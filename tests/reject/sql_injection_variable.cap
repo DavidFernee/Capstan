@@ -1,0 +1,7 @@
+// expect: CWE-89
+// Hiding the query text in a variable does not help: it must be a literal.
+int main() {
+    string q = "DELETE FROM users";
+    sql_query(q);
+    return 0;
+}

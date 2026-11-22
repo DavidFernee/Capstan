@@ -1,0 +1,6 @@
+// expect: CWE-117
+int main() {
+    Tainted user = taint("bob\nINFO admin logged in");
+    println("login failed for " + user);
+    return 0;
+}

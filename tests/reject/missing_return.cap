@@ -1,0 +1,5 @@
+// expect: can reach its end without returning
+int sign(int x) {
+    if (x > 0) { return 1; }
+}
+int main() { return sign(1); }

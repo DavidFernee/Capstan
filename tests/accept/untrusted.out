@@ -1,0 +1,13 @@
+html: &lt;b&gt;Bob&lt;/b&gt;
+admin
+log: <b>Bob</b>\x0aadmin
+ident: user_42
+rejected bad ident
+int: -119
+rejected overflowing int
+[sql] UPDATE users SET name = ? WHERE id = ? $1=<b>Bob</b>\x0aadmin $2=42
+[run] convert argv[1]=a.jpg; rm -rf ~ argv[2]=out.png
+trusted: ok
+cap1$sha256$ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+verify: true false
+legacy tag accepted: false

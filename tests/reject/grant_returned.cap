@@ -1,0 +1,6 @@
+// expect: CWE-613
+struct User { int id; }
+policy Admin(User u) { return u.id == 0; }
+Grant<Admin>? remember(User u) { return authorize Admin(u); }
+int main() { return 0; }
+test "deny" { assert_denied Admin(new User{id: 1}); }

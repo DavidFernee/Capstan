@@ -1,0 +1,5 @@
+// expect: CWE-807
+// Deciding access from a role the client sent in a request header.
+policy Admin(Tainted role_header) { return role_header == "admin"; }
+int main() { return 0; }
+test "deny" { assert_denied Admin(taint("user")); }

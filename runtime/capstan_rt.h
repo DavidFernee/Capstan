@@ -1,0 +1,675 @@
+/*
+ * Capstan runtime, v0.1
+ *
+ * Every program the Capstan compiler produces is C code that calls into this
+ * header. The compiler's type checker rules out most weakness classes before a
+ * program ever runs; the checks here catch the ones that can only be decided at
+ * run time (an index computed from input, an overflowing sum), and stop the
+ * program safely instead of letting it continue in a corrupted state.
+ *
+ * Each check names the CWE weakness it prevents.
+ *
+ * Memory model (v0.1): values are allocated and never freed. That makes
+ * use-after-free and double-free impossible by construction, at the cost of
+ * memory growth in long-running programs. A garbage collector is on the roadmap.
+ */
+#ifndef CAPSTAN_RT_H
+#define CAPSTAN_RT_H
+
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <setjmp.h>
+
+/* ------------------------------------------------------------------ */
+/* Locations and panics                                               */
+/* ------------------------------------------------------------------ */
+
+static const char **cap_files = NULL;   /* set by generated code */
+static int cap_test_mode = 0;
+static jmp_buf cap_test_jmp;
+static int cap_argc = 0;
+static char **cap_argv = NULL;
+
+#define CAP_LOC_FILE(loc) ((int)((loc) / 1000000))
+#define CAP_LOC_LINE(loc) ((long long)((loc) % 1000000))
+
+static void cap_panic(const char *what, const char *cwe, int64_t loc) {
+    const char *file = cap_files ? cap_files[CAP_LOC_FILE(loc)] : "?";
+    fprintf(stderr, "%s:%lld: runtime check failed: %s [%s prevented]\n",
+            file, CAP_LOC_LINE(loc), what, cwe);
+    if (cap_test_mode) longjmp(cap_test_jmp, 1);
+    exit(101);
+}
+
+static void *cap_alloc(size_t n) {
+    void *p = calloc(1, n);
+    if (!p) { fprintf(stderr, "capstan: out of memory\n"); exit(102); }
+    return p;
+}
+
+static void cap_assert(bool ok, int64_t loc) {
+    if (!ok) cap_panic("assertion failed", "test", loc);
+}
+
+/* ------------------------------------------------------------------ */
+/* Checked integer arithmetic (CWE-190, CWE-191, CWE-369)             */
+/* ------------------------------------------------------------------ */
+
+static inline int64_t cap_add(int64_t a, int64_t b, int64_t loc) {
+    int64_t r;
+    if (__builtin_add_overflow(a, b, &r)) cap_panic("integer overflow in +", "CWE-190", loc);
+    return r;
+}
+static inline int64_t cap_sub(int64_t a, int64_t b, int64_t loc) {
+    int64_t r;
+    if (__builtin_sub_overflow(a, b, &r)) cap_panic("integer overflow in -", "CWE-191", loc);
+    return r;
+}
+static inline int64_t cap_mul(int64_t a, int64_t b, int64_t loc) {
+    int64_t r;
+    if (__builtin_mul_overflow(a, b, &r)) cap_panic("integer overflow in *", "CWE-190", loc);
+    return r;
+}
+static inline int64_t cap_div(int64_t a, int64_t b, int64_t loc) {
+    if (b == 0) cap_panic("division by zero", "CWE-369", loc);
+    if (a == INT64_MIN && b == -1) cap_panic("integer overflow in /", "CWE-190", loc);
+    return a / b;
+}
+static inline int64_t cap_mod(int64_t a, int64_t b, int64_t loc) {
+    if (b == 0) cap_panic("division by zero", "CWE-369", loc);
+    if (a == INT64_MIN && b == -1) return 0;
+    return a % b;
+}
+static inline int64_t cap_neg(int64_t a, int64_t loc) {
+    if (a == INT64_MIN) cap_panic("integer overflow in unary -", "CWE-190", loc);
+    return -a;
+}
+
+/* Optional int/bool are boxed; none is NULL. */
+static int64_t *cap_box_int(int64_t v) {
+    int64_t *p = (int64_t *)cap_alloc(sizeof(int64_t));
+    *p = v;
+    return p;
+}
+
+/* ------------------------------------------------------------------ */
+/* Strings: immutable, length-prefixed, always bounds-checked          */
+/* ------------------------------------------------------------------ */
+
+typedef struct CapStr { int64_t len; char data[]; } CapStr;
+
+static CapStr *cap_str_new(const char *s, int64_t n) {
+    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)n + 1);
+    r->len = n;
+    if (n > 0) memcpy(r->data, s, (size_t)n);
+    r->data[n] = 0;
+    return r;
+}
+
+/* String literal, allocated once per site. */
+#define CAP_LIT(s, n) ({ static CapStr *_cap_lit = NULL; \
+    if (!_cap_lit) { _cap_lit = cap_str_new((s), (n)); } _cap_lit; })
+
+static CapStr *cap_str_concat(CapStr *a, CapStr *b, int64_t loc) {
+    int64_t n = cap_add(a->len, b->len, loc);
+    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)n + 1);
+    r->len = n;
+    memcpy(r->data, a->data, (size_t)a->len);
+    memcpy(r->data + a->len, b->data, (size_t)b->len);
+    r->data[n] = 0;
+    return r;
+}
+
+static bool cap_str_eq(CapStr *a, CapStr *b) {
+    return a->len == b->len && memcmp(a->data, b->data, (size_t)a->len) == 0;
+}
+
+static int64_t cap_str_at(CapStr *s, int64_t i, int64_t loc) {
+    if (i < 0 || i >= s->len) cap_panic("string index out of bounds", "CWE-125", loc);
+    return (int64_t)(unsigned char)s->data[i];
+}
+
+static CapStr *cap_str_slice(CapStr *s, int64_t a, int64_t b, int64_t loc) {
+    if (a < 0 || b < a || b > s->len) cap_panic("string slice out of bounds", "CWE-125", loc);
+    return cap_str_new(s->data + a, b - a);
+}
+
+static CapStr *cap_int_to_str(int64_t v) {
+    char buf[32];
+    int n = snprintf(buf, sizeof buf, "%lld", (long long)v);
+    return cap_str_new(buf, n);
+}
+
+static CapStr *cap_char_str(int64_t c, int64_t loc) {
+    if (c < 0 || c > 255) cap_panic("char_str value outside 0..255", "CWE-704", loc);
+    char ch = (char)c;
+    return cap_str_new(&ch, 1);
+}
+
+/* ------------------------------------------------------------------ */
+/* Lists: growable, bounds-checked                                     */
+/* ------------------------------------------------------------------ */
+
+typedef union CapVal { int64_t i; void *p; } CapVal;
+static inline CapVal cap_vi(int64_t i) { CapVal v; v.i = i; return v; }
+static inline CapVal cap_vp(void *p) { CapVal v; v.p = p; return v; }
+
+typedef struct CapList { int64_t len, cap; CapVal *items; } CapList;
+
+static CapList *cap_list_new(void) {
+    return (CapList *)cap_alloc(sizeof(CapList));
+}
+
+static void cap_list_push(CapList *l, CapVal v) {
+    if (l->len == l->cap) {
+        int64_t nc = l->cap ? l->cap * 2 : 8;
+        CapVal *ni = (CapVal *)cap_alloc(sizeof(CapVal) * (size_t)nc);
+        if (l->len) memcpy(ni, l->items, sizeof(CapVal) * (size_t)l->len);
+        l->items = ni;
+        l->cap = nc;
+    }
+    l->items[l->len++] = v;
+}
+
+static CapVal cap_list_get(CapList *l, int64_t i, int64_t loc) {
+    if (i < 0 || i >= l->len) cap_panic("list index out of bounds", "CWE-125", loc);
+    return l->items[i];
+}
+
+static void cap_list_set(CapList *l, int64_t i, CapVal v, int64_t loc) {
+    if (i < 0 || i >= l->len) cap_panic("list index out of bounds", "CWE-787", loc);
+    l->items[i] = v;
+}
+
+static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {
+    int64_t total = 0;
+    for (int64_t i = 0; i < parts->len; i++) {
+        total = cap_add(total, ((CapStr *)parts->items[i].p)->len, loc);
+        if (i > 0) total = cap_add(total, sep->len, loc);
+    }
+    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)total + 1);
+    r->len = total;
+    char *w = r->data;
+    for (int64_t i = 0; i < parts->len; i++) {
+        if (i > 0) { memcpy(w, sep->data, (size_t)sep->len); w += sep->len; }
+        CapStr *p = (CapStr *)parts->items[i].p;
+        memcpy(w, p->data, (size_t)p->len);
+        w += p->len;
+    }
+    *w = 0;
+    return r;
+}
+
+/* ------------------------------------------------------------------ */
+/* Maps: string keys, insertion-ordered (deterministic iteration)      */
+/* ------------------------------------------------------------------ */
+
+typedef struct CapMap {
+    int64_t len, cap;
+    CapStr **keys;
+    CapVal *vals;
+    int64_t *index;     /* open addressing: slot -> position+1, 0 = empty */
+    int64_t index_cap;
+} CapMap;
+
+static uint64_t cap_hash_str(CapStr *s) {
+    uint64_t h = 1469598103934665603ULL;
+    for (int64_t i = 0; i < s->len; i++) { h ^= (unsigned char)s->data[i]; h *= 1099511628211ULL; }
+    return h;
+}
+
+static CapMap *cap_map_new(void) {
+    return (CapMap *)cap_alloc(sizeof(CapMap));
+}
+
+static int64_t cap_map_find(CapMap *m, CapStr *k) {
+    if (m->index_cap == 0) return -1;
+    uint64_t mask = (uint64_t)m->index_cap - 1;
+    uint64_t s = cap_hash_str(k) & mask;
+    while (m->index[s]) {
+        int64_t pos = m->index[s] - 1;
+        if (cap_str_eq(m->keys[pos], k)) return pos;
+        s = (s + 1) & mask;
+    }
+    return -1;
+}
+
+static void cap_map_reindex(CapMap *m, int64_t newcap) {
+    m->index = (int64_t *)cap_alloc(sizeof(int64_t) * (size_t)newcap);
+    m->index_cap = newcap;
+    uint64_t mask = (uint64_t)newcap - 1;
+    for (int64_t pos = 0; pos < m->len; pos++) {
+        uint64_t s = cap_hash_str(m->keys[pos]) & mask;
+        while (m->index[s]) s = (s + 1) & mask;
+        m->index[s] = pos + 1;
+    }
+}
+
+static void cap_map_set(CapMap *m, CapStr *k, CapVal v) {
+    int64_t pos = cap_map_find(m, k);
+    if (pos >= 0) { m->vals[pos] = v; return; }
+    if (m->len == m->cap) {
+        int64_t nc = m->cap ? m->cap * 2 : 8;
+        CapStr **nk = (CapStr **)cap_alloc(sizeof(CapStr *) * (size_t)nc);
+        CapVal *nv = (CapVal *)cap_alloc(sizeof(CapVal) * (size_t)nc);
+        if (m->len) {
+            memcpy(nk, m->keys, sizeof(CapStr *) * (size_t)m->len);
+            memcpy(nv, m->vals, sizeof(CapVal) * (size_t)m->len);
+        }
+        m->keys = nk; m->vals = nv; m->cap = nc;
+    }
+    m->keys[m->len] = k;
+    m->vals[m->len] = v;
+    m->len++;
+    if (m->len * 2 > m->index_cap) cap_map_reindex(m, m->index_cap ? m->index_cap * 2 : 16);
+    else {
+        uint64_t mask = (uint64_t)m->index_cap - 1;
+        uint64_t s = cap_hash_str(k) & mask;
+        while (m->index[s]) s = (s + 1) & mask;
+        m->index[s] = m->len;
+    }
+}
+
+static bool cap_map_has(CapMap *m, CapStr *k) { return cap_map_find(m, k) >= 0; }
+
+static void *cap_map_get_p(CapMap *m, CapStr *k) {
+    int64_t pos = cap_map_find(m, k);
+    return pos < 0 ? NULL : m->vals[pos].p;
+}
+
+static int64_t *cap_map_get_i(CapMap *m, CapStr *k) {
+    int64_t pos = cap_map_find(m, k);
+    return pos < 0 ? NULL : cap_box_int(m->vals[pos].i);
+}
+
+static CapList *cap_map_keys(CapMap *m) {
+    CapList *l = cap_list_new();
+    for (int64_t i = 0; i < m->len; i++) cap_list_push(l, cap_vp(m->keys[i]));
+    return l;
+}
+
+/* ------------------------------------------------------------------ */
+/* Authorisation grants (CWE-862, CWE-639)                             */
+/* ------------------------------------------------------------------ */
+
+#define CAP_GRANT_MAX 8
+typedef struct CapGrant { int64_t policy; int64_t n; void *bound[CAP_GRANT_MAX]; } CapGrant;
+
+static CapGrant *cap_grant_new(int64_t policy) {
+    CapGrant *g = (CapGrant *)cap_alloc(sizeof(CapGrant));
+    g->policy = policy;
+    return g;
+}
+
+static CapGrant *cap_grant_bind(CapGrant *g, void *obj) {
+    if (g->n < CAP_GRANT_MAX) g->bound[g->n++] = obj;
+    return g;
+}
+
+/* A grant is only valid for the exact objects it was issued for. */
+static void cap_grant_check(CapGrant *g, int64_t policy, void *obj, int64_t loc) {
+    if (g->policy != policy) cap_panic("grant issued by a different policy", "CWE-863", loc);
+    for (int64_t i = 0; i < g->n; i++) if (g->bound[i] == obj) return;
+    cap_panic("grant used on an object it was not issued for", "CWE-639", loc);
+}
+
+/* ------------------------------------------------------------------ */
+/* I/O                                                                 */
+/* ------------------------------------------------------------------ */
+
+static void cap_print(CapStr *s) { fwrite(s->data, 1, (size_t)s->len, stdout); }
+static void cap_println(CapStr *s) { cap_print(s); fputc('\n', stdout); }
+
+static void cap_exit(int64_t code) { fflush(stdout); exit((int)code); }
+
+static CapList *cap_args(void) {
+    CapList *l = cap_list_new();
+    for (int i = 1; i < cap_argc; i++) cap_list_push(l, cap_vp(cap_str_new(cap_argv[i], (int64_t)strlen(cap_argv[i]))));
+    return l;
+}
+
+/* File contents are untrusted input: returned as Tainted. */
+static CapStr *cap_read_file(CapStr *path) {
+    FILE *f = fopen(path->data, "rb");
+    if (!f) return NULL;
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
+    long n = ftell(f);
+    if (n < 0) { fclose(f); return NULL; }
+    rewind(f);
+    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)n + 1);
+    r->len = (int64_t)fread(r->data, 1, (size_t)n, f);
+    r->data[r->len] = 0;
+    fclose(f);
+    return r;
+}
+
+static CapStr *cap_read_line(void) {
+    CapList *parts = cap_list_new();
+    char buf[4096];
+    int64_t total = 0;
+    int got = 0;
+    while (fgets(buf, sizeof buf, stdin)) {
+        got = 1;
+        size_t n = strlen(buf);
+        int end = n > 0 && buf[n - 1] == '\n';
+        if (end) n--;
+        cap_list_push(parts, cap_vp(cap_str_new(buf, (int64_t)n)));
+        total += (int64_t)n;
+        if (end) break;
+    }
+    if (!got) return NULL;
+    return cap_join(parts, CAP_LIT("", 0), 0);
+}
+
+static bool cap_write_file(CapStr *path, CapStr *data) {
+    FILE *f = fopen(path->data, "wb");
+    if (!f) return false;
+    size_t w = fwrite(data->data, 1, (size_t)data->len, f);
+    return fclose(f) == 0 && w == (size_t)data->len;
+}
+
+/* ------------------------------------------------------------------ */
+/* Validators: the only ways out of Tainted (CWE-20)                   */
+/* ------------------------------------------------------------------ */
+
+static CapStr *cap_validate_ident(CapStr *t) {
+    if (t->len == 0 || t->len > 255) return NULL;
+    for (int64_t i = 0; i < t->len; i++) {
+        unsigned char c = (unsigned char)t->data[i];
+        int alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+        int digit = c >= '0' && c <= '9';
+        if (!(alpha || (digit && i > 0))) return NULL;
+    }
+    return cap_str_new(t->data, t->len);
+}
+
+static int64_t *cap_validate_int(CapStr *t) {
+    int64_t i = 0, v = 0;
+    int neg = 0;
+    if (t->len == 0) return NULL;
+    if (t->data[0] == '-') { neg = 1; i = 1; if (t->len == 1) return NULL; }
+    for (; i < t->len; i++) {
+        unsigned char c = (unsigned char)t->data[i];
+        if (c < '0' || c > '9') return NULL;
+        if (__builtin_mul_overflow(v, 10, &v)) return NULL;
+        if (neg ? __builtin_sub_overflow(v, c - '0', &v) : __builtin_add_overflow(v, c - '0', &v)) return NULL;
+    }
+    return cap_box_int(v);
+}
+
+/* Escape arbitrary bytes into the body of a C string literal. */
+static CapStr *cap_escape_c(CapStr *t) {
+    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)t->len * 4 + 1);
+    char *w = r->data;
+    for (int64_t i = 0; i < t->len; i++) {
+        unsigned char c = (unsigned char)t->data[i];
+        if (c == '\\') { *w++ = '\\'; *w++ = '\\'; }
+        else if (c == '"') { *w++ = '\\'; *w++ = '"'; }
+        else if (c == '?') { *w++ = '\\'; *w++ = '?'; }
+        else if (c >= 32 && c < 127) *w++ = (char)c;
+        else { w += sprintf(w, "\\%03o", c); }
+    }
+    *w = 0;
+    r->len = (int64_t)(w - r->data);
+    return r;
+}
+
+static CapStr *cap_escape_html(CapStr *t) {
+    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)t->len * 6 + 1);
+    char *w = r->data;
+    for (int64_t i = 0; i < t->len; i++) {
+        char c = t->data[i];
+        switch (c) {
+            case '&': memcpy(w, "&amp;", 5); w += 5; break;
+            case '<': memcpy(w, "&lt;", 4); w += 4; break;
+            case '>': memcpy(w, "&gt;", 4); w += 4; break;
+            case '"': memcpy(w, "&quot;", 6); w += 6; break;
+            case '\'': memcpy(w, "&#39;", 5); w += 5; break;
+            default: *w++ = c;
+        }
+    }
+    *w = 0;
+    r->len = (int64_t)(w - r->data);
+    return r;
+}
+
+/* Neutralise line breaks and control bytes so input cannot forge log lines (CWE-117). */
+static CapStr *cap_escape_log(CapStr *t) {
+    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)t->len * 4 + 1);
+    char *w = r->data;
+    for (int64_t i = 0; i < t->len; i++) {
+        unsigned char c = (unsigned char)t->data[i];
+        if (c < 32 || c == 127) w += sprintf(w, "\\x%02x", c);
+        else *w++ = (char)c;
+    }
+    *w = 0;
+    r->len = (int64_t)(w - r->data);
+    return r;
+}
+
+/* ------------------------------------------------------------------ */
+/* Injection-safe sinks (v0.1 demonstration stubs)                     */
+/* The query/program text is always a compile-time literal; untrusted  */
+/* values travel separately as bound parameters / argv entries.        */
+/* ------------------------------------------------------------------ */
+
+static void cap_sql_query(CapStr *tmpl, CapList *params) {
+    printf("[sql] %s", tmpl->data);
+    for (int64_t i = 0; i < params->len; i++)
+        printf(" $%lld=%s", (long long)(i + 1), cap_escape_log((CapStr *)params->items[i].p)->data);
+    printf("\n");
+}
+
+static void cap_run(CapStr *prog, CapList *argv) {
+    printf("[run] %s", prog->data);
+    for (int64_t i = 0; i < argv->len; i++)
+        printf(" argv[%lld]=%s", (long long)(i + 1), cap_escape_log((CapStr *)argv->items[i].p)->data);
+    printf("\n");
+}
+
+/* ------------------------------------------------------------------ */
+/* Secrets (CWE-798, CWE-208, CWE-532)                                 */
+/* ------------------------------------------------------------------ */
+
+static CapStr *cap_secret_env(CapStr *name) {
+    const char *v = getenv(name->data);
+    return v ? cap_str_new(v, (int64_t)strlen(v)) : NULL;
+}
+
+static bool cap_ct_eq(const char *a, int64_t an, const char *b, int64_t bn) {
+    unsigned char d = (unsigned char)(an != bn);
+    int64_t n = an < bn ? an : bn;
+    for (int64_t i = 0; i < n; i++) d |= (unsigned char)(a[i] ^ b[i]);
+    return d == 0;
+}
+
+static bool cap_secret_eq(CapStr *a, CapStr *b) { return cap_ct_eq(a->data, a->len, b->data, b->len); }
+
+/* ------------------------------------------------------------------ */
+/* Cryptography: algorithm-agile, self-describing outputs (CWE-327/916) */
+/* Every output carries its algorithm tag, so a later Capstan version   */
+/* can change the default while still verifying older values.           */
+/* ------------------------------------------------------------------ */
+
+typedef struct { uint32_t h[8]; uint64_t bits; unsigned char buf[64]; size_t n; } CapSha256;
+
+static const uint32_t cap_k256[64] = {
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2};
+
+#define CAP_ROR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
+
+static void cap_sha256_block(CapSha256 *s, const unsigned char *p) {
+    uint32_t w[64], a, b, c, d, e, f, g, h;
+    for (int i = 0; i < 16; i++) w[i] = (uint32_t)p[4*i] << 24 | (uint32_t)p[4*i+1] << 16 | (uint32_t)p[4*i+2] << 8 | p[4*i+3];
+    for (int i = 16; i < 64; i++) {
+        uint32_t s0 = CAP_ROR(w[i-15], 7) ^ CAP_ROR(w[i-15], 18) ^ (w[i-15] >> 3);
+        uint32_t s1 = CAP_ROR(w[i-2], 17) ^ CAP_ROR(w[i-2], 19) ^ (w[i-2] >> 10);
+        w[i] = w[i-16] + s0 + w[i-7] + s1;
+    }
+    a = s->h[0]; b = s->h[1]; c = s->h[2]; d = s->h[3]; e = s->h[4]; f = s->h[5]; g = s->h[6]; h = s->h[7];
+    for (int i = 0; i < 64; i++) {
+        uint32_t t1 = h + (CAP_ROR(e, 6) ^ CAP_ROR(e, 11) ^ CAP_ROR(e, 25)) + ((e & f) ^ (~e & g)) + cap_k256[i] + w[i];
+        uint32_t t2 = (CAP_ROR(a, 2) ^ CAP_ROR(a, 13) ^ CAP_ROR(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
+        h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+    }
+    s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d; s->h[4] += e; s->h[5] += f; s->h[6] += g; s->h[7] += h;
+}
+
+static void cap_sha256_init(CapSha256 *s) {
+    static const uint32_t iv[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    memcpy(s->h, iv, sizeof iv); s->bits = 0; s->n = 0;
+}
+
+static void cap_sha256_update(CapSha256 *s, const unsigned char *p, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        s->buf[s->n++] = p[i];
+        if (s->n == 64) { cap_sha256_block(s, s->buf); s->n = 0; }
+    }
+    s->bits += (uint64_t)n * 8;
+}
+
+static void cap_sha256_final(CapSha256 *s, unsigned char out[32]) {
+    uint64_t bits = s->bits;
+    unsigned char pad = 0x80, zero = 0, len[8];
+    cap_sha256_update(s, &pad, 1);
+    while (s->n != 56) cap_sha256_update(s, &zero, 1);
+    for (int i = 0; i < 8; i++) len[i] = (unsigned char)(bits >> (56 - 8 * i));
+    cap_sha256_update(s, len, 8);
+    for (int i = 0; i < 8; i++) { out[4*i] = s->h[i] >> 24; out[4*i+1] = s->h[i] >> 16; out[4*i+2] = s->h[i] >> 8; out[4*i+3] = s->h[i]; }
+}
+
+static void cap_hmac_sha256(const unsigned char *key, size_t kn, const unsigned char *msg, size_t mn, unsigned char out[32]) {
+    unsigned char k[64] = {0}, ipad[64], opad[64], inner[32];
+    CapSha256 s;
+    if (kn > 64) { cap_sha256_init(&s); cap_sha256_update(&s, key, kn); cap_sha256_final(&s, k); }
+    else memcpy(k, key, kn);
+    for (int i = 0; i < 64; i++) { ipad[i] = k[i] ^ 0x36; opad[i] = k[i] ^ 0x5c; }
+    cap_sha256_init(&s); cap_sha256_update(&s, ipad, 64); cap_sha256_update(&s, msg, mn); cap_sha256_final(&s, inner);
+    cap_sha256_init(&s); cap_sha256_update(&s, opad, 64); cap_sha256_update(&s, inner, 32); cap_sha256_final(&s, out);
+}
+
+static void cap_hex(const unsigned char *p, size_t n, char *out) {
+    static const char *d = "0123456789abcdef";
+    for (size_t i = 0; i < n; i++) { out[2*i] = d[p[i] >> 4]; out[2*i+1] = d[p[i] & 15]; }
+    out[2*n] = 0;
+}
+
+static CapStr *cap_hash(CapStr *data) {
+    unsigned char dg[32];
+    char out[12 + 65];
+    CapSha256 s;
+    cap_sha256_init(&s); cap_sha256_update(&s, (const unsigned char *)data->data, (size_t)data->len); cap_sha256_final(&s, dg);
+    memcpy(out, "cap1$sha256$", 12);
+    cap_hex(dg, 32, out + 12);
+    return cap_str_new(out, (int64_t)strlen(out));
+}
+
+static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
+    if (tagged->len > 12 && memcmp(tagged->data, "cap1$sha256$", 12) == 0) {
+        CapStr *h = cap_hash(data);
+        return cap_ct_eq(h->data, h->len, tagged->data, tagged->len);
+    }
+    return false;   /* unknown or retired algorithm tag */
+}
+
+#define CAP_PBKDF2_ITER 600000
+
+static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
+    unsigned char msg[64 + 4], u[32], t[32];
+    memcpy(msg, salt, sn);
+    msg[sn] = 0; msg[sn+1] = 0; msg[sn+2] = 0; msg[sn+3] = 1;
+    cap_hmac_sha256((const unsigned char *)pw, pn, msg, sn + 4, u);
+    memcpy(t, u, 32);
+    for (int i = 1; i < iter; i++) {
+        cap_hmac_sha256((const unsigned char *)pw, pn, u, 32, u);
+        for (int j = 0; j < 32; j++) t[j] ^= u[j];
+    }
+    memcpy(out, t, 32);
+}
+
+static CapStr *cap_hash_password(CapStr *pw) {
+    unsigned char salt[16], dk[32];
+    char shex[33], dhex[65], out[128];
+    FILE *r = fopen("/dev/urandom", "rb");
+    if (!r || fread(salt, 1, 16, r) != 16) { fprintf(stderr, "capstan: no secure randomness available\n"); exit(103); }
+    fclose(r);
+    cap_pbkdf2(pw->data, (size_t)pw->len, salt, 16, CAP_PBKDF2_ITER, dk);
+    cap_hex(salt, 16, shex); cap_hex(dk, 32, dhex);
+    int n = snprintf(out, sizeof out, "cap1$pbkdf2-sha256$%d$%s$%s", CAP_PBKDF2_ITER, shex, dhex);
+    return cap_str_new(out, n);
+}
+
+static int cap_unhex(const char *h, size_t n, unsigned char *out) {
+    for (size_t i = 0; i < n; i++) {
+        int v = 0;
+        for (int k = 0; k < 2; k++) {
+            char c = h[2*i+k];
+            v <<= 4;
+            if (c >= '0' && c <= '9') v |= c - '0';
+            else if (c >= 'a' && c <= 'f') v |= c - 'a' + 10;
+            else return 0;
+        }
+        out[i] = (unsigned char)v;
+    }
+    return 1;
+}
+
+static bool cap_verify_password(CapStr *pw, CapStr *tagged) {
+    const char *pre = "cap1$pbkdf2-sha256$";
+    size_t pl = strlen(pre);
+    if ((size_t)tagged->len < pl || memcmp(tagged->data, pre, pl) != 0) return false;
+    const char *p = tagged->data + pl;
+    char *end;
+    long iter = strtol(p, &end, 10);
+    if (*end != '$' || iter < 1 || iter > 100000000) return false;
+    p = end + 1;
+    if (strlen(p) != 32 + 1 + 64 || p[32] != '$') return false;
+    unsigned char salt[16], want[32], got[32];
+    if (!cap_unhex(p, 16, salt) || !cap_unhex(p + 33, 32, want)) return false;
+    cap_pbkdf2(pw->data, (size_t)pw->len, salt, 16, (int)iter, got);
+    return cap_ct_eq((const char *)got, 32, (const char *)want, 32);
+}
+
+/* True when a stored value uses an algorithm or cost the current version has superseded. */
+static bool cap_needs_rehash(CapStr *tagged) {
+    char cur[40];
+    snprintf(cur, sizeof cur, "cap1$pbkdf2-sha256$%d$", CAP_PBKDF2_ITER);
+    size_t n = strlen(cur);
+    return !((size_t)tagged->len > n && memcmp(tagged->data, cur, n) == 0);
+}
+
+/* ------------------------------------------------------------------ */
+/* Test harness                                                        */
+/* ------------------------------------------------------------------ */
+
+static int cap_tests_run = 0, cap_tests_failed = 0;
+
+static void cap_run_test(const char *name, void (*fn)(void)) {
+    cap_tests_run++;
+    cap_test_mode = 1;
+    if (setjmp(cap_test_jmp) == 0) {
+        fn();
+        printf("  pass  %s\n", name);
+    } else {
+        cap_tests_failed++;
+        printf("  FAIL  %s\n", name);
+    }
+    cap_test_mode = 0;
+}
+
+static int cap_test_summary(void) {
+    printf("%d test(s), %d failed\n", cap_tests_run, cap_tests_failed);
+    return cap_tests_failed ? 1 : 0;
+}
+
+#endif

@@ -1,0 +1,5 @@
+// expect: CWE-78
+void convert(Tainted filename) {
+    run("convert " + filename + " out.png");
+}
+int main() { convert(taint("a.jpg; rm -rf ~")); return 0; }

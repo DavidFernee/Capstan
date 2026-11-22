@@ -1,0 +1,2 @@
+// expect: CWE-327
+int main() { string h = sha1("data"); return 0; }

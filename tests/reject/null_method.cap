@@ -1,0 +1,7 @@
+// expect: CWE-476
+int main() {
+    Map<string> m = new Map<string>();
+    string? v = m.get("k");
+    println(int_to_str(v.len()));
+    return 0;
+}

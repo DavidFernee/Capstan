@@ -1,0 +1,212 @@
+// Capstan compiler: shared data structures.
+//
+// The compiler is written in Capstan and obeys every rule it enforces:
+// source text is read as Tainted, and only reaches the generated C code
+// through validate_ident(), validate_int() and escape_c().
+
+// ---- types ----------------------------------------------------------------
+
+const int TY_INT = 1;
+const int TY_BOOL = 2;
+const int TY_STR = 3;
+const int TY_VOID = 4;
+const int TY_TAINT = 5;
+const int TY_SECRET = 6;
+const int TY_STRUCT = 7;
+const int TY_LIST = 8;
+const int TY_MAP = 9;
+const int TY_GRANT = 10;
+const int TY_OPT = 11;
+const int TY_NONE = 12;
+const int TY_ERR = 13;
+
+struct Type {
+    int k;
+    string name;        // struct or policy name
+    List<Type> args;    // element type for List, Map, optional
+}
+
+// ---- syntax tree ----------------------------------------------------------
+
+const int N_STRUCT = 1;
+const int N_FIELD = 2;
+const int N_CONST = 3;
+const int N_FN = 4;
+const int N_PARAM = 5;
+const int N_POLICY = 6;
+const int N_TEST = 7;
+const int N_BLOCK = 10;
+const int N_DECL = 11;
+const int N_ASSIGN = 12;
+const int N_EXPR = 13;
+const int N_IF = 14;
+const int N_WHILE = 15;
+const int N_FOR = 16;
+const int N_RETURN = 17;
+const int N_BREAK = 18;
+const int N_CONTINUE = 19;
+const int N_ASSERT_DENIED = 20;
+const int N_ASSERT_GRANTED = 21;
+const int N_INT = 30;
+const int N_STR = 31;
+const int N_BOOL = 32;
+const int N_NONE = 33;
+const int N_VAR = 34;
+const int N_BIN = 35;
+const int N_NOT = 36;
+const int N_NEG = 37;
+const int N_GETF = 38;
+const int N_INDEX = 39;
+const int N_METHOD = 40;
+const int N_CALL = 41;
+const int N_NEW = 42;
+const int N_INIT = 43;
+const int N_NEWLIST = 44;
+const int N_NEWMAP = 45;
+const int N_AUTHORIZE = 46;
+
+struct Node {
+    int k;
+    string s;           // name, operator, or escaped string literal
+    string s2;          // if-let variable; protected policy name
+    int n;              // integer value, byte length of a string literal, flags
+    int line;
+    int file;
+    List<Node> kids;
+    Type? ty;           // declared type (declarations) or computed type (expressions)
+}
+
+// ---- diagnostics ----------------------------------------------------------
+
+struct Diag {
+    int file;
+    int line;
+    bool error;
+    string code;
+    string msg;
+}
+
+struct Ctx {
+    List<string> files;
+    List<Diag> diags;
+    bool release;
+    bool strict;
+}
+
+void report(Ctx c, int file, int line, bool error, string code, string msg) {
+    c.diags.push(new Diag{file: file, line: line, error: error, code: code, msg: msg});
+}
+
+void error_at(Ctx c, Node at, string code, string msg) {
+    report(c, at.file, at.line, true, code, msg);
+}
+
+void warn_at(Ctx c, Node at, string code, string msg) {
+    report(c, at.file, at.line, c.strict, code, msg);
+}
+
+int error_count(Ctx c) {
+    int n = 0;
+    for (int i = 0; i < c.diags.len(); i += 1) {
+        if (c.diags[i].error) { n += 1; }
+    }
+    return n;
+}
+
+void print_diags(Ctx c) {
+    for (int i = 0; i < c.diags.len(); i += 1) {
+        Diag d = c.diags[i];
+        string sev = "warning";
+        if (d.error) { sev = "error"; }
+        string code = "";
+        if (d.code != "") { code = "[" + d.code + "]"; }
+        println(c.files[d.file] + ":" + int_to_str(d.line) + ": " + sev + code + ": " + d.msg);
+    }
+}
+
+// ---- constructors ---------------------------------------------------------
+
+Type mk_type(int k) {
+    return new Type{k: k, name: "", args: new List<Type>()};
+}
+
+Type mk_named(int k, string name) {
+    return new Type{k: k, name: name, args: new List<Type>()};
+}
+
+Type mk_wrap(int k, Type inner) {
+    List<Type> a = new List<Type>();
+    a.push(inner);
+    return new Type{k: k, name: "", args: a};
+}
+
+Node mk_node(int k, int file, int line) {
+    return new Node{k: k, s: "", s2: "", n: 0, line: line, file: file, kids: new List<Node>(), ty: none};
+}
+
+Node mk_node_s(int k, string s, int file, int line) {
+    Node nd = mk_node(k, file, line);
+    nd.s = s;
+    return nd;
+}
+
+// ---- type helpers -----------------------------------------------------------
+
+bool type_eq(Type a, Type b) {
+    if (a.k != b.k) { return false; }
+    if (a.name != b.name) { return false; }
+    if (a.args.len() != b.args.len()) { return false; }
+    for (int i = 0; i < a.args.len(); i += 1) {
+        if (!type_eq(a.args[i], b.args[i])) { return false; }
+    }
+    return true;
+}
+
+string type_str(Type t) {
+    if (t.k == TY_INT) { return "int"; }
+    if (t.k == TY_BOOL) { return "bool"; }
+    if (t.k == TY_STR) { return "string"; }
+    if (t.k == TY_VOID) { return "void"; }
+    if (t.k == TY_TAINT) { return "Tainted"; }
+    if (t.k == TY_SECRET) { return "Secret"; }
+    if (t.k == TY_STRUCT) { return t.name; }
+    if (t.k == TY_LIST) { return "List<" + type_str(t.args[0]) + ">"; }
+    if (t.k == TY_MAP) { return "Map<" + type_str(t.args[0]) + ">"; }
+    if (t.k == TY_GRANT) { return "Grant<" + t.name + ">"; }
+    if (t.k == TY_OPT) { return type_str(t.args[0]) + "?"; }
+    if (t.k == TY_NONE) { return "none"; }
+    return "<error>";
+}
+
+// Can a value of type `from` be used where `to` is expected?
+bool assignable(Type from, Type to) {
+    if (from.k == TY_ERR || to.k == TY_ERR) { return true; }
+    if (type_eq(from, to)) { return true; }
+    if (to.k == TY_OPT) {
+        if (from.k == TY_NONE) { return true; }
+        if (type_eq(from, to.args[0])) { return true; }
+    }
+    return false;
+}
+
+bool is_stringish(Type t) {
+    return t.k == TY_STR || t.k == TY_TAINT;
+}
+
+string lower(string s) {
+    List<string> out = new List<string>();
+    for (int i = 0; i < s.len(); i += 1) {
+        int c = s.at(i);
+        if (c >= 'A' && c <= 'Z') { c = c + 32; }
+        out.push(char_str(c));
+    }
+    return join(out, "");
+}
+
+bool contains(string hay, string needle) {
+    if (needle.len() > hay.len()) { return false; }
+    for (int i = 0; i + needle.len() <= hay.len(); i += 1) {
+        if (hay.slice(i, i + needle.len()) == needle) { return true; }
+    }
+    return false;
+}

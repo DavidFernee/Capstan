@@ -1,0 +1,2 @@
+// expect: CWE-120
+int main() { strcpy("dst", "a much longer source string"); return 0; }

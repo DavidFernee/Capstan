@@ -1,0 +1,6 @@
+// expect-runtime: CWE-191
+int main() {
+    int small = 0 - 9223372036854775807;
+    int boom = small - 2;
+    return 0;
+}

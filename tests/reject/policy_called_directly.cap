@@ -1,0 +1,5 @@
+// expect: CWE-862
+struct User { int id; }
+policy Admin(User u) { return u.id == 0; }
+int main() { bool ok = Admin(new User{id: 0}); return 0; }
+test "deny" { assert_denied Admin(new User{id: 1}); }

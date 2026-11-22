@@ -1,0 +1,6 @@
+// expect: CWE-862
+struct User { int id; }
+policy Admin(User u) { return u.id == 0; }
+void sneaky(Grant<Admin> g) { }
+int main() { return 0; }
+test "deny" { assert_denied Admin(new User{id: 1}); }

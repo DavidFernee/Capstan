@@ -1,0 +1,6 @@
+// expect: CAP-ROLE
+// flags: --strict
+struct User { string role; }
+policy Admin(User u) { return u.role == "admni"; }
+int main() { return 0; }
+test "deny" { assert_denied Admin(new User{role: "user"}); }

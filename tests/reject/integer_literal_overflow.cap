@@ -1,0 +1,2 @@
+// expect: CWE-190
+int main() { int x = 99999999999999999999; return 0; }

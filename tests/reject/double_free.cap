@@ -1,0 +1,2 @@
+// expect: CWE-415
+int main() { free("x"); return 0; }

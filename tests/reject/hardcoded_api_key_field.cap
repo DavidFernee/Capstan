@@ -1,0 +1,6 @@
+// expect: CWE-798
+struct Client { string url; string api_key; }
+int main() {
+    Client c = new Client{url: "https://api.example.com", api_key: "sk_live_123"};
+    return 0;
+}

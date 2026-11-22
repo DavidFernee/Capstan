@@ -1,0 +1,2 @@
+// expect: CWE-338
+int main() { int token = rand(); return 0; }

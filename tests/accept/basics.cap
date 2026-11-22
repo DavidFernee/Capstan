@@ -1,0 +1,47 @@
+// Structs, optionals, lists, maps, loops and checked arithmetic that stays in range.
+struct Node { int value; Node? next; }
+
+int length(Node? head) {
+    int n = 0;
+    Node? cur = head;
+    while (true) {
+        if (let nd = cur) {
+            n += 1;
+            cur = nd.next;
+        } else {
+            return n;
+        }
+    }
+}
+
+int fib(int n) {
+    if (n < 2) { return n; }
+    return fib(n - 1) + fib(n - 2);
+}
+
+int main() {
+    Node c = new Node{value: 3, next: none};
+    Node b = new Node{value: 2, next: c};
+    Node a = new Node{value: 1, next: b};
+    println("length " + int_to_str(length(a)));
+    println("fib(20) " + int_to_str(fib(20)));
+    Map<int> ages = new Map<int>();
+    ages.set("ada", 36);
+    ages.set("grace", 85);
+    ages.set("ada", 37);
+    List<string> keys = ages.keys();
+    for (int i = 0; i < keys.len(); i += 1) {
+        if (let v = ages.get(keys[i])) { println(keys[i] + " " + int_to_str(v)); }
+    }
+    if (let missing = ages.get("nobody")) { println("unexpected"); } else { println("nobody: none"); }
+    println(int_to_str(-7 / 2) + " " + int_to_str(-7 % 2) + " " + int_to_str(9223372036854775807));
+    List<string> parts = new List<string>();
+    for (int j = 0; j < 5; j += 1) {
+        if (j == 3) { continue; }
+        parts.push(int_to_str(j * j));
+    }
+    println(join(parts, ","));
+    string s = "Capstan";
+    println(s.slice(0, 3) + " " + int_to_str(s.len()) + " " + int_to_str(s.at(0)) + " " + char_str('!'));
+    return 0;
+}

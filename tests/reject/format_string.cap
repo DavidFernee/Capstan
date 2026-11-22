@@ -1,0 +1,2 @@
+// expect: CWE-134
+int main() { printf("%s%s%s%n"); return 0; }
