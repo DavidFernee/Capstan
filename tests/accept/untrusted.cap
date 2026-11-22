@@ -4,11 +4,11 @@ int main() {
     println("html: " + escape_html(name));
     println("log: " + escape_log(name));
     if (let id = validate_ident(taint("user_42"))) { println("ident: " + id); }
-    if (let bad = validate_ident(taint("42; drop"))) { println("unexpected"); } else { println("rejected bad ident"); }
+    if (let _bad = validate_ident(taint("42; drop"))) { println("unexpected"); } else { println("rejected bad ident"); }
     if (let n = validate_int(taint("-120"))) { println("int: " + int_to_str(n + 1)); }
-    if (let huge = validate_int(taint("99999999999999999999"))) { println("unexpected"); } else { println("rejected overflowing int"); }
+    if (let _huge = validate_int(taint("99999999999999999999"))) { println("unexpected"); } else { println("rejected overflowing int"); }
     sql_query("UPDATE users SET name = ? WHERE id = ?", name, "42");
-    run("convert", taint("a.jpg; rm -rf ~"), "out.png");
+    run("convert", "--", taint("a.jpg; rm -rf ~"), "out.png");
     string reviewed = trust(taint("ok"), "value comes from our own config file");
     println("trusted: " + reviewed);
     println(hash("abc"));

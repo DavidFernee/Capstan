@@ -7,7 +7,9 @@ it addresses. Statuses:
 - **Partial**: substantially harder to get wrong, with the gap stated.
 - **Not yet**: outside v0.1's reach; the roadmap item is named.
 
-Every claim here is backed by a test in `tests/`.
+Every claim here is backed by a test in `tests/`. For an attempt-by-attempt
+red-team of about 250 code-level CWEs, including the gaps that remain, see
+[CWE-ATLAS.md](CWE-ATLAS.md).
 
 ## The 2024 CWE Top 25
 
@@ -43,13 +45,16 @@ Every claim here is backed by a test in `tests/`.
 
 | CWE | Weakness | How |
 |---|---|---|
+| 88 | Argument injection | Untrusted arguments to `run()` must come after a literal `"--"`, so they can't be read as options |
 | 117 | Log injection | `Tainted` can't be printed without `escape_log()` |
 | 120 | Classic buffer overflow | `strcpy`/`memcpy`/`gets` don't exist |
 | 134 | Format string | No format strings |
 | 191 | Integer underflow | Checked arithmetic |
-| 208 | Timing side channel on secret comparison | `==` on `Secret` is an error; `secret_eq()` is constant-time |
+| 208 | Timing side channel on secret comparison | `==` on `Secret` is an error, as is `==` on strings named like tokens or passwords; `secret_eq()` is constant-time |
 | 252 | Unchecked return value | Warning when `write_file()`'s result is ignored |
 | 327 / 328 | Weak cryptography | No weak primitives. `hash()` and `hash_password()` tag their outputs with the algorithm, so a new language version can change defaults while still verifying old values; `needs_rehash()` flags them for upgrade |
+| 561 / 563 / 570 / 571 / 1164 | Dead code, unused variables, constant conditions, self-assignment | Warnings (errors with `--strict`) |
+| 916 / 759 / 760 | Fast or unsalted password hashing | `hash()` on a password-named value is an error; use `hash_password()` |
 | 338 | Weak random numbers | `rand()` doesn't exist (secure random API on the roadmap) |
 | 369 | Division by zero | Literal zero rejected at compile time; checked at run time |
 | 415 | Double free | No manual memory management |
@@ -72,6 +77,7 @@ Every claim here is backed by a test in `tests/`.
   them, but testing can't prove their absence.
 - **Deployment and configuration**: open storage buckets, weak TLS settings.
 - **Hardware side channels** below the language.
-- **Laundering by design.** A program can rebuild a string byte by byte with
-  `char_str(s.at(i))`, which removes the `Tainted` marker. Like most taint
-  systems, Capstan tracks values, not information flow through control decisions.
+- **Laundering through data structures or control flow.** Rebuilding text from
+  the bytes of untrusted input with `char_str()` is rejected, including through
+  helper functions and parameters. Bytes stored in lists or struct fields first,
+  or information carried only by branching, are not tracked. The atlas records both.

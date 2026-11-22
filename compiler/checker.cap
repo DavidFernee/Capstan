@@ -19,6 +19,8 @@ struct Checker {
     bool in_policy;
     Map<int> denials;
     int asserts;
+    List<Map<int>> used;        // per scope: name -> read count (CWE-563)
+    List<Map<Node>> decl_at;    // per scope: name -> declaring node
 }
 
 Type ty_of(Node n) {
@@ -36,25 +38,55 @@ Type typed(Node n, Type t) {
 void push_scope(Checker c) {
     if (c.depth < c.scopes.len()) {
         c.scopes[c.depth] = new Map<Type>();
+        c.used[c.depth] = new Map<int>();
+        c.decl_at[c.depth] = new Map<Node>();
     } else {
         c.scopes.push(new Map<Type>());
+        c.used.push(new Map<int>());
+        c.decl_at.push(new Map<Node>());
     }
     c.depth += 1;
 }
 
+// Leaving a scope reports locals that were declared but never read (CWE-563).
 void pop_scope(Checker c) {
+    int top = c.depth - 1;
+    List<string> names = c.decl_at[top].keys();
+    for (int i = 0; i < names.len(); i += 1) {
+        if (!c.used[top].has(names[i]) && names[i].at(0) != '_') {
+            if (let at = c.decl_at[top].get(names[i])) {
+                warn_at(c.ctx, at, "CWE-563", "'" + names[i] + "' is never used; remove it, or name it _" + names[i] + " if that is intended");
+            }
+        }
+    }
     c.depth -= 1;
 }
 
-Type? lookup_local(Checker c, string name) {
+Type? find_local(Checker c, string name) {
     for (int i = c.depth - 1; i >= 0; i -= 1) {
         if (let t = c.scopes[i].get(name)) { return t; }
     }
     return none;
 }
 
+Type? lookup_local(Checker c, string name) {
+    for (int i = c.depth - 1; i >= 0; i -= 1) {
+        if (let t = c.scopes[i].get(name)) {
+            c.used[i].set(name, 1);
+            return t;
+        }
+    }
+    return none;
+}
+
+// Parameters are declared without unused-variable tracking.
+void declare_param(Checker c, Node at, string name, Type t) {
+    declare(c, at, name, t);
+    c.used[c.depth - 1].set(name, 1);
+}
+
 void declare(Checker c, Node at, string name, Type t) {
-    if (let prev = lookup_local(c, name)) {
+    if (let _prev = find_local(c, name)) {
         error_at(c.ctx, at, "CAP-SHADOW", "'" + name + "' is already declared in an enclosing scope; shadowing is not allowed");
         return;
     }
@@ -63,6 +95,7 @@ void declare(Checker c, Node at, string name, Type t) {
         return;
     }
     c.scopes[c.depth - 1].set(name, t);
+    c.decl_at[c.depth - 1].set(name, at);
 }
 
 // ---- type validation ----------------------------------------------------------
@@ -124,6 +157,25 @@ bool looks_secret(string name) {
     string l = lower(name);
     return contains(l, "password") || contains(l, "passwd") || contains(l, "secret") || contains(l, "apikey")
         || contains(l, "api_key") || contains(l, "token") || contains(l, "private_key") || contains(l, "credential");
+}
+
+bool looks_password(string name) {
+    string l = lower(name);
+    return contains(l, "password") || contains(l, "passwd") || contains(l, "passphrase") || contains(l, "pwd") || l == "pw" || l == "pass";
+}
+
+// Does the expression mention a variable or field whose name passes `kind`?
+// kind 1: credential-like (looks_secret); kind 2: password-like.
+bool mentions_name(Node e, int kind) {
+    if (e.k == N_VAR || e.k == N_GETF) {
+        if (kind == 1 && looks_secret(e.s)) { return true; }
+        if (kind == 2 && (looks_password(e.s))) { return true; }
+    }
+    if (e.k == N_CALL || e.k == N_METHOD) { return false; }
+    for (int i = 0; i < e.kids.len(); i += 1) {
+        if (mentions_name(e.kids[i], kind)) { return true; }
+    }
+    return false;
 }
 
 void check_hardcoded(Checker c, Node at, string name, Node value) {
@@ -239,6 +291,9 @@ Type check_binary(Checker c, Node e) {
     if (op == "==" || op == "!=") {
         bool ok = (a.k == TY_INT && b.k == TY_INT) || (a.k == TY_BOOL && b.k == TY_BOOL) || (is_stringish(a) && is_stringish(b));
         if (!ok) { error_at(c.ctx, e, "", "cannot compare " + type_str(a) + " with " + type_str(b)); }
+        if (ok && is_stringish(a) && (mentions_name(e.kids[0], 1) || mentions_name(e.kids[1], 1) || mentions_name(e.kids[0], 2) || mentions_name(e.kids[1], 2))) {
+            error_at(c.ctx, e, "CWE-208", "comparing credentials with '" + op + "' leaks timing information; load them as Secret and use secret_eq(), or store hashes and use verify_password()");
+        }
         return mk_type(TY_BOOL);
     }
     if (op == "<" || op == "<=" || op == ">" || op == ">=") {
@@ -486,8 +541,13 @@ Type check_call(Checker c, Node e) {
         if (n == 0 || !is_literal_str(e.kids[0])) {
             error_at(c.ctx, e, cwe, "the " + what + " passed to " + f + "() must be a string literal; pass untrusted values as separate arguments");
         }
+        bool options_ended = false;
         for (int j = 1; j < n; j += 1) {
             Type argt = ty_of(e.kids[j]);
+            if (e.kids[j].k == N_STR && e.kids[j].s == "--") { options_ended = true; }
+            if (f == "run" && argt.k == TY_TAINT && !options_ended) {
+                error_at(c.ctx, e.kids[j], "CWE-88", "untrusted argument to run() could be read as an option (for example --upload-pack=...); put \"--\" before untrusted arguments");
+            }
             if (argt.k == TY_SECRET) {
                 error_at(c.ctx, e.kids[j], "CWE-532", "a Secret cannot be passed to " + f + "()");
             } else if (!is_stringish(argt)) {
@@ -519,6 +579,9 @@ Type check_call(Checker c, Node e) {
         if (n >= 1) {
             Type dt = ty_of(e.kids[0]);
             if (dt.k != TY_SECRET && !is_stringish(dt)) { expect_type(c, e, dt, mk_type(TY_STR), f + "()"); }
+            if ((f == "hash" || f == "hash_verify") && mentions_name(e.kids[0], 2)) {
+                error_at(c.ctx, e, "CWE-916", f + "() is a fast, unsalted hash and must not be used for passwords; use hash_password() and verify_password()");
+            }
         }
         if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_STR), f + "() stored hash"); }
         if (want == 2) { return mk_type(TY_BOOL); }
@@ -589,6 +652,16 @@ bool is_simple_operand(Node e) {
     return e.k == N_INT || e.k == N_VAR;
 }
 
+bool same_path(Node a, Node b) {
+    if (a.k != b.k || a.s != b.s || a.kids.len() != b.kids.len()) { return false; }
+    if (a.k == N_INT) { return a.n == b.n; }
+    if (a.k != N_VAR && a.k != N_GETF && a.k != N_INDEX) { return false; }
+    for (int i = 0; i < a.kids.len(); i += 1) {
+        if (!same_path(a.kids[i], b.kids[i])) { return false; }
+    }
+    return true;
+}
+
 string lvalue_name(Node e) {
     if (e.k == N_VAR || e.k == N_GETF) { return e.s; }
     return "";
@@ -596,7 +669,15 @@ string lvalue_name(Node e) {
 
 void check_block(Checker c, Node b) {
     push_scope(c);
-    for (int i = 0; i < b.kids.len(); i += 1) { check_stmt(c, b.kids[i]); }
+    bool ended = false;
+    for (int i = 0; i < b.kids.len(); i += 1) {
+        if (ended) {
+            warn_at(c.ctx, b.kids[i], "CWE-561", "unreachable code: this statement can never run");
+            ended = false;
+        }
+        check_stmt(c, b.kids[i]);
+        if (terminates(b.kids[i]) && i + 1 < b.kids.len()) { ended = true; }
+    }
     pop_scope(c);
 }
 
@@ -631,6 +712,9 @@ void check_stmt(Checker c, Node s) {
         }
         expect_type(c, s, rv, tt, "assignment");
         check_hardcoded(c, s, lvalue_name(target), s.kids[1]);
+        if (pure_path(target) && same_path(target, s.kids[1])) {
+            warn_at(c.ctx, s, "CWE-1164", "assignment of a value to itself has no effect");
+        }
         return;
     }
     if (k == N_EXPR) {
@@ -660,6 +744,13 @@ void check_stmt(Checker c, Node s) {
             }
         } else {
             expect_type(c, s, ct, mk_type(TY_BOOL), "if condition");
+            if (s.kids[0].k == N_BOOL) {
+                if (s.kids[0].n == 1) {
+                    warn_at(c.ctx, s, "CWE-571", "condition is always true");
+                } else {
+                    warn_at(c.ctx, s, "CWE-570", "condition is always false; the branch is dead code");
+                }
+            }
             check_block(c, s.kids[1]);
         }
         if (s.kids.len() > 2) { check_block(c, s.kids[2]); }
@@ -722,15 +813,32 @@ void check_stmt(Checker c, Node s) {
 bool always_returns(Node s) {
     if (s.k == N_RETURN) { return true; }
     if (s.k == N_BLOCK) {
-        if (s.kids.len() == 0) { return false; }
-        return always_returns(s.kids[s.kids.len() - 1]);
+        for (int i = 0; i < s.kids.len(); i += 1) {
+            if (always_returns(s.kids[i])) { return true; }
+        }
+        return false;
     }
     if (s.k == N_IF && s.kids.len() == 3) {
         return always_returns(s.kids[1]) && always_returns(s.kids[2]);
     }
-    if (s.k == N_WHILE && s.kids[0].k == N_BOOL && s.kids[0].n == 1) { return true; }
+    if (s.k == N_WHILE && s.kids[0].k == N_BOOL && s.kids[0].n == 1) { return !breaks_out(s.kids[1]); }
     if (s.k == N_EXPR && s.kids[0].k == N_CALL && s.kids[0].s == "exit") { return true; }
     return false;
+}
+
+// Does a loop body contain a break that leaves this loop (not a nested one)?
+bool breaks_out(Node s) {
+    if (s.k == N_BREAK) { return true; }
+    if (s.k == N_WHILE || s.k == N_FOR) { return false; }
+    for (int i = 0; i < s.kids.len(); i += 1) {
+        if (breaks_out(s.kids[i])) { return true; }
+    }
+    return false;
+}
+
+// Does control never continue past this statement?
+bool terminates(Node s) {
+    return always_returns(s) || s.k == N_BREAK || s.k == N_CONTINUE;
 }
 
 // ---- policy analysis ------------------------------------------------------------
@@ -792,7 +900,8 @@ Checker new_checker(Ctx ctx) {
         ctx: ctx, structs: new Map<Node>(), fns: new Map<Node>(), policies: new Map<Node>(),
         policy_ids: new Map<int>(), consts: new Map<Node>(), const_types: new Map<Type>(),
         scopes: new List<Map<Type>>(), depth: 0, ret: mk_type(TY_VOID), loops: 0,
-        in_test: false, in_policy: false, denials: new Map<int>(), asserts: 0
+        in_test: false, in_policy: false, denials: new Map<int>(), asserts: 0,
+        used: new List<Map<int>>(), decl_at: new List<Map<Node>>()
     };
 }
 
@@ -828,7 +937,7 @@ void check_params(Checker c, Node f) {
 
 void bind_params(Checker c, Node f) {
     for (int i = 0; i < f.n; i += 1) {
-        declare(c, f.kids[i], f.kids[i].s, ty_of(f.kids[i]));
+        declare_param(c, f.kids[i], f.kids[i].s, ty_of(f.kids[i]));
     }
 }
 
@@ -840,7 +949,7 @@ void check_fn(Checker c, Node f) {
     }
     check_params(c, f);
     if (f.s2 != "") {
-        if (let pol = c.policies.get(f.s2)) {
+        if (let _pol = c.policies.get(f.s2)) {
             bool ok = f.n >= 1 && ty_of(f.kids[0]).k == TY_GRANT && ty_of(f.kids[0]).name == f.s2;
             if (!ok) {
                 error_at(c.ctx, f, "CWE-862", "protected(" + f.s2 + ") function '" + f.s + "' must take Grant<" + f.s2 + "> as its first parameter");
@@ -927,6 +1036,7 @@ void check_program(Checker c, List<Node> decls, bool need_main) {
             }
         }
     }
+    if (error_count(c.ctx) == 0) { check_laundering(c, decls); }
     List<string> pols = c.policies.keys();
     for (int i5 = 0; i5 < pols.len(); i5 += 1) {
         if (let pn = c.policies.get(pols[i5])) {
@@ -945,5 +1055,152 @@ void check_program(Checker c, List<Node> decls, bool need_main) {
         } else {
             report(c.ctx, 0, 1, true, "", "program has no main() function");
         }
+    }
+}
+
+// ---- laundering analysis (CWE-20) ---------------------------------------------
+//
+// Bytes read from a Tainted value with .at() are "derived" integers. Rebuilding
+// text from them with char_str() would strip the Tainted marking, so it is
+// rejected. Derivation is tracked through arithmetic, local variables, function
+// return values and function parameters (inter-procedurally, to a fixpoint).
+// Not tracked: derived integers stored in struct fields or collections, and
+// information carried only by control flow.
+
+struct FlowSummary {
+    bool returns_derived;
+    List<bool> param_to_return;
+    List<bool> param_to_sink;
+}
+
+struct Flow {
+    Map<int> vars;
+    Map<FlowSummary> sums;
+    bool changed;
+    bool returns;
+    bool sinks;
+    bool report;
+    Ctx ctx;
+}
+
+bool is_arith(string op) {
+    return op == "+" || op == "-" || op == "*" || op == "/" || op == "%";
+}
+
+bool derived(Flow f, Node e) {
+    if (e.k == N_METHOD && e.s == "at" && ty_of(e.kids[0]).k == TY_TAINT) { return true; }
+    if (e.k == N_VAR) { return f.vars.has(e.s); }
+    if (e.k == N_NEG) { return derived(f, e.kids[0]); }
+    if (e.k == N_BIN && is_arith(e.s) && ty_of(e).k == TY_INT) {
+        return derived(f, e.kids[0]) || derived(f, e.kids[1]);
+    }
+    if (e.k == N_CALL) {
+        if (let sm = f.sums.get(e.s)) {
+            if (sm.returns_derived) { return true; }
+            for (int i = 0; i < e.kids.len() && i < sm.param_to_return.len(); i += 1) {
+                if (sm.param_to_return[i] && derived(f, e.kids[i])) { return true; }
+            }
+        }
+    }
+    return false;
+}
+
+void mark(Flow f, string name) {
+    if (!f.vars.has(name)) {
+        f.vars.set(name, 1);
+        f.changed = true;
+    }
+}
+
+void sink(Flow f, Node at) {
+    f.sinks = true;
+    if (f.report) {
+        error_at(f.ctx, at, "CWE-20", "char_str() rebuilds text from bytes of untrusted input, which removes its Tainted marking; slice the Tainted value instead and validate or escape it");
+    }
+}
+
+void flow_walk(Flow f, Node n) {
+    if (n.k == N_DECL && ty_of(n).k == TY_INT && derived(f, n.kids[0])) { mark(f, n.s); }
+    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && ty_of(n.kids[0]).k == TY_INT && derived(f, n.kids[1])) { mark(f, n.kids[0].s); }
+    if (n.k == N_RETURN && n.kids.len() == 1 && derived(f, n.kids[0])) { f.returns = true; }
+    if (n.k == N_CALL && n.s == "char_str" && n.kids.len() == 1 && derived(f, n.kids[0])) { sink(f, n); }
+    if (n.k == N_CALL) {
+        if (let sm = f.sums.get(n.s)) {
+            for (int i = 0; i < n.kids.len() && i < sm.param_to_sink.len(); i += 1) {
+                if (sm.param_to_sink[i] && derived(f, n.kids[i])) { sink(f, n); }
+            }
+        }
+    }
+    for (int k = 0; k < n.kids.len(); k += 1) { flow_walk(f, n.kids[k]); }
+}
+
+// Analyse one body until the set of derived locals stops growing.
+Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, string seed, bool report) {
+    Flow f = new Flow{vars: new Map<int>(), sums: sums, changed: true, returns: false, sinks: false, report: false, ctx: ctx};
+    if (seed != "") { f.vars.set(seed, 1); }
+    int rounds = 0;
+    while (f.changed && rounds < 100) {
+        f.changed = false;
+        f.returns = false;
+        f.sinks = false;
+        flow_walk(f, body);
+        rounds += 1;
+    }
+    if (report) {
+        f.report = true;
+        flow_walk(f, body);
+    }
+    return f;
+}
+
+FlowSummary summarise(Map<FlowSummary> sums, Ctx ctx, Node fn) {
+    Node body = fn.kids[fn.n];
+    Flow base = flow_body(sums, ctx, body, "", false);
+    FlowSummary out = new FlowSummary{returns_derived: base.returns, param_to_return: new List<bool>(), param_to_sink: new List<bool>()};
+    for (int i = 0; i < fn.n; i += 1) {
+        if (ty_of(fn.kids[i]).k == TY_INT) {
+            Flow pf = flow_body(sums, ctx, body, fn.kids[i].s, false);
+            out.param_to_return.push(pf.returns);
+            out.param_to_sink.push(pf.sinks);
+        } else {
+            out.param_to_return.push(false);
+            out.param_to_sink.push(false);
+        }
+    }
+    return out;
+}
+
+bool same_summary(FlowSummary a, FlowSummary b) {
+    if (a.returns_derived != b.returns_derived) { return false; }
+    for (int i = 0; i < a.param_to_return.len(); i += 1) {
+        if (a.param_to_return[i] != b.param_to_return[i] || a.param_to_sink[i] != b.param_to_sink[i]) { return false; }
+    }
+    return true;
+}
+
+void check_laundering(Checker c, List<Node> decls) {
+    Map<FlowSummary> sums = new Map<FlowSummary>();
+    bool changed = true;
+    int rounds = 0;
+    while (changed && rounds < 50) {
+        changed = false;
+        for (int i = 0; i < decls.len(); i += 1) {
+            Node d = decls[i];
+            if (d.k == N_FN) {
+                FlowSummary s = summarise(sums, c.ctx, d);
+                if (let prev = sums.get(d.s)) {
+                    if (!same_summary(prev, s)) { changed = true; }
+                } else {
+                    changed = true;
+                }
+                sums.set(d.s, s);
+            }
+        }
+        rounds += 1;
+    }
+    for (int j = 0; j < decls.len(); j += 1) {
+        Node d2 = decls[j];
+        if (d2.k == N_FN || d2.k == N_POLICY) { flow_body(sums, c.ctx, d2.kids[d2.n], "", true); }
+        if (d2.k == N_TEST) { flow_body(sums, c.ctx, d2.kids[0], "", true); }
     }
 }
