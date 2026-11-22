@@ -1,0 +1,5 @@
+// expect: 3:15: error
+int main() {
+    int x = 1 + true + 2;
+    return x;
+}

@@ -1,0 +1,2 @@
+// expect: (did you mean 'print'?)
+int main() { printn("x"); return 0; }

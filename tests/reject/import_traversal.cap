@@ -1,0 +1,3 @@
+// expect: CWE-22
+import "../../etc/secrets.cap";
+int main() { return 0; }

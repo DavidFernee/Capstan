@@ -1,0 +1,3 @@
+// expect: (did you mean 'Clinician'?)
+enum Role { Patient, Clinician }
+int main() { Role r = Role.Clinican; return 0; }

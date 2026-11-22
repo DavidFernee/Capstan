@@ -34,6 +34,11 @@ string loc(Node n) {
     return int_to_str(n.file * 1000000 + n.line);
 }
 
+// List<bool> uses the packed, one-byte-per-element representation.
+bool is_blist(Type t) {
+    return t.k == TY_LIST && t.args[0].k == TY_BOOL;
+}
+
 bool is_scalar(Type t) {
     return t.k == TY_INT || t.k == TY_BOOL;
 }
@@ -44,7 +49,11 @@ string ctype(Type t) {
     if (k == TY_BOOL) { return "bool"; }
     if (k == TY_STR || k == TY_TAINT || k == TY_SECRET) { return "CapStr*"; }
     if (k == TY_STRUCT) { return "S_" + t.name + "*"; }
-    if (k == TY_LIST) { return "CapList*"; }
+    if (k == TY_ENUM) { return "E_" + t.name + "*"; }
+    if (k == TY_LIST) {
+        if (t.args[0].k == TY_BOOL) { return "CapBList*"; }
+        return "CapList*";
+    }
     if (k == TY_MAP) { return "CapMap*"; }
     if (k == TY_GRANT) { return "CapGrant*"; }
     if (k == TY_OPT) {
@@ -143,6 +152,7 @@ string gen_expr(Gen g, Node e) {
     if (k == N_INDEX) {
         Seq s = operands(g, e, 0);
         Type el = ty_of(e);
+        if (is_blist(ty_of(e.kids[0]))) { return wrap(s, "cap_blist_get(" + call_list(s.names, 0, loc(e)) + ")"); }
         return wrap(s, from_val(el, "cap_list_get(" + call_list(s.names, 0, loc(e)) + ")"));
     }
     if (k == N_METHOD) { return gen_method(g, e); }
@@ -161,7 +171,24 @@ string gen_expr(Gen g, Node e) {
         parts.push(t + "; })");
         return join(parts, "");
     }
-    if (k == N_NEWLIST) { return "cap_list_new()"; }
+    if (k == N_ENUMVAL) {
+        string et = "E_" + e.s2;
+        string t2 = fresh(g);
+        List<string> eparts = new List<string>();
+        eparts.push("({ " + et + " *" + t2 + " = (" + et + " *)cap_alloc(sizeof(" + et + ")); " + t2 + "->tag = " + int_to_str(e.n) + "; ");
+        if (let en = g.c.enums.get(e.s2)) {
+            Node vn = en.kids[e.n];
+            for (int a = 0; a < e.kids.len(); a += 1) {
+                eparts.push(t2 + "->v_" + vn.s + "_" + int_to_str(a) + " = " + coerce(gen_expr(g, e.kids[a]), ty_of(e.kids[a]), ty_of(vn.kids[a])) + "; ");
+            }
+        }
+        eparts.push(t2 + "; })");
+        return join(eparts, "");
+    }
+    if (k == N_NEWLIST) {
+        if (is_blist(ty_of(e))) { return "cap_blist_new()"; }
+        return "cap_list_new()";
+    }
     if (k == N_NEWMAP) { return "cap_map_new()"; }
     if (k == N_AUTHORIZE) { return gen_authorize(g, e); }
     return "/* unsupported */ 0";
@@ -209,6 +236,7 @@ string gen_binary(Gen g, Node e) {
             if (op == "!=") { eq = "(!" + eq + ")"; }
             return wrap(s, eq);
         }
+        if (a.k == TY_ENUM) { return wrap(s, "((" + x + ")->tag " + op + " (" + y + ")->tag)"); }
         return wrap(s, "((" + x + ") " + op + " (" + y + "))");
     }
     if (op == "<" || op == "<=" || op == ">" || op == ">=") {
@@ -232,7 +260,7 @@ string gen_method(Gen g, Node e) {
     simple.push(is_simple(e.kids[0]));
     for (int i = 1; i < e.kids.len(); i += 1) {
         string code = gen_expr(g, e.kids[i]);
-        if (rt.k == TY_LIST && m == "push") { code = to_val(rt.args[0], coerce(code, ty_of(e.kids[i]), rt.args[0])); }
+        if (rt.k == TY_LIST && m == "push" && !is_blist(rt)) { code = to_val(rt.args[0], coerce(code, ty_of(e.kids[i]), rt.args[0])); }
         if (rt.k == TY_MAP && m == "set" && i == 2) { code = to_val(rt.args[0], coerce(code, ty_of(e.kids[i]), rt.args[0])); }
         codes.push(code);
         simple.push(is_simple(e.kids[i]));
@@ -244,12 +272,34 @@ string gen_method(Gen g, Node e) {
         if (m == "at") { return wrap(s, "cap_str_at(" + call_list(s.names, 0, loc(e)) + ")"); }
         if (m == "slice") { return wrap(s, "cap_str_slice(" + call_list(s.names, 0, loc(e)) + ")"); }
     }
+    if (is_blist(rt)) {
+        if (m == "push") { return wrap(s, "cap_blist_push(" + call_list(s.names, 0, "") + ")"); }
+        if (m == "pop") { return wrap(s, "cap_blist_pop(" + r + ")"); }
+        if (m == "clear") { return wrap(s, "cap_blist_clear(" + r + ")"); }
+        if (m == "remove_at") { return wrap(s, "cap_blist_remove(" + call_list(s.names, 0, loc(e)) + ")"); }
+        if (m == "insert") { return wrap(s, "cap_blist_insert(" + call_list(s.names, 0, loc(e)) + ")"); }
+    }
     if (rt.k == TY_LIST && m == "push") { return wrap(s, "cap_list_push(" + call_list(s.names, 0, "") + ")"); }
+    if (rt.k == TY_LIST) {
+        Type le = rt.args[0];
+        if (m == "pop") {
+            if (is_scalar(le)) { return wrap(s, "cap_list_pop_i(" + r + ")"); }
+            return wrap(s, "((" + ctype(le) + ")cap_list_pop_p(" + r + "))");
+        }
+        if (m == "clear") { return wrap(s, "cap_list_clear(" + r + ")"); }
+        if (m == "remove_at") { return wrap(s, from_val(le, "cap_list_remove(" + call_list(s.names, 0, loc(e)) + ")")); }
+        if (m == "insert") { return wrap(s, "cap_list_insert(" + r + ", " + s.names[1] + ", " + to_val(le, coerce(s.names[2], ty_of(e.kids[2]), le)) + ", " + loc(e) + ")"); }
+        if (m == "sort") {
+            if (le.k == TY_INT) { return wrap(s, "cap_list_sort_i(" + r + ")"); }
+            return wrap(s, "cap_list_sort_s(" + r + ")");
+        }
+    }
     if (rt.k == TY_MAP) {
         Type mv = rt.args[0];
         if (m == "has") { return wrap(s, "cap_map_has(" + call_list(s.names, 0, "") + ")"); }
         if (m == "set") { return wrap(s, "cap_map_set(" + call_list(s.names, 0, "") + ")"); }
         if (m == "keys") { return wrap(s, "cap_map_keys(" + r + ")"); }
+        if (m == "remove") { return wrap(s, "cap_map_remove(" + call_list(s.names, 0, "") + ")"); }
         if (m == "get") {
             if (is_scalar(mv)) { return wrap(s, "cap_map_get_i(" + call_list(s.names, 0, "") + ")"); }
             return wrap(s, "((" + ctype(mv) + ")cap_map_get_p(" + call_list(s.names, 0, "") + "))");
@@ -367,6 +417,12 @@ string gen_simple(Gen g, Node s) {
         simple.push(is_simple(target.kids[0]));
         codes.push(gen_expr(g, target.kids[1]));
         simple.push(is_simple(target.kids[1]));
+        if (is_blist(ty_of(target.kids[0]))) {
+            codes.push(rcode);
+            simple.push(is_simple(rhs));
+            Seq sb = hoist(g, codes, simple);
+            return wrap(sb, "cap_blist_set(" + call_list(sb.names, 0, loc(s)) + ")");
+        }
         codes.push(to_val(tt, rcode));
         simple.push(is_simple(rhs));
         Seq sq = hoist(g, codes, simple);
@@ -446,6 +502,46 @@ void gen_stmt(Gen g, Node s) {
         }
         return;
     }
+    if (k == N_MATCH) {
+        // An if/else chain, not a C switch: a break inside a case must still leave the enclosing loop.
+        Type mt = ty_of(s.kids[0]);
+        string mv = fresh(g);
+        emit(g, "{");
+        g.ind += 1;
+        emit(g, ctype(mt) + " " + mv + " = " + gen_expr(g, s.kids[0]) + ";");
+        if (let en = g.c.enums.get(mt.name)) {
+            bool first = true;
+            for (int i = 1; i < s.kids.len(); i += 1) {
+                Node cs = s.kids[i];
+                Node body = cs.kids[cs.kids.len() - 1];
+                if (cs.n == 1) {
+                    if (first) { emit(g, "{"); } else { emit(g, "else {"); }
+                } else {
+                    int tag = 0;
+                    for (int j = 0; j < en.kids.len(); j += 1) { if (en.kids[j].s == cs.s) { tag = j; } }
+                    string kw = "else if";
+                    if (first) { kw = "if"; }
+                    emit(g, kw + " (" + mv + "->tag == " + int_to_str(tag) + ") {");
+                    g.ind += 1;
+                    Node vn = en.kids[tag];
+                    for (int b = 0; b < cs.kids.len() - 1; b += 1) {
+                        emit(g, ctype(ty_of(vn.kids[b])) + " u_" + cs.kids[b].s + " = " + mv + "->v_" + vn.s + "_" + int_to_str(b) + ";");
+                    }
+                    g.ind -= 1;
+                }
+                g.ind += 1;
+                gen_block(g, body);
+                g.ind -= 1;
+                emit(g, "}");
+                first = false;
+            }
+            Node lastc = s.kids[s.kids.len() - 1];
+            if (lastc.n != 1) { emit(g, "else { cap_unreachable(" + loc(s) + "); }"); }
+        }
+        g.ind -= 1;
+        emit(g, "}");
+        return;
+    }
     if (k == N_BREAK) { emit(g, "break;"); return; }
     if (k == N_CONTINUE) { emit(g, "continue;"); return; }
     if (k == N_ASSERT_DENIED || k == N_ASSERT_GRANTED) {
@@ -510,6 +606,23 @@ string generate(Checker c, List<Node> decls, bool test_mode) {
     emit(g, "");
     for (int i2 = 0; i2 < decls.len(); i2 += 1) {
         if (decls[i2].k == N_STRUCT) { emit(g, "typedef struct S_" + decls[i2].s + " S_" + decls[i2].s + ";"); }
+        if (decls[i2].k == N_ENUM) { emit(g, "typedef struct E_" + decls[i2].s + " E_" + decls[i2].s + ";"); }
+    }
+    for (int ie = 0; ie < decls.len(); ie += 1) {
+        Node ed = decls[ie];
+        if (ed.k == N_ENUM) {
+            emit(g, "struct E_" + ed.s + " {");
+            g.ind += 1;
+            emit(g, "int64_t tag;");
+            for (int v = 0; v < ed.kids.len(); v += 1) {
+                Node vn = ed.kids[v];
+                for (int f = 0; f < vn.kids.len(); f += 1) {
+                    emit(g, ctype(ty_of(vn.kids[f])) + " v_" + vn.s + "_" + int_to_str(f) + ";");
+                }
+            }
+            g.ind -= 1;
+            emit(g, "};");
+        }
     }
     for (int i3 = 0; i3 < decls.len(); i3 += 1) {
         Node d = decls[i3];

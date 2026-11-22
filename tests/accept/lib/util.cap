@@ -1,0 +1,2 @@
+import "shapes.cap";
+int double_area(Shape s) { return 2 * size(s); }

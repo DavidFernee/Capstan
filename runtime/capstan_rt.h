@@ -51,6 +51,10 @@ __attribute__((noreturn, cold, noinline)) static void cap_panic(const char *what
 }
 
 /* Memory that may contain pointers (structs, lists, maps, grants). */
+__attribute__((noreturn, cold)) static void cap_unreachable(int64_t loc) {
+    cap_panic("match reached an impossible value (internal error)", "CWE-617", loc);
+}
+
 static void *cap_alloc(size_t n) { return cap_gc_alloc(n, 0); }
 /* Memory that never contains pointers (string bytes, boxed integers). */
 static void *cap_alloc_atomic(size_t n) { return cap_gc_alloc(n, 1); }
@@ -197,6 +201,113 @@ static inline void cap_list_set(CapList *l, int64_t i, CapVal v, int64_t loc) {
     l->items[i] = v;
 }
 
+static void *cap_list_pop_p(CapList *l) {
+    if (l->len == 0) return NULL;
+    return l->items[--l->len].p;
+}
+
+static int64_t *cap_list_pop_i(CapList *l) {
+    if (l->len == 0) return NULL;
+    return cap_box_int(l->items[--l->len].i);
+}
+
+static void cap_list_clear(CapList *l) { l->len = 0; }
+
+static CapVal cap_list_remove(CapList *l, int64_t i, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-125", loc);
+    CapVal v = l->items[i];
+    memmove(l->items + i, l->items + i + 1, sizeof(CapVal) * (size_t)(l->len - i - 1));
+    l->len--;
+    return v;
+}
+
+static void cap_list_insert(CapList *l, int64_t i, CapVal v, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i > (uint64_t)l->len)) cap_panic("list insert position out of bounds", "CWE-787", loc);
+    cap_list_push(l, v);
+    memmove(l->items + i + 1, l->items + i, sizeof(CapVal) * (size_t)(l->len - 1 - i));
+    l->items[i] = v;
+}
+
+/* Stable merge sort, so equal elements keep their order on every platform. */
+static int cap_cmp_i(CapVal a, CapVal b) { return a.i < b.i ? -1 : a.i > b.i; }
+static int cap_cmp_s(CapVal a, CapVal b) {
+    CapStr *x = (CapStr *)a.p, *y = (CapStr *)b.p;
+    int64_t n = x->len < y->len ? x->len : y->len;
+    int c = memcmp(x->data, y->data, (size_t)n);
+    if (c) return c;
+    return x->len < y->len ? -1 : x->len > y->len;
+}
+
+static void cap_merge_sort(CapVal *a, CapVal *tmp, int64_t n, int (*cmp)(CapVal, CapVal)) {
+    if (n < 2) return;
+    int64_t h = n / 2;
+    cap_merge_sort(a, tmp, h, cmp);
+    cap_merge_sort(a + h, tmp, n - h, cmp);
+    int64_t i = 0, j = h, k = 0;
+    while (i < h && j < n) tmp[k++] = cmp(a[j], a[i]) < 0 ? a[j++] : a[i++];
+    while (i < h) tmp[k++] = a[i++];
+    while (j < n) tmp[k++] = a[j++];
+    memcpy(a, tmp, sizeof(CapVal) * (size_t)n);
+}
+
+static void cap_list_sort_i(CapList *l) {
+    CapVal *tmp = (CapVal *)cap_alloc_atomic(sizeof(CapVal) * (size_t)(l->len ? l->len : 1));
+    cap_merge_sort(l->items, tmp, l->len, cap_cmp_i);
+}
+
+static void cap_list_sort_s(CapList *l) {
+    CapVal *tmp = (CapVal *)cap_alloc(sizeof(CapVal) * (size_t)(l->len ? l->len : 1));
+    cap_merge_sort(l->items, tmp, l->len, cap_cmp_s);
+}
+
+/* Packed List<bool>: one byte per element instead of eight. */
+typedef struct CapBList { int64_t len, cap; uint8_t *items; } CapBList;
+
+static CapBList *cap_blist_new(void) { return (CapBList *)cap_alloc(sizeof(CapBList)); }
+
+static inline void cap_blist_push(CapBList *l, bool v) {
+    if (CAP_UNLIKELY(l->len == l->cap)) {
+        int64_t nc = l->cap ? l->cap * 2 : 16;
+        uint8_t *ni = (uint8_t *)cap_alloc_atomic((size_t)nc);
+        if (l->len) memcpy(ni, l->items, (size_t)l->len);
+        l->items = ni;
+        l->cap = nc;
+    }
+    l->items[l->len++] = (uint8_t)v;
+}
+
+static inline bool cap_blist_get(CapBList *l, int64_t i, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-125", loc);
+    return l->items[i];
+}
+
+static inline void cap_blist_set(CapBList *l, int64_t i, bool v, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-787", loc);
+    l->items[i] = (uint8_t)v;
+}
+
+static int64_t *cap_blist_pop(CapBList *l) {
+    if (l->len == 0) return NULL;
+    return cap_box_int(l->items[--l->len]);
+}
+
+static void cap_blist_clear(CapBList *l) { l->len = 0; }
+
+static bool cap_blist_remove(CapBList *l, int64_t i, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-125", loc);
+    bool v = l->items[i];
+    memmove(l->items + i, l->items + i + 1, (size_t)(l->len - i - 1));
+    l->len--;
+    return v;
+}
+
+static void cap_blist_insert(CapBList *l, int64_t i, bool v, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i > (uint64_t)l->len)) cap_panic("list insert position out of bounds", "CWE-787", loc);
+    cap_blist_push(l, v);
+    memmove(l->items + i + 1, l->items + i, (size_t)(l->len - 1 - i));
+    l->items[i] = (uint8_t)v;
+}
+
 static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {
     int64_t total = 0;
     for (int64_t i = 0; i < parts->len; i++) {
@@ -296,6 +407,17 @@ static void *cap_map_get_p(CapMap *m, CapStr *k) {
 static int64_t *cap_map_get_i(CapMap *m, CapStr *k) {
     int64_t pos = cap_map_find(m, k);
     return pos < 0 ? NULL : cap_box_int(m->vals[pos].i);
+}
+
+/* Remove a key, keeping the remaining keys in insertion order. */
+static bool cap_map_remove(CapMap *m, CapStr *k) {
+    int64_t pos = cap_map_find(m, k);
+    if (pos < 0) return false;
+    memmove(m->keys + pos, m->keys + pos + 1, sizeof(CapStr *) * (size_t)(m->len - pos - 1));
+    memmove(m->vals + pos, m->vals + pos + 1, sizeof(CapVal) * (size_t)(m->len - pos - 1));
+    m->len--;
+    cap_map_reindex(m, m->index_cap);
+    return true;
 }
 
 static CapList *cap_map_keys(CapMap *m) {

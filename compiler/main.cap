@@ -6,7 +6,35 @@
 //
 // The `capstan` wrapper script runs this and then the C compiler.
 
-const string VERSION = "0.2.0";
+const string VERSION = "0.3.0";
+
+// import "lib/util.cap"; resolves relative to the importing file. Only relative
+// paths inside the project are allowed: no "..", no absolute paths (CWE-22).
+bool import_path_ok(string spec) {
+    if (spec.len() < 5 || spec.at(0) == '/') { return false; }
+    if (spec.slice(spec.len() - 4, spec.len()) != ".cap") { return false; }
+    int seg_start = 0;
+    for (int i = 0; i <= spec.len(); i += 1) {
+        if (i == spec.len() || spec.at(i) == '/') {
+            string seg = spec.slice(seg_start, i);
+            if (seg == "" || seg == "." || seg == "..") { return false; }
+            seg_start = i + 1;
+        } else {
+            int c = spec.at(i);
+            bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+            if (!ok) { return false; }
+        }
+    }
+    return true;
+}
+
+string dir_of(string path) {
+    int cut = 0;
+    for (int i = 0; i < path.len(); i += 1) {
+        if (path.at(i) == '/') { cut = i + 1; }
+    }
+    return path.slice(0, cut);
+}
 
 void usage() {
     println("Capstan " + VERSION);
@@ -28,7 +56,7 @@ int main() {
         usage();
         return 2;
     }
-    Ctx ctx = new Ctx{files: new List<string>(), diags: new List<Diag>(), release: false, strict: false};
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: false, strict: false};
     string out = "";
     List<string> paths = new List<string>();
     for (int i = 1; i < a.len(); i += 1) {
@@ -56,17 +84,51 @@ int main() {
     }
 
     List<Node> decls = new List<Node>();
-    for (int j = 0; j < paths.len(); j += 1) {
+    Map<int> loaded = new Map<int>();
+    List<string> queue = new List<string>();
+    List<int> from_file = new List<int>();
+    List<int> from_line = new List<int>();
+    for (int q = 0; q < paths.len(); q += 1) {
+        queue.push(paths[q]);
+        from_file.push(-1);
+        from_line.push(0);
+    }
+    int qi = 0;
+    while (qi < queue.len()) {
+        string path = queue[qi];
+        int ofile = from_file[qi];
+        int oline = from_line[qi];
+        qi += 1;
+        if (loaded.has(path)) { continue; }
+        loaded.set(path, 1);
         int index = ctx.files.len();
-        ctx.files.push(paths[j]);
-        if (let src = read_file(paths[j])) {
+        ctx.files.push(path);
+        if (let src = read_file(path)) {
+            ctx.sources.push(src);
             List<Token> toks = lex(ctx, src, index);
             if (error_count(ctx) == 0) {
                 List<Node> part = parse_program(ctx, toks);
-                for (int k = 0; k < part.len(); k += 1) { decls.push(part[k]); }
+                for (int k = 0; k < part.len(); k += 1) {
+                    Node d = part[k];
+                    decls.push(d);
+                    if (d.k == N_IMPORT) {
+                        if (import_path_ok(d.s)) {
+                            queue.push(dir_of(path) + d.s);
+                            from_file.push(index);
+                            from_line.push(d.line);
+                        } else {
+                            error_at(ctx, d, "CWE-22", "import path must be a relative .cap path inside the project: no '..', no absolute paths, only letters, digits, '_', '-', '.' and '/'");
+                        }
+                    }
+                }
             }
         } else {
-            report(ctx, index, 0, true, "", "cannot read file");
+            ctx.sources.push(taint(""));
+            if (ofile >= 0) {
+                report(ctx, ofile, oline, true, "", "cannot read imported file '" + path + "'");
+            } else {
+                report(ctx, index, 0, true, "", "cannot read file");
+            }
         }
     }
     if (error_count(ctx) > 0) {

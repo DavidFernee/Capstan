@@ -1,0 +1,3 @@
+import "util.cap";
+enum Shape { Square(int side) }
+int size(Shape s) { match (s) { case Square(n) { return n * n; } } }

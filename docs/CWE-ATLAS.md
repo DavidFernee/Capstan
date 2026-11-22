@@ -9,11 +9,11 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**253 weaknesses, 269 attempts.** Counting each weakness once, by its weakest attempt:
+**254 weaknesses, 270 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
-| Prevented: rejected at compile time | 67 |
+| Prevented: rejected at compile time | 68 |
 | Prevented: stopped safely at run time | 19 |
 | Prevented: attempt compiles but has no effect | 14 |
 | Inexpressible: the construct does not exist | 73 |
@@ -231,11 +231,12 @@ closes a gap the test fails and the entry is reclassified.
 | [470](https://cwe.mitre.org/data/definitions/470.html) | Use of externally-controlled input to select classes or code (unsafe reflection) | Inexpressible: the construct does not exist |  |
 | [476](https://cwe.mitre.org/data/definitions/476.html) | NULL pointer dereference | Prevented: rejected at compile time | `CWE-476`. |
 | [477](https://cwe.mitre.org/data/definitions/477.html) | Use of obsolete function | Prevented: rejected at compile time | `CWE-327`. |
+| [478](https://cwe.mitre.org/data/definitions/478.html) | Missing default case in multiple condition expression | Prevented: rejected at compile time | `CWE-478`. match must handle every variant or have an else branch. |
 | [480](https://cwe.mitre.org/data/definitions/480.html) | Use of incorrect operator | **Gap: can be written** | Operator choice is the programmer's. |
 | [481](https://cwe.mitre.org/data/definitions/481.html) | Assigning instead of comparing | Inexpressible: the construct does not exist |  |
 | [482](https://cwe.mitre.org/data/definitions/482.html) | Comparing instead of assigning | Prevented: rejected at compile time | `expression result is unused`. |
 | [483](https://cwe.mitre.org/data/definitions/483.html) | Incorrect block delimitation | Inexpressible: the construct does not exist | Braces are mandatory. |
-| [484](https://cwe.mitre.org/data/definitions/484.html) | Omitted break statement in switch | Inexpressible: the construct does not exist |  |
+| [484](https://cwe.mitre.org/data/definitions/484.html) | Omitted break statement in switch | Inexpressible: the construct does not exist | match has no fall-through between cases. |
 | [489](https://cwe.mitre.org/data/definitions/489.html) | Active debug code | **Gap: can be written** | Build-mode features are planned. |
 | [494](https://cwe.mitre.org/data/definitions/494.html) | Download of code without integrity check | Inexpressible: the construct does not exist |  |
 | [497](https://cwe.mitre.org/data/definitions/497.html) | Exposure of sensitive system information | Not applicable (yet) | No system-information API. |

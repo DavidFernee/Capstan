@@ -19,6 +19,7 @@ const int TY_GRANT = 10;
 const int TY_OPT = 11;
 const int TY_NONE = 12;
 const int TY_ERR = 13;
+const int TY_ENUM = 14;
 
 struct Type {
     int k;
@@ -64,6 +65,12 @@ const int N_INIT = 43;
 const int N_NEWLIST = 44;
 const int N_NEWMAP = 45;
 const int N_AUTHORIZE = 46;
+const int N_ENUM = 47;
+const int N_VARIANT = 48;
+const int N_ENUMVAL = 49;
+const int N_MATCH = 50;
+const int N_CASE = 51;
+const int N_IMPORT = 52;
 
 struct Node {
     int k;
@@ -71,6 +78,7 @@ struct Node {
     string s2;          // if-let variable; protected policy name
     int n;              // integer value, byte length of a string literal, flags
     int line;
+    int col;
     int file;
     List<Node> kids;
     Type? ty;           // declared type (declarations) or computed type (expressions)
@@ -81,6 +89,7 @@ struct Node {
 struct Diag {
     int file;
     int line;
+    int col;
     bool error;
     string code;
     string msg;
@@ -88,21 +97,56 @@ struct Diag {
 
 struct Ctx {
     List<string> files;
+    List<Tainted> sources;
     List<Diag> diags;
     bool release;
     bool strict;
 }
 
 void report(Ctx c, int file, int line, bool error, string code, string msg) {
-    c.diags.push(new Diag{file: file, line: line, error: error, code: code, msg: msg});
+    report_at(c, file, line, 0, error, code, msg);
+}
+
+void report_at(Ctx c, int file, int line, int col, bool error, string code, string msg) {
+    c.diags.push(new Diag{file: file, line: line, col: col, error: error, code: code, msg: msg});
 }
 
 void error_at(Ctx c, Node at, string code, string msg) {
-    report(c, at.file, at.line, true, code, msg);
+    report_at(c, at.file, at.line, at.col, true, code, msg);
 }
 
 void warn_at(Ctx c, Node at, string code, string msg) {
-    report(c, at.file, at.line, c.strict, code, msg);
+    report_at(c, at.file, at.line, at.col, c.strict, code, msg);
+}
+
+// The source line a diagnostic points at, made safe for a terminal: source files
+// are untrusted, and a crafted file must not be able to inject escape sequences.
+string source_excerpt(Ctx c, Diag d) {
+    if (d.file >= c.sources.len() || d.line <= 0) { return ""; }
+    Tainted src = c.sources[d.file];
+    int line = 1;
+    int start = 0;
+    int i = 0;
+    while (i < src.len() && line < d.line) {
+        if (src.at(i) == '\n') {
+            line += 1;
+            start = i + 1;
+        }
+        i += 1;
+    }
+    if (line != d.line) { return ""; }
+    int end = start;
+    while (end < src.len() && src.at(end) != '\n') { end += 1; }
+    if (end - start > 200) { end = start + 200; }
+    string text = escape_log(src.slice(start, end));
+    List<string> out = new List<string>();
+    out.push("    " + text);
+    if (d.col > 0 && d.col <= end - start + 1) {
+        List<string> pad = new List<string>();
+        for (int k = 1; k < d.col; k += 1) { pad.push(" "); }
+        out.push("    " + join(pad, "") + "^");
+    }
+    return join(out, "\n");
 }
 
 int error_count(Ctx c) {
@@ -120,7 +164,11 @@ void print_diags(Ctx c) {
         if (d.error) { sev = "error"; }
         string code = "";
         if (d.code != "") { code = "[" + d.code + "]"; }
-        println(c.files[d.file] + ":" + int_to_str(d.line) + ": " + sev + code + ": " + d.msg);
+        string where = c.files[d.file] + ":" + int_to_str(d.line);
+        if (d.col > 0) { where = where + ":" + int_to_str(d.col); }
+        println(where + ": " + sev + code + ": " + d.msg);
+        string ex = source_excerpt(c, d);
+        if (ex != "") { println(ex); }
     }
 }
 
@@ -141,7 +189,42 @@ Type mk_wrap(int k, Type inner) {
 }
 
 Node mk_node(int k, int file, int line) {
-    return new Node{k: k, s: "", s2: "", n: 0, line: line, file: file, kids: new List<Node>(), ty: none};
+    return new Node{k: k, s: "", s2: "", n: 0, line: line, col: 0, file: file, kids: new List<Node>(), ty: none};
+}
+
+// Edit distance, for "did you mean" suggestions.
+int edit_distance(string a, string b) {
+    List<int> prev = new List<int>();
+    for (int j = 0; j <= b.len(); j += 1) { prev.push(j); }
+    for (int i = 1; i <= a.len(); i += 1) {
+        List<int> row = new List<int>();
+        row.push(i);
+        for (int j2 = 1; j2 <= b.len(); j2 += 1) {
+            int cost = 1;
+            if (a.at(i - 1) == b.at(j2 - 1)) { cost = 0; }
+            int best = prev[j2] + 1;
+            if (row[j2 - 1] + 1 < best) { best = row[j2 - 1] + 1; }
+            if (prev[j2 - 1] + cost < best) { best = prev[j2 - 1] + cost; }
+            row.push(best);
+        }
+        prev = row;
+    }
+    return prev[b.len()];
+}
+
+string suggest(string name, List<string> candidates) {
+    string best = "";
+    int best_d = 3;
+    if (name.len() <= 3) { best_d = 2; }
+    for (int i = 0; i < candidates.len(); i += 1) {
+        int d = edit_distance(lower(name), lower(candidates[i]));
+        if (d < best_d && candidates[i] != name) {
+            best_d = d;
+            best = candidates[i];
+        }
+    }
+    if (best == "") { return ""; }
+    return " (did you mean '" + best + "'?)";
 }
 
 Node mk_node_s(int k, string s, int file, int line) {
@@ -169,7 +252,7 @@ string type_str(Type t) {
     if (t.k == TY_VOID) { return "void"; }
     if (t.k == TY_TAINT) { return "Tainted"; }
     if (t.k == TY_SECRET) { return "Secret"; }
-    if (t.k == TY_STRUCT) { return t.name; }
+    if (t.k == TY_STRUCT || t.k == TY_ENUM) { return t.name; }
     if (t.k == TY_LIST) { return "List<" + type_str(t.args[0]) + ">"; }
     if (t.k == TY_MAP) { return "Map<" + type_str(t.args[0]) + ">"; }
     if (t.k == TY_GRANT) { return "Grant<" + t.name + ">"; }

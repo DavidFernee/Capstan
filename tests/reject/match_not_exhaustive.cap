@@ -1,0 +1,11 @@
+// expect: CWE-478
+// A forgotten case is a compile error, never a silent fall-through.
+enum Access { Read, Write, Admin }
+bool allowed(Access a) {
+    match (a) {
+        case Read { return true; }
+        case Write { return false; }
+    }
+    return false;
+}
+int main() { return 0; }

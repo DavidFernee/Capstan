@@ -1,0 +1,4 @@
+// expect: case Rect binds 1 value(s) but Shape.Rect carries 2
+enum Shape { Rect(int w, int h) }
+int f(Shape s) { match (s) { case Rect(w) { return w; } } }
+int main() { return 0; }

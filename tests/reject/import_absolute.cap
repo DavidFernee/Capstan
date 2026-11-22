@@ -1,0 +1,3 @@
+// expect: CWE-22
+import "/usr/lib/evil.cap";
+int main() { return 0; }
