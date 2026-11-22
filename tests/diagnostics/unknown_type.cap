@@ -1,0 +1,2 @@
+// expect: unknown type 'Pointt'
+int main() { Pointt p = none; return 0; }

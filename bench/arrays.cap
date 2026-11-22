@@ -1,0 +1,15 @@
+// Sieve of Eratosthenes: bounds-checked list reads and writes in tight loops.
+int main() {
+    int n = 5000000;
+    List<bool> composite = new List<bool>();
+    for (int i = 0; i <= n; i += 1) { composite.push(false); }
+    int count = 0;
+    for (int p = 2; p <= n; p += 1) {
+        if (!composite[p]) {
+            count += 1;
+            for (int m = p * p; m <= n; m += p) { composite[m] = true; }
+        }
+    }
+    println(int_to_str(count));
+    return 0;
+}

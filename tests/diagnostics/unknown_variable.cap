@@ -1,0 +1,2 @@
+// expect: unknown variable 'cuont'
+int main() { int count = 1; return cuont; }

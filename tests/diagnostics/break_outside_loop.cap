@@ -1,0 +1,2 @@
+// expect: break/continue outside a loop
+int main() { break; return 0; }

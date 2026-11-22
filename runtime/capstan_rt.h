@@ -9,12 +9,16 @@
  *
  * Each check names the CWE weakness it prevents.
  *
- * Memory model (v0.1): values are allocated and never freed. That makes
- * use-after-free and double-free impossible by construction, at the cost of
- * memory growth in long-running programs. A garbage collector is on the roadmap.
+ * Memory model: values are allocated by the garbage collector in
+ * capstan_gc.h and freed automatically. Programs never free memory
+ * themselves, so use-after-free and double-free cannot occur.
  */
 #ifndef CAPSTAN_RT_H
 #define CAPSTAN_RT_H
+
+#if defined(__linux__) && !defined(_GNU_SOURCE)
+#define _GNU_SOURCE   /* pthread_getattr_np, used to find the stack bounds */
+#endif
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -22,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
+#include "capstan_gc.h"
 
 /* ------------------------------------------------------------------ */
 /* Locations and panics                                               */
@@ -33,10 +38,11 @@ static jmp_buf cap_test_jmp;
 static int cap_argc = 0;
 static char **cap_argv = NULL;
 
+#define CAP_UNLIKELY(x) __builtin_expect(!!(x), 0)
 #define CAP_LOC_FILE(loc) ((int)((loc) / 1000000))
 #define CAP_LOC_LINE(loc) ((long long)((loc) % 1000000))
 
-static void cap_panic(const char *what, const char *cwe, int64_t loc) {
+__attribute__((noreturn, cold, noinline)) static void cap_panic(const char *what, const char *cwe, int64_t loc) {
     const char *file = cap_files ? cap_files[CAP_LOC_FILE(loc)] : "?";
     fprintf(stderr, "%s:%lld: runtime check failed: %s [%s prevented]\n",
             file, CAP_LOC_LINE(loc), what, cwe);
@@ -44,11 +50,10 @@ static void cap_panic(const char *what, const char *cwe, int64_t loc) {
     exit(101);
 }
 
-static void *cap_alloc(size_t n) {
-    void *p = calloc(1, n);
-    if (!p) { fprintf(stderr, "capstan: out of memory\n"); exit(102); }
-    return p;
-}
+/* Memory that may contain pointers (structs, lists, maps, grants). */
+static void *cap_alloc(size_t n) { return cap_gc_alloc(n, 0); }
+/* Memory that never contains pointers (string bytes, boxed integers). */
+static void *cap_alloc_atomic(size_t n) { return cap_gc_alloc(n, 1); }
 
 static void cap_assert(bool ok, int64_t loc) {
     if (!ok) cap_panic("assertion failed", "test", loc);
@@ -60,17 +65,17 @@ static void cap_assert(bool ok, int64_t loc) {
 
 static inline int64_t cap_add(int64_t a, int64_t b, int64_t loc) {
     int64_t r;
-    if (__builtin_add_overflow(a, b, &r)) cap_panic("integer overflow in +", "CWE-190", loc);
+    if (CAP_UNLIKELY(__builtin_add_overflow(a, b, &r))) cap_panic("integer overflow in +", "CWE-190", loc);
     return r;
 }
 static inline int64_t cap_sub(int64_t a, int64_t b, int64_t loc) {
     int64_t r;
-    if (__builtin_sub_overflow(a, b, &r)) cap_panic("integer overflow in -", "CWE-191", loc);
+    if (CAP_UNLIKELY(__builtin_sub_overflow(a, b, &r))) cap_panic("integer overflow in -", "CWE-191", loc);
     return r;
 }
 static inline int64_t cap_mul(int64_t a, int64_t b, int64_t loc) {
     int64_t r;
-    if (__builtin_mul_overflow(a, b, &r)) cap_panic("integer overflow in *", "CWE-190", loc);
+    if (CAP_UNLIKELY(__builtin_mul_overflow(a, b, &r))) cap_panic("integer overflow in *", "CWE-190", loc);
     return r;
 }
 static inline int64_t cap_div(int64_t a, int64_t b, int64_t loc) {
@@ -90,7 +95,7 @@ static inline int64_t cap_neg(int64_t a, int64_t loc) {
 
 /* Optional int/bool are boxed; none is NULL. */
 static int64_t *cap_box_int(int64_t v) {
-    int64_t *p = (int64_t *)cap_alloc(sizeof(int64_t));
+    int64_t *p = (int64_t *)cap_alloc_atomic(sizeof(int64_t));
     *p = v;
     return p;
 }
@@ -102,20 +107,28 @@ static int64_t *cap_box_int(int64_t v) {
 typedef struct CapStr { int64_t len; char data[]; } CapStr;
 
 static CapStr *cap_str_new(const char *s, int64_t n) {
-    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)n + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
     r->len = n;
     if (n > 0) memcpy(r->data, s, (size_t)n);
     r->data[n] = 0;
     return r;
 }
 
-/* String literal, allocated once per site. */
+/* String literals are allocated once per site, outside the collected heap. */
+static CapStr *cap_str_perm(const char *s, int64_t n) {
+    CapStr *r = (CapStr *)malloc(sizeof(CapStr) + (size_t)n + 1);
+    if (!r) cap_gc_oom();
+    r->len = n;
+    if (n > 0) memcpy(r->data, s, (size_t)n);
+    r->data[n] = 0;
+    return r;
+}
 #define CAP_LIT(s, n) ({ static CapStr *_cap_lit = NULL; \
-    if (!_cap_lit) { _cap_lit = cap_str_new((s), (n)); } _cap_lit; })
+    if (!_cap_lit) { _cap_lit = cap_str_perm((s), (n)); } _cap_lit; })
 
 static CapStr *cap_str_concat(CapStr *a, CapStr *b, int64_t loc) {
     int64_t n = cap_add(a->len, b->len, loc);
-    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)n + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
     r->len = n;
     memcpy(r->data, a->data, (size_t)a->len);
     memcpy(r->data + a->len, b->data, (size_t)b->len);
@@ -127,8 +140,8 @@ static bool cap_str_eq(CapStr *a, CapStr *b) {
     return a->len == b->len && memcmp(a->data, b->data, (size_t)a->len) == 0;
 }
 
-static int64_t cap_str_at(CapStr *s, int64_t i, int64_t loc) {
-    if (i < 0 || i >= s->len) cap_panic("string index out of bounds", "CWE-125", loc);
+static inline int64_t cap_str_at(CapStr *s, int64_t i, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)s->len)) cap_panic("string index out of bounds", "CWE-125", loc);
     return (int64_t)(unsigned char)s->data[i];
 }
 
@@ -163,8 +176,8 @@ static CapList *cap_list_new(void) {
     return (CapList *)cap_alloc(sizeof(CapList));
 }
 
-static void cap_list_push(CapList *l, CapVal v) {
-    if (l->len == l->cap) {
+static inline void cap_list_push(CapList *l, CapVal v) {
+    if (CAP_UNLIKELY(l->len == l->cap)) {
         int64_t nc = l->cap ? l->cap * 2 : 8;
         CapVal *ni = (CapVal *)cap_alloc(sizeof(CapVal) * (size_t)nc);
         if (l->len) memcpy(ni, l->items, sizeof(CapVal) * (size_t)l->len);
@@ -174,13 +187,13 @@ static void cap_list_push(CapList *l, CapVal v) {
     l->items[l->len++] = v;
 }
 
-static CapVal cap_list_get(CapList *l, int64_t i, int64_t loc) {
-    if (i < 0 || i >= l->len) cap_panic("list index out of bounds", "CWE-125", loc);
+static inline CapVal cap_list_get(CapList *l, int64_t i, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-125", loc);
     return l->items[i];
 }
 
-static void cap_list_set(CapList *l, int64_t i, CapVal v, int64_t loc) {
-    if (i < 0 || i >= l->len) cap_panic("list index out of bounds", "CWE-787", loc);
+static inline void cap_list_set(CapList *l, int64_t i, CapVal v, int64_t loc) {
+    if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-787", loc);
     l->items[i] = v;
 }
 
@@ -190,7 +203,7 @@ static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {
         total = cap_add(total, ((CapStr *)parts->items[i].p)->len, loc);
         if (i > 0) total = cap_add(total, sep->len, loc);
     }
-    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)total + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)total + 1);
     r->len = total;
     char *w = r->data;
     for (int64_t i = 0; i < parts->len; i++) {
@@ -238,7 +251,7 @@ static int64_t cap_map_find(CapMap *m, CapStr *k) {
 }
 
 static void cap_map_reindex(CapMap *m, int64_t newcap) {
-    m->index = (int64_t *)cap_alloc(sizeof(int64_t) * (size_t)newcap);
+    m->index = (int64_t *)cap_alloc_atomic(sizeof(int64_t) * (size_t)newcap);
     m->index_cap = newcap;
     uint64_t mask = (uint64_t)newcap - 1;
     for (int64_t pos = 0; pos < m->len; pos++) {
@@ -339,7 +352,7 @@ static CapStr *cap_read_file(CapStr *path) {
     long n = ftell(f);
     if (n < 0) { fclose(f); return NULL; }
     rewind(f);
-    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)n + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
     r->len = (int64_t)fread(r->data, 1, (size_t)n, f);
     r->data[r->len] = 0;
     fclose(f);
@@ -402,7 +415,7 @@ static int64_t *cap_validate_int(CapStr *t) {
 
 /* Escape arbitrary bytes into the body of a C string literal. */
 static CapStr *cap_escape_c(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)t->len * 4 + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 4 + 1);
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
         unsigned char c = (unsigned char)t->data[i];
@@ -418,7 +431,7 @@ static CapStr *cap_escape_c(CapStr *t) {
 }
 
 static CapStr *cap_escape_html(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)t->len * 6 + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 6 + 1);
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
         char c = t->data[i];
@@ -438,7 +451,7 @@ static CapStr *cap_escape_html(CapStr *t) {
 
 /* Neutralise line breaks and control bytes so input cannot forge log lines (CWE-117). */
 static CapStr *cap_escape_log(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc(sizeof(CapStr) + (size_t)t->len * 4 + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 4 + 1);
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
         unsigned char c = (unsigned char)t->data[i];

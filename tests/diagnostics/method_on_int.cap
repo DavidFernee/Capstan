@@ -1,0 +1,2 @@
+// expect: int has no method 'len'
+int main() { int x = 3; return x.len(); }

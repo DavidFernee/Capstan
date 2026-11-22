@@ -1,0 +1,13 @@
+// Spec: expressions and precedence.
+string b(bool v) { if (v) { return "T"; } return "F"; }
+int main() {
+    println(int_to_str(2 + 3 * 4) + " " + int_to_str((2 + 3) * 4) + " " + int_to_str(20 - 6 - 4) + " " + int_to_str(100 / 10 / 5));
+    println(int_to_str(-3 * -3) + " " + int_to_str(- -5) + " " + int_to_str(17 % 5) + " " + int_to_str(-17 % 5) + " " + int_to_str(17 % -5));
+    println(int_to_str(7 / 2) + " " + int_to_str(-7 / 2) + " " + int_to_str(7 / -2) + " " + int_to_str(-7 / -2));
+    println(b(1 < 2) + b(2 <= 2) + b(3 > 4) + b(4 >= 4) + b(1 == 1) + b(1 != 1));
+    println(b(true || false && false) + b((true || false) && false) + b(!true || true) + b(!(true || true)));
+    println(b(1 + 2 == 3 && 2 * 2 == 4) + b("abc" == "abc") + b("abc" != "abd") + b("" == ""));
+    int min = 0 - 9223372036854775807 - 1;
+    println(int_to_str(min) + " " + int_to_str(min / 2) + " " + int_to_str(min % 10));
+    return 0;
+}

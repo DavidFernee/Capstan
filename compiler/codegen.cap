@@ -347,6 +347,9 @@ string gen_simple(Gen g, Node s) {
             } else {
                 val = "cap_sub(" + tcode + ", " + rcode + ", " + loc(s) + ")";
             }
+            if (target.k == N_INDEX) {
+                return "cap_list_set(" + gen_expr(g, target.kids[0]) + ", " + gen_expr(g, target.kids[1]) + ", " + to_val(tt, val) + ", " + loc(s) + ")";
+            }
             return tcode + " = " + val;
         }
         if (target.k == N_VAR) { return "u_" + target.s + " = " + rcode; }
@@ -380,9 +383,15 @@ void gen_block(Gen g, Node b) {
     emit(g, "}");
 }
 
+// Map the generated C back to Capstan source for debuggers, sanitizers and coverage.
+void emit_line(Gen g, Node s) {
+    g.out.push("#line " + int_to_str(s.line) + " \"" + escape_c(g.c.ctx.files[s.file]) + "\"\n");
+}
+
 void gen_stmt(Gen g, Node s) {
     int k = s.k;
     if (k == N_BLOCK) { gen_block(g, s); return; }
+    emit_line(g, s);
     if (k == N_DECL || k == N_ASSIGN || k == N_EXPR) {
         emit(g, gen_simple(g, s) + ";");
         return;
@@ -528,6 +537,7 @@ string generate(Checker c, List<Node> decls, bool test_mode) {
     for (int i5 = 0; i5 < decls.len(); i5 += 1) {
         Node d5 = decls[i5];
         if (d5.k == N_CONST) {
+            if (!is_scalar(ty_of(d5))) { emit(g, "cap_gc_root((void **)&g_" + d5.s + ");"); }
             emit(g, "g_" + d5.s + " = " + coerce(gen_expr(g, d5.kids[0]), ty_of(d5.kids[0]), ty_of(d5)) + ";");
         }
     }
@@ -558,6 +568,7 @@ string generate(Checker c, List<Node> decls, bool test_mode) {
     emit(g, "");
     emit(g, "int main(int argc, char **argv) {");
     g.ind += 1;
+    emit(g, "cap_gc_init();");
     emit(g, "cap_argc = argc; cap_argv = argv; cap_files = cap_file_names;");
     emit(g, "cap_init_globals();");
     if (test_mode) {

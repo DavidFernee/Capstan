@@ -1,0 +1,2 @@
+// expect: unknown function 'prnt'
+int main() { prnt("x"); return 0; }

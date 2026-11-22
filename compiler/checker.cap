@@ -577,10 +577,16 @@ bool lvalue_ok(Node e) {
     return false;
 }
 
+// A target that can be evaluated twice without side effects: x, x.f, xs[i], xs[i].f
 bool pure_path(Node e) {
     if (e.k == N_VAR) { return true; }
     if (e.k == N_GETF) { return pure_path(e.kids[0]); }
+    if (e.k == N_INDEX) { return pure_path(e.kids[0]) && is_simple_operand(e.kids[1]); }
     return false;
+}
+
+bool is_simple_operand(Node e) {
+    return e.k == N_INT || e.k == N_VAR;
 }
 
 string lvalue_name(Node e) {
@@ -616,7 +622,7 @@ void check_stmt(Checker c, Node s) {
         }
         if (s.s != "=") {
             if (!pure_path(target)) {
-                error_at(c.ctx, s, "", "'" + s.s + "' needs a variable or field on the left; write x = x + v");
+                error_at(c.ctx, s, "", "'" + s.s + "' needs a variable, field or simply-indexed element on the left; write x = x + v");
             }
             if (!(tt.k == TY_INT && rv.k == TY_INT) && !(s.s == "+=" && is_stringish(tt) && is_stringish(rv) && (tt.k == TY_TAINT || rv.k == TY_STR))) {
                 error_at(c.ctx, s, "", "'" + s.s + "' is not defined for " + type_str(tt) + " and " + type_str(rv));

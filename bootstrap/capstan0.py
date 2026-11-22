@@ -42,7 +42,7 @@ def decode_escapes(raw, where):
         if c == "\\":
             i += 1
             e = raw[i]
-            out.append({"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"'}.get(e))
+            out.append({"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"', "'": "'"}.get(e))
             if out[-1] is None:
                 raise SystemExit(f"{where}: bad escape \\{e}")
         else:
@@ -279,7 +279,11 @@ class Parser:
         if self.at("continue"):
             self.p += 1; self.eat(";"); return ("continue",)
         if self.at("assert_denied") or self.at("assert_granted"):
-            raise SystemExit("assert_denied/assert_granted are only allowed in tests")
+            self.p += 1
+            self.ident()
+            self.args()
+            self.eat(";")
+            return ("expr", ("lit", "None"))   # tests are not run by stage 0
         return self.simple_stmt()
 
     def simple_stmt(self, end=";"):
@@ -531,7 +535,7 @@ class Gen:
         if k == "int":
             return str(x[1])
         if k == "str":
-            return repr(x[1])
+            return ascii(x[1])
         if k == "lit":
             return x[1]
         if k == "var":
@@ -639,12 +643,12 @@ class Gen:
                 if not fs:
                     self.emit(2, "pass")
         for d in decls:
-            if d[0] == "const":
-                self.emit(0, f"u_{d[1]} = {self.e(d[2])}")
-        for d in decls:
             if d[0] == "fn":
                 self.emit(0, f"def fn_{d[1]}({', '.join('u_' + p for p in d[2])}):")
                 self.body(1, d[3])
+        for d in decls:   # after the functions, so constant initialisers may call them
+            if d[0] == "const":
+                self.emit(0, f"u_{d[1]} = {self.e(d[2])}")
         self.emit(0, "if __name__ == '__main__':")
         self.emit(1, "_r = fn_main()")
         self.emit(1, "sys.stdout.flush()")

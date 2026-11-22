@@ -1,0 +1,32 @@
+// Spec: lists and maps. Maps iterate in insertion order.
+int main() {
+    Map<List<int>> groups = new Map<List<int>>();
+    List<string> words = new List<string>();
+    words.push("pear"); words.push("fig"); words.push("plum"); words.push("kiwi"); words.push("date"); words.push("apple");
+    for (int i = 0; i < words.len(); i += 1) {
+        string key = int_to_str(words[i].len());
+        if (!groups.has(key)) { groups.set(key, new List<int>()); }
+        if (let g = groups.get(key)) { g.push(i); }
+    }
+    List<string> ks = groups.keys();
+    for (int j = 0; j < ks.len(); j += 1) {
+        if (let g2 = groups.get(ks[j])) {
+            List<string> idx = new List<string>();
+            for (int k = 0; k < g2.len(); k += 1) { idx.push(words[g2[k]]); }
+            println(ks[j] + ": " + join(idx, ","));
+        }
+    }
+    Map<bool> seen = new Map<bool>();
+    seen.set("x", true);
+    seen.set("y", false);
+    if (let y = seen.get("y")) { if (!y) { println("y false"); } }
+    List<List<string>> grid = new List<List<string>>();
+    for (int r = 0; r < 3; r += 1) {
+        List<string> row = new List<string>();
+        for (int c = 0; c < 3; c += 1) { row.push(int_to_str(r * 3 + c)); }
+        grid.push(row);
+    }
+    grid[1][1] = "X";
+    println(join(grid[0], "") + "/" + join(grid[1], "") + "/" + join(grid[2], ""));
+    return 0;
+}

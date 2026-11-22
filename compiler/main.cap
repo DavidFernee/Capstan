@@ -6,7 +6,7 @@
 //
 // The `capstan` wrapper script runs this and then the C compiler.
 
-const string VERSION = "0.1.0";
+const string VERSION = "0.2.0";
 
 void usage() {
     println("Capstan " + VERSION);

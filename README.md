@@ -88,8 +88,9 @@ tests/run.sh                                  # the full suite
 | a policy with no denial test | `warning[CAP-TEST]` (error with `--release`) |
 
 At run time: out-of-bounds reads and writes (CWE-125/787), integer overflow
-(CWE-190/191), division by zero (CWE-369), and a grant replayed against a
-different object (CWE-639) stop the program with exit code 101.
+(CWE-190/191), division by zero (CWE-369), runaway recursion (CWE-674), and a
+grant replayed against a different object (CWE-639) stop the program with
+exit code 101.
 
 See [docs/CWE-COVERAGE.md](docs/CWE-COVERAGE.md) for the full mapping,
 including what Capstan does **not** prevent.
@@ -99,17 +100,48 @@ including what Capstan does **not** prevent.
 - [docs/SPEC.md](docs/SPEC.md): the language reference for v0.1
 - [docs/CWE-COVERAGE.md](docs/CWE-COVERAGE.md): which weaknesses are prevented, and how
 - [docs/DESIGN-MAP.md](docs/DESIGN-MAP.md): design principles and roadmap, from language features to the IDE
+- [docs/TESTING.md](docs/TESTING.md): how the language is tested
+
+## Memory
+
+Capstan has automatic memory management: a mark-sweep garbage collector built
+into the runtime (`runtime/capstan_gc.h`). Programs never free memory
+themselves, so use-after-free and double-free can't occur. Under a churn test
+that allocates more than 600 MB, the heap peaks at about 13 MB.
+
+## Testing
+
+The suite (`tests/run.sh`) includes:
+- runtime unit tests against published cryptographic test vectors
+- 39 vulnerable programs that must be rejected, and 30 diagnostics tests
+- safe-stop tests and conformance tests checked against an independent second implementation
+- collector stress tests, pathological-input limits and sanitizer runs
+- differential and mutation fuzzing, and self-hosting reproducibility checks
+
+See [docs/TESTING.md](docs/TESTING.md).
 
 ## Status
 
-v0.1.0 is a working, self-hosting core language. It is **not yet production-ready**:
-there is no garbage collector yet (memory is never freed), `sql_query()` and
-`run()` are demonstration sinks that print rather than execute, and there are
-no modules, generics or concurrency. See the design map.
+v0.2.0 is a working, self-hosting core language with garbage collection. It is
+**not yet production-ready**: `sql_query()` and `run()` are demonstration
+sinks that print rather than execute, and there are no modules, generics or
+concurrency yet. See the [design map](docs/DESIGN-MAP.md).
 
 ## Performance
 
-Capstan compiles to C, which GCC or Clang optimises to native code. On a loop-
-and recursion-heavy benchmark, v0.1 runs about 1.6–2× slower than hand-written
-C, with every bounds and overflow check active. Closing that gap is on the
-roadmap (check elimination, unboxed generics).
+Capstan compiles to C, which GCC or Clang optimises to native code. Against
+equivalent hand-written C (`bench/run.sh`, all safety checks on):
+
+| Benchmark | What it stresses | Capstan vs C |
+|---|---|---|
+| alloc | building and discarding trees | about **0.55×** (faster than malloc/free) |
+| calls | recursive function calls | about 2× |
+| strings | string building and map updates | about 2–2.5× |
+| arrays | sieve over a 5-million-element list | about 4× |
+
+The arrays gap comes from lists storing every element in 8 bytes; packed,
+type-specialised lists are planned for v0.3.
+
+## Licence
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

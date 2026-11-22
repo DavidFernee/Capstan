@@ -1,0 +1,2 @@
+// expect: strings are indexed with .at(i)
+int main() { string s = "abc"; return s[0]; }

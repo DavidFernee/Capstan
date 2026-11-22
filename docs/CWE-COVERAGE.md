@@ -20,7 +20,7 @@ Every claim here is backed by a test in `tests/`.
 | 5 | 22 | Path traversal | Partial | File paths must be `string`, so untrusted input must be validated first. *Gap:* no path validator or directory capability yet (roadmap: `Path` type, capability-based file access) |
 | 6 | 125 | Out-of-bounds read | **Prevented** | Bounds-checked strings and lists |
 | 7 | 78 | OS command injection | **Prevented** | No shell exists; `run()` takes a literal program and separate arguments |
-| 8 | 416 | Use after free | **Prevented** | No manual memory management (v0.1 never frees; GC planned) |
+| 8 | 416 | Use after free | **Prevented** | Garbage-collected memory; programs cannot free memory themselves |
 | 9 | 862 | Missing authorisation | **Prevented** for `protected` functions | Protected functions require a `Grant`, which only `authorize` can create. *Gap:* the developer must mark sensitive operations `protected` (roadmap: `sensitive struct`, making access protected by default) |
 | 10 | 434 | Unrestricted file upload | Not yet | Roadmap: typed upload handling in the web framework |
 | 11 | 94 | Code injection | **Prevented** | No `eval`. The compiler itself only emits source text through `escape_c()` |
@@ -53,6 +53,7 @@ Every claim here is backed by a test in `tests/`.
 | 338 | Weak random numbers | `rand()` doesn't exist (secure random API on the roadmap) |
 | 369 | Division by zero | Literal zero rejected at compile time; checked at run time |
 | 415 | Double free | No manual memory management |
+| 674 | Uncontrolled recursion | Runaway recursion stops safely; the compiler limits source nesting instead of overflowing its own stack |
 | 457 / 908 | Uninitialised variables and fields | Declarations need an initialiser; `new` needs every field |
 | 532 | Secrets in logs | `Secret` can't be printed or written |
 | 613 | Grants outliving their request | Grants can't be stored, returned or put in collections |
@@ -66,7 +67,9 @@ Every claim here is backed by a test in `tests/`.
   "clinicians on the care team" rather than "all clinicians".
 - **Business-logic flaws**: a refund claimable twice, a race between checking and
   debiting at the database.
-- **Bugs in the trusted base**: the compiler, the runtime header, the C compiler.
+- **Bugs in the trusted base**: the compiler, the runtime (including the garbage
+  collector), and the C compiler. The test suite fuzzes, stress-tests and sanitises
+  them, but testing can't prove their absence.
 - **Deployment and configuration**: open storage buckets, weak TLS settings.
 - **Hardware side channels** below the language.
 - **Laundering by design.** A program can rebuild a string byte by byte with

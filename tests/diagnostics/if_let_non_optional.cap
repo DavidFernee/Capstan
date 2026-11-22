@@ -1,0 +1,2 @@
+// expect: if (let ...) needs an optional value, found int
+int main() { if (let x = 5) { return x; } return 0; }

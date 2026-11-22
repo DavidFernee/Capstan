@@ -1,0 +1,50 @@
+// Builds trees, maps and strings while discarding garbage, then verifies every
+// reachable value. Run with CAPSTAN_GC_STRESS=1 so it collects on every allocation.
+struct Tree { int value; Tree? left; Tree? right; string tag; }
+
+const string PREFIX = "node:";
+const List<string> NAMES = names();
+
+List<string> names() {
+    List<string> l = new List<string>();
+    l.push("alpha"); l.push("beta"); l.push("gamma");
+    return l;
+}
+
+Tree build(int depth, int base) {
+    string junk = "garbage " + int_to_str(base) + int_to_str(depth);
+    if (depth == 0) { return new Tree{value: base, left: none, right: none, tag: PREFIX + int_to_str(base)}; }
+    Tree l = build(depth - 1, base * 2);
+    string more = junk + junk;
+    Tree r = build(depth - 1, base * 2 + 1);
+    return new Tree{value: base, left: l, right: r, tag: PREFIX + int_to_str(base)};
+}
+
+int sum(Tree? t) {
+    if (let n = t) {
+        if (n.tag != PREFIX + int_to_str(n.value)) { println("corrupt tag at " + int_to_str(n.value)); }
+        return n.value + sum(n.left) + sum(n.right);
+    }
+    return 0;
+}
+
+int main() {
+    Tree t = build(9, 1);
+    Map<string> m = new Map<string>();
+    for (int i = 0; i < 500; i += 1) {
+        m.set("k" + int_to_str(i), "v" + int_to_str(i * i));
+        string throwaway = "x" + int_to_str(i);
+    }
+    int bad = 0;
+    for (int j = 0; j < 500; j += 1) {
+        if (let v = m.get("k" + int_to_str(j))) {
+            if (v != "v" + int_to_str(j * j)) { bad += 1; }
+        } else {
+            bad += 1;
+        }
+    }
+    println("tree sum " + int_to_str(sum(t)));
+    println("map errors " + int_to_str(bad));
+    println("globals " + join(NAMES, ",") + " " + PREFIX);
+    return 0;
+}

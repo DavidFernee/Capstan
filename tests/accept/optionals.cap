@@ -1,0 +1,28 @@
+// Spec: optionals. There is no null; T converts to T?; unwrap with if (let).
+struct Box { int v; }
+int? half(int n) {
+    if (n % 2 == 0) { return n / 2; }
+    return none;
+}
+string? first(List<string> xs) {
+    if (xs.len() == 0) { return none; }
+    return xs[0];
+}
+string show(int? x) {
+    if (let v = x) { return "some(" + int_to_str(v) + ")"; }
+    return "none";
+}
+int main() {
+    println(show(half(10)) + " " + show(half(7)) + " " + show(none) + " " + show(3));
+    List<string> empty = new List<string>();
+    List<string> one = new List<string>();
+    one.push("only");
+    if (let f = first(one)) { println("first " + f); }
+    if (let g = first(empty)) { println("unexpected"); } else { println("empty"); }
+    Box? bx = new Box{v: 4};
+    bx = none;
+    if (let b2 = bx) { println("unexpected"); } else { println("cleared"); }
+    bool? flag = true;
+    if (let fl = flag) { if (fl) { println("flag true"); } }
+    return 0;
+}

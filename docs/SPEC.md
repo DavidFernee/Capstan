@@ -112,6 +112,15 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
 - Every non-public policy needs a test containing `assert_denied P(...)`. Without one it is a
   warning, and an error under `--release`.
 
+## Memory and limits
+
+- Memory is managed by a garbage collector; there is no way to free memory manually.
+  `CAPSTAN_GC_STATS=1` prints collector statistics on exit; `CAPSTAN_GC_STRESS=N` collects every N allocations (for testing).
+- Runaway recursion stops the program with CWE-674 rather than crashing.
+- Source nesting (expressions, statements, operator chains) is limited to 1,000 levels;
+  deeper input is a compile error (CWE-674).
+- A program stopped by a runtime check exits with code 101.
+
 ## Compiler modes
 
 ```

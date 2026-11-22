@@ -1,0 +1,23 @@
+// Spec: authorisation, grants and secrets at run time.
+struct User { int id; bool admin; }
+struct File { int owner; string body; }
+policy Read(User u, File f) { return u.admin || u.id == f.owner; }
+public policy Anyone(User u) { return true; }
+protected(Read) string open(Grant<Read> g, File f) { return f.body; }
+protected(Anyone) string motd(Grant<Anyone> g) { return "welcome"; }
+string attempt(User u, File f) {
+    if (let g = authorize Read(u, f)) { return open(g, f); }
+    return "denied";
+}
+int main() {
+    User owner = new User{id: 1, admin: false};
+    User other = new User{id: 2, admin: false};
+    User root = new User{id: 0, admin: true};
+    File f = new File{owner: 1, body: "secret plans"};
+    println(attempt(owner, f) + " | " + attempt(other, f) + " | " + attempt(root, f));
+    if (let g = authorize Anyone(other)) { println(motd(g)); }
+    if (let missing = secret_env("CAPSTAN_TEST_UNSET_VARIABLE")) { println("unexpected"); } else { println("no secret"); }
+    return 0;
+}
+test "owner reads" { assert_granted Read(new User{id: 1, admin: false}, new File{owner: 1, body: ""}); }
+test "stranger denied" { assert_denied Read(new User{id: 2, admin: false}, new File{owner: 1, body: ""}); }

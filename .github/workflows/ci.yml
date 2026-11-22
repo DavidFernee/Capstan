@@ -1,14 +1,19 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 15 * * *"      # nightly full run (01:17 Melbourne time)
+  workflow_dispatch:
 jobs:
-  build-and-test:
+  test:
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        cc: [gcc, clang]
-        exclude:
-          - os: macos-latest
-            cc: gcc
+        include:
+          - { os: ubuntu-latest, cc: gcc }
+          - { os: ubuntu-latest, cc: clang }
+          - { os: macos-latest,  cc: clang }
     runs-on: ${{ matrix.os }}
     env:
       CC: ${{ matrix.cc }}
@@ -17,20 +22,12 @@ jobs:
       - name: Bootstrap (stage 0 -> self-hosted fixpoint)
         run: make
       - name: Test suite
-        run: tests/run.sh
-  sanitizers:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - run: make
-      - name: Compiler and examples under ASan + UBSan
-        env:
-          ASAN_OPTIONS: detect_leaks=0
         run: |
-          SAN="-O1 -g -std=gnu11 -w -fsanitize=address,undefined -fno-sanitize-recover=all -Iruntime"
-          gcc $SAN build/stage3.c -o san-capstanc
-          ./san-capstanc build -o self.c compiler/{ast,lexer,parser,checker,codegen,main}.cap
-          cmp self.c build/stage3.c
-          for f in tests/accept/*.cap examples/*.cap; do
-            ./build/capstanc build -o x.c "$f" && gcc $SAN x.c -o x && ./x > /dev/null
-          done
+          if [ "${{ github.event_name }}" = "schedule" ]; then tests/run.sh --full; else tests/run.sh; fi
+      - name: Keep fuzz failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures-${{ matrix.os }}-${{ matrix.cc }}
+          path: tests/fuzz/failures/
+          if-no-files-found: ignore

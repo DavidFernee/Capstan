@@ -1,0 +1,2 @@
+// expect: void is only allowed as a function return type
+int main() { void v = 1; return 0; }
