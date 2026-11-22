@@ -47,7 +47,7 @@ string ctype(Type t) {
     int k = t.k;
     if (k == TY_INT) { return "int64_t"; }
     if (k == TY_BOOL) { return "bool"; }
-    if (k == TY_STR || k == TY_TAINT || k == TY_SECRET) { return "CapStr*"; }
+    if (k == TY_STR || k == TY_TAINT || k == TY_SECRET || k == TY_HTML || k == TY_LOG) { return "CapStr*"; }
     if (k == TY_STRUCT) { return "S_" + t.name + "*"; }
     if (k == TY_ENUM) { return "E_" + t.name + "*"; }
     if (k == TY_LIST) {
@@ -242,7 +242,7 @@ string gen_binary(Gen g, Node e) {
     if (op == "<" || op == "<=" || op == ">" || op == ">=") {
         return wrap(s, "((" + x + ") " + op + " (" + y + "))");
     }
-    if (op == "+" && is_stringish(a)) { return wrap(s, "cap_str_concat(" + x + ", " + y + ", " + l + ")"); }
+    if (op == "+" && is_texty(a)) { return wrap(s, "cap_str_concat(" + x + ", " + y + ", " + l + ")"); }
     string fname = "cap_add";
     if (op == "-") { fname = "cap_sub"; }
     if (op == "*") { fname = "cap_mul"; }
@@ -325,6 +325,9 @@ string builtin_c(string f) {
     if (f == "escape_c") { return "cap_escape_c"; }
     if (f == "escape_html") { return "cap_escape_html"; }
     if (f == "escape_log") { return "cap_escape_log"; }
+    if (f == "escape_csv") { return "cap_escape_csv"; }
+    if (f == "validate_path") { return "cap_validate_path"; }
+    if (f == "validate_range") { return "cap_validate_range"; }
     if (f == "secret_env") { return "cap_secret_env"; }
     if (f == "secret_eq") { return "cap_secret_eq"; }
     if (f == "hash") { return "cap_hash"; }
@@ -390,7 +393,7 @@ string gen_simple(Gen g, Node s) {
         if (s.s != "=") {
             string tcode = gen_expr(g, target);
             string val = "";
-            if (is_stringish(tt)) {
+            if (is_texty(tt)) {
                 val = "cap_str_concat(" + tcode + ", " + rcode + ", " + loc(s) + ")";
             } else if (s.s == "+=") {
                 val = "cap_add(" + tcode + ", " + rcode + ", " + loc(s) + ")";

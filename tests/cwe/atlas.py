@@ -14,6 +14,9 @@ Verdicts:
            output must contain `expect`
   absent   the construct the weakness needs does not exist in Capstan;
            the attempt (written as a C/Java programmer would) must fail to compile
+  audited  possible only through trust(); the build reports an AUDIT warning
+  logic    a logic or design decision that no language can tell from intent;
+           the attempt compiles
   gap      THE WEAKNESS CAN BE WRITTEN: the attempt compiles. If a later version
            closes the gap, this check fails, so the entry must be reclassified
   na       not applicable to program code in Capstan (hardware, process, or a
@@ -79,6 +82,9 @@ string launder(Tainted t) {
     for (int i = 0; i < t.len(); i += 1) { out += char_str(byte_at(t, i)); }
     return out;
 }
+'''
+SENS = '''sensitive struct User { int id; int role; }
+sensitive struct Record { int owner; string body; }
 '''
 USERS = '''struct User { int id; int role; }
 struct Record { int owner; string body; }
@@ -160,9 +166,7 @@ add(197, "Numeric truncation error", "absent", CAST)
 add(369, "Divide by zero", "runtime",
     "int avg(int sum, int n) { return sum / n; }\nint main() { return avg(10, 0); }", "CWE-369")
 add(681, "Incorrect conversion between numeric types", "absent", CAST)
-add(682, "Incorrect calculation", "gap",
-    "int discount(int price) { return price - price / 10 * 100; }" + MAIN,
-    note="Logic errors in arithmetic are the programmer's; overflow is still caught.")
+add(682, "Incorrect calculation", "logic", "int discount(int price) { return price - price / 10 * 100; }" + MAIN, note="A wrong formula is a specification error. Overflow from it is still caught.")
 add(704, "Incorrect type conversion or cast", "runtime",
     "int main() { int code = 300; string s = char_str(code); return 0; }", "CWE-704")
 add(1335, "Incorrect bitwise shift of integer", "absent", SHIFT)
@@ -183,19 +187,21 @@ add(78, "OS command injection (via run with untrusted argument)", "neutral",
     "No shell exists: the whole value stays one argument.")
 add(79, "Cross-site scripting", "reject",
     "string page(string body) { return \"<p>\" + body + \"</p>\"; }\nint main() { Tainted c = taint(\"<script>x()</script>\"); string h = page(c); return 0; }", "CWE-20")
-add(79, "Cross-site scripting (via the wrong escaper)", "gap",
-    'string page(string body) { return "<p>" + body + "</p>"; }\nint main() { println(page(escape_log(taint("<script>steal()</script>")))); return 0; }',
-    note="escape_log() makes text safe for logs, not HTML. Context-typed output (an Html type) is on the roadmap.")
+add(79, "Cross-site scripting (via the wrong escaper)", "reject",
+    'string page(string body) { return "<p>" + body + "</p>"; }\nint main() { println(page(escape_log(taint("<script>steal()</script>")))); return 0; }', "CWE-116",
+    "escape_log() returns LogText and escape_html() returns Html; neither can pass as a plain string.")
 add(79, "Cross-site scripting (via byte-by-byte laundering)", "reject",
     LAUNDER + 'int main() { println("<p>" + launder(taint("<script>x()</script>")) + "</p>"); return 0; }', "CWE-20")
 add(79, "Cross-site scripting (laundering through a helper function)", "reject",
     LAUNDER_HELPER + 'int main() { println("<p>" + launder(taint("<script>x()</script>")) + "</p>"); return 0; }', "CWE-20")
-add(20, "Laundering untrusted bytes through a list", "gap",
-    'string launder(Tainted t) { List<int> b = new List<int>(); for (int i = 0; i < t.len(); i += 1) { b.push(t.at(i)); } string out = ""; for (int j = 0; j < b.len(); j += 1) { out += char_str(b[j]); } return out; }' + MAIN,
-    note="Derived bytes stored in collections or struct fields are not tracked (planned: taint on element types).")
-add(20, "Laundering untrusted bytes through control flow", "gap",
+add(20, "Laundering untrusted bytes through a list", "reject",
+    'string launder(Tainted t) { List<int> b = new List<int>(); for (int i = 0; i < t.len(); i += 1) { b.push(t.at(i)); } string out = ""; for (int j = 0; j < b.len(); j += 1) { out += char_str(b[j]); } return out; }' + MAIN, "CWE-20",
+    "Collections and structs that hold bytes of untrusted input are tracked too.")
+add(20, "Laundering untrusted bytes through a struct field", "reject",
+    'struct Box { int b; }\nstring launder(Tainted t) { Box x = new Box{b: 0}; x.b = t.at(0); return char_str(x.b); }' + MAIN, "CWE-20")
+add(20, "Laundering untrusted bytes through control flow", "logic",
     'string launder(Tainted t) { string out = ""; for (int i = 0; i < t.len(); i += 1) { if (t.at(i) == 60) { out += "<"; } else { out += "a"; } } return out; }' + MAIN,
-    note="Implicit flows (information carried only by branching) are not tracked, as in most taint systems.")
+    note="Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision.")
 add(80, "Basic XSS (improper neutralization of script tags)", "neutral",
     'int main() { println("<p>" + escape_html(taint("<script>x()</script>")) + "</p>"); return 0; }', "&lt;script&gt;")
 add(88, "Argument injection", "reject",
@@ -218,9 +224,12 @@ add(98, "PHP remote file inclusion", "absent", INCLUDE)
 add(99, "Resource injection", "reject",
     "int main() { if (let p = read_line()) { if (let data = read_file(p)) { } } return 0; }", "CWE-20")
 add(113, "HTTP response splitting", "na", note="No HTTP facility yet; header output would follow the CWE-93 rule.")
-add(116, "Improper encoding or escaping of output", "gap",
-    'int main() { string csv = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", csv); return 0; }',
-    note="Escapers are not tied to the output context they were made for.")
+add(116, "Improper encoding or escaping of output", "reject",
+    'int main() { string csv = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", csv); return 0; }', "CWE-116",
+    "Escaped text is typed by its context (Html, LogText) and cannot pass as a plain string.")
+add(116, "Improper encoding: HTML-escaped text written into a CSV file", "gap",
+    'int main() { Html cell = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", cell); return 0; }',
+    note="write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap.")
 add(117, "Improper output neutralization for logs", "reject",
     'int main() { println("login failed: " + taint("bob\\nINFO admin ok")); return 0; }', "CWE-117")
 add(117, "Log injection (attempt after escape_log)", "neutral",
@@ -230,18 +239,22 @@ add(652, "XQuery injection", "na", note="No XQuery facility.")
 add(611, "XML external entity reference (XXE)", "absent", XML)
 add(776, "XML entity expansion (billion laughs)", "absent", XML)
 add(917, "Expression language injection", "absent", EVAL)
-add(1236, "CSV formula injection", "gap",
-    'int main() { Tainted cell = taint("=HYPERLINK(\\"http://evil\\")"); bool ok = write_file("export.csv", "name\\n" + cell); return 0; }',
-    note="Untrusted text may be written to files. A CSV writer with cell escaping is on the roadmap.")
+add(1236, "CSV formula injection", "reject",
+    'int main() { Tainted cell = taint("=HYPERLINK(\\"http://evil\\")"); bool ok = write_file("export.csv", "name\\n" + cell); return 0; }', "escape_csv",
+    "Untrusted text cannot be written to a file unchanged.")
+add(1236, "CSV formula injection (attempt after escape_csv)", "neutral",
+    'int main() { println(escape_csv(taint("=HYPERLINK(1)"))); return 0; }', "\"'=HYPERLINK(1)\"")
 add(1333, "Inefficient regular expression complexity (ReDoS)", "absent", REGEX)
 add(185, "Incorrect regular expression", "absent", REGEX)
 
 # ---------------------------------------------------------------- files and paths
 add(22, "Path traversal", "reject",
     "int main() { Tainted name = taint(\"../../etc/passwd\"); if (let f = read_file(name)) { } return 0; }", "CWE-20")
-add(22, "Path traversal (via an audited trust())", "gap",
+add(22, "Path traversal (via an audited trust())", "audited",
     'int main() { Tainted name = taint("../../etc/passwd"); if (let f = read_file(trust(name, "file name from form"))) { } return 0; }',
-    note="trust() is an explicit, audited escape hatch; a traversal-safe Path type is on the roadmap.")
+    note="Possible only through trust(), which needs a written justification and is reported in every build. validate_path() is the safe route.")
+add(22, "Path traversal (attempt through validate_path)", "neutral",
+    'int main() { if (let p = validate_path(taint("../../etc/passwd"))) { println("accepted"); } else { println("rejected"); } return 0; }', "rejected")
 add(23, "Relative path traversal", "reject",
     "int main() { string base = \"/srv/files/\"; Tainted n = taint(\"../secret\"); bool ok = write_file(base + n, \"x\"); return 0; }", "CWE-20")
 add(36, "Absolute path traversal", "reject",
@@ -277,18 +290,19 @@ add(494, "Download of code without integrity check", "absent", NET)
 add(250, "Execution with unnecessary privileges", "na", note="Deployment concern; capability-based I/O (v0.6) limits what code can touch.")
 
 # ---------------------------------------------------------------- cryptography and randomness
-add(256, "Plaintext storage of a password", "gap",
-    'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }',
-    note="Passwords arrive as Tainted, which may be written to files. Typing passwords as Secret at input is on the roadmap.")
-add(257, "Storing passwords in a recoverable format", "gap",
-    'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", escape_html(pw)); } return 0; }',
-    note="As CWE-256.")
+add(256, "Plaintext storage of a password", "reject",
+    'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }', "CWE-20")
+add(257, "Storing passwords in a recoverable format", "reject",
+    'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", escape_html(pw)); } return 0; }', "CWE-256")
 add(259, "Use of hard-coded password", "reject", "int main() { string admin_password = \"letmein\"; return 0; }", "CWE-798")
 add(798, "Use of hard-coded credentials", "reject",
     "struct Client { string api_key; }\nint main() { Client c = new Client{api_key: \"sk_live_42\"}; return 0; }", "CWE-798")
-add(798, "Hard-coded credential under an innocuous name", "gap",
-    'int main() { string cfg = "sk_live_51HxQ2eKz"; sql_query("UPDATE settings SET v = ?", cfg); return 0; }',
-    note="Detection is name-based; an innocuously named literal is not recognised.")
+add(798, "Hard-coded credential in a recognised format, under an innocuous name", "reject",
+    'int main() { string cfg = "sk_live_51HxQ2eKzABCDEFG"; return 0; }', "CWE-798",
+    "Literals in known credential formats (payment, cloud, source-hosting and chat tokens; private keys) are rejected wherever they appear.")
+add(798, "Hard-coded password-like literal under an innocuous name", "gap",
+    'int main() { string cfg = "Winter2026!"; sql_query("UPDATE settings SET v = ?", cfg); return 0; }',
+    note="A short password-like literal under an ordinary name is indistinguishable from other text.")
 add(321, "Use of hard-coded cryptographic key", "reject", "int main() { string signing_secret = \"0123456789abcdef\"; return 0; }", "CWE-798")
 add(311, "Missing encryption of sensitive data", "na", note="No encryption API yet (seal()/open() planned for v0.6).")
 add(312, "Cleartext storage of sensitive information", "reject",
@@ -322,25 +336,28 @@ add(208, "Observable timing discrepancy", "reject",
     "bool ok(Secret a, Secret b) { return a == b; }" + MAIN, "CWE-208")
 add(208, "Timing discrepancy (token compared as a plain string)", "reject",
     "bool valid(Tainted given_token, string stored_token) { return given_token == stored_token; }" + MAIN, "CWE-208")
-add(203, "Observable discrepancy (e.g. username enumeration)", "gap",
+add(203, "Observable discrepancy (e.g. username enumeration)", "logic",
     'string login(bool user_exists, bool pw_ok) { if (!user_exists) { return "no such user"; } if (!pw_ok) { return "wrong password"; } return "ok"; }' + MAIN,
-    note="Response design is the programmer's.")
+    note="What a response reveals is a design decision.")
 add(385, "Covert timing channel", "na", note="Below the language.")
 
 # ---------------------------------------------------------------- authentication and authorisation
 add(862, "Missing authorization", "reject",
     USERS + "policy Read(User u, Record r) { return u.id == r.owner; }\nprotected(Read) string body(Grant<Read> g, Record r) { return r.body; }\nint main() { Record r = new Record{owner: 1, body: \"x\"}; println(body(r)); return 0; }\ntest \"d\" { assert_denied Read(new User{id: 2, role: 0}, new Record{owner: 1, body: \"\"}); }",
     "CWE-862")
-add(862, "Missing authorization (sensitive function never marked protected)", "gap",
+add(862, "Missing authorization (record read with no grant)", "reject",
+    SENS + "string read_any(Record r) { return r.body; }" + MAIN, "CWE-862",
+    "Fields of a sensitive struct can only be read in protected functions, policies and tests.")
+add(862, "Missing authorization (data type not declared sensitive)", "gap",
     USERS + "string read_any(Record r) { return r.body; }" + MAIN,
-    note="The developer must mark sensitive operations protected; protected-by-default `sensitive struct` is on the roadmap.")
+    note="Protection starts when the type is declared sensitive. It is declared once per type, not per function, but it can still be forgotten.")
 add(285, "Improper authorization", "reject",
     USERS + "policy Read(User u, Record r) { return true; }" + MAIN, "CWE-862")
 add(284, "Improper access control", "reject",
     USERS + "policy Admin(User u) { return u.role == 9; }\nvoid wipe(Grant<Admin> g) { }" + MAIN + "test \"d\" { assert_denied Admin(new User{id: 1, role: 0}); }", "CWE-862")
-add(863, "Incorrect authorization", "gap",
+add(863, "Incorrect authorization", "logic",
     USERS + "policy Read(User u, Record r) { return u.id == r.owner || u.role > 0; }" + MAIN + "test \"d\" { assert_denied Read(new User{id: 2, role: 0}, new Record{owner: 1, body: \"\"}); }",
-    note="A policy that is consistent but wrong (any staff role reads everything) is legal. Denial tests and documentation review are the defence.")
+    note="A consistent but wrong policy is a requirements error. Denial tests, policy assertions (roadmap) and review are the defences.")
 add(639, "Authorization bypass through user-controlled key (IDOR)", "runtime",
     USERS + "policy Read(User u, Record r) { return u.id == r.owner; }\nprotected(Read) string body(Grant<Read> g, Record r) { return r.body; }\nint main() { User me = new User{id: 1, role: 0}; Record mine = new Record{owner: 1, body: \"a\"}; Record theirs = new Record{owner: 2, body: \"b\"}; if (let g = authorize Read(me, mine)) { println(body(g, theirs)); } return 0; }\ntest \"d\" { assert_denied Read(new User{id: 2, role: 0}, new Record{owner: 1, body: \"\"}); }",
     "CWE-639")
@@ -356,34 +373,33 @@ add(302, "Authentication bypass by assumed-immutable data", "reject",
 add(565, "Reliance on cookies without validation", "reject",
     "policy Owner(Tainted cookie_user_id) { return cookie_user_id == \"7\"; }" + MAIN + "test \"d\" { assert_denied Owner(taint(\"8\")); }", "CWE-807")
 add(602, "Client-side enforcement of server-side security", "na", note="Architecture concern.")
-add(287, "Improper authentication", "gap",
+add(287, "Improper authentication", "logic",
     'bool authenticate(Tainted user, Tainted pw) { return user == "admin"; }' + MAIN,
-    note="Authentication logic is the programmer's; a session/auth framework is on the roadmap.")
+    note="Authentication logic is a design decision; a session and authentication framework is on the roadmap.")
 add(306, "Missing authentication for critical function", "gap",
-    "void delete_all_records() { }" + MAIN, note="As CWE-862's gap.")
-add(307, "Improper restriction of excessive authentication attempts", "gap",
-    'bool try_login(Tainted pw) { return verify_password(pw, "cap1$pbkdf2-sha256$600000$00$00"); }' + MAIN, note="Rate limiting is the programmer's.")
+    "void delete_all_records() { }" + MAIN, note="An operation that touches no sensitive data value cannot be recognised as critical; it must be declared protected.")
+add(307, "Improper restriction of excessive authentication attempts", "logic",
+    'bool try_login(Tainted pw) { return verify_password(pw, "cap1$pbkdf2-sha256$600000$00$00"); }' + MAIN, note="Rate limiting is a design decision (the slow password hash already limits guessing speed).")
 add(308, "Use of single-factor authentication", "na", note="Design concern.")
-add(521, "Weak password requirements", "gap",
-    "bool acceptable(Tainted pw) { return pw.len() >= 1; }" + MAIN, note="Policy is the programmer's.")
+add(521, "Weak password requirements", "logic", "bool acceptable(Tainted pw) { return pw.len() >= 1; }" + MAIN, note="Password rules are policy.")
 add(522, "Insufficiently protected credentials", "reject",
     'int main() { if (let token = secret_env("TOKEN")) { println("token loaded: " + token); } return 0; }', "CWE-200")
-add(620, "Unverified password change", "gap",
-    'string change(Tainted new_pw) { return hash_password(new_pw); }' + MAIN, note="Workflow is the programmer's.")
+add(620, "Unverified password change", "logic",
+    'string change(Tainted new_pw) { return hash_password(new_pw); }' + MAIN, note="Workflow design.")
 add(640, "Weak password recovery mechanism", "na", note="Design concern.")
 add(384, "Session fixation", "na", note="No session facility.")
 add(352, "Cross-site request forgery", "na", note="No web facility yet (CSRF tokens planned in the web framework).")
 add(1021, "Improper restriction of rendered UI layers (clickjacking)", "na", note="No web facility.")
 add(290, "Authentication bypass by spoofing", "na", note="Network concern.")
 add(294, "Authentication bypass by capture-replay", "na", note="Network concern.")
-add(288, "Authentication bypass using an alternate path", "gap",
-    USERS + "policy Read(User u, Record r) { return u.id == r.owner; }\nprotected(Read) string body(Grant<Read> g, Record r) { return r.body; }\nstring export_all(Record r) { return r.body; }" + MAIN + "test \"d\" { assert_denied Read(new User{id: 2, role: 0}, new Record{owner: 1, body: \"\"}); }",
-    note="An unprotected second path to the same data is legal; protected-by-default data (roadmap) closes it.")
+add(288, "Authentication bypass using an alternate path", "reject",
+    SENS + "policy Read(User u, Record r) { return u.id == r.owner; }\nprotected(Read) string body(Grant<Read> g, Record r) { return r.body; }\nstring export_all(Record r) { return r.body; }" + MAIN + "test \"d\" { assert_denied Read(new User{id: 2, role: 0}, new Record{owner: 1, body: \"\"}); }",
+    "CWE-862", "Every path to sensitive data needs a grant, so a second unprotected path does not compile.")
 add(425, "Direct request (forced browsing)", "na", note="No web facility.")
-add(269, "Improper privilege management", "gap",
-    USERS + "void promote(User u) { u.role = 9; }" + MAIN, note="Unless the operation is marked protected.")
-add(266, "Incorrect privilege assignment", "gap",
-    USERS + "User new_user(int id) { return new User{id: id, role: 9}; }" + MAIN, note="Default roles are the programmer's.")
+add(269, "Improper privilege management", "reject",
+    SENS + "void promote(User u) { u.role = 9; }" + MAIN, "CWE-862", "Changing a sensitive record also needs a grant.")
+add(266, "Incorrect privilege assignment", "logic",
+    USERS + "User new_user(int id) { return new User{id: id, role: 9}; }" + MAIN, note="Default roles are policy.")
 
 # ---------------------------------------------------------------- information exposure
 add(200, "Exposure of sensitive information", "reject",
@@ -397,9 +413,9 @@ add(215, "Insertion of sensitive information into debugging code", "reject",
     'int main() { if (let k = secret_env("KEY")) { println(k); } return 0; }', "CWE-532")
 add(532, "Insertion of sensitive information into log file", "reject",
     'int main() { if (let k = secret_env("KEY")) { println(k); } return 0; }', "CWE-532")
-add(359, "Exposure of private personal information", "gap",
-    "struct Patient { string name; string diagnosis; }\nint main() { Patient p = new Patient{name: \"A\", diagnosis: \"x\"}; println(p.diagnosis); return 0; }",
-    note="Only Secret is protected. A `sensitive` marking for personal data is on the roadmap.")
+add(359, "Exposure of private personal information", "reject",
+    "sensitive struct Patient { string name; string diagnosis; }\nint main() { Patient p = new Patient{name: \"A\", diagnosis: \"x\"}; println(p.diagnosis); return 0; }",
+    "CWE-862", "Personal data declared sensitive can only be read under a grant.")
 add(497, "Exposure of sensitive system information", "na", note="No system-information API.")
 add(214, "Invocation of process using visible sensitive information", "neutral",
     'int main() { if (let k = secret_env("KEY")) { run("tool", "--"); } return 0; }', "[run] tool",
@@ -409,9 +425,9 @@ add(214, "Sensitive information on a command line", "reject",
 add(226, "Sensitive information in resource not removed before reuse", "neutral",
     'int main() { println("ok"); return 0; }', "ok",
     "Memory is zeroed when the collector reuses it and when it is allocated. Freed but not yet reused memory is not wiped; see CWE-244.")
-add(244, "Improper clearing of heap memory before release (heap inspection)", "gap",
-    'int main() { if (let k = secret_env("KEY")) { } return 0; }',
-    note="A Secret's bytes remain in memory until reused. Wiping Secret memory on collection is on the roadmap.")
+add(244, "Improper clearing of heap memory before release (heap inspection)", "neutral",
+    'int main() { if (let k = secret_env("KEY")) { } println("ok"); return 0; }', "ok",
+    "Secrets live in their own memory class and are zeroed when collected; tests/unit proves it. Password-hashing scratch buffers are wiped too.")
 add(316, "Cleartext storage of sensitive information in memory", "na", note="As CWE-244.")
 
 # ---------------------------------------------------------------- error handling
@@ -420,15 +436,16 @@ add(252, "Unchecked return value", "reject",
     "int main() { write_file(\"out.txt\", \"data\"); return 0; }", "CWE-252", "Warning; an error with --strict (tested that way).")
 add(253, "Incorrect check of function return value", "reject",
     "int main() { int ok = write_file(\"x\", \"y\"); return 0; }", "type mismatch")
-add(390, "Detection of error condition without action", "gap",
-    "int main() { if (let d = read_file(\"config\")) { } else { } return 0; }", note="Ignoring a handled error is legal.")
+add(390, "Detection of error condition without action", "reject",
+    "int main() { if (let d = read_file(\"config\")) { println(\"loaded\"); } else { } return 0; }", "CWE-390",
+    "An empty else is a warning; an error with --strict (tested that way).")
 add(391, "Unchecked error condition", "reject",
     "int main() { Tainted? d = read_file(\"config\"); println(int_to_str(d.len())); return 0; }", "CWE-476")
 add(396, "Declaration of catch for generic exception", "absent", EXCEPT)
 add(397, "Declaration of throws for generic exception", "absent", EXCEPT)
-add(617, "Reachable assertion", "gap",
-    "int main() { if (let line = read_line()) { assert(line.len() < 10); } return 0; }",
-    note="An input-reachable assert() stops the program safely, but it is a denial-of-service lever. Validate instead.")
+add(617, "Reachable assertion", "reject",
+    "int main() { if (let line = read_line()) { assert(line.len() < 10); } return 0; }", "CWE-617",
+    "assert() outside tests is a warning; an error with --strict (tested that way).")
 add(636, "Not failing securely (failing open)", "reject",
     USERS + "policy Read(User u, Record r) { if (u.id == r.owner) { return true; } }" + MAIN, "default deny")
 add(754, "Improper check for unusual or exceptional conditions", "reject",
@@ -449,27 +466,24 @@ add(821, "Incorrect synchronization", "absent", THREAD)
 add(1265, "Unintended reentrant invocation of non-reentrant code", "absent", SIGNAL)
 
 # ---------------------------------------------------------------- resources and denial of service
-add(400, "Uncontrolled resource consumption", "gap",
-    "int main() { if (let n = read_line()) { if (let count = validate_int(n)) { List<int> xs = new List<int>(); for (int i = 0; i < count; i += 1) { xs.push(i); } } } return 0; }",
-    note="Size-bounded input types and resource limits are on the roadmap (v0.6).")
-add(770, "Allocation of resources without limits or throttling", "gap",
-    "int main() { List<string> all = new List<string>(); while (true) { if (let l = read_line()) { all.push(escape_log(l)); } else { break; } } return 0; }",
-    note="As CWE-400.")
-add(789, "Memory allocation with excessive size value", "gap",
-    "int main() { if (let l = read_line()) { if (let n = validate_int(l)) { List<int> xs = new List<int>(); for (int i = 0; i < n; i += 1) { xs.push(0); } } } return 0; }",
-    note="Sizes are overflow-checked and exhaustion exits cleanly (code 102), but input-chosen sizes are not limited; see CWE-400.")
-add(834, "Excessive iteration", "gap",
+add(400, "Uncontrolled resource consumption", "runtime",
+    'int main() { if (let n = validate_int(taint("100000000"))) { List<string> xs = new List<string>(); for (int i = 0; i < n; i += 1) { xs.push("row " + int_to_str(i)); } } return 0; }', "CWE-400",
+    "The heap limit (CAPSTAN_MAX_HEAP; 64 MB in this test) stops runaway allocation safely. validate_range() bounds input values.")
+add(770, "Allocation of resources without limits or throttling", "runtime",
+    'int main() { List<string> all = new List<string>(); while (true) { all.push("request " + int_to_str(all.len())); } return 0; }', "CWE-400")
+add(789, "Memory allocation with excessive size value", "runtime",
+    'int main() { string s = "x"; for (int i = 0; i < 40; i += 1) { s = s + s; } return 0; }', "CWE-400")
+add(834, "Excessive iteration", "logic",
     "int main() { for (int i = 0; i < 9223372036854775807; i += 1) { if (i == 3) { return 0; } } return 0; }",
-    note="Loop bounds are the programmer's.")
-add(835, "Loop with unreachable exit condition (infinite loop)", "gap",
-    "void spin() { int i = 0; while (i < 10) { i = i * 1; } }" + MAIN, note="Termination is undecidable in general.")
-add(606, "Unchecked input for loop condition", "gap",
-    "int main() { if (let l = read_line()) { if (let n = validate_int(l)) { for (int i = 0; i < n; i += 1) { } } } return 0; }",
-    note="As CWE-400.")
+    note="Loop bounds are a design decision.")
+add(835, "Loop with unreachable exit condition (infinite loop)", "logic",
+    "void spin() { int i = 0; while (i < 10) { i = i * 1; } }" + MAIN, note="Whether a loop terminates is undecidable in general (the halting problem).")
+add(606, "Unchecked input for loop condition", "runtime",
+    'int main() { if (let n = validate_int(taint("90000000"))) { List<int> xs = new List<int>(); for (int i = 0; i < n; i += 1) { xs.push(i); } } return 0; }', "CWE-400")
 add(674, "Uncontrolled recursion", "runtime",
     "int down(int n) { return down(n + 1) + 1; }\nint main() { return down(0); }", "CWE-674")
-add(407, "Inefficient algorithmic complexity", "gap",
-    "int slow(int n) { if (n < 2) { return n; } return slow(n - 1) + slow(n - 2); }" + MAIN, note="Algorithm choice is the programmer's.")
+add(407, "Inefficient algorithmic complexity", "logic",
+    "int slow(int n) { if (n < 2) { return n; } return slow(n - 1) + slow(n - 2); }" + MAIN, note="Algorithm choice is a design decision.")
 add(405, "Asymmetric resource consumption (amplification)", "na", note="Network concern.")
 add(404, "Improper resource shutdown or release", "absent",
     "int main() { File f = open(\"x\"); return 0; }", note="Files are read and written whole; there are no handles to leak.")
@@ -478,8 +492,7 @@ add(775, "Missing release of file descriptor or handle", "absent", "int main() {
 add(459, "Incomplete cleanup", "absent", "int main() { File f = open(\"x\"); return 0; }")
 
 # ---------------------------------------------------------------- code quality and logic
-add(480, "Use of incorrect operator", "gap",
-    "bool is_admin(int role) { return role > 9; }" + MAIN, note="Operator choice is the programmer's.")
+add(480, "Use of incorrect operator", "logic", "bool is_big(int n) { return n > 9; }" + MAIN, note="Which operator was meant is the programmer\'s intent.")
 add(481, "Assigning instead of comparing", "absent", ASSIGN_IN_COND)
 add(482, "Comparing instead of assigning", "reject", "int main() { int x = 0; x == 1; return x; }", "expression result is unused")
 add(483, "Incorrect block delimitation", "absent",
@@ -502,53 +515,51 @@ add(595, "Comparison of object references instead of object contents", "reject",
 add(597, "Use of wrong operator in string comparison", "neutral",
     'int main() { string a = "ab"; string b = "a" + "b"; if (a == b) { println("equal by content"); } return 0; }', "equal by content",
     "== on strings compares contents, not references.")
-add(697, "Incorrect comparison", "gap",
-    'bool same_user(string a, string b) { return a.len() == b.len(); }' + MAIN, note="Comparison logic is the programmer's.")
-add(1023, "Incomplete comparison with missing factors", "gap",
-    USERS + "bool same(User a, User b) { return a.id == b.id; }" + MAIN, note="As CWE-697.")
-add(783, "Operator precedence logic error", "gap",
-    "bool allowed(bool admin, bool owner, bool locked) { return admin || owner && !locked; }" + MAIN,
-    note="Precedence follows C; a lint for mixed && and || without parentheses is planned.")
+add(697, "Incorrect comparison", "logic",
+    'bool same_user(string a, string b) { return a.len() == b.len(); }' + MAIN, note="Comparison logic is intent.")
+add(1023, "Incomplete comparison with missing factors", "logic", USERS + "bool same(User a, User b) { return a.id == b.id; }" + MAIN, note="As CWE-697.")
+add(783, "Operator precedence logic error", "reject",
+    "bool allowed(bool admin, bool owner, bool locked) { return admin || owner && !locked; }" + MAIN, "CWE-783",
+    "Mixing && inside || without parentheses is a warning; an error with --strict (tested that way).")
 add(843, "Access of resource using incompatible type (type confusion)", "absent", CAST)
-add(670, "Always-incorrect control flow implementation", "gap",
-    "int f(int x) { while (x > 0) { return 1; } return 0; }" + MAIN, note="Control-flow logic is the programmer's.")
-add(489, "Active debug code", "gap",
-    'const bool DEBUG = true;\nint main() { if (DEBUG) { println("debug mode"); } return 0; }', note="Build-mode features are planned.")
-add(546, "Suspicious comment", "gap", "// TODO: remove this backdoor before release" + MAIN, note="A lint for security-relevant TODO/FIXME comments is planned.")
-add(547, "Use of hard-coded, security-relevant constants", "gap",
-    "bool is_admin(int role) { return role == 7; }" + MAIN, note="Named constants are encouraged; not enforced.")
+add(670, "Always-incorrect control flow implementation", "logic", "int f(int x) { while (x > 0) { return 1; } return 0; }" + MAIN, note="Control-flow intent.")
+add(489, "Active debug code", "reject",
+    'const bool DEBUG = true;\nint main() { if (DEBUG) { println("debug mode"); } return 0; }', "CWE-489",
+    "A debug switch left on is an error in --release builds (tested that way).")
+add(546, "Suspicious comment", "reject", "// TODO: remove this backdoor before release" + MAIN, "CWE-546",
+    "A warning; an error with --strict (tested that way).")
+add(547, "Use of hard-coded, security-relevant constants", "reject",
+    "bool is_admin(int role) { return role == 7; }" + MAIN, "CWE-547", "A warning; an error with --strict (tested that way).")
 add(1164, "Irrelevant code", "reject",
     "int main() { int x = 1; x = x; return x; }", "CWE-1164", "Warning; an error with --strict (tested that way).")
-add(912, "Hidden functionality", "gap",
+add(912, "Hidden functionality", "logic",
     'bool login(Tainted user, Tainted pw) { if (user == "maintenance") { return true; } return verify_password(pw, "cap1$pbkdf2-sha256$600000$00$00"); }' + MAIN,
-    note="Backdoors written in plain code are legal; review and Capstan Review (AI) are the defences.")
+    note="A deliberate backdoor written as ordinary logic is indistinguishable from intended logic. Code review and Capstan Review (AI) are the defences.")
 add(506, "Embedded malicious code", "na", note="Supply-chain concern; signed packages are planned.")
 add(1104, "Use of unmaintained third-party components", "na", note="No package system yet.")
-add(693, "Protection mechanism failure", "gap",
-    'int main() { string s = trust(taint("x"), "temporary"); return 0; }', note="trust() is audited, not forbidden.")
+add(693, "Protection mechanism failure", "audited",
+    'int main() { string s = trust(taint("x"), "temporary"); return 0; }', note="trust() is audited: it needs a justification and is reported in every build.")
 
 # ---------------------------------------------------------------- data handling
-add(1284, "Improper validation of specified quantity in input", "gap",
+add(1284, "Improper validation of specified quantity in input", "logic",
     "int main() { if (let l = read_line()) { if (let qty = validate_int(l)) { int total = qty * 10; } } return 0; }",
-    note="Range validation is the programmer's; overflow is still caught.")
+    note="Which range is valid is business knowledge; validate_range(t, min, max) makes enforcing it one call. Overflow is still caught.")
 add(1287, "Improper validation of specified type in input", "neutral",
     'int main() { if (let n = validate_int(taint("12abc"))) { println("accepted"); } else { println("rejected"); } return 0; }', "rejected")
 add(172, "Encoding error", "na", note="Strings are bytes; encodings are not interpreted.")
 add(176, "Improper handling of Unicode encoding", "neutral",
     'int main() { if (let id = validate_ident(taint("adm\\0in"))) { println("accepted"); } else { println("rejected"); } return 0; }', "rejected")
-add(178, "Improper handling of case sensitivity", "gap",
-    'bool blocked(Tainted name) { return name == "admin"; }' + MAIN, note="'Admin' passes; normalisation is the programmer's.")
+add(178, "Improper handling of case sensitivity", "logic",
+    'bool blocked(Tainted name) { return name == "admin"; }' + MAIN, note="Whether 'Admin' and 'admin' are the same name is a design decision.")
 add(180, "Incorrect behaviour order: validate before canonicalize", "na", note="No canonicalisation API.")
 add(345, "Insufficient verification of data authenticity", "na", note="No signature API yet.")
 add(353, "Missing support for integrity check", "neutral",
     'int main() { string tag = hash("payload"); if (hash_verify("payload", tag)) { println("verified"); } return 0; }', "verified",
     "hash() and hash_verify() are available. Integrity is opt-in.")
-add(841, "Improper enforcement of behavioral workflow", "gap",
-    "void ship(int order) { }\nvoid pay(int order) { }" + MAIN, note="Typestate (enforced call order) is a possible future feature.")
-add(837, "Improper enforcement of a single, unique action", "gap",
-    "void redeem(int voucher) { }" + MAIN, note="Business logic.")
-add(799, "Improper control of interaction frequency", "gap",
-    "void send_code(Tainted phone) { }" + MAIN, note="Rate limiting is the programmer's.")
+add(841, "Improper enforcement of behavioral workflow", "logic",
+    "void ship(int order) { }\nvoid pay(int order) { }" + MAIN, note="Workflow order is a design decision; typestate checking is a possible future feature.")
+add(837, "Improper enforcement of a single, unique action", "logic", "void redeem(int voucher) { }" + MAIN, note="Business rule.")
+add(799, "Improper control of interaction frequency", "logic", "void send_code(Tainted phone) { }" + MAIN, note="Rate limiting is a design decision.")
 add(601, "URL redirection to untrusted site (open redirect)", "na", note="No web facility.")
 add(918, "Server-side request forgery", "absent", NET)
 add(1188, "Insecure default initialization of resource", "reject",
@@ -585,6 +596,8 @@ def check(e, d):
     cap, c, exe = (os.path.join(d, n) for n in ("a.cap", "a.c", "a"))
     open(cap, "w").write(code)
     flags = ["--strict"] if STRICT_NOTE in e["note"] else []
+    if "--release" in e["note"]:
+        flags.append("--release")
     comp = run([os.path.join(ROOT, "build/capstanc"), "build", "-o", c] + flags + [cap])
     out = comp.stdout.decode(errors="replace")
     v = e["verdict"]
@@ -596,13 +609,15 @@ def check(e, d):
         return None if e["expect"] in out else f"rejected, but without {e['expect']!r}: {out.strip()[:200]}"
     if comp.returncode != 0:
         return f"expected to compile ({v}) but: {out.strip()[:300]}"
-    if v == "gap":
+    if v in ("gap", "logic"):
         return None
+    if v == "audited":
+        return None if "AUDIT" in out else "expected an AUDIT warning"
     b = run([CC, "-std=gnu11", "-O1", "-w", "-I" + os.path.join(ROOT, "runtime"), c, "-o", exe])
     if b.returncode != 0:
         return "generated C did not compile"
     try:
-        r = subprocess.run([exe], capture_output=True, timeout=60, env=dict(os.environ, KEY="k", API_KEY="k", TOKEN="t", DB_KEY="k", DB_PASSWORD="p"))
+        r = subprocess.run([exe], capture_output=True, timeout=60, env=dict(os.environ, CAPSTAN_MAX_HEAP="64M", KEY="k", API_KEY="k", TOKEN="t", DB_KEY="k", DB_PASSWORD="p"))
     except subprocess.TimeoutExpired:
         return "program did not finish"
     so, se = r.stdout.decode(errors="replace"), r.stderr.decode(errors="replace")
@@ -623,6 +638,8 @@ LABEL = {
     "neutral": "Prevented: attempt compiles but has no effect",
     "absent": "Inexpressible: the construct does not exist",
     "gap": "**Gap: can be written**",
+    "audited": "Possible only through an audited escape hatch",
+    "logic": "Logic or design decision: beyond any language",
     "na": "Not applicable (yet)",
 }
 
@@ -633,7 +650,7 @@ def write_doc(results):
         by.setdefault(e["verdict"], []).append(e)
     ids = sorted({e["cwe"] for e in E})
     worst = {}
-    order = ["gap", "na", "neutral", "runtime", "reject", "absent"]
+    order = ["gap", "logic", "audited", "na", "neutral", "runtime", "reject", "absent"]
     for e in E:
         cur = worst.get(e["cwe"])
         if cur is None or order.index(e["verdict"]) < order.index(cur):
@@ -655,7 +672,7 @@ def write_doc(results):
         "| Outcome | Weaknesses |",
         "|---|---|",
     ]
-    for v in ["reject", "runtime", "neutral", "absent", "gap", "na"]:
+    for v in ["reject", "runtime", "neutral", "absent", "audited", "logic", "gap", "na"]:
         lines.append(f"| {LABEL[v]} | {sum(1 for c in ids if worst[c] == v)} |")
     lines += ["", "## Gaps: weaknesses that can still be written", "",
               "These are honest limits of the current version. Each is a test, so when a future version",
@@ -669,6 +686,14 @@ def write_doc(results):
             if len(snippet) > 90:
                 snippet = snippet[:87] + "..."
             lines.append(f"| [{e['cwe']}](https://cwe.mitre.org/data/definitions/{e['cwe']}.html) | {e['name']} | `{snippet}` | {e['note']} |")
+    lines += ["", "## Beyond any language: logic and design decisions", "",
+              "These weaknesses can be written in Capstan because they are not mistakes in *how* code is written but",
+              "in *what* it was meant to do: a wrong formula, a missing business rule, a policy that is consistent but",
+              "wrong. No compiler can tell them from intended behaviour. Each attempt still compiles here, as a test.", "",
+              "| CWE | Weakness | Why | ", "|---|---|---|"]
+    for e in E:
+        if e["verdict"] == "logic":
+            lines.append(f"| [{e['cwe']}](https://cwe.mitre.org/data/definitions/{e['cwe']}.html) | {e['name']} | {e['note']} |")
     lines += ["", "## Full atlas", "", "| CWE | Weakness | Outcome | Detail |", "|---|---|---|---|"]
     for e in sorted(E, key=lambda x: (x["cwe"], x["verdict"])):
         detail = e["note"]
@@ -691,8 +716,9 @@ def main():
     gaps = sorted({e["cwe"] for e in E if e["verdict"] == "gap"})
     if "--write-doc" in sys.argv:
         write_doc(None)
+    logic = sorted({e["cwe"] for e in E if e["verdict"] == "logic"})
     print(f"CWE atlas: {len(E)} attempts across {len(ids)} weaknesses, {failures} verdict(s) wrong; "
-          f"{len(gaps)} weaknesses still have a writable form")
+          f"{len(gaps)} gaps, {len(logic)} logic/design weaknesses beyond any language")
     sys.exit(1 if failures else 0)
 
 

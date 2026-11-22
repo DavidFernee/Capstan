@@ -22,6 +22,7 @@ struct Checker {
     List<Map<int>> used;        // per scope: name -> read count (CWE-563)
     List<Map<Node>> decl_at;    // per scope: name -> declaring node
     Map<Node> enums;
+    bool privileged;            // inside a protected function, policy or test
 }
 
 Type ty_of(Node n) {
@@ -164,6 +165,8 @@ bool contains_grant(Type t) {
 void mismatch(Checker c, Node at, Type from, Type to, string where) {
     if (from.k == TY_TAINT && to.k == TY_STR) {
         error_at(c.ctx, at, "CWE-20", "untrusted input (Tainted) used as a trusted string in " + where + "; pass it through a validator or escaper first");
+    } else if ((from.k == TY_HTML || from.k == TY_LOG) && to.k == TY_STR) {
+        error_at(c.ctx, at, "CWE-116", "text escaped as " + type_str(from) + " is only safe where " + type_str(from) + " is expected, not as a plain string in " + where);
     } else if (from.k == TY_SECRET) {
         error_at(c.ctx, at, "CWE-200", "a Secret cannot be used as " + type_str(to) + " in " + where);
     } else if (from.k == TY_OPT && type_eq(from.args[0], to)) {
@@ -198,6 +201,53 @@ bool mentions_name(Node e, int kind) {
     if (e.k == N_CALL || e.k == N_METHOD) { return false; }
     for (int i = 0; i < e.kids.len(); i += 1) {
         if (mentions_name(e.kids[i], kind)) { return true; }
+    }
+    return false;
+}
+
+// A credential prefix followed by at least 8 more characters (a bare prefix is not a key).
+bool starts(string s, string p) {
+    return s.len() >= p.len() + 8 && s.slice(0, p.len()) == p;
+}
+
+bool all_in(string s, int from, int to, string allowed) {
+    for (int i = from; i < to; i += 1) {
+        bool found = false;
+        for (int j = 0; j < allowed.len(); j += 1) {
+            if (s.at(i) == allowed.at(j)) { found = true; }
+        }
+        if (!found) { return false; }
+    }
+    return true;
+}
+
+// Known credential formats, as secret scanners recognise them.
+string credential_format(string s) {
+    string upper_digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    if (starts(s, "sk_live_") || starts(s, "rk_live_")) { return "payment API key"; }
+    if (s.len() == 20 && (starts(s, "AKIA") || starts(s, "ASIA")) && all_in(s, 4, 20, upper_digits)) { return "cloud access key"; }
+    if (starts(s, "ghp_") || starts(s, "gho_") || starts(s, "ghs_") || starts(s, "github_pat_")) { return "source-hosting token"; }
+    if (starts(s, "xoxb-") || starts(s, "xoxp-") || starts(s, "xoxa-")) { return "chat-platform token"; }
+    if (s.len() == 39 && starts(s, "AIza")) { return "web API key"; }
+    if (s.len() > 10 && s.slice(0, 10) == "-----BEGIN" && contains(s, "PRIVATE KEY")) { return "private key"; }
+    return "";
+}
+
+void check_literal(Checker c, Node e) {
+    string kind = credential_format(e.s);
+    if (kind != "") {
+        error_at(c.ctx, e, "CWE-798", "string literal looks like a hard-coded credential (" + kind + "); load it with secret_env(\"NAME\")");
+    }
+}
+
+// Like mentions_name, but also looks inside call arguments (escape_html(password)).
+bool mentions_deep(Node e, int kind) {
+    if (e.k == N_VAR || e.k == N_GETF) {
+        if (kind == 1 && looks_secret(e.s)) { return true; }
+        if (kind == 2 && looks_password(e.s)) { return true; }
+    }
+    for (int i = 0; i < e.kids.len(); i += 1) {
+        if (mentions_deep(e.kids[i], kind)) { return true; }
     }
     return false;
 }
@@ -287,7 +337,10 @@ bool simple_enum(Checker c, string name) {
 Type check_expr(Checker c, Node e) {
     int k = e.k;
     if (k == N_INT) { return typed(e, mk_type(TY_INT)); }
-    if (k == N_STR) { return typed(e, mk_type(TY_STR)); }
+    if (k == N_STR) {
+        check_literal(c, e);
+        return typed(e, mk_type(TY_STR));
+    }
     if (k == N_BOOL) { return typed(e, mk_type(TY_BOOL)); }
     if (k == N_NONE) { return typed(e, mk_type(TY_NONE)); }
     if (k == N_VAR) {
@@ -323,6 +376,12 @@ Type check_expr(Checker c, Node e) {
         if (ot.k != TY_STRUCT) {
             if (ot.k != TY_ERR) { error_at(c.ctx, e, "", "'" + type_str(ot) + "' has no field '" + e.s + "'"); }
             return typed(e, mk_type(TY_ERR));
+        }
+        if (let sst = c.structs.get(ot.name)) {
+            if (sst.s2 == "sensitive" && !c.privileged) {
+                error_at(c.ctx, e, "CWE-862", ot.name + " is sensitive: its fields can only be read or changed in protected functions, policies and tests (field '" + e.s + "')");
+                return typed(e, mk_type(TY_ERR));
+            }
         }
         if (let ft = field_type(c, ot.name, e.s)) { return typed(e, ft); }
         error_at(c.ctx, e, "", "struct " + ot.name + " has no field '" + e.s + "'" + suggest(e.s, field_names(c, ot.name)));
@@ -361,11 +420,35 @@ Type check_expr(Checker c, Node e) {
     return typed(e, mk_type(TY_ERR));
 }
 
+bool security_name(Node e) {
+    if (e.k != N_VAR && e.k != N_GETF) { return false; }
+    string l = lower(e.s);
+    return contains(l, "role") || contains(l, "level") || contains(l, "permission") || contains(l, "privilege")
+        || contains(l, "clearance") || contains(l, "access") || contains(l, "rank");
+}
+
 Type check_binary(Checker c, Node e) {
     string op = e.s;
     Type a = check_expr(c, e.kids[0]);
     Type b = check_expr(c, e.kids[1]);
     if (a.k == TY_ERR || b.k == TY_ERR) { return mk_type(TY_ERR); }
+    if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=") {
+        for (int mk = 0; mk < 2; mk += 1) {
+            Node lit = e.kids[mk];
+            Node other = e.kids[1 - mk];
+            if (lit.k == N_INT && lit.n > 1 && security_name(other)) {
+                warn_at(c.ctx, e, "CWE-547", "security decision on the magic number " + int_to_str(lit.n) + "; give it a name with an enum");
+            }
+        }
+    }
+    if (op == "||") {
+        for (int pk = 0; pk < 2; pk += 1) {
+            Node side = e.kids[pk];
+            if (side.k == N_BIN && side.s == "&&" && side.s2 != "()") {
+                warn_at(c.ctx, side, "CWE-783", "'&&' inside '||' without parentheses; add them to make the intended grouping explicit");
+            }
+        }
+    }
     if (op == "&&" || op == "||") {
         expect_type(c, e, a, mk_type(TY_BOOL), "'" + op + "'");
         expect_type(c, e, b, mk_type(TY_BOOL), "'" + op + "'");
@@ -402,6 +485,21 @@ Type check_binary(Checker c, Node e) {
     if (op == "<" || op == "<=" || op == ">" || op == ">=") {
         if (a.k != TY_INT || b.k != TY_INT) { error_at(c.ctx, e, "", "'" + op + "' needs int operands"); }
         return mk_type(TY_BOOL);
+    }
+    if (op == "+" && is_texty(a) && is_texty(b) && (a.k == TY_HTML || b.k == TY_HTML || a.k == TY_LOG || b.k == TY_LOG)) {
+        int ctx_k = TY_HTML;
+        string ctx_name = "Html";
+        string esc = "escape_html()";
+        if (a.k == TY_LOG || b.k == TY_LOG) { ctx_k = TY_LOG; ctx_name = "LogText"; esc = "escape_log()"; }
+        if ((a.k == TY_HTML && b.k == TY_LOG) || (a.k == TY_LOG && b.k == TY_HTML)) {
+            error_at(c.ctx, e, "CWE-116", "text escaped for HTML and text escaped for logs cannot be combined");
+            return mk_type(TY_ERR);
+        }
+        if (a.k == TY_TAINT || b.k == TY_TAINT) {
+            error_at(c.ctx, e, "CWE-116", "untrusted input cannot be joined to " + ctx_name + " unescaped; wrap it in " + esc);
+            return mk_type(TY_ERR);
+        }
+        return mk_type(ctx_k);
     }
     if (op == "+" && is_stringish(a) && is_stringish(b)) {
         if (a.k == TY_TAINT || b.k == TY_TAINT) { return mk_type(TY_TAINT); }
@@ -530,6 +628,7 @@ List<string> builtin_names() {
     b.push("validate_ident"); b.push("validate_int"); b.push("escape_c"); b.push("escape_html"); b.push("escape_log");
     b.push("trust"); b.push("taint"); b.push("sql_query"); b.push("run"); b.push("secret_env"); b.push("secret_eq");
     b.push("hash"); b.push("hash_verify"); b.push("hash_password"); b.push("verify_password"); b.push("needs_rehash");
+    b.push("escape_csv"); b.push("validate_path"); b.push("validate_range");
     return b;
 }
 
@@ -571,7 +670,7 @@ void sink_string(Checker c, Node arg, string what, bool allow_tainted) {
         error_at(c.ctx, arg, "CWE-532", "a Secret cannot be written by " + what);
         return;
     }
-    if (!is_stringish(t)) { expect_type(c, arg, t, mk_type(TY_STR), what); }
+    if (!is_texty(t)) { expect_type(c, arg, t, mk_type(TY_STR), what); }
 }
 
 Type check_call(Checker c, Node e) {
@@ -620,7 +719,14 @@ Type check_call(Checker c, Node e) {
         want_args(c, e, 0, 2, f);
         if (n == 2) {
             expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "write_file() path");
-            sink_string(c, e.kids[1], "write_file()", true);
+            Type wt = ty_of(e.kids[1]);
+            if (wt.k == TY_TAINT) {
+                error_at(c.ctx, e.kids[1], "CWE-20", "untrusted input written to a file unchanged; escape it for the file's format first (escape_csv() for spreadsheets, escape_html() for web pages) or validate it");
+            } else if (mentions_deep(e.kids[1], 2)) {
+                error_at(c.ctx, e.kids[1], "CWE-256", "passwords must never be written out; store hash_password() of it instead");
+            } else {
+                sink_string(c, e.kids[1], "write_file()", true);
+            }
         }
         return mk_type(TY_BOOL);
     }
@@ -641,6 +747,9 @@ Type check_call(Checker c, Node e) {
     if (f == "assert") {
         want_args(c, e, 0, 1, f);
         if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_BOOL), "assert()"); }
+        if (!c.in_test) {
+            warn_at(c.ctx, e, "CWE-617", "assert() outside a test stops the program when it fails; if input can reach it, handle the case instead");
+        }
         c.asserts += 1;
         return mk_type(TY_VOID);
     }
@@ -650,10 +759,26 @@ Type check_call(Checker c, Node e) {
         if (f == "validate_int") { return mk_wrap(TY_OPT, mk_type(TY_INT)); }
         return mk_wrap(TY_OPT, mk_type(TY_STR));
     }
-    if (f == "escape_c" || f == "escape_html" || f == "escape_log") {
+    if (f == "escape_c" || f == "escape_html" || f == "escape_log" || f == "escape_csv") {
         want_args(c, e, 0, 1, f);
         if (n == 1 && !is_stringish(ty_of(e.kids[0]))) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()"); }
+        if (f == "escape_html") { return mk_type(TY_HTML); }
+        if (f == "escape_log") { return mk_type(TY_LOG); }
         return mk_type(TY_STR);
+    }
+    if (f == "validate_path") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()"); }
+        return mk_wrap(TY_OPT, mk_type(TY_STR));
+    }
+    if (f == "validate_range") {
+        want_args(c, e, 0, 3, f);
+        if (n == 3) {
+            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()");
+            expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), f + "() minimum");
+            expect_type(c, e, ty_of(e.kids[2]), mk_type(TY_INT), f + "() maximum");
+        }
+        return mk_wrap(TY_OPT, mk_type(TY_INT));
     }
     if (f == "trust") {
         want_args(c, e, 0, 2, f);
@@ -846,7 +971,8 @@ void check_stmt(Checker c, Node s) {
             if (!pure_path(target)) {
                 error_at(c.ctx, s, "", "'" + s.s + "' needs a variable, field or simply-indexed element on the left; write x = x + v");
             }
-            if (!(tt.k == TY_INT && rv.k == TY_INT) && !(s.s == "+=" && is_stringish(tt) && is_stringish(rv) && (tt.k == TY_TAINT || rv.k == TY_STR))) {
+            bool ctx_ok = s.s == "+=" && (tt.k == TY_HTML || tt.k == TY_LOG) && (rv.k == tt.k || rv.k == TY_STR);
+            if (!ctx_ok && !(tt.k == TY_INT && rv.k == TY_INT) && !(s.s == "+=" && is_stringish(tt) && is_stringish(rv) && (tt.k == TY_TAINT || rv.k == TY_STR))) {
                 error_at(c.ctx, s, "", "'" + s.s + "' is not defined for " + type_str(tt) + " and " + type_str(rv));
             }
             return;
@@ -894,7 +1020,12 @@ void check_stmt(Checker c, Node s) {
             }
             check_block(c, s.kids[1]);
         }
-        if (s.kids.len() > 2) { check_block(c, s.kids[2]); }
+        if (s.kids.len() > 2) {
+            if (s.kids[2].kids.len() == 0) {
+                warn_at(c.ctx, s, "CWE-390", "the else branch is empty, so this failure case is silently ignored; handle it or remove the else");
+            }
+            check_block(c, s.kids[2]);
+        }
         return;
     }
     if (k == N_WHILE) {
@@ -1109,7 +1240,7 @@ Checker new_checker(Ctx ctx) {
         policy_ids: new Map<int>(), consts: new Map<Node>(), const_types: new Map<Type>(),
         scopes: new List<Map<Type>>(), depth: 0, ret: mk_type(TY_VOID), loops: 0,
         in_test: false, in_policy: false, denials: new Map<int>(), asserts: 0,
-        used: new List<Map<int>>(), decl_at: new List<Map<Node>>(), enums: new Map<Node>()
+        used: new List<Map<int>>(), decl_at: new List<Map<Node>>(), enums: new Map<Node>(), privileged: false
     };
 }
 
@@ -1175,6 +1306,7 @@ void check_fn(Checker c, Node f) {
     }
     c.ret = rt;
     c.depth = 0;
+    c.privileged = f.s2 != "";
     push_scope(c);
     bind_params(c, f);
     Node body = f.kids[f.n];
@@ -1232,6 +1364,11 @@ void check_program(Checker c, List<Node> decls, bool need_main) {
             Type vt = check_expr(c, d3.kids[0]);
             pop_scope(c);
             expect_type(c, d3, vt, ct, "constant '" + d3.s + "'");
+            string dl = lower(d3.s);
+            if (c.ctx.release && ct.k == TY_BOOL && d3.kids[0].k == N_BOOL && d3.kids[0].n == 1
+                && (contains(dl, "debug") || contains(dl, "dev_mode") || contains(dl, "test_mode") || contains(dl, "insecure"))) {
+                error_at(c.ctx, d3, "CWE-489", "debug switch '" + d3.s + "' is on in a release build");
+            }
             check_hardcoded(c, d3, d3.s, d3.kids[0]);
             c.const_types.set(d3.s, ct);
         }
@@ -1244,6 +1381,7 @@ void check_program(Checker c, List<Node> decls, bool need_main) {
             c.ret = mk_type(TY_BOOL);
             c.depth = 0;
             c.in_policy = true;
+            c.privileged = true;
             push_scope(c);
             bind_params(c, d4);
             check_block(c, d4.kids[d4.n]);
@@ -1255,6 +1393,7 @@ void check_program(Checker c, List<Node> decls, bool need_main) {
             c.ret = mk_type(TY_VOID);
             c.depth = 0;
             c.in_test = true;
+            c.privileged = true;
             int before = c.asserts;
             check_block(c, d4.kids[0]);
             c.in_test = false;
@@ -1318,6 +1457,9 @@ bool derived(Flow f, Node e) {
     if (e.k == N_METHOD && e.s == "at" && ty_of(e.kids[0]).k == TY_TAINT) { return true; }
     if (e.k == N_VAR) { return f.vars.has(e.s); }
     if (e.k == N_NEG) { return derived(f, e.kids[0]); }
+    // A collection or struct that ever held a derived integer yields derived integers.
+    if (e.k == N_INDEX || e.k == N_GETF) { return base_marked(f, e.kids[0]); }
+    if (e.k == N_METHOD && (e.s == "pop" || e.s == "get" || e.s == "remove_at")) { return base_marked(f, e.kids[0]); }
     if (e.k == N_BIN && is_arith(e.s) && ty_of(e).k == TY_INT) {
         return derived(f, e.kids[0]) || derived(f, e.kids[1]);
     }
@@ -1330,6 +1472,18 @@ bool derived(Flow f, Node e) {
         }
     }
     return false;
+}
+
+bool base_marked(Flow f, Node e) {
+    if (e.k == N_VAR) { return f.vars.has(e.s); }
+    if (e.k == N_GETF || e.k == N_INDEX) { return base_marked(f, e.kids[0]); }
+    return false;
+}
+
+string base_name(Node e) {
+    if (e.k == N_VAR) { return e.s; }
+    if (e.k == N_GETF || e.k == N_INDEX) { return base_name(e.kids[0]); }
+    return "";
 }
 
 void mark(Flow f, string name) {
@@ -1349,6 +1503,15 @@ void sink(Flow f, Node at) {
 void flow_walk(Flow f, Node n) {
     if (n.k == N_DECL && ty_of(n).k == TY_INT && derived(f, n.kids[0])) { mark(f, n.s); }
     if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && ty_of(n.kids[0]).k == TY_INT && derived(f, n.kids[1])) { mark(f, n.kids[0].s); }
+    if (n.k == N_ASSIGN && (n.kids[0].k == N_INDEX || n.kids[0].k == N_GETF) && derived(f, n.kids[1])) {
+        string bn = base_name(n.kids[0]);
+        if (bn != "") { mark(f, bn); }
+    }
+    if (n.k == N_METHOD && (n.s == "push" || n.s == "insert" || n.s == "set") && n.kids.len() > 1 && derived(f, n.kids[n.kids.len() - 1])) {
+        string bn2 = base_name(n.kids[0]);
+        if (bn2 != "") { mark(f, bn2); }
+    }
+    if (n.k == N_IF && n.n == 1 && derived(f, n.kids[0])) { mark(f, n.s2); }
     if (n.k == N_RETURN && n.kids.len() == 1 && derived(f, n.kids[0])) { f.returns = true; }
     if (n.k == N_CALL && n.s == "char_str" && n.kids.len() == 1 && derived(f, n.kids[0])) { sink(f, n); }
     if (n.k == N_CALL) {

@@ -16,7 +16,7 @@ import os, sys
 KEYWORDS = {
     "struct", "const", "if", "else", "while", "for", "return", "break", "continue",
     "true", "false", "none", "new", "let", "protected", "policy", "public", "test",
-    "authorize", "assert_denied", "assert_granted", "enum", "match", "case", "import",
+    "authorize", "assert_denied", "assert_granted", "enum", "match", "case", "import", "sensitive",
 }
 PUNCT = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=", "++", "--",
          "{", "}", "(", ")", "[", "]", ";", ",", ".", ":", "?", "<", ">", "=",
@@ -211,6 +211,8 @@ class Parser:
                     self.eat(",")
             self.eat("}")
             return ("enum", name, variants)
+        if self.at("sensitive"):
+            self.p += 1
         if self.at("struct"):
             self.p += 1
             name = self.ident()
@@ -462,6 +464,7 @@ BUILTINS = {
     "args", "exit", "join", "assert", "validate_ident", "validate_int", "escape_c",
     "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
     "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
+    "escape_csv", "validate_path", "validate_range",
 }
 
 PRELUDE = r'''
@@ -558,6 +561,16 @@ def b_escape_html(t):
     return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
 def b_escape_log(t): return "".join(ch if 32 <= ord(ch) < 127 or ord(ch) > 127 else "\\x%02x" % ord(ch) for ch in t)
 def b_trust(t, why): return t
+def b_escape_csv(t):
+    return '"' + ("'" if t[:1] in ("=", "+", "-", "@", "\t", "\r") and t else "") + t.replace('"', '""') + '"'
+def b_validate_path(t):
+    if not t or len(t) > 4096 or t[0] == "/": return None
+    for seg in t.split("/"):
+        if seg in ("", ".", "..") or not re.fullmatch(r"[A-Za-z0-9_.-]+", seg): return None
+    return t
+def b_validate_range(t, lo, hi):
+    v = b_validate_int(t)
+    return v if v is not None and lo <= v <= hi else None
 def b_taint(s): return s
 def b_sql_query(tmpl, *a): b_println("[sql] " + tmpl + "".join(" $%d=%s" % (i + 1, b_escape_log(x)) for i, x in enumerate(a)))
 def b_run(prog, *a): b_println("[run] " + prog + "".join(" argv[%d]=%s" % (i + 1, b_escape_log(x)) for i, x in enumerate(a)))

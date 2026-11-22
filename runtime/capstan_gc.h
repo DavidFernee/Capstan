@@ -11,6 +11,10 @@
  *  - Large objects are allocated individually and found by binary search.
  *  - "Atomic" allocations (strings, boxed integers, hash indexes) hold no
  *    pointers and are never scanned, so text cannot keep objects alive.
+ *  - Secrets live in their own pages and are zeroed when collected, so a
+ *    credential does not linger in freed memory (CWE-244).
+ *  - The heap has a limit (CAPSTAN_MAX_HEAP, default three quarters of
+ *    physical memory). Exceeding it stops the program safely (CWE-400).
  *  - Roots: the machine stack, callee-saved registers (spilled with setjmp),
  *    and global variables registered by the generated code. The stack and
  *    object contents are scanned conservatively.
@@ -18,6 +22,7 @@
  * Environment:
  *   CAPSTAN_GC_STATS=1    print collector statistics on exit
  *   CAPSTAN_GC_STRESS=N   collect every N allocations (for testing)
+ *   CAPSTAN_MAX_HEAP=N    heap limit in bytes; K, M and G suffixes accepted
  */
 #ifndef CAPSTAN_GC_H
 #define CAPSTAN_GC_H
@@ -52,6 +57,9 @@
 #define CAP_PAGE_SIZE ((uintptr_t)1 << CAP_PAGE_SHIFT)
 #define CAP_NCLASS 14
 #define CAP_MIN_THRESHOLD ((size_t)8 << 20)
+#define CAP_KINDS 3          /* 0: may hold pointers, 1: pointer-free, 2: secret (pointer-free, wiped) */
+
+__attribute__((noreturn, cold, noinline)) static void cap_panic(const char *what, const char *cwe, int64_t loc);
 
 static const uint32_t cap_class_size[CAP_NCLASS] =
     {16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048};
@@ -72,7 +80,8 @@ static struct {
     char *stack_top;
     CapPage **pages; size_t npages, cappages;
     CapPage **ptab; size_t ptab_cap;          /* hash table keyed by page number */
-    void *freelist[2][CAP_NCLASS];
+    void *freelist[CAP_KINDS][CAP_NCLASS];
+    size_t max_heap;
     CapLarge *large; size_t nlarge, caplarge;
     void ***roots; size_t nroots, caproots;
     uintptr_t lo, hi;
@@ -142,6 +151,18 @@ static void cap_gc_init(void) {
     const char *s = getenv("CAPSTAN_GC_STRESS");
     if (s) cap_gc.stress = atol(s);
     if (getenv("CAPSTAN_GC_STATS")) { cap_gc.stats = 1; atexit(cap_gc_report); }
+    const char *mh = getenv("CAPSTAN_MAX_HEAP");
+    if (mh) {
+        char *end;
+        unsigned long long v = strtoull(mh, &end, 10);
+        if (*end == 'K' || *end == 'k') v <<= 10;
+        else if (*end == 'M' || *end == 'm') v <<= 20;
+        else if (*end == 'G' || *end == 'g') v <<= 30;
+        cap_gc.max_heap = (size_t)v;
+    } else {
+        long pages = sysconf(_SC_PHYS_PAGES), psize = sysconf(_SC_PAGESIZE);
+        cap_gc.max_heap = pages > 0 && psize > 0 ? (size_t)pages / 4 * 3 * (size_t)psize : (size_t)1 << 34;
+    }
     char *low = NULL;
 #if defined(__APPLE__)
     cap_gc.stack_top = (char *)pthread_get_stackaddr_np(pthread_self());
@@ -312,7 +333,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
 
     /* sweep */
     size_t live = 0;
-    for (int a = 0; a < 2; a++) for (int c = 0; c < CAP_NCLASS; c++) cap_gc.freelist[a][c] = NULL;
+    for (int a = 0; a < CAP_KINDS; a++) for (int c = 0; c < CAP_NCLASS; c++) cap_gc.freelist[a][c] = NULL;
     for (size_t i = 0; i < cap_gc.npages; i++) {
         CapPage *pg = cap_gc.pages[i];
         int cls = 0;
@@ -322,6 +343,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
                 pg->mark[j] = 0;
                 live += pg->objsize;
             } else {
+                if (pg->atomic == 2 && pg->alloc[j]) memset(pg->base + (size_t)j * pg->objsize, 0, pg->objsize);
                 pg->alloc[j] = 0;
                 void **slot = (void **)(pg->base + (size_t)j * pg->objsize);
                 *slot = cap_gc.freelist[pg->atomic][cls];
@@ -337,6 +359,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
             live += l.size;
             cap_gc.large[keep++] = l;
         } else {
+            if (l.atomic == 2) { volatile char *w = l.base; for (size_t z = 0; z < l.size; z++) w[z] = 0; }
             free(l.base);
             cap_gc.heap -= l.size;
         }
@@ -360,6 +383,10 @@ static void *cap_gc_alloc(size_t n, int atomic) {
         cap_gc_collect();
     }
     if (n > cap_class_size[CAP_NCLASS - 1]) {
+        if (cap_gc.max_heap && cap_gc.heap + n > cap_gc.max_heap) {
+            cap_gc_collect();
+            if (cap_gc.heap + n > cap_gc.max_heap) cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+        }
         void *p = calloc(1, n);
         if (!p) cap_gc_oom();
         if (cap_gc.nlarge == cap_gc.caplarge) {
@@ -381,6 +408,11 @@ static void *cap_gc_alloc(size_t n, int atomic) {
     }
     int cls = 0;
     while (cap_class_size[cls] < n) cls++;
+    if (!cap_gc.freelist[atomic][cls] && cap_gc.max_heap && cap_gc.heap + CAP_PAGE_SIZE > cap_gc.max_heap) {
+        cap_gc_collect();
+        if (!cap_gc.freelist[atomic][cls] && cap_gc.heap + CAP_PAGE_SIZE > cap_gc.max_heap)
+            cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+    }
     if (!cap_gc.freelist[atomic][cls]) {
         cap_gc_new_page(atomic, cls);
         if (cap_gc.heap > cap_gc.peak_heap) cap_gc.peak_heap = cap_gc.heap;
