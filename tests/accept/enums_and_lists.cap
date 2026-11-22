@@ -1,0 +1,75 @@
+enum Role { Patient, Clinician, Reception }
+enum Shape { Circle(int r), Rect(int w, int h), Empty }
+
+int area(Shape s) {
+    match (s) {
+        case Circle(r) { return 3 * r * r; }
+        case Rect(w, h) { return w * h; }
+        case Empty { return 0; }
+    }
+}
+
+string describe(Role r) {
+    match (r) {
+        case Clinician { return "clinician"; }
+        else { return "other"; }
+    }
+}
+
+int main() {
+    List<Shape> shapes = new List<Shape>();
+    shapes.push(Shape.Circle(2));
+    shapes.push(Shape.Rect(3, 4));
+    shapes.push(Shape.Empty);
+    int total = 0;
+    for (int i = 0; i < shapes.len(); i++) { total += area(shapes[i]); }
+    println("total " + int_to_str(total));
+    Role me = Role.Clinician;
+    if (me == Role.Clinician) { println("is " + describe(me)); }
+    if (me != Role.Patient) { println("not patient; " + describe(Role.Reception)); }
+    for (int j = 0; j < 5; j++) {
+        match (shapes[j % 3]) {
+            case Empty { break; }
+            else { println("shape " + int_to_str(j)); }
+        }
+    }
+    List<int> xs = new List<int>();
+    xs.push(5); xs.push(1); xs.push(4); xs.push(2);
+    xs.sort();
+    xs.insert(0, 9);
+    int removed = xs.remove_at(1);
+    if (let last = xs.pop()) { println("pop " + int_to_str(last)); }
+    List<string> parts = new List<string>();
+    for (int k = 0; k < xs.len(); k++) { parts.push(int_to_str(xs[k])); }
+    println(join(parts, ",") + " removed " + int_to_str(removed));
+    List<string> names = new List<string>();
+    names.push("pear"); names.push("Apple"); names.push("fig"); names.push("apple");
+    names.sort();
+    println(join(names, " "));
+    Map<int> m = new Map<int>();
+    m.set("a", 1); m.set("b", 2); m.set("c", 3);
+    bool gone = m.remove("b");
+    bool again = m.remove("b");
+    List<string> ks = m.keys();
+    println(join(ks, "") + " " + int_to_str(ks.len()));
+    if (gone && !again) { println("remove ok"); }
+    int countdown = 3;
+    countdown--;
+    println("countdown " + int_to_str(countdown));
+    println("bools " + int_to_str(bools()));
+    return 0;
+}
+
+// Packed List<bool>
+int bools() {
+    List<bool> flags = new List<bool>();
+    for (int i = 0; i < 10; i++) { flags.push(i % 3 == 0); }
+    flags[1] = true;
+    flags.insert(0, false);
+    bool first = flags.remove_at(0);
+    int count = 0;
+    for (int j = 0; j < flags.len(); j++) { if (flags[j]) { count++; } }
+    if (let last = flags.pop()) { if (last) { count += 100; } }
+    if (first) { count += 1000; }
+    return count;
+}

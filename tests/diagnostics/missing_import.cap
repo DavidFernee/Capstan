@@ -1,0 +1,3 @@
+// expect: cannot read imported file
+import "does_not_exist.cap";
+int main() { return 0; }

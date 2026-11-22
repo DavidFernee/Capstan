@@ -1,0 +1,4 @@
+// Spec: modules. Imports resolve relative to the importing file; each file loads once, so cycles are harmless.
+import "lib/util.cap";
+import "lib/shapes.cap";
+int main() { println(int_to_str(double_area(Shape.Square(3)))); return 0; }

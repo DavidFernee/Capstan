@@ -484,7 +484,11 @@ add(481, "Assigning instead of comparing", "absent", ASSIGN_IN_COND)
 add(482, "Comparing instead of assigning", "reject", "int main() { int x = 0; x == 1; return x; }", "expression result is unused")
 add(483, "Incorrect block delimitation", "absent",
     "int main() { int x = 0; if (x > 1) x = 2; x = 3; return x; }", note="Braces are mandatory.")
-add(484, "Omitted break statement in switch", "absent", SWITCH)
+add(484, "Omitted break statement in switch", "absent", SWITCH,
+    note="match has no fall-through between cases.")
+add(478, "Missing default case in multiple condition expression", "reject",
+    "enum Access { Read, Write, Admin }\nbool ok(Access a) { match (a) { case Read { return true; } case Write { return false; } } return false; }" + MAIN, "CWE-478",
+    "match must handle every variant or have an else branch.")
 add(561, "Dead code", "reject",
     "int f() { return 1; int unreachable = 2; }" + MAIN, "CWE-561", "Warning; an error with --strict (tested that way).")
 add(563, "Assignment to variable without use", "reject",

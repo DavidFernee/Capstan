@@ -11,14 +11,14 @@ itself, and this file can be thrown away.
 
 Usage:  python3 capstan0.py out.py file1.cap [file2.cap ...]
 """
-import sys
+import os, sys
 
 KEYWORDS = {
     "struct", "const", "if", "else", "while", "for", "return", "break", "continue",
     "true", "false", "none", "new", "let", "protected", "policy", "public", "test",
-    "authorize", "assert_denied", "assert_granted",
+    "authorize", "assert_denied", "assert_granted", "enum", "match", "case", "import",
 }
-PUNCT = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=",
+PUNCT = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=", "++", "--",
          "{", "}", "(", ")", "[", "]", ";", ",", ".", ":", "?", "<", ">", "=",
          "+", "-", "*", "/", "%", "!"]
 TYPE_WORDS = {"int", "bool", "string", "void", "Tainted", "Secret"}
@@ -185,6 +185,32 @@ class Parser:
         return ps
 
     def decl(self):
+        if self.at("import"):
+            self.p += 1
+            path = self.peek().text
+            self.p += 1
+            self.eat(";")
+            return ("import", path)
+        if self.at("enum"):
+            self.p += 1
+            name = self.ident()
+            self.eat("{")
+            variants = []
+            while not self.at("}"):
+                v = self.ident()
+                n = 0
+                if self.at("("):
+                    self.p += 1
+                    while not self.at(")"):
+                        self.parse_type(); self.ident(); n += 1
+                        if not self.at(")"):
+                            self.eat(",")
+                    self.eat(")")
+                variants.append((v, n))
+                if not self.at("}"):
+                    self.eat(",")
+            self.eat("}")
+            return ("enum", name, variants)
         if self.at("struct"):
             self.p += 1
             name = self.ident()
@@ -236,6 +262,31 @@ class Parser:
     def stmt(self):
         if self.at("{"):
             return ("block", self.block())
+        if self.at("match"):
+            self.p += 1
+            self.eat("(")
+            e = self.expr()
+            self.eat(")")
+            self.eat("{")
+            cases = []
+            while not self.at("}"):
+                if self.at("else"):
+                    self.p += 1
+                    cases.append((None, [], self.block()))
+                    continue
+                self.eat("case")
+                v = self.ident()
+                binds = []
+                if self.at("("):
+                    self.p += 1
+                    while not self.at(")"):
+                        binds.append(self.ident())
+                        if not self.at(")"):
+                            self.eat(",")
+                    self.eat(")")
+                cases.append((v, binds, self.block()))
+            self.eat("}")
+            return ("match", e, cases)
         if self.at("if"):
             self.p += 1
             self.eat("(")
@@ -295,6 +346,11 @@ class Parser:
             self.eat(end)
             return ("decl", name, e)
         e = self.expr()
+        if self.at("++") or self.at("--"):
+            op = "+=" if self.at("++") else "-="
+            self.p += 1
+            self.eat(end)
+            return ("assign", e, op, ("int", 1))
         if self.at("=") or self.at("+=") or self.at("-="):
             op = self.peek().text
             self.p += 1
@@ -442,6 +498,19 @@ def _idx(l, i):
 def _setidx(l, i, v):
     if i < 0 or i >= len(l): _panic("list index out of bounds", "CWE-787")
     l[i] = v
+class _Enum:
+    __slots__ = ("v", "vals")
+    def __init__(self, v, vals): self.v, self.vals = v, vals
+    def __eq__(self, o): return self.v == o.v and self.vals == o.vals
+    def __ne__(self, o): return not self.__eq__(o)
+def _pop(l): return l.pop() if l else None
+def _insert(l, i, v):
+    if i < 0 or i > len(l): _panic("list insert position out of bounds", "CWE-787")
+    l.insert(i, v)
+def _remove_at(l, i):
+    if i < 0 or i >= len(l): _panic("list index out of bounds", "CWE-125")
+    return l.pop(i)
+_MISSING = object()
 class _Grant:
     def __init__(self, bound): self.bound = bound
 def _authorize(pol, args):
@@ -517,11 +586,18 @@ METHODS = {
     "set": lambda r, a: f"{r}.__setitem__({a[0]}, {a[1]})",
     "has": lambda r, a: f"({a[0]} in {r})",
     "keys": lambda r, a: f"list({r}.keys())",
+    "pop": lambda r, a: f"_pop({r})",
+    "clear": lambda r, a: f"{r}.clear()",
+    "insert": lambda r, a: f"_insert({r}, {a[0]}, {a[1]})",
+    "remove_at": lambda r, a: f"_remove_at({r}, {a[0]})",
+    "sort": lambda r, a: f"{r}.sort()",
+    "remove": lambda r, a: f"({r}.pop({a[0]}, _MISSING) is not _MISSING)",
 }
 
 
 class Gen:
     def __init__(self):
+        self.enums = set()
         self.out = [PRELUDE]
         self.tmp = 0
         self.loops = []
@@ -555,10 +631,14 @@ class Gen:
             if op == "||": return f"({a} or {b})"
             return f"({a} {op} {b})"
         if k == "field":
+            if x[1][0] == "var" and x[1][1] in self.enums:
+                return f"_Enum({x[2]!r}, [])"
             return f"{self.e(x[1])}.u_{x[2]}"
         if k == "index":
             return f"_idx({self.e(x[1])}, {self.e(x[2])})"
         if k == "method":
+            if x[1][0] == "var" and x[1][1] in self.enums:
+                return f"_Enum({x[2]!r}, [{', '.join(self.e(a) for a in x[3])}])"
             return METHODS[x[2]](self.e(x[1]), [self.e(a) for a in x[3]])
         if k == "call":
             fn = ("b_" if x[1] in BUILTINS else "fn_") + x[1]
@@ -628,10 +708,24 @@ class Gen:
             self.body(ind + 1, s[4])
             self.loops.pop()
             self.stmt(ind + 1, s[3])
+        elif k == "match":
+            t = self.fresh()
+            self.emit(ind, f"{t} = {self.e(s[1])}")
+            first = True
+            for v, binds, body in s[2]:
+                if v is None:
+                    self.emit(ind, "else:" if not first else "if True:")
+                else:
+                    self.emit(ind, f"{'if' if first else 'elif'} {t}.v == {v!r}:")
+                    for i, b in enumerate(binds):
+                        self.emit(ind + 1, f"u_{b} = {t}.vals[{i}]")
+                self.body(ind + 1, body)
+                first = False
         else:
             raise SystemExit(f"stage0: cannot translate statement {k}")
 
     def program(self, decls):
+        self.enums = {d[1] for d in decls if d[0] == "enum"}
         for d in decls:
             if d[0] == "struct":
                 fs = d[2]
@@ -659,11 +753,18 @@ class Gen:
 def main():
     if len(sys.argv) < 3:
         raise SystemExit("usage: capstan0.py out.py file.cap [file.cap ...]")
-    decls = []
-    for path in sys.argv[2:]:
+    decls, queue, loaded = [], list(sys.argv[2:]), set()
+    while queue:
+        path = queue.pop(0)
+        if path in loaded:
+            continue
+        loaded.add(path)
         with open(path, "rb") as f:
             src = f.read().decode("latin-1")
-        decls += Parser(lex(src, path)).program()
+        for d in Parser(lex(src, path)).program():
+            decls.append(d)
+            if d[0] == "import":
+                queue.append(os.path.join(os.path.dirname(path), d[1]) if os.path.dirname(path) else d[1])
     with open(sys.argv[1], "w", encoding="latin-1") as f:
         f.write(Gen().program(decls))
 

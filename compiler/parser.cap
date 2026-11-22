@@ -58,7 +58,7 @@ void parse_fail(Parser p, string msg) {
         if (t.k == T_EOF) { found = "end of file"; }
         if (t.k == T_STR) { found = "a string literal"; }
         if (t.k == T_INT) { found = "a number"; }
-        report(p.ctx, t.file, t.line, true, "", msg + ", found '" + found + "'");
+        report_at(p.ctx, t.file, t.line, t.col, true, "", msg + ", found '" + found + "'");
     }
     p.failed = true;
     p.pos = p.toks.len() - 1;
@@ -80,7 +80,15 @@ string expect_ident(Parser p) {
 
 Node node_here(Parser p, int k) {
     Token t = cur(p);
-    return mk_node(k, t.file, t.line);
+    Node nd = mk_node(k, t.file, t.line);
+    nd.col = t.col;
+    return nd;
+}
+
+Node tok_node(int k, string s, Token t) {
+    Node nd = mk_node_s(k, s, t.file, t.line);
+    nd.col = t.col;
+    return nd;
 }
 
 // ---- types ----------------------------------------------------------------
@@ -158,7 +166,7 @@ Node parse_binary(Parser p, int min_prec) {
         if (prec == 0 || prec < min_prec) { break; }
         advance(p);
         Node rhs = parse_binary(p, prec + 1);
-        Node b = mk_node_s(N_BIN, t.s, t.file, t.line);
+        Node b = tok_node(N_BIN, t.s, t);
         b.kids.push(lhs);
         b.kids.push(rhs);
         lhs = b;
@@ -211,12 +219,12 @@ Node parse_postfix(Parser p, Node base) {
             Token nt = cur(p);
             string name = expect_ident(p);
             if (at(p, "(")) {
-                Node m = mk_node_s(N_METHOD, name, nt.file, nt.line);
+                Node m = tok_node(N_METHOD, name, nt);
                 m.kids.push(e);
                 parse_args(p, m);
                 e = m;
             } else {
-                Node f = mk_node_s(N_GETF, name, nt.file, nt.line);
+                Node f = tok_node(N_GETF, name, nt);
                 f.kids.push(e);
                 e = f;
             }
@@ -283,7 +291,7 @@ Node parse_primary(Parser p) {
         expect(p, "{");
         while (!at(p, "}") && !is_eof(p)) {
             Token ft = cur(p);
-            Node init = mk_node_s(N_INIT, expect_ident(p), ft.file, ft.line);
+            Node init = tok_node(N_INIT, expect_ident(p), ft);
             expect(p, ":");
             init.kids.push(parse_expr(p));
             nw.kids.push(init);
@@ -302,11 +310,11 @@ Node parse_primary(Parser p) {
     if (t.k == T_ID) {
         advance(p);
         if (at(p, "(")) {
-            Node call = mk_node_s(N_CALL, t.s, t.file, t.line);
+            Node call = tok_node(N_CALL, t.s, t);
             parse_args(p, call);
             return call;
         }
-        return mk_node_s(N_VAR, t.s, t.file, t.line);
+        return tok_node(N_VAR, t.s, t);
     }
     parse_fail(p, "expected an expression");
     return mk_node(N_NONE, t.file, t.line);
@@ -340,6 +348,18 @@ Node parse_simple(Parser p, string end) {
         return d;
     }
     Node e = parse_expr(p);
+    if (at(p, "++") || at(p, "--")) {
+        Node inc = node_here(p, N_ASSIGN);
+        inc.s = "+=";
+        if (at(p, "--")) { inc.s = "-="; }
+        advance(p);
+        Node one = mk_node(N_INT, inc.file, inc.line);
+        one.n = 1;
+        inc.kids.push(e);
+        inc.kids.push(one);
+        expect(p, end);
+        return inc;
+    }
     if (at(p, "=") || at(p, "+=") || at(p, "-=")) {
         Node a = node_here(p, N_ASSIGN);
         a.s = cur(p).s;
@@ -362,8 +382,43 @@ Node parse_stmt(Parser p) {
     return st;
 }
 
+// match (value) { case Variant(a, b) { ... } case Other { ... } else { ... } }
+Node parse_match(Parser p) {
+    Node m = node_here(p, N_MATCH);
+    advance(p);
+    expect(p, "(");
+    m.kids.push(parse_expr(p));
+    expect(p, ")");
+    expect(p, "{");
+    while (!at(p, "}") && !is_eof(p)) {
+        Node cs = node_here(p, N_CASE);
+        if (at(p, "else")) {
+            advance(p);
+            cs.n = 1;
+        } else {
+            expect(p, "case");
+            cs.s = expect_ident(p);
+            if (at(p, "(")) {
+                advance(p);
+                while (!at(p, ")") && !is_eof(p)) {
+                    Node b = node_here(p, N_PARAM);
+                    b.s = expect_ident(p);
+                    cs.kids.push(b);
+                    if (!at(p, ")")) { expect(p, ","); }
+                }
+                expect(p, ")");
+            }
+        }
+        cs.kids.push(parse_block(p));
+        m.kids.push(cs);
+    }
+    expect(p, "}");
+    return m;
+}
+
 Node parse_stmt_inner(Parser p) {
     if (at(p, "{")) { return parse_block(p); }
+    if (at(p, "match")) { return parse_match(p); }
     if (at(p, "if")) {
         Node ifn = node_here(p, N_IF);
         advance(p);
@@ -456,6 +511,44 @@ void parse_params(Parser p, Node into) {
 }
 
 Node parse_decl(Parser p) {
+    if (at(p, "import")) {
+        Node im = node_here(p, N_IMPORT);
+        advance(p);
+        Token path = cur(p);
+        if (path.k != T_STR) {
+            parse_fail(p, "expected the imported file name as a string");
+            return im;
+        }
+        im.s = path.s;
+        advance(p);
+        expect(p, ";");
+        return im;
+    }
+    if (at(p, "enum")) {
+        Node en = node_here(p, N_ENUM);
+        advance(p);
+        en.s = expect_ident(p);
+        expect(p, "{");
+        while (!at(p, "}") && !is_eof(p)) {
+            Node v = node_here(p, N_VARIANT);
+            v.s = expect_ident(p);
+            if (at(p, "(")) {
+                advance(p);
+                while (!at(p, ")") && !is_eof(p)) {
+                    Node fd = node_here(p, N_FIELD);
+                    fd.ty = parse_type(p);
+                    fd.s = expect_ident(p);
+                    v.kids.push(fd);
+                    if (!at(p, ")")) { expect(p, ","); }
+                }
+                expect(p, ")");
+            }
+            en.kids.push(v);
+            if (!at(p, "}")) { expect(p, ","); }
+        }
+        expect(p, "}");
+        return en;
+    }
     if (at(p, "struct")) {
         Node st = node_here(p, N_STRUCT);
         advance(p);

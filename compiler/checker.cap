@@ -21,6 +21,7 @@ struct Checker {
     int asserts;
     List<Map<int>> used;        // per scope: name -> read count (CWE-563)
     List<Map<Node>> decl_at;    // per scope: name -> declaring node
+    Map<Node> enums;
 }
 
 Type ty_of(Node n) {
@@ -100,12 +101,35 @@ void declare(Checker c, Node at, string name, Type t) {
 
 // ---- type validation ----------------------------------------------------------
 
+// The parser cannot tell struct names from enum names; resolve them here.
+void normalise(Checker c, Type t) {
+    if (t.k == TY_STRUCT && c.enums.has(t.name)) { t.k = TY_ENUM; }
+    for (int i = 0; i < t.args.len(); i += 1) { normalise(c, t.args[i]); }
+}
+
+void normalise_node(Checker c, Node n) {
+    if (let t = n.ty) { normalise(c, t); }
+    for (int i = 0; i < n.kids.len(); i += 1) {
+        int k = n.kids[i].k;
+        if (k == N_PARAM || k == N_FIELD || k == N_VARIANT) { normalise_node(c, n.kids[i]); }
+    }
+}
+
+List<string> type_names(Checker c) {
+    List<string> out = c.structs.keys();
+    List<string> en = c.enums.keys();
+    for (int i = 0; i < en.len(); i += 1) { out.push(en[i]); }
+    out.push("int"); out.push("bool"); out.push("string"); out.push("Tainted"); out.push("Secret");
+    return out;
+}
+
 void check_type(Checker c, Node at, Type t, bool allow_void) {
+    normalise(c, t);
     if (t.k == TY_VOID && !allow_void) {
         error_at(c.ctx, at, "", "void is only allowed as a function return type");
     }
     if (t.k == TY_STRUCT && !c.structs.has(t.name)) {
-        error_at(c.ctx, at, "", "unknown type '" + t.name + "'");
+        error_at(c.ctx, at, "", "unknown type '" + t.name + "'" + suggest(t.name, type_names(c)));
     }
     if (t.k == TY_GRANT && !c.policies.has(t.name)) {
         error_at(c.ctx, at, "", "Grant refers to unknown policy '" + t.name + "'");
@@ -186,6 +210,14 @@ void check_hardcoded(Checker c, Node at, string name, Node value) {
 
 // ---- expressions ----------------------------------------------------------------
 
+List<string> field_names(Checker c, string sname) {
+    List<string> out = new List<string>();
+    if (let st = c.structs.get(sname)) {
+        for (int i = 0; i < st.kids.len(); i += 1) { out.push(st.kids[i].s); }
+    }
+    return out;
+}
+
 Type? field_type(Checker c, string sname, string fname) {
     if (let st = c.structs.get(sname)) {
         for (int i = 0; i < st.kids.len(); i += 1) {
@@ -193,6 +225,63 @@ Type? field_type(Checker c, string sname, string fname) {
         }
     }
     return none;
+}
+
+List<string> visible_names(Checker c) {
+    List<string> out = new List<string>();
+    for (int i = 0; i < c.depth; i += 1) {
+        List<string> ks = c.scopes[i].keys();
+        for (int j = 0; j < ks.len(); j += 1) { out.push(ks[j]); }
+    }
+    List<string> cs = c.const_types.keys();
+    for (int k = 0; k < cs.len(); k += 1) { out.push(cs[k]); }
+    return out;
+}
+
+// Name.Variant or Name.Variant(values): is the receiver an enum name?
+bool is_enum_ref(Checker c, Node recv) {
+    if (recv.k != N_VAR || !c.enums.has(recv.s)) { return false; }
+    if (let _l = find_local(c, recv.s)) { return false; }
+    return true;
+}
+
+Type check_enum_value(Checker c, Node e, int first) {
+    string ename = e.kids[0].s;
+    if (let en = c.enums.get(ename)) {
+        List<string> names = new List<string>();
+        for (int i = 0; i < en.kids.len(); i += 1) {
+            Node v = en.kids[i];
+            names.push(v.s);
+            if (v.s == e.s) {
+                List<Node> args = new List<Node>();
+                for (int j = first; j < e.kids.len(); j += 1) { args.push(e.kids[j]); }
+                e.k = N_ENUMVAL;
+                e.s2 = ename;
+                e.n = i;
+                e.kids = args;
+                if (args.len() != v.kids.len()) {
+                    error_at(c.ctx, e, "", ename + "." + v.s + " takes " + int_to_str(v.kids.len()) + " value(s), found " + int_to_str(args.len()));
+                    return mk_type(TY_ERR);
+                }
+                for (int a = 0; a < args.len(); a += 1) {
+                    expect_type(c, args[a], check_expr(c, args[a]), ty_of(v.kids[a]), ename + "." + v.s + " value " + int_to_str(a + 1));
+                }
+                return mk_named(TY_ENUM, ename);
+            }
+        }
+        error_at(c.ctx, e, "", "enum " + ename + " has no variant '" + e.s + "'" + suggest(e.s, names));
+    }
+    return mk_type(TY_ERR);
+}
+
+bool simple_enum(Checker c, string name) {
+    if (let en = c.enums.get(name)) {
+        for (int i = 0; i < en.kids.len(); i += 1) {
+            if (en.kids[i].kids.len() > 0) { return false; }
+        }
+        return true;
+    }
+    return false;
 }
 
 Type check_expr(Checker c, Node e) {
@@ -207,7 +296,11 @@ Type check_expr(Checker c, Node e) {
             e.n = 1;
             return typed(e, ct);
         }
-        error_at(c.ctx, e, "", "unknown variable '" + e.s + "'");
+        if (c.enums.has(e.s)) {
+            error_at(c.ctx, e, "", "'" + e.s + "' is an enum; write " + e.s + ".Variant");
+            return typed(e, mk_type(TY_ERR));
+        }
+        error_at(c.ctx, e, "", "unknown variable '" + e.s + "'" + suggest(e.s, visible_names(c)));
         return typed(e, mk_type(TY_ERR));
     }
     if (k == N_NOT) {
@@ -219,6 +312,8 @@ Type check_expr(Checker c, Node e) {
         return typed(e, mk_type(TY_INT));
     }
     if (k == N_BIN) { return typed(e, check_binary(c, e)); }
+    if (k == N_GETF && is_enum_ref(c, e.kids[0])) { return typed(e, check_enum_value(c, e, 1)); }
+    if (k == N_METHOD && is_enum_ref(c, e.kids[0])) { return typed(e, check_enum_value(c, e, 1)); }
     if (k == N_GETF) {
         Type ot = check_expr(c, e.kids[0]);
         if (ot.k == TY_OPT) {
@@ -230,7 +325,7 @@ Type check_expr(Checker c, Node e) {
             return typed(e, mk_type(TY_ERR));
         }
         if (let ft = field_type(c, ot.name, e.s)) { return typed(e, ft); }
-        error_at(c.ctx, e, "", "struct " + ot.name + " has no field '" + e.s + "'");
+        error_at(c.ctx, e, "", "struct " + ot.name + " has no field '" + e.s + "'" + suggest(e.s, field_names(c, ot.name)));
         return typed(e, mk_type(TY_ERR));
     }
     if (k == N_INDEX) {
@@ -287,6 +382,14 @@ Type check_binary(Checker c, Node e) {
     if (a.k == TY_OPT || b.k == TY_OPT) {
         error_at(c.ctx, e, "CWE-476", "operand of '" + op + "' may be none; unwrap it with if (let x = ...)");
         return mk_type(TY_ERR);
+    }
+    if ((op == "==" || op == "!=") && a.k == TY_ENUM) {
+        if (!type_eq(a, b)) {
+            error_at(c.ctx, e, "", "cannot compare " + type_str(a) + " with " + type_str(b));
+        } else if (!simple_enum(c, a.name)) {
+            error_at(c.ctx, e, "", "enum " + a.name + " carries values, so it cannot be compared with '" + op + "'; use match");
+        }
+        return mk_type(TY_BOOL);
     }
     if (op == "==" || op == "!=") {
         bool ok = (a.k == TY_INT && b.k == TY_INT) || (a.k == TY_BOOL && b.k == TY_BOOL) || (is_stringish(a) && is_stringish(b));
@@ -353,6 +456,26 @@ Type check_method(Checker c, Node e) {
     if (rt.k == TY_LIST) {
         Type el = rt.args[0];
         if (m == "len") { want_args(c, e, 1, 0, "len"); return mk_type(TY_INT); }
+        if (m == "pop") { want_args(c, e, 1, 0, "pop"); return mk_wrap(TY_OPT, el); }
+        if (m == "clear") { want_args(c, e, 1, 0, "clear"); return mk_type(TY_VOID); }
+        if (m == "remove_at") {
+            want_args(c, e, 1, 1, "remove_at");
+            if (e.kids.len() == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "remove_at()"); }
+            return el;
+        }
+        if (m == "insert") {
+            want_args(c, e, 1, 2, "insert");
+            if (e.kids.len() == 3) {
+                expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "insert() position");
+                expect_type(c, e, ty_of(e.kids[2]), el, "insert()");
+            }
+            return mk_type(TY_VOID);
+        }
+        if (m == "sort") {
+            want_args(c, e, 1, 0, "sort");
+            if (el.k != TY_INT && el.k != TY_STR) { error_at(c.ctx, e, "", "sort() needs List<int> or List<string>"); }
+            return mk_type(TY_VOID);
+        }
         if (m == "push") {
             want_args(c, e, 1, 1, "push");
             if (e.kids.len() == 2) { expect_type(c, e, ty_of(e.kids[1]), el, "push()"); }
@@ -376,6 +499,11 @@ Type check_method(Checker c, Node e) {
             return mk_type(TY_VOID);
         }
         if (m == "keys") { want_args(c, e, 1, 0, "keys"); return mk_wrap(TY_LIST, mk_type(TY_STR)); }
+        if (m == "remove") {
+            want_args(c, e, 1, 1, "remove");
+            if (e.kids.len() == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_STR), "remove()"); }
+            return mk_type(TY_BOOL);
+        }
     }
     error_at(c.ctx, e, "", type_str(rt) + " has no method '" + m + "'");
     return mk_type(TY_ERR);
@@ -393,6 +521,16 @@ void check_args(Checker c, Node e, Node callee, int first, string what) {
         Node arg = e.kids[first + j];
         expect_type(c, arg, ty_of(arg), ty_of(callee.kids[j]), "argument " + int_to_str(j + 1) + " of " + what);
     }
+}
+
+List<string> builtin_names() {
+    List<string> b = new List<string>();
+    b.push("print"); b.push("println"); b.push("int_to_str"); b.push("char_str"); b.push("read_file");
+    b.push("read_line"); b.push("write_file"); b.push("args"); b.push("exit"); b.push("join"); b.push("assert");
+    b.push("validate_ident"); b.push("validate_int"); b.push("escape_c"); b.push("escape_html"); b.push("escape_log");
+    b.push("trust"); b.push("taint"); b.push("sql_query"); b.push("run"); b.push("secret_env"); b.push("secret_eq");
+    b.push("hash"); b.push("hash_verify"); b.push("hash_password"); b.push("verify_password"); b.push("needs_rehash");
+    return b;
 }
 
 string banned_hint(string name) {
@@ -598,7 +736,10 @@ Type check_call(Checker c, Node e) {
         while (hint.at(bar) != '|') { bar += 1; }
         error_at(c.ctx, e, hint.slice(0, bar), hint.slice(bar + 1, hint.len()));
     } else {
-        error_at(c.ctx, e, "", "unknown function '" + f + "'");
+        List<string> fnames = c.fns.keys();
+        List<string> bi = builtin_names();
+        for (int b = 0; b < bi.len(); b += 1) { fnames.push(bi[b]); }
+        error_at(c.ctx, e, "", "unknown function '" + f + "'" + suggest(f, fnames));
     }
     return mk_type(TY_ERR);
 }
@@ -787,6 +928,7 @@ void check_stmt(Checker c, Node s) {
         }
         return;
     }
+    if (k == N_MATCH) { check_match(c, s); return; }
     if (k == N_BREAK || k == N_CONTINUE) {
         if (c.loops == 0) { error_at(c.ctx, s, "", "break/continue outside a loop"); }
         return;
@@ -809,6 +951,65 @@ void check_stmt(Checker c, Node s) {
     error_at(c.ctx, s, "", "unsupported statement");
 }
 
+void check_match(Checker c, Node s) {
+    Type mt = check_expr(c, s.kids[0]);
+    if (mt.k != TY_ENUM) {
+        if (mt.k == TY_OPT) {
+            error_at(c.ctx, s, "CWE-476", "match on a value that may be none; unwrap it with if (let x = ...)");
+        } else if (mt.k != TY_ERR) {
+            error_at(c.ctx, s, "", "match needs an enum value, found " + type_str(mt));
+        }
+        return;
+    }
+    if (let en = c.enums.get(mt.name)) {
+        Map<int> seen = new Map<int>();
+        bool has_else = false;
+        List<string> names = new List<string>();
+        for (int v = 0; v < en.kids.len(); v += 1) { names.push(en.kids[v].s); }
+        for (int i = 1; i < s.kids.len(); i += 1) {
+            Node cs = s.kids[i];
+            Node body = cs.kids[cs.kids.len() - 1];
+            if (cs.n == 1) {
+                if (has_else) { error_at(c.ctx, cs, "", "match has more than one else branch"); }
+                if (i != s.kids.len() - 1) { error_at(c.ctx, cs, "", "else must be the last branch of a match"); }
+                if (seen.keys().len() == en.kids.len()) { warn_at(c.ctx, cs, "CWE-561", "every variant is already handled, so this else can never run"); }
+                has_else = true;
+                check_block(c, body);
+            } else {
+                Node? variant = none;
+                for (int j = 0; j < en.kids.len(); j += 1) {
+                    if (en.kids[j].s == cs.s) { variant = en.kids[j]; }
+                }
+                if (let vn = variant) {
+                    if (seen.has(cs.s)) { error_at(c.ctx, cs, "", "variant " + cs.s + " is handled twice"); }
+                    seen.set(cs.s, 1);
+                    int nb = cs.kids.len() - 1;
+                    if (nb != vn.kids.len()) {
+                        error_at(c.ctx, cs, "", "case " + cs.s + " binds " + int_to_str(nb) + " value(s) but " + mt.name + "." + cs.s + " carries " + int_to_str(vn.kids.len()));
+                    }
+                    push_scope(c);
+                    for (int b = 0; b < nb && b < vn.kids.len(); b += 1) {
+                        declare(c, cs.kids[b], cs.kids[b].s, ty_of(vn.kids[b]));
+                    }
+                    check_block(c, body);
+                    pop_scope(c);
+                } else {
+                    error_at(c.ctx, cs, "", "enum " + mt.name + " has no variant '" + cs.s + "'" + suggest(cs.s, names));
+                }
+            }
+        }
+        List<string> missing = new List<string>();
+        for (int m = 0; m < en.kids.len(); m += 1) {
+            if (!seen.has(en.kids[m].s)) { missing.push(en.kids[m].s); }
+        }
+        if (missing.len() > 0 && !has_else) {
+            error_at(c.ctx, s, "CWE-478", "match on " + mt.name + " does not handle " + join(missing, ", ") + "; add those cases or an else branch");
+        } else {
+            s.n = 1;
+        }
+    }
+}
+
 // Does this statement always end in a return?
 bool always_returns(Node s) {
     if (s.k == N_RETURN) { return true; }
@@ -823,6 +1024,13 @@ bool always_returns(Node s) {
     }
     if (s.k == N_WHILE && s.kids[0].k == N_BOOL && s.kids[0].n == 1) { return !breaks_out(s.kids[1]); }
     if (s.k == N_EXPR && s.kids[0].k == N_CALL && s.kids[0].s == "exit") { return true; }
+    if (s.k == N_MATCH && s.n == 1 && s.kids.len() > 1) {
+        for (int i = 1; i < s.kids.len(); i += 1) {
+            Node cs = s.kids[i];
+            if (!always_returns(cs.kids[cs.kids.len() - 1])) { return false; }
+        }
+        return true;
+    }
     return false;
 }
 
@@ -886,7 +1094,7 @@ void check_policy(Checker c, Node p) {
         error_at(c.ctx, p, "CWE-862", "policy '" + p.s + "' permits every request; declare it 'public policy' if that is intended");
     }
     if (compares_string_literal(body)) {
-        warn_at(c.ctx, p, "CAP-ROLE", "policy '" + p.s + "' compares against a string literal; use int constants for roles so a typo cannot fail open");
+        warn_at(c.ctx, p, "CAP-ROLE", "policy '" + p.s + "' compares against a string literal; use an enum for roles so a typo cannot fail open");
     }
     if (!always_returns(body)) {
         error_at(c.ctx, p, "", "policy '" + p.s + "' must return a decision on every path (default deny)");
@@ -901,22 +1109,23 @@ Checker new_checker(Ctx ctx) {
         policy_ids: new Map<int>(), consts: new Map<Node>(), const_types: new Map<Type>(),
         scopes: new List<Map<Type>>(), depth: 0, ret: mk_type(TY_VOID), loops: 0,
         in_test: false, in_policy: false, denials: new Map<int>(), asserts: 0,
-        used: new List<Map<int>>(), decl_at: new List<Map<Node>>()
+        used: new List<Map<int>>(), decl_at: new List<Map<Node>>(), enums: new Map<Node>()
     };
 }
 
 bool taken(Checker c, string name) {
-    return c.structs.has(name) || c.fns.has(name) || c.policies.has(name) || c.consts.has(name);
+    return c.structs.has(name) || c.fns.has(name) || c.policies.has(name) || c.consts.has(name) || c.enums.has(name);
 }
 
 void register(Checker c, Node d) {
-    if (d.k == N_STRUCT || d.k == N_FN || d.k == N_POLICY || d.k == N_CONST) {
+    if (d.k == N_STRUCT || d.k == N_FN || d.k == N_POLICY || d.k == N_CONST || d.k == N_ENUM) {
         if (taken(c, d.s)) {
             error_at(c.ctx, d, "", "'" + d.s + "' is declared more than once");
             return;
         }
     }
     if (d.k == N_STRUCT) { c.structs.set(d.s, d); }
+    if (d.k == N_ENUM) { c.enums.set(d.s, d); }
     if (d.k == N_FN) { c.fns.set(d.s, d); }
     if (d.k == N_POLICY) {
         c.policy_ids.set(d.s, c.policies.keys().len());
@@ -978,6 +1187,24 @@ void check_fn(Checker c, Node f) {
 
 void check_program(Checker c, List<Node> decls, bool need_main) {
     for (int i = 0; i < decls.len(); i += 1) { register(c, decls[i]); }
+    for (int n0 = 0; n0 < decls.len(); n0 += 1) { normalise_node(c, decls[n0]); }
+    for (int e0 = 0; e0 < decls.len(); e0 += 1) {
+        Node en = decls[e0];
+        if (en.k == N_ENUM) {
+            Map<int> vseen = new Map<int>();
+            if (en.kids.len() == 0) { error_at(c.ctx, en, "", "enum " + en.s + " has no variants"); }
+            for (int v = 0; v < en.kids.len(); v += 1) {
+                Node vn = en.kids[v];
+                if (vseen.has(vn.s)) { error_at(c.ctx, vn, "", "duplicate variant '" + vn.s + "'"); }
+                vseen.set(vn.s, 1);
+                for (int f = 0; f < vn.kids.len(); f += 1) {
+                    Type ft = ty_of(vn.kids[f]);
+                    check_type(c, vn.kids[f], ft, false);
+                    if (contains_grant(ft)) { error_at(c.ctx, vn.kids[f], "CWE-613", "grants cannot be stored in enum values"); }
+                }
+            }
+        }
+    }
     for (int i2 = 0; i2 < decls.len(); i2 += 1) {
         Node d = decls[i2];
         if (d.k == N_STRUCT) {
