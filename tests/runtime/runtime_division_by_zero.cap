@@ -1,0 +1,3 @@
+// expect-runtime: CWE-369
+int div(int a, int b) { return a / b; }
+int main() { return div(1, 0); }

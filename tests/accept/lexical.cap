@@ -1,0 +1,11 @@
+// Spec: lexical structure. Comments, literals, escapes, character literals.
+/* block comment with // inside and "quotes" */
+int main() {
+    println("tab[\t] quote[\"] backslash[\\] apostrophe[\'] cr-free");
+    println(int_to_str('A') + " " + int_to_str('\n') + " " + int_to_str('\\') + " " + int_to_str('\'') + " " + int_to_str('\0'));
+    println(int_to_str(0) + " " + int_to_str(007) + " " + int_to_str(9223372036854775807));
+    string s = "multi" /* inline */ + "part"; // trailing
+    println(s);
+    println("unicode bytes: " + int_to_str("é".len()) + " " + int_to_str("日本".len()));
+    return 0;
+}

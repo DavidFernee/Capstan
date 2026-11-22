@@ -1,0 +1,33 @@
+name: ci
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 15 * * *"      # nightly full run (01:17 Melbourne time)
+  workflow_dispatch:
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, cc: gcc }
+          - { os: ubuntu-latest, cc: clang }
+          - { os: macos-latest,  cc: clang }
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap (stage 0 -> self-hosted fixpoint)
+        run: make
+      - name: Test suite
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then tests/run.sh --full; else tests/run.sh; fi
+      - name: Keep fuzz failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failures-${{ matrix.os }}-${{ matrix.cc }}
+          path: tests/fuzz/failures/
+          if-no-files-found: ignore

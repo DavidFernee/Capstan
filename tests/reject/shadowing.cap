@@ -1,0 +1,6 @@
+// expect: CAP-SHADOW
+int main() {
+    int count = 0;
+    if (true) { int count = 5; }
+    return count;
+}

@@ -1,0 +1,14 @@
+// expect-runtime: CWE-639
+// A grant obtained for one record cannot be replayed against another (IDOR).
+struct User { int id; }
+struct Doc { int owner; string body; }
+policy ReadDoc(User u, Doc d) { return u.id == d.owner; }
+protected(ReadDoc) string read(Grant<ReadDoc> g, Doc d) { return d.body; }
+int main() {
+    User me = new User{id: 1};
+    Doc mine = new Doc{owner: 1, body: "mine"};
+    Doc theirs = new Doc{owner: 2, body: "someone else's medical history"};
+    if (let g = authorize ReadDoc(me, mine)) { println(read(g, theirs)); }
+    return 0;
+}
+test "deny" { assert_denied ReadDoc(new User{id: 2}, new Doc{owner: 1, body: ""}); }

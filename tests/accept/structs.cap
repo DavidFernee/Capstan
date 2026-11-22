@@ -1,0 +1,21 @@
+// Spec: structs are reference types.
+struct Account { string owner; int balance; Account? backup; }
+void deposit(Account a, int amount) { a.balance += amount; }
+int main() {
+    Account a = new Account{owner: "Ada", balance: 10, backup: none};
+    Account alias = a;
+    deposit(alias, 5);
+    println(a.owner + " " + int_to_str(a.balance));
+    Account b = new Account{balance: 1, owner: "Bob", backup: a};
+    if (let bk = b.backup) {
+        bk.balance = 100;
+    }
+    println(int_to_str(a.balance));
+    List<Account> all = new List<Account>();
+    all.push(a);
+    all.push(b);
+    all[1].balance -= 1;
+    all[0] = b;
+    println(all[0].owner + " " + int_to_str(all[0].balance) + " " + int_to_str(all.len()));
+    return 0;
+}

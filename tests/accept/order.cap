@@ -1,0 +1,16 @@
+// Capstan evaluates operands strictly left to right, unlike C.
+struct Counter { int n; }
+int tick(Counter c, string label) {
+    c.n += 1;
+    println(label + " " + int_to_str(c.n));
+    return c.n;
+}
+int pair(int a, int b) { return a * 10 + b; }
+int main() {
+    Counter c = new Counter{n: 0};
+    int r = pair(tick(c, "first"), tick(c, "second"));
+    println("pair " + int_to_str(r));
+    int s = tick(c, "left") - tick(c, "right");
+    println("diff " + int_to_str(s));
+    return 0;
+}

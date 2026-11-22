@@ -1,0 +1,132 @@
+# Capstan v0.1 language reference
+
+## Lexical structure
+
+- Comments: `// line` and `/* block */`.
+- Identifiers: `[A-Za-z_][A-Za-z0-9_]*`.
+- Integer literals: decimal, must fit in a signed 64-bit integer (otherwise a compile error).
+- Character literals: `'a'`, `'\n'`, `'\''`; they are `int` values 0–255.
+- String literals: `"..."` with escapes `\n \t \r \0 \\ \" \'`. Strings are byte sequences.
+- Keywords: `struct const if else while for return break continue true false none new let protected policy public test authorize assert_denied assert_granted`.
+
+## Types
+
+| Type | Meaning |
+|---|---|
+| `int` | signed 64-bit integer; all arithmetic is overflow-checked |
+| `bool` | `true` / `false` |
+| `string` | immutable, trusted byte string |
+| `Tainted` | immutable byte string from an untrusted source |
+| `Secret` | a credential; cannot be printed, concatenated, compared with `==` or read |
+| `S` | a `struct` (reference type) |
+| `List<T>` | growable, bounds-checked list |
+| `Map<T>` | map from `string` keys to `T`, iterated in insertion order |
+| `Grant<P>` | proof that policy `P` approved a request |
+| `T?` | optional: a `T` or `none` |
+| `void` | function return type only |
+
+There is no null. Only `T?` can hold `none`, and an optional must be unwrapped with
+`if (let x = value) { ... } else { ... }` before use. A `T` converts implicitly to `T?`.
+List and map elements cannot be optional, and optionals cannot nest.
+
+## Declarations
+
+```java
+struct Point { int x; int y; Point? next; }
+const int LIMIT = 100;
+int add(int a, int b) { return a + b; }
+policy CanEdit(User u, Doc d) { return u.id == d.owner; }
+public policy Anyone(User u) { return true; }
+protected(CanEdit) void edit(Grant<CanEdit> g, Doc d) { ... }
+test "owners can edit" { assert_granted CanEdit(owner, doc); }
+```
+
+- Every variable must be initialised where it is declared.
+- Every field must be given a value in `new S{field: value, ...}`.
+- A variable may not shadow a variable or constant from an enclosing scope.
+- A non-void function must return on every path.
+- The program entry point is `int main()` or `void main()`.
+
+## Statements
+
+`T name = expr;`, `target = expr;`, `target += expr;`, `target -= expr;`, `if (cond) {...} else {...}`,
+`if (let x = opt) {...} else {...}`, `while (cond) {...}`, `for (init; cond; step) {...}`,
+`return expr;`, `break;`, `continue;`, and expression statements (calls only).
+Braces are required around every body.
+
+## Expressions
+
+Precedence from low to high: `||`, `&&`, `== !=`, `< <= > >=`, `+ -`, `* / %`, unary `! -`,
+then postfix `.field`, `.method(args)`, `[index]`.
+
+- `+` adds `int`s or concatenates strings. If either string operand is `Tainted`, the result is `Tainted`.
+- `==` and `!=` compare `int`, `bool` and strings. Structs and optionals cannot be compared.
+- `/` truncates toward zero. Division by zero stops the program (CWE-369).
+- **Evaluation is strictly left to right**, including function arguments.
+
+### Methods
+
+| Receiver | Methods |
+|---|---|
+| `string`, `Tainted` | `len()`, `at(i)` → byte as `int`, `slice(a, b)` → same type |
+| `List<T>` | `len()`, `push(v)`, indexing `xs[i]`, `xs[i] = v` |
+| `Map<T>` | `get(k)` → `T?`, `set(k, v)`, `has(k)`, `keys()` → `List<string>` |
+
+## Built-in functions
+
+| Function | Notes |
+|---|---|
+| `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
+| `int_to_str(i)`, `char_str(c)` | |
+| `args()` → `List<string>` | command-line arguments (supplied by the operator) |
+| `read_file(path)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources |
+| `write_file(path, data)` → `bool` | ignoring the result is warning CWE-252 |
+| `join(list, sep)`, `exit(code)`, `assert(cond)` | |
+| `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
+| `escape_html(t)`, `escape_log(t)`, `escape_c(t)` → `string` | escapers |
+| `trust(t, "justification")` → `string` | explicit escape hatch; always reported as an AUDIT warning |
+| `taint(s)` → `Tainted` | marks a value as untrusted (useful in tests) |
+| `sql_query("literal", params...)` | query text must be a literal; values are bound parameters |
+| `run("program", args...)` | program must be a literal; no shell; arguments are passed separately |
+| `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | constant-time comparison |
+| `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…` |
+| `hash_password(p)`, `verify_password(p, h)`, `needs_rehash(h)` | PBKDF2-SHA256 with 600,000 iterations; output carries its algorithm and cost |
+
+In v0.1, `sql_query` and `run` are demonstration sinks: they print what they would execute.
+
+## Authorisation
+
+- `policy P(params) { ... }` returns `bool` and must return on every path.
+- `authorize P(args)` evaluates the policy and returns `Grant<P>?`.
+- A `Grant<P>` can only come from `authorize`. It can't be constructed, stored in
+  a field, collection or constant, or returned from a function.
+- `protected(P)` functions must take `Grant<P>` as their first parameter. Only
+  protected functions may take grants, and calling one without a grant is CWE-862.
+- A grant is bound to the struct objects it was issued for. If a protected function
+  is passed a different object of a type the policy checked, the program stops with CWE-639.
+- Policy analysis:
+  - `return true;` without `public` is an error (CWE-862).
+  - `Tainted` parameters are an error (CWE-807).
+  - An ignored parameter is a warning (CWE-639).
+  - Comparing against a string literal is a warning (CAP-ROLE).
+- Every non-public policy needs a test containing `assert_denied P(...)`. Without one it is a
+  warning, and an error under `--release`.
+
+## Memory and limits
+
+- Memory is managed by a garbage collector; there is no way to free memory manually.
+  `CAPSTAN_GC_STATS=1` prints collector statistics on exit; `CAPSTAN_GC_STRESS=N` collects every N allocations (for testing).
+- Runaway recursion stops the program with CWE-674 rather than crashing.
+- Source nesting (expressions, statements, operator chains) is limited to 1,000 levels;
+  deeper input is a compile error (CWE-674).
+- A program stopped by a runtime check exits with code 101.
+
+## Compiler modes
+
+```
+capstanc check [--strict] [--release] files...
+capstanc build -o out.c [--strict] [--release] files...
+capstanc test  -o out.c [--strict] files...
+```
+
+`--strict` turns every warning into an error. `--release` makes missing policy tests errors.

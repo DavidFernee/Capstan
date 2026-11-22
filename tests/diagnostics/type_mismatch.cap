@@ -1,0 +1,2 @@
+// expect: expected int, found string
+int main() { int x = "five"; return x; }

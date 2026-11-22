@@ -1,0 +1,5 @@
+// expect: CWE-862
+struct User { int id; }
+struct Doc { int owner; }
+policy ReadDoc(User u, Doc d) { return true; }
+int main() { return 0; }

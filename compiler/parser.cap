@@ -1,0 +1,531 @@
+// Capstan compiler: recursive-descent parser.
+
+const int MAX_NESTING = 1000;
+
+struct Parser {
+    List<Token> toks;
+    int pos;
+    Ctx ctx;
+    bool failed;
+    int depth;
+}
+
+// Deeply nested input must produce a diagnostic, not exhaust the compiler's stack (CWE-674).
+bool enter(Parser p) {
+    p.depth += 1;
+    if (p.depth > MAX_NESTING) {
+        parse_fail(p, "nesting is too deep (limit " + int_to_str(MAX_NESTING) + ") [CWE-674]");
+        return false;
+    }
+    return true;
+}
+
+void leave(Parser p) {
+    p.depth -= 1;
+}
+
+Token cur(Parser p) {
+    return p.toks[p.pos];
+}
+
+Token ahead(Parser p, int k) {
+    int i = p.pos + k;
+    if (i >= p.toks.len()) { i = p.toks.len() - 1; }
+    return p.toks[i];
+}
+
+bool is_eof(Parser p) {
+    return cur(p).k == T_EOF;
+}
+
+bool at_k(Parser p, int k, string s) {
+    Token t = ahead(p, k);
+    return (t.k == T_OP || t.k == T_KW) && t.s == s;
+}
+
+bool at(Parser p, string s) {
+    return at_k(p, 0, s);
+}
+
+void advance(Parser p) {
+    if (!is_eof(p)) { p.pos += 1; }
+}
+
+void parse_fail(Parser p, string msg) {
+    if (!p.failed) {
+        Token t = cur(p);
+        string found = t.s;
+        if (t.k == T_EOF) { found = "end of file"; }
+        if (t.k == T_STR) { found = "a string literal"; }
+        if (t.k == T_INT) { found = "a number"; }
+        report(p.ctx, t.file, t.line, true, "", msg + ", found '" + found + "'");
+    }
+    p.failed = true;
+    p.pos = p.toks.len() - 1;
+}
+
+void expect(Parser p, string s) {
+    if (at(p, s)) { advance(p); } else { parse_fail(p, "expected '" + s + "'"); }
+}
+
+string expect_ident(Parser p) {
+    Token t = cur(p);
+    if (t.k != T_ID) {
+        parse_fail(p, "expected a name");
+        return "_";
+    }
+    advance(p);
+    return t.s;
+}
+
+Node node_here(Parser p, int k) {
+    Token t = cur(p);
+    return mk_node(k, t.file, t.line);
+}
+
+// ---- types ----------------------------------------------------------------
+
+bool is_type_word(string s) {
+    return s == "int" || s == "bool" || s == "string" || s == "void" || s == "Tainted" || s == "Secret";
+}
+
+bool is_generic_word(string s) {
+    return s == "List" || s == "Map" || s == "Grant";
+}
+
+Type parse_type(Parser p) {
+    string name = expect_ident(p);
+    Type t = mk_type(TY_ERR);
+    if (name == "int") { t = mk_type(TY_INT); }
+    else if (name == "bool") { t = mk_type(TY_BOOL); }
+    else if (name == "string") { t = mk_type(TY_STR); }
+    else if (name == "void") { t = mk_type(TY_VOID); }
+    else if (name == "Tainted") { t = mk_type(TY_TAINT); }
+    else if (name == "Secret") { t = mk_type(TY_SECRET); }
+    else if (name == "List" || name == "Map") {
+        expect(p, "<");
+        Type inner = parse_type(p);
+        expect(p, ">");
+        if (name == "List") { t = mk_wrap(TY_LIST, inner); } else { t = mk_wrap(TY_MAP, inner); }
+    } else if (name == "Grant") {
+        expect(p, "<");
+        string pol = expect_ident(p);
+        expect(p, ">");
+        t = mk_named(TY_GRANT, pol);
+    } else {
+        t = mk_named(TY_STRUCT, name);
+    }
+    if (at(p, "?")) {
+        advance(p);
+        t = mk_wrap(TY_OPT, t);
+    }
+    return t;
+}
+
+bool is_decl_start(Parser p) {
+    Token t = cur(p);
+    if (t.k != T_ID) { return false; }
+    if (is_type_word(t.s)) { return true; }
+    if (is_generic_word(t.s) && at_k(p, 1, "<")) { return true; }
+    if (ahead(p, 1).k == T_ID) { return true; }
+    if (at_k(p, 1, "?") && ahead(p, 2).k == T_ID) { return true; }
+    return false;
+}
+
+// ---- expressions --------------------------------------------------------------
+
+int precedence(string op) {
+    if (op == "||") { return 1; }
+    if (op == "&&") { return 2; }
+    if (op == "==" || op == "!=") { return 3; }
+    if (op == "<" || op == "<=" || op == ">" || op == ">=") { return 4; }
+    if (op == "+" || op == "-") { return 5; }
+    if (op == "*" || op == "/" || op == "%") { return 6; }
+    return 0;
+}
+
+Node parse_expr(Parser p) {
+    return parse_binary(p, 1);
+}
+
+Node parse_binary(Parser p, int min_prec) {
+    Node lhs = parse_unary(p);
+    int chain = 0;
+    while (!p.failed) {
+        Token t = cur(p);
+        if (t.k != T_OP) { break; }
+        int prec = precedence(t.s);
+        if (prec == 0 || prec < min_prec) { break; }
+        advance(p);
+        Node rhs = parse_binary(p, prec + 1);
+        Node b = mk_node_s(N_BIN, t.s, t.file, t.line);
+        b.kids.push(lhs);
+        b.kids.push(rhs);
+        lhs = b;
+        chain += 1;
+        if (!enter(p)) { break; }
+    }
+    p.depth -= chain;
+    return lhs;
+}
+
+Node parse_unary(Parser p) {
+    if (!enter(p)) { return mk_node(N_NONE, cur(p).file, cur(p).line); }
+    Node u = parse_unary_inner(p);
+    leave(p);
+    return u;
+}
+
+Node parse_unary_inner(Parser p) {
+    if (at(p, "!")) {
+        Node nn = node_here(p, N_NOT);
+        advance(p);
+        nn.kids.push(parse_unary(p));
+        return nn;
+    }
+    if (at(p, "-")) {
+        Node ng = node_here(p, N_NEG);
+        advance(p);
+        ng.kids.push(parse_unary(p));
+        return ng;
+    }
+    return parse_postfix(p, parse_primary(p));
+}
+
+void parse_args(Parser p, Node into) {
+    expect(p, "(");
+    while (!at(p, ")") && !is_eof(p)) {
+        into.kids.push(parse_expr(p));
+        if (!at(p, ")")) { expect(p, ","); }
+    }
+    expect(p, ")");
+}
+
+Node parse_postfix(Parser p, Node base) {
+    Node e = base;
+    int chain = 0;
+    while (!p.failed && enter(p)) {
+        chain += 1;
+        if (at(p, ".")) {
+            advance(p);
+            Token nt = cur(p);
+            string name = expect_ident(p);
+            if (at(p, "(")) {
+                Node m = mk_node_s(N_METHOD, name, nt.file, nt.line);
+                m.kids.push(e);
+                parse_args(p, m);
+                e = m;
+            } else {
+                Node f = mk_node_s(N_GETF, name, nt.file, nt.line);
+                f.kids.push(e);
+                e = f;
+            }
+        } else if (at(p, "[")) {
+            Node ix = node_here(p, N_INDEX);
+            advance(p);
+            ix.kids.push(e);
+            ix.kids.push(parse_expr(p));
+            expect(p, "]");
+            e = ix;
+        } else {
+            break;
+        }
+    }
+    p.depth -= chain;
+    return e;
+}
+
+Node parse_primary(Parser p) {
+    Token t = cur(p);
+    if (t.k == T_INT) {
+        Node ni = node_here(p, N_INT);
+        ni.n = t.n;
+        advance(p);
+        return ni;
+    }
+    if (t.k == T_STR) {
+        Node ns = node_here(p, N_STR);
+        ns.s = t.s;
+        ns.n = t.n;
+        advance(p);
+        return ns;
+    }
+    if (at(p, "true") || at(p, "false")) {
+        Node nb = node_here(p, N_BOOL);
+        if (at(p, "true")) { nb.n = 1; }
+        advance(p);
+        return nb;
+    }
+    if (at(p, "none")) {
+        Node nn = node_here(p, N_NONE);
+        advance(p);
+        return nn;
+    }
+    if (at(p, "(")) {
+        advance(p);
+        Node inner = parse_expr(p);
+        expect(p, ")");
+        return inner;
+    }
+    if (at(p, "new")) {
+        Node nw = node_here(p, N_NEW);
+        advance(p);
+        Token nt = cur(p);
+        if (nt.k == T_ID && (nt.s == "List" || nt.s == "Map")) {
+            Type ct = parse_type(p);
+            expect(p, "(");
+            expect(p, ")");
+            if (nt.s == "List") { nw.k = N_NEWLIST; } else { nw.k = N_NEWMAP; }
+            nw.ty = ct;
+            return nw;
+        }
+        nw.s = expect_ident(p);
+        expect(p, "{");
+        while (!at(p, "}") && !is_eof(p)) {
+            Token ft = cur(p);
+            Node init = mk_node_s(N_INIT, expect_ident(p), ft.file, ft.line);
+            expect(p, ":");
+            init.kids.push(parse_expr(p));
+            nw.kids.push(init);
+            if (!at(p, "}")) { expect(p, ","); }
+        }
+        expect(p, "}");
+        return nw;
+    }
+    if (at(p, "authorize")) {
+        Node az = node_here(p, N_AUTHORIZE);
+        advance(p);
+        az.s = expect_ident(p);
+        parse_args(p, az);
+        return az;
+    }
+    if (t.k == T_ID) {
+        advance(p);
+        if (at(p, "(")) {
+            Node call = mk_node_s(N_CALL, t.s, t.file, t.line);
+            parse_args(p, call);
+            return call;
+        }
+        return mk_node_s(N_VAR, t.s, t.file, t.line);
+    }
+    parse_fail(p, "expected an expression");
+    return mk_node(N_NONE, t.file, t.line);
+}
+
+// ---- statements ---------------------------------------------------------------
+
+Node parse_block(Parser p) {
+    Node b = node_here(p, N_BLOCK);
+    expect(p, "{");
+    while (!at(p, "}") && !is_eof(p)) {
+        b.kids.push(parse_stmt(p));
+    }
+    expect(p, "}");
+    return b;
+}
+
+// Declaration, assignment or expression statement; `end` is ";" or ")".
+Node parse_simple(Parser p, string end) {
+    if (is_decl_start(p)) {
+        Node d = node_here(p, N_DECL);
+        d.ty = parse_type(p);
+        d.s = expect_ident(p);
+        if (!at(p, "=")) {
+            parse_fail(p, "variable '" + d.s + "' must be initialised when declared [CWE-457]");
+            return d;
+        }
+        advance(p);
+        d.kids.push(parse_expr(p));
+        expect(p, end);
+        return d;
+    }
+    Node e = parse_expr(p);
+    if (at(p, "=") || at(p, "+=") || at(p, "-=")) {
+        Node a = node_here(p, N_ASSIGN);
+        a.s = cur(p).s;
+        advance(p);
+        a.kids.push(e);
+        a.kids.push(parse_expr(p));
+        expect(p, end);
+        return a;
+    }
+    Node es = mk_node(N_EXPR, e.file, e.line);
+    es.kids.push(e);
+    expect(p, end);
+    return es;
+}
+
+Node parse_stmt(Parser p) {
+    if (!enter(p)) { return mk_node(N_BLOCK, cur(p).file, cur(p).line); }
+    Node st = parse_stmt_inner(p);
+    leave(p);
+    return st;
+}
+
+Node parse_stmt_inner(Parser p) {
+    if (at(p, "{")) { return parse_block(p); }
+    if (at(p, "if")) {
+        Node ifn = node_here(p, N_IF);
+        advance(p);
+        expect(p, "(");
+        if (at(p, "let")) {
+            advance(p);
+            ifn.s2 = expect_ident(p);
+            ifn.n = 1;
+            expect(p, "=");
+        }
+        ifn.kids.push(parse_expr(p));
+        expect(p, ")");
+        ifn.kids.push(parse_block(p));
+        if (at(p, "else")) {
+            advance(p);
+            if (at(p, "if")) {
+                Node wrap = node_here(p, N_BLOCK);
+                wrap.kids.push(parse_stmt(p));
+                ifn.kids.push(wrap);
+            } else {
+                ifn.kids.push(parse_block(p));
+            }
+        }
+        return ifn;
+    }
+    if (at(p, "while")) {
+        Node wn = node_here(p, N_WHILE);
+        advance(p);
+        expect(p, "(");
+        wn.kids.push(parse_expr(p));
+        expect(p, ")");
+        wn.kids.push(parse_block(p));
+        return wn;
+    }
+    if (at(p, "for")) {
+        Node fn = node_here(p, N_FOR);
+        advance(p);
+        expect(p, "(");
+        fn.kids.push(parse_simple(p, ";"));
+        fn.kids.push(parse_expr(p));
+        expect(p, ";");
+        fn.kids.push(parse_simple(p, ")"));
+        fn.kids.push(parse_block(p));
+        return fn;
+    }
+    if (at(p, "return")) {
+        Node rn = node_here(p, N_RETURN);
+        advance(p);
+        if (!at(p, ";")) { rn.kids.push(parse_expr(p)); }
+        expect(p, ";");
+        return rn;
+    }
+    if (at(p, "break")) {
+        Node bn = node_here(p, N_BREAK);
+        advance(p);
+        expect(p, ";");
+        return bn;
+    }
+    if (at(p, "continue")) {
+        Node cn = node_here(p, N_CONTINUE);
+        advance(p);
+        expect(p, ";");
+        return cn;
+    }
+    if (at(p, "assert_denied") || at(p, "assert_granted")) {
+        Node an = node_here(p, N_ASSERT_DENIED);
+        if (at(p, "assert_granted")) { an.k = N_ASSERT_GRANTED; }
+        advance(p);
+        an.s = expect_ident(p);
+        parse_args(p, an);
+        expect(p, ";");
+        return an;
+    }
+    return parse_simple(p, ";");
+}
+
+// ---- declarations -------------------------------------------------------------
+
+void parse_params(Parser p, Node into) {
+    expect(p, "(");
+    while (!at(p, ")") && !is_eof(p)) {
+        Node prm = node_here(p, N_PARAM);
+        prm.ty = parse_type(p);
+        prm.s = expect_ident(p);
+        into.kids.push(prm);
+        into.n += 1;
+        if (!at(p, ")")) { expect(p, ","); }
+    }
+    expect(p, ")");
+}
+
+Node parse_decl(Parser p) {
+    if (at(p, "struct")) {
+        Node st = node_here(p, N_STRUCT);
+        advance(p);
+        st.s = expect_ident(p);
+        expect(p, "{");
+        while (!at(p, "}") && !is_eof(p)) {
+            Node fd = node_here(p, N_FIELD);
+            fd.ty = parse_type(p);
+            fd.s = expect_ident(p);
+            expect(p, ";");
+            st.kids.push(fd);
+        }
+        expect(p, "}");
+        return st;
+    }
+    if (at(p, "const")) {
+        Node cn = node_here(p, N_CONST);
+        advance(p);
+        cn.ty = parse_type(p);
+        cn.s = expect_ident(p);
+        expect(p, "=");
+        cn.kids.push(parse_expr(p));
+        expect(p, ";");
+        return cn;
+    }
+    if (at(p, "test")) {
+        Node tn = node_here(p, N_TEST);
+        advance(p);
+        Token name = cur(p);
+        if (name.k != T_STR) {
+            parse_fail(p, "expected a test name string");
+            return tn;
+        }
+        tn.s = name.s;
+        advance(p);
+        tn.kids.push(parse_block(p));
+        return tn;
+    }
+    if (at(p, "public") || at(p, "policy")) {
+        Node pn = node_here(p, N_POLICY);
+        if (at(p, "public")) {
+            pn.s2 = "public";
+            advance(p);
+        }
+        expect(p, "policy");
+        pn.s = expect_ident(p);
+        parse_params(p, pn);
+        pn.kids.push(parse_block(p));
+        pn.ty = mk_type(TY_BOOL);
+        return pn;
+    }
+    Node fn = node_here(p, N_FN);
+    if (at(p, "protected")) {
+        advance(p);
+        expect(p, "(");
+        fn.s2 = expect_ident(p);
+        expect(p, ")");
+    }
+    fn.ty = parse_type(p);
+    fn.s = expect_ident(p);
+    parse_params(p, fn);
+    fn.kids.push(parse_block(p));
+    return fn;
+}
+
+List<Node> parse_program(Ctx ctx, List<Token> toks) {
+    Parser p = new Parser{toks: toks, pos: 0, ctx: ctx, failed: false, depth: 0};
+    List<Node> decls = new List<Node>();
+    while (!is_eof(p)) {
+        decls.push(parse_decl(p));
+    }
+    return decls;
+}

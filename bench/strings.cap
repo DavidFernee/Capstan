@@ -1,0 +1,13 @@
+// Word frequency: string building, hashing and map updates.
+int main() {
+    Map<int> freq = new Map<int>();
+    for (int i = 0; i < 2000000; i += 1) {
+        string w = "w" + int_to_str(i % 5003);
+        if (let c = freq.get(w)) { freq.set(w, c + 1); } else { freq.set(w, 1); }
+    }
+    int total = 0;
+    List<string> ks = freq.keys();
+    for (int j = 0; j < ks.len(); j += 1) { if (let v = freq.get(ks[j])) { total += v; } }
+    println(int_to_str(ks.len()) + " " + int_to_str(total));
+    return 0;
+}

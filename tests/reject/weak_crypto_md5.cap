@@ -1,0 +1,2 @@
+// expect: CWE-327
+int main() { string h = md5("password"); return 0; }

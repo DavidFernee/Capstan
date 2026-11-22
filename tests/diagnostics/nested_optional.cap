@@ -1,0 +1,2 @@
+// expect: optional
+int main() { List<int?> xs = new List<int?>(); return 0; }

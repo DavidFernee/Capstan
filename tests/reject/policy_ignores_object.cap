@@ -1,0 +1,8 @@
+// expect: CWE-639
+// flags: --strict
+// Insecure direct object reference: any clinician can read any record.
+struct User { int id; int role; }
+struct Record { int patient; }
+policy ReadRecord(User u, Record r) { return u.role == 2; }
+int main() { return 0; }
+test "deny" { assert_denied ReadRecord(new User{id: 1, role: 1}, new Record{patient: 1}); }

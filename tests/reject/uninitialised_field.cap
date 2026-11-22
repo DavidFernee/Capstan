@@ -1,0 +1,7 @@
+// expect: CWE-908
+struct Config { int port; string host; }
+int main() {
+    Config c = new Config{port: 8080};
+    println(c.host);
+    return 0;
+}

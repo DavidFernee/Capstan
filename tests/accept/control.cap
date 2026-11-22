@@ -1,0 +1,29 @@
+// Spec: statements and control flow.
+string classify(int n) {
+    if (n < 0) { return "negative"; } else if (n == 0) { return "zero"; } else if (n < 10) { return "small"; } else { return "large"; }
+}
+int main() {
+    println(classify(-5) + " " + classify(0) + " " + classify(7) + " " + classify(70));
+    List<string> out = new List<string>();
+    for (int i = 0; i < 4; i += 1) {
+        for (int j = 0; j < 4; j += 1) {
+            if (j > i) { break; }
+            if ((i + j) % 2 == 1) { continue; }
+            out.push(int_to_str(i) + int_to_str(j));
+        }
+    }
+    println(join(out, " "));
+    int n = 0;
+    while (true) {
+        n += 1;
+        if (n == 3) { continue; }
+        if (n > 5) { break; }
+    }
+    println("n " + int_to_str(n));
+    int count = 10;
+    while (count > 0) { count -= 3; }
+    println("count " + int_to_str(count));
+    { int scoped = 1; println("block " + int_to_str(scoped)); }
+    { int scoped = 2; println("block " + int_to_str(scoped)); }
+    return 0;
+}

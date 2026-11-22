@@ -1,0 +1,2 @@
+// expect: '-=' is not defined for string and string
+int main() { string s = "ab"; s -= "b"; return 0; }

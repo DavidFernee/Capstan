@@ -1,0 +1,3 @@
+// expect: CWE-252
+// flags: --strict
+int main() { write_file("out.txt", "data"); return 0; }

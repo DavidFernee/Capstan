@@ -1,0 +1,6 @@
+// expect-runtime: CWE-190
+int main() {
+    int big = 9223372036854775807;
+    int boom = big + 1;
+    return 0;
+}

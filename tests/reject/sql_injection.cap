@@ -1,0 +1,6 @@
+// expect: CWE-89
+// The classic Java mistake: building a query by concatenating user input.
+void find_user(Tainted username) {
+    sql_query("SELECT * FROM users WHERE name = '" + username + "'");
+}
+int main() { find_user(taint("x' OR '1'='1")); return 0; }

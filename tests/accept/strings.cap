@@ -1,0 +1,16 @@
+// Spec: strings are immutable byte sequences.
+int main() {
+    string s = "Grace Hopper";
+    println(int_to_str(s.len()) + " [" + s.slice(0, 5) + "] [" + s.slice(6, 12) + "] [" + s.slice(3, 3) + "]");
+    List<string> codes = new List<string>();
+    for (int i = 0; i < 5; i += 1) { codes.push(int_to_str(s.at(i))); }
+    println(join(codes, " "));
+    string built = "";
+    for (int j = 0; j < 5; j += 1) { built += char_str('a' + j); }
+    println(built + " " + int_to_str(built.len()));
+    string t = s;
+    t += "!";
+    println(s + " / " + t);
+    println(join(new List<string>(), ",") + "|" + char_str(65) + char_str(0).slice(0, 0) + "|");
+    return 0;
+}

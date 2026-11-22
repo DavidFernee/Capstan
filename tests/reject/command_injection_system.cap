@@ -1,0 +1,2 @@
+// expect: CWE-78
+int main() { system("rm -rf /tmp/x"); return 0; }

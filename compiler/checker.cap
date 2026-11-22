@@ -1,0 +1,949 @@
+// Capstan compiler: type and safety checker.
+//
+// Every rule that makes a weakness class impossible to write lives here.
+// Diagnostics carry the CWE number of the weakness they prevent.
+
+struct Checker {
+    Ctx ctx;
+    Map<Node> structs;
+    Map<Node> fns;
+    Map<Node> policies;
+    Map<int> policy_ids;
+    Map<Node> consts;
+    Map<Type> const_types;
+    List<Map<Type>> scopes;
+    int depth;
+    Type ret;
+    int loops;
+    bool in_test;
+    bool in_policy;
+    Map<int> denials;
+    int asserts;
+}
+
+Type ty_of(Node n) {
+    if (let t = n.ty) { return t; }
+    return mk_type(TY_ERR);
+}
+
+Type typed(Node n, Type t) {
+    n.ty = t;
+    return t;
+}
+
+// ---- scopes -------------------------------------------------------------------
+
+void push_scope(Checker c) {
+    if (c.depth < c.scopes.len()) {
+        c.scopes[c.depth] = new Map<Type>();
+    } else {
+        c.scopes.push(new Map<Type>());
+    }
+    c.depth += 1;
+}
+
+void pop_scope(Checker c) {
+    c.depth -= 1;
+}
+
+Type? lookup_local(Checker c, string name) {
+    for (int i = c.depth - 1; i >= 0; i -= 1) {
+        if (let t = c.scopes[i].get(name)) { return t; }
+    }
+    return none;
+}
+
+void declare(Checker c, Node at, string name, Type t) {
+    if (let prev = lookup_local(c, name)) {
+        error_at(c.ctx, at, "CAP-SHADOW", "'" + name + "' is already declared in an enclosing scope; shadowing is not allowed");
+        return;
+    }
+    if (c.const_types.has(name)) {
+        error_at(c.ctx, at, "CAP-SHADOW", "'" + name + "' would shadow the constant of the same name");
+        return;
+    }
+    c.scopes[c.depth - 1].set(name, t);
+}
+
+// ---- type validation ----------------------------------------------------------
+
+void check_type(Checker c, Node at, Type t, bool allow_void) {
+    if (t.k == TY_VOID && !allow_void) {
+        error_at(c.ctx, at, "", "void is only allowed as a function return type");
+    }
+    if (t.k == TY_STRUCT && !c.structs.has(t.name)) {
+        error_at(c.ctx, at, "", "unknown type '" + t.name + "'");
+    }
+    if (t.k == TY_GRANT && !c.policies.has(t.name)) {
+        error_at(c.ctx, at, "", "Grant refers to unknown policy '" + t.name + "'");
+    }
+    if (t.k == TY_OPT) {
+        Type inner = t.args[0];
+        if (inner.k == TY_OPT || inner.k == TY_VOID) {
+            error_at(c.ctx, at, "", "invalid optional type " + type_str(t));
+        }
+        check_type(c, at, inner, false);
+    }
+    if (t.k == TY_LIST || t.k == TY_MAP) {
+        Type el = t.args[0];
+        if (el.k == TY_OPT) {
+            error_at(c.ctx, at, "", "collection elements cannot be optional (" + type_str(t) + ")");
+        }
+        if (el.k == TY_GRANT) {
+            error_at(c.ctx, at, "CWE-613", "grants cannot be stored in collections; a grant must not outlive the request that obtained it");
+        }
+        check_type(c, at, el, false);
+    }
+}
+
+bool contains_grant(Type t) {
+    if (t.k == TY_GRANT) { return true; }
+    for (int i = 0; i < t.args.len(); i += 1) {
+        if (contains_grant(t.args[i])) { return true; }
+    }
+    return false;
+}
+
+void mismatch(Checker c, Node at, Type from, Type to, string where) {
+    if (from.k == TY_TAINT && to.k == TY_STR) {
+        error_at(c.ctx, at, "CWE-20", "untrusted input (Tainted) used as a trusted string in " + where + "; pass it through a validator or escaper first");
+    } else if (from.k == TY_SECRET) {
+        error_at(c.ctx, at, "CWE-200", "a Secret cannot be used as " + type_str(to) + " in " + where);
+    } else if (from.k == TY_OPT && type_eq(from.args[0], to)) {
+        error_at(c.ctx, at, "CWE-476", "value may be none in " + where + "; unwrap it with if (let x = ...)");
+    } else {
+        error_at(c.ctx, at, "", "type mismatch in " + where + ": expected " + type_str(to) + ", found " + type_str(from));
+    }
+}
+
+void expect_type(Checker c, Node at, Type from, Type to, string where) {
+    if (!assignable(from, to)) { mismatch(c, at, from, to, where); }
+}
+
+bool looks_secret(string name) {
+    string l = lower(name);
+    return contains(l, "password") || contains(l, "passwd") || contains(l, "secret") || contains(l, "apikey")
+        || contains(l, "api_key") || contains(l, "token") || contains(l, "private_key") || contains(l, "credential");
+}
+
+void check_hardcoded(Checker c, Node at, string name, Node value) {
+    if (value.k == N_STR && value.n > 0 && looks_secret(name)) {
+        error_at(c.ctx, at, "CWE-798", "hard-coded credential in '" + name + "'; load it with secret_env(\"NAME\") instead");
+    }
+}
+
+// ---- expressions ----------------------------------------------------------------
+
+Type? field_type(Checker c, string sname, string fname) {
+    if (let st = c.structs.get(sname)) {
+        for (int i = 0; i < st.kids.len(); i += 1) {
+            if (st.kids[i].s == fname) { return ty_of(st.kids[i]); }
+        }
+    }
+    return none;
+}
+
+Type check_expr(Checker c, Node e) {
+    int k = e.k;
+    if (k == N_INT) { return typed(e, mk_type(TY_INT)); }
+    if (k == N_STR) { return typed(e, mk_type(TY_STR)); }
+    if (k == N_BOOL) { return typed(e, mk_type(TY_BOOL)); }
+    if (k == N_NONE) { return typed(e, mk_type(TY_NONE)); }
+    if (k == N_VAR) {
+        if (let lt = lookup_local(c, e.s)) { return typed(e, lt); }
+        if (let ct = c.const_types.get(e.s)) {
+            e.n = 1;
+            return typed(e, ct);
+        }
+        error_at(c.ctx, e, "", "unknown variable '" + e.s + "'");
+        return typed(e, mk_type(TY_ERR));
+    }
+    if (k == N_NOT) {
+        expect_type(c, e, check_expr(c, e.kids[0]), mk_type(TY_BOOL), "'!'");
+        return typed(e, mk_type(TY_BOOL));
+    }
+    if (k == N_NEG) {
+        expect_type(c, e, check_expr(c, e.kids[0]), mk_type(TY_INT), "unary '-'");
+        return typed(e, mk_type(TY_INT));
+    }
+    if (k == N_BIN) { return typed(e, check_binary(c, e)); }
+    if (k == N_GETF) {
+        Type ot = check_expr(c, e.kids[0]);
+        if (ot.k == TY_OPT) {
+            error_at(c.ctx, e, "CWE-476", "field '" + e.s + "' read through a value that may be none; unwrap it with if (let x = ...)");
+            return typed(e, mk_type(TY_ERR));
+        }
+        if (ot.k != TY_STRUCT) {
+            if (ot.k != TY_ERR) { error_at(c.ctx, e, "", "'" + type_str(ot) + "' has no field '" + e.s + "'"); }
+            return typed(e, mk_type(TY_ERR));
+        }
+        if (let ft = field_type(c, ot.name, e.s)) { return typed(e, ft); }
+        error_at(c.ctx, e, "", "struct " + ot.name + " has no field '" + e.s + "'");
+        return typed(e, mk_type(TY_ERR));
+    }
+    if (k == N_INDEX) {
+        Type lt2 = check_expr(c, e.kids[0]);
+        expect_type(c, e, check_expr(c, e.kids[1]), mk_type(TY_INT), "index");
+        if (lt2.k == TY_LIST) { return typed(e, lt2.args[0]); }
+        if (lt2.k == TY_OPT) {
+            error_at(c.ctx, e, "CWE-476", "indexing a value that may be none; unwrap it with if (let x = ...)");
+        } else if (lt2.k == TY_STR || lt2.k == TY_TAINT) {
+            error_at(c.ctx, e, "", "strings are indexed with .at(i)");
+        } else if (lt2.k != TY_ERR) {
+            error_at(c.ctx, e, "", "cannot index a value of type " + type_str(lt2));
+        }
+        return typed(e, mk_type(TY_ERR));
+    }
+    if (k == N_METHOD) { return typed(e, check_method(c, e)); }
+    if (k == N_CALL) { return typed(e, check_call(c, e)); }
+    if (k == N_NEW) { return typed(e, check_new(c, e)); }
+    if (k == N_NEWLIST || k == N_NEWMAP) {
+        Type nt = ty_of(e);
+        check_type(c, e, nt, false);
+        return nt;
+    }
+    if (k == N_AUTHORIZE) {
+        if (let pol = c.policies.get(e.s)) {
+            check_args(c, e, pol, 0, "authorize " + e.s);
+            return typed(e, mk_wrap(TY_OPT, mk_named(TY_GRANT, e.s)));
+        }
+        error_at(c.ctx, e, "", "unknown policy '" + e.s + "'");
+        return typed(e, mk_type(TY_ERR));
+    }
+    error_at(c.ctx, e, "", "unsupported expression");
+    return typed(e, mk_type(TY_ERR));
+}
+
+Type check_binary(Checker c, Node e) {
+    string op = e.s;
+    Type a = check_expr(c, e.kids[0]);
+    Type b = check_expr(c, e.kids[1]);
+    if (a.k == TY_ERR || b.k == TY_ERR) { return mk_type(TY_ERR); }
+    if (op == "&&" || op == "||") {
+        expect_type(c, e, a, mk_type(TY_BOOL), "'" + op + "'");
+        expect_type(c, e, b, mk_type(TY_BOOL), "'" + op + "'");
+        return mk_type(TY_BOOL);
+    }
+    if (a.k == TY_SECRET || b.k == TY_SECRET) {
+        if (op == "==" || op == "!=") {
+            error_at(c.ctx, e, "CWE-208", "comparing a Secret with '" + op + "' leaks timing information; use secret_eq()");
+        } else {
+            error_at(c.ctx, e, "CWE-200", "a Secret cannot be used with '" + op + "'");
+        }
+        return mk_type(TY_ERR);
+    }
+    if (a.k == TY_OPT || b.k == TY_OPT) {
+        error_at(c.ctx, e, "CWE-476", "operand of '" + op + "' may be none; unwrap it with if (let x = ...)");
+        return mk_type(TY_ERR);
+    }
+    if (op == "==" || op == "!=") {
+        bool ok = (a.k == TY_INT && b.k == TY_INT) || (a.k == TY_BOOL && b.k == TY_BOOL) || (is_stringish(a) && is_stringish(b));
+        if (!ok) { error_at(c.ctx, e, "", "cannot compare " + type_str(a) + " with " + type_str(b)); }
+        return mk_type(TY_BOOL);
+    }
+    if (op == "<" || op == "<=" || op == ">" || op == ">=") {
+        if (a.k != TY_INT || b.k != TY_INT) { error_at(c.ctx, e, "", "'" + op + "' needs int operands"); }
+        return mk_type(TY_BOOL);
+    }
+    if (op == "+" && is_stringish(a) && is_stringish(b)) {
+        if (a.k == TY_TAINT || b.k == TY_TAINT) { return mk_type(TY_TAINT); }
+        return mk_type(TY_STR);
+    }
+    if (a.k != TY_INT || b.k != TY_INT) {
+        error_at(c.ctx, e, "", "'" + op + "' needs int operands, found " + type_str(a) + " and " + type_str(b));
+        return mk_type(TY_ERR);
+    }
+    if ((op == "/" || op == "%") && e.kids[1].k == N_INT && e.kids[1].n == 0) {
+        error_at(c.ctx, e, "CWE-369", "division by zero");
+    }
+    return mk_type(TY_INT);
+}
+
+int arg_count(Node e) {
+    return e.kids.len();
+}
+
+void want_args(Checker c, Node e, int first, int count, string name) {
+    if (e.kids.len() - first != count) {
+        error_at(c.ctx, e, "", name + " expects " + int_to_str(count) + " argument(s), found " + int_to_str(e.kids.len() - first));
+    }
+}
+
+Type check_method(Checker c, Node e) {
+    Type rt = check_expr(c, e.kids[0]);
+    for (int i = 1; i < e.kids.len(); i += 1) { check_expr(c, e.kids[i]); }
+    string m = e.s;
+    if (rt.k == TY_ERR) { return rt; }
+    if (rt.k == TY_OPT) {
+        error_at(c.ctx, e, "CWE-476", "method '" + m + "' called on a value that may be none; unwrap it with if (let x = ...)");
+        return mk_type(TY_ERR);
+    }
+    if (rt.k == TY_SECRET) {
+        error_at(c.ctx, e, "CWE-200", "a Secret exposes no methods; its contents cannot be read");
+        return mk_type(TY_ERR);
+    }
+    if (is_stringish(rt)) {
+        if (m == "len") { want_args(c, e, 1, 0, "len"); return mk_type(TY_INT); }
+        if (m == "at") {
+            want_args(c, e, 1, 1, "at");
+            if (e.kids.len() == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "at()"); }
+            return mk_type(TY_INT);
+        }
+        if (m == "slice") {
+            want_args(c, e, 1, 2, "slice");
+            for (int j = 1; j < e.kids.len(); j += 1) { expect_type(c, e, ty_of(e.kids[j]), mk_type(TY_INT), "slice()"); }
+            return rt;
+        }
+    }
+    if (rt.k == TY_LIST) {
+        Type el = rt.args[0];
+        if (m == "len") { want_args(c, e, 1, 0, "len"); return mk_type(TY_INT); }
+        if (m == "push") {
+            want_args(c, e, 1, 1, "push");
+            if (e.kids.len() == 2) { expect_type(c, e, ty_of(e.kids[1]), el, "push()"); }
+            return mk_type(TY_VOID);
+        }
+    }
+    if (rt.k == TY_MAP) {
+        Type mv = rt.args[0];
+        if (m == "get" || m == "has") {
+            want_args(c, e, 1, 1, m);
+            if (e.kids.len() == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_STR), m + "()"); }
+            if (m == "has") { return mk_type(TY_BOOL); }
+            return mk_wrap(TY_OPT, mv);
+        }
+        if (m == "set") {
+            want_args(c, e, 1, 2, "set");
+            if (e.kids.len() == 3) {
+                expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_STR), "set()");
+                expect_type(c, e, ty_of(e.kids[2]), mv, "set()");
+            }
+            return mk_type(TY_VOID);
+        }
+        if (m == "keys") { want_args(c, e, 1, 0, "keys"); return mk_wrap(TY_LIST, mk_type(TY_STR)); }
+    }
+    error_at(c.ctx, e, "", type_str(rt) + " has no method '" + m + "'");
+    return mk_type(TY_ERR);
+}
+
+// Check user-function or policy arguments starting at kid `first`.
+void check_args(Checker c, Node e, Node callee, int first, string what) {
+    for (int i = first; i < e.kids.len(); i += 1) { check_expr(c, e.kids[i]); }
+    int np = callee.n;
+    if (e.kids.len() - first != np) {
+        error_at(c.ctx, e, "", what + " expects " + int_to_str(np) + " argument(s), found " + int_to_str(e.kids.len() - first));
+        return;
+    }
+    for (int j = 0; j < np; j += 1) {
+        Node arg = e.kids[first + j];
+        expect_type(c, arg, ty_of(arg), ty_of(callee.kids[j]), "argument " + int_to_str(j + 1) + " of " + what);
+    }
+}
+
+string banned_hint(string name) {
+    if (name == "md5" || name == "sha1" || name == "des" || name == "rc4" || name == "crc32") {
+        return "CWE-327|weak cryptographic primitive '" + name + "' does not exist in Capstan; use hash(), or hash_password() for passwords";
+    }
+    if (name == "system" || name == "popen" || name == "exec" || name == "shell" || name == "execl") {
+        return "CWE-78|there is no shell execution in Capstan; use run(\"program\", args...) which never invokes a shell";
+    }
+    if (name == "eval") { return "CWE-95|Capstan has no eval"; }
+    if (name == "printf" || name == "sprintf" || name == "fprintf") {
+        return "CWE-134|Capstan has no format strings; build text with + and print()";
+    }
+    if (name == "gets" || name == "strcpy" || name == "strcat" || name == "memcpy") {
+        return "CWE-120|unchecked buffer copies do not exist in Capstan; strings and lists are bounds-checked";
+    }
+    if (name == "malloc" || name == "free" || name == "realloc") {
+        return "CWE-415|manual memory management does not exist in Capstan; memory is managed for you";
+    }
+    if (name == "rand" || name == "random") {
+        return "CWE-338|predictable random numbers are not available; a secure random API is on the roadmap";
+    }
+    return "";
+}
+
+bool is_literal_str(Node e) {
+    return e.k == N_STR;
+}
+
+// Arguments for print-like and storage sinks: anything stringish, but never secrets.
+void sink_string(Checker c, Node arg, string what, bool allow_tainted) {
+    Type t = ty_of(arg);
+    if (t.k == TY_TAINT && !allow_tainted) {
+        error_at(c.ctx, arg, "CWE-117", "untrusted input passed to " + what + " can forge output or log lines; wrap it in escape_log()");
+        return;
+    }
+    if (t.k == TY_SECRET) {
+        error_at(c.ctx, arg, "CWE-532", "a Secret cannot be written by " + what);
+        return;
+    }
+    if (!is_stringish(t)) { expect_type(c, arg, t, mk_type(TY_STR), what); }
+}
+
+Type check_call(Checker c, Node e) {
+    string f = e.s;
+    if (let fnode = c.fns.get(f)) {
+        if (fnode.s2 != "") {
+            bool granted = false;
+            if (e.kids.len() > 0) {
+                Type gt = check_expr(c, e.kids[0]);
+                granted = gt.k == TY_GRANT && gt.name == fnode.s2;
+            }
+            if (!granted) {
+                error_at(c.ctx, e, "CWE-862", f + "() is protected; obtain a grant with authorize " + fnode.s2 + "(...) and pass it as the first argument");
+                return ty_of(fnode);
+            }
+        }
+        check_args(c, e, fnode, 0, f + "()");
+        return ty_of(fnode);
+    }
+    if (c.policies.has(f)) {
+        error_at(c.ctx, e, "CWE-862", "policies are not called directly; use authorize " + f + "(...) to obtain a grant");
+        return mk_type(TY_ERR);
+    }
+    for (int i = 0; i < e.kids.len(); i += 1) { check_expr(c, e.kids[i]); }
+    int n = e.kids.len();
+    if (f == "print" || f == "println") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { sink_string(c, e.kids[0], f + "()", false); }
+        return mk_type(TY_VOID);
+    }
+    if (f == "int_to_str" || f == "char_str") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), f + "()"); }
+        return mk_type(TY_STR);
+    }
+    if (f == "read_file") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path"); }
+        return mk_wrap(TY_OPT, mk_type(TY_TAINT));
+    }
+    if (f == "read_line") {
+        want_args(c, e, 0, 0, f);
+        return mk_wrap(TY_OPT, mk_type(TY_TAINT));
+    }
+    if (f == "write_file") {
+        want_args(c, e, 0, 2, f);
+        if (n == 2) {
+            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "write_file() path");
+            sink_string(c, e.kids[1], "write_file()", true);
+        }
+        return mk_type(TY_BOOL);
+    }
+    if (f == "args") { want_args(c, e, 0, 0, f); return mk_wrap(TY_LIST, mk_type(TY_STR)); }
+    if (f == "exit") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "exit()"); }
+        return mk_type(TY_VOID);
+    }
+    if (f == "join") {
+        want_args(c, e, 0, 2, f);
+        if (n == 2) {
+            expect_type(c, e, ty_of(e.kids[0]), mk_wrap(TY_LIST, mk_type(TY_STR)), "join()");
+            expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_STR), "join() separator");
+        }
+        return mk_type(TY_STR);
+    }
+    if (f == "assert") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_BOOL), "assert()"); }
+        c.asserts += 1;
+        return mk_type(TY_VOID);
+    }
+    if (f == "validate_ident" || f == "validate_int") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()"); }
+        if (f == "validate_int") { return mk_wrap(TY_OPT, mk_type(TY_INT)); }
+        return mk_wrap(TY_OPT, mk_type(TY_STR));
+    }
+    if (f == "escape_c" || f == "escape_html" || f == "escape_log") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1 && !is_stringish(ty_of(e.kids[0]))) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()"); }
+        return mk_type(TY_STR);
+    }
+    if (f == "trust") {
+        want_args(c, e, 0, 2, f);
+        if (n == 2) {
+            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), "trust()");
+            if (!is_literal_str(e.kids[1]) || e.kids[1].n == 0) {
+                error_at(c.ctx, e, "CWE-20", "trust() needs a written justification as a string literal");
+            } else {
+                warn_at(c.ctx, e, "AUDIT", "untrusted input explicitly trusted: \"" + e.kids[1].s + "\"");
+            }
+        }
+        return mk_type(TY_STR);
+    }
+    if (f == "taint") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "taint()"); }
+        return mk_type(TY_TAINT);
+    }
+    if (f == "sql_query" || f == "run") {
+        string cwe = "CWE-89";
+        string what = "SQL query text";
+        if (f == "run") { cwe = "CWE-78"; what = "program name"; }
+        if (n == 0 || !is_literal_str(e.kids[0])) {
+            error_at(c.ctx, e, cwe, "the " + what + " passed to " + f + "() must be a string literal; pass untrusted values as separate arguments");
+        }
+        for (int j = 1; j < n; j += 1) {
+            Type argt = ty_of(e.kids[j]);
+            if (argt.k == TY_SECRET) {
+                error_at(c.ctx, e.kids[j], "CWE-532", "a Secret cannot be passed to " + f + "()");
+            } else if (!is_stringish(argt)) {
+                expect_type(c, e.kids[j], argt, mk_type(TY_STR), f + "() argument");
+            }
+        }
+        return mk_type(TY_VOID);
+    }
+    if (f == "secret_env") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1 && !is_literal_str(e.kids[0])) {
+            error_at(c.ctx, e, "", "secret_env() takes the variable name as a string literal");
+        }
+        return mk_wrap(TY_OPT, mk_type(TY_SECRET));
+    }
+    if (f == "secret_eq") {
+        want_args(c, e, 0, 2, f);
+        if (n == 2) {
+            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_SECRET), "secret_eq()");
+            Type bt = ty_of(e.kids[1]);
+            if (bt.k != TY_SECRET && !is_stringish(bt)) { expect_type(c, e, bt, mk_type(TY_TAINT), "secret_eq()"); }
+        }
+        return mk_type(TY_BOOL);
+    }
+    if (f == "hash" || f == "hash_password" || f == "hash_verify" || f == "verify_password") {
+        int want = 1;
+        if (f == "hash_verify" || f == "verify_password") { want = 2; }
+        want_args(c, e, 0, want, f);
+        if (n >= 1) {
+            Type dt = ty_of(e.kids[0]);
+            if (dt.k != TY_SECRET && !is_stringish(dt)) { expect_type(c, e, dt, mk_type(TY_STR), f + "()"); }
+        }
+        if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_STR), f + "() stored hash"); }
+        if (want == 2) { return mk_type(TY_BOOL); }
+        return mk_type(TY_STR);
+    }
+    if (f == "needs_rehash") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), f + "()"); }
+        return mk_type(TY_BOOL);
+    }
+    string hint = banned_hint(f);
+    if (hint != "") {
+        int bar = 0;
+        while (hint.at(bar) != '|') { bar += 1; }
+        error_at(c.ctx, e, hint.slice(0, bar), hint.slice(bar + 1, hint.len()));
+    } else {
+        error_at(c.ctx, e, "", "unknown function '" + f + "'");
+    }
+    return mk_type(TY_ERR);
+}
+
+Type check_new(Checker c, Node e) {
+    if (let st = c.structs.get(e.s)) {
+        Map<int> seen = new Map<int>();
+        for (int i = 0; i < e.kids.len(); i += 1) {
+            Node init = e.kids[i];
+            Type vt = check_expr(c, init.kids[0]);
+            if (seen.has(init.s)) {
+                error_at(c.ctx, init, "", "field '" + init.s + "' initialised twice");
+            }
+            seen.set(init.s, 1);
+            if (let ft = field_type(c, e.s, init.s)) {
+                expect_type(c, init, vt, ft, "field '" + init.s + "'");
+                check_hardcoded(c, init, init.s, init.kids[0]);
+            } else {
+                error_at(c.ctx, init, "", "struct " + e.s + " has no field '" + init.s + "'");
+            }
+        }
+        for (int j = 0; j < st.kids.len(); j += 1) {
+            if (!seen.has(st.kids[j].s)) {
+                error_at(c.ctx, e, "CWE-908", "field '" + st.kids[j].s + "' of " + e.s + " is not initialised");
+            }
+        }
+        return mk_named(TY_STRUCT, e.s);
+    }
+    error_at(c.ctx, e, "", "unknown struct '" + e.s + "'");
+    return mk_type(TY_ERR);
+}
+
+// ---- statements ---------------------------------------------------------------
+
+bool lvalue_ok(Node e) {
+    if (e.k == N_VAR) { return e.n == 0; }
+    if (e.k == N_GETF) { return true; }
+    if (e.k == N_INDEX) { return true; }
+    return false;
+}
+
+// A target that can be evaluated twice without side effects: x, x.f, xs[i], xs[i].f
+bool pure_path(Node e) {
+    if (e.k == N_VAR) { return true; }
+    if (e.k == N_GETF) { return pure_path(e.kids[0]); }
+    if (e.k == N_INDEX) { return pure_path(e.kids[0]) && is_simple_operand(e.kids[1]); }
+    return false;
+}
+
+bool is_simple_operand(Node e) {
+    return e.k == N_INT || e.k == N_VAR;
+}
+
+string lvalue_name(Node e) {
+    if (e.k == N_VAR || e.k == N_GETF) { return e.s; }
+    return "";
+}
+
+void check_block(Checker c, Node b) {
+    push_scope(c);
+    for (int i = 0; i < b.kids.len(); i += 1) { check_stmt(c, b.kids[i]); }
+    pop_scope(c);
+}
+
+void check_stmt(Checker c, Node s) {
+    int k = s.k;
+    if (k == N_BLOCK) { check_block(c, s); return; }
+    if (k == N_DECL) {
+        Type dt = ty_of(s);
+        check_type(c, s, dt, false);
+        Type vt = check_expr(c, s.kids[0]);
+        expect_type(c, s, vt, dt, "initialiser of '" + s.s + "'");
+        check_hardcoded(c, s, s.s, s.kids[0]);
+        declare(c, s, s.s, dt);
+        return;
+    }
+    if (k == N_ASSIGN) {
+        Node target = s.kids[0];
+        Type tt = check_expr(c, target);
+        Type rv = check_expr(c, s.kids[1]);
+        if (!lvalue_ok(target)) {
+            error_at(c.ctx, s, "", "cannot assign to this expression");
+            return;
+        }
+        if (s.s != "=") {
+            if (!pure_path(target)) {
+                error_at(c.ctx, s, "", "'" + s.s + "' needs a variable, field or simply-indexed element on the left; write x = x + v");
+            }
+            if (!(tt.k == TY_INT && rv.k == TY_INT) && !(s.s == "+=" && is_stringish(tt) && is_stringish(rv) && (tt.k == TY_TAINT || rv.k == TY_STR))) {
+                error_at(c.ctx, s, "", "'" + s.s + "' is not defined for " + type_str(tt) + " and " + type_str(rv));
+            }
+            return;
+        }
+        expect_type(c, s, rv, tt, "assignment");
+        check_hardcoded(c, s, lvalue_name(target), s.kids[1]);
+        return;
+    }
+    if (k == N_EXPR) {
+        Node ex = s.kids[0];
+        Type et = check_expr(c, ex);
+        if (ex.k != N_CALL && ex.k != N_METHOD && et.k != TY_ERR) {
+            error_at(c.ctx, s, "", "expression result is unused");
+        }
+        if (ex.k == N_CALL && ex.s == "write_file") {
+            warn_at(c.ctx, s, "CWE-252", "result of write_file() is ignored; check whether the write succeeded");
+        }
+        return;
+    }
+    if (k == N_IF) {
+        Type ct = check_expr(c, s.kids[0]);
+        if (s.n == 1) {
+            if (ct.k != TY_OPT) {
+                if (ct.k != TY_ERR) { error_at(c.ctx, s, "", "if (let ...) needs an optional value, found " + type_str(ct)); }
+                push_scope(c);
+                check_block(c, s.kids[1]);
+                pop_scope(c);
+            } else {
+                push_scope(c);
+                declare(c, s, s.s2, ct.args[0]);
+                check_block(c, s.kids[1]);
+                pop_scope(c);
+            }
+        } else {
+            expect_type(c, s, ct, mk_type(TY_BOOL), "if condition");
+            check_block(c, s.kids[1]);
+        }
+        if (s.kids.len() > 2) { check_block(c, s.kids[2]); }
+        return;
+    }
+    if (k == N_WHILE) {
+        expect_type(c, s, check_expr(c, s.kids[0]), mk_type(TY_BOOL), "while condition");
+        c.loops += 1;
+        check_block(c, s.kids[1]);
+        c.loops -= 1;
+        return;
+    }
+    if (k == N_FOR) {
+        push_scope(c);
+        check_stmt(c, s.kids[0]);
+        expect_type(c, s, check_expr(c, s.kids[1]), mk_type(TY_BOOL), "for condition");
+        check_stmt(c, s.kids[2]);
+        c.loops += 1;
+        check_block(c, s.kids[3]);
+        c.loops -= 1;
+        pop_scope(c);
+        return;
+    }
+    if (k == N_RETURN) {
+        if (s.kids.len() == 0) {
+            if (c.ret.k != TY_VOID) { error_at(c.ctx, s, "", "missing return value"); }
+        } else {
+            Type rt = check_expr(c, s.kids[0]);
+            if (c.ret.k == TY_VOID) {
+                error_at(c.ctx, s, "", "void function cannot return a value");
+            } else {
+                expect_type(c, s, rt, c.ret, "return");
+            }
+        }
+        return;
+    }
+    if (k == N_BREAK || k == N_CONTINUE) {
+        if (c.loops == 0) { error_at(c.ctx, s, "", "break/continue outside a loop"); }
+        return;
+    }
+    if (k == N_ASSERT_DENIED || k == N_ASSERT_GRANTED) {
+        if (!c.in_test) { error_at(c.ctx, s, "", "assert_denied/assert_granted are only allowed in tests"); }
+        if (let pol = c.policies.get(s.s)) {
+            check_args(c, s, pol, 0, s.s);
+            if (k == N_ASSERT_DENIED) {
+                int prev = 0;
+                if (let pv = c.denials.get(s.s)) { prev = pv; }
+                c.denials.set(s.s, prev + 1);
+            }
+            c.asserts += 1;
+        } else {
+            error_at(c.ctx, s, "", "unknown policy '" + s.s + "'");
+        }
+        return;
+    }
+    error_at(c.ctx, s, "", "unsupported statement");
+}
+
+// Does this statement always end in a return?
+bool always_returns(Node s) {
+    if (s.k == N_RETURN) { return true; }
+    if (s.k == N_BLOCK) {
+        if (s.kids.len() == 0) { return false; }
+        return always_returns(s.kids[s.kids.len() - 1]);
+    }
+    if (s.k == N_IF && s.kids.len() == 3) {
+        return always_returns(s.kids[1]) && always_returns(s.kids[2]);
+    }
+    if (s.k == N_WHILE && s.kids[0].k == N_BOOL && s.kids[0].n == 1) { return true; }
+    if (s.k == N_EXPR && s.kids[0].k == N_CALL && s.kids[0].s == "exit") { return true; }
+    return false;
+}
+
+// ---- policy analysis ------------------------------------------------------------
+
+bool uses_var(Node n, string name) {
+    if (n.k == N_VAR && n.s == name) { return true; }
+    for (int i = 0; i < n.kids.len(); i += 1) {
+        if (uses_var(n.kids[i], name)) { return true; }
+    }
+    return false;
+}
+
+bool compares_string_literal(Node n) {
+    if (n.k == N_BIN && (n.s == "==" || n.s == "!=")) {
+        if (n.kids[0].k == N_STR || n.kids[1].k == N_STR) { return true; }
+    }
+    for (int i = 0; i < n.kids.len(); i += 1) {
+        if (compares_string_literal(n.kids[i])) { return true; }
+    }
+    return false;
+}
+
+bool trivially_permits(Node body) {
+    if (body.kids.len() == 0) { return false; }
+    Node first = body.kids[0];
+    if (first.k != N_RETURN || first.kids.len() != 1) { return false; }
+    Node v = first.kids[0];
+    return v.k == N_BOOL && v.n == 1;
+}
+
+void check_policy(Checker c, Node p) {
+    Node body = p.kids[p.n];
+    bool is_public = p.s2 == "public";
+    for (int i = 0; i < p.n; i += 1) {
+        Node prm = p.kids[i];
+        Type pt = ty_of(prm);
+        if (pt.k == TY_TAINT) {
+            error_at(c.ctx, prm, "CWE-807", "policy '" + p.s + "' decides on untrusted input '" + prm.s + "'; authorisation must use authenticated data");
+        }
+        if (!uses_var(body, prm.s) && !is_public) {
+            warn_at(c.ctx, prm, "CWE-639", "policy '" + p.s + "' never looks at '" + prm.s + "'; per-object decisions that ignore the object allow access to other users' data");
+        }
+    }
+    if (trivially_permits(body) && !is_public) {
+        error_at(c.ctx, p, "CWE-862", "policy '" + p.s + "' permits every request; declare it 'public policy' if that is intended");
+    }
+    if (compares_string_literal(body)) {
+        warn_at(c.ctx, p, "CAP-ROLE", "policy '" + p.s + "' compares against a string literal; use int constants for roles so a typo cannot fail open");
+    }
+    if (!always_returns(body)) {
+        error_at(c.ctx, p, "", "policy '" + p.s + "' must return a decision on every path (default deny)");
+    }
+}
+
+// ---- declarations -------------------------------------------------------------
+
+Checker new_checker(Ctx ctx) {
+    return new Checker{
+        ctx: ctx, structs: new Map<Node>(), fns: new Map<Node>(), policies: new Map<Node>(),
+        policy_ids: new Map<int>(), consts: new Map<Node>(), const_types: new Map<Type>(),
+        scopes: new List<Map<Type>>(), depth: 0, ret: mk_type(TY_VOID), loops: 0,
+        in_test: false, in_policy: false, denials: new Map<int>(), asserts: 0
+    };
+}
+
+bool taken(Checker c, string name) {
+    return c.structs.has(name) || c.fns.has(name) || c.policies.has(name) || c.consts.has(name);
+}
+
+void register(Checker c, Node d) {
+    if (d.k == N_STRUCT || d.k == N_FN || d.k == N_POLICY || d.k == N_CONST) {
+        if (taken(c, d.s)) {
+            error_at(c.ctx, d, "", "'" + d.s + "' is declared more than once");
+            return;
+        }
+    }
+    if (d.k == N_STRUCT) { c.structs.set(d.s, d); }
+    if (d.k == N_FN) { c.fns.set(d.s, d); }
+    if (d.k == N_POLICY) {
+        c.policy_ids.set(d.s, c.policies.keys().len());
+        c.policies.set(d.s, d);
+    }
+    if (d.k == N_CONST) { c.consts.set(d.s, d); }
+}
+
+void check_params(Checker c, Node f) {
+    Map<int> seen = new Map<int>();
+    for (int i = 0; i < f.n; i += 1) {
+        Node prm = f.kids[i];
+        check_type(c, prm, ty_of(prm), false);
+        if (seen.has(prm.s)) { error_at(c.ctx, prm, "", "duplicate parameter '" + prm.s + "'"); }
+        seen.set(prm.s, 1);
+    }
+}
+
+void bind_params(Checker c, Node f) {
+    for (int i = 0; i < f.n; i += 1) {
+        declare(c, f.kids[i], f.kids[i].s, ty_of(f.kids[i]));
+    }
+}
+
+void check_fn(Checker c, Node f) {
+    Type rt = ty_of(f);
+    check_type(c, f, rt, true);
+    if (contains_grant(rt)) {
+        error_at(c.ctx, f, "CWE-613", "functions cannot return grants; authorise where the protected action happens");
+    }
+    check_params(c, f);
+    if (f.s2 != "") {
+        if (let pol = c.policies.get(f.s2)) {
+            bool ok = f.n >= 1 && ty_of(f.kids[0]).k == TY_GRANT && ty_of(f.kids[0]).name == f.s2;
+            if (!ok) {
+                error_at(c.ctx, f, "CWE-862", "protected(" + f.s2 + ") function '" + f.s + "' must take Grant<" + f.s2 + "> as its first parameter");
+            }
+        } else {
+            error_at(c.ctx, f, "", "protected() names unknown policy '" + f.s2 + "'");
+        }
+    } else {
+        for (int i = 0; i < f.n; i += 1) {
+            if (ty_of(f.kids[i]).k == TY_GRANT) {
+                error_at(c.ctx, f.kids[i], "CWE-862", "only protected functions may take a Grant; declare '" + f.s + "' as protected(" + ty_of(f.kids[i]).name + ")");
+            }
+        }
+    }
+    c.ret = rt;
+    c.depth = 0;
+    push_scope(c);
+    bind_params(c, f);
+    Node body = f.kids[f.n];
+    check_block(c, body);
+    pop_scope(c);
+    if (rt.k != TY_VOID && !always_returns(body)) {
+        error_at(c.ctx, f, "", "function '" + f.s + "' can reach its end without returning a value");
+    }
+}
+
+void check_program(Checker c, List<Node> decls, bool need_main) {
+    for (int i = 0; i < decls.len(); i += 1) { register(c, decls[i]); }
+    for (int i2 = 0; i2 < decls.len(); i2 += 1) {
+        Node d = decls[i2];
+        if (d.k == N_STRUCT) {
+            Map<int> seen = new Map<int>();
+            for (int j = 0; j < d.kids.len(); j += 1) {
+                Node fd = d.kids[j];
+                Type ft = ty_of(fd);
+                check_type(c, fd, ft, false);
+                if (contains_grant(ft)) {
+                    error_at(c.ctx, fd, "CWE-613", "grants cannot be stored in struct fields; a grant must not outlive the request that obtained it");
+                }
+                if (seen.has(fd.s)) { error_at(c.ctx, fd, "", "duplicate field '" + fd.s + "'"); }
+                seen.set(fd.s, 1);
+            }
+        }
+    }
+    for (int i3 = 0; i3 < decls.len(); i3 += 1) {
+        Node d3 = decls[i3];
+        if (d3.k == N_CONST) {
+            Type ct = ty_of(d3);
+            check_type(c, d3, ct, false);
+            if (contains_grant(ct)) { error_at(c.ctx, d3, "CWE-613", "grants cannot be constants"); }
+            c.depth = 0;
+            push_scope(c);
+            Type vt = check_expr(c, d3.kids[0]);
+            pop_scope(c);
+            expect_type(c, d3, vt, ct, "constant '" + d3.s + "'");
+            check_hardcoded(c, d3, d3.s, d3.kids[0]);
+            c.const_types.set(d3.s, ct);
+        }
+    }
+    for (int i4 = 0; i4 < decls.len(); i4 += 1) {
+        Node d4 = decls[i4];
+        if (d4.k == N_FN) { check_fn(c, d4); }
+        if (d4.k == N_POLICY) {
+            check_params(c, d4);
+            c.ret = mk_type(TY_BOOL);
+            c.depth = 0;
+            c.in_policy = true;
+            push_scope(c);
+            bind_params(c, d4);
+            check_block(c, d4.kids[d4.n]);
+            pop_scope(c);
+            c.in_policy = false;
+            check_policy(c, d4);
+        }
+        if (d4.k == N_TEST) {
+            c.ret = mk_type(TY_VOID);
+            c.depth = 0;
+            c.in_test = true;
+            int before = c.asserts;
+            check_block(c, d4.kids[0]);
+            c.in_test = false;
+            if (c.asserts == before) {
+                warn_at(c.ctx, d4, "CAP-TEST", "test \"" + d4.s + "\" asserts nothing");
+            }
+        }
+    }
+    List<string> pols = c.policies.keys();
+    for (int i5 = 0; i5 < pols.len(); i5 += 1) {
+        if (let pn = c.policies.get(pols[i5])) {
+            if (pn.s2 != "public" && !c.denials.has(pols[i5])) {
+                report(c.ctx, pn.file, pn.line, c.ctx.release || c.ctx.strict, "CAP-TEST",
+                    "policy '" + pols[i5] + "' has no test showing a request being denied; add assert_denied " + pols[i5] + "(...) in a test");
+            }
+        }
+    }
+    if (need_main) {
+        if (let m = c.fns.get("main")) {
+            Type mt = ty_of(m);
+            if (m.n != 0 || (mt.k != TY_INT && mt.k != TY_VOID)) {
+                error_at(c.ctx, m, "", "main must be declared as int main() or void main()");
+            }
+        } else {
+            report(c.ctx, 0, 1, true, "", "program has no main() function");
+        }
+    }
+}

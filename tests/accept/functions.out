@@ -1,0 +1,5 @@
+say: Hello, Capstan
+20
+parity ok
+ack(2,3) = 9
+depth 100000

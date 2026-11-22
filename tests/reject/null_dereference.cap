@@ -1,0 +1,8 @@
+// expect: CWE-476
+struct Account { string owner; }
+Account? find(int id) { return none; }
+int main() {
+    Account? a = find(3);
+    println(a.owner);
+    return 0;
+}

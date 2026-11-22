@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# capstan: front end for the Capstan compiler.
+#   capstan run   file.cap... [-- program args]
+#   capstan build file.cap... -o program [--release] [--strict]
+#   capstan test  file.cap...           [--strict]
+#   capstan check file.cap...           [--release] [--strict]
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CAPSTANC="$ROOT/build/capstanc"
+CC="${CC:-cc}"
+CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime"
+
+if [[ ! -x "$CAPSTANC" ]]; then
+  echo "capstan: bootstrapping the compiler (first run)..." >&2
+  make -s -C "$ROOT" bootstrap >&2
+fi
+
+cmd="${1:-}"; shift || true
+files=(); flags=(); out=""; progargs=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    --release|--strict) flags+=("$1"); shift ;;
+    --) shift; progargs=("$@"); break ;;
+    *) files+=("$1"); shift ;;
+  esac
+done
+
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+case "$cmd" in
+  check) exec "$CAPSTANC" check "${flags[@]}" "${files[@]}" ;;
+  build)
+    [[ -n "$out" ]] || { echo "capstan build: needs -o program" >&2; exit 2; }
+    "$CAPSTANC" build -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
+    "$CC" $CFLAGS "$tmp/out.c" -o "$out" ;;
+  run)
+    "$CAPSTANC" build -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
+    "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/prog"
+    "$tmp/prog" "${progargs[@]}" ;;
+  test)
+    "$CAPSTANC" test -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
+    "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/tests"
+    "$tmp/tests" ;;
+  *) echo "usage: capstan (run|build|test|check) file.cap... [-o program] [--release] [--strict]" >&2; exit 2 ;;
+esac

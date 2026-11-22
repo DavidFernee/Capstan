@@ -1,0 +1,5 @@
+// expect: CWE-457
+int main() {
+    int total;
+    return total;
+}

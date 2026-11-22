@@ -1,0 +1,7 @@
+// expect-runtime: CWE-125
+int main() {
+    List<int> xs = new List<int>();
+    xs.push(1);
+    int i = 5;
+    return xs[i];
+}

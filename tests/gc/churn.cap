@@ -1,0 +1,28 @@
+// Allocates about 3 GB of short-lived garbage while keeping a small live set.
+// The test runner checks that the peak heap stays small.
+struct Item { int id; string label; Item? next; }
+
+int main() {
+    Item? keep = none;
+    int checksum = 0;
+    for (int round = 0; round < 400; round += 1) {
+        List<Item> scratch = new List<Item>();
+        for (int i = 0; i < 20000; i += 1) {
+            scratch.push(new Item{id: i, label: "item-" + int_to_str(i), next: none});
+        }
+        checksum += scratch[round % 20000].id;
+        if (round % 50 == 0) { keep = new Item{id: round, label: "kept-" + int_to_str(round), next: keep}; }
+    }
+    int kept = 0;
+    Item? cur = keep;
+    while (true) {
+        if (let it = cur) {
+            kept += it.id;
+            cur = it.next;
+        } else {
+            break;
+        }
+    }
+    println("checksum " + int_to_str(checksum) + " kept " + int_to_str(kept));
+    return 0;
+}

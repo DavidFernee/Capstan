@@ -1,0 +1,2 @@
+// expect: CWE-20
+int main() { string s = trust(taint("x"), ""); return 0; }

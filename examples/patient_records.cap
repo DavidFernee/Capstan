@@ -1,0 +1,96 @@
+// Patient records: authorisation, secrets and untrusted input in Capstan.
+//
+//   bin/capstan run  examples/patient_records.cap
+//   bin/capstan test examples/patient_records.cap
+
+const int ROLE_PATIENT = 1;
+const int ROLE_CLINICIAN = 2;
+const int ROLE_RECEPTION = 3;
+
+struct User {
+    int id;
+    int role;
+    string name;
+}
+
+struct Record {
+    int patient_id;
+    int treating_clinician;
+    string notes;
+}
+
+// A clinician may read the records of patients they treat; patients may read their own.
+policy ReadRecord(User u, Record r) {
+    if (u.role == ROLE_CLINICIAN && u.id == r.treating_clinician) { return true; }
+    if (u.role == ROLE_PATIENT && u.id == r.patient_id) { return true; }
+    return false;
+}
+
+// The compiler will not let this function be called without a Grant<ReadRecord>,
+// and the runtime checks that the grant was issued for this very record.
+protected(ReadRecord) string read_notes(Grant<ReadRecord> g, Record r) {
+    return r.notes;
+}
+
+void show(User u, Record r) {
+    if (let g = authorize ReadRecord(u, r)) {
+        println(u.name + " reads: " + read_notes(g, r));
+    } else {
+        println(u.name + " is denied access");
+    }
+}
+
+// Search terms come from outside, so they are Tainted. They can only reach the
+// database as a bound parameter, never as part of the query text.
+void search(Tainted term) {
+    sql_query("SELECT id FROM records WHERE notes LIKE ?", term);
+}
+
+int main() {
+    User alice = new User{id: 1, role: ROLE_PATIENT, name: "Alice (patient)"};
+    User drlee = new User{id: 7, role: ROLE_CLINICIAN, name: "Dr Lee (treating)"};
+    User drkim = new User{id: 8, role: ROLE_CLINICIAN, name: "Dr Kim (not treating)"};
+    User front = new User{id: 9, role: ROLE_RECEPTION, name: "Reception"};
+    Record rec = new Record{patient_id: 1, treating_clinician: 7, notes: "BP 120/80, review in 6 weeks"};
+
+    show(alice, rec);
+    show(drlee, rec);
+    show(drkim, rec);
+    show(front, rec);
+
+    search(taint("'; DROP TABLE records; --"));
+
+    // Passwords: stored with an algorithm tag so future versions can upgrade them.
+    string stored = hash_password(taint("correct horse battery staple"));
+    println("password ok: " + bool_str(verify_password(taint("correct horse battery staple"), stored)));
+    println("wrong password ok: " + bool_str(verify_password(taint("guess"), stored)));
+    println("needs rehash: " + bool_str(needs_rehash(stored)));
+    return 0;
+}
+
+string bool_str(bool b) {
+    if (b) { return "yes"; }
+    return "no";
+}
+
+test "treating clinician can read" {
+    User doc = new User{id: 7, role: ROLE_CLINICIAN, name: "doc"};
+    Record r = new Record{patient_id: 1, treating_clinician: 7, notes: "n"};
+    assert_granted ReadRecord(doc, r);
+}
+
+test "other clinicians and reception are denied" {
+    User other = new User{id: 8, role: ROLE_CLINICIAN, name: "other"};
+    User desk = new User{id: 9, role: ROLE_RECEPTION, name: "desk"};
+    Record r = new Record{patient_id: 1, treating_clinician: 7, notes: "n"};
+    assert_denied ReadRecord(other, r);
+    assert_denied ReadRecord(desk, r);
+}
+
+test "patients see only their own record" {
+    User pat = new User{id: 1, role: ROLE_PATIENT, name: "p"};
+    Record mine = new Record{patient_id: 1, treating_clinician: 7, notes: "a"};
+    Record theirs = new Record{patient_id: 2, treating_clinician: 7, notes: "b"};
+    assert_granted ReadRecord(pat, mine);
+    assert_denied ReadRecord(pat, theirs);
+}

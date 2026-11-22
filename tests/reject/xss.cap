@@ -1,0 +1,7 @@
+// expect: CWE-20
+string page(string body) { return "<html><body>" + body + "</body></html>"; }
+int main() {
+    Tainted comment = taint("<script>steal()</script>");
+    string html = page(comment);
+    return 0;
+}

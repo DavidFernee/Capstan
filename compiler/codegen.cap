@@ -1,0 +1,597 @@
+// Capstan compiler: C code generator.
+//
+// Generated C is compiled with GCC or Clang. Capstan guarantees left-to-right
+// evaluation, so wherever C leaves the order unspecified (function arguments,
+// operands), operands that might have side effects are evaluated into
+// temporaries first.
+
+struct Gen {
+    Checker c;
+    List<string> out;
+    int tmp;
+    int ind;
+    Type ret;
+    bool test_mode;
+}
+
+struct Seq {
+    string pre;
+    List<string> names;
+}
+
+void emit(Gen g, string s) {
+    List<string> pad = new List<string>();
+    for (int i = 0; i < g.ind; i += 1) { pad.push("    "); }
+    g.out.push(join(pad, "") + s + "\n");
+}
+
+string fresh(Gen g) {
+    g.tmp += 1;
+    return "_t" + int_to_str(g.tmp);
+}
+
+string loc(Node n) {
+    return int_to_str(n.file * 1000000 + n.line);
+}
+
+bool is_scalar(Type t) {
+    return t.k == TY_INT || t.k == TY_BOOL;
+}
+
+string ctype(Type t) {
+    int k = t.k;
+    if (k == TY_INT) { return "int64_t"; }
+    if (k == TY_BOOL) { return "bool"; }
+    if (k == TY_STR || k == TY_TAINT || k == TY_SECRET) { return "CapStr*"; }
+    if (k == TY_STRUCT) { return "S_" + t.name + "*"; }
+    if (k == TY_LIST) { return "CapList*"; }
+    if (k == TY_MAP) { return "CapMap*"; }
+    if (k == TY_GRANT) { return "CapGrant*"; }
+    if (k == TY_OPT) {
+        if (is_scalar(t.args[0])) { return "int64_t*"; }
+        return ctype(t.args[0]);
+    }
+    if (k == TY_VOID) { return "void"; }
+    return "void*";
+}
+
+string coerce(string code, Type from, Type to) {
+    if (to.k == TY_OPT && from.k != TY_OPT) {
+        if (from.k == TY_NONE) { return "NULL"; }
+        if (is_scalar(to.args[0])) { return "cap_box_int(" + code + ")"; }
+    }
+    return code;
+}
+
+string to_val(Type t, string code) {
+    if (is_scalar(t)) { return "cap_vi(" + code + ")"; }
+    return "cap_vp(" + code + ")";
+}
+
+string from_val(Type t, string code) {
+    if (t.k == TY_INT) { return "(" + code + ").i"; }
+    if (t.k == TY_BOOL) { return "((bool)(" + code + ").i)"; }
+    return "((" + ctype(t) + ")(" + code + ").p)";
+}
+
+bool is_simple(Node n) {
+    return n.k == N_INT || n.k == N_STR || n.k == N_BOOL || n.k == N_NONE || n.k == N_VAR;
+}
+
+// Evaluate operands into temporaries, left to right, when more than one could
+// have side effects.
+Seq hoist(Gen g, List<string> codes, List<bool> simple) {
+    int complex = 0;
+    for (int i = 0; i < simple.len(); i += 1) {
+        if (!simple[i]) { complex += 1; }
+    }
+    if (complex <= 1) { return new Seq{pre: "", names: codes}; }
+    List<string> pre = new List<string>();
+    List<string> names = new List<string>();
+    for (int j = 0; j < codes.len(); j += 1) {
+        if (simple[j]) {
+            names.push(codes[j]);
+        } else {
+            string t = fresh(g);
+            pre.push("__auto_type " + t + " = " + codes[j] + "; ");
+            names.push(t);
+        }
+    }
+    return new Seq{pre: join(pre, ""), names: names};
+}
+
+string wrap(Seq s, string expr) {
+    if (s.pre == "") { return expr; }
+    return "({ " + s.pre + expr + "; })";
+}
+
+string call_list(List<string> names, int from, string extra) {
+    List<string> parts = new List<string>();
+    for (int i = from; i < names.len(); i += 1) { parts.push(names[i]); }
+    if (extra != "") { parts.push(extra); }
+    return join(parts, ", ");
+}
+
+// Generate all kids of `e` from index `first` as plain operands.
+Seq operands(Gen g, Node e, int first) {
+    List<string> codes = new List<string>();
+    List<bool> simple = new List<bool>();
+    for (int i = first; i < e.kids.len(); i += 1) {
+        codes.push(gen_expr(g, e.kids[i]));
+        simple.push(is_simple(e.kids[i]));
+    }
+    return hoist(g, codes, simple);
+}
+
+string gen_expr(Gen g, Node e) {
+    int k = e.k;
+    if (k == N_INT) { return "INT64_C(" + int_to_str(e.n) + ")"; }
+    if (k == N_STR) { return "CAP_LIT(\"" + e.s + "\", " + int_to_str(e.n) + ")"; }
+    if (k == N_BOOL) {
+        if (e.n == 1) { return "true"; }
+        return "false";
+    }
+    if (k == N_NONE) { return "NULL"; }
+    if (k == N_VAR) {
+        if (e.n == 1) { return "g_" + e.s; }
+        return "u_" + e.s;
+    }
+    if (k == N_NOT) { return "(!(" + gen_expr(g, e.kids[0]) + "))"; }
+    if (k == N_NEG) { return "cap_neg(" + gen_expr(g, e.kids[0]) + ", " + loc(e) + ")"; }
+    if (k == N_BIN) { return gen_binary(g, e); }
+    if (k == N_GETF) { return "(" + gen_expr(g, e.kids[0]) + ")->f_" + e.s; }
+    if (k == N_INDEX) {
+        Seq s = operands(g, e, 0);
+        Type el = ty_of(e);
+        return wrap(s, from_val(el, "cap_list_get(" + call_list(s.names, 0, loc(e)) + ")"));
+    }
+    if (k == N_METHOD) { return gen_method(g, e); }
+    if (k == N_CALL) { return gen_call(g, e); }
+    if (k == N_NEW) {
+        string t = fresh(g);
+        string sname = "S_" + e.s;
+        List<string> parts = new List<string>();
+        parts.push("({ " + sname + " *" + t + " = (" + sname + " *)cap_alloc(sizeof(" + sname + ")); ");
+        for (int i = 0; i < e.kids.len(); i += 1) {
+            Node init = e.kids[i];
+            Type ft = mk_type(TY_ERR);
+            if (let fty = field_type(g.c, e.s, init.s)) { ft = fty; }
+            parts.push(t + "->f_" + init.s + " = " + coerce(gen_expr(g, init.kids[0]), ty_of(init.kids[0]), ft) + "; ");
+        }
+        parts.push(t + "; })");
+        return join(parts, "");
+    }
+    if (k == N_NEWLIST) { return "cap_list_new()"; }
+    if (k == N_NEWMAP) { return "cap_map_new()"; }
+    if (k == N_AUTHORIZE) { return gen_authorize(g, e); }
+    return "/* unsupported */ 0";
+}
+
+string gen_authorize(Gen g, Node e) {
+    Node pol = e;
+    int id = 0;
+    if (let pn = g.c.policies.get(e.s)) { pol = pn; }
+    if (let pid = g.c.policy_ids.get(e.s)) { id = pid; }
+    List<string> parts = new List<string>();
+    List<string> names = new List<string>();
+    parts.push("({ ");
+    for (int i = 0; i < e.kids.len(); i += 1) {
+        string t = fresh(g);
+        Type pt = ty_of(pol.kids[i]);
+        parts.push(ctype(pt) + " " + t + " = " + coerce(gen_expr(g, e.kids[i]), ty_of(e.kids[i]), pt) + "; ");
+        names.push(t);
+    }
+    string gt = fresh(g);
+    parts.push("CapGrant *" + gt + " = NULL; ");
+    parts.push("if (pol_" + e.s + "(" + join(names, ", ") + ")) { " + gt + " = cap_grant_new(" + int_to_str(id) + "); ");
+    for (int j = 0; j < names.len(); j += 1) {
+        if (ty_of(pol.kids[j]).k == TY_STRUCT) {
+            parts.push("cap_grant_bind(" + gt + ", (void *)" + names[j] + "); ");
+        }
+    }
+    parts.push("} " + gt + "; })");
+    return join(parts, "");
+}
+
+string gen_binary(Gen g, Node e) {
+    string op = e.s;
+    Type a = ty_of(e.kids[0]);
+    if (op == "&&" || op == "||") {
+        return "((" + gen_expr(g, e.kids[0]) + ") " + op + " (" + gen_expr(g, e.kids[1]) + "))";
+    }
+    Seq s = operands(g, e, 0);
+    string x = s.names[0];
+    string y = s.names[1];
+    string l = loc(e);
+    if (op == "==" || op == "!=") {
+        if (is_stringish(a)) {
+            string eq = "cap_str_eq(" + x + ", " + y + ")";
+            if (op == "!=") { eq = "(!" + eq + ")"; }
+            return wrap(s, eq);
+        }
+        return wrap(s, "((" + x + ") " + op + " (" + y + "))");
+    }
+    if (op == "<" || op == "<=" || op == ">" || op == ">=") {
+        return wrap(s, "((" + x + ") " + op + " (" + y + "))");
+    }
+    if (op == "+" && is_stringish(a)) { return wrap(s, "cap_str_concat(" + x + ", " + y + ", " + l + ")"); }
+    string fname = "cap_add";
+    if (op == "-") { fname = "cap_sub"; }
+    if (op == "*") { fname = "cap_mul"; }
+    if (op == "/") { fname = "cap_div"; }
+    if (op == "%") { fname = "cap_mod"; }
+    return wrap(s, fname + "(" + x + ", " + y + ", " + l + ")");
+}
+
+string gen_method(Gen g, Node e) {
+    Type rt = ty_of(e.kids[0]);
+    string m = e.s;
+    List<string> codes = new List<string>();
+    List<bool> simple = new List<bool>();
+    codes.push(gen_expr(g, e.kids[0]));
+    simple.push(is_simple(e.kids[0]));
+    for (int i = 1; i < e.kids.len(); i += 1) {
+        string code = gen_expr(g, e.kids[i]);
+        if (rt.k == TY_LIST && m == "push") { code = to_val(rt.args[0], coerce(code, ty_of(e.kids[i]), rt.args[0])); }
+        if (rt.k == TY_MAP && m == "set" && i == 2) { code = to_val(rt.args[0], coerce(code, ty_of(e.kids[i]), rt.args[0])); }
+        codes.push(code);
+        simple.push(is_simple(e.kids[i]));
+    }
+    Seq s = hoist(g, codes, simple);
+    string r = s.names[0];
+    if (m == "len") { return wrap(s, "((" + r + ")->len)"); }
+    if (is_stringish(rt)) {
+        if (m == "at") { return wrap(s, "cap_str_at(" + call_list(s.names, 0, loc(e)) + ")"); }
+        if (m == "slice") { return wrap(s, "cap_str_slice(" + call_list(s.names, 0, loc(e)) + ")"); }
+    }
+    if (rt.k == TY_LIST && m == "push") { return wrap(s, "cap_list_push(" + call_list(s.names, 0, "") + ")"); }
+    if (rt.k == TY_MAP) {
+        Type mv = rt.args[0];
+        if (m == "has") { return wrap(s, "cap_map_has(" + call_list(s.names, 0, "") + ")"); }
+        if (m == "set") { return wrap(s, "cap_map_set(" + call_list(s.names, 0, "") + ")"); }
+        if (m == "keys") { return wrap(s, "cap_map_keys(" + r + ")"); }
+        if (m == "get") {
+            if (is_scalar(mv)) { return wrap(s, "cap_map_get_i(" + call_list(s.names, 0, "") + ")"); }
+            return wrap(s, "((" + ctype(mv) + ")cap_map_get_p(" + call_list(s.names, 0, "") + "))");
+        }
+    }
+    return "/* unsupported method */ 0";
+}
+
+string builtin_c(string f) {
+    if (f == "print") { return "cap_print"; }
+    if (f == "println") { return "cap_println"; }
+    if (f == "int_to_str") { return "cap_int_to_str"; }
+    if (f == "char_str") { return "cap_char_str"; }
+    if (f == "read_file") { return "cap_read_file"; }
+    if (f == "read_line") { return "cap_read_line"; }
+    if (f == "write_file") { return "cap_write_file"; }
+    if (f == "args") { return "cap_args"; }
+    if (f == "exit") { return "cap_exit"; }
+    if (f == "join") { return "cap_join"; }
+    if (f == "assert") { return "cap_assert"; }
+    if (f == "validate_ident") { return "cap_validate_ident"; }
+    if (f == "validate_int") { return "cap_validate_int"; }
+    if (f == "escape_c") { return "cap_escape_c"; }
+    if (f == "escape_html") { return "cap_escape_html"; }
+    if (f == "escape_log") { return "cap_escape_log"; }
+    if (f == "secret_env") { return "cap_secret_env"; }
+    if (f == "secret_eq") { return "cap_secret_eq"; }
+    if (f == "hash") { return "cap_hash"; }
+    if (f == "hash_verify") { return "cap_hash_verify"; }
+    if (f == "hash_password") { return "cap_hash_password"; }
+    if (f == "verify_password") { return "cap_verify_password"; }
+    if (f == "needs_rehash") { return "cap_needs_rehash"; }
+    return "";
+}
+
+bool builtin_needs_loc(string f) {
+    return f == "char_str" || f == "join" || f == "assert";
+}
+
+string gen_call(Gen g, Node e) {
+    string f = e.s;
+    if (let fnode = g.c.fns.get(f)) {
+        List<string> codes = new List<string>();
+        List<bool> simple = new List<bool>();
+        for (int i = 0; i < e.kids.len(); i += 1) {
+            codes.push(coerce(gen_expr(g, e.kids[i]), ty_of(e.kids[i]), ty_of(fnode.kids[i])));
+            simple.push(is_simple(e.kids[i]));
+        }
+        Seq s = hoist(g, codes, simple);
+        return wrap(s, "fn_" + f + "(" + call_list(s.names, 0, "") + ")");
+    }
+    if (f == "trust" || f == "taint") { return gen_expr(g, e.kids[0]); }
+    if (f == "sql_query" || f == "run") {
+        string lt = fresh(g);
+        List<string> parts = new List<string>();
+        parts.push("({ CapList *" + lt + " = cap_list_new(); ");
+        for (int j = 1; j < e.kids.len(); j += 1) {
+            parts.push("cap_list_push(" + lt + ", cap_vp(" + gen_expr(g, e.kids[j]) + ")); ");
+        }
+        parts.push("cap_" + f + "(" + gen_expr(g, e.kids[0]) + ", " + lt + "); })");
+        return join(parts, "");
+    }
+    Seq s2 = operands(g, e, 0);
+    string extra = "";
+    if (builtin_needs_loc(f)) { extra = loc(e); }
+    return wrap(s2, builtin_c(f) + "(" + call_list(s2.names, 0, extra) + ")");
+}
+
+// ---- statements ---------------------------------------------------------------
+
+string unwrap_opt(Type inner, string t) {
+    if (inner.k == TY_INT) { return "(*" + t + ")"; }
+    if (inner.k == TY_BOOL) { return "((bool)*" + t + ")"; }
+    return t;
+}
+
+// A declaration, assignment or expression without the trailing semicolon.
+string gen_simple(Gen g, Node s) {
+    if (s.k == N_DECL) {
+        Type dt = ty_of(s);
+        return ctype(dt) + " u_" + s.s + " = " + coerce(gen_expr(g, s.kids[0]), ty_of(s.kids[0]), dt);
+    }
+    if (s.k == N_ASSIGN) {
+        Node target = s.kids[0];
+        Node rhs = s.kids[1];
+        Type tt = ty_of(target);
+        string rcode = coerce(gen_expr(g, rhs), ty_of(rhs), tt);
+        if (s.s != "=") {
+            string tcode = gen_expr(g, target);
+            string val = "";
+            if (is_stringish(tt)) {
+                val = "cap_str_concat(" + tcode + ", " + rcode + ", " + loc(s) + ")";
+            } else if (s.s == "+=") {
+                val = "cap_add(" + tcode + ", " + rcode + ", " + loc(s) + ")";
+            } else {
+                val = "cap_sub(" + tcode + ", " + rcode + ", " + loc(s) + ")";
+            }
+            if (target.k == N_INDEX) {
+                return "cap_list_set(" + gen_expr(g, target.kids[0]) + ", " + gen_expr(g, target.kids[1]) + ", " + to_val(tt, val) + ", " + loc(s) + ")";
+            }
+            return tcode + " = " + val;
+        }
+        if (target.k == N_VAR) { return "u_" + target.s + " = " + rcode; }
+        if (target.k == N_GETF) {
+            Node obj = target.kids[0];
+            if (is_simple(obj) || is_simple(rhs)) {
+                return "(" + gen_expr(g, obj) + ")->f_" + target.s + " = " + rcode;
+            }
+            string ot = fresh(g);
+            return "({ __auto_type " + ot + " = " + gen_expr(g, obj) + "; " + ot + "->f_" + target.s + " = " + rcode + "; })";
+        }
+        List<string> codes = new List<string>();
+        List<bool> simple = new List<bool>();
+        codes.push(gen_expr(g, target.kids[0]));
+        simple.push(is_simple(target.kids[0]));
+        codes.push(gen_expr(g, target.kids[1]));
+        simple.push(is_simple(target.kids[1]));
+        codes.push(to_val(tt, rcode));
+        simple.push(is_simple(rhs));
+        Seq sq = hoist(g, codes, simple);
+        return wrap(sq, "cap_list_set(" + call_list(sq.names, 0, loc(s)) + ")");
+    }
+    return gen_expr(g, s.kids[0]);
+}
+
+void gen_block(Gen g, Node b) {
+    emit(g, "{");
+    g.ind += 1;
+    for (int i = 0; i < b.kids.len(); i += 1) { gen_stmt(g, b.kids[i]); }
+    g.ind -= 1;
+    emit(g, "}");
+}
+
+// Map the generated C back to Capstan source for debuggers, sanitizers and coverage.
+void emit_line(Gen g, Node s) {
+    g.out.push("#line " + int_to_str(s.line) + " \"" + escape_c(g.c.ctx.files[s.file]) + "\"\n");
+}
+
+void gen_stmt(Gen g, Node s) {
+    int k = s.k;
+    if (k == N_BLOCK) { gen_block(g, s); return; }
+    emit_line(g, s);
+    if (k == N_DECL || k == N_ASSIGN || k == N_EXPR) {
+        emit(g, gen_simple(g, s) + ";");
+        return;
+    }
+    if (k == N_IF) {
+        if (s.n == 1) {
+            Type ot = ty_of(s.kids[0]);
+            string t = fresh(g);
+            emit(g, "{");
+            g.ind += 1;
+            emit(g, ctype(ot) + " " + t + " = " + gen_expr(g, s.kids[0]) + ";");
+            emit(g, "if (" + t + " != NULL) {");
+            g.ind += 1;
+            Type inner = mk_type(TY_ERR);
+            if (ot.k == TY_OPT) { inner = ot.args[0]; }
+            emit(g, ctype(inner) + " u_" + s.s2 + " = " + unwrap_opt(inner, t) + ";");
+            gen_block(g, s.kids[1]);
+            g.ind -= 1;
+            if (s.kids.len() > 2) {
+                emit(g, "} else");
+                gen_block(g, s.kids[2]);
+            } else {
+                emit(g, "}");
+            }
+            g.ind -= 1;
+            emit(g, "}");
+            return;
+        }
+        emit(g, "if (" + gen_expr(g, s.kids[0]) + ")");
+        gen_block(g, s.kids[1]);
+        if (s.kids.len() > 2) {
+            emit(g, "else");
+            gen_block(g, s.kids[2]);
+        }
+        return;
+    }
+    if (k == N_WHILE) {
+        emit(g, "while (" + gen_expr(g, s.kids[0]) + ")");
+        gen_block(g, s.kids[1]);
+        return;
+    }
+    if (k == N_FOR) {
+        emit(g, "for (" + gen_simple(g, s.kids[0]) + "; " + gen_expr(g, s.kids[1]) + "; " + gen_simple(g, s.kids[2]) + ")");
+        gen_block(g, s.kids[3]);
+        return;
+    }
+    if (k == N_RETURN) {
+        if (s.kids.len() == 0) {
+            emit(g, "return;");
+        } else {
+            emit(g, "return " + coerce(gen_expr(g, s.kids[0]), ty_of(s.kids[0]), g.ret) + ";");
+        }
+        return;
+    }
+    if (k == N_BREAK) { emit(g, "break;"); return; }
+    if (k == N_CONTINUE) { emit(g, "continue;"); return; }
+    if (k == N_ASSERT_DENIED || k == N_ASSERT_GRANTED) {
+        Node az = mk_node_s(N_AUTHORIZE, s.s, s.file, s.line);
+        az.kids = s.kids;
+        string cmp = " == NULL";
+        if (k == N_ASSERT_GRANTED) { cmp = " != NULL"; }
+        emit(g, "cap_assert(" + gen_authorize(g, az) + cmp + ", " + loc(s) + ");");
+        return;
+    }
+}
+
+// ---- declarations -------------------------------------------------------------
+
+string params_c(Node f) {
+    if (f.n == 0) { return "void"; }
+    List<string> ps = new List<string>();
+    for (int i = 0; i < f.n; i += 1) {
+        ps.push(ctype(ty_of(f.kids[i])) + " u_" + f.kids[i].s);
+    }
+    return join(ps, ", ");
+}
+
+string fn_sig(Node f) {
+    return "static " + ctype(ty_of(f)) + " fn_" + f.s + "(" + params_c(f) + ")";
+}
+
+string pol_sig(Node p) {
+    return "static bool pol_" + p.s + "(" + params_c(p) + ")";
+}
+
+// Protected functions verify that the grant was issued for these very objects.
+void gen_grant_checks(Gen g, Node f) {
+    if (let pol = g.c.policies.get(f.s2)) {
+        int id = 0;
+        if (let pid = g.c.policy_ids.get(f.s2)) { id = pid; }
+        for (int i = 1; i < f.n; i += 1) {
+            Type pt = ty_of(f.kids[i]);
+            if (pt.k == TY_STRUCT) {
+                bool bound = false;
+                for (int j = 0; j < pol.n; j += 1) {
+                    if (type_eq(ty_of(pol.kids[j]), pt)) { bound = true; }
+                }
+                if (bound) {
+                    emit(g, "cap_grant_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", (void *)u_" + f.kids[i].s + ", " + loc(f) + ");");
+                }
+            }
+        }
+    }
+}
+
+string generate(Checker c, List<Node> decls, bool test_mode) {
+    Gen g = new Gen{c: c, out: new List<string>(), tmp: 0, ind: 0, ret: mk_type(TY_VOID), test_mode: test_mode};
+    emit(g, "/* Generated by the Capstan compiler. Do not edit. */");
+    emit(g, "#include \"capstan_rt.h\"");
+    emit(g, "");
+    List<string> fnames = new List<string>();
+    for (int i = 0; i < c.ctx.files.len(); i += 1) {
+        fnames.push("\"" + escape_c(c.ctx.files[i]) + "\"");
+    }
+    emit(g, "static const char *cap_file_names[] = {" + join(fnames, ", ") + "};");
+    emit(g, "");
+    for (int i2 = 0; i2 < decls.len(); i2 += 1) {
+        if (decls[i2].k == N_STRUCT) { emit(g, "typedef struct S_" + decls[i2].s + " S_" + decls[i2].s + ";"); }
+    }
+    for (int i3 = 0; i3 < decls.len(); i3 += 1) {
+        Node d = decls[i3];
+        if (d.k == N_STRUCT) {
+            emit(g, "struct S_" + d.s + " {");
+            g.ind += 1;
+            for (int j = 0; j < d.kids.len(); j += 1) {
+                emit(g, ctype(ty_of(d.kids[j])) + " f_" + d.kids[j].s + ";");
+            }
+            if (d.kids.len() == 0) { emit(g, "char _empty;"); }
+            g.ind -= 1;
+            emit(g, "};");
+        }
+    }
+    emit(g, "");
+    for (int i4 = 0; i4 < decls.len(); i4 += 1) {
+        Node d4 = decls[i4];
+        if (d4.k == N_CONST) { emit(g, "static " + ctype(ty_of(d4)) + " g_" + d4.s + ";"); }
+        if (d4.k == N_FN) { emit(g, fn_sig(d4) + ";"); }
+        if (d4.k == N_POLICY) { emit(g, pol_sig(d4) + ";"); }
+    }
+    emit(g, "");
+    emit(g, "static void cap_init_globals(void) {");
+    g.ind += 1;
+    for (int i5 = 0; i5 < decls.len(); i5 += 1) {
+        Node d5 = decls[i5];
+        if (d5.k == N_CONST) {
+            if (!is_scalar(ty_of(d5))) { emit(g, "cap_gc_root((void **)&g_" + d5.s + ");"); }
+            emit(g, "g_" + d5.s + " = " + coerce(gen_expr(g, d5.kids[0]), ty_of(d5.kids[0]), ty_of(d5)) + ";");
+        }
+    }
+    g.ind -= 1;
+    emit(g, "}");
+    int tests = 0;
+    for (int i6 = 0; i6 < decls.len(); i6 += 1) {
+        Node d6 = decls[i6];
+        if (d6.k == N_FN || d6.k == N_POLICY) {
+            emit(g, "");
+            g.ret = ty_of(d6);
+            if (d6.k == N_FN) { emit(g, fn_sig(d6)); } else { emit(g, pol_sig(d6)); }
+            emit(g, "{");
+            g.ind += 1;
+            if (d6.k == N_FN && d6.s2 != "") { gen_grant_checks(g, d6); }
+            gen_block(g, d6.kids[d6.n]);
+            g.ind -= 1;
+            emit(g, "}");
+        }
+        if (d6.k == N_TEST && test_mode) {
+            emit(g, "");
+            g.ret = mk_type(TY_VOID);
+            emit(g, "static void cap_test_" + int_to_str(tests) + "(void)");
+            gen_block(g, d6.kids[0]);
+            tests += 1;
+        }
+    }
+    emit(g, "");
+    emit(g, "int main(int argc, char **argv) {");
+    g.ind += 1;
+    emit(g, "cap_gc_init();");
+    emit(g, "cap_argc = argc; cap_argv = argv; cap_files = cap_file_names;");
+    emit(g, "cap_init_globals();");
+    if (test_mode) {
+        int ti = 0;
+        for (int i7 = 0; i7 < decls.len(); i7 += 1) {
+            if (decls[i7].k == N_TEST) {
+                emit(g, "cap_run_test(\"" + decls[i7].s + "\", cap_test_" + int_to_str(ti) + ");");
+                ti += 1;
+            }
+        }
+        emit(g, "return cap_test_summary();");
+    } else {
+        if (let m = c.fns.get("main")) {
+            if (ty_of(m).k == TY_INT) {
+                emit(g, "int r = (int)fn_main();");
+            } else {
+                emit(g, "fn_main(); int r = 0;");
+            }
+        }
+        emit(g, "fflush(stdout);");
+        emit(g, "return r;");
+    }
+    g.ind -= 1;
+    emit(g, "}");
+    return join(g.out, "");
+}

@@ -1,0 +1,2 @@
+// expect: CWE-369
+int main() { int x = 10 / 0; return x; }

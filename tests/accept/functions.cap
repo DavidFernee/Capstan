@@ -1,0 +1,22 @@
+// Spec: functions, recursion, mutual recursion, constants.
+const int BASE = 10;
+const int DOUBLE_BASE = BASE * 2;
+const string NAME = "Capstan";
+const string GREETING = "Hello, " + NAME;
+bool is_even(int n) { if (n == 0) { return true; } return is_odd(n - 1); }
+bool is_odd(int n) { if (n == 0) { return false; } return is_even(n - 1); }
+int ackermann(int m, int n) {
+    if (m == 0) { return n + 1; }
+    if (n == 0) { return ackermann(m - 1, 1); }
+    return ackermann(m - 1, ackermann(m, n - 1));
+}
+void say(string s) { println("say: " + s); }
+int depth(int n) { if (n == 0) { return 0; } return 1 + depth(n - 1); }
+int main() {
+    say(GREETING);
+    println(int_to_str(DOUBLE_BASE));
+    if (is_even(10) && is_odd(7)) { println("parity ok"); }
+    println("ack(2,3) = " + int_to_str(ackermann(2, 3)));
+    println("depth " + int_to_str(depth(100000)));
+    return 0;
+}

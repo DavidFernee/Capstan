@@ -1,0 +1,672 @@
+#!/usr/bin/env python3
+"""
+capstan0 -- the stage-0 bootstrap for Capstan.
+
+Grace Hopper's A-0 needed something to start from, and so does every
+self-hosting compiler. This file is that starting point: a deliberately
+small, unchecked translator from Capstan to Python. It performs *no* safety
+analysis. Its only job is to run the real Capstan compiler (compiler/*.cap,
+written in Capstan) for the first time. From then on the compiler compiles
+itself, and this file can be thrown away.
+
+Usage:  python3 capstan0.py out.py file1.cap [file2.cap ...]
+"""
+import sys
+
+KEYWORDS = {
+    "struct", "const", "if", "else", "while", "for", "return", "break", "continue",
+    "true", "false", "none", "new", "let", "protected", "policy", "public", "test",
+    "authorize", "assert_denied", "assert_granted",
+}
+PUNCT = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=",
+         "{", "}", "(", ")", "[", "]", ";", ",", ".", ":", "?", "<", ">", "=",
+         "+", "-", "*", "/", "%", "!"]
+TYPE_WORDS = {"int", "bool", "string", "void", "Tainted", "Secret"}
+GENERIC_WORDS = {"List", "Map", "Grant"}
+
+
+class Tok:
+    __slots__ = ("kind", "text", "line", "file")
+
+    def __init__(self, kind, text, line, file):
+        self.kind, self.text, self.line, self.file = kind, text, line, file
+
+    def __repr__(self):
+        return f"{self.file}:{self.line}:{self.kind}:{self.text!r}"
+
+
+def decode_escapes(raw, where):
+    out, i = [], 0
+    while i < len(raw):
+        c = raw[i]
+        if c == "\\":
+            i += 1
+            e = raw[i]
+            out.append({"n": "\n", "t": "\t", "r": "\r", "0": "\0", "\\": "\\", '"': '"', "'": "'"}.get(e))
+            if out[-1] is None:
+                raise SystemExit(f"{where}: bad escape \\{e}")
+        else:
+            out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def lex(src, file):
+    toks, i, line, n = [], 0, 1, len(src)
+    while i < n:
+        c = src[i]
+        if c == "\n":
+            line += 1; i += 1; continue
+        if c in " \t\r":
+            i += 1; continue
+        if src.startswith("//", i):
+            while i < n and src[i] != "\n":
+                i += 1
+            continue
+        if src.startswith("/*", i):
+            j = src.find("*/", i + 2)
+            if j < 0:
+                raise SystemExit(f"{file}:{line}: unterminated comment")
+            line += src.count("\n", i, j)
+            i = j + 2
+            continue
+        if c.isalpha() or c == "_":
+            j = i
+            while j < n and (src[j].isalnum() or src[j] == "_"):
+                j += 1
+            w = src[i:j]
+            toks.append(Tok("kw" if w in KEYWORDS else "id", w, line, file))
+            i = j; continue
+        if c.isdigit():
+            j = i
+            while j < n and src[j].isdigit():
+                j += 1
+            toks.append(Tok("int", src[i:j], line, file))
+            i = j; continue
+        if c == "'":
+            j = i + 1
+            while j < n and src[j] != "'":
+                if src[j] == "\\":
+                    j += 1
+                j += 1
+            ch = decode_escapes(src[i + 1:j].replace("\\'", "'"), f"{file}:{line}")
+            if len(ch) != 1:
+                raise SystemExit(f"{file}:{line}: bad character literal")
+            toks.append(Tok("int", str(ord(ch)), line, file))
+            i = j + 1; continue
+        if c == '"':
+            j = i + 1
+            while j < n and src[j] != '"':
+                if src[j] == "\\":
+                    j += 1
+                if src[j] == "\n":
+                    raise SystemExit(f"{file}:{line}: newline in string literal")
+                j += 1
+            toks.append(Tok("str", decode_escapes(src[i + 1:j], f"{file}:{line}"), line, file))
+            i = j + 1; continue
+        for p in PUNCT:
+            if src.startswith(p, i):
+                toks.append(Tok("op", p, line, file))
+                i += len(p)
+                break
+        else:
+            raise SystemExit(f"{file}:{line}: unexpected character {c!r}")
+    toks.append(Tok("eof", "", line, file))
+    return toks
+
+
+class Parser:
+    def __init__(self, toks):
+        self.t, self.p = toks, 0
+        self.tmp = 0
+
+    # -- helpers --
+    def peek(self, k=0):
+        return self.t[min(self.p + k, len(self.t) - 1)]
+
+    def at(self, text, k=0):
+        tk = self.peek(k)
+        return tk.kind in ("op", "kw") and tk.text == text
+
+    def eat(self, text):
+        tk = self.peek()
+        if not self.at(text):
+            raise SystemExit(f"{tk.file}:{tk.line}: expected {text!r}, found {tk.text!r}")
+        self.p += 1
+        return tk
+
+    def ident(self):
+        tk = self.peek()
+        if tk.kind != "id":
+            raise SystemExit(f"{tk.file}:{tk.line}: expected identifier, found {tk.text!r}")
+        self.p += 1
+        return tk.text
+
+    # -- types (stage 0 only needs to skip them) --
+    def parse_type(self):
+        name = self.ident()
+        if name in GENERIC_WORDS:
+            self.eat("<"); self.parse_type(); self.eat(">")
+        if self.at("?"):
+            self.p += 1
+        return name
+
+    def is_decl_start(self):
+        tk = self.peek()
+        if tk.kind != "id":
+            return False
+        if tk.text in TYPE_WORDS:
+            return True
+        if tk.text in GENERIC_WORDS and self.at("<", 1):
+            return True
+        nxt = self.peek(1)
+        if nxt.kind == "id":
+            return True
+        if self.at("?", 1) and self.peek(2).kind == "id":
+            return True
+        return False
+
+    # -- program --
+    def program(self):
+        out = []
+        while self.peek().kind != "eof":
+            out.append(self.decl())
+        return out
+
+    def params(self):
+        self.eat("(")
+        ps = []
+        while not self.at(")"):
+            self.parse_type()
+            ps.append(self.ident())
+            if not self.at(")"):
+                self.eat(",")
+        self.eat(")")
+        return ps
+
+    def decl(self):
+        if self.at("struct"):
+            self.p += 1
+            name = self.ident()
+            self.eat("{")
+            fields = []
+            while not self.at("}"):
+                self.parse_type()
+                fields.append(self.ident())
+                self.eat(";")
+            self.eat("}")
+            return ("struct", name, fields)
+        if self.at("const"):
+            self.p += 1
+            self.parse_type()
+            name = self.ident()
+            self.eat("=")
+            e = self.expr()
+            self.eat(";")
+            return ("const", name, e)
+        if self.at("test"):
+            self.p += 1
+            self.p += 1  # name string
+            self.block()
+            return ("skip",)
+        if self.at("public"):
+            self.p += 1
+        if self.at("policy"):
+            self.p += 1
+            name = self.ident()
+            ps = self.params()
+            return ("fn", "pol_" + name, ps, self.block())
+        if self.at("protected"):
+            self.p += 1
+            self.eat("("); self.ident(); self.eat(")")
+        self.parse_type()
+        name = self.ident()
+        ps = self.params()
+        return ("fn", name, ps, self.block())
+
+    # -- statements --
+    def block(self):
+        self.eat("{")
+        body = []
+        while not self.at("}"):
+            body.append(self.stmt())
+        self.eat("}")
+        return body
+
+    def stmt(self):
+        if self.at("{"):
+            return ("block", self.block())
+        if self.at("if"):
+            self.p += 1
+            self.eat("(")
+            if self.at("let"):
+                self.p += 1
+                v = self.ident()
+                self.eat("=")
+                e = self.expr()
+                self.eat(")")
+                cond = ("let", v, e)
+            else:
+                cond = self.expr()
+                self.eat(")")
+            then = self.block()
+            els = None
+            if self.at("else"):
+                self.p += 1
+                els = [self.stmt()] if self.at("if") else self.block()
+            return ("if", cond, then, els)
+        if self.at("while"):
+            self.p += 1
+            self.eat("(")
+            c = self.expr()
+            self.eat(")")
+            return ("while", c, self.block())
+        if self.at("for"):
+            self.p += 1
+            self.eat("(")
+            init = self.simple_stmt()
+            c = self.expr()
+            self.eat(";")
+            step = self.simple_stmt(end=")")
+            return ("for", init, c, step, self.block())
+        if self.at("return"):
+            self.p += 1
+            e = None if self.at(";") else self.expr()
+            self.eat(";")
+            return ("return", e)
+        if self.at("break"):
+            self.p += 1; self.eat(";"); return ("break",)
+        if self.at("continue"):
+            self.p += 1; self.eat(";"); return ("continue",)
+        if self.at("assert_denied") or self.at("assert_granted"):
+            self.p += 1
+            self.ident()
+            self.args()
+            self.eat(";")
+            return ("expr", ("lit", "None"))   # tests are not run by stage 0
+        return self.simple_stmt()
+
+    def simple_stmt(self, end=";"):
+        if self.is_decl_start():
+            self.parse_type()
+            name = self.ident()
+            self.eat("=")
+            e = self.expr()
+            self.eat(end)
+            return ("decl", name, e)
+        e = self.expr()
+        if self.at("=") or self.at("+=") or self.at("-="):
+            op = self.peek().text
+            self.p += 1
+            rhs = self.expr()
+            self.eat(end)
+            return ("assign", e, op, rhs)
+        self.eat(end)
+        return ("expr", e)
+
+    # -- expressions --
+    BIN = [["||"], ["&&"], ["==", "!="], ["<", "<=", ">", ">="], ["+", "-"], ["*", "/", "%"]]
+
+    def expr(self, lvl=0):
+        if lvl == len(self.BIN):
+            return self.unary()
+        e = self.expr(lvl + 1)
+        while self.peek().kind == "op" and self.peek().text in self.BIN[lvl]:
+            op = self.peek().text
+            self.p += 1
+            e = ("bin", op, e, self.expr(lvl + 1))
+        return e
+
+    def unary(self):
+        if self.at("!"):
+            self.p += 1
+            return ("not", self.unary())
+        if self.at("-"):
+            self.p += 1
+            return ("neg", self.unary())
+        return self.postfix(self.primary())
+
+    def args(self):
+        self.eat("(")
+        a = []
+        while not self.at(")"):
+            a.append(self.expr())
+            if not self.at(")"):
+                self.eat(",")
+        self.eat(")")
+        return a
+
+    def postfix(self, e):
+        while True:
+            if self.at("."):
+                self.p += 1
+                name = self.ident()
+                if self.at("("):
+                    e = ("method", e, name, self.args())
+                else:
+                    e = ("field", e, name)
+            elif self.at("["):
+                self.p += 1
+                i = self.expr()
+                self.eat("]")
+                e = ("index", e, i)
+            else:
+                return e
+
+    def primary(self):
+        tk = self.peek()
+        if tk.kind == "int":
+            self.p += 1
+            return ("int", int(tk.text))
+        if tk.kind == "str":
+            self.p += 1
+            return ("str", tk.text)
+        if self.at("true"):
+            self.p += 1; return ("lit", "True")
+        if self.at("false"):
+            self.p += 1; return ("lit", "False")
+        if self.at("none"):
+            self.p += 1; return ("lit", "None")
+        if self.at("("):
+            self.p += 1
+            e = self.expr()
+            self.eat(")")
+            return e
+        if self.at("new"):
+            self.p += 1
+            name = self.ident()
+            if name in ("List", "Map"):
+                self.eat("<"); self.parse_type(); self.eat(">")
+                self.eat("("); self.eat(")")
+                return ("lit", "[]" if name == "List" else "{}")
+            self.eat("{")
+            inits = []
+            while not self.at("}"):
+                f = self.ident()
+                self.eat(":")
+                inits.append((f, self.expr()))
+                if not self.at("}"):
+                    self.eat(",")
+            self.eat("}")
+            return ("new", name, inits)
+        if self.at("authorize"):
+            self.p += 1
+            name = self.ident()
+            return ("authorize", name, self.args())
+        if tk.kind == "id":
+            self.p += 1
+            if self.at("("):
+                return ("call", tk.text, self.args())
+            return ("var", tk.text)
+        raise SystemExit(f"{tk.file}:{tk.line}: unexpected {tk.text!r}")
+
+
+BUILTINS = {
+    "print", "println", "int_to_str", "char_str", "read_file", "read_line", "write_file",
+    "args", "exit", "join", "assert", "validate_ident", "validate_int", "escape_c",
+    "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
+    "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
+}
+
+PRELUDE = r'''
+import sys, re, hashlib, os
+sys.setrecursionlimit(200000)
+I64MIN, I64MAX = -(1 << 63), (1 << 63) - 1
+def _panic(msg, cwe):
+    sys.stderr.write("runtime check failed: %s [%s prevented]\n" % (msg, cwe)); sys.exit(101)
+def _chk(v):
+    if v < I64MIN or v > I64MAX: _panic("integer overflow", "CWE-190")
+    return v
+def _plus(a, b):
+    if isinstance(a, str): return a + b
+    return _chk(a + b)
+def _sub(a, b): return _chk(a - b)
+def _mul(a, b): return _chk(a * b)
+def _div(a, b):
+    if b == 0: _panic("division by zero", "CWE-369")
+    q = abs(a) // abs(b)
+    return _chk(q if (a >= 0) == (b >= 0) else -q)
+def _mod(a, b):
+    if b == 0: _panic("division by zero", "CWE-369")
+    return a - b * _div(a, b) if not (a == I64MIN and b == -1) else 0
+def _neg(a): return _chk(-a)
+def _at(s, i):
+    if i < 0 or i >= len(s): _panic("string index out of bounds", "CWE-125")
+    return ord(s[i])
+def _slice(s, a, b):
+    if a < 0 or b < a or b > len(s): _panic("string slice out of bounds", "CWE-125")
+    return s[a:b]
+def _idx(l, i):
+    if i < 0 or i >= len(l): _panic("list index out of bounds", "CWE-125")
+    return l[i]
+def _setidx(l, i, v):
+    if i < 0 or i >= len(l): _panic("list index out of bounds", "CWE-787")
+    l[i] = v
+class _Grant:
+    def __init__(self, bound): self.bound = bound
+def _authorize(pol, args):
+    return _Grant(args) if pol(*args) else None
+def b_print(s): sys.stdout.buffer.write(s.encode("latin-1"))
+def b_println(s): b_print(s + "\n")
+def b_int_to_str(i): return str(i)
+def b_char_str(c):
+    if c < 0 or c > 255: _panic("char_str out of range", "CWE-704")
+    return chr(c)
+def b_read_file(p):
+    try:
+        with open(p, "rb") as f: return f.read().decode("latin-1")
+    except OSError: return None
+def b_read_line():
+    l = sys.stdin.buffer.readline()
+    return None if not l else l.decode("latin-1").rstrip("\n")
+def b_write_file(p, d):
+    try:
+        with open(p, "wb") as f: f.write(d.encode("latin-1"))
+        return True
+    except OSError: return False
+def b_args(): return list(sys.argv[1:])
+def b_exit(c): sys.stdout.flush(); sys.exit(c)
+def b_join(l, sep): return sep.join(l)
+def b_assert(c):
+    if not c: _panic("assertion failed", "test")
+_ID = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+def b_validate_ident(t): return t if 0 < len(t) <= 255 and _ID.match(t) else None
+def b_validate_int(t):
+    if not re.fullmatch(r"-?[0-9]+", t): return None
+    v = int(t)
+    return v if I64MIN <= v <= I64MAX else None
+def b_escape_c(t):
+    o = []
+    for ch in t:
+        c = ord(ch)
+        if ch == "\\": o.append("\\\\")
+        elif ch == '"': o.append('\\"')
+        elif ch == "?": o.append("\\?")
+        elif 32 <= c < 127: o.append(ch)
+        else: o.append("\\%03o" % c)
+    return "".join(o)
+def b_escape_html(t):
+    return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
+def b_escape_log(t): return "".join(ch if 32 <= ord(ch) < 127 or ord(ch) > 127 else "\\x%02x" % ord(ch) for ch in t)
+def b_trust(t, why): return t
+def b_taint(s): return s
+def b_sql_query(tmpl, *a): b_println("[sql] " + tmpl + "".join(" $%d=%s" % (i + 1, b_escape_log(x)) for i, x in enumerate(a)))
+def b_run(prog, *a): b_println("[run] " + prog + "".join(" argv[%d]=%s" % (i + 1, b_escape_log(x)) for i, x in enumerate(a)))
+def b_secret_env(n): return os.environ.get(n)
+def b_secret_eq(a, b):
+    import hmac; return hmac.compare_digest(a.encode("latin-1"), b.encode("latin-1"))
+def b_hash(d): return "cap1$sha256$" + hashlib.sha256(d.encode("latin-1")).hexdigest()
+def b_hash_verify(d, t): return t.startswith("cap1$sha256$") and b_secret_eq(b_hash(d), t)
+def b_hash_password(p):
+    s = os.urandom(16)
+    return "cap1$pbkdf2-sha256$600000$%s$%s" % (s.hex(), hashlib.pbkdf2_hmac("sha256", p.encode("latin-1"), s, 600000).hex())
+def b_verify_password(p, t):
+    parts = t.split("$")
+    if len(parts) != 5 or parts[1] != "pbkdf2-sha256": return False
+    dk = hashlib.pbkdf2_hmac("sha256", p.encode("latin-1"), bytes.fromhex(parts[3]), int(parts[2])).hex()
+    return b_secret_eq(dk, parts[4])
+def b_needs_rehash(t): return not t.startswith("cap1$pbkdf2-sha256$600000$")
+'''
+
+METHODS = {
+    "len": lambda r, a: f"len({r})",
+    "at": lambda r, a: f"_at({r}, {a[0]})",
+    "slice": lambda r, a: f"_slice({r}, {a[0]}, {a[1]})",
+    "push": lambda r, a: f"{r}.append({a[0]})",
+    "get": lambda r, a: f"{r}.get({a[0]})",
+    "set": lambda r, a: f"{r}.__setitem__({a[0]}, {a[1]})",
+    "has": lambda r, a: f"({a[0]} in {r})",
+    "keys": lambda r, a: f"list({r}.keys())",
+}
+
+
+class Gen:
+    def __init__(self):
+        self.out = [PRELUDE]
+        self.tmp = 0
+        self.loops = []
+
+    def fresh(self):
+        self.tmp += 1
+        return f"_t{self.tmp}"
+
+    def e(self, x):
+        k = x[0]
+        if k == "int":
+            return str(x[1])
+        if k == "str":
+            return ascii(x[1])
+        if k == "lit":
+            return x[1]
+        if k == "var":
+            return "u_" + x[1]
+        if k == "not":
+            return f"(not {self.e(x[1])})"
+        if k == "neg":
+            return f"_neg({self.e(x[1])})"
+        if k == "bin":
+            op, a, b = x[1], self.e(x[2]), self.e(x[3])
+            if op == "+": return f"_plus({a}, {b})"
+            if op == "-": return f"_sub({a}, {b})"
+            if op == "*": return f"_mul({a}, {b})"
+            if op == "/": return f"_div({a}, {b})"
+            if op == "%": return f"_mod({a}, {b})"
+            if op == "&&": return f"({a} and {b})"
+            if op == "||": return f"({a} or {b})"
+            return f"({a} {op} {b})"
+        if k == "field":
+            return f"{self.e(x[1])}.u_{x[2]}"
+        if k == "index":
+            return f"_idx({self.e(x[1])}, {self.e(x[2])})"
+        if k == "method":
+            return METHODS[x[2]](self.e(x[1]), [self.e(a) for a in x[3]])
+        if k == "call":
+            fn = ("b_" if x[1] in BUILTINS else "fn_") + x[1]
+            return f"{fn}({', '.join(self.e(a) for a in x[2])})"
+        if k == "new":
+            return f"S_{x[1]}({', '.join('u_' + f + '=' + self.e(v) for f, v in x[2])})"
+        if k == "authorize":
+            return f"_authorize(fn_pol_{x[1]}, [{', '.join(self.e(a) for a in x[2])}])"
+        raise SystemExit(f"stage0: cannot translate {k}")
+
+    def emit(self, ind, s):
+        self.out.append("    " * ind + s)
+
+    def body(self, ind, stmts):
+        if not stmts:
+            self.emit(ind, "pass")
+        for s in stmts:
+            self.stmt(ind, s)
+
+    def stmt(self, ind, s):
+        k = s[0]
+        if k == "block":
+            self.body(ind, s[1]) if s[1] else None
+        elif k == "decl":
+            self.emit(ind, f"u_{s[1]} = {self.e(s[2])}")
+        elif k == "assign":
+            tgt, op, rhs = s[1], s[2], self.e(s[3])
+            if op != "=":
+                rhs = self.e(("bin", op[0], tgt, s[3]))
+            if tgt[0] == "index":
+                self.emit(ind, f"_setidx({self.e(tgt[1])}, {self.e(tgt[2])}, {rhs})")
+            else:
+                self.emit(ind, f"{self.e(tgt)} = {rhs}")
+        elif k == "expr":
+            self.emit(ind, self.e(s[1]))
+        elif k == "return":
+            self.emit(ind, "return" if s[1] is None else f"return {self.e(s[1])}")
+        elif k == "break":
+            self.emit(ind, "break")
+        elif k == "continue":
+            step = self.loops[-1] if self.loops else None
+            if step is not None:
+                self.stmt(ind, step)
+            self.emit(ind, "continue")
+        elif k == "if":
+            cond = s[1]
+            if isinstance(cond, tuple) and cond[0] == "let":
+                t = self.fresh()
+                self.emit(ind, f"{t} = {self.e(cond[2])}")
+                self.emit(ind, f"if {t} is not None:")
+                self.emit(ind + 1, f"u_{cond[1]} = {t}")
+            else:
+                self.emit(ind, f"if {self.e(cond)}:")
+            self.body(ind + 1, s[2])
+            if s[3] is not None:
+                self.emit(ind, "else:")
+                self.body(ind + 1, s[3])
+        elif k == "while":
+            self.emit(ind, f"while {self.e(s[1])}:")
+            self.loops.append(None)
+            self.body(ind + 1, s[2])
+            self.loops.pop()
+        elif k == "for":
+            self.stmt(ind, s[1])
+            self.emit(ind, f"while {self.e(s[2])}:")
+            self.loops.append(s[3])
+            self.body(ind + 1, s[4])
+            self.loops.pop()
+            self.stmt(ind + 1, s[3])
+        else:
+            raise SystemExit(f"stage0: cannot translate statement {k}")
+
+    def program(self, decls):
+        for d in decls:
+            if d[0] == "struct":
+                fs = d[2]
+                self.emit(0, f"class S_{d[1]}:")
+                self.emit(1, f"__slots__ = ({', '.join(repr('u_' + f) for f in fs)}{',' if len(fs) == 1 else ''})")
+                self.emit(1, f"def __init__(self, {', '.join('u_' + f for f in fs)}):")
+                for f in fs:
+                    self.emit(2, f"self.u_{f} = u_{f}")
+                if not fs:
+                    self.emit(2, "pass")
+        for d in decls:
+            if d[0] == "fn":
+                self.emit(0, f"def fn_{d[1]}({', '.join('u_' + p for p in d[2])}):")
+                self.body(1, d[3])
+        for d in decls:   # after the functions, so constant initialisers may call them
+            if d[0] == "const":
+                self.emit(0, f"u_{d[1]} = {self.e(d[2])}")
+        self.emit(0, "if __name__ == '__main__':")
+        self.emit(1, "_r = fn_main()")
+        self.emit(1, "sys.stdout.flush()")
+        self.emit(1, "sys.exit(_r if isinstance(_r, int) else 0)")
+        return "\n".join(self.out) + "\n"
+
+
+def main():
+    if len(sys.argv) < 3:
+        raise SystemExit("usage: capstan0.py out.py file.cap [file.cap ...]")
+    decls = []
+    for path in sys.argv[2:]:
+        with open(path, "rb") as f:
+            src = f.read().decode("latin-1")
+        decls += Parser(lex(src, path)).program()
+    with open(sys.argv[1], "w", encoding="latin-1") as f:
+        f.write(Gen().program(decls))
+
+
+if __name__ == "__main__":
+    main()

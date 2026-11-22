@@ -1,0 +1,6 @@
+// expect: CAP-TEST
+// flags: --release
+// Release builds require a test proving that the policy denies someone.
+struct User { int id; }
+policy Admin(User u) { return u.id == 0; }
+int main() { return 0; }
