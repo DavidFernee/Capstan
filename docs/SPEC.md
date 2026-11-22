@@ -87,9 +87,9 @@ then postfix `.field`, `.method(args)`, `[index]`.
 | `trust(t, "justification")` → `string` | explicit escape hatch; always reported as an AUDIT warning |
 | `taint(s)` → `Tainted` | marks a value as untrusted (useful in tests) |
 | `sql_query("literal", params...)` | query text must be a literal; values are bound parameters |
-| `run("program", args...)` | program must be a literal; no shell; arguments are passed separately |
+| `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; untrusted arguments must follow a literal `"--"` (CWE-88) |
 | `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | constant-time comparison |
-| `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…` |
+| `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…`; not for passwords (CWE-916) |
 | `hash_password(p)`, `verify_password(p, h)`, `needs_rehash(h)` | PBKDF2-SHA256 with 600,000 iterations; output carries its algorithm and cost |
 
 In v0.1, `sql_query` and `run` are demonstration sinks: they print what they would execute.
@@ -120,6 +120,22 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
 - Source nesting (expressions, statements, operator chains) is limited to 1,000 levels;
   deeper input is a compile error (CWE-674).
 - A program stopped by a runtime check exits with code 101.
+
+## Warnings
+
+Warnings are errors under `--strict`. Names starting with `_` are exempt from the unused-variable warning.
+
+| Code | Warning |
+|---|---|
+| CWE-561 | unreachable statement |
+| CWE-563 | local variable never read |
+| CWE-570 / CWE-571 | `if` condition is the literal `false` / `true` |
+| CWE-1164 | assignment of a value to itself |
+| CWE-252 | result of `write_file()` ignored |
+| CWE-639 | policy ignores one of its parameters |
+| CAP-ROLE | policy compares against a string literal |
+| CAP-TEST | policy without a denial test (error under `--release`), or test that asserts nothing |
+| AUDIT | use of `trust()` |
 
 ## Compiler modes
 

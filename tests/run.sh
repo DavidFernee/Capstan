@@ -14,6 +14,7 @@
 #                and warning-free generated C (-Wall -Wextra -Werror)
 #   gc           bounded memory under churn, integrity when collecting on every allocation
 #   limits       pathological input (deep nesting) gives diagnostics, not crashes
+#   cwe atlas    an attempt to write every code-level CWE in Capstan, with its verdict
 #   fuzz         differential fuzzing (random programs) and mutation fuzzing (corrupted programs)
 #   sanitizers   compiler and programs under AddressSanitizer + UndefinedBehaviorSanitizer
 #   bootstrap    self-hosting fixpoint, the compiler's own --strict check, alternate C compiler
@@ -97,8 +98,11 @@ for t in deep blocks long; do
   out="$("$C" check "$tmp/$t.cap" 2>&1)"; code=$?
   if [[ $code -eq 1 ]] && grep -q "CWE-674" <<<"$out"; then ok "$t nesting gives a diagnostic"; else bad "$t nesting" "exit $code"; fi
 done
-$PY -c "open('$tmp/wide.cap','w').write('int main() {\n' + ''.join('    int v%d = %d;\n' % (i, i) for i in range(20000)) + '    return v19999 - 19999;\n}\n')"
+$PY -c "open('$tmp/wide.cap','w').write('int main() {\n' + ''.join('    int _v%d = %d;\n' % (i, i) for i in range(20000)) + '    return _v19999 - 19999;\n}\n')"
 if "$C" build -o "$tmp/wide.c" "$tmp/wide.cap" && "$CC" -O0 -std=gnu11 -w -I"$ROOT/runtime" "$tmp/wide.c" -o "$tmp/wide" && "$tmp/wide"; then ok "20,000-statement function"; else bad "wide" "failed"; fi
+
+section "cwe atlas: red-team attempt for every code-level CWE"
+if out="$($PY "$ROOT/tests/cwe/atlas.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "cwe atlas" "$out"; fi
 
 section "fuzz"
 DIFF_N=60; MUT_N=3000; (( FULL )) && { DIFF_N=1000; MUT_N=50000; }
