@@ -693,7 +693,7 @@ string pol_sig(Node p) {
     return "static bool pol_" + p.s + "(" + params_c(p) + ")";
 }
 
-// Protected functions verify that the grant was issued for these very objects.
+// Protected functions verify each object against its exact policy-argument role.
 void gen_grant_checks(Gen g, Node f) {
     if (let pol = g.c.policies.get(f.s2)) {
         int id = 0;
@@ -701,12 +701,24 @@ void gen_grant_checks(Gen g, Node f) {
         for (int i = 1; i < f.n; i += 1) {
             Type pt = ty_of(f.kids[i]);
             if (pt.k == TY_STRUCT) {
-                bool bound = false;
-                for (int j = 0; j < pol.n; j += 1) {
-                    if (type_eq(ty_of(pol.kids[j]), pt)) { bound = true; }
+                int ordinal = 0;
+                for (int k = 1; k < i; k += 1) {
+                    if (type_eq(ty_of(f.kids[k]), pt)) { ordinal += 1; }
                 }
-                if (bound) {
-                    emit(g, "cap_grant_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", (void *)u_" + f.kids[i].s + ", " + loc(f) + ");");
+                int match = -1;
+                int occurrence = 0;
+                for (int j = 0; j < pol.n; j += 1) {
+                    if (type_eq(ty_of(pol.kids[j]), pt)) {
+                        if (occurrence == ordinal) { match = j; }
+                        occurrence += 1;
+                    }
+                }
+                if (match >= 0) {
+                    int slot = 0;
+                    for (int j = 0; j < match; j += 1) {
+                        if (ty_of(pol.kids[j]).k == TY_STRUCT) { slot += 1; }
+                    }
+                    emit(g, "cap_grant_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", " + int_to_str(slot) + ", (void *)u_" + f.kids[i].s + ", " + loc(f) + ");");
                 }
             }
         }
