@@ -17,6 +17,13 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   ownership and linear resources, data guarded by its lock, RCU as a type, execution contexts, lock
   levels, structured concurrency, typed views, checked shifts, entry-point policies, speculation
   hardening, bounded loops and declared formats; K0 projects the effect on the same CVEs
+- K0 review: all 588 CVEs the classifier could not decide (or called speculative execution) read
+  and classified by hand (`tools/k0/data/reviewed-2025.csv`); 4 of 2,702 remain undeterminable.
+  Measured today: 60.6% prevented; with K1.1 to K1.9: 79.1%; with K1.10 proofs: 98.7%
+- K1.8 extended (speculatively constant-time secrets, automatic per-processor mitigations, CFI) and
+  K1.10, proof against a specification: contracts, lock invariants, protocols, termination,
+  non-interference between security domains, refinement for the core, an independent proof checker,
+  and the guarantee Capstan will claim, with its stated limits
 - Testing measured, not assumed: line coverage of the compiler, formatter and runtime with
   enforced floors (`tests/coverage.py`, docs/COVERAGE.md), and mutation testing of the compiler
   (`tests/mutate_compiler.py`); ASan and UBSan on fuzzed programs; every conformance program and
