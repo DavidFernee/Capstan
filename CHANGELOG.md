@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `int_to_str` writes digits itself instead of calling `snprintf` (which was 38% of the `strings`
+  benchmark): that benchmark goes from 1.9× C to 1.2×, and one more libc formatting call leaves the
+  runtime. Checked against `snprintf` on every power-of-ten boundary and a million random values.
 - Range analysis across calls: each integer parameter gets the range of its arguments at every
   call site in the program (recursion included, by an iterated and widened fixpoint), so checks in
   helpers called with small values are left out. A function called anywhere with any value gets
