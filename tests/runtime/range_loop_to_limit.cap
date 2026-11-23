@@ -1,0 +1,7 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks compiler.ranges
+// The step of a loop that runs up to the largest int must stay checked.
+int main() {
+    for (int i = 9223372036854775807 - 2; i <= 9223372036854775807; i += 1) { println(int_to_str(i % 10)); }
+    return 0;
+}

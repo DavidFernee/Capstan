@@ -73,11 +73,24 @@ Carried forward, because neither blocks everyday use:
 - `public`/`private` visibility for module members (v0.5, alongside interfaces)
 - parser error recovery, so one run reports more than one syntax error (with the LSP server, Phase A)
 
-### v0.4 — Performance *(packed bool lists done)*
-- packed, type-specialised lists (`List<bool>` in one byte per element) and unboxed optionals
+### v0.4 — Performance *(in progress)*
+Done:
+- packed `List<bool>`, one byte per element
+- **range analysis** (`compiler/ranges.cap`): overflow, division and bounds checks are left out
+  where the compiler proves they cannot fail (`i += 1` under `i < xs.len()`, `xs[i]` in a loop
+  that cannot shrink any list, `n - 1` after `if (n < 2) { return n; }`), and kept everywhere
+  else. It proves 186 of the compiler's own 855 checks unnecessary. Facts are only kept for
+  variables that cannot change, so the argument for soundness is short (see the file header
+  and CWE-COVERAGE.md). `--keep-checks` turns it off for assurance work.
+- unboxed optionals where an `int?` is unwrapped at once (`if (let v = m.get(k))`, `xs.pop()`)
+- benchmark gate in the nightly CI run
+
+Remaining:
+- packed, type-specialised lists for other element types, and unboxed `int?` in variables and fields
+- facts across function calls (bounds on parameters from every call site): what the `calls`
+  benchmark still pays for
 - generational collection; returning empty pages to the operating system
-- bounds-check elimination when the index is provably in range
-- benchmark suite in CI, with a target of within 20% of C
+- benchmarks within 20% of C (now: alloc is; arrays about 1.4×, calls 1.7×, strings 1.9×)
 
 ### v0.5 — Abstraction
 - user generics with interfaces (`interface Comparable<T>`)

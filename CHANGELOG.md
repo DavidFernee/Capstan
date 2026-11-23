@@ -7,6 +7,11 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 ## 0.4.0 (unreleased)
 - Struct methods
 - String interpolation: `$"Hello {name}"`, with every taint and context rule preserved
+- Range analysis: overflow, division and bounds checks are left out only where proved
+  unnecessary (186 of the compiler's own 855); `--keep-checks` keeps them all.
+  The heap is capped at 2^48 bytes, which bounds every length.
+- Unboxed `int?` for `if (let v = m.get(k))` and `xs.pop()`
+- Benchmarks: `calls` now measures 33 million unfoldable calls; naive Fibonacci is `fib`
 - `capstan fmt` formatter (written in Capstan, whitespace-only, verified token for token),
   with `--check` for CI; the repository is formatted and the suite enforces it
 - Conformance areas in the specification, with coverage enforced on every run

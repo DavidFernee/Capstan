@@ -141,6 +141,8 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
 - Source nesting (expressions, statements, operator chains) is limited to 1,000 levels;
   deeper input is a compile error (CWE-674).
 - A program stopped by a runtime check exits with code 101.
+- The compiler may leave out a check that it proves can never fail (range analysis); this
+  never changes what a program does. `--keep-checks` keeps every check.
 
 ## Warnings
 
@@ -173,6 +175,7 @@ capstanc test  -o out.c [--strict] files...
 ```
 
 `--strict` turns every warning into an error. `--release` makes missing policy tests errors.
+`--keep-checks` emits every run-time check, including those the range analysis proves unnecessary.
 
 ## Formatter
 
@@ -242,6 +245,7 @@ When the language gains a feature, add its area here and its tests together.
 | `memory.gc` | garbage collection |
 | `memory.limits` | heap limit and stack-overflow guard |
 | `runtime.checks` | safe stops with exit code 101 |
+| `compiler.ranges` | checks left out only when proved unnecessary; `--keep-checks` |
 | `diag.messages` | error message text, positions, suggestions |
 | `warnings` | warnings and their CWE codes |
 | `modes` | `--strict` and `--release` |

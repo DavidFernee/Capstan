@@ -1,0 +1,16 @@
+// spec: runtime.checks compiler.ranges
+// Contradictory guards make code unreachable. The range analysis must not trip
+// over the empty set of values they describe (n > 3 and n <= 0 at once).
+int f(int n) {
+    if (n > 3) {
+        if (n <= 0) { return 100 / n + 7 % n; }
+        return n * 2;
+    }
+    return 0 - n;
+}
+
+int main() {
+    println(int_to_str(f(5)));
+    println(int_to_str(f(-2)));
+    return 0;
+}

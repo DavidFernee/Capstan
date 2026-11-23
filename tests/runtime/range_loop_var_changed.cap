@@ -1,0 +1,12 @@
+// expect-runtime: CWE-125
+// spec: runtime.checks types.list compiler.ranges
+// A loop variable assigned in its body proves nothing.
+int main() {
+    List<int> xs = new List<int>();
+    xs.push(1); xs.push(2); xs.push(3);
+    for (int i = 0; i < xs.len(); i += 1) {
+        i += 1;
+        println(int_to_str(xs[i]));
+    }
+    return 0;
+}

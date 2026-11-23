@@ -25,7 +25,7 @@ files=(); flags=(); out=""; progargs=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
-    --release|--strict) flags+=("$1"); shift ;;
+    --release|--strict|--keep-checks) flags+=("$1"); shift ;;
     --) shift; progargs=("$@"); break ;;
     *) files+=("$1"); shift ;;
   esac
