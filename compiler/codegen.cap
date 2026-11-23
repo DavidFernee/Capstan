@@ -355,6 +355,12 @@ string gen_call(Gen g, Node e) {
         return wrap(s, "fn_" + f + "(" + call_list(s.names, 0, "") + ")");
     }
     if (f == "trust" || f == "taint") { return gen_expr(g, e.kids[0]); }
+    if (f == "to_text") {
+        Type xt = ty_of(e.kids[0]);
+        if (xt.k == TY_INT) { return "cap_int_to_str(" + gen_expr(g, e.kids[0]) + ")"; }
+        if (xt.k == TY_BOOL) { return "((" + gen_expr(g, e.kids[0]) + ") ? CAP_LIT(\"true\", 4) : CAP_LIT(\"false\", 5))"; }
+        return gen_expr(g, e.kids[0]);
+    }
     if (f == "sql_query" || f == "run") {
         string lt = fresh(g);
         List<string> parts = new List<string>();

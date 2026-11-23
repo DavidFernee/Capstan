@@ -23,6 +23,7 @@ struct Token {
 struct Lexer {
     Tainted src;
     int pos;
+    int end;
     int line;
     int line_start;
     int tok_start;
@@ -80,7 +81,7 @@ bool is_digit(int c) {
 
 int peek_ch(Lexer lx, int ahead) {
     int at = lx.pos + ahead;
-    if (at >= lx.src.len()) { return -1; }
+    if (at >= lx.end) { return -1; }
     return lx.src.at(at);
 }
 
@@ -150,6 +151,103 @@ void lex_char(Lexer lx) {
     lx.pos += 2 + width;
 }
 
+// Decode escapes in src[a, b) into a string token.
+void add_text(Lexer lx, int a, int b) {
+    Tainted decoded = lx.src.slice(0, 0);
+    int i = a;
+    while (i < b) {
+        int c = lx.src.at(i);
+        if (c == '\\' && i + 1 < b) {
+            int v = escape_value(lx.src.at(i + 1));
+            if (v == -1) {
+                lex_error(lx, "unknown escape sequence in string literal");
+                v = '?';
+            }
+            decoded = decoded + char_str(v);
+            i += 2;
+        } else {
+            decoded = decoded + lx.src.slice(i, i + 1);
+            i += 1;
+        }
+    }
+    add_tok(lx, T_STR, escape_c(decoded), decoded.len());
+}
+
+// $"text {expr} text" becomes ("" + to_text(expr) + "text"), so every typing
+// and safety rule for + applies unchanged. {{ and }} are literal braces.
+void lex_interp(Lexer lx) {
+    lx.pos += 2;
+    add_tok(lx, T_OP, "(", 0);
+    add_tok(lx, T_STR, "", 0);
+    int part = lx.pos;
+    while (true) {
+        int c = peek_ch(lx, 0);
+        if (c == -1 || c == '\n') {
+            lex_error(lx, "unterminated interpolated string");
+            return;
+        }
+        if (c == '"') { break; }
+        if (c == '\\') {
+            lx.pos += 2;
+        } else if ((c == '{' && peek_ch(lx, 1) == '{') || (c == '}' && peek_ch(lx, 1) == '}')) {
+            lx.pos += 1;
+            if (lx.pos > part) {
+                add_tok(lx, T_OP, "+", 0);
+                add_text(lx, part, lx.pos);
+            }
+            lx.pos += 1;
+            part = lx.pos;
+        } else if (c == '{') {
+            if (lx.pos > part) {
+                add_tok(lx, T_OP, "+", 0);
+                add_text(lx, part, lx.pos);
+            }
+            int depth = 1;
+            int j = lx.pos + 1;
+            while (j < lx.end && depth > 0) {
+                int d = lx.src.at(j);
+                if (d == '\n') { break; }
+                if (d == '"') {
+                    j += 1;
+                    while (j < lx.end && lx.src.at(j) != '"' && lx.src.at(j) != '\n') {
+                        if (lx.src.at(j) == '\\') { j += 1; }
+                        j += 1;
+                    }
+                } else if (d == '{') {
+                    depth += 1;
+                } else if (d == '}') {
+                    depth -= 1;
+                }
+                if (depth > 0) { j += 1; }
+            }
+            if (depth != 0) {
+                lex_error(lx, "unclosed { in interpolated string");
+                return;
+            }
+            add_tok(lx, T_OP, "+", 0);
+            add_tok(lx, T_ID, "to_text", 0);
+            add_tok(lx, T_OP, "(", 0);
+            Lexer sub = new Lexer{src: lx.src, pos: lx.pos + 1, end: j, line: lx.line, line_start: lx.line_start, tok_start: lx.pos + 1, file: lx.file, ctx: lx.ctx, toks: lx.toks};
+            lex_run(sub);
+            lx.tok_start = j;
+            add_tok(lx, T_OP, ")", 0);
+            lx.pos = j + 1;
+            part = lx.pos;
+        } else if (c == '}') {
+            lex_error(lx, "unmatched } in interpolated string; write }} for a literal brace");
+            lx.pos += 1;
+        } else {
+            lx.pos += 1;
+        }
+    }
+    if (lx.pos > part) {
+        add_tok(lx, T_OP, "+", 0);
+        add_text(lx, part, lx.pos);
+    }
+    lx.pos += 1;
+    add_tok(lx, T_OP, ")", 0);
+}
+
 // Two-character operators first, then single characters.
 bool lex_op(Lexer lx) {
     int c = peek_ch(lx, 0);
@@ -178,8 +276,17 @@ bool lex_op(Lexer lx) {
 }
 
 List<Token> lex(Ctx ctx, Tainted src, int file) {
-    Lexer lx = new Lexer{src: src, pos: 0, line: 1, line_start: 0, tok_start: 0, file: file, ctx: ctx, toks: new List<Token>()};
-    while (lx.pos < src.len()) {
+    Lexer lx = new Lexer{src: src, pos: 0, end: src.len(), line: 1, line_start: 0, tok_start: 0, file: file, ctx: ctx, toks: new List<Token>()};
+    lex_run(lx);
+    lx.tok_start = lx.pos;
+    add_tok(lx, T_EOF, "", 0);
+    return lx.toks;
+}
+
+// Tokenise src[pos, end), appending to lx.toks.
+void lex_run(Lexer lx) {
+    Tainted src = lx.src;
+    while (lx.pos < lx.end) {
         int c = peek_ch(lx, 0);
         lx.tok_start = lx.pos;
         if (c == '\n') {
@@ -190,20 +297,20 @@ List<Token> lex(Ctx ctx, Tainted src, int file) {
             lx.pos += 1;
         } else if (c == '/' && peek_ch(lx, 1) == '/') {
             int cstart = lx.pos;
-            while (lx.pos < src.len() && peek_ch(lx, 0) != '\n') { lx.pos += 1; }
+            while (lx.pos < lx.end && peek_ch(lx, 0) != '\n') { lx.pos += 1; }
             check_comment(lx, cstart, lx.pos, lx.line);
         } else if (c == '/' && peek_ch(lx, 1) == '*') {
             int bstart = lx.pos;
             int bline = lx.line;
             lx.pos += 2;
-            while (lx.pos < src.len() && !(peek_ch(lx, 0) == '*' && peek_ch(lx, 1) == '/')) {
+            while (lx.pos < lx.end && !(peek_ch(lx, 0) == '*' && peek_ch(lx, 1) == '/')) {
                 if (peek_ch(lx, 0) == '\n') {
                     lx.line += 1;
                     lx.line_start = lx.pos + 1;
                 }
                 lx.pos += 1;
             }
-            if (lx.pos >= src.len()) {
+            if (lx.pos >= lx.end) {
                 lex_error(lx, "unterminated comment");
             } else {
                 lx.pos += 2;
@@ -225,6 +332,8 @@ List<Token> lex(Ctx ctx, Tainted src, int file) {
             } else {
                 lex_error(lx, "integer literal does not fit in 64 bits [CWE-190]");
             }
+        } else if (c == '$' && peek_ch(lx, 1) == '"') {
+            lex_interp(lx);
         } else if (c == '"') {
             lex_string(lx);
         } else if (c == '\'') {
@@ -234,7 +343,4 @@ List<Token> lex(Ctx ctx, Tainted src, int file) {
             lx.pos += 1;
         }
     }
-    lx.tok_start = lx.pos;
-    add_tok(lx, T_EOF, "", 0);
-    return lx.toks;
 }

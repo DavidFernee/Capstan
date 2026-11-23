@@ -70,6 +70,9 @@ Braces are required around every body.
 Precedence from low to high: `||`, `&&`, `== !=`, `< <= > >=`, `+ -`, `* / %`, unary `! -`,
 then postfix `.field`, `.method(args)`, `[index]`.
 
+- `$"Hello {name}, {count} new"` is an interpolated string: it means `"Hello " + to_text(name) + ", " + to_text(count) + " new"`,
+  so every rule for `+` applies (interpolating `Tainted` yields `Tainted`, interpolating into `Html` stays `Html`, a `Secret`
+  cannot be interpolated). `int` and `bool` are converted to text; `{{` and `}}` are literal braces.
 - `+` adds `int`s or concatenates strings. If either string operand is `Tainted`, the result is `Tainted`.
 - `==` and `!=` compare `int`, `bool` and strings. Structs and optionals cannot be compared.
 - `/` truncates toward zero. Division by zero stops the program (CWE-369).
@@ -203,6 +206,7 @@ When the language gains a feature, add its area here and its tests together.
 | `stmt.match` | `match`, exhaustiveness, bindings |
 | `expr.operators` | operators and precedence |
 | `expr.order` | strict left-to-right evaluation |
+| `expr.interpolation` | `$"..."` interpolated strings |
 | `builtins.io` | printing, files, arguments |
 | `builtins.validators` | the ways out of `Tainted`, and `trust()` |
 | `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c` |

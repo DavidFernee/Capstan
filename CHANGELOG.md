@@ -6,6 +6,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 
 ## 0.4.0 (unreleased)
 - Struct methods
+- String interpolation: `$"Hello {name}"`, with every taint and context rule preserved
 - Conformance areas in the specification, with coverage enforced on every run
 - Release pipeline: the full suite on every platform before a release is published
 - CWE gap closures: `Html`/`LogText` context types, `sensitive struct`, credential-format

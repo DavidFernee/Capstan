@@ -652,7 +652,7 @@ List<string> builtin_names() {
     b.push("validate_ident"); b.push("validate_int"); b.push("escape_c"); b.push("escape_html"); b.push("escape_log");
     b.push("trust"); b.push("taint"); b.push("sql_query"); b.push("run"); b.push("secret_env"); b.push("secret_eq");
     b.push("hash"); b.push("hash_verify"); b.push("hash_password"); b.push("verify_password"); b.push("needs_rehash");
-    b.push("escape_csv"); b.push("validate_path"); b.push("validate_range");
+    b.push("escape_csv"); b.push("validate_path"); b.push("validate_range"); b.push("to_text");
     return b;
 }
 
@@ -724,6 +724,22 @@ Type check_call(Checker c, Node e) {
         want_args(c, e, 0, 1, f);
         if (n == 1) { sink_string(c, e.kids[0], f + "()", false); }
         return mk_type(TY_VOID);
+    }
+    if (f == "to_text") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) {
+            Type xt = ty_of(e.kids[0]);
+            if (xt.k == TY_INT || xt.k == TY_BOOL) { return mk_type(TY_STR); }
+            if (is_texty(xt)) { return xt; }
+            if (xt.k == TY_SECRET) {
+                error_at(c.ctx, e, "CWE-200", "a Secret cannot be interpolated into text");
+            } else if (xt.k == TY_OPT) {
+                error_at(c.ctx, e, "CWE-476", "an optional value cannot be interpolated; unwrap it with if (let x = ...)");
+            } else if (xt.k != TY_ERR) {
+                error_at(c.ctx, e, "", type_str(xt) + " cannot be interpolated into text");
+            }
+        }
+        return mk_type(TY_ERR);
     }
     if (f == "int_to_str" || f == "char_str") {
         want_args(c, e, 0, 1, f);

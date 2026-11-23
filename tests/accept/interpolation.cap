@@ -1,0 +1,16 @@
+// spec: expr.interpolation types.string types.html types.tainted
+// Spec: string interpolation. $"..." desugars to concatenation, so every typing rule applies.
+struct User { string name; int unread; bool admin; }
+int main() {
+    User u = new User{name: "Ada", unread: 3, admin: true};
+    println($"Hello {u.name}, you have {u.unread} new messages (admin: {u.admin})");
+    println($"{1 + 2} = {u.unread}, braces: {{literal}}, quote: \"{u.name}\"");
+    println($"nested call: {int_to_str(u.unread * 10)} and {$"inner {u.name}"}");
+    println($"");
+    Tainted comment = taint("<script>x()</script>");
+    Html page = $"<p>{escape_html(comment)}</p>";
+    println(page);
+    LogText line = $"login failed for {escape_log(taint("bob\nadmin"))}";
+    println(line);
+    return 0;
+}
