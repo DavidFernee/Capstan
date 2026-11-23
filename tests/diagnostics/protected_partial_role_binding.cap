@@ -1,0 +1,6 @@
+// expect: protected(P) function 'only_one' must take all 2 policy parameters of type A or none
+// spec: auth.policy auth.grant
+struct A { int value; }
+policy P(A first, A second) { return first.value == 1 && second.value == 2; }
+protected(P) void only_one(Grant<P> g, A first) { }
+int main() { return 0; }
