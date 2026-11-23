@@ -139,6 +139,7 @@ for f in "$ROOT"/tests/io/*.cap; do
   else ok "$n (expected output; stage 0 agrees)"; fi
   rm -rf "$d1" "$d2"
 done
+if out="$($PY "$ROOT/tests/unit/stdio_interactive.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: conversation over a pipe" "$out"; fi
 
 section "gc"
 "$C" build -o "$tmp/churn.c" "$ROOT/tests/gc/churn.cap" >/dev/null && "$CC" $CFLAGS "$tmp/churn.c" -o "$tmp/churn"

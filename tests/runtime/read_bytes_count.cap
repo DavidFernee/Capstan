@@ -1,0 +1,9 @@
+// expect-runtime: CWE-789
+// spec: runtime.checks builtins.io
+// A count that would let input decide how much memory to set aside stops safely.
+int count() { return 1 << 31; }
+
+int main() {
+    if (let b = read_bytes(count())) { println(int_to_str(b.len())); }
+    return 0;
+}

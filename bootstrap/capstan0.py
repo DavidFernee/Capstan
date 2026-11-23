@@ -530,7 +530,7 @@ BUILTINS = {
     "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
     "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
     "escape_csv", "validate_path", "validate_range", "to_text",
-    "wrapping_add", "wrapping_sub", "wrapping_mul", "wrapping_shl",
+    "wrapping_add", "wrapping_sub", "wrapping_mul", "wrapping_shl", "read_bytes", "flush",
 }
 
 PRELUDE = r'''
@@ -615,6 +615,16 @@ def b_read_file(p):
 def b_read_line():
     l = sys.stdin.buffer.readline()
     return None if not l else l.decode("latin-1").rstrip("\n")
+def b_read_bytes(n):
+    if n < 0 or n > (1 << 30): _panic("read_bytes() count outside 0..2^30", "CWE-789")
+    if n == 0: return ""
+    out = b""
+    while len(out) < n:
+        got = sys.stdin.buffer.read1(min(n - len(out), 65536))
+        if not got: break
+        out += got
+    return None if not out else out.decode("latin-1")
+def b_flush(): sys.stdout.flush()
 def b_write_file(p, d):
     if p == "" or "\0" in p: return False
     try:
