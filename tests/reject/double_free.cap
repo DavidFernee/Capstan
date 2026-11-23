@@ -1,2 +1,3 @@
 // expect: CWE-415
+// spec: safety.banned
 int main() { free("x"); return 0; }

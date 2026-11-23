@@ -1,3 +1,4 @@
 // expect: carries values, so it cannot be compared
+// spec: diag.messages types.enum
 enum Shape { Circle(int r), Empty }
 int main() { bool same = Shape.Empty == Shape.Circle(1); return 0; }

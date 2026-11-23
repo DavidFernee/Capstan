@@ -1,2 +1,3 @@
 // expect: CWE-134
+// spec: safety.banned
 int main() { printf("%s%s%s%n"); return 0; }

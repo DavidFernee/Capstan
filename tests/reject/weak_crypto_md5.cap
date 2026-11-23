@@ -1,2 +1,3 @@
 // expect: CWE-327
+// spec: builtins.crypto safety.banned
 int main() { string h = md5("password"); return 0; }

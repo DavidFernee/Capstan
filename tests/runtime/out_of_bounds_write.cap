@@ -1,4 +1,5 @@
 // expect-runtime: CWE-787
+// spec: types.list runtime.checks
 int main() {
     List<int> xs = new List<int>();
     xs[0] = 1;

@@ -170,3 +170,51 @@ capstanc test  -o out.c [--strict] files...
 ```
 
 `--strict` turns every warning into an error. `--release` makes missing policy tests errors.
+
+## Conformance areas
+
+Every area below must be covered by at least one test that declares it with a
+`// spec: <area>` line. `tests/spec_coverage.py` enforces this on every test run
+and every release, and writes the matrix in [CONFORMANCE.md](CONFORMANCE.md).
+When the language gains a feature, add its area here and its tests together.
+
+| Area | Covers |
+|---|---|
+| `lexical` | comments, literals, escapes, character literals, integer literal range |
+| `types.int` | checked 64-bit arithmetic, truncating division, limits |
+| `types.bool` | booleans and logical operators |
+| `types.string` | immutable byte strings, `len`, `at`, `slice`, concatenation |
+| `types.tainted` | untrusted input and where it may flow |
+| `types.secret` | secrets and hard-coded credential detection |
+| `types.html` | context-typed escaped text (`Html`, `LogText`) |
+| `types.optional` | `T?`, `none`, `if (let ...)` |
+| `types.list` | lists, indexing, list operations, packed `List<bool>` |
+| `types.map` | insertion-ordered maps and their operations |
+| `types.struct` | structs as reference types |
+| `types.enum` | enums with and without values |
+| `decl.function` | functions, returns, scoping, initialisation |
+| `decl.const` | constants and their initialisation order |
+| `decl.struct` | struct declarations and complete initialisation |
+| `decl.sensitive` | sensitive structs |
+| `decl.method` | struct methods |
+| `decl.import` | modules and import path rules |
+| `stmt.control` | `if`, `while`, `for`, `break`, `continue` |
+| `stmt.assign` | assignment and compound assignment, `++`, `--` |
+| `stmt.match` | `match`, exhaustiveness, bindings |
+| `expr.operators` | operators and precedence |
+| `expr.order` | strict left-to-right evaluation |
+| `builtins.io` | printing, files, arguments |
+| `builtins.validators` | the ways out of `Tainted`, and `trust()` |
+| `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c` |
+| `builtins.sinks` | `sql_query` and `run` |
+| `builtins.crypto` | hashing and password hashing |
+| `safety.banned` | dangerous C idioms and weak primitives that do not exist |
+| `auth.policy` | policies and policy analysis |
+| `auth.grant` | grants: creation, binding, restrictions |
+| `auth.tests` | tests, `assert_denied`, `assert_granted`, mandatory denial tests |
+| `memory.gc` | garbage collection |
+| `memory.limits` | heap limit and stack-overflow guard |
+| `runtime.checks` | safe stops with exit code 101 |
+| `diag.messages` | error message text, positions, suggestions |
+| `warnings` | warnings and their CWE codes |
+| `modes` | `--strict` and `--release` |

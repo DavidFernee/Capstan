@@ -1,2 +1,3 @@
 // expect: main must be declared as int main() or void main()
+// spec: diag.messages
 string main(int argc) { return ""; }

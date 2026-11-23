@@ -1,2 +1,3 @@
 // expect: CWE-95
+// spec: safety.banned
 int main() { eval("1 + 1"); return 0; }

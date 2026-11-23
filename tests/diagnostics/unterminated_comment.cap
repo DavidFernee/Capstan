@@ -1,2 +1,3 @@
 // expect: unterminated comment
+// spec: diag.messages
 int main() { return 0; } /* never closed

@@ -1,3 +1,4 @@
 // expect: void function cannot return a value
+// spec: diag.messages
 void f() { return 1; }
 int main() { return 0; }

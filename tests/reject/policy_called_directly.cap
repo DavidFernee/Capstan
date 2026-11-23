@@ -1,4 +1,5 @@
 // expect: CWE-862
+// spec: auth.policy
 struct User { int id; }
 policy Admin(User u) { return u.id == 0; }
 int main() { bool ok = Admin(new User{id: 0}); return 0; }

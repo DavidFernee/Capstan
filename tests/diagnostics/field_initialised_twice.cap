@@ -1,3 +1,4 @@
 // expect: field 'x' initialised twice
+// spec: diag.messages
 struct P { int x; }
 int main() { P p = new P{x: 1, x: 2}; return 0; }

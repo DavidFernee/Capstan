@@ -1,4 +1,5 @@
 // expect: CWE-457
+// spec: decl.function
 int main() {
     int total;
     return total;

@@ -1,3 +1,4 @@
+// spec: expr.operators types.int types.bool
 // Spec: expressions and precedence.
 string b(bool v) { if (v) { return "T"; } return "F"; }
 int main() {

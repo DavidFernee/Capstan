@@ -1,3 +1,4 @@
+// spec: decl.function decl.const
 // Spec: functions, recursion, mutual recursion, constants.
 const int BASE = 10;
 const int DOUBLE_BASE = BASE * 2;

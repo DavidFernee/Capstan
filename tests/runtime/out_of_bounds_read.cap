@@ -1,4 +1,5 @@
 // expect-runtime: CWE-125
+// spec: types.list runtime.checks
 int main() {
     List<int> xs = new List<int>();
     xs.push(1);

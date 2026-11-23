@@ -1,3 +1,4 @@
+// spec: auth.policy auth.grant auth.tests types.secret
 // Spec: authorisation, grants and secrets at run time.
 struct User { int id; bool admin; }
 struct File { int owner; string body; }

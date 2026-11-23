@@ -1,4 +1,5 @@
 // expect: CAP-TEST
+// spec: auth.tests modes
 // flags: --release
 // Release builds require a test proving that the policy denies someone.
 struct User { int id; }

@@ -1,2 +1,3 @@
 // expect: unknown escape sequence
+// spec: diag.messages
 int main() { println("\q"); return 0; }

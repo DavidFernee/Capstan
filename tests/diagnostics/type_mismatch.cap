@@ -1,2 +1,3 @@
 // expect: expected int, found string
+// spec: diag.messages
 int main() { int x = "five"; return x; }

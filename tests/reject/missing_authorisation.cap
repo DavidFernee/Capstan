@@ -1,4 +1,5 @@
 // expect: CWE-862
+// spec: auth.grant
 struct Doc { int owner; string body; }
 struct User { int id; }
 policy ReadDoc(User u, Doc d) { return u.id == d.owner; }

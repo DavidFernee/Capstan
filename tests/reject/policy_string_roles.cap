@@ -1,4 +1,5 @@
 // expect: CAP-ROLE
+// spec: auth.policy warnings modes
 // flags: --strict
 struct User { string role; }
 policy Admin(User u) { return u.role == "admni"; }

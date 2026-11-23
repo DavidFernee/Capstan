@@ -1,4 +1,5 @@
 // expect-runtime: CWE-125
+// spec: types.string runtime.checks
 int main() {
     string s = "abc";
     return s.at(0 - 1);

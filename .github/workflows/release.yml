@@ -1,0 +1,60 @@
+name: release
+# Pushing a tag vX.Y.Z publishes a release only if every check passes on every platform.
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  verify:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { os: ubuntu-latest, cc: gcc }
+          - { os: ubuntu-latest, cc: clang }
+          - { os: macos-latest,  cc: clang }
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap from stage 0 (verifies the self-hosting fixpoint)
+        run: make
+      - name: Version and changelog consistency
+        run: scripts/release-check.sh "${GITHUB_REF_NAME}"
+      - name: Full test suite (long fuzzing, sanitizers, benchmarks)
+        run: |
+          set -o pipefail
+          FUZZ_SEED="${GITHUB_RUN_ID}" tests/run.sh --full 2>&1 | tee "test-report-${{ matrix.os }}-${{ matrix.cc }}.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-report-${{ matrix.os }}-${{ matrix.cc }}
+          path: |
+            test-report-*.txt
+            tests/fuzz/failures/
+          if-no-files-found: ignore
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: reports
+      - name: Source archive and checksums
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          git archive --format=tar.gz --prefix="capstan-${ver}/" -o "capstan-${ver}.tar.gz" "${GITHUB_REF_NAME}"
+          cp reports/*/test-report-*.txt .
+          sha256sum capstan-*.tar.gz test-report-*.txt > SHA256SUMS
+      - name: Release notes from the changelog
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v v="## ${ver}" '$0 == v {on = 1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
+          printf '\n\nEvery check in tests/run.sh --full passed on Linux (GCC, Clang) and macOS (Clang); the reports are attached.\n' >> notes.md
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --title "Capstan ${GITHUB_REF_NAME}" --notes-file notes.md capstan-*.tar.gz test-report-*.txt SHA256SUMS

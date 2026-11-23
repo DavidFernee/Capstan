@@ -1,3 +1,4 @@
+// spec: types.list types.map
 // Spec: lists and maps. Maps iterate in insertion order.
 int main() {
     Map<List<int>> groups = new Map<List<int>>();

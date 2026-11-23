@@ -1,0 +1,9 @@
+// expect-runtime: CWE-400
+// spec: memory.limits memory.gc
+// env: CAPSTAN_MAX_HEAP=32M
+// Runaway allocation stops safely at the configured heap limit.
+int main() {
+    List<string> keep = new List<string>();
+    while (true) { keep.push("row " + int_to_str(keep.len())); }
+    return 0;
+}

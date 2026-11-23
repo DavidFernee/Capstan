@@ -1,3 +1,4 @@
+// spec: memory.gc
 // Allocates about 3 GB of short-lived garbage while keeping a small live set.
 // The test runner checks that the peak heap stays small.
 struct Item { int id; string label; Item? next; }

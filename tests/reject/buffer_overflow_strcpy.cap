@@ -1,2 +1,3 @@
 // expect: CWE-120
+// spec: safety.banned
 int main() { strcpy("dst", "a much longer source string"); return 0; }

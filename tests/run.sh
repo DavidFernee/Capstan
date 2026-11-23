@@ -5,6 +5,7 @@
 #   tests/run.sh --full   adds long fuzzing campaigns and the benchmark gate
 #
 # Sections:
+#   spec         every area of docs/SPEC.md is covered by tagged tests
 #   unit         runtime unit tests (published crypto vectors, collections, validators, GC)
 #   reject       vulnerable programs that must not compile, each with its CWE
 #   diagnostics  ordinary errors with their exact messages
@@ -40,6 +41,9 @@ section() { echo; echo "== $1"; }
 
 [[ -x "$C" ]] || make -s -C "$ROOT" bootstrap
 
+section "spec coverage: every language area has tests"
+if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
+
 section "unit"
 if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tmp/unit")"; then ok "$out"; else bad "runtime unit tests" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
@@ -63,9 +67,10 @@ section "runtime: safe stops"
 for f in "$ROOT"/tests/runtime/*.cap; do
   n="runtime/$(basename "$f")"
   want="$(sed -n 's|^// expect-runtime: ||p' "$f" | head -1)"
+  envs="$(sed -n 's|^// env: ||p' "$f" | head -1)"
   if ! "$C" build -o "$tmp/r.c" "$f" >"$tmp/log" 2>&1; then bad "$n" "did not compile: $(head -1 "$tmp/log")"; continue; fi
   "$CC" $CFLAGS "$tmp/r.c" -o "$tmp/r" || { bad "$n" "C compile failed"; continue; }
-  err="$("$tmp/r" 2>&1 >/dev/null)"; code=$?
+  err="$(env $envs "$tmp/r" 2>&1 >/dev/null)"; code=$?
   if [[ $code -eq 101 ]] && grep -qF -- "$want" <<<"$err"; then ok "$n  ($want)"; else bad "$n" "exit $code: $err"; fi
 done
 

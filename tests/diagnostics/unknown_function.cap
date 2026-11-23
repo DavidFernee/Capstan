@@ -1,2 +1,3 @@
 // expect: unknown function 'prnt'
+// spec: diag.messages
 int main() { prnt("x"); return 0; }

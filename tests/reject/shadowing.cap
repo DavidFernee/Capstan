@@ -1,4 +1,5 @@
 // expect: CAP-SHADOW
+// spec: decl.function
 int main() {
     int count = 0;
     if (true) { int count = 5; }

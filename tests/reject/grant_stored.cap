@@ -1,4 +1,5 @@
 // expect: CWE-613
+// spec: auth.grant
 struct User { int id; }
 policy Admin(User u) { return u.id == 0; }
 struct Session { Grant<Admin> cached; }

@@ -1,4 +1,5 @@
 // expect: CWE-478
+// spec: stmt.match types.enum
 // A forgotten case is a compile error, never a silent fall-through.
 enum Access { Read, Write, Admin }
 bool allowed(Access a) {

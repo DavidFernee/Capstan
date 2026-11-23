@@ -1,2 +1,3 @@
 // expect: unknown variable 'cuont'
+// spec: diag.messages
 int main() { int count = 1; return cuont; }

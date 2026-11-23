@@ -1,3 +1,4 @@
 // expect: cannot read imported file
+// spec: diag.messages decl.import
 import "does_not_exist.cap";
 int main() { return 0; }

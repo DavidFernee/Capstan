@@ -1,3 +1,4 @@
+// spec: types.int types.list types.map types.optional types.struct stmt.control
 // Structs, optionals, lists, maps, loops and checked arithmetic that stays in range.
 struct Node { int value; Node? next; }
 

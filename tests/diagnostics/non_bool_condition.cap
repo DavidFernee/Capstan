@@ -1,2 +1,3 @@
 // expect: if condition: expected bool, found int
+// spec: diag.messages
 int main() { if (1) { return 1; } return 0; }

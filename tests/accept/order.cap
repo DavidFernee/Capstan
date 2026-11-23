@@ -1,3 +1,4 @@
+// spec: expr.order
 // Capstan evaluates operands strictly left to right, unlike C.
 struct Counter { int n; }
 int tick(Counter c, string label) {

@@ -1,4 +1,5 @@
 // expect: CWE-20
+// spec: types.tainted
 // Untrusted input cannot silently become a trusted string.
 string greet(string name) { return "Hello " + name; }
 int main() {

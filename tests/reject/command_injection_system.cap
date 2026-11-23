@@ -1,2 +1,3 @@
 // expect: CWE-78
+// spec: safety.banned
 int main() { system("rm -rf /tmp/x"); return 0; }

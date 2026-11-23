@@ -1,3 +1,4 @@
 // expect: add() expects 2 argument(s), found 3
+// spec: diag.messages
 int add(int a, int b) { return a + b; }
 int main() { return add(1, 2, 3); }
