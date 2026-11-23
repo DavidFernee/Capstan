@@ -1,0 +1,3 @@
+// expect: struct Account has no method 'withdraw' (did you mean 'withdrw'?)
+struct Account { int balance; void withdrw(int n) { self.balance -= n; } }
+int main() { Account a = new Account{balance: 1}; a.withdraw(1); return 0; }

@@ -56,7 +56,11 @@ sanitizers and coverage. A commercial-grade test suite: published crypto vectors
 conformance against a second implementation, differential and mutation fuzzing,
 sanitizers, GC stress, pathological limits and a benchmark gate (see TESTING.md).
 
-### v0.3 — Everyday language
+### v0.3 — Everyday language *(done, except string interpolation and the formatter)*
+Done: enums with exhaustive `match`, modules, columns, source excerpts and did-you-mean in diagnostics,
+`x++`, list and map operations, struct methods, packed `List<bool>`, plus the CWE red-team atlas and
+20 gap closures (`Html`/`LogText`, `sensitive struct`, secret wiping, heap limit, new lints).
+Remaining from the original plan:
 - `enum` with payloads and exhaustive `match` (replacing int constants for roles and states)
 - `else if` chains without nesting, `i++`, ternary-free conditional expressions
 - string interpolation that preserves taint: `"Hello {name}"`
@@ -65,7 +69,7 @@ sanitizers, GC stress, pathological limits and a benchmark gate (see TESTING.md)
 - better diagnostics: column numbers, source excerpts, "did you mean" suggestions, error recovery
 - `capstan fmt` (formatter)
 
-### v0.4 — Performance
+### v0.4 — Performance *(packed bool lists done)*
 - packed, type-specialised lists (`List<bool>` in one byte per element) and unboxed optionals
 - generational collection; returning empty pages to the operating system
 - bounds-check elimination when the index is provably in range

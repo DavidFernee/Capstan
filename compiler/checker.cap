@@ -408,6 +408,10 @@ Type check_expr(Checker c, Node e) {
         check_type(c, e, nt, false);
         return nt;
     }
+    if (k == N_ENUMVAL) {
+        for (int ev = 0; ev < e.kids.len(); ev += 1) { check_expr(c, e.kids[ev]); }
+        return typed(e, mk_named(TY_ENUM, e.s2));
+    }
     if (k == N_AUTHORIZE) {
         if (let pol = c.policies.get(e.s)) {
             check_args(c, e, pol, 0, "authorize " + e.s);
@@ -525,8 +529,28 @@ void want_args(Checker c, Node e, int first, int count, string name) {
     }
 }
 
+List<string> method_names(Checker c, string sname) {
+    List<string> out = new List<string>();
+    List<string> fs = c.fns.keys();
+    string prefix = sname + "__";
+    for (int i = 0; i < fs.len(); i += 1) {
+        if (fs[i].len() > prefix.len() && fs[i].slice(0, prefix.len()) == prefix) { out.push(fs[i].slice(prefix.len(), fs[i].len())); }
+    }
+    return out;
+}
+
 Type check_method(Checker c, Node e) {
     Type rt = check_expr(c, e.kids[0]);
+    if (rt.k == TY_STRUCT) {
+        string mangled = rt.name + "__" + e.s;
+        if (c.fns.has(mangled)) {
+            e.k = N_CALL;
+            e.s = mangled;
+            return check_call(c, e);
+        }
+        error_at(c.ctx, e, "", "struct " + rt.name + " has no method '" + e.s + "'" + suggest(e.s, method_names(c, rt.name)));
+        return mk_type(TY_ERR);
+    }
     for (int i = 1; i < e.kids.len(); i += 1) { check_expr(c, e.kids[i]); }
     string m = e.s;
     if (rt.k == TY_ERR) { return rt; }

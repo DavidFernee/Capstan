@@ -49,6 +49,8 @@ test "owners can edit" { assert_granted CanEdit(owner, doc); }
 - `enum Shape { Circle(int r), Empty }`; values are written `Shape.Circle(3)` and `Shape.Empty`.
   `match (s) { case Circle(r) { ... } case Empty { ... } }` must handle every variant or end with
   `else { ... }` (CWE-478). Enums without values can be compared with `==`.
+- Methods are declared inside a struct and called as `value.method(args)`; the receiver is available as `self`.
+  Methods get no extra access: on a sensitive struct they still need a grant to read fields.
 - `import "lib/util.cap";` loads a file once, relative to the importing file; no `..` or absolute paths.
 - Every variable must be initialised where it is declared.
 - Every field must be given a value in `new S{field: value, ...}`.
