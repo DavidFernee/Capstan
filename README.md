@@ -104,6 +104,7 @@ including what Capstan does **not** prevent.
 - [docs/CWE-COVERAGE.md](docs/CWE-COVERAGE.md): which weaknesses are prevented, and how
 - [docs/DESIGN-MAP.md](docs/DESIGN-MAP.md): design principles and roadmap, from language features to the IDE
 - [docs/K0-KERNEL-CVES.md](docs/K0-KERNEL-CVES.md): the Linux kernel's 2025 CVEs measured against Capstan (roadmap K0)
+- [docs/CHALLENGE.md](docs/CHALLENGE.md): draft rules for the Capstan Challenge, a planned yearly prize for writing a vulnerability Capstan says is impossible
 - [docs/TESTING.md](docs/TESTING.md): how the language is tested
 - [docs/assurance/](docs/assurance/README.md): memory-safety statement, threat model, and ISM and SSDF mapping
 

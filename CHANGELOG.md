@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- The Capstan Challenge, drafted (docs/CHALLENGE.md, DESIGN-MAP section 8): a planned yearly
+  prize for writing a vulnerability Capstan claims is impossible; until funded, confirmed
+  findings are credited in its hall of fame
 - Bitwise operators `& | ^ ~ << >> >>>`, hexadecimal literals and `wrapping_add/sub/mul/shl`
   (trusted-base stage T2). Shift counts must be 0..63 (CWE-1335); `<<` that loses bits stops
   (CWE-190); mixing a bitwise operator with another operator needs parentheses (CWE-783);

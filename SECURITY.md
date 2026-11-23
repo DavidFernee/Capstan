@@ -15,6 +15,10 @@ guarantees is a security issue in its own right. Reports are very welcome.
 Known, documented gaps listed in the atlas are not new vulnerabilities, but a practical
 exploit of one is still worth reporting.
 
+Confirmed findings are credited in the hall of fame of the Capstan Challenge
+([docs/CHALLENGE.md](docs/CHALLENGE.md)), a planned yearly prize for breaking Capstan's guarantees.
+The challenge is a draft and offers no prize until it is announced with its funding.
+
 ## How to report
 
 Please use GitHub's private vulnerability reporting for this repository
