@@ -714,7 +714,7 @@ List<string> builtin_names() {
     b.push("hash"); b.push("hash_verify"); b.push("hash_password"); b.push("verify_password"); b.push("needs_rehash");
     b.push("escape_csv"); b.push("validate_path"); b.push("validate_range"); b.push("to_text");
     b.push("wrapping_add"); b.push("wrapping_sub"); b.push("wrapping_mul"); b.push("wrapping_shl");
-    b.push("read_bytes"); b.push("flush");
+    b.push("read_bytes"); b.push("flush"); b.push("escape_json"); b.push("taint_char");
     return b;
 }
 
@@ -882,7 +882,12 @@ Type check_call(Checker c, Node e) {
         if (f == "validate_int") { return mk_wrap(TY_OPT, mk_type(TY_INT)); }
         return mk_wrap(TY_OPT, mk_type(TY_STR));
     }
-    if (f == "escape_c" || f == "escape_html" || f == "escape_log" || f == "escape_csv") {
+    if (f == "taint_char") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), f + "()"); }
+        return mk_type(TY_TAINT);
+    }
+    if (f == "escape_c" || f == "escape_html" || f == "escape_log" || f == "escape_csv" || f == "escape_json") {
         want_args(c, e, 0, 1, f);
         if (n == 1 && !is_stringish(ty_of(e.kids[0]))) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()"); }
         if (f == "escape_html") { return mk_type(TY_HTML); }

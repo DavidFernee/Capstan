@@ -1,0 +1,36 @@
+// spec: builtins.escapers types.tainted
+// Decoding escapes in untrusted text keeps it untrusted (taint_char), and
+// escape_json() makes any text safe inside a JSON string.
+
+int hex_digit(int c) {
+    if (c >= 48 && c <= 57) { return c - 48; }
+    if (c >= 65 && c <= 70) { return c - 55; }
+    if (c >= 97 && c <= 102) { return c - 87; }
+    return -1;
+}
+
+// %XX decoding, as for URIs: the result is still Tainted.
+Tainted percent_decode(Tainted t) {
+    Tainted out = taint("");
+    int i = 0;
+    while (i < t.len()) {
+        int c = t.at(i);
+        if (c == 37 && i + 2 < t.len() && hex_digit(t.at(i + 1)) >= 0 && hex_digit(t.at(i + 2)) >= 0) {
+            out = out + taint_char(hex_digit(t.at(i + 1)) * 16 + hex_digit(t.at(i + 2)));
+            i += 3;
+        } else {
+            out = out + t.slice(i, i + 1);
+            i += 1;
+        }
+    }
+    return out;
+}
+
+int main() {
+    Tainted raw = taint("file%3A%2F%2Fhome%2Fa%20b%22%3Cscript%3E%0A");
+    Tainted path = percent_decode(raw);
+    println("{\"path\": \"" + escape_json(path) + "\"}");
+    println("{\"text\": \"" + escape_json(taint("tab\there, quote \" backslash \\ é €") + taint_char(226) + taint_char(128) + taint_char(168)) + "\"}");
+    println("{\"bad\": \"" + escape_json(taint_char(255) + taint_char(0) + taint_char(127)) + "\"}");
+    return 0;
+}

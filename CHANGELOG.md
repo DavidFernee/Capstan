@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `escape_json(t)`: any text made safe inside a JSON string (always valid JSON, and safe inside an
+  HTML `<script>`), and `taint_char(c)`: a byte that stays untrusted, so escapes in untrusted text
+  (`%41`, `\u0041`) can be decoded without laundering it. Both requested by the language server.
 - `read_file()` is bounded: it gives `none` for a file longer than its limit (default 2^30, or
   `read_file(path, max)`), so `/dev/zero` or an endless pipe cannot exhaust memory (CWE-400), and
   opening a FIFO with no writer no longer blocks. The compiler, formatter and language server read

@@ -821,6 +821,48 @@ static CapStr *cap_escape_log(CapStr *t) {
     return r;
 }
 
+/* The contents of a JSON string literal (without the quotes) for any bytes
+   (CWE-116): '"' and '\\' are escaped; controls, DEL, '<', '>', '&' and the line
+   separators U+2028/U+2029 become \uXXXX (safe inside an HTML <script> too, CWE-79);
+   valid UTF-8 is kept; each invalid byte becomes U+FFFD, so the output is always
+   valid JSON. */
+static CapStr *cap_escape_json(CapStr *t) {
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 6 + 1);
+    char *w = r->data;
+    const unsigned char *s = (const unsigned char *)t->data;
+    int64_t i = 0;
+    while (i < t->len) {
+        unsigned char c = s[i];
+        if (c == '"' || c == '\\') { *w++ = '\\'; *w++ = (char)c; i++; continue; }
+        if (c == '\n') { *w++ = '\\'; *w++ = 'n'; i++; continue; }
+        if (c == '\t') { *w++ = '\\'; *w++ = 't'; i++; continue; }
+        if (c == '\r') { *w++ = '\\'; *w++ = 'r'; i++; continue; }
+        if (c < 32 || c == 127 || c == '<' || c == '>' || c == '&') { w += sprintf(w, "\\u%04x", c); i++; continue; }
+        if (c < 128) { *w++ = (char)c; i++; continue; }
+        uint32_t cp = 0;
+        int len = cap_utf8_seq(s + i, t->len - i, &cp);
+        if (len == 0) { memcpy(w, "\\ufffd", 6); w += 6; i++; continue; }
+        if (cp == 0x2028 || cp == 0x2029) { w += sprintf(w, "\\u%04x", (unsigned)cp); i += len; continue; }
+        memcpy(w, s + i, (size_t)len);
+        w += len;
+        i += len;
+    }
+    *w = 0;
+    r->len = (int64_t)(w - r->data);
+    return r;
+}
+
+/* A one-byte string that stays untrusted: decoding escapes in untrusted text
+   (%41, \u0041) cannot launder it, because the result is Tainted. */
+static CapStr *cap_taint_char(int64_t c, int64_t loc) {
+    if (CAP_UNLIKELY(c < 0 || c > 255)) cap_panic("taint_char() byte outside 0..255", "CWE-704", loc);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + 2);
+    r->data[0] = (char)c;
+    r->data[1] = 0;
+    r->len = 1;
+    return r;
+}
+
 /* ------------------------------------------------------------------ */
 /* Injection-safe sinks (v0.1 demonstration stubs)                     */
 /* The query/program text is always a compile-time literal; untrusted  */
