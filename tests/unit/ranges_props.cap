@@ -46,7 +46,7 @@ int main() {
     }
     List<string> cmps = new List<string>();
     cmps.push("<"); cmps.push("<="); cmps.push(">"); cmps.push(">="); cmps.push("==");
-    Rg rg = new Rg{env: new Map<Iv>(), assigns: new Map<int>(), idx: new List<string>(), seqs: new List<string>(), seq_ok: false, consts: new Map<Node>(), fns: new Map<Node>(), off: false};
+    Rg rg = new Rg{env: new Map<Iv>(), assigns: new Map<int>(), idx: new List<string>(), seqs: new List<string>(), seq_ok: false, consts: new Map<Node>(), fns: new Map<Node>(), off: false, collecting: false, reached: true, seen: new Map<List<Iv>>(), params: new Map<List<Iv>>()};
     for (int u = 0; u < ivs.len(); u += 1) {
         for (int w = 0; w < ivs.len(); w += 1) {
             for (int m = 0; m < cmps.len(); m += 1) {

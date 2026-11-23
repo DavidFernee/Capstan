@@ -109,11 +109,19 @@ behaves differently; only the cost of checks that can never fire goes away.
   or call to user code, which might shrink another name for the same list).
 - Lengths are bounded by the runtime's 2^48-byte heap cap, and bound arithmetic
   saturates, so the analysis cannot itself overflow.
+- Facts about a parameter come from every call in the program, the recursive ones
+  included: the compiler assumes a range for each integer parameter, checks every call
+  against it, and widens it until no call falls outside. Only then are the ranges used,
+  and a function that is never called gets none. The whole program is compiled at once,
+  and every call to user code (method calls too) passes through one place in the
+  compiler, so no call can be missed.
 - `capstanc --keep-checks` (and `capstan build/run --keep-checks`) keeps every check,
   for anyone who would rather not rely on the analysis.
 - Tested by: runtime stops that must still happen (`tests/runtime/range_*.cap`), an
   exact count of what is proved (`tests/accept/ranges_proved.cap`), identical results
   with `--keep-checks`, and differential fuzzing against stage 0, which has no range
   analysis, with programs built to tempt it (guards, loops at the 64-bit limits, lists
-  shrinking in loop bodies, conditions and calls).
+  shrinking in loop bodies, conditions and calls, and recursive functions called with
+  values near the limits); facts across calls are pinned by `tests/accept/ranges_calls.cap`
+  and `tests/runtime/range_call_*.cap`.
 

@@ -1,0 +1,13 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks
+// Facts about a parameter cover every call site: one small call must not make
+// the check disappear for another call far away in the program.
+int next(int n) { return n + 1; }
+
+int later() { return next(9223372036854775807); }
+
+int main() {
+    println(int_to_str(next(1)));
+    println(int_to_str(later()));
+    return 0;
+}
