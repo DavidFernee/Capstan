@@ -61,6 +61,42 @@ KERNEL_OVERRIDES = {
 }
 OVERRIDE_BUCKET = {cwe: (UNKNOWN if cwe == "CWE-617" else OUTSIDE) for cwe in KERNEL_OVERRIDES}
 
+# What the K1 design (DESIGN-MAP.md section 7) is meant to do to each class that Capstan does not
+# prevent today. A projection, not a measurement: it holds only if the feature is built as designed,
+# and K2 will test it on real kernel code.
+PROJECTION = {
+    "memory leak": (COMPILE, "K1.1 ownership"),
+    "resource leak": (COMPILE, "K1.1 linear resources"),
+    "improper locking": (COMPILE, "K1.2 guarded data, RCU type; K1.3 contexts"),
+    "deadlock": (COMPILE, "K1.4 lock levels (dynamic orders: safe stop)"),
+    "type confusion": (COMPILE, "K1.6 typed views"),
+    "shift out of bounds": (RUNTIME, "K1.6 checked shifts"),
+    "missing authorisation": (COMPILE, "K1.7 entry points declare policy"),
+}
+# Races split: a race on shared data is a data race, which K1.2 rejects; a race between a device's
+# teardown and its callbacks is what K1.5 rules out. Races in ordering logic beyond these stay logic.
+DATA_RACE = re.compile(r"data-race|kcsan|read_once|write_once|without (holding |taking )?(the )?\\w* ?lock|"
+                       r"(missing|no|under|outside( of)?) (the )?\\w* ?(lock|rcu)|concurrent(ly)? (access|modif|updat|writ)|"
+                       r"\\b(unregist\\w*|remov(e|al|ing)|teardown|unbind|unload\\w*|detach\\w*)\\b", re.I)
+# Hangs: only loops driven by data (corrupt images, packets, devices) are what K1.9's bounded loops
+# turn into errors. A hang waiting on hardware or firmware stays a logic or platform fault.
+DATA_LOOP = re.compile(r"infinite loop|endless loop|loops? forever|never (terminates|ends|exits)|"
+                       r"corrupt|malformed|crafted|bogus|malicious|on-disk|fuzz|syzbot|syzkaller|image", re.I)
+
+
+def projected(r):
+    if r["bucket"] in (COMPILE, RUNTIME, UNKNOWN):
+        return r["bucket"], ""
+    if r["class"] in PROJECTION:
+        return PROJECTION[r["class"]]
+    if r["class"] == "race condition":
+        if DATA_RACE.search(r["title"] + " " + r["desc"]):
+            return COMPILE, "K1.2 guarded data; K1.5 structured concurrency"
+        return LOGIC, ""
+    if r["class"] == "hang or infinite loop" and DATA_LOOP.search(r["title"] + " " + r["desc"]):
+        return RUNTIME, "K1.9 bounded loops"
+    return r["bucket"], ""
+
 
 def atlas_verdicts():
     """Weakest outcome per CWE, read from the generated atlas."""
@@ -175,6 +211,7 @@ def main():
         r["class"], r["cwe"], r["evidence"] = cls, cwe, ev
         r["bucket"], r["atlas"] = bucket_for(cwe, atlas)
         r["subsystem"] = subsystem(r["files"])
+        r["projected"], r["via"] = projected(r)
 
     n = len(rows)
     by_bucket = collections.Counter(r["bucket"] for r in rows)
@@ -187,15 +224,18 @@ def main():
     os.makedirs(os.path.join(HERE, "data"), exist_ok=True)
     with open(os.path.join(HERE, "data", f"kernel-cves-{year}.csv"), "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["id", "published", "subsystem", "class", "cwe", "outcome", "evidence", "title"])
+        w.writerow(["id", "published", "subsystem", "class", "cwe", "outcome", "with_k1", "evidence", "title"])
         for r in rows:
             w.writerow([r["id"], r["date"], r["subsystem"], r["class"], r["cwe"], r["bucket"],
-                        r["evidence"], r["title"]])
+                        r["projected"], r["evidence"], r["title"]])
 
+    proj = collections.Counter(r["projected"] for r in rows)
+    proj_prevented = proj[COMPILE] + proj[RUNTIME]
     tuning = check_labels(rows, atlas, "labels.csv")
     heldout = check_labels(rows, atlas, "labels-heldout.csv")
     json.dump({"year": year, "total": n, "buckets": {b: by_bucket[b] for b in BUCKETS},
-               "memory_safety": mem, "heldout": heldout[:3] if heldout else None},
+               "memory_safety": mem,
+               "projected": {b: proj[b] for b in BUCKETS}, "heldout": heldout[:3] if heldout else None},
               open(os.path.join(HERE, "data", f"summary-{year}.json"), "w"), indent=1)
 
     out = []
@@ -244,6 +284,26 @@ def main():
       "deterministic memory management planned for kernel code (K1) must keep that guarantee, as Rust's "
       "ownership does. Some of these use-after-frees begin as races (a work item running after its device "
       "is gone); the memory error is prevented, the race itself may remain a logic error.\n")
+    p("## With the K1 design\n")
+    p("The K1 items in [DESIGN-MAP.md](DESIGN-MAP.md) (section 7) are designed against the classes above that "
+      "Capstan does not yet prevent. If they are built as designed, the same CVEs would come out as follows. "
+      "This is a projection, not a measurement; K2 tests it on real kernel code.\n")
+    p("| Outcome | Today | With K1 |")
+    p("|---|---|---|")
+    for b in BUCKETS[:4]:
+        p(f"| {b} | {pct(by_bucket[b], known)} | {pct(proj[b], known)} |")
+    p(f"| **Prevented** | **{pct(prevented, known)}** | **{pct(proj_prevented, known)}** |")
+    p("")
+    via = collections.Counter((r["class"], r["via"], r["projected"]) for r in rows if r["via"])
+    p("| Class | CVEs | With K1 | Design item |")
+    p("|---|---|---|---|")
+    for (cls, v, b), c in sorted(via.items(), key=lambda kv: -kv[1]):
+        p(f"| {cls} | {c:,} | {b} | {v} |")
+    p("")
+    p("Still not prevented after K1: races in ordering logic that are not data races or teardown races, "
+      "insufficient validation (K1.9's declared formats make validation the default, but a wrong constraint "
+      "is still a logic error), speculative execution beyond variant 1, and the CVEs whose records do not "
+      "say what went wrong.\n")
     subs = collections.Counter(r["subsystem"] for r in rows if r["bucket"] in (COMPILE, RUNTIME))
     p("## Where the preventable CVEs are\n")
     p("Subsystems with the most CVEs Capstan would have prevented: candidates for K2.\n")
@@ -290,6 +350,7 @@ def main():
     open(os.path.join(ROOT, "docs", "K0-KERNEL-CVES.md"), "w").write("\n".join(out))
 
     print(f"{n} CVEs; " + "; ".join(f"{b}: {by_bucket[b]}" for b in BUCKETS))
+    print(f"prevented today {pct(prevented, known)}, with K1 {pct(proj_prevented, known)}")
     for name, lab in (("tuning", tuning), ("held-out", heldout)):
         if lab:
             print(f"{name}: class {lab[1]}/{lab[0]}, outcome {lab[2]}/{lab[0]}")

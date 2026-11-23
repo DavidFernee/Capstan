@@ -67,6 +67,32 @@ The atlas judges Capstan as it is today, for application code. Where its verdict
 
 Use-after-free and double free are counted as prevented: Capstan has no `free()`, and the deterministic memory management planned for kernel code (K1) must keep that guarantee, as Rust's ownership does. Some of these use-after-frees begin as races (a work item running after its device is gone); the memory error is prevented, the race itself may remain a logic error.
 
+## With the K1 design
+
+The K1 items in [DESIGN-MAP.md](DESIGN-MAP.md) (section 7) are designed against the classes above that Capstan does not yet prevent. If they are built as designed, the same CVEs would come out as follows. This is a projection, not a measurement; K2 tests it on real kernel code.
+
+| Outcome | Today | With K1 |
+|---|---|---|
+| Prevented at compile time | 50.9% | 67.8% |
+| Stopped safely at run time | 19.9% | 21.6% |
+| Logic error: beyond any language | 8.2% | 10.2% |
+| Outside Capstan's current reach | 21.0% | 0.5% |
+| **Prevented** | **70.8%** | **89.3%** |
+
+| Class | CVEs | With K1 | Design item |
+|---|---|---|---|
+| improper locking | 97 | Prevented at compile time | K1.2 guarded data, RCU type; K1.3 contexts |
+| deadlock | 91 | Prevented at compile time | K1.4 lock levels (dynamic orders: safe stop) |
+| resource leak | 79 | Prevented at compile time | K1.1 linear resources |
+| memory leak | 58 | Prevented at compile time | K1.1 ownership |
+| hang or infinite loop | 34 | Stopped safely at run time | K1.9 bounded loops |
+| missing authorisation | 19 | Prevented at compile time | K1.7 entry points declare policy |
+| race condition | 11 | Prevented at compile time | K1.2 guarded data; K1.5 structured concurrency |
+| type confusion | 4 | Prevented at compile time | K1.6 typed views |
+| shift out of bounds | 1 | Stopped safely at run time | K1.6 checked shifts |
+
+Still not prevented after K1: races in ordering logic that are not data races or teardown races, insufficient validation (K1.9's declared formats make validation the default, but a wrong constraint is still a logic error), speculative execution beyond variant 1, and the CVEs whose records do not say what went wrong.
+
 ## Where the preventable CVEs are
 
 Subsystems with the most CVEs Capstan would have prevented: candidates for K2.

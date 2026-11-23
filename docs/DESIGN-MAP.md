@@ -121,6 +121,8 @@ Remaining:
 ### v0.7 — Concurrency
 - tasks and channels; data shared only by moving ownership or through typed locks
   (data races become compile errors)
+- the kernel-ready forms of these are designed in section 7, K1.2 to K1.5: data guarded by its
+  lock, RCU as a type, execution contexts, lock ordering and structured concurrency
 - `async` I/O for servers
 
 ### v0.8 — Policies, proven
@@ -190,7 +192,7 @@ removes a dependency altogether.
 | Stage | Work | Security gain |
 |---|---|---|
 | T1 (with v0.5) | **Standard library in Capstan:** validators, escapers, collection helpers (sort, join, search) | Text-processing code inherits Capstan's guarantees |
-| T2 (with v0.5) | **Bitwise operators and explicitly wrapping arithmetic** (`&`, `\|`, `^`, shifts, `wrapping_add`); ordinary `+` stays overflow-checked | Prerequisite for writing crypto and parsers safely |
+| T2 (with v0.5) | **Bitwise operators and explicitly wrapping arithmetic** (`&`, `\|`, `^`, shifts, `wrapping_add`); ordinary `+` stays overflow-checked, and a shift by a negative amount or by the type's width or more stops safely | Prerequisite for writing crypto and parsers safely |
 | T3 (with v0.6) | **Crypto in Capstan:** SHA-256, HMAC, PBKDF2, then authenticated encryption, checked against the same published vectors | Crypto implementation bugs cannot corrupt memory. A FIPS 140-3 validated-module option remains for certified deployments |
 | T4 (with v0.6) | **Formatting and parsing in Capstan:** number to text and back, replacing `sprintf`, `snprintf` and `strtol`; differentially tested against libc on millions of random inputs | Removes the libc functions where memory-corruption bugs have historically clustered |
 | T5 (with v0.6) | **Network parsing in Capstan from the start:** addresses, URLs, HTTP, name resolution. Never borrowed from libc | The highest-risk input handling is memory-safe by construction (compare glibc CVE-2015-0235, CVE-2015-7547) |
@@ -269,20 +271,109 @@ stream and Capstan both change. This is also direct evidence for government and 
 `tools/k0/study.py`: of 2,702 kernel CVEs published in 2025, about 71% of those that could be
 classified are weaknesses Capstan prevents today (51% at compile time, 20% stopped safely at run
 time), 21% are outside its current reach (mostly concurrency and resource lifetime, the target of
-K1) and 8% are logic errors. Next: independent relabelling of the check samples, and the 2026 re-run.
+K1) and 8% are logic errors. The K1 design below is aimed at that remainder; the study projects
+that, built as designed, it would raise the prevented share to about 89%. Next: independent
+relabelling of the check samples, and the 2026 re-run.
 
 ### K1: kernel-mode prerequisites
 Kernel code cannot use a collector that pauses at arbitrary moments or rely on an operating system
 beneath it. Before any kernel work, Capstan needs:
-- **deterministic memory management:** ownership or region-based memory, statically checked, as an
-  alternative to garbage collection for kernel and real-time code
-- **safe concurrency** (v0.7): locks, atomics and per-CPU data whose misuse is a compile error,
-  including lock release on every path
-- **interrupts and hardware access under proof:** device registers, DMA buffers and interrupt
-  handlers expressed as typed operations whose preconditions the compiler proves, keeping the
-  no-unsafe rule
 - **a freestanding mode:** no operating system, no allocator unless one is provided, explicit stack limits
 - **error results that must be handled:** no ignored return codes (already a Capstan direction)
+
+The rest of K1 is designed against the K0 result. Of the 2025 kernel CVEs that could be
+classified, 29% are not prevented by Capstan today: 21% outside its reach, 8% logic errors. Each
+item below names the classes it targets and the outcome it is meant to produce; `tools/k0/study.py`
+projects the effect on the same CVEs, so the claim can be checked when the feature exists. None of
+them adds an `unsafe` escape: where the compiler cannot prove a rule, the code does not compile.
+
+**K1.1 Ownership and linear resources** *(memory leaks, resource and reference-count leaks:
+~6% of classified CVEs)*
+- Kernel mode replaces the collector with ownership: every allocation has one owner, freed when the
+  owner goes out of scope; borrowing is checked so no reference outlives its object. Use-after-free
+  and double free stay impossible, as they are under the collector.
+- **Linear resources.** A reference count taken, a device enabled, a DMA mapping or an IRQ
+  requested is a value of a `linear` type: it must be released exactly once on every path, including
+  every error path. `Ref<T> r = get(obj);` with no matching `put(r)` is `error[CWE-772]`; a second
+  `put(r)` is `error[CWE-1341]`. The kernel's `goto err_*` unwind ladders become automatic, in reverse
+  order of acquisition.
+- **Shared ownership** (`Rc<T>`, `Arc<T>`) for objects that really are shared, with weak
+  references for back-pointers so cycles do not leak.
+
+**K1.2 Data guarded by its lock** *(data races, improper locking: ~8%)*
+- Shared mutable data is declared with the lock that protects it: `Locked<Stats, Spin> stats;`.
+  The data can only be reached through the guard that `lock()` returns, and the guard releases the
+  lock when it goes out of scope, on every path. Missing locks, missing unlocks and unbalanced
+  lock/unlock are compile errors (`CWE-667`).
+- Values cross between threads only if their type is safe to share (immutable, atomic, or behind a
+  lock); otherwise moving or sharing them is `error[CWE-362]`. This is Rust's `Send`/`Sync`, extended
+  to the kernel's own primitives: per-CPU data, sequence locks and atomics with explicit ordering.
+- **RCU as a type.** `Rcu<T>` can be read only inside an `rcu_read { }` block, and a reference read
+  there cannot escape the block; updates go through `rcu_assign` and objects are freed only after a
+  grace period, by the compiler-inserted `call_rcu`. Accessing RCU data outside a read section, the
+  most common locking CVE in the 2025 set, does not compile.
+- **Shared memory with user space or devices** is a distinct type, `Volatile<T>`: every read is a
+  single fetch into a local (the kernel's `READ_ONCE()`), so a value cannot change between its check
+  and its use (`CWE-367`).
+
+**K1.3 Execution contexts** *(sleeping in atomic context, interrupt-unsafe locking)*
+- Every function has a context, inferred where possible and declared at boundaries: `process`,
+  `atomic` (spinlock held, preemption off), `softirq`, `hardirq`, `nmi`. A function that may sleep
+  cannot be called in an atomic context, and a lock taken in interrupt context must be taken with
+  interrupts disabled everywhere else. Both are compile errors, not lockdep warnings at run time.
+
+**K1.4 Lock ordering** *(deadlocks: ~4%)*
+- Locks are declared in levels (`lock_order inode_lock < page_lock < stats_lock`); the compiler
+  rejects acquiring a lock while holding one of an equal or higher level, which rules out
+  self-deadlock (AA) and ABBA cycles. Waiting for work, a completion or a timer counts as acquiring
+  the locks that work takes, so `flush_work()` under a lock the work needs is rejected (`CWE-833`).
+- Lock orders that depend on run-time data (two objects of the same type) use an ordered
+  acquisition primitive (`lock_both(a, b)` by address), and the checked build verifies the remaining
+  dynamic orders and stops safely before a cycle completes.
+
+**K1.5 Lifetimes of callbacks** *(teardown races: work, timers and interrupts outliving their
+device; the largest source of race-caused use-after-free)*
+- **Structured concurrency.** A work item, timer, interrupt handler or kernel thread is registered
+  through an owner (`dev.spawn(...)`, `dev.request_irq(...)`), and the owner cannot be destroyed
+  until all of them are cancelled and finished: the compiler inserts the cancellation, in order, at
+  the end of the owner's lifetime. Module unload with work pending becomes impossible to write.
+- **Typestate for drivers.** A device moves through declared states (`probed`, `open`, `suspended`,
+  `removed`); operations exist only in the states that allow them, so using a device after
+  `remove()` or before probe completes is a type error (`CWE-841`, `CWE-672`).
+
+**K1.6 Hardware and memory reinterpretation** *(type confusion, shifts)*
+- **Typed views.** Device memory, network packets and on-disk structures are reached through
+  `view<T>(bytes)`, which the compiler allows only when `T` is plain data and the size and
+  alignment are proved; the result of a view of untrusted bytes is `Tainted`. `container_of` becomes
+  a checked downcast. This replaces casts without reintroducing type confusion (`CWE-843`).
+- **Checked shifts** (with T2): a shift by a negative amount or by at least the type's width stops
+  safely, as overflow does; `wrapping_shl` is explicit (`CWE-1335`).
+
+**K1.7 Entry points declare their authorisation** *(missing permission checks)*
+- Every system call, ioctl, netlink handler and sysfs or procfs write is an entry point, and an entry
+  point must name its policy (`protected(CapNetAdmin)`, `protected(OwnerOf)`) or be explicitly
+  `public`. A privileged operation reached from an entry point without a grant does not compile.
+  This closes the atlas's CWE-862 and CWE-306 gaps for kernel code, where entry points are known.
+
+**K1.8 Speculation hardening** *(Spectre variant 1)*
+- Capstan already knows which indices are `Tainted`. An array access with an index derived from
+  untrusted input is compiled with the bounds check *and* index masking (the kernel's
+  `array_index_nospec()`), automatically. Other speculation attacks remain the processor's to fix.
+
+**K1.9 Narrowing the logic errors** *(hangs and infinite loops, insufficient validation: ~8%)*
+No language decides intent, but two features turn common kernel logic errors into checkable ones:
+- **Bounded loops.** In `atomic` and interrupt contexts, and wherever the loop's bound comes from
+  untrusted data (a disk image, a packet, a device), a loop must declare its bound
+  (`for (...) bounded(MAX_EXTENTS)`) or a decreasing measure the compiler proves; reaching the bound
+  returns an error instead of hanging. Most 2025 hangs were loops over corrupt on-disk or device data.
+- **Declared formats and refinement types.** On-disk and wire structures are described once
+  (`format Ext4Extent { u16 len in 1..32768; u32 start; ... }`), and the compiler generates the
+  parser: a value of the type exists only if every declared constraint held. Integer ranges
+  (`int{0..MAX_PORTS}`) travel with the value. What remains a logic error is a wrong constraint,
+  not a forgotten one.
+
+**What stays out of reach:** logic errors in what the code is meant to do, hardware and firmware
+faults, and processor side channels beyond variant 1. K0 reports them separately every year.
 
 ### K2: port real subsystems and count what disappears
 Using kernel-mode Capstan, rewrite a small number of the Linux subsystems with the most CVEs, as
