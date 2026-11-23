@@ -1,0 +1,9 @@
+// expect: CWE-88
+// spec: builtins.sinks builtins.validators
+// A validated number can be negative and read as an option; computed arguments follow "--".
+int main() {
+    if (let t = read_line()) {
+        if (let n = validate_int(t)) { run("head", "-n", int_to_str(n), "log.txt"); }
+    }
+    return 0;
+}

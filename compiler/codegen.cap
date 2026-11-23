@@ -228,6 +228,12 @@ string gen_authorize(Gen g, Node e) {
             parts.push("cap_grant_bind(" + gt + ", (void *)" + names[j] + "); ");
         }
     }
+    string pa = fresh(g);
+    parts.push("CapPolArgs_" + e.s + " *" + pa + " = (CapPolArgs_" + e.s + " *)cap_alloc(sizeof(CapPolArgs_" + e.s + ")); ");
+    for (int k = 0; k < names.len(); k += 1) {
+        parts.push(pa + "->a" + int_to_str(k) + " = " + names[k] + "; ");
+    }
+    parts.push(gt + "->recheck = cap_recheck_" + e.s + "; " + gt + "->args = " + pa + "; ");
     parts.push("} " + gt + "; })");
     return join(parts, "");
 }
@@ -704,6 +710,7 @@ void gen_grant_checks(Gen g, Node f) {
                 }
             }
         }
+        emit(g, "cap_grant_recheck(u_" + f.kids[0].s + ", " + loc(f) + ");");
     }
 }
 
@@ -778,6 +785,21 @@ string generate_pass(Checker c, List<Node> decls, bool test_mode, Rg r) {
         if (d4.k == N_CONST) { emit(g, "static " + ctype(ty_of(d4)) + " g_" + d4.s + ";"); }
         if (d4.k == N_FN) { emit(g, fn_sig(d4) + ";"); }
         if (d4.k == N_POLICY) { emit(g, pol_sig(d4) + ";"); }
+    }
+    // For each policy, a record of its arguments and a function that evaluates it again on them.
+    for (int i8 = 0; i8 < decls.len(); i8 += 1) {
+        Node d8 = decls[i8];
+        if (d8.k == N_POLICY) {
+            List<string> fields = new List<string>();
+            List<string> uses = new List<string>();
+            for (int a8 = 0; a8 < d8.n; a8 += 1) {
+                fields.push(ctype(ty_of(d8.kids[a8])) + " a" + int_to_str(a8) + ";");
+                uses.push("x->a" + int_to_str(a8));
+            }
+            if (d8.n == 0) { fields.push("char _empty;"); }
+            emit(g, "typedef struct { " + join(fields, " ") + " } CapPolArgs_" + d8.s + ";");
+            emit(g, "static bool cap_recheck_" + d8.s + "(void *p) { CapPolArgs_" + d8.s + " *x = (CapPolArgs_" + d8.s + " *)p; (void)x; return pol_" + d8.s + "(" + join(uses, ", ") + "); }");
+        }
     }
     emit(g, "");
     emit(g, "static void cap_init_globals(void) {");

@@ -559,7 +559,12 @@ static CapList *cap_map_keys(CapMap *m) {
 /* ------------------------------------------------------------------ */
 
 #define CAP_GRANT_MAX 8
-typedef struct CapGrant { int64_t policy; int64_t n; void *bound[CAP_GRANT_MAX]; } CapGrant;
+/* A grant also keeps the policy's arguments and a function that evaluates the policy on them
+   again, so a protected call fails if what the policy checked has changed since (CWE-367). */
+typedef struct CapGrant {
+    int64_t policy; int64_t n; void *bound[CAP_GRANT_MAX];
+    bool (*recheck)(void *args); void *args;
+} CapGrant;
 
 static CapGrant *cap_grant_new(int64_t policy) {
     CapGrant *g = (CapGrant *)cap_alloc(sizeof(CapGrant));
@@ -570,6 +575,11 @@ static CapGrant *cap_grant_new(int64_t policy) {
 static CapGrant *cap_grant_bind(CapGrant *g, void *obj) {
     if (g->n < CAP_GRANT_MAX) g->bound[g->n++] = obj;
     return g;
+}
+
+static void cap_grant_recheck(CapGrant *g, int64_t loc) {
+    if (g->recheck && !g->recheck(g->args))
+        cap_panic("the policy no longer allows this: what it checked has changed since the grant was issued", "CWE-367", loc);
 }
 
 /* A grant is only valid for the exact objects it was issued for. */
@@ -779,7 +789,8 @@ static CapStr *cap_escape_html(CapStr *t) {
 /* A relative path inside the current directory tree: segments of letters, digits,
    '_', '-' and '.', never "." or "..", never absolute (CWE-22). */
 static CapStr *cap_validate_path(CapStr *t) {
-    if (t->len == 0 || t->len > 4096 || t->data[0] == '/') return NULL;
+    /* A leading '-' would be read as an option by most programs (CWE-88). */
+    if (t->len == 0 || t->len > 4096 || t->data[0] == '/' || t->data[0] == '-') return NULL;
     int64_t seg = 0;
     for (int64_t i = 0; i <= t->len; i++) {
         if (i == t->len || t->data[i] == '/') {

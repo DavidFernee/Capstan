@@ -3,6 +3,9 @@
 ## Lexical structure
 
 - Comments: `// line` and `/* block */`.
+- Bidirectional text controls (U+202A–U+202E, U+2066–U+2069, U+200E, U+200F, U+061C), zero-width
+  characters (U+200B–U+200D, U+2060) and a byte-order mark after the first character are errors
+  anywhere in a source file, comments and strings included (CWE-1007, Trojan Source).
 - Identifiers: `[A-Za-z_][A-Za-z0-9_]*`.
 - Integer literals: decimal, must fit in a signed 64-bit integer (otherwise a compile error);
   or hexadecimal, `0x` followed by up to 16 significant hex digits, which use all 64 bits as in
@@ -116,9 +119,9 @@ explicitly. Their meaning therefore never depends on precedence.
 | `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | |
 | `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
-| `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers |
+| `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers. `escape_html()` output is safe in element text and in a quoted attribute value; joined to literal HTML in the same expression, it is an error (CWE-79) inside a tag outside a quoted value, in an event-handler (`on…`) or URL or style attribute (`href`, `src`, `action`, `style` and others), or inside `<script>`, `<style>` or a comment |
 | `trust(t, "justification")` → `string` | explicit escape hatch; always reported as an AUDIT warning |
-| `validate_path(t)` → `string?` | a relative path with no `.` or `..` segments (CWE-22) |
+| `validate_path(t)` → `string?` | a relative path with no `.` or `..` segments (CWE-22) that does not begin with `-` (CWE-88) |
 | `validate_range(t, min, max)` → `int?` | an integer within bounds (CWE-1284) |
 | `escape_csv(t)` → `string` | one quoted CSV field, with leading `= + - @` neutralised (CWE-1236) |
 | `escape_json(t)` → `string` | the contents of a JSON string literal, without the quotes (CWE-116): `"` and `\` escaped; controls, DEL, `<`, `>`, `&`, U+2028 and U+2029 as `\uXXXX`, so the text is safe inside an HTML `<script>` too (CWE-79); valid UTF-8 kept; each invalid byte becomes U+FFFD, so the result is always valid JSON |
@@ -127,9 +130,9 @@ explicitly. Their meaning therefore never depends on precedence.
 | `wrapping_add(a, b)`, `wrapping_sub(a, b)`, `wrapping_mul(a, b)` → `int` | arithmetic modulo 2^64; never stops |
 | `wrapping_shl(a, n)` → `int` | `a << n` modulo 2^64; `n` must be 0..63 (CWE-1335) |
 | `sql_query("literal", params...)` | query text must be a literal; values are bound parameters |
-| `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; untrusted arguments must follow a literal `"--"` (CWE-88) |
+| `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; every computed (non-literal) argument must follow a literal `"--"` (CWE-88). If the program is a shell, interpreter or launcher (`sh`, `bash`, `env`, `xargs`, `sudo`, `ssh`, `python…`, `perl…`, `node` and others, matched without directory or `.exe`), every argument must be a literal (CWE-78) |
 | `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | constant-time comparison |
-| `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…`; not for passwords (CWE-916) |
+| `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…`; not for passwords (CWE-916); `hash()` of a `Secret` is an error (CWE-532), `hash_verify()` of one is allowed |
 | `hash_password(p)`, `verify_password(p, h)`, `needs_rehash(h)` | PBKDF2-SHA256 with 600,000 iterations; output carries its algorithm and cost |
 
 In v0.1, `sql_query` and `run` are demonstration sinks: they print what they would execute.
@@ -142,6 +145,8 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
   a field, collection or constant, or returned from a function.
 - `protected(P)` functions must take `Grant<P>` as their first parameter. Only
   protected functions may take grants, and calling one without a grant is CWE-862.
+- Each call to a protected function evaluates the policy again on the arguments it was
+  authorised with; if it no longer holds (an owner changed, say), the program stops with CWE-367.
 - A grant is bound to the struct objects it was issued for. If a protected function
   is passed a different object of a type the policy checked, the program stops with CWE-639.
 - Policy analysis:
