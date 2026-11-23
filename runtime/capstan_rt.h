@@ -208,10 +208,19 @@ static CapStr *cap_str_slice(CapStr *s, int64_t a, int64_t b, int64_t loc) {
     return cap_str_new(s->data + a, b - a);
 }
 
+/* Decimal text of v, written right to left: no printf machinery (part of T4's aim of
+   leaving libc's formatting functions out of the trusted base). The magnitude is taken
+   in unsigned arithmetic, so INT64_MIN needs no special case. */
 static CapStr *cap_int_to_str(int64_t v) {
-    char buf[32];
-    int n = snprintf(buf, sizeof buf, "%lld", (long long)v);
-    return cap_str_new(buf, n);
+    char buf[24];
+    int i = (int)sizeof buf;
+    uint64_t u = v < 0 ? (uint64_t)0 - (uint64_t)v : (uint64_t)v;
+    do {
+        buf[--i] = (char)('0' + (int)(u % 10));
+        u /= 10;
+    } while (u != 0);
+    if (v < 0) buf[--i] = '-';
+    return cap_str_new(buf + i, (int64_t)sizeof buf - i);
 }
 
 static CapStr *cap_char_str(int64_t c, int64_t loc) {

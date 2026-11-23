@@ -349,6 +349,32 @@ static void test_arithmetic(void) {
     CHECK(cap_div(-7, 2, 0) == -3 && cap_mod(-7, 2, 0) == -1 && cap_mod(7, -2, 0) == 1);
     CHECK(cap_mod(INT64_MIN, -1, 0) == 0);
     CHECK(strcmp(cap_int_to_str(INT64_MIN)->data, "-9223372036854775808") == 0);
+    /* int_to_str against snprintf: every power of ten and its neighbours, both
+       signs, the 64-bit extremes, and a million pseudo-random values. */
+    {
+        int bad = 0, n = 0;
+        int64_t edges[200];
+        int ne = 0;
+        int64_t p10 = 1;
+        for (int k = 0; k < 19; k++) {
+            edges[ne++] = p10 - 1; edges[ne++] = p10; edges[ne++] = p10 + 1;
+            edges[ne++] = -p10 + 1; edges[ne++] = -p10; edges[ne++] = -p10 - 1;
+            if (k < 18) p10 *= 10;
+        }
+        edges[ne++] = INT64_MAX; edges[ne++] = INT64_MAX - 1; edges[ne++] = INT64_MIN; edges[ne++] = INT64_MIN + 1;
+        uint64_t x = 0x9E3779B97F4A7C15ULL;
+        for (int i = 0; i < ne + 1000000; i++) {
+            int64_t v;
+            if (i < ne) v = edges[i];
+            else { x ^= x << 13; x ^= x >> 7; x ^= x << 17; v = (int64_t)(x >> (x % 64)); if (x & 1) v = -v; }
+            char want[32];
+            snprintf(want, sizeof want, "%lld", (long long)v);
+            CapStr *got = cap_int_to_str(v);
+            n++;
+            if (got->len != (int64_t)strlen(want) || memcmp(got->data, want, strlen(want)) != 0 || got->data[got->len] != 0) bad++;
+        }
+        CHECK(bad == 0 && n > 1000000);
+    }
     CHECK(cap_ct_eq("abc", 3, "abc", 3) && !cap_ct_eq("abc", 3, "abd", 3) && !cap_ct_eq("abc", 3, "ab", 2));
 }
 
