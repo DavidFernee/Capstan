@@ -473,6 +473,111 @@ void check_bitwise_grouping(Checker c, Node e) {
     }
 }
 
+// ---- HTML contexts (CWE-79) ----------------------------------------------------
+//
+// escape_html() makes text safe in element content and inside a quoted attribute value. It does
+// not make it safe in an unquoted attribute, a URL or event-handler attribute, or a script,
+// style or comment block. When escaped text is joined to literal HTML in one expression, the
+// literal text before it is parsed to find its context. Html built in separate statements is
+// not followed (a documented limit in the CWE atlas).
+
+bool is_escape_html(Node e) {
+    return e.k == N_CALL && e.s == "escape_html";
+}
+
+// String literals are stored escaped for C; undo the escapes that matter here.
+string c_unescape(string s) {
+    string out = "";
+    int i = 0;
+    while (i < s.len()) {
+        int ch = s.at(i);
+        if (ch == '\\' && i + 1 < s.len()) {
+            int nx = s.at(i + 1);
+            if (nx >= '0' && nx <= '7') {
+                out = out + "?";
+                i += 4;
+            } else {
+                out = out + s.slice(i + 1, i + 2);
+                i += 2;
+            }
+        } else {
+            out = out + s.slice(i, i + 1);
+            i += 1;
+        }
+    }
+    return out;
+}
+
+// The text an HTML expression produces before its last part: literals as written, anything
+// else as neutral text.
+string html_prefix(Node e) {
+    if (e.k == N_STR) { return c_unescape(e.s); }
+    if (e.k == N_BIN && e.s == "+") { return html_prefix(e.kids[0]) + html_prefix(e.kids[1]); }
+    return "x";
+}
+
+string lower_ascii(string s) {
+    string out = "";
+    for (int i = 0; i < s.len(); i += 1) {
+        int ch = s.at(i);
+        if (ch >= 'A' && ch <= 'Z') { out = out + char_str(ch + 32); } else { out = out + s.slice(i, i + 1); }
+    }
+    return out;
+}
+
+int last_index(string s, string needle) {
+    int found = -1;
+    for (int i = 0; i + needle.len() <= s.len(); i += 1) {
+        if (s.slice(i, i + needle.len()) == needle) { found = i; }
+    }
+    return found;
+}
+
+bool is_name_ch(int ch) {
+    return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == ':';
+}
+
+// Why text appended after `prefix` is not in a context escape_html() protects, or "" if it is.
+string html_context(string prefix) {
+    string p = lower_ascii(prefix);
+    if (last_index(p, "<script") > last_index(p, "</script")) { return "inside a <script> element"; }
+    if (last_index(p, "<style") > last_index(p, "</style")) { return "inside a <style> element"; }
+    if (last_index(p, "<!--") > last_index(p, "-->")) { return "inside an HTML comment"; }
+    int lt = last_index(p, "<");
+    if (lt <= last_index(p, ">")) { return ""; }
+    // Inside a tag: find whether the end is within a quoted attribute value, and which.
+    int quote = 0;
+    int qstart = -1;
+    for (int i = lt + 1; i < p.len(); i += 1) {
+        int ch = p.at(i);
+        if (quote == 0 && (ch == '"' || ch == '\'')) {
+            quote = ch;
+            qstart = i;
+        } else if (quote != 0 && ch == quote) {
+            quote = 0;
+        }
+    }
+    if (quote == 0) { return "inside a tag but not inside a quoted attribute value"; }
+    int k = qstart - 1;
+    while (k > lt && p.at(k) == ' ') { k -= 1; }
+    if (k <= lt || p.at(k) != '=') { return "inside a tag but not inside a quoted attribute value"; }
+    k -= 1;
+    while (k > lt && p.at(k) == ' ') { k -= 1; }
+    int nend = k + 1;
+    while (k > lt && is_name_ch(p.at(k))) { k -= 1; }
+    string attr = p.slice(k + 1, nend);
+    if (attr.len() > 2 && attr.slice(0, 2) == "on") { return "in the event-handler attribute '" + attr + "'"; }
+    List<string> urls = new List<string>();
+    urls.push("href"); urls.push("src"); urls.push("action"); urls.push("formaction"); urls.push("srcdoc"); urls.push("style");
+    urls.push("xlink:href"); urls.push("data"); urls.push("poster"); urls.push("background"); urls.push("cite"); urls.push("codebase");
+    urls.push("ping"); urls.push("manifest"); urls.push("lowsrc"); urls.push("srcset"); urls.push("dynsrc"); urls.push("longdesc");
+    urls.push("usemap"); urls.push("xmlns"); urls.push("archive"); urls.push("classid"); urls.push("profile"); urls.push("http-equiv");
+    for (int u = 0; u < urls.len(); u += 1) {
+        if (attr == urls[u]) { return "in the URL or style attribute '" + attr + "'"; }
+    }
+    return "";
+}
+
 Type check_binary(Checker c, Node e) {
     string op = e.s;
     Type a = check_expr(c, e.kids[0]);
@@ -563,6 +668,12 @@ Type check_binary(Checker c, Node e) {
             error_at(c.ctx, e, "CWE-116", "untrusted input cannot be joined to " + ctx_name + " unescaped; wrap it in " + esc);
             return mk_type(TY_ERR);
         }
+        if (ctx_k == TY_HTML && is_escape_html(e.kids[1])) {
+            string why = html_context(html_prefix(e.kids[0]));
+            if (why != "") {
+                error_at(c.ctx, e.kids[1], "CWE-79", "escape_html() output lands " + why + ", where HTML escaping does not stop script injection; use it only in element text or a quoted, non-URL, non-event attribute");
+            }
+        }
         return mk_type(ctx_k);
     }
     if (op == "+" && is_stringish(a) && is_stringish(b)) {
@@ -577,6 +688,40 @@ Type check_binary(Checker c, Node e) {
         error_at(c.ctx, e, "CWE-369", "division by zero");
     }
     return mk_type(TY_INT);
+}
+
+// Programs that execute their arguments: shells, interpreters, and launchers that run another
+// program named in their arguments. The name is matched without its directory or ".exe".
+bool is_launcher(string prog) {
+    int start = 0;
+    for (int i = 0; i < prog.len(); i += 1) {
+        if (prog.at(i) == '/' || prog.at(i) == '\\') { start = i + 1; }
+    }
+    string p = prog.slice(start, prog.len());
+    if (p.len() > 4 && p.slice(p.len() - 4, p.len()) == ".exe") { p = p.slice(0, p.len() - 4); }
+    List<string> exact = new List<string>();
+    exact.push("sh"); exact.push("bash"); exact.push("dash"); exact.push("zsh"); exact.push("ksh"); exact.push("mksh");
+    exact.push("csh"); exact.push("tcsh"); exact.push("fish"); exact.push("ash"); exact.push("busybox"); exact.push("cmd");
+    exact.push("powershell"); exact.push("pwsh"); exact.push("env"); exact.push("xargs"); exact.push("nohup"); exact.push("nice");
+    exact.push("timeout"); exact.push("stdbuf"); exact.push("setsid"); exact.push("sudo"); exact.push("doas"); exact.push("su");
+    exact.push("runuser"); exact.push("chroot"); exact.push("ssh"); exact.push("rsh"); exact.push("watch"); exact.push("time");
+    exact.push("strace"); exact.push("ltrace"); exact.push("gdb"); exact.push("flock"); exact.push("unshare"); exact.push("nsenter");
+    exact.push("node"); exact.push("nodejs"); exact.push("deno"); exact.push("bun"); exact.push("tclsh"); exact.push("wish");
+    exact.push("awk"); exact.push("gawk"); exact.push("mawk"); exact.push("nawk"); exact.push("sed"); exact.push("find");
+    exact.push("make"); exact.push("osascript"); exact.push("wscript"); exact.push("cscript"); exact.push("mshta");
+    exact.push("rundll32"); exact.push("regsvr32"); exact.push("at"); exact.push("batch"); exact.push("crontab"); exact.push("expect");
+    exact.push("script"); exact.push("docker"); exact.push("podman"); exact.push("kubectl"); exact.push("systemd-run");
+    exact.push("pkexec"); exact.push("eval"); exact.push("exec"); exact.push("command"); exact.push("start");
+    for (int k = 0; k < exact.len(); k += 1) {
+        if (p == exact[k]) { return true; }
+    }
+    List<string> prefix = new List<string>();
+    prefix.push("python"); prefix.push("perl"); prefix.push("ruby"); prefix.push("php"); prefix.push("lua"); prefix.push("pypy");
+    for (int q = 0; q < prefix.len(); q += 1) {
+        string pre = prefix[q];
+        if (p.len() >= pre.len() && p.slice(0, pre.len()) == pre) { return true; }
+    }
+    return false;
 }
 
 int arg_count(Node e) {
@@ -714,7 +859,7 @@ List<string> builtin_names() {
     b.push("hash"); b.push("hash_verify"); b.push("hash_password"); b.push("verify_password"); b.push("needs_rehash");
     b.push("escape_csv"); b.push("validate_path"); b.push("validate_range"); b.push("to_text");
     b.push("wrapping_add"); b.push("wrapping_sub"); b.push("wrapping_mul"); b.push("wrapping_shl");
-    b.push("read_bytes"); b.push("flush");
+    b.push("read_bytes"); b.push("flush"); b.push("escape_json"); b.push("taint_char");
     return b;
 }
 
@@ -820,8 +965,9 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_STR);
     }
     if (f == "read_file") {
-        want_args(c, e, 0, 1, f);
-        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path"); }
+        if (n != 2) { want_args(c, e, 0, 1, f); }
+        if (n >= 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path"); }
+        if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "read_file() limit"); }
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "read_line") {
@@ -881,7 +1027,12 @@ Type check_call(Checker c, Node e) {
         if (f == "validate_int") { return mk_wrap(TY_OPT, mk_type(TY_INT)); }
         return mk_wrap(TY_OPT, mk_type(TY_STR));
     }
-    if (f == "escape_c" || f == "escape_html" || f == "escape_log" || f == "escape_csv") {
+    if (f == "taint_char") {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), f + "()"); }
+        return mk_type(TY_TAINT);
+    }
+    if (f == "escape_c" || f == "escape_html" || f == "escape_log" || f == "escape_csv" || f == "escape_json") {
         want_args(c, e, 0, 1, f);
         if (n == 1 && !is_stringish(ty_of(e.kids[0]))) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()"); }
         if (f == "escape_html") { return mk_type(TY_HTML); }
@@ -920,6 +1071,9 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_TAINT);
     }
     if (f == "sql_query" || f == "run") {
+        // A shell, interpreter or launcher runs its arguments as code or as another program, so
+        // passing it anything but literals is command injection by another route (CWE-78).
+        bool launcher = f == "run" && n > 0 && is_literal_str(e.kids[0]) && is_launcher(e.kids[0].s);
         string cwe = "CWE-89";
         string what = "SQL query text";
         if (f == "run") { cwe = "CWE-78"; what = "program name"; }
@@ -930,8 +1084,13 @@ Type check_call(Checker c, Node e) {
         for (int j = 1; j < n; j += 1) {
             Type argt = ty_of(e.kids[j]);
             if (e.kids[j].k == N_STR && e.kids[j].s == "--") { options_ended = true; }
-            if (f == "run" && argt.k == TY_TAINT && !options_ended) {
+            bool literal = is_literal_str(e.kids[j]);
+            if (launcher && !literal) {
+                error_at(c.ctx, e.kids[j], "CWE-78", "'" + e.kids[0].s + "' runs its arguments as code or as another program; every argument to it must be a string literal. Call the program you need directly");
+            } else if (f == "run" && argt.k == TY_TAINT && !options_ended) {
                 error_at(c.ctx, e.kids[j], "CWE-88", "untrusted argument to run() could be read as an option (for example --upload-pack=...); put \"--\" before untrusted arguments");
+            } else if (f == "run" && !literal && !options_ended) {
+                error_at(c.ctx, e.kids[j], "CWE-88", "a computed argument to run() could begin with '-' and be read as an option (validated numbers can be negative); put \"--\" before computed arguments");
             }
             if (argt.k == TY_SECRET) {
                 error_at(c.ctx, e.kids[j], "CWE-532", "a Secret cannot be passed to " + f + "()");
@@ -964,6 +1123,9 @@ Type check_call(Checker c, Node e) {
         if (n >= 1) {
             Type dt = ty_of(e.kids[0]);
             if (dt.k != TY_SECRET && !is_stringish(dt)) { expect_type(c, e, dt, mk_type(TY_STR), f + "()"); }
+            if (f == "hash" && dt.k == TY_SECRET) {
+                error_at(c.ctx, e, "CWE-532", "hash() of a Secret gives printable text from which a short or guessable secret can be recovered by trying values offline; compare secrets with secret_eq() or hash_verify(), and store passwords with hash_password()");
+            }
             if ((f == "hash" || f == "hash_verify") && mentions_name(e.kids[0], 2)) {
                 error_at(c.ctx, e, "CWE-916", f + "() is a fast, unsalted hash and must not be used for passwords; use hash_password() and verify_password()");
             }
@@ -1549,11 +1711,14 @@ void check_program(Checker c, List<Node> decls, bool need_main) {
 // ---- laundering analysis (CWE-20) ---------------------------------------------
 //
 // Bytes read from a Tainted value with .at() are "derived" integers. Rebuilding
-// text from them with char_str() would strip the Tainted marking, so it is
-// rejected. Derivation is tracked through arithmetic, local variables, function
-// return values and function parameters (inter-procedurally, to a fixpoint).
-// Not tracked: derived integers stored in struct fields or collections, and
-// information carried only by control flow.
+// text from them would strip the Tainted marking, so every way of doing it is
+// rejected: char_str() of a derived integer, and looking up trusted text with one
+// (an index into a list of strings, a slice of a trusted string, a map key made
+// from it). A collection indexed by a derived integer yields derived values, and
+// int_to_str() of a derived integer is a derived string. Derivation is tracked
+// through arithmetic, local variables, collections and struct fields written with
+// derived values, function return values and integer parameters (inter-procedurally,
+// to a fixpoint). Not tracked: information carried only by control flow.
 
 struct FlowSummary {
     bool returns_derived;
@@ -1580,7 +1745,13 @@ bool derived(Flow f, Node e) {
     if (e.k == N_VAR) { return f.vars.has(e.s); }
     if (e.k == N_NEG || e.k == N_BNOT) { return derived(f, e.kids[0]); }
     // A collection or struct that ever held a derived integer yields derived integers.
-    if (e.k == N_INDEX || e.k == N_GETF) { return base_marked(f, e.kids[0]); }
+    if (e.k == N_GETF) { return base_marked(f, e.kids[0]); }
+    // Indexing with a derived integer selects by untrusted data: the result is derived too.
+    if (e.k == N_INDEX) { return base_marked(f, e.kids[0]) || derived(f, e.kids[1]); }
+    if (e.k == N_METHOD && e.s == "get" && e.kids.len() > 1 && derived(f, e.kids[1])) { return true; }
+    // Decimal digits of an untrusted byte, and text joined to them, are derived strings.
+    if (e.k == N_CALL && e.s == "int_to_str" && e.kids.len() == 1 && derived(f, e.kids[0])) { return true; }
+    if (e.k == N_BIN && e.s == "+" && ty_of(e).k == TY_STR) { return derived(f, e.kids[0]) || derived(f, e.kids[1]); }
     if (e.k == N_METHOD && (e.s == "pop" || e.s == "get" || e.s == "remove_at")) { return base_marked(f, e.kids[0]); }
     if (e.k == N_BIN && is_arith(e.s) && ty_of(e).k == TY_INT) {
         return derived(f, e.kids[0]) || derived(f, e.kids[1]);
@@ -1628,9 +1799,33 @@ void sink(Flow f, Node at) {
     }
 }
 
+void lookup_sink(Flow f, Node at) {
+    f.sinks = true;
+    if (f.report) {
+        error_at(f.ctx, at, "CWE-20", "trusted text selected by bytes of untrusted input rebuilds that input without its Tainted marking; slice the Tainted value instead and validate or escape it");
+    }
+}
+
+bool texty_type(Type t) {
+    return t.k == TY_STR || t.k == TY_HTML || t.k == TY_LOG;
+}
+
 void flow_walk(Flow f, Node n) {
-    if (n.k == N_DECL && ty_of(n).k == TY_INT && derived(f, n.kids[0])) { mark(f, n.s); }
-    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && ty_of(n.kids[0]).k == TY_INT && derived(f, n.kids[1])) { mark(f, n.kids[0].s); }
+    if (n.k == N_DECL && (ty_of(n).k == TY_INT || ty_of(n).k == TY_STR) && derived(f, n.kids[0])) { mark(f, n.s); }
+    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && (ty_of(n.kids[0]).k == TY_INT || ty_of(n.kids[0]).k == TY_STR) && derived(f, n.kids[1])) { mark(f, n.kids[0].s); }
+    // Lookups of trusted text keyed by untrusted bytes.
+    if (n.k == N_INDEX && texty_type(ty_of(n)) && derived(f, n.kids[1])) { lookup_sink(f, n); }
+    if (n.k == N_METHOD && n.s == "get" && n.kids.len() > 1 && derived(f, n.kids[1])) {
+        Type gt = ty_of(n);
+        if (gt.k == TY_OPT && gt.args.len() > 0 && texty_type(gt.args[0])) { lookup_sink(f, n); }
+    }
+    if (n.k == N_METHOD && n.s == "slice" && ty_of(n.kids[0]).k != TY_TAINT) {
+        bool sliced_by_input = false;
+        for (int si = 1; si < n.kids.len(); si += 1) {
+            if (derived(f, n.kids[si])) { sliced_by_input = true; }
+        }
+        if (sliced_by_input) { lookup_sink(f, n); }
+    }
     if (n.k == N_ASSIGN && (n.kids[0].k == N_INDEX || n.kids[0].k == N_GETF) && derived(f, n.kids[1])) {
         string bn = base_name(n.kids[0]);
         if (bn != "") { mark(f, bn); }

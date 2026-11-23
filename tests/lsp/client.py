@@ -26,9 +26,15 @@ def read_frames(data):
         body = data[end + 4:end + 4 + n]
         if len(body) != n:
             raise FramingError("truncated body")
-        if any(b < 32 or b > 126 for b in body):
-            raise FramingError("body is not printable ASCII")
-        out.append(json.loads(body.decode("ascii")))
+        if any(b < 32 or b == 127 for b in body):
+            raise FramingError("body contains a raw control character")
+        try:
+            text = body.decode("utf-8")
+        except UnicodeDecodeError:
+            raise FramingError("body is not valid UTF-8")
+        if "\u2028" in text or "\u2029" in text:
+            raise FramingError("body contains a raw line separator")
+        out.append(json.loads(body.decode("utf-8")))
         i = end + 4 + n
     return out
 
@@ -62,7 +68,7 @@ class Server:
                         break
                     body = buf[end + 4:end + 4 + n]
                     buf = buf[end + 4 + n:]
-                    self.q.put(json.loads(body.decode("ascii")))
+                    self.q.put(json.loads(body.decode("utf-8")))
         except Exception as e:      # reported by recv()
             self.error = e
         self.q.put(None)

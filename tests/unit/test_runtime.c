@@ -314,7 +314,8 @@ static void test_bitwise(void) {
     CHECK(cap_shl_proved(5, 3, 0) == 40 && cap_sar_proved(-9, 1, 0) == -5 && cap_shr_proved(-2, 63, 0) == 1);
 }
 
-static void test_collections(void) {
+/* noinline: if inlined into main, its 100,000-key map could stay visible in main's frame. */
+__attribute__((noinline)) static void test_collections(void) {
     CapMap *m = cap_map_new();
     for (int i = 0; i < 100000; i++) cap_map_set(m, cap_int_to_str(i), cap_vi(i));
     for (int i = 0; i < 100000; i += 997) cap_map_set(m, cap_int_to_str(i), cap_vi(-i));
@@ -348,11 +349,47 @@ static void test_arithmetic(void) {
     CHECK(cap_div(-7, 2, 0) == -3 && cap_mod(-7, 2, 0) == -1 && cap_mod(7, -2, 0) == 1);
     CHECK(cap_mod(INT64_MIN, -1, 0) == 0);
     CHECK(strcmp(cap_int_to_str(INT64_MIN)->data, "-9223372036854775808") == 0);
+    /* int_to_str against snprintf: every power of ten and its neighbours, both
+       signs, the 64-bit extremes, and a million pseudo-random values. */
+    {
+        int bad = 0, n = 0;
+        int64_t edges[200];
+        int ne = 0;
+        int64_t p10 = 1;
+        for (int k = 0; k < 19; k++) {
+            edges[ne++] = p10 - 1; edges[ne++] = p10; edges[ne++] = p10 + 1;
+            edges[ne++] = -p10 + 1; edges[ne++] = -p10; edges[ne++] = -p10 - 1;
+            if (k < 18) p10 *= 10;
+        }
+        edges[ne++] = INT64_MAX; edges[ne++] = INT64_MAX - 1; edges[ne++] = INT64_MIN; edges[ne++] = INT64_MIN + 1;
+        uint64_t x = 0x9E3779B97F4A7C15ULL;
+        for (int i = 0; i < ne + 1000000; i++) {
+            int64_t v;
+            if (i < ne) v = edges[i];
+            else { x ^= x << 13; x ^= x >> 7; x ^= x << 17; v = (int64_t)(x >> (x % 64)); if (x & 1) v = -v; }
+            char want[32];
+            snprintf(want, sizeof want, "%lld", (long long)v);
+            CapStr *got = cap_int_to_str(v);
+            n++;
+            if (got->len != (int64_t)strlen(want) || memcmp(got->data, want, strlen(want)) != 0 || got->data[got->len] != 0) bad++;
+        }
+        CHECK(bad == 0 && n > 1000000);
+    }
     CHECK(cap_ct_eq("abc", 3, "abc", 3) && !cap_ct_eq("abc", 3, "abd", 3) && !cap_ct_eq("abc", 3, "ab", 2));
+}
+
+/* Zero the stack below the caller, so stale pointers left by earlier tests (the
+   collector is conservative) cannot keep their objects alive. */
+__attribute__((noinline)) static void scrub_stack(int depth) {
+    volatile char pad[4096];
+    memset((char *)pad, 0, sizeof pad);
+    if (depth > 0) scrub_stack(depth - 1);
 }
 
 /* The collector must keep objects reachable only through interior pointers,
    large objects, registered globals, and nested structures. */
+#define CAP_DISGUISE_GC ((uintptr_t)0x3c3c3c3c3c3c3c3cULL)
+__attribute__((noinline)) static void scrub_stack(int depth);
 static CapStr *global_root;
 static void test_gc(void) {
     cap_gc_root((void **)&global_root);
@@ -378,6 +415,55 @@ static void test_gc(void) {
     CHECK(cap_gc.live < (size_t)4 << 20);
 }
 
+/* Pages a collection leaves empty go back to the operating system beyond a reserve,
+   are reused (for any size class) before new memory is requested, and a stale
+   pointer into a released page is treated as pointing at nothing. */
+static uintptr_t stale_addr;
+__attribute__((noinline)) static void fill_and_drop(void) {
+    /* About 50 MiB of garbage with no collection in between (the threshold is
+       raised for the duration), so one collection then finds it all empty. */
+    size_t saved = cap_gc.threshold;
+    cap_gc.threshold = (size_t)1 << 40;
+    for (int i = 0; i < 600000; i++) {
+        CapStr *t = cap_str_new("0123456789012345678901234567890123456789", 40);
+        if (i == 1000) stale_addr = (uintptr_t)t ^ CAP_DISGUISE_GC;
+    }
+    cap_gc.threshold = saved;
+}
+/* Collect from a fresh frame after clearing the stack and the callee-saved
+   registers, so stale copies of dropped pointers do not keep them alive. */
+__attribute__((noinline)) static void collect_clean(void) {
+    scrub_stack(16);
+    __asm__ volatile("" ::: "memory");
+#if defined(__x86_64__)
+    __asm__ volatile("xor %%r12d, %%r12d\n\txor %%r13d, %%r13d\n\txor %%r14d, %%r14d\n\txor %%r15d, %%r15d\n\txor %%ebx, %%ebx" ::: "r12", "r13", "r14", "r15", "rbx", "memory");
+#endif
+    cap_gc_collect();
+}
+static void test_gc_release(void) {
+    cap_gc_collect();
+    size_t released_before = cap_gc.released_total, heap_before = cap_gc.heap;
+    fill_and_drop();
+    collect_clean();
+    CHECK(cap_gc.released_total > released_before);          /* memory went back */
+    CHECK(cap_gc.heap <= heap_before + ((size_t)32 << 20));  /* at most the reserve stays */
+    /* A stale pointer into the released memory must not be followed or kept. */
+    volatile uintptr_t stale = stale_addr ^ CAP_DISGUISE_GC;
+    cap_gc_collect();
+    CHECK(stale != 0);
+    /* Reuse: allocations of another size class take the spare pages first. */
+    size_t reused_before = cap_gc.reused_total, pages_before = cap_gc.npages;
+    CapList *keep = cap_list_new();
+    for (int i = 0; i < 20000; i++) cap_list_push(keep, cap_vp(cap_str_new("a much longer string that needs a bigger size class than forty bytes", 68)));
+    CHECK(cap_gc.npages == pages_before);                     /* no new memory was requested */
+    CHECK(cap_gc.reused_total >= reused_before);
+    int ok = 1;
+    for (int i = 0; i < 20000; i++) if (((CapStr *)keep->items[i].p)->len != 68) ok = 0;
+    cap_gc_collect();
+    for (int i = 0; i < 20000; i++) if (((CapStr *)keep->items[i].p)->data[0] != 'a') ok = 0;
+    CHECK(ok);
+}
+
 /* Collected secrets must be wiped (CWE-244). The test keeps only disguised
    addresses, so the collector cannot see references to the secrets. A conservative
    collector may retain a few through stale register values, so the test creates
@@ -392,11 +478,6 @@ __attribute__((noinline)) static void make_secrets(void) {
         secret_addrs[i] = (uintptr_t)sec->data ^ CAP_DISGUISE;
     }
     unsetenv("CAPSTAN_UNIT_SECRET");
-}
-__attribute__((noinline)) static void scrub_stack(int depth) {
-    volatile char pad[4096];
-    memset((char *)pad, 0, sizeof pad);
-    if (depth > 0) scrub_stack(depth - 1);
 }
 static void test_secret_wipe(void) {
     make_secrets();
@@ -430,7 +511,9 @@ int main(void) {
     test_bitwise();
     test_collections();
     test_arithmetic();
+    scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
+    test_gc_release();
     test_secret_wipe();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

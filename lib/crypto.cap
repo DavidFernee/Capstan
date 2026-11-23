@@ -1,0 +1,230 @@
+// Capstan standard library: cryptographic hashing in Capstan (trusted-base stage T3).
+//
+// SHA-256 (FIPS 180-4), HMAC-SHA256 (RFC 2104) and PBKDF2-HMAC-SHA256 (RFC 8018),
+// written in Capstan so that a bug here cannot corrupt memory: every list access is
+// bounds-checked and every + overflow-checked, as in any Capstan program. They are
+// checked against the published vectors, against Python's hashlib on generated
+// inputs, and against the runtime's C implementation that hash() uses today
+// (tests/crypto/). Bytes are List<int> values 0..255.
+//
+// Words are 32-bit values held in 64-bit ints and masked after every step; a
+// rotation's left shift uses wrapping_shl because its high bits are masked away.
+
+const int MASK32 = 0xFFFFFFFF;
+
+List<int> sha256_constants() {
+    List<int> k = new List<int>();
+    List<int> v = new List<int>();
+    v.push(0x428a2f98); v.push(0x71374491); v.push(0xb5c0fbcf); v.push(0xe9b5dba5);
+    v.push(0x3956c25b); v.push(0x59f111f1); v.push(0x923f82a4); v.push(0xab1c5ed5);
+    v.push(0xd807aa98); v.push(0x12835b01); v.push(0x243185be); v.push(0x550c7dc3);
+    v.push(0x72be5d74); v.push(0x80deb1fe); v.push(0x9bdc06a7); v.push(0xc19bf174);
+    v.push(0xe49b69c1); v.push(0xefbe4786); v.push(0x0fc19dc6); v.push(0x240ca1cc);
+    v.push(0x2de92c6f); v.push(0x4a7484aa); v.push(0x5cb0a9dc); v.push(0x76f988da);
+    v.push(0x983e5152); v.push(0xa831c66d); v.push(0xb00327c8); v.push(0xbf597fc7);
+    v.push(0xc6e00bf3); v.push(0xd5a79147); v.push(0x06ca6351); v.push(0x14292967);
+    v.push(0x27b70a85); v.push(0x2e1b2138); v.push(0x4d2c6dfc); v.push(0x53380d13);
+    v.push(0x650a7354); v.push(0x766a0abb); v.push(0x81c2c92e); v.push(0x92722c85);
+    v.push(0xa2bfe8a1); v.push(0xa81a664b); v.push(0xc24b8b70); v.push(0xc76c51a3);
+    v.push(0xd192e819); v.push(0xd6990624); v.push(0xf40e3585); v.push(0x106aa070);
+    v.push(0x19a4c116); v.push(0x1e376c08); v.push(0x2748774c); v.push(0x34b0bcb5);
+    v.push(0x391c0cb3); v.push(0x4ed8aa4a); v.push(0x5b9cca4f); v.push(0x682e6ff3);
+    v.push(0x748f82ee); v.push(0x78a5636f); v.push(0x84c87814); v.push(0x8cc70208);
+    v.push(0x90befffa); v.push(0xa4506ceb); v.push(0xbef9a3f7); v.push(0xc67178f2);
+    for (int i = 0; i < v.len(); i += 1) { k.push(v[i]); }
+    return k;
+}
+
+int rotr32(int x, int n) {
+    return ((x >>> n) | wrapping_shl(x, 32 - n)) & MASK32;
+}
+
+// One 64-byte block of msg, starting at byte `at`, folded into the state h.
+void sha256_block(List<int> h, List<int> k, List<int> w, List<int> msg, int at) {
+    for (int t = 0; t < 16; t += 1) {
+        int p = at + t * 4;
+        w[t] = (msg[p] << 24) | (msg[p + 1] << 16) | (msg[p + 2] << 8) | msg[p + 3];
+    }
+    for (int t2 = 16; t2 < 64; t2 += 1) {
+        int x = w[t2 - 15];
+        int y = w[t2 - 2];
+        int s0 = rotr32(x, 7) ^ rotr32(x, 18) ^ (x >>> 3);
+        int s1 = rotr32(y, 17) ^ rotr32(y, 19) ^ (y >>> 10);
+        w[t2] = (w[t2 - 16] + s0 + w[t2 - 7] + s1) & MASK32;
+    }
+    int a = h[0];
+    int b = h[1];
+    int c = h[2];
+    int d = h[3];
+    int e = h[4];
+    int f = h[5];
+    int g = h[6];
+    int hh = h[7];
+    for (int r = 0; r < 64; r += 1) {
+        int big1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+        int ch = (e & f) ^ ((~e) & MASK32 & g);
+        int t1 = (hh + big1 + ch + k[r] + w[r]) & MASK32;
+        int big0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+        int maj = (a & b) ^ (a & c) ^ (b & c);
+        int t2b = (big0 + maj) & MASK32;
+        hh = g;
+        g = f;
+        f = e;
+        e = (d + t1) & MASK32;
+        d = c;
+        c = b;
+        b = a;
+        a = (t1 + t2b) & MASK32;
+    }
+    h[0] = (h[0] + a) & MASK32;
+    h[1] = (h[1] + b) & MASK32;
+    h[2] = (h[2] + c) & MASK32;
+    h[3] = (h[3] + d) & MASK32;
+    h[4] = (h[4] + e) & MASK32;
+    h[5] = (h[5] + f) & MASK32;
+    h[6] = (h[6] + g) & MASK32;
+    h[7] = (h[7] + hh) & MASK32;
+}
+
+// The SHA-256 digest of msg: 32 bytes.
+List<int> sha256(List<int> msg) {
+    List<int> padded = new List<int>();
+    for (int i = 0; i < msg.len(); i += 1) { padded.push(msg[i] & 0xFF); }
+    padded.push(0x80);
+    while (padded.len() % 64 != 56) { padded.push(0); }
+    int bits = msg.len() * 8;
+    for (int j = 7; j >= 0; j -= 1) { padded.push((bits >>> (j * 8)) & 0xFF); }
+    List<int> h = new List<int>();
+    h.push(0x6a09e667); h.push(0xbb67ae85); h.push(0x3c6ef372); h.push(0xa54ff53a);
+    h.push(0x510e527f); h.push(0x9b05688c); h.push(0x1f83d9ab); h.push(0x5be0cd19);
+    List<int> k = sha256_constants();
+    List<int> w = new List<int>();
+    for (int z = 0; z < 64; z += 1) { w.push(0); }
+    for (int at = 0; at < padded.len(); at += 64) { sha256_block(h, k, w, padded, at); }
+    List<int> out = new List<int>();
+    for (int q = 0; q < 8; q += 1) {
+        out.push((h[q] >>> 24) & 0xFF);
+        out.push((h[q] >>> 16) & 0xFF);
+        out.push((h[q] >>> 8) & 0xFF);
+        out.push(h[q] & 0xFF);
+    }
+    return out;
+}
+
+List<int> concat_bytes(List<int> a, List<int> b) {
+    List<int> out = new List<int>();
+    for (int i = 0; i < a.len(); i += 1) { out.push(a[i]); }
+    for (int j = 0; j < b.len(); j += 1) { out.push(b[j]); }
+    return out;
+}
+
+// HMAC-SHA256 of msg under key: 32 bytes.
+List<int> hmac_sha256(List<int> key, List<int> msg) {
+    List<int> k = key;
+    if (k.len() > 64) { k = sha256(key); }
+    List<int> ipad = new List<int>();
+    List<int> opad = new List<int>();
+    for (int i = 0; i < 64; i += 1) {
+        int b = 0;
+        if (i < k.len()) { b = k[i]; }
+        ipad.push(b ^ 0x36);
+        opad.push(b ^ 0x5c);
+    }
+    return sha256(concat_bytes(opad, sha256(concat_bytes(ipad, msg))));
+}
+
+// The SHA-256 state after one 64-byte block from the initial value: HMAC's keyed
+// inner and outer states, computed once and reused for every PBKDF2 iteration.
+List<int> sha256_after_block(List<int> k, List<int> w, List<int> block) {
+    List<int> h = new List<int>();
+    h.push(0x6a09e667); h.push(0xbb67ae85); h.push(0x3c6ef372); h.push(0xa54ff53a);
+    h.push(0x510e527f); h.push(0x9b05688c); h.push(0x1f83d9ab); h.push(0x5be0cd19);
+    sha256_block(h, k, w, block, 0);
+    return h;
+}
+
+// Finish a hash whose first 64 bytes gave `state` and whose last 32 bytes are
+// in32: one more block (in32, padding, total length 96 bytes). The digest goes
+// to out32; blk and h are scratch lists of 64 and 8 entries.
+void sha256_finish_96(List<int> k, List<int> w, List<int> state, List<int> in32, List<int> blk, List<int> h, List<int> out32) {
+    for (int i = 0; i < 32; i += 1) { blk[i] = in32[i]; }
+    blk[32] = 0x80;
+    for (int z = 33; z < 62; z += 1) { blk[z] = 0; }
+    blk[62] = 3;        // 96 bytes = 768 bits = 0x0300
+    blk[63] = 0;
+    for (int j = 0; j < 8; j += 1) { h[j] = state[j]; }
+    sha256_block(h, k, w, blk, 0);
+    for (int q = 0; q < 8; q += 1) {
+        out32[q * 4] = (h[q] >>> 24) & 0xFF;
+        out32[q * 4 + 1] = (h[q] >>> 16) & 0xFF;
+        out32[q * 4 + 2] = (h[q] >>> 8) & 0xFF;
+        out32[q * 4 + 3] = h[q] & 0xFF;
+    }
+}
+
+List<int> zeros(int n) {
+    List<int> out = new List<int>();
+    for (int i = 0; i < n; i += 1) { out.push(0); }
+    return out;
+}
+
+// PBKDF2-HMAC-SHA256: dklen bytes derived from password and salt with the
+// given number of iterations (at least 1). dklen is 1..2^20 here. Each
+// iteration after the first is HMAC of a 32-byte value, so it costs two
+// compressions from the precomputed keyed states and allocates nothing.
+List<int> pbkdf2_sha256(List<int> password, List<int> salt, int iterations, int dklen) {
+    List<int> out = new List<int>();
+    if (iterations < 1 || dklen < 1 || dklen > 1048576) { return out; }
+    List<int> key = password;
+    if (key.len() > 64) { key = sha256(password); }
+    List<int> ipad = zeros(64);
+    List<int> opad = zeros(64);
+    for (int i = 0; i < 64; i += 1) {
+        int b = 0;
+        if (i < key.len()) { b = key[i]; }
+        ipad[i] = b ^ 0x36;
+        opad[i] = b ^ 0x5c;
+    }
+    List<int> k = sha256_constants();
+    List<int> w = zeros(64);
+    List<int> inner = sha256_after_block(k, w, ipad);
+    List<int> outer = sha256_after_block(k, w, opad);
+    List<int> blk = zeros(64);
+    List<int> h = zeros(8);
+    List<int> mid = zeros(32);
+    int block = 1;
+    while (out.len() < dklen) {
+        List<int> first = concat_bytes(salt, new List<int>());
+        first.push((block >>> 24) & 0xFF);
+        first.push((block >>> 16) & 0xFF);
+        first.push((block >>> 8) & 0xFF);
+        first.push(block & 0xFF);
+        List<int> u = hmac_sha256(password, first);
+        List<int> t = concat_bytes(u, new List<int>());
+        for (int it = 1; it < iterations; it += 1) {
+            sha256_finish_96(k, w, inner, u, blk, h, mid);
+            sha256_finish_96(k, w, outer, mid, blk, h, u);
+            for (int x = 0; x < 32; x += 1) { t[x] = t[x] ^ u[x]; }
+        }
+        for (int y = 0; y < 32 && out.len() < dklen; y += 1) { out.push(t[y]); }
+        block += 1;
+    }
+    return out;
+}
+
+// The bytes of a string, and bytes as lowercase hexadecimal.
+List<int> bytes_of(string s) {
+    List<int> out = new List<int>();
+    for (int i = 0; i < s.len(); i += 1) { out.push(s.at(i)); }
+    return out;
+}
+
+string to_hex(List<int> bytes) {
+    string digits = "0123456789abcdef";
+    List<string> parts = new List<string>();
+    for (int i = 0; i < bytes.len(); i += 1) {
+        int b = bytes[i] & 0xFF;
+        parts.push(digits.slice(b >>> 4, (b >>> 4) + 1) + digits.slice(b & 15, (b & 15) + 1));
+    }
+    return join(parts, "");
+}

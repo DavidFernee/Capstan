@@ -1,0 +1,15 @@
+// expect: CWE-20
+// spec: types.tainted types.string
+// Slicing a trusted alphabet at positions taken from untrusted bytes is the same laundering.
+int main() {
+    if (let t = read_line()) {
+        string abc = "abcdefghijklmnopqrstuvwxyz";
+        string out = "";
+        for (int i = 0; i < t.len(); i += 1) {
+            int b = t.at(i) - 97;
+            out = out + abc.slice(b, b + 1);
+        }
+        sql_query("SELECT ?", out);
+    }
+    return 0;
+}

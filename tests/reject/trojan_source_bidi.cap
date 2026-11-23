@@ -1,0 +1,9 @@
+// expect: CWE-1007
+// spec: lexical
+// Trojan Source (CVE-2021-42574): a right-to-left override in a comment reorders how the line displays.
+int main() {
+    bool is_admin = false;
+    /* ‮ } ⁦if (is_admin)⁩ ⁦ begin admins only */
+    if (is_admin) { println("admin"); }
+    return 0;
+}

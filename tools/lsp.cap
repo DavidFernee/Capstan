@@ -13,8 +13,7 @@
 //
 // Everything the editor sends is untrusted. It arrives as Tainted and stays Tainted:
 // numbers leave through validate_int(), relative paths through validate_path(),
-// and every reply is JSON written as printable ASCII only (all other bytes become
-// \uXXXX escapes), which escape_log() then passes unchanged to standard output.
+// and every string in a reply goes through escape_json().
 // There is no trust() in this program.
 //
 // Limits (CWE-400): a message body is at most MAX_MESSAGE bytes, a header line
@@ -50,22 +49,6 @@ const int S_RUNNING = 1;
 const int S_SHUTDOWN = 2;
 
 // ---- bytes ------------------------------------------------------------------------
-
-// Every byte value 0-255, as one Tainted text. Slicing it gives a byte as Tainted
-// text, so decoded \uXXXX and %XX escapes stay untrusted.
-struct Bytes {
-    Tainted all;
-}
-
-Bytes lsp_bytes() {
-    List<string> b = new List<string>();
-    for (int i = 0; i < 256; i += 1) { b.push(char_str(i)); }
-    return new Bytes{all: taint(join(b, ""))};
-}
-
-Tainted lsp_byte(Bytes bt, int v) {
-    return bt.all.slice(v, v + 1);
-}
 
 // Join many pieces without quadratic copying.
 Tainted lsp_concat(List<Tainted> parts, int from, int to) {
@@ -115,33 +98,21 @@ int lsp_utf8_len(Tainted s, int i) {
     return n;
 }
 
-// The code point of a valid sequence of length n at i.
-int lsp_utf8_cp(Tainted s, int i, int n) {
-    int c = s.at(i);
-    if (n == 1) { return c; }
-    int cp = 0;
-    if (n == 2) { cp = c - 192; }
-    if (n == 3) { cp = c - 224; }
-    if (n == 4) { cp = c - 240; }
-    for (int k = 1; k < n; k += 1) { cp = cp * 64 + (s.at(i + k) - 128); }
-    return cp;
-}
-
-void lsp_put_utf8(List<Tainted> out, Bytes bt, int cp) {
+void lsp_put_utf8(List<Tainted> out, int cp) {
     if (cp < 128) {
-        out.push(lsp_byte(bt, cp));
+        out.push(taint_char(cp));
     } else if (cp < 2048) {
-        out.push(lsp_byte(bt, 192 + cp / 64));
-        out.push(lsp_byte(bt, 128 + cp % 64));
+        out.push(taint_char(192 + cp / 64));
+        out.push(taint_char(128 + cp % 64));
     } else if (cp < 65536) {
-        out.push(lsp_byte(bt, 224 + cp / 4096));
-        out.push(lsp_byte(bt, 128 + (cp / 64) % 64));
-        out.push(lsp_byte(bt, 128 + cp % 64));
+        out.push(taint_char(224 + cp / 4096));
+        out.push(taint_char(128 + (cp / 64) % 64));
+        out.push(taint_char(128 + cp % 64));
     } else {
-        out.push(lsp_byte(bt, 240 + cp / 262144));
-        out.push(lsp_byte(bt, 128 + (cp / 4096) % 64));
-        out.push(lsp_byte(bt, 128 + (cp / 64) % 64));
-        out.push(lsp_byte(bt, 128 + cp % 64));
+        out.push(taint_char(240 + cp / 262144));
+        out.push(taint_char(128 + (cp / 4096) % 64));
+        out.push(taint_char(128 + (cp / 64) % 64));
+        out.push(taint_char(128 + cp % 64));
     }
 }
 
@@ -273,7 +244,6 @@ struct JParse {
     Tainted s;
     int pos;
     string err;
-    Bytes bt;
 }
 
 Json j_new(int k) {
@@ -338,9 +308,9 @@ Tainted j_string(JParse p) {
             } else if (e == 'r') {
                 parts.push(taint("\r"));
             } else if (e == 'b') {
-                parts.push(lsp_byte(p.bt, 8));
+                parts.push(taint_char(8));
             } else if (e == 'f') {
-                parts.push(lsp_byte(p.bt, 12));
+                parts.push(taint_char(12));
             } else if (e == 'u') {
                 int cp = j_hex4(p);
                 if (cp >= 55296 && cp <= 56319 && lsp_has_at(p.s, p.pos, "\\u")) {
@@ -356,7 +326,7 @@ Tainted j_string(JParse p) {
                 } else if (cp >= 55296 && cp <= 57343) {
                     cp = 65533;   // an unpaired surrogate has no UTF-8 form
                 }
-                if (cp >= 0) { lsp_put_utf8(parts, p.bt, cp); }
+                if (cp >= 0) { lsp_put_utf8(parts, cp); }
             } else {
                 p.pos -= 1;
                 j_fail(p, "invalid escape in string");
@@ -501,11 +471,10 @@ Json j_value(JParse p, int depth) {
 }
 
 // A whole JSON text: one value with only whitespace around it.
-Json j_parse(Tainted s, Bytes bt, JParse p) {
+Json j_parse(Tainted s, JParse p) {
     p.s = s;
     p.pos = 0;
     p.err = "";
-    p.bt = bt;
     Json v = j_value(p, 0);
     j_ws(p);
     if (p.err == "" && p.pos < s.len()) { j_fail(p, "unexpected data after the JSON value"); }
@@ -558,84 +527,29 @@ bool j_bool(Json o, string key) {
 
 // ---- JSON output ------------------------------------------------------------------------
 //
-// Replies are printable ASCII: every other byte is written as a \uXXXX escape
-// (invalid UTF-8 as U+FFFD), so escape_log() leaves the text unchanged and the
-// Content-Length computed before it stays right.
+// Replies are built only from literals, numbers and escape_json() of untrusted
+// text, so they are trusted strings and always valid JSON (invalid UTF-8 becomes
+// U+FFFD). Decoded \uXXXX and %XX escapes are rebuilt with taint_char(), so the
+// decoded text stays Tainted.
 
-const string HEX = "0123456789abcdef";
-
-Tainted w_hex4(int v) {
-    List<Tainted> d = new List<Tainted>();
-    d.push(taint("\\u"));
-    int shift = 4096;
-    for (int k = 0; k < 4; k += 1) {
-        int digit = (v / shift) % 16;
-        d.push(taint(HEX.slice(digit, digit + 1)));
-        shift = shift / 16;
-    }
-    return lsp_join(d);
+void w_str(List<string> out, Tainted s) {
+    out.push("\"" + escape_json(s) + "\"");
 }
 
-void w_str(List<Tainted> out, Tainted s) {
-    out.push(taint("\""));
-    int run = 0;
-    int i = 0;
-    while (i < s.len()) {
-        int c = s.at(i);
-        if (c >= 32 && c < 127 && c != '"' && c != '\\') {
-            i += 1;
-        } else {
-            out.push(s.slice(run, i));
-            int n = 1;
-            if (c == '"') {
-                out.push(taint("\\\""));
-            } else if (c == '\\') {
-                out.push(taint("\\\\"));
-            } else if (c == '\n') {
-                out.push(taint("\\n"));
-            } else if (c == '\r') {
-                out.push(taint("\\r"));
-            } else if (c == '\t') {
-                out.push(taint("\\t"));
-            } else if (c < 128) {
-                out.push(w_hex4(c));
-            } else {
-                n = lsp_utf8_len(s, i);
-                if (n == 0) {
-                    out.push(taint("\\ufffd"));
-                    n = 1;
-                } else {
-                    int cp = lsp_utf8_cp(s, i, n);
-                    if (cp >= 65536) {
-                        out.push(w_hex4(55296 + (cp - 65536) / 1024));
-                        out.push(w_hex4(56320 + (cp - 65536) % 1024));
-                    } else {
-                        out.push(w_hex4(cp));
-                    }
-                }
-            }
-            i += n;
-            run = i;
-        }
-    }
-    out.push(s.slice(run, s.len()));
-    out.push(taint("\""));
+void w_lit(List<string> out, string s) {
+    out.push(s);
 }
 
-void w_lit(List<Tainted> out, string s) {
-    out.push(taint(s));
-}
-
-void w_int(List<Tainted> out, int v) {
-    out.push(taint(int_to_str(v)));
+void w_int(List<string> out, int v) {
+    out.push(int_to_str(v));
 }
 
 // Write a parsed value back (used for request ids).
-void w_json(List<Tainted> out, Json v) {
+void w_json(List<string> out, Json v) {
     if (v.k == J_STR) {
         w_str(out, v.text);
     } else if (v.k == J_NUM) {
-        out.push(v.text);   // checked against the JSON number grammar: ASCII digits, sign, '.', 'e'
+        out.push(escape_json(v.text));   // checked against the JSON number grammar: ASCII digits, sign, '.', 'e'
     } else if (v.k == J_BOOL) {
         if (v.b) { w_lit(out, "true"); } else { w_lit(out, "false"); }
     } else if (v.k == J_ARR) {
@@ -674,24 +588,23 @@ struct Server {
     bool release;       // initializationOptions: {"release": true} as capstanc --release
     Tainted root;       // workspace root URI with a trailing '/', or ""
     List<Doc> docs;
-    Bytes bt;
     JParse jp;
 }
 
 // Send one message: the Content-Length header, then the body.
-void send(List<Tainted> body) {
-    Tainted text = lsp_join(body);
-    print("Content-Length: " + int_to_str(text.len()) + "\r\n\r\n" + escape_log(text));
+void send(List<string> body) {
+    string text = join(body, "");
+    print("Content-Length: " + int_to_str(text.len()) + "\r\n\r\n" + text);
     flush();
 }
 
-void reply_head(List<Tainted> out, Json id) {
+void reply_head(List<string> out, Json id) {
     w_lit(out, "{\"jsonrpc\":\"2.0\",\"id\":");
     w_json(out, id);
 }
 
-void reply_result(Json id, Tainted result) {
-    List<Tainted> out = new List<Tainted>();
+void reply_result(Json id, string result) {
+    List<string> out = new List<string>();
     reply_head(out, id);
     w_lit(out, ",\"result\":");
     out.push(result);
@@ -700,7 +613,7 @@ void reply_result(Json id, Tainted result) {
 }
 
 void reply_error(Json id, int code, Tainted msg) {
-    List<Tainted> out = new List<Tainted>();
+    List<string> out = new List<string>();
     reply_head(out, id);
     w_lit(out, ",\"error\":{\"code\":");
     w_int(out, code);
@@ -710,17 +623,17 @@ void reply_error(Json id, int code, Tainted msg) {
     send(out);
 }
 
-void notify(string method, List<Tainted> params) {
-    List<Tainted> out = new List<Tainted>();
+void notify(string method, List<string> params) {
+    List<string> out = new List<string>();
     w_lit(out, "{\"jsonrpc\":\"2.0\",\"method\":\"" + method + "\",\"params\":");
-    out.push(lsp_join(params));
+    out.push(join(params, ""));
     w_lit(out, "}");
     send(out);
 }
 
 // window/logMessage: type 1 error, 2 warning, 3 info.
 void log_message(int kind, Tainted msg) {
-    List<Tainted> p = new List<Tainted>();
+    List<string> p = new List<string>();
     w_lit(p, "{\"type\":");
     w_int(p, kind);
     w_lit(p, ",\"message\":");
@@ -794,7 +707,7 @@ bool ident_byte(int c) {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 }
 
-void w_pos(List<Tainted> out, int line, int character) {
+void w_pos(List<string> out, int line, int character) {
     w_lit(out, "{\"line\":");
     w_int(out, line);
     w_lit(out, ",\"character\":");
@@ -804,7 +717,7 @@ void w_pos(List<Tainted> out, int line, int character) {
 
 // The range a diagnostic underlines: from its column to the end of the word there
 // (at least one character); a diagnostic without a column underlines its line.
-void w_range(List<Tainted> out, Server srv, Tainted text, List<int> starts, int line1, int col1) {
+void w_range(List<string> out, Server srv, Tainted text, List<int> starts, int line1, int col1) {
     int line = line1 - 1;
     if (line < 0) { line = 0; }
     if (line >= starts.len()) { line = starts.len() - 1; }
@@ -884,7 +797,7 @@ Tainted uri_dir(Tainted uri) {
 }
 
 // Decode %XX escapes in a URI path.
-Tainted? uri_decode(Bytes bt, Tainted s) {
+Tainted? uri_decode(Tainted s) {
     List<Tainted> parts = new List<Tainted>();
     int run = 0;
     int i = 0;
@@ -894,7 +807,7 @@ Tainted? uri_decode(Bytes bt, Tainted s) {
             int l = lsp_hex_val(lsp_ch(s, i + 2));
             if (h < 0 || l < 0) { return none; }
             parts.push(s.slice(run, i));
-            parts.push(lsp_byte(bt, h * 16 + l));
+            parts.push(taint_char(h * 16 + l));
             i += 3;
             run = i;
         } else {
@@ -909,7 +822,7 @@ Tainted? uri_decode(Bytes bt, Tainted s) {
 // when run there, or "document".
 string doc_name(Server srv, Tainted uri) {
     if (srv.root.len() > 0 && uri.len() > srv.root.len() && uri.slice(0, srv.root.len()) == srv.root) {
-        if (let rel = uri_decode(srv.bt, uri.slice(srv.root.len(), uri.len()))) {
+        if (let rel = uri_decode(uri.slice(srv.root.len(), uri.len()))) {
             if (let path = validate_path(rel)) { return path; }
         }
     }
@@ -931,15 +844,15 @@ Tainted? import_text(Server srv, Tainted uri) {
     int di = doc_index(srv, uri);
     if (di >= 0) { return srv.docs[di].text; }
     if (srv.root.len() == 0 || uri.len() <= srv.root.len() || uri.slice(0, srv.root.len()) != srv.root) { return none; }
-    if (let rel = uri_decode(srv.bt, uri.slice(srv.root.len(), uri.len()))) {
-        if (let path = validate_path(rel)) { return read_file(path); }
+    if (let rel = uri_decode(uri.slice(srv.root.len(), uri.len()))) {
+        if (let path = validate_path(rel)) { return read_file(path, MAX_SOURCE_BYTES); }
     }
     return none;
 }
 
 // One diagnostic as LSP JSON. Diagnostics in imported files are shown on the
 // import that brought them in.
-void w_diag(List<Tainted> out, Server srv, Tainted text, List<int> starts, Diag d, List<string> names, List<int> at_line, List<int> at_col) {
+void w_diag(List<string> out, Server srv, Tainted text, List<int> starts, Diag d, List<string> names, List<int> at_line, List<int> at_col) {
     int line = d.line;
     int col = d.col;
     string msg = d.msg;
@@ -1040,7 +953,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             }
         } else {
             ctx.sources.push(taint(""));
-            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "'");
+            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "' (missing, unreadable, a directory, or over 16 MiB)");
         }
     }
     if (error_count(ctx) == 0) {
@@ -1061,7 +974,7 @@ void publish(Server srv, Doc doc) {
     List<int> at_col = new List<int>();
     Ctx ctx = check_doc(srv, doc, names, at_line, at_col);
     List<int> starts = line_starts(doc.text);
-    List<Tainted> p = new List<Tainted>();
+    List<string> p = new List<string>();
     w_lit(p, "{\"uri\":");
     w_str(p, doc.uri);
     w_lit(p, ",\"version\":");
@@ -1078,7 +991,7 @@ void publish(Server srv, Doc doc) {
 }
 
 void publish_empty(Tainted uri) {
-    List<Tainted> p = new List<Tainted>();
+    List<string> p = new List<string>();
     w_lit(p, "{\"uri\":");
     w_str(p, uri);
     w_lit(p, ",\"diagnostics\":[]}");
@@ -1114,12 +1027,12 @@ void on_initialize(Server srv, Json id, Json params) {
     if (root.len() > 0 && root.at(root.len() - 1) != '/') { root = root + "/"; }
     srv.root = root;
     srv.state = S_RUNNING;
-    List<Tainted> r = new List<Tainted>();
+    List<string> r = new List<string>();
     w_lit(r, "{\"capabilities\":{\"positionEncoding\":");
     if (srv.utf8) { w_lit(r, "\"utf-8\""); } else { w_lit(r, "\"utf-16\""); }
     w_lit(r, ",\"textDocumentSync\":{\"openClose\":true,\"change\":1}},");
     w_lit(r, "\"serverInfo\":{\"name\":\"capstan-lsp\",\"version\":\"" + LSP_VERSION + "\"}}");
-    reply_result(id, lsp_join(r));
+    reply_result(id, join(r, ""));
 }
 
 // Would the open documents stay within MAX_TOTAL_TEXT if document i (-1: a new
@@ -1239,7 +1152,7 @@ bool id_ok(Json id) {
 }
 
 void dispatch(Server srv, Tainted body) {
-    Json msg = j_parse(body, srv.bt, srv.jp);
+    Json msg = j_parse(body, srv.jp);
     Json null_id = j_new(J_NULL);
     if (srv.jp.err != "") {
         reply_error(null_id, E_PARSE, taint("parse error: " + srv.jp.err));
@@ -1299,7 +1212,7 @@ void dispatch(Server srv, Tainted body) {
                 reply_error(id, E_INVALID_REQUEST, taint("initialize may only be sent once"));
             } else if (method == "shutdown") {
                 srv.state = S_SHUTDOWN;
-                reply_result(id, taint("null"));
+                reply_result(id, "null");
             } else {
                 reply_error(id, E_METHOD_NOT_FOUND, "method not found: " + method);
             }
@@ -1369,7 +1282,7 @@ void framing_error(string why) {
 }
 
 int main() {
-    Server srv = new Server{state: S_NEW, utf8: false, strict: false, release: false, root: taint(""), docs: new List<Doc>(), bt: lsp_bytes(), jp: new JParse{s: taint(""), pos: 0, err: "", bt: lsp_bytes()}};
+    Server srv = new Server{state: S_NEW, utf8: false, strict: false, release: false, root: taint(""), docs: new List<Doc>(), jp: new JParse{s: taint(""), pos: 0, err: ""}};
     Reader r = new Reader{eof: false};
     Frame f = new Frame{length: -1, bad: false, lines: 0};
     while (true) {

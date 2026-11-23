@@ -1,0 +1,13 @@
+// expect: CWE-20
+// spec: types.tainted types.list
+// Looking up trusted characters by untrusted bytes rebuilds the input without its Tainted marking.
+int main() {
+    if (let t = read_line()) {
+        List<string> table = new List<string>();
+        for (int c = 0; c < 256; c += 1) { table.push(char_str(c)); }
+        string out = "";
+        for (int i = 0; i < t.len(); i += 1) { out = out + table[t.at(i)]; }
+        sql_query("SELECT ?", out);
+    }
+    return 0;
+}

@@ -1,0 +1,10 @@
+// expect: CWE-79
+// spec: types.html
+// Inside <script>, HTML escaping is not JavaScript escaping.
+int main() {
+    if (let t = read_line()) {
+        bool ok = write_file("p.html", "<script>var name = '" + escape_html(t) + "';</script>");
+        if (!ok) { println("write failed"); }
+    }
+    return 0;
+}

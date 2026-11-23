@@ -99,10 +99,39 @@ Done:
 
 Remaining:
 - packed, type-specialised lists for other element types, and unboxed `int?` in variables and fields
-- facts across function calls (bounds on parameters from every call site): what the `calls`
-  benchmark still pays for
-- generational collection; returning empty pages to the operating system
-- benchmarks within 20% of C (now: alloc is; arrays about 1.4×, calls 1.7×, strings 1.9×)
+- facts across function calls (bounds on parameters from every call site) *(done: an iterated,
+  widened fixpoint over every call site, recursion included; the compiler now proves 227 of its
+  own checks, up from 203. The `calls` benchmark turned out not to pay for checks, since it runs
+  at the same speed with `--keep-checks`; its gap to C is call overhead.)*
+- generational collection; returning empty pages to the operating system *(pages: done. Pages
+  a collection leaves empty go back to the OS beyond a reserve of twice the next threshold, and
+  are reused for any size class before new memory is requested. A program that builds 140 MB
+  and drops it now ends using 53 MB instead of 180 MB, and runs 2.6 times faster, because
+  collections no longer sweep the empty pages.)*
+  *Generational collection, measured:* collection takes about a third of the compiler's own
+  build (0.057 s of 0.18 s, 16 collections each re-marking a live heap that grows to 6 MB of
+  syntax trees and tables) and about 10% of the `alloc` and `strings` benchmarks. The design,
+  for a collector that does not move objects:
+  - *two generations by mark bits:* objects that survive a collection keep their mark ("sticky"
+    marks) and are old; a minor collection marks only from the roots and from old objects that
+    may point to young ones, and sweeps only young objects. Every few minor collections, or when
+    the old generation has grown by half, a full collection runs as today
+  - *a write barrier:* every store of a pointer into a heap object (a struct field, a list or
+    map element, a grant's arguments) marks that object's card dirty. The code generator emits
+    it at each store; runtime functions that store (`push`, `set`, `insert`) do it themselves.
+    Pointer-free (atomic) and secret pages need no barrier
+  - *the barrier can be proved complete:* a missed barrier frees a reachable object, which is a
+    use-after-free, so it must never happen. A verifying mode (`CAPSTAN_GC_VERIFY=1`) runs a full
+    mark after every minor collection and stops the program if the minor collection would have
+    freed anything the full mark reached. The whole test suite, the fuzzers and the compiler's
+    own bootstrap run in this mode in CI, so a store site without a barrier fails a test instead
+    of reaching a user
+  - expected effect: most collections mark only what was allocated since the last one, so the
+    compiler's collection time should fall by more than half
+  The barrier sites are in `compiler/codegen.cap`; this work starts after the open changes to
+  list code generation (#36) are merged, to avoid conflicting with them.
+- benchmarks within 20% of C (now: alloc is; arrays about 1.3×, calls 1.8×, strings 1.2× since
+  `int_to_str` stopped using `snprintf`, which was 38% of its time)
 
 ### v0.5 — Abstraction
 - user generics with interfaces (`interface Comparable<T>`)
@@ -259,7 +288,7 @@ removes a dependency altogether.
 |---|---|---|
 | T1 (with v0.5) | **Standard library in Capstan:** validators, escapers, collection helpers (sort, join, search) | Text-processing code inherits Capstan's guarantees |
 | T2 (with v0.5) *(done)* | **Bitwise operators and explicitly wrapping arithmetic** (`&`, `\|`, `^`, `~`, `<<`, `>>`, `>>>`, `wrapping_add/sub/mul/shl`, hexadecimal literals); ordinary `+` and `<<` stay overflow-checked, shift counts are checked (CWE-1335), and bitwise operators need parentheses when mixed with others (CWE-783); a shift by a negative amount or by the type's width or more is a compile error when the count is a literal and stops safely otherwise | Prerequisite for writing crypto and parsers safely |
-| T3 (with v0.6) | **Crypto in Capstan:** SHA-256, HMAC, PBKDF2, then authenticated encryption, checked against the same published vectors | Crypto implementation bugs cannot corrupt memory. A FIPS 140-3 validated-module option remains for certified deployments |
+| T3 (with v0.6) *(started)* | **Crypto in Capstan:** SHA-256, HMAC, PBKDF2, then authenticated encryption, checked against the same published vectors. *Progress:* SHA-256, HMAC-SHA256 and PBKDF2-HMAC-SHA256 are written in Capstan (`lib/crypto.cap`) and agree with hashlib, the FIPS 180-4 examples and the runtime's C code (`tests/crypto/`); PBKDF2 at 600,000 iterations runs as fast as the C version. Next: a standard-library mechanism (T1) so `hash()` and `hash_password()` call them, then retire the C | Crypto implementation bugs cannot corrupt memory. A FIPS 140-3 validated-module option remains for certified deployments |
 | T4 (with v0.6) | **Formatting and parsing in Capstan:** number to text and back, replacing `sprintf`, `snprintf` and `strtol`; differentially tested against libc on millions of random inputs | Removes the libc functions where memory-corruption bugs have historically clustered |
 | T5 (with v0.6) | **Network parsing in Capstan from the start:** addresses, URLs, HTTP, name resolution. Never borrowed from libc | The highest-risk input handling is memory-safe by construction (compare glibc CVE-2015-0235, CVE-2015-7547) |
 | T6 (v0.7) | **Thin system-call layer:** the program talks to the kernel through a small audited layer (open, read, write, exit, memory mapping, signals) instead of the C library, as Go does on Linux | libc leaves the trusted base |
@@ -573,6 +602,14 @@ Standing commitments, every release:
   the trusted base changes substantially.
 - **Threat model:** a maintained document stating what Capstan defends against, what it
   assumes, and what is out of scope ([assurance/THREAT-MODEL.md](assurance/THREAT-MODEL.md)).
+- **The Capstan Challenge** *(subject to funding for a foundation to administer the language)*: a
+  yearly prize for anyone who writes a vulnerability Capstan claims is impossible, in four tiers: a wrong atlas verdict, a broken safe stop, a working exploit, and
+  (with K1.10) a broken proof. Draft rules: [CHALLENGE.md](CHALLENGE.md).
+  *Stages:* now, findings through `SECURITY.md` are credited in the challenge's hall of fame;
+  once a foundation is established and funded to administer Capstan, cash prizes open when the
+  pool is held in full, an independent appeals panel is
+  named and the rules have had legal review; after K1.10, the proof tier carries the largest
+  prize. Each year closes with a public report alongside K0.
 
 ## 9. Government and defence use
 

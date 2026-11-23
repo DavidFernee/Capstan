@@ -95,7 +95,7 @@ of them can break a guarantee.
 | Python 3 and stage 0 (`bootstrap/capstan0.py`) | Translates the compiler once to start the bootstrap | A small, unchecked Python translator, plus the Python interpreter | Must bootstrap to the byte-identical compiler; used as the second implementation in differential tests | Kept as an independent route for diverse double-compiling, not depended on once the native backend exists |
 | Shell scripts (`bin/capstan`, `Makefile`, `tests/run.sh`, `scripts/release-check.sh`) | Drive the C compiler, tests and release checks | Bash and Make | Exercised by every test run | Not yet planned |
 | Operating system and hardware | Process isolation, memory, signals, files | The platform | Not tested by Capstan | seL4 or a Capstan microkernel are long-term options (section 7, K3) |
-| GitHub and its hosted runners | Host the authoritative source, run CI and build releases | `.github/workflows/` | Every check runs on three platforms before a release is published | Signed releases, SBOMs and SLSA provenance are planned (section 8); not done |
+| GitHub and its hosted runners | Host the authoritative source, run CI and build releases | `.github/workflows/` | Every check runs on three platforms before a release is published; releases carry keyless Sigstore signatures, CycloneDX and SPDX SBOMs and GitHub artifact attestations; actions are pinned by commit | An independent rebuild outside GitHub and SLSA Build Level 3 (section 8) |
 
 ## 6. Out of scope
 
@@ -123,10 +123,13 @@ of them can break a guarantee.
 1. **Atlas gaps that can still be written** ([CWE-ATLAS.md](../CWE-ATLAS.md)): HTML-escaped text
    written into a CSV file (CWE-116); a password-like literal under an innocuous name (CWE-798); a
    password hashed with `hash()` when held in an innocuously named variable (CWE-916); data whose type
-   was not declared `sensitive` (CWE-862); a critical operation not declared `protected` (CWE-306).
+   was not declared `sensitive` (CWE-862); a critical operation not declared `protected` (CWE-306);
+   escaped text placed into HTML that was assembled in separate statements, whose context the
+   compiler does not follow (CWE-79).
 2. **Laundering through control flow.** Rebuilding untrusted text by branching on each byte is how a
    validator is written, so the compiler cannot reject it (atlas, CWE-20). Laundering through helper
-   functions, lists and struct fields is rejected (`tests/reject/launder_*.cap`).
+   functions, lists, struct fields, and lookups of trusted text by untrusted bytes (list indexes,
+   slices, map keys) is rejected (`tests/reject/launder_*.cap`).
 3. **Name-based heuristics.** Credential and password detection partly relies on names and known
    formats; a heuristic can miss cases and give false confidence ([DESIGN-MAP.md](../DESIGN-MAP.md),
    section 11). These rules are labelled Partial.
@@ -141,10 +144,10 @@ of them can break a guarantee.
    `-O2 -std=gnu11 -w` and does not explicitly enable stack protectors, control-flow integrity,
    position-independent executables or `_FORTIFY_SOURCE`; only the platform compiler's defaults apply.
    These would limit the impact of a trusted-base bug (DESIGN-MAP section 6, "Defence in depth").
-8. **Release integrity.** Releases are source archives with SHA-256 checksums published alongside
-   them. They are not signed, have no SBOM and no build provenance, and GitHub Actions are referenced
-   by version tag rather than commit hash (`.github/workflows/`). Anyone able to alter the release can
-   alter the checksums too.
+8. **Release integrity.** Releases are signed (keyless Sigstore), carry SBOMs and GitHub artifact
+   attestations, and the workflows pin actions by commit. They are still built only on GitHub's
+   runners: there is no independent rebuild elsewhere, and the build is not SLSA Build Level 3
+   ([DESIGN-MAP.md](../DESIGN-MAP.md), section 8).
 9. **No independent review yet.** An external security audit is planned before v1.0
    ([DESIGN-MAP.md](../DESIGN-MAP.md), section 8).
 10. **Peer review is not enforced.** Changes arrive through pull requests, but nothing in the

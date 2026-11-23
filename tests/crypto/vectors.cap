@@ -1,0 +1,98 @@
+// spec: builtins.crypto
+// Built together with lib/crypto.cap and run by tests/crypto/check.py, natively and
+// under stage 0, which compares every line with Python's hashlib. Each line is
+// "<what> <hex result>". Inputs come from a small generator that check.py repeats
+// (xorshift64*), so nothing here is untrusted input.
+
+struct Gen {
+    int s;
+}
+
+int next(Gen g) {
+    int x = g.s;
+    x = x ^ (x >>> 12);
+    x = x ^ wrapping_shl(x, 25);
+    x = x ^ (x >>> 27);
+    g.s = x;
+    return (wrapping_mul(x, 2685821657736338717) >>> 33) & 0x7FFFFFFF;
+}
+
+List<int> random_bytes(Gen g, int n) {
+    List<int> out = new List<int>();
+    for (int i = 0; i < n; i += 1) { out.push(next(g) & 0xFF); }
+    return out;
+}
+
+string text_of(List<int> bytes) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < bytes.len(); i += 1) { parts.push(char_str(bytes[i])); }
+    return join(parts, "");
+}
+
+int hex_value(int c) {
+    if (c >= 48 && c <= 57) { return c - 48; }
+    if (c >= 97 && c <= 102) { return c - 87; }
+    return 0;
+}
+
+List<int> from_hex(string t) {
+    List<int> out = new List<int>();
+    for (int i = 0; i + 1 < t.len(); i += 2) { out.push(hex_value(t.at(i)) * 16 + hex_value(t.at(i + 1))); }
+    return out;
+}
+
+int main() {
+    List<string> a = args();
+    bool long_vectors = a.len() > 0 && a[0] == "long";
+    // FIPS 180-4 examples.
+    println("sha256-empty " + to_hex(sha256(bytes_of(""))));
+    println("sha256-abc " + to_hex(sha256(bytes_of("abc"))));
+    println("sha256-448 " + to_hex(sha256(bytes_of("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"))));
+    println("sha256-896 " + to_hex(sha256(bytes_of("abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"))));
+    if (long_vectors) {
+        // The runtime's hash_password(): its stored salt and key must be what this
+        // library derives from the same password and salt, at the same cost.
+        string stored = hash_password("correct horse battery staple");
+        string prefix = "cap1$pbkdf2-sha256$600000$";
+        if (stored.len() == prefix.len() + 32 + 1 + 64 && stored.slice(0, prefix.len()) == prefix) {
+            List<int> salt = from_hex(stored.slice(prefix.len(), prefix.len() + 32));
+            string want = stored.slice(prefix.len() + 33, stored.len());
+            string mine = to_hex(pbkdf2_sha256(bytes_of("correct horse battery staple"), salt, 600000, 32));
+            if (mine == want) { println("hash_password agrees"); } else { println("hash_password DIFFERS: " + mine + " vs " + want); }
+        } else {
+            println("hash_password format changed: " + stored);
+        }
+        List<int> million = new List<int>();
+        for (int i = 0; i < 1000000; i += 1) { million.push(97); }
+        println("sha256-million-a " + to_hex(sha256(million)));
+    }
+    Gen g = new Gen{s: 88172645463325252};
+    // Every length from 0 to 200 (each padding case), then some longer inputs.
+    for (int n = 0; n <= 200; n += 1) {
+        List<int> m = random_bytes(g, n);
+        string mine = to_hex(sha256(m));
+        string runtime = hash(text_of(m));
+        if ("cap1$sha256$" + mine != runtime) { println("MISMATCH with the runtime's hash() at length " + int_to_str(n)); }
+        println("sha256-" + int_to_str(n) + " " + mine);
+    }
+    for (int r = 0; r < 20; r += 1) {
+        int n2 = 200 + next(g) % 3000;
+        println("sha256-long-" + int_to_str(n2) + " " + to_hex(sha256(random_bytes(g, n2))));
+    }
+    // HMAC with keys shorter than, equal to and longer than the block.
+    for (int h = 0; h < 40; h += 1) {
+        int kn = next(g) % 150;
+        List<int> key = random_bytes(g, kn);
+        List<int> msg = random_bytes(g, next(g) % 300);
+        println("hmac-" + int_to_str(kn) + " " + to_hex(hmac_sha256(key, msg)));
+    }
+    // PBKDF2 with a few iterations and output lengths across block boundaries.
+    for (int p = 0; p < 12; p += 1) {
+        List<int> pw = random_bytes(g, next(g) % 80);
+        List<int> salt = random_bytes(g, next(g) % 40);
+        int iter = 1 + next(g) % 20;
+        int dklen = 1 + next(g) % 100;
+        println("pbkdf2-" + int_to_str(iter) + "-" + int_to_str(dklen) + " " + to_hex(pbkdf2_sha256(pw, salt, iter, dklen)));
+    }
+    return 0;
+}

@@ -18,6 +18,8 @@
 #                and warning-free generated C (-Wall -Wextra -Werror)
 #   portability  every conformance program and safety stop at -O0, -O2 and -O3, with each
 #                C compiler available, behaves identically
+#   crypto       lib/crypto.cap (SHA-256, HMAC, PBKDF2 in Capstan) against hashlib, the
+#                published vectors and the runtime's C implementation, native and stage 0
 #   gc           bounded memory under churn, integrity when collecting on every allocation
 #   limits       pathological input (deep nesting) gives diagnostics, not crashes
 #   cwe atlas    an attempt to write every code-level CWE in Capstan, with its verdict
@@ -61,6 +63,8 @@ if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tm
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/ranges_props.py" 2>&1)"; then ok "$out"; else bad "range properties" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_log_agree.py" 2>&1)"; then ok "$out"; else bad "escape_log agreement" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/siphash_agree.py" 2>&1)"; then ok "$out"; else bad "siphash" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/escape_json_agree.py" 2>&1)"; then ok "$out"; else bad "escape_json agreement" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/lint_table.py" 2>&1)"; then ok "$out"; else bad "lint table" "$out"; fi
 
 expect_reject() {   # dir label
@@ -162,6 +166,10 @@ for f in "$ROOT"/tests/io/*.cap; do
   rm -rf "$d1" "$d2"
 done
 if out="$($PY "$ROOT/tests/unit/stdio_interactive.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: conversation over a pipe" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/read_file_bounds.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: read_file bounds" "$out"; fi
+
+section "crypto: lib/crypto.cap against hashlib, the published vectors and the runtime"
+if out="$($PY "$ROOT/tests/crypto/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "crypto" "$out"; fi
 
 section "gc"
 "$C" build -o "$tmp/churn.c" "$ROOT/tests/gc/churn.cap" >/dev/null && "$CC" $CFLAGS "$tmp/churn.c" -o "$tmp/churn"
@@ -251,7 +259,7 @@ done
 # Every source file in the repository follows the house style, except the diagnostics
 # and recovery tests (their columns and lexical errors are what they test), formatter inputs and
 # files marked `// fmt: off` (a lexical test that needs tabs and CRLF).
-STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io}/*.cap 2>/dev/null)
+STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap lib/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io,crypto}/*.cap 2>/dev/null)
 if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then ok "$(wc -w <<<"$STYLED") repository sources are formatted"; else bad "house style" "run bin/capstan fmt on: $out"; fi
 cp "$ROOT/tests/fmt/layout.cap" "$tmp/bad.cap"; printf 'int main() { return 0 @ 1; }\n' > "$tmp/lexerr.cap"; cp "$tmp/lexerr.cap" "$tmp/lexerr.keep"
 "$F" --check "$tmp/bad.cap" >/dev/null; c1=$?; "$F" "$tmp/lexerr.cap" >/dev/null; c2=$?
@@ -275,6 +283,7 @@ if out="$($PY "$ROOT/tests/lsp/sessions.py" "$L" 2>&1)"; then ok "$out"; else ba
 LSP_N=40; (( FULL )) && LSP_N=1000
 if out="$($PY "$ROOT/tests/lsp/fuzz.py" "$L" $LSP_N "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then ok "$out"; else bad "lsp fuzz" "$out"; fi
 if "$CC" $SAN "$tmp/lsp.c" -o "$tmp/lspsan" 2>/dev/null; then
+  out2=""
   if out="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/sessions.py" "$tmp/lspsan" 2>&1)" && out2="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/fuzz.py" "$tmp/lspsan" 20 "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then
     ok "language server clean under ASan+UBSan with GC stress (sessions and fuzzing)"
   else bad "sanitized language server" "$out $out2"; fi

@@ -3,6 +3,9 @@
 ## Lexical structure
 
 - Comments: `// line` and `/* block */`.
+- Bidirectional text controls (U+202A–U+202E, U+2066–U+2069, U+200E, U+200F, U+061C), zero-width
+  characters (U+200B–U+200D, U+2060) and a byte-order mark after the first character are errors
+  anywhere in a source file, comments and strings included (CWE-1007, Trojan Source).
 - Identifiers: `[A-Za-z_][A-Za-z0-9_]*`.
 - Integer literals: decimal, must fit in a signed 64-bit integer (otherwise a compile error);
   or hexadecimal, `0x` followed by up to 16 significant hex digits, which use all 64 bits as in
@@ -24,7 +27,7 @@
 | `LogText` | text escaped for logs and terminals (from `escape_log()`): printable ASCII and valid UTF-8 text are kept; control bytes, invalid UTF-8, C1 controls, bidirectional controls, line and paragraph separators and the byte-order mark become `\xNN`. Same rules as `Html` |
 | `S` | a `struct` (reference type) |
 | `List<T>` | growable, bounds-checked list |
-| `Map<T>` | map from `string` keys to `T`, iterated in insertion order |
+| `Map<T>` | map from `string` keys to `T`, iterated in insertion order. Keys are hashed with SipHash-1-3 under a random per-process key, so chosen keys cannot be made to collide (CWE-407) |
 | `Grant<P>` | proof that policy `P` approved a request |
 | `T?` | optional: a `T` or `none` |
 | `void` | function return type only |
@@ -111,23 +114,25 @@ explicitly. Their meaning therefore never depends on precedence.
 | `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
-| `read_file(path)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, or a path containing a NUL byte (CWE-158). `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
+| `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
 | `read_bytes(n)` → `Tainted?`, `flush()` | `read_bytes` reads exactly `n` bytes of standard input (fewer only if the input ends first), every byte kept, or gives `none` at end of input; `read_bytes(0)` is `""`. `n` outside 0..2^30 stops the program (CWE-789); memory grows with the bytes read, not with `n`. `flush()` writes out everything printed so far, for programs that converse over a pipe (a language server, say) |
 | `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | |
 | `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
-| `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers |
+| `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers. `escape_html()` output is safe in element text and in a quoted attribute value; joined to literal HTML in the same expression, it is an error (CWE-79) inside a tag outside a quoted value, in an event-handler (`on…`) or URL or style attribute (`href`, `src`, `action`, `style` and others), or inside `<script>`, `<style>` or a comment |
 | `trust(t, "justification")` → `string` | explicit escape hatch; always reported as an AUDIT warning |
-| `validate_path(t)` → `string?` | a relative path with no `.` or `..` segments (CWE-22) |
+| `validate_path(t)` → `string?` | a relative path with no `.` or `..` segments (CWE-22) that does not begin with `-` (CWE-88) |
 | `validate_range(t, min, max)` → `int?` | an integer within bounds (CWE-1284) |
 | `escape_csv(t)` → `string` | one quoted CSV field, with leading `= + - @` neutralised (CWE-1236) |
+| `escape_json(t)` → `string` | the contents of a JSON string literal, without the quotes (CWE-116): `"` and `\` escaped; controls, DEL, `<`, `>`, `&`, U+2028 and U+2029 as `\uXXXX`, so the text is safe inside an HTML `<script>` too (CWE-79); valid UTF-8 kept; each invalid byte becomes U+FFFD, so the result is always valid JSON |
+| `taint_char(c)` → `Tainted` | the one-byte text with byte value `c` (0..255, otherwise the program stops with CWE-704), still untrusted: for decoding escapes (`%41`, `\u0041`) in untrusted text without laundering it. `char_str()` of a byte of untrusted text is rejected (CWE-20) |
 | `taint(s)` → `Tainted` | marks a value as untrusted (useful in tests) |
 | `wrapping_add(a, b)`, `wrapping_sub(a, b)`, `wrapping_mul(a, b)` → `int` | arithmetic modulo 2^64; never stops |
 | `wrapping_shl(a, n)` → `int` | `a << n` modulo 2^64; `n` must be 0..63 (CWE-1335) |
 | `sql_query("literal", params...)` | query text must be a literal; values are bound parameters |
-| `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; untrusted arguments must follow a literal `"--"` (CWE-88) |
+| `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; every computed (non-literal) argument must follow a literal `"--"` (CWE-88). If the program is a shell, interpreter or launcher (`sh`, `bash`, `env`, `xargs`, `sudo`, `ssh`, `python…`, `perl…`, `node` and others, matched without directory or `.exe`), every argument must be a literal (CWE-78) |
 | `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | constant-time comparison |
-| `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…`; not for passwords (CWE-916) |
+| `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…`; not for passwords (CWE-916); `hash()` of a `Secret` is an error (CWE-532), `hash_verify()` of one is allowed |
 | `hash_password(p)`, `verify_password(p, h)`, `needs_rehash(h)` | PBKDF2-SHA256 with 600,000 iterations; output carries its algorithm and cost |
 
 In v0.1, `sql_query` and `run` are demonstration sinks: they print what they would execute.
@@ -140,6 +145,8 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
   a field, collection or constant, or returned from a function.
 - `protected(P)` functions must take `Grant<P>` as their first parameter. Only
   protected functions may take grants, and calling one without a grant is CWE-862.
+- Each call to a protected function evaluates the policy again on the arguments it was
+  authorised with; if it no longer holds (an owner changed, say), the program stops with CWE-367.
 - A grant is bound to the struct objects it was issued for. If a protected function
   is passed a different object of a type the policy checked, the program stops with CWE-639.
 - Policy analysis:
@@ -254,7 +261,8 @@ null id, an invalid request -32600, an unknown method -32601, invalid parameters
 and a request before `initialize` -32002. Notifications are never answered.
 
 Everything the client sends is untrusted (`Tainted`); the server has no `trust()`. Its
-replies are JSON in printable ASCII. Limits (CWE-400): 16 MiB per message (a larger one is
+replies are UTF-8 JSON whose strings all pass through `escape_json()` (decoded `\uXXXX` and
+`%XX` escapes are rebuilt with `taint_char()`, so they stay untrusted). Limits (CWE-400): 16 MiB per message (a larger one is
 skipped unread and answered with -32600), 4,096-byte header lines, 32 header lines,
 JSON nesting of 64 levels, 1,000 open documents and 256 MiB of text in all, 1,000
 diagnostics per document, 256 imported files.
@@ -295,7 +303,7 @@ When the language gains a feature, add its area here and its tests together.
 | `expr.bitwise` | `& \| ^ ~ << >> >>>`, required parentheses, shift counts, hexadecimal literals, wrapping arithmetic |
 | `builtins.io` | printing, files, arguments |
 | `builtins.validators` | the ways out of `Tainted`, and `trust()` |
-| `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c` |
+| `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c`, `escape_json` |
 | `builtins.sinks` | `sql_query` and `run` |
 | `builtins.crypto` | hashing and password hashing |
 | `safety.banned` | dangerous C idioms and weak primitives that do not exist |
