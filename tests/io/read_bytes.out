@@ -1,0 +1,7 @@
+frame 1: 5 of 5 bytes: hello
+frame 2: 3 of 3 bytes: a\x00b
+frame 3: 0 of 0 bytes: 
+frame 4: 5 of 12 bytes: short
+end of input: none
+read_bytes(0) gives 0 bytes
+4 frames

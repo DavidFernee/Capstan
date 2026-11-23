@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
+  `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
+  Capstan program can hold a framed conversation over a pipe. The language server needs both.
 - Parser error recovery: after a syntax error the parser resumes at the next statement or
   declaration, so one run reports every independent syntax error (at most 50, so the output stays
   bounded). Needed by the language server.

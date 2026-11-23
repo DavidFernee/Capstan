@@ -602,6 +602,32 @@ static CapStr *cap_read_line(void) {
     return b.s;
 }
 
+/* Up to n bytes of standard input: exactly n unless the input ends first, or none
+   at end of input. Each byte is kept. n must be 0..2^30 (CWE-789); memory grows
+   with the bytes actually read, not with n. */
+#define CAP_READ_BYTES_MAX ((int64_t)1 << 30)
+static CapStr *cap_read_bytes(int64_t n, int64_t loc) {
+    if (CAP_UNLIKELY(n < 0 || n > CAP_READ_BYTES_MAX)) cap_panic("read_bytes() count outside 0..2^30", "CWE-789", loc);
+    CapBuf b = cap_buf_new(n < 65536 ? n + 1 : 65536);
+    char chunk[65536];
+    int64_t left = n;
+    bool any = n == 0;
+    while (left > 0) {
+        size_t want = left < (int64_t)sizeof chunk ? (size_t)left : sizeof chunk;
+        size_t got = fread(chunk, 1, want, stdin);
+        if (got == 0) break;
+        any = true;
+        cap_buf_put(&b, chunk, (int64_t)got);
+        left -= (int64_t)got;
+    }
+    if (!any) return NULL;
+    return b.s;
+}
+
+/* Everything printed so far is written out now (for programs that talk to
+   another process through a pipe). */
+static void cap_flush(void) { fflush(stdout); }
+
 static bool cap_write_file(CapStr *path, CapStr *data) {
     if (!cap_path_ok(path)) return false;
     FILE *f = fopen(path->data, "wb");
