@@ -1,0 +1,42 @@
+// spec: builtins.io
+// Run by tests/run.sh with input_and_files.in on standard input and a scratch
+// directory as the only argument, through both the native compiler and stage 0.
+// Every byte must survive, and bad paths must give none or false, not a crash.
+int main() {
+    List<string> a = args();
+    if (a.len() != 1) { return 2; }
+    string dir = a[0];
+    int n = 0;
+    while (true) {
+        if (let line = read_line()) {
+            n += 1;
+            println($"line {n}: {line.len()} bytes: " + escape_log(line));
+        } else {
+            break;
+        }
+    }
+    println($"{n} lines");
+    List<string> bytes = new List<string>();
+    for (int i = 0; i < 256; i += 1) { bytes.push(char_str(i)); }
+    string all = join(bytes, "");
+    string path = dir + "/all.bin";
+    println("write: " + to_text(write_file(path, all)));
+    if (let back = read_file(path)) {
+        println($"read back {back.len()} bytes, identical: {back == all}");
+    } else {
+        println("read back: none");
+    }
+    println("empty write: " + to_text(write_file(path, "")));
+    if (let empty = read_file(path)) { println($"empty read: {empty.len()} bytes"); }
+    List<string> bad = new List<string>();
+    bad.push(dir);
+    bad.push(dir + "/missing.txt");
+    bad.push("");
+    bad.push(dir + "\0/all.bin");
+    for (int j = 0; j < bad.len(); j += 1) {
+        bool found = false;
+        if (let _x = read_file(bad[j])) { found = true; }
+        println($"bad path {j}: read gives {found}, write gives {write_file(bad[j], "x")}");
+    }
+    return 0;
+}
