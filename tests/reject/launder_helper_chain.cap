@@ -1,0 +1,12 @@
+// expect: CWE-20
+// spec: types.tainted decl.function
+// Untrusted bytes passed through two helpers, declared outer first, are still
+// untrusted: the analysis must iterate until it has seen the whole chain.
+int outer(int c) { return middle(c) + 0; }
+int middle(int c) { return inner(c); }
+int inner(int c) { return c; }
+
+int main() {
+    if (let t = read_line()) { println(char_str(outer(t.at(0)))); }
+    return 0;
+}

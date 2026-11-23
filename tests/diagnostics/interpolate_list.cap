@@ -1,0 +1,7 @@
+// expect: List<int> cannot be interpolated into text
+// spec: expr.interpolation
+int main() {
+    List<int> xs = new List<int>();
+    println($"items {xs}");
+    return 0;
+}

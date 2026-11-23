@@ -1,0 +1,6 @@
+// expect: type mismatch in run() argument: expected string, found int
+// spec: builtins.sinks
+int main() {
+    run("ls", 5);
+    return 0;
+}

@@ -1,0 +1,7 @@
+// expect: match needs an enum value, found int
+// spec: stmt.match
+int main() {
+    int n = 3;
+    match (n) { else { return 1; } }
+    return 0;
+}

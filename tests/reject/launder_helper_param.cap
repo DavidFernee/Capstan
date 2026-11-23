@@ -1,0 +1,9 @@
+// expect: CWE-20
+// spec: types.tainted decl.function
+// A helper that turns its int parameter into text launders whatever it is given.
+string as_text(int c) { return char_str(c); }
+
+int main() {
+    if (let t = read_line()) { println(as_text(t.at(0))); }
+    return 0;
+}

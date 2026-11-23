@@ -1,0 +1,7 @@
+// expect: unknown escape sequence in string literal
+// spec: expr.interpolation lexical
+// Escapes inside an interpolated string are checked too.
+int main() {
+    println($"bad \q {1} escape");
+    return 0;
+}

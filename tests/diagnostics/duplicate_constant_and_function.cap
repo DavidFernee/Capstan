@@ -1,0 +1,5 @@
+// expect: 'LIMIT' is declared more than once
+// spec: decl.const
+const int LIMIT = 10;
+int LIMIT() { return 1; }
+int main() { return 0; }

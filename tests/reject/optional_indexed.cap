@@ -1,0 +1,8 @@
+// expect: CWE-476
+// spec: types.optional
+// A list that may be none cannot be indexed before it is unwrapped.
+List<int>? maybe() { return none; }
+int main() {
+    List<int>? xs = maybe();
+    return xs[0];
+}

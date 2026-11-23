@@ -1,0 +1,8 @@
+// expect: CAP-SHADOW
+// spec: decl.const
+// A local may not shadow a constant.
+const int LIMIT = 10;
+int main() {
+    int LIMIT = 3;
+    return LIMIT;
+}

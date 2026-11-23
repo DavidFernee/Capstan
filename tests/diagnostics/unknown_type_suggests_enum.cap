@@ -1,0 +1,7 @@
+// expect: unknown type 'Shap' (did you mean 'Shape'?)
+// spec: diag.messages types.enum
+enum Shape { Circle, Square }
+int main() {
+    Shap s = Shape.Circle;
+    return 0;
+}

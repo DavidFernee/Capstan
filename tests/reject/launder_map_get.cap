@@ -1,0 +1,11 @@
+// expect: CWE-20
+// spec: types.tainted types.map
+// A map that holds bytes of untrusted input yields untrusted bytes.
+int main() {
+    if (let t = read_line()) {
+        Map<int> m = new Map<int>();
+        m.set("first", t.at(0));
+        if (let b = m.get("first")) { println(char_str(b)); }
+    }
+    return 0;
+}

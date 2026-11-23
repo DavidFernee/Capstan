@@ -1,0 +1,13 @@
+// expect: CWE-20
+// spec: types.tainted types.struct
+// A struct field that holds a list of untrusted bytes yields untrusted bytes.
+struct Box { List<int> bytes; }
+
+int main() {
+    if (let t = read_line()) {
+        Box box = new Box{bytes: new List<int>()};
+        box.bytes.push(t.at(0));
+        println(char_str(box.bytes[0]));
+    }
+    return 0;
+}

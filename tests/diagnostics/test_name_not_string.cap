@@ -1,0 +1,4 @@
+// expect: expected a test name string
+// spec: auth.tests
+test name { assert(true); }
+int main() { return 0; }

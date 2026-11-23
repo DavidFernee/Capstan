@@ -1,0 +1,16 @@
+// expect-runtime: CWE-191
+// spec: runtime.checks compiler.ranges
+// The else branch runs when the condition is false: n <= 0, which says nothing that
+// makes n - 1 safe.
+int below(int n) {
+    if (n > 0) {
+        return n;
+    } else {
+        return n - 1;
+    }
+}
+
+int main() {
+    println(int_to_str(below(0 - 9223372036854775807 - 1)));
+    return 0;
+}

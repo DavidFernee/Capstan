@@ -204,10 +204,20 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 ## 7. Quality bar
 
 - every safety rule has at least one rejecting test, and every runtime check a stopping test
+- every diagnostic the checker can emit is triggered by a test; line coverage of the compiler,
+  formatter and runtime is measured (`tests/coverage.py`, `docs/COVERAGE.md`) and may not fall
+  below the floors in `tests/coverage_floors.txt`
+- mutation testing of the compiler (`tests/mutate_compiler.py`): injected compiler bugs must be
+  caught by the suite; every surviving mutant becomes a test or is shown to be equivalent
+- every conformance program and safety stop behaves identically at `-O0`, `-O2` and `-O3` with
+  GCC and Clang
+- the range analysis's interval arithmetic is property-tested against exact arithmetic on every
+  combination of edge values
 - the compiler passes its own `--strict` check
 - every source file in the repository is formatted (`capstan fmt --check`)
 - the bootstrap fixpoint is verified in CI
-- sanitiser runs (ASan/UBSan) of the compiler and examples in CI
+- sanitiser runs (ASan/UBSan) of the compiler, formatter and examples in CI, and of a third of
+  the differentially fuzzed programs (so undefined behaviour is caught even when output matches)
 - differential and mutation fuzzing on every change; long campaigns nightly
 
 ## 8. Known risks
