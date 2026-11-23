@@ -820,8 +820,9 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_STR);
     }
     if (f == "read_file") {
-        want_args(c, e, 0, 1, f);
-        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path"); }
+        if (n != 2) { want_args(c, e, 0, 1, f); }
+        if (n >= 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path"); }
+        if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "read_file() limit"); }
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "read_line") {

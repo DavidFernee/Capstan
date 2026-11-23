@@ -5,6 +5,10 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `read_file()` is bounded: it gives `none` for a file longer than its limit (default 2^30, or
+  `read_file(path, max)`), so `/dev/zero` or an endless pipe cannot exhaust memory (CWE-400), and
+  opening a FIFO with no writer no longer blocks. The compiler, formatter and language server read
+  source files of at most 16 MiB.
 - `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
   `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
   Capstan program can hold a framed conversation over a pipe. The language server needs both.

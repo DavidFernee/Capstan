@@ -570,7 +570,7 @@ int main() {
     int status = 0;
     for (int fi = 0; fi < files.len(); fi += 1) {
         string path = files[fi];
-        if (let src = read_file(path)) {
+        if (let src = read_file(path, 16777216)) {   // 16 MiB at most (CWE-400)
             Scan s = scan(src);
             if (s.err != "") {
                 println(path + ":" + int_to_str(s.err_line) + ": cannot format: " + s.err);

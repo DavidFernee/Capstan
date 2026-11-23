@@ -932,7 +932,7 @@ Tainted? import_text(Server srv, Tainted uri) {
     if (di >= 0) { return srv.docs[di].text; }
     if (srv.root.len() == 0 || uri.len() <= srv.root.len() || uri.slice(0, srv.root.len()) != srv.root) { return none; }
     if (let rel = uri_decode(srv.bt, uri.slice(srv.root.len(), uri.len()))) {
-        if (let path = validate_path(rel)) { return read_file(path); }
+        if (let path = validate_path(rel)) { return read_file(path, MAX_SOURCE_BYTES); }
     }
     return none;
 }
@@ -1040,7 +1040,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             }
         } else {
             ctx.sources.push(taint(""));
-            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "'");
+            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "' (missing, unreadable, a directory, or over 16 MiB)");
         }
     }
     if (error_count(ctx) == 0) {
