@@ -234,7 +234,7 @@ byte for byte, its SHA-256 must match the current implementation, and so on.
 in C: not the compiler, the standard library, the runtime, the system-call layer or the program's
 start-up code. What remains belongs to the platform, not to Capstan:
 
-| Platform | Capstan and its programs | Still underneath |
+| Platform | Capstan and its programs | Still underneath (see section 7 for removing the kernel too) |
 |---|---|---|
 | Linux | no C at all: programs call the kernel directly through its stable system-call interface | the kernel |
 | macOS, Windows | no C in Capstan or its programs | the kernel, plus the vendor's system libraries: both platforms require programs to reach the kernel through them (Go had to make the same change on macOS). Everything those calls return is treated as untrusted input |
@@ -251,7 +251,50 @@ diverse double-compiling defence: the compiler must reproduce itself byte for by
 built with GCC, with Clang, and from the independent Python stage 0. Each new backend
 joins that comparison.
 
-## 7. Security programme
+## 7. Capstan in the kernel
+
+The operating-system kernel is the last large body of C beneath a Capstan program. The Linux
+kernel is about 40 million lines and now fixes close to 2,000 CVEs per release, most of them
+memory corruption. This track measures how much of that Capstan would prevent, then tests the
+answer on real kernel code, and finally removes the kernel from the trusted base altogether.
+
+### K0: measure first (can start now, no kernel code)
+Take the Linux kernel CVEs from a recent period, classify each by CWE from its fix, and run every
+class through the CWE atlas. Publish the result: the share Capstan's rules would have prevented at
+compile time, the share stopped safely at run time, the share that are logic errors no language
+catches, and the share outside Capstan's current reach. Re-run the study each year as the CVE
+stream and Capstan both change. This is also direct evidence for government and defence buyers.
+
+### K1: kernel-mode prerequisites
+Kernel code cannot use a collector that pauses at arbitrary moments or rely on an operating system
+beneath it. Before any kernel work, Capstan needs:
+- **deterministic memory management:** ownership or region-based memory, statically checked, as an
+  alternative to garbage collection for kernel and real-time code
+- **safe concurrency** (v0.7): locks, atomics and per-CPU data whose misuse is a compile error,
+  including lock release on every path
+- **interrupts and hardware access under proof:** device registers, DMA buffers and interrupt
+  handlers expressed as typed operations whose preconditions the compiler proves, keeping the
+  no-unsafe rule
+- **a freestanding mode:** no operating system, no allocator unless one is provided, explicit stack limits
+- **error results that must be handled:** no ignored return codes (already a Capstan direction)
+
+### K2: port real subsystems and count what disappears
+Using kernel-mode Capstan, rewrite a small number of the Linux subsystems with the most CVEs, as
+loadable modules: for example a network protocol parser, a USB or Bluetooth driver, and a
+file-system metadata parser. For each, replay the known CVE reproducers and run the kernel's own
+fuzzer (syzkaller) against the C original and the Capstan version side by side, and report which
+vulnerabilities no longer exist, which became safe stops, and which remain. The kernel itself is C,
+so these modules sit on the platform as any program does; everything the C kernel passes them is
+treated as untrusted input.
+
+### K3: a Capstan microkernel
+Rather than rewriting all of Linux, write a small kernel in Capstan, in the spirit of seL4 (formally
+verified) and Redox (written in Rust): isolation, scheduling, memory management and message passing
+in the kernel; drivers, file systems and network stacks as isolated Capstan services. With its
+correctness proved, it completes the stack: Capstan all the way down, kernel included, with nothing
+in C. This is a long-term goal after v1.0.
+
+## 8. Security programme
 
 Standing commitments, every release:
 
@@ -274,7 +317,7 @@ Standing commitments, every release:
 - **Threat model:** a maintained document stating what Capstan defends against, what it
   assumes, and what is out of scope.
 
-## 8. Government and defence use
+## 9. Government and defence use
 
 Capstan's first audience is government and defence software, where vulnerability
 classes are costly and assurance must be demonstrated. Work needed for that audience:
@@ -306,7 +349,7 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 - **Air-gapped operation.** The compiler, runtime and tests need no network access.
   Capstan Review (AI) must stay optional and off by default for classified work.
 
-## 9. Quality bar
+## 10. Quality bar
 
 - every safety rule has at least one rejecting test, and every runtime check a stopping test
 - every diagnostic the checker can emit is triggered by a test; line coverage of the compiler,
@@ -325,7 +368,7 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
   the differentially fuzzed programs (so undefined behaviour is caught even when output matches)
 - differential and mutation fuzzing on every change; long campaigns nightly
 
-## 10. Known risks
+## 11. Known risks
 
 | Risk | Mitigation |
 |---|---|
@@ -336,3 +379,4 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 | Friction drives developers to `trust()` | quick fixes and good validators; audit reports make overuse visible |
 | AI review non-determinism | advisory by default; cached and recorded verdicts in gate mode |
 | Scope | ship each version usable on its own; never break self-hosting |
+| Kernel work outgrows the project | measure first (K0); port only a few high-CVE subsystems (K2); a microkernel rather than a Linux rewrite (K3) |
