@@ -1,0 +1,32 @@
+// spec: builtins.io
+// Run by tests/run.sh with read_bytes.in on standard input, through both the native
+// compiler and stage 0. Framed input: a length line, then exactly that many bytes
+// (no newline after them), as in the language server protocol. Every byte survives.
+int main() {
+    int frames = 0;
+    while (true) {
+        if (let header = read_line()) {
+            if (let n = validate_range(header, 0, 1000)) {
+                if (let body = read_bytes(n)) {
+                    frames += 1;
+                    println($"frame {frames}: {body.len()} of {n} bytes: " + escape_log(body));
+                    flush();
+                } else {
+                    println("input ended before the body");
+                }
+            } else {
+                println("bad header: " + escape_log(header));
+            }
+        } else {
+            break;
+        }
+    }
+    if (let none_left = read_bytes(10)) {
+        println("unexpected: " + escape_log(none_left));
+    } else {
+        println("end of input: none");
+    }
+    if (let empty = read_bytes(0)) { println($"read_bytes(0) gives {empty.len()} bytes"); }
+    println($"{frames} frames");
+    return 0;
+}

@@ -9,6 +9,7 @@
 #   unit         runtime unit tests (published crypto vectors, collections, validators, GC)
 #   reject       vulnerable programs that must not compile, each with its CWE
 #   diagnostics  ordinary errors with their exact messages
+#   recovery     every independent syntax error in a file is reported in one run
 #   runtime      programs that must stop safely with the named CWE
 #   ranges       checks the range analysis proves unnecessary: exact counts, and the same
 #                output with --keep-checks
@@ -27,6 +28,8 @@
 #   fmt          the formatter: expected layout, idempotence, house style, whitespace and corruption fuzzing
 #   supply chain SBOM generation, the reproducibility report, the release verifier against good
 #                and tampered releases, and the workflow hardening rules (tests/supply/)
+#   lsp          the language server: the compiler's exact diagnostics for every test program, the
+#                protocol and its errors, sanitizers, and fuzzing of JSON and framing
 #   coverage     (--full) line coverage of compiler, formatter and runtime, with floors
 #   mutation     (--full) injected compiler bugs must be caught by the suite
 #   bench        (--full) speed against hand-written C, with a regression limit
@@ -74,6 +77,27 @@ expect_reject() {   # dir label
 }
 section "reject: vulnerabilities rejected at compile time"; expect_reject reject
 section "diagnostics: ordinary errors"; expect_reject diagnostics
+
+section "recovery: every independent syntax error reported in one run"
+for f in "$ROOT"/tests/recovery/*.cap; do
+  n="recovery/$(basename "$f")"
+  sed -n 's|^// error: ||p' "$f" >"$tmp/want"
+  out="$("$C" check "$f" 2>&1)"; code=$?
+  grep -o '^[^ ]*:[0-9]*:[0-9]*: error: .*' <<<"$out" | sed 's|^.*\.cap:||; s|error: ||' >"$tmp/got"
+  if [[ $code -ne 1 ]]; then bad "$n" "compiler exited $code"
+  elif diff -q "$tmp/want" "$tmp/got" >/dev/null; then ok "$n  ($(wc -l <"$tmp/want" | tr -d ' ') errors)"
+  else bad "$n" "errors differ: $(diff "$tmp/want" "$tmp/got" | head -3 | tr '\n' ' ')"; fi
+done
+# A file with very many errors stops after 50 syntax errors (bounded output, CWE-400).
+for i in $(seq 1 80); do echo "int f$i() { return ; ; }"; done | sed 's/return ;/return +;/' >"$tmp/many.cap"
+got=$("$C" check "$tmp/many.cap" 2>&1 | grep -c ': error: ')
+if [[ $got -eq 50 ]]; then ok "recovery: 80 broken functions give exactly 50 errors"; else bad "recovery: error limit" "got $got errors"; fi
+{ echo "int main() {"; for i in $(seq 1 80); do echo "  int x$i = +;"; done; echo "  return 0;"; echo "}"; } >"$tmp/many2.cap"
+got=$("$C" check "$tmp/many2.cap" 2>&1 | grep -c ': error: ')
+if [[ $got -eq 50 ]]; then ok "recovery: 80 broken statements in one block give exactly 50 errors"; else bad "recovery: error limit in a block" "got $got errors"; fi
+{ echo "int main() { return"; for i in $(seq 1 1100); do printf '('; done; echo " 1; }"; echo "int f() { return +; }"; } >"$tmp/deep.cap"
+got=$("$C" check "$tmp/deep.cap" 2>&1 | grep -c ': error: ')
+if [[ $got -eq 1 ]]; then ok "recovery: too-deep nesting stops parsing with one error"; else bad "recovery: nesting is fatal" "got $got errors"; fi
 
 section "runtime: safe stops (generated C warning-free; these programs recurse or loop on purpose)"
 for f in "$ROOT"/tests/runtime/*.cap; do
@@ -137,6 +161,8 @@ for f in "$ROOT"/tests/io/*.cap; do
   else ok "$n (expected output; stage 0 agrees)"; fi
   rm -rf "$d1" "$d2"
 done
+if out="$($PY "$ROOT/tests/unit/stdio_interactive.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: conversation over a pipe" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/read_file_bounds.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: read_file bounds" "$out"; fi
 
 section "gc"
 "$C" build -o "$tmp/churn.c" "$ROOT/tests/gc/churn.cap" >/dev/null && "$CC" $CFLAGS "$tmp/churn.c" -o "$tmp/churn"
@@ -224,7 +250,7 @@ for f in "$ROOT"/tests/fmt/*.cap; do
   else bad "$n" "layout differs"; cat "$tmp/diff"; fi
 done
 # Every source file in the repository follows the house style, except the diagnostics
-# tests (their columns and lexical errors are what they test), formatter inputs and
+# and recovery tests (their columns and lexical errors are what they test), formatter inputs and
 # files marked `// fmt: off` (a lexical test that needs tabs and CRLF).
 STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io}/*.cap 2>/dev/null)
 if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then ok "$(wc -w <<<"$STYLED") repository sources are formatted"; else bad "house style" "run bin/capstan fmt on: $out"; fi
@@ -239,6 +265,24 @@ if out="$(cd "$ROOT" && $PY tests/fmt/perturb.py --corrupt "$F" $COR_N "${FUZZ_S
 section "supply chain: SBOM, reproducibility report, release verifier, workflow hardening"
 if out="$("$ROOT/tests/supply/test_supply.sh" 2>&1)"; then ok "$(tail -1 <<<"$out")"; grep '^  pass' <<<"$out" | sed 's/^  pass  /      /'
 else bad "supply chain" "$(grep -A3 'FAIL' <<<"$out" | head -8)"; fi
+
+section "lsp"
+L="$ROOT/build/capstan-lsp"
+LSP_SRC="$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen}.cap) $ROOT/tools/lsp.cap"
+if "$C" build -o "$tmp/lsp.c" $LSP_SRC >"$tmp/log" 2>&1 && "$CC" $WFLAGS "$tmp/lsp.c" -o "$L" 2>>"$tmp/log"; then
+  if [[ ! -s "$tmp/log" ]]; then ok "language server builds with no warnings and no trust(); warning-free C"; else bad "lsp build" "$(head -3 "$tmp/log")"; fi
+else bad "lsp build" "$(head -3 "$tmp/log")"; fi
+if out="$($PY "$ROOT/tests/lsp/sessions.py" "$L" 2>&1)"; then ok "$out"; else bad "lsp sessions" "$out"; fi
+LSP_N=40; (( FULL )) && LSP_N=1000
+if out="$($PY "$ROOT/tests/lsp/fuzz.py" "$L" $LSP_N "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then ok "$out"; else bad "lsp fuzz" "$out"; fi
+if "$CC" $SAN "$tmp/lsp.c" -o "$tmp/lspsan" 2>/dev/null; then
+  out2=""
+  if out="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/sessions.py" "$tmp/lspsan" 2>&1)" && out2="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/fuzz.py" "$tmp/lspsan" 20 "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then
+    ok "language server clean under ASan+UBSan with GC stress (sessions and fuzzing)"
+  else bad "sanitized language server" "$out $out2"; fi
+else
+  echo "  skip  sanitizers not available for $CC"
+fi
 
 if (( FULL )); then
   section "coverage"

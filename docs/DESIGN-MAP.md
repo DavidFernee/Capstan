@@ -82,6 +82,8 @@ formatted, and the suite enforces it and fuzzes the formatter (see TESTING.md).
 Carried forward, because neither blocks everyday use:
 - `public`/`private` visibility for module members (v0.5, alongside interfaces)
 - parser error recovery, so one run reports more than one syntax error (with the LSP server, Phase A)
+  *(done: the parser resumes at the next statement or declaration and reports up to 50 syntax
+  errors per run; tests/recovery)*
 
 ### v0.4 — Performance *(in progress)*
 Done:
@@ -148,15 +150,19 @@ Remaining:
 
 ## 5. Tooling and IDE
 
-### Phase A — Language server (next, alongside v0.4)
+### Phase A — Language server (in progress, alongside v0.4)
 An LSP server written in Capstan, reusing the compiler front end:
 - prerequisite: parser error recovery, so an editor sees every error in a file at once
+  (still needed: until then the server shows the first syntax error, and every checker
+  diagnostic once the file parses)
 - red and yellow underlines with CWE codes, linking to the CWE description
+  (done: `capstan lsp`, `tools/lsp.cap`, gives exactly the compiler's diagnostics)
 - hover types (`Tainted`, `Grant<ReadRecord>`), go to definition, find references, rename
 - quick fixes: "wrap in `escape_log()`", "unwrap with `if (let ...)`",
   "generate a denial test for this policy"
 - format on save through `capstan fmt` (done as a command-line tool)
 - works in VS Code, JetBrains, Neovim, Zed and others from day one
+  (the server speaks standard LSP over stdio; editor extensions are not packaged yet)
 
 ### Phase B — Capstan IDE (with v0.6)
 A dedicated IDE built on the same server (for example a VS Code-based distribution):

@@ -9,7 +9,8 @@ programmer might make by mistake (a flipped comparison, && for ||, an inverted
 boolean, an off-by-one, a deleted diagnostic or guard). Each mutant is built
 and run against the suite's behavioural oracles until one fails ("killed"):
 
-  1. every reject and diagnostics test must still fail with its expected message;
+  1. every reject and diagnostics test must still fail with its expected message, and every
+     recovery test must report exactly its syntax errors;
   2. every runtime test must still stop with its CWE;
   3. every conformance and io program must still give its expected output;
   4. the range-analysis counts must still hold;
@@ -110,6 +111,28 @@ def oracles(mc, d):
         r = run([mc, "build", "-o", out] + flags + [f])
         if r is None or r.returncode != 1 or expect(f, "expect") not in r.stdout.decode(errors="replace"):
             return f"{os.path.relpath(f, ROOT)} no longer rejected as expected"
+    for f in sorted(glob.glob(os.path.join(ROOT, "tests/recovery/*.cap"))):
+        want = re.findall(r"^// error: (.*)$", open(f, encoding="latin-1").read(), re.M)
+        r = run([mc, "check", f])
+        got = re.findall(r"^\S*\.cap:(\d+:\d+): error: (.*)$", r.stdout.decode(errors="replace"), re.M) if r else None
+        if r is None or r.returncode != 1 or [f"{a}: {m}" for a, m in got] != want:
+            return f"{os.path.relpath(f, ROOT)} reports different syntax errors"
+    many = os.path.join(d, "many.cap")
+    with open(many, "w") as fh:
+        fh.write("".join(f"int f{i}() {{ return +; ; }}\n" for i in range(80)))
+    r = run([mc, "check", many])
+    if r is None or r.stdout.decode(errors="replace").count(": error: ") != 50:
+        return "a file with 80 syntax errors no longer reports exactly 50"
+    with open(many, "w") as fh:
+        fh.write("int main() {\n" + "".join(f"  int x{i} = +;\n" for i in range(80)) + "  return 0;\n}\n")
+    r = run([mc, "check", many])
+    if r is None or r.stdout.decode(errors="replace").count(": error: ") != 50:
+        return "a block with 80 syntax errors no longer reports exactly 50"
+    with open(many, "w") as fh:
+        fh.write("int main() { return " + "(" * 1100 + " 1; }\nint f() { return +; }\n")
+    r = run([mc, "check", many])
+    if r is None or r.stdout.decode(errors="replace").count(": error: ") != 1:
+        return "too-deep nesting no longer stops parsing with one error"
     for f in sorted(glob.glob(os.path.join(ROOT, "tests/runtime/*.cap"))):
         r = run([mc, "build", "-o", out, f])
         if r is None or r.returncode != 0 or run([CC] + CF + [out, "-o", exe]).returncode != 0:

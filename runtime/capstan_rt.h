@@ -27,6 +27,8 @@
 #include <string.h>
 #include <setjmp.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "capstan_gc.h"
 
 /* ------------------------------------------------------------------ */
@@ -570,22 +572,38 @@ static CapBuf cap_buf_new(int64_t cap) {
 }
 
 /* File contents are untrusted input: returned as Tainted. Reads until end of file
-   rather than trusting the reported size, so pipes and /proc files work; a
-   directory or an unreadable file gives none. */
-static CapStr *cap_read_file(CapStr *path) {
+   rather than trusting the reported size, so pipes and /proc files work. Gives none
+   for a directory, an unreadable file, or a file longer than max bytes (default
+   2^30), so /dev/zero or an endless pipe cannot exhaust memory (CWE-400). Opening
+   never blocks: a FIFO with no writer reads as empty instead of hanging. */
+#define CAP_READ_FILE_DEFAULT ((int64_t)1 << 30)
+static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
+    if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_DEFAULT)) cap_panic("read_file() limit outside 0..2^30", "CWE-789", loc);
     if (!cap_path_ok(path)) return NULL;
-    FILE *f = fopen(path->data, "rb");
-    if (!f) return NULL;
+    int fd = open(path->data, O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
+    if (fd < 0) return NULL;
     struct stat st;
-    if (fstat(fileno(f), &st) != 0 || S_ISDIR(st.st_mode)) { fclose(f); return NULL; }
-    CapBuf b = cap_buf_new(S_ISREG(st.st_mode) && st.st_size > 0 && st.st_size < ((off_t)1 << 40) ? (int64_t)st.st_size + 1 : 4096);
+    if (fstat(fd, &st) != 0 || S_ISDIR(st.st_mode)) { close(fd); return NULL; }
+    int fl = fcntl(fd, F_GETFL);
+    if (fl < 0 || fcntl(fd, F_SETFL, fl & ~O_NONBLOCK) < 0) { close(fd); return NULL; }
+    FILE *f = fdopen(fd, "rb");
+    if (!f) { close(fd); return NULL; }
+    int64_t hint = S_ISREG(st.st_mode) && st.st_size > 0 && st.st_size <= max ? (int64_t)st.st_size + 1 : 4096;
+    CapBuf b = cap_buf_new(hint);
     char chunk[65536];
     size_t got;
-    while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) cap_buf_put(&b, chunk, (int64_t)got);
+    int64_t total = 0;
+    bool too_long = false;
+    while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) {
+        if ((int64_t)got > max - total) { too_long = true; break; }
+        cap_buf_put(&b, chunk, (int64_t)got);
+        total += (int64_t)got;
+    }
     int failed = ferror(f);
     fclose(f);
-    return failed ? NULL : b.s;
+    return failed || too_long ? NULL : b.s;
 }
+static CapStr *cap_read_file(CapStr *path) { return cap_read_file_max(path, CAP_READ_FILE_DEFAULT, 0); }
 
 /* One line of standard input without its newline, or none at end of input. Every
    byte is kept, including NUL bytes. */
@@ -601,6 +619,32 @@ static CapStr *cap_read_line(void) {
     if (!got) return NULL;
     return b.s;
 }
+
+/* Up to n bytes of standard input: exactly n unless the input ends first, or none
+   at end of input. Each byte is kept. n must be 0..2^30 (CWE-789); memory grows
+   with the bytes actually read, not with n. */
+#define CAP_READ_BYTES_MAX ((int64_t)1 << 30)
+static CapStr *cap_read_bytes(int64_t n, int64_t loc) {
+    if (CAP_UNLIKELY(n < 0 || n > CAP_READ_BYTES_MAX)) cap_panic("read_bytes() count outside 0..2^30", "CWE-789", loc);
+    CapBuf b = cap_buf_new(n < 65536 ? n + 1 : 65536);
+    char chunk[65536];
+    int64_t left = n;
+    bool any = n == 0;
+    while (left > 0) {
+        size_t want = left < (int64_t)sizeof chunk ? (size_t)left : sizeof chunk;
+        size_t got = fread(chunk, 1, want, stdin);
+        if (got == 0) break;
+        any = true;
+        cap_buf_put(&b, chunk, (int64_t)got);
+        left -= (int64_t)got;
+    }
+    if (!any) return NULL;
+    return b.s;
+}
+
+/* Everything printed so far is written out now (for programs that talk to
+   another process through a pipe). */
+static void cap_flush(void) { fflush(stdout); }
 
 static bool cap_write_file(CapStr *path, CapStr *data) {
     if (!cap_path_ok(path)) return false;

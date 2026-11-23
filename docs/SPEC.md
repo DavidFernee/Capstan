@@ -111,7 +111,8 @@ explicitly. Their meaning therefore never depends on precedence.
 | `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
-| `read_file(path)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, or a path containing a NUL byte (CWE-158). `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
+| `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
+| `read_bytes(n)` → `Tainted?`, `flush()` | `read_bytes` reads exactly `n` bytes of standard input (fewer only if the input ends first), every byte kept, or gives `none` at end of input; `read_bytes(0)` is `""`. `n` outside 0..2^30 stops the program (CWE-789); memory grows with the bytes read, not with `n`. `flush()` writes out everything printed so far, for programs that converse over a pipe (a language server, say) |
 | `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | |
 | `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
@@ -160,6 +161,9 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
 - String literals in known credential formats (payment, cloud, source-hosting and chat tokens, private keys) are rejected (CWE-798).
 - Source nesting (expressions, statements, operator chains) is limited to 1,000 levels;
   deeper input is a compile error (CWE-674).
+- After a syntax error the compiler resumes at the next statement or declaration, so one run
+  reports every independent syntax error; it stops after 50 (CWE-400). Nesting that is too deep
+  ends parsing at once.
 - A program stopped by a runtime check exits with code 101.
 - The compiler may leave out a check that it proves can never fail (range analysis); this
   never changes what a program does. `--keep-checks` keeps every check.
@@ -220,6 +224,41 @@ Before writing, the formatter scans its output again and requires the same token
 same text; otherwise the file is left unchanged. A file that does not scan (an unterminated
 string or comment, an unexpected character) is refused with exit code 2.
 
+## Language server
+
+```
+capstan lsp
+```
+
+`capstan lsp` is a Language Server Protocol server on standard input and output, for any
+editor with an LSP client. It is built from the compiler's own lexer, parser and checker,
+so an open file shows exactly the diagnostics `capstanc check` reports for it:
+
+- each diagnostic has the compiler's line, column and message; errors have severity 1 and
+  warnings 2; the CWE or CAP code is the diagnostic's `code`, and a CWE code links to
+  `https://cwe.mitre.org/data/definitions/N.html` (`codeDescription.href`);
+- the range runs from the compiler's column to the end of the word there; a diagnostic
+  without a column covers its line. Positions count UTF-16 code units, or bytes if the
+  client offers the `utf-8` position encoding;
+- a file that declares `main()` gets the `main` checks; one without is checked as a library;
+- `import`s are read from documents open in the editor, otherwise from disk when the file
+  is inside the workspace root; diagnostics in an imported file are shown on its `import`;
+- `initializationOptions` `{"strict": true}` and `{"release": true}` act as `--strict` and
+  `--release`.
+
+Messages: `initialize`, `initialized`, `shutdown`, `exit` (exit code 0 after `shutdown`,
+otherwise 1), `textDocument/didOpen`, `didChange` (full text, or ranges), `didClose`
+(clears the file's diagnostics); the server sends `textDocument/publishDiagnostics` and
+`window/logMessage`. Errors follow JSON-RPC 2.0: invalid JSON or framing is -32700 with a
+null id, an invalid request -32600, an unknown method -32601, invalid parameters -32602,
+and a request before `initialize` -32002. Notifications are never answered.
+
+Everything the client sends is untrusted (`Tainted`); the server has no `trust()`. Its
+replies are JSON in printable ASCII. Limits (CWE-400): 16 MiB per message (a larger one is
+skipped unread and answered with -32600), 4,096-byte header lines, 32 header lines,
+JSON nesting of 64 levels, 1,000 open documents and 256 MiB of text in all, 1,000
+diagnostics per document, 256 imported files.
+
 ## Conformance areas
 
 Every area below must be covered by at least one test that declares it with a
@@ -268,6 +307,8 @@ When the language gains a feature, add its area here and its tests together.
 | `runtime.checks` | safe stops with exit code 101 |
 | `compiler.ranges` | checks left out only when proved unnecessary; `--keep-checks` |
 | `diag.messages` | error message text, positions, suggestions |
+| `diag.recovery` | every independent syntax error reported in one run, at most 50 |
 | `warnings` | warnings and their CWE codes |
 | `modes` | `--strict` and `--release` |
 | `tools.fmt` | `capstan fmt`: layout rules, idempotence, comments, refusing unscannable input |
+| `tools.lsp` | `capstan lsp`: the compiler's diagnostics over the Language Server Protocol, protocol errors, limits |

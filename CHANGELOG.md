@@ -5,6 +5,16 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `read_file()` is bounded: it gives `none` for a file longer than its limit (default 2^30, or
+  `read_file(path, max)`), so `/dev/zero` or an endless pipe cannot exhaust memory (CWE-400), and
+  opening a FIFO with no writer no longer blocks. The compiler, formatter and language server read
+  source files of at most 16 MiB.
+- `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
+  `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
+  Capstan program can hold a framed conversation over a pipe. The language server needs both.
+- Parser error recovery: after a syntax error the parser resumes at the next statement or
+  declaration, so one run reports every independent syntax error (at most 50, so the output stays
+  bounded). Needed by the language server.
 - The Capstan Challenge, drafted (docs/CHALLENGE.md, DESIGN-MAP section 8): a planned yearly
   prize for writing a vulnerability Capstan claims is impossible, subject to funding for a
   foundation to administer the language; until then, confirmed findings are credited in its hall
@@ -14,6 +24,13 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   (CWE-190); mixing a bitwise operator with another operator needs parentheses (CWE-783);
   bitwise operators on `bool` are rejected (CWE-480). Taint flows through all of them, and the
   range analysis proves shift counts and masks.
+- `capstan lsp`, the first version of the language server (DESIGN-MAP section 5, phase A), written
+  in Capstan and built with the compiler's own lexer, parser and checker: editors get exactly the
+  compiler's diagnostics, with CWE codes linked to cwe.mitre.org. JSON-RPC over stdio with
+  Content-Length framing, a JSON parser and writer in Capstan, full and incremental sync, UTF-16
+  and UTF-8 positions, imports; JSON-RPC errors for malformed input and bounded sizes (CWE-400);
+  no `trust()`. Tested for agreement with the compiler on every test program, protocol behaviour,
+  sanitizers and fuzzing (`tests/lsp/`). Pure Capstan, using `read_bytes()` and `flush()`
 - K0, the first kernel study: every Linux kernel CVE published in 2025, classified from its fix and
   run through the CWE atlas with stated kernel adjustments (`tools/k0/`, docs/K0-KERNEL-CVES.md),
   with a hand-labelled held-out sample to measure the classifier

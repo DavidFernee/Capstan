@@ -336,6 +336,8 @@ string builtin_c(string f) {
     if (f == "char_str") { return "cap_char_str"; }
     if (f == "read_file") { return "cap_read_file"; }
     if (f == "read_line") { return "cap_read_line"; }
+    if (f == "read_bytes") { return "cap_read_bytes"; }
+    if (f == "flush") { return "cap_flush"; }
     if (f == "write_file") { return "cap_write_file"; }
     if (f == "args") { return "cap_args"; }
     if (f == "exit") { return "cap_exit"; }
@@ -364,7 +366,7 @@ string builtin_c(string f) {
 }
 
 bool builtin_needs_loc(string f) {
-    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl";
+    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes";
 }
 
 string gen_call(Gen g, Node e) {
@@ -398,8 +400,13 @@ string gen_call(Gen g, Node e) {
     }
     Seq s2 = operands(g, e, 0);
     string extra = "";
+    string cf = builtin_c(f);
     if (builtin_needs_loc(f)) { extra = loc(e); }
-    return wrap(s2, builtin_c(f) + "(" + call_list(s2.names, 0, extra) + ")");
+    if (f == "read_file" && e.kids.len() == 2) {
+        cf = "cap_read_file_max";
+        extra = loc(e);
+    }
+    return wrap(s2, cf + "(" + call_list(s2.names, 0, extra) + ")");
 }
 
 // ---- statements ---------------------------------------------------------------
