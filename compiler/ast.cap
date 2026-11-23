@@ -73,6 +73,7 @@ const int N_ENUMVAL = 49;
 const int N_MATCH = 50;
 const int N_CASE = 51;
 const int N_IMPORT = 52;
+const int N_BNOT = 53;     // ~x
 
 struct Node {
     int k;

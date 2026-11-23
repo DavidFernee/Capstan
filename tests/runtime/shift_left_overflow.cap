@@ -1,0 +1,8 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks expr.bitwise
+// << loses no bits: shifting a 1 out of the top is an overflow, like multiplication.
+int main() {
+    int x = 3;
+    for (int n = 60; n < 64; n += 1) { println(int_to_str(x << n)); }
+    return 0;
+}

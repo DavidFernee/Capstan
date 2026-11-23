@@ -125,7 +125,22 @@ bool is_literal(Node e) {
 }
 
 bool is_int_arith(Node e) {
-    return e.k == N_BIN && ty_of(e).k == TY_INT && (e.s == "+" || e.s == "-" || e.s == "*" || e.s == "/" || e.s == "%");
+    return e.k == N_BIN && ty_of(e).k == TY_INT && (e.s == "+" || e.s == "-" || e.s == "*" || e.s == "/" || e.s == "%"
+        || e.s == "&" || e.s == "|" || e.s == "^" || e.s == "<<" || e.s == ">>" || e.s == ">>>");
+}
+
+// 2^k for 0 <= k <= 62.
+int pow2(int k) {
+    int v = 1;
+    for (int i = 0; i < k; i += 1) { v = v * 2; }
+    return v;
+}
+
+// The smallest 2^k - 1 that is >= v, for v >= 0: every bit an or/xor of values up to v can set.
+int bit_cover(int v) {
+    int m = 0;
+    while (m < v) { m = m * 2 + 1; }
+    return m;
 }
 
 Iv range(Rg r, Node e) {
@@ -148,6 +163,10 @@ Iv range(Rg r, Node e) {
         if (x.lo == I64_MIN) { return full(); }
         return iv(-x.hi, -x.lo);
     }
+    if (e.k == N_BNOT) {
+        Iv y = range(r, e.kids[0]);
+        return iv(-1 - y.hi, -1 - y.lo);
+    }
     if (is_int_arith(e)) { return bin_range(e.s, range(r, e.kids[0]), range(r, e.kids[1])); }
     if (e.k == N_METHOD && e.s == "len") { return iv(0, LEN_MAX); }
     if (e.k == N_METHOD && e.s == "at" && is_stringish(ty_of(e.kids[0]))) { return iv(0, 255); }
@@ -169,6 +188,36 @@ Iv bin_range(string op, Iv a, Iv b) {
         if (a.lo >= 0 && b.lo > 0) { return iv(a.lo / b.hi, a.hi / b.lo); }
         return full();
     }
+    if (op == "&") {
+        if (a.lo >= 0 && b.lo >= 0) { return iv(0, imin(a.hi, b.hi)); }
+        if (a.lo >= 0) { return iv(0, a.hi); }
+        if (b.lo >= 0) { return iv(0, b.hi); }
+        return full();
+    }
+    if (op == "|" || op == "^") {
+        if (a.lo >= 0 && b.lo >= 0) { return iv(0, bit_cover(imax(a.hi, b.hi))); }
+        return full();
+    }
+    if (op == "<<") {
+        if (bin_safe(op, a, b) && b.hi == 63) {
+            // a is 0 or -1: the result is 0, or -1 shifted, which reaches the smallest int
+            if (a.lo < 0) { return iv(I64_MIN, 0); }
+            return iv(0, 0);
+        }
+        if (bin_safe(op, a, b)) {
+            int p1 = sat_mul(a.lo, pow2(b.lo));
+            int p2 = sat_mul(a.lo, pow2(b.hi));
+            int p3 = sat_mul(a.hi, pow2(b.lo));
+            int p4 = sat_mul(a.hi, pow2(b.hi));
+            return iv(imin(imin(p1, p2), imin(p3, p4)), imax(imax(p1, p2), imax(p3, p4)));
+        }
+        return full();
+    }
+    if (op == ">>" || op == ">>>") {
+        if (a.lo >= 0) { return iv(0, a.hi); }
+        if (op == ">>" && b.lo >= 0 && b.hi <= 63) { return iv(a.lo, imax(a.hi, 0)); }
+        return full();
+    }
     if (op == "%") {
         if (b.lo > 0) {
             int m = b.hi - 1;
@@ -185,6 +234,14 @@ bool bin_safe(string op, Iv a, Iv b) {
     if (op == "+") { return !add_over(a.lo, b.lo) && !add_over(a.hi, b.hi); }
     if (op == "-") { return !sub_over(a.lo, b.hi) && !sub_over(a.hi, b.lo); }
     if (op == "*") { return mul_fits(a.lo, b.lo) && mul_fits(a.lo, b.hi) && mul_fits(a.hi, b.lo) && mul_fits(a.hi, b.hi); }
+    bool count_ok = b.lo >= 0 && b.hi <= 63;
+    if (op == ">>" || op == ">>>") { return count_ok; }
+    if (op == "<<") {
+        if (!count_ok) { return false; }
+        if (b.hi == 63) { return a.lo >= -1 && a.hi <= 0; }      // only 0 and -1 survive a shift by 63
+        int scale = pow2(b.hi);
+        return mul_fits(a.lo, scale) && mul_fits(a.hi, scale);
+    }
     bool nonzero = b.lo > 0 || b.hi < 0;
     bool no_min_by_minus_one = a.lo > I64_MIN || b.lo > -1 || b.hi < -1;
     if (op == "/" || op == "%") { return nonzero && no_min_by_minus_one; }

@@ -1,0 +1,8 @@
+// expect-runtime: CWE-1335
+// spec: runtime.checks expr.bitwise
+int count() { return -1; }
+
+int main() {
+    println(int_to_str(wrapping_shl(1, count())));
+    return 0;
+}

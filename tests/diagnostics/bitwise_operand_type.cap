@@ -1,0 +1,6 @@
+// expect: '&' needs int operands, found int and string
+// spec: expr.bitwise
+int main() {
+    int x = 1 & "a";
+    return x;
+}

@@ -298,6 +298,22 @@ static void test_files(void) {
     rmdir(dir);
 }
 
+/* Shifts and wrapping arithmetic at the edges of the 64-bit range (no panics here;
+   the stops are covered by tests/runtime/shift_*.cap). */
+static void test_bitwise(void) {
+    CHECK(cap_as_signed(0) == 0 && cap_as_signed(UINT64_MAX) == -1);
+    CHECK(cap_as_signed((uint64_t)INT64_MAX) == INT64_MAX && cap_as_signed((uint64_t)INT64_MAX + 1) == INT64_MIN);
+    CHECK(cap_shl(1, 62, 0) == (int64_t)1 << 62 && cap_shl(-1, 63, 0) == INT64_MIN && cap_shl(0, 63, 0) == 0);
+    CHECK(cap_shl(-3, 61, 0) == -3 * ((int64_t)1 << 61));
+    CHECK(cap_sar(INT64_MIN, 63, 0) == -1 && cap_sar(-1, 1, 0) == -1 && cap_sar(-16, 2, 0) == -4 && cap_sar(INT64_MAX, 62, 0) == 1);
+    CHECK(cap_sar(-7, 1, 0) == -4);                                 /* rounds toward minus infinity */
+    CHECK(cap_shr(-1, 0, 0) == -1 && cap_shr(-1, 1, 0) == INT64_MAX && cap_shr(-1, 63, 0) == 1 && cap_shr(INT64_MIN, 63, 0) == 1);
+    CHECK(cap_wrapping_add(INT64_MAX, 1) == INT64_MIN && cap_wrapping_sub(INT64_MIN, 1) == INT64_MAX);
+    CHECK(cap_wrapping_mul(INT64_MIN, -1) == INT64_MIN && cap_wrapping_mul(0x100000000LL, 0x100000000LL) == 0);
+    CHECK(cap_wrapping_shl(3, 63, 0) == INT64_MIN && cap_wrapping_shl(-1, 63, 0) == INT64_MIN);
+    CHECK(cap_shl_proved(5, 3, 0) == 40 && cap_sar_proved(-9, 1, 0) == -5 && cap_shr_proved(-2, 63, 0) == 1);
+}
+
 static void test_collections(void) {
     CapMap *m = cap_map_new();
     for (int i = 0; i < 100000; i++) cap_map_set(m, cap_int_to_str(i), cap_vi(i));
@@ -411,6 +427,7 @@ int main(void) {
     test_csv();
     test_secret_eq();
     test_files();
+    test_bitwise();
     test_collections();
     test_arithmetic();
     test_gc();

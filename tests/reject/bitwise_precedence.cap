@@ -1,0 +1,8 @@
+// expect: CWE-783
+// spec: expr.bitwise
+// In C this means flags & (1 == 0). Capstan requires the parentheses.
+int main() {
+    int flags = 6;
+    if (flags & 1 == 0) { println("even"); }
+    return 0;
+}

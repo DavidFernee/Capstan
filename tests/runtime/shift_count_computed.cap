@@ -1,0 +1,7 @@
+// expect-runtime: CWE-1335
+// spec: runtime.checks expr.bitwise
+// A shift count computed at run time must be 0..63.
+int main() {
+    for (int n = 60; n < 70; n += 1) { println(int_to_str(1 >> n)); }
+    return 0;
+}

@@ -8,7 +8,8 @@ List<int> edges() {
     List<int> e = new List<int>();
     e.push(I64_MIN); e.push(I64_MIN + 1); e.push(I64_MIN + 2);
     e.push(-4294967296); e.push(-3037000500); e.push(-3037000499);
-    e.push(-1000); e.push(-2); e.push(-1); e.push(0); e.push(1); e.push(2); e.push(1000);
+    e.push(-1000); e.push(-2); e.push(-1); e.push(0); e.push(1); e.push(2); e.push(31); e.push(62); e.push(63); e.push(64);
+    e.push(1000);
     e.push(3037000499); e.push(3037000500); e.push(4294967296);
     e.push(I64_MAX - 2); e.push(I64_MAX - 1); e.push(I64_MAX);
     return e;
@@ -32,6 +33,7 @@ int main() {
     }
     List<string> ops = new List<string>();
     ops.push("+"); ops.push("-"); ops.push("*"); ops.push("/"); ops.push("%");
+    ops.push("<<"); ops.push(">>"); ops.push(">>>"); ops.push("&"); ops.push("|"); ops.push("^");
     for (int p = 0; p < ivs.len(); p += 1) {
         for (int q = 0; q < ivs.len(); q += 1) {
             Iv a = ivs[p];

@@ -100,6 +100,41 @@ static inline int64_t cap_neg(int64_t a, int64_t loc) {
     return -a;
 }
 
+/* Bitwise shifts (CWE-1335): the count must be 0..63. << is checked like
+   multiplication (no bit may be lost, CWE-190); >> keeps the sign, >>> fills with
+   zeros. Written so that every case is defined behaviour in C. */
+static inline int64_t cap_shift_count(int64_t n, int64_t loc) {
+    if (CAP_UNLIKELY(n < 0 || n > 63)) cap_panic("shift count outside 0..63", "CWE-1335", loc);
+    return n;
+}
+/* uint64_t to int64_t without relying on implementation-defined conversion. */
+static inline int64_t cap_as_signed(uint64_t u) {
+    return u <= (uint64_t)INT64_MAX ? (int64_t)u : -(int64_t)(~u) - 1;
+}
+static inline int64_t cap_shl(int64_t a, int64_t n, int64_t loc) {
+    cap_shift_count(n, loc);
+    int64_t r = cap_as_signed((uint64_t)a << n);
+    int64_t back = r < 0 ? ~(int64_t)((uint64_t)~r >> n) : (int64_t)((uint64_t)r >> n);
+    if (CAP_UNLIKELY(back != a)) cap_panic("integer overflow in <<", "CWE-190", loc);
+    return r;
+}
+static inline int64_t cap_sar(int64_t a, int64_t n, int64_t loc) {
+    cap_shift_count(n, loc);
+    return a < 0 ? ~(int64_t)((uint64_t)~a >> n) : (int64_t)((uint64_t)a >> n);
+}
+static inline int64_t cap_shr(int64_t a, int64_t n, int64_t loc) {
+    cap_shift_count(n, loc);
+    return cap_as_signed((uint64_t)a >> n);
+}
+/* Explicit modular arithmetic, for hashing and cryptography. */
+static inline int64_t cap_wrapping_add(int64_t a, int64_t b) { return cap_as_signed((uint64_t)a + (uint64_t)b); }
+static inline int64_t cap_wrapping_sub(int64_t a, int64_t b) { return cap_as_signed((uint64_t)a - (uint64_t)b); }
+static inline int64_t cap_wrapping_mul(int64_t a, int64_t b) { return cap_as_signed((uint64_t)a * (uint64_t)b); }
+static inline int64_t cap_wrapping_shl(int64_t a, int64_t n, int64_t loc) {
+    cap_shift_count(n, loc);
+    return cap_as_signed((uint64_t)a << n);
+}
+
 /* Proved forms: used only where the compiler's range analysis has proved that the
    check cannot fail (compiler/ranges.cap), so the check is done at compile time
    instead of at run time. Same arguments, so evaluation is unchanged. */
@@ -109,6 +144,9 @@ static inline int64_t cap_mul_proved(int64_t a, int64_t b, int64_t loc) { (void)
 static inline int64_t cap_div_proved(int64_t a, int64_t b, int64_t loc) { (void)loc; return a / b; }
 static inline int64_t cap_mod_proved(int64_t a, int64_t b, int64_t loc) { (void)loc; return a % b; }
 static inline int64_t cap_neg_proved(int64_t a, int64_t loc) { (void)loc; return -a; }
+static inline int64_t cap_shl_proved(int64_t a, int64_t n, int64_t loc) { (void)loc; return cap_as_signed((uint64_t)a << n); }
+static inline int64_t cap_sar_proved(int64_t a, int64_t n, int64_t loc) { (void)loc; return a < 0 ? ~(int64_t)((uint64_t)~a >> n) : (int64_t)((uint64_t)a >> n); }
+static inline int64_t cap_shr_proved(int64_t a, int64_t n, int64_t loc) { (void)loc; return cap_as_signed((uint64_t)a >> n); }
 
 /* Optional int/bool are boxed; none is NULL. */
 static int64_t *cap_box_int(int64_t v) {

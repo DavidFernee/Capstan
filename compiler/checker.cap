@@ -364,6 +364,15 @@ Type check_expr(Checker c, Node e) {
         expect_type(c, e, check_expr(c, e.kids[0]), mk_type(TY_INT), "unary '-'");
         return typed(e, mk_type(TY_INT));
     }
+    if (k == N_BNOT) {
+        Type bt = check_expr(c, e.kids[0]);
+        if (bt.k == TY_BOOL) {
+            error_at(c.ctx, e, "CWE-480", "'~' is the bitwise complement of an int; for a bool use '!'");
+        } else {
+            expect_type(c, e, bt, mk_type(TY_INT), "'~'");
+        }
+        return typed(e, mk_type(TY_INT));
+    }
     if (k == N_BIN) { return typed(e, check_binary(c, e)); }
     if (k == N_GETF && is_enum_ref(c, e.kids[0])) { return typed(e, check_enum_value(c, e, 1)); }
     if (k == N_METHOD && is_enum_ref(c, e.kids[0])) { return typed(e, check_enum_value(c, e, 1)); }
@@ -431,11 +440,62 @@ bool security_name(Node e) {
         || contains(l, "clearance") || contains(l, "access") || contains(l, "rank");
 }
 
+// A shift count written as a literal (possibly negated) that is outside 0..63.
+bool bad_literal_count(Node n) {
+    if (n.k == N_INT) { return n.n < 0 || n.n > 63; }
+    return n.k == N_NEG && n.kids[0].k == N_INT && n.kids[0].n != 0;
+}
+
+string literal_text(Node n) {
+    if (n.k == N_NEG) { return "-" + int_to_str(n.kids[0].n); }
+    return int_to_str(n.n);
+}
+
+bool is_bitwise(string op) {
+    return op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" || op == ">>>";
+}
+
+// C's precedence for bitwise operators is a classic source of bugs (in C,
+// x & 1 == 0 means x & (1 == 0)). Capstan sidesteps it: a bitwise or shift
+// operator may not be combined with any other operator without parentheses.
+// Chains of one associative operator (a | b | c) are fine.
+void check_bitwise_grouping(Checker c, Node e) {
+    for (int k = 0; k < 2; k += 1) {
+        Node side = e.kids[k];
+        if (side.k != N_BIN || side.s2 == "()") { continue; }
+        bool mixed = false;
+        if (is_bitwise(e.s) || is_bitwise(side.s)) {
+            mixed = side.s != e.s || e.s == "<<" || e.s == ">>" || e.s == ">>>";
+        }
+        if (mixed) {
+            error_at(c.ctx, side, "CWE-783", "'" + side.s + "' combined with '" + e.s + "' needs parentheses; Capstan does not rely on the precedence of bitwise operators");
+        }
+    }
+}
+
 Type check_binary(Checker c, Node e) {
     string op = e.s;
     Type a = check_expr(c, e.kids[0]);
     Type b = check_expr(c, e.kids[1]);
     if (a.k == TY_ERR || b.k == TY_ERR) { return mk_type(TY_ERR); }
+    check_bitwise_grouping(c, e);
+    if (is_bitwise(op)) {
+        if ((op == "&" || op == "|" || op == "^") && (a.k == TY_BOOL || b.k == TY_BOOL)) {
+            string logical = "&&";
+            if (op == "|") { logical = "||"; }
+            if (op == "^") { logical = "!="; }
+            error_at(c.ctx, e, "CWE-480", "'" + op + "' is a bitwise operator on ints; for booleans use '" + logical + "'");
+            return mk_type(TY_ERR);
+        }
+        if (a.k != TY_INT || b.k != TY_INT) {
+            error_at(c.ctx, e, "", "'" + op + "' needs int operands, found " + type_str(a) + " and " + type_str(b));
+            return mk_type(TY_ERR);
+        }
+        if (op != "&" && op != "|" && op != "^" && bad_literal_count(e.kids[1])) {
+            error_at(c.ctx, e, "CWE-1335", "shift count " + literal_text(e.kids[1]) + " is outside 0..63");
+        }
+        return mk_type(TY_INT);
+    }
     if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=") {
         for (int mk = 0; mk < 2; mk += 1) {
             Node lit = e.kids[mk];
@@ -653,6 +713,7 @@ List<string> builtin_names() {
     b.push("trust"); b.push("taint"); b.push("sql_query"); b.push("run"); b.push("secret_env"); b.push("secret_eq");
     b.push("hash"); b.push("hash_verify"); b.push("hash_password"); b.push("verify_password"); b.push("needs_rehash");
     b.push("escape_csv"); b.push("validate_path"); b.push("validate_range"); b.push("to_text");
+    b.push("wrapping_add"); b.push("wrapping_sub"); b.push("wrapping_mul"); b.push("wrapping_shl");
     return b;
 }
 
@@ -740,6 +801,17 @@ Type check_call(Checker c, Node e) {
             }
         }
         return mk_type(TY_ERR);
+    }
+    if (f == "wrapping_add" || f == "wrapping_sub" || f == "wrapping_mul" || f == "wrapping_shl") {
+        want_args(c, e, 0, 2, f);
+        if (n == 2) {
+            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), f + "()");
+            expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), f + "()");
+            if (f == "wrapping_shl" && bad_literal_count(e.kids[1])) {
+                error_at(c.ctx, e, "CWE-1335", "shift count " + literal_text(e.kids[1]) + " is outside 0..63");
+            }
+        }
+        return mk_type(TY_INT);
     }
     if (f == "int_to_str" || f == "char_str") {
         want_args(c, e, 0, 1, f);
@@ -1490,18 +1562,24 @@ struct Flow {
 }
 
 bool is_arith(string op) {
-    return op == "+" || op == "-" || op == "*" || op == "/" || op == "%";
+    return op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || is_bitwise(op);
 }
 
 bool derived(Flow f, Node e) {
     if (e.k == N_METHOD && e.s == "at" && ty_of(e.kids[0]).k == TY_TAINT) { return true; }
     if (e.k == N_VAR) { return f.vars.has(e.s); }
-    if (e.k == N_NEG) { return derived(f, e.kids[0]); }
+    if (e.k == N_NEG || e.k == N_BNOT) { return derived(f, e.kids[0]); }
     // A collection or struct that ever held a derived integer yields derived integers.
     if (e.k == N_INDEX || e.k == N_GETF) { return base_marked(f, e.kids[0]); }
     if (e.k == N_METHOD && (e.s == "pop" || e.s == "get" || e.s == "remove_at")) { return base_marked(f, e.kids[0]); }
     if (e.k == N_BIN && is_arith(e.s) && ty_of(e).k == TY_INT) {
         return derived(f, e.kids[0]) || derived(f, e.kids[1]);
+    }
+    // The wrapping builtins compute with their arguments, so untrusted bytes stay untrusted.
+    if (e.k == N_CALL && (e.s == "wrapping_add" || e.s == "wrapping_sub" || e.s == "wrapping_mul" || e.s == "wrapping_shl")) {
+        for (int w = 0; w < e.kids.len(); w += 1) {
+            if (derived(f, e.kids[w])) { return true; }
+        }
     }
     if (e.k == N_CALL) {
         if (let sm = f.sums.get(e.s)) {

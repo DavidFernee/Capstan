@@ -7,23 +7,22 @@ lines for the compiler and formatter, through the generated C's `#line` mapping.
 | File | Lines | Covered | Coverage |
 |---|---|---|---|
 | `compiler/ast.cap` | 124 | 124 | 100.0% |
-| `compiler/checker.cap` | 1076 | 1064 | 98.9% |
-| `compiler/codegen.cap` | 571 | 562 | 98.4% |
-| `compiler/lexer.cap` | 225 | 222 | 98.7% |
+| `compiler/checker.cap` | 1123 | 1112 | 99.0% |
+| `compiler/codegen.cap` | 583 | 574 | 98.5% |
+| `compiler/lexer.cap` | 250 | 250 | 100.0% |
 | `compiler/main.cap` | 104 | 100 | 96.2% |
-| `compiler/parser.cap` | 473 | 473 | 100.0% |
-| `compiler/ranges.cap` | 241 | 237 | 98.3% |
-| `tools/fmt.cap` | 360 | 346 | 96.1% |
+| `compiler/parser.cap` | 497 | 497 | 100.0% |
+| `compiler/ranges.cap` | 282 | 276 | 97.9% |
+| `tools/fmt.cap` | 362 | 348 | 96.1% |
 | `runtime/capstan_gc.h` | 256 | 241 | 94.1% |
-| `runtime/capstan_rt.h` | 584 | 571 | 97.8% |
+| `runtime/capstan_rt.h` | 610 | 597 | 97.9% |
 
 ## Lines no test reaches
 
-- `compiler/checker.cap`: 30, 334, 412–413, 423–424, 523, 926, 946, 954, 1122, 1526
-- `compiler/codegen.cap`: 65, 201, 299, 320, 350, 441–443, 792
-- `compiler/lexer.cap`: 217, 224–225
+- `compiler/checker.cap`: 30, 334, 421–422, 432–433, 583, 811, 1026, 1194, 1604
+- `compiler/codegen.cap`: 65, 206, 308, 329, 363, 454–456, 807
 - `compiler/main.cap`: 87–88, 156–157
-- `compiler/ranges.cap`: 119–120, 180, 191
-- `tools/fmt.cap`: 159–160, 184–185, 203–204, 210, 342, 430, 579–581, 588–589
+- `compiler/ranges.cap`: 120, 195, 204–205, 229, 248
+- `tools/fmt.cap`: 160–161, 185–186, 204–205, 211, 344, 434, 583–585, 592–593
 - `runtime/capstan_gc.h`: 95–97, 117, 119, 121–123, 125–126, 128, 130, 418–420
-- `runtime/capstan_rt.h`: 55–56, 100, 219–221, 235, 259, 317, 491, 919, 965–966
+- `runtime/capstan_rt.h`: 55–56, 100, 258–260, 274, 298, 356, 530, 958, 1004–1005

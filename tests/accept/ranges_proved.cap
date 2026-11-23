@@ -1,5 +1,5 @@
 // spec: runtime.checks types.int types.list types.string compiler.ranges
-// expect-proved: 29
+// expect-proved: 51
 // What the range analysis proves. Each line notes whether its check is left out
 // ("proved") or kept; tests/run.sh counts the proved operations in the C.
 const int LIMIT = 1000;
@@ -75,6 +75,38 @@ int skip_and_stop(List<int> xs) {
     return sum;
 }
 
+int pack_rgb(int r, int g, int b) {
+    if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) { return 0; }
+    return (r << 16) | (g << 8) | b;             // << 16, << 8: proved (0..255 shifted stays small)
+}
+
+int low_bits(int x) {
+    return (x >> 3) + (x >>> 60);                // >> 3, >>> 60: proved (literal counts); + kept
+}
+
+int popcount(int x) {
+    int bits = 0;
+    for (int k = 0; k < 64; k += 1) {            // k += 1: proved
+        bits += (x >>> k) & 1;                   // >>> k: proved (0 <= k <= 63); bits += ...: kept
+    }
+    return bits;
+}
+
+int combine(int a, int b) {
+    if (a < 0 || a > 15 || b < 0 || b > 15) { return 0; }
+    return (a | b) * 1000 + (a ^ b) * 1000;      // both *, and +: proved (| and ^ of 0..15 stay in 0..15)
+}
+
+int halves(int x, int y) {
+    if (x < -1000 || x > 1000 || y < 0 || y > 1000) { return 0; }   // -1000: proved
+    return (x >> 4) * 1000 + (y >>> 2) * 1000;                      // >> 4, >>> 2, both *, and +: proved
+}
+
+int spread(int a, int b) {
+    if (a < 0 || a > 100 || b < 0 || b > 100) { return 0; }
+    return (a + b) * 1000 + (a - b) * 1000;      // +, -, both *, and the outer +: proved
+}
+
 int percent(int x) {
     if (x >= 0 && x <= 100) { return x * 1000; }   // *: proved (both halves of the && count)
     return 0;
@@ -96,6 +128,12 @@ int main() {
     println(int_to_str(skip_and_stop(mixed)));
     println(int_to_str(every_nth(mixed, 2)));
     println(int_to_str(percent(42)));
+    println(int_to_str(combine(12, 10)));
+    println(int_to_str(halves(-999, 1000)));                           // -999: proved
+    println(int_to_str(spread(30, 70)));
+    println(int_to_str(pack_rgb(18, 52, 86)));
+    println(int_to_str(low_bits(-1000)));                              // -1000: proved
+    println(int_to_str(popcount(0xFF00FF)));
     println(int_to_str(FLOOR * LIMIT));                                // *: proved (a negative constant)
     return 0;
 }

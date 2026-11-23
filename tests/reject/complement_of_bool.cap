@@ -1,0 +1,7 @@
+// expect: CWE-480
+// spec: expr.bitwise
+int main() {
+    bool locked = false;
+    if (~locked) { println("open"); }
+    return 0;
+}

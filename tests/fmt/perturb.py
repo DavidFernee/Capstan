@@ -14,9 +14,9 @@ either format the copy (and leave it formatted) or refuse it with exit code 2;
 it must never crash, stop on a runtime check or hang."""
 import os, random, re, subprocess, sys, tempfile
 
-TWO = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=", "++", "--"]
-ONE = "{}()[];,.:?<>=+-*/%!"
-WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|[0-9]+")
+TWO = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=", "++", "--", "<<"]
+ONE = "{}()[];,.:?<>=+-*/%!&|^~"
+WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|[0-9][A-Za-z0-9_]*")   # numbers include 0xFF
 
 
 def tokens(src):
@@ -102,6 +102,8 @@ def scramble(src, r):
                 out.append(" " * gap)                       # trailing-comment gaps are kept
             elif kind == "b" or prev[0] == "b":
                 out.append(ws(r, 1, 3) if gap else "")
+            elif text == ">" and prev[1] == ">" and gap == 0:
+                out.append("")                              # >> and >>> are adjacent '>' tokens
             elif glues(prev[1], text):
                 out.append(ws(r, 1, 3))
             else:

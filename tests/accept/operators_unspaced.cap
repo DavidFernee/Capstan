@@ -1,0 +1,15 @@
+// fmt: off
+// spec: expr.bitwise lexical
+// Operators written without spaces: only touching > characters form a shift. (Kept unformatted on purpose.)
+int main() {
+    int x=8;int y=2;
+    println(to_text(x>(y)));
+    println(to_text(x>-y));
+    println(to_text(x>=y));
+    println(int_to_str(x>>y));
+    println(int_to_str(x>>>y));
+    println(int_to_str(x<<y));
+    println(int_to_str((x&y)|(x^y)));
+    println(to_text((x>y)==(y<x)));
+    return 0;
+}

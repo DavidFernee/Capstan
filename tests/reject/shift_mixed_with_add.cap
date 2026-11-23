@@ -1,0 +1,8 @@
+// expect: CWE-783
+// spec: expr.bitwise
+// 1 << n + 1 is 1 << (n + 1) in C; Capstan makes the grouping explicit.
+int main() {
+    int n = 3;
+    println(int_to_str(1 << n + 1));
+    return 0;
+}

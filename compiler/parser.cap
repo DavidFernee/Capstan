@@ -145,14 +145,39 @@ bool is_decl_start(Parser p) {
 
 // ---- expressions --------------------------------------------------------------
 
+// Bitwise and shift operators may not be mixed with other operators without
+// parentheses (the checker enforces it, CWE-783), so their precedence only decides
+// how an unparenthesised mix is read for the error message.
 int precedence(string op) {
     if (op == "||") { return 1; }
     if (op == "&&") { return 2; }
     if (op == "==" || op == "!=") { return 3; }
     if (op == "<" || op == "<=" || op == ">" || op == ">=") { return 4; }
-    if (op == "+" || op == "-") { return 5; }
-    if (op == "*" || op == "/" || op == "%") { return 6; }
+    if (op == "|") { return 5; }
+    if (op == "^") { return 6; }
+    if (op == "&") { return 7; }
+    if (op == "<<" || op == ">>" || op == ">>>") { return 8; }
+    if (op == "+" || op == "-") { return 9; }
+    if (op == "*" || op == "/" || op == "%") { return 10; }
     return 0;
+}
+
+// Is token k positions ahead a '>' that touches the token before it?
+bool touching_gt(Parser p, int k) {
+    Token a = ahead(p, k - 1);
+    Token b = ahead(p, k);
+    return b.k == T_OP && b.s == ">" && b.line == a.line && b.file == a.file && b.col == a.col + 1;
+}
+
+// The operator at the current token: adjacent '>' tokens form '>>' and '>>>'.
+string operator_here(Parser p) {
+    Token t = cur(p);
+    if (t.k != T_OP) { return ""; }
+    if (t.s == ">" && touching_gt(p, 1)) {
+        if (touching_gt(p, 2)) { return ">>>"; }
+        return ">>";
+    }
+    return t.s;
 }
 
 Node parse_expr(Parser p) {
@@ -164,12 +189,16 @@ Node parse_binary(Parser p, int min_prec) {
     int chain = 0;
     while (!p.failed) {
         Token t = cur(p);
-        if (t.k != T_OP) { break; }
-        int prec = precedence(t.s);
+        string op = operator_here(p);
+        if (op == "") { break; }
+        int prec = precedence(op);
         if (prec == 0 || prec < min_prec) { break; }
-        advance(p);
+        int tokens = 1;
+        if (op == ">>") { tokens = 2; }
+        if (op == ">>>") { tokens = 3; }
+        for (int k = 0; k < tokens; k += 1) { advance(p); }
         Node rhs = parse_binary(p, prec + 1);
-        Node b = tok_node(N_BIN, t.s, t);
+        Node b = tok_node(N_BIN, op, t);
         b.kids.push(lhs);
         b.kids.push(rhs);
         lhs = b;
@@ -199,6 +228,12 @@ Node parse_unary_inner(Parser p) {
         advance(p);
         ng.kids.push(parse_unary(p));
         return ng;
+    }
+    if (at(p, "~")) {
+        Node nb = node_here(p, N_BNOT);
+        advance(p);
+        nb.kids.push(parse_unary(p));
+        return nb;
     }
     return parse_postfix(p, parse_primary(p));
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Mutation testing of the compiler: does the test suite notice a compiler bug?
 
-    mutate_compiler.py COUNT SEED [file.cap ...]
+    mutate_compiler.py COUNT SEED [file.cap[:FROM-TO] ...]
     mutate_compiler.py --replay REPORT      re-run the survivors listed in an earlier report
 
 Makes COUNT mutants of the compiler, each with one small change of the kind a
@@ -32,7 +32,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CC = os.environ.get("CC", "cc")
 NAMES = ("ast", "lexer", "parser", "checker", "ranges", "codegen", "main")
 RT = os.path.join(ROOT, "runtime")
-CF = ["-O1", "-std=gnu11", "-w", "-I" + RT]
+CF = ["-O1", "-std=gnu11", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function", "-Wno-unused-parameter", "-Wno-unused-variable",
+      "-Wno-unused-but-set-variable", "-Wno-infinite-recursion", "-Wno-for-loop-analysis", "-I" + RT]   # as in tests/run.sh
 
 # (pattern, replacement) pairs applied at one match each.
 OPERATORS = [
@@ -203,7 +204,15 @@ def main():
     targets = sys.argv[3:] or ["compiler/ranges.cap", "compiler/checker.cap"]
     texts = {n: open(os.path.join(ROOT, f"compiler/{n}.cap")).read() for n in NAMES}
     r = random.Random(seed)
-    pool = [(os.path.basename(t)[:-4], s) for t in targets for s in sites(texts[os.path.basename(t)[:-4]])]
+    pool = []
+    for t in targets:        # file.cap, or file.cap:FROM-TO to mutate only those lines
+        path, _, span = t.partition(":")
+        name = os.path.basename(path)[:-4]
+        lo, _, hi = span.partition("-")
+        for site in sites(texts[name]):
+            line = int(re.match(r"line (\d+)", site[3]).group(1))
+            if not span or int(lo) <= line <= int(hi or lo):
+                pool.append((name, site))
     r.shuffle(pool)
     return campaign(texts, pool, count, seed)
 

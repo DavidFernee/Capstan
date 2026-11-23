@@ -37,6 +37,7 @@ const int R_GEN_CLOSE = 3;
 const int R_STRUCT_OPEN = 4;
 const int R_STRUCT_CLOSE = 5;
 const int R_POSTFIX = 6;
+const int R_SHIFT_TAIL = 7;     // the second or third '>' of >> or >>>
 
 // Open brackets.
 const int B_BLOCK = 1;
@@ -123,7 +124,7 @@ bool scan_op(Scan s) {
     List<string> two = new List<string>();
     two.push("&&"); two.push("||"); two.push("=="); two.push("!=");
     two.push("<="); two.push(">="); two.push("+="); two.push("-=");
-    two.push("++"); two.push("--");
+    two.push("++"); two.push("--"); two.push("<<");
     for (int i = 0; i < two.len(); i += 1) {
         string op = two[i];
         if (c == op.at(0) && d == op.at(1)) {
@@ -132,7 +133,7 @@ bool scan_op(Scan s) {
             return true;
         }
     }
-    string one = "{}()[];,.:?<>=+-*/%!";
+    string one = "{}()[];,.:?<>=+-*/%!&|^~";
     for (int j = 0; j < one.len(); j += 1) {
         if (c == one.at(j)) {
             push_tok(s, K_OP, s.pos, s.pos + 1, one.slice(j, j + 1), s.line);
@@ -281,7 +282,8 @@ Scan scan(Tainted src) {
             push_tok(s, K_WORD, wstart, s.pos, word, s.line);
         } else if (is_digit(c)) {
             int nstart = s.pos;
-            while (is_digit(ch(s, s.pos))) { s.pos += 1; }
+            // digits, and the rest of a hexadecimal literal such as 0xFF
+            while (is_digit(ch(s, s.pos)) || is_alpha(ch(s, s.pos))) { s.pos += 1; }
             push_tok(s, K_NUM, nstart, s.pos, "", s.line);
         } else if (c == '$' && ch(s, s.pos + 1) == '"') {
             scan_interp(s);
@@ -359,6 +361,8 @@ void classify(Layout f, int i) {
         } else if (op == ">" && f.gen > 0) {
             role = R_GEN_CLOSE;
             f.gen -= 1;
+        } else if (op == ">" && p == i - 1 && p >= 0 && f.toks[p].op == ">" && t.gap == 0 && t.nl == 0) {
+            role = R_SHIFT_TAIL;
         } else if (op == "-" && !value_end(f, p)) {
             role = R_UNARY;
         } else if ((op == "++" || op == "--") && value_end(f, p)) {
@@ -436,11 +440,11 @@ int spacing(Layout f, int ai, int bi) {
     int n = 1;
     if (b.k == K_OP && (y == "," || y == ";" || y == ")" || y == "]" || y == "." || y == "?" || y == ":")) {
         n = 0;
-    } else if (rb == R_POSTFIX || rb == R_GEN_OPEN || rb == R_GEN_CLOSE || rb == R_STRUCT_OPEN || rb == R_STRUCT_CLOSE) {
+    } else if (rb == R_POSTFIX || rb == R_GEN_OPEN || rb == R_GEN_CLOSE || rb == R_STRUCT_OPEN || rb == R_STRUCT_CLOSE || rb == R_SHIFT_TAIL) {
         n = 0;
     } else if (ra == R_GEN_OPEN || ra == R_UNARY || ra == R_STRUCT_OPEN) {
         n = 0;
-    } else if (a.k == K_OP && (x == "." || x == "(" || x == "[" || x == "!")) {
+    } else if (a.k == K_OP && (x == "." || x == "(" || x == "[" || x == "!" || x == "~")) {
         n = 0;
     } else if (b.k == K_OP && y == "}" && x == "{") {
         n = 0;
