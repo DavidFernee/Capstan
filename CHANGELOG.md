@@ -5,6 +5,10 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- T3 begins: SHA-256, HMAC-SHA256 and PBKDF2-HMAC-SHA256 written in Capstan (`lib/crypto.cap`),
+  checked against hashlib on generated inputs, the FIPS 180-4 examples, and the runtime's C
+  `hash()` and `hash_password()`; not yet used by those builtins (that needs T1, the standard
+  library mechanism).
 - `escape_json(t)`: any text made safe inside a JSON string (always valid JSON, and safe inside an
   HTML `<script>`), and `taint_char(c)`: a byte that stays untrusted, so escapes in untrusted text
   (`%41`, `\u0041`) can be decoded without laundering it. Both requested by the language server.
