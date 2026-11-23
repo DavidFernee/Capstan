@@ -332,19 +332,22 @@ static void cap_list_sort_s(CapList *l) {
 }
 
 /* Packed List<bool>: one byte per element instead of eight. */
-typedef struct CapBList { int64_t len, cap; uint8_t *items; } CapBList;
+/* Elements are stored as bool, not uint8_t: a store through a character type may
+   alias anything, which forced the C compiler to reload len and items after every
+   write in a loop; bool stores cannot alias the int64_t fields. */
+typedef struct CapBList { int64_t len, cap; bool *items; } CapBList;
 
 static CapBList *cap_blist_new(void) { return (CapBList *)cap_alloc(sizeof(CapBList)); }
 
 static inline void cap_blist_push(CapBList *l, bool v) {
     if (CAP_UNLIKELY(l->len == l->cap)) {
         int64_t nc = l->cap ? l->cap * 2 : 16;
-        uint8_t *ni = (uint8_t *)cap_alloc_atomic((size_t)nc);
-        if (l->len) memcpy(ni, l->items, (size_t)l->len);
+        bool *ni = (bool *)cap_alloc_atomic((size_t)nc * sizeof(bool));
+        if (l->len) memcpy(ni, l->items, (size_t)l->len * sizeof(bool));
         l->items = ni;
         l->cap = nc;
     }
-    l->items[l->len++] = (uint8_t)v;
+    l->items[l->len++] = v;
 }
 
 static inline bool cap_blist_get(CapBList *l, int64_t i, int64_t loc) {
@@ -354,10 +357,10 @@ static inline bool cap_blist_get(CapBList *l, int64_t i, int64_t loc) {
 
 static inline void cap_blist_set(CapBList *l, int64_t i, bool v, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-787", loc);
-    l->items[i] = (uint8_t)v;
+    l->items[i] = v;
 }
 static inline bool cap_blist_get_proved(CapBList *l, int64_t i, int64_t loc) { (void)loc; return l->items[i]; }
-static inline void cap_blist_set_proved(CapBList *l, int64_t i, bool v, int64_t loc) { (void)loc; l->items[i] = (uint8_t)v; }
+static inline void cap_blist_set_proved(CapBList *l, int64_t i, bool v, int64_t loc) { (void)loc; l->items[i] = v; }
 
 static int64_t *cap_blist_pop(CapBList *l) {
     if (l->len == 0) return NULL;
@@ -369,7 +372,7 @@ static void cap_blist_clear(CapBList *l) { l->len = 0; }
 static bool cap_blist_remove(CapBList *l, int64_t i, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-125", loc);
     bool v = l->items[i];
-    memmove(l->items + i, l->items + i + 1, (size_t)(l->len - i - 1));
+    memmove(l->items + i, l->items + i + 1, (size_t)(l->len - i - 1) * sizeof(bool));
     l->len--;
     return v;
 }
@@ -377,8 +380,8 @@ static bool cap_blist_remove(CapBList *l, int64_t i, int64_t loc) {
 static void cap_blist_insert(CapBList *l, int64_t i, bool v, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i > (uint64_t)l->len)) cap_panic("list insert position out of bounds", "CWE-787", loc);
     cap_blist_push(l, v);
-    memmove(l->items + i + 1, l->items + i, (size_t)(l->len - 1 - i));
-    l->items[i] = (uint8_t)v;
+    memmove(l->items + i + 1, l->items + i, (size_t)(l->len - 1 - i) * sizeof(bool));
+    l->items[i] = v;
 }
 
 static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {

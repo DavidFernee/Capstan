@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `List<bool>` stores its elements as C `bool` rather than `uint8_t`: a byte store may alias
+  anything, so the C compiler reloaded the list's length and storage after every write. The
+  `arrays` benchmark runs 16% fewer instructions.
 - Maps hash their keys with SipHash-1-3 under a random key chosen once per process, instead of
   FNV-1a: keys an attacker chooses can no longer be made to collide and turn every lookup into a
   scan (hash flooding, CWE-407). Iteration order is unchanged (insertion order). Checked against
