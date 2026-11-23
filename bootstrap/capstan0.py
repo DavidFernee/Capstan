@@ -94,6 +94,37 @@ def lex(src, file):
                 raise SystemExit(f"{file}:{line}: bad character literal")
             toks.append(Tok("int", str(ord(ch)), line, file))
             i = j + 1; continue
+        if c == "$" and src.startswith('$"', i):
+            j, parts, k = i + 2, [], i + 2
+            toks.append(Tok("op", "(", line, file)); toks.append(Tok("str", "", line, file))
+            while src[j] != '"':
+                if src[j] == "\\":
+                    j += 2; continue
+                if src[j] in "{}" and src[j + 1:j + 2] == src[j]:
+                    if j + 1 > k:
+                        toks.append(Tok("op", "+", line, file)); toks.append(Tok("str", decode_escapes(src[k:j + 1], file), line, file))
+                    j += 2; k = j; continue
+                if src[j] == "{":
+                    if j > k:
+                        toks.append(Tok("op", "+", line, file)); toks.append(Tok("str", decode_escapes(src[k:j], file), line, file))
+                    depth, e = 1, j + 1
+                    while depth:
+                        if src[e] == '"':
+                            e += 1
+                            while src[e] != '"':
+                                e += 2 if src[e] == "\\" else 1
+                        elif src[e] == "{": depth += 1
+                        elif src[e] == "}": depth -= 1
+                        e += 1 if depth else 0
+                    toks += [Tok("op", "+", line, file), Tok("id", "to_text", line, file), Tok("op", "(", line, file)]
+                    toks += lex(src[j + 1:e], file)[:-1]
+                    toks.append(Tok("op", ")", line, file))
+                    j = e + 1; k = j; continue
+                j += 1
+            if j > k:
+                toks.append(Tok("op", "+", line, file)); toks.append(Tok("str", decode_escapes(src[k:j], file), line, file))
+            toks.append(Tok("op", ")", line, file))
+            i = j + 1; continue
         if c == '"':
             j = i + 1
             while j < n and src[j] != '"':
@@ -472,7 +503,7 @@ BUILTINS = {
     "args", "exit", "join", "assert", "validate_ident", "validate_int", "escape_c",
     "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
     "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
-    "escape_csv", "validate_path", "validate_range",
+    "escape_csv", "validate_path", "validate_range", "to_text",
 }
 
 PRELUDE = r'''
@@ -573,6 +604,9 @@ def b_escape_html(t):
     return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
 def b_escape_log(t): return "".join(ch if 32 <= ord(ch) < 127 or ord(ch) > 127 else "\\x%02x" % ord(ch) for ch in t)
 def b_trust(t, why): return t
+def b_to_text(x):
+    if isinstance(x, bool): return "true" if x else "false"
+    return str(x) if isinstance(x, int) else x
 def b_escape_csv(t):
     return '"' + ("'" if t[:1] in ("=", "+", "-", "@", "\t", "\r") and t else "") + t.replace('"', '""') + '"'
 def b_validate_path(t):

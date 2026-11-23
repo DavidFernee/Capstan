@@ -1,0 +1,3 @@
+// expect: unmatched } in interpolated string
+// spec: expr.interpolation diag.messages
+int main() { println($"oops }"); return 0; }

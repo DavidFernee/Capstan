@@ -56,7 +56,7 @@ sanitizers and coverage. A commercial-grade test suite: published crypto vectors
 conformance against a second implementation, differential and mutation fuzzing,
 sanitizers, GC stress, pathological limits and a benchmark gate (see TESTING.md).
 
-### v0.3 — Everyday language *(done, except string interpolation and the formatter)*
+### v0.3 — Everyday language *(done, except the formatter)*
 Done: enums with exhaustive `match`, modules, columns, source excerpts and did-you-mean in diagnostics,
 `x++`, list and map operations, struct methods, packed `List<bool>`, plus the CWE red-team atlas and
 20 gap closures (`Html`/`LogText`, `sensitive struct`, secret wiping, heap limit, new lints).
