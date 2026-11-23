@@ -24,8 +24,7 @@
 // unknown methods get JSON-RPC errors; nothing a client sends stops the server
 // except the exit notification or the end of its input.
 //
-// The byte stream reaches this program through tools/lsp/transport.c (see there for
-// why); the behaviour is specified in docs/SPEC.md, "Language server".
+// The behaviour is specified in docs/SPEC.md, "Language server".
 
 const string LSP_VERSION = "0.4.0";
 const int MAX_MESSAGE = 16777216;
@@ -170,59 +169,16 @@ int lsp_find_last(Tainted s, string needle) {
 }
 
 // ---- input --------------------------------------------------------------------------
+//
+// Header lines are read a byte at a time with read_bytes(1), so a line without a line
+// break can never grow beyond MAX_HEADER_LINE bytes in memory (read_line() would keep
+// all of it); bodies are read whole with read_bytes(n), and oversized ones are skipped
+// in 1 MiB pieces without being stored.
 
-// The transport delivers each chunk of the editor's bytes as one line, with '\'
-// escaped as "\\" and a newline as "\n" (tools/lsp/transport.c).
+const int SKIP_CHUNK = 1048576;
+
 struct Reader {
-    List<Tainted> chunks;
-    int ci;
-    int off;
     bool eof;
-}
-
-Tainted rd_unescape(Tainted line) {
-    List<Tainted> parts = new List<Tainted>();
-    int run = 0;
-    int i = 0;
-    while (i < line.len()) {
-        if (line.at(i) == '\\' && i + 1 < line.len()) {
-            parts.push(line.slice(run, i));
-            if (line.at(i + 1) == 'n') {
-                parts.push(taint("\n"));
-            } else {
-                parts.push(line.slice(i + 1, i + 2));
-            }
-            i += 2;
-            run = i;
-        } else {
-            i += 1;
-        }
-    }
-    if (run == 0) { return line; }
-    parts.push(line.slice(run, line.len()));
-    return lsp_join(parts);
-}
-
-// Make sure a chunk with unread bytes is current; false at end of input.
-bool rd_ready(Reader r) {
-    while (true) {
-        if (r.ci < r.chunks.len() && r.off < r.chunks[r.ci].len()) { return true; }
-        if (r.ci < r.chunks.len()) {
-            r.ci += 1;
-            r.off = 0;
-        } else {
-            if (r.eof) { return false; }
-            r.chunks.clear();
-            r.ci = 0;
-            r.off = 0;
-            if (let line = read_line()) {
-                Tainted chunk = rd_unescape(line);
-                if (chunk.len() > 0) { r.chunks.push(chunk); }
-            } else {
-                r.eof = true;
-            }
-        }
-    }
 }
 
 struct HLine {
@@ -232,49 +188,68 @@ struct HLine {
     int bytes;
 }
 
+Tainted rd_tail(List<Tainted> parts) {
+    Tainted all = lsp_join(parts);
+    if (all.len() <= MAX_HEADER_LINE) { return all; }
+    return all.slice(all.len() - MAX_HEADER_LINE, all.len());
+}
+
 HLine rd_header_line(Reader r) {
     List<Tainted> parts = new List<Tainted>();
+    int kept = 0;
     int total = 0;
-    bool overlong = false;
-    while (rd_ready(r)) {
-        Tainted c = r.chunks[r.ci];
-        int start = r.off;
-        int i = start;
-        while (i < c.len() && c.at(i) != '\n') { i += 1; }
-        parts.push(c.slice(start, i));
-        total += i - start;
-        if (total > MAX_HEADER_LINE) {
-            Tainted all = lsp_join(parts);
-            parts.clear();
-            parts.push(all.slice(all.len() - MAX_HEADER_LINE, all.len()));
-            overlong = true;
+    while (!r.eof) {
+        if (let b = read_bytes(1)) {
+            if (b.len() == 0) {
+                r.eof = true;
+            } else if (b.at(0) == '\n') {
+                Tainted text = rd_tail(parts);
+                if (text.len() > 0 && text.at(text.len() - 1) == '\r') { text = text.slice(0, text.len() - 1); }
+                return new HLine{text: text, overlong: total > MAX_HEADER_LINE, eof: false, bytes: total + 1};
+            } else {
+                parts.push(b);
+                kept += 1;
+                total += 1;
+                if (kept > 2 * MAX_HEADER_LINE) {
+                    Tainted tail = rd_tail(parts);
+                    parts.clear();
+                    parts.push(tail);
+                    kept = tail.len();
+                }
+            }
+        } else {
+            r.eof = true;
         }
-        if (i < c.len()) {
-            r.off = i + 1;
-            Tainted text = lsp_join(parts);
-            if (text.len() > 0 && text.at(text.len() - 1) == '\r') { text = text.slice(0, text.len() - 1); }
-            return new HLine{text: text, overlong: overlong, eof: false, bytes: total + 1};
-        }
-        r.off = i;
     }
-    return new HLine{text: lsp_join(parts), overlong: overlong, eof: true, bytes: total};
+    return new HLine{text: rd_tail(parts), overlong: total > MAX_HEADER_LINE, eof: true, bytes: total};
 }
 
 // Read n bytes, or none if the input ends first. With keep false the bytes are
 // skipped without being stored.
 Tainted? rd_body(Reader r, int n, bool keep) {
-    List<Tainted> parts = new List<Tainted>();
+    if (keep) {
+        if (let body = read_bytes(n)) {
+            if (body.len() == n) { return body; }
+        }
+        r.eof = true;
+        return none;
+    }
     int need = n;
     while (need > 0) {
-        if (!rd_ready(r)) { return none; }
-        Tainted c = r.chunks[r.ci];
-        int take = c.len() - r.off;
-        if (take > need) { take = need; }
-        if (keep) { parts.push(c.slice(r.off, r.off + take)); }
-        r.off += take;
+        int take = need;
+        if (take > SKIP_CHUNK) { take = SKIP_CHUNK; }
+        if (let piece = read_bytes(take)) {
+            if (piece.len() < take) {
+                r.eof = true;
+                return none;
+            }
+        } else {
+            r.eof = true;
+            return none;
+        }
         need -= take;
     }
-    return lsp_join(parts);
+    return taint("");
 }
 
 // ---- JSON -----------------------------------------------------------------------------
@@ -707,6 +682,7 @@ struct Server {
 void send(List<Tainted> body) {
     Tainted text = lsp_join(body);
     print("Content-Length: " + int_to_str(text.len()) + "\r\n\r\n" + escape_log(text));
+    flush();
 }
 
 void reply_head(List<Tainted> out, Json id) {
@@ -1247,8 +1223,8 @@ void on_did_close(Server srv, Json params) {
     if (let uri = j_str(td, "uri")) {
         int i = doc_index(srv, uri);
         if (i >= 0) {
-            Doc closed = srv.docs.remove_at(i);
-            publish_empty(closed.uri);
+            srv.docs.remove_at(i);
+            publish_empty(uri);
         }
     }
 }
@@ -1394,7 +1370,7 @@ void framing_error(string why) {
 
 int main() {
     Server srv = new Server{state: S_NEW, utf8: false, strict: false, release: false, root: taint(""), docs: new List<Doc>(), bt: lsp_bytes(), jp: new JParse{s: taint(""), pos: 0, err: "", bt: lsp_bytes()}};
-    Reader r = new Reader{chunks: new List<Tainted>(), ci: 0, off: 0, eof: false};
+    Reader r = new Reader{eof: false};
     Frame f = new Frame{length: -1, bad: false, lines: 0};
     while (true) {
         HLine h = rd_header_line(r);

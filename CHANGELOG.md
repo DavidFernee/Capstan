@@ -19,8 +19,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   Content-Length framing, a JSON parser and writer in Capstan, full and incremental sync, UTF-16
   and UTF-8 positions, imports; JSON-RPC errors for malformed input and bounded sizes (CWE-400);
   no `trust()`. Tested for agreement with the compiler on every test program, protocol behaviour,
-  sanitizers and fuzzing (`tests/lsp/`). A small C shim (`tools/lsp/transport.c`) carries the
-  bytes until the runtime can read part of a line and flush its output
+  sanitizers and fuzzing (`tests/lsp/`). Pure Capstan, using `read_bytes()` and `flush()`
 - K0, the first kernel study: every Linux kernel CVE published in 2025, classified from its fix and
   run through the CWE atlas with stated kernel adjustments (`tools/k0/`, docs/K0-KERNEL-CVES.md),
   with a hand-labelled held-out sample to measure the classifier

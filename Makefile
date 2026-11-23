@@ -39,14 +39,11 @@ build/capstanfmt: build/capstanc tools/fmt.cap $(RT)
 fmt: build/capstanfmt
 
 # The language server, written in Capstan and built together with the compiler's front
-# end so that it reports exactly what the compiler reports. tools/lsp/transport.c only
-# carries bytes between the editor and the server (see the comment there).
+# end so that it reports exactly what the compiler reports.
 LSP_SRC  = compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap compiler/ranges.cap compiler/codegen.cap tools/lsp.cap
-build/capstan-lsp: build/capstanc $(LSP_SRC) tools/lsp/transport.c $(RT)
+build/capstan-lsp: build/capstanc $(LSP_SRC) $(RT)
 	./build/capstanc build -o build/lsp.c $(LSP_SRC)
-	$(CC) $(CFLAGS) -Iruntime -Dmain=capstan_lsp_main -c build/lsp.c -o build/lsp.o
-	$(CC) $(CFLAGS) -c tools/lsp/transport.c -o build/lsp_transport.o
-	$(CC) $(CFLAGS) build/lsp.o build/lsp_transport.o -o $@
+	$(CC) $(CFLAGS) -Iruntime build/lsp.c -o $@
 
 lsp: build/capstan-lsp
 
