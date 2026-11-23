@@ -5,6 +5,8 @@ on:
   schedule:
     - cron: "17 15 * * *"      # nightly full run (01:17 Melbourne time)
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   test:
     strategy:
@@ -17,19 +19,54 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       CC: ${{ matrix.cc }}
+      EVENT: ${{ github.event_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Bootstrap (stage 0 -> self-hosted fixpoint)
         run: make
       - name: Test suite
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then tests/run.sh --full; else tests/run.sh; fi
+          if [ "${EVENT}" = "schedule" ]; then tests/run.sh --full; else tests/run.sh; fi
       - name: Keep fuzz failures
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fuzz-failures-${{ matrix.os }}-${{ matrix.cc }}
           path: |
             tests/fuzz/failures/
             tests/fmt/failures/
           if-no-files-found: ignore
+
+  # The release pipeline's evidence, checked on every change: the workflows lint clean, and the
+  # SBOMs of the current tree are valid against the official CycloneDX and SPDX schemas.
+  # (tests/run.sh already checks SBOM generation, reproducibility reports and the verifier.)
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Lint the workflows (actionlint, with shellcheck on every run step)
+        # The release binary, pinned by its SHA-256 (from the release's checksums file).
+        env:
+          ACTIONLINT: actionlint_1.7.12_linux_amd64.tar.gz
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          cd "${RUNNER_TEMP}"
+          curl -sSfL --retry 3 -o "${ACTIONLINT}" "https://github.com/rhysd/actionlint/releases/download/v1.7.12/${ACTIONLINT}"
+          echo "${ACTIONLINT_SHA256}  ${ACTIONLINT}" | sha256sum -c -
+          tar -xzf "${ACTIONLINT}" actionlint
+          cd "${GITHUB_WORKSPACE}" && "${RUNNER_TEMP}/actionlint" -color
+      - name: SBOM of the current tree, validated against the schemas
+        run: |
+          ver="$(sed -n 's/^const string VERSION = "\(.*\)";/\1/p' compiler/main.cap)"
+          out="${RUNNER_TEMP}/sbom"; mkdir -p "${out}"
+          git archive --format=tar.gz --prefix="capstan-${ver}/" -o "${out}/capstan-${ver}.tar.gz" HEAD
+          python3 -I scripts/sbom.py generate --archive "${out}/capstan-${ver}.tar.gz" --commit "$(git rev-parse HEAD)" \
+            --cyclonedx "${out}/capstan.cdx.json" --spdx "${out}/capstan.spdx.json"
+          python3 -m venv "${RUNNER_TEMP}/sbom-venv"
+          "${RUNNER_TEMP}/sbom-venv/bin/pip" install --quiet --require-hashes --only-binary :all: -r scripts/sbom-schema-requirements.txt
+          "${RUNNER_TEMP}/sbom-venv/bin/python" -I scripts/sbom-validate.py \
+            --cyclonedx "${out}/capstan.cdx.json" --spdx "${out}/capstan.spdx.json"

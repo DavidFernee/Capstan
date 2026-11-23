@@ -30,6 +30,14 @@ Include a minimal Capstan program or steps that show the problem, and the versio
 - A fix, a regression test that would have caught it, a security advisory, and credit
   for the reporter unless they prefer otherwise
 
+## Verifying a release
+
+Every release carries SBOMs (CycloneDX and SPDX), SLSA build provenance, a keyless Sigstore
+signature for every file, and reports showing the compiler reproduced itself byte for byte on
+every platform. `scripts/verify-release.sh vX.Y.Z` checks all of them; see
+[docs/TESTING.md](docs/TESTING.md#verifying-a-release). A release that fails verification should
+be reported as above.
+
 ## Supported versions
 
 Until v1.0, security fixes are made in the latest release only.

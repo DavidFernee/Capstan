@@ -40,6 +40,11 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   with `--check` for CI; the repository is formatted and the suite enforces it
 - Conformance areas in the specification, with coverage enforced on every run
 - Release pipeline: the full suite on every platform before a release is published
+- Supply-chain evidence on every release: CycloneDX 1.6 and SPDX 2.3 SBOMs (`scripts/sbom.py`,
+  schema-validated), SLSA build provenance (GitHub artifact attestations), keyless Sigstore
+  signatures, per-platform reproducibility reports (fixpoint and stage2/stage3 checksums), and
+  `scripts/verify-release.sh` to check a download, optionally rebuilding it; workflows pin every
+  action by commit and are read-only by default, with write access only where needed
 - CWE gap closures: `Html`/`LogText` context types, `sensitive struct`, credential-format
   literal scanning, laundering through collections, heap limit, secret wiping,
   `escape_csv`, `validate_path`, `validate_range`, six new lints

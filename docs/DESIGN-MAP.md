@@ -413,6 +413,12 @@ Standing commitments, every release:
 - **Supply chain:** signed releases, SBOMs (CycloneDX or SPDX), SLSA build provenance,
   reproducible builds (already verified by the self-hosting fixpoint), and minimal
   dependencies.
+  *Progress (0.4.0):* in place in `release.yml`: keyless Sigstore signatures for every
+  file, CycloneDX and SPDX SBOMs validated against their schemas, SLSA provenance through
+  GitHub artifact attestations, per-platform reproducibility reports whose checksums must
+  agree and which the source archive must rebuild to, and `scripts/verify-release.sh` for
+  users; every action pinned by commit, least-privilege jobs. Not yet: an independent
+  rebuild outside GitHub, and SLSA Build Level 3 (an isolated, non-forgeable builder).
 - **Dependency watch:** monitor advisories for the C compilers and C library while they
   remain in the trusted base.
 - **Independent review:** an external security audit before v1.0, and again whenever

@@ -13,15 +13,80 @@ Every safety claim in [CWE-COVERAGE.md](CWE-COVERAGE.md) is backed by at least o
 |---|---|---|
 | Every push and pull request | `tests/run.sh` | Linux (GCC, Clang), macOS (Clang) |
 | Nightly | `tests/run.sh --full` | the same three |
-| **Every release** (pushing a tag `vX.Y.Z`) | `scripts/release-check.sh`, then `tests/run.sh --full` | the same three; the release is published only if all pass, with the test reports attached |
+| **Every release** (pushing a tag `vX.Y.Z`) | `scripts/release-check.sh`, `scripts/repro.sh`, then `tests/run.sh --full`; then SBOMs, provenance and signatures, checked by `scripts/verify-release.sh` | the same three; the release is published only if all pass, with the test reports and supply-chain evidence attached |
 
 ## Making a release
 
 1. Set `VERSION` in `compiler/main.cap` and change the changelog heading from `## X.Y.Z (unreleased)` to `## X.Y.Z`.
 2. Run `make && scripts/release-check.sh vX.Y.Z && tests/run.sh --full` locally.
 3. Merge, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
-4. `.github/workflows/release.yml` repeats every check on every platform and publishes the release:
-   the source archive, the test reports, SHA-256 checksums and notes taken from the changelog.
+4. `.github/workflows/release.yml` repeats every check on every platform and publishes the release.
+   Its jobs each get only the permissions they need:
+   - **verify** (every platform, read-only): bootstrap, `release-check.sh`, a reproducibility report
+     (`scripts/repro.sh`: the fixpoint and the SHA-256 of `build/stage2.c` and `build/stage3.c`),
+     and `tests/run.sh --full`.
+   - **assemble** (read-only): the source archive (`git archive` of the tagged commit), SBOMs in
+     CycloneDX 1.6 and SPDX 2.3 (`scripts/sbom.py`, validated against the official schemas by
+     `scripts/sbom-validate.py`), `SHA256SUMS`, and `verify-release.sh --rebuild`, which also
+     checks that every platform reported the same checksums and that the archive rebuilds to them.
+   - **sign** (may request an OIDC token and write attestations, cannot write to the repository):
+     SLSA build provenance for every file (GitHub artifact attestations), a keyless Sigstore
+     signature for every file and for `SHA256SUMS`, then `verify-release.sh` exactly as a user runs it.
+   - **publish** (may create the release, runs no repository code): uploads the verified files.
+
+   Release assets, for version X.Y.Z:
+
+   | File | What it is |
+   |---|---|
+   | `capstan-X.Y.Z.tar.gz` | the source archive |
+   | `capstan-X.Y.Z.cdx.json`, `capstan-X.Y.Z.spdx.json` | SBOM (CycloneDX, SPDX): every file in the archive with its hashes, the build tools (a C compiler, make, Python 3 for stage 0 and the tests, bash), and the only run-time dependency, the platform C library; no third-party code |
+   | `reproducibility-<os>-<cc>.txt` | per platform: the compiler reproduced itself, and the checksums of `build/stage2.c` and `build/stage3.c` (identical on every platform) |
+   | `test-report-<os>-<cc>.txt` | the full test suite's output per platform |
+   | `SHA256SUMS` | SHA-256 of every file above |
+   | `*.sigstore.json` | a Sigstore signature bundle for each file above and for `SHA256SUMS` |
+   | `capstan-X.Y.Z.intoto.jsonl` | the SLSA provenance attestation (also stored in the repository's attestations) |
+
+   Every action the workflows use is pinned by commit, every workflow is read-only by default,
+   and `tests/supply/workflows.py` (part of the suite) enforces both.
+
+## Verifying a release
+
+From a clone of the repository (read `scripts/verify-release.sh` first: it is short), with
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 3.0 or later and the
+[GitHub CLI](https://cli.github.com/) logged in (`gh auth login`):
+
+```sh
+scripts/verify-release.sh vX.Y.Z              # download the release and check everything
+scripts/verify-release.sh vX.Y.Z DIR          # check files already downloaded into DIR
+scripts/verify-release.sh --rebuild vX.Y.Z    # also rebuild the compiler from the archive here
+```
+
+It fails unless:
+
+1. every file matches `SHA256SUMS`, and nothing unlisted is present;
+2. every file and `SHA256SUMS` carries a Sigstore signature made by this repository's
+   `release.yml` workflow for that tag, through GitHub's OIDC issuer;
+3. `gh attestation verify` finds SLSA build provenance for every file, made by `release.yml`
+   from that tag on a GitHub-hosted runner;
+4. both SBOMs describe exactly the files in the archive (`scripts/sbom.py check`);
+5. every platform's reproducibility report shows the fixpoint, with the same checksums;
+6. with `--rebuild`, bootstrapping the archive here (a C compiler, make and Python 3) gives
+   those same checksums: the compiler you build is byte for byte the one that was tested.
+
+The same checks by hand:
+
+```sh
+sha256sum -c SHA256SUMS            # macOS: shasum -a 256 -c SHA256SUMS
+cosign verify-blob --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity https://github.com/DavidFernee/Capstan/.github/workflows/release.yml@refs/tags/vX.Y.Z \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+gh attestation verify capstan-X.Y.Z.tar.gz --repo DavidFernee/Capstan \
+  --signer-workflow DavidFernee/Capstan/.github/workflows/release.yml --source-ref refs/tags/vX.Y.Z
+```
+
+`--skip-signatures` and `--skip-attestations` leave out checks 2 and 3, for machines without
+network access; the remaining checks then show only that the files are consistent with each
+other, not who made them.
 
 ## Conformance
 
@@ -51,6 +116,7 @@ A new feature is not finished until its area is in the spec and covered.
 | **bootstrap** | The compiler reproduces itself byte for byte; it does so when built with a different C compiler too; stage 0 still bootstraps to the identical compiler; the compiler passes its own `--strict --release` checks; its generated C is warning-free. |
 | **examples** | Example programs pass `--release` checks (including mandatory denial tests) and their own tests. The test runner itself reports failures correctly and keeps going after one. |
 | **fmt** | The formatter produces the expected layout and is idempotent; every source file in the repository is already formatted; `--check` changes nothing; unscannable files are refused. *Whitespace fuzz:* every formatted file, with its indentation, spacing, tabs, trailing whitespace and blank lines scrambled, must be restored byte for byte. *Corruption fuzz:* randomly corrupted files are formatted or refused, never crash or hang the formatter. Building the formatter must report exactly one warning: the AUDIT for its single `trust()`. |
+| **supply chain** | SBOMs are deterministic, record the build tools and the C library as the only run-time dependency, and `sbom.py check` catches a changed file; the reproducibility report matches the build; `verify-release.sh` accepts a correct release (rebuilding its archive) and rejects a changed, missing or unlisted file, a path in `SHA256SUMS`, a missing or mismatched SBOM, a failed fixpoint, platforms that disagree and an unsigned release; the workflows pin every action by commit, default to read-only and expand no untrusted data in scripts (`tests/supply/`). |
 | **coverage** | (`--full`) Line coverage of the compiler, the formatter and the runtime under the suite's workloads, through the `#line` mapping (`tests/coverage.py`, report in [COVERAGE.md](COVERAGE.md)); no file may fall below its floor in `tests/coverage_floors.txt`. |
 | **compiler mutation** | (`--full`) Mutants of the compiler (a flipped comparison, `&&` for `\|\|`, an inverted boolean, a deleted diagnostic or guard) must each be caught by the suite (`tests/mutate_compiler.py`); see below. |
 | **bench** | (`--full`) Speed against equivalent hand-written C, failing if any benchmark exceeds the regression limit. |
