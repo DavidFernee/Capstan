@@ -21,6 +21,19 @@
 //   shrink an alias of xs). Strings are immutable, so their facts always hold.
 // - The proved form of an operation takes the same arguments as the checked
 //   form, so evaluation order is unchanged.
+// - Facts about parameters come from every call site in the program. Every call
+//   to user code, including a method call, goes through one place in code
+//   generation, and the whole program is compiled at once, so no call site is
+//   missed. Collection passes assume a range S(f, i) for each integer parameter
+//   and record the range of each integer argument at every call in code that S
+//   lets run (main, tests, policies and global initialisers always run; another
+//   function runs only if some call to it was recorded). S starts empty and
+//   grows to include what was recorded, with bounds that keep changing widened
+//   to a few fixed thresholds, until a pass records nothing outside S. Then S is
+//   sound by induction on the call stack: main's callers are the runtime, which
+//   passes no integers, and each recorded call stays inside S provided its
+//   caller's parameters were inside S. If S does not settle within MAX_ROUNDS
+//   passes, no parameter facts are used. Only the final pass's code is kept.
 
 const int I64_MAX = 9223372036854775807;
 const int I64_MIN = -9223372036854775807 - 1;
@@ -40,6 +53,10 @@ struct Rg {
     Map<Node> consts;
     Map<Node> fns;
     bool off;               // --keep-checks
+    bool collecting;        // a collection pass: record argument ranges at calls
+    bool reached;           // may the body being generated run, given params?
+    Map<List<Iv>> seen;     // per function, the union of each argument's range so far
+    Map<List<Iv>> params;   // S: the assumed range of each parameter
 }
 
 struct Snap {
@@ -111,7 +128,7 @@ int sat_mul(int a, int b) {
 // ---- intervals of expressions -----------------------------------------------
 
 Rg new_rg(Checker c) {
-    return new Rg{env: new Map<Iv>(), assigns: new Map<int>(), idx: new List<string>(), seqs: new List<string>(), seq_ok: false, consts: c.consts, fns: c.fns, off: c.ctx.keep_checks};
+    return new Rg{env: new Map<Iv>(), assigns: new Map<int>(), idx: new List<string>(), seqs: new List<string>(), seq_ok: false, consts: c.consts, fns: c.fns, off: c.ctx.keep_checks, collecting: false, reached: true, seen: new Map<List<Iv>>(), params: new Map<List<Iv>>()};
 }
 
 int literal_value(Node e, int fallback) {
@@ -288,6 +305,7 @@ void start_body(Rg r, Node body) {
     r.idx = new List<string>();
     r.seqs = new List<string>();
     r.seq_ok = false;
+    r.reached = true;
     count_assigns(r, body);
 }
 
@@ -497,4 +515,117 @@ Iv loop_base(Rg r, Node init, Node step) {
         if (d.lo >= 0 && step.s == "-=") { return iv(I64_MIN, start.hi); }
     }
     return full();
+}
+
+// ---- facts across calls -------------------------------------------------------
+
+const int MAX_ROUNDS = 12;
+
+// Record the range of each integer argument of this call (collection passes, in
+// code that may run). Non-integer arguments are recorded as any value.
+void note_call(Rg r, Node fnode, Node call) {
+    if (!r.collecting || !r.reached || r.off) { return; }
+    List<Iv> now = new List<Iv>();
+    for (int i = 0; i < call.kids.len(); i += 1) {
+        if (ty_of(call.kids[i]).k == TY_INT) { now.push(range(r, call.kids[i])); } else { now.push(full()); }
+    }
+    if (let prev = r.seen.get(fnode.s)) {
+        r.seen.set(fnode.s, join_ivs(prev, now));
+    } else {
+        r.seen.set(fnode.s, now);
+    }
+}
+
+List<Iv> join_ivs(List<Iv> a, List<Iv> b) {
+    List<Iv> out = new List<Iv>();
+    if (a.len() != b.len()) {
+        // Cannot happen in a checked program; be conservative if it does.
+        int n = imax(a.len(), b.len());
+        for (int k = 0; k < n; k += 1) { out.push(full()); }
+        return out;
+    }
+    for (int j = 0; j < a.len(); j += 1) { out.push(iv(imin(a[j].lo, b[j].lo), imax(a[j].hi, b[j].hi))); }
+    return out;
+}
+
+// The largest threshold at or below v, and the smallest at or above it.
+int widen_down(int v) {
+    if (v >= 1) { return 1; }
+    if (v >= 0) { return 0; }
+    if (v >= -1) { return -1; }
+    return I64_MIN;
+}
+
+int widen_up(int v) {
+    if (v <= 0) { return 0; }
+    if (v <= 1) { return 1; }
+    if (v <= LEN_MAX) { return LEN_MAX; }
+    return I64_MAX;
+}
+
+// S joined with what a pass recorded; a bound that grows is widened, so each
+// bound changes at most a few times and the iteration ends.
+Map<List<Iv>> grow(Map<List<Iv>> s, Map<List<Iv>> seen) {
+    Map<List<Iv>> next = new Map<List<Iv>>();
+    List<string> names = s.keys();
+    for (int i = 0; i < names.len(); i += 1) {
+        if (let v = s.get(names[i])) { next.set(names[i], v); }
+    }
+    List<string> got = seen.keys();
+    for (int k = 0; k < got.len(); k += 1) {
+        if (let now = seen.get(got[k])) {
+            if (let old = s.get(got[k])) {
+                List<Iv> j = join_ivs(old, now);
+                List<Iv> w = new List<Iv>();
+                for (int m = 0; m < j.len(); m += 1) {
+                    int lo = j[m].lo;
+                    int hi = j[m].hi;
+                    if (m < old.len() && lo < old[m].lo) { lo = widen_down(lo); }
+                    if (m < old.len() && hi > old[m].hi) { hi = widen_up(hi); }
+                    w.push(iv(lo, hi));
+                }
+                next.set(got[k], w);
+            } else {
+                next.set(got[k], now);
+            }
+        }
+    }
+    return next;
+}
+
+bool same_facts(Map<List<Iv>> a, Map<List<Iv>> b) {
+    List<string> names = a.keys();
+    if (names.len() != b.keys().len()) { return false; }
+    for (int i = 0; i < names.len(); i += 1) {
+        if (let x = a.get(names[i])) {
+            if (let y = b.get(names[i])) {
+                if (x.len() != y.len()) { return false; }
+                for (int j = 0; j < x.len(); j += 1) {
+                    if (x[j].lo != y[j].lo || x[j].hi != y[j].hi) { return false; }
+                }
+            } else {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// At the start of a body: may it run under S, and what S says about its fixed
+// integer parameters.
+void enter_body(Rg r, Node d) {
+    r.reached = true;
+    if (r.off || d.k != N_FN || d.s == "main") { return; }
+    if (let known = r.params.get(d.s)) {
+        if (known.len() != d.n) { return; }
+        for (int i = 0; i < d.n; i += 1) {
+            Node p = d.kids[i];
+            if (ty_of(p).k == TY_INT) {
+                Iv v = known[i];
+                if (v.lo > I64_MIN || v.hi < I64_MAX) { rg_declare(r, p.s, v); }
+            }
+        }
+    } else {
+        r.reached = false;
+    }
 }

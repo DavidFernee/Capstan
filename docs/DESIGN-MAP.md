@@ -99,8 +99,10 @@ Done:
 
 Remaining:
 - packed, type-specialised lists for other element types, and unboxed `int?` in variables and fields
-- facts across function calls (bounds on parameters from every call site): what the `calls`
-  benchmark still pays for
+- facts across function calls (bounds on parameters from every call site) *(done: an iterated,
+  widened fixpoint over every call site, recursion included; the compiler now proves 227 of its
+  own checks, up from 203. The `calls` benchmark turned out not to pay for checks, since it runs
+  at the same speed with `--keep-checks`; its gap to C is call overhead.)*
 - generational collection; returning empty pages to the operating system
 - benchmarks within 20% of C (now: alloc is; arrays about 1.4×, calls 1.7×, strings 1.9×)
 

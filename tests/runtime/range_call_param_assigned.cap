@@ -1,0 +1,13 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks
+// A parameter that is assigned in the body is not fixed: no fact about it holds.
+int bump(int n) {
+    n = n * 1000000000000;
+    return n + 1;
+}
+
+int main() {
+    println(int_to_str(bump(3)));
+    println(int_to_str(bump(10000000)));
+    return 0;
+}
