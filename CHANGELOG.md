@@ -5,6 +5,10 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- T3 begins: SHA-256, HMAC-SHA256 and PBKDF2-HMAC-SHA256 written in Capstan (`lib/crypto.cap`),
+  checked against hashlib on generated inputs, the FIPS 180-4 examples, and the runtime's C
+  `hash()` and `hash_password()`; not yet used by those builtins (that needs T1, the standard
+  library mechanism).
 - Range analysis across calls: each integer parameter gets the range of its arguments at every
   call site in the program (recursion included, by an iterated and widened fixpoint), so checks in
   helpers called with small values are left out. A function called anywhere with any value gets
