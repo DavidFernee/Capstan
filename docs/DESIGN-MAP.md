@@ -82,6 +82,8 @@ formatted, and the suite enforces it and fuzzes the formatter (see TESTING.md).
 Carried forward, because neither blocks everyday use:
 - `public`/`private` visibility for module members (v0.5, alongside interfaces)
 - parser error recovery, so one run reports more than one syntax error (with the LSP server, Phase A)
+  *(done: the parser resumes at the next statement or declaration and reports up to 50 syntax
+  errors per run; tests/recovery)*
 
 ### v0.4 — Performance *(in progress)*
 Done:

@@ -1,0 +1,13 @@
+// A broken declaration does not hide errors in the declarations after it.
+// spec: diag.recovery
+// error: 7:8: expected a name, found '{'
+// error: 8:18: expected ';', found '}'
+// error: 9:8: expected the imported file name as a string, found 'a number'
+// error: 11:18: expected ')', found '{'
+struct { int a; }
+struct S { int a }
+import 5 + 3;
+int main() {
+    if (S.a == 1 { print(1); }
+    return 0;
+}
