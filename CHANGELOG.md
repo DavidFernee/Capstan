@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
+  `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
+  Capstan program can hold a framed conversation over a pipe. The language server needs both.
 - Bitwise operators `& | ^ ~ << >> >>>`, hexadecimal literals and `wrapping_add/sub/mul/shl`
   (trusted-base stage T2). Shift counts must be 0..63 (CWE-1335); `<<` that loses bits stops
   (CWE-190); mixing a bitwise operator with another operator needs parentheses (CWE-783);

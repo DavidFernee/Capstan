@@ -1,0 +1,8 @@
+// expect: CWE-20
+// spec: types.tainted builtins.io
+// Bytes read from standard input are untrusted, like a line.
+string greet(string name) { return "Hello " + name; }
+int main() {
+    if (let body = read_bytes(16)) { println(greet(body)); }
+    return 0;
+}
