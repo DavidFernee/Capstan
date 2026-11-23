@@ -1,0 +1,1445 @@
+// capstan-lsp: the Capstan language server.
+//
+//   capstan lsp        (the editor starts it and talks to it on stdin and stdout)
+//
+// It speaks the Language Server Protocol (JSON-RPC 2.0 with Content-Length framing)
+// and is built together with the compiler's own front end (compiler/ast, lexer,
+// parser, checker, ranges, codegen), so an editor shows exactly the diagnostics
+// `capstanc check` reports: same lines, columns, CWE codes and messages.
+//
+// Supported: initialize, initialized, shutdown, exit, textDocument/didOpen,
+// didChange (full and incremental), didClose, and textDocument/publishDiagnostics.
+// Each CWE code links to its description at cwe.mitre.org.
+//
+// Everything the editor sends is untrusted. It arrives as Tainted and stays Tainted:
+// numbers leave through validate_int(), relative paths through validate_path(),
+// and every reply is JSON written as printable ASCII only (all other bytes become
+// \uXXXX escapes), which escape_log() then passes unchanged to standard output.
+// There is no trust() in this program.
+//
+// Limits (CWE-400): a message body is at most MAX_MESSAGE bytes, a header line
+// MAX_HEADER_LINE bytes, a header block MAX_HEADERS lines, JSON nesting
+// MAX_JSON_DEPTH levels; at most MAX_DOCS documents are open and MAX_DIAGS
+// diagnostics are published per document. Malformed framing, malformed JSON and
+// unknown methods get JSON-RPC errors; nothing a client sends stops the server
+// except the exit notification or the end of its input.
+//
+// The byte stream reaches this program through tools/lsp/transport.c (see there for
+// why); the behaviour is specified in docs/SPEC.md, "Language server".
+
+const string LSP_VERSION = "0.4.0";
+const int MAX_MESSAGE = 16777216;
+const int MAX_HEADER_LINE = 4096;
+const int MAX_HEADERS = 32;
+const int MAX_JSON_DEPTH = 64;
+const int MAX_DOCS = 1000;
+const int MAX_DIAGS = 1000;
+const int MAX_IMPORTS = 256;
+const int MAX_TOTAL_TEXT = 268435456;   // all open documents together
+const int MAX_EDIT_WORK = 67108864;     // bytes copied while applying one didChange
+
+// JSON-RPC error codes.
+const int E_PARSE = -32700;
+const int E_INVALID_REQUEST = -32600;
+const int E_METHOD_NOT_FOUND = -32601;
+const int E_INVALID_PARAMS = -32602;
+const int E_NOT_INITIALIZED = -32002;
+
+// Server states.
+const int S_NEW = 0;
+const int S_RUNNING = 1;
+const int S_SHUTDOWN = 2;
+
+// ---- bytes ------------------------------------------------------------------------
+
+// Every byte value 0-255, as one Tainted text. Slicing it gives a byte as Tainted
+// text, so decoded \uXXXX and %XX escapes stay untrusted.
+struct Bytes {
+    Tainted all;
+}
+
+Bytes lsp_bytes() {
+    List<string> b = new List<string>();
+    for (int i = 0; i < 256; i += 1) { b.push(char_str(i)); }
+    return new Bytes{all: taint(join(b, ""))};
+}
+
+Tainted lsp_byte(Bytes bt, int v) {
+    return bt.all.slice(v, v + 1);
+}
+
+// Join many pieces without quadratic copying.
+Tainted lsp_concat(List<Tainted> parts, int from, int to) {
+    if (to <= from) { return taint(""); }
+    if (to - from == 1) { return parts[from]; }
+    int mid = from + (to - from) / 2;
+    return lsp_concat(parts, from, mid) + lsp_concat(parts, mid, to);
+}
+
+Tainted lsp_join(List<Tainted> parts) {
+    return lsp_concat(parts, 0, parts.len());
+}
+
+int lsp_ch(Tainted s, int i) {
+    if (i < 0 || i >= s.len()) { return -1; }
+    return s.at(i);
+}
+
+// Length of the valid UTF-8 sequence at i (1-4), or 0 if the bytes there are not
+// valid UTF-8 (overlong forms, surrogates and values above U+10FFFF are invalid).
+int lsp_utf8_len(Tainted s, int i) {
+    int c = lsp_ch(s, i);
+    if (c < 0) { return 0; }
+    if (c < 128) { return 1; }
+    int n = 0;
+    int lo = 128;
+    int hi = 191;
+    if (c >= 194 && c <= 223) {
+        n = 2;
+    } else if (c >= 224 && c <= 239) {
+        n = 3;
+        if (c == 224) { lo = 160; }
+        if (c == 237) { hi = 159; }
+    } else if (c >= 240 && c <= 244) {
+        n = 4;
+        if (c == 240) { lo = 144; }
+        if (c == 244) { hi = 143; }
+    } else {
+        return 0;
+    }
+    int c1 = lsp_ch(s, i + 1);
+    if (c1 < lo || c1 > hi) { return 0; }
+    for (int k = 2; k < n; k += 1) {
+        int ck = lsp_ch(s, i + k);
+        if (ck < 128 || ck > 191) { return 0; }
+    }
+    return n;
+}
+
+// The code point of a valid sequence of length n at i.
+int lsp_utf8_cp(Tainted s, int i, int n) {
+    int c = s.at(i);
+    if (n == 1) { return c; }
+    int cp = 0;
+    if (n == 2) { cp = c - 192; }
+    if (n == 3) { cp = c - 224; }
+    if (n == 4) { cp = c - 240; }
+    for (int k = 1; k < n; k += 1) { cp = cp * 64 + (s.at(i + k) - 128); }
+    return cp;
+}
+
+void lsp_put_utf8(List<Tainted> out, Bytes bt, int cp) {
+    if (cp < 128) {
+        out.push(lsp_byte(bt, cp));
+    } else if (cp < 2048) {
+        out.push(lsp_byte(bt, 192 + cp / 64));
+        out.push(lsp_byte(bt, 128 + cp % 64));
+    } else if (cp < 65536) {
+        out.push(lsp_byte(bt, 224 + cp / 4096));
+        out.push(lsp_byte(bt, 128 + (cp / 64) % 64));
+        out.push(lsp_byte(bt, 128 + cp % 64));
+    } else {
+        out.push(lsp_byte(bt, 240 + cp / 262144));
+        out.push(lsp_byte(bt, 128 + (cp / 4096) % 64));
+        out.push(lsp_byte(bt, 128 + (cp / 64) % 64));
+        out.push(lsp_byte(bt, 128 + cp % 64));
+    }
+}
+
+int lsp_hex_val(int c) {
+    if (c >= '0' && c <= '9') { return c - '0'; }
+    if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+    if (c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+    return -1;
+}
+
+// Does s contain needle starting at i?
+bool lsp_has_at(Tainted s, int i, string needle) {
+    if (i < 0 || i + needle.len() > s.len()) { return false; }
+    return s.slice(i, i + needle.len()) == needle;
+}
+
+// The last position of needle in s, or -1.
+int lsp_find_last(Tainted s, string needle) {
+    int i = s.len() - needle.len();
+    while (i >= 0) {
+        if (lsp_has_at(s, i, needle)) { return i; }
+        i -= 1;
+    }
+    return -1;
+}
+
+// ---- input --------------------------------------------------------------------------
+
+// The transport delivers each chunk of the editor's bytes as one line, with '\'
+// escaped as "\\" and a newline as "\n" (tools/lsp/transport.c).
+struct Reader {
+    List<Tainted> chunks;
+    int ci;
+    int off;
+    bool eof;
+}
+
+Tainted rd_unescape(Tainted line) {
+    List<Tainted> parts = new List<Tainted>();
+    int run = 0;
+    int i = 0;
+    while (i < line.len()) {
+        if (line.at(i) == '\\' && i + 1 < line.len()) {
+            parts.push(line.slice(run, i));
+            if (line.at(i + 1) == 'n') {
+                parts.push(taint("\n"));
+            } else {
+                parts.push(line.slice(i + 1, i + 2));
+            }
+            i += 2;
+            run = i;
+        } else {
+            i += 1;
+        }
+    }
+    if (run == 0) { return line; }
+    parts.push(line.slice(run, line.len()));
+    return lsp_join(parts);
+}
+
+// Make sure a chunk with unread bytes is current; false at end of input.
+bool rd_ready(Reader r) {
+    while (true) {
+        if (r.ci < r.chunks.len() && r.off < r.chunks[r.ci].len()) { return true; }
+        if (r.ci < r.chunks.len()) {
+            r.ci += 1;
+            r.off = 0;
+        } else {
+            if (r.eof) { return false; }
+            r.chunks.clear();
+            r.ci = 0;
+            r.off = 0;
+            if (let line = read_line()) {
+                Tainted chunk = rd_unescape(line);
+                if (chunk.len() > 0) { r.chunks.push(chunk); }
+            } else {
+                r.eof = true;
+            }
+        }
+    }
+}
+
+struct HLine {
+    Tainted text;   // without the line break; the last MAX_HEADER_LINE bytes if longer
+    bool overlong;
+    bool eof;       // input ended before a line break
+    int bytes;
+}
+
+HLine rd_header_line(Reader r) {
+    List<Tainted> parts = new List<Tainted>();
+    int total = 0;
+    bool overlong = false;
+    while (rd_ready(r)) {
+        Tainted c = r.chunks[r.ci];
+        int start = r.off;
+        int i = start;
+        while (i < c.len() && c.at(i) != '\n') { i += 1; }
+        parts.push(c.slice(start, i));
+        total += i - start;
+        if (total > MAX_HEADER_LINE) {
+            Tainted all = lsp_join(parts);
+            parts.clear();
+            parts.push(all.slice(all.len() - MAX_HEADER_LINE, all.len()));
+            overlong = true;
+        }
+        if (i < c.len()) {
+            r.off = i + 1;
+            Tainted text = lsp_join(parts);
+            if (text.len() > 0 && text.at(text.len() - 1) == '\r') { text = text.slice(0, text.len() - 1); }
+            return new HLine{text: text, overlong: overlong, eof: false, bytes: total + 1};
+        }
+        r.off = i;
+    }
+    return new HLine{text: lsp_join(parts), overlong: overlong, eof: true, bytes: total};
+}
+
+// Read n bytes, or none if the input ends first. With keep false the bytes are
+// skipped without being stored.
+Tainted? rd_body(Reader r, int n, bool keep) {
+    List<Tainted> parts = new List<Tainted>();
+    int need = n;
+    while (need > 0) {
+        if (!rd_ready(r)) { return none; }
+        Tainted c = r.chunks[r.ci];
+        int take = c.len() - r.off;
+        if (take > need) { take = need; }
+        if (keep) { parts.push(c.slice(r.off, r.off + take)); }
+        r.off += take;
+        need -= take;
+    }
+    return lsp_join(parts);
+}
+
+// ---- JSON -----------------------------------------------------------------------------
+
+const int J_NULL = 1;
+const int J_BOOL = 2;
+const int J_NUM = 3;
+const int J_STR = 4;
+const int J_ARR = 5;
+const int J_OBJ = 6;
+
+struct Json {
+    int k;
+    bool b;
+    Tainted text;       // decoded string, or a number as written
+    List<Json> items;   // array elements, or object values
+    List<Tainted> keys; // object keys, in order
+}
+
+struct JParse {
+    Tainted s;
+    int pos;
+    string err;
+    Bytes bt;
+}
+
+Json j_new(int k) {
+    return new Json{k: k, b: false, text: taint(""), items: new List<Json>(), keys: new List<Tainted>()};
+}
+
+void j_fail(JParse p, string msg) {
+    if (p.err == "") { p.err = msg + " at byte " + int_to_str(p.pos); }
+    p.pos = p.s.len();
+}
+
+void j_ws(JParse p) {
+    while (true) {
+        int c = lsp_ch(p.s, p.pos);
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            p.pos += 1;
+        } else {
+            return;
+        }
+    }
+}
+
+int j_hex4(JParse p) {
+    int v = 0;
+    for (int k = 0; k < 4; k += 1) {
+        int d = lsp_hex_val(lsp_ch(p.s, p.pos + k));
+        if (d < 0) {
+            j_fail(p, "invalid \\u escape");
+            return -1;
+        }
+        v = v * 16 + d;
+    }
+    p.pos += 4;
+    return v;
+}
+
+// At a '"'. Returns the decoded text; on error p.err is set.
+Tainted j_string(JParse p) {
+    p.pos += 1;
+    List<Tainted> parts = new List<Tainted>();
+    int run = p.pos;
+    while (p.err == "") {
+        int c = lsp_ch(p.s, p.pos);
+        if (c < 0) {
+            j_fail(p, "unterminated string");
+        } else if (c == '"') {
+            parts.push(p.s.slice(run, p.pos));
+            p.pos += 1;
+            return lsp_join(parts);
+        } else if (c < 32) {
+            j_fail(p, "control character in string");
+        } else if (c == '\\') {
+            parts.push(p.s.slice(run, p.pos));
+            int e = lsp_ch(p.s, p.pos + 1);
+            p.pos += 2;
+            if (e == '"' || e == '\\' || e == '/') {
+                parts.push(p.s.slice(p.pos - 1, p.pos));
+            } else if (e == 'n') {
+                parts.push(taint("\n"));
+            } else if (e == 't') {
+                parts.push(taint("\t"));
+            } else if (e == 'r') {
+                parts.push(taint("\r"));
+            } else if (e == 'b') {
+                parts.push(lsp_byte(p.bt, 8));
+            } else if (e == 'f') {
+                parts.push(lsp_byte(p.bt, 12));
+            } else if (e == 'u') {
+                int cp = j_hex4(p);
+                if (cp >= 55296 && cp <= 56319 && lsp_has_at(p.s, p.pos, "\\u")) {
+                    int save = p.pos;
+                    p.pos += 2;
+                    int lo = j_hex4(p);
+                    if (lo >= 56320 && lo <= 57343) {
+                        cp = 65536 + (cp - 55296) * 1024 + (lo - 56320);
+                    } else {
+                        p.pos = save;
+                        cp = 65533;
+                    }
+                } else if (cp >= 55296 && cp <= 57343) {
+                    cp = 65533;   // an unpaired surrogate has no UTF-8 form
+                }
+                if (cp >= 0) { lsp_put_utf8(parts, p.bt, cp); }
+            } else {
+                p.pos -= 1;
+                j_fail(p, "invalid escape in string");
+            }
+            run = p.pos;
+        } else if (c >= 128) {
+            int n = lsp_utf8_len(p.s, p.pos);
+            if (n == 0) {
+                j_fail(p, "invalid UTF-8 in string");
+            } else {
+                p.pos += n;
+            }
+        } else {
+            p.pos += 1;
+        }
+    }
+    return taint("");
+}
+
+bool j_digit(int c) {
+    return c >= '0' && c <= '9';
+}
+
+Json j_number(JParse p) {
+    int start = p.pos;
+    if (lsp_ch(p.s, p.pos) == '-') { p.pos += 1; }
+    if (lsp_ch(p.s, p.pos) == '0') {
+        p.pos += 1;
+    } else if (j_digit(lsp_ch(p.s, p.pos))) {
+        while (j_digit(lsp_ch(p.s, p.pos))) { p.pos += 1; }
+    } else {
+        j_fail(p, "invalid number");
+    }
+    if (lsp_ch(p.s, p.pos) == '.') {
+        p.pos += 1;
+        if (!j_digit(lsp_ch(p.s, p.pos))) { j_fail(p, "invalid number"); }
+        while (j_digit(lsp_ch(p.s, p.pos))) { p.pos += 1; }
+    }
+    int e = lsp_ch(p.s, p.pos);
+    if (e == 'e' || e == 'E') {
+        p.pos += 1;
+        int sign = lsp_ch(p.s, p.pos);
+        if (sign == '+' || sign == '-') { p.pos += 1; }
+        if (!j_digit(lsp_ch(p.s, p.pos))) { j_fail(p, "invalid number"); }
+        while (j_digit(lsp_ch(p.s, p.pos))) { p.pos += 1; }
+    }
+    Json v = j_new(J_NUM);
+    if (p.err == "") { v.text = p.s.slice(start, p.pos); }
+    return v;
+}
+
+bool j_word(JParse p, string w) {
+    if (lsp_has_at(p.s, p.pos, w)) {
+        p.pos += w.len();
+        return true;
+    }
+    return false;
+}
+
+Json j_value(JParse p, int depth) {
+    if (depth > MAX_JSON_DEPTH) {
+        j_fail(p, "nesting deeper than " + int_to_str(MAX_JSON_DEPTH) + " levels");
+        return j_new(J_NULL);
+    }
+    j_ws(p);
+    int c = lsp_ch(p.s, p.pos);
+    if (c == '{') {
+        Json o = j_new(J_OBJ);
+        p.pos += 1;
+        j_ws(p);
+        if (lsp_ch(p.s, p.pos) == '}') {
+            p.pos += 1;
+            return o;
+        }
+        while (p.err == "") {
+            j_ws(p);
+            if (lsp_ch(p.s, p.pos) != '"') {
+                j_fail(p, "expected a string key");
+                return o;
+            }
+            Tainted key = j_string(p);
+            j_ws(p);
+            if (lsp_ch(p.s, p.pos) != ':') {
+                j_fail(p, "expected ':'");
+                return o;
+            }
+            p.pos += 1;
+            Json item = j_value(p, depth + 1);
+            o.keys.push(key);
+            o.items.push(item);
+            j_ws(p);
+            int d = lsp_ch(p.s, p.pos);
+            p.pos += 1;
+            if (d == '}') { return o; }
+            if (d != ',') {
+                p.pos -= 1;
+                j_fail(p, "expected ',' or '}'");
+            }
+        }
+        return o;
+    }
+    if (c == '[') {
+        Json a = j_new(J_ARR);
+        p.pos += 1;
+        j_ws(p);
+        if (lsp_ch(p.s, p.pos) == ']') {
+            p.pos += 1;
+            return a;
+        }
+        while (p.err == "") {
+            a.items.push(j_value(p, depth + 1));
+            j_ws(p);
+            int d2 = lsp_ch(p.s, p.pos);
+            p.pos += 1;
+            if (d2 == ']') { return a; }
+            if (d2 != ',') {
+                p.pos -= 1;
+                j_fail(p, "expected ',' or ']'");
+            }
+        }
+        return a;
+    }
+    if (c == '"') {
+        Json st = j_new(J_STR);
+        st.text = j_string(p);
+        return st;
+    }
+    if (c == '-' || j_digit(c)) { return j_number(p); }
+    if (j_word(p, "true")) {
+        Json t = j_new(J_BOOL);
+        t.b = true;
+        return t;
+    }
+    if (j_word(p, "false")) { return j_new(J_BOOL); }
+    if (j_word(p, "null")) { return j_new(J_NULL); }
+    if (c < 0) {
+        j_fail(p, "unexpected end of input");
+    } else {
+        j_fail(p, "unexpected character");
+    }
+    return j_new(J_NULL);
+}
+
+// A whole JSON text: one value with only whitespace around it.
+Json j_parse(Tainted s, Bytes bt, JParse p) {
+    p.s = s;
+    p.pos = 0;
+    p.err = "";
+    p.bt = bt;
+    Json v = j_value(p, 0);
+    j_ws(p);
+    if (p.err == "" && p.pos < s.len()) { j_fail(p, "unexpected data after the JSON value"); }
+    return v;
+}
+
+// The value of key in object o (the last one if repeated), or none.
+Json? j_get(Json o, string key) {
+    if (o.k != J_OBJ) { return none; }
+    int i = o.keys.len() - 1;
+    while (i >= 0) {
+        if (o.keys[i] == key) { return o.items[i]; }
+        i -= 1;
+    }
+    return none;
+}
+
+bool j_has(Json o, string key) {
+    if (let _v = j_get(o, key)) { return true; }
+    return false;
+}
+
+// The string at o.key, or none if it is missing or not a string.
+Tainted? j_str(Json o, string key) {
+    if (let v = j_get(o, key)) {
+        if (v.k == J_STR) { return v.text; }
+    }
+    return none;
+}
+
+Json j_obj(Json o, string key) {
+    if (let v = j_get(o, key)) {
+        if (v.k == J_OBJ) { return v; }
+    }
+    return j_new(J_NULL);
+}
+
+// An integer at o.key, or none if missing or not an integer that fits.
+int? j_int(Json o, string key) {
+    if (let v = j_get(o, key)) {
+        if (v.k == J_NUM) { return validate_int(v.text); }
+    }
+    return none;
+}
+
+bool j_bool(Json o, string key) {
+    if (let v = j_get(o, key)) { return v.k == J_BOOL && v.b; }
+    return false;
+}
+
+// ---- JSON output ------------------------------------------------------------------------
+//
+// Replies are printable ASCII: every other byte is written as a \uXXXX escape
+// (invalid UTF-8 as U+FFFD), so escape_log() leaves the text unchanged and the
+// Content-Length computed before it stays right.
+
+const string HEX = "0123456789abcdef";
+
+Tainted w_hex4(int v) {
+    List<Tainted> d = new List<Tainted>();
+    d.push(taint("\\u"));
+    int shift = 4096;
+    for (int k = 0; k < 4; k += 1) {
+        int digit = (v / shift) % 16;
+        d.push(taint(HEX.slice(digit, digit + 1)));
+        shift = shift / 16;
+    }
+    return lsp_join(d);
+}
+
+void w_str(List<Tainted> out, Tainted s) {
+    out.push(taint("\""));
+    int run = 0;
+    int i = 0;
+    while (i < s.len()) {
+        int c = s.at(i);
+        if (c >= 32 && c < 127 && c != '"' && c != '\\') {
+            i += 1;
+        } else {
+            out.push(s.slice(run, i));
+            int n = 1;
+            if (c == '"') {
+                out.push(taint("\\\""));
+            } else if (c == '\\') {
+                out.push(taint("\\\\"));
+            } else if (c == '\n') {
+                out.push(taint("\\n"));
+            } else if (c == '\r') {
+                out.push(taint("\\r"));
+            } else if (c == '\t') {
+                out.push(taint("\\t"));
+            } else if (c < 128) {
+                out.push(w_hex4(c));
+            } else {
+                n = lsp_utf8_len(s, i);
+                if (n == 0) {
+                    out.push(taint("\\ufffd"));
+                    n = 1;
+                } else {
+                    int cp = lsp_utf8_cp(s, i, n);
+                    if (cp >= 65536) {
+                        out.push(w_hex4(55296 + (cp - 65536) / 1024));
+                        out.push(w_hex4(56320 + (cp - 65536) % 1024));
+                    } else {
+                        out.push(w_hex4(cp));
+                    }
+                }
+            }
+            i += n;
+            run = i;
+        }
+    }
+    out.push(s.slice(run, s.len()));
+    out.push(taint("\""));
+}
+
+void w_lit(List<Tainted> out, string s) {
+    out.push(taint(s));
+}
+
+void w_int(List<Tainted> out, int v) {
+    out.push(taint(int_to_str(v)));
+}
+
+// Write a parsed value back (used for request ids).
+void w_json(List<Tainted> out, Json v) {
+    if (v.k == J_STR) {
+        w_str(out, v.text);
+    } else if (v.k == J_NUM) {
+        out.push(v.text);   // checked against the JSON number grammar: ASCII digits, sign, '.', 'e'
+    } else if (v.k == J_BOOL) {
+        if (v.b) { w_lit(out, "true"); } else { w_lit(out, "false"); }
+    } else if (v.k == J_ARR) {
+        w_lit(out, "[");
+        for (int i = 0; i < v.items.len(); i += 1) {
+            if (i > 0) { w_lit(out, ","); }
+            w_json(out, v.items[i]);
+        }
+        w_lit(out, "]");
+    } else if (v.k == J_OBJ) {
+        w_lit(out, "{");
+        for (int j = 0; j < v.items.len(); j += 1) {
+            if (j > 0) { w_lit(out, ","); }
+            w_str(out, v.keys[j]);
+            w_lit(out, ":");
+            w_json(out, v.items[j]);
+        }
+        w_lit(out, "}");
+    } else {
+        w_lit(out, "null");
+    }
+}
+
+// ---- server state ---------------------------------------------------------------------
+
+struct Doc {
+    Tainted uri;
+    Tainted text;
+    int version;
+}
+
+struct Server {
+    int state;
+    bool utf8;          // positions count bytes (negotiated "utf-8"); otherwise UTF-16 code units
+    bool strict;        // initializationOptions: {"strict": true} as capstanc --strict
+    bool release;       // initializationOptions: {"release": true} as capstanc --release
+    Tainted root;       // workspace root URI with a trailing '/', or ""
+    List<Doc> docs;
+    Bytes bt;
+    JParse jp;
+}
+
+// Send one message: the Content-Length header, then the body.
+void send(List<Tainted> body) {
+    Tainted text = lsp_join(body);
+    print("Content-Length: " + int_to_str(text.len()) + "\r\n\r\n" + escape_log(text));
+}
+
+void reply_head(List<Tainted> out, Json id) {
+    w_lit(out, "{\"jsonrpc\":\"2.0\",\"id\":");
+    w_json(out, id);
+}
+
+void reply_result(Json id, Tainted result) {
+    List<Tainted> out = new List<Tainted>();
+    reply_head(out, id);
+    w_lit(out, ",\"result\":");
+    out.push(result);
+    w_lit(out, "}");
+    send(out);
+}
+
+void reply_error(Json id, int code, Tainted msg) {
+    List<Tainted> out = new List<Tainted>();
+    reply_head(out, id);
+    w_lit(out, ",\"error\":{\"code\":");
+    w_int(out, code);
+    w_lit(out, ",\"message\":");
+    w_str(out, msg);
+    w_lit(out, "}}");
+    send(out);
+}
+
+void notify(string method, List<Tainted> params) {
+    List<Tainted> out = new List<Tainted>();
+    w_lit(out, "{\"jsonrpc\":\"2.0\",\"method\":\"" + method + "\",\"params\":");
+    out.push(lsp_join(params));
+    w_lit(out, "}");
+    send(out);
+}
+
+// window/logMessage: type 1 error, 2 warning, 3 info.
+void log_message(int kind, Tainted msg) {
+    List<Tainted> p = new List<Tainted>();
+    w_lit(p, "{\"type\":");
+    w_int(p, kind);
+    w_lit(p, ",\"message\":");
+    w_str(p, msg);
+    w_lit(p, "}");
+    notify("window/logMessage", p);
+}
+
+int doc_index(Server srv, Tainted uri) {
+    for (int i = 0; i < srv.docs.len(); i += 1) {
+        if (srv.docs[i].uri == uri) { return i; }
+    }
+    return -1;
+}
+
+// ---- positions --------------------------------------------------------------------------
+
+// Byte offsets where each line starts.
+List<int> line_starts(Tainted text) {
+    List<int> starts = new List<int>();
+    starts.push(0);
+    for (int i = 0; i < text.len(); i += 1) {
+        if (text.at(i) == '\n') { starts.push(i + 1); }
+    }
+    return starts;
+}
+
+int line_end(Tainted text, List<int> starts, int line) {
+    if (line + 1 < starts.len()) {
+        int e = starts[line + 1] - 1;
+        if (e > starts[line] && text.at(e - 1) == '\r') { e -= 1; }
+        return e;
+    }
+    return text.len();
+}
+
+// Position units (UTF-16 code units, or bytes) between two byte offsets on a line.
+int units(Server srv, Tainted text, int from, int to) {
+    if (srv.utf8) { return to - from; }
+    int n = 0;
+    for (int i = from; i < to; i += 1) {
+        int c = text.at(i);
+        if (c < 128 || c >= 192) { n += 1; }
+        if (c >= 240) { n += 1; }   // four-byte sequences are two UTF-16 units
+    }
+    return n;
+}
+
+// The byte offset of a protocol position, clamped to the document.
+int offset_of(Server srv, Tainted text, List<int> starts, int line, int character) {
+    if (line < 0) { return 0; }
+    if (line >= starts.len()) { return text.len(); }
+    int at = starts[line];
+    int end = line_end(text, starts, line);
+    int left = character;
+    while (at < end && left > 0) {
+        int n = lsp_utf8_len(text, at);
+        if (n == 0) { n = 1; }
+        int w = n;
+        if (!srv.utf8) {
+            w = 1;
+            if (n == 4) { w = 2; }
+        }
+        left -= w;
+        at += n;
+    }
+    return at;
+}
+
+bool ident_byte(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+void w_pos(List<Tainted> out, int line, int character) {
+    w_lit(out, "{\"line\":");
+    w_int(out, line);
+    w_lit(out, ",\"character\":");
+    w_int(out, character);
+    w_lit(out, "}");
+}
+
+// The range a diagnostic underlines: from its column to the end of the word there
+// (at least one character); a diagnostic without a column underlines its line.
+void w_range(List<Tainted> out, Server srv, Tainted text, List<int> starts, int line1, int col1) {
+    int line = line1 - 1;
+    if (line < 0) { line = 0; }
+    if (line >= starts.len()) { line = starts.len() - 1; }
+    int ls = starts[line];
+    int le = line_end(text, starts, line);
+    int a = ls;
+    int b = le;
+    if (col1 > 0) {
+        a = ls + col1 - 1;
+        if (a > le) { a = le; }
+        b = a;
+        while (b < le && ident_byte(text.at(b))) { b += 1; }
+        if (b == a && b < le) {
+            int n = lsp_utf8_len(text, b);
+            if (n == 0) { n = 1; }
+            b += n;
+        }
+    } else {
+        while (a < le && (text.at(a) == ' ' || text.at(a) == '\t')) { a += 1; }
+    }
+    w_lit(out, "{\"start\":");
+    w_pos(out, line, units(srv, text, ls, a));
+    w_lit(out, ",\"end\":");
+    w_pos(out, line, units(srv, text, ls, b));
+    w_lit(out, "}");
+}
+
+// ---- checking -------------------------------------------------------------------------
+
+// The CWE or CAP code of a diagnostic: its code, or a trailing "[CWE-N]" in the message.
+string diag_code(Diag d) {
+    if (d.code != "") { return d.code; }
+    string m = d.msg;
+    if (m.len() > 7 && m.at(m.len() - 1) == ']') {
+        int i = m.len() - 2;
+        while (i > 0 && m.at(i) != '[') { i -= 1; }
+        string inner = m.slice(i + 1, m.len() - 1);
+        if (m.at(i) == '[' && inner.len() > 4 && inner.slice(0, 4) == "CWE-") { return inner; }
+    }
+    return "";
+}
+
+// "https://cwe.mitre.org/data/definitions/N.html" for a code "CWE-N", else "".
+string cwe_href(string code) {
+    if (code.len() < 5 || code.slice(0, 4) != "CWE-") { return ""; }
+    for (int i = 4; i < code.len(); i += 1) {
+        if (code.at(i) < '0' || code.at(i) > '9') { return ""; }
+    }
+    return "https://cwe.mitre.org/data/definitions/" + code.slice(4, code.len()) + ".html";
+}
+
+// The same rule as the compiler's driver (CWE-22): relative .cap paths only.
+bool lsp_import_ok(string spec) {
+    if (spec.len() < 5 || spec.at(0) == '/') { return false; }
+    if (spec.slice(spec.len() - 4, spec.len()) != ".cap") { return false; }
+    int seg_start = 0;
+    for (int i = 0; i <= spec.len(); i += 1) {
+        if (i == spec.len() || spec.at(i) == '/') {
+            string seg = spec.slice(seg_start, i);
+            if (seg == "" || seg == "." || seg == "..") { return false; }
+            seg_start = i + 1;
+        } else {
+            int c = spec.at(i);
+            bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+            if (!ok) { return false; }
+        }
+    }
+    return true;
+}
+
+Tainted uri_dir(Tainted uri) {
+    int cut = 0;
+    for (int i = 0; i < uri.len(); i += 1) {
+        if (uri.at(i) == '/') { cut = i + 1; }
+    }
+    return uri.slice(0, cut);
+}
+
+// Decode %XX escapes in a URI path.
+Tainted? uri_decode(Bytes bt, Tainted s) {
+    List<Tainted> parts = new List<Tainted>();
+    int run = 0;
+    int i = 0;
+    while (i < s.len()) {
+        if (s.at(i) == '%') {
+            int h = lsp_hex_val(lsp_ch(s, i + 1));
+            int l = lsp_hex_val(lsp_ch(s, i + 2));
+            if (h < 0 || l < 0) { return none; }
+            parts.push(s.slice(run, i));
+            parts.push(lsp_byte(bt, h * 16 + l));
+            i += 3;
+            run = i;
+        } else {
+            i += 1;
+        }
+    }
+    parts.push(s.slice(run, s.len()));
+    return lsp_join(parts);
+}
+
+// A document's path relative to the workspace root, as the compiler would name it
+// when run there, or "document".
+string doc_name(Server srv, Tainted uri) {
+    if (srv.root.len() > 0 && uri.len() > srv.root.len() && uri.slice(0, srv.root.len()) == srv.root) {
+        if (let rel = uri_decode(srv.bt, uri.slice(srv.root.len(), uri.len()))) {
+            if (let path = validate_path(rel)) { return path; }
+        }
+    }
+    return "document";
+}
+
+string name_dir(string name) {
+    int cut = 0;
+    for (int i = 0; i < name.len(); i += 1) {
+        if (name.at(i) == '/') { cut = i + 1; }
+    }
+    return name.slice(0, cut);
+}
+
+// The text of an imported file: an open document with that URI, or the file on
+// disk if the URI is inside the workspace root. Disk paths are relative to the
+// server's working directory, which editors set to the workspace root.
+Tainted? import_text(Server srv, Tainted uri) {
+    int di = doc_index(srv, uri);
+    if (di >= 0) { return srv.docs[di].text; }
+    if (srv.root.len() == 0 || uri.len() <= srv.root.len() || uri.slice(0, srv.root.len()) != srv.root) { return none; }
+    if (let rel = uri_decode(srv.bt, uri.slice(srv.root.len(), uri.len()))) {
+        if (let path = validate_path(rel)) { return read_file(path); }
+    }
+    return none;
+}
+
+// One diagnostic as LSP JSON. Diagnostics in imported files are shown on the
+// import that brought them in.
+void w_diag(List<Tainted> out, Server srv, Tainted text, List<int> starts, Diag d, List<string> names, List<int> at_line, List<int> at_col) {
+    int line = d.line;
+    int col = d.col;
+    string msg = d.msg;
+    if (d.file != 0) {
+        line = at_line[d.file];
+        col = at_col[d.file];
+        string where = names[d.file];
+        if (d.line > 0) { where = where + ":" + int_to_str(d.line); }
+        if (d.col > 0) { where = where + ":" + int_to_str(d.col); }
+        msg = "in " + where + ": " + d.msg;
+    }
+    w_lit(out, "{\"range\":");
+    w_range(out, srv, text, starts, line, col);
+    w_lit(out, ",\"severity\":");
+    if (d.error) { w_lit(out, "1"); } else { w_lit(out, "2"); }
+    string code = diag_code(d);
+    if (code != "") {
+        w_lit(out, ",\"code\":");
+        w_str(out, taint(code));
+        string href = cwe_href(code);
+        if (href != "") {
+            w_lit(out, ",\"codeDescription\":{\"href\":");
+            w_str(out, taint(href));
+            w_lit(out, "}");
+        }
+    }
+    w_lit(out, ",\"source\":\"capstan\",\"message\":");
+    w_str(out, taint(msg));
+    w_lit(out, "}");
+}
+
+// Check one document with the compiler's front end, as `capstanc check` would.
+Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<int> at_col) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: srv.release, strict: srv.strict, keep_checks: false};
+    List<Node> decls = new List<Node>();
+    List<Tainted> loaded = new List<Tainted>();
+    List<Tainted> queue = new List<Tainted>();
+    List<string> qname = new List<string>();
+    List<int> qfile = new List<int>();
+    List<int> qline = new List<int>();
+    List<int> qcol = new List<int>();
+    queue.push(doc.uri);
+    qname.push(doc_name(srv, doc.uri));
+    qfile.push(-1);
+    qline.push(0);
+    qcol.push(0);
+    int qi = 0;
+    while (qi < queue.len()) {
+        Tainted uri = queue[qi];
+        string name = qname[qi];
+        int ofile = qfile[qi];
+        int oline = qline[qi];
+        int ocol = qcol[qi];
+        qi += 1;
+        bool seen = false;
+        for (int s = 0; s < loaded.len(); s += 1) {
+            if (loaded[s] == uri) { seen = true; }
+        }
+        if (seen) { continue; }
+        if (loaded.len() >= MAX_IMPORTS) {
+            report(ctx, ofile, oline, true, "CWE-400", "more than " + int_to_str(MAX_IMPORTS) + " imported files");
+            break;
+        }
+        loaded.push(uri);
+        int index = ctx.files.len();
+        ctx.files.push(name);
+        names.push(name);
+        // Where this file's diagnostics are shown in the document: the root-level import.
+        if (ofile <= 0) {
+            at_line.push(oline);
+            at_col.push(ocol);
+        } else {
+            at_line.push(at_line[ofile]);
+            at_col.push(at_col[ofile]);
+        }
+        Tainted? found = none;
+        if (index == 0) { found = doc.text; } else { found = import_text(srv, uri); }
+        if (let src = found) {
+            ctx.sources.push(src);
+            List<Token> toks = lex(ctx, src, index);
+            if (error_count(ctx) == 0) {
+                List<Node> part = parse_program(ctx, toks);
+                for (int k = 0; k < part.len(); k += 1) {
+                    Node d = part[k];
+                    decls.push(d);
+                    if (d.k == N_IMPORT) {
+                        if (lsp_import_ok(d.s)) {
+                            queue.push(uri_dir(uri) + d.s);
+                            qname.push(name_dir(name) + d.s);
+                            qfile.push(index);
+                            qline.push(d.line);
+                            qcol.push(d.col);
+                        } else {
+                            error_at(ctx, d, "CWE-22", "import path must be a relative .cap path inside the project: no '..', no absolute paths, only letters, digits, '_', '-', '.' and '/'");
+                        }
+                    }
+                }
+            }
+        } else {
+            ctx.sources.push(taint(""));
+            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "'");
+        }
+    }
+    if (error_count(ctx) == 0) {
+        // A file without main() may be a library; one with main() must declare it properly.
+        bool has_main = false;
+        for (int m = 0; m < decls.len(); m += 1) {
+            if (decls[m].k == N_FN && decls[m].s == "main") { has_main = true; }
+        }
+        Checker c = new_checker(ctx);
+        check_program(c, decls, has_main);
+    }
+    return ctx;
+}
+
+void publish(Server srv, Doc doc) {
+    List<string> names = new List<string>();
+    List<int> at_line = new List<int>();
+    List<int> at_col = new List<int>();
+    Ctx ctx = check_doc(srv, doc, names, at_line, at_col);
+    List<int> starts = line_starts(doc.text);
+    List<Tainted> p = new List<Tainted>();
+    w_lit(p, "{\"uri\":");
+    w_str(p, doc.uri);
+    w_lit(p, ",\"version\":");
+    w_int(p, doc.version);
+    w_lit(p, ",\"diagnostics\":[");
+    int n = ctx.diags.len();
+    if (n > MAX_DIAGS) { n = MAX_DIAGS; }
+    for (int i = 0; i < n; i += 1) {
+        if (i > 0) { w_lit(p, ","); }
+        w_diag(p, srv, doc.text, starts, ctx.diags[i], names, at_line, at_col);
+    }
+    w_lit(p, "]}");
+    notify("textDocument/publishDiagnostics", p);
+}
+
+void publish_empty(Tainted uri) {
+    List<Tainted> p = new List<Tainted>();
+    w_lit(p, "{\"uri\":");
+    w_str(p, uri);
+    w_lit(p, ",\"diagnostics\":[]}");
+    notify("textDocument/publishDiagnostics", p);
+}
+
+// ---- methods --------------------------------------------------------------------------------
+
+bool offers_utf8(Json params) {
+    Json general = j_obj(j_obj(params, "capabilities"), "general");
+    if (let encs = j_get(general, "positionEncodings")) {
+        if (encs.k == J_ARR) {
+            for (int i = 0; i < encs.items.len(); i += 1) {
+                if (encs.items[i].k == J_STR && encs.items[i].text == "utf-8") { return true; }
+            }
+        }
+    }
+    return false;
+}
+
+void on_initialize(Server srv, Json id, Json params) {
+    srv.utf8 = offers_utf8(params);
+    Json opts = j_obj(params, "initializationOptions");
+    srv.strict = j_bool(opts, "strict");
+    srv.release = j_bool(opts, "release");
+    Tainted root = taint("");
+    if (let r = j_str(params, "rootUri")) { root = r; }
+    if (let folders = j_get(params, "workspaceFolders")) {
+        if (folders.k == J_ARR && folders.items.len() > 0) {
+            if (let f = j_str(folders.items[0], "uri")) { root = f; }
+        }
+    }
+    if (root.len() > 0 && root.at(root.len() - 1) != '/') { root = root + "/"; }
+    srv.root = root;
+    srv.state = S_RUNNING;
+    List<Tainted> r = new List<Tainted>();
+    w_lit(r, "{\"capabilities\":{\"positionEncoding\":");
+    if (srv.utf8) { w_lit(r, "\"utf-8\""); } else { w_lit(r, "\"utf-16\""); }
+    w_lit(r, ",\"textDocumentSync\":{\"openClose\":true,\"change\":1}},");
+    w_lit(r, "\"serverInfo\":{\"name\":\"capstan-lsp\",\"version\":\"" + LSP_VERSION + "\"}}");
+    reply_result(id, lsp_join(r));
+}
+
+// Would the open documents stay within MAX_TOTAL_TEXT if document i (-1: a new
+// one) had n bytes?
+bool room_for(Server srv, int i, int n) {
+    int total = n;
+    for (int k = 0; k < srv.docs.len(); k += 1) {
+        if (k != i) { total += srv.docs[k].text.len(); }
+    }
+    return total <= MAX_TOTAL_TEXT;
+}
+
+void on_did_open(Server srv, Json params) {
+    Json td = j_obj(params, "textDocument");
+    if (let uri = j_str(td, "uri")) {
+        if (let text = j_str(td, "text")) {
+            int version = 0;
+            if (let v = j_int(td, "version")) { version = v; }
+            int i = doc_index(srv, uri);
+            Doc doc = new Doc{uri: uri, text: text, version: version};
+            if (!room_for(srv, i, text.len())) {
+                log_message(1, "capstan-lsp: open documents would exceed " + int_to_str(MAX_TOTAL_TEXT) + " bytes; not checking " + uri);
+                return;
+            }
+            if (i >= 0) {
+                srv.docs[i] = doc;
+            } else if (srv.docs.len() >= MAX_DOCS) {
+                log_message(1, "capstan-lsp: more than " + int_to_str(MAX_DOCS) + " open documents; not checking " + uri);
+                return;
+            } else {
+                srv.docs.push(doc);
+            }
+            publish(srv, doc);
+            return;
+        }
+    }
+    log_message(2, taint("capstan-lsp: textDocument/didOpen without textDocument.uri and text; ignored"));
+}
+
+// Apply one entry of contentChanges: a whole new text, or a range replaced.
+Tainted apply_change(Server srv, Tainted text, Json change) {
+    if (let repl = j_str(change, "text")) {
+        if (let rng = j_get(change, "range")) {
+            Json s = j_obj(rng, "start");
+            Json e = j_obj(rng, "end");
+            int sl = 0;
+            int sc = 0;
+            int el = 0;
+            int ec = 0;
+            if (let v1 = j_int(s, "line")) { sl = v1; }
+            if (let v2 = j_int(s, "character")) { sc = v2; }
+            if (let v3 = j_int(e, "line")) { el = v3; }
+            if (let v4 = j_int(e, "character")) { ec = v4; }
+            List<int> starts = line_starts(text);
+            int a = offset_of(srv, text, starts, sl, sc);
+            int b = offset_of(srv, text, starts, el, ec);
+            if (b < a) { b = a; }
+            return text.slice(0, a) + repl + text.slice(b, text.len());
+        }
+        return repl;
+    }
+    return text;
+}
+
+void on_did_change(Server srv, Json params) {
+    Json td = j_obj(params, "textDocument");
+    if (let uri = j_str(td, "uri")) {
+        int i = doc_index(srv, uri);
+        if (i < 0) {
+            log_message(2, "capstan-lsp: textDocument/didChange for a document that is not open: " + uri);
+            return;
+        }
+        Doc doc = srv.docs[i];
+        if (let changes = j_get(params, "contentChanges")) {
+            if (changes.k == J_ARR) {
+                // Each change copies the text: bound the total work (CWE-400).
+                int work = 0;
+                Tainted text = doc.text;
+                for (int k = 0; k < changes.items.len(); k += 1) {
+                    work += text.len() + MAX_HEADER_LINE;
+                    Tainted next = apply_change(srv, text, changes.items[k]);
+                    work += next.len();
+                    if (work > MAX_EDIT_WORK || !room_for(srv, i, next.len())) {
+                        log_message(1, "capstan-lsp: changes to " + uri + " exceed the server's limits and were not applied; close and reopen the document");
+                        return;
+                    }
+                    text = next;
+                }
+                doc.text = text;
+            }
+        }
+        if (let v = j_int(td, "version")) { doc.version = v; }
+        publish(srv, doc);
+        return;
+    }
+    log_message(2, taint("capstan-lsp: textDocument/didChange without textDocument.uri; ignored"));
+}
+
+void on_did_close(Server srv, Json params) {
+    Json td = j_obj(params, "textDocument");
+    if (let uri = j_str(td, "uri")) {
+        int i = doc_index(srv, uri);
+        if (i >= 0) {
+            Doc closed = srv.docs.remove_at(i);
+            publish_empty(closed.uri);
+        }
+    }
+}
+
+// A request id must be a string or an integer (JSON-RPC 2.0; LSP).
+bool id_ok(Json id) {
+    if (id.k == J_STR) { return true; }
+    if (id.k == J_NUM) {
+        if (let _v = validate_int(id.text)) { return true; }
+    }
+    return false;
+}
+
+void dispatch(Server srv, Tainted body) {
+    Json msg = j_parse(body, srv.bt, srv.jp);
+    Json null_id = j_new(J_NULL);
+    if (srv.jp.err != "") {
+        reply_error(null_id, E_PARSE, taint("parse error: " + srv.jp.err));
+        return;
+    }
+    if (msg.k != J_OBJ) {
+        reply_error(null_id, E_INVALID_REQUEST, taint("a message must be a JSON object (batches are not used by LSP)"));
+        return;
+    }
+    Json id = null_id;
+    bool is_request = false;
+    if (let i = j_get(msg, "id")) {
+        id = i;
+        is_request = true;
+    }
+    if (is_request && !id_ok(id)) {
+        reply_error(null_id, E_INVALID_REQUEST, taint("the id must be a string or an integer"));
+        return;
+    }
+    bool version_ok = false;
+    if (let v = j_str(msg, "jsonrpc")) { version_ok = v == "2.0"; }
+    Json params = j_obj(msg, "params");
+    if (let m = j_get(msg, "method")) {
+        if (m.k != J_STR || !version_ok) {
+            if (is_request) {
+                reply_error(id, E_INVALID_REQUEST, taint("invalid request: needs \"jsonrpc\": \"2.0\" and a string \"method\""));
+            } else {
+                log_message(2, taint("capstan-lsp: ignored a notification without \"jsonrpc\": \"2.0\" and a string \"method\""));
+            }
+            return;
+        }
+        Tainted method = m.text;
+        if (let pv = j_get(msg, "params")) {
+            if (pv.k != J_OBJ && pv.k != J_ARR) {
+                if (is_request) { reply_error(id, E_INVALID_PARAMS, taint("params must be an object or an array")); }
+                return;
+            }
+        }
+        if (method == "exit" && !is_request) {
+            if (srv.state == S_SHUTDOWN) { exit(0); }
+            exit(1);
+        }
+        if (srv.state == S_NEW) {
+            if (method == "initialize" && is_request) {
+                on_initialize(srv, id, params);
+            } else if (is_request) {
+                reply_error(id, E_NOT_INITIALIZED, taint("the server has not been initialized"));
+            }
+            return;
+        }
+        if (srv.state == S_SHUTDOWN) {
+            if (is_request) { reply_error(id, E_INVALID_REQUEST, taint("the server is shutting down")); }
+            return;
+        }
+        if (is_request) {
+            if (method == "initialize") {
+                reply_error(id, E_INVALID_REQUEST, taint("initialize may only be sent once"));
+            } else if (method == "shutdown") {
+                srv.state = S_SHUTDOWN;
+                reply_result(id, taint("null"));
+            } else {
+                reply_error(id, E_METHOD_NOT_FOUND, "method not found: " + method);
+            }
+            return;
+        }
+        if (method == "textDocument/didOpen") {
+            on_did_open(srv, params);
+        } else if (method == "textDocument/didChange") {
+            on_did_change(srv, params);
+        } else if (method == "textDocument/didClose") {
+            on_did_close(srv, params);
+        }
+        // Other notifications (initialized, $/cancelRequest, didSave, ...) need nothing.
+        return;
+    }
+    // No method: a response to a request of ours (the server sends none), or invalid.
+    if (!j_has(msg, "result") && !j_has(msg, "error")) {
+        reply_error(id, E_INVALID_REQUEST, taint("a message needs a \"method\""));
+    }
+}
+
+// ---- framing ----------------------------------------------------------------------------------
+
+struct Frame {
+    int length;     // -1 if no valid Content-Length
+    bool bad;
+    int lines;
+}
+
+bool lsp_space(int c) {
+    return c == ' ' || c == '\t';
+}
+
+// One header line: Content-Length sets the length, other "Name: value" headers
+// (Content-Type) are accepted and ignored, anything else is bad framing.
+void header(Frame f, Tainted line) {
+    f.lines += 1;
+    if (f.lines > MAX_HEADERS) { f.bad = true; }
+    string name = "Content-Length:";
+    if (lsp_has_at(line, 0, name)) {
+        int a = name.len();
+        int b = line.len();
+        while (a < b && lsp_space(line.at(a))) { a += 1; }
+        while (b > a && lsp_space(line.at(b - 1))) { b -= 1; }
+        if (let n = validate_int(line.slice(a, b))) {
+            if (n >= 0 && f.length < 0 && line.at(a) != '-') {
+                f.length = n;
+                return;
+            }
+        }
+        f.bad = true;
+        return;
+    }
+    int colon = -1;
+    for (int i = 0; i < line.len() && colon < 0; i += 1) {
+        if (line.at(i) == ':') { colon = i; }
+    }
+    if (colon <= 0) { f.bad = true; }
+    for (int j = 0; j < colon; j += 1) {
+        int c = line.at(j);
+        if (c <= 32 || c >= 127) { f.bad = true; }
+    }
+}
+
+void framing_error(string why) {
+    reply_error(j_new(J_NULL), E_PARSE, taint("invalid message framing: " + why));
+}
+
+int main() {
+    Server srv = new Server{state: S_NEW, utf8: false, strict: false, release: false, root: taint(""), docs: new List<Doc>(), bt: lsp_bytes(), jp: new JParse{s: taint(""), pos: 0, err: "", bt: lsp_bytes()}};
+    Reader r = new Reader{chunks: new List<Tainted>(), ci: 0, off: 0, eof: false};
+    Frame f = new Frame{length: -1, bad: false, lines: 0};
+    while (true) {
+        HLine h = rd_header_line(r);
+        if (h.eof) {
+            if (f.lines > 0 || h.bytes > 0) { framing_error("input ended inside a header"); }
+            break;
+        }
+        Tainted line = h.text;
+        // A Content-Length in the middle of a line, or after a bad header or another
+        // Content-Length with no blank line between, starts a new message: report what
+        // came before it and resynchronise there.
+        int cl = lsp_find_last(line, "Content-Length:");
+        if (cl > 0 || (cl == 0 && (f.bad || f.length >= 0)) || (h.overlong && cl >= 0)) {
+            framing_error("data before a Content-Length header");
+            f = new Frame{length: -1, bad: false, lines: 0};
+            line = line.slice(cl, line.len());
+        } else if (h.overlong) {
+            f.bad = true;
+            f.lines += 1;
+            continue;
+        }
+        if (line.len() > 0) {
+            header(f, line);
+            continue;
+        }
+        if (f.lines == 0) { continue; }   // stray blank lines between messages
+        Frame done = f;
+        f = new Frame{length: -1, bad: false, lines: 0};
+        if (done.bad || done.length < 0) {
+            framing_error("a header block needs exactly one valid Content-Length and only 'Name: value' lines");
+            continue;
+        }
+        if (done.length > MAX_MESSAGE) {
+            if (let _skipped = rd_body(r, done.length, false)) {
+                reply_error(j_new(J_NULL), E_INVALID_REQUEST, taint("message of " + int_to_str(done.length) + " bytes is larger than the limit of " + int_to_str(MAX_MESSAGE) + " bytes [CWE-400]"));
+                continue;
+            }
+            break;
+        }
+        if (let body = rd_body(r, done.length, true)) {
+            dispatch(srv, body);
+        } else {
+            break;
+        }
+    }
+    if (srv.state == S_SHUTDOWN) { return 0; }
+    return 1;
+}

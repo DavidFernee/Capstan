@@ -5,6 +5,7 @@
 #   capstan test  file.cap...           [--strict]
 #   capstan check file.cap...           [--release] [--strict]
 #   capstan fmt   file.cap...           [--check]
+#   capstan lsp                         (language server on stdin/stdout, started by an editor)
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAPSTANC="$ROOT/build/capstanc"
@@ -20,6 +21,10 @@ cmd="${1:-}"; shift || true
 if [[ "$cmd" == fmt ]]; then
   [[ -x "$ROOT/build/capstanfmt" ]] || make -s -C "$ROOT" fmt >&2
   exec "$ROOT/build/capstanfmt" "$@"
+fi
+if [[ "$cmd" == lsp ]]; then
+  [[ -x "$ROOT/build/capstan-lsp" ]] || make -s -C "$ROOT" lsp >&2
+  exec "$ROOT/build/capstan-lsp" "$@"
 fi
 files=(); flags=(); out=""; progargs=()
 while [[ $# -gt 0 ]]; do
@@ -46,5 +51,5 @@ case "$cmd" in
     "$CAPSTANC" test -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
     "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/tests"
     "$tmp/tests" ;;
-  *) echo "usage: capstan (run|build|test|check|fmt) file.cap... [-o program] [--release] [--strict] [--check]" >&2; exit 2 ;;
+  *) echo "usage: capstan (run|build|test|check|fmt|lsp) file.cap... [-o program] [--release] [--strict] [--check]" >&2; exit 2 ;;
 esac

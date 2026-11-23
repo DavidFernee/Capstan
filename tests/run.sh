@@ -27,6 +27,8 @@
 #   fmt          the formatter: expected layout, idempotence, house style, whitespace and corruption fuzzing
 #   supply chain SBOM generation, the reproducibility report, the release verifier against good
 #                and tampered releases, and the workflow hardening rules (tests/supply/)
+#   lsp          the language server: the compiler's exact diagnostics for every test program, the
+#                protocol and its errors, sanitizers, and fuzzing of JSON and framing
 #   coverage     (--full) line coverage of compiler, formatter and runtime, with floors
 #   mutation     (--full) injected compiler bugs must be caught by the suite
 #   bench        (--full) speed against hand-written C, with a regression limit
@@ -239,6 +241,25 @@ if out="$(cd "$ROOT" && $PY tests/fmt/perturb.py --corrupt "$F" $COR_N "${FUZZ_S
 section "supply chain: SBOM, reproducibility report, release verifier, workflow hardening"
 if out="$("$ROOT/tests/supply/test_supply.sh" 2>&1)"; then ok "$(tail -1 <<<"$out")"; grep '^  pass' <<<"$out" | sed 's/^  pass  /      /'
 else bad "supply chain" "$(grep -A3 'FAIL' <<<"$out" | head -8)"; fi
+
+section "lsp"
+L="$ROOT/build/capstan-lsp"
+LSP_SRC="$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen}.cap) $ROOT/tools/lsp.cap"
+if "$C" build -o "$tmp/lsp.c" $LSP_SRC >"$tmp/log" 2>&1 && "$CC" $WFLAGS -Dmain=capstan_lsp_main -c "$tmp/lsp.c" -o "$tmp/lsp.o" 2>>"$tmp/log" \
+   && "$CC" $WFLAGS -c "$ROOT/tools/lsp/transport.c" -o "$tmp/lspt.o" 2>>"$tmp/log" && "$CC" "$tmp/lsp.o" "$tmp/lspt.o" -o "$L" 2>>"$tmp/log"; then
+  if [[ ! -s "$tmp/log" ]]; then ok "language server builds with no warnings and no trust(); warning-free C"; else bad "lsp build" "$(head -3 "$tmp/log")"; fi
+else bad "lsp build" "$(head -3 "$tmp/log")"; fi
+if out="$($PY "$ROOT/tests/lsp/sessions.py" "$L" 2>&1)"; then ok "$out"; else bad "lsp sessions" "$out"; fi
+LSP_N=40; (( FULL )) && LSP_N=1000
+if out="$($PY "$ROOT/tests/lsp/fuzz.py" "$L" $LSP_N "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then ok "$out"; else bad "lsp fuzz" "$out"; fi
+if "$CC" $SAN -Dmain=capstan_lsp_main -c "$tmp/lsp.c" -o "$tmp/lsps.o" 2>/dev/null && "$CC" $SAN -c "$ROOT/tools/lsp/transport.c" -o "$tmp/lspts.o" \
+   && "$CC" $SAN "$tmp/lsps.o" "$tmp/lspts.o" -o "$tmp/lspsan" 2>/dev/null; then
+  if out="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/sessions.py" "$tmp/lspsan" 2>&1)" && out2="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/fuzz.py" "$tmp/lspsan" 20 "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then
+    ok "language server clean under ASan+UBSan with GC stress (sessions and fuzzing)"
+  else bad "sanitized language server" "$out $out2"; fi
+else
+  echo "  skip  sanitizers not available for $CC"
+fi
 
 if (( FULL )); then
   section "coverage"

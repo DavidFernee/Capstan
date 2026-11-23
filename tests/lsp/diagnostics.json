@@ -1,0 +1,90 @@
+[
+  {
+    "range": {
+      "start": {
+        "line": 9,
+        "character": 24
+      },
+      "end": {
+        "line": 9,
+        "character": 25
+      }
+    },
+    "severity": 1,
+    "code": "CWE-117",
+    "codeDescription": {
+      "href": "https://cwe.mitre.org/data/definitions/117.html"
+    },
+    "source": "capstan",
+    "message": "untrusted input passed to println() can forge output or log lines; wrap it in escape_log()"
+  },
+  {
+    "range": {
+      "start": {
+        "line": 13,
+        "character": 4
+      },
+      "end": {
+        "line": 13,
+        "character": 13
+      }
+    },
+    "severity": 1,
+    "code": "CWE-89",
+    "codeDescription": {
+      "href": "https://cwe.mitre.org/data/definitions/89.html"
+    },
+    "source": "capstan",
+    "message": "the SQL query text passed to sql_query() must be a string literal; pass untrusted values as separate arguments"
+  },
+  {
+    "range": {
+      "start": {
+        "line": 18,
+        "character": 11
+      },
+      "end": {
+        "line": 18,
+        "character": 16
+      }
+    },
+    "severity": 1,
+    "source": "capstan",
+    "message": "unknown variable 'total'"
+  },
+  {
+    "range": {
+      "start": {
+        "line": 17,
+        "character": 4
+      },
+      "end": {
+        "line": 17,
+        "character": 7
+      }
+    },
+    "severity": 2,
+    "code": "CWE-563",
+    "codeDescription": {
+      "href": "https://cwe.mitre.org/data/definitions/563.html"
+    },
+    "source": "capstan",
+    "message": "'unused' is never used; remove it, or name it _unused if that is intended"
+  },
+  {
+    "range": {
+      "start": {
+        "line": 6,
+        "character": 0
+      },
+      "end": {
+        "line": 6,
+        "character": 42
+      }
+    },
+    "severity": 2,
+    "code": "CAP-TEST",
+    "source": "capstan",
+    "message": "policy 'Owner' has no test showing a request being denied; add assert_denied Owner(...) in a test"
+  }
+]
