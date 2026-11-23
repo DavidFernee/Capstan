@@ -1,13 +1,15 @@
 # The Capstan Challenge (draft)
 
-> **Status: draft. The challenge is not open and no prize is offered.** It will open only when it
-> is announced with its funding, judges and final rules ([DESIGN-MAP.md](DESIGN-MAP.md), section 8).
+> **Status: draft, subject to funding for a foundation to administer the Capstan language.** No such
+> foundation exists yet. The challenge is not open and no prize is offered: it will open only when
+> the foundation is established and funded, and announces the challenge with its prize pool, judges
+> and final rules ([DESIGN-MAP.md](DESIGN-MAP.md), section 8).
 > Until then, report findings through [SECURITY.md](../SECURITY.md): every confirmed one is fixed,
 > credited and listed in the hall of fame below.
 
 Capstan claims that the weaknesses its [CWE atlas](CWE-ATLAS.md) marks as prevented cannot be
-written in it. The Capstan Challenge puts money behind that claim: each year, a prize for anyone
-who writes a vulnerability Capstan says is impossible.
+written in it. The Capstan Challenge will put money behind that claim: each year, a prize, awarded
+by the foundation, for anyone who writes a vulnerability Capstan says is impossible.
 
 A successful entry is the most useful thing that can happen to the language. Every winner gets a
 public write-up, a fix, and a regression test that would have caught it, so each payout makes
@@ -65,7 +67,7 @@ twenty times. An unclaimed prize carries over and grows the next year.
 
 - An entry is acknowledged within 5 working days, and a decision with reasons follows within
   30 days.
-- The maintainer judges first. An entrant who disagrees can appeal to an independent panel of at
+- The foundation's maintainers judge first. An entrant who disagrees can appeal to an independent panel of at
   least two security researchers with no stake in Capstan, named when the challenge opens; the
   panel's decision is final.
 - Every decision, accepted or not, is published with its reasoning after the fix is released.
@@ -74,7 +76,7 @@ twenty times. An unclaimed prize carries over and grows the next year.
 
 ## Payment, disclosure and credit
 
-- Prizes are paid within 30 days of acceptance, in Australian dollars unless agreed otherwise.
+- Prizes are paid by the foundation within 30 days of acceptance, in Australian dollars unless agreed otherwise.
 - The flaw is fixed with a regression test, an advisory is published, and the atlas is corrected.
   Disclosure is coordinated: the entrant may publish 90 days after acceptance, or when the fix is
   released if sooner.
@@ -84,7 +86,7 @@ twenty times. An unclaimed prize carries over and grows the next year.
 ## Safe harbour
 
 Good-faith research under these rules, on your own copy of Capstan and your own programs, is
-authorised: the project will not pursue legal action against it or ask anyone else to. Do not test
+authorised: the project and the foundation will not pursue legal action against it or ask anyone else to. Do not test
 against systems you do not own, and do not access, change or keep other people's data.
 
 ## Eligibility
@@ -104,6 +106,7 @@ fixes made, and the rule changes for the next year.
 
 ## Before the challenge opens
 
+- [ ] A foundation established and funded to administer the Capstan language, including the challenge
 - [ ] Funding held separately for the full prize pool, so every prize can be paid at once
 - [ ] Prize amounts set for each tier
 - [ ] Independent appeals panel named
