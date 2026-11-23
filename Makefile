@@ -4,9 +4,9 @@ CFLAGS  ?= -O2 -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable -Wno-u
 SRC      = compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap compiler/codegen.cap compiler/main.cap
 RT       = runtime/capstan_rt.h
 
-.PHONY: all bootstrap test clean
+.PHONY: all bootstrap fmt test clean
 
-all: bootstrap
+all: bootstrap fmt
 
 # Stage 0 (Python) translates the compiler so it can run once.
 build/stage1.py: bootstrap/capstan0.py $(SRC)
@@ -30,7 +30,15 @@ build/capstanc: build/stage3.c $(RT)
 
 bootstrap: build/capstanc
 
-test: build/capstanc
+# The formatter, written in Capstan. Building it reports one AUDIT warning: the
+# single trust() that lets it write a verified source file back.
+build/capstanfmt: build/capstanc tools/fmt.cap $(RT)
+	./build/capstanc build -o build/fmt.c tools/fmt.cap
+	$(CC) $(CFLAGS) -Iruntime build/fmt.c -o $@
+
+fmt: build/capstanfmt
+
+test: build/capstanc build/capstanfmt
 	./tests/run.sh
 
 clean:

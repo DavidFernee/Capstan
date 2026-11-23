@@ -1,0 +1,604 @@
+// capstan fmt: the Capstan source formatter.
+//
+//   capstanfmt [--check] file.cap...
+//
+// Rewrites each file in the house style, or with --check lists the files that
+// are not formatted and exits 1. The formatter changes whitespace only:
+//
+// - indentation is four spaces per open block, plus one level for a line that
+//   continues an unfinished statement or bracket;
+// - spacing between tokens on a line is normalised (one space around binary
+//   operators and after commas, none inside brackets, generics or member access);
+// - line breaks are kept, runs of blank lines become one, trailing whitespace goes,
+//   and the file ends with a single newline;
+// - comments are kept exactly; a trailing comment keeps at least its gap, and
+//   trailing comments that were aligned stay aligned.
+//
+// Before anything is written the output is scanned again and must contain the
+// same tokens, in the same order, with the same text. If it doesn't, the file is
+// left untouched. A file that doesn't scan as Capstan is not formatted at all.
+//
+// Source files are read as Tainted. Writing one back is the single place this
+// tool trusts input, and the compiler reports it as an AUDIT warning when the
+// tool is built: the justification is the token-for-token check above.
+
+const int K_WORD = 1;
+const int K_NUM = 2;
+const int K_STR = 3;
+const int K_OP = 4;
+const int K_LINE_COMMENT = 5;
+const int K_BLOCK_COMMENT = 6;
+
+// Roles a token can take, decided from the tokens before it.
+const int R_NONE = 0;
+const int R_UNARY = 1;
+const int R_GEN_OPEN = 2;
+const int R_GEN_CLOSE = 3;
+const int R_STRUCT_OPEN = 4;
+const int R_STRUCT_CLOSE = 5;
+const int R_POSTFIX = 6;
+
+// Open brackets.
+const int B_BLOCK = 1;
+const int B_STRUCT = 2;
+const int B_PAREN = 3;
+const int B_INDEX = 4;
+
+struct Tok {
+    int k;
+    Tainted text;
+    string op;      // operator or word; "" for literals and comments
+    int nl;         // line breaks between the previous token and this one
+    int gap;        // spaces and tabs before this token on its line
+    int col;        // byte offset of the token in its line
+    int line;
+}
+
+struct Scan {
+    Tainted src;
+    int pos;
+    int line;
+    int nl;
+    int gap;
+    int line_start;
+    List<Tok> toks;
+    string err;
+    int err_line;
+}
+
+bool is_keyword(string w) {
+    List<string> kws = new List<string>();
+    kws.push("struct"); kws.push("const"); kws.push("if"); kws.push("else");
+    kws.push("while"); kws.push("for"); kws.push("return"); kws.push("break");
+    kws.push("continue"); kws.push("true"); kws.push("false"); kws.push("none");
+    kws.push("new"); kws.push("let"); kws.push("protected"); kws.push("policy");
+    kws.push("public"); kws.push("test"); kws.push("authorize");
+    kws.push("assert_denied"); kws.push("assert_granted");
+    kws.push("enum"); kws.push("match"); kws.push("case"); kws.push("import"); kws.push("sensitive");
+    for (int i = 0; i < kws.len(); i += 1) {
+        if (kws[i] == w) { return true; }
+    }
+    return false;
+}
+
+bool is_generic_type(string w) {
+    return w == "List" || w == "Map" || w == "Grant";
+}
+
+bool is_alpha(int c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
+}
+
+bool is_digit(int c) {
+    return c >= '0' && c <= '9';
+}
+
+bool is_space(int c) {
+    return c == ' ' || c == '\t' || c == '\r';
+}
+
+// ---- scanning ----------------------------------------------------------------
+
+int ch(Scan s, int at) {
+    if (at >= s.src.len()) { return -1; }
+    return s.src.at(at);
+}
+
+void fail(Scan s, string msg) {
+    if (s.err == "") {
+        s.err = msg;
+        s.err_line = s.line;
+    }
+    s.pos = s.src.len();
+}
+
+void push_tok(Scan s, int k, int start, int end, string op, int line) {
+    s.toks.push(new Tok{k: k, text: s.src.slice(start, end), op: op, nl: s.nl, gap: s.gap, col: start - s.line_start, line: line});
+    s.nl = 0;
+    s.gap = 0;
+}
+
+// Operators the lexer accepts: two-character ones first.
+bool scan_op(Scan s) {
+    int c = ch(s, s.pos);
+    int d = ch(s, s.pos + 1);
+    List<string> two = new List<string>();
+    two.push("&&"); two.push("||"); two.push("=="); two.push("!=");
+    two.push("<="); two.push(">="); two.push("+="); two.push("-=");
+    two.push("++"); two.push("--");
+    for (int i = 0; i < two.len(); i += 1) {
+        string op = two[i];
+        if (c == op.at(0) && d == op.at(1)) {
+            push_tok(s, K_OP, s.pos, s.pos + 2, op, s.line);
+            s.pos += 2;
+            return true;
+        }
+    }
+    string one = "{}()[];,.:?<>=+-*/%!";
+    for (int j = 0; j < one.len(); j += 1) {
+        if (c == one.at(j)) {
+            push_tok(s, K_OP, s.pos, s.pos + 1, one.slice(j, j + 1), s.line);
+            s.pos += 1;
+            return true;
+        }
+    }
+    return false;
+}
+
+// "..." with escapes; the token is the literal as written.
+void scan_string(Scan s) {
+    int start = s.pos;
+    s.pos += 1;
+    while (true) {
+        int c = ch(s, s.pos);
+        if (c == -1 || c == '\n') {
+            fail(s, "unterminated string literal");
+            return;
+        }
+        if (c == '"') { break; }
+        if (c == '\\') {
+            if (ch(s, s.pos + 1) == -1 || ch(s, s.pos + 1) == '\n') {
+                fail(s, "unterminated string literal");
+                return;
+            }
+            s.pos += 2;
+        } else {
+            s.pos += 1;
+        }
+    }
+    s.pos += 1;
+    push_tok(s, K_STR, start, s.pos, "", s.line);
+}
+
+// $"text {expr} text": kept whole, exactly as written.
+void scan_interp(Scan s) {
+    int start = s.pos;
+    s.pos += 2;
+    while (true) {
+        int c = ch(s, s.pos);
+        if (c == -1 || c == '\n') {
+            fail(s, "unterminated interpolated string");
+            return;
+        }
+        if (c == '"') { break; }
+        if (c == '\\') {
+            if (ch(s, s.pos + 1) == -1 || ch(s, s.pos + 1) == '\n') {
+                fail(s, "unterminated interpolated string");
+                return;
+            }
+            s.pos += 2;
+        } else if ((c == '{' && ch(s, s.pos + 1) == '{') || (c == '}' && ch(s, s.pos + 1) == '}')) {
+            s.pos += 2;
+        } else if (c == '{') {
+            int depth = 1;
+            int j = s.pos + 1;
+            while (depth > 0) {
+                int e = ch(s, j);
+                if (e == -1 || e == '\n') {
+                    fail(s, "unclosed { in interpolated string");
+                    return;
+                }
+                if (e == '"') {
+                    j += 1;
+                    while (ch(s, j) != '"') {
+                        if (ch(s, j) == -1 || ch(s, j) == '\n') {
+                            fail(s, "unterminated string in interpolated string");
+                            return;
+                        }
+                        if (ch(s, j) == '\\') { j += 1; }
+                        j += 1;
+                    }
+                } else if (e == '{') {
+                    depth += 1;
+                } else if (e == '}') {
+                    depth -= 1;
+                }
+                j += 1;
+            }
+            s.pos = j;
+        } else if (c == '}') {
+            fail(s, "unmatched } in interpolated string");
+            return;
+        } else {
+            s.pos += 1;
+        }
+    }
+    s.pos += 1;
+    push_tok(s, K_STR, start, s.pos, "", s.line);
+}
+
+void scan_char(Scan s) {
+    int width = 3;
+    if (ch(s, s.pos + 1) == '\\') { width = 4; }
+    int body = ch(s, s.pos + 1);
+    if (body == -1 || body == '\n' || ch(s, s.pos + width - 1) != '\'' || (width == 4 && ch(s, s.pos + 2) == '\n')) {
+        fail(s, "malformed character literal");
+        return;
+    }
+    push_tok(s, K_STR, s.pos, s.pos + width, "", s.line);
+    s.pos += width;
+}
+
+Scan scan(Tainted src) {
+    Scan s = new Scan{src: src, pos: 0, line: 1, nl: 0, gap: 0, line_start: 0, toks: new List<Tok>(), err: "", err_line: 0};
+    while (s.pos < src.len()) {
+        int c = ch(s, s.pos);
+        if (c == '\n') {
+            s.nl += 1;
+            s.line += 1;
+            s.gap = 0;
+            s.pos += 1;
+            s.line_start = s.pos;
+        } else if (is_space(c)) {
+            s.gap += 1;
+            s.pos += 1;
+        } else if (c == '/' && ch(s, s.pos + 1) == '/') {
+            int cstart = s.pos;
+            int last = s.pos + 2;
+            while (s.pos < src.len() && ch(s, s.pos) != '\n') {
+                if (!is_space(ch(s, s.pos))) { last = s.pos + 1; }
+                s.pos += 1;
+            }
+            push_tok(s, K_LINE_COMMENT, cstart, last, "", s.line);
+        } else if (c == '/' && ch(s, s.pos + 1) == '*') {
+            int bstart = s.pos;
+            int bline = s.line;
+            int breaks = 0;
+            s.pos += 2;
+            while (s.pos < src.len() && !(ch(s, s.pos) == '*' && ch(s, s.pos + 1) == '/')) {
+                if (ch(s, s.pos) == '\n') {
+                    breaks += 1;
+                    s.line_start = s.pos + 1;
+                }
+                s.pos += 1;
+            }
+            if (s.pos >= src.len()) {
+                fail(s, "unterminated comment");
+            } else {
+                s.pos += 2;
+                push_tok(s, K_BLOCK_COMMENT, bstart, s.pos, "", bline);
+                s.line += breaks;
+            }
+        } else if (is_alpha(c)) {
+            int wstart = s.pos;
+            while (is_alpha(ch(s, s.pos)) || is_digit(ch(s, s.pos))) { s.pos += 1; }
+            string word = "";
+            if (let w = validate_ident(src.slice(wstart, s.pos))) { word = w; }
+            push_tok(s, K_WORD, wstart, s.pos, word, s.line);
+        } else if (is_digit(c)) {
+            int nstart = s.pos;
+            while (is_digit(ch(s, s.pos))) { s.pos += 1; }
+            push_tok(s, K_NUM, nstart, s.pos, "", s.line);
+        } else if (c == '$' && ch(s, s.pos + 1) == '"') {
+            scan_interp(s);
+        } else if (c == '"') {
+            scan_string(s);
+        } else if (c == '\'') {
+            scan_char(s);
+        } else if (!scan_op(s)) {
+            fail(s, "unexpected character (byte " + int_to_str(c) + ")");
+        }
+    }
+    return s;
+}
+
+bool same_tokens(List<Tok> a, List<Tok> b) {
+    if (a.len() != b.len()) { return false; }
+    for (int i = 0; i < a.len(); i += 1) {
+        if (a[i].k != b[i].k || a[i].text != b[i].text) { return false; }
+    }
+    return true;
+}
+
+// ---- layout -------------------------------------------------------------------
+
+// One output line. A trailing // comment is kept apart from the code so that
+// comments that were aligned in the input can be aligned again.
+struct Line {
+    Tainted code;
+    bool blank;
+    bool has_comment;
+    Tainted comment;
+    int gap;        // spaces before the comment in the input
+    int col;        // the comment's column in the input
+}
+
+struct Layout {
+    List<Tok> toks;
+    List<int> roles;
+    List<int> stack;
+    int gen;
+    List<Line> lines;
+    bool started;
+}
+
+// The nearest token before i that isn't a comment, or -1.
+int code_before(Layout f, int i) {
+    int j = i - 1;
+    while (j >= 0 && (f.toks[j].k == K_LINE_COMMENT || f.toks[j].k == K_BLOCK_COMMENT)) { j -= 1; }
+    return j;
+}
+
+// Does token j end a value (so a following '-' is binary and '++' is postfix)?
+bool value_end(Layout f, int j) {
+    if (j < 0) { return false; }
+    Tok t = f.toks[j];
+    if (t.k == K_NUM || t.k == K_STR) { return true; }
+    if (t.k == K_WORD) { return !is_keyword(t.op) || t.op == "true" || t.op == "false" || t.op == "none"; }
+    if (t.k == K_OP) { return t.op == ")" || t.op == "]" || f.roles[j] == R_POSTFIX || f.roles[j] == R_STRUCT_CLOSE; }
+    return false;
+}
+
+bool is_closer(Tok t) {
+    return t.k == K_OP && (t.op == "}" || t.op == ")" || t.op == "]");
+}
+
+// Decide token i's role and update the bracket stack.
+void classify(Layout f, int i) {
+    Tok t = f.toks[i];
+    int p = code_before(f, i);
+    int role = R_NONE;
+    if (t.k == K_OP) {
+        string op = t.op;
+        if (op == "<" && p >= 0 && f.toks[p].k == K_WORD && is_generic_type(f.toks[p].op)) {
+            role = R_GEN_OPEN;
+            f.gen += 1;
+        } else if (op == ">" && f.gen > 0) {
+            role = R_GEN_CLOSE;
+            f.gen -= 1;
+        } else if (op == "-" && !value_end(f, p)) {
+            role = R_UNARY;
+        } else if ((op == "++" || op == "--") && value_end(f, p)) {
+            role = R_POSTFIX;
+        } else if (op == "{") {
+            int pp = code_before(f, p);
+            if (p >= 0 && pp >= 0 && f.toks[p].k == K_WORD && !is_keyword(f.toks[p].op) && f.toks[pp].op == "new") {
+                role = R_STRUCT_OPEN;
+                f.stack.push(B_STRUCT);
+            } else {
+                f.stack.push(B_BLOCK);
+            }
+        } else if (op == "(") {
+            f.stack.push(B_PAREN);
+        } else if (op == "[") {
+            f.stack.push(B_INDEX);
+        } else if (op == "}" || op == ")" || op == "]") {
+            if (let top = f.stack.pop()) {
+                if (op == "}" && top == B_STRUCT) { role = R_STRUCT_CLOSE; }
+            }
+        }
+        if (op == ";" || op == "{" || op == "}") { f.gen = 0; }
+    }
+    f.roles.push(role);
+}
+
+// Indentation for a line that starts with token i (before i is classified).
+int indent_for(Layout f, int i) {
+    Tok t = f.toks[i];
+    int n = f.stack.len();
+    if (is_closer(t) && n > 0) { n -= 1; }
+    int blocks = 0;
+    for (int k = 0; k < n; k += 1) {
+        if (f.stack[k] == B_BLOCK) { blocks += 1; }
+    }
+    bool inside_block = n == 0 || f.stack[n - 1] == B_BLOCK;
+    bool cont = !inside_block;
+    int p = code_before(f, i);
+    if (!cont && p >= 0 && !is_closer(t) && !(t.k == K_OP && t.op == "{")) {
+        string last = f.toks[p].op;
+        // Inside a block, a ',' ends an item of an enum's variant list.
+        bool ends = f.toks[p].k == K_OP && (last == ";" || last == "{" || last == "," || (last == "}" && f.roles[p] != R_STRUCT_CLOSE));
+        cont = !ends;
+    }
+    if (cont) { blocks += 1; }
+    return blocks;
+}
+
+bool glues(int a, int b) {
+    if ((is_alpha(a) || is_digit(a)) && (is_alpha(b) || is_digit(b))) { return true; }
+    string pairs = "&&||==!=<=>=+=-=++--//*/";
+    for (int i = 0; i + 1 < pairs.len(); i += 2) {
+        if (a == pairs.at(i) && b == pairs.at(i + 1)) { return true; }
+    }
+    // "/*" opens a comment; "//" is covered above.
+    return a == '/' && b == '*';
+}
+
+// Spaces between token a and the following token b on the same line.
+int spacing(Layout f, int ai, int bi) {
+    Tok a = f.toks[ai];
+    Tok b = f.toks[bi];
+    if (b.k == K_LINE_COMMENT) {
+        if (b.gap < 1) { return 1; }
+        return b.gap;
+    }
+    if (a.k == K_BLOCK_COMMENT || b.k == K_BLOCK_COMMENT) {
+        if (b.gap > 0) { return 1; }
+        return 0;
+    }
+    int ra = f.roles[ai];
+    int rb = f.roles[bi];
+    string x = a.op;
+    string y = b.op;
+    int n = 1;
+    if (b.k == K_OP && (y == "," || y == ";" || y == ")" || y == "]" || y == "." || y == "?" || y == ":")) {
+        n = 0;
+    } else if (rb == R_POSTFIX || rb == R_GEN_OPEN || rb == R_GEN_CLOSE || rb == R_STRUCT_OPEN || rb == R_STRUCT_CLOSE) {
+        n = 0;
+    } else if (ra == R_GEN_OPEN || ra == R_UNARY || ra == R_STRUCT_OPEN) {
+        n = 0;
+    } else if (a.k == K_OP && (x == "." || x == "(" || x == "[" || x == "!")) {
+        n = 0;
+    } else if (b.k == K_OP && y == "}" && x == "{") {
+        n = 0;
+    } else if (b.k == K_OP && y == "(") {
+        if (a.k == K_WORD) {
+            if (!is_keyword(x) || x == "protected") { n = 0; }
+        } else if (a.k == K_OP && (x == ")" || x == "]" || ra == R_GEN_CLOSE)) {
+            n = 0;
+        }
+    } else if (b.k == K_OP && y == "[") {
+        if ((a.k == K_WORD && !is_keyword(x)) || (a.k == K_OP && (x == ")" || x == "]"))) { n = 0; }
+    }
+    if (n == 0 && glues(a.text.at(a.text.len() - 1), b.text.at(0))) { n = 1; }
+    return n;
+}
+
+string spaces(int n) {
+    List<string> sp = new List<string>();
+    for (int i = 0; i < n; i += 1) { sp.push(" "); }
+    return join(sp, "");
+}
+
+Line new_line(Tainted code) {
+    return new Line{code: code, blank: false, has_comment: false, comment: taint(""), gap: 0, col: 0};
+}
+
+// Consecutive lines whose trailing comments started in the same column form a
+// group. Each line keeps at least its own gap, and the group stays aligned.
+// Unchanged code gives back the original columns, so formatting is idempotent.
+List<Tainted> render(List<Line> lines) {
+    List<Tainted> parts = new List<Tainted>();
+    int i = 0;
+    while (i < lines.len()) {
+        Line ln = lines[i];
+        if (ln.blank) {
+            parts.push(taint("\n"));
+            i += 1;
+        } else if (!ln.has_comment) {
+            parts.push(ln.code + "\n");
+            i += 1;
+        } else {
+            int last = i;
+            while (last + 1 < lines.len() && !lines[last + 1].blank && lines[last + 1].has_comment && lines[last + 1].col == ln.col) { last += 1; }
+            int at = 0;
+            for (int k = i; k <= last; k += 1) {
+                int want = lines[k].code.len() + lines[k].gap;
+                if (want > at) { at = want; }
+            }
+            for (int m = i; m <= last; m += 1) {
+                parts.push(lines[m].code + spaces(at - lines[m].code.len()) + lines[m].comment + "\n");
+            }
+            i = last + 1;
+        }
+    }
+    return parts;
+}
+
+// Join many pieces without quadratic copying.
+Tainted concat(List<Tainted> parts, int from, int to) {
+    if (to - from == 1) { return parts[from]; }
+    int mid = from + (to - from) / 2;
+    return concat(parts, from, mid) + concat(parts, mid, to);
+}
+
+Tainted layout(List<Tok> toks) {
+    Layout f = new Layout{toks: toks, roles: new List<int>(), stack: new List<int>(), gen: 0, lines: new List<Line>(), started: false};
+    for (int i = 0; i < toks.len(); i += 1) {
+        Tok t = toks[i];
+        if (!f.started || t.nl > 0) {
+            int depth = indent_for(f, i);
+            classify(f, i);
+            if (f.started && t.nl > 1) {
+                Line gap_line = new_line(taint(""));
+                gap_line.blank = true;
+                f.lines.push(gap_line);
+            }
+            f.lines.push(new_line(spaces(4 * depth) + t.text));
+            f.started = true;
+        } else {
+            classify(f, i);
+            Line cur = f.lines[f.lines.len() - 1];
+            if (t.k == K_LINE_COMMENT) {
+                cur.has_comment = true;
+                cur.comment = t.text;
+                cur.gap = spacing(f, i - 1, i);
+                cur.col = t.col;
+            } else {
+                cur.code = cur.code + spaces(spacing(f, i - 1, i)) + t.text;
+            }
+        }
+    }
+    List<Tainted> parts = render(f.lines);
+    if (parts.len() == 0) { return taint(""); }
+    return concat(parts, 0, parts.len());
+}
+
+// ---- driver -------------------------------------------------------------------
+
+void usage() {
+    println("usage: capstanfmt [--check] file.cap...");
+    println("  rewrites each file in the Capstan house style (whitespace only)");
+    println("  --check   list the files that are not formatted and exit 1; change nothing");
+}
+
+int main() {
+    List<string> a = args();
+    bool check = false;
+    List<string> files = new List<string>();
+    for (int i = 0; i < a.len(); i += 1) {
+        if (a[i] == "--check") {
+            check = true;
+        } else if (a[i] == "--help" || a[i] == "-h") {
+            usage();
+            return 0;
+        } else {
+            files.push(a[i]);
+        }
+    }
+    if (files.len() == 0) {
+        usage();
+        return 2;
+    }
+    int status = 0;
+    for (int fi = 0; fi < files.len(); fi += 1) {
+        string path = files[fi];
+        if (let src = read_file(path)) {
+            Scan s = scan(src);
+            if (s.err != "") {
+                println(path + ":" + int_to_str(s.err_line) + ": cannot format: " + s.err);
+                status = 2;
+                continue;
+            }
+            Tainted out = layout(s.toks);
+            Scan again = scan(out);
+            if (again.err != "" || !same_tokens(s.toks, again.toks)) {
+                println(path + ": internal error: formatting would change the program's tokens; file left unchanged");
+                status = 2;
+                continue;
+            }
+            if (out == src) { continue; }
+            if (check) {
+                println(path);
+                if (status == 0) { status = 1; }
+            } else if (!write_file(path, trust(out, "capstan fmt writes the user's own source file back after verifying that only whitespace changed"))) {
+                println(path + ": cannot write");
+                status = 2;
+            }
+        } else {
+            println(path + ": cannot read");
+            status = 2;
+        }
+    }
+    return status;
+}

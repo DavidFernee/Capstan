@@ -1,4 +1,4 @@
 // expect: CWE-20
 // spec: expr.interpolation types.tainted
-void save(string s) { }
+void save(string s) {}
 int main() { if (let name = read_line()) { save($"user={name}"); } return 0; }

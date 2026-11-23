@@ -174,6 +174,29 @@ capstanc test  -o out.c [--strict] files...
 
 `--strict` turns every warning into an error. `--release` makes missing policy tests errors.
 
+## Formatter
+
+```
+capstan fmt [--check] files...
+```
+
+`capstan fmt` rewrites files in the house style; `--check` lists the files that are not
+formatted, changes nothing and exits 1 if there are any. Only whitespace changes:
+
+- four spaces of indentation per open block, plus one level for a line that continues an
+  unfinished statement or an open `(`, `[` or struct literal;
+- one space around binary operators and after `,` and `;`; none inside brackets, generic
+  arguments (`List<int>`), struct literals (`new P{x: 1}`), or around `.`, unary operators,
+  postfix `++`/`--` and the optional `?`; a space after `if`, `while`, `for`, `match` and `return`;
+- line breaks are kept, runs of blank lines become one, trailing whitespace is removed and
+  the file ends with one newline;
+- comments are unchanged. A trailing `//` comment keeps at least its gap, and trailing
+  comments that were aligned stay aligned.
+
+Before writing, the formatter scans its output again and requires the same tokens with the
+same text; otherwise the file is left unchanged. A file that does not scan (an unterminated
+string or comment, an unexpected character) is refused with exit code 2.
+
 ## Conformance areas
 
 Every area below must be covered by at least one test that declares it with a
@@ -222,3 +245,4 @@ When the language gains a feature, add its area here and its tests together.
 | `diag.messages` | error message text, positions, suggestions |
 | `warnings` | warnings and their CWE codes |
 | `modes` | `--strict` and `--release` |
+| `tools.fmt` | `capstan fmt`: layout rules, idempotence, comments, refusing unscannable input |

@@ -41,7 +41,7 @@ either impossible to express or a compile error, and say plainly what remains.**
 ## 4. Roadmap
 
 Each version must keep the self-hosting fixpoint, the full test suite and the
-compiler's own `--strict` check passing.
+compiler's own `--strict` check passing, and the repository formatted with `capstan fmt`.
 
 ### v0.1 — Self-hosting safe core *(done)*
 Structs, optionals, lists, maps, checked integers, taint tracking, secrets,
@@ -56,18 +56,22 @@ sanitizers and coverage. A commercial-grade test suite: published crypto vectors
 conformance against a second implementation, differential and mutation fuzzing,
 sanitizers, GC stress, pathological limits and a benchmark gate (see TESTING.md).
 
-### v0.3 — Everyday language *(done, except the formatter)*
-Done: enums with exhaustive `match`, modules, columns, source excerpts and did-you-mean in diagnostics,
-`x++`, list and map operations, struct methods, packed `List<bool>`, plus the CWE red-team atlas and
-20 gap closures (`Html`/`LogText`, `sensitive struct`, secret wiping, heap limit, new lints).
-Remaining from the original plan:
-- `enum` with payloads and exhaustive `match` (replacing int constants for roles and states)
-- `else if` chains without nesting, `i++`, ternary-free conditional expressions
-- string interpolation that preserves taint: `"Hello {name}"`
-- methods on structs (`p.distance()`), `List.pop/insert/remove`, `Map.remove`, sorting
-- `import "module"` with one file per module, public/private visibility
-- better diagnostics: column numbers, source excerpts, "did you mean" suggestions, error recovery
-- `capstan fmt` (formatter)
+### v0.3 — Everyday language *(done)*
+Enums with payloads and exhaustive `match`, `else if` chains, `x++`, string interpolation that
+preserves taint (`$"Hello {name}"`), struct methods, `List.pop/insert/remove_at/sort`, `Map.remove`,
+`import "module"` with one file per module, packed `List<bool>`, and diagnostics with columns,
+source excerpts and "did you mean" suggestions. Also the CWE red-team atlas and 20 gap closures
+(`Html`/`LogText`, `sensitive struct`, secret wiping, heap limit, new lints).
+
+`capstan fmt`, the formatter, completes the version. It is written in Capstan (`tools/fmt.cap`),
+changes whitespace only and checks its own output token for token before writing. Writing a
+source file back is its one `trust()`, so its build shows one AUDIT warning: the first in-tree use
+of the escape hatch, and the first entry the v0.10 audit command will list. The repository is
+formatted, and the suite enforces it and fuzzes the formatter (see TESTING.md).
+
+Carried forward, because neither blocks everyday use:
+- `public`/`private` visibility for module members (v0.5, alongside interfaces)
+- parser error recovery, so one run reports more than one syntax error (with the LSP server, Phase A)
 
 ### v0.4 — Performance *(packed bool lists done)*
 - packed, type-specialised lists (`List<bool>` in one byte per element) and unboxed optionals
@@ -77,6 +81,7 @@ Remaining from the original plan:
 
 ### v0.5 — Abstraction
 - user generics with interfaces (`interface Comparable<T>`)
+- `public`/`private` visibility for module members
 - closures that capture by value (no dangling references)
 - error handling: `Result<T, E>` with `?` propagation (no exceptions)
 
@@ -118,12 +123,14 @@ Remaining from the original plan:
 
 ## 5. Tooling and IDE
 
-### Phase A — Language server (with v0.3)
+### Phase A — Language server (next, alongside v0.4)
 An LSP server written in Capstan, reusing the compiler front end:
+- prerequisite: parser error recovery, so an editor sees every error in a file at once
 - red and yellow underlines with CWE codes, linking to the CWE description
 - hover types (`Tainted`, `Grant<ReadRecord>`), go to definition, find references, rename
 - quick fixes: "wrap in `escape_log()`", "unwrap with `if (let ...)`",
   "generate a denial test for this policy"
+- format on save through `capstan fmt` (done as a command-line tool)
 - works in VS Code, JetBrains, Neovim, Zed and others from day one
 
 ### Phase B — Capstan IDE (with v0.6)
@@ -185,6 +192,7 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 
 - every safety rule has at least one rejecting test, and every runtime check a stopping test
 - the compiler passes its own `--strict` check
+- every source file in the repository is formatted (`capstan fmt --check`)
 - the bootstrap fixpoint is verified in CI
 - sanitiser runs (ASan/UBSan) of the compiler and examples in CI
 - differential and mutation fuzzing on every change; long campaigns nightly
