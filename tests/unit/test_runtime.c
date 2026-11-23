@@ -388,6 +388,8 @@ __attribute__((noinline)) static void scrub_stack(int depth) {
 
 /* The collector must keep objects reachable only through interior pointers,
    large objects, registered globals, and nested structures. */
+#define CAP_DISGUISE_GC ((uintptr_t)0x3c3c3c3c3c3c3c3cULL)
+__attribute__((noinline)) static void scrub_stack(int depth);
 static CapStr *global_root;
 static void test_gc(void) {
     cap_gc_root((void **)&global_root);
@@ -411,6 +413,55 @@ static void test_gc(void) {
     cap_gc_collect();
     CHECK(cap_gc.heap <= before + (size_t)8 * 65536);   /* garbage is reused, not accumulated */
     CHECK(cap_gc.live < (size_t)4 << 20);
+}
+
+/* Pages a collection leaves empty go back to the operating system beyond a reserve,
+   are reused (for any size class) before new memory is requested, and a stale
+   pointer into a released page is treated as pointing at nothing. */
+static uintptr_t stale_addr;
+__attribute__((noinline)) static void fill_and_drop(void) {
+    /* About 50 MiB of garbage with no collection in between (the threshold is
+       raised for the duration), so one collection then finds it all empty. */
+    size_t saved = cap_gc.threshold;
+    cap_gc.threshold = (size_t)1 << 40;
+    for (int i = 0; i < 600000; i++) {
+        CapStr *t = cap_str_new("0123456789012345678901234567890123456789", 40);
+        if (i == 1000) stale_addr = (uintptr_t)t ^ CAP_DISGUISE_GC;
+    }
+    cap_gc.threshold = saved;
+}
+/* Collect from a fresh frame after clearing the stack and the callee-saved
+   registers, so stale copies of dropped pointers do not keep them alive. */
+__attribute__((noinline)) static void collect_clean(void) {
+    scrub_stack(16);
+    __asm__ volatile("" ::: "memory");
+#if defined(__x86_64__)
+    __asm__ volatile("xor %%r12d, %%r12d\n\txor %%r13d, %%r13d\n\txor %%r14d, %%r14d\n\txor %%r15d, %%r15d\n\txor %%ebx, %%ebx" ::: "r12", "r13", "r14", "r15", "rbx", "memory");
+#endif
+    cap_gc_collect();
+}
+static void test_gc_release(void) {
+    cap_gc_collect();
+    size_t released_before = cap_gc.released_total, heap_before = cap_gc.heap;
+    fill_and_drop();
+    collect_clean();
+    CHECK(cap_gc.released_total > released_before);          /* memory went back */
+    CHECK(cap_gc.heap <= heap_before + ((size_t)32 << 20));  /* at most the reserve stays */
+    /* A stale pointer into the released memory must not be followed or kept. */
+    volatile uintptr_t stale = stale_addr ^ CAP_DISGUISE_GC;
+    cap_gc_collect();
+    CHECK(stale != 0);
+    /* Reuse: allocations of another size class take the spare pages first. */
+    size_t reused_before = cap_gc.reused_total, pages_before = cap_gc.npages;
+    CapList *keep = cap_list_new();
+    for (int i = 0; i < 20000; i++) cap_list_push(keep, cap_vp(cap_str_new("a much longer string that needs a bigger size class than forty bytes", 68)));
+    CHECK(cap_gc.npages == pages_before);                     /* no new memory was requested */
+    CHECK(cap_gc.reused_total >= reused_before);
+    int ok = 1;
+    for (int i = 0; i < 20000; i++) if (((CapStr *)keep->items[i].p)->len != 68) ok = 0;
+    cap_gc_collect();
+    for (int i = 0; i < 20000; i++) if (((CapStr *)keep->items[i].p)->data[0] != 'a') ok = 0;
+    CHECK(ok);
 }
 
 /* Collected secrets must be wiped (CWE-244). The test keeps only disguised
@@ -462,6 +513,7 @@ int main(void) {
     test_arithmetic();
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
+    test_gc_release();
     test_secret_wipe();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;

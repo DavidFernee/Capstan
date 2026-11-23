@@ -103,7 +103,33 @@ Remaining:
   widened fixpoint over every call site, recursion included; the compiler now proves 227 of its
   own checks, up from 203. The `calls` benchmark turned out not to pay for checks, since it runs
   at the same speed with `--keep-checks`; its gap to C is call overhead.)*
-- generational collection; returning empty pages to the operating system
+- generational collection; returning empty pages to the operating system *(pages: done. Pages
+  a collection leaves empty go back to the OS beyond a reserve of twice the next threshold, and
+  are reused for any size class before new memory is requested. A program that builds 140 MB
+  and drops it now ends using 53 MB instead of 180 MB, and runs 2.6 times faster, because
+  collections no longer sweep the empty pages.)*
+  *Generational collection, measured:* collection takes about a third of the compiler's own
+  build (0.057 s of 0.18 s, 16 collections each re-marking a live heap that grows to 6 MB of
+  syntax trees and tables) and about 10% of the `alloc` and `strings` benchmarks. The design,
+  for a collector that does not move objects:
+  - *two generations by mark bits:* objects that survive a collection keep their mark ("sticky"
+    marks) and are old; a minor collection marks only from the roots and from old objects that
+    may point to young ones, and sweeps only young objects. Every few minor collections, or when
+    the old generation has grown by half, a full collection runs as today
+  - *a write barrier:* every store of a pointer into a heap object (a struct field, a list or
+    map element, a grant's arguments) marks that object's card dirty. The code generator emits
+    it at each store; runtime functions that store (`push`, `set`, `insert`) do it themselves.
+    Pointer-free (atomic) and secret pages need no barrier
+  - *the barrier can be proved complete:* a missed barrier frees a reachable object, which is a
+    use-after-free, so it must never happen. A verifying mode (`CAPSTAN_GC_VERIFY=1`) runs a full
+    mark after every minor collection and stops the program if the minor collection would have
+    freed anything the full mark reached. The whole test suite, the fuzzers and the compiler's
+    own bootstrap run in this mode in CI, so a store site without a barrier fails a test instead
+    of reaching a user
+  - expected effect: most collections mark only what was allocated since the last one, so the
+    compiler's collection time should fall by more than half
+  The barrier sites are in `compiler/codegen.cap`; this work starts after the open changes to
+  list code generation (#36) are merged, to avoid conflicting with them.
 - benchmarks within 20% of C (now: alloc is; arrays about 1.3×, calls 1.8×, strings 1.2× since
   `int_to_str` stopped using `snprintf`, which was 38% of its time)
 

@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Collector returns empty pages to the operating system beyond a reserve, and reuses them for any
+  size class before requesting new memory; empty pages are no longer swept. A program that builds
+  and drops 140 MB ends at 53 MB resident instead of 180 MB and runs 2.6 times faster
 - `List<bool>` stores its elements as C `bool` rather than `uint8_t`: a byte store may alias
   anything, so the C compiler reloaded the list's length and storage after every write. The
   `arrays` benchmark runs 16% fewer instructions.

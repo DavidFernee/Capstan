@@ -15,6 +15,10 @@
  *    credential does not linger in freed memory (CWE-244).
  *  - The heap has a limit (CAPSTAN_MAX_HEAP, default three quarters of
  *    physical memory). Exceeding it stops the program safely (CWE-400).
+ *  - Pages left empty by a collection are returned to the operating system
+ *    (madvise), beyond a reserve kept for reuse, and are reused before new
+ *    memory is requested. Their addresses stay reserved, so a stale pointer
+ *    into one is still recognised as pointing at nothing.
  *  - Roots: the machine stack, callee-saved registers (spilled with setjmp),
  *    and global variables registered by the generated code. The stack and
  *    object contents are scanned conservatively.
@@ -36,6 +40,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <unistd.h>
+#include <sys/mman.h>
 
 /* Upper bound on any length (see the heap limit below). */
 #define CAP_MAX_LEN ((size_t)1 << 48)
@@ -71,6 +76,8 @@ typedef struct CapPage {
     char *base;
     uint32_t objsize, nobj;
     int atomic;
+    int spare;               /* empty and in the spare list, not in any free list */
+    int released;            /* spare, and its memory has been returned to the OS */
     uint8_t *alloc;
     uint8_t *mark;
 } CapPage;
@@ -90,6 +97,8 @@ static struct {
     uintptr_t lo, hi;
     size_t since, threshold, live, heap, peak_heap, total, collections;
     void **mstack; size_t msp, mcap;
+    CapPage **spare; size_t nspare, capspare;  /* empty pages, reused before new ones */
+    size_t released_total, reused_total;
 } cap_gc;
 
 static void cap_gc_oom(void) {
@@ -104,8 +113,9 @@ static void *cap_gc_meta(size_t n) {
 }
 
 static void cap_gc_report(void) {
-    fprintf(stderr, "gc: collections=%zu total_allocated=%zu live=%zu heap=%zu peak_heap=%zu\n",
-            cap_gc.collections, cap_gc.total, cap_gc.live, cap_gc.heap, cap_gc.peak_heap);
+    fprintf(stderr, "gc: collections=%zu total_allocated=%zu live=%zu heap=%zu peak_heap=%zu pages_released=%zu pages_reused=%zu\n",
+            cap_gc.collections, cap_gc.total, cap_gc.live, cap_gc.heap, cap_gc.peak_heap,
+            cap_gc.released_total, cap_gc.reused_total);
 }
 
 /* ---- stack overflow guard (CWE-674) -----------------------------------------
@@ -230,21 +240,78 @@ static void cap_gc_range(uintptr_t a, uintptr_t b) {
     if (b > cap_gc.hi) cap_gc.hi = b;
 }
 
-static void cap_gc_new_page(int atomic, int cls) {
-    void *mem = NULL;
-    if (posix_memalign(&mem, CAP_PAGE_SIZE, CAP_PAGE_SIZE) != 0) cap_gc_oom();
-    CapPage *pg = (CapPage *)cap_gc_meta(sizeof(CapPage));
-    pg->base = (char *)mem;
+/* Move an empty page to the spare list, from which any size class can take it.
+   With `release`, its memory also goes back to the operating system. Either
+   way the address range stays reserved and the page stays in the page table
+   with nothing allocated, so a stale pointer into it still maps to nothing. */
+static void cap_gc_release(CapPage *pg) {
+    if (pg->released) return;
+#if defined(__APPLE__)
+    madvise(pg->base, CAP_PAGE_SIZE, MADV_FREE);
+#elif defined(MADV_DONTNEED)
+    madvise(pg->base, CAP_PAGE_SIZE, MADV_DONTNEED);
+#endif
+    pg->released = 1;
+    cap_gc.heap -= CAP_PAGE_SIZE;
+    cap_gc.released_total++;
+}
+
+static void cap_gc_spare_page(CapPage *pg, int release) {
+    pg->spare = 1;
+    if (release) cap_gc_release(pg);
+    if (cap_gc.nspare == cap_gc.capspare) {
+        size_t nc = cap_gc.capspare ? cap_gc.capspare * 2 : 16;
+        CapPage **ns = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
+        if (cap_gc.nspare) memcpy(ns, cap_gc.spare, sizeof(CapPage *) * cap_gc.nspare);
+        free(cap_gc.spare);
+        cap_gc.spare = ns;
+        cap_gc.capspare = nc;
+    }
+    cap_gc.spare[cap_gc.nspare++] = pg;
+}
+
+/* Set up a page's metadata for size class `cls` and thread its slots onto the free list. */
+static void cap_gc_format_page(CapPage *pg, int atomic, int cls) {
+    uint32_t nobj = (uint32_t)(CAP_PAGE_SIZE / cap_class_size[cls]);
+    if (pg->alloc && pg->nobj != nobj) {
+        free(pg->alloc);
+        free(pg->mark);
+        pg->alloc = NULL;
+    }
+    if (!pg->alloc) {
+        pg->alloc = (uint8_t *)cap_gc_meta(nobj);
+        pg->mark = (uint8_t *)cap_gc_meta(nobj);
+    } else {
+        memset(pg->alloc, 0, nobj);
+        memset(pg->mark, 0, nobj);
+    }
     pg->objsize = cap_class_size[cls];
-    pg->nobj = (uint32_t)(CAP_PAGE_SIZE / pg->objsize);
+    pg->nobj = nobj;
     pg->atomic = atomic;
-    pg->alloc = (uint8_t *)cap_gc_meta(pg->nobj);
-    pg->mark = (uint8_t *)cap_gc_meta(pg->nobj);
+    pg->spare = 0;
+    pg->released = 0;
     for (uint32_t i = pg->nobj; i-- > 0;) {
         void **slot = (void **)(pg->base + (size_t)i * pg->objsize);
         *slot = cap_gc.freelist[atomic][cls];
         cap_gc.freelist[atomic][cls] = slot;
     }
+}
+
+static void cap_gc_new_page(int atomic, int cls) {
+    if (cap_gc.nspare) {
+        CapPage *pg = cap_gc.spare[--cap_gc.nspare];
+        if (pg->released) {
+            cap_gc.heap += CAP_PAGE_SIZE;
+            cap_gc.reused_total++;
+        }
+        cap_gc_format_page(pg, atomic, cls);
+        return;
+    }
+    void *mem = NULL;
+    if (posix_memalign(&mem, CAP_PAGE_SIZE, CAP_PAGE_SIZE) != 0) cap_gc_oom();
+    CapPage *pg = (CapPage *)cap_gc_meta(sizeof(CapPage));
+    pg->base = (char *)mem;
+    cap_gc_format_page(pg, atomic, cls);
     if (cap_gc.npages == cap_gc.cappages) {
         size_t nc = cap_gc.cappages ? cap_gc.cappages * 2 : 16;
         CapPage **np = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
@@ -340,14 +407,24 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
     /* sweep */
     size_t live = 0;
     for (int a = 0; a < CAP_KINDS; a++) for (int c = 0; c < CAP_NCLASS; c++) cap_gc.freelist[a][c] = NULL;
+    /* Pages left empty are kept, up to a reserve, for the next allocations; the
+       rest go back to the OS. The reserve covers what the program will allocate
+       before the next collection (the new threshold), so a program in a steady
+       state neither releases nor re-requests memory. It is decided after the
+       sweep, once the live size is known. */
+    size_t nempty = 0;
     for (size_t i = 0; i < cap_gc.npages; i++) {
         CapPage *pg = cap_gc.pages[i];
+        if (pg->spare) continue;
         int cls = 0;
         while (cap_class_size[cls] != pg->objsize) cls++;
+        int any = 0;
+        void *head = cap_gc.freelist[pg->atomic][cls];
         for (uint32_t j = pg->nobj; j-- > 0;) {
             if (pg->mark[j]) {
                 pg->mark[j] = 0;
                 live += pg->objsize;
+                any = 1;
             } else {
                 if (pg->atomic == 2 && pg->alloc[j]) memset(pg->base + (size_t)j * pg->objsize, 0, pg->objsize);
                 pg->alloc[j] = 0;
@@ -356,6 +433,35 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
                 cap_gc.freelist[pg->atomic][cls] = slot;
             }
         }
+        if (!any) {
+            /* Unthread this page's slots again: they were pushed last, so the free
+               list resumes at the head it had before this page. */
+            cap_gc.freelist[pg->atomic][cls] = head;
+            /* Gather empty pages at the front by swapping (page order does not matter). */
+            cap_gc.pages[i] = cap_gc.pages[nempty];
+            cap_gc.pages[nempty] = pg;
+            nempty++;
+        }
+    }
+    {
+        size_t next_threshold = live > CAP_MIN_THRESHOLD ? live : CAP_MIN_THRESHOLD;
+        /* Twice the threshold: rounding up to size classes can use up to twice the
+           bytes requested. */
+        size_t reserve = 2 * next_threshold / CAP_PAGE_SIZE;
+        /* Unreleased spares from earlier collections count towards the reserve;
+           any beyond it (the program's live size has fallen) are released now. */
+        size_t kept = 0;
+        for (size_t i = cap_gc.nspare; i-- > 0;) {
+            CapPage *sp = cap_gc.spare[i];
+            if (sp->released) continue;
+            if (kept < reserve) kept++; else cap_gc_release(sp);
+        }
+        /* Release the excess first and keep the reserve last, so the spare list
+           (taken from the end) hands out pages that are still in memory first. */
+        size_t keep_now = reserve > kept ? reserve - kept : 0;
+        if (keep_now > nempty) keep_now = nempty;
+        for (size_t i = keep_now; i < nempty; i++) cap_gc_spare_page(cap_gc.pages[i], 1);
+        for (size_t i = 0; i < keep_now; i++) cap_gc_spare_page(cap_gc.pages[i], 0);
     }
     size_t keep = 0;
     for (size_t i = 0; i < cap_gc.nlarge; i++) {
