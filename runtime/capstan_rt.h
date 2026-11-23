@@ -27,6 +27,8 @@
 #include <string.h>
 #include <setjmp.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "capstan_gc.h"
 
 /* ------------------------------------------------------------------ */
@@ -580,22 +582,38 @@ static CapBuf cap_buf_new(int64_t cap) {
 }
 
 /* File contents are untrusted input: returned as Tainted. Reads until end of file
-   rather than trusting the reported size, so pipes and /proc files work; a
-   directory or an unreadable file gives none. */
-static CapStr *cap_read_file(CapStr *path) {
+   rather than trusting the reported size, so pipes and /proc files work. Gives none
+   for a directory, an unreadable file, or a file longer than max bytes (default
+   2^30), so /dev/zero or an endless pipe cannot exhaust memory (CWE-400). Opening
+   never blocks: a FIFO with no writer reads as empty instead of hanging. */
+#define CAP_READ_FILE_DEFAULT ((int64_t)1 << 30)
+static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
+    if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_DEFAULT)) cap_panic("read_file() limit outside 0..2^30", "CWE-789", loc);
     if (!cap_path_ok(path)) return NULL;
-    FILE *f = fopen(path->data, "rb");
-    if (!f) return NULL;
+    int fd = open(path->data, O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
+    if (fd < 0) return NULL;
     struct stat st;
-    if (fstat(fileno(f), &st) != 0 || S_ISDIR(st.st_mode)) { fclose(f); return NULL; }
-    CapBuf b = cap_buf_new(S_ISREG(st.st_mode) && st.st_size > 0 && st.st_size < ((off_t)1 << 40) ? (int64_t)st.st_size + 1 : 4096);
+    if (fstat(fd, &st) != 0 || S_ISDIR(st.st_mode)) { close(fd); return NULL; }
+    int fl = fcntl(fd, F_GETFL);
+    if (fl < 0 || fcntl(fd, F_SETFL, fl & ~O_NONBLOCK) < 0) { close(fd); return NULL; }
+    FILE *f = fdopen(fd, "rb");
+    if (!f) { close(fd); return NULL; }
+    int64_t hint = S_ISREG(st.st_mode) && st.st_size > 0 && st.st_size <= max ? (int64_t)st.st_size + 1 : 4096;
+    CapBuf b = cap_buf_new(hint);
     char chunk[65536];
     size_t got;
-    while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) cap_buf_put(&b, chunk, (int64_t)got);
+    int64_t total = 0;
+    bool too_long = false;
+    while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) {
+        if ((int64_t)got > max - total) { too_long = true; break; }
+        cap_buf_put(&b, chunk, (int64_t)got);
+        total += (int64_t)got;
+    }
     int failed = ferror(f);
     fclose(f);
-    return failed ? NULL : b.s;
+    return failed || too_long ? NULL : b.s;
 }
+static CapStr *cap_read_file(CapStr *path) { return cap_read_file_max(path, CAP_READ_FILE_DEFAULT, 0); }
 
 /* One line of standard input without its newline, or none at end of input. Every
    byte is kept, including NUL bytes. */
@@ -811,6 +829,48 @@ static CapStr *cap_escape_log(CapStr *t) {
     }
     *w = 0;
     r->len = (int64_t)(w - r->data);
+    return r;
+}
+
+/* The contents of a JSON string literal (without the quotes) for any bytes
+   (CWE-116): '"' and '\\' are escaped; controls, DEL, '<', '>', '&' and the line
+   separators U+2028/U+2029 become \uXXXX (safe inside an HTML <script> too, CWE-79);
+   valid UTF-8 is kept; each invalid byte becomes U+FFFD, so the output is always
+   valid JSON. */
+static CapStr *cap_escape_json(CapStr *t) {
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 6 + 1);
+    char *w = r->data;
+    const unsigned char *s = (const unsigned char *)t->data;
+    int64_t i = 0;
+    while (i < t->len) {
+        unsigned char c = s[i];
+        if (c == '"' || c == '\\') { *w++ = '\\'; *w++ = (char)c; i++; continue; }
+        if (c == '\n') { *w++ = '\\'; *w++ = 'n'; i++; continue; }
+        if (c == '\t') { *w++ = '\\'; *w++ = 't'; i++; continue; }
+        if (c == '\r') { *w++ = '\\'; *w++ = 'r'; i++; continue; }
+        if (c < 32 || c == 127 || c == '<' || c == '>' || c == '&') { w += sprintf(w, "\\u%04x", c); i++; continue; }
+        if (c < 128) { *w++ = (char)c; i++; continue; }
+        uint32_t cp = 0;
+        int len = cap_utf8_seq(s + i, t->len - i, &cp);
+        if (len == 0) { memcpy(w, "\\ufffd", 6); w += 6; i++; continue; }
+        if (cp == 0x2028 || cp == 0x2029) { w += sprintf(w, "\\u%04x", (unsigned)cp); i += len; continue; }
+        memcpy(w, s + i, (size_t)len);
+        w += len;
+        i += len;
+    }
+    *w = 0;
+    r->len = (int64_t)(w - r->data);
+    return r;
+}
+
+/* A one-byte string that stays untrusted: decoding escapes in untrusted text
+   (%41, \u0041) cannot launder it, because the result is Tainted. */
+static CapStr *cap_taint_char(int64_t c, int64_t loc) {
+    if (CAP_UNLIKELY(c < 0 || c > 255)) cap_panic("taint_char() byte outside 0..255", "CWE-704", loc);
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + 2);
+    r->data[0] = (char)c;
+    r->data[1] = 0;
+    r->len = 1;
     return r;
 }
 

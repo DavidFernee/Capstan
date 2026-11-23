@@ -63,8 +63,22 @@ bin/capstan run  examples/patient_records.cap
 bin/capstan test examples/patient_records.cap
 bin/capstan check --release examples/patient_records.cap
 bin/capstan fmt   examples/patient_records.cap   # format in place (--check to verify only)
+bin/capstan lsp                               # language server for editors (stdin/stdout)
 tests/run.sh                                  # the full suite
 ```
+
+## Editors
+
+`bin/capstan lsp` is a language server: any editor with an LSP client can start it to
+underline what the compiler reports as you type, with each CWE code linked to its
+description. For example, in Neovim:
+
+```lua
+vim.lsp.start({ name = "capstan", cmd = { "/path/to/capstan/bin/capstan", "lsp" },
+                root_dir = vim.fs.root(0, ".git") })
+```
+
+See [the specification](docs/SPEC.md#language-server) for what it supports.
 
 ## What the compiler refuses
 
@@ -104,6 +118,7 @@ including what Capstan does **not** prevent.
 - [docs/CWE-COVERAGE.md](docs/CWE-COVERAGE.md): which weaknesses are prevented, and how
 - [docs/DESIGN-MAP.md](docs/DESIGN-MAP.md): design principles and roadmap, from language features to the IDE
 - [docs/K0-KERNEL-CVES.md](docs/K0-KERNEL-CVES.md): the Linux kernel's 2025 CVEs measured against Capstan (roadmap K0)
+- [docs/CHALLENGE.md](docs/CHALLENGE.md): draft rules for the Capstan Challenge, a planned yearly prize for writing a vulnerability Capstan says is impossible, subject to funding for a foundation to administer the language
 - [docs/TESTING.md](docs/TESTING.md): how the language is tested
 - [docs/assurance/](docs/assurance/README.md): memory-safety statement, threat model, and ISM and SSDF mapping
 
@@ -124,6 +139,8 @@ The suite (`tests/run.sh`) includes:
 - collector stress tests, pathological-input limits and sanitizer runs
 - differential and mutation fuzzing, and self-hosting reproducibility checks
 - formatter tests: expected layout, house style across the repository, whitespace and corruption fuzzing
+- language server tests: the compiler's exact diagnostics for every test program, protocol errors,
+  limits, sanitizers, and fuzzing of JSON and framing
 - every program at -O0, -O2 and -O3 with GCC and Clang; fuzzed programs under ASan and UBSan
 - measured test quality: line coverage of the compiler (about 98–100% per file) with enforced
   floors, and mutation testing of the compiler: injected compiler bugs must be caught
@@ -133,7 +150,7 @@ See [docs/TESTING.md](docs/TESTING.md).
 ## Status
 
 Capstan (0.4.0, unreleased) is a working, self-hosting language with garbage
-collection, enums, modules, struct methods, a formatter and range analysis. It is **not yet production-ready**: `sql_query()` and
+collection, enums, modules, struct methods, a formatter, a language server and range analysis. It is **not yet production-ready**: `sql_query()` and
 `run()` are demonstration sinks that print rather than execute, and there are no
 generics or concurrency yet. See the [design map](docs/DESIGN-MAP.md).
 

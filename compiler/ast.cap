@@ -6,6 +6,10 @@
 
 // ---- types ----------------------------------------------------------------
 
+// The largest source file the compiler and its tools read: a bigger one, or an
+// endless one such as /dev/zero, is refused rather than read into memory (CWE-400).
+const int MAX_SOURCE_BYTES = 16777216;
+
 const int TY_INT = 1;
 const int TY_BOOL = 2;
 const int TY_STR = 3;

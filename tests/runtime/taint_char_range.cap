@@ -1,0 +1,9 @@
+// expect-runtime: CWE-704
+// spec: runtime.checks
+int byte() { return 256; }
+
+int main() {
+    Tainted t = taint_char(byte());
+    println(int_to_str(t.len()));
+    return 0;
+}

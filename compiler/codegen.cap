@@ -355,6 +355,8 @@ string builtin_c(string f) {
     if (f == "escape_html") { return "cap_escape_html"; }
     if (f == "escape_log") { return "cap_escape_log"; }
     if (f == "escape_csv") { return "cap_escape_csv"; }
+    if (f == "escape_json") { return "cap_escape_json"; }
+    if (f == "taint_char") { return "cap_taint_char"; }
     if (f == "validate_path") { return "cap_validate_path"; }
     if (f == "validate_range") { return "cap_validate_range"; }
     if (f == "secret_env") { return "cap_secret_env"; }
@@ -372,7 +374,7 @@ string builtin_c(string f) {
 }
 
 bool builtin_needs_loc(string f) {
-    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes";
+    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes" || f == "taint_char";
 }
 
 string gen_call(Gen g, Node e) {
@@ -406,8 +408,13 @@ string gen_call(Gen g, Node e) {
     }
     Seq s2 = operands(g, e, 0);
     string extra = "";
+    string cf = builtin_c(f);
     if (builtin_needs_loc(f)) { extra = loc(e); }
-    return wrap(s2, builtin_c(f) + "(" + call_list(s2.names, 0, extra) + ")");
+    if (f == "read_file" && e.kids.len() == 2) {
+        cf = "cap_read_file_max";
+        extra = loc(e);
+    }
+    return wrap(s2, cf + "(" + call_list(s2.names, 0, extra) + ")");
 }
 
 // ---- statements ---------------------------------------------------------------

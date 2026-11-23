@@ -150,15 +150,19 @@ Remaining:
 
 ## 5. Tooling and IDE
 
-### Phase A — Language server (next, alongside v0.4)
+### Phase A — Language server (in progress, alongside v0.4)
 An LSP server written in Capstan, reusing the compiler front end:
 - prerequisite: parser error recovery, so an editor sees every error in a file at once
+  (still needed: until then the server shows the first syntax error, and every checker
+  diagnostic once the file parses)
 - red and yellow underlines with CWE codes, linking to the CWE description
+  (done: `capstan lsp`, `tools/lsp.cap`, gives exactly the compiler's diagnostics)
 - hover types (`Tainted`, `Grant<ReadRecord>`), go to definition, find references, rename
 - quick fixes: "wrap in `escape_log()`", "unwrap with `if (let ...)`",
   "generate a denial test for this policy"
 - format on save through `capstan fmt` (done as a command-line tool)
 - works in VS Code, JetBrains, Neovim, Zed and others from day one
+  (the server speaks standard LSP over stdio; editor extensions are not packaged yet)
 
 ### Phase B — Capstan IDE (with v0.6)
 A dedicated IDE built on the same server (for example a VS Code-based distribution):
@@ -509,6 +513,14 @@ Standing commitments, every release:
   the trusted base changes substantially.
 - **Threat model:** a maintained document stating what Capstan defends against, what it
   assumes, and what is out of scope ([assurance/THREAT-MODEL.md](assurance/THREAT-MODEL.md)).
+- **The Capstan Challenge** *(subject to funding for a foundation to administer the language)*: a
+  yearly prize for anyone who writes a vulnerability Capstan claims is impossible, in four tiers: a wrong atlas verdict, a broken safe stop, a working exploit, and
+  (with K1.10) a broken proof. Draft rules: [CHALLENGE.md](CHALLENGE.md).
+  *Stages:* now, findings through `SECURITY.md` are credited in the challenge's hall of fame;
+  once a foundation is established and funded to administer Capstan, cash prizes open when the
+  pool is held in full, an independent appeals panel is
+  named and the rules have had legal review; after K1.10, the proof tier carries the largest
+  prize. Each year closes with a public report alongside K0.
 
 ## 9. Government and defence use
 

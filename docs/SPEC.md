@@ -114,7 +114,7 @@ explicitly. Their meaning therefore never depends on precedence.
 | `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
-| `read_file(path)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, or a path containing a NUL byte (CWE-158). `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
+| `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
 | `read_bytes(n)` → `Tainted?`, `flush()` | `read_bytes` reads exactly `n` bytes of standard input (fewer only if the input ends first), every byte kept, or gives `none` at end of input; `read_bytes(0)` is `""`. `n` outside 0..2^30 stops the program (CWE-789); memory grows with the bytes read, not with `n`. `flush()` writes out everything printed so far, for programs that converse over a pipe (a language server, say) |
 | `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | |
@@ -124,6 +124,8 @@ explicitly. Their meaning therefore never depends on precedence.
 | `validate_path(t)` → `string?` | a relative path with no `.` or `..` segments (CWE-22) that does not begin with `-` (CWE-88) |
 | `validate_range(t, min, max)` → `int?` | an integer within bounds (CWE-1284) |
 | `escape_csv(t)` → `string` | one quoted CSV field, with leading `= + - @` neutralised (CWE-1236) |
+| `escape_json(t)` → `string` | the contents of a JSON string literal, without the quotes (CWE-116): `"` and `\` escaped; controls, DEL, `<`, `>`, `&`, U+2028 and U+2029 as `\uXXXX`, so the text is safe inside an HTML `<script>` too (CWE-79); valid UTF-8 kept; each invalid byte becomes U+FFFD, so the result is always valid JSON |
+| `taint_char(c)` → `Tainted` | the one-byte text with byte value `c` (0..255, otherwise the program stops with CWE-704), still untrusted: for decoding escapes (`%41`, `\u0041`) in untrusted text without laundering it. `char_str()` of a byte of untrusted text is rejected (CWE-20) |
 | `taint(s)` → `Tainted` | marks a value as untrusted (useful in tests) |
 | `wrapping_add(a, b)`, `wrapping_sub(a, b)`, `wrapping_mul(a, b)` → `int` | arithmetic modulo 2^64; never stops |
 | `wrapping_shl(a, n)` → `int` | `a << n` modulo 2^64; `n` must be 0..63 (CWE-1335) |
@@ -229,6 +231,42 @@ Before writing, the formatter scans its output again and requires the same token
 same text; otherwise the file is left unchanged. A file that does not scan (an unterminated
 string or comment, an unexpected character) is refused with exit code 2.
 
+## Language server
+
+```
+capstan lsp
+```
+
+`capstan lsp` is a Language Server Protocol server on standard input and output, for any
+editor with an LSP client. It is built from the compiler's own lexer, parser and checker,
+so an open file shows exactly the diagnostics `capstanc check` reports for it:
+
+- each diagnostic has the compiler's line, column and message; errors have severity 1 and
+  warnings 2; the CWE or CAP code is the diagnostic's `code`, and a CWE code links to
+  `https://cwe.mitre.org/data/definitions/N.html` (`codeDescription.href`);
+- the range runs from the compiler's column to the end of the word there; a diagnostic
+  without a column covers its line. Positions count UTF-16 code units, or bytes if the
+  client offers the `utf-8` position encoding;
+- a file that declares `main()` gets the `main` checks; one without is checked as a library;
+- `import`s are read from documents open in the editor, otherwise from disk when the file
+  is inside the workspace root; diagnostics in an imported file are shown on its `import`;
+- `initializationOptions` `{"strict": true}` and `{"release": true}` act as `--strict` and
+  `--release`.
+
+Messages: `initialize`, `initialized`, `shutdown`, `exit` (exit code 0 after `shutdown`,
+otherwise 1), `textDocument/didOpen`, `didChange` (full text, or ranges), `didClose`
+(clears the file's diagnostics); the server sends `textDocument/publishDiagnostics` and
+`window/logMessage`. Errors follow JSON-RPC 2.0: invalid JSON or framing is -32700 with a
+null id, an invalid request -32600, an unknown method -32601, invalid parameters -32602,
+and a request before `initialize` -32002. Notifications are never answered.
+
+Everything the client sends is untrusted (`Tainted`); the server has no `trust()`. Its
+replies are UTF-8 JSON whose strings all pass through `escape_json()` (decoded `\uXXXX` and
+`%XX` escapes are rebuilt with `taint_char()`, so they stay untrusted). Limits (CWE-400): 16 MiB per message (a larger one is
+skipped unread and answered with -32600), 4,096-byte header lines, 32 header lines,
+JSON nesting of 64 levels, 1,000 open documents and 256 MiB of text in all, 1,000
+diagnostics per document, 256 imported files.
+
 ## Conformance areas
 
 Every area below must be covered by at least one test that declares it with a
@@ -265,7 +303,7 @@ When the language gains a feature, add its area here and its tests together.
 | `expr.bitwise` | `& \| ^ ~ << >> >>>`, required parentheses, shift counts, hexadecimal literals, wrapping arithmetic |
 | `builtins.io` | printing, files, arguments |
 | `builtins.validators` | the ways out of `Tainted`, and `trust()` |
-| `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c` |
+| `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c`, `escape_json` |
 | `builtins.sinks` | `sql_query` and `run` |
 | `builtins.crypto` | hashing and password hashing |
 | `safety.banned` | dangerous C idioms and weak primitives that do not exist |
@@ -281,3 +319,4 @@ When the language gains a feature, add its area here and its tests together.
 | `warnings` | warnings and their CWE codes |
 | `modes` | `--strict` and `--release` |
 | `tools.fmt` | `capstan fmt`: layout rules, idempotence, comments, refusing unscannable input |
+| `tools.lsp` | `capstan lsp`: the compiler's diagnostics over the Language Server Protocol, protocol errors, limits |

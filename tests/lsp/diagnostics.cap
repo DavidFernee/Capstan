@@ -1,0 +1,20 @@
+// spec: tools.lsp
+// Opened in the language server by tests/lsp/sessions.py, which compares the published
+// diagnostics with tests/lsp/diagnostics.json: positions in UTF-16 code units (the line
+// with "é" and an emoji), CWE codes linked to cwe.mitre.org, warnings as severity 2, and a
+// diagnostic without a column underlining its whole line.
+struct User { int id; }
+policy Owner(User u) { return u.id == 1; }
+
+void greet(Tainted name) {
+    println("héllo 😀 " + name);
+}
+
+void lookup(Tainted name) {
+    sql_query("SELECT * FROM users WHERE name = '" + name + "'");
+}
+
+int count() {
+    int unused = 0;
+    return total;
+}
