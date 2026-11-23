@@ -349,8 +349,9 @@ device; the largest source of race-caused use-after-free)*
   `view<T>(bytes)`, which the compiler allows only when `T` is plain data and the size and
   alignment are proved; the result of a view of untrusted bytes is `Tainted`. `container_of` becomes
   a checked downcast. This replaces casts without reintroducing type confusion (`CWE-843`).
-- **Checked shifts** (with T2): a shift by a negative amount or by at least the type's width stops
-  safely, as overflow does; `wrapping_shl` is explicit (`CWE-1335`).
+- **Checked shifts** *(done, T2)*: a shift by a negative amount or by at least the type's width is a
+  compile error when the count is a literal and stops safely otherwise, as overflow does;
+  `wrapping_shl` is explicit (`CWE-1335`). K0 now counts the 2025 shift CVE as stopped safely.
 
 **K1.7 Entry points declare their authorisation** *(missing permission checks)*
 - Every system call, ioctl, netlink handler and sysfs or procfs write is an entry point, and an entry

@@ -1764,7 +1764,7 @@ CVE-2025-38706,2025-09-04,sound/soc,NULL dereference,CWE-476,Prevented at compil
 CVE-2025-38707,2025-09-04,fs/ntfs3,insufficient validation,CWE-20,Logic error: beyond any language,Logic error: beyond any language,sanity check,fs/ntfs3: Add sanity check for file name
 CVE-2025-38708,2025-09-04,drivers/block,use-after-free,CWE-416,Prevented at compile time,Prevented at compile time,use after free,drbd: add missing kref_get in handle_write_conflicts
 CVE-2025-38709,2025-09-04,drivers/block,unclassified,,Not determinable from the record,Not determinable from the record,,loop: Avoid updating block size under exclusive owner
-CVE-2025-38710,2025-09-04,fs/gfs2,shift out of bounds,CWE-1335,Outside Capstan's current reach,Stopped safely at run time,undefined shift,gfs2: Validate i_depth for exhash directories
+CVE-2025-38710,2025-09-04,fs/gfs2,shift out of bounds,CWE-1335,Stopped safely at run time,Stopped safely at run time,undefined shift,gfs2: Validate i_depth for exhash directories
 CVE-2025-38711,2025-09-04,fs/smb,deadlock,CWE-833,Outside Capstan's current reach,Prevented at compile time,deadlock,smb/server: avoid deadlock when linking with ReplaceIfExists
 CVE-2025-38712,2025-09-04,fs/hfsplus,assertion or warning reached,CWE-617,Not determinable from the record,Not determinable from the record,BUG_ON,hfsplus: don't use BUG_ON() in hfsplus_create_attributes_file()
 CVE-2025-38713,2025-09-04,fs/hfsplus,out-of-bounds read,CWE-125,Stopped safely at run time,Stopped safely at run time,out-of-bounds,hfsplus: fix slab-out-of-bounds read in hfsplus_uni2asc()

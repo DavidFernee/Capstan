@@ -3,9 +3,9 @@
  "total": 2702,
  "buckets": {
   "Prevented at compile time": 1081,
-  "Stopped safely at run time": 423,
+  "Stopped safely at run time": 424,
   "Logic error: beyond any language": 175,
-  "Outside Capstan's current reach": 446,
+  "Outside Capstan's current reach": 445,
   "Not determinable from the record": 577
  },
  "memory_safety": 1299,
