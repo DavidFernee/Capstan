@@ -69,8 +69,6 @@ KERNEL_OVERRIDES = {
     "CWE-833": "As CWE-362. Needs lock ordering checked by the compiler (v0.7, K1).",
     "CWE-843": "Capstan has no casts, but kernel code must reinterpret device memory and container "
                "structures. Needs typed hardware access under proof (K1).",
-    "CWE-1335": "Capstan has no shift operators yet; kernel code needs them. A checked shift, like "
-                "checked arithmetic, is the natural rule (to be designed).",
     "CWE-1037": "Speculative-execution leaks are a property of the processor, not of the source language.",
     "CWE-617": "A kernel WARN_ON or BUG_ON was reached, but the record does not say what state "
                "reached it, so the underlying weakness is unknown.",
@@ -86,7 +84,6 @@ PROJECTION = {
     "improper locking": (COMPILE, "K1.2 guarded data, RCU type; K1.3 contexts"),
     "deadlock": (COMPILE, "K1.4 lock levels (dynamic orders: safe stop)"),
     "type confusion": (COMPILE, "K1.6 typed views"),
-    "shift out of bounds": (RUNTIME, "K1.6 checked shifts"),
     "missing authorisation": (COMPILE, "K1.7 entry points declare policy"),
     "use after device removal": (COMPILE, "K1.5 structured concurrency, driver typestate"),
     "misaligned access": (COMPILE, "K1.6 typed views prove alignment"),

@@ -354,7 +354,7 @@ device; the largest source of race-caused use-after-free)*
   `view<T>(bytes)`, which the compiler allows only when `T` is plain data and the size and
   alignment are proved; the result of a view of untrusted bytes is `Tainted`. `container_of` becomes
   a checked downcast. This replaces casts without reintroducing type confusion (`CWE-843`).
-- **Checked shifts** (with T2): a shift by a negative amount or by at least the type's width stops
+- **Checked shifts** (done in T2): a shift by a negative amount or by at least the type's width stops
   safely, as overflow does; `wrapping_shl` is explicit (`CWE-1335`).
 
 **K1.7 Entry points declare their authorisation** *(missing permission checks)*
