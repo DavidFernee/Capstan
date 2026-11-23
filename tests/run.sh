@@ -163,6 +163,7 @@ for f in "$ROOT"/tests/io/*.cap; do
   rm -rf "$d1" "$d2"
 done
 if out="$($PY "$ROOT/tests/unit/stdio_interactive.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: conversation over a pipe" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/read_file_bounds.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: read_file bounds" "$out"; fi
 
 section "gc"
 "$C" build -o "$tmp/churn.c" "$ROOT/tests/gc/churn.cap" >/dev/null && "$CC" $CFLAGS "$tmp/churn.c" -o "$tmp/churn"
@@ -276,6 +277,7 @@ if out="$($PY "$ROOT/tests/lsp/sessions.py" "$L" 2>&1)"; then ok "$out"; else ba
 LSP_N=40; (( FULL )) && LSP_N=1000
 if out="$($PY "$ROOT/tests/lsp/fuzz.py" "$L" $LSP_N "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then ok "$out"; else bad "lsp fuzz" "$out"; fi
 if "$CC" $SAN "$tmp/lsp.c" -o "$tmp/lspsan" 2>/dev/null; then
+  out2=""
   if out="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/sessions.py" "$tmp/lspsan" 2>&1)" && out2="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/fuzz.py" "$tmp/lspsan" 20 "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then
     ok "language server clean under ASan+UBSan with GC stress (sessions and fuzzing)"
   else bad "sanitized language server" "$out $out2"; fi

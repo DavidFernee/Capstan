@@ -8,12 +8,20 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 - `escape_json(t)`: any text made safe inside a JSON string (always valid JSON, and safe inside an
   HTML `<script>`), and `taint_char(c)`: a byte that stays untrusted, so escapes in untrusted text
   (`%41`, `\u0041`) can be decoded without laundering it. Both requested by the language server.
+- `read_file()` is bounded: it gives `none` for a file longer than its limit (default 2^30, or
+  `read_file(path, max)`), so `/dev/zero` or an endless pipe cannot exhaust memory (CWE-400), and
+  opening a FIFO with no writer no longer blocks. The compiler, formatter and language server read
+  source files of at most 16 MiB.
 - `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
   `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
   Capstan program can hold a framed conversation over a pipe. The language server needs both.
 - Parser error recovery: after a syntax error the parser resumes at the next statement or
   declaration, so one run reports every independent syntax error (at most 50, so the output stays
   bounded). Needed by the language server.
+- The Capstan Challenge, drafted (docs/CHALLENGE.md, DESIGN-MAP section 8): a planned yearly
+  prize for writing a vulnerability Capstan claims is impossible, subject to funding for a
+  foundation to administer the language; until then, confirmed findings are credited in its hall
+  of fame
 - Bitwise operators `& | ^ ~ << >> >>>`, hexadecimal literals and `wrapping_add/sub/mul/shl`
   (trusted-base stage T2). Shift counts must be 0..63 (CWE-1335); `<<` that loses bits stops
   (CWE-190); mixing a bitwise operator with another operator needs parentheses (CWE-783);

@@ -108,7 +108,7 @@ int main() {
         loaded.set(path, 1);
         int index = ctx.files.len();
         ctx.files.push(path);
-        if (let src = read_file(path)) {
+        if (let src = read_file(path, MAX_SOURCE_BYTES)) {
             ctx.sources.push(src);
             List<Token> toks = lex(ctx, src, index);
             if (error_count(ctx) == 0) {
@@ -130,9 +130,9 @@ int main() {
         } else {
             ctx.sources.push(taint(""));
             if (ofile >= 0) {
-                report(ctx, ofile, oline, true, "", "cannot read imported file '" + path + "'");
+                report(ctx, ofile, oline, true, "", "cannot read imported file '" + path + "' (missing, unreadable, a directory, or over 16 MiB)");
             } else {
-                report(ctx, index, 0, true, "", "cannot read file");
+                report(ctx, index, 0, true, "", "cannot read file (missing, unreadable, a directory, or over 16 MiB)");
             }
         }
     }

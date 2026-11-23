@@ -300,7 +300,7 @@ def protocol(exe):
           "an error in an imported file is shown on its import: %r" % d)
     s.notify("textDocument/didChange", {"textDocument": {"uri": uri, "version": 3}, "contentChanges": [{"text": 'import "nowhere.cap";\n'}]})
     d = publish_for(s, uri)["diagnostics"]
-    check(len(d) == 1 and d[0]["message"] == "cannot read imported file 'nowhere.cap'", "missing import: %r" % d)
+    check(len(d) == 1 and d[0]["message"] == "cannot read imported file 'nowhere.cap' (missing, unreadable, a directory, or over 16 MiB)", "missing import: %r" % d)
     finish(s, "imports")
 
     # --strict and --release through initializationOptions.

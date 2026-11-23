@@ -534,7 +534,7 @@ BUILTINS = {
 }
 
 PRELUDE = r'''
-import sys, re, hashlib, os
+import sys, re, hashlib, os, stat
 sys.setrecursionlimit(200000)
 I64MIN, I64MAX = -(1 << 63), (1 << 63) - 1
 def _panic(msg, cwe):
@@ -607,10 +607,18 @@ def b_int_to_str(i): return str(i)
 def b_char_str(c):
     if c < 0 or c > 255: _panic("char_str out of range", "CWE-704")
     return chr(c)
-def b_read_file(p):
+def b_read_file(p, mx=1 << 30):
+    if mx < 0 or mx > (1 << 30): _panic("read_file() limit outside 0..2^30", "CWE-789")
     if p == "" or "\0" in p: return None
     try:
-        with open(p, "rb") as f: return f.read().decode("latin-1")
+        fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC)
+    except OSError: return None
+    try:
+        os.set_blocking(fd, True)
+        with os.fdopen(fd, "rb") as f:
+            if stat.S_ISDIR(os.fstat(f.fileno()).st_mode): return None
+            data = f.read(mx + 1)
+            return None if len(data) > mx else data.decode("latin-1")
     except OSError: return None
 def b_read_line():
     l = sys.stdin.buffer.readline()
