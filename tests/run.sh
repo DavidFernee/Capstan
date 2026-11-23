@@ -9,6 +9,7 @@
 #   unit         runtime unit tests (published crypto vectors, collections, validators, GC)
 #   reject       vulnerable programs that must not compile, each with its CWE
 #   diagnostics  ordinary errors with their exact messages
+#   recovery     every independent syntax error in a file is reported in one run
 #   runtime      programs that must stop safely with the named CWE
 #   ranges       checks the range analysis proves unnecessary: exact counts, and the same
 #                output with --keep-checks
@@ -74,6 +75,27 @@ expect_reject() {   # dir label
 }
 section "reject: vulnerabilities rejected at compile time"; expect_reject reject
 section "diagnostics: ordinary errors"; expect_reject diagnostics
+
+section "recovery: every independent syntax error reported in one run"
+for f in "$ROOT"/tests/recovery/*.cap; do
+  n="recovery/$(basename "$f")"
+  sed -n 's|^// error: ||p' "$f" >"$tmp/want"
+  out="$("$C" check "$f" 2>&1)"; code=$?
+  grep -o '^[^ ]*:[0-9]*:[0-9]*: error: .*' <<<"$out" | sed 's|^.*\.cap:||; s|error: ||' >"$tmp/got"
+  if [[ $code -ne 1 ]]; then bad "$n" "compiler exited $code"
+  elif diff -q "$tmp/want" "$tmp/got" >/dev/null; then ok "$n  ($(wc -l <"$tmp/want" | tr -d ' ') errors)"
+  else bad "$n" "errors differ: $(diff "$tmp/want" "$tmp/got" | head -3 | tr '\n' ' ')"; fi
+done
+# A file with very many errors stops after 50 syntax errors (bounded output, CWE-400).
+for i in $(seq 1 80); do echo "int f$i() { return ; ; }"; done | sed 's/return ;/return +;/' >"$tmp/many.cap"
+got=$("$C" check "$tmp/many.cap" 2>&1 | grep -c ': error: ')
+if [[ $got -eq 50 ]]; then ok "recovery: 80 broken functions give exactly 50 errors"; else bad "recovery: error limit" "got $got errors"; fi
+{ echo "int main() {"; for i in $(seq 1 80); do echo "  int x$i = +;"; done; echo "  return 0;"; echo "}"; } >"$tmp/many2.cap"
+got=$("$C" check "$tmp/many2.cap" 2>&1 | grep -c ': error: ')
+if [[ $got -eq 50 ]]; then ok "recovery: 80 broken statements in one block give exactly 50 errors"; else bad "recovery: error limit in a block" "got $got errors"; fi
+{ echo "int main() { return"; for i in $(seq 1 1100); do printf '('; done; echo " 1; }"; echo "int f() { return +; }"; } >"$tmp/deep.cap"
+got=$("$C" check "$tmp/deep.cap" 2>&1 | grep -c ': error: ')
+if [[ $got -eq 1 ]]; then ok "recovery: too-deep nesting stops parsing with one error"; else bad "recovery: nesting is fatal" "got $got errors"; fi
 
 section "runtime: safe stops (generated C warning-free; these programs recurse or loop on purpose)"
 for f in "$ROOT"/tests/runtime/*.cap; do
@@ -224,7 +246,7 @@ for f in "$ROOT"/tests/fmt/*.cap; do
   else bad "$n" "layout differs"; cat "$tmp/diff"; fi
 done
 # Every source file in the repository follows the house style, except the diagnostics
-# tests (their columns and lexical errors are what they test), formatter inputs and
+# and recovery tests (their columns and lexical errors are what they test), formatter inputs and
 # files marked `// fmt: off` (a lexical test that needs tabs and CRLF).
 STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io}/*.cap 2>/dev/null)
 if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then ok "$(wc -w <<<"$STYLED") repository sources are formatted"; else bad "house style" "run bin/capstan fmt on: $out"; fi

@@ -9,13 +9,19 @@ struct Parser {
     bool failed;
     int depth;
     List<Node> extra;     // methods lifted out of struct bodies
+    int fail_pos;         // where the current syntax error was found
+    int errors;           // syntax errors reported so far
+    bool fatal;           // stop: no recovery (nesting limit, too many errors)
 }
+
+const int MAX_SYNTAX_ERRORS = 50;
 
 // Deeply nested input must produce a diagnostic, not exhaust the compiler's stack (CWE-674).
 bool enter(Parser p) {
     p.depth += 1;
     if (p.depth > MAX_NESTING) {
         parse_fail(p, "nesting is too deep (limit " + int_to_str(MAX_NESTING) + ") [CWE-674]");
+        p.fatal = true;
         return false;
     }
     return true;
@@ -52,6 +58,10 @@ void advance(Parser p) {
     if (!is_eof(p)) { p.pos += 1; }
 }
 
+// A syntax error is reported once, then every parsing function unwinds quickly:
+// the position jumps to the end of the input. The nearest enclosing block (or
+// the declaration loop) then recovers from fail_pos, so one run reports every
+// independent syntax error in a file.
 void parse_fail(Parser p, string msg) {
     if (!p.failed) {
         Token t = cur(p);
@@ -60,9 +70,62 @@ void parse_fail(Parser p, string msg) {
         if (t.k == T_STR) { found = "a string literal"; }
         if (t.k == T_INT) { found = "a number"; }
         report_at(p.ctx, t.file, t.line, t.col, true, "", msg + ", found '" + found + "'");
+        p.fail_pos = p.pos;
+        p.errors += 1;
+        if (p.errors >= MAX_SYNTAX_ERRORS) { p.fatal = true; }
     }
     p.failed = true;
     p.pos = p.toks.len() - 1;
+}
+
+// Resume after a syntax error inside a block: skip to just after the statement's
+// ';', or past a nested { ... } that ends at this level, or stop before the
+// block's own '}'. After a fatal error nothing changes: the position stays at
+// the end of the input and every parsing loop stops.
+void recover_statement(Parser p) {
+    if (p.fatal) { return; }
+    int i = p.fail_pos;
+    int depth = 0;
+    while (i < p.toks.len() - 1) {
+        Token t = p.toks[i];
+        if (t.k == T_OP && t.s == "{") {
+            depth += 1;
+        } else if (t.k == T_OP && t.s == "}") {
+            if (depth == 0) { break; }
+            depth -= 1;
+            if (depth == 0) {
+                i += 1;
+                break;
+            }
+        } else if (t.k == T_OP && t.s == ";" && depth == 0) {
+            i += 1;
+            break;
+        }
+        i += 1;
+    }
+    p.pos = i;
+    p.failed = false;
+}
+
+// Resume after a syntax error in a declaration: skip past the end of the
+// declaration it was in (a ';' or a '}' at the top level).
+void recover_declaration(Parser p) {
+    if (p.fatal) { return; }
+    // At least one token is always skipped, unless the error is at the end of the input.
+    int i = p.fail_pos;
+    int depth = 0;
+    while (i < p.toks.len() - 1) {
+        Token t = p.toks[i];
+        i += 1;
+        if (t.k == T_OP && t.s == "{") { depth += 1; }
+        if (t.k == T_OP && t.s == "}") {
+            if (depth > 0) { depth -= 1; }
+            if (depth == 0) { break; }
+        }
+        if (t.k == T_OP && t.s == ";" && depth == 0) { break; }
+    }
+    p.pos = i;
+    p.failed = false;
 }
 
 void expect(Parser p, string s) {
@@ -365,7 +428,12 @@ Node parse_block(Parser p) {
     Node b = node_here(p, N_BLOCK);
     expect(p, "{");
     while (!at(p, "}") && !is_eof(p)) {
-        b.kids.push(parse_stmt(p));
+        Node st = parse_stmt(p);
+        if (p.failed) {
+            recover_statement(p);
+        } else {
+            b.kids.push(st);
+        }
     }
     expect(p, "}");
     return b;
@@ -674,12 +742,18 @@ Node parse_decl(Parser p) {
 }
 
 List<Node> parse_program(Ctx ctx, List<Token> toks) {
-    Parser p = new Parser{toks: toks, pos: 0, ctx: ctx, failed: false, depth: 0, extra: new List<Node>()};
+    Parser p = new Parser{toks: toks, pos: 0, ctx: ctx, failed: false, depth: 0, extra: new List<Node>(), fail_pos: 0, errors: 0, fatal: false};
     List<Node> decls = new List<Node>();
     while (!is_eof(p)) {
-        decls.push(parse_decl(p));
-        for (int i = 0; i < p.extra.len(); i += 1) { decls.push(p.extra[i]); }
-        p.extra.clear();
+        Node d = parse_decl(p);
+        if (p.failed) {
+            p.extra.clear();
+            recover_declaration(p);
+        } else {
+            decls.push(d);
+            for (int i = 0; i < p.extra.len(); i += 1) { decls.push(p.extra[i]); }
+            p.extra.clear();
+        }
     }
     return decls;
 }

@@ -160,6 +160,9 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
 - String literals in known credential formats (payment, cloud, source-hosting and chat tokens, private keys) are rejected (CWE-798).
 - Source nesting (expressions, statements, operator chains) is limited to 1,000 levels;
   deeper input is a compile error (CWE-674).
+- After a syntax error the compiler resumes at the next statement or declaration, so one run
+  reports every independent syntax error; it stops after 50 (CWE-400). Nesting that is too deep
+  ends parsing at once.
 - A program stopped by a runtime check exits with code 101.
 - The compiler may leave out a check that it proves can never fail (range analysis); this
   never changes what a program does. `--keep-checks` keeps every check.
