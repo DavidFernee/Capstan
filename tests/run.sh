@@ -10,6 +10,8 @@
 #   reject       vulnerable programs that must not compile, each with its CWE
 #   diagnostics  ordinary errors with their exact messages
 #   runtime      programs that must stop safely with the named CWE
+#   ranges       checks the range analysis proves unnecessary: exact counts, and the same
+#                output with --keep-checks
 #   conformance  programs with expected output, checked three ways:
 #                exact output, agreement with the independent stage-0 implementation,
 #                and warning-free generated C (-Wall -Wextra -Werror)
@@ -33,7 +35,7 @@ WFLAGS="-O2 -std=gnu11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-pa
 SAN="-O1 -g -std=gnu11 -w -fsanitize=address,undefined -fno-sanitize-recover=all -I$ROOT/runtime"
 export ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=0
 PY="python3 -I"
-SRC=$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,codegen,main}.cap)
+SRC=$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen,main}.cap)
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  pass  %s\n' "$1"; }
@@ -74,6 +76,19 @@ for f in "$ROOT"/tests/runtime/*.cap; do
   err="$(env $envs "$tmp/r" 2>&1 >/dev/null)"; code=$?
   if [[ $code -eq 101 ]] && grep -qF -- "$want" <<<"$err"; then ok "$n  ($want)"; else bad "$n" "exit $code: $err"; fi
 done
+
+section "ranges: run-time checks proved unnecessary"
+for f in $(grep -l '^// expect-unchecked: ' "$ROOT"/tests/*/*.cap); do
+  n="${f#$ROOT/tests/}"; want="$(sed -n 's|^// expect-unchecked: ||p' "$f" | head -1)"
+  "$C" build -o "$tmp/rg.c" "$f" >/dev/null 2>&1 && "$C" build --keep-checks -o "$tmp/rk.c" "$f" >/dev/null 2>&1 || { bad "$n" "did not compile"; continue; }
+  got=$(grep -o 'cap_[a-z_]*_u(' "$tmp/rg.c" | wc -l | tr -d ' '); kept=$(grep -o 'cap_[a-z_]*_u(' "$tmp/rk.c" | wc -l | tr -d ' ')
+  "$CC" $CFLAGS "$tmp/rg.c" -o "$tmp/rg" && "$CC" $CFLAGS "$tmp/rk.c" -o "$tmp/rk"
+  if [[ "$got" == "$want" && "$kept" == 0 ]] && cmp -s <("$tmp/rg" 2>&1; echo "exit $?") <("$tmp/rk" 2>&1; echo "exit $?"); then ok "$n  ($got checks proved; same result with --keep-checks)"
+  else bad "$n" "proved $got, expected $want; --keep-checks left $kept unchecked"; fi
+done
+"$C" build -o "$tmp/self_rg.c" $SRC && proved=$(grep -o 'cap_[a-z_]*_u(' "$tmp/self_rg.c" | wc -l | tr -d ' ')
+total=$(grep -oE 'cap_(add|sub|mul|div|mod|neg|list_get|list_set|blist_get|blist_set|str_at)(_u)?\(' "$tmp/self_rg.c" | wc -l | tr -d ' ')
+ok "the compiler's own code: $proved of $total checks proved unnecessary"
 
 section "conformance: output, stage-0 agreement, warning-free C"
 for f in "$ROOT"/tests/accept/*.cap "$ROOT"/tests/gc/*.cap; do
@@ -126,7 +141,7 @@ if "$CC" $SAN "$ROOT/build/stage3.c" -o "$tmp/san" 2>/dev/null; then
   done
   (( sanfail )) || ok "all conformance programs and examples clean under ASan+UBSan with GC stress"
   "$C" build -o "$tmp/fmtsan.c" "$ROOT/tools/fmt.cap" >/dev/null 2>&1 && "$CC" $SAN "$tmp/fmtsan.c" -o "$tmp/fmtsan" && cp "$ROOT/tests/fmt/layout.cap" $SRC "$tmp/" 2>/dev/null
-  if CAPSTAN_GC_STRESS=200 "$tmp/fmtsan" "$tmp/layout.cap" "$tmp"/{ast,lexer,parser,checker,codegen,main}.cap && cmp -s "$tmp/layout.cap" "$ROOT/tests/fmt/layout.fmt"; then ok "formatter clean under ASan+UBSan with GC stress"; else bad "sanitized formatter" "failed"; fi
+  if CAPSTAN_GC_STRESS=200 "$tmp/fmtsan" "$tmp/layout.cap" "$tmp"/{ast,lexer,parser,checker,ranges,codegen,main}.cap && cmp -s "$tmp/layout.cap" "$ROOT/tests/fmt/layout.fmt"; then ok "formatter clean under ASan+UBSan with GC stress"; else bad "sanitized formatter" "failed"; fi
 else
   echo "  skip  sanitizers not available for $CC"
 fi

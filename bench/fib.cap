@@ -1,0 +1,5 @@
+// Naive Fibonacci. With the range analysis the compiler proves n - 1 and n - 2 cannot
+// overflow (n >= 2 after the early return), and GCC then restructures the recursion,
+// so this measures the optimiser rather than call overhead; see calls.cap for that.
+int fib(int n) { if (n < 2) { return n; } return fib(n - 1) + fib(n - 2); }
+int main() { println(int_to_str(fib(35))); return 0; }

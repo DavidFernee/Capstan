@@ -99,6 +99,15 @@ static inline int64_t cap_neg(int64_t a, int64_t loc) {
     return -a;
 }
 
+/* Unchecked forms, used only where the compiler's range analysis has proved the
+   check cannot fail (compiler/ranges.cap). Same arguments, so evaluation is unchanged. */
+static inline int64_t cap_add_u(int64_t a, int64_t b, int64_t loc) { (void)loc; return a + b; }
+static inline int64_t cap_sub_u(int64_t a, int64_t b, int64_t loc) { (void)loc; return a - b; }
+static inline int64_t cap_mul_u(int64_t a, int64_t b, int64_t loc) { (void)loc; return a * b; }
+static inline int64_t cap_div_u(int64_t a, int64_t b, int64_t loc) { (void)loc; return a / b; }
+static inline int64_t cap_mod_u(int64_t a, int64_t b, int64_t loc) { (void)loc; return a % b; }
+static inline int64_t cap_neg_u(int64_t a, int64_t loc) { (void)loc; return -a; }
+
 /* Optional int/bool are boxed; none is NULL. */
 static int64_t *cap_box_int(int64_t v) {
     int64_t *p = (int64_t *)cap_alloc_atomic(sizeof(int64_t));
@@ -150,6 +159,7 @@ static inline int64_t cap_str_at(CapStr *s, int64_t i, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)s->len)) cap_panic("string index out of bounds", "CWE-125", loc);
     return (int64_t)(unsigned char)s->data[i];
 }
+static inline int64_t cap_str_at_u(CapStr *s, int64_t i, int64_t loc) { (void)loc; return (int64_t)(unsigned char)s->data[i]; }
 
 static CapStr *cap_str_slice(CapStr *s, int64_t a, int64_t b, int64_t loc) {
     if (a < 0 || b < a || b > s->len) cap_panic("string slice out of bounds", "CWE-125", loc);
@@ -202,6 +212,8 @@ static inline void cap_list_set(CapList *l, int64_t i, CapVal v, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-787", loc);
     l->items[i] = v;
 }
+static inline CapVal cap_list_get_u(CapList *l, int64_t i, int64_t loc) { (void)loc; return l->items[i]; }
+static inline void cap_list_set_u(CapList *l, int64_t i, CapVal v, int64_t loc) { (void)loc; l->items[i] = v; }
 
 static void *cap_list_pop_p(CapList *l) {
     if (l->len == 0) return NULL;
@@ -211,6 +223,12 @@ static void *cap_list_pop_p(CapList *l) {
 static int64_t *cap_list_pop_i(CapList *l) {
     if (l->len == 0) return NULL;
     return cap_box_int(l->items[--l->len].i);
+}
+
+/* Unboxed form for `if (let v = xs.pop())`, read immediately (see cap_map_peek_i). */
+static int64_t *cap_list_pop_peek_i(CapList *l) {
+    if (l->len == 0) return NULL;
+    return &l->items[--l->len].i;
 }
 
 static void cap_list_clear(CapList *l) { l->len = 0; }
@@ -287,6 +305,8 @@ static inline void cap_blist_set(CapBList *l, int64_t i, bool v, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-787", loc);
     l->items[i] = (uint8_t)v;
 }
+static inline bool cap_blist_get_u(CapBList *l, int64_t i, int64_t loc) { (void)loc; return l->items[i]; }
+static inline void cap_blist_set_u(CapBList *l, int64_t i, bool v, int64_t loc) { (void)loc; l->items[i] = (uint8_t)v; }
 
 static int64_t *cap_blist_pop(CapBList *l) {
     if (l->len == 0) return NULL;
@@ -409,6 +429,13 @@ static void *cap_map_get_p(CapMap *m, CapStr *k) {
 static int64_t *cap_map_get_i(CapMap *m, CapStr *k) {
     int64_t pos = cap_map_find(m, k);
     return pos < 0 ? NULL : cap_box_int(m->vals[pos].i);
+}
+
+/* Unboxed form for `if (let v = m.get(k))`: a pointer into the entry itself, valid
+   until the map next changes. The generated code reads it immediately. */
+static int64_t *cap_map_peek_i(CapMap *m, CapStr *k) {
+    int64_t pos = cap_map_find(m, k);
+    return pos < 0 ? NULL : &m->vals[pos].i;
 }
 
 /* Remove a key, keeping the remaining keys in insertion order. */

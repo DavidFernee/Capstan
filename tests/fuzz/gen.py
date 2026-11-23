@@ -12,6 +12,12 @@ zero, and so on.
 The programs deliberately hit edge cases: values near the 64-bit limits,
 negative indexes, empty slices, and map keys that are present or absent.
 
+They also exercise what the compiler's range analysis reasons about, because
+stage 0 has no range analysis and keeps every check: guards and early returns
+before arithmetic, loops that run up to the 64-bit limits, and index loops whose
+list shrinks in the body, in the condition or through a call. If the analysis
+ever dropped a check that could fire, the two runs would disagree.
+
 usage: gen.py [count] [seed]
 """
 import os, random, subprocess, sys, tempfile
@@ -95,7 +101,7 @@ class Gen:
 
     def stmt(self, sc, d, ind):
         r, p = self.r, "    " * ind
-        k = r.randrange(12)
+        k = r.randrange(15)
         if k <= 1:
             v = self.fresh()
             line = f"{p}int {v} = {self.int_expr(sc, 3)};"
@@ -131,6 +137,42 @@ class Gen:
         if k == 10 and sc["maps"]:
             m, v = sc["maps"][0], self.fresh("m")
             return [f'{p}if (let {v} = {m}.get("k" + int_to_str({self.int_expr(sc, 1)} % 5))) {{ println("hit " + int_to_str({v})); }} else {{ println("miss"); }}']
+        if k == 12 and d > 0:
+            # a loop at the edge of the 64-bit range, up or down
+            i, a, b, step = self.fresh("i"), r.randint(0, 4), r.randint(0, 4), r.randint(1, 3)
+            inner = dict(sc, ints=list(sc["ints"]) + [i], strs=list(sc["strs"]))
+            body = self.block(inner, 0, ind + 1, 2) + [f"{p}    println(int_to_str({i} % 10));"]
+            if r.random() < 0.5:
+                head = f"for (int {i} = (9223372036854775807 - {a}); {i} {r.choice(['<', '<='])} (9223372036854775807 - {b}); {i} += {step})"
+            else:
+                head = f"for (int {i} = (0 - 9223372036854775807 + {a}); {i} {r.choice(['>', '>='])} (0 - 9223372036854775807 - 1 + {b}); {i} -= {step})"
+            return [f"{p}{head} {{"] + body + [f"{p}}}"]
+        if k == 13 and sc["lists"]:
+            # an index loop; the list may shrink in the body, the condition or a call
+            xs, j = r.choice(sc["lists"]), self.fresh("j")
+            cond = f"{j} < {xs}.len()"
+            if r.random() < 0.2:
+                cond += f" && pop_ok({xs})"
+            shrink = r.choice(["", "", f"{xs}.pop();", f"shrink({xs});", f"if (let {self.fresh('q')} = {xs}.pop()) {{ println(\"popped\"); }}", f"{xs}.clear();"])
+            if shrink == f"{xs}.pop();":
+                shrink = f"if ({xs}.len() > 5) {{ {xs}.remove_at(0); }}"
+            lines = [f"{p}for (int {j} = {r.choice(['0', '0', '1'])}; {cond}; {j} += 1) {{",
+                     f"{p}    println(int_to_str({xs}[{j}] % 1000));"]
+            if shrink:
+                lines.append(f"{p}    {shrink}")
+                lines.append(f"{p}    println(int_to_str({xs}[{j}] % 1000));")
+            return lines + [f"{p}}}"]
+        if k == 14:
+            # a guard on a variable that never changes, then arithmetic it might justify
+            fixed = [v for v in sc["ints"] if v not in sc["mut"]]
+            if fixed:
+                v = r.choice(fixed)
+                op, lit = r.choice(["<", "<=", ">", ">=", "==", "!="]), self.lit()
+                aop = r.choice(["+", "-", "*", "/", "%"])
+                k1, k2 = self.lit(), self.lit()
+                if aop in "/%":
+                    k1, k2 = (x if x != "0" else "(0 + 0)" for x in (k1, k2))
+                return [f"{p}if ({v} {op} {lit}) {{ println(int_to_str({v} {aop} {k1})); }} else {{ println(int_to_str({v} {aop} {k2})); }}"]
         if k == 11:
             v = self.fresh("s")
             line = f"{p}string {v} = {self.str_expr(sc, 2)};"
@@ -142,7 +184,11 @@ class Gen:
         ar = self.r.randint(1, 3)
         params = [self.fresh("p") for _ in range(ar)]
         sc = {"ints": list(params), "mut": [], "strs": [], "lists": [], "maps": []}
-        body = self.block(sc, 1, 1, 4)
+        body = []
+        for q in params:
+            if self.r.random() < 0.5:     # an early return the range analysis learns from
+                body.append(f"    if ({q} {self.r.choice(['<', '<=', '>', '>='])} {self.lit()}) {{ return {self.int_expr(sc, 2)}; }}")
+        body += self.block(sc, 1, 1, 4)
         ret = self.int_expr(sc, 3)
         name = f"f{idx}"
         src = [f"int {name}({', '.join('int ' + q for q in params)}) {{"] + body + [f"    return {ret};", "}"]
@@ -157,6 +203,13 @@ class Gen:
             "    int m = i % n;",
             "    if (m < 0) { return m + n; }",
             "    return m;",
+            "}",
+            "void shrink(List<int> ys) {",
+            "    if (ys.len() > 0) { ys.remove_at(0); }",
+            "}",
+            "bool pop_ok(List<int> ys) {",
+            "    if (let _q = ys.pop()) { return true; }",
+            "    return false;",
             "}",
         ]
         for i in range(self.r.randint(0, 3)):

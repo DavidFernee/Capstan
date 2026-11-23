@@ -1,0 +1,11 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks types.int compiler.ranges
+// A guard proves nothing about a variable that is later reassigned.
+int main() {
+    int n = 1;
+    if (n < 100) {
+        n = 9223372036854775807;
+        println(int_to_str(n + 1));
+    }
+    return 0;
+}

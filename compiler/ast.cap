@@ -103,6 +103,7 @@ struct Ctx {
     List<Diag> diags;
     bool release;
     bool strict;
+    bool keep_checks;   // --keep-checks: emit every run-time check, even ones proved unnecessary
 }
 
 void report(Ctx c, int file, int line, bool error, string code, string msg) {

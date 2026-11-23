@@ -39,11 +39,12 @@ A new feature is not finished until its area is in the spec and covered.
 | **reject** | Vulnerable programs (SQL/command/log injection, null dereference, hard-coded credentials, weak crypto, missing authorisation, grant misuse, policy weaknesses) are refused, each with its CWE number. |
 | **diagnostics** | Ordinary mistakes (type errors, unknown names, syntax errors, missing returns) produce the exact expected message. |
 | **runtime** | Programs that can only fail at run time (out-of-bounds access, overflow, division by zero, a grant replayed on another object, runaway recursion) stop safely with exit code 101 and the named CWE. |
+| **ranges** | The range analysis proves exactly the expected checks unnecessary (`// expect-unchecked: N`), `--keep-checks` gives the same result with every check in place, and the compiler reports how many of its own checks it proves away. Runtime tests (`tests/runtime/range_*.cap`) cover each trap: loops up to the 64-bit limits, lists shrinking in the body, the condition or through an alias, reassigned variables and boundary guards. |
 | **conformance** | Programs covering each section of the language reference must (1) print exactly the expected output, (2) agree with the independent stage-0 implementation, and (3) produce C that compiles with `-Wall -Wextra -Werror`. |
 | **gc** | Memory stays bounded: the churn test allocates more than 500 MB with a peak heap under 64 MB. Collecting on every single allocation must not change any value. The compiler's output is unchanged under collector stress. |
 | **limits** | Pathological input (100,000 nested parentheses or blocks, 50,000-term expressions, 20,000-statement functions) gets a diagnostic or compiles; it never crashes the compiler. |
 | **cwe atlas** | An attempt to write each of about 250 code-level CWEs in Capstan; every verdict (rejected, stopped, neutralised, inexpressible, gap) is re-checked. |
-| **fuzz** | *Differential:* random well-typed programs (values near the 64-bit limits, zero divisors, edge-case indexes) must give identical output and exit codes from the native compiler and stage 0, including identical safety stops. *Mutation:* corrupted versions of every program in the repository must never crash or hang the compiler, and any program it accepts must produce valid C. |
+| **fuzz** | *Differential:* random well-typed programs (values near the 64-bit limits, zero divisors, edge-case indexes, and guards, limit loops and shrinking lists aimed at the range analysis) must give identical output and exit codes from the native compiler and stage 0, which has no range analysis, including identical safety stops. *Mutation:* corrupted versions of every program in the repository must never crash or hang the compiler, and any program it accepts must produce valid C. |
 | **sanitizers** | The compiler (under collector stress), the formatter, the runtime unit tests and every conformance program and example run clean under AddressSanitizer and UndefinedBehaviorSanitizer. |
 | **bootstrap** | The compiler reproduces itself byte for byte; it does so when built with a different C compiler too; stage 0 still bootstraps to the identical compiler; the compiler passes its own `--strict --release` checks; its generated C is warning-free. |
 | **examples** | Example programs pass `--release` checks (including mandatory denial tests) and their own tests. The test runner itself reports failures correctly and keeps going after one. |
@@ -76,6 +77,7 @@ permanent regression tests.
 - A rejected program: `tests/reject/name.cap`, with first line `// expect: CWE-nnn`
   (optionally `// flags: --strict` or `--release`).
 - A runtime stop: `tests/runtime/name.cap`, with `// expect-runtime: CWE-nnn`.
+- A range-analysis count: add `// expect-unchecked: N` to any test; the suite counts the unchecked operations in its C.
 - A conformance program: `tests/accept/name.cap` plus `name.out` with the exact expected output.
 - A formatter case: `tests/fmt/name.cap` (the input) plus `name.fmt` (the exact expected result).
 - Every test file carries a `// spec:` line naming the conformance areas it covers.

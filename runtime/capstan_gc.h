@@ -37,6 +37,9 @@
 #include <signal.h>
 #include <unistd.h>
 
+/* Upper bound on any length (see the heap limit below). */
+#define CAP_MAX_LEN ((size_t)1 << 48)
+
 #if defined(__clang__)
 #define CAP_NO_SANITIZE __attribute__((no_sanitize("address"), noinline))
 #elif defined(__GNUC__)
@@ -163,6 +166,9 @@ static void cap_gc_init(void) {
         long pages = sysconf(_SC_PHYS_PAGES), psize = sysconf(_SC_PAGESIZE);
         cap_gc.max_heap = pages > 0 && psize > 0 ? (size_t)pages / 4 * 3 * (size_t)psize : (size_t)1 << 34;
     }
+    /* Never more than 2^48 bytes: every string and collection is then shorter than
+       2^48 elements, a bound the compiler's range analysis relies on. */
+    if (cap_gc.max_heap == 0 || cap_gc.max_heap > CAP_MAX_LEN) cap_gc.max_heap = CAP_MAX_LEN;
     char *low = NULL;
 #if defined(__APPLE__)
     cap_gc.stack_top = (char *)pthread_get_stackaddr_np(pthread_self());

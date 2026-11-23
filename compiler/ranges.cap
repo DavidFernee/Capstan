@@ -1,0 +1,443 @@
+// Capstan compiler: range analysis.
+//
+// Proves facts about integer variables so that code generation can leave out
+// run-time checks that can never fail: overflow checks on + - * and unary -,
+// division-by-zero checks, and bounds checks on list indexing and string at().
+// A check is left out only when the analysis proves it cannot fire; everything
+// it cannot prove keeps its check. The analysis never changes what a program
+// does, only how fast it runs.
+//
+// Why it is sound:
+// - Facts are only ever recorded for *fixed* variables: locals and parameters
+//   that are never assigned after their declaration, and a for-loop variable
+//   inside its own body (the step is its only assignment). A fact about a fixed
+//   variable, once true, stays true for the rest of its region.
+// - Intervals are computed with saturating arithmetic, and an operation's check
+//   is dropped only when its exact mathematical result is proved to fit.
+// - Every length is below 2^48: the runtime caps the heap at 2^48 bytes and every
+//   element or byte uses at least one.
+// - A fact "i < xs.len()" about a list is recorded only for a region in which no
+//   list can shrink: no pop/remove_at/clear and no call to user code (which might
+//   shrink an alias of xs). Strings are immutable, so their facts always hold.
+// - Generated code for unchecked operations takes the same arguments as the
+//   checked form, so evaluation order is unchanged.
+
+const int I64_MAX = 9223372036854775807;
+const int I64_MIN = -9223372036854775807 - 1;
+const int LEN_MAX = 281474976710656;    // 2^48, enforced by the runtime's heap limit
+
+struct Iv {
+    int lo;
+    int hi;
+}
+
+struct Rg {
+    Map<Iv> env;            // proven bounds of fixed variables; missing means any value
+    Map<int> assigns;       // assignments to each name in this function (for-loop steps excluded)
+    List<string> idx;       // facts idx[k] < seqs[k].len()
+    List<string> seqs;
+    bool seq_ok;            // may list-length facts be recorded in the current region?
+    Map<Node> consts;
+    Map<Node> fns;
+    bool off;               // --keep-checks
+}
+
+struct Snap {
+    Map<Iv> env;
+    int facts;
+    bool seq_ok;
+}
+
+Iv iv(int lo, int hi) {
+    return new Iv{lo: lo, hi: hi};
+}
+
+Iv full() {
+    return iv(I64_MIN, I64_MAX);
+}
+
+int imin(int a, int b) {
+    if (a < b) { return a; }
+    return b;
+}
+
+int imax(int a, int b) {
+    if (a > b) { return a; }
+    return b;
+}
+
+// ---- overflow-safe bound arithmetic ---------------------------------------
+
+bool add_over(int a, int b) {
+    return (b > 0 && a > I64_MAX - b) || (b < 0 && a < I64_MIN - b);
+}
+
+bool sub_over(int a, int b) {
+    return (b < 0 && a > I64_MAX + b) || (b > 0 && a < I64_MIN + b);
+}
+
+bool mul_fits(int a, int b) {
+    if (a == 0 || b == 0) { return true; }
+    if (a > 0) {
+        if (b > 0) { return a <= I64_MAX / b; }
+        return b >= I64_MIN / a;
+    }
+    if (b > 0) { return a >= I64_MIN / b; }
+    return a >= I64_MAX / b;
+}
+
+int sat_add(int a, int b) {
+    if (add_over(a, b)) {
+        if (b > 0) { return I64_MAX; }
+        return I64_MIN;
+    }
+    return a + b;
+}
+
+int sat_sub(int a, int b) {
+    if (sub_over(a, b)) {
+        if (b < 0) { return I64_MAX; }
+        return I64_MIN;
+    }
+    return a - b;
+}
+
+int sat_mul(int a, int b) {
+    if (mul_fits(a, b)) { return a * b; }
+    if ((a > 0) == (b > 0)) { return I64_MAX; }
+    return I64_MIN;
+}
+
+// ---- intervals of expressions -----------------------------------------------
+
+Rg new_rg(Checker c) {
+    return new Rg{env: new Map<Iv>(), assigns: new Map<int>(), idx: new List<string>(), seqs: new List<string>(), seq_ok: false, consts: c.consts, fns: c.fns, off: c.ctx.keep_checks};
+}
+
+int literal_value(Node e, int fallback) {
+    if (e.k == N_INT) { return e.n; }
+    if (e.k == N_NEG && e.kids[0].k == N_INT) { return -e.kids[0].n; }
+    return fallback;
+}
+
+bool is_literal(Node e) {
+    return e.k == N_INT || (e.k == N_NEG && e.kids[0].k == N_INT);
+}
+
+bool is_int_arith(Node e) {
+    return e.k == N_BIN && ty_of(e).k == TY_INT && (e.s == "+" || e.s == "-" || e.s == "*" || e.s == "/" || e.s == "%");
+}
+
+Iv range(Rg r, Node e) {
+    if (e.k == N_INT) { return iv(e.n, e.n); }
+    if (e.k == N_VAR) {
+        if (e.n == 1) {
+            if (let cn = r.consts.get(e.s)) {
+                if (ty_of(cn).k == TY_INT && is_literal(cn.kids[0])) {
+                    int v = literal_value(cn.kids[0], 0);
+                    return iv(v, v);
+                }
+            }
+            return full();
+        }
+        if (let known = r.env.get(e.s)) { return known; }
+        return full();
+    }
+    if (e.k == N_NEG) {
+        Iv x = range(r, e.kids[0]);
+        if (x.lo == I64_MIN) { return full(); }
+        return iv(-x.hi, -x.lo);
+    }
+    if (is_int_arith(e)) { return bin_range(e.s, range(r, e.kids[0]), range(r, e.kids[1])); }
+    if (e.k == N_METHOD && e.s == "len") { return iv(0, LEN_MAX); }
+    if (e.k == N_METHOD && e.s == "at" && is_stringish(ty_of(e.kids[0]))) { return iv(0, 255); }
+    return full();
+}
+
+// The interval of a op b, given that the (possibly checked) operation succeeded.
+Iv bin_range(string op, Iv a, Iv b) {
+    if (op == "+") { return iv(sat_add(a.lo, b.lo), sat_add(a.hi, b.hi)); }
+    if (op == "-") { return iv(sat_sub(a.lo, b.hi), sat_sub(a.hi, b.lo)); }
+    if (op == "*") {
+        int p1 = sat_mul(a.lo, b.lo);
+        int p2 = sat_mul(a.lo, b.hi);
+        int p3 = sat_mul(a.hi, b.lo);
+        int p4 = sat_mul(a.hi, b.hi);
+        return iv(imin(imin(p1, p2), imin(p3, p4)), imax(imax(p1, p2), imax(p3, p4)));
+    }
+    if (op == "/") {
+        if (a.lo >= 0 && b.lo > 0) { return iv(a.lo / b.hi, a.hi / b.lo); }
+        return full();
+    }
+    if (op == "%") {
+        if (b.lo > 0) {
+            int m = b.hi - 1;
+            if (a.lo >= 0) { return iv(0, imin(a.hi, m)); }
+            return iv(-m, m);
+        }
+        return full();
+    }
+    return full();
+}
+
+// Can a op b be computed without its run-time check?
+bool bin_safe(string op, Iv a, Iv b) {
+    if (op == "+") { return !add_over(a.lo, b.lo) && !add_over(a.hi, b.hi); }
+    if (op == "-") { return !sub_over(a.lo, b.hi) && !sub_over(a.hi, b.lo); }
+    if (op == "*") { return mul_fits(a.lo, b.lo) && mul_fits(a.lo, b.hi) && mul_fits(a.hi, b.lo) && mul_fits(a.hi, b.hi); }
+    bool nonzero = b.lo > 0 || b.hi < 0;
+    bool no_min_by_minus_one = a.lo > I64_MIN || b.lo > -1 || b.hi < -1;
+    if (op == "/" || op == "%") { return nonzero && no_min_by_minus_one; }
+    return false;
+}
+
+bool neg_safe(Rg r, Node e) {
+    return !r.off && range(r, e.kids[0]).lo > I64_MIN;
+}
+
+bool arith_safe(Rg r, Node e) {
+    return !r.off && bin_safe(e.s, range(r, e.kids[0]), range(r, e.kids[1]));
+}
+
+// target op= value, for += and -= on an int.
+bool compound_safe(Rg r, string op, Node target, Node value) {
+    return !r.off && bin_safe(op, range(r, target), range(r, value));
+}
+
+// ---- which variables are fixed ------------------------------------------------
+
+void count_assigns(Rg r, Node n) {
+    if (n.k == N_FOR) {
+        Node init = n.kids[0];
+        Node step = n.kids[2];
+        bool loop_step = init.k == N_DECL && step.k == N_ASSIGN && step.kids[0].k == N_VAR && step.kids[0].s == init.s && (step.s == "+=" || step.s == "-=");
+        for (int i = 0; i < n.kids.len(); i += 1) {
+            if (!(loop_step && i == 2)) { count_assigns(r, n.kids[i]); }
+        }
+        if (loop_step) { count_assigns(r, step.kids[1]); }
+        return;
+    }
+    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR) {
+        int prev = 0;
+        if (let c = r.assigns.get(n.kids[0].s)) { prev = c; }
+        r.assigns.set(n.kids[0].s, prev + 1);
+    }
+    for (int k = 0; k < n.kids.len(); k += 1) { count_assigns(r, n.kids[k]); }
+}
+
+void start_body(Rg r, Node body) {
+    r.env = new Map<Iv>();
+    r.assigns = new Map<int>();
+    r.idx = new List<string>();
+    r.seqs = new List<string>();
+    r.seq_ok = false;
+    count_assigns(r, body);
+}
+
+bool is_fixed(Rg r, Node e) {
+    return e.k == N_VAR && e.n == 0 && !r.assigns.has(e.s);
+}
+
+// A declaration (or binding) of `name` with the value range `v`.
+void rg_declare(Rg r, string name, Iv v) {
+    if (!r.assigns.has(name)) {
+        r.env.set(name, v);
+    } else {
+        r.env.remove(name);
+    }
+    forget_seq(r, name);
+}
+
+void forget(Rg r, string name) {
+    r.env.remove(name);
+    forget_seq(r, name);
+}
+
+// A name declared again (in a sibling scope) loses any length fact it had.
+void forget_seq(Rg r, string name) {
+    List<string> ni = new List<string>();
+    List<string> ns = new List<string>();
+    for (int i = 0; i < r.idx.len(); i += 1) {
+        if (r.idx[i] != name && r.seqs[i] != name) {
+            ni.push(r.idx[i]);
+            ns.push(r.seqs[i]);
+        }
+    }
+    r.idx = ni;
+    r.seqs = ns;
+}
+
+// ---- snapshots ----------------------------------------------------------------
+
+Snap snap(Rg r) {
+    Map<Iv> copy = new Map<Iv>();
+    List<string> ks = r.env.keys();
+    for (int i = 0; i < ks.len(); i += 1) {
+        if (let v = r.env.get(ks[i])) { copy.set(ks[i], v); }
+    }
+    return new Snap{env: copy, facts: r.idx.len(), seq_ok: r.seq_ok};
+}
+
+void restore(Rg r, Snap s) {
+    r.env = s.env;
+    List<string> ni = new List<string>();
+    List<string> ns = new List<string>();
+    for (int i = 0; i < s.facts && i < r.idx.len(); i += 1) {
+        ni.push(r.idx[i]);
+        ns.push(r.seqs[i]);
+    }
+    r.idx = ni;
+    r.seqs = ns;
+    r.seq_ok = s.seq_ok;
+}
+
+// ---- regions in which no list can shrink ----------------------------------------
+
+bool may_shrink(Rg r, Node n) {
+    if (n.k == N_METHOD) {
+        Type rt = ty_of(n.kids[0]);
+        if (rt.k == TY_LIST && (n.s == "pop" || n.s == "remove_at" || n.s == "clear")) { return true; }
+        if (rt.k == TY_STRUCT || rt.k == TY_ENUM) { return true; }
+    }
+    if (n.k == N_CALL && r.fns.has(n.s)) { return true; }
+    if (n.k == N_AUTHORIZE || n.k == N_ASSERT_DENIED || n.k == N_ASSERT_GRANTED) { return true; }
+    for (int i = 0; i < n.kids.len(); i += 1) {
+        if (may_shrink(r, n.kids[i])) { return true; }
+    }
+    return false;
+}
+
+bool rest_may_shrink(Rg r, Node block, int from) {
+    for (int i = from; i < block.kids.len(); i += 1) {
+        if (may_shrink(r, block.kids[i])) { return true; }
+    }
+    return false;
+}
+
+// ---- facts from conditions -------------------------------------------------------
+
+string negate_cmp(string op) {
+    if (op == "<") { return ">="; }
+    if (op == "<=") { return ">"; }
+    if (op == ">") { return "<="; }
+    if (op == ">=") { return "<"; }
+    if (op == "==") { return "!="; }
+    return "==";
+}
+
+string flip_cmp(string op) {
+    if (op == "<") { return ">"; }
+    if (op == "<=") { return ">="; }
+    if (op == ">") { return "<"; }
+    if (op == ">=") { return "<="; }
+    return op;
+}
+
+// name op (a value in v) is known to hold.
+void bound(Rg r, string name, string op, Iv v) {
+    Iv cur = full();
+    if (let known = r.env.get(name)) { cur = known; }
+    int lo = cur.lo;
+    int hi = cur.hi;
+    if (op == "<" && v.hi > I64_MIN) { hi = imin(hi, v.hi - 1); }
+    if (op == "<=" || op == "==") { hi = imin(hi, v.hi); }
+    if (op == ">" && v.lo < I64_MAX) { lo = imax(lo, v.lo + 1); }
+    if (op == ">=" || op == "==") { lo = imax(lo, v.lo); }
+    // Contradictory facts mean the code is unreachable, so any value is a true
+    // claim about it; keep intervals non-empty so that interval arithmetic stays simple.
+    if (lo > hi) { hi = lo; }
+    r.env.set(name, iv(lo, hi));
+}
+
+// i < s.len() for a fixed index i and a sequence variable s that is never reassigned.
+void length_fact(Rg r, Node i, Node len_call) {
+    if (!is_fixed(r, i) || len_call.k != N_METHOD || len_call.s != "len") { return; }
+    Node s = len_call.kids[0];
+    Type st = ty_of(s);
+    if (!is_fixed(r, s)) { return; }
+    bool ok = is_stringish(st) || (st.k == TY_LIST && r.seq_ok);
+    if (!ok) { return; }
+    r.idx.push(i.s);
+    r.seqs.push(s.s);
+}
+
+void learn(Rg r, Node c, bool truth) {
+    if (c.k == N_NOT) {
+        learn(r, c.kids[0], !truth);
+        return;
+    }
+    if (c.k != N_BIN) { return; }
+    string op = c.s;
+    if (op == "&&") {
+        if (truth) {
+            learn(r, c.kids[0], true);
+            learn(r, c.kids[1], true);
+        }
+        return;
+    }
+    if (op == "||") {
+        if (!truth) {
+            learn(r, c.kids[0], false);
+            learn(r, c.kids[1], false);
+        }
+        return;
+    }
+    if (op != "<" && op != "<=" && op != ">" && op != ">=" && op != "==" && op != "!=") { return; }
+    if (ty_of(c.kids[0]).k != TY_INT) { return; }
+    string eff = op;
+    if (!truth) { eff = negate_cmp(op); }
+    if (eff == "!=") { return; }
+    Node a = c.kids[0];
+    Node b = c.kids[1];
+    Iv ra = range(r, a);
+    Iv rb = range(r, b);
+    if (is_fixed(r, a)) { bound(r, a.s, eff, rb); }
+    if (is_fixed(r, b)) { bound(r, b.s, flip_cmp(eff), ra); }
+    if (eff == "<") { length_fact(r, a, b); }
+    if (eff == ">") { length_fact(r, b, a); }
+}
+
+// ---- checks that can be left out --------------------------------------------------
+
+// Is index `i` provably within the bounds of sequence `s`?
+bool index_safe(Rg r, Node s, Node i) {
+    if (r.off || !is_fixed(r, s) || !is_fixed(r, i)) { return false; }
+    if (range(r, i).lo < 0) { return false; }
+    for (int k = 0; k < r.idx.len(); k += 1) {
+        if (r.idx[k] == i.s && r.seqs[k] == s.s) { return true; }
+    }
+    return false;
+}
+
+// Does every path through `s` leave the enclosing block (return, break, continue)?
+bool always_exits(Node s) {
+    if (s.k == N_RETURN || s.k == N_BREAK || s.k == N_CONTINUE) { return true; }
+    if (s.k == N_BLOCK) {
+        for (int i = 0; i < s.kids.len(); i += 1) {
+            if (always_exits(s.kids[i])) { return true; }
+        }
+        return false;
+    }
+    if (s.k == N_IF && s.kids.len() > 2) { return always_exits(s.kids[1]) && always_exits(s.kids[2]); }
+    return false;
+}
+
+bool mentions(Node e, string name) {
+    if (e.k == N_VAR && e.s == name) { return true; }
+    for (int i = 0; i < e.kids.len(); i += 1) {
+        if (mentions(e.kids[i], name)) { return true; }
+    }
+    return false;
+}
+
+// The range a for-loop variable keeps at every evaluation of the condition:
+// a non-negative step only ever increases it (+=) or decreases it (-=).
+Iv loop_base(Rg r, Node init, Node step) {
+    Iv start = range(r, init.kids[0]);
+    if (step.k == N_ASSIGN && step.kids[0].k == N_VAR && step.kids[0].s == init.s && !mentions(step.kids[1], init.s)) {
+        Iv d = range(r, step.kids[1]);
+        if (d.lo >= 0 && step.s == "+=") { return iv(start.lo, I64_MAX); }
+        if (d.lo >= 0 && step.s == "-=") { return iv(I64_MIN, start.hi); }
+    }
+    return full();
+}
