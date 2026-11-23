@@ -1,0 +1,13 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks
+// Recursion that grows its argument: the facts must widen, not settle too soon.
+int grow(int n, int depth) {
+    if (depth == 0) { return n; }
+    return grow(n * 3 + 1, depth - 1);
+}
+
+int main() {
+    println(int_to_str(grow(1, 10)));
+    println(int_to_str(grow(1, 60)));
+    return 0;
+}

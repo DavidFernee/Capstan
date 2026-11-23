@@ -1,0 +1,38 @@
+// spec: compiler.ranges
+// Facts about parameters, from every call site in the program. Each check
+// marked "proved" below is left out; tests/run.sh compares the count with
+// --keep-checks and the output with ranges_calls.out.
+// expect-proved: 8
+
+// Called with 0..9 only: i * 7 + 3 and the % are proved.
+int scramble(int i) { return (i * 7 + 3) % 11; }
+
+// Recursion: d is 0..20 at every call (the facts settle after widening), so
+// d * d is proved. With `d == 0` as the guard nothing would be: an interval
+// cannot say "not 0", so the lower bound would widen without end.
+int squares(int d) {
+    if (d <= 0) { return 0; }
+    return d * d + squares(d - 1);
+}
+
+// A method: self is not an integer; k is 1..3 at every call (k * 4 proved).
+struct Grid {
+    List<int> cells;
+    int cell(int k) { return self.cells[k * 4]; }
+}
+
+// Called with any value somewhere: nothing is proved about n.
+int twice(int n) { return n * 2; }
+
+int main() {
+    int sum = 0;
+    for (int i = 0; i < 10; i += 1) { sum += scramble(i); }
+    println(int_to_str(sum));
+    println(int_to_str(squares(20)));
+    Grid g = new Grid{cells: new List<int>()};
+    for (int c = 0; c < 16; c += 1) { g.cells.push(c); }
+    println(int_to_str(g.cell(1) + g.cell(2) + g.cell(3)));
+    println(int_to_str(twice(sum)));
+    if (let v = validate_int(taint("21"))) { println(int_to_str(twice(v))); }
+    return 0;
+}

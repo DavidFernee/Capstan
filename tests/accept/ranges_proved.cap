@@ -126,7 +126,7 @@ int main() {
     List<int> mixed = new List<int>();
     mixed.push(5); mixed.push(-3); mixed.push(250); mixed.push(0); mixed.push(5000); mixed.push(9);   // -3: proved
     println(int_to_str(skip_and_stop(mixed)));
-    println(int_to_str(every_nth(mixed, 2)));
+    if (let n = validate_int(taint("2"))) { println(int_to_str(every_nth(mixed, n))); }   // any step, as far as the compiler knows
     println(int_to_str(percent(42)));
     println(int_to_str(combine(12, 10)));
     println(int_to_str(halves(-999, 1000)));                           // -999: proved
