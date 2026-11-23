@@ -1,0 +1,15 @@
+// expect-runtime: CWE-125
+// spec: runtime.checks types.list compiler.ranges
+// A call may shrink the list through another name for it.
+void drop_first(List<int> ys) { ys.remove_at(0); }
+
+int main() {
+    List<int> xs = new List<int>();
+    xs.push(1); xs.push(2); xs.push(3);
+    List<int> alias = xs;
+    for (int i = 0; i < xs.len(); i += 1) {
+        drop_first(alias);
+        println(int_to_str(xs[i]));
+    }
+    return 0;
+}

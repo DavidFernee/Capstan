@@ -1,0 +1,6 @@
+// expect: cannot index a value of type int
+// spec: types.list
+int main() {
+    int n = 5;
+    return n[0];
+}

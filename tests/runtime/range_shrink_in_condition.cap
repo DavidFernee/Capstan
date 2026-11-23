@@ -1,0 +1,15 @@
+// expect-runtime: CWE-125
+// spec: runtime.checks types.list compiler.ranges
+// The list shrinks after the length comparison, inside the same condition.
+bool take(List<int> ys) {
+    if (let _v = ys.pop()) { return true; }
+    return false;
+}
+
+int main() {
+    List<int> xs = new List<int>();
+    xs.push(5);
+    int i = 0;
+    if (i < xs.len() && take(xs)) { println(int_to_str(xs[i])); }
+    return 0;
+}

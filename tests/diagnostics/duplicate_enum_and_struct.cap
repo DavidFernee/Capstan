@@ -1,0 +1,5 @@
+// expect: 'Shape' is declared more than once
+// spec: types.enum
+enum Shape { Circle, Square }
+struct Shape { int sides; }
+int main() { return 0; }

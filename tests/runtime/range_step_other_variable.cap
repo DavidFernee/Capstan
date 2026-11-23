@@ -1,0 +1,9 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks compiler.ranges
+// The step assigns j, not the loop variable i, so j changes on every iteration and
+// nothing about it may be assumed from its declaration.
+int main() {
+    int j = 9223372036854775807 - 2;
+    for (int i = 0; i < 5; j += 1) { println(int_to_str(j + 1)); }
+    return 0;
+}

@@ -1,0 +1,6 @@
+// expect: test "does nothing" asserts nothing
+// flags: --strict
+// spec: auth.tests warnings
+// A test that asserts nothing is a warning (an error under --strict).
+test "does nothing" { int _x = 1; }
+int main() { return 0; }

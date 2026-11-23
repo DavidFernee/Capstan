@@ -598,7 +598,7 @@ def check(e, d):
     flags = ["--strict"] if STRICT_NOTE in e["note"] else []
     if "--release" in e["note"]:
         flags.append("--release")
-    comp = run([os.path.join(ROOT, "build/capstanc"), "build", "-o", c] + flags + [cap])
+    comp = run([os.environ.get("CAPSTANC", os.path.join(ROOT, "build/capstanc")), "build", "-o", c] + flags + [cap])
     out = comp.stdout.decode(errors="replace")
     v = e["verdict"]
     if v == "absent":

@@ -1,0 +1,21 @@
+// expect-runtime: CWE-125
+// spec: runtime.checks compiler.ranges auth.policy
+// A policy is user code and may shrink a list, so authorize ends any length fact.
+struct Holder { List<int> items; int owner; }
+struct User { int id; }
+policy Drains(User u, Holder h) {
+    if (let _v = h.items.pop()) { return u.id == h.owner; }
+    return false;
+}
+test "denies" { assert_denied Drains(new User{id: 1}, new Holder{items: new List<int>(), owner: 2}); }
+int main() {
+    List<int> xs = new List<int>();
+    xs.push(1); xs.push(2); xs.push(3);
+    Holder h = new Holder{items: xs, owner: 1};
+    User u = new User{id: 1};
+    for (int i = 0; i < xs.len(); i += 1) {
+        if (let _g = authorize Drains(u, h)) { println("granted"); }
+        println(int_to_str(xs[i]));
+    }
+    return 0;
+}

@@ -1,0 +1,11 @@
+// expect: CWE-613
+// spec: auth.grant
+// Grants cannot be kept in collections: a grant must not outlive its request.
+policy Owns(User u, Doc d) { return u.id == d.owner; }
+struct User { int id; }
+struct Doc { int owner; }
+test "denies" { assert_denied Owns(new User{id: 1}, new Doc{owner: 2}); }
+int main() {
+    List<Grant<Owns>> kept = new List<Grant<Owns>>();
+    return kept.len();
+}

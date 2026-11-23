@@ -1,0 +1,12 @@
+// expect: CWE-20
+// spec: types.tainted types.list
+// Storing an untrusted byte into a list element taints the list.
+int main() {
+    if (let t = read_line()) {
+        List<int> bytes = new List<int>();
+        bytes.push(0);
+        bytes[0] = t.at(0);
+        println(char_str(bytes[0]));
+    }
+    return 0;
+}

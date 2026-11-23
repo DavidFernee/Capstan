@@ -1,0 +1,12 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks types.int compiler.ranges
+// n >= 0 after the early return is not enough to make n + 1 safe.
+int next(int n) {
+    if (n < 0) { return 0; }
+    return n + 1;
+}
+
+int main() {
+    println(int_to_str(next(9223372036854775807)));
+    return 0;
+}

@@ -1,0 +1,10 @@
+// expect: CWE-476
+// spec: stmt.match types.optional
+// A value that may be none cannot be matched before it is unwrapped.
+enum Shape { Circle(int r), Empty }
+Shape? find() { return none; }
+int main() {
+    Shape? s = find();
+    match (s) { case Circle(r) { return r; } case Empty { return 0; } }
+    return 0;
+}

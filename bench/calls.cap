@@ -1,2 +1,14 @@
-int fib(int n) { if (n < 2) { return n; } return fib(n - 1) + fib(n - 2); }
-int main() { println(int_to_str(fib(35))); return 0; }
+// Recursive calls that cannot be folded away: split a range in half down to
+// single elements, about 33 million calls in all.
+int leaf(int i) { return (i * 7 + 3) % 11; }
+
+int split_sum(int lo, int hi) {
+    if (hi - lo == 1) { return leaf(lo); }
+    int mid = lo + (hi - lo) / 2;
+    return split_sum(lo, mid) + split_sum(mid, hi);
+}
+
+int main() {
+    println(int_to_str(split_sum(0, 16777216)));
+    return 0;
+}

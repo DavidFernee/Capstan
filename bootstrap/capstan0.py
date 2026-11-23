@@ -568,6 +568,7 @@ def b_char_str(c):
     if c < 0 or c > 255: _panic("char_str out of range", "CWE-704")
     return chr(c)
 def b_read_file(p):
+    if p == "" or "\0" in p: return None
     try:
         with open(p, "rb") as f: return f.read().decode("latin-1")
     except OSError: return None
@@ -575,6 +576,7 @@ def b_read_line():
     l = sys.stdin.buffer.readline()
     return None if not l else l.decode("latin-1").rstrip("\n")
 def b_write_file(p, d):
+    if p == "" or "\0" in p: return False
     try:
         with open(p, "wb") as f: f.write(d.encode("latin-1"))
         return True
@@ -602,7 +604,28 @@ def b_escape_c(t):
     return "".join(o)
 def b_escape_html(t):
     return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")
-def b_escape_log(t): return "".join(ch if 32 <= ord(ch) < 127 or ord(ch) > 127 else "\\x%02x" % ord(ch) for ch in t)
+def _utf8_seq(b, i):
+    c = b[i]
+    if 0xC2 <= c <= 0xDF: n, lo, hi = 2, 0x80, 0xBF
+    elif 0xE0 <= c <= 0xEF: n, lo, hi = 3, (0xA0 if c == 0xE0 else 0x80), (0x9F if c == 0xED else 0xBF)
+    elif 0xF0 <= c <= 0xF4: n, lo, hi = 4, (0x90 if c == 0xF0 else 0x80), (0x8F if c == 0xF4 else 0xBF)
+    else: return 0, 0
+    if len(b) - i < n or not lo <= b[i + 1] <= hi or any(not 0x80 <= b[i + k] <= 0xBF for k in range(2, n)): return 0, 0
+    return n, ord(bytes(b[i:i + n]).decode("utf-8"))
+def _log_hostile(cp):
+    return 0x80 <= cp <= 0x9F or cp in (0x061C, 0x200E, 0x200F, 0xFEFF) or 0x2028 <= cp <= 0x202E or 0x2066 <= cp <= 0x2069
+def b_escape_log(t):
+    b, out, i = t.encode("latin-1"), [], 0
+    while i < len(b):
+        c = b[i]
+        if 32 <= c < 127:
+            out.append(chr(c)); i += 1; continue
+        n, cp = _utf8_seq(b, i) if c >= 0x80 else (0, 0)
+        if n and not _log_hostile(cp):
+            out.append(bytes(b[i:i + n]).decode("latin-1")); i += n; continue
+        n = n or 1
+        out.extend("\\x%02x" % b[i + k] for k in range(n)); i += n
+    return "".join(out)
 def b_trust(t, why): return t
 def b_to_text(x):
     if isinstance(x, bool): return "true" if x else "false"
@@ -661,6 +684,15 @@ class Gen:
         self.out = [PRELUDE]
         self.tmp = 0
         self.loops = []
+        self.scopes = [set()]   # names of locals in scope: a local may share an enum's name
+
+    def enum_ref(self, x):
+        return x[0] == "var" and x[1] in self.enums and not any(x[1] in s for s in self.scopes)
+
+    def scoped(self, ind, stmts, names=()):
+        self.scopes.append(set(names))
+        self.body(ind, stmts)
+        self.scopes.pop()
 
     def fresh(self):
         self.tmp += 1
@@ -691,13 +723,13 @@ class Gen:
             if op == "||": return f"({a} or {b})"
             return f"({a} {op} {b})"
         if k == "field":
-            if x[1][0] == "var" and x[1][1] in self.enums:
+            if self.enum_ref(x[1]):
                 return f"_Enum({x[2]!r}, [])"
             return f"{self.e(x[1])}.u_{x[2]}"
         if k == "index":
             return f"_idx({self.e(x[1])}, {self.e(x[2])})"
         if k == "method":
-            if x[1][0] == "var" and x[1][1] in self.enums:
+            if self.enum_ref(x[1]):
                 return f"_Enum({x[2]!r}, [{', '.join(self.e(a) for a in x[3])}])"
             if x[2] in self.methods:
                 recv = self.e(x[1])
@@ -728,9 +760,10 @@ class Gen:
     def stmt(self, ind, s):
         k = s[0]
         if k == "block":
-            self.body(ind, s[1]) if s[1] else None
+            self.scoped(ind, s[1]) if s[1] else None
         elif k == "decl":
             self.emit(ind, f"u_{s[1]} = {self.e(s[2])}")
+            self.scopes[-1].add(s[1])
         elif k == "assign":
             tgt, op, rhs = s[1], s[2], self.e(s[3])
             if op != "=":
@@ -752,29 +785,33 @@ class Gen:
             self.emit(ind, "continue")
         elif k == "if":
             cond = s[1]
+            bound = ()
             if isinstance(cond, tuple) and cond[0] == "let":
                 t = self.fresh()
                 self.emit(ind, f"{t} = {self.e(cond[2])}")
                 self.emit(ind, f"if {t} is not None:")
                 self.emit(ind + 1, f"u_{cond[1]} = {t}")
+                bound = (cond[1],)
             else:
                 self.emit(ind, f"if {self.e(cond)}:")
-            self.body(ind + 1, s[2])
+            self.scoped(ind + 1, s[2], bound)
             if s[3] is not None:
                 self.emit(ind, "else:")
-                self.body(ind + 1, s[3])
+                self.scoped(ind + 1, s[3])
         elif k == "while":
             self.emit(ind, f"while {self.e(s[1])}:")
             self.loops.append(None)
-            self.body(ind + 1, s[2])
+            self.scoped(ind + 1, s[2])
             self.loops.pop()
         elif k == "for":
+            self.scopes.append(set())
             self.stmt(ind, s[1])
             self.emit(ind, f"while {self.e(s[2])}:")
             self.loops.append(s[3])
-            self.body(ind + 1, s[4])
+            self.scoped(ind + 1, s[4])
             self.loops.pop()
             self.stmt(ind + 1, s[3])
+            self.scopes.pop()
         elif k == "match":
             t = self.fresh()
             self.emit(ind, f"{t} = {self.e(s[1])}")
@@ -786,7 +823,7 @@ class Gen:
                     self.emit(ind, f"{'if' if first else 'elif'} {t}.v == {v!r}:")
                     for i, b in enumerate(binds):
                         self.emit(ind + 1, f"u_{b} = {t}.vals[{i}]")
-                self.body(ind + 1, body)
+                self.scoped(ind + 1, body, binds or ())
                 first = False
         else:
             raise SystemExit(f"stage0: cannot translate statement {k}")
@@ -807,7 +844,7 @@ class Gen:
         for d in decls:
             if d[0] == "fn":
                 self.emit(0, f"def fn_{d[1]}({', '.join('u_' + p for p in d[2])}):")
-                self.body(1, d[3])
+                self.scoped(1, d[3], d[2])
         for d in decls:   # after the functions, so constant initialisers may call them
             if d[0] == "const":
                 self.emit(0, f"u_{d[1]} = {self.e(d[2])}")
