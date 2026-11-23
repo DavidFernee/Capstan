@@ -10,7 +10,9 @@
 the archive's own hashes, every file in it with its hashes, the tools needed to build and test it
 (a C compiler, make, Python 3 for the stage-0 bootstrap and the tests, bash), and its run-time
 dependencies: only the platform C library. There are no third-party libraries, vendored or
-fetched, and the SBOM says so (CycloneDX composition "complete").
+fetched, and the SBOM says so (CycloneDX composition "complete"). The one piece of third-party
+material in the archive is data, not code: subsets of the DejaVu fonts used by the Shroud GUI
+library (lib/shroud/fonts/), which the SBOM lists with their own licence (see VENDORED).
 
 The output is deterministic: the same archive, commit and timestamp give the same bytes.
 The timestamp is --timestamp, else SOURCE_DATE_EPOCH, else the archive's commit time.
@@ -34,6 +36,19 @@ REPO_URL = "https://github.com/" + REPO
 TOOL = "capstan-sbom"
 TOOL_VERSION = "1"
 LICENSE = "Apache-2.0"
+# Third-party material included in the source archive: (path prefix, name, version, SPDX licence,
+# origin). Each file under the prefix carries the licence in both SBOMs.
+VENDORED = [
+    ("lib/shroud/fonts/", "DejaVu Sans and DejaVu Sans Bold, Latin subsets (fonts, data only)", "2.37",
+     "Bitstream-Vera", "https://dejavu-fonts.github.io/"),
+]
+
+
+def vendored(rel):
+    for prefix, name, version, lic, origin in VENDORED:
+        if rel.startswith(prefix):
+            return (name, version, lic, origin)
+    return None
 # A fixed namespace so the CycloneDX serial number depends only on the archive's digest.
 SERIAL_NS = uuid.UUID("6f1c3c2e-5a7e-4d1b-9a43-2b1d0c0a5e11")
 
@@ -135,8 +150,13 @@ def cyclonedx(arch, version, commit, ts, files):
     }
     comps = []
     for rel, d in files:
-        comps.append({"type": "file", "bom-ref": "file:" + rel, "name": rel,
-                      "hashes": [{"alg": a, "content": d[a]} for a in ("SHA-1", "SHA-256")]})
+        comp = {"type": "file", "bom-ref": "file:" + rel, "name": rel,
+                "hashes": [{"alg": a, "content": d[a]} for a in ("SHA-1", "SHA-256")]}
+        v = vendored(rel)
+        if v:
+            comp["licenses"] = [{"license": {"id": v[2]}}]
+            comp["properties"] = [{"name": "capstan:vendored-from", "value": "%s %s (%s)" % (v[0], v[1], v[3])}]
+        comps.append(comp)
     deps = []
     for key, name, kind, ctype, desc in REQUIREMENTS:
         comps.append({
@@ -164,6 +184,8 @@ def cyclonedx(arch, version, commit, ts, files):
             "properties": [
                 {"name": "capstan:third-party-runtime-dependencies", "value": "none"},
                 {"name": "capstan:vendored-third-party-code", "value": "none"},
+                {"name": "capstan:vendored-third-party-data",
+                 "value": "; ".join("%s %s in %s (%s)" % (n, v, p, l) for p, n, v, l, _ in VENDORED)},
             ],
         },
         "components": comps,
@@ -184,10 +206,16 @@ def spdx(arch, version, commit, ts, files):
     for i, (rel, d) in enumerate(files, 1):
         fid = "SPDXRef-File-%04d" % i
         sha1s.append(d["SHA-1"])
-        out_files.append({"fileName": "./" + rel, "SPDXID": fid,
-                          "checksums": [{"algorithm": "SHA1", "checksumValue": d["SHA-1"]},
-                                        {"algorithm": "SHA256", "checksumValue": d["SHA-256"]}],
-                          "licenseConcluded": "NOASSERTION", "copyrightText": "NOASSERTION"})
+        entry = {"fileName": "./" + rel, "SPDXID": fid,
+                 "checksums": [{"algorithm": "SHA1", "checksumValue": d["SHA-1"]},
+                               {"algorithm": "SHA256", "checksumValue": d["SHA-256"]}],
+                 "licenseConcluded": "NOASSERTION", "copyrightText": "NOASSERTION"}
+        v = vendored(rel)
+        if v:
+            entry["licenseConcluded"] = v[2]
+            entry["licenseInfoInFiles"] = [v[2]]
+            entry["comment"] = "Third-party: %s %s, from %s" % (v[0], v[1], v[3])
+        out_files.append(entry)
         rels.append({"spdxElementId": pkg, "relationshipType": "CONTAINS", "relatedSpdxElement": fid})
     # SPDX 2.3 section 7.9: SHA-1 of the sorted, concatenated SHA-1s of every file.
     verification = hashlib.sha1("".join(sorted(sha1s)).encode("ascii")).hexdigest()
@@ -204,10 +232,11 @@ def spdx(arch, version, commit, ts, files):
         "homepage": REPO_URL,
         "sourceInfo": "git archive of commit %s (tag %s)" % (commit, tag),
         "licenseConcluded": "NOASSERTION",
-        "licenseDeclared": LICENSE,
+        "licenseDeclared": " AND ".join([LICENSE] + sorted({v[3] for v in VENDORED})),
         "copyrightText": "NOASSERTION",
         "summary": "Capstan source release: the self-hosting compiler, its runtime, the stage-0 bootstrap, tools and tests",
-        "comment": "No third-party libraries are vendored or fetched. The only run-time dependency is the platform C library.",
+        "comment": "No third-party libraries are vendored or fetched. The only run-time dependency is the platform C library. "
+                   "Third-party data: " + "; ".join("%s %s in %s (%s)" % (n, v, p, l) for p, n, v, l, _ in VENDORED) + ".",
         "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl",
                           "referenceLocator": "pkg:github/%s@%s" % (REPO, tag)}],
         "primaryPackagePurpose": "SOURCE",

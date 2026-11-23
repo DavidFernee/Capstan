@@ -1,0 +1,128 @@
+// Shroud: colour.
+//
+// A colour is an int holding 8-bit alpha, red, green and blue: 0xAARRGGBB, written as
+// in CSS but with alpha first. Application code uses straight (unpremultiplied)
+// colours; pixmaps store premultiplied ones, which composite exactly with integers.
+// Blending happens in sRGB space, as in Flutter, WinUI, Qt and the web, so colours
+// match the designs they were picked from.
+
+int argb(int a, int r, int g, int b) {
+    return (clamp(a, 0, 255) << 24) | (clamp(r, 0, 255) << 16) | (clamp(g, 0, 255) << 8) | clamp(b, 0, 255);
+}
+
+int rgb(int r, int g, int b) { return argb(255, r, g, b); }
+
+// 0xRRGGBB, opaque.
+int hex_rgb(int v) { return argb(255, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF); }
+
+int ch_a(int c) { return (c >> 24) & 0xFF; }
+int ch_r(int c) { return (c >> 16) & 0xFF; }
+int ch_g(int c) { return (c >> 8) & 0xFF; }
+int ch_b(int c) { return c & 0xFF; }
+
+// The same colour with its alpha multiplied by a / 255.
+int with_alpha(int c, int a) {
+    return argb(div255(ch_a(c) * clamp(a, 0, 255)), ch_r(c), ch_g(c), ch_b(c));
+}
+
+// x / 255 rounded to nearest, exact for 0 <= x <= 255 * 255.
+int div255(int x) {
+    int t = x + 128;
+    return (t + (t >> 8)) >> 8;
+}
+
+int premultiply(int c) {
+    int a = ch_a(c);
+    return (a << 24) | (div255(ch_r(c) * a) << 16) | (div255(ch_g(c) * a) << 8) | div255(ch_b(c) * a);
+}
+
+int unpremultiply(int p) {
+    int a = ch_a(p);
+    if (a == 0) { return 0; }
+    return argb(a, (ch_r(p) * 255 + a / 2) / a, (ch_g(p) * 255 + a / 2) / a, (ch_b(p) * 255 + a / 2) / a);
+}
+
+// Source-over compositing of premultiplied src onto premultiplied dst.
+int over(int src, int dst) {
+    int ia = 255 - ch_a(src);
+    if (ia == 0) { return src; }
+    if (ia == 255) { return dst; }
+    int a = ch_a(src) + div255(ch_a(dst) * ia);
+    int r = ch_r(src) + div255(ch_r(dst) * ia);
+    int g = ch_g(src) + div255(ch_g(dst) * ia);
+    int b = ch_b(src) + div255(ch_b(dst) * ia);
+    return (a << 24) | (r << 16) | (g << 8) | b;
+}
+
+// A premultiplied colour scaled by coverage / 255.
+int scale_px(int p, int coverage) {
+    if (coverage >= 255) { return p; }
+    if (coverage <= 0) { return 0; }
+    return (div255(ch_a(p) * coverage) << 24) | (div255(ch_r(p) * coverage) << 16) | (div255(ch_g(p) * coverage) << 8) | div255(ch_b(p) * coverage);
+}
+
+// Straight colours a and b mixed: t = 0 gives a, t = 255 gives b.
+int mix(int a, int b, int t) {
+    int u = 255 - clamp(t, 0, 255);
+    int v = clamp(t, 0, 255);
+    return argb(div255(ch_a(a) * u + ch_a(b) * v), div255(ch_r(a) * u + ch_r(b) * v), div255(ch_g(a) * u + ch_g(b) * v), div255(ch_b(a) * u + ch_b(b) * v));
+}
+
+// ---- contrast (WCAG 2.2) -----------------------------------------------------------
+//
+// Shroud checks text contrast rather than leaving it to a later audit: themes are
+// validated when they are built, and the accessibility report lists any text whose
+// contrast with its background is below 4.5:1 (WCAG 2.2 success criterion 1.4.3).
+
+// sRGB byte to linear light, in millionths (the IEC 61966-2-1 transfer function).
+List<int> srgb_linear_table() {
+    List<int> t = new List<int>();
+    t.push(0); t.push(304); t.push(607); t.push(911); t.push(1214); t.push(1518); t.push(1821); t.push(2125);
+    t.push(2428); t.push(2732); t.push(3035); t.push(3347); t.push(3677); t.push(4025); t.push(4391); t.push(4777);
+    t.push(5182); t.push(5605); t.push(6049); t.push(6512); t.push(6995); t.push(7499); t.push(8023); t.push(8568);
+    t.push(9134); t.push(9721); t.push(10330); t.push(10960); t.push(11612); t.push(12286); t.push(12983); t.push(13702);
+    t.push(14444); t.push(15209); t.push(15996); t.push(16807); t.push(17642); t.push(18500); t.push(19382); t.push(20289);
+    t.push(21219); t.push(22174); t.push(23153); t.push(24158); t.push(25187); t.push(26241); t.push(27321); t.push(28426);
+    t.push(29557); t.push(30713); t.push(31896); t.push(33105); t.push(34340); t.push(35601); t.push(36889); t.push(38204);
+    t.push(39546); t.push(40915); t.push(42311); t.push(43735); t.push(45186); t.push(46665); t.push(48172); t.push(49707);
+    t.push(51269); t.push(52861); t.push(54480); t.push(56128); t.push(57805); t.push(59511); t.push(61246); t.push(63010);
+    t.push(64803); t.push(66626); t.push(68478); t.push(70360); t.push(72272); t.push(74214); t.push(76185); t.push(78187);
+    t.push(80220); t.push(82283); t.push(84376); t.push(86500); t.push(88656); t.push(90842); t.push(93059); t.push(95307);
+    t.push(97587); t.push(99899); t.push(102242); t.push(104616); t.push(107023); t.push(109462); t.push(111932); t.push(114435);
+    t.push(116971); t.push(119538); t.push(122139); t.push(124772); t.push(127438); t.push(130136); t.push(132868); t.push(135633);
+    t.push(138432); t.push(141263); t.push(144128); t.push(147027); t.push(149960); t.push(152926); t.push(155926); t.push(158961);
+    t.push(162029); t.push(165132); t.push(168269); t.push(171441); t.push(174647); t.push(177888); t.push(181164); t.push(184475);
+    t.push(187821); t.push(191202); t.push(194618); t.push(198069); t.push(201556); t.push(205079); t.push(208637); t.push(212231);
+    t.push(215861); t.push(219526); t.push(223228); t.push(226966); t.push(230740); t.push(234551); t.push(238398); t.push(242281);
+    t.push(246201); t.push(250158); t.push(254152); t.push(258183); t.push(262251); t.push(266356); t.push(270498); t.push(274677);
+    t.push(278894); t.push(283149); t.push(287441); t.push(291771); t.push(296138); t.push(300544); t.push(304987); t.push(309469);
+    t.push(313989); t.push(318547); t.push(323143); t.push(327778); t.push(332452); t.push(337164); t.push(341914); t.push(346704);
+    t.push(351533); t.push(356400); t.push(361307); t.push(366253); t.push(371238); t.push(376262); t.push(381326); t.push(386429);
+    t.push(391572); t.push(396755); t.push(401978); t.push(407240); t.push(412543); t.push(417885); t.push(423268); t.push(428690);
+    t.push(434154); t.push(439657); t.push(445201); t.push(450786); t.push(456411); t.push(462077); t.push(467784); t.push(473531);
+    t.push(479320); t.push(485150); t.push(491021); t.push(496933); t.push(502886); t.push(508881); t.push(514918); t.push(520996);
+    t.push(527115); t.push(533276); t.push(539479); t.push(545724); t.push(552011); t.push(558340); t.push(564712); t.push(571125);
+    t.push(577580); t.push(584078); t.push(590619); t.push(597202); t.push(603827); t.push(610496); t.push(617207); t.push(623960);
+    t.push(630757); t.push(637597); t.push(644480); t.push(651406); t.push(658375); t.push(665387); t.push(672443); t.push(679542);
+    t.push(686685); t.push(693872); t.push(701102); t.push(708376); t.push(715694); t.push(723055); t.push(730461); t.push(737910);
+    t.push(745404); t.push(752942); t.push(760525); t.push(768151); t.push(775822); t.push(783538); t.push(791298); t.push(799103);
+    t.push(806952); t.push(814847); t.push(822786); t.push(830770); t.push(838799); t.push(846873); t.push(854993); t.push(863157);
+    t.push(871367); t.push(879622); t.push(887923); t.push(896269); t.push(904661); t.push(913099); t.push(921582); t.push(930111);
+    t.push(938686); t.push(947307); t.push(955973); t.push(964686); t.push(973445); t.push(982251); t.push(991102); t.push(1000000);
+
+    return t;
+}
+
+// Relative luminance of an opaque colour, in millionths.
+int luminance(List<int> lin, int c) {
+    return (2126 * lin[ch_r(c)] + 7152 * lin[ch_g(c)] + 722 * lin[ch_b(c)]) / 10000;
+}
+
+// The contrast ratio of two opaque colours, times 100 (450 means 4.5:1).
+int contrast_x100(int fg, int bg) {
+    List<int> lin = srgb_linear_table();
+    int la = luminance(lin, fg) + 50000;
+    int lb = luminance(lin, bg) + 50000;
+    if (la < lb) { return (lb * 100) / la; }
+    return (la * 100) / lb;
+}
