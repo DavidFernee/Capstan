@@ -1,0 +1,61 @@
+id,class
+CVE-2025-40170,improper locking
+CVE-2025-21681,hang or infinite loop
+CVE-2025-68351,resource leak
+CVE-2025-39838,NULL dereference
+CVE-2025-22060,race condition
+CVE-2025-40051,unchecked error
+CVE-2024-39282,use-after-free
+CVE-2025-38462,NULL dereference
+CVE-2025-38480,uninitialised memory
+CVE-2025-40219,race condition
+CVE-2025-37882,race condition
+CVE-2024-58087,race condition
+CVE-2025-38509,insufficient validation
+CVE-2025-38584,use-after-free
+CVE-2025-21746,NULL dereference
+CVE-2024-57950,divide by zero
+CVE-2025-21835,uninitialised memory
+CVE-2025-37794,NULL dereference
+CVE-2025-21752,assertion or warning reached
+CVE-2025-38630,NULL dereference
+CVE-2024-57993,insufficient validation
+CVE-2025-68198,NULL dereference
+CVE-2024-57883,resource leak
+CVE-2025-40154,out-of-bounds read
+CVE-2025-39973,insufficient validation
+CVE-2024-58091,NULL dereference
+CVE-2025-23147,NULL dereference
+CVE-2025-22126,use-after-free
+CVE-2024-57878,uninitialised memory
+CVE-2025-37865,uninitialised memory
+CVE-2025-68322,assertion or warning reached
+CVE-2025-38571,insufficient validation
+CVE-2025-39766,assertion or warning reached
+CVE-2025-38393,race condition
+CVE-2025-40012,use-after-free
+CVE-2024-57895,assertion or warning reached
+CVE-2025-40325,unclassified
+CVE-2025-21801,improper locking
+CVE-2025-40120,deadlock
+CVE-2025-23163,deadlock
+CVE-2025-37779,use-after-free
+CVE-2025-21849,deadlock
+CVE-2025-37930,assertion or warning reached
+CVE-2025-68170,double or invalid free
+CVE-2024-57902,out-of-bounds write
+CVE-2025-21824,uninitialised memory
+CVE-2025-21907,assertion or warning reached
+CVE-2025-40149,use-after-free
+CVE-2025-38449,use-after-free
+CVE-2025-21699,unclassified
+CVE-2025-40287,hang or infinite loop
+CVE-2025-39767,hang or infinite loop
+CVE-2025-38076,use-after-free
+CVE-2025-39693,NULL dereference
+CVE-2025-40250,use-after-free
+CVE-2025-22072,resource leak
+CVE-2025-38268,deadlock
+CVE-2025-40044,out-of-bounds read
+CVE-2025-39709,NULL dereference
+CVE-2025-40061,use-after-free
