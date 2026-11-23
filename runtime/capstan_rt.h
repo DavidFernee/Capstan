@@ -58,6 +58,8 @@ __attribute__((noreturn, cold)) static void cap_unreachable(int64_t loc) {
 static void *cap_alloc(size_t n) { return cap_gc_alloc(n, 0); }
 /* Memory that never contains pointers (string bytes, boxed integers). */
 static void *cap_alloc_atomic(size_t n) { return cap_gc_alloc(n, 1); }
+/* Memory for secrets: pointer-free, and zeroed when collected. */
+static void *cap_alloc_secret(size_t n) { return cap_gc_alloc(n, 2); }
 
 static void cap_assert(bool ok, int64_t loc) {
     if (!ok) cap_panic("assertion failed", "test", loc);
@@ -571,6 +573,50 @@ static CapStr *cap_escape_html(CapStr *t) {
     return r;
 }
 
+/* A relative path inside the current directory tree: segments of letters, digits,
+   '_', '-' and '.', never "." or "..", never absolute (CWE-22). */
+static CapStr *cap_validate_path(CapStr *t) {
+    if (t->len == 0 || t->len > 4096 || t->data[0] == '/') return NULL;
+    int64_t seg = 0;
+    for (int64_t i = 0; i <= t->len; i++) {
+        if (i == t->len || t->data[i] == '/') {
+            int64_t n = i - seg;
+            if (n == 0) return NULL;
+            if (n == 1 && t->data[seg] == '.') return NULL;
+            if (n == 2 && t->data[seg] == '.' && t->data[seg + 1] == '.') return NULL;
+            seg = i + 1;
+        } else {
+            unsigned char c = (unsigned char)t->data[i];
+            int ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+            if (!ok) return NULL;
+        }
+    }
+    return cap_str_new(t->data, t->len);
+}
+
+static int64_t *cap_validate_range(CapStr *t, int64_t lo, int64_t hi) {
+    int64_t *v = cap_validate_int(t);
+    if (!v || *v < lo || *v > hi) return NULL;
+    return v;
+}
+
+/* One CSV field: always quoted, quotes doubled, and a leading = + - @ tab or CR
+   neutralised with an apostrophe so spreadsheets do not run it (CWE-1236). */
+static CapStr *cap_escape_csv(CapStr *t) {
+    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 2 + 4);
+    char *w = r->data;
+    *w++ = '"';
+    if (t->len > 0 && t->data[0] != 0 && strchr("=+-@\t\r", t->data[0])) *w++ = '\'';
+    for (int64_t i = 0; i < t->len; i++) {
+        if (t->data[i] == '"') *w++ = '"';
+        *w++ = t->data[i];
+    }
+    *w++ = '"';
+    *w = 0;
+    r->len = (int64_t)(w - r->data);
+    return r;
+}
+
 /* Neutralise line breaks and control bytes so input cannot forge log lines (CWE-117). */
 static CapStr *cap_escape_log(CapStr *t) {
     CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 4 + 1);
@@ -611,8 +657,16 @@ static void cap_run(CapStr *prog, CapList *argv) {
 
 static CapStr *cap_secret_env(CapStr *name) {
     const char *v = getenv(name->data);
-    return v ? cap_str_new(v, (int64_t)strlen(v)) : NULL;
+    if (!v) return NULL;
+    int64_t n = (int64_t)strlen(v);
+    CapStr *r = (CapStr *)cap_alloc_secret(sizeof(CapStr) + (size_t)n + 1);
+    r->len = n;
+    memcpy(r->data, v, (size_t)n);
+    r->data[n] = 0;
+    return r;
 }
+
+static void cap_wipe(void *p, size_t n) { volatile unsigned char *w = (volatile unsigned char *)p; while (n--) *w++ = 0; }
 
 static bool cap_ct_eq(const char *a, int64_t an, const char *b, int64_t bn) {
     unsigned char d = (unsigned char)(an != bn);
@@ -691,6 +745,7 @@ static void cap_hmac_sha256(const unsigned char *key, size_t kn, const unsigned 
     for (int i = 0; i < 64; i++) { ipad[i] = k[i] ^ 0x36; opad[i] = k[i] ^ 0x5c; }
     cap_sha256_init(&s); cap_sha256_update(&s, ipad, 64); cap_sha256_update(&s, msg, mn); cap_sha256_final(&s, inner);
     cap_sha256_init(&s); cap_sha256_update(&s, opad, 64); cap_sha256_update(&s, inner, 32); cap_sha256_final(&s, out);
+    cap_wipe(k, sizeof k); cap_wipe(ipad, sizeof ipad); cap_wipe(opad, sizeof opad); cap_wipe(inner, sizeof inner); cap_wipe(&s, sizeof s);
 }
 
 static void cap_hex(const unsigned char *p, size_t n, char *out) {
@@ -730,6 +785,7 @@ static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, siz
         for (int j = 0; j < 32; j++) t[j] ^= u[j];
     }
     memcpy(out, t, 32);
+    cap_wipe(u, sizeof u); cap_wipe(t, sizeof t); cap_wipe(msg, sizeof msg);
 }
 
 static CapStr *cap_hash_password(CapStr *pw) {
@@ -740,6 +796,7 @@ static CapStr *cap_hash_password(CapStr *pw) {
     fclose(r);
     cap_pbkdf2(pw->data, (size_t)pw->len, salt, 16, CAP_PBKDF2_ITER, dk);
     cap_hex(salt, 16, shex); cap_hex(dk, 32, dhex);
+    cap_wipe(dk, sizeof dk);
     int n = snprintf(out, sizeof out, "cap1$pbkdf2-sha256$%d$%s$%s", CAP_PBKDF2_ITER, shex, dhex);
     return cap_str_new(out, n);
 }
@@ -772,7 +829,9 @@ static bool cap_verify_password(CapStr *pw, CapStr *tagged) {
     unsigned char salt[16], want[32], got[32];
     if (!cap_unhex(p, 16, salt) || !cap_unhex(p + 33, 32, want)) return false;
     cap_pbkdf2(pw->data, (size_t)pw->len, salt, 16, (int)iter, got);
-    return cap_ct_eq((const char *)got, 32, (const char *)want, 32);
+    bool ok = cap_ct_eq((const char *)got, 32, (const char *)want, 32);
+    cap_wipe(got, sizeof got);
+    return ok;
 }
 
 /* True when a stored value uses an algorithm or cost the current version has superseded. */

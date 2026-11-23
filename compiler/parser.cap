@@ -94,7 +94,7 @@ Node tok_node(int k, string s, Token t) {
 // ---- types ----------------------------------------------------------------
 
 bool is_type_word(string s) {
-    return s == "int" || s == "bool" || s == "string" || s == "void" || s == "Tainted" || s == "Secret";
+    return s == "int" || s == "bool" || s == "string" || s == "void" || s == "Tainted" || s == "Secret" || s == "Html" || s == "LogText";
 }
 
 bool is_generic_word(string s) {
@@ -110,6 +110,8 @@ Type parse_type(Parser p) {
     else if (name == "void") { t = mk_type(TY_VOID); }
     else if (name == "Tainted") { t = mk_type(TY_TAINT); }
     else if (name == "Secret") { t = mk_type(TY_SECRET); }
+    else if (name == "Html") { t = mk_type(TY_HTML); }
+    else if (name == "LogText") { t = mk_type(TY_LOG); }
     else if (name == "List" || name == "Map") {
         expect(p, "<");
         Type inner = parse_type(p);
@@ -273,6 +275,7 @@ Node parse_primary(Parser p) {
         advance(p);
         Node inner = parse_expr(p);
         expect(p, ")");
+        if (inner.k == N_BIN) { inner.s2 = "()"; }
         return inner;
     }
     if (at(p, "new")) {
@@ -549,9 +552,13 @@ Node parse_decl(Parser p) {
         expect(p, "}");
         return en;
     }
-    if (at(p, "struct")) {
+    if (at(p, "sensitive") || at(p, "struct")) {
         Node st = node_here(p, N_STRUCT);
-        advance(p);
+        if (at(p, "sensitive")) {
+            st.s2 = "sensitive";
+            advance(p);
+        }
+        expect(p, "struct");
         st.s = expect_ident(p);
         expect(p, "{");
         while (!at(p, "}") && !is_eof(p)) {

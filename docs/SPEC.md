@@ -18,6 +18,8 @@
 | `string` | immutable, trusted byte string |
 | `Tainted` | immutable byte string from an untrusted source |
 | `Secret` | a credential; cannot be printed, concatenated, compared with `==` or read |
+| `Html` | text escaped for HTML (from `escape_html()`); joins only with `Html` and trusted `string`, never passes as a plain `string` |
+| `LogText` | text escaped for logs and terminals (from `escape_log()`); same rules as `Html` |
 | `S` | a `struct` (reference type) |
 | `List<T>` | growable, bounds-checked list |
 | `Map<T>` | map from `string` keys to `T`, iterated in insertion order |
@@ -41,6 +43,13 @@ protected(CanEdit) void edit(Grant<CanEdit> g, Doc d) { ... }
 test "owners can edit" { assert_granted CanEdit(owner, doc); }
 ```
 
+- `sensitive struct Record { ... }`: fields of a sensitive struct can only be read or changed
+  in protected functions, policies and tests, so every path to the data needs a grant (CWE-862).
+  Values can be created and passed around anywhere.
+- `enum Shape { Circle(int r), Empty }`; values are written `Shape.Circle(3)` and `Shape.Empty`.
+  `match (s) { case Circle(r) { ... } case Empty { ... } }` must handle every variant or end with
+  `else { ... }` (CWE-478). Enums without values can be compared with `==`.
+- `import "lib/util.cap";` loads a file once, relative to the importing file; no `..` or absolute paths.
 - Every variable must be initialised where it is declared.
 - Every field must be given a value in `new S{field: value, ...}`.
 - A variable may not shadow a variable or constant from an enclosing scope.
@@ -80,11 +89,14 @@ then postfix `.field`, `.method(args)`, `[index]`.
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
 | `read_file(path)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources |
-| `write_file(path, data)` → `bool` | ignoring the result is warning CWE-252 |
+| `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252 |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | |
 | `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
-| `escape_html(t)`, `escape_log(t)`, `escape_c(t)` → `string` | escapers |
+| `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers |
 | `trust(t, "justification")` → `string` | explicit escape hatch; always reported as an AUDIT warning |
+| `validate_path(t)` → `string?` | a relative path with no `.` or `..` segments (CWE-22) |
+| `validate_range(t, min, max)` → `int?` | an integer within bounds (CWE-1284) |
+| `escape_csv(t)` → `string` | one quoted CSV field, with leading `= + - @` neutralised (CWE-1236) |
 | `taint(s)` → `Tainted` | marks a value as untrusted (useful in tests) |
 | `sql_query("literal", params...)` | query text must be a literal; values are bound parameters |
 | `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; untrusted arguments must follow a literal `"--"` (CWE-88) |
@@ -117,6 +129,10 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
 - Memory is managed by a garbage collector; there is no way to free memory manually.
   `CAPSTAN_GC_STATS=1` prints collector statistics on exit; `CAPSTAN_GC_STRESS=N` collects every N allocations (for testing).
 - Runaway recursion stops the program with CWE-674 rather than crashing.
+- The heap is limited by `CAPSTAN_MAX_HEAP` (bytes, with K/M/G suffixes; default three quarters of
+  physical memory). Exceeding it stops the program with CWE-400.
+- Secrets are kept in their own memory and zeroed when collected (CWE-244).
+- String literals in known credential formats (payment, cloud, source-hosting and chat tokens, private keys) are rejected (CWE-798).
 - Source nesting (expressions, statements, operator chains) is limited to 1,000 levels;
   deeper input is a compile error (CWE-674).
 - A program stopped by a runtime check exits with code 101.
@@ -131,6 +147,12 @@ Warnings are errors under `--strict`. Names starting with `_` are exempt from th
 | CWE-563 | local variable never read |
 | CWE-570 / CWE-571 | `if` condition is the literal `false` / `true` |
 | CWE-1164 | assignment of a value to itself |
+| CWE-390 | empty `else` branch (a failure case silently ignored) |
+| CWE-546 | comment mentioning a backdoor, or a TODO/FIXME about security |
+| CWE-547 | security decision on a magic number (`role == 7`) |
+| CWE-617 | `assert()` outside a test |
+| CWE-783 | `&&` inside `||` without parentheses |
+| CWE-489 | (error in `--release`) a debug switch constant left on |
 | CWE-252 | result of `write_file()` ignored |
 | CWE-639 | policy ignores one of its parameters |
 | CAP-ROLE | policy compares against a string literal |

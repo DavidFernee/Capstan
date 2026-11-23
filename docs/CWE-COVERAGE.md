@@ -15,15 +15,15 @@ red-team of about 250 code-level CWEs, including the gaps that remain, see
 
 | # | CWE | Weakness | Status | How |
 |---|---|---|---|---|
-| 1 | 79 | Cross-site scripting | Partial | `Tainted` can't become `string` without `escape_html()` or another validator. *Gap:* no typed HTML output yet (roadmap: `Html` type and templating). |
+| 1 | 79 | Cross-site scripting | **Prevented** for HTML built from `Html` values | Untrusted input must go through `escape_html()`, whose `Html` result can't be confused with other text. *Gap:* typed HTML templates and an HTML-only output sink are on the roadmap |
 | 2 | 787 | Out-of-bounds write | **Prevented** | No pointers; every list write is bounds-checked |
 | 3 | 89 | SQL injection | **Prevented** | Query text must be a string literal; values are bound parameters |
 | 4 | 352 | CSRF | Not yet | A framework concern (roadmap: web framework with built-in tokens) |
-| 5 | 22 | Path traversal | Partial | File paths must be `string`, so untrusted input must be validated first. *Gap:* no path validator or directory capability yet (roadmap: `Path` type, capability-based file access) |
+| 5 | 22 | Path traversal | **Prevented** (except through audited `trust()`) | File paths must be `string`; `validate_path()` rejects `..` and absolute paths; imports are checked the same way |
 | 6 | 125 | Out-of-bounds read | **Prevented** | Bounds-checked strings and lists |
 | 7 | 78 | OS command injection | **Prevented** | No shell exists; `run()` takes a literal program and separate arguments |
 | 8 | 416 | Use after free | **Prevented** | Garbage-collected memory; programs cannot free memory themselves |
-| 9 | 862 | Missing authorisation | **Prevented** for `protected` functions | Protected functions require a `Grant`, which only `authorize` can create. *Gap:* the developer must mark sensitive operations `protected` (roadmap: `sensitive struct`, making access protected by default) |
+| 9 | 862 | Missing authorisation | **Prevented** for `protected` functions and `sensitive` data | Protected functions require a `Grant`, which only `authorize` can create; fields of a `sensitive struct` can only be touched under a grant. *Gap:* the type must be declared sensitive (once per type) |
 | 10 | 434 | Unrestricted file upload | Not yet | Roadmap: typed upload handling in the web framework |
 | 11 | 94 | Code injection | **Prevented** | No `eval`. The compiler itself only emits source text through `escape_c()` |
 | 12 | 20 | Improper input validation | **Prevented** as a type error | Input sources return `Tainted`. Leaving it requires a validator or an audited `trust()` |
@@ -31,20 +31,26 @@ red-team of about 250 code-level CWEs, including the gaps that remain, see
 | 14 | 287 | Improper authentication | Partial | `Secret`, `secret_eq()` and `hash_password()` make the parts safe. *Gap:* no built-in session/auth framework |
 | 15 | 269 | Improper privilege management | Partial | Policies and grants. *Gap:* policy meaning is the developer's |
 | 16 | 502 | Deserialisation of untrusted data | **Prevented** (by absence) | No object deserialisation. Roadmap: typed decoders that return `Tainted` fields |
-| 17 | 200 | Exposure of sensitive information | Partial | `Secret` can't be printed, logged, concatenated, written or read. *Gap:* other sensitive data isn't marked |
+| 17 | 200 | Exposure of sensitive information | Partial | `Secret` can't be printed, logged, concatenated, written or read; `sensitive struct` data needs a grant. *Gap:* the type must be declared sensitive |
 | 18 | 863 | Incorrect authorisation | Partial | Policy analysis (trivially-true, ignored parameters, string roles, tainted inputs) and mandatory denial tests. *Gap:* the policy's meaning |
 | 19 | 918 | Server-side request forgery | Not yet | v0.1 has no networking. Roadmap: capability-based network access |
 | 20 | 119 | Buffer bounds | **Prevented** | As 787/125 |
 | 21 | 476 | Null dereference | **Prevented** | No null; optionals must be unwrapped |
 | 22 | 798 | Hard-coded credentials | Partial | Secrets only come from `secret_env()`, and literals assigned to credential-named variables or fields are rejected. *Gap:* a literal under an innocuous name isn't detected |
 | 23 | 190 | Integer overflow | **Prevented** | All arithmetic is checked; overflowing literals don't compile |
-| 24 | 400 | Uncontrolled resource consumption | Not yet | Roadmap: size-bounded input types, mandatory timeouts, linear-time regex only |
+| 24 | 400 | Uncontrolled resource consumption | Partial | A heap limit stops runaway allocation safely; `validate_range()` bounds input. *Gap:* CPU time and loop bounds |
 | 25 | 306 | Missing authentication for a critical function | Partial | As CWE-862 |
 
 ## Other weaknesses addressed
 
 | CWE | Weakness | How |
 |---|---|---|
+| 116 | Wrong output encoding | Escaped text is typed by context (`Html`, `LogText`) and can't pass as a plain string |
+| 244 | Secrets left in freed memory | Secrets are zeroed when collected |
+| 256 / 257 | Passwords stored readably | Untrusted input can't be written to files unescaped; password-named data can't be written at all |
+| 390 / 546 / 547 / 617 / 783 / 489 | Ignored errors, suspicious comments, magic security numbers, reachable asserts, precedence slips, debug switches | Warnings (errors with `--strict`; debug switches are errors in `--release`) |
+| 478 | Missing case | `match` must handle every variant |
+| 1236 | CSV formula injection | `escape_csv()`; untrusted text can't be written to files unescaped |
 | 88 | Argument injection | Untrusted arguments to `run()` must come after a literal `"--"`, so they can't be read as options |
 | 117 | Log injection | `Tainted` can't be printed without `escape_log()` |
 | 120 | Classic buffer overflow | `strcpy`/`memcpy`/`gets` don't exist |

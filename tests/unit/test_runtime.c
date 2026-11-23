@@ -198,6 +198,40 @@ static void test_gc(void) {
     CHECK(cap_gc.live < (size_t)4 << 20);
 }
 
+/* Collected secrets must be wiped (CWE-244). The test keeps only disguised
+   addresses, so the collector cannot see references to the secrets. A conservative
+   collector may retain a few through stale register values, so the test creates
+   many and requires nearly all to be wiped once collected. */
+#define CAP_DISGUISE ((uintptr_t)0x5a5a5a5a5a5a5a5aULL)
+#define CAP_NSECRETS 200
+static uintptr_t secret_addrs[CAP_NSECRETS];
+__attribute__((noinline)) static void make_secrets(void) {
+    setenv("CAPSTAN_UNIT_SECRET", "correct-horse-battery-staple", 1);
+    for (int i = 0; i < CAP_NSECRETS; i++) {
+        CapStr *sec = cap_secret_env(CAP_LIT("CAPSTAN_UNIT_SECRET", 19));
+        secret_addrs[i] = (uintptr_t)sec->data ^ CAP_DISGUISE;
+    }
+    unsetenv("CAPSTAN_UNIT_SECRET");
+}
+__attribute__((noinline)) static void scrub_stack(int depth) {
+    volatile char pad[4096];
+    memset((char *)pad, 0, sizeof pad);
+    if (depth > 0) scrub_stack(depth - 1);
+}
+static void test_secret_wipe(void) {
+    make_secrets();
+    scrub_stack(16);
+    for (int i = 0; i < 3; i++) cap_gc_collect();
+    int wiped = 0;
+    for (int i = 0; i < CAP_NSECRETS; i++) {
+        const volatile char *where = (const volatile char *)(secret_addrs[i] ^ CAP_DISGUISE);
+        int clean = 1;
+        for (int j = 0; j < 28; j++) if (where[j] != 0) clean = 0;
+        wiped += clean;
+    }
+    CHECK(wiped >= CAP_NSECRETS - 4);
+}
+
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
@@ -210,6 +244,7 @@ int main(void) {
     test_collections();
     test_arithmetic();
     test_gc();
+    test_secret_wipe();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }

@@ -39,11 +39,35 @@ bool is_keyword(string w) {
     kws.push("new"); kws.push("let"); kws.push("protected"); kws.push("policy");
     kws.push("public"); kws.push("test"); kws.push("authorize");
     kws.push("assert_denied"); kws.push("assert_granted");
-    kws.push("enum"); kws.push("match"); kws.push("case"); kws.push("import");
+    kws.push("enum"); kws.push("match"); kws.push("case"); kws.push("import"); kws.push("sensitive");
     for (int i = 0; i < kws.len(); i += 1) {
         if (kws[i] == w) { return true; }
     }
     return false;
+}
+
+// Case-insensitive search in a slice of the (untrusted) source text.
+bool src_has(Lexer lx, int from, int to, string needle) {
+    for (int i = from; i + needle.len() <= to; i += 1) {
+        bool same = true;
+        for (int j = 0; j < needle.len() && same; j += 1) {
+            int c = lx.src.at(i + j);
+            if (c >= 'A' && c <= 'Z') { c = c + 32; }
+            if (c != needle.at(j)) { same = false; }
+        }
+        if (same) { return true; }
+    }
+    return false;
+}
+
+// Notes left in comments about unfinished security work deserve a reviewer (CWE-546).
+void check_comment(Lexer lx, int from, int to, int line) {
+    bool marker = src_has(lx, from, to, "todo") || src_has(lx, from, to, "fixme") || src_has(lx, from, to, "xxx") || src_has(lx, from, to, "hack");
+    bool topic = src_has(lx, from, to, "password") || src_has(lx, from, to, "auth") || src_has(lx, from, to, "secur")
+        || src_has(lx, from, to, "secret") || src_has(lx, from, to, "bypass") || src_has(lx, from, to, "remove before");
+    if (src_has(lx, from, to, "backdoor") || (marker && topic)) {
+        report_at(lx.ctx, lx.file, line, 0, lx.ctx.strict, "CWE-546", "comment suggests unfinished or hidden security-relevant code; resolve it before release");
+    }
 }
 
 bool is_alpha(int c) {
@@ -165,8 +189,12 @@ List<Token> lex(Ctx ctx, Tainted src, int file) {
         } else if (c == ' ' || c == '\t' || c == '\r') {
             lx.pos += 1;
         } else if (c == '/' && peek_ch(lx, 1) == '/') {
+            int cstart = lx.pos;
             while (lx.pos < src.len() && peek_ch(lx, 0) != '\n') { lx.pos += 1; }
+            check_comment(lx, cstart, lx.pos, lx.line);
         } else if (c == '/' && peek_ch(lx, 1) == '*') {
+            int bstart = lx.pos;
+            int bline = lx.line;
             lx.pos += 2;
             while (lx.pos < src.len() && !(peek_ch(lx, 0) == '*' && peek_ch(lx, 1) == '/')) {
                 if (peek_ch(lx, 0) == '\n') {
@@ -179,6 +207,7 @@ List<Token> lex(Ctx ctx, Tainted src, int file) {
                 lex_error(lx, "unterminated comment");
             } else {
                 lx.pos += 2;
+                check_comment(lx, bstart, lx.pos, bline);
             }
         } else if (is_alpha(c)) {
             int start = lx.pos;

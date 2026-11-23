@@ -20,6 +20,8 @@ const int TY_OPT = 11;
 const int TY_NONE = 12;
 const int TY_ERR = 13;
 const int TY_ENUM = 14;
+const int TY_HTML = 15;      // text escaped for HTML; usable only where HTML is expected
+const int TY_LOG = 16;       // text escaped for logs and terminals
 
 struct Type {
     int k;
@@ -121,8 +123,8 @@ void warn_at(Ctx c, Node at, string code, string msg) {
 
 // The source line a diagnostic points at, made safe for a terminal: source files
 // are untrusted, and a crafted file must not be able to inject escape sequences.
-string source_excerpt(Ctx c, Diag d) {
-    if (d.file >= c.sources.len() || d.line <= 0) { return ""; }
+LogText? source_excerpt(Ctx c, Diag d) {
+    if (d.file >= c.sources.len() || d.line <= 0) { return none; }
     Tainted src = c.sources[d.file];
     int line = 1;
     int start = 0;
@@ -134,19 +136,17 @@ string source_excerpt(Ctx c, Diag d) {
         }
         i += 1;
     }
-    if (line != d.line) { return ""; }
+    if (line != d.line) { return none; }
     int end = start;
     while (end < src.len() && src.at(end) != '\n') { end += 1; }
     if (end - start > 200) { end = start + 200; }
-    string text = escape_log(src.slice(start, end));
-    List<string> out = new List<string>();
-    out.push("    " + text);
+    LogText out = "    " + escape_log(src.slice(start, end));
     if (d.col > 0 && d.col <= end - start + 1) {
         List<string> pad = new List<string>();
         for (int k = 1; k < d.col; k += 1) { pad.push(" "); }
-        out.push("    " + join(pad, "") + "^");
+        out = out + "\n    " + join(pad, "") + "^";
     }
-    return join(out, "\n");
+    return out;
 }
 
 int error_count(Ctx c) {
@@ -167,8 +167,7 @@ void print_diags(Ctx c) {
         string where = c.files[d.file] + ":" + int_to_str(d.line);
         if (d.col > 0) { where = where + ":" + int_to_str(d.col); }
         println(where + ": " + sev + code + ": " + d.msg);
-        string ex = source_excerpt(c, d);
-        if (ex != "") { println(ex); }
+        if (let ex = source_excerpt(c, d)) { println(ex); }
     }
 }
 
@@ -252,6 +251,8 @@ string type_str(Type t) {
     if (t.k == TY_VOID) { return "void"; }
     if (t.k == TY_TAINT) { return "Tainted"; }
     if (t.k == TY_SECRET) { return "Secret"; }
+    if (t.k == TY_HTML) { return "Html"; }
+    if (t.k == TY_LOG) { return "LogText"; }
     if (t.k == TY_STRUCT || t.k == TY_ENUM) { return t.name; }
     if (t.k == TY_LIST) { return "List<" + type_str(t.args[0]) + ">"; }
     if (t.k == TY_MAP) { return "Map<" + type_str(t.args[0]) + ">"; }
@@ -274,6 +275,11 @@ bool assignable(Type from, Type to) {
 
 bool is_stringish(Type t) {
     return t.k == TY_STR || t.k == TY_TAINT;
+}
+
+// Any text value, whatever its trust level or escaping context.
+bool is_texty(Type t) {
+    return t.k == TY_STR || t.k == TY_TAINT || t.k == TY_HTML || t.k == TY_LOG;
 }
 
 string lower(string s) {
