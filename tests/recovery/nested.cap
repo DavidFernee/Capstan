@@ -1,0 +1,13 @@
+// Recovery inside nested blocks resumes at the innermost enclosing block.
+// spec: diag.recovery
+// error: 8:23: expected an expression, found ')'
+// error: 10:17: expected an expression, found '='
+int main() {
+    for (int i = 0; i < 3; i += 1) {
+        while (i > 5) {
+            print(i * );
+        }
+        int k = = 2;
+    }
+    return 0;
+}

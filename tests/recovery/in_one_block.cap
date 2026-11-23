@@ -1,0 +1,10 @@
+// Errors inside one function body are recovered statement by statement.
+// spec: diag.recovery
+// error: 6:13: expected an expression, found ';'
+// error: 7:10: expected an expression, found ';'
+int main() {
+    int a = ;
+    a = (;
+    print(a);
+    return 0;
+}

@@ -90,8 +90,10 @@ red-team of about 250 code-level CWEs, including the gaps that remain, see
 - **Hardware side channels** below the language.
 - **Laundering through data structures or control flow.** Rebuilding text from
   the bytes of untrusted input with `char_str()` is rejected, including through
-  helper functions and parameters. Bytes stored in lists or struct fields first,
-  or information carried only by branching, are not tracked. The atlas records both.
+  helper functions and parameters, lists, maps and struct fields, and bit masks
+  and wrapping arithmetic. Information carried only by branching on each byte is
+  not tracked: that is how a validator is written, so which branches are safe is
+  the programmer's decision. The atlas records it.
 
 ## Checks proved unnecessary
 
