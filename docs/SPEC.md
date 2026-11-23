@@ -191,7 +191,7 @@ formatted, changes nothing and exits 1 if there are any. Only whitespace changes
 - line breaks are kept, runs of blank lines become one, trailing whitespace is removed and
   the file ends with one newline;
 - comments are unchanged. A trailing `//` comment keeps at least its gap, and trailing
-  comments that were aligned stay aligned.
+  comments on consecutive lines are aligned with each other.
 
 Before writing, the formatter scans its output again and requires the same tokens with the
 same text; otherwise the file is left unchanged. A file that does not scan (an unterminated
