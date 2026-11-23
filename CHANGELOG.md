@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `escape_json(t)`: any text made safe inside a JSON string (always valid JSON, and safe inside an
+  HTML `<script>`), and `taint_char(c)`: a byte that stays untrusted, so escapes in untrusted text
+  (`%41`, `\u0041`) can be decoded without laundering it. Both requested by the language server.
 - `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
   `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
   Capstan program can hold a framed conversation over a pipe. The language server needs both.

@@ -15,7 +15,8 @@ input closes.
 
 Always: no crash, no runtime stop, nothing on standard error, no hang (every session
 has a deadline), and every byte the server writes is a well-framed JSON message in
-printable ASCII. A failing session's input is saved in tests/lsp/failures/.
+valid UTF-8 with no raw control characters or line separators. A failing session's
+input is saved in tests/lsp/failures/.
 """
 # spec: tools.lsp
 import json, os, random, sys, time

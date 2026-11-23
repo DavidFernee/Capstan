@@ -530,7 +530,7 @@ BUILTINS = {
     "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
     "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
     "escape_csv", "validate_path", "validate_range", "to_text",
-    "wrapping_add", "wrapping_sub", "wrapping_mul", "wrapping_shl", "read_bytes", "flush",
+    "wrapping_add", "wrapping_sub", "wrapping_mul", "wrapping_shl", "read_bytes", "flush", "escape_json", "taint_char",
 }
 
 PRELUDE = r'''
@@ -676,6 +676,25 @@ def b_escape_log(t):
         n = n or 1
         out.extend("\\x%02x" % b[i + k] for k in range(n)); i += n
     return "".join(out)
+def b_escape_json(t):
+    b, out, i = t.encode("latin-1"), [], 0
+    simple = {0x22: '\\"', 0x5C: "\\\\", 0x0A: "\\n", 0x09: "\\t", 0x0D: "\\r"}
+    while i < len(b):
+        c = b[i]
+        if c in simple:
+            out.append(simple[c]); i += 1; continue
+        if c < 32 or c == 127 or c in (0x3C, 0x3E, 0x26):
+            out.append("\\u%04x" % c); i += 1; continue
+        if c < 128:
+            out.append(chr(c)); i += 1; continue
+        n, cp = _utf8_seq(b, i)
+        if not n:
+            out.append("\\ufffd"); i += 1; continue
+        out.append("\\u%04x" % cp if cp in (0x2028, 0x2029) else bytes(b[i:i + n]).decode("latin-1")); i += n
+    return "".join(out)
+def b_taint_char(c):
+    if c < 0 or c > 255: _panic("taint_char() byte outside 0..255", "CWE-704")
+    return chr(c)
 def b_trust(t, why): return t
 def b_to_text(x):
     if isinstance(x, bool): return "true" if x else "false"

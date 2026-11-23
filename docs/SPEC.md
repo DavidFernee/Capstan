@@ -121,6 +121,8 @@ explicitly. Their meaning therefore never depends on precedence.
 | `validate_path(t)` → `string?` | a relative path with no `.` or `..` segments (CWE-22) |
 | `validate_range(t, min, max)` → `int?` | an integer within bounds (CWE-1284) |
 | `escape_csv(t)` → `string` | one quoted CSV field, with leading `= + - @` neutralised (CWE-1236) |
+| `escape_json(t)` → `string` | the contents of a JSON string literal, without the quotes (CWE-116): `"` and `\` escaped; controls, DEL, `<`, `>`, `&`, U+2028 and U+2029 as `\uXXXX`, so the text is safe inside an HTML `<script>` too (CWE-79); valid UTF-8 kept; each invalid byte becomes U+FFFD, so the result is always valid JSON |
+| `taint_char(c)` → `Tainted` | the one-byte text with byte value `c` (0..255, otherwise the program stops with CWE-704), still untrusted: for decoding escapes (`%41`, `\u0041`) in untrusted text without laundering it. `char_str()` of a byte of untrusted text is rejected (CWE-20) |
 | `taint(s)` → `Tainted` | marks a value as untrusted (useful in tests) |
 | `wrapping_add(a, b)`, `wrapping_sub(a, b)`, `wrapping_mul(a, b)` → `int` | arithmetic modulo 2^64; never stops |
 | `wrapping_shl(a, n)` → `int` | `a << n` modulo 2^64; `n` must be 0..63 (CWE-1335) |
@@ -254,7 +256,8 @@ null id, an invalid request -32600, an unknown method -32601, invalid parameters
 and a request before `initialize` -32002. Notifications are never answered.
 
 Everything the client sends is untrusted (`Tainted`); the server has no `trust()`. Its
-replies are JSON in printable ASCII. Limits (CWE-400): 16 MiB per message (a larger one is
+replies are UTF-8 JSON whose strings all pass through `escape_json()` (decoded `\uXXXX` and
+`%XX` escapes are rebuilt with `taint_char()`, so they stay untrusted). Limits (CWE-400): 16 MiB per message (a larger one is
 skipped unread and answered with -32600), 4,096-byte header lines, 32 header lines,
 JSON nesting of 64 levels, 1,000 open documents and 256 MiB of text in all, 1,000
 diagnostics per document, 256 imported files.
@@ -295,7 +298,7 @@ When the language gains a feature, add its area here and its tests together.
 | `expr.bitwise` | `& \| ^ ~ << >> >>>`, required parentheses, shift counts, hexadecimal literals, wrapping arithmetic |
 | `builtins.io` | printing, files, arguments |
 | `builtins.validators` | the ways out of `Tainted`, and `trust()` |
-| `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c` |
+| `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c`, `escape_json` |
 | `builtins.sinks` | `sql_query` and `run` |
 | `builtins.crypto` | hashing and password hashing |
 | `safety.banned` | dangerous C idioms and weak primitives that do not exist |
