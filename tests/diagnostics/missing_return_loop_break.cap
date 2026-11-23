@@ -1,0 +1,12 @@
+// expect: can reach its end without returning a value
+// spec: decl.function
+// while (true) only ends a function if nothing breaks out of it.
+int first_positive(List<int> xs) {
+    int i = 0;
+    while (true) {
+        if (xs[i] > 0) { break; }
+        i += 1;
+    }
+}
+
+int main() { return 0; }

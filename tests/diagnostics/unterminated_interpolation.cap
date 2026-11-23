@@ -1,0 +1,7 @@
+// expect: unterminated interpolated string
+// spec: expr.interpolation lexical
+int main() {
+    println($"open {1}
+    );
+    return 0;
+}

@@ -1,0 +1,6 @@
+// expect: println expects 1 argument(s), found 2
+// spec: builtins.io
+int main() {
+    println("a", "b");
+    return 0;
+}

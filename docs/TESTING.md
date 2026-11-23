@@ -35,19 +35,24 @@ A new feature is not finished until its area is in the spec and covered.
 | Section | What it proves |
 |---|---|
 | **spec coverage** | Every conformance area in the specification has at least one test. |
-| **unit** | Runtime correctness against published reference vectors: SHA-256 (FIPS 180-2), HMAC-SHA256 (RFC 4231), PBKDF2-SHA256 (RFC 7914). Also validator edge cases at the 64-bit limits, tampered password hashes failing closed, 100,000-key maps, and collector retention of interior pointers, globals and large objects. An end-to-end round trip proves every byte value survives source → compiler → C → program output. |
+| **unit** | Runtime correctness against published reference vectors: SHA-256 (FIPS 180-2), HMAC-SHA256 (RFC 4231), PBKDF2-SHA256 (RFC 7914). Every validator and escaper against its specification: `validate_path` (traversal, absolute paths, NUL bytes, the 4096-byte limit), `validate_range`, `escape_csv` (every formula prefix), `escape_log` (C1 controls, bidirectional overrides, line separators, invalid and overlong UTF-8, plus every 2-byte input), `secret_eq`; `read_file`, `write_file` and `read_line` with every byte value, NUL bytes, directories, missing files and `/proc`. Also tampered password hashes failing closed, 100,000-key maps and collector retention. `escape_log` must agree byte for byte with stage 0 on 73,000 inputs. *Interval properties:* the range analysis's arithmetic, compiled from the compiler's own sources, is checked against exact arithmetic for every pair of intervals over the 64-bit edge values (180,500 operations). *Lint table:* every credential format, magic-number name and comment marker, each with a near miss that must not be flagged. |
 | **reject** | Vulnerable programs (SQL/command/log injection, null dereference, hard-coded credentials, weak crypto, missing authorisation, grant misuse, policy weaknesses) are refused, each with its CWE number. |
 | **diagnostics** | Ordinary mistakes (type errors, unknown names, syntax errors, missing returns) produce the exact expected message. |
 | **runtime** | Programs that can only fail at run time (out-of-bounds access, overflow, division by zero, a grant replayed on another object, runaway recursion) stop safely with exit code 101 and the named CWE. |
+| **ranges** | The range analysis proves exactly the expected checks unnecessary (`// expect-proved: N`), `--keep-checks` gives the same result with every check in place, and the compiler reports how many of its own checks it proves away. Runtime tests (`tests/runtime/range_*.cap`) cover each trap: loops up to the 64-bit limits, lists shrinking in the body, the condition or through an alias, reassigned variables and boundary guards. |
+| **io** | A program reads standard input (NUL bytes, CRLF, a 10,000-byte line, escape sequences, an unterminated last line) and writes and reads files (every byte value, empty files, directories, missing files, a NUL in the path), under both the native compiler and stage 0, which must agree with each other and with the expected output. |
+| **portability** | Every conformance program and every safety stop behaves identically at `-O0`, `-O2` and `-O3`, with each C compiler available (GCC and Clang in CI). |
 | **conformance** | Programs covering each section of the language reference must (1) print exactly the expected output, (2) agree with the independent stage-0 implementation, and (3) produce C that compiles with `-Wall -Wextra -Werror`. |
 | **gc** | Memory stays bounded: the churn test allocates more than 500 MB with a peak heap under 64 MB. Collecting on every single allocation must not change any value. The compiler's output is unchanged under collector stress. |
 | **limits** | Pathological input (100,000 nested parentheses or blocks, 50,000-term expressions, 20,000-statement functions) gets a diagnostic or compiles; it never crashes the compiler. |
 | **cwe atlas** | An attempt to write each of about 250 code-level CWEs in Capstan; every verdict (rejected, stopped, neutralised, inexpressible, gap) is re-checked. |
-| **fuzz** | *Differential:* random well-typed programs (values near the 64-bit limits, zero divisors, edge-case indexes) must give identical output and exit codes from the native compiler and stage 0, including identical safety stops. *Mutation:* corrupted versions of every program in the repository must never crash or hang the compiler, and any program it accepts must produce valid C. |
+| **fuzz** | *Differential:* random well-typed programs (a third of them also built with ASan and UBSan, including signed-overflow detection, so undefined behaviour is caught even when the output happens to match) (values near the 64-bit limits, zero divisors, edge-case indexes, and guards, limit loops and shrinking lists aimed at the range analysis) must give identical output and exit codes from the native compiler and stage 0, which has no range analysis, including identical safety stops. *Mutation:* corrupted versions of every program in the repository must never crash or hang the compiler, and any program it accepts must produce valid C. |
 | **sanitizers** | The compiler (under collector stress), the formatter, the runtime unit tests and every conformance program and example run clean under AddressSanitizer and UndefinedBehaviorSanitizer. |
 | **bootstrap** | The compiler reproduces itself byte for byte; it does so when built with a different C compiler too; stage 0 still bootstraps to the identical compiler; the compiler passes its own `--strict --release` checks; its generated C is warning-free. |
 | **examples** | Example programs pass `--release` checks (including mandatory denial tests) and their own tests. The test runner itself reports failures correctly and keeps going after one. |
 | **fmt** | The formatter produces the expected layout and is idempotent; every source file in the repository is already formatted; `--check` changes nothing; unscannable files are refused. *Whitespace fuzz:* every formatted file, with its indentation, spacing, tabs, trailing whitespace and blank lines scrambled, must be restored byte for byte. *Corruption fuzz:* randomly corrupted files are formatted or refused, never crash or hang the formatter. Building the formatter must report exactly one warning: the AUDIT for its single `trust()`. |
+| **coverage** | (`--full`) Line coverage of the compiler, the formatter and the runtime under the suite's workloads, through the `#line` mapping (`tests/coverage.py`, report in [COVERAGE.md](COVERAGE.md)); no file may fall below its floor in `tests/coverage_floors.txt`. |
+| **compiler mutation** | (`--full`) Mutants of the compiler (a flipped comparison, `&&` for `\|\|`, an inverted boolean, a deleted diagnostic or guard) must each be caught by the suite (`tests/mutate_compiler.py`); see below. |
 | **bench** | (`--full`) Speed against equivalent hand-written C, failing if any benchmark exceeds the regression limit. |
 
 ## Two independent implementations
@@ -76,7 +81,56 @@ permanent regression tests.
 - A rejected program: `tests/reject/name.cap`, with first line `// expect: CWE-nnn`
   (optionally `// flags: --strict` or `--release`).
 - A runtime stop: `tests/runtime/name.cap`, with `// expect-runtime: CWE-nnn`.
+- A range-analysis count: add `// expect-proved: N` to any test; the suite counts the operations in its C whose check was proved unnecessary.
 - A conformance program: `tests/accept/name.cap` plus `name.out` with the exact expected output.
 - A formatter case: `tests/fmt/name.cap` (the input) plus `name.fmt` (the exact expected result).
 - Every test file carries a `// spec:` line naming the conformance areas it covers.
 - A runtime test may set environment variables with `// env: NAME=value`.
+
+## Measuring the tests themselves
+
+Two tools measure how good the suite is, rather than how good the compiler is.
+
+**Coverage** (`tests/coverage.py`) runs every test program, example, the CWE atlas and short
+fuzzing campaigns through instrumented builds and reports which lines of the compiler, the
+formatter and the runtime were reached, as Capstan source lines. Its first run found 28 checker
+diagnostics that no test had ever triggered, eight of them security checks, and runtime functions
+(`validate_path`, `validate_range`, `escape_csv`, `secret_eq`, file and line input) that were
+compiled by tests but never executed. Writing those tests found two real bugs: `read_line` lost
+bytes after a NUL and merged lines, and `read_file` on a directory stopped the program instead of
+returning `none`. Reviewing `escape_log` while testing it found that it let C1 controls, Unicode
+bidirectional overrides and line separators through.
+
+**Mutation testing** (`tests/mutate_compiler.py COUNT SEED [files]`) builds compilers with one
+deliberate bug each and runs the suite's oracles against them. A surviving mutant is behaviour no
+test pins down: it becomes a test, or is recorded below as equivalent. `--replay REPORT` re-runs
+the survivors of an earlier report.
+
+```sh
+python3 -I tests/coverage.py --check              # report, and fail below the floors
+python3 -I tests/mutate_compiler.py 80 7          # 80 mutants of ranges.cap and checker.cap
+python3 -I tests/mutate_compiler.py --replay old.log
+```
+
+Equivalent mutants found so far (changes that cannot alter behaviour), with the reason:
+
+- `checker.cap`, the laundering fixpoint: mutating `same_summary`, the per-round resets of
+  `returns` and `sinks`, or `changed = false` only makes the bounded fixpoint run more rounds;
+  its result is the same.
+- `codegen.cap`, `forget(...)` for match and if-let bindings, and `ranges.cap`, `mentions()`
+  in loop steps: defence in depth. Capstan forbids shadowing, so a binding can never reuse the
+  name of a variable with recorded facts, and a loop variable is not yet in scope when its
+  step is analysed, so its range is already "any value".
+- `codegen.cap`, `g.ind` (indentation of the generated C) and `lexer.cap`, `lx.pos > part` before
+  a `{{` (it can only add an empty `+ ""` to an interpolated string): output layout only.
+- `ranges.cap`, `literal_value()`'s test for a negated literal: only called once `is_literal()`
+  has confirmed one of the two shapes it handles.
+- `checker.cap`, the not-an-enum fallback of `simple_enum()` (only ever called with an enum's
+  name) and the grant-parameter loop's bound (one step further reaches the body node, which is
+  never a grant).
+
+Results so far: the first campaign (80 mutants of the range analysis and checker, 40 of the
+lexer, parser and code generator) killed 62% and 82%. Every non-equivalent survivor became a test,
+and those tests found four real bugs (above, and the `exit()` warning and a stage-0 scoping bug).
+A fresh campaign on new seeds then killed 60 of 70 at once (86%); of the other ten, five were
+equivalent and five became tests, so every non-equivalent mutant in it is now caught.

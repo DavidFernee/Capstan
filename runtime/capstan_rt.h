@@ -26,6 +26,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
+#include <sys/stat.h>
 #include "capstan_gc.h"
 
 /* ------------------------------------------------------------------ */
@@ -99,6 +100,16 @@ static inline int64_t cap_neg(int64_t a, int64_t loc) {
     return -a;
 }
 
+/* Proved forms: used only where the compiler's range analysis has proved that the
+   check cannot fail (compiler/ranges.cap), so the check is done at compile time
+   instead of at run time. Same arguments, so evaluation is unchanged. */
+static inline int64_t cap_add_proved(int64_t a, int64_t b, int64_t loc) { (void)loc; return a + b; }
+static inline int64_t cap_sub_proved(int64_t a, int64_t b, int64_t loc) { (void)loc; return a - b; }
+static inline int64_t cap_mul_proved(int64_t a, int64_t b, int64_t loc) { (void)loc; return a * b; }
+static inline int64_t cap_div_proved(int64_t a, int64_t b, int64_t loc) { (void)loc; return a / b; }
+static inline int64_t cap_mod_proved(int64_t a, int64_t b, int64_t loc) { (void)loc; return a % b; }
+static inline int64_t cap_neg_proved(int64_t a, int64_t loc) { (void)loc; return -a; }
+
 /* Optional int/bool are boxed; none is NULL. */
 static int64_t *cap_box_int(int64_t v) {
     int64_t *p = (int64_t *)cap_alloc_atomic(sizeof(int64_t));
@@ -150,6 +161,7 @@ static inline int64_t cap_str_at(CapStr *s, int64_t i, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)s->len)) cap_panic("string index out of bounds", "CWE-125", loc);
     return (int64_t)(unsigned char)s->data[i];
 }
+static inline int64_t cap_str_at_proved(CapStr *s, int64_t i, int64_t loc) { (void)loc; return (int64_t)(unsigned char)s->data[i]; }
 
 static CapStr *cap_str_slice(CapStr *s, int64_t a, int64_t b, int64_t loc) {
     if (a < 0 || b < a || b > s->len) cap_panic("string slice out of bounds", "CWE-125", loc);
@@ -202,6 +214,8 @@ static inline void cap_list_set(CapList *l, int64_t i, CapVal v, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-787", loc);
     l->items[i] = v;
 }
+static inline CapVal cap_list_get_proved(CapList *l, int64_t i, int64_t loc) { (void)loc; return l->items[i]; }
+static inline void cap_list_set_proved(CapList *l, int64_t i, CapVal v, int64_t loc) { (void)loc; l->items[i] = v; }
 
 static void *cap_list_pop_p(CapList *l) {
     if (l->len == 0) return NULL;
@@ -211,6 +225,12 @@ static void *cap_list_pop_p(CapList *l) {
 static int64_t *cap_list_pop_i(CapList *l) {
     if (l->len == 0) return NULL;
     return cap_box_int(l->items[--l->len].i);
+}
+
+/* Unboxed form for `if (let v = xs.pop())`, read immediately (see cap_map_peek_i). */
+static int64_t *cap_list_pop_peek_i(CapList *l) {
+    if (l->len == 0) return NULL;
+    return &l->items[--l->len].i;
 }
 
 static void cap_list_clear(CapList *l) { l->len = 0; }
@@ -287,6 +307,8 @@ static inline void cap_blist_set(CapBList *l, int64_t i, bool v, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-787", loc);
     l->items[i] = (uint8_t)v;
 }
+static inline bool cap_blist_get_proved(CapBList *l, int64_t i, int64_t loc) { (void)loc; return l->items[i]; }
+static inline void cap_blist_set_proved(CapBList *l, int64_t i, bool v, int64_t loc) { (void)loc; l->items[i] = (uint8_t)v; }
 
 static int64_t *cap_blist_pop(CapBList *l) {
     if (l->len == 0) return NULL;
@@ -411,6 +433,13 @@ static int64_t *cap_map_get_i(CapMap *m, CapStr *k) {
     return pos < 0 ? NULL : cap_box_int(m->vals[pos].i);
 }
 
+/* Unboxed form for `if (let v = m.get(k))`: a pointer into the entry itself, valid
+   until the map next changes. The generated code reads it immediately. */
+static int64_t *cap_map_peek_i(CapMap *m, CapStr *k) {
+    int64_t pos = cap_map_find(m, k);
+    return pos < 0 ? NULL : &m->vals[pos].i;
+}
+
 /* Remove a key, keeping the remaining keys in insertion order. */
 static bool cap_map_remove(CapMap *m, CapStr *k) {
     int64_t pos = cap_map_find(m, k);
@@ -460,7 +489,7 @@ static void cap_grant_check(CapGrant *g, int64_t policy, void *obj, int64_t loc)
 static void cap_print(CapStr *s) { fwrite(s->data, 1, (size_t)s->len, stdout); }
 static void cap_println(CapStr *s) { cap_print(s); fputc('\n', stdout); }
 
-static void cap_exit(int64_t code) { fflush(stdout); exit((int)code); }
+__attribute__((noreturn)) static void cap_exit(int64_t code) { fflush(stdout); exit((int)code); }
 
 static CapList *cap_args(void) {
     CapList *l = cap_list_new();
@@ -468,40 +497,75 @@ static CapList *cap_args(void) {
     return l;
 }
 
-/* File contents are untrusted input: returned as Tainted. */
-static CapStr *cap_read_file(CapStr *path) {
-    FILE *f = fopen(path->data, "rb");
-    if (!f) return NULL;
-    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return NULL; }
-    long n = ftell(f);
-    if (n < 0) { fclose(f); return NULL; }
-    rewind(f);
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
-    r->len = (int64_t)fread(r->data, 1, (size_t)n, f);
-    r->data[r->len] = 0;
-    fclose(f);
-    return r;
+/* A path is passed to the C library as a NUL-terminated string, so a path that
+   contains a NUL byte would silently name a different file (CWE-158). */
+static bool cap_path_ok(CapStr *path) {
+    return path->len > 0 && memchr(path->data, 0, (size_t)path->len) == NULL;
 }
 
+/* A growable byte buffer on the collected heap, so the heap limit applies to input
+   of any size. */
+typedef struct CapBuf { CapStr *s; int64_t cap; } CapBuf;
+
+static void cap_buf_put(CapBuf *b, const char *p, int64_t n) {
+    if (b->s->len + n + 1 > b->cap) {
+        int64_t nc = b->cap * 2;
+        while (b->s->len + n + 1 > nc) nc *= 2;
+        CapStr *ns = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)nc);
+        ns->len = b->s->len;
+        memcpy(ns->data, b->s->data, (size_t)b->s->len);
+        b->s = ns;
+        b->cap = nc;
+    }
+    memcpy(b->s->data + b->s->len, p, (size_t)n);
+    b->s->len += n;
+    b->s->data[b->s->len] = 0;
+}
+
+static CapBuf cap_buf_new(int64_t cap) {
+    CapBuf b;
+    b.cap = cap < 64 ? 64 : cap;
+    b.s = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)b.cap);
+    b.s->len = 0;
+    b.s->data[0] = 0;
+    return b;
+}
+
+/* File contents are untrusted input: returned as Tainted. Reads until end of file
+   rather than trusting the reported size, so pipes and /proc files work; a
+   directory or an unreadable file gives none. */
+static CapStr *cap_read_file(CapStr *path) {
+    if (!cap_path_ok(path)) return NULL;
+    FILE *f = fopen(path->data, "rb");
+    if (!f) return NULL;
+    struct stat st;
+    if (fstat(fileno(f), &st) != 0 || S_ISDIR(st.st_mode)) { fclose(f); return NULL; }
+    CapBuf b = cap_buf_new(S_ISREG(st.st_mode) && st.st_size > 0 && st.st_size < ((off_t)1 << 40) ? (int64_t)st.st_size + 1 : 4096);
+    char chunk[65536];
+    size_t got;
+    while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) cap_buf_put(&b, chunk, (int64_t)got);
+    int failed = ferror(f);
+    fclose(f);
+    return failed ? NULL : b.s;
+}
+
+/* One line of standard input without its newline, or none at end of input. Every
+   byte is kept, including NUL bytes. */
 static CapStr *cap_read_line(void) {
-    CapList *parts = cap_list_new();
-    char buf[4096];
-    int64_t total = 0;
-    int got = 0;
-    while (fgets(buf, sizeof buf, stdin)) {
+    CapBuf b = cap_buf_new(128);
+    int c, got = 0;
+    while ((c = getc(stdin)) != EOF) {
         got = 1;
-        size_t n = strlen(buf);
-        int end = n > 0 && buf[n - 1] == '\n';
-        if (end) n--;
-        cap_list_push(parts, cap_vp(cap_str_new(buf, (int64_t)n)));
-        total += (int64_t)n;
-        if (end) break;
+        if (c == '\n') break;
+        char ch = (char)c;
+        cap_buf_put(&b, &ch, 1);
     }
     if (!got) return NULL;
-    return cap_join(parts, CAP_LIT("", 0), 0);
+    return b.s;
 }
 
 static bool cap_write_file(CapStr *path, CapStr *data) {
+    if (!cap_path_ok(path)) return false;
     FILE *f = fopen(path->data, "wb");
     if (!f) return false;
     size_t w = fwrite(data->data, 1, (size_t)data->len, f);
@@ -618,13 +682,57 @@ static CapStr *cap_escape_csv(CapStr *t) {
 }
 
 /* Neutralise line breaks and control bytes so input cannot forge log lines (CWE-117). */
+/* Length of the valid UTF-8 sequence at p (n bytes available), or 0 if invalid;
+   overlong forms and surrogates are invalid. *cp receives the code point. */
+static int cap_utf8_seq(const unsigned char *p, int64_t n, uint32_t *cp) {
+    unsigned char c = p[0];
+    int len;
+    uint32_t v, lo = 0x80, hi = 0xBF;
+    if (c >= 0xC2 && c <= 0xDF) { len = 2; v = c & 0x1F; }
+    else if (c >= 0xE0 && c <= 0xEF) { len = 3; v = c & 0x0F; if (c == 0xE0) lo = 0xA0; if (c == 0xED) hi = 0x9F; }
+    else if (c >= 0xF0 && c <= 0xF4) { len = 4; v = c & 0x07; if (c == 0xF0) lo = 0x90; if (c == 0xF4) hi = 0x8F; }
+    else return 0;
+    if (n < len) return 0;
+    for (int k = 1; k < len; k++) {
+        unsigned char d = p[k];
+        if (d < (k == 1 ? lo : 0x80) || d > (k == 1 ? hi : 0xBF)) return 0;
+        v = (v << 6) | (d & 0x3F);
+    }
+    *cp = v;
+    return len;
+}
+
+/* Code points that steer a terminal or a log viewer rather than display text:
+   C1 controls (0x9B is a CSI introducer), bidirectional controls (log lines that
+   display differently from what they contain), line and paragraph separators,
+   and the byte-order mark. */
+static bool cap_log_hostile(uint32_t cp) {
+    return (cp >= 0x80 && cp <= 0x9F) || cp == 0x061C || cp == 0x200E || cp == 0x200F ||
+           (cp >= 0x2028 && cp <= 0x202E) || (cp >= 0x2066 && cp <= 0x2069) || cp == 0xFEFF;
+}
+
+/* Neutralise anything that could forge or disguise a log line (CWE-117, CWE-150):
+   ASCII controls, invalid UTF-8, and the hostile code points above become \xNN
+   escapes, one per byte. Printable ASCII and other valid UTF-8 text are kept. */
 static CapStr *cap_escape_log(CapStr *t) {
     CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 4 + 1);
     char *w = r->data;
-    for (int64_t i = 0; i < t->len; i++) {
-        unsigned char c = (unsigned char)t->data[i];
-        if (c < 32 || c == 127) w += sprintf(w, "\\x%02x", c);
-        else *w++ = (char)c;
+    const unsigned char *s = (const unsigned char *)t->data;
+    int64_t i = 0;
+    while (i < t->len) {
+        unsigned char c = s[i];
+        if (c >= 32 && c < 127) { *w++ = (char)c; i++; continue; }
+        uint32_t cp = 0;
+        int len = c >= 0x80 ? cap_utf8_seq(s + i, t->len - i, &cp) : 0;
+        if (len > 0 && !cap_log_hostile(cp)) {
+            memcpy(w, s + i, (size_t)len);
+            w += len;
+            i += len;
+            continue;
+        }
+        if (len == 0) len = 1;
+        for (int k = 0; k < len; k++) w += sprintf(w, "\\x%02x", s[i + k]);
+        i += len;
     }
     *w = 0;
     r->len = (int64_t)(w - r->data);

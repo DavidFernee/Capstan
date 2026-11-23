@@ -1,0 +1,4 @@
+// expect: invalid optional type void?
+// spec: types.optional
+void? nothing() { return; }
+int main() { return 0; }

@@ -1,0 +1,7 @@
+// expect: 'Shape' is an enum; write Shape.Variant
+// spec: types.enum
+enum Shape { Circle(int r), Empty }
+int main() {
+    Shape s = Shape;
+    return 0;
+}

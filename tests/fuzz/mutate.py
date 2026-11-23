@@ -54,7 +54,7 @@ def main():
     r = random.Random(seed)
     corpus = [open(p, "rb").read() for p in sorted(glob.glob(os.path.join(ROOT, "**/*.cap"), recursive=True))
               if "/fuzz/" not in p]
-    capstanc = os.path.join(ROOT, "build/capstanc")
+    capstanc = os.environ.get("CAPSTANC", os.path.join(ROOT, "build/capstanc"))
     accepted = rejected = 0
     with tempfile.TemporaryDirectory() as d:
         cap, c = os.path.join(d, "m.cap"), os.path.join(d, "m.c")
@@ -82,8 +82,9 @@ def main():
             else:
                 accepted += 1
             if problem:
-                os.makedirs(os.path.join(ROOT, "tests/fuzz/failures"), exist_ok=True)
-                path = os.path.join(ROOT, f"tests/fuzz/failures/mut_{seed}_{i}.cap")
+                keep = os.environ.get("FUZZ_FAILURES", os.path.join(ROOT, "tests/fuzz/failures"))
+                os.makedirs(keep, exist_ok=True)
+                path = os.path.join(keep, f"mut_{seed}_{i}.cap")
                 open(path, "wb").write(src)
                 print(f"FAIL iteration {i} ({mode}) saved to {path}\n{problem}")
                 sys.exit(1)

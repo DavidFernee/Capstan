@@ -1,0 +1,7 @@
+// expect: 'CanRead' is declared more than once
+// spec: auth.policy
+struct U { int id; }
+policy CanRead(U u) { return u.id == 1; }
+test "denied" { assert_denied CanRead(new U{id: 2}); }
+int CanRead(int x) { return x; }
+int main() { return 0; }

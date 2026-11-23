@@ -1,0 +1,60 @@
+// spec: compiler.ranges
+// Property-test driver for the range analysis's interval arithmetic. It is
+// compiled together with the compiler's sources (everything but main.cap) and
+// prints the analysis's answers for every pair of intervals built from edge
+// values; tests/unit/ranges_props.py checks each answer with exact arithmetic.
+
+List<int> edges() {
+    List<int> e = new List<int>();
+    e.push(I64_MIN); e.push(I64_MIN + 1); e.push(I64_MIN + 2);
+    e.push(-4294967296); e.push(-3037000500); e.push(-3037000499);
+    e.push(-1000); e.push(-2); e.push(-1); e.push(0); e.push(1); e.push(2); e.push(1000);
+    e.push(3037000499); e.push(3037000500); e.push(4294967296);
+    e.push(I64_MAX - 2); e.push(I64_MAX - 1); e.push(I64_MAX);
+    return e;
+}
+
+string b(bool v) {
+    if (v) { return "1"; }
+    return "0";
+}
+
+int main() {
+    List<int> e = edges();
+    List<Iv> ivs = new List<Iv>();
+    for (int i = 0; i < e.len(); i += 1) {
+        for (int j = i; j < e.len(); j += 1) { ivs.push(iv(e[i], e[j])); }
+    }
+    for (int x = 0; x < e.len(); x += 1) {
+        for (int y = 0; y < e.len(); y += 1) {
+            println($"F {e[x]} {e[y]} {b(mul_fits(e[x], e[y]))} {b(add_over(e[x], e[y]))} {b(sub_over(e[x], e[y]))} {sat_add(e[x], e[y])} {sat_sub(e[x], e[y])} {sat_mul(e[x], e[y])}");
+        }
+    }
+    List<string> ops = new List<string>();
+    ops.push("+"); ops.push("-"); ops.push("*"); ops.push("/"); ops.push("%");
+    for (int p = 0; p < ivs.len(); p += 1) {
+        for (int q = 0; q < ivs.len(); q += 1) {
+            Iv a = ivs[p];
+            Iv c = ivs[q];
+            for (int k = 0; k < ops.len(); k += 1) {
+                Iv r = bin_range(ops[k], a, c);
+                println($"B {ops[k]} {a.lo} {a.hi} {c.lo} {c.hi} {b(bin_safe(ops[k], a, c))} {r.lo} {r.hi}");
+            }
+        }
+    }
+    List<string> cmps = new List<string>();
+    cmps.push("<"); cmps.push("<="); cmps.push(">"); cmps.push(">="); cmps.push("==");
+    Rg rg = new Rg{env: new Map<Iv>(), assigns: new Map<int>(), idx: new List<string>(), seqs: new List<string>(), seq_ok: false, consts: new Map<Node>(), fns: new Map<Node>(), off: false};
+    for (int u = 0; u < ivs.len(); u += 1) {
+        for (int w = 0; w < ivs.len(); w += 1) {
+            for (int m = 0; m < cmps.len(); m += 1) {
+                rg.env.set("x", ivs[u]);
+                bound(rg, "x", cmps[m], ivs[w]);
+                if (let got = rg.env.get("x")) {
+                    println($"C {cmps[m]} {ivs[u].lo} {ivs[u].hi} {ivs[w].lo} {ivs[w].hi} {got.lo} {got.hi}");
+                }
+            }
+        }
+    }
+    return 0;
+}

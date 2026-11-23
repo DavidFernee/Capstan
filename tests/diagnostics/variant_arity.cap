@@ -1,0 +1,7 @@
+// expect: Shape.Circle takes 1 value(s), found 2
+// spec: types.enum
+enum Shape { Circle(int r), Empty }
+int main() {
+    Shape s = Shape.Circle(1, 2);
+    return 0;
+}

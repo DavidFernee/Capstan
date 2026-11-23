@@ -12,7 +12,7 @@
 // - line breaks are kept, runs of blank lines become one, trailing whitespace goes,
 //   and the file ends with a single newline;
 // - comments are kept exactly; a trailing comment keeps at least its gap, and
-//   trailing comments that were aligned stay aligned.
+//   trailing comments on consecutive lines are aligned.
 //
 // Before anything is written the output is scanned again and must contain the
 // same tokens, in the same order, with the same text. If it doesn't, the file is
@@ -50,7 +50,6 @@ struct Tok {
     string op;      // operator or word; "" for literals and comments
     int nl;         // line breaks between the previous token and this one
     int gap;        // spaces and tabs before this token on its line
-    int col;        // byte offset of the token in its line
     int line;
 }
 
@@ -60,7 +59,6 @@ struct Scan {
     int line;
     int nl;
     int gap;
-    int line_start;
     List<Tok> toks;
     string err;
     int err_line;
@@ -113,7 +111,7 @@ void fail(Scan s, string msg) {
 }
 
 void push_tok(Scan s, int k, int start, int end, string op, int line) {
-    s.toks.push(new Tok{k: k, text: s.src.slice(start, end), op: op, nl: s.nl, gap: s.gap, col: start - s.line_start, line: line});
+    s.toks.push(new Tok{k: k, text: s.src.slice(start, end), op: op, nl: s.nl, gap: s.gap, line: line});
     s.nl = 0;
     s.gap = 0;
 }
@@ -240,7 +238,7 @@ void scan_char(Scan s) {
 }
 
 Scan scan(Tainted src) {
-    Scan s = new Scan{src: src, pos: 0, line: 1, nl: 0, gap: 0, line_start: 0, toks: new List<Tok>(), err: "", err_line: 0};
+    Scan s = new Scan{src: src, pos: 0, line: 1, nl: 0, gap: 0, toks: new List<Tok>(), err: "", err_line: 0};
     while (s.pos < src.len()) {
         int c = ch(s, s.pos);
         if (c == '\n') {
@@ -248,7 +246,6 @@ Scan scan(Tainted src) {
             s.line += 1;
             s.gap = 0;
             s.pos += 1;
-            s.line_start = s.pos;
         } else if (is_space(c)) {
             s.gap += 1;
             s.pos += 1;
@@ -266,10 +263,7 @@ Scan scan(Tainted src) {
             int breaks = 0;
             s.pos += 2;
             while (s.pos < src.len() && !(ch(s, s.pos) == '*' && ch(s, s.pos + 1) == '/')) {
-                if (ch(s, s.pos) == '\n') {
-                    breaks += 1;
-                    s.line_start = s.pos + 1;
-                }
+                if (ch(s, s.pos) == '\n') { breaks += 1; }
                 s.pos += 1;
             }
             if (s.pos >= src.len()) {
@@ -320,7 +314,6 @@ struct Line {
     bool has_comment;
     Tainted comment;
     int gap;        // spaces before the comment in the input
-    int col;        // the comment's column in the input
 }
 
 struct Layout {
@@ -471,12 +464,13 @@ string spaces(int n) {
 }
 
 Line new_line(Tainted code) {
-    return new Line{code: code, blank: false, has_comment: false, comment: taint(""), gap: 0, col: 0};
+    return new Line{code: code, blank: false, has_comment: false, comment: taint(""), gap: 0};
 }
 
-// Consecutive lines whose trailing comments started in the same column form a
-// group. Each line keeps at least its own gap, and the group stays aligned.
-// Unchanged code gives back the original columns, so formatting is idempotent.
+// Consecutive lines that end in trailing comments form a group, aligned at the
+// first column that gives every line at least its own gap. The result depends only
+// on the code and the gaps, never on where comments happened to sit, so formatting
+// is idempotent.
 List<Tainted> render(List<Line> lines) {
     List<Tainted> parts = new List<Tainted>();
     int i = 0;
@@ -490,7 +484,7 @@ List<Tainted> render(List<Line> lines) {
             i += 1;
         } else {
             int last = i;
-            while (last + 1 < lines.len() && !lines[last + 1].blank && lines[last + 1].has_comment && lines[last + 1].col == ln.col) { last += 1; }
+            while (last + 1 < lines.len() && !lines[last + 1].blank && lines[last + 1].has_comment) { last += 1; }
             int at = 0;
             for (int k = i; k <= last; k += 1) {
                 int want = lines[k].code.len() + lines[k].gap;
@@ -533,7 +527,6 @@ Tainted layout(List<Tok> toks) {
                 cur.has_comment = true;
                 cur.comment = t.text;
                 cur.gap = spacing(f, i - 1, i);
-                cur.col = t.col;
             } else {
                 cur.code = cur.code + spaces(spacing(f, i - 1, i)) + t.text;
             }

@@ -1,3 +1,5 @@
 build/
 tests/fmt/failures/
 *.o
+tests/fuzz/failures/
+__pycache__/

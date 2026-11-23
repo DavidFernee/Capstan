@@ -1,0 +1,11 @@
+// fmt: off
+// spec: lexical
+// Tabs and CRLF line endings are whitespace like any other. (Kept unformatted on purpose.)
+int main() {
+	int a = 1;		// tab-separated
+	int	b = 2;
+
+	println(int_to_str(a	+	b));
+	println("tab	inside a string stays");
+	return 0;
+}

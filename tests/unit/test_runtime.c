@@ -134,6 +134,170 @@ static void test_escapers(void) {
     }
 }
 
+static bool str_is(CapStr *s, const char *want, int64_t n) {
+    return s && s->len == n && memcmp(s->data, want, (size_t)n) == 0;
+}
+
+/* escape_log(): text survives, anything that could forge or disguise a log line does not. */
+static void test_escape_log(void) {
+    struct { const char *in; int n; const char *out; } cases[] = {
+        {"plain text", 10, "plain text"},
+        {"caf\xc3\xa9 \xe4\xb8\xad\xe6\x96\x87 \xf0\x9f\x9a\xa2", 17, "caf\xc3\xa9 \xe4\xb8\xad\xe6\x96\x87 \xf0\x9f\x9a\xa2"},  /* é 中文 🚢 */
+        {"a\nb", 3, "a\\x0ab"},
+        {"\x1b[31m", 5, "\\x1b[31m"},
+        {"\xc2\x9b" "31m", 5, "\\xc2\\x9b31m"},                     /* U+009B: C1 CSI */
+        {"\x9b" "31m", 4, "\\x9b31m"},                              /* raw 8-bit CSI */
+        {"user \xe2\x80\xae" "nimda", 13, "user \\xe2\\x80\\xaenimda"}, /* U+202E: right-to-left override */
+        {"\xe2\x81\xa6x", 4, "\\xe2\\x81\\xa6x"},                     /* U+2066 */
+        {"a\xe2\x80\xa8" "b", 5, "a\\xe2\\x80\\xa8b"},                 /* U+2028: line separator */
+        {"\xef\xbb\xbf" "x", 4, "\\xef\\xbb\\xbfx"},                     /* byte-order mark */
+        {"\xff", 1, "\\xff"},                                        /* never valid */
+        {"\xc0\xaf", 2, "\\xc0\\xaf"},                                /* overlong '/' */
+        {"\xed\xa0\x80", 3, "\\xed\\xa0\\x80"},                        /* surrogate */
+        {"\xf4\x90\x80\x80", 4, "\\xf4\\x90\\x80\\x80"},                /* beyond U+10FFFF */
+        {"ok\xe2\x80", 4, "ok\\xe2\\x80"},                              /* truncated at the end */
+        {"\xe2\x28\xa1", 3, "\\xe2(\\xa1"},                           /* bad continuation */
+        {"\x7f\x00", 2, "\\x7f\\x00"},
+    };
+    for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
+        CapStr *e = cap_escape_log(cap_str_new(cases[i].in, cases[i].n));
+        CHECK(strcmp(e->data, cases[i].out) == 0);
+        if (strcmp(e->data, cases[i].out) != 0) fprintf(stderr, "  escape_log case %zu gave %s\n", i, e->data);
+    }
+    /* every 1- and 2-byte input: the result never contains a control byte, a raw byte
+       0x80-0x9F that is not inside a kept sequence, or an escape of printable ASCII */
+    for (int a = 0; a < 256; a++) {
+        for (int b = 0; b < 256; b++) {
+            char in[2] = {(char)a, (char)b};
+            CapStr *e = cap_escape_log(cap_str_new(in, 2));
+            for (int64_t k = 0; k < e->len; k++) {
+                unsigned char c = (unsigned char)e->data[k];
+                CHECK(c >= 32 && c != 127);
+                if (c == 0xC2 && k + 1 < e->len) CHECK((unsigned char)e->data[k + 1] > 0x9F);
+            }
+        }
+    }
+}
+
+/* validate_path(): relative paths of safe segments only (CWE-22, CWE-158). */
+static void test_paths(void) {
+    const char *good[] = {"a", "dir/file.txt", "a-b_c.d", "x/y/z", "...", "a..b", ".hidden", "v1.2.3/notes"};
+    for (size_t i = 0; i < sizeof good / sizeof *good; i++) {
+        CapStr *in = cap_str_new(good[i], (int64_t)strlen(good[i]));
+        CHECK(str_is(cap_validate_path(in), good[i], in->len));
+    }
+    const char *bad[] = {"", "/etc/passwd", "..", ".", "../x", "a/../b", "a/..", "a/./b", "./a", "a//b", "a/", "/",
+                         "a b", "a\\b", "~root", "C:x", "a;b", "$HOME", "a\nb", "caf\xc3\xa9"};
+    for (size_t i = 0; i < sizeof bad / sizeof *bad; i++) CHECK(cap_validate_path(cap_str_new(bad[i], (int64_t)strlen(bad[i]))) == NULL);
+    CHECK(cap_validate_path(cap_str_new("a\0b", 3)) == NULL);
+    char longp[5000];
+    memset(longp, 'p', sizeof longp);
+    CHECK(cap_validate_path(cap_str_new(longp, 4096)) != NULL);
+    CHECK(cap_validate_path(cap_str_new(longp, 4097)) == NULL);
+}
+
+/* validate_range(): an integer inside [lo, hi] (CWE-1284). */
+static void test_ranges(void) {
+    int64_t *v;
+    v = cap_validate_range(CAP_LIT("5", 1), 1, 10); CHECK(v && *v == 5);
+    v = cap_validate_range(CAP_LIT("1", 1), 1, 10); CHECK(v && *v == 1);
+    v = cap_validate_range(CAP_LIT("10", 2), 1, 10); CHECK(v && *v == 10);
+    CHECK(cap_validate_range(CAP_LIT("0", 1), 1, 10) == NULL);
+    CHECK(cap_validate_range(CAP_LIT("11", 2), 1, 10) == NULL);
+    CHECK(cap_validate_range(CAP_LIT("-1", 2), 0, 10) == NULL);
+    CHECK(cap_validate_range(CAP_LIT("5", 1), 10, 1) == NULL);       /* empty range */
+    CHECK(cap_validate_range(CAP_LIT("x", 1), 0, 10) == NULL);
+    CHECK(cap_validate_range(CAP_LIT("99999999999999999999", 20), INT64_MIN, INT64_MAX) == NULL);
+    v = cap_validate_range(CAP_LIT("-9223372036854775808", 20), INT64_MIN, INT64_MAX); CHECK(v && *v == INT64_MIN);
+}
+
+/* escape_csv(): one quoted field; formula prefixes neutralised (CWE-1236). */
+static void test_csv(void) {
+    CHECK(str_is(cap_escape_csv(CAP_LIT("abc", 3)), "\"abc\"", 5));
+    CHECK(str_is(cap_escape_csv(CAP_LIT("", 0)), "\"\"", 2));
+    CHECK(str_is(cap_escape_csv(CAP_LIT("say \"hi\"", 8)), "\"say \"\"hi\"\"\"", 12));
+    CHECK(str_is(cap_escape_csv(CAP_LIT("a,b\nc", 5)), "\"a,b\nc\"", 7));
+    const char *formulas[] = {"=SUM(A1)", "+1", "-1", "@cmd", "\tx", "\rx"};
+    for (size_t i = 0; i < sizeof formulas / sizeof *formulas; i++) {
+        size_t n = strlen(formulas[i]);
+        CapStr *e = cap_escape_csv(cap_str_new(formulas[i], (int64_t)n));
+        CHECK(e->len == (int64_t)n + 3 && e->data[0] == '"' && e->data[1] == '\'' && memcmp(e->data + 2, formulas[i], n) == 0);
+    }
+    CHECK(str_is(cap_escape_csv(CAP_LIT("a=b", 3)), "\"a=b\"", 5));   /* only a leading prefix matters */
+    CHECK(str_is(cap_escape_csv(cap_str_new("\0=", 2)), "\"\0=\"", 4));
+    CHECK(str_is(cap_escape_csv(CAP_LIT("\"=x", 3)), "\"\"\"=x\"", 6));
+}
+
+/* secret_eq(): constant-time comparison gives the right answer in every case. */
+static void test_secret_eq(void) {
+    CHECK(cap_secret_eq(CAP_LIT("hunter2", 7), CAP_LIT("hunter2", 7)));
+    CHECK(!cap_secret_eq(CAP_LIT("hunter2", 7), CAP_LIT("hunter3", 7)));
+    CHECK(!cap_secret_eq(CAP_LIT("hunter2", 7), CAP_LIT("Hunter2", 7)));
+    CHECK(!cap_secret_eq(CAP_LIT("hunter2", 7), CAP_LIT("hunter", 6)));
+    CHECK(!cap_secret_eq(CAP_LIT("hunter", 6), CAP_LIT("hunter2", 7)));
+    CHECK(!cap_secret_eq(CAP_LIT("", 0), CAP_LIT("x", 1)));
+    CHECK(cap_secret_eq(CAP_LIT("", 0), CAP_LIT("", 0)));
+    CHECK(!cap_secret_eq(cap_str_new("a\0b", 3), cap_str_new("a\0c", 3)));
+    CHECK(!cap_secret_eq(cap_str_new("a\0", 2), cap_str_new("a", 1)));
+}
+
+/* read_file(), write_file(), read_line(): every byte survives, and bad paths fail safely. */
+static void test_files(void) {
+    char dir[] = "/tmp/capstan-unit-XXXXXX";
+    CHECK(mkdtemp(dir) != NULL);
+    char path[256];
+    snprintf(path, sizeof path, "%s/data.bin", dir);
+    char all[256];
+    for (int i = 0; i < 256; i++) all[i] = (char)i;
+    CapStr *p = cap_str_new(path, (int64_t)strlen(path));
+    CHECK(cap_write_file(p, cap_str_new(all, 256)));
+    CHECK(str_is(cap_read_file(p), all, 256));
+    CHECK(cap_write_file(p, CAP_LIT("", 0)));
+    CHECK(str_is(cap_read_file(p), "", 0));
+    /* larger than the read chunk, so the buffer must grow */
+    char *big = (char *)malloc(300000);
+    for (int i = 0; i < 300000; i++) big[i] = (char)(i * 7);
+    CHECK(cap_write_file(p, cap_str_new(big, 300000)));
+    CHECK(str_is(cap_read_file(p), big, 300000));
+    free(big);
+    CHECK(cap_read_file(cap_str_new(dir, (int64_t)strlen(dir))) == NULL);            /* a directory */
+    CHECK(cap_read_file(CAP_LIT("/nonexistent/capstan", 20)) == NULL);
+    CHECK(cap_read_file(CAP_LIT("", 0)) == NULL);
+    char nul[300];
+    int nn = snprintf(nul, sizeof nul, "%s/data.bin", dir);
+    nul[strlen(dir)] = 0;                                                              /* "<dir>\0data.bin" */
+    CHECK(cap_read_file(cap_str_new(nul, nn)) == NULL);
+    CHECK(!cap_write_file(cap_str_new(nul, nn), CAP_LIT("x", 1)));
+    CHECK(!cap_write_file(CAP_LIT("/nonexistent/capstan/x", 22), CAP_LIT("x", 1)));
+    CHECK(!cap_write_file(cap_str_new(dir, (int64_t)strlen(dir)), CAP_LIT("x", 1)));
+    CapStr *proc = cap_read_file(CAP_LIT("/proc/self/status", 17));                   /* size 0 on Linux */
+#if defined(__linux__)
+    CHECK(proc && proc->len > 0);
+#else
+    (void)proc;
+#endif
+    /* read_line(): from a file standing in for standard input */
+    char in[256];
+    snprintf(in, sizeof in, "%s/stdin.txt", dir);
+    FILE *f = fopen(in, "wb");
+    fwrite("ab\0cd\n\nx\r\n", 1, 10, f);
+    for (int i = 0; i < 10000; i++) fputc('L', f);
+    fwrite("\nlast", 1, 5, f);
+    fclose(f);
+    CHECK(freopen(in, "rb", stdin) != NULL);
+    CHECK(str_is(cap_read_line(), "ab\0cd", 5));
+    CHECK(str_is(cap_read_line(), "", 0));
+    CHECK(str_is(cap_read_line(), "x\r", 2));
+    CapStr *longl = cap_read_line();
+    CHECK(longl && longl->len == 10000 && longl->data[0] == 'L' && longl->data[9999] == 'L');
+    CHECK(str_is(cap_read_line(), "last", 4));
+    CHECK(cap_read_line() == NULL);
+    CHECK(cap_read_line() == NULL);
+    remove(in);
+    remove(path);
+    rmdir(dir);
+}
+
 static void test_collections(void) {
     CapMap *m = cap_map_new();
     for (int i = 0; i < 100000; i++) cap_map_set(m, cap_int_to_str(i), cap_vi(i));
@@ -241,6 +405,12 @@ int main(void) {
     test_passwords();
     test_validators();
     test_escapers();
+    test_escape_log();
+    test_paths();
+    test_ranges();
+    test_csv();
+    test_secret_eq();
+    test_files();
     test_collections();
     test_arithmetic();
     test_gc();

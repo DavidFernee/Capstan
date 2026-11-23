@@ -12,6 +12,7 @@ struct Gen {
     int ind;
     Type ret;
     bool test_mode;
+    Rg r;               // range facts for the code being generated (ranges.cap)
 }
 
 struct Seq {
@@ -146,14 +147,20 @@ string gen_expr(Gen g, Node e) {
         return "u_" + e.s;
     }
     if (k == N_NOT) { return "(!(" + gen_expr(g, e.kids[0]) + "))"; }
-    if (k == N_NEG) { return "cap_neg(" + gen_expr(g, e.kids[0]) + ", " + loc(e) + ")"; }
+    if (k == N_NEG) {
+        string nf = "cap_neg(";
+        if (neg_safe(g.r, e)) { nf = "cap_neg_proved("; }
+        return nf + gen_expr(g, e.kids[0]) + ", " + loc(e) + ")";
+    }
     if (k == N_BIN) { return gen_binary(g, e); }
     if (k == N_GETF) { return "(" + gen_expr(g, e.kids[0]) + ")->f_" + e.s; }
     if (k == N_INDEX) {
         Seq s = operands(g, e, 0);
         Type el = ty_of(e);
-        if (is_blist(ty_of(e.kids[0]))) { return wrap(s, "cap_blist_get(" + call_list(s.names, 0, loc(e)) + ")"); }
-        return wrap(s, from_val(el, "cap_list_get(" + call_list(s.names, 0, loc(e)) + ")"));
+        string u = "";
+        if (index_safe(g.r, e.kids[0], e.kids[1])) { u = "_proved"; }
+        if (is_blist(ty_of(e.kids[0]))) { return wrap(s, "cap_blist_get" + u + "(" + call_list(s.names, 0, loc(e)) + ")"); }
+        return wrap(s, from_val(el, "cap_list_get" + u + "(" + call_list(s.names, 0, loc(e)) + ")"));
     }
     if (k == N_METHOD) { return gen_method(g, e); }
     if (k == N_CALL) { return gen_call(g, e); }
@@ -248,6 +255,7 @@ string gen_binary(Gen g, Node e) {
     if (op == "*") { fname = "cap_mul"; }
     if (op == "/") { fname = "cap_div"; }
     if (op == "%") { fname = "cap_mod"; }
+    if (arith_safe(g.r, e)) { fname = fname + "_proved"; }
     return wrap(s, fname + "(" + x + ", " + y + ", " + l + ")");
 }
 
@@ -269,7 +277,11 @@ string gen_method(Gen g, Node e) {
     string r = s.names[0];
     if (m == "len") { return wrap(s, "((" + r + ")->len)"); }
     if (is_stringish(rt)) {
-        if (m == "at") { return wrap(s, "cap_str_at(" + call_list(s.names, 0, loc(e)) + ")"); }
+        if (m == "at") {
+            string af = "cap_str_at(";
+            if (index_safe(g.r, e.kids[0], e.kids[1])) { af = "cap_str_at_proved("; }
+            return wrap(s, af + call_list(s.names, 0, loc(e)) + ")");
+        }
         if (m == "slice") { return wrap(s, "cap_str_slice(" + call_list(s.names, 0, loc(e)) + ")"); }
     }
     if (is_blist(rt)) {
@@ -385,6 +397,22 @@ string unwrap_opt(Type inner, string t) {
     return t;
 }
 
+// The optional tested by `if (let x = e)`. It is read the moment it is produced,
+// so an int from a map or a popped int list need not be boxed: a pointer to the
+// stored value will do (unboxed optionals).
+string gen_unwrapped(Gen g, Node e) {
+    if (e.k == N_METHOD && e.kids[0].k == N_VAR) {
+        Type rt = ty_of(e.kids[0]);
+        if (rt.k == TY_MAP && e.s == "get" && is_scalar(rt.args[0])) {
+            return "cap_map_peek_i(" + gen_expr(g, e.kids[0]) + ", " + gen_expr(g, e.kids[1]) + ")";
+        }
+        if (rt.k == TY_LIST && !is_blist(rt) && e.s == "pop" && is_scalar(rt.args[0])) {
+            return "cap_list_pop_peek_i(" + gen_expr(g, e.kids[0]) + ")";
+        }
+    }
+    return gen_expr(g, e);
+}
+
 // A declaration, assignment or expression without the trailing semicolon.
 string gen_simple(Gen g, Node s) {
     if (s.k == N_DECL) {
@@ -401,13 +429,18 @@ string gen_simple(Gen g, Node s) {
             string val = "";
             if (is_texty(tt)) {
                 val = "cap_str_concat(" + tcode + ", " + rcode + ", " + loc(s) + ")";
-            } else if (s.s == "+=") {
-                val = "cap_add(" + tcode + ", " + rcode + ", " + loc(s) + ")";
             } else {
-                val = "cap_sub(" + tcode + ", " + rcode + ", " + loc(s) + ")";
+                string cf = "cap_add";
+                if (s.s == "-=") { cf = "cap_sub"; }
+                string cop = "+";
+                if (s.s == "-=") { cop = "-"; }
+                if (compound_safe(g.r, cop, target, rhs)) { cf = cf + "_proved"; }
+                val = cf + "(" + tcode + ", " + rcode + ", " + loc(s) + ")";
             }
             if (target.k == N_INDEX) {
-                return "cap_list_set(" + gen_expr(g, target.kids[0]) + ", " + gen_expr(g, target.kids[1]) + ", " + to_val(tt, val) + ", " + loc(s) + ")";
+                string su = "";
+                if (index_safe(g.r, target.kids[0], target.kids[1])) { su = "_proved"; }
+                return "cap_list_set" + su + "(" + gen_expr(g, target.kids[0]) + ", " + gen_expr(g, target.kids[1]) + ", " + to_val(tt, val) + ", " + loc(s) + ")";
             }
             return tcode + " = " + val;
         }
@@ -420,6 +453,8 @@ string gen_simple(Gen g, Node s) {
             string ot = fresh(g);
             return "({ __auto_type " + ot + " = " + gen_expr(g, obj) + "; " + ot + "->f_" + target.s + " = " + rcode + "; })";
         }
+        string iu = "";
+        if (index_safe(g.r, target.kids[0], target.kids[1])) { iu = "_proved"; }
         List<string> codes = new List<string>();
         List<bool> simple = new List<bool>();
         codes.push(gen_expr(g, target.kids[0]));
@@ -430,12 +465,12 @@ string gen_simple(Gen g, Node s) {
             codes.push(rcode);
             simple.push(is_simple(rhs));
             Seq sb = hoist(g, codes, simple);
-            return wrap(sb, "cap_blist_set(" + call_list(sb.names, 0, loc(s)) + ")");
+            return wrap(sb, "cap_blist_set" + iu + "(" + call_list(sb.names, 0, loc(s)) + ")");
         }
         codes.push(to_val(tt, rcode));
         simple.push(is_simple(rhs));
         Seq sq = hoist(g, codes, simple);
-        return wrap(sq, "cap_list_set(" + call_list(sq.names, 0, loc(s)) + ")");
+        return wrap(sq, "cap_list_set" + iu + "(" + call_list(sq.names, 0, loc(s)) + ")");
     }
     return gen_expr(g, s.kids[0]);
 }
@@ -443,9 +478,32 @@ string gen_simple(Gen g, Node s) {
 void gen_block(Gen g, Node b) {
     emit(g, "{");
     g.ind += 1;
-    for (int i = 0; i < b.kids.len(); i += 1) { gen_stmt(g, b.kids[i]); }
+    Snap saved = snap(g.r);
+    for (int i = 0; i < b.kids.len(); i += 1) {
+        Node st = b.kids[i];
+        gen_stmt(g, st);
+        // After `if (c) { ...exits... }` the rest of the block runs only when c is false.
+        if (st.k == N_IF && st.n != 1) {
+            bool then_exits = always_exits(st.kids[1]);
+            bool else_exits = st.kids.len() > 2 && always_exits(st.kids[2]);
+            if (then_exits != else_exits) {
+                g.r.seq_ok = !may_shrink(g.r, st.kids[0]) && !rest_may_shrink(g.r, b, i + 1);
+                learn(g.r, st.kids[0], else_exits);
+            }
+        }
+    }
+    restore(g.r, saved);
     g.ind -= 1;
     emit(g, "}");
+}
+
+// Generate `body` knowing that condition `c` evaluated to `truth` just before it.
+void gen_guarded(Gen g, Node c, bool truth, Node body, Node extra) {
+    Snap saved = snap(g.r);
+    g.r.seq_ok = !may_shrink(g.r, c) && !may_shrink(g.r, body) && !may_shrink(g.r, extra);
+    learn(g.r, c, truth);
+    gen_block(g, body);
+    restore(g.r, saved);
 }
 
 // Map the generated C back to Capstan source for debuggers, sanitizers and coverage.
@@ -459,6 +517,9 @@ void gen_stmt(Gen g, Node s) {
     emit_line(g, s);
     if (k == N_DECL || k == N_ASSIGN || k == N_EXPR) {
         emit(g, gen_simple(g, s) + ";");
+        if (k == N_DECL) {
+            if (ty_of(s).k == TY_INT) { rg_declare(g.r, s.s, range(g.r, s.kids[0])); } else { forget(g.r, s.s); }
+        }
         return;
     }
     if (k == N_IF) {
@@ -467,13 +528,16 @@ void gen_stmt(Gen g, Node s) {
             string t = fresh(g);
             emit(g, "{");
             g.ind += 1;
-            emit(g, ctype(ot) + " " + t + " = " + gen_expr(g, s.kids[0]) + ";");
+            emit(g, ctype(ot) + " " + t + " = " + gen_unwrapped(g, s.kids[0]) + ";");
             emit(g, "if (" + t + " != NULL) {");
             g.ind += 1;
             Type inner = mk_type(TY_ERR);
             if (ot.k == TY_OPT) { inner = ot.args[0]; }
             emit(g, ctype(inner) + " u_" + s.s2 + " = " + unwrap_opt(inner, t) + ";");
+            Snap bound_snap = snap(g.r);
+            forget(g.r, s.s2);
             gen_block(g, s.kids[1]);
+            restore(g.r, bound_snap);
             g.ind -= 1;
             if (s.kids.len() > 2) {
                 emit(g, "} else");
@@ -486,21 +550,36 @@ void gen_stmt(Gen g, Node s) {
             return;
         }
         emit(g, "if (" + gen_expr(g, s.kids[0]) + ")");
-        gen_block(g, s.kids[1]);
+        gen_guarded(g, s.kids[0], true, s.kids[1], s.kids[0]);
         if (s.kids.len() > 2) {
             emit(g, "else");
-            gen_block(g, s.kids[2]);
+            gen_guarded(g, s.kids[0], false, s.kids[2], s.kids[0]);
         }
         return;
     }
     if (k == N_WHILE) {
         emit(g, "while (" + gen_expr(g, s.kids[0]) + ")");
-        gen_block(g, s.kids[1]);
+        gen_guarded(g, s.kids[0], true, s.kids[1], s.kids[0]);
         return;
     }
     if (k == N_FOR) {
-        emit(g, "for (" + gen_simple(g, s.kids[0]) + "; " + gen_expr(g, s.kids[1]) + "; " + gen_simple(g, s.kids[2]) + ")");
-        gen_block(g, s.kids[3]);
+        // init runs with the facts before the loop; the condition with the loop
+        // variable's monotone range; the step and body with the condition's facts too.
+        Node init = s.kids[0];
+        Node cond = s.kids[1];
+        Node step = s.kids[2];
+        Node body = s.kids[3];
+        Snap before = snap(g.r);
+        string init_code = gen_simple(g, init);
+        if (init.k == N_DECL) {
+            if (ty_of(init).k == TY_INT) { rg_declare(g.r, init.s, loop_base(g.r, init, step)); } else { forget(g.r, init.s); }
+        }
+        string cond_code = gen_expr(g, cond);
+        g.r.seq_ok = !may_shrink(g.r, cond) && !may_shrink(g.r, body) && !may_shrink(g.r, step);
+        learn(g.r, cond, true);
+        emit(g, "for (" + init_code + "; " + cond_code + "; " + gen_simple(g, step) + ")");
+        gen_block(g, body);
+        restore(g.r, before);
         return;
     }
     if (k == N_RETURN) {
@@ -535,6 +614,7 @@ void gen_stmt(Gen g, Node s) {
                     Node vn = en.kids[tag];
                     for (int b = 0; b < cs.kids.len() - 1; b += 1) {
                         emit(g, ctype(ty_of(vn.kids[b])) + " u_" + cs.kids[b].s + " = " + mv + "->v_" + vn.s + "_" + int_to_str(b) + ";");
+                        forget(g.r, cs.kids[b].s);
                     }
                     g.ind -= 1;
                 }
@@ -603,7 +683,7 @@ void gen_grant_checks(Gen g, Node f) {
 }
 
 string generate(Checker c, List<Node> decls, bool test_mode) {
-    Gen g = new Gen{c: c, out: new List<string>(), tmp: 0, ind: 0, ret: mk_type(TY_VOID), test_mode: test_mode};
+    Gen g = new Gen{c: c, out: new List<string>(), tmp: 0, ind: 0, ret: mk_type(TY_VOID), test_mode: test_mode, r: new_rg(c)};
     emit(g, "/* Generated by the Capstan compiler. Do not edit. */");
     emit(g, "#include \"capstan_rt.h\"");
     emit(g, "");
@@ -675,6 +755,7 @@ string generate(Checker c, List<Node> decls, bool test_mode) {
             emit(g, "{");
             g.ind += 1;
             if (d6.k == N_FN && d6.s2 != "") { gen_grant_checks(g, d6); }
+            start_body(g.r, d6.kids[d6.n]);
             gen_block(g, d6.kids[d6.n]);
             g.ind -= 1;
             emit(g, "}");
@@ -683,6 +764,7 @@ string generate(Checker c, List<Node> decls, bool test_mode) {
             emit(g, "");
             g.ret = mk_type(TY_VOID);
             emit(g, "static void cap_test_" + int_to_str(tests) + "(void)");
+            start_body(g.r, d6.kids[0]);
             gen_block(g, d6.kids[0]);
             tests += 1;
         }

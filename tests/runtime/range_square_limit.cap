@@ -1,0 +1,7 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks types.int compiler.ranges
+// 3037000499 squared fits in 64 bits; 3037000500 squared does not.
+int main() {
+    for (int p = 3037000499; p <= 3037000500; p += 1) { println(int_to_str(p * p)); }
+    return 0;
+}

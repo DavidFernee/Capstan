@@ -16,11 +16,11 @@ red-team of about 250 code-level CWEs, including the gaps that remain, see
 | # | CWE | Weakness | Status | How |
 |---|---|---|---|---|
 | 1 | 79 | Cross-site scripting | **Prevented** for HTML built from `Html` values | Untrusted input must go through `escape_html()`, whose `Html` result can't be confused with other text. *Gap:* typed HTML templates and an HTML-only output sink are on the roadmap |
-| 2 | 787 | Out-of-bounds write | **Prevented** | No pointers; every list write is bounds-checked |
+| 2 | 787 | Out-of-bounds write | **Prevented** | No pointers; every list write is bounds-checked, except where the compiler proves the index in range (see *Checks proved unnecessary* below) |
 | 3 | 89 | SQL injection | **Prevented** | Query text must be a string literal; values are bound parameters |
 | 4 | 352 | CSRF | Not yet | A framework concern (roadmap: web framework with built-in tokens) |
 | 5 | 22 | Path traversal | **Prevented** (except through audited `trust()`) | File paths must be `string`; `validate_path()` rejects `..` and absolute paths; imports are checked the same way |
-| 6 | 125 | Out-of-bounds read | **Prevented** | Bounds-checked strings and lists |
+| 6 | 125 | Out-of-bounds read | **Prevented** | Bounds-checked strings and lists (checks are left out only where proved unnecessary) |
 | 7 | 78 | OS command injection | **Prevented** | No shell exists; `run()` takes a literal program and separate arguments |
 | 8 | 416 | Use after free | **Prevented** | Garbage-collected memory; programs cannot free memory themselves |
 | 9 | 862 | Missing authorisation | **Prevented** for `protected` functions and `sensitive` data | Protected functions require a `Grant`, which only `authorize` can create; fields of a `sensitive struct` can only be touched under a grant. *Gap:* the type must be declared sensitive (once per type) |
@@ -37,7 +37,7 @@ red-team of about 250 code-level CWEs, including the gaps that remain, see
 | 20 | 119 | Buffer bounds | **Prevented** | As 787/125 |
 | 21 | 476 | Null dereference | **Prevented** | No null; optionals must be unwrapped |
 | 22 | 798 | Hard-coded credentials | Partial | Secrets only come from `secret_env()`, and literals assigned to credential-named variables or fields are rejected. *Gap:* a literal under an innocuous name isn't detected |
-| 23 | 190 | Integer overflow | **Prevented** | All arithmetic is checked; overflowing literals don't compile |
+| 23 | 190 | Integer overflow | **Prevented** | All arithmetic is checked, except where the compiler proves the result fits; overflowing literals don't compile |
 | 24 | 400 | Uncontrolled resource consumption | Partial | A heap limit stops runaway allocation safely; `validate_range()` bounds input. *Gap:* CPU time and loop bounds |
 | 25 | 306 | Missing authentication for a critical function | Partial | As CWE-862 |
 
@@ -52,7 +52,9 @@ red-team of about 250 code-level CWEs, including the gaps that remain, see
 | 478 | Missing case | `match` must handle every variant |
 | 1236 | CSV formula injection | `escape_csv()`; untrusted text can't be written to files unescaped |
 | 88 | Argument injection | Untrusted arguments to `run()` must come after a literal `"--"`, so they can't be read as options |
-| 117 | Log injection | `Tainted` can't be printed without `escape_log()` |
+| 117 | Log injection | `Tainted` can't be printed without `escape_log()`, which neutralises line breaks and control bytes, and also C1 controls, bidirectional overrides, Unicode line separators and invalid UTF-8 |
+| 150 | Escape sequences in output | As 117: terminal control sequences, including 8-bit CSI (0x9B and U+009B), are escaped |
+| 158 | NUL byte in a path | `read_file()` and `write_file()` refuse a path containing a NUL byte, which C would truncate to name a different file |
 | 120 | Classic buffer overflow | `strcpy`/`memcpy`/`gets` don't exist |
 | 134 | Format string | No format strings |
 | 191 | Integer underflow | Checked arithmetic |
@@ -87,3 +89,26 @@ red-team of about 250 code-level CWEs, including the gaps that remain, see
   the bytes of untrusted input with `char_str()` is rejected, including through
   helper functions and parameters. Bytes stored in lists or struct fields first,
   or information carried only by branching, are not tracked. The atlas records both.
+
+## Checks proved unnecessary
+
+Since v0.4 the compiler's range analysis (`compiler/ranges.cap`) leaves out an
+overflow, division or bounds check when it can prove the check cannot fail: for
+example `i += 1` in `for (int i = 0; i < xs.len(); i += 1)`, the read `xs[i]` in
+that loop when nothing in it can shrink a list, or `n - 1` after
+`if (n < 2) { return n; }`. Every check it cannot prove is kept, so no program
+behaves differently; only the cost of checks that can never fire goes away.
+
+- Facts are recorded only for variables that cannot change in the region concerned,
+  and a list-length fact only where no list can shrink (no `pop`, `remove_at`, `clear`
+  or call to user code, which might shrink another name for the same list).
+- Lengths are bounded by the runtime's 2^48-byte heap cap, and bound arithmetic
+  saturates, so the analysis cannot itself overflow.
+- `capstanc --keep-checks` (and `capstan build/run --keep-checks`) keeps every check,
+  for anyone who would rather not rely on the analysis.
+- Tested by: runtime stops that must still happen (`tests/runtime/range_*.cap`), an
+  exact count of what is proved (`tests/accept/ranges_proved.cap`), identical results
+  with `--keep-checks`, and differential fuzzing against stage 0, which has no range
+  analysis, with programs built to tempt it (guards, loops at the 64-bit limits, lists
+  shrinking in loop bodies, conditions and calls).
+

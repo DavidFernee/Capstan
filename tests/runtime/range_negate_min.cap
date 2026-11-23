@@ -1,0 +1,12 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks types.int compiler.ranges
+// x <= 0 includes the smallest int, whose negation overflows.
+int flip(int x) {
+    if (x > 0) { return x; }
+    return -x;
+}
+
+int main() {
+    println(int_to_str(flip(0 - 9223372036854775807 - 1)));
+    return 0;
+}

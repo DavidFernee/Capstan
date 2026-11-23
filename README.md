@@ -113,19 +113,23 @@ that allocates more than 600 MB, the heap peaks at about 13 MB.
 ## Testing
 
 The suite (`tests/run.sh`) includes:
-- runtime unit tests against published cryptographic test vectors
-- 51 vulnerable programs that must be rejected, and 41 diagnostics tests
+- runtime unit tests against published cryptographic test vectors, and every validator and escaper
+  against its specification
+- 68 vulnerable programs that must be rejected, and 76 diagnostics tests
 - safe-stop tests and conformance tests checked against an independent second implementation
 - collector stress tests, pathological-input limits and sanitizer runs
 - differential and mutation fuzzing, and self-hosting reproducibility checks
 - formatter tests: expected layout, house style across the repository, whitespace and corruption fuzzing
+- every program at -O0, -O2 and -O3 with GCC and Clang; fuzzed programs under ASan and UBSan
+- measured test quality: line coverage of the compiler (about 98–100% per file) with enforced
+  floors, and mutation testing of the compiler: injected compiler bugs must be caught
 
 See [docs/TESTING.md](docs/TESTING.md).
 
 ## Status
 
 Capstan (0.4.0, unreleased) is a working, self-hosting language with garbage
-collection, enums, modules, struct methods and a formatter. It is **not yet production-ready**: `sql_query()` and
+collection, enums, modules, struct methods, a formatter and range analysis. It is **not yet production-ready**: `sql_query()` and
 `run()` are demonstration sinks that print rather than execute, and there are no
 generics or concurrency yet. See the [design map](docs/DESIGN-MAP.md).
 
@@ -136,13 +140,16 @@ equivalent hand-written C (`bench/run.sh`, all safety checks on):
 
 | Benchmark | What it stresses | Capstan vs C |
 |---|---|---|
-| alloc | building and discarding trees | about **0.55×** (faster than malloc/free) |
-| calls | recursive function calls | about 2× |
-| strings | string building and map updates | about 2–2.5× |
-| arrays | sieve over a 5-million-element list | about 4× |
+| alloc | building and discarding trees | about **0.75×** (faster than malloc/free) |
+| arrays | sieve over a 5-million-element `List<bool>` | about 1.4× |
+| calls | 33 million recursive calls | about 1.7× |
+| strings | string building and map updates | about 1.9× |
 
-The arrays gap comes from lists storing every element in 8 bytes; packed,
-type-specialised lists are planned for v0.3.
+The compiler's range analysis leaves out overflow and bounds checks it can prove
+will never fail, and keeps all the others (`--keep-checks` keeps them all).
+`bench/fib.cap` shows how far that can go: once `n - 1` and `n - 2` are proved safe,
+the C compiler restructures naive Fibonacci entirely and it runs about 20× faster than
+the hand-written C, which says more about optimisers than about call overhead.
 
 ## Licence
 

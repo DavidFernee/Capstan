@@ -1,0 +1,15 @@
+// spec: expr.interpolation lexical
+// Interpolation holes may contain string literals, including braces and escaped
+// quotes; only the hole's own braces end it.
+string wrap(string a, string b) { return a + b; }
+
+int main() {
+    List<string> xs = new List<string>();
+    xs.push("x");
+    xs.push("y");
+    println($"joined {join(xs, "}{")} done");
+    println($"quote {wrap("\"", "{")} end");
+    println($"nested {wrap($"inner {1 + 2}", "!")} outer");
+    println($"literal braces {{ and }} with {wrap("a", "b")}");
+    return 0;
+}

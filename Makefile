@@ -1,7 +1,7 @@
 # Capstan build. `make` bootstraps the self-hosted compiler and verifies the fixpoint.
 CC      ?= cc
 CFLAGS  ?= -O2 -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-parentheses-equality
-SRC      = compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap compiler/codegen.cap compiler/main.cap
+SRC      = compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap compiler/ranges.cap compiler/codegen.cap compiler/main.cap
 RT       = runtime/capstan_rt.h
 
 .PHONY: all bootstrap fmt test clean
