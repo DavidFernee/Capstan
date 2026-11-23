@@ -314,7 +314,8 @@ static void test_bitwise(void) {
     CHECK(cap_shl_proved(5, 3, 0) == 40 && cap_sar_proved(-9, 1, 0) == -5 && cap_shr_proved(-2, 63, 0) == 1);
 }
 
-static void test_collections(void) {
+/* noinline: if inlined into main, its 100,000-key map could stay visible in main's frame. */
+__attribute__((noinline)) static void test_collections(void) {
     CapMap *m = cap_map_new();
     for (int i = 0; i < 100000; i++) cap_map_set(m, cap_int_to_str(i), cap_vi(i));
     for (int i = 0; i < 100000; i += 997) cap_map_set(m, cap_int_to_str(i), cap_vi(-i));
@@ -349,6 +350,14 @@ static void test_arithmetic(void) {
     CHECK(cap_mod(INT64_MIN, -1, 0) == 0);
     CHECK(strcmp(cap_int_to_str(INT64_MIN)->data, "-9223372036854775808") == 0);
     CHECK(cap_ct_eq("abc", 3, "abc", 3) && !cap_ct_eq("abc", 3, "abd", 3) && !cap_ct_eq("abc", 3, "ab", 2));
+}
+
+/* Zero the stack below the caller, so stale pointers left by earlier tests (the
+   collector is conservative) cannot keep their objects alive. */
+__attribute__((noinline)) static void scrub_stack(int depth) {
+    volatile char pad[4096];
+    memset((char *)pad, 0, sizeof pad);
+    if (depth > 0) scrub_stack(depth - 1);
 }
 
 /* The collector must keep objects reachable only through interior pointers,
@@ -393,11 +402,6 @@ __attribute__((noinline)) static void make_secrets(void) {
     }
     unsetenv("CAPSTAN_UNIT_SECRET");
 }
-__attribute__((noinline)) static void scrub_stack(int depth) {
-    volatile char pad[4096];
-    memset((char *)pad, 0, sizeof pad);
-    if (depth > 0) scrub_stack(depth - 1);
-}
 static void test_secret_wipe(void) {
     make_secrets();
     scrub_stack(16);
@@ -430,6 +434,7 @@ int main(void) {
     test_bitwise();
     test_collections();
     test_arithmetic();
+    scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
     test_secret_wipe();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
