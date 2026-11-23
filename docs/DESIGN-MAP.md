@@ -412,16 +412,18 @@ Standing commitments, every release:
 - **Independent review:** an external security audit before v1.0, and again whenever
   the trusted base changes substantially.
 - **Threat model:** a maintained document stating what Capstan defends against, what it
-  assumes, and what is out of scope.
+  assumes, and what is out of scope ([assurance/THREAT-MODEL.md](assurance/THREAT-MODEL.md)).
 
 ## 9. Government and defence use
 
 Capstan's first audience is government and defence software, where vulnerability
-classes are costly and assurance must be demonstrated. Work needed for that audience:
+classes are costly and assurance must be demonstrated. Work needed for that audience
+(the assurance pack so far is in [assurance/](assurance/README.md)):
 
 - **Memory-safe language guidance.** The Five Eyes cyber agencies, including ASD's
   ACSC, recommend that organisations move to memory-safe languages. Capstan should
-  publish a short statement mapping its guarantees to that guidance.
+  publish a short statement mapping its guarantees to that guidance
+  ([assurance/MEMORY-SAFETY.md](assurance/MEMORY-SAFETY.md)).
 - **Approved cryptography.** Align the defaults behind `hash()`, `hash_password()` and
   the future `seal()` with ASD's approved cryptographic algorithms and NSA's
   CNSA 2.0 suite (for example SHA-384 and AES-256 for higher classifications).
@@ -431,7 +433,8 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
   routes every primitive through a validated module (for example the OpenSSL 3 FIPS
   provider or AWS-LC FIPS), keeping the built-in implementation for other uses.
 - **Secure development evidence.** Map the toolchain and tests to the ISM's software
-  development controls and NIST SP 800-218 (SSDF). Publish SBOMs (CycloneDX or SPDX),
+  development controls and NIST SP 800-218 (SSDF)
+  ([assurance/ISM-MAPPING.md](assurance/ISM-MAPPING.md)). Publish SBOMs (CycloneDX or SPDX),
   signed releases and SLSA build provenance. The self-hosting fixpoint already gives
   reproducible compiler builds.
 - **Export controls.** Capstan includes cryptographic source code. Before public release,

@@ -103,6 +103,7 @@ including what Capstan does **not** prevent.
 - [docs/DESIGN-MAP.md](docs/DESIGN-MAP.md): design principles and roadmap, from language features to the IDE
 - [docs/K0-KERNEL-CVES.md](docs/K0-KERNEL-CVES.md): the Linux kernel's 2025 CVEs measured against Capstan (roadmap K0)
 - [docs/TESTING.md](docs/TESTING.md): how the language is tested
+- [docs/assurance/](docs/assurance/README.md): memory-safety statement, threat model, and ISM and SSDF mapping
 
 ## Memory
 
