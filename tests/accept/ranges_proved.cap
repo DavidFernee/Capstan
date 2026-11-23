@@ -1,5 +1,5 @@
 // spec: runtime.checks types.int types.list types.string compiler.ranges
-// expect-proved: 28
+// expect-proved: 29
 // What the range analysis proves. Each line notes whether its check is left out
 // ("proved") or kept; tests/run.sh counts the proved operations in the C.
 const int LIMIT = 1000;
@@ -75,6 +75,11 @@ int skip_and_stop(List<int> xs) {
     return sum;
 }
 
+int percent(int x) {
+    if (x >= 0 && x <= 100) { return x * 1000; }   // *: proved (both halves of the && count)
+    return 0;
+}
+
 int main() {
     List<int> xs = new List<int>();
     for (int i = 1; i <= LIMIT; i += 1) { xs.push(i % 7); }     // i += 1, i % 7: proved
@@ -90,6 +95,7 @@ int main() {
     mixed.push(5); mixed.push(-3); mixed.push(250); mixed.push(0); mixed.push(5000); mixed.push(9);   // -3: proved
     println(int_to_str(skip_and_stop(mixed)));
     println(int_to_str(every_nth(mixed, 2)));
+    println(int_to_str(percent(42)));
     println(int_to_str(FLOOR * LIMIT));                                // *: proved (a negative constant)
     return 0;
 }
