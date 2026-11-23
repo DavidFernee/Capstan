@@ -1,20 +1,29 @@
 {
  "year": 2025,
  "total": 2702,
+ "reviewed": 588,
  "buckets": {
-  "Prevented at compile time": 1081,
-  "Stopped safely at run time": 423,
-  "Logic error: beyond any language": 175,
-  "Outside Capstan's current reach": 446,
-  "Not determinable from the record": 577
- },
- "memory_safety": 1299,
- "projected": {
-  "Prevented at compile time": 1440,
+  "Prevented at compile time": 1176,
   "Stopped safely at run time": 458,
-  "Logic error: beyond any language": 216,
-  "Outside Capstan's current reach": 11,
-  "Not determinable from the record": 577
+  "Logic error: beyond any language": 504,
+  "Outside Capstan's current reach": 560,
+  "Not determinable from the record": 4
+ },
+ "memory_safety": 1415,
+ "with_k1": {
+  "Prevented at compile time": 1641,
+  "Stopped safely at run time": 493,
+  "Logic error: beyond any language": 562,
+  "Outside Capstan's current reach": 2,
+  "Not determinable from the record": 4
+ },
+ "with_k1_10": {
+  "Prevented at compile time": 1641,
+  "Stopped safely at run time": 493,
+  "Logic error: beyond any language": 32,
+  "Outside Capstan's current reach": 2,
+  "Not determinable from the record": 4,
+  "Proved absent against a specification": 530
  },
  "heldout": [
   40,

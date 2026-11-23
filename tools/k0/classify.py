@@ -50,7 +50,7 @@ RULES = [
     ("type confusion", "CWE-843", [r"type confusion", r"wrong type", r"incorrect type", r"misinterpret\w* as"]),
     ("unbounded recursion", "CWE-674", [r"(?<!lock )recursion", r"recursive\w* (call|loop)", r"stack exhaustion"]),
     ("unchecked error", "CWE-252", [r"(missing|add|unchecked|ignor\w+|check\w*) (\w+ )?(error|return)[- ](value|code|check)s?", r"error (handling|check)", r"return value", r"not check\w* (the )?(return|result|error)"]),
-    ("speculative execution", "CWE-1037", [r"speculat", r"spectre", r"side[- ]channel", r"retbleed", r"\bmds\b"]),
+    ("speculative execution", "CWE-1037", [r"speculat", r"spectre", r"side[- ]channel", r"retbleed", r"microarchitectural data sampling"]),
     ("deadlock", "CWE-833", [r"dead-?lock", r"\babba\b", r"recursive locking", r"lock recursion", r"circular locking", r"lock inversion", r"self-?lock"]),
     ("improper locking", "CWE-667", [
         r"lockdep", r"under (the )?[\w ]{0,20}(lock|semaphore|mutex|spinlock)", r"(lock|mutex|semaphore) (ordering|order)", r"sleeping function called from invalid context", r"scheduling while atomic",
