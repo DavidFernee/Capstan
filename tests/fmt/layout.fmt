@@ -1,0 +1,46 @@
+// spec: tools.fmt
+// Deliberately badly laid out; layout.fmt is the expected result.
+
+struct Point { int x; int y; Point? next; }
+enum Shape {
+    Circle(int r),
+    Empty
+}
+const int LIMIT = 100;
+
+policy CanRead(User u, Doc d) { return u.id == d.owner; }
+protected(CanRead) string read(Grant<CanRead> g, Doc d) { return d.body; }
+
+int area(Shape s) {
+    match (s) {
+        case Circle(r) { return 3 * r * r; }
+        case Empty { return 0; }
+    }
+}
+
+int main() {
+    List<string> names = new List<string>();
+    Map<List<int>> m = new Map<List<int>>();
+    int total = -1 + -2;    // trailing comments keep their gap
+    int n = 0;              // so aligned comments stay aligned
+    for (int i = 0; i < LIMIT; i++) {
+        if (i % 2 == 0 && !(i > 10)) { total += i; } else if (i < 0) { total -= -i; } else { n++; }
+    }
+    Point p = new Point{x: 1, y: 2, next: none};
+    Point q = new Point{
+        x: p.x,
+        y: -p.y,
+        next: p
+    };
+    bool long_one = total > 0
+        || n > 3
+        || names.len() == 0;
+    string s = $"total {total}, n {n}";
+    /* a block
+       comment, kept verbatim */
+    println(s);
+    report(names[0], m.get("k"),
+        p.x);
+
+    return total - n;
+}

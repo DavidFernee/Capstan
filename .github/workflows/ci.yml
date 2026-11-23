@@ -29,5 +29,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-failures-${{ matrix.os }}-${{ matrix.cc }}
-          path: tests/fuzz/failures/
+          path: |
+            tests/fuzz/failures/
+            tests/fmt/failures/
           if-no-files-found: ignore

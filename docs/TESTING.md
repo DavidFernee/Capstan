@@ -44,9 +44,10 @@ A new feature is not finished until its area is in the spec and covered.
 | **limits** | Pathological input (100,000 nested parentheses or blocks, 50,000-term expressions, 20,000-statement functions) gets a diagnostic or compiles; it never crashes the compiler. |
 | **cwe atlas** | An attempt to write each of about 250 code-level CWEs in Capstan; every verdict (rejected, stopped, neutralised, inexpressible, gap) is re-checked. |
 | **fuzz** | *Differential:* random well-typed programs (values near the 64-bit limits, zero divisors, edge-case indexes) must give identical output and exit codes from the native compiler and stage 0, including identical safety stops. *Mutation:* corrupted versions of every program in the repository must never crash or hang the compiler, and any program it accepts must produce valid C. |
-| **sanitizers** | The compiler (under collector stress), the runtime unit tests and every conformance program and example run clean under AddressSanitizer and UndefinedBehaviorSanitizer. |
+| **sanitizers** | The compiler (under collector stress), the formatter, the runtime unit tests and every conformance program and example run clean under AddressSanitizer and UndefinedBehaviorSanitizer. |
 | **bootstrap** | The compiler reproduces itself byte for byte; it does so when built with a different C compiler too; stage 0 still bootstraps to the identical compiler; the compiler passes its own `--strict --release` checks; its generated C is warning-free. |
 | **examples** | Example programs pass `--release` checks (including mandatory denial tests) and their own tests. The test runner itself reports failures correctly and keeps going after one. |
+| **fmt** | The formatter produces the expected layout and is idempotent; every source file in the repository is already formatted; `--check` changes nothing; unscannable files are refused. *Whitespace fuzz:* every formatted file, with its indentation, spacing, tabs, trailing whitespace and blank lines scrambled, must be restored byte for byte. *Corruption fuzz:* randomly corrupted files are formatted or refused, never crash or hang the formatter. Building the formatter must report exactly one warning: the AUDIT for its single `trust()`. |
 | **bench** | (`--full`) Speed against equivalent hand-written C, failing if any benchmark exceeds the regression limit. |
 
 ## Two independent implementations
@@ -64,6 +65,7 @@ Failing inputs are saved to `tests/fuzz/failures/`. Re-run with the reported see
 ```sh
 python3 -I tests/fuzz/gen.py 1000 <seed>
 python3 -I tests/fuzz/mutate.py 50000 <seed>
+FUZZ_SEED=<seed> tests/run.sh            # formatter fuzzing; failures go to tests/fmt/failures/
 ```
 
 Fixed failures should be minimised and added to the relevant directory as
@@ -75,5 +77,6 @@ permanent regression tests.
   (optionally `// flags: --strict` or `--release`).
 - A runtime stop: `tests/runtime/name.cap`, with `// expect-runtime: CWE-nnn`.
 - A conformance program: `tests/accept/name.cap` plus `name.out` with the exact expected output.
+- A formatter case: `tests/fmt/name.cap` (the input) plus `name.fmt` (the exact expected result).
 - Every test file carries a `// spec:` line naming the conformance areas it covers.
 - A runtime test may set environment variables with `// env: NAME=value`.

@@ -4,6 +4,7 @@
 #   capstan build file.cap... -o program [--release] [--strict]
 #   capstan test  file.cap...           [--strict]
 #   capstan check file.cap...           [--release] [--strict]
+#   capstan fmt   file.cap...           [--check]
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAPSTANC="$ROOT/build/capstanc"
@@ -16,6 +17,10 @@ if [[ ! -x "$CAPSTANC" ]]; then
 fi
 
 cmd="${1:-}"; shift || true
+if [[ "$cmd" == fmt ]]; then
+  [[ -x "$ROOT/build/capstanfmt" ]] || make -s -C "$ROOT" fmt >&2
+  exec "$ROOT/build/capstanfmt" "$@"
+fi
 files=(); flags=(); out=""; progargs=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,5 +46,5 @@ case "$cmd" in
     "$CAPSTANC" test -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
     "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/tests"
     "$tmp/tests" ;;
-  *) echo "usage: capstan (run|build|test|check) file.cap... [-o program] [--release] [--strict]" >&2; exit 2 ;;
+  *) echo "usage: capstan (run|build|test|check|fmt) file.cap... [-o program] [--release] [--strict] [--check]" >&2; exit 2 ;;
 esac

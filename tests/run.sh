@@ -20,6 +20,7 @@
 #   sanitizers   compiler and programs under AddressSanitizer + UndefinedBehaviorSanitizer
 #   bootstrap    self-hosting fixpoint, the compiler's own --strict check, alternate C compiler
 #   examples     example programs pass --release checks and their own tests
+#   fmt          the formatter: expected layout, idempotence, house style, whitespace and corruption fuzzing
 #   bench        (--full) speed against hand-written C, with a regression limit
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -124,6 +125,8 @@ if "$CC" $SAN "$ROOT/build/stage3.c" -o "$tmp/san" 2>/dev/null; then
     "$C" build -o "$tmp/s.c" "$f" >/dev/null 2>&1 && "$CC" $SAN "$tmp/s.c" -o "$tmp/s" && CAPSTAN_GC_STRESS=50 "$tmp/s" >/dev/null 2>"$tmp/serr" || { sanfail=1; bad "sanitized $(basename "$f")" "$(tail -3 "$tmp/serr")"; }
   done
   (( sanfail )) || ok "all conformance programs and examples clean under ASan+UBSan with GC stress"
+  "$C" build -o "$tmp/fmtsan.c" "$ROOT/tools/fmt.cap" >/dev/null 2>&1 && "$CC" $SAN "$tmp/fmtsan.c" -o "$tmp/fmtsan" && cp "$ROOT/tests/fmt/layout.cap" $SRC "$tmp/" 2>/dev/null
+  if CAPSTAN_GC_STRESS=200 "$tmp/fmtsan" "$tmp/layout.cap" "$tmp"/{ast,lexer,parser,checker,codegen,main}.cap && cmp -s "$tmp/layout.cap" "$ROOT/tests/fmt/layout.fmt"; then ok "formatter clean under ASan+UBSan with GC stress"; else bad "sanitized formatter" "failed"; fi
 else
   echo "  skip  sanitizers not available for $CC"
 fi
@@ -155,6 +158,30 @@ CAP
 out="$("$tmp/f" 2>/dev/null)"; code=$?
 if [[ $code -eq 1 ]] && grep -q "FAIL  fails" <<<"$out" && grep -q "pass  still runs" <<<"$out" && grep -q "3 test(s), 1 failed" <<<"$out"; then ok "test runner reports failures and keeps going"
 else bad "test runner" "exit $code: $out"; fi
+
+section "fmt"
+F="$ROOT/build/capstanfmt"
+if "$C" build -o "$tmp/fmt.c" "$ROOT/tools/fmt.cap" >"$tmp/log" 2>&1 && "$CC" $WFLAGS "$tmp/fmt.c" -o "$F" 2>>"$tmp/log"; then
+  if [[ "$(grep -c 'warning\[' "$tmp/log")" == 1 ]] && grep -q 'warning\[AUDIT\]' "$tmp/log"; then ok "formatter builds warning-free C; its single trust() is reported as AUDIT"
+  else bad "fmt build" "expected exactly one AUDIT warning: $(head -3 "$tmp/log")"; fi
+else bad "fmt build" "$(head -3 "$tmp/log")"; fi
+for f in "$ROOT"/tests/fmt/*.cap; do
+  n="fmt/$(basename "$f")"; cp "$f" "$tmp/f.cap"
+  if "$F" "$tmp/f.cap" && diff -u "${f%.cap}.fmt" "$tmp/f.cap" >"$tmp/diff"; then
+    if "$F" --check "$tmp/f.cap" >/dev/null; then ok "$n (expected layout, idempotent)"; else bad "$n" "not idempotent"; fi
+  else bad "$n" "layout differs"; cat "$tmp/diff"; fi
+done
+# Every source file in the repository follows the house style, except the diagnostics
+# tests (their columns and lexical errors are what they test) and formatter inputs.
+STYLED=$(cd "$ROOT" && ls compiler/*.cap tools/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc}/*.cap 2>/dev/null)
+if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then ok "$(wc -w <<<"$STYLED") repository sources are formatted"; else bad "house style" "run bin/capstan fmt on: $out"; fi
+cp "$ROOT/tests/fmt/layout.cap" "$tmp/bad.cap"; printf 'int main() { return 0 @ 1; }\n' > "$tmp/lexerr.cap"; cp "$tmp/lexerr.cap" "$tmp/lexerr.keep"
+"$F" --check "$tmp/bad.cap" >/dev/null; c1=$?; "$F" "$tmp/lexerr.cap" >/dev/null; c2=$?
+if [[ $c1 -eq 1 && $c2 -eq 2 ]] && cmp -s "$tmp/lexerr.cap" "$tmp/lexerr.keep" && cmp -s "$tmp/bad.cap" "$ROOT/tests/fmt/layout.cap"; then ok "--check changes nothing and exits 1; unscannable files are refused and left alone"
+else bad "fmt modes" "check exit $c1, refuse exit $c2"; fi
+FMT_N=3; COR_N=2; (( FULL )) && { FMT_N=30; COR_N=20; }
+if out="$(cd "$ROOT" && $PY tests/fmt/perturb.py "$F" $FMT_N "${FUZZ_SEED:-$RANDOM}" $STYLED 2>&1)"; then ok "$out"; else bad "fmt whitespace fuzz" "$out"; fi
+if out="$(cd "$ROOT" && $PY tests/fmt/perturb.py --corrupt "$F" $COR_N "${FUZZ_SEED:-$RANDOM}" $STYLED 2>&1)"; then ok "$out"; else bad "fmt corruption fuzz" "$out"; fi
 
 if (( FULL )); then
   section "bench"

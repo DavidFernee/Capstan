@@ -62,6 +62,7 @@ make                                          # bootstrap; verifies the fixpoint
 bin/capstan run  examples/patient_records.cap
 bin/capstan test examples/patient_records.cap
 bin/capstan check --release examples/patient_records.cap
+bin/capstan fmt   examples/patient_records.cap   # format in place (--check to verify only)
 tests/run.sh                                  # the full suite
 ```
 
@@ -113,19 +114,20 @@ that allocates more than 600 MB, the heap peaks at about 13 MB.
 
 The suite (`tests/run.sh`) includes:
 - runtime unit tests against published cryptographic test vectors
-- 39 vulnerable programs that must be rejected, and 30 diagnostics tests
+- 51 vulnerable programs that must be rejected, and 41 diagnostics tests
 - safe-stop tests and conformance tests checked against an independent second implementation
 - collector stress tests, pathological-input limits and sanitizer runs
 - differential and mutation fuzzing, and self-hosting reproducibility checks
+- formatter tests: expected layout, house style across the repository, whitespace and corruption fuzzing
 
 See [docs/TESTING.md](docs/TESTING.md).
 
 ## Status
 
-v0.2.0 is a working, self-hosting core language with garbage collection. It is
-**not yet production-ready**: `sql_query()` and `run()` are demonstration
-sinks that print rather than execute, and there are no modules, generics or
-concurrency yet. See the [design map](docs/DESIGN-MAP.md).
+Capstan (0.4.0, unreleased) is a working, self-hosting core language with garbage
+collection, enums, modules, struct methods and a formatter. It is **not yet production-ready**: `sql_query()` and
+`run()` are demonstration sinks that print rather than execute, and there are no
+generics or concurrency yet. See the [design map](docs/DESIGN-MAP.md).
 
 ## Performance
 
