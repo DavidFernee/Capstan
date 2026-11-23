@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Collector returns empty pages to the operating system beyond a reserve, and reuses them for any
+  size class before requesting new memory; empty pages are no longer swept. A program that builds
+  and drops 140 MB ends at 53 MB resident instead of 180 MB and runs 2.6 times faster
 - `int_to_str` writes digits itself instead of calling `snprintf` (which was 38% of the `strings`
   benchmark): that benchmark goes from 1.9× C to 1.2×, and one more libc formatting call leaves the
   runtime. Checked against `snprintf` on every power-of-ten boundary and a million random values.

@@ -103,7 +103,11 @@ Remaining:
   widened fixpoint over every call site, recursion included; the compiler now proves 227 of its
   own checks, up from 203. The `calls` benchmark turned out not to pay for checks, since it runs
   at the same speed with `--keep-checks`; its gap to C is call overhead.)*
-- generational collection; returning empty pages to the operating system
+- generational collection; returning empty pages to the operating system *(pages: done. Pages
+  a collection leaves empty go back to the OS beyond a reserve of twice the next threshold, and
+  are reused for any size class before new memory is requested. A program that builds 140 MB
+  and drops it now ends using 53 MB instead of 180 MB, and runs 2.6 times faster, because
+  collections no longer sweep the empty pages.)*
 - benchmarks within 20% of C (now: alloc is; arrays about 1.3×, calls 1.8×, strings 1.2× since
   `int_to_str` stopped using `snprintf`, which was 38% of its time)
 
