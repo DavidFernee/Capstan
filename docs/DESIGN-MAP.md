@@ -5,6 +5,10 @@
 Capstan's goal: **with familiar C/Java syntax, make every common vulnerability class
 either impossible to express or a compile error, and say plainly what remains.**
 
+The long-term aim is **Capstan all the way down**: the compiler, standard library and
+runtime written in Capstan, compiling to machine code without C, with the code that must
+still be trusted reduced to a small, audited and eventually formally verified core.
+
 ## 2. Design principles
 
 1. **Unsafe is unrepresentable.** Prefer removing the dangerous construct (null,
@@ -22,6 +26,11 @@ either impossible to express or a compile error, and say plainly what remains.**
    version upgrades the algorithms.
 7. **Dogfooding.** The compiler is written in Capstan and must pass `--strict`.
 8. **Honest claims.** The coverage document states what is not prevented.
+9. **Trust as little as possible.** Every line of C, every external tool and every
+   escape hatch is a liability to be reduced, and the remainder is documented as the
+   trusted base.
+10. **Every security check, every release.** No release ships without the full suite,
+    the CWE atlas, fuzzing and sanitisers passing on every supported platform.
 
 ## 3. Architecture
 
@@ -156,7 +165,64 @@ An advisory AI layer on top of the deterministic compiler:
 - Privacy: code is sent to the API. Offer an organisation-level switch and a clear
   data notice, which matters for government and PROTECTED workloads.
 
-## 6. Government and defence use
+## 6. Trusted base reduction: Capstan all the way down
+
+Today a Capstan program depends on three things that are not Capstan: the runtime
+(about 1,500 lines of C), the C standard library, and the C compiler. Code written in
+Capstan cannot corrupt memory; code in that foundation can. Each step below moves code
+into Capstan, where its bugs become safe stops instead of exploitable corruption, or
+removes a dependency altogether.
+
+| Stage | Work | Security gain |
+|---|---|---|
+| T1 (with v0.5) | **Standard library in Capstan:** validators, escapers, collection helpers (sort, join, search) | Text-processing code inherits Capstan's guarantees |
+| T2 (with v0.5) | **Bitwise operators and explicitly wrapping arithmetic** (`&`, `\|`, `^`, shifts, `wrapping_add`); ordinary `+` stays overflow-checked | Prerequisite for writing crypto and parsers safely |
+| T3 (with v0.6) | **Crypto in Capstan:** SHA-256, HMAC, PBKDF2, then authenticated encryption, checked against the same published vectors | Crypto implementation bugs cannot corrupt memory. A FIPS 140-3 validated-module option remains for certified deployments |
+| T4 (with v0.6) | **Formatting and parsing in Capstan:** number to text and back, replacing `sprintf`, `snprintf` and `strtol`; differentially tested against libc on millions of random inputs | Removes the libc functions where memory-corruption bugs have historically clustered |
+| T5 (with v0.6) | **Network parsing in Capstan from the start:** addresses, URLs, HTTP, name resolution. Never borrowed from libc | The highest-risk input handling is memory-safe by construction (compare glibc CVE-2015-0235, CVE-2015-7547) |
+| T6 (v0.7) | **Thin system-call layer:** the program talks to the kernel through a small audited layer (open, read, write, exit, memory mapping, signals) instead of the C library, as Go does on Linux | libc leaves the trusted base |
+| T7 (v0.8) | **`unsafe` Capstan:** an audited subset for code that must handle raw memory, with mandatory justification and review markers, reported in every build | The runtime itself can move to Capstan |
+| T8 (v0.9) | **Runtime in `unsafe` Capstan:** garbage collector, allocator and safety primitives; the C remaining is only the program entry point | C runtime reduced to a few dozen lines |
+| T9 (v0.9) | **Verified C compilation option:** generated C builds with CompCert (formally verified), for high-assurance users | The C compiler leaves the trusted base (CompCert needs a commercial licence outside research) |
+| T10 (v1.0) | **WebAssembly backend:** Capstan emits WebAssembly directly, no C | First backend with no C at all; sandboxed execution contains even compiler bugs |
+| T11 (after v1.0) | **Native backend:** Capstan emits x86-64 and ARM64 directly. Designed for verification (small, simple, with translation validation) rather than peak speed; the C path remains for performance builds | Capstan all the way down |
+| T12 (after v1.0) | **Formal verification** of the type and safety checker's core rules and of the `unsafe` core | Proof, not just testing, for the trusted base |
+
+At every stage the existing tests (conformance, CWE atlas, differential and mutation
+fuzzing, sanitisers, published vectors) must pass unchanged. Each replaced component is
+also tested against the one it replaces: Capstan's number formatting must match libc's
+byte for byte, its SHA-256 must match the current implementation, and so on.
+
+**Defending the compiler itself.** Ken Thompson showed that a compiler can be tampered
+with to insert flaws that appear nowhere in its source. Capstan uses David A. Wheeler's
+diverse double-compiling defence: the compiler must reproduce itself byte for byte when
+built with GCC, with Clang, and from the independent Python stage 0. Each new backend
+joins that comparison.
+
+## 7. Security programme
+
+Standing commitments, every release:
+
+- **Full verification on every platform:** `tests/run.sh --full`, including the CWE atlas,
+  long fuzzing campaigns, sanitisers and benchmarks, on every supported OS and compiler.
+  No release is published otherwise.
+- **CWE tracking:** when MITRE publishes a new CWE version or Top 25 list, new code-level
+  entries are added to the atlas with an attack attempt and a verdict before the next release.
+- **Gap burn-down:** every remaining gap in the atlas has an owner milestone; a release
+  may not add a new gap without recording it.
+- **Vulnerability reporting:** a published disclosure policy (`SECURITY.md`), private
+  reporting, advisories for every confirmed issue, and a regression test for every fix.
+- **Supply chain:** signed releases, SBOMs (CycloneDX or SPDX), SLSA build provenance,
+  reproducible builds (already verified by the self-hosting fixpoint), and minimal
+  dependencies.
+- **Dependency watch:** monitor advisories for the C compilers and C library while they
+  remain in the trusted base.
+- **Independent review:** an external security audit before v1.0, and again whenever
+  the trusted base changes substantially.
+- **Threat model:** a maintained document stating what Capstan defends against, what it
+  assumes, and what is out of scope.
+
+## 8. Government and defence use
 
 Capstan's first audience is government and defence software, where vulnerability
 classes are costly and assurance must be demonstrated. Work needed for that audience:
@@ -188,7 +254,7 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 - **Air-gapped operation.** The compiler, runtime and tests need no network access.
   Capstan Review (AI) must stay optional and off by default for classified work.
 
-## 7. Quality bar
+## 9. Quality bar
 
 - every safety rule has at least one rejecting test, and every runtime check a stopping test
 - the compiler passes its own `--strict` check
@@ -197,11 +263,12 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 - sanitiser runs (ASan/UBSan) of the compiler and examples in CI
 - differential and mutation fuzzing on every change; long campaigns nightly
 
-## 8. Known risks
+## 10. Known risks
 
 | Risk | Mitigation |
 |---|---|
-| Trusted base bugs (runtime, C compiler) | keep the runtime small, fuzz it, sanitiser runs; a verified backend later |
+| Trusted base bugs (runtime, C library, C compiler) | the trusted base reduction plan (section 6); meanwhile fuzzing, sanitisers and diverse double-compiling |
+| Rewritten components less battle-tested than the originals | write them in Capstan so their bugs cannot corrupt memory; differential testing against the component replaced |
 | Heuristic checks (CWE-798 names) give false confidence | label them Partial; prefer type-based rules over name heuristics |
 | Friction drives developers to `trust()` | quick fixes and good validators; audit reports make overuse visible |
 | AI review non-determinism | advisory by default; cached and recorded verdicts in gate mode |
