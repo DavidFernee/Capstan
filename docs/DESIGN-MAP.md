@@ -104,7 +104,8 @@ Remaining:
   own checks, up from 203. The `calls` benchmark turned out not to pay for checks, since it runs
   at the same speed with `--keep-checks`; its gap to C is call overhead.)*
 - generational collection; returning empty pages to the operating system
-- benchmarks within 20% of C (now: alloc is; arrays about 1.4×, calls 1.7×, strings 1.9×)
+- benchmarks within 20% of C (now: alloc is; arrays about 1.3×, calls 1.8×, strings 1.2× since
+  `int_to_str` stopped using `snprintf`, which was 38% of its time)
 
 ### v0.5 — Abstraction
 - user generics with interfaces (`interface Comparable<T>`)

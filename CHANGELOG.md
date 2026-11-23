@@ -8,6 +8,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 - `List<bool>` stores its elements as C `bool` rather than `uint8_t`: a byte store may alias
   anything, so the C compiler reloaded the list's length and storage after every write. The
   `arrays` benchmark runs 16% fewer instructions.
+- `int_to_str` writes digits itself instead of calling `snprintf` (which was 38% of the `strings`
+  benchmark): that benchmark goes from 1.9× C to 1.2×, and one more libc formatting call leaves the
+  runtime. Checked against `snprintf` on every power-of-ten boundary and a million random values.
 - T3 begins: SHA-256, HMAC-SHA256 and PBKDF2-HMAC-SHA256 written in Capstan (`lib/crypto.cap`),
   checked against hashlib on generated inputs, the FIPS 180-4 examples, and the runtime's C
   `hash()` and `hash_password()`; not yet used by those builtins (that needs T1, the standard
