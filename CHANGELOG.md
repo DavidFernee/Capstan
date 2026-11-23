@@ -8,6 +8,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 - `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
   `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
   Capstan program can hold a framed conversation over a pipe. The language server needs both.
+- Parser error recovery: after a syntax error the parser resumes at the next statement or
+  declaration, so one run reports every independent syntax error (at most 50, so the output stays
+  bounded). Needed by the language server.
 - Bitwise operators `& | ^ ~ << >> >>>`, hexadecimal literals and `wrapping_add/sub/mul/shl`
   (trusted-base stage T2). Shift counts must be 0..63 (CWE-1335); `<<` that loses bits stops
   (CWE-190); mixing a bitwise operator with another operator needs parentheses (CWE-783);
