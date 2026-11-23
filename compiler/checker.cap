@@ -1565,6 +1565,14 @@ void bind_params(Checker c, Node f) {
     }
 }
 
+int count_params_of_type(Node f, Type t, int start) {
+    int count = 0;
+    for (int i = start; i < f.n; i += 1) {
+        if (type_eq(ty_of(f.kids[i]), t)) { count += 1; }
+    }
+    return count;
+}
+
 void check_fn(Checker c, Node f) {
     Type rt = ty_of(f);
     check_type(c, f, rt, true);
@@ -1573,10 +1581,29 @@ void check_fn(Checker c, Node f) {
     }
     check_params(c, f);
     if (f.s2 != "") {
-        if (let _pol = c.policies.get(f.s2)) {
+        if (let pol = c.policies.get(f.s2)) {
             bool ok = f.n >= 1 && ty_of(f.kids[0]).k == TY_GRANT && ty_of(f.kids[0]).name == f.s2;
             if (!ok) {
                 error_at(c.ctx, f, "CWE-862", "protected(" + f.s2 + ") function '" + f.s + "' must take Grant<" + f.s2 + "> as its first parameter");
+            }
+            // If a protected function accepts objects of a type used more than once by
+            // its policy, it must accept every such parameter. Otherwise the role mapping
+            // would be ambiguous and could collapse distinct policy arguments.
+            for (int i = 0; i < pol.n; i += 1) {
+                Type pt = ty_of(pol.kids[i]);
+                if (pt.k == TY_STRUCT) {
+                    bool seen = false;
+                    for (int j = 0; j < i; j += 1) {
+                        if (type_eq(ty_of(pol.kids[j]), pt)) { seen = true; }
+                    }
+                    if (!seen) {
+                        int policy_count = count_params_of_type(pol, pt, 0);
+                        int function_count = count_params_of_type(f, pt, 1);
+                        if (function_count != 0 && function_count != policy_count) {
+                            error_at(c.ctx, f, "CWE-639", "protected(" + f.s2 + ") function '" + f.s + "' must take all " + int_to_str(policy_count) + " policy parameters of type " + type_str(pt) + " or none, so object roles remain unambiguous");
+                        }
+                    }
+                }
             }
         } else {
             error_at(c.ctx, f, "", "protected() names unknown policy '" + f.s2 + "'");
