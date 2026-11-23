@@ -513,6 +513,14 @@ Standing commitments, every release:
   the trusted base changes substantially.
 - **Threat model:** a maintained document stating what Capstan defends against, what it
   assumes, and what is out of scope ([assurance/THREAT-MODEL.md](assurance/THREAT-MODEL.md)).
+- **The Capstan Challenge** *(subject to funding for a foundation to administer the language)*: a
+  yearly prize for anyone who writes a vulnerability Capstan claims is impossible, in four tiers: a wrong atlas verdict, a broken safe stop, a working exploit, and
+  (with K1.10) a broken proof. Draft rules: [CHALLENGE.md](CHALLENGE.md).
+  *Stages:* now, findings through `SECURITY.md` are credited in the challenge's hall of fame;
+  once a foundation is established and funded to administer Capstan, cash prizes open when the
+  pool is held in full, an independent appeals panel is
+  named and the rules have had legal review; after K1.10, the proof tier carries the largest
+  prize. Each year closes with a public report alongside K0.
 
 ## 9. Government and defence use
 
