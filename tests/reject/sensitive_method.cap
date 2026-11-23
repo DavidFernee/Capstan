@@ -1,4 +1,5 @@
 // expect: CWE-862
+// spec: decl.sensitive decl.method
 // Methods get no special access: reading a sensitive record still needs a grant.
 sensitive struct Record { string notes; string leak() { return self.notes; } }
 int main() { return 0; }

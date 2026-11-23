@@ -1,2 +1,3 @@
 // expect: CWE-20
+// spec: builtins.validators
 int main() { string s = trust(taint("x"), ""); return 0; }

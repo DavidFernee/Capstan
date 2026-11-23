@@ -1,4 +1,5 @@
 // expect: CWE-78
+// spec: builtins.sinks types.tainted
 void convert(Tainted filename) {
     run("convert " + filename + " out.png");
 }

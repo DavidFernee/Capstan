@@ -1,4 +1,5 @@
 // expect-runtime: CWE-674
+// spec: memory.limits runtime.checks
 // Unbounded recursion stops safely instead of crashing.
 int forever(int n) { return forever(n + 1) + 1; }
 int main() { return forever(0); }

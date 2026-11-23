@@ -1,4 +1,5 @@
 // expect: variant A is handled twice
+// spec: diag.messages stmt.match
 enum E { A, B }
 int f(E e) { match (e) { case A { return 1; } case A { return 2; } case B { return 3; } } }
 int main() { return 0; }

@@ -1,3 +1,4 @@
 // expect: CWE-252
+// spec: warnings builtins.io
 // flags: --strict
 int main() { write_file("out.txt", "data"); return 0; }

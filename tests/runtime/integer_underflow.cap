@@ -1,4 +1,5 @@
 // expect-runtime: CWE-191
+// spec: types.int runtime.checks
 int main() {
     int small = 0 - 9223372036854775807;
     int boom = small - 2;

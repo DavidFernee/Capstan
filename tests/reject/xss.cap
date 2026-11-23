@@ -1,4 +1,5 @@
 // expect: CWE-20
+// spec: types.tainted types.html
 string page(string body) { return "<html><body>" + body + "</body></html>"; }
 int main() {
     Tainted comment = taint("<script>steal()</script>");

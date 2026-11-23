@@ -1,3 +1,4 @@
+// spec: lexical
 // Spec: lexical structure. Comments, literals, escapes, character literals.
 /* block comment with // inside and "quotes" */
 int main() {

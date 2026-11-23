@@ -1,0 +1,6 @@
+// expect: CWE-783
+// spec: warnings modes
+// flags: --strict
+// Under --strict every warning is an error.
+bool f(bool a, bool b, bool c) { return a || b && c; }
+int main() { return 0; }

@@ -1,0 +1,5 @@
+// expect: CWE-489
+// spec: warnings modes
+// flags: --release
+const bool DEBUG_LOGGING = true;
+int main() { if (DEBUG_LOGGING) { println("x"); } return 0; }

@@ -1,3 +1,4 @@
 // expect: (did you mean 'Clinician'?)
+// spec: diag.messages types.enum
 enum Role { Patient, Clinician }
 int main() { Role r = Role.Clinican; return 0; }

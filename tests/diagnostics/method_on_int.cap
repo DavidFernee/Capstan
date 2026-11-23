@@ -1,2 +1,3 @@
 // expect: int has no method 'len'
+// spec: diag.messages
 int main() { int x = 3; return x.len(); }

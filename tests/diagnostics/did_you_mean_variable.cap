@@ -1,2 +1,3 @@
 // expect: (did you mean 'balance'?)
+// spec: diag.messages
 int main() { int balance = 1; return balanse; }

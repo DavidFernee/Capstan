@@ -1,3 +1,4 @@
 // expect: cannot assign to this expression
+// spec: diag.messages
 const int LIMIT = 3;
 int main() { LIMIT = 4; return 0; }

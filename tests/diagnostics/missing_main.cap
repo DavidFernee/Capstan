@@ -1,2 +1,3 @@
 // expect: program has no main() function
+// spec: diag.messages
 int helper() { return 1; }

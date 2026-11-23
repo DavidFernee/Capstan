@@ -1,3 +1,4 @@
 // expect: cannot compare P with P
+// spec: diag.messages
 struct P { int x; }
 int main() { P a = new P{x: 1}; bool same = a == a; return 0; }

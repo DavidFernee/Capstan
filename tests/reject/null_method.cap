@@ -1,4 +1,5 @@
 // expect: CWE-476
+// spec: types.optional
 int main() {
     Map<string> m = new Map<string>();
     string? v = m.get("k");

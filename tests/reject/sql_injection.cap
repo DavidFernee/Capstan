@@ -1,4 +1,5 @@
 // expect: CWE-89
+// spec: builtins.sinks types.tainted
 // The classic Java mistake: building a query by concatenating user input.
 void find_user(Tainted username) {
     sql_query("SELECT * FROM users WHERE name = '" + username + "'");

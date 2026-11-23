@@ -1,3 +1,4 @@
+// spec: types.enum stmt.match types.list types.map stmt.assign
 enum Role { Patient, Clinician, Reception }
 enum Shape { Circle(int r), Rect(int w, int h), Empty }
 

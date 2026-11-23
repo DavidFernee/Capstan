@@ -1,3 +1,4 @@
+// spec: types.optional
 // Spec: optionals. There is no null; T converts to T?; unwrap with if (let).
 struct Box { int v; }
 int? half(int n) {

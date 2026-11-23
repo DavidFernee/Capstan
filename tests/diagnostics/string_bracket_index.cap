@@ -1,2 +1,3 @@
 // expect: strings are indexed with .at(i)
+// spec: diag.messages
 int main() { string s = "abc"; return s[0]; }

@@ -1,3 +1,4 @@
 // expect: missing return value
+// spec: diag.messages
 int f() { return; }
 int main() { return f(); }

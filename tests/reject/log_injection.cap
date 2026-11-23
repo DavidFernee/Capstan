@@ -1,4 +1,5 @@
 // expect: CWE-117
+// spec: types.tainted builtins.escapers
 int main() {
     Tainted user = taint("bob\nINFO admin logged in");
     println("login failed for " + user);

@@ -1,3 +1,4 @@
 // expect: (did you mean 'owner'?)
+// spec: diag.messages
 struct Doc { int owner; }
 int main() { Doc d = new Doc{owner: 1}; return d.ownr; }

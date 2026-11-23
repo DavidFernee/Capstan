@@ -1,3 +1,4 @@
+// spec: types.tainted types.html builtins.validators builtins.escapers builtins.sinks builtins.crypto
 // The legitimate ways to handle untrusted input.
 int main() {
     Tainted name = taint("<b>Bob</b>\nadmin");

@@ -1,3 +1,4 @@
+// spec: memory.gc decl.const
 // Builds trees, maps and strings while discarding garbage, then verifies every
 // reachable value. Run with CAPSTAN_GC_STRESS=1 so it collects on every allocation.
 struct Tree { int value; Tree? left; Tree? right; string tag; }

@@ -1,0 +1,4 @@
+// expect: CWE-862
+// spec: decl.sensitive
+sensitive struct Patient { string diagnosis; }
+int main() { Patient p = new Patient{diagnosis: "x"}; println(p.diagnosis); return 0; }

@@ -1,4 +1,5 @@
 // expect: CWE-476
+// spec: types.optional
 struct Account { string owner; }
 Account? find(int id) { return none; }
 int main() {

@@ -1,4 +1,5 @@
 // expect: CWE-807
+// spec: auth.policy types.tainted
 // Deciding access from a role the client sent in a request header.
 policy Admin(Tainted role_header) { return role_header == "admin"; }
 int main() { return 0; }

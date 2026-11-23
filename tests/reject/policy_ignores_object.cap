@@ -1,4 +1,5 @@
 // expect: CWE-639
+// spec: auth.policy modes
 // flags: --strict
 // Insecure direct object reference: any clinician can read any record.
 struct User { int id; int role; }

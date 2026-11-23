@@ -1,3 +1,4 @@
+// spec: types.struct decl.struct
 // Spec: structs are reference types.
 struct Account { string owner; int balance; Account? backup; }
 void deposit(Account a, int amount) { a.balance += amount; }

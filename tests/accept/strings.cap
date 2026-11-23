@@ -1,3 +1,4 @@
+// spec: types.string
 // Spec: strings are immutable byte sequences.
 int main() {
     string s = "Grace Hopper";

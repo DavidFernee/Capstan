@@ -1,3 +1,4 @@
 // expect: CWE-22
+// spec: decl.import
 import "../../etc/secrets.cap";
 int main() { return 0; }

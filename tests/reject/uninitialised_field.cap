@@ -1,4 +1,5 @@
 // expect: CWE-908
+// spec: decl.struct
 struct Config { int port; string host; }
 int main() {
     Config c = new Config{port: 8080};

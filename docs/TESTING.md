@@ -6,13 +6,35 @@ tests/run.sh --full   # adds long fuzzing campaigns and the benchmark gate
 ```
 
 Every safety claim in [CWE-COVERAGE.md](CWE-COVERAGE.md) is backed by at least one test below.
-CI runs the standard suite on Linux (GCC and Clang) and macOS (Clang) for every change,
-and the full suite nightly.
+
+## When the suite runs
+
+| Event | What runs | Where |
+|---|---|---|
+| Every push and pull request | `tests/run.sh` | Linux (GCC, Clang), macOS (Clang) |
+| Nightly | `tests/run.sh --full` | the same three |
+| **Every release** (pushing a tag `vX.Y.Z`) | `scripts/release-check.sh`, then `tests/run.sh --full` | the same three; the release is published only if all pass, with the test reports attached |
+
+## Making a release
+
+1. Set `VERSION` in `compiler/main.cap` and change the changelog heading from `## X.Y.Z (unreleased)` to `## X.Y.Z`.
+2. Run `make && scripts/release-check.sh vX.Y.Z && tests/run.sh --full` locally.
+3. Merge, then tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. `.github/workflows/release.yml` repeats every check on every platform and publishes the release:
+   the source archive, the test reports, SHA-256 checksums and notes taken from the changelog.
+
+## Conformance
+
+`docs/SPEC.md` defines the **conformance areas**, one per language feature. Every test declares the
+areas it covers with a `// spec: area ...` line, and `tests/spec_coverage.py` fails the run if any area
+has no tests or a test names an unknown area. The generated matrix is in [CONFORMANCE.md](CONFORMANCE.md).
+A new feature is not finished until its area is in the spec and covered.
 
 ## Sections
 
 | Section | What it proves |
 |---|---|
+| **spec coverage** | Every conformance area in the specification has at least one test. |
 | **unit** | Runtime correctness against published reference vectors: SHA-256 (FIPS 180-2), HMAC-SHA256 (RFC 4231), PBKDF2-SHA256 (RFC 7914). Also validator edge cases at the 64-bit limits, tampered password hashes failing closed, 100,000-key maps, and collector retention of interior pointers, globals and large objects. An end-to-end round trip proves every byte value survives source → compiler → C → program output. |
 | **reject** | Vulnerable programs (SQL/command/log injection, null dereference, hard-coded credentials, weak crypto, missing authorisation, grant misuse, policy weaknesses) are refused, each with its CWE number. |
 | **diagnostics** | Ordinary mistakes (type errors, unknown names, syntax errors, missing returns) produce the exact expected message. |
@@ -20,6 +42,7 @@ and the full suite nightly.
 | **conformance** | Programs covering each section of the language reference must (1) print exactly the expected output, (2) agree with the independent stage-0 implementation, and (3) produce C that compiles with `-Wall -Wextra -Werror`. |
 | **gc** | Memory stays bounded: the churn test allocates more than 500 MB with a peak heap under 64 MB. Collecting on every single allocation must not change any value. The compiler's output is unchanged under collector stress. |
 | **limits** | Pathological input (100,000 nested parentheses or blocks, 50,000-term expressions, 20,000-statement functions) gets a diagnostic or compiles; it never crashes the compiler. |
+| **cwe atlas** | An attempt to write each of about 250 code-level CWEs in Capstan; every verdict (rejected, stopped, neutralised, inexpressible, gap) is re-checked. |
 | **fuzz** | *Differential:* random well-typed programs (values near the 64-bit limits, zero divisors, edge-case indexes) must give identical output and exit codes from the native compiler and stage 0, including identical safety stops. *Mutation:* corrupted versions of every program in the repository must never crash or hang the compiler, and any program it accepts must produce valid C. |
 | **sanitizers** | The compiler (under collector stress), the runtime unit tests and every conformance program and example run clean under AddressSanitizer and UndefinedBehaviorSanitizer. |
 | **bootstrap** | The compiler reproduces itself byte for byte; it does so when built with a different C compiler too; stage 0 still bootstraps to the identical compiler; the compiler passes its own `--strict --release` checks; its generated C is warning-free. |
@@ -52,3 +75,5 @@ permanent regression tests.
   (optionally `// flags: --strict` or `--release`).
 - A runtime stop: `tests/runtime/name.cap`, with `// expect-runtime: CWE-nnn`.
 - A conformance program: `tests/accept/name.cap` plus `name.out` with the exact expected output.
+- Every test file carries a `// spec:` line naming the conformance areas it covers.
+- A runtime test may set environment variables with `// env: NAME=value`.

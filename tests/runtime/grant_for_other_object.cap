@@ -1,4 +1,5 @@
 // expect-runtime: CWE-639
+// spec: auth.grant runtime.checks
 // A grant obtained for one record cannot be replayed against another (IDOR).
 struct User { int id; }
 struct Doc { int owner; string body; }

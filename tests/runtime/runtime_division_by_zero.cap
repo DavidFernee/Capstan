@@ -1,3 +1,4 @@
 // expect-runtime: CWE-369
+// spec: types.int runtime.checks
 int div(int a, int b) { return a / b; }
 int main() { return div(1, 0); }

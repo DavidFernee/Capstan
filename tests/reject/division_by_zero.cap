@@ -1,2 +1,3 @@
 // expect: CWE-369
+// spec: types.int
 int main() { int x = 10 / 0; return x; }

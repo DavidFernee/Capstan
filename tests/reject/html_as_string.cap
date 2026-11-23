@@ -1,0 +1,5 @@
+// expect: CWE-116
+// spec: types.html builtins.escapers
+// Text escaped for HTML cannot be passed off as a plain string.
+void store(string s) { }
+int main() { store(escape_html(taint("<b>"))); return 0; }
