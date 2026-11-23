@@ -1,0 +1,7 @@
+// expect: CWE-78
+// spec: builtins.sinks
+// "--" does not help when the program is a shell: it runs its argument as a script.
+int main() {
+    if (let t = read_line()) { run("sh", "-c", "--", t); }
+    return 0;
+}

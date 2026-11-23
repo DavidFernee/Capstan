@@ -5,6 +5,15 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Security fixes from an attack review of the compiler (each with a regression test and an atlas
+  entry): bytes of untrusted input stay untrusted when used as list indexes, slice bounds or map
+  keys (CWE-20); shells, interpreters and launchers named in `run()` take only literal arguments
+  (CWE-78); every computed `run()` argument follows `"--"`, and `validate_path()` refuses a leading
+  `-` (CWE-88); `escape_html()` output is rejected in unquoted, URL, event-handler and style
+  attributes and in script, style and comment blocks (CWE-79); `hash()` of a `Secret` is an error
+  (CWE-532); bidirectional and zero-width characters are rejected in source (CWE-1007, Trojan
+  Source); grants are re-evaluated at each protected call (CWE-367)
+- Threat model brought up to date with signed releases, SBOMs and attestations
 - `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
   `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
   Capstan program can hold a framed conversation over a pipe. The language server needs both.

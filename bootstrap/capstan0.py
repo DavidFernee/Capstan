@@ -683,7 +683,7 @@ def b_to_text(x):
 def b_escape_csv(t):
     return '"' + ("'" if t[:1] in ("=", "+", "-", "@", "\t", "\r") and t else "") + t.replace('"', '""') + '"'
 def b_validate_path(t):
-    if not t or len(t) > 4096 or t[0] == "/": return None
+    if not t or len(t) > 4096 or t[0] in ("/", "-"): return None
     for seg in t.split("/"):
         if seg in ("", ".", "..") or not re.fullmatch(r"[A-Za-z0-9_.-]+", seg): return None
     return t

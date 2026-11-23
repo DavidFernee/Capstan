@@ -1,0 +1,7 @@
+// expect: CWE-78
+// spec: builtins.sinks
+// env runs the program named in its arguments, so it is a launcher too.
+int main() {
+    if (let t = read_line()) { run("/usr/bin/env", "--", t); }
+    return 0;
+}

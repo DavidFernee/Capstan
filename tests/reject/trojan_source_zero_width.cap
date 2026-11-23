@@ -1,0 +1,8 @@
+// expect: CWE-1007
+// spec: lexical
+// A zero-width space inside a string hides text from a reviewer.
+int main() {
+    string user = "admin​";
+    println(user);
+    return 0;
+}
