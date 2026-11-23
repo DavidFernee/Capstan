@@ -1,0 +1,3 @@
+// expect: malformed character literal
+// spec: lexical
+int main() { int c = 'ab'; return c; }

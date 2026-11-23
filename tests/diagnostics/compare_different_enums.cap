@@ -1,0 +1,8 @@
+// expect: cannot compare A with B
+// spec: types.enum
+enum A { X, Y }
+enum B { P, Q }
+int main() {
+    if (A.X == B.P) { return 1; }
+    return 0;
+}

@@ -1,0 +1,4 @@
+// expect: unknown policy 'Nobody'
+// spec: auth.tests
+test "nobody" { assert_denied Nobody(1); }
+int main() { return 0; }

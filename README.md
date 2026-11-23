@@ -113,12 +113,16 @@ that allocates more than 600 MB, the heap peaks at about 13 MB.
 ## Testing
 
 The suite (`tests/run.sh`) includes:
-- runtime unit tests against published cryptographic test vectors
-- 51 vulnerable programs that must be rejected, and 41 diagnostics tests
+- runtime unit tests against published cryptographic test vectors, and every validator and escaper
+  against its specification
+- 68 vulnerable programs that must be rejected, and 76 diagnostics tests
 - safe-stop tests and conformance tests checked against an independent second implementation
 - collector stress tests, pathological-input limits and sanitizer runs
 - differential and mutation fuzzing, and self-hosting reproducibility checks
 - formatter tests: expected layout, house style across the repository, whitespace and corruption fuzzing
+- every program at -O0, -O2 and -O3 with GCC and Clang; fuzzed programs under ASan and UBSan
+- measured test quality: line coverage of the compiler (about 98–100% per file) with enforced
+  floors, and mutation testing of the compiler: injected compiler bugs must be caught
 
 See [docs/TESTING.md](docs/TESTING.md).
 

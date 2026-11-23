@@ -15,6 +15,8 @@
 #   conformance  programs with expected output, checked three ways:
 #                exact output, agreement with the independent stage-0 implementation,
 #                and warning-free generated C (-Wall -Wextra -Werror)
+#   portability  every conformance program and safety stop at -O0, -O2 and -O3, with each
+#                C compiler available, behaves identically
 #   gc           bounded memory under churn, integrity when collecting on every allocation
 #   limits       pathological input (deep nesting) gives diagnostics, not crashes
 #   cwe atlas    an attempt to write every code-level CWE in Capstan, with its verdict
@@ -23,6 +25,8 @@
 #   bootstrap    self-hosting fixpoint, the compiler's own --strict check, alternate C compiler
 #   examples     example programs pass --release checks and their own tests
 #   fmt          the formatter: expected layout, idempotence, house style, whitespace and corruption fuzzing
+#   coverage     (--full) line coverage of compiler, formatter and runtime, with floors
+#   mutation     (--full) injected compiler bugs must be caught by the suite
 #   bench        (--full) speed against hand-written C, with a regression limit
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -50,6 +54,9 @@ if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out
 section "unit"
 if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tmp/unit")"; then ok "$out"; else bad "runtime unit tests" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/ranges_props.py" 2>&1)"; then ok "$out"; else bad "range properties" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/escape_log_agree.py" 2>&1)"; then ok "$out"; else bad "escape_log agreement" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/lint_table.py" 2>&1)"; then ok "$out"; else bad "lint table" "$out"; fi
 
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do
@@ -93,12 +100,40 @@ ok "the compiler's own code: $proved of $total checks proved unnecessary"
 section "conformance: output, stage-0 agreement, warning-free C"
 for f in "$ROOT"/tests/accept/*.cap "$ROOT"/tests/gc/*.cap; do
   n="${f#$ROOT/tests/}"
-  if ! "$C" build -o "$tmp/a.c" "$f" >"$tmp/log" 2>&1; then bad "$n" "$(head -3 "$tmp/log")"; continue; fi
+  aflags="$(sed -n 's|^// flags: ||p' "$f" | head -1)"
+  if ! "$C" build -o "$tmp/a.c" $aflags "$f" >"$tmp/log" 2>&1; then bad "$n" "$(head -3 "$tmp/log")"; continue; fi
   if ! "$CC" $WFLAGS "$tmp/a.c" -o "$tmp/a" 2>"$tmp/cc"; then bad "$n" "generated C has warnings: $(head -3 "$tmp/cc")"; continue; fi
   "$tmp/a" >"$tmp/native" 2>/dev/null
   if ! diff -u "${f%.cap}.out" "$tmp/native" >"$tmp/diff"; then bad "$n" "output differs"; cat "$tmp/diff"; continue; fi
   $PY "$ROOT/bootstrap/capstan0.py" "$tmp/s0.py" "$f" && $PY "$tmp/s0.py" >"$tmp/s0" 2>/dev/null
   if [[ "$n" == accept/untrusted.cap ]] || cmp -s "$tmp/native" "$tmp/s0"; then ok "$n"; else bad "$n" "stage 0 disagrees"; diff "$tmp/native" "$tmp/s0" | head; fi
+done
+
+section "portability: optimisation levels and C compilers"
+COMPILERS="$CC"; for alt in gcc clang; do command -v $alt >/dev/null && [[ "$(readlink -f "$(command -v $alt)")" != "$(readlink -f "$(command -v $CC)")" ]] && COMPILERS="$COMPILERS $alt"; done
+pfail=0; pn=0
+for f in "$ROOT"/tests/accept/*.cap "$ROOT"/tests/gc/integrity.cap "$ROOT"/tests/runtime/*.cap; do
+  "$C" build -o "$tmp/p.c" "$f" >/dev/null 2>&1 || continue
+  envs="$(sed -n 's|^// env: ||p' "$f" | head -1)"; ref=""
+  for cc in $COMPILERS; do for o in -O0 -O2 -O3; do
+    if ! $cc $o -std=gnu11 -w -I"$ROOT/runtime" "$tmp/p.c" -o "$tmp/p" 2>/dev/null; then bad "${f#$ROOT/tests/}" "$cc $o: C compile failed"; pfail=1; continue; fi
+    got="$(env $envs "$tmp/p" 2>&1; echo "exit $?")"
+    if [[ -z "$ref" ]]; then ref="$got"; elif [[ "$got" != "$ref" ]]; then bad "${f#$ROOT/tests/}" "$cc $o behaves differently"; pfail=1; fi
+  done; done
+  pn=$((pn+1))
+done
+(( pfail )) || ok "$pn programs behave identically at -O0, -O2 and -O3 with: $COMPILERS"
+
+section "io: standard input and files, native and stage 0"
+for f in "$ROOT"/tests/io/*.cap; do
+  n="io/$(basename "$f")"; in="${f%.cap}.in"; d1="$(mktemp -d)"; d2="$(mktemp -d)"
+  if ! "$C" build -o "$tmp/io.c" "$f" >"$tmp/log" 2>&1 || ! "$CC" $WFLAGS "$tmp/io.c" -o "$tmp/io" 2>>"$tmp/log"; then bad "$n" "$(head -3 "$tmp/log")"; continue; fi
+  "$tmp/io" "$d1" <"$in" >"$tmp/io.native" 2>&1; c1=$?
+  $PY "$ROOT/bootstrap/capstan0.py" "$tmp/io0.py" "$f" && $PY "$tmp/io0.py" "$d2" <"$in" >"$tmp/io.s0" 2>&1; c2=$?
+  if [[ $c1 -ne 0 ]] || ! diff -u "${f%.cap}.out" "$tmp/io.native" >"$tmp/diff"; then bad "$n" "exit $c1"; cat "$tmp/diff"
+  elif [[ $c2 -ne 0 ]] || ! cmp -s "$tmp/io.native" "$tmp/io.s0"; then bad "$n" "stage 0 disagrees"; diff "$tmp/io.native" "$tmp/io.s0" | head
+  else ok "$n (expected output; stage 0 agrees)"; fi
+  rm -rf "$d1" "$d2"
 done
 
 section "gc"
@@ -187,8 +222,9 @@ for f in "$ROOT"/tests/fmt/*.cap; do
   else bad "$n" "layout differs"; cat "$tmp/diff"; fi
 done
 # Every source file in the repository follows the house style, except the diagnostics
-# tests (their columns and lexical errors are what they test) and formatter inputs.
-STYLED=$(cd "$ROOT" && ls compiler/*.cap tools/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc}/*.cap 2>/dev/null)
+# tests (their columns and lexical errors are what they test), formatter inputs and
+# files marked `// fmt: off` (a lexical test that needs tabs and CRLF).
+STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io}/*.cap 2>/dev/null)
 if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then ok "$(wc -w <<<"$STYLED") repository sources are formatted"; else bad "house style" "run bin/capstan fmt on: $out"; fi
 cp "$ROOT/tests/fmt/layout.cap" "$tmp/bad.cap"; printf 'int main() { return 0 @ 1; }\n' > "$tmp/lexerr.cap"; cp "$tmp/lexerr.cap" "$tmp/lexerr.keep"
 "$F" --check "$tmp/bad.cap" >/dev/null; c1=$?; "$F" "$tmp/lexerr.cap" >/dev/null; c2=$?
@@ -199,6 +235,15 @@ if out="$(cd "$ROOT" && $PY tests/fmt/perturb.py "$F" $FMT_N "${FUZZ_SEED:-$RAND
 if out="$(cd "$ROOT" && $PY tests/fmt/perturb.py --corrupt "$F" $COR_N "${FUZZ_SEED:-$RANDOM}" $STYLED 2>&1)"; then ok "$out"; else bad "fmt corruption fuzz" "$out"; fi
 
 if (( FULL )); then
+  section "coverage"
+  if [[ "$(uname)" != Linux ]] || ! command -v gcov >/dev/null || ! command -v gcc >/dev/null; then echo "  skip  coverage and compiler mutation run on Linux with gcc and gcov"
+  elif out="$($PY "$ROOT/tests/coverage.py" --check 2>&1)"; then ok "$(tail -1 <<<"$out")"; echo "$out" | grep '%' | sed 's/^/      /'; else bad "coverage" "$(tail -3 <<<"$out")"; fi
+
+  section "compiler mutation"
+  if [[ "$(uname)" != Linux ]]; then echo "  skip  (Linux only)"
+  elif out="$($PY "$ROOT/tests/mutate_compiler.py" "${MUTANTS:-24}" "${FUZZ_SEED:-$RANDOM}" compiler/ranges.cap compiler/checker.cap compiler/lexer.cap compiler/parser.cap compiler/codegen.cap 2>&1)"; then ok "$(tail -1 <<<"$out")"
+  else bad "compiler mutation" "$(grep SURVIVED <<<"$out" | head -5; tail -1 <<<"$out")"; fi
+
   section "bench"
   if out="$("$ROOT/bench/run.sh" 2>&1)"; then ok "benchmarks within limit"; echo "$out" | sed 's/^/        /'; else bad "bench" "$out"; fi
 fi

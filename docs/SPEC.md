@@ -19,7 +19,7 @@
 | `Tainted` | immutable byte string from an untrusted source |
 | `Secret` | a credential; cannot be printed, concatenated, compared with `==` or read |
 | `Html` | text escaped for HTML (from `escape_html()`); joins only with `Html` and trusted `string`, never passes as a plain `string` |
-| `LogText` | text escaped for logs and terminals (from `escape_log()`); same rules as `Html` |
+| `LogText` | text escaped for logs and terminals (from `escape_log()`): printable ASCII and valid UTF-8 text are kept; control bytes, invalid UTF-8, C1 controls, bidirectional controls, line and paragraph separators and the byte-order mark become `\xNN`. Same rules as `Html` |
 | `S` | a `struct` (reference type) |
 | `List<T>` | growable, bounds-checked list |
 | `Map<T>` | map from `string` keys to `T`, iterated in insertion order |
@@ -93,8 +93,8 @@ then postfix `.field`, `.method(args)`, `[index]`.
 | `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
-| `read_file(path)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources |
-| `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252 |
+| `read_file(path)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, or a path containing a NUL byte (CWE-158). `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
+| `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | |
 | `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
 | `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers |

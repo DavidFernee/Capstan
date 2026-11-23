@@ -1,0 +1,84 @@
+// flags: --strict --release
+// spec: types.tainted types.secret builtins.escapers decl.function stmt.control auth.policy warnings
+// Correct code the checker must accept even under --strict --release: every
+// construct here sits next to a rule that rejects something similar.
+enum Color { Red, Blue }
+
+struct Config { string name; string api_url; }
+struct User { int id; bool admin; }
+struct Doc { int owner; }
+
+// Policies may start with any statement, not only `return`.
+policy CanEdit(User u, Doc d) {
+    if (u.admin) { return true; }
+    return u.id == d.owner;
+}
+
+// ...including a declaration that starts with the literal true.
+policy CanView(User u, Doc d) {
+    bool allowed = true;
+    if (u.id != d.owner && !u.admin) { allowed = false; }
+    return allowed;
+}
+
+test "strangers cannot view" { assert_denied CanView(new User{id: 1, admin: false}, new Doc{owner: 2}); }
+test "strangers cannot edit" { assert_denied CanEdit(new User{id: 1, admin: false}, new Doc{owner: 2}); }
+test "owners can edit" { assert_granted CanEdit(new User{id: 2, admin: false}, new Doc{owner: 2}); }
+
+// char_str() of trusted integers is fine, whether they come from a helper's
+// parameter, a function's result or a list of trusted numbers.
+string letter(int c) { return char_str(c); }
+int code_for(int i) { return 65 + i; }
+
+List<int> trusted_codes() {
+    List<int> xs = new List<int>();
+    xs.push(33);
+    return xs;
+}
+
+string describe() { return "issued 3"; }
+
+string greeting() { return "hello"; }
+string farewell() { return "bye"; }
+
+// A function may end with exit().
+int fail(string why) {
+    println("stopping: " + why);
+    exit(3);
+}
+
+int main() {
+    List<int> codes = new List<int>();
+    codes.push(72);
+    codes.push(105);
+    string word = char_str(codes[0]) + letter(codes[1]) + char_str(code_for(1));
+    println(word + char_str(trusted_codes()[0]));
+    string token_log = describe();
+    if (!write_file("/dev/null", token_log)) { return fail("cannot write"); }
+    if (greeting() == farewell()) { println("unexpected"); }
+    Config cfg = new Config{name: "reports", api_url: "https://example.org/api"};
+    println(cfg.name + " " + cfg.api_url);
+    Html page = escape_html("<b>literal</b>") + "<br>";
+    page += "<hr>";
+    page += escape_html("&");
+    LogText note = escape_log("a");
+    note += escape_log("b");
+    println(note);
+    if (!write_file("/dev/null", page)) { return fail("cannot write"); }
+    Color favourite = Color.Blue;
+    if (favourite == Color.Blue) { println("blue"); }
+    println(int_to_str(local_named_like_enum()));
+    if (let pct = validate_range(taint("42"), 0, 100)) { println(int_to_str(pct)); }
+    if (let key = secret_env("CAPSTAN_TEST_NO_SUCH_VARIABLE")) {
+        if (secret_eq(key, "expected")) { println("unexpected secret"); }
+    } else {
+        println("no secret set");
+    }
+    return 0;
+}
+
+// A local may share an enum's name; inside its scope the name means the local.
+int local_named_like_enum() {
+    string Color = "shade";
+    return Color.len();
+}

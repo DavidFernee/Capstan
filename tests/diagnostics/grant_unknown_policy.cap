@@ -1,0 +1,4 @@
+// expect: Grant refers to unknown policy 'Nobody'
+// spec: auth.grant
+void f(Grant<Nobody> g) {}
+int main() { return 0; }

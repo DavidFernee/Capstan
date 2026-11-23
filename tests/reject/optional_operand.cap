@@ -1,0 +1,7 @@
+// expect: CWE-476
+// spec: types.optional
+// An optional cannot be used in arithmetic before it is unwrapped.
+int main() {
+    Map<int> m = new Map<int>();
+    return m.get("a") + 1;
+}

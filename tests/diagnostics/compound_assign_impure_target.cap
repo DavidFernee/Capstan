@@ -1,0 +1,10 @@
+// expect: '+=' needs a variable, field or simply-indexed element on the left
+// spec: stmt.assign
+// The target of += is evaluated twice, so it may not contain a call.
+int next(List<int> xs) { return 0; }
+int main() {
+    List<int> xs = new List<int>();
+    xs.push(1);
+    xs[next(xs)] += 1;
+    return 0;
+}

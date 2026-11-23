@@ -1,0 +1,4 @@
+// expect: protected() names unknown policy 'Nobody'
+// spec: auth.policy
+protected(Nobody) void f(Grant<Nobody> g) {}
+int main() { return 0; }

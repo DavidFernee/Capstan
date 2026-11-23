@@ -1,0 +1,5 @@
+// expect: 'Point' is declared more than once
+// spec: decl.struct
+struct Point { int x; }
+struct Point { int y; }
+int main() { return 0; }

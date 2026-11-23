@@ -1,0 +1,9 @@
+// expect: CWE-116
+// spec: types.html
+// Untrusted input cannot be appended to Html without escaping.
+int main() {
+    if (let t = read_line()) {
+        Html page = escape_html(taint("<p>")) + t;
+    }
+    return 0;
+}

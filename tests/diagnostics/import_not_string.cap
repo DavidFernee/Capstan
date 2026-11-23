@@ -1,0 +1,4 @@
+// expect: expected the imported file name as a string
+// spec: decl.import
+import util;
+int main() { return 0; }

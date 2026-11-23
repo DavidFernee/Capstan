@@ -1,0 +1,6 @@
+// expect: escape_html expects 1 argument(s), found 0
+// spec: builtins.escapers
+int main() {
+    Html h = escape_html();
+    return 0;
+}

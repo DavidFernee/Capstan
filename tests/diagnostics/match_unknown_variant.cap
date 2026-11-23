@@ -1,0 +1,8 @@
+// expect: enum Shape has no variant 'Circel' (did you mean 'Circle'?)
+// spec: stmt.match diag.messages
+enum Shape { Circle(int r), Empty }
+int main() {
+    Shape s = Shape.Empty;
+    match (s) { case Circel(r) { return r; } case Empty { return 0; } }
+    return 0;
+}

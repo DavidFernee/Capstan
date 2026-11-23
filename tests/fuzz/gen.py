@@ -18,12 +18,19 @@ before arithmetic, loops that run up to the 64-bit limits, and index loops whose
 list shrinks in the body, in the condition or through a call. If the analysis
 ever dropped a check that could fire, the two runs would disagree.
 
+Every third program is also built with AddressSanitizer and UBSan (including
+signed-overflow detection) and must behave identically. That catches an
+unchecked operation that misbehaves even when the output happens to match:
+signed overflow in C is undefined, and an out-of-bounds read may return a
+plausible value.
+
 usage: gen.py [count] [seed]
 """
 import os, random, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CC = os.environ.get("CC", "cc")
+CAPSTANC = os.environ.get("CAPSTANC", os.path.join(ROOT, "build/capstanc"))   # another compiler, e.g. a mutant
 BIG = [0, 1, 2, 3, 7, 10, 255, 1000, 65536, 2147483647, 4611686018427387904, 9223372036854775807]
 
 
@@ -223,30 +230,82 @@ class Gen:
         return "\n".join(out) + "\n"
 
 
-def run(cmd, **kw):
-    return subprocess.run(cmd, capture_output=True, timeout=30, **kw)
+class Ran:
+    def __init__(self, returncode, stdout, stderr):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
 
 
-def check(src, d):
+def _limit_output():
+    import resource
+    resource.setrlimit(resource.RLIMIT_FSIZE, (64 << 20, 64 << 20))   # a runaway writer gets SIGXFSZ
+
+
+def run(cmd, input=None, timeout=30, env=None, cwd=None):
+    """Run cmd with its output going to files capped at 64 MB, so a runaway program
+    (a mutant's, say) cannot exhaust this process's memory. None on timeout."""
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        try:
+            p = subprocess.run(cmd, input=input, stdout=out, stderr=err, timeout=timeout, env=env, cwd=cwd,
+                               preexec_fn=_limit_output)
+        except subprocess.TimeoutExpired:
+            return None
+        out.seek(0)
+        err.seek(0)
+        return Ran(p.returncode, out.read(8 << 20), err.read(1 << 20))
+
+
+def _run_or_raise(cmd, **kw):
+    r = run(cmd, **kw)
+    if r is None:
+        raise subprocess.TimeoutExpired(cmd, kw.get("timeout", 30))
+    return r
+
+
+SAN = ["-O1", "-g", "-fsanitize=address,undefined", "-fsanitize=signed-integer-overflow,shift,bounds",
+       "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
+SAN_ENV = dict(os.environ, ASAN_OPTIONS="detect_leaks=0:detect_stack_use_after_return=0", UBSAN_OPTIONS="print_stacktrace=1")
+_san_ok = None
+
+
+def sanitizers_available(d):
+    global _san_ok
+    if _san_ok is None:
+        probe = os.path.join(d, "probe.c")
+        open(probe, "w").write("int main(void) { return 0; }\n")
+        _san_ok = _run_or_raise([CC] + SAN + [probe, "-o", os.path.join(d, "probe")]).returncode == 0
+    return _san_ok
+
+
+def check(src, d, sanitize=False):
     cap = os.path.join(d, "p.cap")
     open(cap, "w").write(src)
-    c = run([os.path.join(ROOT, "build/capstanc"), "build", "-o", os.path.join(d, "p.c"), cap])
+    c = _run_or_raise([CAPSTANC, "build", "-o", os.path.join(d, "p.c"), cap])
     if c.returncode != 0:
         return "native compiler rejected a well-typed program:\n" + c.stdout.decode(errors="replace")
-    b = run([CC, "-std=gnu11", "-O1", "-w", "-I" + os.path.join(ROOT, "runtime"), os.path.join(d, "p.c"), "-o", os.path.join(d, "p")])
+    b = _run_or_raise([CC, "-std=gnu11", "-O1", "-w", "-I" + os.path.join(ROOT, "runtime"), os.path.join(d, "p.c"), "-o", os.path.join(d, "p")])
     if b.returncode != 0:
         return "generated C did not compile:\n" + b.stderr.decode(errors="replace")[:2000]
-    t = run([sys.executable, "-I", os.path.join(ROOT, "bootstrap/capstan0.py"), os.path.join(d, "p0.py"), cap])
+    t = _run_or_raise([sys.executable, "-I", os.path.join(ROOT, "bootstrap/capstan0.py"), os.path.join(d, "p0.py"), cap])
     if t.returncode != 0:
         return "stage 0 failed to translate:\n" + t.stderr.decode(errors="replace")
-    n = run([os.path.join(d, "p")])
-    py = run([sys.executable, "-I", os.path.join(d, "p0.py")])
+    n = _run_or_raise([os.path.join(d, "p")])
+    py = _run_or_raise([sys.executable, "-I", os.path.join(d, "p0.py")])
     if n.returncode not in (0, 101):
         return f"native program crashed (exit {n.returncode})"
     if (n.stdout, n.returncode) != (py.stdout, py.returncode):
         return (f"native and stage 0 disagree: exit {n.returncode} vs {py.returncode}\n--- native\n"
                 + n.stdout.decode(errors="replace")[-1500:] + "\n--- stage0\n" + py.stdout.decode(errors="replace")[-1500:]
                 + "\n" + py.stderr.decode(errors="replace")[-500:])
+    if sanitize and sanitizers_available(d):
+        s = _run_or_raise([CC, "-std=gnu11", "-w", "-I" + os.path.join(ROOT, "runtime")] + SAN + [os.path.join(d, "p.c"), "-o", os.path.join(d, "ps")])
+        if s.returncode != 0:
+            return "generated C did not compile with sanitizers:\n" + s.stderr.decode(errors="replace")[:2000]
+        ns = run([os.path.join(d, "ps")], timeout=120, env=SAN_ENV)
+        if ns is None:
+            return "sanitized build timed out"
+        if (ns.stdout, ns.returncode) != (n.stdout, n.returncode):
+            return (f"sanitized build differs (exit {ns.returncode} vs {n.returncode}): undefined behaviour or a bad access in generated code\n"
+                    + ns.stderr.decode(errors="replace")[-2500:])
     return None
 
 
@@ -257,17 +316,19 @@ def main():
     for i in range(count):
         src = Gen(random.Random(seed * 100003 + i)).program()
         with tempfile.TemporaryDirectory() as d:
-            err = check(src, d)
+            err = check(src, d, sanitize=(i % 3 == 0))
             if err is None and os.path.exists(os.path.join(d, "p")):
-                if run([os.path.join(d, "p")]).returncode == 101:
+                if _run_or_raise([os.path.join(d, "p")]).returncode == 101:
                     stops += 1
         if err:
-            os.makedirs(os.path.join(ROOT, "tests/fuzz/failures"), exist_ok=True)
-            path = os.path.join(ROOT, f"tests/fuzz/failures/gen_{seed}_{i}.cap")
+            keep = os.environ.get("FUZZ_FAILURES", os.path.join(ROOT, "tests/fuzz/failures"))
+            os.makedirs(keep, exist_ok=True)
+            path = os.path.join(keep, f"gen_{seed}_{i}.cap")
             open(path, "w").write(src)
             print(f"FAIL program {i} (seed {seed}) saved to {path}\n{err}")
             sys.exit(1)
-    print(f"differential fuzz: {count} random programs agree (native vs stage 0); {stops} stopped safely at run time")
+    san = f", {(count + 2) // 3} also clean under ASan+UBSan" if _san_ok else ""
+    print(f"differential fuzz: {count} random programs agree (native vs stage 0){san}; {stops} stopped safely at run time")
 
 
 if __name__ == "__main__":

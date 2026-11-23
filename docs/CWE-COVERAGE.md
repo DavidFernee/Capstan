@@ -52,7 +52,9 @@ red-team of about 250 code-level CWEs, including the gaps that remain, see
 | 478 | Missing case | `match` must handle every variant |
 | 1236 | CSV formula injection | `escape_csv()`; untrusted text can't be written to files unescaped |
 | 88 | Argument injection | Untrusted arguments to `run()` must come after a literal `"--"`, so they can't be read as options |
-| 117 | Log injection | `Tainted` can't be printed without `escape_log()` |
+| 117 | Log injection | `Tainted` can't be printed without `escape_log()`, which neutralises line breaks and control bytes, and also C1 controls, bidirectional overrides, Unicode line separators and invalid UTF-8 |
+| 150 | Escape sequences in output | As 117: terminal control sequences, including 8-bit CSI (0x9B and U+009B), are escaped |
+| 158 | NUL byte in a path | `read_file()` and `write_file()` refuse a path containing a NUL byte, which C would truncate to name a different file |
 | 120 | Classic buffer overflow | `strcpy`/`memcpy`/`gets` don't exist |
 | 134 | Format string | No format strings |
 | 191 | Integer underflow | Checked arithmetic |

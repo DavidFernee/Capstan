@@ -1,0 +1,14 @@
+# Minimum line coverage per file, checked by `tests/coverage.py --check` (tests/run.sh --full).
+# Set about one point below the measured value; raise a floor when coverage rises.
+# What is left unreached is listed in docs/COVERAGE.md: mostly defensive fallbacks
+# (unsupported expression, internal errors) and handlers that end with _exit().
+compiler/ast.cap        99.0
+compiler/checker.cap    97.9
+compiler/codegen.cap    97.4
+compiler/lexer.cap      98.6
+compiler/main.cap       95.0
+compiler/parser.cap     99.0
+compiler/ranges.cap     97.3
+tools/fmt.cap           95.0
+runtime/capstan_gc.h    93.0
+runtime/capstan_rt.h    96.3
