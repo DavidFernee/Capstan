@@ -5,6 +5,21 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- `List<bool>` stores its elements as C `bool` rather than `uint8_t`: a byte store may alias
+  anything, so the C compiler reloaded the list's length and storage after every write. The
+  `arrays` benchmark runs 16% fewer instructions.
+- Maps hash their keys with SipHash-1-3 under a random key chosen once per process, instead of
+  FNV-1a: keys an attacker chooses can no longer be made to collide and turn every lookup into a
+  scan (hash flooding, CWE-407). Iteration order is unchanged (insertion order). Checked against
+  the published SipHash vectors and an independent implementation; about 5% slower on the
+  map-heaviest benchmark.
+- `int_to_str` writes digits itself instead of calling `snprintf` (which was 38% of the `strings`
+  benchmark): that benchmark goes from 1.9× C to 1.2×, and one more libc formatting call leaves the
+  runtime. Checked against `snprintf` on every power-of-ten boundary and a million random values.
+- T3 begins: SHA-256, HMAC-SHA256 and PBKDF2-HMAC-SHA256 written in Capstan (`lib/crypto.cap`),
+  checked against hashlib on generated inputs, the FIPS 180-4 examples, and the runtime's C
+  `hash()` and `hash_password()`; not yet used by those builtins (that needs T1, the standard
+  library mechanism).
 - Range analysis across calls: each integer parameter gets the range of its arguments at every
   call site in the program (recursion included, by an iterated and widened fixpoint), so checks in
   helpers called with small values are left out. A function called anywhere with any value gets

@@ -314,7 +314,8 @@ static void test_bitwise(void) {
     CHECK(cap_shl_proved(5, 3, 0) == 40 && cap_sar_proved(-9, 1, 0) == -5 && cap_shr_proved(-2, 63, 0) == 1);
 }
 
-static void test_collections(void) {
+/* noinline: if inlined into main, its 100,000-key map could stay visible in main's frame. */
+__attribute__((noinline)) static void test_collections(void) {
     CapMap *m = cap_map_new();
     for (int i = 0; i < 100000; i++) cap_map_set(m, cap_int_to_str(i), cap_vi(i));
     for (int i = 0; i < 100000; i += 997) cap_map_set(m, cap_int_to_str(i), cap_vi(-i));
@@ -348,7 +349,41 @@ static void test_arithmetic(void) {
     CHECK(cap_div(-7, 2, 0) == -3 && cap_mod(-7, 2, 0) == -1 && cap_mod(7, -2, 0) == 1);
     CHECK(cap_mod(INT64_MIN, -1, 0) == 0);
     CHECK(strcmp(cap_int_to_str(INT64_MIN)->data, "-9223372036854775808") == 0);
+    /* int_to_str against snprintf: every power of ten and its neighbours, both
+       signs, the 64-bit extremes, and a million pseudo-random values. */
+    {
+        int bad = 0, n = 0;
+        int64_t edges[200];
+        int ne = 0;
+        int64_t p10 = 1;
+        for (int k = 0; k < 19; k++) {
+            edges[ne++] = p10 - 1; edges[ne++] = p10; edges[ne++] = p10 + 1;
+            edges[ne++] = -p10 + 1; edges[ne++] = -p10; edges[ne++] = -p10 - 1;
+            if (k < 18) p10 *= 10;
+        }
+        edges[ne++] = INT64_MAX; edges[ne++] = INT64_MAX - 1; edges[ne++] = INT64_MIN; edges[ne++] = INT64_MIN + 1;
+        uint64_t x = 0x9E3779B97F4A7C15ULL;
+        for (int i = 0; i < ne + 1000000; i++) {
+            int64_t v;
+            if (i < ne) v = edges[i];
+            else { x ^= x << 13; x ^= x >> 7; x ^= x << 17; v = (int64_t)(x >> (x % 64)); if (x & 1) v = -v; }
+            char want[32];
+            snprintf(want, sizeof want, "%lld", (long long)v);
+            CapStr *got = cap_int_to_str(v);
+            n++;
+            if (got->len != (int64_t)strlen(want) || memcmp(got->data, want, strlen(want)) != 0 || got->data[got->len] != 0) bad++;
+        }
+        CHECK(bad == 0 && n > 1000000);
+    }
     CHECK(cap_ct_eq("abc", 3, "abc", 3) && !cap_ct_eq("abc", 3, "abd", 3) && !cap_ct_eq("abc", 3, "ab", 2));
+}
+
+/* Zero the stack below the caller, so stale pointers left by earlier tests (the
+   collector is conservative) cannot keep their objects alive. */
+__attribute__((noinline)) static void scrub_stack(int depth) {
+    volatile char pad[4096];
+    memset((char *)pad, 0, sizeof pad);
+    if (depth > 0) scrub_stack(depth - 1);
 }
 
 /* The collector must keep objects reachable only through interior pointers,
@@ -393,11 +428,6 @@ __attribute__((noinline)) static void make_secrets(void) {
     }
     unsetenv("CAPSTAN_UNIT_SECRET");
 }
-__attribute__((noinline)) static void scrub_stack(int depth) {
-    volatile char pad[4096];
-    memset((char *)pad, 0, sizeof pad);
-    if (depth > 0) scrub_stack(depth - 1);
-}
 static void test_secret_wipe(void) {
     make_secrets();
     scrub_stack(16);
@@ -430,6 +460,7 @@ int main(void) {
     test_bitwise();
     test_collections();
     test_arithmetic();
+    scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
     test_secret_wipe();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);

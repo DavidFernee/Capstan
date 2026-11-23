@@ -18,6 +18,8 @@
 #                and warning-free generated C (-Wall -Wextra -Werror)
 #   portability  every conformance program and safety stop at -O0, -O2 and -O3, with each
 #                C compiler available, behaves identically
+#   crypto       lib/crypto.cap (SHA-256, HMAC, PBKDF2 in Capstan) against hashlib, the
+#                published vectors and the runtime's C implementation, native and stage 0
 #   gc           bounded memory under churn, integrity when collecting on every allocation
 #   limits       pathological input (deep nesting) gives diagnostics, not crashes
 #   cwe atlas    an attempt to write every code-level CWE in Capstan, with its verdict
@@ -61,6 +63,7 @@ if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tm
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/ranges_props.py" 2>&1)"; then ok "$out"; else bad "range properties" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_log_agree.py" 2>&1)"; then ok "$out"; else bad "escape_log agreement" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/siphash_agree.py" 2>&1)"; then ok "$out"; else bad "siphash" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_json_agree.py" 2>&1)"; then ok "$out"; else bad "escape_json agreement" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/lint_table.py" 2>&1)"; then ok "$out"; else bad "lint table" "$out"; fi
 
@@ -165,6 +168,9 @@ done
 if out="$($PY "$ROOT/tests/unit/stdio_interactive.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: conversation over a pipe" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/read_file_bounds.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: read_file bounds" "$out"; fi
 
+section "crypto: lib/crypto.cap against hashlib, the published vectors and the runtime"
+if out="$($PY "$ROOT/tests/crypto/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "crypto" "$out"; fi
+
 section "gc"
 "$C" build -o "$tmp/churn.c" "$ROOT/tests/gc/churn.cap" >/dev/null && "$CC" $CFLAGS "$tmp/churn.c" -o "$tmp/churn"
 stats="$(CAPSTAN_GC_STATS=1 "$tmp/churn" 2>&1 >/dev/null)"
@@ -253,7 +259,7 @@ done
 # Every source file in the repository follows the house style, except the diagnostics
 # and recovery tests (their columns and lexical errors are what they test), formatter inputs and
 # files marked `// fmt: off` (a lexical test that needs tabs and CRLF).
-STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io}/*.cap 2>/dev/null)
+STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap lib/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io,crypto}/*.cap 2>/dev/null)
 if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then ok "$(wc -w <<<"$STYLED") repository sources are formatted"; else bad "house style" "run bin/capstan fmt on: $out"; fi
 cp "$ROOT/tests/fmt/layout.cap" "$tmp/bad.cap"; printf 'int main() { return 0 @ 1; }\n' > "$tmp/lexerr.cap"; cp "$tmp/lexerr.cap" "$tmp/lexerr.keep"
 "$F" --check "$tmp/bad.cap" >/dev/null; c1=$?; "$F" "$tmp/lexerr.cap" >/dev/null; c2=$?
