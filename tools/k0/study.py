@@ -26,10 +26,26 @@ ROOT = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
 from classify import RULES, classify  # noqa: E402
 
+
 COMPILE, RUNTIME, LOGIC, OUTSIDE, UNKNOWN = (
     "Prevented at compile time", "Stopped safely at run time", "Logic error: beyond any language",
     "Outside Capstan's current reach", "Not determinable from the record")
+PROVED = "Proved absent against a specification"
 BUCKETS = [COMPILE, RUNTIME, LOGIC, OUTSIDE, UNKNOWN]
+
+# Classes used only in the reviewed labels (tools/k0/data/reviewed-<year>.csv), with their CWE and,
+# where the CWE alone does not decide it, the outcome today.
+EXTRA_CLASSES = {
+    "logic error": ("CWE-670", None),
+    "hardware or firmware fault": ("", LOGIC),
+    "build or configuration error": ("", LOGIC),
+    "use after device removal": ("CWE-672", OUTSIDE),
+    "misaligned access": ("CWE-1328", OUTSIDE),
+    "aliased mutation": ("CWE-1260", OUTSIDE),
+    "timing side channel": ("CWE-208", None),
+}
+CLASS_CWE = {c: w for c, w, _ in RULES}
+CLASS_CWE.update({c: w for c, (w, _) in EXTRA_CLASSES.items()})
 
 # Atlas outcome -> study bucket. "Inexpressible" and "no effect" mean the weakness cannot be
 # written in Capstan as it stands, which counts as prevented before the program runs.
@@ -72,7 +88,14 @@ PROJECTION = {
     "type confusion": (COMPILE, "K1.6 typed views"),
     "shift out of bounds": (RUNTIME, "K1.6 checked shifts"),
     "missing authorisation": (COMPILE, "K1.7 entry points declare policy"),
+    "use after device removal": (COMPILE, "K1.5 structured concurrency, driver typestate"),
+    "misaligned access": (COMPILE, "K1.6 typed views prove alignment"),
+    "aliased mutation": (COMPILE, "K1.1 ownership: no mutation through a shared reference"),
 }
+# K1.10: proof against a specification. Applies to what K1.1-K1.9 leave as logic errors, for code
+# whose behaviour is specified. Hardware faults and build errors stay outside any proof of the code.
+PROVABLE = {"logic error", "insufficient validation", "race condition", "hang or infinite loop"}
+SPECTRE_V1 = re.compile(r"nospec|array_index|\bindex\b|opcode|speculat\w* (load|read|access)", re.I)
 # Races split: a race on shared data is a data race, which K1.2 rejects; a race between a device's
 # teardown and its callbacks is what K1.5 rules out. Races in ordering logic beyond these stay logic.
 DATA_RACE = re.compile(r"data-race|kcsan|read_once|write_once|without (holding |taking )?(the )?\\w* ?lock|"
@@ -87,6 +110,10 @@ DATA_LOOP = re.compile(r"infinite loop|endless loop|loops? forever|never (termin
 def projected(r):
     if r["bucket"] in (COMPILE, RUNTIME, UNKNOWN):
         return r["bucket"], ""
+    if r["class"] == "speculative execution":
+        if SPECTRE_V1.search(r["title"] + " " + r["desc"]) and "bhb" not in (r["title"] + r["desc"]).lower():
+            return COMPILE, "K1.8 index masking on tainted indices"
+        return OUTSIDE, ""
     if r["class"] in PROJECTION:
         return PROJECTION[r["class"]]
     if r["class"] == "race condition":
@@ -151,6 +178,20 @@ def subsystem(files):
     return top[0]
 
 
+def proved(r):
+    """Outcome with K1.10 as well as K1.1-K1.9."""
+    if r["projected"] == LOGIC and r["class"] in PROVABLE:
+        return PROVED, "K1.10 proof against a specification"
+    return r["projected"], r["via"]
+
+
+def bucket_for_class(cls, atlas):
+    cwe = CLASS_CWE.get(cls, "")
+    if cls in EXTRA_CLASSES and EXTRA_CLASSES[cls][1]:
+        return EXTRA_CLASSES[cls][1], "reviewed class"
+    return bucket_for(cwe, atlas)
+
+
 def bucket_for(cwe, atlas):
     if cwe in OVERRIDE_BUCKET:
         base = atlas[cwe][1] if cwe in atlas else "not in the atlas"
@@ -171,7 +212,6 @@ def check_labels(classified, atlas, name):
     path = os.path.join(ROOT, "tests", "k0", name)
     if not os.path.exists(path):
         return None
-    cwe_of = {c: w for c, w, _ in RULES}
     by_id = {r["id"]: r for r in classified}
     total = same_class = same_outcome = 0
     prevented = {"classifier": 0, "labels": 0}
@@ -181,13 +221,14 @@ def check_labels(classified, atlas, name):
         if not r:
             continue
         total += 1
-        same_class += r["class"] == lab["class"]
-        lab_bucket = bucket_for(cwe_of.get(lab["class"], ""), atlas)[0]
-        same_outcome += r["bucket"] == lab_bucket
-        prevented["classifier"] += r["bucket"] in (COMPILE, RUNTIME)
+        auto_bucket = bucket_for_class(r["auto_class"], atlas)[0]
+        same_class += r["auto_class"] == lab["class"]
+        lab_bucket = bucket_for_class(lab["class"], atlas)[0]
+        same_outcome += auto_bucket == lab_bucket
+        prevented["classifier"] += auto_bucket in (COMPILE, RUNTIME)
         prevented["labels"] += lab_bucket in (COMPILE, RUNTIME)
-        if r["class"] != lab["class"]:
-            misses.append((lab["id"], lab["class"], r["class"]))
+        if r["auto_class"] != lab["class"]:
+            misses.append((lab["id"], lab["class"], r["auto_class"]))
     return total, same_class, same_outcome, misses, prevented
 
 
@@ -206,36 +247,52 @@ def main():
     except OSError:
         snapshot = "unknown"
     atlas = atlas_verdicts()
+    reviewed = {}
+    rpath = os.path.join(HERE, "data", f"reviewed-{year}.csv")
+    if os.path.exists(rpath):
+        reviewed = {x["id"]: x["class"] for x in csv.DictReader(open(rpath))}
     for r in rows:
         cls, cwe, ev = classify(r["title"], r["desc"])
         r["class"], r["cwe"], r["evidence"] = cls, cwe, ev
-        r["bucket"], r["atlas"] = bucket_for(cwe, atlas)
+        r["auto_class"], r["method"] = cls, "classifier"
+        if r["id"] in reviewed:
+            r["class"], r["method"] = reviewed[r["id"]], "reviewed"
+            r["cwe"], r["evidence"] = CLASS_CWE.get(r["class"], ""), "read by a reviewer"
+        r["bucket"], r["atlas"] = bucket_for_class(r["class"], atlas)
         r["subsystem"] = subsystem(r["files"])
         r["projected"], r["via"] = projected(r)
+        r["final"], r["final_via"] = proved(r)
 
     n = len(rows)
     by_bucket = collections.Counter(r["bucket"] for r in rows)
     by_class = collections.Counter((r["class"], r["cwe"], r["bucket"]) for r in rows)
     known = n - by_bucket[UNKNOWN]
+    n_reviewed = sum(r["method"] == "reviewed" for r in rows)
     memory_classes = {"use-after-free", "double or invalid free", "out-of-bounds read",
                       "out-of-bounds write", "NULL dereference", "uninitialised memory"}
     mem = sum(1 for r in rows if r["class"] in memory_classes)
+    prevented = by_bucket[COMPILE] + by_bucket[RUNTIME]
+    proj = collections.Counter(r["projected"] for r in rows)
+    proj_prevented = proj[COMPILE] + proj[RUNTIME]
+    fin = collections.Counter(r["final"] for r in rows)
+    fin_prevented = fin[COMPILE] + fin[RUNTIME] + fin[PROVED]
 
     os.makedirs(os.path.join(HERE, "data"), exist_ok=True)
     with open(os.path.join(HERE, "data", f"kernel-cves-{year}.csv"), "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["id", "published", "subsystem", "class", "cwe", "outcome", "with_k1", "evidence", "title"])
+        w.writerow(["id", "published", "subsystem", "class", "cwe", "method", "outcome", "with_k1",
+                    "with_k1_10", "evidence", "title"])
         for r in rows:
-            w.writerow([r["id"], r["date"], r["subsystem"], r["class"], r["cwe"], r["bucket"],
-                        r["projected"], r["evidence"], r["title"]])
+            w.writerow([r["id"], r["date"], r["subsystem"], r["class"], r["cwe"], r["method"], r["bucket"],
+                        r["projected"], r["final"], r["evidence"], r["title"]])
 
-    proj = collections.Counter(r["projected"] for r in rows)
-    proj_prevented = proj[COMPILE] + proj[RUNTIME]
     tuning = check_labels(rows, atlas, "labels.csv")
     heldout = check_labels(rows, atlas, "labels-heldout.csv")
-    json.dump({"year": year, "total": n, "buckets": {b: by_bucket[b] for b in BUCKETS},
-               "memory_safety": mem,
-               "projected": {b: proj[b] for b in BUCKETS}, "heldout": heldout[:3] if heldout else None},
+    json.dump({"year": year, "total": n, "reviewed": n_reviewed,
+               "buckets": {b: by_bucket[b] for b in BUCKETS}, "memory_safety": mem,
+               "with_k1": {b: proj[b] for b in BUCKETS},
+               "with_k1_10": {b: fin[b] for b in BUCKETS + [PROVED]},
+               "heldout": heldout[:3] if heldout else None},
               open(os.path.join(HERE, "data", f"summary-{year}.json"), "w"), indent=1)
 
     out = []
@@ -245,88 +302,108 @@ def main():
       "every rule are below, so the result can be checked and re-run each year "
       "([DESIGN-MAP.md](DESIGN-MAP.md), section 7, K0).\n")
     p("## Result\n")
-    p(f"**{n:,} CVEs** published in {year} by the Linux kernel's CVE Numbering Authority.\n")
-    p("| Outcome had the code been written in Capstan | CVEs | Share of all | Share of those classified |")
+    p(f"**{n:,} CVEs** published in {year} by the Linux kernel's CVE Numbering Authority. "
+      f"{n - n_reviewed:,} were classified automatically from their fix descriptions and {n_reviewed:,} were "
+      f"read and classified by a reviewer, because the rules could not decide them or decided them wrongly. "
+      f"{by_bucket[UNKNOWN]} remain undeterminable from the record.\n")
+    p("| Outcome had the code been written in Capstan | Today | With K1.1 to K1.9 | With K1.10 proofs |")
     p("|---|---|---|---|")
-    for b in BUCKETS:
-        share_known = pct(by_bucket[b], known) if b != UNKNOWN else ""
-        p(f"| {b} | {by_bucket[b]:,} | {pct(by_bucket[b], n)} | {share_known} |")
-    prevented = by_bucket[COMPILE] + by_bucket[RUNTIME]
+    for b in [COMPILE, RUNTIME, PROVED, LOGIC, OUTSIDE]:
+        today = pct(by_bucket[b], known) if b != PROVED else "\u2013"
+        k1 = pct(proj[b], known) if b != PROVED else "\u2013"
+        p(f"| {b} | {today} | {k1} | {pct(fin[b], known)} |")
+    p(f"| **Prevented or proved absent** | **{pct(prevented, known)}** | **{pct(proj_prevented, known)}** | "
+      f"**{pct(fin_prevented, known)}** |")
     p("")
-    p(f"- **{pct(prevented, known)} of the classified CVEs** ({prevented:,}) are weaknesses Capstan prevents today: "
-      f"{pct(by_bucket[COMPILE], known)} refused by the compiler, {pct(by_bucket[RUNTIME], known)} stopped safely at run time.")
+    p(f"Shares are of the {known:,} CVEs whose weakness is known. Today's column is a measurement of "
+      "Capstan as it stands; the other two are projections of designs in [DESIGN-MAP.md](DESIGN-MAP.md) "
+      "section 7, which hold only if those designs are built as specified, and which K2 tests on real kernel code.\n")
     p(f"- **{pct(mem, n)} of all CVEs** ({mem:,}) are memory-safety bugs: use-after-free, double free, "
-      "out-of-bounds access, NULL dereference and uninitialised memory.")
-    p(f"- **{pct(by_bucket[OUTSIDE], known)}** are outside Capstan's current reach, mostly concurrency and "
-      "resource lifetime: the kernel-mode prerequisites in K1 are aimed at exactly these.")
-    p(f"- **{pct(by_bucket[LOGIC], known)}** are logic errors that no programming language prevents.")
-    p("")
-    p("A safe stop in the kernel is still a crash (a denial of service), but not a corruption an attacker "
+      "out-of-bounds access, NULL dereference and uninitialised memory. Capstan prevents every one of them today.")
+    p(f"- **{pct(prevented, known)} are prevented today**: {pct(by_bucket[COMPILE], known)} refused by the compiler, "
+      f"{pct(by_bucket[RUNTIME], known)} stopped safely at run time.")
+    p("- A safe stop in the kernel is still a crash (a denial of service), but not a corruption an attacker "
       "can turn into code execution or privilege escalation.\n")
-    p("## By weakness class\n")
+    rest = [r for r in rows if r["final"] in (LOGIC, OUTSIDE)]
+    rc = collections.Counter(r["class"] for r in rest)
+    p("### What no design here removes\n")
+    p(f"{len(rest)} CVEs ({pct(len(rest), known)}) stay possible even with every design item, and "
+      f"{by_bucket[UNKNOWN]} cannot be judged:\n")
+    p("| Class | CVEs | Why |")
+    p("|---|---|---|")
+    why = {"hardware or firmware fault": "The device, firmware or processor misbehaves; the driver's workaround "
+           "is a correct program for a wrong machine.",
+           "build or configuration error": "The mistake is in the build or device-tree configuration, not in code.",
+           "speculative execution": "Processor flaws beyond Spectre variant 1 (branch-history injection, VMSCAPE): "
+           "Capstan applies the vendor's barriers, but the leak is in the hardware.",
+           "logic error": "Code outside the specified core: proof (K1.10) needs a specification to prove against.",
+           "insufficient validation": "As logic error.", "race condition": "As logic error.",
+           "hang or infinite loop": "As logic error."}
+    for c, k in rc.most_common():
+        p(f"| {c} | {k} | {why.get(c, '')} |")
+    p("")
+    p("K1.10's proofs apply to the logic errors only where the component's behaviour is specified, and a "
+      "proof is only as good as its specification. The study counts every logic error in a provable class as "
+      "proved absent, so that column is the ceiling the design aims at, not a forecast.\n")
+    p("## By weakness class (today)\n")
     p("| Class | CWE | CVEs | Share | Outcome | Atlas verdict |")
     p("|---|---|---|---|---|---|")
     for (cls, cwe, b), c in sorted(by_class.items(), key=lambda kv: -kv[1]):
         link = f"[{cwe}](https://cwe.mitre.org/data/definitions/{cwe[4:]}.html)" if cwe else ""
-        verdict = bucket_for(cwe, atlas)[1]
+        verdict = bucket_for_class(cls, atlas)[1]
         p(f"| {cls} | {link} | {c:,} | {pct(c, n)} | {b} | {verdict} |")
     p("")
+    p("## What each design item removes\n")
+    via = collections.Counter((r["class"], r["final_via"], r["final"]) for r in rows if r["final_via"])
+    p("| Class | CVEs | Outcome | Design item |")
+    p("|---|---|---|---|")
+    for (cls, v, b), c in sorted(via.items(), key=lambda kv: -kv[1]):
+        p(f"| {cls} | {c:,} | {b} | {v} |")
+    p("")
+    p("Races and hangs count for K1.2, K1.5 and K1.9 only where the description shows the pattern those items "
+      "target (a data race or teardown race; a loop driven by untrusted data). The rest fall to K1.10.\n")
     p("## Kernel adjustments to the atlas\n")
     p("The atlas judges Capstan as it is today, for application code. Where its verdict depends on a feature "
       "kernel code cannot use, or on a construct Capstan simply lacks, the study counts the class as outside "
       "Capstan's reach rather than prevented:\n")
     p("| CWE | Why the atlas verdict does not carry over to the kernel |")
     p("|---|---|")
-    for cwe, why in KERNEL_OVERRIDES.items():
-        p(f"| {cwe} | {why} |")
+    for cwe, why_ in KERNEL_OVERRIDES.items():
+        p(f"| {cwe} | {why_} |")
     p("")
+    p("Classes found only in review are judged the same way: use after device removal (CWE-672), misaligned "
+      "access and aliased mutation of a shared buffer have no counterpart in Capstan today, so they count as "
+      "outside its reach until K1.5, K1.6 and K1.1. Hardware faults and build errors are beyond any language.\n")
     p("Use-after-free and double free are counted as prevented: Capstan has no `free()`, and the "
-      "deterministic memory management planned for kernel code (K1) must keep that guarantee, as Rust's "
-      "ownership does. Some of these use-after-frees begin as races (a work item running after its device "
-      "is gone); the memory error is prevented, the race itself may remain a logic error.\n")
-    p("## With the K1 design\n")
-    p("The K1 items in [DESIGN-MAP.md](DESIGN-MAP.md) (section 7) are designed against the classes above that "
-      "Capstan does not yet prevent. If they are built as designed, the same CVEs would come out as follows. "
-      "This is a projection, not a measurement; K2 tests it on real kernel code.\n")
-    p("| Outcome | Today | With K1 |")
-    p("|---|---|---|")
-    for b in BUCKETS[:4]:
-        p(f"| {b} | {pct(by_bucket[b], known)} | {pct(proj[b], known)} |")
-    p(f"| **Prevented** | **{pct(prevented, known)}** | **{pct(proj_prevented, known)}** |")
-    p("")
-    via = collections.Counter((r["class"], r["via"], r["projected"]) for r in rows if r["via"])
-    p("| Class | CVEs | With K1 | Design item |")
-    p("|---|---|---|---|")
-    for (cls, v, b), c in sorted(via.items(), key=lambda kv: -kv[1]):
-        p(f"| {cls} | {c:,} | {b} | {v} |")
-    p("")
-    p("Still not prevented after K1: races in ordering logic that are not data races or teardown races, "
-      "insufficient validation (K1.9's declared formats make validation the default, but a wrong constraint "
-      "is still a logic error), speculative execution beyond variant 1, and the CVEs whose records do not "
-      "say what went wrong.\n")
+      "deterministic memory management planned for kernel code (K1.1) must keep that guarantee, as Rust's "
+      "ownership does.\n")
     subs = collections.Counter(r["subsystem"] for r in rows if r["bucket"] in (COMPILE, RUNTIME))
     p("## Where the preventable CVEs are\n")
-    p("Subsystems with the most CVEs Capstan would have prevented: candidates for K2.\n")
+    p("Subsystems with the most CVEs Capstan would have prevented today: candidates for K2.\n")
     p("| Subsystem | Preventable CVEs |")
     p("|---|---|")
-    for s, c in subs.most_common(12):
-        p(f"| `{s}` | {c} |")
+    for sname, c in subs.most_common(12):
+        p(f"| `{sname}` | {c} |")
     p("")
     p("## Method\n")
     p("1. **Data.** Every record in the [CVE List](https://github.com/CVEProject/cvelistV5) whose assigner is the "
       f"Linux kernel CNA and whose publication date falls in {year}. Rejected records are excluded. "
       f"Snapshot: commit `{snapshot[:12]}`.")
-    p("2. **Classification.** The kernel CNA almost never assigns a CWE, so each CVE is classified from its "
-      "description, which is the fix commit's message: its subject line, its text, and the sanitiser "
+    p("2. **Automatic classification.** The kernel CNA almost never assigns a CWE, so each CVE is classified from "
+      "its description, which is the fix commit's message: its subject line, its text, and the sanitiser "
       "reports quoted in it (KASAN, UBSAN, KMSAN, KCSAN, lockdep, kmemleak). The rules are regular expressions "
       "in `tools/k0/classify.py`, tried in a fixed order. Memory-safety classes are tried first, so a race "
       "that ends in a use-after-free counts as a use-after-free: that is what a language has to stop.")
-    p("3. **The atlas.** Each class's CWE is looked up in the [CWE atlas](CWE-ATLAS.md), taking its weakest "
+    p(f"3. **Review.** Every CVE the rules could not decide, and every one they called speculative execution, "
+      f"was read and classified by a reviewer ({n_reviewed:,} in all, `tools/k0/data/reviewed-{year}.csv`). "
+      "The review label replaces the automatic one. Where a fix states its consequence (\"leads to a NULL "
+      "dereference\"), the consequence decides, as in step 2.")
+    p("4. **The atlas.** Each class's CWE is looked up in the [CWE atlas](CWE-ATLAS.md), taking its weakest "
       "verdict, then the kernel adjustments above are applied.")
     if heldout:
         t, c, o, _, pv = heldout
-        p(f"4. **Check.** {t} CVEs drawn at random were labelled by reading each fix, before looking at the "
-          f"classifier's answer (`tests/k0/labels-heldout.csv`). The classifier gives the same class for "
+        p(f"5. **Check.** {t} CVEs drawn at random were labelled by reading each fix, before looking at the "
+          f"classifier's answer (`tests/k0/labels-heldout.csv`). The automatic classifier gives the same class for "
           f"{c} ({pct(c, t)}) and the same outcome for {o} ({pct(o, t)}). It counts {pv['classifier']} of the "
           f"{t} as prevented; the hand labels count {pv['labels']}"
           + (", so its errors do not inflate the headline." if pv["classifier"] <= pv["labels"]
@@ -334,29 +411,30 @@ def main():
         if tuning:
             t2, c2, o2, _, _ = tuning
             p(f"   On the {t2}-CVE sample used while writing the rules (`tests/k0/labels.csv`) the figures are "
-              f"{pct(c2, t2)} and {pct(o2, t2)}. Both samples were labelled by the AI assistant that wrote "
-              "the classifier; independent relabelling is the next step.")
+              f"{pct(c2, t2)} and {pct(o2, t2)}.")
     p("")
     p("## Limits\n")
-    p("- Classification is automatic. A description can mention a class it does not fix, and many state the "
-      "symptom rather than the cause. The per-CVE table (`tools/k0/data/`) lets anyone check a row.")
+    p("- The review and both check samples were done by Claude, the AI assistant that wrote the classifier. "
+      "An independent reviewer relabelling them is the next step for the study's credibility.")
+    p("- The automatic classification is right about 60% of the time on class and 70% on outcome (held-out "
+      "sample); it does not overstate prevention there, but individual rows can be wrong. Every row is in "
+      "`tools/k0/data/` with how it was classified.")
+    p("- Review read the fix descriptions, not the code changes. Reading the diffs would settle the four "
+      "undeterminable CVEs and some borderline logic errors.")
     p("- A CVE is not an exploit: the kernel CNA assigns one to almost every fix that might matter. The study "
       "measures weakness classes, not attacks.")
     p("- \"Prevented\" means the weakness could not be written, not that the driver would have been bug-free: "
       "the same mistake in Capstan becomes a compile error or a safe stop, and the programmer must still fix it.")
-    p("- Kernel-mode Capstan (K1) does not exist yet. These are the classes its rules must cover, measured "
-      "against the language as it stands.")
+    p("- Kernel-mode Capstan (K1) does not exist yet. The projections say which classes its rules must cover.")
     p("")
     open(os.path.join(ROOT, "docs", "K0-KERNEL-CVES.md"), "w").write("\n".join(out))
 
-    print(f"{n} CVEs; " + "; ".join(f"{b}: {by_bucket[b]}" for b in BUCKETS))
-    print(f"prevented today {pct(prevented, known)}, with K1 {pct(proj_prevented, known)}")
+    print(f"{n} CVEs ({n_reviewed} reviewed); " + "; ".join(f"{b}: {by_bucket[b]}" for b in BUCKETS))
+    print(f"prevented today {pct(prevented, known)}, with K1 {pct(proj_prevented, known)}, "
+          f"with K1.10 {pct(fin_prevented, known)}")
     for name, lab in (("tuning", tuning), ("held-out", heldout)):
         if lab:
             print(f"{name}: class {lab[1]}/{lab[0]}, outcome {lab[2]}/{lab[0]}")
-            for m in lab[3]:
-                print("  mismatch", *m)
-
 
 if __name__ == "__main__":
     main()

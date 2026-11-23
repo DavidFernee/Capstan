@@ -1,0 +1,589 @@
+id,class,scope
+CVE-2024-47408,out-of-bounds read,not determinable by the classifier
+CVE-2024-49568,out-of-bounds read,not determinable by the classifier
+CVE-2024-49571,out-of-bounds read,not determinable by the classifier
+CVE-2024-49573,logic error,not determinable by the classifier
+CVE-2024-52560,logic error,not determinable by the classifier
+CVE-2024-53682,hardware or firmware fault,not determinable by the classifier
+CVE-2024-53685,hang or infinite loop,not determinable by the classifier
+CVE-2024-53687,improper locking,not determinable by the classifier
+CVE-2024-54031,misaligned access,not determinable by the classifier
+CVE-2024-54193,logic error,not determinable by the classifier
+CVE-2024-54455,NULL dereference,not determinable by the classifier
+CVE-2024-55639,use-after-free,not determinable by the classifier
+CVE-2024-55881,logic error,not determinable by the classifier
+CVE-2024-56372,logic error,not determinable by the classifier
+CVE-2024-56757,resource leak,not determinable by the classifier
+CVE-2024-56761,logic error,not determinable by the classifier
+CVE-2024-56763,insufficient validation,not determinable by the classifier
+CVE-2024-56768,logic error,not determinable by the classifier
+CVE-2024-56771,hardware or firmware fault,not determinable by the classifier
+CVE-2024-56783,logic error,not determinable by the classifier
+CVE-2024-56785,build or configuration error,not determinable by the classifier
+CVE-2024-56787,logic error,not determinable by the classifier
+CVE-2024-57792,out-of-bounds read,not determinable by the classifier
+CVE-2024-57800,unchecked error,not determinable by the classifier
+CVE-2024-57804,race condition,not determinable by the classifier
+CVE-2024-57806,logic error,not determinable by the classifier
+CVE-2024-57838,logic error,not determinable by the classifier
+CVE-2024-57844,use after device removal,not determinable by the classifier
+CVE-2024-57879,resource leak,not determinable by the classifier
+CVE-2024-57895,logic error,not determinable by the classifier
+CVE-2024-57897,logic error,not determinable by the classifier
+CVE-2024-57898,logic error,not determinable by the classifier
+CVE-2024-57899,out-of-bounds read,not determinable by the classifier
+CVE-2024-57904,double or invalid free,not determinable by the classifier
+CVE-2024-57913,logic error,not determinable by the classifier
+CVE-2024-57916,improper locking,not determinable by the classifier
+CVE-2024-57918,out-of-bounds read,not determinable by the classifier
+CVE-2024-57924,logic error,not determinable by the classifier
+CVE-2024-57927,NULL dereference,not determinable by the classifier
+CVE-2024-57928,unchecked error,not determinable by the classifier
+CVE-2024-57930,logic error,not determinable by the classifier
+CVE-2024-57931,logic error,not determinable by the classifier
+CVE-2024-57933,NULL dereference,not determinable by the classifier
+CVE-2024-57935,uninitialised memory,not determinable by the classifier
+CVE-2024-57936,out-of-bounds write,not determinable by the classifier
+CVE-2024-57949,improper locking,not determinable by the classifier
+CVE-2024-57952,logic error,not determinable by the classifier
+CVE-2024-57986,logic error,not determinable by the classifier
+CVE-2024-57987,NULL dereference,not determinable by the classifier
+CVE-2024-57992,double or invalid free,not determinable by the classifier
+CVE-2024-57995,use-after-free,not determinable by the classifier
+CVE-2024-57999,hardware or firmware fault,not determinable by the classifier
+CVE-2024-58001,logic error,not determinable by the classifier
+CVE-2024-58004,use-after-free,not determinable by the classifier
+CVE-2024-58005,logic error,not determinable by the classifier
+CVE-2024-58006,logic error,not determinable by the classifier
+CVE-2024-58008,type confusion,not determinable by the classifier
+CVE-2024-58034,use-after-free,not determinable by the classifier
+CVE-2024-58054,assertion or warning reached,not determinable by the classifier
+CVE-2024-58056,double or invalid free,not determinable by the classifier
+CVE-2024-58057,logic error,not determinable by the classifier
+CVE-2024-58061,insufficient validation,not determinable by the classifier
+CVE-2024-58074,NULL dereference,not determinable by the classifier
+CVE-2024-58075,unchecked error,not determinable by the classifier
+CVE-2024-58077,logic error,not determinable by the classifier
+CVE-2024-58078,double or invalid free,not determinable by the classifier
+CVE-2024-58079,use-after-free,not determinable by the classifier
+CVE-2024-58085,insufficient validation,not determinable by the classifier
+CVE-2024-58086,use-after-free,not determinable by the classifier
+CVE-2024-58092,logic error,not determinable by the classifier
+CVE-2024-58094,NULL dereference,not determinable by the classifier
+CVE-2024-58095,logic error,not determinable by the classifier
+CVE-2024-58096,improper locking,not determinable by the classifier
+CVE-2024-58099,logic error,not determinable by the classifier
+CVE-2024-58238,hardware or firmware fault,not determinable by the classifier
+CVE-2024-58239,logic error,not determinable by the classifier
+CVE-2025-21632,logic error,not determinable by the classifier
+CVE-2025-21643,logic error,not determinable by the classifier
+CVE-2025-21645,logic error,not determinable by the classifier
+CVE-2025-21646,insufficient validation,not determinable by the classifier
+CVE-2025-21648,insufficient validation,not determinable by the classifier
+CVE-2025-21651,race condition,not determinable by the classifier
+CVE-2025-21654,logic error,not determinable by the classifier
+CVE-2025-21657,improper locking,not determinable by the classifier
+CVE-2025-21659,missing authorisation,not determinable by the classifier
+CVE-2025-21660,logic error,not determinable by the classifier
+CVE-2025-21678,use after device removal,not determinable by the classifier
+CVE-2025-21690,logic error,not determinable by the classifier
+CVE-2025-21696,logic error,not determinable by the classifier
+CVE-2025-21697,logic error,not determinable by the classifier
+CVE-2025-21699,logic error,not determinable by the classifier
+CVE-2025-21705,logic error,not determinable by the classifier
+CVE-2025-21706,insufficient validation,not determinable by the classifier
+CVE-2025-21712,use-after-free,not determinable by the classifier
+CVE-2025-21719,type confusion,not determinable by the classifier
+CVE-2025-21728,improper locking,not determinable by the classifier
+CVE-2025-21730,logic error,not determinable by the classifier
+CVE-2025-21733,logic error,not determinable by the classifier
+CVE-2025-21738,out-of-bounds write,not determinable by the classifier
+CVE-2025-21746,NULL dereference,not determinable by the classifier
+CVE-2025-21747,hardware or firmware fault,not determinable by the classifier
+CVE-2025-21752,logic error,not determinable by the classifier
+CVE-2025-21754,logic error,not determinable by the classifier
+CVE-2025-21769,use after device removal,not determinable by the classifier
+CVE-2025-21781,use-after-free,not determinable by the classifier
+CVE-2025-21784,unchecked error,not determinable by the classifier
+CVE-2025-21802,race condition,not determinable by the classifier
+CVE-2025-21805,resource leak,not determinable by the classifier
+CVE-2025-21806,insufficient validation,not determinable by the classifier
+CVE-2025-21808,insufficient validation,not determinable by the classifier
+CVE-2025-21810,uninitialised memory,not determinable by the classifier
+CVE-2025-21822,NULL dereference,not determinable by the classifier
+CVE-2025-21826,insufficient validation,not determinable by the classifier
+CVE-2025-21828,logic error,not determinable by the classifier
+CVE-2025-21829,logic error,not determinable by the classifier
+CVE-2025-21830,insufficient validation,not determinable by the classifier
+CVE-2025-21834,logic error,not determinable by the classifier
+CVE-2025-21836,race condition,not determinable by the classifier
+CVE-2025-21839,logic error,not determinable by the classifier
+CVE-2025-21842,type confusion,not determinable by the classifier
+CVE-2025-21845,logic error,not determinable by the classifier
+CVE-2025-21862,uninitialised memory,not determinable by the classifier
+CVE-2025-21865,logic error,not determinable by the classifier
+CVE-2025-21868,logic error,not determinable by the classifier
+CVE-2025-21869,logic error,not determinable by the classifier
+CVE-2025-21873,unchecked error,not determinable by the classifier
+CVE-2025-21888,logic error,not determinable by the classifier
+CVE-2025-21890,uninitialised memory,not determinable by the classifier
+CVE-2025-21894,insufficient validation,not determinable by the classifier
+CVE-2025-21895,logic error,not determinable by the classifier
+CVE-2025-21902,hardware or firmware fault,not determinable by the classifier
+CVE-2025-21903,NULL dereference,not determinable by the classifier
+CVE-2025-21906,logic error,not determinable by the classifier
+CVE-2025-21907,logic error,not determinable by the classifier
+CVE-2025-21909,insufficient validation,not determinable by the classifier
+CVE-2025-21913,unchecked error,not determinable by the classifier
+CVE-2025-21924,resource leak,not determinable by the classifier
+CVE-2025-21925,aliased mutation,not determinable by the classifier
+CVE-2025-21926,resource leak,not determinable by the classifier
+CVE-2025-21930,logic error,not determinable by the classifier
+CVE-2025-21931,improper locking,not determinable by the classifier
+CVE-2025-21932,logic error,not determinable by the classifier
+CVE-2025-21949,logic error,not determinable by the classifier
+CVE-2025-21952,improper locking,not determinable by the classifier
+CVE-2025-21954,logic error,not determinable by the classifier
+CVE-2025-21955,use-after-free,not determinable by the classifier
+CVE-2025-21956,logic error,not determinable by the classifier
+CVE-2025-21958,logic error,not determinable by the classifier
+CVE-2025-21960,logic error,not determinable by the classifier
+CVE-2025-21961,logic error,not determinable by the classifier
+CVE-2025-21970,assertion or warning reached,not determinable by the classifier
+CVE-2025-21971,insufficient validation,not determinable by the classifier
+CVE-2025-21974,NULL dereference,not determinable by the classifier
+CVE-2025-21976,logic error,not determinable by the classifier
+CVE-2025-21988,race condition,not determinable by the classifier
+CVE-2025-22005,memory leak,not determinable by the classifier
+CVE-2025-22008,race condition,not determinable by the classifier
+CVE-2025-22011,hardware or firmware fault,not determinable by the classifier
+CVE-2025-22012,hardware or firmware fault,not determinable by the classifier
+CVE-2025-22013,logic error,not determinable by the classifier
+CVE-2025-22019,missing authorisation,not determinable by the classifier
+CVE-2025-22021,logic error,not determinable by the classifier
+CVE-2025-22028,logic error,not determinable by the classifier
+CVE-2025-22044,integer overflow,not determinable by the classifier
+CVE-2025-22046,logic error,not determinable by the classifier
+CVE-2025-22049,misaligned access,not determinable by the classifier
+CVE-2025-22061,logic error,not determinable by the classifier
+CVE-2025-22064,double or invalid free,not determinable by the classifier
+CVE-2025-22069,logic error,not determinable by the classifier
+CVE-2025-22074,resource leak,not determinable by the classifier
+CVE-2025-22075,out-of-bounds write,not determinable by the classifier
+CVE-2025-22076,logic error,not determinable by the classifier
+CVE-2025-22078,uninitialised memory,not determinable by the classifier
+CVE-2025-22082,out-of-bounds read,not determinable by the classifier
+CVE-2025-22090,logic error,not determinable by the classifier
+CVE-2025-22095,double or invalid free,not determinable by the classifier
+CVE-2025-22102,hardware or firmware fault,not determinable by the classifier
+CVE-2025-22106,resource leak,not determinable by the classifier
+CVE-2025-22112,out-of-bounds read,not determinable by the classifier
+CVE-2025-22125,logic error,not determinable by the classifier
+CVE-2025-22128,resource leak,not determinable by the classifier
+CVE-2025-23129,resource leak,not determinable by the classifier
+CVE-2025-23130,logic error,not determinable by the classifier
+CVE-2025-23135,logic error,not determinable by the classifier
+CVE-2025-23149,logic error,not determinable by the classifier
+CVE-2025-23152,use-after-free,not determinable by the classifier
+CVE-2025-23153,use-after-free,not determinable by the classifier
+CVE-2025-23154,logic error,not determinable by the classifier
+CVE-2025-37746,type confusion,not determinable by the classifier
+CVE-2025-37751,out-of-bounds read,not determinable by the classifier
+CVE-2025-37756,logic error,not determinable by the classifier
+CVE-2025-37760,logic error,not determinable by the classifier
+CVE-2025-37773,NULL dereference,not determinable by the classifier
+CVE-2025-37775,logic error,not determinable by the classifier
+CVE-2025-37791,out-of-bounds write,not determinable by the classifier
+CVE-2025-37798,logic error,not determinable by the classifier
+CVE-2025-37802,improper locking,not determinable by the classifier
+CVE-2025-37808,improper locking,not determinable by the classifier
+CVE-2025-37813,out-of-bounds read,not determinable by the classifier
+CVE-2025-37815,improper locking,not determinable by the classifier
+CVE-2025-37818,logic error,not determinable by the classifier
+CVE-2025-37822,hardware or firmware fault,not determinable by the classifier
+CVE-2025-37833,hardware or firmware fault,not determinable by the classifier
+CVE-2025-37837,resource leak,not determinable by the classifier
+CVE-2025-37839,logic error,not determinable by the classifier
+CVE-2025-37842,use after device removal,not determinable by the classifier
+CVE-2025-37861,race condition,not determinable by the classifier
+CVE-2025-37863,insufficient validation,not determinable by the classifier
+CVE-2025-37866,logic error,not determinable by the classifier
+CVE-2025-37867,insufficient validation,not determinable by the classifier
+CVE-2025-37873,out-of-bounds read,not determinable by the classifier
+CVE-2025-37876,unchecked error,not determinable by the classifier
+CVE-2025-37877,use-after-free,not determinable by the classifier
+CVE-2025-37878,NULL dereference,not determinable by the classifier
+CVE-2025-37886,use-after-free,not determinable by the classifier
+CVE-2025-37887,uninitialised memory,not determinable by the classifier
+CVE-2025-37889,logic error,not determinable by the classifier
+CVE-2025-37898,logic error,not determinable by the classifier
+CVE-2025-37901,logic error,not determinable by the classifier
+CVE-2025-37908,logic error,not determinable by the classifier
+CVE-2025-37930,race condition,not determinable by the classifier
+CVE-2025-37931,logic error,not determinable by the classifier
+CVE-2025-37932,logic error,not determinable by the classifier
+CVE-2025-37935,logic error,not determinable by the classifier
+CVE-2025-37936,logic error,not determinable by the classifier
+CVE-2025-37938,logic error,not determinable by the classifier
+CVE-2025-37944,logic error,not determinable by the classifier
+CVE-2025-37945,logic error,not determinable by the classifier
+CVE-2025-37950,double or invalid free,not determinable by the classifier
+CVE-2025-37956,insufficient validation,not determinable by the classifier
+CVE-2025-37959,logic error,not determinable by the classifier
+CVE-2025-37960,logic error,not determinable by the classifier
+CVE-2025-37964,race condition,not determinable by the classifier
+CVE-2025-37966,logic error,not determinable by the classifier
+CVE-2025-37977,hardware or firmware fault,not determinable by the classifier
+CVE-2025-37978,improper locking,not determinable by the classifier
+CVE-2025-37991,hardware or firmware fault,not determinable by the classifier
+CVE-2025-37998,insufficient validation,not determinable by the classifier
+CVE-2025-37999,logic error,not determinable by the classifier
+CVE-2025-38002,improper locking,not determinable by the classifier
+CVE-2025-38009,resource leak,not determinable by the classifier
+CVE-2025-38033,build or configuration error,not determinable by the classifier
+CVE-2025-38039,logic error,not determinable by the classifier
+CVE-2025-38042,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38043,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38044,logic error,not determinable by the classifier
+CVE-2025-38045,logic error,not determinable by the classifier
+CVE-2025-38060,logic error,not determinable by the classifier
+CVE-2025-38063,logic error,not determinable by the classifier
+CVE-2025-38065,integer overflow,not determinable by the classifier
+CVE-2025-38066,logic error,not determinable by the classifier
+CVE-2025-38067,insufficient validation,not determinable by the classifier
+CVE-2025-38074,improper locking,not determinable by the classifier
+CVE-2025-38080,out-of-bounds write,not determinable by the classifier
+CVE-2025-38090,out-of-bounds write,not determinable by the classifier
+CVE-2025-38092,NULL dereference,not determinable by the classifier
+CVE-2025-38093,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38096,logic error,not determinable by the classifier
+CVE-2025-38099,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38115,logic error,not determinable by the classifier
+CVE-2025-38128,out-of-bounds read,not determinable by the classifier
+CVE-2025-38130,NULL dereference,not determinable by the classifier
+CVE-2025-38158,logic error,not determinable by the classifier
+CVE-2025-38164,logic error,not determinable by the classifier
+CVE-2025-38165,aliased mutation,not determinable by the classifier
+CVE-2025-38166,logic error,not determinable by the classifier
+CVE-2025-38168,resource leak,not determinable by the classifier
+CVE-2025-38169,logic error,not determinable by the classifier
+CVE-2025-38173,out-of-bounds read,not determinable by the classifier
+CVE-2025-38174,double or invalid free,not determinable by the classifier
+CVE-2025-38177,logic error,not determinable by the classifier
+CVE-2025-38201,insufficient validation,not determinable by the classifier
+CVE-2025-38219,insufficient validation,not determinable by the classifier
+CVE-2025-38223,logic error,not determinable by the classifier
+CVE-2025-38233,logic error,not determinable by the classifier
+CVE-2025-38246,logic error,not determinable by the classifier
+CVE-2025-38252,type confusion,not determinable by the classifier
+CVE-2025-38253,use after device removal,not determinable by the classifier
+CVE-2025-38256,logic error,not determinable by the classifier
+CVE-2025-38261,logic error,not determinable by the classifier
+CVE-2025-38266,type confusion,not determinable by the classifier
+CVE-2025-38267,logic error,not determinable by the classifier
+CVE-2025-38270,logic error,not determinable by the classifier
+CVE-2025-38276,logic error,not determinable by the classifier
+CVE-2025-38278,logic error,not determinable by the classifier
+CVE-2025-38279,logic error,not determinable by the classifier
+CVE-2025-38280,logic error,not determinable by the classifier
+CVE-2025-38282,logic error,not determinable by the classifier
+CVE-2025-38283,NULL dereference,not determinable by the classifier
+CVE-2025-38284,logic error,not determinable by the classifier
+CVE-2025-38285,logic error,not determinable by the classifier
+CVE-2025-38288,improper locking,not determinable by the classifier
+CVE-2025-38290,logic error,not determinable by the classifier
+CVE-2025-38291,logic error,not determinable by the classifier
+CVE-2025-38293,logic error,not determinable by the classifier
+CVE-2025-38294,NULL dereference,not determinable by the classifier
+CVE-2025-38295,improper locking,not determinable by the classifier
+CVE-2025-38296,logic error,not determinable by the classifier
+CVE-2025-38303,out-of-bounds write,not determinable by the classifier
+CVE-2025-38314,logic error,not determinable by the classifier
+CVE-2025-38318,NULL dereference,not determinable by the classifier
+CVE-2025-38321,logic error,not determinable by the classifier
+CVE-2025-38322,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38325,type confusion,not determinable by the classifier
+CVE-2025-38327,logic error,not determinable by the classifier
+CVE-2025-38333,insufficient validation,not determinable by the classifier
+CVE-2025-38334,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38343,insufficient validation,not determinable by the classifier
+CVE-2025-38353,uninitialised memory,not determinable by the classifier
+CVE-2025-38354,race condition,not determinable by the classifier
+CVE-2025-38355,use after device removal,not determinable by the classifier
+CVE-2025-38356,use after device removal,not determinable by the classifier
+CVE-2025-38357,logic error,not determinable by the classifier
+CVE-2025-38369,use after device removal,not determinable by the classifier
+CVE-2025-38370,logic error,not determinable by the classifier
+CVE-2025-38385,logic error,not determinable by the classifier
+CVE-2025-38396,missing authorisation,not determinable by the classifier
+CVE-2025-38406,logic error,not determinable by the classifier
+CVE-2025-38413,out-of-bounds write,not determinable by the classifier
+CVE-2025-38414,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38416,race condition,not determinable by the classifier
+CVE-2025-38424,race condition,not determinable by the classifier
+CVE-2025-38427,logic error,not determinable by the classifier
+CVE-2025-38430,type confusion,not determinable by the classifier
+CVE-2025-38431,logic error,not determinable by the classifier
+CVE-2025-38433,logic error,not determinable by the classifier
+CVE-2025-38434,logic error,not determinable by the classifier
+CVE-2025-38435,logic error,not determinable by the classifier
+CVE-2025-38439,logic error,not determinable by the classifier
+CVE-2025-38444,memory leak,not determinable by the classifier
+CVE-2025-38445,use-after-free,not determinable by the classifier
+CVE-2025-38451,assertion or warning reached,not determinable by the classifier
+CVE-2025-38468,logic error,not determinable by the classifier
+CVE-2025-38469,memory leak,not determinable by the classifier
+CVE-2025-38474,insufficient validation,not determinable by the classifier
+CVE-2025-38479,double or invalid free,not determinable by the classifier
+CVE-2025-38481,insufficient validation,not determinable by the classifier
+CVE-2025-38486,logic error,not determinable by the classifier
+CVE-2025-38489,logic error,not determinable by the classifier
+CVE-2025-38494,insufficient validation,not determinable by the classifier
+CVE-2025-38495,out-of-bounds write,not determinable by the classifier
+CVE-2025-38501,logic error,not determinable by the classifier
+CVE-2025-38503,logic error,not determinable by the classifier
+CVE-2025-38504,logic error,not determinable by the classifier
+CVE-2025-38508,logic error,not determinable by the classifier
+CVE-2025-38512,insufficient validation,not determinable by the classifier
+CVE-2025-38514,NULL dereference,not determinable by the classifier
+CVE-2025-38516,insufficient validation,not determinable by the classifier
+CVE-2025-38518,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38521,logic error,not determinable by the classifier
+CVE-2025-38522,NULL dereference,not determinable by the classifier
+CVE-2025-38523,logic error,not determinable by the classifier
+CVE-2025-38525,improper locking,not determinable by the classifier
+CVE-2025-38528,insufficient validation,not determinable by the classifier
+CVE-2025-38532,uninitialised memory,not determinable by the classifier
+CVE-2025-38535,resource leak,not determinable by the classifier
+CVE-2025-38545,out-of-bounds write,not determinable by the classifier
+CVE-2025-38547,out-of-bounds read,not determinable by the classifier
+CVE-2025-38550,use-after-free,not determinable by the classifier
+CVE-2025-38566,insufficient validation,not determinable by the classifier
+CVE-2025-38571,insufficient validation,not determinable by the classifier
+CVE-2025-38575,double or invalid free,not determinable by the classifier
+CVE-2025-38582,double or invalid free,not determinable by the classifier
+CVE-2025-38586,uninitialised memory,not determinable by the classifier
+CVE-2025-38591,logic error,not determinable by the classifier
+CVE-2025-38601,use-after-free,not determinable by the classifier
+CVE-2025-38605,NULL dereference,not determinable by the classifier
+CVE-2025-38607,logic error,not determinable by the classifier
+CVE-2025-38613,uninitialised memory,not determinable by the classifier
+CVE-2025-38615,logic error,not determinable by the classifier
+CVE-2025-38619,double or invalid free,not determinable by the classifier
+CVE-2025-38622,insufficient validation,not determinable by the classifier
+CVE-2025-38625,logic error,not determinable by the classifier
+CVE-2025-38626,logic error,not determinable by the classifier
+CVE-2025-38631,hardware or firmware fault,not determinable by the classifier
+CVE-2025-38637,logic error,not determinable by the classifier
+CVE-2025-38642,logic error,not determinable by the classifier
+CVE-2025-38658,double or invalid free,not determinable by the classifier
+CVE-2025-38661,out-of-bounds read,not determinable by the classifier
+CVE-2025-38670,improper locking,not determinable by the classifier
+CVE-2025-38678,insufficient validation,not determinable by the classifier
+CVE-2025-38686,type confusion,not determinable by the classifier
+CVE-2025-38698,insufficient validation,not determinable by the classifier
+CVE-2025-38701,insufficient validation,not determinable by the classifier
+CVE-2025-38709,race condition,not determinable by the classifier
+CVE-2025-38712,insufficient validation,not determinable by the classifier
+CVE-2025-39682,logic error,not determinable by the classifier
+CVE-2025-39687,uninitialised memory,not determinable by the classifier
+CVE-2025-39688,logic error,not determinable by the classifier
+CVE-2025-39698,logic error,not determinable by the classifier
+CVE-2025-39700,insufficient validation,not determinable by the classifier
+CVE-2025-39701,logic error,not determinable by the classifier
+CVE-2025-39702,timing side channel,not determinable by the classifier
+CVE-2025-39714,race condition,not determinable by the classifier
+CVE-2025-39722,hardware or firmware fault,not determinable by the classifier
+CVE-2025-39724,hardware or firmware fault,not determinable by the classifier
+CVE-2025-39726,race condition,not determinable by the classifier
+CVE-2025-39733,deadlock,not determinable by the classifier
+CVE-2025-39738,logic error,not determinable by the classifier
+CVE-2025-39739,hardware or firmware fault,not determinable by the classifier
+CVE-2025-39743,logic error,not determinable by the classifier
+CVE-2025-39748,logic error,not determinable by the classifier
+CVE-2025-39753,logic error,not determinable by the classifier
+CVE-2025-39756,insufficient validation,not determinable by the classifier
+CVE-2025-39763,logic error,not determinable by the classifier
+CVE-2025-39765,double or invalid free,not determinable by the classifier
+CVE-2025-39768,logic error,not determinable by the classifier
+CVE-2025-39771,resource leak,not determinable by the classifier
+CVE-2025-39774,race condition,not determinable by the classifier
+CVE-2025-39776,resource leak,not determinable by the classifier
+CVE-2025-39777,type confusion,not determinable by the classifier
+CVE-2025-39780,logic error,not determinable by the classifier
+CVE-2025-39781,logic error,not determinable by the classifier
+CVE-2025-39784,logic error,not determinable by the classifier
+CVE-2025-39794,type confusion,not determinable by the classifier
+CVE-2025-39796,deadlock,not determinable by the classifier
+CVE-2025-39797,logic error,not determinable by the classifier
+CVE-2025-39800,insufficient validation,not determinable by the classifier
+CVE-2025-39801,logic error,not determinable by the classifier
+CVE-2025-39802,improper locking,not determinable by the classifier
+CVE-2025-39803,logic error,not determinable by the classifier
+CVE-2025-39804,improper locking,not determinable by the classifier
+CVE-2025-39805,logic error,not determinable by the classifier
+CVE-2025-39822,integer overflow,not determinable by the classifier
+CVE-2025-39829,resource leak,not determinable by the classifier
+CVE-2025-39831,improper locking,not determinable by the classifier
+CVE-2025-39836,type confusion,not determinable by the classifier
+CVE-2025-39845,logic error,not determinable by the classifier
+CVE-2025-39848,aliased mutation,not determinable by the classifier
+CVE-2025-39853,NULL dereference,not determinable by the classifier
+CVE-2025-39862,logic error,not determinable by the classifier
+CVE-2025-39868,logic error,not determinable by the classifier
+CVE-2025-39874,improper locking,not determinable by the classifier
+CVE-2025-39878,unchecked error,not determinable by the classifier
+CVE-2025-39889,insufficient validation,not determinable by the classifier
+CVE-2025-39894,race condition,not determinable by the classifier
+CVE-2025-39899,resource leak,not determinable by the classifier
+CVE-2025-39900,improper locking,not determinable by the classifier
+CVE-2025-39902,logic error,not determinable by the classifier
+CVE-2025-39907,logic error,not determinable by the classifier
+CVE-2025-39908,improper locking,not determinable by the classifier
+CVE-2025-39911,resource leak,not determinable by the classifier
+CVE-2025-39912,resource leak,not determinable by the classifier
+CVE-2025-39914,logic error,not determinable by the classifier
+CVE-2025-39918,use-after-free,not determinable by the classifier
+CVE-2025-39919,type confusion,not determinable by the classifier
+CVE-2025-39925,resource leak,not determinable by the classifier
+CVE-2025-39930,use-after-free,not determinable by the classifier
+CVE-2025-39931,uninitialised memory,not determinable by the classifier
+CVE-2025-39932,use after device removal,not determinable by the classifier
+CVE-2025-39933,insufficient validation,not determinable by the classifier
+CVE-2025-39942,insufficient validation,not determinable by the classifier
+CVE-2025-39955,logic error,not determinable by the classifier
+CVE-2025-39956,resource leak,not determinable by the classifier
+CVE-2025-39958,logic error,not determinable by the classifier
+CVE-2025-39968,insufficient validation,not determinable by the classifier
+CVE-2025-39976,improper locking,not determinable by the classifier
+CVE-2025-39990,NULL dereference,not determinable by the classifier
+CVE-2025-40019,insufficient validation,not determinable by the classifier
+CVE-2025-40024,use-after-free,not determinable by the classifier
+CVE-2025-40026,logic error,not determinable by the classifier
+CVE-2025-40040,logic error,not determinable by the classifier
+CVE-2025-40050,logic error,not determinable by the classifier
+CVE-2025-40052,type confusion,not determinable by the classifier
+CVE-2025-40057,insufficient validation,not determinable by the classifier
+CVE-2025-40058,hardware or firmware fault,not determinable by the classifier
+CVE-2025-40063,type confusion,not determinable by the classifier
+CVE-2025-40067,insufficient validation,not determinable by the classifier
+CVE-2025-40071,deadlock,not determinable by the classifier
+CVE-2025-40078,logic error,not determinable by the classifier
+CVE-2025-40080,insufficient validation,not determinable by the classifier
+CVE-2025-40087,NULL dereference,not determinable by the classifier
+CVE-2025-40100,logic error,not determinable by the classifier
+CVE-2025-40104,logic error,not determinable by the classifier
+CVE-2025-40109,NULL dereference,not determinable by the classifier
+CVE-2025-40113,hardware or firmware fault,not determinable by the classifier
+CVE-2025-40115,use-after-free,not determinable by the classifier
+CVE-2025-40131,logic error,not determinable by the classifier
+CVE-2025-40132,NULL dereference,not determinable by the classifier
+CVE-2025-40136,logic error,not determinable by the classifier
+CVE-2025-40140,logic error,not determinable by the classifier
+CVE-2025-40145,double or invalid free,not determinable by the classifier
+CVE-2025-40160,logic error,not determinable by the classifier
+CVE-2025-40161,logic error,not determinable by the classifier
+CVE-2025-40163,logic error,not determinable by the classifier
+CVE-2025-40164,improper locking,not determinable by the classifier
+CVE-2025-40165,resource leak,not determinable by the classifier
+CVE-2025-40166,use after device removal,not determinable by the classifier
+CVE-2025-40172,insufficient validation,not determinable by the classifier
+CVE-2025-40173,logic error,not determinable by the classifier
+CVE-2025-40179,insufficient validation,not determinable by the classifier
+CVE-2025-40184,logic error,not determinable by the classifier
+CVE-2025-40188,logic error,not determinable by the classifier
+CVE-2025-40196,logic error,not determinable by the classifier
+CVE-2025-40197,use-after-free,not determinable by the classifier
+CVE-2025-40199,logic error,not determinable by the classifier
+CVE-2025-40200,insufficient validation,not determinable by the classifier
+CVE-2025-40204,timing side channel,not determinable by the classifier
+CVE-2025-40216,logic error,not determinable by the classifier
+CVE-2025-40226,NULL dereference,not determinable by the classifier
+CVE-2025-40230,logic error,not determinable by the classifier
+CVE-2025-40245,uninitialised memory,not determinable by the classifier
+CVE-2025-40253,double or invalid free,not determinable by the classifier
+CVE-2025-40259,improper locking,not determinable by the classifier
+CVE-2025-40261,use after device removal,not determinable by the classifier
+CVE-2025-40263,NULL dereference,not determinable by the classifier
+CVE-2025-40273,resource leak,not determinable by the classifier
+CVE-2025-40282,uninitialised memory,not determinable by the classifier
+CVE-2025-40289,logic error,not determinable by the classifier
+CVE-2025-40302,logic error,not determinable by the classifier
+CVE-2025-40305,logic error,not determinable by the classifier
+CVE-2025-40311,logic error,not determinable by the classifier
+CVE-2025-40312,insufficient validation,not determinable by the classifier
+CVE-2025-40313,insufficient validation,not determinable by the classifier
+CVE-2025-40324,assertion or warning reached,not determinable by the classifier
+CVE-2025-40325,logic error,not determinable by the classifier
+CVE-2025-40326,logic error,not determinable by the classifier
+CVE-2025-40330,use after device removal,not determinable by the classifier
+CVE-2025-40336,out-of-bounds read,not determinable by the classifier
+CVE-2025-40339,NULL dereference,not determinable by the classifier
+CVE-2025-40340,use after device removal,not determinable by the classifier
+CVE-2025-40350,out-of-bounds read,not determinable by the classifier
+CVE-2025-40353,logic error,not determinable by the classifier
+CVE-2025-40356,type confusion,not determinable by the classifier
+CVE-2025-40357,use-after-free,not determinable by the classifier
+CVE-2025-40363,out-of-bounds write,not determinable by the classifier
+CVE-2025-40364,logic error,not determinable by the classifier
+CVE-2025-68175,logic error,not determinable by the classifier
+CVE-2025-68184,hardware or firmware fault,not determinable by the classifier
+CVE-2025-68186,logic error,not determinable by the classifier
+CVE-2025-68189,logic error,not determinable by the classifier
+CVE-2025-68191,logic error,not determinable by the classifier
+CVE-2025-68196,use-after-free,not determinable by the classifier
+CVE-2025-68199,logic error,not determinable by the classifier
+CVE-2025-68200,logic error,not determinable by the classifier
+CVE-2025-68201,logic error,not determinable by the classifier
+CVE-2025-68206,logic error,not determinable by the classifier
+CVE-2025-68207,use after device removal,not determinable by the classifier
+CVE-2025-68216,logic error,not determinable by the classifier
+CVE-2025-68221,logic error,not determinable by the classifier
+CVE-2025-68227,logic error,not determinable by the classifier
+CVE-2025-68231,logic error,not determinable by the classifier
+CVE-2025-68234,logic error,not determinable by the classifier
+CVE-2025-68236,hardware or firmware fault,not determinable by the classifier
+CVE-2025-68239,resource leak,not determinable by the classifier
+CVE-2025-68243,missing authorisation,not determinable by the classifier
+CVE-2025-68248,logic error,not determinable by the classifier
+CVE-2025-68250,misaligned access,not determinable by the classifier
+CVE-2025-68258,insufficient validation,not determinable by the classifier
+CVE-2025-68259,logic error,not determinable by the classifier
+CVE-2025-68281,out-of-bounds write,not determinable by the classifier
+CVE-2025-68294,use-after-free,not determinable by the classifier
+CVE-2025-68297,logic error,not determinable by the classifier
+CVE-2025-68307,resource leak,not determinable by the classifier
+CVE-2025-68311,logic error,not determinable by the classifier
+CVE-2025-68313,hardware or firmware fault,not determinable by the classifier
+CVE-2025-68314,logic error,not determinable by the classifier
+CVE-2025-68317,logic error,not determinable by the classifier
+CVE-2025-68321,logic error,not determinable by the classifier
+CVE-2025-68322,misaligned access,not determinable by the classifier
+CVE-2025-68327,use after device removal,not determinable by the classifier
+CVE-2025-68328,logic error,not determinable by the classifier
+CVE-2025-68329,resource leak,not determinable by the classifier
+CVE-2025-68337,insufficient validation,not determinable by the classifier
+CVE-2025-68342,out-of-bounds read,not determinable by the classifier
+CVE-2025-68343,out-of-bounds read,not determinable by the classifier
+CVE-2025-68357,NULL dereference,not determinable by the classifier
+CVE-2025-68360,logic error,not determinable by the classifier
+CVE-2025-68364,insufficient validation,not determinable by the classifier
+CVE-2025-68370,logic error,not determinable by the classifier
+CVE-2025-68730,use-after-free,not determinable by the classifier
+CVE-2025-68736,logic error,not determinable by the classifier
+CVE-2025-68740,unchecked error,not determinable by the classifier
+CVE-2025-68742,logic error,not determinable by the classifier
+CVE-2025-68743,insufficient validation,not determinable by the classifier
+CVE-2025-68744,memory leak,not determinable by the classifier
+CVE-2025-68746,logic error,not determinable by the classifier
+CVE-2024-58000,speculative execution,classifier said speculative execution
+CVE-2025-21863,speculative execution,classifier said speculative execution
+CVE-2025-37929,out-of-bounds read,classifier said speculative execution
+CVE-2025-37948,speculative execution,classifier said speculative execution
+CVE-2025-40300,speculative execution,classifier said speculative execution
+CVE-2025-40143,logic error,classifier said speculative execution
+CVE-2025-21737,memory leak,classifier said speculative execution
+CVE-2025-22045,logic error,classifier said speculative execution
+CVE-2025-38238,logic error,classifier said speculative execution
+CVE-2025-39989,logic error,classifier said speculative execution
+CVE-2025-40362,missing authorisation,classifier said speculative execution
