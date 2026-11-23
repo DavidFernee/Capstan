@@ -412,13 +412,58 @@ typedef struct CapMap {
     int64_t index_cap;
 } CapMap;
 
+/* Map keys are hashed with SipHash-1-3 under a random key chosen once per process
+   (as Rust and Python do), so an attacker who chooses the keys cannot make them
+   collide and turn every lookup into a scan of the table (hash flooding, CWE-407).
+   cap_siphash is the generic SipHash-c-d; tests check it against the published
+   SipHash-2-4 vectors and an independent implementation. */
+#define CAP_ROTL64(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
+#define CAP_SIPROUND do { \
+    v0 += v1; v1 = CAP_ROTL64(v1, 13); v1 ^= v0; v0 = CAP_ROTL64(v0, 32); \
+    v2 += v3; v3 = CAP_ROTL64(v3, 16); v3 ^= v2; \
+    v0 += v3; v3 = CAP_ROTL64(v3, 21); v3 ^= v0; \
+    v2 += v1; v1 = CAP_ROTL64(v1, 17); v1 ^= v2; v2 = CAP_ROTL64(v2, 32); } while (0)
+
+static uint64_t cap_siphash(const unsigned char *in, size_t len, uint64_t k0, uint64_t k1, int c, int d) {
+    uint64_t v0 = 0x736f6d6570736575ULL ^ k0, v1 = 0x646f72616e646f6dULL ^ k1;
+    uint64_t v2 = 0x6c7967656e657261ULL ^ k0, v3 = 0x7465646279746573ULL ^ k1;
+    size_t full = len - len % 8;
+    for (size_t i = 0; i < full; i += 8) {
+        uint64_t m = 0;
+        for (int j = 7; j >= 0; j--) m = (m << 8) | in[i + (size_t)j];
+        v3 ^= m;
+        for (int r = 0; r < c; r++) CAP_SIPROUND;
+        v0 ^= m;
+    }
+    uint64_t b = (uint64_t)len << 56;
+    for (size_t j = 0; j < len % 8; j++) b |= (uint64_t)in[full + j] << (8 * j);
+    v3 ^= b;
+    for (int r = 0; r < c; r++) CAP_SIPROUND;
+    v0 ^= b;
+    v2 ^= 0xff;
+    for (int r = 0; r < d; r++) CAP_SIPROUND;
+    return v0 ^ v1 ^ v2 ^ v3;
+}
+
+static uint64_t cap_map_k0, cap_map_k1;
+static bool cap_map_keyed;
+
+static void cap_map_key_init(void) {
+    unsigned char k[16];
+    FILE *r = fopen("/dev/urandom", "rb");
+    if (!r || fread(k, 1, 16, r) != 16) { fprintf(stderr, "capstan: no secure randomness available\n"); exit(103); }
+    fclose(r);
+    cap_map_k0 = cap_map_k1 = 0;
+    for (int i = 7; i >= 0; i--) { cap_map_k0 = (cap_map_k0 << 8) | k[i]; cap_map_k1 = (cap_map_k1 << 8) | k[8 + i]; }
+    cap_map_keyed = true;
+}
+
 static uint64_t cap_hash_str(CapStr *s) {
-    uint64_t h = 1469598103934665603ULL;
-    for (int64_t i = 0; i < s->len; i++) { h ^= (unsigned char)s->data[i]; h *= 1099511628211ULL; }
-    return h;
+    return cap_siphash((const unsigned char *)s->data, (size_t)s->len, cap_map_k0, cap_map_k1, 1, 3);
 }
 
 static CapMap *cap_map_new(void) {
+    if (!cap_map_keyed) cap_map_key_init();
     return (CapMap *)cap_alloc(sizeof(CapMap));
 }
 
