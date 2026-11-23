@@ -124,7 +124,7 @@ See [docs/TESTING.md](docs/TESTING.md).
 
 ## Status
 
-Capstan (0.4.0, unreleased) is a working, self-hosting core language with garbage
+Capstan (0.4.0, unreleased) is a working, self-hosting language with garbage
 collection, enums, modules, struct methods and a formatter. It is **not yet production-ready**: `sql_query()` and
 `run()` are demonstration sinks that print rather than execute, and there are no
 generics or concurrency yet. See the [design map](docs/DESIGN-MAP.md).
