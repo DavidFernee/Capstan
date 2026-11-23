@@ -6,8 +6,9 @@ Capstan's goal: **with familiar C/Java syntax, make every common vulnerability c
 either impossible to express or a compile error, and say plainly what remains.**
 
 The long-term aim is **Capstan all the way down**: the compiler, standard library and
-runtime written in Capstan, compiling to machine code without C, with the code that must
-still be trusted reduced to a small, audited and eventually formally verified core.
+runtime written in Capstan, compiling to machine code with no C anywhere, every line
+subject to Capstan's guarantees, and the core proved rather than trusted. Only the
+operating system underneath remains outside Capstan.
 
 ## 2. Design principles
 
@@ -215,6 +216,21 @@ At every stage the existing tests (conformance, CWE atlas, differential and muta
 fuzzing, sanitisers, published vectors) must pass unchanged. Each replaced component is
 also tested against the one it replaces: Capstan's number formatting must match libc's
 byte for byte, its SHA-256 must match the current implementation, and so on.
+
+**The end state: no C.** After stage T11, nothing in Capstan or in a Capstan program is written
+in C: not the compiler, the standard library, the runtime, the system-call layer or the program's
+start-up code. What remains belongs to the platform, not to Capstan:
+
+| Platform | Capstan and its programs | Still underneath |
+|---|---|---|
+| Linux | no C at all: programs call the kernel directly through its stable system-call interface | the kernel |
+| macOS, Windows | no C in Capstan or its programs | the kernel, plus the vendor's system libraries: both platforms require programs to reach the kernel through them (Go had to make the same change on macOS). Everything those calls return is treated as untrusted input |
+| seL4 (formally verified kernel) | no C at all | a kernel with a machine-checked proof of correctness: the highest-assurance target, suited to defence use |
+
+**Bootstrapping without C.** Once the native backend exists, each Capstan release is built by the
+previous one. The Python stage 0 and the C route are kept, but not depended on: they are the
+independent toolchains that diverse double-compiling compares against, so a tampered compiler
+binary would be detected.
 
 **Defending the compiler itself.** Ken Thompson showed that a compiler can be tampered
 with to insert flaws that appear nowhere in its source. Capstan uses David A. Wheeler's
