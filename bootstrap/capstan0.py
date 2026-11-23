@@ -119,6 +119,7 @@ class Parser:
     def __init__(self, toks):
         self.t, self.p = toks, 0
         self.tmp = 0
+        self.pending = []
 
     # -- helpers --
     def peek(self, k=0):
@@ -171,6 +172,8 @@ class Parser:
         out = []
         while self.peek().kind != "eof":
             out.append(self.decl())
+            out += self.pending
+            self.pending = []
         return out
 
     def params(self):
@@ -220,7 +223,12 @@ class Parser:
             fields = []
             while not self.at("}"):
                 self.parse_type()
-                fields.append(self.ident())
+                fname = self.ident()
+                if self.at("("):
+                    ps = ["self"] + self.params()
+                    self.pending.append(("fn", f"{name}__{fname}", ps, self.block()))
+                    continue
+                fields.append(fname)
                 self.eat(";")
             self.eat("}")
             return ("struct", name, fields)
@@ -514,6 +522,10 @@ def _remove_at(l, i):
     if i < 0 or i >= len(l): _panic("list index out of bounds", "CWE-125")
     return l.pop(i)
 _MISSING = object()
+class _Struct:
+    __slots__ = ()
+def _mcall(recv, name, *args):
+    return globals()["fn_" + type(recv).__name__[2:] + "__" + name](recv, *args)
 class _Grant:
     def __init__(self, bound): self.bound = bound
 def _authorize(pol, args):
@@ -611,6 +623,7 @@ METHODS = {
 class Gen:
     def __init__(self):
         self.enums = set()
+        self.methods = set()
         self.out = [PRELUDE]
         self.tmp = 0
         self.loops = []
@@ -652,6 +665,13 @@ class Gen:
         if k == "method":
             if x[1][0] == "var" and x[1][1] in self.enums:
                 return f"_Enum({x[2]!r}, [{', '.join(self.e(a) for a in x[3])}])"
+            if x[2] in self.methods:
+                recv = self.e(x[1])
+                user = f"_mcall({recv}, {x[2]!r}{''.join(', ' + self.e(a) for a in x[3])})"
+                if x[2] not in METHODS:
+                    return user
+                t = self.fresh()
+                return f"(_mcall({t}, {x[2]!r}{''.join(', ' + self.e(a) for a in x[3])}) if isinstance(({t} := {recv}), _Struct) else {METHODS[x[2]](t, [self.e(a) for a in x[3]])})"
             return METHODS[x[2]](self.e(x[1]), [self.e(a) for a in x[3]])
         if k == "call":
             fn = ("b_" if x[1] in BUILTINS else "fn_") + x[1]
@@ -739,10 +759,11 @@ class Gen:
 
     def program(self, decls):
         self.enums = {d[1] for d in decls if d[0] == "enum"}
+        self.methods = {d[1].split("__", 1)[1] for d in decls if d[0] == "fn" and "__" in d[1]}
         for d in decls:
             if d[0] == "struct":
                 fs = d[2]
-                self.emit(0, f"class S_{d[1]}:")
+                self.emit(0, f"class S_{d[1]}(_Struct):")
                 self.emit(1, f"__slots__ = ({', '.join(repr('u_' + f) for f in fs)}{',' if len(fs) == 1 else ''})")
                 self.emit(1, f"def __init__(self, {', '.join('u_' + f for f in fs)}):")
                 for f in fs:

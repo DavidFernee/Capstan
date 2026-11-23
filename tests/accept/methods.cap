@@ -1,0 +1,19 @@
+// Spec: struct methods. A method is a function with an implicit self.
+struct Account {
+    string owner;
+    int balance;
+    void deposit(int amount) { self.balance += amount; }
+    bool can_pay(int amount) { return self.balance >= amount; }
+    string describe() { return self.owner + ": " + int_to_str(self.balance); }
+    int len() { return self.owner.len(); }
+}
+int main() {
+    Account a = new Account{owner: "Ada", balance: 10};
+    a.deposit(5);
+    List<Account> all = new List<Account>();
+    all.push(a);
+    all[0].deposit(1);
+    if (a.can_pay(16)) { println(a.describe() + " can pay"); }
+    println("owner length " + int_to_str(a.len()) + ", list length " + int_to_str(all.len()));
+    return 0;
+}

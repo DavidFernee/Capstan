@@ -8,6 +8,7 @@ struct Parser {
     Ctx ctx;
     bool failed;
     int depth;
+    List<Node> extra;     // methods lifted out of struct bodies
 }
 
 // Deeply nested input must produce a diagnostic, not exhaust the compiler's stack (CWE-674).
@@ -565,8 +566,24 @@ Node parse_decl(Parser p) {
             Node fd = node_here(p, N_FIELD);
             fd.ty = parse_type(p);
             fd.s = expect_ident(p);
-            expect(p, ";");
-            st.kids.push(fd);
+            if (at(p, "(")) {
+                // A method: a function named Struct__name whose first parameter is `self`.
+                Node fn = mk_node(N_FN, fd.file, fd.line);
+                fn.col = fd.col;
+                fn.ty = fd.ty;
+                fn.s = st.s + "__" + fd.s;
+                Node self = mk_node(N_PARAM, fd.file, fd.line);
+                self.s = "self";
+                self.ty = mk_named(TY_STRUCT, st.s);
+                fn.kids.push(self);
+                fn.n = 1;
+                parse_params(p, fn);
+                fn.kids.push(parse_block(p));
+                p.extra.push(fn);
+            } else {
+                expect(p, ";");
+                st.kids.push(fd);
+            }
         }
         expect(p, "}");
         return st;
@@ -622,10 +639,12 @@ Node parse_decl(Parser p) {
 }
 
 List<Node> parse_program(Ctx ctx, List<Token> toks) {
-    Parser p = new Parser{toks: toks, pos: 0, ctx: ctx, failed: false, depth: 0};
+    Parser p = new Parser{toks: toks, pos: 0, ctx: ctx, failed: false, depth: 0, extra: new List<Node>()};
     List<Node> decls = new List<Node>();
     while (!is_eof(p)) {
         decls.push(parse_decl(p));
+        for (int i = 0; i < p.extra.len(); i += 1) { decls.push(p.extra[i]); }
+        p.extra.clear();
     }
     return decls;
 }
