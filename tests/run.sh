@@ -25,6 +25,8 @@
 #   bootstrap    self-hosting fixpoint, the compiler's own --strict check, alternate C compiler
 #   examples     example programs pass --release checks and their own tests
 #   fmt          the formatter: expected layout, idempotence, house style, whitespace and corruption fuzzing
+#   supply chain SBOM generation, the reproducibility report, the release verifier against good
+#                and tampered releases, and the workflow hardening rules (tests/supply/)
 #   coverage     (--full) line coverage of compiler, formatter and runtime, with floors
 #   mutation     (--full) injected compiler bugs must be caught by the suite
 #   bench        (--full) speed against hand-written C, with a regression limit
@@ -233,6 +235,10 @@ else bad "fmt modes" "check exit $c1, refuse exit $c2"; fi
 FMT_N=3; COR_N=2; (( FULL )) && { FMT_N=30; COR_N=20; }
 if out="$(cd "$ROOT" && $PY tests/fmt/perturb.py "$F" $FMT_N "${FUZZ_SEED:-$RANDOM}" $STYLED 2>&1)"; then ok "$out"; else bad "fmt whitespace fuzz" "$out"; fi
 if out="$(cd "$ROOT" && $PY tests/fmt/perturb.py --corrupt "$F" $COR_N "${FUZZ_SEED:-$RANDOM}" $STYLED 2>&1)"; then ok "$out"; else bad "fmt corruption fuzz" "$out"; fi
+
+section "supply chain: SBOM, reproducibility report, release verifier, workflow hardening"
+if out="$("$ROOT/tests/supply/test_supply.sh" 2>&1)"; then ok "$(tail -1 <<<"$out")"; grep '^  pass' <<<"$out" | sed 's/^  pass  /      /'
+else bad "supply chain" "$(grep -A3 'FAIL' <<<"$out" | head -8)"; fi
 
 if (( FULL )); then
   section "coverage"

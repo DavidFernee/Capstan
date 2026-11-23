@@ -1,10 +1,21 @@
 name: release
-# Pushing a tag vX.Y.Z publishes a release only if every check passes on every platform.
+# Pushing a tag vX.Y.Z publishes a release only if every check passes on every platform,
+# with supply-chain evidence: a CycloneDX and an SPDX SBOM, SLSA build provenance (GitHub
+# artifact attestations), keyless Sigstore signatures for every file, and the compiler's
+# reproducibility reports. scripts/verify-release.sh checks all of it before publishing, and
+# lets anyone check a downloaded release the same way (docs/TESTING.md, "Verifying a release").
+#
+# Each job gets only the permissions it needs: verify and assemble read the repository; sign
+# may mint an OIDC token and write attestations but cannot change the repository; publish may
+# create the release but runs no repository code. Every action is pinned by commit.
 on:
   push:
     tags: ["v*"]
 permissions:
-  contents: write
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
   verify:
     strategy:
@@ -17,44 +28,157 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       CC: ${{ matrix.cc }}
+      PLATFORM: ${{ matrix.os }}-${{ matrix.cc }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Bootstrap from stage 0 (verifies the self-hosting fixpoint)
         run: make
       - name: Version and changelog consistency
         run: scripts/release-check.sh "${GITHUB_REF_NAME}"
+      - name: Reproducibility report (fixpoint and checksums of build/stage2.c and build/stage3.c)
+        run: scripts/repro.sh "reproducibility-${PLATFORM}.txt"
       - name: Full test suite (long fuzzing, sanitizers, benchmarks)
         run: |
           set -o pipefail
-          FUZZ_SEED="${GITHUB_RUN_ID}" tests/run.sh --full 2>&1 | tee "test-report-${{ matrix.os }}-${{ matrix.cc }}.txt"
-      - uses: actions/upload-artifact@v4
+          FUZZ_SEED="${GITHUB_RUN_ID}" tests/run.sh --full 2>&1 | tee "test-report-${PLATFORM}.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: test-report-${{ matrix.os }}-${{ matrix.cc }}
+          name: evidence-${{ matrix.os }}-${{ matrix.cc }}
           path: |
             test-report-*.txt
-            tests/fuzz/failures/
+            reproducibility-*.txt
           if-no-files-found: ignore
-  publish:
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: failures-${{ matrix.os }}-${{ matrix.cc }}
+          path: |
+            tests/fuzz/failures/
+            tests/fmt/failures/
+          if-no-files-found: ignore
+
+  # Source archive, SBOMs and checksums, checked before anything is signed.
+  assemble:
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: reports
-      - name: Source archive and checksums
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: evidence-*
+          merge-multiple: true
+          path: dist
+      - name: Source archive
+        run: |
+          [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad tag"; exit 1; }
+          ver="${GITHUB_REF_NAME#v}"
+          git archive --format=tar.gz --prefix="capstan-${ver}/" -o "dist/capstan-${ver}.tar.gz" "${GITHUB_SHA}"
+      - name: SBOM (CycloneDX 1.6 and SPDX 2.3)
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          git archive --format=tar.gz --prefix="capstan-${ver}/" -o "capstan-${ver}.tar.gz" "${GITHUB_REF_NAME}"
-          cp reports/*/test-report-*.txt .
-          sha256sum capstan-*.tar.gz test-report-*.txt > SHA256SUMS
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct "${GITHUB_SHA}")" python3 -I scripts/sbom.py generate \
+            --archive "dist/capstan-${ver}.tar.gz" --commit "${GITHUB_SHA}" \
+            --cyclonedx "dist/capstan-${ver}.cdx.json" --spdx "dist/capstan-${ver}.spdx.json"
+      - name: Validate the SBOMs against the CycloneDX and SPDX schemas
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          python3 -m venv "${RUNNER_TEMP}/sbom-venv"
+          "${RUNNER_TEMP}/sbom-venv/bin/pip" install --quiet --require-hashes --only-binary :all: -r scripts/sbom-schema-requirements.txt
+          "${RUNNER_TEMP}/sbom-venv/bin/python" -I scripts/sbom-validate.py \
+            --cyclonedx "dist/capstan-${ver}.cdx.json" --spdx "dist/capstan-${ver}.spdx.json"
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum -- * > ../SHA256SUMS && mv ../SHA256SUMS . && cat SHA256SUMS
+      - name: Check the unsigned release, including a rebuild of the archive
+        run: scripts/verify-release.sh --skip-signatures --skip-attestations --rebuild "${GITHUB_REF_NAME}" dist
       - name: Release notes from the changelog
         run: |
           ver="${GITHUB_REF_NAME#v}"
           awk -v v="## ${ver}" '$0 == v {on = 1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
-          printf '\n\nEvery check in tests/run.sh --full passed on Linux (GCC, Clang) and macOS (Clang); the reports are attached.\n' >> notes.md
+          cat >> notes.md <<'EOF'
+
+          Every check in tests/run.sh --full passed on Linux (GCC, Clang) and macOS (Clang); the reports are attached.
+
+          Supply-chain evidence: CycloneDX and SPDX SBOMs, SLSA build provenance (GitHub artifact attestations,
+          also attached as a Sigstore bundle), a keyless Sigstore signature for every file, and reproducibility
+          reports showing the compiler reproduced itself byte for byte on every platform with the same checksums.
+          To verify a download: scripts/verify-release.sh (see docs/TESTING.md, "Verifying a release").
+          EOF
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned-release
+          path: |
+            dist/
+            notes.md
+          if-no-files-found: error
+
+  # Provenance and signatures. May mint an OIDC token for Sigstore and write attestations;
+  # cannot write to the repository.
+  sign:
+    needs: assemble
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned-release
+          path: release
+      - name: Every file is as assembled
+        working-directory: release/dist
+        run: sha256sum -c SHA256SUMS
+      - name: SLSA build provenance
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/dist/*
+      - name: Attach the provenance bundle
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "${BUNDLE}" "release/dist/capstan-${GITHUB_REF_NAME#v}.intoto.jsonl"
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3 (cosign v3.1.4)
+      - name: Sign every file (keyless, GitHub OIDC)
+        working-directory: release/dist
+        run: |
+          while read -r _ f; do
+            cosign sign-blob --yes --bundle "${f}.sigstore.json" "${f}" > /dev/null
+          done < SHA256SUMS
+          cosign sign-blob --yes --bundle SHA256SUMS.sigstore.json SHA256SUMS > /dev/null
+      - name: Verify signatures and provenance exactly as a user would
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/verify-release.sh --repo "${GITHUB_REPOSITORY}" "${GITHUB_REF_NAME}" release/dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signed-release
+          path: release/
+          if-no-files-found: error
+
+  # The only job that can write to the repository: it creates the release from the verified
+  # files and runs no repository code.
+  publish:
+    needs: sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: signed-release
+          path: release
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" --title "Capstan ${GITHUB_REF_NAME}" --notes-file notes.md capstan-*.tar.gz test-report-*.txt SHA256SUMS
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --verify-tag \
+            --title "Capstan ${GITHUB_REF_NAME}" --notes-file release/notes.md release/dist/*
