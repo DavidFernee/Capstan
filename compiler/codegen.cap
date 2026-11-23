@@ -400,8 +400,13 @@ string gen_call(Gen g, Node e) {
     }
     Seq s2 = operands(g, e, 0);
     string extra = "";
+    string cf = builtin_c(f);
     if (builtin_needs_loc(f)) { extra = loc(e); }
-    return wrap(s2, builtin_c(f) + "(" + call_list(s2.names, 0, extra) + ")");
+    if (f == "read_file" && e.kids.len() == 2) {
+        cf = "cap_read_file_max";
+        extra = loc(e);
+    }
+    return wrap(s2, cf + "(" + call_list(s2.names, 0, extra) + ")");
 }
 
 // ---- statements ---------------------------------------------------------------
