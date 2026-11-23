@@ -8,6 +8,14 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 - Collector returns empty pages to the operating system beyond a reserve, and reuses them for any
   size class before requesting new memory; empty pages are no longer swept. A program that builds
   and drops 140 MB ends at 53 MB resident instead of 180 MB and runs 2.6 times faster
+- `List<bool>` stores its elements as C `bool` rather than `uint8_t`: a byte store may alias
+  anything, so the C compiler reloaded the list's length and storage after every write. The
+  `arrays` benchmark runs 16% fewer instructions.
+- Maps hash their keys with SipHash-1-3 under a random key chosen once per process, instead of
+  FNV-1a: keys an attacker chooses can no longer be made to collide and turn every lookup into a
+  scan (hash flooding, CWE-407). Iteration order is unchanged (insertion order). Checked against
+  the published SipHash vectors and an independent implementation; about 5% slower on the
+  map-heaviest benchmark.
 - `int_to_str` writes digits itself instead of calling `snprintf` (which was 38% of the `strings`
   benchmark): that benchmark goes from 1.9× C to 1.2×, and one more libc formatting call leaves the
   runtime. Checked against `snprintf` on every power-of-ten boundary and a million random values.
@@ -26,6 +34,15 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   `read_file(path, max)`), so `/dev/zero` or an endless pipe cannot exhaust memory (CWE-400), and
   opening a FIFO with no writer no longer blocks. The compiler, formatter and language server read
   source files of at most 16 MiB.
+- Security fixes from an attack review of the compiler (each with a regression test and an atlas
+  entry): bytes of untrusted input stay untrusted when used as list indexes, slice bounds or map
+  keys (CWE-20); shells, interpreters and launchers named in `run()` take only literal arguments
+  (CWE-78); every computed `run()` argument follows `"--"`, and `validate_path()` refuses a leading
+  `-` (CWE-88); `escape_html()` output is rejected in unquoted, URL, event-handler and style
+  attributes and in script, style and comment blocks (CWE-79); `hash()` of a `Secret` is an error
+  (CWE-532); bidirectional and zero-width characters are rejected in source (CWE-1007, Trojan
+  Source); grants are re-evaluated at each protected call (CWE-367)
+- Threat model brought up to date with signed releases, SBOMs and attestations
 - `read_bytes(n)` and `flush()`: read exactly `n` bytes of standard input (untrusted, like
   `read_line`; `n` outside 0..2^30 stops with CWE-789) and write out what has been printed, so a
   Capstan program can hold a framed conversation over a pipe. The language server needs both.

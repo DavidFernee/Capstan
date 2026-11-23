@@ -1,0 +1,15 @@
+// expect: CWE-20
+// spec: types.tainted types.map
+// A map from the decimal text of each byte to its character launders through the key.
+int main() {
+    if (let t = read_line()) {
+        Map<string> m = new Map<string>();
+        for (int c = 0; c < 256; c += 1) { m.set(int_to_str(c), char_str(c)); }
+        string out = "";
+        for (int i = 0; i < t.len(); i += 1) {
+            if (let ch = m.get(int_to_str(t.at(i)))) { out = out + ch; }
+        }
+        sql_query("SELECT ?", out);
+    }
+    return 0;
+}

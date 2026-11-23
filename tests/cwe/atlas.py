@@ -593,6 +593,41 @@ add(1394, "Use of default cryptographic key", "reject", "int main() { string pri
 
 # ---------------------------------------------------------------- harness
 
+# ---- found in the November 2026 attack review --------------------------------------------------
+TABLE = "List<string> table = new List<string>(); for (int c = 0; c < 256; c += 1) { table.push(char_str(c)); } "
+add(20, "Improper input validation (laundering through a lookup table)", "reject",
+    "int main() { if (let t = read_line()) { " + TABLE + "string out = \"\"; for (int i = 0; i < t.len(); i += 1) { out = out + table[t.at(i)]; } sql_query(\"SELECT ?\", out); } return 0; }", "CWE-20",
+    "Bytes of untrusted input are tainted integers: selecting trusted text with them (list index, slice, map key) is rejected.")
+add(78, "OS command injection (through a shell named as the program)", "reject",
+    'int main() { if (let t = read_line()) { run("sh", "-c", "--", t); } return 0; }', "CWE-78",
+    "Shells, interpreters and launchers (sh, env, python, xargs and others) take only literal arguments.")
+add(88, "Argument injection (computed argument read as an option)", "reject",
+    'int main() { if (let t = read_line()) { if (let n = validate_int(t)) { run("head", "-n", int_to_str(n), "log"); } } return 0; }', "CWE-88",
+    "Every computed argument must follow a literal \"--\"; validate_path() also refuses a leading '-'.")
+add(79, "Cross-site scripting (escaped text in an unquoted attribute)", "reject",
+    'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<img src=" + escape_html(t) + ">"); } return 0; }', "CWE-79")
+add(79, "Cross-site scripting (escaped text in a URL attribute)", "reject",
+    'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<a href=\\"" + escape_html(t) + "\\">x</a>"); } return 0; }', "CWE-79")
+add(79, "Cross-site scripting (escaped text in a script block)", "reject",
+    'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<script>var n = \'" + escape_html(t) + "\';</script>"); } return 0; }', "CWE-79")
+add(79, "Cross-site scripting (Html assembled across separate statements)", "gap",
+    'int main() { if (let t = read_line()) { Html v = escape_html(t); Html page = "<img src=" + v + ">"; bool ok = write_file("p.html", page); } return 0; }',
+    note="The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap.")
+add(1007, "Insufficient visual distinction of homoglyphs and invisible characters (Trojan Source)", "reject",
+    "int main() { bool admin = false; /* \u202e } \u2066if (admin)\u2069 \u2066 */ return 0; }", "CWE-1007",
+    "Bidirectional controls and zero-width characters are rejected anywhere in source (CVE-2021-42574).")
+add(532, "Insertion of sensitive information into output (hash of a secret)", "reject",
+    'int main() { if (let s = secret_env("PIN")) { println(hash(s)); } return 0; }', "CWE-532",
+    "A fast hash of a short secret is reversed by trying every value.")
+add(367, "Time-of-check time-of-use (grant used after the checked data changed)", "runtime",
+    "struct User { int id; }\nsensitive struct Doc { int owner; string body; }\npolicy CanRead(User u, Doc d) { return u.id == d.owner; }\n"
+    "protected(CanRead) string read_doc(Grant<CanRead> g, Doc d) { return d.body; }\n"
+    "protected(CanRead) void transfer(Grant<CanRead> g, Doc d, int to) { d.owner = to; }\n"
+    "test \"deny\" { assert_denied CanRead(new User{id: 1}, new Doc{owner: 2, body: \"x\"}); }\n"
+    "int main() { User me = new User{id: 1}; Doc d = new Doc{owner: 1, body: \"p\"}; if (let g = authorize CanRead(me, d)) { transfer(g, d, 2); println(read_doc(g, d)); } return 0; }",
+    "CWE-367", "Each protected call evaluates the policy again on the grant's arguments.")
+
+
 STRICT_NOTE = "--strict"
 
 

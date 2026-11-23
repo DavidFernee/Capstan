@@ -332,19 +332,22 @@ static void cap_list_sort_s(CapList *l) {
 }
 
 /* Packed List<bool>: one byte per element instead of eight. */
-typedef struct CapBList { int64_t len, cap; uint8_t *items; } CapBList;
+/* Elements are stored as bool, not uint8_t: a store through a character type may
+   alias anything, which forced the C compiler to reload len and items after every
+   write in a loop; bool stores cannot alias the int64_t fields. */
+typedef struct CapBList { int64_t len, cap; bool *items; } CapBList;
 
 static CapBList *cap_blist_new(void) { return (CapBList *)cap_alloc(sizeof(CapBList)); }
 
 static inline void cap_blist_push(CapBList *l, bool v) {
     if (CAP_UNLIKELY(l->len == l->cap)) {
         int64_t nc = l->cap ? l->cap * 2 : 16;
-        uint8_t *ni = (uint8_t *)cap_alloc_atomic((size_t)nc);
-        if (l->len) memcpy(ni, l->items, (size_t)l->len);
+        bool *ni = (bool *)cap_alloc_atomic((size_t)nc * sizeof(bool));
+        if (l->len) memcpy(ni, l->items, (size_t)l->len * sizeof(bool));
         l->items = ni;
         l->cap = nc;
     }
-    l->items[l->len++] = (uint8_t)v;
+    l->items[l->len++] = v;
 }
 
 static inline bool cap_blist_get(CapBList *l, int64_t i, int64_t loc) {
@@ -354,10 +357,10 @@ static inline bool cap_blist_get(CapBList *l, int64_t i, int64_t loc) {
 
 static inline void cap_blist_set(CapBList *l, int64_t i, bool v, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-787", loc);
-    l->items[i] = (uint8_t)v;
+    l->items[i] = v;
 }
 static inline bool cap_blist_get_proved(CapBList *l, int64_t i, int64_t loc) { (void)loc; return l->items[i]; }
-static inline void cap_blist_set_proved(CapBList *l, int64_t i, bool v, int64_t loc) { (void)loc; l->items[i] = (uint8_t)v; }
+static inline void cap_blist_set_proved(CapBList *l, int64_t i, bool v, int64_t loc) { (void)loc; l->items[i] = v; }
 
 static int64_t *cap_blist_pop(CapBList *l) {
     if (l->len == 0) return NULL;
@@ -369,7 +372,7 @@ static void cap_blist_clear(CapBList *l) { l->len = 0; }
 static bool cap_blist_remove(CapBList *l, int64_t i, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-125", loc);
     bool v = l->items[i];
-    memmove(l->items + i, l->items + i + 1, (size_t)(l->len - i - 1));
+    memmove(l->items + i, l->items + i + 1, (size_t)(l->len - i - 1) * sizeof(bool));
     l->len--;
     return v;
 }
@@ -377,8 +380,8 @@ static bool cap_blist_remove(CapBList *l, int64_t i, int64_t loc) {
 static void cap_blist_insert(CapBList *l, int64_t i, bool v, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i > (uint64_t)l->len)) cap_panic("list insert position out of bounds", "CWE-787", loc);
     cap_blist_push(l, v);
-    memmove(l->items + i + 1, l->items + i, (size_t)(l->len - 1 - i));
-    l->items[i] = (uint8_t)v;
+    memmove(l->items + i + 1, l->items + i, (size_t)(l->len - 1 - i) * sizeof(bool));
+    l->items[i] = v;
 }
 
 static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {
@@ -412,13 +415,58 @@ typedef struct CapMap {
     int64_t index_cap;
 } CapMap;
 
+/* Map keys are hashed with SipHash-1-3 under a random key chosen once per process
+   (as Rust and Python do), so an attacker who chooses the keys cannot make them
+   collide and turn every lookup into a scan of the table (hash flooding, CWE-407).
+   cap_siphash is the generic SipHash-c-d; tests check it against the published
+   SipHash-2-4 vectors and an independent implementation. */
+#define CAP_ROTL64(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
+#define CAP_SIPROUND do { \
+    v0 += v1; v1 = CAP_ROTL64(v1, 13); v1 ^= v0; v0 = CAP_ROTL64(v0, 32); \
+    v2 += v3; v3 = CAP_ROTL64(v3, 16); v3 ^= v2; \
+    v0 += v3; v3 = CAP_ROTL64(v3, 21); v3 ^= v0; \
+    v2 += v1; v1 = CAP_ROTL64(v1, 17); v1 ^= v2; v2 = CAP_ROTL64(v2, 32); } while (0)
+
+static uint64_t cap_siphash(const unsigned char *in, size_t len, uint64_t k0, uint64_t k1, int c, int d) {
+    uint64_t v0 = 0x736f6d6570736575ULL ^ k0, v1 = 0x646f72616e646f6dULL ^ k1;
+    uint64_t v2 = 0x6c7967656e657261ULL ^ k0, v3 = 0x7465646279746573ULL ^ k1;
+    size_t full = len - len % 8;
+    for (size_t i = 0; i < full; i += 8) {
+        uint64_t m = 0;
+        for (int j = 7; j >= 0; j--) m = (m << 8) | in[i + (size_t)j];
+        v3 ^= m;
+        for (int r = 0; r < c; r++) CAP_SIPROUND;
+        v0 ^= m;
+    }
+    uint64_t b = (uint64_t)len << 56;
+    for (size_t j = 0; j < len % 8; j++) b |= (uint64_t)in[full + j] << (8 * j);
+    v3 ^= b;
+    for (int r = 0; r < c; r++) CAP_SIPROUND;
+    v0 ^= b;
+    v2 ^= 0xff;
+    for (int r = 0; r < d; r++) CAP_SIPROUND;
+    return v0 ^ v1 ^ v2 ^ v3;
+}
+
+static uint64_t cap_map_k0, cap_map_k1;
+static bool cap_map_keyed;
+
+static void cap_map_key_init(void) {
+    unsigned char k[16];
+    FILE *r = fopen("/dev/urandom", "rb");
+    if (!r || fread(k, 1, 16, r) != 16) { fprintf(stderr, "capstan: no secure randomness available\n"); exit(103); }
+    fclose(r);
+    cap_map_k0 = cap_map_k1 = 0;
+    for (int i = 7; i >= 0; i--) { cap_map_k0 = (cap_map_k0 << 8) | k[i]; cap_map_k1 = (cap_map_k1 << 8) | k[8 + i]; }
+    cap_map_keyed = true;
+}
+
 static uint64_t cap_hash_str(CapStr *s) {
-    uint64_t h = 1469598103934665603ULL;
-    for (int64_t i = 0; i < s->len; i++) { h ^= (unsigned char)s->data[i]; h *= 1099511628211ULL; }
-    return h;
+    return cap_siphash((const unsigned char *)s->data, (size_t)s->len, cap_map_k0, cap_map_k1, 1, 3);
 }
 
 static CapMap *cap_map_new(void) {
+    if (!cap_map_keyed) cap_map_key_init();
     return (CapMap *)cap_alloc(sizeof(CapMap));
 }
 
@@ -511,7 +559,12 @@ static CapList *cap_map_keys(CapMap *m) {
 /* ------------------------------------------------------------------ */
 
 #define CAP_GRANT_MAX 8
-typedef struct CapGrant { int64_t policy; int64_t n; void *bound[CAP_GRANT_MAX]; } CapGrant;
+/* A grant also keeps the policy's arguments and a function that evaluates the policy on them
+   again, so a protected call fails if what the policy checked has changed since (CWE-367). */
+typedef struct CapGrant {
+    int64_t policy; int64_t n; void *bound[CAP_GRANT_MAX];
+    bool (*recheck)(void *args); void *args;
+} CapGrant;
 
 static CapGrant *cap_grant_new(int64_t policy) {
     CapGrant *g = (CapGrant *)cap_alloc(sizeof(CapGrant));
@@ -522,6 +575,11 @@ static CapGrant *cap_grant_new(int64_t policy) {
 static CapGrant *cap_grant_bind(CapGrant *g, void *obj) {
     if (g->n < CAP_GRANT_MAX) g->bound[g->n++] = obj;
     return g;
+}
+
+static void cap_grant_recheck(CapGrant *g, int64_t loc) {
+    if (g->recheck && !g->recheck(g->args))
+        cap_panic("the policy no longer allows this: what it checked has changed since the grant was issued", "CWE-367", loc);
 }
 
 /* A grant is only valid for the exact objects it was issued for. */
@@ -731,7 +789,8 @@ static CapStr *cap_escape_html(CapStr *t) {
 /* A relative path inside the current directory tree: segments of letters, digits,
    '_', '-' and '.', never "." or "..", never absolute (CWE-22). */
 static CapStr *cap_validate_path(CapStr *t) {
-    if (t->len == 0 || t->len > 4096 || t->data[0] == '/') return NULL;
+    /* A leading '-' would be read as an option by most programs (CWE-88). */
+    if (t->len == 0 || t->len > 4096 || t->data[0] == '/' || t->data[0] == '-') return NULL;
     int64_t seg = 0;
     for (int64_t i = 0; i <= t->len; i++) {
         if (i == t->len || t->data[i] == '/') {

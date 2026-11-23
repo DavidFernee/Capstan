@@ -9,17 +9,17 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**254 weaknesses, 281 attempts.** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 291 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
 | Prevented: rejected at compile time | 80 |
-| Prevented: stopped safely at run time | 24 |
+| Prevented: stopped safely at run time | 25 |
 | Prevented: attempt compiles but has no effect | 16 |
-| Inexpressible: the construct does not exist | 72 |
+| Inexpressible: the construct does not exist | 71 |
 | Possible only through an audited escape hatch | 2 |
 | Logic or design decision: beyond any language | 22 |
-| **Gap: can be written** | 5 |
+| **Gap: can be written** | 6 |
 | Not applicable (yet) | 33 |
 
 ## Gaps: weaknesses that can still be written
@@ -34,6 +34,7 @@ closes a gap the test fails and the entry is reclassified.
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | `int main() { if (let x = read_line()) { string stored = hash(x); } return 0; }` | Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap). |
 | [862](https://cwe.mitre.org/data/definitions/862.html) | Missing authorization (data type not declared sensitive) | `string read_any(Record r) { return r.body; }` | Protection starts when the type is declared sensitive. It is declared once per type, not per function, but it can still be forgotten. |
 | [306](https://cwe.mitre.org/data/definitions/306.html) | Missing authentication for critical function | `void delete_all_records() { }` | An operation that touches no sensitive data value cannot be recognised as critical; it must be declared protected. |
+| [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (Html assembled across separate statements) | `int main() { if (let t = read_line()) { Html v = escape_html(t); Html page = "<img src=...` | The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap. |
 
 ## Beyond any language: logic and design decisions
 
@@ -76,6 +77,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation | Prevented: rejected at compile time | `CWE-20`. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a list | Prevented: rejected at compile time | `CWE-20`. Collections and structs that hold bytes of untrusted input are tracked too. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a struct field | Prevented: rejected at compile time | `CWE-20`. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a lookup table) | Prevented: rejected at compile time | `CWE-20`. Bytes of untrusted input are tainted integers: selecting trusted text with them (list index, slice, map key) is rejected. |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal (via an audited trust()) | Possible only through an audited escape hatch | Possible only through trust(), which needs a written justification and is reported in every build. validate_path() is the safe route. |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal (attempt through validate_path) | Prevented: attempt compiles but has no effect |  |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal | Prevented: rejected at compile time | `CWE-20`. |
@@ -87,12 +89,18 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [77](https://cwe.mitre.org/data/definitions/77.html) | Command injection | Prevented: rejected at compile time | `CWE-78`. |
 | [78](https://cwe.mitre.org/data/definitions/78.html) | OS command injection (via run with untrusted argument) | Prevented: attempt compiles but has no effect | No shell exists: the whole value stays one argument. |
 | [78](https://cwe.mitre.org/data/definitions/78.html) | OS command injection | Prevented: rejected at compile time | `CWE-78`. |
+| [78](https://cwe.mitre.org/data/definitions/78.html) | OS command injection (through a shell named as the program) | Prevented: rejected at compile time | `CWE-78`. Shells, interpreters and launchers (sh, env, python, xargs and others) take only literal arguments. |
+| [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (Html assembled across separate statements) | **Gap: can be written** | The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap. |
 | [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting | Prevented: rejected at compile time | `CWE-20`. |
 | [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (via the wrong escaper) | Prevented: rejected at compile time | `CWE-116`. escape_log() returns LogText and escape_html() returns Html; neither can pass as a plain string. |
 | [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (via byte-by-byte laundering) | Prevented: rejected at compile time | `CWE-20`. |
 | [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (laundering through a helper function) | Prevented: rejected at compile time | `CWE-20`. |
+| [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (escaped text in an unquoted attribute) | Prevented: rejected at compile time | `CWE-79`. |
+| [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (escaped text in a URL attribute) | Prevented: rejected at compile time | `CWE-79`. |
+| [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (escaped text in a script block) | Prevented: rejected at compile time | `CWE-79`. |
 | [80](https://cwe.mitre.org/data/definitions/80.html) | Basic XSS (improper neutralization of script tags) | Prevented: attempt compiles but has no effect |  |
 | [88](https://cwe.mitre.org/data/definitions/88.html) | Argument injection | Prevented: rejected at compile time | `CWE-88`. |
+| [88](https://cwe.mitre.org/data/definitions/88.html) | Argument injection (computed argument read as an option) | Prevented: rejected at compile time | `CWE-88`. Every computed argument must follow a literal "--"; validate_path() also refuses a leading '-'. |
 | [89](https://cwe.mitre.org/data/definitions/89.html) | SQL injection (attempt through a bound parameter) | Prevented: attempt compiles but has no effect |  |
 | [89](https://cwe.mitre.org/data/definitions/89.html) | SQL injection | Prevented: rejected at compile time | `CWE-89`. |
 | [89](https://cwe.mitre.org/data/definitions/89.html) | SQL injection (query held in a variable) | Prevented: rejected at compile time | `CWE-89`. |
@@ -198,6 +206,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [364](https://cwe.mitre.org/data/definitions/364.html) | Signal handler race condition | Inexpressible: the construct does not exist |  |
 | [366](https://cwe.mitre.org/data/definitions/366.html) | Race condition within a thread | Inexpressible: the construct does not exist |  |
 | [367](https://cwe.mitre.org/data/definitions/367.html) | Time-of-check time-of-use race | Inexpressible: the construct does not exist | There is no separate existence check; read_file() returns the contents or none in one step. |
+| [367](https://cwe.mitre.org/data/definitions/367.html) | Time-of-check time-of-use (grant used after the checked data changed) | Prevented: stopped safely at run time | `CWE-367`. Each protected call evaluates the policy again on the grant's arguments. |
 | [369](https://cwe.mitre.org/data/definitions/369.html) | Divide by zero | Prevented: stopped safely at run time | `CWE-369`. |
 | [377](https://cwe.mitre.org/data/definitions/377.html) | Insecure temporary file | Not applicable (yet) | No temporary-file API. |
 | [384](https://cwe.mitre.org/data/definitions/384.html) | Session fixation | Not applicable (yet) | No session facility. |
@@ -241,6 +250,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [521](https://cwe.mitre.org/data/definitions/521.html) | Weak password requirements | Logic or design decision: beyond any language | Password rules are policy. |
 | [522](https://cwe.mitre.org/data/definitions/522.html) | Insufficiently protected credentials | Prevented: rejected at compile time | `CWE-200`. |
 | [532](https://cwe.mitre.org/data/definitions/532.html) | Insertion of sensitive information into log file | Prevented: rejected at compile time | `CWE-532`. |
+| [532](https://cwe.mitre.org/data/definitions/532.html) | Insertion of sensitive information into output (hash of a secret) | Prevented: rejected at compile time | `CWE-532`. A fast hash of a short secret is reversed by trying every value. |
 | [538](https://cwe.mitre.org/data/definitions/538.html) | Insertion of sensitive information into externally-accessible file | Prevented: rejected at compile time | `CWE-532`. |
 | [543](https://cwe.mitre.org/data/definitions/543.html) | Use of singleton pattern without synchronization | Inexpressible: the construct does not exist |  |
 | [546](https://cwe.mitre.org/data/definitions/546.html) | Suspicious comment | Prevented: rejected at compile time | `CWE-546`. A warning; an error with --strict (tested that way). |
@@ -327,6 +337,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Use of password hash with insufficient computational effort | Prevented: rejected at compile time | `CWE-916`. |
 | [917](https://cwe.mitre.org/data/definitions/917.html) | Expression language injection | Inexpressible: the construct does not exist |  |
 | [918](https://cwe.mitre.org/data/definitions/918.html) | Server-side request forgery | Inexpressible: the construct does not exist |  |
+| [1007](https://cwe.mitre.org/data/definitions/1007.html) | Insufficient visual distinction of homoglyphs and invisible characters (Trojan Source) | Prevented: rejected at compile time | `CWE-1007`. Bidirectional controls and zero-width characters are rejected anywhere in source (CVE-2021-42574). |
 | [1021](https://cwe.mitre.org/data/definitions/1021.html) | Improper restriction of rendered UI layers (clickjacking) | Not applicable (yet) | No web facility. |
 | [1023](https://cwe.mitre.org/data/definitions/1023.html) | Incomplete comparison with missing factors | Logic or design decision: beyond any language | As CWE-697. |
 | [1077](https://cwe.mitre.org/data/definitions/1077.html) | Floating point comparison with incorrect operator | Inexpressible: the construct does not exist |  |
