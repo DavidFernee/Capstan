@@ -583,10 +583,10 @@ static void cap_grant_recheck(CapGrant *g, int64_t loc) {
 }
 
 /* A grant is only valid for the exact objects it was issued for. */
-static void cap_grant_check(CapGrant *g, int64_t policy, void *obj, int64_t loc) {
+static void cap_grant_check(CapGrant *g, int64_t policy, int64_t slot, void *obj, int64_t loc) {
     if (g->policy != policy) cap_panic("grant issued by a different policy", "CWE-863", loc);
-    for (int64_t i = 0; i < g->n; i++) if (g->bound[i] == obj) return;
-    cap_panic("grant used on an object it was not issued for", "CWE-639", loc);
+    if (slot < 0 || slot >= g->n || g->bound[slot] != obj)
+        cap_panic("grant used on an object in the wrong policy-argument role", "CWE-639", loc);
 }
 
 /* ------------------------------------------------------------------ */
