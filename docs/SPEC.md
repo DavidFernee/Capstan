@@ -24,7 +24,7 @@
 | `LogText` | text escaped for logs and terminals (from `escape_log()`): printable ASCII and valid UTF-8 text are kept; control bytes, invalid UTF-8, C1 controls, bidirectional controls, line and paragraph separators and the byte-order mark become `\xNN`. Same rules as `Html` |
 | `S` | a `struct` (reference type) |
 | `List<T>` | growable, bounds-checked list |
-| `Map<T>` | map from `string` keys to `T`, iterated in insertion order |
+| `Map<T>` | map from `string` keys to `T`, iterated in insertion order. Keys are hashed with SipHash-1-3 under a random per-process key, so chosen keys cannot be made to collide (CWE-407) |
 | `Grant<P>` | proof that policy `P` approved a request |
 | `T?` | optional: a `T` or `none` |
 | `void` | function return type only |
