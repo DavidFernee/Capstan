@@ -271,6 +271,7 @@ When the language gains a feature, add its area here and its tests together.
 | `runtime.checks` | safe stops with exit code 101 |
 | `compiler.ranges` | checks left out only when proved unnecessary; `--keep-checks` |
 | `diag.messages` | error message text, positions, suggestions |
+| `diag.recovery` | every independent syntax error reported in one run, at most 50 |
 | `warnings` | warnings and their CWE codes |
 | `modes` | `--strict` and `--release` |
 | `tools.fmt` | `capstan fmt`: layout rules, idempotence, comments, refusing unscannable input |

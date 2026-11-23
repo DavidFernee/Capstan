@@ -1,5 +1,5 @@
 // Every independent syntax error in a file is reported in one run.
-// spec: diagnostics
+// spec: diag.recovery
 // error: 8:5: expected ';', found 'return'
 // error: 12:13: expected an expression, found ';'
 // error: 13:28: expected ';', found '}'

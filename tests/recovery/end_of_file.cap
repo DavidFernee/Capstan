@@ -1,5 +1,5 @@
 // An error at the very end of the file, after an earlier one, ends parsing cleanly.
-// spec: diagnostics
+// spec: diag.recovery
 // error: 5:21: expected an expression, found '+'
 // error: 7:1: expected ')', found 'end of file'
 int main() { return +; }

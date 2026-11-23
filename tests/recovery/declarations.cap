@@ -1,5 +1,5 @@
 // A broken declaration does not hide errors in the declarations after it.
-// spec: diagnostics
+// spec: diag.recovery
 // error: 7:8: expected a name, found '{'
 // error: 8:18: expected ';', found '}'
 // error: 9:8: expected the imported file name as a string, found 'a number'

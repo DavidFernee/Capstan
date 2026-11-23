@@ -1,5 +1,5 @@
 // A block cut off by the end of the file: the error inside it and the missing '}'.
-// spec: diagnostics
+// spec: diag.recovery
 // error: 6:13: expected an expression, found '+'
 // error: 7:1: expected '}', found 'end of file'
 int main() {
