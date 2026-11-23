@@ -705,17 +705,17 @@ void gen_grant_checks(Gen g, Node f) {
                 for (int k = 1; k < i; k += 1) {
                     if (type_eq(ty_of(f.kids[k]), pt)) { ordinal += 1; }
                 }
-                int match = -1;
+                int policy_index = -1;
                 int occurrence = 0;
                 for (int j = 0; j < pol.n; j += 1) {
                     if (type_eq(ty_of(pol.kids[j]), pt)) {
-                        if (occurrence == ordinal) { match = j; }
+                        if (occurrence == ordinal) { policy_index = j; }
                         occurrence += 1;
                     }
                 }
-                if (match >= 0) {
+                if (policy_index >= 0) {
                     int slot = 0;
-                    for (int j = 0; j < match; j += 1) {
+                    for (int j = 0; j < policy_index; j += 1) {
                         if (ty_of(pol.kids[j]).k == TY_STRUCT) { slot += 1; }
                     }
                     emit(g, "cap_grant_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", " + int_to_str(slot) + ", (void *)u_" + f.kids[i].s + ", " + loc(f) + ");");
