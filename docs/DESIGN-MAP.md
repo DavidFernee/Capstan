@@ -7,7 +7,7 @@ either impossible to express or a compile error, and say plainly what remains.**
 
 The long-term aim is **Capstan all the way down**: the compiler, standard library and
 runtime written in Capstan, compiling to machine code with no C anywhere, every line
-subject to Capstan's guarantees, and the core proved rather than trusted. Only the
+subject to Capstan's guarantees, including the runtime. Only the
 operating system underneath remains outside Capstan.
 
 ## 2. Design principles
@@ -19,7 +19,7 @@ operating system underneath remains outside Capstan.
 3. **The compiler is deterministic.** The same source always gives the same verdict.
    AI review is advisory, or a separately recorded and cached gate, never part of type checking.
 4. **Escape hatches are explicit, rare and auditable.** `trust("why")` always needs a written
-   justification and appears in audit output. There is no `unsafe`: no code anywhere, the core included, runs unchecked.
+   justification and appears in audit output. There is no unsafe code: nothing, the runtime included, runs unchecked.
 5. **Friction only where risk is.** Mandatory tests apply to policies and other
    security-critical code, not to everything.
 6. **Agility without code changes.** Security primitives are abstract (`hash`,
@@ -53,7 +53,7 @@ operating system underneath remains outside Capstan.
 Each version must keep the self-hosting fixpoint, the full test suite and the
 compiler's own `--strict` check passing, and the repository formatted with `capstan fmt`.
 
-### v0.1 — Self-hosting safe core *(done)*
+### v0.1 — Self-hosting safe language *(done)*
 Structs, optionals, lists, maps, checked integers, taint tracking, secrets,
 policies and grants with object binding, mandatory denial tests, agile hashing
 (SHA-256 and PBKDF2), 46 vulnerability tests (39 rejected at compile time, 7 stopped at run time), and a compiler that compiles itself.
@@ -182,33 +182,33 @@ removes a dependency altogether.
 | T4 (with v0.6) | **Formatting and parsing in Capstan:** number to text and back, replacing `sprintf`, `snprintf` and `strtol`; differentially tested against libc on millions of random inputs | Removes the libc functions where memory-corruption bugs have historically clustered |
 | T5 (with v0.6) | **Network parsing in Capstan from the start:** addresses, URLs, HTTP, name resolution. Never borrowed from libc | The highest-risk input handling is memory-safe by construction (compare glibc CVE-2015-0235, CVE-2015-7547) |
 | T6 (v0.7) | **Thin system-call layer:** the program talks to the kernel through a small audited layer (open, read, write, exit, memory mapping, signals) instead of the C library, as Go does on Linux | libc leaves the trusted base |
-| T7 (v0.8) | **Verified low-level Capstan:** the few raw operations the core needs (read or write raw memory, convert an address, call the kernel) are allowed only when the compiler proves their preconditions with an automated solver, as SPARK Ada does for run-time errors and Verus does for low-level Rust. Unprovable code does not compile. There is no `unsafe` escape hatch | Capstan's guarantees hold in the core too, established by proof instead of run-time checks |
+| T7 (v0.8) | **Verified low-level Capstan:** the few raw operations the runtime needs (read or write raw memory, convert an address, call the kernel) are allowed only when the compiler proves their preconditions with an automated solver, as SPARK Ada does for run-time errors and Verus does for low-level Rust. Unprovable code does not compile. There is no `unsafe` escape hatch | Capstan's guarantees hold in the runtime too, established by proof instead of run-time checks |
 | T8 (v0.9) | **Runtime in verified Capstan:** garbage collector, allocator and safety primitives, every raw operation proved; the C remaining is only the program entry point, until the native backend removes it | No unchecked code in the runtime |
 | T9 (v0.9) | **Verified C compilation option:** generated C builds with CompCert (formally verified), for high-assurance users | The C compiler leaves the trusted base (CompCert needs a commercial licence outside research) |
 | T10 (v1.0) | **WebAssembly backend:** Capstan emits WebAssembly directly, no C | First backend with no C at all; sandboxed execution contains even compiler bugs |
 | T11 (after v1.0) | **Native backend:** Capstan emits x86-64 and ARM64 directly. Designed for verification (small, simple, with translation validation) rather than peak speed; the C path remains for performance builds | Capstan all the way down |
-| T12 (after v1.0) | **Full functional verification:** the type and safety checker proved to enforce Capstan's rules, and the core proved to meet its specification (not only free of memory errors) | Proof, not just testing, for everything Capstan relies on |
+| T12 (after v1.0) | **Full functional verification:** the type and safety checker proved to enforce Capstan's rules, and the runtime proved to meet its specification (not only free of memory errors) | Proof, not just testing, for everything Capstan relies on |
 
 **No unsafe component.** Capstan's guarantees apply at all times, to all code, including
 the runtime and the standard library. Ordinary code is protected by the type system and run-time
-checks; the core is protected by machine-checked proof. Code that cannot be proved safe does not
+checks; the runtime's low-level operations are protected by machine-checked proof. Code that cannot be proved safe does not
 compile, so there is no code anywhere that runs unchecked. What remains to be trusted is the
 irreducible minimum for any system: the proof checker, the specifications (a proof shows code
 meets its specification, not that the specification is right), the operating-system kernel and
 the hardware, the same residue that seL4 and CompCert rest on.
 
-**Testing the core as hard as it is proved.** Proof and testing complement each other:
-- **checked build:** in test runs, every raw operation in the core is also checked at run time
+**Testing the runtime as hard as it is proved.** Proof and testing complement each other:
+- **checked build:** in test runs, every raw operation in the runtime is also checked at run time
   against the allocator's own record of which memory exists and who owns it, and the whole suite
   (conformance, CWE atlas, differential and mutation fuzzing, collector stress) runs on that build
 - **reference models:** the collector and allocator run side by side with a deliberately simple,
   obviously correct model on millions of random allocation patterns and must agree
-- **direct fuzzing** of every core entry point
-- **CWE atlas for the core:** attacks aimed at low-level code, each of which the prover or the
+- **direct fuzzing** of every runtime entry point
+- **CWE atlas for the runtime:** attacks aimed at low-level code, each of which the prover or the
   checked build must catch
 
 **Defence in depth.** Even proved code runs on real hardware with real compilers until the native
-backend is complete, so the core is also hardened against exploitation: guard pages around heap
+backend is complete, so the runtime is also hardened against exploitation: guard pages around heap
 regions, randomised heap layout, poisoning of freed memory, and the C compilers' exploit mitigations
 (control-flow integrity, stack protectors, position-independent code) while C is still in the build.
 
@@ -306,7 +306,7 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 
 | Risk | Mitigation |
 |---|---|
-| Trusted base bugs (runtime, C library, C compiler) | the trusted base reduction plan (section 6): proof for the core, no unchecked code; meanwhile fuzzing, sanitisers and diverse double-compiling |
+| Trusted base bugs (runtime, C library, C compiler) | the trusted base reduction plan (section 6): proof for the runtime, no unchecked code; meanwhile fuzzing, sanitisers and diverse double-compiling |
 | Proofs rest on specifications that could be wrong | specifications are reviewed, kept small, and tested: the checked build and reference models test the same properties the proofs establish |
 | Rewritten components less battle-tested than the originals | write them in Capstan so their bugs cannot corrupt memory; differential testing against the component replaced |
 | Heuristic checks (CWE-798 names) give false confidence | label them Partial; prefer type-based rules over name heuristics |
