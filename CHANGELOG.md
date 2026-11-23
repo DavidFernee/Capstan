@@ -9,6 +9,10 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   checked against hashlib on generated inputs, the FIPS 180-4 examples, and the runtime's C
   `hash()` and `hash_password()`; not yet used by those builtins (that needs T1, the standard
   library mechanism).
+- Range analysis across calls: each integer parameter gets the range of its arguments at every
+  call site in the program (recursion included, by an iterated and widened fixpoint), so checks in
+  helpers called with small values are left out. A function called anywhere with any value gets
+  nothing; `--keep-checks` still keeps every check.
 - `escape_json(t)`: any text made safe inside a JSON string (always valid JSON, and safe inside an
   HTML `<script>`), and `taint_char(c)`: a byte that stays untrusted, so escapes in untrusted text
   (`%41`, `\u0041`) can be decoded without laundering it. Both requested by the language server.

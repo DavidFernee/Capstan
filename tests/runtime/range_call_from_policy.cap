@@ -1,0 +1,16 @@
+// expect-runtime: CWE-190
+// spec: runtime.checks auth.policy
+// Calls from every kind of body count toward the facts, a policy's included.
+int plus_one(int n) { return n + 1; }
+
+struct Req { int size; }
+
+public policy Roomy(Req r) { return plus_one(r.size) > 0; }
+
+test "small requests are allowed" { assert_granted Roomy(new Req{size: 1}); }
+
+int main() {
+    println(int_to_str(plus_one(1)));
+    if (let g = authorize Roomy(new Req{size: 9223372036854775807})) { println("granted"); }
+    return 0;
+}
