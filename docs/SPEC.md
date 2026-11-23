@@ -224,6 +224,41 @@ Before writing, the formatter scans its output again and requires the same token
 same text; otherwise the file is left unchanged. A file that does not scan (an unterminated
 string or comment, an unexpected character) is refused with exit code 2.
 
+## Language server
+
+```
+capstan lsp
+```
+
+`capstan lsp` is a Language Server Protocol server on standard input and output, for any
+editor with an LSP client. It is built from the compiler's own lexer, parser and checker,
+so an open file shows exactly the diagnostics `capstanc check` reports for it:
+
+- each diagnostic has the compiler's line, column and message; errors have severity 1 and
+  warnings 2; the CWE or CAP code is the diagnostic's `code`, and a CWE code links to
+  `https://cwe.mitre.org/data/definitions/N.html` (`codeDescription.href`);
+- the range runs from the compiler's column to the end of the word there; a diagnostic
+  without a column covers its line. Positions count UTF-16 code units, or bytes if the
+  client offers the `utf-8` position encoding;
+- a file that declares `main()` gets the `main` checks; one without is checked as a library;
+- `import`s are read from documents open in the editor, otherwise from disk when the file
+  is inside the workspace root; diagnostics in an imported file are shown on its `import`;
+- `initializationOptions` `{"strict": true}` and `{"release": true}` act as `--strict` and
+  `--release`.
+
+Messages: `initialize`, `initialized`, `shutdown`, `exit` (exit code 0 after `shutdown`,
+otherwise 1), `textDocument/didOpen`, `didChange` (full text, or ranges), `didClose`
+(clears the file's diagnostics); the server sends `textDocument/publishDiagnostics` and
+`window/logMessage`. Errors follow JSON-RPC 2.0: invalid JSON or framing is -32700 with a
+null id, an invalid request -32600, an unknown method -32601, invalid parameters -32602,
+and a request before `initialize` -32002. Notifications are never answered.
+
+Everything the client sends is untrusted (`Tainted`); the server has no `trust()`. Its
+replies are JSON in printable ASCII. Limits (CWE-400): 16 MiB per message (a larger one is
+skipped unread and answered with -32600), 4,096-byte header lines, 32 header lines,
+JSON nesting of 64 levels, 1,000 open documents and 256 MiB of text in all, 1,000
+diagnostics per document, 256 imported files.
+
 ## Conformance areas
 
 Every area below must be covered by at least one test that declares it with a
@@ -276,3 +311,4 @@ When the language gains a feature, add its area here and its tests together.
 | `warnings` | warnings and their CWE codes |
 | `modes` | `--strict` and `--release` |
 | `tools.fmt` | `capstan fmt`: layout rules, idempotence, comments, refusing unscannable input |
+| `tools.lsp` | `capstan lsp`: the compiler's diagnostics over the Language Server Protocol, protocol errors, limits |

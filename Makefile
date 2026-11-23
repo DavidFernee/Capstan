@@ -4,9 +4,9 @@ CFLAGS  ?= -O2 -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable -Wno-u
 SRC      = compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap compiler/ranges.cap compiler/codegen.cap compiler/main.cap
 RT       = runtime/capstan_rt.h
 
-.PHONY: all bootstrap fmt test clean
+.PHONY: all bootstrap fmt lsp test clean
 
-all: bootstrap fmt
+all: bootstrap fmt lsp
 
 # Stage 0 (Python) translates the compiler so it can run once.
 build/stage1.py: bootstrap/capstan0.py $(SRC)
@@ -38,7 +38,16 @@ build/capstanfmt: build/capstanc tools/fmt.cap $(RT)
 
 fmt: build/capstanfmt
 
-test: build/capstanc build/capstanfmt
+# The language server, written in Capstan and built together with the compiler's front
+# end so that it reports exactly what the compiler reports.
+LSP_SRC  = compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap compiler/ranges.cap compiler/codegen.cap tools/lsp.cap
+build/capstan-lsp: build/capstanc $(LSP_SRC) $(RT)
+	./build/capstanc build -o build/lsp.c $(LSP_SRC)
+	$(CC) $(CFLAGS) -Iruntime build/lsp.c -o $@
+
+lsp: build/capstan-lsp
+
+test: build/capstanc build/capstanfmt build/capstan-lsp
 	./tests/run.sh
 
 clean:
