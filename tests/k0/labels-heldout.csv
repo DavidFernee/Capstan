@@ -1,0 +1,41 @@
+id,class
+CVE-2025-37898,unclassified
+CVE-2025-39746,hang or infinite loop
+CVE-2025-39745,assertion or warning reached
+CVE-2025-38485,use-after-free
+CVE-2025-40298,NULL dereference
+CVE-2025-38071,unchecked error
+CVE-2025-38347,insufficient validation
+CVE-2025-40136,assertion or warning reached
+CVE-2024-57941,unclassified
+CVE-2025-68312,use-after-free
+CVE-2025-40179,insufficient validation
+CVE-2025-38574,uninitialised memory
+CVE-2025-68212,uninitialised memory
+CVE-2025-38151,resource leak
+CVE-2025-21861,assertion or warning reached
+CVE-2025-21831,unclassified
+CVE-2025-21671,use-after-free
+CVE-2025-38335,improper locking
+CVE-2025-21785,out-of-bounds write
+CVE-2024-45828,NULL dereference
+CVE-2025-68743,insufficient validation
+CVE-2025-40303,use-after-free
+CVE-2025-38356,assertion or warning reached
+CVE-2025-38144,NULL dereference
+CVE-2025-40335,insufficient validation
+CVE-2025-38061,out-of-bounds read
+CVE-2025-21799,unchecked error
+CVE-2025-68348,memory leak
+CVE-2025-37813,out-of-bounds read
+CVE-2025-38248,use-after-free
+CVE-2025-39980,unclassified
+CVE-2025-21881,assertion or warning reached
+CVE-2025-38682,double or invalid free
+CVE-2025-40345,out-of-bounds write
+CVE-2024-57914,NULL dereference
+CVE-2025-38398,NULL dereference
+CVE-2025-68247,memory leak
+CVE-2025-21973,NULL dereference
+CVE-2025-40302,unclassified
+CVE-2025-40086,NULL dereference

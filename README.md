@@ -101,6 +101,7 @@ including what Capstan does **not** prevent.
 - [docs/SPEC.md](docs/SPEC.md): the language reference for v0.1
 - [docs/CWE-COVERAGE.md](docs/CWE-COVERAGE.md): which weaknesses are prevented, and how
 - [docs/DESIGN-MAP.md](docs/DESIGN-MAP.md): design principles and roadmap, from language features to the IDE
+- [docs/K0-KERNEL-CVES.md](docs/K0-KERNEL-CVES.md): the Linux kernel's 2025 CVEs measured against Capstan (roadmap K0)
 - [docs/TESTING.md](docs/TESTING.md): how the language is tested
 
 ## Memory
