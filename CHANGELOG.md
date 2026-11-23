@@ -5,6 +5,11 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Maps hash their keys with SipHash-1-3 under a random key chosen once per process, instead of
+  FNV-1a: keys an attacker chooses can no longer be made to collide and turn every lookup into a
+  scan (hash flooding, CWE-407). Iteration order is unchanged (insertion order). Checked against
+  the published SipHash vectors and an independent implementation; about 5% slower on the
+  map-heaviest benchmark.
 - T3 begins: SHA-256, HMAC-SHA256 and PBKDF2-HMAC-SHA256 written in Capstan (`lib/crypto.cap`),
   checked against hashlib on generated inputs, the FIPS 180-4 examples, and the runtime's C
   `hash()` and `hash_password()`; not yet used by those builtins (that needs T1, the standard
