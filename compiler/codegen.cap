@@ -135,7 +135,11 @@ Seq operands(Gen g, Node e, int first) {
 
 string gen_expr(Gen g, Node e) {
     int k = e.k;
-    if (k == N_INT) { return "INT64_C(" + int_to_str(e.n) + ")"; }
+    if (k == N_INT) {
+        // A hex literal may be the smallest int, which C cannot write as a literal.
+        if (e.n == I64_MIN) { return "INT64_MIN"; }
+        return "INT64_C(" + int_to_str(e.n) + ")";
+    }
     if (k == N_STR) { return "CAP_LIT(\"" + e.s + "\", " + int_to_str(e.n) + ")"; }
     if (k == N_BOOL) {
         if (e.n == 1) { return "true"; }
@@ -147,6 +151,7 @@ string gen_expr(Gen g, Node e) {
         return "u_" + e.s;
     }
     if (k == N_NOT) { return "(!(" + gen_expr(g, e.kids[0]) + "))"; }
+    if (k == N_BNOT) { return "(~(" + gen_expr(g, e.kids[0]) + "))"; }
     if (k == N_NEG) {
         string nf = "cap_neg(";
         if (neg_safe(g.r, e)) { nf = "cap_neg_proved("; }
@@ -250,11 +255,15 @@ string gen_binary(Gen g, Node e) {
         return wrap(s, "((" + x + ") " + op + " (" + y + "))");
     }
     if (op == "+" && is_texty(a)) { return wrap(s, "cap_str_concat(" + x + ", " + y + ", " + l + ")"); }
+    if (op == "&" || op == "|" || op == "^") { return wrap(s, "((" + x + ") " + op + " (" + y + "))"); }
     string fname = "cap_add";
     if (op == "-") { fname = "cap_sub"; }
     if (op == "*") { fname = "cap_mul"; }
     if (op == "/") { fname = "cap_div"; }
     if (op == "%") { fname = "cap_mod"; }
+    if (op == "<<") { fname = "cap_shl"; }
+    if (op == ">>") { fname = "cap_sar"; }
+    if (op == ">>>") { fname = "cap_shr"; }
     if (arith_safe(g.r, e)) { fname = fname + "_proved"; }
     return wrap(s, fname + "(" + x + ", " + y + ", " + l + ")");
 }
@@ -347,11 +356,15 @@ string builtin_c(string f) {
     if (f == "hash_password") { return "cap_hash_password"; }
     if (f == "verify_password") { return "cap_verify_password"; }
     if (f == "needs_rehash") { return "cap_needs_rehash"; }
+    if (f == "wrapping_add") { return "cap_wrapping_add"; }
+    if (f == "wrapping_sub") { return "cap_wrapping_sub"; }
+    if (f == "wrapping_mul") { return "cap_wrapping_mul"; }
+    if (f == "wrapping_shl") { return "cap_wrapping_shl"; }
     return "";
 }
 
 bool builtin_needs_loc(string f) {
-    return f == "char_str" || f == "join" || f == "assert";
+    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl";
 }
 
 string gen_call(Gen g, Node e) {
@@ -472,6 +485,8 @@ string gen_simple(Gen g, Node s) {
         Seq sq = hoist(g, codes, simple);
         return wrap(sq, "cap_list_set" + iu + "(" + call_list(sq.names, 0, loc(s)) + ")");
     }
+    // A statement that discards a value (xs.remove_at(0);) says so, so the C has no warning.
+    if (s.k == N_EXPR && ty_of(s.kids[0]).k != TY_VOID) { return "(void)(" + gen_expr(g, s.kids[0]) + ")"; }
     return gen_expr(g, s.kids[0]);
 }
 

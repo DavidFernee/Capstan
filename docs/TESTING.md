@@ -125,6 +125,7 @@ Equivalent mutants found so far (changes that cannot alter behaviour), with the 
   a `{{` (it can only add an empty `+ ""` to an interpolated string): output layout only.
 - `ranges.cap`, `literal_value()`'s test for a negated literal: only called once `is_literal()`
   has confirmed one of the two shapes it handles.
+- `lexer.cap`, the digit counter of a hexadecimal literal: it is only ever compared with zero.
 - `checker.cap`, the not-an-enum fallback of `simple_enum()` (only ever called with an enum's
   name) and the grant-parameter loop's bound (one step further reaches the body node, which is
   never a grant).
@@ -134,3 +135,10 @@ lexer, parser and code generator) killed 62% and 82%. Every non-equivalent survi
 and those tests found four real bugs (above, and the `exit()` warning and a stage-0 scoping bug).
 A fresh campaign on new seeds then killed 60 of 70 at once (86%); of the other ten, five were
 equivalent and five became tests, so every non-equivalent mutant in it is now caught.
+
+Mutating only the lines a change adds (`file.cap:FROM-TO` targets) is how new features are
+checked: the bitwise operators first scored 58%, and their survivors became tests (laundering
+through every arithmetic operator, the ranges of `|`, `^`, `>>`, `>>>`, lowercase hex digits,
+unspaced `x>(y)`). Making the mutation oracles require warning-free C, as the conformance section
+does, also found that a statement discarding a value (`xs.remove_at(0);`) produced C that
+warned; it is now cast to `void`, and the safety-stop tests are compiled with `-Werror` too.

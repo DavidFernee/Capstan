@@ -1,0 +1,5 @@
+// expect: CWE-480
+// spec: expr.bitwise
+// & on booleans is almost always a mistyped &&.
+bool allowed(bool admin, bool owner) { return admin & owner; }
+int main() { return 0; }

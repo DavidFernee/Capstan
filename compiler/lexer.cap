@@ -248,6 +248,39 @@ void lex_interp(Lexer lx) {
     add_tok(lx, T_OP, ")", 0);
 }
 
+int hex_digit(int c) {
+    if (c >= '0' && c <= '9') { return c - '0'; }
+    if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+    if (c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+    return -1;
+}
+
+// 0x... uses all 64 bits, as in Java: 0xFFFFFFFFFFFFFFFF is -1. Masks and the
+// constants of hash functions are written this way.
+void lex_hex(Lexer lx) {
+    lx.pos += 2;
+    int v = 0;
+    int digits = 0;
+    int significant = 0;
+    while (hex_digit(peek_ch(lx, 0)) >= 0) {
+        int d = hex_digit(peek_ch(lx, 0));
+        if (significant > 0 || d != 0) { significant += 1; }
+        v = wrapping_add(wrapping_shl(v, 4), d);
+        digits += 1;
+        lx.pos += 1;
+    }
+    if (digits == 0 || is_alpha(peek_ch(lx, 0)) || is_digit(peek_ch(lx, 0))) {
+        lex_error(lx, "malformed hexadecimal literal");
+        while (is_alpha(peek_ch(lx, 0)) || is_digit(peek_ch(lx, 0))) { lx.pos += 1; }
+        return;
+    }
+    if (significant > 16) {
+        lex_error(lx, "hexadecimal literal does not fit in 64 bits [CWE-190]");
+        return;
+    }
+    add_tok(lx, T_INT, "", v);
+}
+
 // Two-character operators first, then single characters.
 bool lex_op(Lexer lx) {
     int c = peek_ch(lx, 0);
@@ -255,7 +288,7 @@ bool lex_op(Lexer lx) {
     List<string> two = new List<string>();
     two.push("&&"); two.push("||"); two.push("=="); two.push("!=");
     two.push("<="); two.push(">="); two.push("+="); two.push("-=");
-    two.push("++"); two.push("--");
+    two.push("++"); two.push("--"); two.push("<<");
     for (int i = 0; i < two.len(); i += 1) {
         string op = two[i];
         if (c == op.at(0) && d == op.at(1)) {
@@ -264,7 +297,9 @@ bool lex_op(Lexer lx) {
             return true;
         }
     }
-    string one = "{}()[];,.:?<>=+-*/%!";
+    // '>' stays a single token: the parser joins adjacent ones into >> and >>>,
+    // so that Map<List<int>> still closes two type arguments.
+    string one = "{}()[];,.:?<>=+-*/%!&|^~";
     for (int j = 0; j < one.len(); j += 1) {
         if (c == one.at(j)) {
             add_tok(lx, T_OP, one.slice(j, j + 1), 0);
@@ -324,6 +359,8 @@ void lex_run(Lexer lx) {
             } else {
                 lex_error(lx, "invalid identifier");
             }
+        } else if (c == '0' && (peek_ch(lx, 1) == 'x' || peek_ch(lx, 1) == 'X')) {
+            lex_hex(lx);
         } else if (is_digit(c)) {
             int start2 = lx.pos;
             while (is_digit(peek_ch(lx, 0))) { lx.pos += 1; }

@@ -4,7 +4,9 @@
 
 - Comments: `// line` and `/* block */`.
 - Identifiers: `[A-Za-z_][A-Za-z0-9_]*`.
-- Integer literals: decimal, must fit in a signed 64-bit integer (otherwise a compile error).
+- Integer literals: decimal, must fit in a signed 64-bit integer (otherwise a compile error);
+  or hexadecimal, `0x` followed by up to 16 significant hex digits, which use all 64 bits as in
+  Java (`0xFFFFFFFFFFFFFFFF` is `-1`, `0x8000000000000000` is the smallest int).
 - Character literals: `'a'`, `'\n'`, `'\''`; they are `int` values 0–255.
 - String literals: `"..."` with escapes `\n \t \r \0 \\ \" \'`. Strings are byte sequences.
 - Keywords: `struct const if else while for return break continue true false none new let protected policy public test authorize assert_denied assert_granted`.
@@ -67,8 +69,24 @@ Braces are required around every body.
 
 ## Expressions
 
-Precedence from low to high: `||`, `&&`, `== !=`, `< <= > >=`, `+ -`, `* / %`, unary `! -`,
+Precedence from low to high: `||`, `&&`, `== !=`, `< <= > >=`, `+ -`, `* / %`, unary `! - ~`,
 then postfix `.field`, `.method(args)`, `[index]`.
+
+Bitwise operators `&`, `|`, `^` and shifts `<<`, `>>`, `>>>` **may not be combined with any other
+operator without parentheses** (CWE-783): `(x & 1) == 0`, never `x & 1 == 0`, which C reads as
+`x & (1 == 0)`. A chain of one of `&`, `|`, `^` needs none (`a | b | c`); shifts are always grouped
+explicitly. Their meaning therefore never depends on precedence.
+
+- `&`, `|`, `^` and `~` work on `int` as 64-bit two's complement. On `bool` they are an error
+  (CWE-480): use `&&`, `||`, `!=` and `!`.
+- `a << n` requires `0 <= n <= 63` (CWE-1335) and is checked like multiplication: if a bit would
+  be lost, the program stops (CWE-190). `a >> n` shifts right keeping the sign; `a >>> n` shifts
+  right filling with zeros. Both require `0 <= n <= 63`. A literal count outside 0..63 is a
+  compile error; a computed one stops the program.
+- `wrapping_add(a, b)`, `wrapping_sub(a, b)`, `wrapping_mul(a, b)` and `wrapping_shl(a, n)` compute
+  modulo 2^64, for hashing and cryptography. Ordinary `+`, `-`, `*` and `<<` stay checked.
+- `>>` and `>>>` are written as adjacent `>` characters, so `Map<List<int>>` still closes two
+  type arguments.
 
 - `$"Hello {name}, {count} new"` is an interpolated string: it means `"Hello " + to_text(name) + ", " + to_text(count) + " new"`,
   so every rule for `+` applies (interpolating `Tainted` yields `Tainted`, interpolating into `Html` stays `Html`, a `Secret`
@@ -103,6 +121,8 @@ then postfix `.field`, `.method(args)`, `[index]`.
 | `validate_range(t, min, max)` → `int?` | an integer within bounds (CWE-1284) |
 | `escape_csv(t)` → `string` | one quoted CSV field, with leading `= + - @` neutralised (CWE-1236) |
 | `taint(s)` → `Tainted` | marks a value as untrusted (useful in tests) |
+| `wrapping_add(a, b)`, `wrapping_sub(a, b)`, `wrapping_mul(a, b)` → `int` | arithmetic modulo 2^64; never stops |
+| `wrapping_shl(a, n)` → `int` | `a << n` modulo 2^64; `n` must be 0..63 (CWE-1335) |
 | `sql_query("literal", params...)` | query text must be a literal; values are bound parameters |
 | `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; untrusted arguments must follow a literal `"--"` (CWE-88) |
 | `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | constant-time comparison |
@@ -233,6 +253,7 @@ When the language gains a feature, add its area here and its tests together.
 | `expr.operators` | operators and precedence |
 | `expr.order` | strict left-to-right evaluation |
 | `expr.interpolation` | `$"..."` interpolated strings |
+| `expr.bitwise` | `& \| ^ ~ << >> >>>`, required parentheses, shift counts, hexadecimal literals, wrapping arithmetic |
 | `builtins.io` | printing, files, arguments |
 | `builtins.validators` | the ways out of `Tainted`, and `trust()` |
 | `builtins.escapers` | `escape_html`, `escape_log`, `escape_csv`, `escape_c` |

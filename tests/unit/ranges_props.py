@@ -8,7 +8,7 @@ arithmetic:
   F  mul_fits, add_over, sub_over and the saturating operations, for every pair
      of edge values: must be exactly right.
   B  bin_safe and bin_range for every pair of intervals over the edge values and
-     each of + - * / %:
+     each of + - * / % << >> >>> & | ^:
        - soundness: when bin_safe says an operation needs no check, it must be
          impossible for it to overflow or divide by zero anywhere in the intervals;
        - precision: for + - * it must also say so whenever that is true;
@@ -50,8 +50,22 @@ def points(lo, hi):
     return [p for p in cand if lo <= p <= hi]
 
 
+def signed(v):
+    v &= (1 << 64) - 1
+    return v - (1 << 64) if v >= 1 << 63 else v
+
+
 def exact(op, x, y):
     """The value op produces at run time, or None if the check stops the program."""
+    if op in ("&", "|", "^"):
+        return {"&": x & y, "|": x | y, "^": x ^ y}[op]
+    if op in ("<<", ">>", ">>>"):
+        if not 0 <= y <= 63:
+            return None
+        if op == "<<":
+            v = x << y
+            return v if fits(v) else None
+        return x >> y if op == ">>" else signed((x & ((1 << 64) - 1)) >> y)
     if op == "+":
         v = x + y
     elif op == "-":
@@ -71,6 +85,12 @@ def exact(op, x, y):
 
 def truly_safe(op, alo, ahi, blo, bhi):
     corners = [(x, y) for x in (alo, ahi) for y in (blo, bhi)]
+    if op in ("&", "|", "^"):
+        return True           # cannot fail; bin_safe is never asked
+    if op in (">>", ">>>"):
+        return 0 <= blo and bhi <= 63
+    if op == "<<":
+        return 0 <= blo and bhi <= 63 and all(fits(x << bhi) for x in (alo, ahi))
     if op in "+-*":
         return all(fits({"+": x + y, "-": x - y, "*": x * y}[op]) for x, y in corners)
     if blo <= 0 <= bhi:
@@ -114,9 +134,11 @@ def main():
             op = f[1]
             alo, ahi, blo, bhi, safe, rlo, rhi = (int(v) for v in f[2:])
             truth = truly_safe(op, alo, ahi, blo, bhi)
+            if op in ("&", "|", "^"):
+                truth = safe = 0          # no check to prove; only the range is tested
             if safe and not truth:
                 errors.append(f"UNSOUND bin_safe: {line}")
-            if op in "+-*" and truth and not safe:
+            if op in ("+", "-", "*", "<<", ">>", ">>>") and truth and not safe:
                 errors.append(f"imprecise bin_safe: {line}")
             possible += truth
             proved += safe

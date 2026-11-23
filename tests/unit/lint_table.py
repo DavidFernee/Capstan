@@ -52,6 +52,19 @@ ROWS.append(("comment: backdoor", "/* debug backdoor */\nint main() { return 0; 
 ROWS.append(("comment: TODO about something else", "// TODO: tidy up the output format\nint main() { return 0; }", None))
 ROWS.append(("comment: security note without a marker", "// passwords are hashed with PBKDF2\nint main() { return 0; }", None))
 
+# CWE-20: untrusted bytes stay untrusted through every arithmetic and bitwise operator.
+for expr in ["b + 0", "b - 0", "b * 1", "b / 1", "b % 256", "b & 255", "b | 0", "b ^ 0", "b << 0", "b >> 0", "b >>> 0",
+             "~(~b)", "wrapping_add(b, 0)", "wrapping_sub(b, 0)", "wrapping_mul(b, 1)", "wrapping_shl(b, 0)"]:
+    ROWS.append((f"laundering through {expr}",
+                 f"int main() {{ if (let t = read_line()) {{ int b = t.at(0); println(char_str({expr})); }} return 0; }}", "CWE-20"))
+ROWS.append(("trusted bytes through the same operators",
+             "int main() { int b = 72; println(char_str((b + 0) & 255) + char_str(wrapping_add(b, 1))); return 0; }", None))
+
+# CWE-480: bitwise operators on booleans, each pointing to the logical operator meant.
+for op, meant in [("&", "&&"), ("|", "||"), ("^", "!=")]:
+    ROWS.append((f"bitwise {op} on bool", f"bool f(bool a, bool b) {{ return a {op} b; }}\nint main() {{ return 0; }}", "CWE-480"))
+ROWS.append(("bitwise ~ on bool", "bool f(bool a) { return ~a == 0; }\nint main() { return 0; }", "CWE-480"))
+
 # Warnings with no other test.
 ROWS.append(("CWE-390 empty else", "int main() { int x = 1; if (x > 0) { println(\"a\"); } else {} return 0; }", "CWE-390"))
 ROWS.append(("CWE-1164 self-assignment", "int main() { int x = 1; x = x; println(int_to_str(x)); return 0; }", "CWE-1164"))

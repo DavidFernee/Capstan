@@ -73,13 +73,13 @@ expect_reject() {   # dir label
 section "reject: vulnerabilities rejected at compile time"; expect_reject reject
 section "diagnostics: ordinary errors"; expect_reject diagnostics
 
-section "runtime: safe stops"
+section "runtime: safe stops (generated C warning-free; these programs recurse or loop on purpose)"
 for f in "$ROOT"/tests/runtime/*.cap; do
   n="runtime/$(basename "$f")"
   want="$(sed -n 's|^// expect-runtime: ||p' "$f" | head -1)"
   envs="$(sed -n 's|^// env: ||p' "$f" | head -1)"
   if ! "$C" build -o "$tmp/r.c" "$f" >"$tmp/log" 2>&1; then bad "$n" "did not compile: $(head -1 "$tmp/log")"; continue; fi
-  "$CC" $CFLAGS "$tmp/r.c" -o "$tmp/r" || { bad "$n" "C compile failed"; continue; }
+  "$CC" $WFLAGS -Wno-infinite-recursion -Wno-for-loop-analysis "$tmp/r.c" -o "$tmp/r" 2>"$tmp/cc" || { bad "$n" "generated C has warnings or does not compile: $(head -2 "$tmp/cc")"; continue; }
   err="$(env $envs "$tmp/r" 2>&1 >/dev/null)"; code=$?
   if [[ $code -eq 101 ]] && grep -qF -- "$want" <<<"$err"; then ok "$n  ($want)"; else bad "$n" "exit $code: $err"; fi
 done

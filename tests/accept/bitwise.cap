@@ -1,0 +1,42 @@
+// spec: expr.bitwise lexical
+// Bitwise operators, shifts, hexadecimal literals and wrapping arithmetic.
+const int MASK = 0xFF;
+
+// A 32-bit rotation, as hash functions use it: masks keep every value in 32 bits.
+int rotr32(int x, int n) {
+    return ((x >>> n) | wrapping_shl(x, 32 - n)) & 0xFFFFFFFF;
+}
+
+int main() {
+    int x = 0xA5;
+    println(int_to_str(x & 0x0F));
+    println(int_to_str(x | 0x100));
+    println(int_to_str(x ^ MASK));
+    println(int_to_str(~x));
+    println(int_to_str((x & 0xF0) | (x & 0x0F)));
+    println(int_to_str(1 << 62));
+    println(int_to_str(-1 << 62));
+    println(int_to_str(-16 >> 2));
+    println(int_to_str(-1 >> 63));
+    println(int_to_str(-1 >>> 60));
+    println(int_to_str(-1 >>> 0));
+    println(int_to_str(0x7FFFFFFFFFFFFFFF));
+    println(int_to_str(0xFFFFFFFFFFFFFFFF));
+    println(int_to_str(0x8000000000000000));
+    println(int_to_str(0x0000000000000000001));
+    println(int_to_str(0xabcdef + 0xABCDEF));
+    println(int_to_str(wrapping_add(0x7FFFFFFFFFFFFFFF, 1)));
+    println(int_to_str(wrapping_sub(0x8000000000000000, 1)));
+    println(int_to_str(wrapping_mul(0x100000000, 0x100000000)));
+    println(int_to_str(wrapping_mul(-3, 0x5555555555555555)));
+    println(int_to_str(wrapping_shl(3, 63)));
+    println(int_to_str(rotr32(0x12345678, 8)));
+    println(int_to_str(rotr32(1, 1)));
+    int k = 5;
+    println(int_to_str(1 << k));
+    println(to_text((x & 1) == 1));
+    List<List<int>> nested = new List<List<int>>();
+    nested.push(new List<int>());
+    println(int_to_str(nested.len() >> 0));
+    return 0;
+}

@@ -1,0 +1,7 @@
+// expect: CWE-20
+// spec: types.tainted expr.bitwise
+// Masking an untrusted byte does not make it trusted.
+int main() {
+    if (let t = read_line()) { println(char_str(t.at(0) & 0x7F)); }
+    return 0;
+}

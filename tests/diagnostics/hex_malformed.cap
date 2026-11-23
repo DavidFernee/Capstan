@@ -1,0 +1,3 @@
+// expect: malformed hexadecimal literal
+// spec: lexical
+int main() { return 0xFG; }

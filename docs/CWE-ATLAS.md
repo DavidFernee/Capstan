@@ -9,14 +9,14 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**254 weaknesses, 276 attempts.** Counting each weakness once, by its weakest attempt:
+**254 weaknesses, 281 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
 | Prevented: rejected at compile time | 80 |
-| Prevented: stopped safely at run time | 23 |
+| Prevented: stopped safely at run time | 24 |
 | Prevented: attempt compiles but has no effect | 16 |
-| Inexpressible: the construct does not exist | 73 |
+| Inexpressible: the construct does not exist | 72 |
 | Possible only through an audited escape hatch | 2 |
 | Logic or design decision: beyond any language | 22 |
 | **Gap: can be written** | 5 |
@@ -72,6 +72,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 |---|---|---|---|
 | [15](https://cwe.mitre.org/data/definitions/15.html) | External control of system or configuration setting | Inexpressible: the construct does not exist |  |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through control flow | Logic or design decision: beyond any language | Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a bit mask | Prevented: rejected at compile time | `CWE-20`. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation | Prevented: rejected at compile time | `CWE-20`. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a list | Prevented: rejected at compile time | `CWE-20`. Collections and structs that hold bytes of untrusted input are tracked too. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a struct field | Prevented: rejected at compile time | `CWE-20`. |
@@ -131,6 +132,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [185](https://cwe.mitre.org/data/definitions/185.html) | Incorrect regular expression | Inexpressible: the construct does not exist |  |
 | [188](https://cwe.mitre.org/data/definitions/188.html) | Reliance on data/memory layout | Inexpressible: the construct does not exist |  |
 | [190](https://cwe.mitre.org/data/definitions/190.html) | Integer overflow or wraparound | Prevented: stopped safely at run time | `CWE-190`. |
+| [190](https://cwe.mitre.org/data/definitions/190.html) | Integer overflow (bits shifted out by <<) | Prevented: stopped safely at run time | `CWE-190`. << is checked like multiplication; wrapping_shl() is the explicit modular form. |
 | [191](https://cwe.mitre.org/data/definitions/191.html) | Integer underflow | Prevented: stopped safely at run time | `CWE-191`. |
 | [192](https://cwe.mitre.org/data/definitions/192.html) | Integer coercion error | Inexpressible: the construct does not exist |  |
 | [194](https://cwe.mitre.org/data/definitions/194.html) | Unexpected sign extension | Inexpressible: the construct does not exist |  |
@@ -226,6 +228,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [477](https://cwe.mitre.org/data/definitions/477.html) | Use of obsolete function | Prevented: rejected at compile time | `CWE-327`. |
 | [478](https://cwe.mitre.org/data/definitions/478.html) | Missing default case in multiple condition expression | Prevented: rejected at compile time | `CWE-478`. match must handle every variant or have an else branch. |
 | [480](https://cwe.mitre.org/data/definitions/480.html) | Use of incorrect operator | Logic or design decision: beyond any language | Which operator was meant is the programmer's intent. |
+| [480](https://cwe.mitre.org/data/definitions/480.html) | Use of incorrect operator (bitwise on booleans) | Prevented: rejected at compile time | `CWE-480`. |
 | [481](https://cwe.mitre.org/data/definitions/481.html) | Assigning instead of comparing | Inexpressible: the construct does not exist |  |
 | [482](https://cwe.mitre.org/data/definitions/482.html) | Comparing instead of assigning | Prevented: rejected at compile time | `expression result is unused`. |
 | [483](https://cwe.mitre.org/data/definitions/483.html) | Incorrect block delimitation | Inexpressible: the construct does not exist | Braces are mandatory. |
@@ -288,6 +291,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [775](https://cwe.mitre.org/data/definitions/775.html) | Missing release of file descriptor or handle | Inexpressible: the construct does not exist |  |
 | [776](https://cwe.mitre.org/data/definitions/776.html) | XML entity expansion (billion laughs) | Inexpressible: the construct does not exist |  |
 | [780](https://cwe.mitre.org/data/definitions/780.html) | Use of RSA algorithm without OAEP | Inexpressible: the construct does not exist |  |
+| [783](https://cwe.mitre.org/data/definitions/783.html) | Operator precedence logic error (bitwise) | Prevented: rejected at compile time | `CWE-783`. A bitwise operator may not be mixed with another operator without parentheses. |
 | [783](https://cwe.mitre.org/data/definitions/783.html) | Operator precedence logic error | Prevented: rejected at compile time | `CWE-783`. Mixing && inside || without parentheses is a warning; an error with --strict (tested that way). |
 | [786](https://cwe.mitre.org/data/definitions/786.html) | Access of memory location before start of buffer | Prevented: stopped safely at run time | `CWE-125`. |
 | [787](https://cwe.mitre.org/data/definitions/787.html) | Out-of-bounds write | Prevented: stopped safely at run time | `CWE-787`. |
@@ -337,7 +341,8 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [1321](https://cwe.mitre.org/data/definitions/1321.html) | Prototype pollution | Inexpressible: the construct does not exist |  |
 | [1325](https://cwe.mitre.org/data/definitions/1325.html) | Improperly controlled sequential memory allocation | Prevented: attempt compiles but has no effect | Collections grow geometrically with checked sizes. |
 | [1333](https://cwe.mitre.org/data/definitions/1333.html) | Inefficient regular expression complexity (ReDoS) | Inexpressible: the construct does not exist |  |
-| [1335](https://cwe.mitre.org/data/definitions/1335.html) | Incorrect bitwise shift of integer | Inexpressible: the construct does not exist |  |
+| [1335](https://cwe.mitre.org/data/definitions/1335.html) | Incorrect bitwise shift of integer | Prevented: rejected at compile time | `CWE-1335`. A literal shift count outside 0..63 does not compile. |
+| [1335](https://cwe.mitre.org/data/definitions/1335.html) | Incorrect bitwise shift of integer (computed count) | Prevented: stopped safely at run time | `CWE-1335`. |
 | [1339](https://cwe.mitre.org/data/definitions/1339.html) | Insufficient precision or accuracy of a real number | Inexpressible: the construct does not exist |  |
 | [1341](https://cwe.mitre.org/data/definitions/1341.html) | Multiple releases of same resource | Prevented: rejected at compile time | `CWE-415`. |
 | [1386](https://cwe.mitre.org/data/definitions/1386.html) | Insecure operation on Windows junction / mount point | Not applicable (yet) | Platform file-system concern. |

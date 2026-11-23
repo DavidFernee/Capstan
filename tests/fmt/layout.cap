@@ -36,6 +36,8 @@ int main( ) {
   bool long_one = total > 0
   || n > 3
       || names.len() == 0;
+    int bits=(total&0xFF)|( n<<2 )^ ~n;
+    int high=total>>  1>>>0;
     string s=$"total {total}, n {n}";
     /* a block
        comment, kept verbatim */

@@ -46,14 +46,32 @@ class Gen:
 
     def lit(self):
         r = self.r
+        if r.random() < 0.08:       # hexadecimal, using all 64 bits
+            return r.choice(["0xFF", "0x7FFFFFFFFFFFFFFF", "0xFFFFFFFFFFFFFFFF", "0x8000000000000000", "0x5555555555555555", f"0x{r.getrandbits(64):X}"])
         v = r.choice(BIG) if r.random() < 0.3 else r.randint(0, 50)
         return str(v) if r.random() < 0.8 else f"(0 - {v})"
+
+    def shift_count(self, sc, d):
+        r = self.r
+        if r.random() < 0.7:
+            return str(r.choice([0, 1, 2, 7, 31, 32, 62, 63]))
+        return f"(0 + {self.int_expr(sc, d)})"     # usually out of range: a run-time stop
 
     def int_expr(self, sc, d):
         r = self.r
         if d <= 0 or r.random() < 0.25:
             return r.choice(sc["ints"]) if sc["ints"] and r.random() < 0.6 else self.lit()
         k = r.randrange(10)
+        if k <= 3 and r.random() < 0.3:
+            op = r.choice(["&", "|", "^", "<<", ">>", ">>>", "~", "wrapping_add", "wrapping_sub", "wrapping_mul", "wrapping_shl"])
+            a = self.int_expr(sc, d - 1)
+            if op == "~":
+                return f"(~{a})"
+            if op.startswith("wrapping"):
+                b = self.shift_count(sc, d - 1) if op == "wrapping_shl" else self.int_expr(sc, d - 1)
+                return f"{op}({a}, {b})"
+            b = self.shift_count(sc, d - 1) if op in ("<<", ">>", ">>>") else self.int_expr(sc, d - 1)
+            return f"({a} {op} {b})"
         if k <= 3:
             op = r.choice(["+", "-", "*", "/", "%", "+", "-"])
             rhs = self.int_expr(sc, d - 1)

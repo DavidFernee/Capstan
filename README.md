@@ -79,6 +79,8 @@ tests/run.sh                                  # the full suite
 | `new Config{port: 80}` missing a field | `error[CWE-908]` field not initialised |
 | `string db_password = "hunter2";` | `error[CWE-798]` use `secret_env("NAME")` |
 | `md5(…)`, `sha1(…)` | `error[CWE-327]` use `hash()` / `hash_password()` |
+| `flags & 1 == 0` | `error[CWE-783]` bitwise operators need parentheses when mixed with others |
+| `1 << 64`, `admin & owner` on bools | `error[CWE-1335]`, `error[CWE-480]` |
 | `printf(…)`, `strcpy(…)`, `free(…)` | `error[CWE-134/120/415]` these don't exist |
 | `println(api_key)`, `token == given` | `error[CWE-532]`, `error[CWE-208]` use `secret_eq()` |
 | calling a protected function without a grant | `error[CWE-862]` |
@@ -89,7 +91,7 @@ tests/run.sh                                  # the full suite
 | a policy with no denial test | `warning[CAP-TEST]` (error with `--release`) |
 
 At run time: out-of-bounds reads and writes (CWE-125/787), integer overflow
-(CWE-190/191), division by zero (CWE-369), runaway recursion (CWE-674), and a
+(CWE-190/191), division by zero (CWE-369), a shift count outside 0..63 (CWE-1335), runaway recursion (CWE-674), and a
 grant replayed against a different object (CWE-639) stop the program with
 exit code 101.
 

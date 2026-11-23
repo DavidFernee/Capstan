@@ -18,18 +18,18 @@ KEYWORDS = {
     "true", "false", "none", "new", "let", "protected", "policy", "public", "test",
     "authorize", "assert_denied", "assert_granted", "enum", "match", "case", "import", "sensitive",
 }
-PUNCT = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=", "++", "--",
+PUNCT = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=", "++", "--", "<<",
          "{", "}", "(", ")", "[", "]", ";", ",", ".", ":", "?", "<", ">", "=",
-         "+", "-", "*", "/", "%", "!"]
+         "+", "-", "*", "/", "%", "!", "&", "|", "^", "~"]
 TYPE_WORDS = {"int", "bool", "string", "void", "Tainted", "Secret"}
 GENERIC_WORDS = {"List", "Map", "Grant"}
 
 
 class Tok:
-    __slots__ = ("kind", "text", "line", "file")
+    __slots__ = ("kind", "text", "line", "file", "pos")
 
-    def __init__(self, kind, text, line, file):
-        self.kind, self.text, self.line, self.file = kind, text, line, file
+    def __init__(self, kind, text, line, file, pos=-1):
+        self.kind, self.text, self.line, self.file, self.pos = kind, text, line, file, pos
 
     def __repr__(self):
         return f"{self.file}:{self.line}:{self.kind}:{self.text!r}"
@@ -76,6 +76,15 @@ def lex(src, file):
                 j += 1
             w = src[i:j]
             toks.append(Tok("kw" if w in KEYWORDS else "id", w, line, file))
+            i = j; continue
+        if src.startswith(("0x", "0X"), i):
+            j = i + 2
+            while j < n and src[j] in "0123456789abcdefABCDEF":
+                j += 1
+            if j == i + 2 or (j < n and (src[j].isalnum() or src[j] == "_")) or int(src[i + 2:j], 16) >= 1 << 64:
+                raise SystemExit(f"{file}:{line}: malformed hexadecimal literal")
+            v = int(src[i + 2:j], 16)
+            toks.append(Tok("int", str(v - (1 << 64) if v >= 1 << 63 else v), line, file))
             i = j; continue
         if c.isdigit():
             j = i
@@ -137,7 +146,7 @@ def lex(src, file):
             i = j + 1; continue
         for p in PUNCT:
             if src.startswith(p, i):
-                toks.append(Tok("op", p, line, file))
+                toks.append(Tok("op", p, line, file, i))
                 i += len(p)
                 break
         else:
@@ -402,17 +411,31 @@ class Parser:
         return ("expr", e)
 
     # -- expressions --
-    BIN = [["||"], ["&&"], ["==", "!="], ["<", "<=", ">", ">="], ["+", "-"], ["*", "/", "%"]]
+    BIN = [["||"], ["&&"], ["==", "!="], ["<", "<=", ">", ">="], ["|"], ["^"], ["&"], ["<<", ">>", ">>>"],
+           ["+", "-"], ["*", "/", "%"]]
+
+    def op_here(self):
+        """The operator at the cursor and how many tokens it spans: touching '>' tokens make >> and >>>."""
+        t = self.peek()
+        if t.kind != "op":
+            return None, 0
+        if t.text == ">":
+            k = 1
+            while k < 3 and self.peek(k).text == ">" and self.peek(k).pos == t.pos + k:
+                k += 1
+            return ">" * k, k
+        return t.text, 1
 
     def expr(self, lvl=0):
         if lvl == len(self.BIN):
             return self.unary()
         e = self.expr(lvl + 1)
-        while self.peek().kind == "op" and self.peek().text in self.BIN[lvl]:
-            op = self.peek().text
-            self.p += 1
+        while True:
+            op, width = self.op_here()
+            if op not in self.BIN[lvl]:
+                return e
+            self.p += width
             e = ("bin", op, e, self.expr(lvl + 1))
-        return e
 
     def unary(self):
         if self.at("!"):
@@ -421,6 +444,9 @@ class Parser:
         if self.at("-"):
             self.p += 1
             return ("neg", self.unary())
+        if self.at("~"):
+            self.p += 1
+            return ("bnot", self.unary())
         return self.postfix(self.primary())
 
     def args(self):
@@ -504,6 +530,7 @@ BUILTINS = {
     "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
     "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
     "escape_csv", "validate_path", "validate_range", "to_text",
+    "wrapping_add", "wrapping_sub", "wrapping_mul", "wrapping_shl",
 }
 
 PRELUDE = r'''
@@ -528,6 +555,19 @@ def _mod(a, b):
     if b == 0: _panic("division by zero", "CWE-369")
     return a - b * _div(a, b) if not (a == I64MIN and b == -1) else 0
 def _neg(a): return _chk(-a)
+def _signed(v):
+    v &= (1 << 64) - 1
+    return v - (1 << 64) if v >= 1 << 63 else v
+def _count(n):
+    if n < 0 or n > 63: _panic("shift count outside 0..63", "CWE-1335")
+    return n
+def _shl(a, n): return _chk(a << _count(n))
+def _sar(a, n): return a >> _count(n)
+def _shr(a, n): return _signed((a & ((1 << 64) - 1)) >> _count(n))
+def b_wrapping_add(a, b): return _signed(a + b)
+def b_wrapping_sub(a, b): return _signed(a - b)
+def b_wrapping_mul(a, b): return _signed(a * b)
+def b_wrapping_shl(a, n): return _signed(a << _count(n))
 def _at(s, i):
     if i < 0 or i >= len(s): _panic("string index out of bounds", "CWE-125")
     return ord(s[i])
@@ -710,6 +750,8 @@ class Gen:
             return "u_" + x[1]
         if k == "not":
             return f"(not {self.e(x[1])})"
+        if k == "bnot":
+            return f"(~{self.e(x[1])})"
         if k == "neg":
             return f"_neg({self.e(x[1])})"
         if k == "bin":
@@ -719,6 +761,10 @@ class Gen:
             if op == "*": return f"_mul({a}, {b})"
             if op == "/": return f"_div({a}, {b})"
             if op == "%": return f"_mod({a}, {b})"
+            if op in ("&", "|", "^"): return f"({a} {op} {b})"
+            if op == "<<": return f"_shl({a}, {b})"
+            if op == ">>": return f"_sar({a}, {b})"
+            if op == ">>>": return f"_shr({a}, {b})"
             if op == "&&": return f"({a} and {b})"
             if op == "||": return f"({a} or {b})"
             return f"({a} {op} {b})"

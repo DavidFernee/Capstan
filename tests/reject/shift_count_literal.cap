@@ -1,0 +1,3 @@
+// expect: CWE-1335
+// spec: expr.bitwise
+int main() { return 1 << 64; }

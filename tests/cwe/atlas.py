@@ -169,7 +169,20 @@ add(681, "Incorrect conversion between numeric types", "absent", CAST)
 add(682, "Incorrect calculation", "logic", "int discount(int price) { return price - price / 10 * 100; }" + MAIN, note="A wrong formula is a specification error. Overflow from it is still caught.")
 add(704, "Incorrect type conversion or cast", "runtime",
     "int main() { int code = 300; string s = char_str(code); return 0; }", "CWE-704")
-add(1335, "Incorrect bitwise shift of integer", "absent", SHIFT)
+add(1335, "Incorrect bitwise shift of integer", "reject", SHIFT, "CWE-1335",
+    note="A literal shift count outside 0..63 does not compile.")
+add(1335, "Incorrect bitwise shift of integer (computed count)", "runtime",
+    "int count() { return 70; }\nint main() { return 1 << count(); }", "CWE-1335")
+add(190, "Integer overflow (bits shifted out by <<)", "runtime",
+    "int main() { int x = 3; int n = 62; return x << n; }", "CWE-190",
+    note="<< is checked like multiplication; wrapping_shl() is the explicit modular form.")
+add(783, "Operator precedence logic error (bitwise)", "reject",
+    "bool even(int flags) { return flags & 1 == 0; }" + MAIN, "CWE-783",
+    note="A bitwise operator may not be mixed with another operator without parentheses.")
+add(480, "Use of incorrect operator (bitwise on booleans)", "reject",
+    "bool both(bool a, bool b) { return a & b; }" + MAIN, "CWE-480")
+add(20, "Laundering untrusted bytes through a bit mask", "reject",
+    "int main() { if (let t = read_line()) { println(char_str(t.at(0) & 0x7F)); } return 0; }", "CWE-20")
 add(1339, "Insufficient precision or accuracy of a real number", "absent", FLOAT)
 add(1077, "Floating point comparison with incorrect operator", "absent", FLOAT)
 
