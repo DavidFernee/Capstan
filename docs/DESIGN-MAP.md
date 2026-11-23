@@ -169,7 +169,8 @@ Remaining:
 
 ### v0.10 — Interop and packages
 - foreign code (existing C libraries) runs isolated, never in-process unchecked: in a separate process or a WebAssembly sandbox, behind a typed, checked interface whose inputs and outputs are `Tainted`
-- package manager: signed packages, lockfiles, capability manifests per dependency
+- package manager: signed packages, lockfiles, capability manifests per dependency; the IDE's
+  live SBOM, vulnerability checks and default remediation build on these (section 5)
 - audit command: lists every `trust()`, isolated foreign component and suppressed warning in a project
 
 ### v1.0 — Stable
@@ -199,6 +200,65 @@ A dedicated IDE built on the same server (for example a VS Code-based distributi
 - **taint view**: where untrusted input enters and every validator it passes through
 - one-click `--release` build showing exactly what blocks it
 - debugger with grant and taint inspection
+
+### Supply chain in the IDE (with Phase B and v0.10 packages)
+The IDE keeps every project's software bill of materials live, checks it against every
+vulnerability source continuously, and fixes what it finds by default.
+
+**A live SBOM.** The IDE maintains the project's SBOM (CycloneDX and SPDX, as releases already
+use) as the code changes, not only at release:
+- every dependency, with its version, licence, signature, provenance and declared capabilities
+- the toolchain too: the Capstan compiler and runtime, the C compiler and C library while they
+  remain in the trusted base (section 6), and the build tools, since these are where a supply-chain
+  attack would hide
+- the history of every change to it, with the reason (upgrade, remediation, new dependency)
+- exported on demand and attached to every build, so what shipped is always known
+
+**Every vulnerability source, checked continuously.** On project open, on every dependency change,
+and whenever a source publishes:
+- OSV (which gathers the GitHub Advisory Database and the ecosystem databases), the NVD, CISA's
+  Known Exploited Vulnerabilities catalogue, EPSS exploitation scores, vendor and distribution
+  advisories, and Capstan's own advisories, including any Capstan Challenge findings
+- **reachability:** the compiler knows the call graph, so each advisory is marked as reachable or
+  not from the project's code; unreachable ones are recorded in the SBOM as VEX "not affected"
+  statements with the evidence, rather than raised as noise
+- **privacy:** lookups run against a local mirror of the databases, so the project's dependency list
+  never leaves the machine. Air-gapped and classified environments import signed database snapshots
+  instead (section 9)
+
+**Fixed by default.** When an update, an advisory or a warning has a fix, the IDE applies it
+without being asked, unless the user has chosen to see warnings before remediation:
+- the setting is per user, per project and per organisation (an organisation can require review
+  for its projects); its default is **remediate automatically**
+- **what is remediated:** dependency updates that fix an advisory; new versions of dependencies
+  and of the toolchain; compiler warnings that have a deterministic quick fix (wrap in
+  `escape_log()`, add `"--"`, unwrap an optional). Capstan Review's AI findings are never applied
+  automatically, since they are advice, not proof
+- **how:** each remediation is one change set with its reason, the advisory it fixes, and the SBOM
+  difference; it is shown in a remediation log and can be undone in one step
+- **when it cannot be fixed** (no fixed version yet, or the fix fails the gates below), the finding
+  stays as a warning with the advisory, its reachability and the options, and a release build is
+  blocked if it is a known exploited vulnerability that is reachable
+
+**Safeguards on automatic updates.** A new version is also how supply-chain attacks arrive (a
+compromised maintainer account, a backdoored release such as xz in 2024), so updating automatically
+must never mean trusting automatically. An update is applied without asking only if it passes every gate:
+1. **signed, with build provenance** that matches the package's declared source repository
+2. **no new capabilities:** the package's capability manifest (v0.10) grants nothing it did not
+   before, and it adds no `trust()`, foreign code or suppressed warning (the audit command). Any
+   increase is always shown to the user first, whatever the setting
+3. **a cooling-off period** (default seven days) before a new release is adopted, so the ecosystem
+   has time to catch a malicious one; waived only when the update fixes a known exploited,
+   reachable vulnerability
+4. **the project's own tests pass**, including its CWE checks and policy denial tests, and
+   `--release` still builds
+5. **a compatible version** by the package's declared compatibility; a breaking upgrade is prepared
+   on a branch and shown, never applied silently
+
+**Reported, not hidden.** A summary after each session lists what was updated and why, what was
+held back and why, and what the user should look at. Organisations get the same as a report for
+their whole portfolio, which also serves as evidence for the ISM's software controls and the SSDF
+(see `docs/assurance/ISM-MAPPING.md`).
 
 ### Phase C — Capstan Review, powered by Claude
 An advisory AI layer on top of the deterministic compiler:
