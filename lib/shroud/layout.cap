@@ -94,8 +94,8 @@ void uniquify_layout_ids(Laid root, Ui ui) {
             bool collision = true;
             while (collision) {
                 collision = false;
-                if (let r = reserved.get(candidate)) { collision = true; }
-                if (let a = assigned.get(candidate)) { collision = true; }
+                if (let r = reserved.get(candidate)) { collision = r > 0; }
+                if (let a = assigned.get(candidate)) { collision = a > 0; }
                 if (collision) {
                     suffix += 1;
                     candidate = $"{original}#shroud-duplicate-{suffix}";
