@@ -1,0 +1,6 @@
+name = "capstanFormal"
+version = "0.1.0"
+defaultTargets = ["CapstanFormal"]
+
+[[lean_lib]]
+name = "CapstanFormal"

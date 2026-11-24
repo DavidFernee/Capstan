@@ -4,13 +4,21 @@ on:
   push:
     branches:
       - main
+      - 'formal/**'
       - 'verification/**'
       - 'architecture/**'
   workflow_dispatch:
+
 permissions:
   contents: read
+
+concurrency:
+  group: formal-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  lean:
+  verification-lean:
+    name: Existing language-verification package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,3 +57,78 @@ jobs:
       - name: Report theorem axiom dependencies
         working-directory: verification/lean
         run: lake env lean AxiomAudit.lean
+
+  allocator-gc-model:
+    name: Allocator and GC abstract model
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build model, audit axioms, and independently check proofs
+        uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1
+        with:
+          lake-package-directory: formal
+          use-mathlib-cache: "false"
+          leanchecker: "true"
+          nanoda: "false"
+          axiom-audit: "true"
+          axiom-audit-root: "CapstanFormal"
+      - name: Install pinned Rust toolchain for Nanoda
+        shell: bash
+        run: |
+          rustup toolchain install 1.100.0 --profile minimal
+          rustup run 1.100.0 rustc --version
+          rustup run 1.100.0 cargo --version
+      - name: Independently check Lean declarations with pinned Nanoda
+        working-directory: formal
+        shell: bash
+        env:
+          LEAN4EXPORT_SHA: df81913eee5519d5a88ae5b0fd701b5298cc29ab
+          NANODA_LIB_SHA: 0da9f98feadd3a0a2ef4b3dbcf52a298a6fef929
+        run: |
+          set -euo pipefail
+
+          git init _lean4export
+          git -C _lean4export remote add origin https://github.com/leanprover/lean4export.git
+          git -C _lean4export fetch --depth 1 origin "$LEAN4EXPORT_SHA"
+          git -C _lean4export checkout --detach FETCH_HEAD
+          test "$(git -C _lean4export rev-parse HEAD)" = "$LEAN4EXPORT_SHA"
+          cp lean-toolchain _lean4export/lean-toolchain
+          (cd _lean4export && lake build)
+
+          git init _nanoda_lib
+          git -C _nanoda_lib remote add origin https://github.com/ammkrn/nanoda_lib.git
+          git -C _nanoda_lib fetch --depth 1 origin "$NANODA_LIB_SHA"
+          git -C _nanoda_lib checkout --detach FETCH_HEAD
+          test "$(git -C _nanoda_lib rev-parse HEAD)" = "$NANODA_LIB_SHA"
+          rustup run 1.100.0 cargo build --locked --release --manifest-path _nanoda_lib/Cargo.toml
+
+          lake env _lean4export/.lake/build/bin/lean4export CapstanFormal > "$RUNNER_TEMP/capstan-formal-export.txt"
+          cat > "$RUNNER_TEMP/capstan-nanoda.json" <<EOF
+          {
+            "export_file_path": "$RUNNER_TEMP/capstan-formal-export.txt",
+            "use_stdin": false,
+            "permitted_axioms": ["propext", "Classical.choice", "Quot.sound", "Lean.trustCompiler"],
+            "unpermitted_axiom_hard_error": false,
+            "nat_extension": true,
+            "string_extension": true,
+            "print_success_message": true,
+            "print_axioms": false
+          }
+          EOF
+          _nanoda_lib/target/release/nanoda_bin "$RUNNER_TEMP/capstan-nanoda.json"
+      - name: Negative control — reject an invalid theorem
+        working-directory: formal
+        shell: bash
+        run: |
+          cat > "${RUNNER_TEMP}/CapstanFalseTheorem.lean" <<'EOF'
+          theorem capstan_negative_control : False := by
+            exact True.intro
+          EOF
+          if lake env lean "${RUNNER_TEMP}/CapstanFalseTheorem.lean"; then
+            echo "ERROR: Lean accepted an invalid theorem"
+            exit 1
+          else
+            echo "PASS: Lean rejected the deliberately invalid theorem"
+          fi
