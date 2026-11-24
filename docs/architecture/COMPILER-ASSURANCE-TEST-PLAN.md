@@ -7,12 +7,12 @@
 
 ## 1. Current evidence and scope boundary
 
-The current main-branch baseline contains the C-generating compiler, C runtime and Python/C bootstrap described in `COMPILER-PIPELINE-AUDIT.md`. The initial CCAM proposal and Capstan-native arithmetic/register substrate are currently on the separate PR #81 branch `architecture/c-free-formal-foundation`, not yet part of main at the time of this plan.
+The current main-branch baseline contains the C-generating compiler, C runtime and Python/C bootstrap described in `COMPILER-PIPELINE-AUDIT.md`, including the compound-assignment and lazy-string-literal sequencing corrections merged in PRs #97 and #109. The CCAM proposal and Capstan-native arithmetic/register substrate remain on the separate PR #81 branch `architecture/c-free-formal-foundation`; dependent PR #100 carries the remainder, register-validation and machine-schema corrections. Neither branch is part of main as of this update.
 
 Observed PR #81 state:
 - `docs/architecture/CCAM.md` defines CCAM v0.1 for signed-64 integers, booleans, typed local registers, arithmetic, branches, calls/returns, traps and deterministic step/call-depth limits.
 - `verification/ccam_core.cap` currently implements checked arithmetic and a typed register-file substrate. It is not yet a complete evaluator.
-- The PR head's GitHub Actions workflow run #582 completed successfully. This is CI evidence for that exact PR head, not evidence of a completed evaluator, native backend or formal proof.
+- The latest observed PR #81 CI run (`45352697607`) was still in progress at the time of this update. Earlier successful runs validate only their exact earlier heads. No CI result establishes a completed evaluator, native backend or end-to-end formal proof.
 
 The first native backend must wait for the CCAM instruction/evaluator interfaces and the formal/runtime owners' agreement. This plan can be adopted now without creating a competing machine.
 
