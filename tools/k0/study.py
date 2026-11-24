@@ -208,7 +208,7 @@ def load(cvelist, year):
                     published_date = date.fromisoformat(published[:10])
                 except ValueError as error:
                     raise RuntimeError(f"invalid datePublished in {path}: {published!r}") from error
-                if not isinstance(cve_id, str) or not re.fullmatch(r"CVE-\\d{4}-\\d{4,}", cve_id):
+                if not isinstance(cve_id, str) or not re.fullmatch(r"CVE-\d{4}-\d{4,}", cve_id):
                     raise RuntimeError(f"Linux published CVE has no valid cveId: {path}")
                 if filename != cve_id + ".json":
                     raise RuntimeError(f"CVE filename/id mismatch in {path}: {cve_id}")
