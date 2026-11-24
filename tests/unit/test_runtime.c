@@ -370,6 +370,17 @@ static void trigger_heap_limit_shift_overflow(void) {
 static void trigger_negative_heap_limit(void) {
     (void)cap_gc_parse_heap_limit("-1");
 }
+static void trigger_signed_heap_limit(void) {
+    (void)cap_gc_parse_heap_limit(" -1");
+}
+static void trigger_plus_heap_limit(void) {
+    (void)cap_gc_parse_heap_limit("+1");
+}
+static void trigger_missing_page_table_with_pages(void) {
+    cap_gc.ptab_cap = 0;
+    cap_gc.npages = 1;
+    cap_gc_ptab_insert(&(CapPage){.base = (char *)(uintptr_t)0x40000});
+}
 static void test_gc_allocator_arithmetic(void) {
     CHECK(expect_gc_panic(trigger_gc_add_overflow));
     CHECK(expect_gc_panic(trigger_gc_mul_overflow));
@@ -377,6 +388,8 @@ static void test_gc_allocator_arithmetic(void) {
     CHECK(expect_gc_panic(trigger_bad_heap_limit_suffix));
     CHECK(expect_gc_panic(trigger_heap_limit_shift_overflow));
     CHECK(expect_gc_panic(trigger_negative_heap_limit));
+    CHECK(expect_gc_panic(trigger_signed_heap_limit));
+    CHECK(expect_gc_panic(trigger_plus_heap_limit));
     CHECK(cap_gc_parse_heap_limit("128K") == ((size_t)128 << 10));
     CHECK(cap_gc_parse_heap_limit("1G") == ((size_t)1 << 30));
     CHECK(cap_gc_physical_heap_limit(1024, 4096) == ((size_t)3 << 20));
@@ -395,6 +408,12 @@ static void test_gc_allocator_arithmetic(void) {
     CHECK(cap_gc_saturating_add(SIZE_MAX - 1, 2) == SIZE_MAX);
     CHECK(cap_gc_next_capacity(64, 128, 64, sizeof(CapPage *)) == 128);
     CHECK(expect_gc_panic(trigger_null_registered_root));
+    {
+        size_t saved_cap = cap_gc.ptab_cap, saved_pages = cap_gc.npages;
+        cap_gc.ptab_cap = 0; cap_gc.npages = 1;
+        CHECK(expect_gc_panic(trigger_full_page_table_insert));
+        cap_gc.ptab_cap = saved_cap; cap_gc.npages = saved_pages;
+    }
     {
         CapPage **saved_table = cap_gc.ptab;
         size_t saved_cap = cap_gc.ptab_cap;
