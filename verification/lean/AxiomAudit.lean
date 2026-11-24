@@ -25,3 +25,11 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.executeNot_preserves_well_typed
 #print axioms CapstanVerification.machineStep
 #print axioms CapstanVerification.machineState_pc_is_in_range
+
+#print axioms CapstanVerification.sequentialPC
+#print axioms CapstanVerification.write
+#print axioms CapstanVerification.executeMove
+#print axioms CapstanVerification.executeAdd
+#print axioms CapstanVerification.executeLt
+#print axioms CapstanVerification.executeEq
+#print axioms CapstanVerification.executeNot
