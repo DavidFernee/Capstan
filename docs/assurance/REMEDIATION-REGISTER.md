@@ -65,7 +65,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 | #122 | Closed, superseded (not merged) | `8294cd700b35adc312475b017f739bd5f8223246` | No usable CI; test-file update malformed and draft closed | Do not merge. Corrected clean rebase is PR #134. |
 | #127 | Closed, superseded (not merged) | `70cbcdd240c469ab7d58b8532f79e84fe386e47b` | No exact-head CI; obsolete v07 base after #118 merged | Do not merge. Corrected current-main rebase is PR #134. |
 | #134 | Open, draft, targets main | `293200fac44195eb535ebd459bc26f68e7dfed6c` | Run 45355459313 success (all four jobs) | Current-main password parser; 368604 runtime checks passed on both Linux compilers; Worker 7 independent re-review positive; Worker 4/5 and architect acceptance pending. |
-| #140 | Open, draft, stacked on #117 | `2a768fdd9098469acfc6fe430e858bdab13c67ee` | No exact-head run returned yet | Test-only follow-up adds full 1 MiB Tainted fail-closed rejection without `.max_lines()` and fixes the seven-assertion summary; exact CI/owner review pending. |
+| #140 | Open, draft, stacked on #117 | `2a768fdd9098469acfc6fe430e858bdab13c67ee` | Run 45358322625 in progress; supply-chain passed, Ubuntu/GCC and Ubuntu/Clang running, macOS queued | Test-only follow-up adds full 1 MiB Tainted fail-closed rejection without `.max_lines()` and fixes the seven-assertion summary; exact CI/owner review pending. |
 
 Previously merged changes reconciled as already addressed for their specific scope: #27 (taint/run/HTML attack findings), #29 (bounded read_file/FIFO behaviour), #56 (review documentation only), #67 (taint fixpoint fails closed), #73 (NUL environment names and bounded read_line), and #78 (grant-role capacity). These do not close the distinct findings above.
 
