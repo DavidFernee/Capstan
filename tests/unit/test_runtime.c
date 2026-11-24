@@ -380,6 +380,7 @@ static void test_gc_allocator_arithmetic(void) {
     cap_gc.heap = saved_heap;
     cap_gc.max_heap = saved_limit;
     CHECK(cap_gc_saturating_add(SIZE_MAX - 1, 2) == SIZE_MAX);
+    CHECK(cap_gc_next_capacity(64, 128, 64, sizeof(CapPage *)) == 128);
 }
 
 static void test_bitwise(void) {
