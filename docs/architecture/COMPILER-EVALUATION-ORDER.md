@@ -39,9 +39,10 @@ This is sound only under the following current-language assumptions:
 1. A local scalar binding is not addressable or captured by a callee. Function arguments are passed by value, so a call cannot reassign the caller's local scalar.
 2. A local reference-valued binding contributes its pointer/reference value. A callee may mutate the referenced object, but cannot change the caller's local binding itself through that by-value argument.
 3. Global names resolved as variables are constants registered in the checker; there are no mutable global variable bindings.
-4. Every expression that can perform an observable read or effect through a field, index, call or method is classified complex.
+4. Field, index, call and method expressions are classified complex and materialised when paired with another complex operand.
+5. **Unresolved exception:** the current `is_simple()` also classifies string literals as simple, but `CAP_LIT` lazily allocates via `malloc` on first evaluation. That is an effect with a possible allocation-failure outcome. Issue #106 tracks whether literal materialisation is part of the observable resource-order contract and the required codegen/allocation-failure regression. Until resolved, the C backend's ordering claim is not complete for string-literal initialisation.
 
-If any future language feature invalidates one of these assumptions—mutable globals, by-reference scalar parameters, captured mutable locals, overloaded variable reads, or effectful getters—the simple/complex classification must be revisited before that feature is enabled. The safe fallback is to materialise every operand in source order.
+If any future language feature invalidates one of these assumptions—mutable globals, by-reference scalar parameters, captured mutable locals, overloaded variable reads, or effectful getters—the simple/complex classification must be revisited before that feature is enabled. The current string-literal exception is already known and unresolved. The safe fallback is to materialise every operand in source order or eliminate runtime effects from literal construction.
 
 This is an explicit compiler proof obligation, not an intrinsic property of C.
 
