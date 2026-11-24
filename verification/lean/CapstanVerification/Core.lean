@@ -155,7 +155,7 @@ theorem readInt_success_in_range
     | int x =>
       simp [hreg] at hread
       cases hread
-      have htyped := hregs index (.int x) hreg
+      have htyped := hregs index (.int value) hreg
       simpa [hasType, hindex] using htyped
     | bool b =>
       simp [hreg] at hread
