@@ -682,3 +682,50 @@ Specify whether all type parameters must be supplied explicitly or whether a tra
 - Verify the same call produces identical inferred type identities and diagnostics in bootstrap and self-hosted compiler runs.
 
 These requirements specify acceptance criteria; they do not claim generic inference or the proposed syntax currently exists.
+
+
+## 22. Interface-obligation resolution must be finite and exact
+
+The proposal requires generic bodies to use only operations supplied by declared constraints and resolves interface implementations after substitution. It does not yet define the representation or resolution algorithm for obligations, especially when interfaces and bounds refer recursively to generic types.
+
+### 22.1 Canonical obligation identity
+
+Represent each required interface implementation as a canonical obligation over resolved declaration identities and fully substituted type arguments, conceptually `Implements(InterfaceDeclId, ConcreteTypeId)`. Do not key obligations by short interface/type names or rendered type strings.
+
+For each generic instantiation:
+- Substitute the complete type argument vector into every declared bound.
+- Normalize and resolve the resulting interface and target identities.
+- Require exactly one concrete implementation in the applicable coherence set.
+- Reject zero matches and multiple matches before code generation.
+- Cache only completed successful or failed results under a canonical key that includes the compilation/coherence context; never reuse an answer from a different root import closure.
+- Revalidate method signatures, visibility and protected effects against the exact interface contract.
+
+An interface bound is evidence only for the exact substituted type/interface pair. It does not provide a conversion, structural duck typing, or ambient permission to call methods not declared by the interface.
+
+### 22.2 Bound and interface recursion
+
+Specify whether interfaces may extend other interfaces, whether one bound can imply another, and whether associated types/default methods are in scope. The conservative v0.5 choice is to exclude interface inheritance, associated types and default methods; each bound then creates one explicit concrete obligation and each impl supplies the complete declared method set.
+
+Even with that restriction, recursive type references and recursive generic bounds must not cause unbounded resolution. Detect an obligation already in progress using its canonical key. A repeated in-progress obligation is not automatically proof of satisfaction: reject unsupported recursive obligation cycles with a deterministic diagnostic unless the language defines a sound, terminating coinductive rule and tests it.
+
+Do not permit impl bodies to satisfy their own interface obligations by recursively selecting the impl currently being checked. Impl validation must be a separate phase that checks the complete method set and exact signatures without executing or recursively dispatching through the implementation under validation.
+
+### 22.3 Generic bounds are lexical contracts
+
+A generic declaration may rely only on bounds declared by its own type-parameter binders and on language-defined universal operations. It must not inherit constraints from whichever concrete instantiation happens to be compiled first, from another function's call context, or from a private implementation visible only in a different module.
+
+If generic nominal types can declare bounds, specify whether those bounds are required at construction, field access, method invocation or all uses. If v0.5 does not support bounds on generic struct/enum declarations, state that explicitly; do not let method bodies on `Box<T>` assume unexpressed capabilities of `T`.
+
+### 22.4 Required adversarial tests
+
+- Resolve one concrete obligation and reject zero or duplicate implementations.
+- Verify obligation keys distinguish same-spelled declarations from different modules and distinct policy/interface identities.
+- Verify a generic function's obligation is resolved only after full substitution and against the correct root import closure.
+- Reject attempts to use an implementation not visible under the chosen impl-visibility rule.
+- Verify an interface bound exposes only its declared methods and never authorises method-name-based structural dispatch.
+- Reject unsupported recursive obligation cycles deterministically without stack overflow or accidental success.
+- Verify impl validation cannot recursively use the impl being defined to prove itself.
+- Verify interface inheritance, associated types, default methods and generic nominal bounds follow explicit supported/excluded decisions.
+- Verify cache results do not leak between separate compilation roots with different imported implementation sets.
+
+These are acceptance requirements for future interface checking and static dispatch, not claims that the machinery currently exists.
