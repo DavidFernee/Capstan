@@ -1,0 +1,46 @@
+// Unit and integration checks for the aggregate rendered-line budget.
+string repeat_newlines(int n) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < n; i += 1) { parts.push("\n"); }
+    return join(parts, "");
+}
+
+string repeat_ascii(int n) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < n; i += 1) { parts.push("x"); }
+    return join(parts, "");
+}
+
+int main() {
+    if (MAX_FRAME_LINES != 131072) { return 1; }
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
+        if (let font = font_load(data)) {
+            Ui ui = new_ui(font, font, light_theme(), 64, 64, 256);
+
+            // 131,071 explicit newlines produce exactly 131,072 lines.
+            string exact = repeat_newlines(MAX_FRAME_LINES - 1);
+            Laid a = layout_root(ui, text(exact), fx(64), fx(64));
+            if (a.lines.len() / 2 != MAX_FRAME_LINES) { return 2; }
+
+            // The line budget is shared across separate text-bearing views.
+            string half = repeat_newlines(MAX_FRAME_LINES / 2 - 1);
+            View pair = column().add(text(half)).add(text(half));
+            Laid b = layout_root(ui, pair, fx(64), fx(64));
+            if (b.kids[0].lines.len() / 2 + b.kids[1].lines.len() / 2 != MAX_FRAME_LINES) { return 3; }
+
+            // An explicit max_lines() truncates before allocating excess line indices.
+            string many = repeat_newlines(MAX_FRAME_LINES + 10);
+            Laid c = layout_root(ui, text(many).max_lines(1), fx(64), fx(64));
+            if (c.lines.len() / 2 != 1) { return 4; }
+
+            // Soft wrapping consumes the same aggregate budget as explicit newlines.
+            string soft = repeat_ascii(MAX_FRAME_LINES);
+            Laid d = layout_root(ui, text(soft), fx(1), fx(64));
+            if (d.lines.len() / 2 != MAX_FRAME_LINES) { return 5; }
+
+            println("frame line budget: 5 assertions");
+            return 0;
+        }
+    }
+    return 6;
+}
