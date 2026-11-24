@@ -10,9 +10,8 @@ int main() {
     if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
         if (let font = font_load(data)) {
             Ui ui = new_ui(font, font, light_theme(), 64, 64, 256);
-            string half = repeat_ascii(MAX_FRAME_TEXT_BYTES / 2);
-            string half_plus = repeat_ascii(MAX_FRAME_TEXT_BYTES / 2 + 1);
-            View root = column().add(text(half)).add(text(half_plus));
+            string half = repeat_ascii(MAX_TEXT_BYTES);
+            View root = column().add(text(half)).add(text(half)).add(text("x"));
             layout_root(ui, root, fx(64), fx(64));
             println("unexpectedly accepted aggregate text");
             return 1;
