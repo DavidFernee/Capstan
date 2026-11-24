@@ -586,20 +586,12 @@ static int large_secret_wipe_clean;
 static void observe_large_secret_wipe(const void *memory, size_t n) {
     uintptr_t address = (uintptr_t)memory;
     const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
-    size_t ordinal = large_secret_wipe_observations++;
-    if (ordinal >= CAP_NLARGE_SECRETS) {
-        large_secret_wipe_clean = 0;
-        return;
-    }
-    large_secret_wiped_addrs[ordinal] = address;
-    large_secret_wiped_sizes[ordinal] = n;
-    large_secret_heap_at_hook[ordinal] = cap_gc.heap;
     if (n < 8192 || n % CAP_PAGE_SIZE != 0) large_secret_wipe_clean = 0;
     for (size_t i = 0; i < n; i++)
         if (bytes[i] != 0) large_secret_wipe_clean = 0;
 
-    /* The hook is inside the actual sweep: the original record must still be
-       present exactly once, with the same rounded mapping size, before munmap. */
+    /* The hook also sees unrelated secrets reclaimed by this collection.
+       Validate every callback, but count only the mappings created by this test. */
     size_t records = 0;
     for (size_t i = 0; i < cap_gc.nlarge; i++) {
         if ((uintptr_t)cap_gc.large[i].base == address) {
@@ -615,15 +607,16 @@ static void observe_large_secret_wipe(const void *memory, size_t n) {
         uintptr_t expected = large_secret_addrs[i] ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
         if (expected == address) original++;
     }
-    if (original != 1) large_secret_wipe_clean = 0;
+    if (original > 1) large_secret_wipe_clean = 0;
+    if (original == 0) return;
 
-    /* Between consecutive callbacks, only the preceding mapping's accounting
-       decrement may have occurred. */
-    if (ordinal > 0 &&
-        (large_secret_heap_at_hook[ordinal - 1] < large_secret_wiped_sizes[ordinal - 1] ||
-         cap_gc.heap != large_secret_heap_at_hook[ordinal - 1] -
-                        large_secret_wiped_sizes[ordinal - 1]))
+    size_t ordinal = large_secret_wipe_observations++;
+    if (ordinal >= CAP_NLARGE_SECRETS) {
         large_secret_wipe_clean = 0;
+        return;
+    }
+    large_secret_wiped_addrs[ordinal] = address;
+    large_secret_wiped_sizes[ordinal] = n;
 }
 
 __attribute__((noinline)) static void make_large_secrets_for_wipe(void) {
