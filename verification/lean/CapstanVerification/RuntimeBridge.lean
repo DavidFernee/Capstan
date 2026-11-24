@@ -224,7 +224,7 @@ theorem fin_eq_of_val_eq {n : Nat} {a b : Fin n}
 
 /-- The target register receives the replacement's declared type. -/
 theorem runtimeWriteRegister_type_at_target_preserved
-    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    {n : Nat} {types : RegTypes n}
     {runtime updated : List RuntimeRegister}
     (index : Fin n) (replacement : RuntimeRegister)
     (hdecl : replacement.declaredType = types index)
