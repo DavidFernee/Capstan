@@ -126,13 +126,18 @@ The left operand is always evaluated first. The right operand is evaluated only 
 For simple local assignment `x = e`, evaluate `e` completely, then replace the value of `x`.
 
 Compound assignment is defined by sequencing, not by textual substitution into an implementation-language expression. The source checker on the audit baseline (`main` before PR #123) accepts local variables, field paths rooted in a simple path, and simply-indexed elements as compound-assignment targets; effectful call expressions in the base or index are rejected there. Draft PR #123 proposes a narrow extension for field targets whose receiver is effectful, with a regression requiring that receiver to be evaluated exactly once. Indexed targets retain the stricter simple-path rule. Whether or not that extension is adopted, every accepted target must obey the exactly-once sequencing rule below. For an assignable location `L` and operation `op`, `L op= e` means:
-1. evaluate and retain the location designator exactly once; an indexed location retains the container identity and evaluated index, not an identity for the element currently stored there;
+1. evaluate and retain the location designator exactly once:
+   - for a local variable, retain the binding in the current frame;
+   - for a field target `receiver.field`, evaluate `receiver` once and retain the resulting object identity;
+   - for a direct indexed target `container[index]`, evaluate and retain the container identity and index, not the identity of the element currently stored there;
 2. read and retain the old value at that location;
 3. evaluate `e`;
 4. apply `op` to the retained old value and the new RHS value;
-5. establish that the retained location remains valid in the post-RHS state (including object liveness and current logical bounds), by a dynamic recheck or a sound proof that the RHS cannot invalidate it; then write the result.
+5. establish that the retained location remains valid in the post-RHS state, then write the result.
 
-A trap in steps 1–4 prevents the write. After the RHS, the write targets the current slot at the retained index if that index remains within the container's current logical length; an insertion/removal before that index may therefore change which element occupies the slot. If the RHS invalidates the location—for example, by shrinking the list so the retained index is no longer valid—the write traps and performs no store. A bounds proof established before the RHS alone does not justify an unchecked post-RHS store. No step may be reordered across another observable step. The aggregate transition is reserved until aggregate locations are added to the machine, but every future aggregate extension MUST preserve this sequencing and revalidation rule.
+For a direct indexed target, step 5 MUST verify that the retained container is live and the retained index remains within its current logical length, either dynamically or by a sound proof that the RHS cannot invalidate it. The write targets the current slot at that index; an insertion/removal before the index may therefore change which element occupies the slot. If the RHS shrinks the container so the retained index is no longer valid, the write traps and performs no store. A pre-RHS bounds proof alone does not justify an unchecked post-RHS store.
+
+For a field target, the write is to the retained receiver object, not to a receiver expression or collection slot re-evaluated after the RHS. The retained reference MUST remain live through the operation (and, in a GC implementation, be visible as a root); if the receiver was obtained from `container[index]`, the list access is performed once before the RHS and the field write still targets that same object even if the RHS later changes the list. A simple local binding remains valid for the duration of its frame. No step may be reordered across another observable step. These aggregate-location rules are reserved until aggregate locations are added to the machine, but every future aggregate extension MUST preserve them.
 
 ## 4. Integer semantics
 
