@@ -492,6 +492,8 @@ string gen_simple(Gen g, Node s) {
                 string index = fresh(g);
                 string list_type = "cap_list";
                 if (is_blist(ty_of(target.kids[0]))) { list_type = "cap_blist"; }
+                // A proved setter is valid only when range analysis has
+                // excluded RHS effects that could shrink this collection.
                 string su = "";
                 if (index_safe(g.r, target.kids[0], target.kids[1])) { su = "_proved"; }
                 string read_old = "";
