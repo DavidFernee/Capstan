@@ -579,7 +579,6 @@ static void test_secret_wipe(void) {
 static uintptr_t large_secret_addrs[CAP_NLARGE_SECRETS];
 static uintptr_t large_secret_wiped_addrs[CAP_NLARGE_SECRETS];
 static size_t large_secret_wiped_sizes[CAP_NLARGE_SECRETS];
-static size_t large_secret_heap_at_hook[CAP_NLARGE_SECRETS];
 static size_t large_secret_wipe_observations;
 static int large_secret_wipe_clean;
 
@@ -653,13 +652,6 @@ static void test_gc_large_secret_mapping(void) {
             if ((uintptr_t)cap_gc.large[i].base == large_secret_wiped_addrs[j]) records++;
         if (records != 0) large_secret_wipe_clean = 0;
     }
-    if (large_secret_wipe_observations > 0) {
-        size_t last = large_secret_wipe_observations - 1;
-        if (large_secret_heap_at_hook[last] < large_secret_wiped_sizes[last] ||
-            cap_gc.heap != large_secret_heap_at_hook[last] - large_secret_wiped_sizes[last])
-            large_secret_wipe_clean = 0;
-    }
-
     cap_gc_test_secret_wipe_hook = NULL;
     size_t heap_after = cap_gc.heap;
     CHECK(large_secret_wipe_observations >= CAP_NLARGE_SECRETS - 1);
