@@ -32,20 +32,22 @@ int main() {
             string many = repeat_newlines(MAX_FRAME_LINES + 10);
             Laid c = layout_root(ui, text(many).max_lines(1), fx(64), fx(64));
             if (c.lines.len() / 2 != 1) { return 4; }
+            List<int> direct = wrap_lines_limited(font, fx(14), text_codepoints(many), 0, MAX_FRAME_LINES + 1, true);
+            if (direct.len() / 2 != MAX_FRAME_LINES) { return 5; }
 
             // Soft wrapping consumes the same aggregate budget as explicit newlines.
             string soft = repeat_ascii(MAX_FRAME_LINES);
             Laid d = layout_root(ui, text(soft), fx(1), fx(64));
-            if (d.lines.len() / 2 != MAX_FRAME_LINES) { return 5; }
+            if (d.lines.len() / 2 != MAX_FRAME_LINES) { return 6; }
 
             // A full-size untrusted file is decoded, but max_lines stops wrapping
             // after the first visual line instead of building a million line pairs.
             if (let payload = read_file("tests/shroud/.frame_line_payload.tmp")) {
                 Laid e = layout_root(ui, user_text(payload).max_lines(1), fx(1), fx(64));
-                if (e.lines.len() / 2 != 1) { return 6; }
-            } else { return 7; }
+                if (e.lines.len() / 2 != 1) { return 7; }
+            } else { return 8; }
 
-            println("frame line budget: 6 assertions");
+            println("frame line budget: 7 assertions");
             return 0;
         }
     }
