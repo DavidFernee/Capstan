@@ -100,6 +100,8 @@ execution and build path, not the intended C-free destination.
 | Operating system and hardware | Process isolation, memory, signals, files | The platform | Not tested by Capstan | seL4 or a Capstan microkernel are long-term options (section 7, K3) |
 | GitHub and its hosted runners | Host source, CI and release assembly | `.github/workflows/` | Actions are SHA-pinned; release workflow defines checksums, keyless Sigstore signatures, CycloneDX/SPDX SBOMs and GitHub artifact attestations. Workflow configuration is not proof of a successful release or an independent rebuild | Independent rebuild outside GitHub and a higher-assurance provenance process remain future work |
 
+The detailed allocation kinds, conservative root set, reachability rules, reclamation behaviour and explicit lifetime limitations are specified in [RUNTIME-MEMORY-MODEL.md](RUNTIME-MEMORY-MODEL.md). That document is a normative v0.6 design baseline with implementation conformance explicitly qualified; it is not a proof that the current C collector satisfies every stated property.
+
 ## 5.1 Formal-verification boundary
 
 The active C-free programme uses CCAM as the proposed canonical typed core IR and Lean 4
