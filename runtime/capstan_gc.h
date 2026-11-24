@@ -229,6 +229,12 @@ static size_t cap_gc_parse_heap_limit(const char *text) {
     return (size_t)value;
 }
 
+static size_t cap_gc_effective_heap_limit(size_t configured) {
+    /* Zero disables the user-selected lower cap, not the hard object-size ceiling. */
+    return configured == 0 || configured > CAP_MAX_LEN
+         ? (size_t)CAP_MAX_LEN : configured;
+}
+
 static size_t cap_gc_physical_heap_limit(size_t physical_pages, size_t page_size) {
     if (!physical_pages || !page_size) return (size_t)1 << 34;
     if (physical_pages > CAP_MAX_LEN / page_size) return CAP_MAX_LEN;
@@ -256,7 +262,7 @@ static void cap_gc_init(void) {
     }
     /* Never more than 2^48 bytes: every string and collection is then shorter than
        2^48 elements, a bound the compiler's range analysis relies on. */
-    if (cap_gc.max_heap == 0 || cap_gc.max_heap > CAP_MAX_LEN) cap_gc.max_heap = CAP_MAX_LEN;
+    cap_gc.max_heap = cap_gc_effective_heap_limit(cap_gc.max_heap);
     char *low = NULL;
 #if defined(__APPLE__)
     cap_gc.stack_top = (char *)pthread_get_stackaddr_np(pthread_self());
