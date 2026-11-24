@@ -1,0 +1,8 @@
+// expect-runtime: CWE-369
+// spec: types.int runtime.checks
+// A variable divisor avoids the compile-time literal-zero diagnostic;
+// remainder by zero must still trap at run time.
+int main() {
+    int zero = 0;
+    return 1 % zero;
+}

@@ -75,6 +75,20 @@ Braces are required around every body.
 Precedence from low to high: `||`, `&&`, `== !=`, `< <= > >=`, `+ -`, `* / %`, unary `! - ~`,
 then postfix `.field`, `.method(args)`, `[index]`.
 
+Integer arithmetic uses signed 64-bit two's-complement values. Addition,
+subtraction, multiplication and unary negation are checked; an unrepresentable
+result stops the program with CWE-190. Division truncates toward zero.
+Remainder is defined by `a = q*b + r`, where `q` is that truncating quotient;
+a nonzero remainder has the sign of the dividend and `|r| < |b|`.
+Division or remainder by zero stops the program with CWE-369.
+Let `MIN = -2^63`. `MIN / -1` stops with CWE-190, while
+`0x8000000000000000 % -1` returns `0`: the remainder is representable even
+though the corresponding quotient is not. Implementations must special-case
+this remainder pair before any host operation that could overflow or be
+undefined. The sign is a unary operator, not part of a decimal token; use the
+hexadecimal literal `0x8000000000000000` or an in-range arithmetic expression
+to denote the minimum signed integer.
+
 Bitwise operators `&`, `|`, `^` and shifts `<<`, `>>`, `>>>` **may not be combined with any other
 operator without parentheses** (CWE-783): `(x & 1) == 0`, never `x & 1 == 0`, which C reads as
 `x & (1 == 0)`. A chain of one of `&`, `|`, `^` needs none (`a | b | c`); shifts are always grouped
@@ -114,10 +128,10 @@ explicitly. Their meaning therefore never depends on precedence.
 | `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
-| `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
+| `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input. Its payload is limited to 1,048,576 bytes, excluding the terminating newline: exactly 1 MiB is accepted whether followed by newline or EOF; the next non-newline byte traps with CWE-789 before it is appended |
 | `read_bytes(n)` → `Tainted?`, `flush()` | `read_bytes` reads exactly `n` bytes of standard input (fewer only if the input ends first), every byte kept, or gives `none` at end of input; `read_bytes(0)` is `""`. `n` outside 0..2^30 stops the program (CWE-789); memory grows with the bytes read, not with `n`. `flush()` writes out everything printed so far, for programs that converse over a pipe (a language server, say) |
 | `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
-| `join(list, sep)`, `exit(code)`, `assert(cond)` | `join(List<string>, string)` returns `string`; `join(List<Tainted>, string)` returns `Tainted` and preserves untrusted provenance. The runtime computes the output size and allocates the result once. |
+| `join(list, sep)`, `exit(code)`, `assert(cond)` | `List<string>` joins to `string`; `List<Tainted>` joins to `Tainted` and preserves untrusted provenance. The runtime computes the output size and allocates the result once. |
 | `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
 | `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers. `escape_html()` output is safe in element text and in a quoted attribute value; joined to literal HTML in the same expression, it is an error (CWE-79) inside a tag outside a quoted value, in an event-handler (`on…`) or URL or style attribute (`href`, `src`, `action`, `style` and others), or inside `<script>`, `<style>` or a comment |
 | `trust(t, "justification")` → `string` | explicit escape hatch; always reported as an AUDIT warning |
@@ -316,6 +330,7 @@ When the language gains a feature, add its area here and its tests together.
 | `stmt.match` | `match`, exhaustiveness, bindings |
 | `expr.operators` | operators and precedence |
 | `expr.order` | strict left-to-right evaluation |
+| `expr.short_circuit` | `&&`/`||` suppress a trapping RHS when the result is already determined |
 | `expr.interpolation` | `$"..."` interpolated strings |
 | `expr.bitwise` | `& \| ^ ~ << >> >>>`, required parentheses, shift counts, hexadecimal literals, wrapping arithmetic |
 | `builtins.io` | printing, files, arguments |

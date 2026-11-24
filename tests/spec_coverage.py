@@ -7,7 +7,7 @@ import glob, os, re, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 spec = open(os.path.join(ROOT, "docs/SPEC.md")).read()
 table = spec.split("## Conformance areas", 1)[1]
-areas = {m.group(1): m.group(2).strip() for m in re.finditer(r"^\| `([a-z.]+)` \| (.+?) \|$", table, re.M)}
+areas = {m.group(1): m.group(2).strip() for m in re.finditer(r"^\| `([a-z][a-z0-9_.]*)` \| (.+?) \|$", table, re.M)}
 tests = {}
 for p in sorted(glob.glob(os.path.join(ROOT, "tests/*/*.cap"))):
     m = re.search(r"^// spec: (.+)$", open(p, encoding="latin-1").read(), re.M)
