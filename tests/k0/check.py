@@ -88,8 +88,22 @@ with tempfile.TemporaryDirectory() as temporary:
     tracked_record.write_text("{}", encoding="utf-8")
     subprocess.run(["git", "-C", str(root), "add", "snapshot.txt", "cves"], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
+    subprocess.run(["git", "-C", str(root), "remote", "add", "origin",
+                    "https://github.com/CVEProject/cvelistV5.git"], check=True)
     commit = study.source_snapshot(str(root))
     assert len(commit) == 40 and all(ch in "0123456789abcdef" for ch in commit)
+    # A different repository with the same directory layout must not be labelled as CVE List V5.
+    subprocess.run(["git", "-C", str(root), "remote", "set-url", "origin",
+                    "https://github.com/example/not-cvelist.git"], check=True)
+    try:
+        study.source_snapshot(str(root))
+    except RuntimeError as error:
+        assert "origin" in str(error)
+    else:
+        raise AssertionError("unrelated Git origin was accepted as CVE List V5")
+    subprocess.run(["git", "-C", str(root), "remote", "set-url", "origin",
+                    "git@github.com:CVEProject/cvelistV5.git"], check=True)
+    assert study.source_snapshot(str(root)) == commit
     # A sparse checkout can hide tracked files from status while leaving the tree clean.
     subprocess.run(["git", "-C", str(root), "update-index", "--skip-worktree",
                     "cves/1999/0xxx/CVE-1999-0001.json"], check=True)
