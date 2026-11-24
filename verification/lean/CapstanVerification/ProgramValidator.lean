@@ -216,7 +216,7 @@ theorem validateSingleFrameProgram_final_terminal
   finiteProgram_final_instruction_has_control_effect program
 
 /-- Every instruction in a finite program has bounded control-flow targets. -/
-theorem finiteProgram_targets_bounded
+theorem validateSingleFrameProgram_targets_bounded
     {n m : Nat} {types : RegTypes n}
     (program : FiniteProgram n m types)
     (pc : Fin (m + 1)) :
