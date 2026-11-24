@@ -52,11 +52,15 @@ static void test_secret_scratch_lifecycle(void) {
     cap_secret_scratch_destroy(&scratch);
     CHECK(!scratch.active && scratch.data == NULL && scratch.len == 0);
     CHECK(secret_scratch_wipe_calls == 1 && secret_scratch_wipe_clean);
+    cap_secret_scratch_destroy(&scratch); /* repeated destroy is a no-op */
+    CHECK(secret_scratch_wipe_calls == 1);
 
     CHECK(cap_secret_scratch_init(&scratch, 0));
     CHECK(scratch.active && scratch.data == NULL && scratch.len == 0);
     cap_secret_scratch_destroy(&scratch);
     CHECK(!scratch.active && secret_scratch_wipe_calls == 1);
+    cap_secret_scratch_destroy(&scratch);
+    CHECK(secret_scratch_wipe_calls == 1);
 
     /* PBKDF2 intermediates are wiped as one region immediately before free. */
     unsigned char salt[16] = {0}, derived[32];
