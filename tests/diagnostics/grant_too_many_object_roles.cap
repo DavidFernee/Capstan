@@ -1,0 +1,28 @@
+// expect: policy 'P' has more than 8 struct parameters; grants support at most 8 object roles
+// spec: auth.policy auth.grant
+struct A { int id; }
+struct B { int id; }
+struct C { int id; }
+struct D { int id; }
+struct E { int id; }
+struct F { int id; }
+struct G { int id; }
+struct H { int id; }
+struct I { int id; }
+
+public policy P(A p0, B p1, C p2, D p3, E p4, F p5, G p6, H p7, I p8) { return true; }
+protected(P) void use(Grant<P> grant, A p0, B p1, C p2, D p3, E p4, F p5, G p6, H p7, I p8) { }
+int main() {
+    A p0 = new A{id: 0};
+B p1 = new B{id: 1};
+C p2 = new C{id: 2};
+D p3 = new D{id: 3};
+E p4 = new E{id: 4};
+F p5 = new F{id: 5};
+G p6 = new G{id: 6};
+H p7 = new H{id: 7};
+I p8 = new I{id: 8};
+
+    if (let grant = authorize P(p0, p1, p2, p3, p4, p5, p6, p7, p8)) { use(grant, p0, p1, p2, p3, p4, p5, p6, p7, p8); }
+    return 0;
+}
