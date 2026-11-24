@@ -47,7 +47,7 @@ The source reference promises left-to-right evaluation. The original field and i
 
 ### 3.3 `read_line()` bound
 
-The runtime caps the payload at 1,048,576 bytes, excluding the terminating newline. Exactly 1 MiB is accepted (including EOF immediately after that payload); the next non-newline byte traps with CWE-789. PR #93 adds the existing bound and over-limit outcome to the `docs/SPEC.md` row. The runtime unit suite tests exactly 1 MiB followed by newline and max-plus-one rejection; exactly 1 MiB followed immediately by EOF appears accepted by source inspection but still needs its own regression. Treat the limit as a compatibility fact, not as a new CCAM feature.
+The runtime caps the payload at 1,048,576 bytes, excluding the terminating newline. Exactly 1 MiB is accepted (including EOF immediately after that payload); the next non-newline byte traps with CWE-789. PR #93 adds the existing bound and over-limit outcome to the `docs/SPEC.md` row. The runtime unit suite tests exactly 1 MiB followed by newline and max-plus-one rejection. PR #93 adds `tests/unit/read_line_eof.py`, which exercises the public native API with exactly 1 MiB followed immediately by EOF. Treat the limit as a compatibility fact, not as a new CCAM feature.
 
 ## 4. Compatibility policy
 
