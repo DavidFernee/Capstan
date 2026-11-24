@@ -110,6 +110,35 @@ with tempfile.TemporaryDirectory() as temporary:
     else:
         raise AssertionError("dirty CVE source snapshot was accepted")
 
+# Review labels must be unique, belong to the exact source population and use known classes.
+with tempfile.TemporaryDirectory() as temporary:
+    path = pathlib.Path(temporary) / "reviewed.csv"
+    population = [{"id": "CVE-2025-10001"}]
+    path.write_text("id,class\\nCVE-2025-10001,use-after-free\\n", encoding="utf-8")
+    assert study.load_reviewed(population, str(path)) == {"CVE-2025-10001": "use-after-free"}
+    path.write_text("id,class\\nCVE-2025-10001,use-after-free\\nCVE-2025-10001,logic error\\n",
+                    encoding="utf-8")
+    try:
+        study.load_reviewed(population, str(path))
+    except RuntimeError as error:
+        assert "duplicate" in str(error)
+    else:
+        raise AssertionError("duplicate review labels were accepted")
+    path.write_text("id,class\\nCVE-2024-10001,use-after-free\\n", encoding="utf-8")
+    try:
+        study.load_reviewed(population, str(path))
+    except RuntimeError as error:
+        assert "absent from the source population" in str(error)
+    else:
+        raise AssertionError("stale review label was accepted")
+    path.write_text("id,class\\nCVE-2025-10001,not-a-real-class\\n", encoding="utf-8")
+    try:
+        study.load_reviewed(population, str(path))
+    except RuntimeError as error:
+        assert "unknown review class" in str(error)
+    else:
+        raise AssertionError("unknown review class was accepted")
+
 # Memory-safety consequences must outrank non-memory causes across title/body fields.
 cls, cwe, evidence = study.classify(
     "integer overflow in packet length",

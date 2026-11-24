@@ -208,15 +208,20 @@ def load(cvelist, year):
                     published_date = date.fromisoformat(published[:10])
                 except ValueError as error:
                     raise RuntimeError(f"invalid datePublished in {path}: {published!r}") from error
-                if published_date.year != year:
-                    continue
-                if not isinstance(cve_id, str) or not cve_id.startswith("CVE-"):
+                if not isinstance(cve_id, str) or not re.fullmatch(r"CVE-\\d{4}-\\d{4,}", cve_id):
                     raise RuntimeError(f"Linux published CVE has no valid cveId: {path}")
                 if filename != cve_id + ".json":
                     raise RuntimeError(f"CVE filename/id mismatch in {path}: {cve_id}")
                 if cve_id in seen:
                     raise RuntimeError(f"duplicate CVE identifier in source tree: {cve_id}")
                 seen.add(cve_id)
+                identifier_year, sequence = cve_id.split("-")[1:]
+                relative = os.path.relpath(path, root).split(os.sep)
+                if (identifier_year != sub or len(relative) != 3
+                        or relative[1] != sequence[:2] + "xxx"):
+                    raise RuntimeError(f"CVE identifier does not match its source directory: {path}")
+                if published_date.year != year:
+                    continue
 
                 containers = record.get("containers")
                 cna = containers.get("cna") if isinstance(containers, dict) else None
@@ -250,6 +255,36 @@ def load(cvelist, year):
 
     rows.sort(key=lambda row: row["id"])
     return rows
+
+def load_reviewed(rows, path):
+    """Load manual labels and reject duplicates, stale IDs and unknown classes."""
+    if not os.path.exists(path):
+        return {}
+    by_id = {row["id"]: row for row in rows}
+    with open(path, newline="", encoding="utf-8") as source:
+        labels = list(csv.DictReader(source))
+    required = {"id", "class"}
+    if not labels:
+        # An empty file is valid only when it still has the required CSV header.
+        with open(path, newline="", encoding="utf-8") as source:
+            fields = set(csv.DictReader(source).fieldnames or [])
+        if not required.issubset(fields):
+            raise RuntimeError(f"review label file lacks required columns {sorted(required)}: {path}")
+    ids = [label.get("id", "") for label in labels]
+    if any(not identifier for identifier in ids):
+        raise RuntimeError(f"review label file contains an empty CVE identifier: {path}")
+    if len(ids) != len(set(ids)):
+        raise RuntimeError(f"duplicate CVE identifiers in review label file: {path}")
+    missing = sorted(set(ids) - set(by_id))
+    if missing:
+        raise RuntimeError(f"review label file contains CVEs absent from the source population: {missing}")
+    known_classes = set(CLASS_CWE)
+    for label in labels:
+        cls = label.get("class", "").strip()
+        if cls not in known_classes:
+            raise RuntimeError(f"unknown review class {cls!r} in {path} for {label['id']}")
+    return {label["id"]: label["class"].strip() for label in labels}
+
 
 def subsystem(files):
     if not files:
@@ -378,10 +413,8 @@ def main():
     rows = load(args[0], year)
     snapshot = source_snapshot(args[0])
     atlas = atlas_verdicts()
-    reviewed = {}
     rpath = os.path.join(HERE, "data", f"reviewed-{year}.csv")
-    if os.path.exists(rpath):
-        reviewed = {x["id"]: x["class"] for x in csv.DictReader(open(rpath))}
+    reviewed = load_reviewed(rows, rpath)
     for r in rows:
         cls, cwe, ev = classify(r["title"], r["desc"])
         r["class"], r["cwe"], r["evidence"] = cls, cwe, ev
