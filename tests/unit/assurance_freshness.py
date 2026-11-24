@@ -41,6 +41,20 @@ class FreshnessTests(unittest.TestCase):
         MODULE.ROOT = self.old_root
         self.tmp.cleanup()
 
+    def test_only_live_claim_states_require_freshness(self):
+        self.assertTrue(MODULE.requires_freshness("active"))
+        self.assertTrue(MODULE.requires_freshness("qualified"))
+        self.assertFalse(MODULE.requires_freshness("proposed"))
+        self.assertFalse(MODULE.requires_freshness("withdrawn"))
+
+    def test_schema_rejects_empty_claim_inventory(self):
+        import json
+        schema_path = os.path.join(ROOT, "docs", "assurance", "assurance.schema.json")
+        with open(schema_path, encoding="utf-8") as f:
+            schema = json.load(f)
+        self.assertGreaterEqual(schema["properties"]["claims"].get("minItems", 0), 1)
+        self.assertGreaterEqual(schema["$defs"]["claim"]["properties"]["evidence"].get("minItems", 0), 1)
+
     def test_unrelated_change_does_not_stale_covered_path(self):
         with open(os.path.join(self.repo, "unrelated.txt"), "w", encoding="utf-8") as f:
             f.write("unrelated\n")

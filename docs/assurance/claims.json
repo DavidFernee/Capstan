@@ -13,7 +13,7 @@
         "Capstan-language programs compiled by the repository compiler",
         "String and list indexing operations covered by the language specification and runtime"
       ],
-      "state": "qualified",
+      "state": "proposed",
       "assumptions": [
         "The Capstan compiler and generated-code checks behave as specified.",
         "The C compiler, C runtime, operating system and platform C library are within the trusted computing base."
@@ -28,7 +28,8 @@
       "limitations": [
         "This claim does not establish memory safety of the C runtime itself.",
         "It does not cover future foreign-function interfaces or unsafe platform extensions.",
-        "A test fixture's presence is not evidence that it passed on the snapshot revision."
+        "A test fixture's presence is not evidence that it passed on the snapshot revision.",
+        "This claim is not currently qualified: its recorded review and evidence are stale against the current implementation and must be refreshed before it is presented as an active assurance claim."
       ],
       "evidence": [
         {
