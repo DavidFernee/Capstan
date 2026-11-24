@@ -330,6 +330,7 @@ static void test_files(void) {
 
 /* Shifts and wrapping arithmetic at the edges of the 64-bit range (no panics here;
    the stops are covered by tests/runtime/shift_*.cap). */
+static int expect_runtime_panic(void (*fn)(void));
 static void trigger_gc_add_overflow(void) {
     (void)cap_gc_checked_add(SIZE_MAX, 1);
 }
