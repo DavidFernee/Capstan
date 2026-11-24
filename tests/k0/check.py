@@ -152,6 +152,30 @@ with tempfile.TemporaryDirectory() as temporary:
     else:
         raise AssertionError("unknown review class was accepted")
 
+# The tuning and held-out label checker must reject duplicate and stale IDs.
+original_root = study.ROOT
+with tempfile.TemporaryDirectory() as temporary:
+    study.ROOT = temporary
+    label_dir = pathlib.Path(temporary) / "tests" / "k0"
+    label_dir.mkdir(parents=True)
+    label_path = label_dir / "labels.csv"
+    label_path.write_text("id,class\\nCVE-2025-10001,use-after-free\\n"
+                          "CVE-2025-10001,logic error\\n", encoding="utf-8")
+    try:
+        study.check_labels([], {}, "labels.csv")
+    except ValueError as error:
+        assert "duplicate" in str(error)
+    else:
+        raise AssertionError("duplicate tuning labels were accepted")
+    label_path.write_text("id,class\\nCVE-2024-10001,use-after-free\\n", encoding="utf-8")
+    try:
+        study.check_labels([], {}, "labels.csv")
+    except ValueError as error:
+        assert "absent from the source population" in str(error)
+    else:
+        raise AssertionError("stale tuning label was accepted")
+study.ROOT = original_root
+
 # Memory-safety consequences must outrank non-memory causes across title/body fields.
 cls, cwe, evidence = study.classify(
     "integer overflow in packet length",

@@ -340,7 +340,8 @@ def check_labels(classified, atlas, name):
     total = same_class = same_outcome = 0
     prevented = {"classifier": 0, "labels": 0}
     misses = []
-    labels = list(csv.DictReader(open(path)))
+    with open(path, newline="", encoding="utf-8") as source:
+        labels = list(csv.DictReader(source))
     label_ids = [lab["id"] for lab in labels]
     if len(label_ids) != len(set(label_ids)):
         raise ValueError(f"duplicate CVE identifiers in label file {path}")
