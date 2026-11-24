@@ -127,7 +127,7 @@ The executable evaluator, register files, frames, instruction sequences, and con
 Execution returns exactly one of:
 - `Halt(value)` for a successful non-void entry-function return;
 - `HaltVoid` for a successful void entry-function return; or
-- `Trap(code, function, pc)` for a defined dynamic machine trap.
+- `Trap(code, function, pc, detail)` for a defined dynamic machine trap; `detail` is absent except for `explicit_trap`, which carries its validated reason.
 
 A complete source-program entry has zero arguments and returns `int` or `void`. Internal functions may return `int`, `bool` or `void`. Structural program errors are reported as validation failures before execution, not as dynamic traps.
 
