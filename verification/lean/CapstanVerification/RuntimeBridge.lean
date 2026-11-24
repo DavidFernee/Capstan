@@ -53,6 +53,20 @@ def runtimeSetAt : List RuntimeRegister → Nat → RuntimeRegister → List Run
   | head :: rest, Nat.succ index, replacement =>
       head :: runtimeSetAt rest index replacement
 
+/-- A list-slot replacement preserves the register-file length. -/
+theorem runtimeSetAt_length
+    (registers : List RuntimeRegister) (index : Nat)
+    (replacement : RuntimeRegister) :
+    (runtimeSetAt registers index replacement).length = registers.length := by
+  induction registers generalizing index with
+  | nil =>
+      simp [runtimeSetAt]
+  | cons head rest ih =>
+      cases index with
+      | zero => rfl
+      | succ index =>
+          simp [runtimeSetAt, ih]
+
 /-- The replacement is found at the index that was updated. -/
 theorem runtimeSetAt_get_same_of_exists
     (registers : List RuntimeRegister) (index : Nat)
@@ -109,6 +123,23 @@ def runtimeWriteRegister (registers : List RuntimeRegister)
         .ok (runtimeSetAt registers index replacement)
       else
         .error .typeMismatch
+
+/-- A successful dynamic replacement preserves the register-file length. -/
+theorem runtimeWriteRegister_length
+    (registers updated : List RuntimeRegister)
+    (index : Nat) (replacement : RuntimeRegister)
+    (hwrite : runtimeWriteRegister registers index replacement = .ok updated) :
+    updated.length = registers.length := by
+  unfold runtimeWriteRegister at hwrite
+  cases hreg : runtimeRegisterAt registers index with
+  | none =>
+      simp [hreg] at hwrite
+  | some old =>
+      by_cases htype : old.declaredType = replacement.declaredType
+      · simp [hreg, htype] at hwrite
+        cases hwrite
+        exact runtimeSetAt_length registers index replacement
+      · simp [hreg, htype] at hwrite
 
 /-- A successful dynamic replacement installs the requested register at its index. -/
 theorem runtimeWriteRegister_target
