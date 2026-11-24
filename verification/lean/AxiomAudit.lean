@@ -92,6 +92,9 @@ import CapstanVerification.Progress
 #print axioms CapstanVerification.runtimeReadBool_corresponds
 #print axioms CapstanVerification.runtimeRelation_preserves_well_typed
 #print axioms CapstanVerification.runtimeWriteRegister_preserves_relation
+#print axioms CapstanVerification.fin_eq_of_val_eq
+#print axioms Fin.ext
+#print axioms Fin.val_ne_of_ne
 
 #print axioms CapstanVerification.runtimeSetAt
 #print axioms CapstanVerification.runtimeSetAt_get_same_of_exists
