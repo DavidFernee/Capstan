@@ -4,6 +4,7 @@ import CapstanVerification.Core
 #print axioms CapstanVerification.maxI64_in_range
 #print axioms CapstanVerification.below_minI64_out_of_range
 #print axioms CapstanVerification.above_maxI64_out_of_range
+#print axioms CapstanVerification.executeBranch_target_is_declared
 #print axioms CapstanVerification.executeMove_preserves_well_typed
 #print axioms CapstanVerification.readValue_success_well_typed
 #print axioms CapstanVerification.readInt_success_in_range
