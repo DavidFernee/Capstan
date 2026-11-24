@@ -8,7 +8,7 @@
 - No `${{ ... }}` expansion of untrusted event data or secrets inside a `run:` script; values
   reach scripts through `env:` instead.
 - Every actions/checkout sets `persist-credentials: false`.
-- Write permissions appear only in release.yml, and only in the jobs that need them.
+- Write permissions are allowlisted per workflow and job; CodeQL result upload is restricted to its analysis job.
 
 Line-based (no YAML library) so it runs with `python3 -I` anywhere.
 Usage: python3 -I tests/supply/workflows.py [DIR]   (default .github/workflows)
@@ -24,6 +24,7 @@ ALLOWED_WRITES = {
     ("release.yml", "sign", "id-token"),
     ("release.yml", "sign", "attestations"),
     ("release.yml", "publish", "contents"),
+    ("codeql.yml", "analyze", "security-events"),
 }
 USES = re.compile(r"^\s*(?:-\s+)?uses:\s*(\S+)(.*)$")
 PINNED = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$")
