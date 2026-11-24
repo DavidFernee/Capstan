@@ -113,5 +113,13 @@ int main() {
     if (bounds_ok) { println("pbkdf2-bounds ok"); }
     else { println("pbkdf2-bounds FAIL"); }
     println("pbkdf2-empty " + to_hex(pbkdf2_sha256(empty, empty, 1, 32)));
+    List<int> key64 = new List<int>();
+    List<int> key65 = new List<int>();
+    for (int q3 = 0; q3 < 65; q3 += 1) {
+        key65.push(112);
+        if (q3 < 64) { key64.push(112); }
+    }
+    println("pbkdf2-key64 " + to_hex(pbkdf2_sha256(key64, bytes("salt"), 2, 32)));
+    println("pbkdf2-key65 " + to_hex(pbkdf2_sha256(key65, bytes("salt"), 2, 32)));
     return 0;
 }
