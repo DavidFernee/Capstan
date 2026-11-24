@@ -12,7 +12,7 @@ The current main-branch baseline contains the C-generating compiler, C runtime a
 Observed PR #81 state:
 - `docs/architecture/CCAM.md` defines CCAM v0.1 for signed-64 integers, booleans, typed local registers, arithmetic, branches, calls/returns, traps and deterministic step/call-depth limits.
 - `verification/ccam_core.cap` currently implements checked arithmetic and a typed register-file substrate. It is not yet a complete evaluator.
-- The latest observed PR #81 CI run (`45352697607`) was still in progress at the time of this update. Earlier successful runs validate only their exact earlier heads. No CI result establishes a completed evaluator, native backend or end-to-end formal proof.
+- PR #81's exact head `8591cc152ca40330e419b48282afce2f4dd32903` passed all four required CI jobs in run `45352697607`. Its dependent semantic-correction PR #100 exact head `de299dc22ada1e92c00184de95acd9bfc29c8a6f` also passed all four jobs in run `45352775903`. These are CI results for those exact revisions, not evidence of a completed evaluator, native backend or end-to-end formal proof. PR #124's source-language core/typed-IR contract and PR #89's formal refinement work remain separate review items.
 
 The first native backend must wait for the CCAM instruction/evaluator interfaces and the formal/runtime owners' agreement. This plan can be adopted now without creating a competing machine.
 
