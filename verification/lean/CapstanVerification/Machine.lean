@@ -67,7 +67,7 @@ The program invariant requires the final slot to be a jump, branch, return or
 trap, so a well-formed program never uses the clamped sequential edge.
 -/
 def sequentialPC {m : Nat} (pc : Fin (m + 1)) : Fin (m + 1) :=
-  ⟨min (pc.val + 1) m, by omega⟩
+  ⟨min (pc.val + 1) m, Nat.lt_succ_of_le (Nat.min_le_right _ _)⟩
 
 /-- Total small-step semantics for the finite, typed, single-frame fragment. -/
 def machineStep {n m : Nat} {types : RegTypes n}
