@@ -172,50 +172,32 @@ theorem pushCallFrame_within_limit
     exact Nat.succ_le_of_lt hdepth
   · simp [hdepth] at h
 
-/-- Pop a nested callee and restore its caller as the top frame.
+/-- Pop a nested callee and return the remaining caller stack.
 
 The singleton entry frame is deliberately not popped here: returning from the
 entry function is a halt, handled by the enclosing machine semantics.
 -/
 def popNestedCallFrame {Frame : Type}
-    (stack : CallStack Frame) : Except Trap (Frame × CallStack Frame) :=
-  match stack with
-  | ⟨frames, maxDepth, _nonempty, within_limit⟩ =>
-      match frames with
-      | [] => .error .invalidControlFlow
-      | [_] => .error .invalidControlFlow
-      | callee :: caller :: rest =>
-          .ok (callee, {
-            frames := caller :: rest
-            maxDepth := maxDepth
-            nonempty := by simp
-            within_limit := by
-              have hlen : (caller :: rest).length ≤ (callee :: caller :: rest).length := by
-                simp
-              have hbound : (callee :: caller :: rest).length ≤ maxDepth := by
-                simpa using within_limit
-              exact Nat.le_trans hlen hbound
-          })
+    (stack : CallStack Frame) : Except Trap (Frame × List Frame) :=
+  match stack.frames with
+  | callee :: caller :: rest => .ok (callee, caller :: rest)
+  | _ => .error .invalidControlFlow
 
-/-- A successful nested return restores the caller at the top of the stack. -/
+/-- A successful nested return restores the caller at the top of the frame list. -/
 theorem popNestedCallFrame_restores_caller
-    {Frame : Type} (stack next : CallStack Frame)
+    {Frame : Type} (stack : CallStack Frame)
     (callee caller : Frame) (rest : List Frame)
     (hframes : stack.frames = callee :: caller :: rest)
-    (h : popNestedCallFrame stack = .ok (callee, next)) :
-    next.frames.head? = some caller := by
-  cases stack with
-  | mk frames maxDepth nonempty within_limit =>
-      simp [popNestedCallFrame, hframes] at h
-      cases h
-      simp
+    (h : popNestedCallFrame stack = .ok (callee, caller :: rest)) :
+    (caller :: rest).head? = some caller := by
+  simp
 
 /-- A successful nested return decreases call depth by exactly one. -/
 theorem popNestedCallFrame_decreases_depth
     {Frame : Type} (stack : CallStack Frame)
-    (result : Frame × CallStack Frame)
+    (result : Frame × List Frame)
     (h : popNestedCallFrame stack = .ok result) :
-    result.2.frames.length + 1 = stack.frames.length := by
+    result.2.length + 1 = stack.frames.length := by
   cases hframes : stack.frames with
   | nil =>
       simp [popNestedCallFrame, hframes] at h
@@ -227,6 +209,18 @@ theorem popNestedCallFrame_decreases_depth
           simp [popNestedCallFrame, hframes, htail] at h
           cases h
           simp
+
+/-- A successful nested return remains within the configured call-depth limit. -/
+theorem popNestedCallFrame_within_limit
+    {Frame : Type} (stack : CallStack Frame)
+    (result : Frame × List Frame)
+    (h : popNestedCallFrame stack = .ok result) :
+    result.2.length ≤ stack.maxDepth := by
+  have hdepth := popNestedCallFrame_decreases_depth stack result h
+  have hlt : result.2.length < stack.frames.length := by
+    rw [← hdepth]
+    exact Nat.lt_succ_self _
+  exact Nat.le_trans (Nat.le_of_lt hlt) stack.within_limit
 
 /-- The entry frame is retained; its return is not a nested stack pop. -/
 theorem popNestedCallFrame_entry_refused
