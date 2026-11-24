@@ -384,6 +384,8 @@ test "CCAM x86-64 backend emits freestanding checked native assembly" {
     assert(ccam_x64_contains(native.assembly, "cap_max_depth: .quad 16"));
     assert(ccam_x64_contains(native.assembly, "movq $9, %rax"));
     assert(ccam_x64_contains(native.assembly, "movq $10, %rax"));
+    assert(ccam_x64_contains(native.assembly, "movq cap_stack_base(%rip), %rdi"));
+    assert(ccam_x64_contains(native.assembly, "addq $4096, %rdi"));
     assert(ccam_x64_contains(native.assembly, "cap_stack_base: .zero 8"));
     assert(ccam_x64_contains(native.assembly, "cap_stack_bytes: .quad "));
     assert(ccam_x64_contains(native.assembly, ".Lcap_trap_stack_allocation"));
