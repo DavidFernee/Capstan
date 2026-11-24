@@ -148,6 +148,16 @@ A call transfers control to the callee's first instruction only after the call i
 
 The Capstan source entry point remains `int main()` or `void main()`; a CCAM program used as a complete source-program image MUST have a zero-argument entry function returning `int` or `void`. Internal CCAM functions MAY return `bool` as well as `int` or `void`.
 
+
+### 5.1 Structured control flow
+
+- An `if` evaluates its boolean condition once, then executes exactly the selected branch (or no branch when false and no `else` is present).
+- A `while` evaluates its condition before each iteration. A false result exits; a true result executes the body and then reevaluates the condition. `continue` resumes at the condition; `break` exits the innermost enclosing loop.
+- A `for (init; cond; step)` executes `init` once, then repeats: evaluate `cond`; if false, exit; otherwise execute the body; on normal body completion or `continue`, execute `step`; then reevaluate `cond`. `break` exits without executing `step`.
+- A `return` terminates the current function immediately. No later statement in that invocation is evaluated. A successful call resumes the caller only after the callee has returned; a trap terminates the entire machine execution.
+
+These rules are source-level sequencing requirements. Lowering may replace structured control flow with branches and jumps, but MUST preserve the condition, body, step, break and continue order exactly.
+
 All branches select a validated instruction index within the current function. Starting at instruction 0, every reachable nonterminal instruction MUST have an in-function successor; a reachable infinite loop is permitted. A function MUST NOT have a reachable path that falls through beyond its instruction sequence. Unreachable instructions are still structurally validated.
 
 ## 6. Structural validation and dynamic traps
