@@ -1933,6 +1933,15 @@ Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, string seed, bool repo
         flow_walk(f, body);
         rounds += 1;
     }
+    // Never run sink diagnostics with a partial intraprocedural taint set.
+    // A long reverse dependency chain can require more than 100 passes.
+    if (f.changed) {
+        if (error_count(ctx) == 0) {
+            error_at(ctx, body, "CWE-20",
+                "intraprocedural taint analysis did not reach a fixpoint within 100 rounds; refusing to compile");
+        }
+        return f;
+    }
     if (report) {
         f.report = true;
         flow_walk(f, body);
