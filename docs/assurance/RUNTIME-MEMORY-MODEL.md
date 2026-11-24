@@ -33,7 +33,7 @@ The collector uses 64 KiB pages for small allocations (up to 2 KiB), with one si
 
 Strings and hash-index storage are atomic: their bytes are not interpreted as references. Pointer-bearing structures, lists and maps use traced allocations. Secret allocations are pointer-free.
 
-The collector's allocation kind must not be confused with a source-level confidentiality label. Copying secret bytes into an ordinary string, stack buffer, file, environment, register, or foreign API does not cause those copies to inherit the secret allocation kind. The declared `CAP_MAX_LEN` is not yet enforced at the central allocator entry point on current main; PR #98 adds that central check together with checked accounting.
+The collector's allocation kind must not be confused with a source-level confidentiality label. Copying secret bytes into an ordinary string, stack buffer, file, environment, register, or foreign API does not cause those copies to inherit the secret allocation kind. The central allocator now rejects invalid allocation kinds and requests larger than `CAP_MAX_LEN`. PR #112 also adds checked metadata arithmetic, bounded metadata growth, heap-accounting guards and page-table validation; these are implementation checks backed by the exact-head CI matrix, not a proof of the collector as a whole.
 
 ## 3. Roots and reachability
 
@@ -121,9 +121,9 @@ cap_gc.heap =
   + sizes of currently registered large allocations
 ```
 
-The exact definition of “retained” must track successful OS release/recommit operations. Collector metadata is excluded. The current mainline's page-release path does not check the return value of `madvise` before marking a page released and decrementing `cap_gc.heap`; this is an outstanding correctness issue addressed separately in the GC safety workstream. Consequently, the counter is not yet a fully reliable measurement of resident managed backing on every OS path.
+The exact definition of “retained” must track successful OS release/recommit operations. Collector metadata is excluded. The page-release path still does not check the return value of `madvise` before marking a page released and decrementing `cap_gc.heap`; this remains an outstanding correctness issue in the separate GC safety workstream. Consequently, the counter is not yet a fully reliable measurement of retained managed backing on every OS path.
 
-The current mainline also contains unchecked arithmetic in allocator accounting and metadata capacity growth, and its default physical-memory limit calculation can overflow on extreme platform values. The central allocator does not yet enforce `CAP_MAX_LEN` for every direct allocation. The separate allocator-hardening workstream (PR #98) adds checked arithmetic, strict heap-limit parsing, a bounded physical-memory calculation and bounded metadata growth; until that change is integrated and validated, the corresponding stronger invariants are proposed requirements, not current guarantees. Large-object sweep also decrements `cap_gc.heap` without an explicit underflow check on current main.
+PR #112 is merged and adds checked size addition/multiplication, bounded metadata capacity and allocation sizing, saturating counters, subtraction-based heap-limit checks, checked page/large-object release underflow, bounded page-table probing/rehash and strict `CAPSTAN_MAX_HEAP` parsing. The physical-memory-derived default limit is also calculated with overflow checks. These checks are covered by regression tests and exact-head Ubuntu/GCC, Ubuntu/Clang, macOS/Clang and supply-chain CI. They do not establish that every possible internal metadata corruption is recoverable, that OS release calls succeed, or that collector accounting is a process-wide memory measurement.
 
 ## 7. Synchronisation and threads
 
@@ -151,13 +151,13 @@ The following invariants are the basis for implementation checks and future proo
 | MEM-01 | Every small object belongs to exactly one page, size class and allocation kind. | Enforced by allocator structure; needs heap-integrity verification |
 | MEM-02 | A small slot is allocated iff its page allocation metadata marks it allocated. | Collector invariant; stress tests exist, exhaustive checker required |
 | MEM-03 | A free slot appears exactly once in the matching free list and is not marked live. | Collector invariant; dedicated heap-integrity checker required |
-| MEM-04 | A page-table entry maps a page number to exactly one page record; table capacity is a power of two and probing terminates. | Current implementation uses open addressing; corrupt-table termination and capacity hardening are in progress |
+| MEM-04 | A page-table entry maps a page number to exactly one page record; table capacity is a power of two and probing terminates. | PR #112 adds bounded probing, insertion and rehash, plus checks for invalid capacities, missing storage and duplicate records; covered by regression tests |
 | MEM-05 | The large-object table is sorted by base address and contains each live large allocation exactly once. | Used by binary-search marking; requires invariant checker |
-| MEM-06 | Metadata capacity and byte-size calculations do not wrap. | Not guaranteed on current main; PR #98 hardens the arithmetic |
-| MEM-07 | Heap accounting changes exactly once for each successful page backing acquisition/release and large-object allocation/free. | Not fully established; OS release return handling and exact decrement tests remain outstanding |
+| MEM-06 | Metadata capacity and byte-size calculations do not wrap. | PR #112 adds checked arithmetic and bounded metadata sizing/growth; regression-tested |
+| MEM-07 | Heap accounting changes exactly once for each successful page backing acquisition/release and large-object allocation/free. | Arithmetic and underflow checks are merged in #112; `madvise` success/failure handling and exact release-transition observation remain outstanding in #51 |
 | MEM-08 | Every live pointer-bearing object reachable from a supported root is marked before sweep. | Requires collector proof under explicit ABI/root assumptions and adversarial tests |
 | MEM-09 | Atomic allocations are never scanned as pointer-bearing objects. | Structural allocator property; testable |
-| MEM-10 | Secret wiping occurs before reclaimed storage is made available for reuse or returned to the OS. | Intended ordering; needs non-elidable wipe review and direct path-specific tests |
+| MEM-10 | Secret wiping occurs before reclaimed storage is made available for reuse or returned to the OS. | Large-object and small-slot wipe behaviour remains subject to #51; small secret free slots on main still have allocator metadata written into the first pointer-sized word |
 | MEM-11 | No concurrent runtime entry occurs under the v0.6 execution model. | External program/runtime-use assumption; not internally enforced |
 | MEM-12 | A failed allocation does not return a partially initialized object to the caller. | Current failure is process-fatal; recoverable failure atomicity is not promised |
 
