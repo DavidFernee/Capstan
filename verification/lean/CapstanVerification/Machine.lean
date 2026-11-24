@@ -296,6 +296,24 @@ trap, so a well-formed program never uses the clamped sequential edge.
 def sequentialPC {m : Nat} (pc : Fin (m + 1)) : Fin (m + 1) :=
   ⟨min (pc.val + 1) m, Nat.lt_succ_of_le (Nat.min_le_right _ _)⟩
 
+/-- Sequential execution advances by one slot before the final instruction. -/
+theorem sequentialPC_increments_before_last
+    {m : Nat} (pc : Fin (m + 1)) (h : pc.val < m) :
+    (sequentialPC pc).val = pc.val + 1 := by
+  unfold sequentialPC
+  simp [Nat.min_eq_left (Nat.succ_le_of_lt h)]
+
+/-- The clamped sequential successor of the final slot is the final slot itself.
+
+Well-formed programs require that slot to have an explicit control effect, so
+this clamped edge is never a valid instruction fall-through.
+-/
+theorem sequentialPC_at_last
+    {m : Nat} (pc : Fin (m + 1)) (h : pc.val = m) :
+    (sequentialPC pc).val = m := by
+  unfold sequentialPC
+  simp [h]
+
 /-- Total small-step semantics for the finite, typed, single-frame fragment. -/
 def machineStep {n m : Nat} {types : RegTypes n}
     (program : FiniteProgram n m types) (state : MachineState n m types) :
