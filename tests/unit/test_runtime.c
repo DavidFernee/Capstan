@@ -361,6 +361,13 @@ static void trigger_full_page_table_insert(void) {
     CapPage pg = {.base = (char *)(uintptr_t)0x30000};
     cap_gc_ptab_insert(&pg);
 }
+static void trigger_null_page_table_insert(void) {
+    cap_gc_ptab_insert(NULL);
+}
+static void trigger_duplicate_page_table_insert(void) {
+    CapPage duplicate = {.base = (char *)(uintptr_t)0x10000};
+    cap_gc_ptab_insert(&duplicate);
+}
 static void trigger_bad_heap_limit_suffix(void) {
     (void)cap_gc_parse_heap_limit("12MB");
 }
@@ -407,6 +414,7 @@ static void test_gc_allocator_arithmetic(void) {
     CHECK(cap_gc_saturating_add(SIZE_MAX - 1, 2) == SIZE_MAX);
     CHECK(cap_gc_next_capacity(64, 128, 64, sizeof(CapPage *)) == 128);
     CHECK(expect_gc_panic(trigger_null_registered_root));
+    CHECK(expect_gc_panic(trigger_null_page_table_insert));
     {
         size_t saved_cap = cap_gc.ptab_cap, saved_pages = cap_gc.npages;
         cap_gc.ptab_cap = 0; cap_gc.npages = 1;
@@ -419,6 +427,15 @@ static void test_gc_allocator_arithmetic(void) {
         cap_gc.ptab = NULL; cap_gc.ptab_cap = 2;
         CHECK(expect_gc_panic(trigger_full_page_table_lookup));
         cap_gc.ptab = saved_table; cap_gc.ptab_cap = saved_cap;
+    }
+    {
+        CapPage existing = {.base = (char *)(uintptr_t)0x10000};
+        CapPage *table[2] = {&existing, NULL};
+        CapPage **saved_table = cap_gc.ptab;
+        size_t saved_cap = cap_gc.ptab_cap, saved_pages = cap_gc.npages;
+        cap_gc.ptab = table; cap_gc.ptab_cap = 2; cap_gc.npages = 1;
+        CHECK(expect_gc_panic(trigger_duplicate_page_table_insert));
+        cap_gc.ptab = saved_table; cap_gc.ptab_cap = saved_cap; cap_gc.npages = saved_pages;
     }
     {
         CapPage first = {.base = (char *)(uintptr_t)0x10000};
