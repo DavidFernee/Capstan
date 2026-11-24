@@ -204,6 +204,9 @@ int draw_glyphs(Canvas cv, Font f, int size, List<int> cps, int from, int to, in
 // out[0], 2, 4...; ends (exclusive, trailing spaces dropped) in out[1], 3, 5...
 // Lines break after spaces, at newlines, and inside a word only if it alone is too
 // wide. With max_w at UNBOUNDED only newlines break.
+// Bound standalone wrapping too; layout uses the same value as its frame budget.
+const int MAX_TEXT_LINES = 131072;
+
 bool line_slot_available(int used, int max_lines, bool allow_truncate) {
     if (used < max_lines) { return true; }
     if (allow_truncate) { return false; }
@@ -255,7 +258,7 @@ List<int> wrap_lines_limited(Font f, int size, List<int> cps, int max_w, int max
 // Backwards-compatible single-value wrapper. The layout pass uses the
 // limited form with its shared remaining-frame budget.
 List<int> wrap_lines(Font f, int size, List<int> cps, int max_w) {
-    return wrap_lines_limited(f, size, cps, max_w, MAX_FRAME_LINES, false);
+    return wrap_lines_limited(f, size, cps, max_w, MAX_TEXT_LINES, false);
 }
 
 int trim_end(List<int> cps, int from, int to) {
