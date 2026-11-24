@@ -47,7 +47,7 @@ The source reference promises left-to-right evaluation. The code generator's ind
 
 ### 3.3 `read_line()` bound
 
-The runtime caps a line at 1 MiB; the current reference row documents byte preservation and EOF but omits the bound and over-limit outcome. Treat the limit as a compatibility fact requiring explicit documentation and boundary tests, not as a new CCAM feature.
+The runtime caps the payload at 1,048,576 bytes, excluding the terminating newline. Exactly 1 MiB is accepted (including EOF immediately after that payload); the next non-newline byte traps with CWE-789. The current reference row documents byte preservation and EOF but omits this bound and over-limit outcome. Treat the limit as a compatibility fact requiring explicit documentation and boundary tests, not as a new CCAM feature.
 
 ## 4. Compatibility policy
 
