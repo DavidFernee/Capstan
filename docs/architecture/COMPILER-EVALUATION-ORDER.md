@@ -32,17 +32,16 @@ The backend uses GNU C statement expressions and temporaries for this purpose. T
 
 ## 3. The `hoist()` classification invariant
 
-The optimisation does not materialise every operand unconditionally. It classifies integer/string/boolean/none literals and variable references as simple; field, index, call and method expressions are complex.
+The optimisation does not materialise every operand unconditionally. It classifies integer/boolean/none literals and variable references as simple; string literals, field, index, call and method expressions are complex. String literals are complex because `CAP_LIT` performs lazy allocation in the current runtime; PR #109 fixes their sequencing.
 
 This is sound only under the following current-language assumptions:
 
 1. A local scalar binding is not addressable or captured by a callee. Function arguments are passed by value, so a call cannot reassign the caller's local scalar.
 2. A local reference-valued binding contributes its pointer/reference value. A callee may mutate the referenced object, but cannot change the caller's local binding itself through that by-value argument.
 3. Global names resolved as variables are constants registered in the checker; there are no mutable global variable bindings.
-4. Field, index, call and method expressions are classified complex and materialised when paired with another complex operand.
-5. **Unresolved exception:** the current `is_simple()` also classifies string literals as simple, but `CAP_LIT` lazily allocates via `malloc` on first evaluation. That is an effect with a possible allocation-failure outcome. Issue #106 tracks whether literal materialisation is part of the observable resource-order contract and the required codegen/allocation-failure regression. Until resolved, the C backend's ordering claim is not complete for string-literal initialisation.
+4. Field, index, call, method and string-literal expressions are classified complex and materialised in source order when paired with another complex operand. String literals require this treatment because `CAP_LIT` lazily allocates via `malloc` and can fail.
 
-If any future language feature invalidates one of these assumptions—mutable globals, by-reference scalar parameters, captured mutable locals, overloaded variable reads, or effectful getters—the simple/complex classification must be revisited before that feature is enabled. The current string-literal exception is already known and unresolved. The safe fallback is to materialise every operand in source order or eliminate runtime effects from literal construction.
+If any future language feature invalidates one of these assumptions—mutable globals, by-reference scalar parameters, captured mutable locals, overloaded variable reads, or effectful getters—the simple/complex classification must be revisited before that feature is enabled. String-literal sequencing is fixed by PR #109; the safe fallback for any future effectful expression is to materialise every operand in source order or eliminate runtime effects from its construction.
 
 This is an explicit compiler proof obligation, not an intrinsic property of C.
 
@@ -54,7 +53,7 @@ This is an explicit compiler proof obligation, not an intrinsic property of C.
 
 The expected output is `11` and `1001`. These values distinguish left-to-right evaluation from a lowering that executes the mutating call before reading the field.
 
-`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. `tests/accept/compound_assignment_lvalue_once.cap` checks that a side-effectful field receiver is evaluated exactly once before the RHS. The current checker restricts indexed compound-assignment targets to simple-indexed elements, so effectful index/base expressions are not currently source-representable; the indexed-list old-value and post-RHS validity paths are covered separately. `tests/runtime/compound_assignment_invalidated_index.cap` checks that an RHS which shrinks the list causes a controlled bounds trap at the final write rather than an unchecked stale-index store.
+`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. The current checker restricts indexed compound-assignment targets to simple-indexed elements, so effectful index/base expressions are not currently source-representable; the indexed-list old-value and post-RHS validity paths are covered separately. `tests/runtime/compound_assignment_invalidated_index.cap` checks that an RHS which shrinks the list causes a controlled bounds trap at the final write rather than an unchecked stale-index store.
 
 The fixtures are conformance tests. They do not prove all generated expressions correct, establish that the C compiler behaves identically on every target, or replace a formal source-to-CCAM/native correctness argument.
 
