@@ -1237,6 +1237,9 @@ static void cap_hmac_sha256(const unsigned char *key, size_t kn, const unsigned 
    copy these states, finish the inner/outer hashes, and wipe the copies. */
 static void cap_hmac_sha256_prepare(const unsigned char *key, size_t kn,
                                     CapSha256 *inner, CapSha256 *outer) {
+#ifdef CAP_PBKDF2_TEST_HOOK
+    cap_pbkdf2_prepare_calls++;
+#endif
     unsigned char k[64] = {0}, ipad[64], opad[64];
     CapSha256 s;
     if (kn > 64) {
@@ -1307,6 +1310,7 @@ static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
 
 #ifdef CAP_PBKDF2_TEST_HOOK
 static unsigned cap_pbkdf2_test_calls;
+static unsigned cap_pbkdf2_prepare_calls;
 #endif
 
 static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
