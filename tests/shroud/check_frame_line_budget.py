@@ -52,24 +52,31 @@ def main():
             with open(payload_path, "wb") as payload:
                 payload.write(b"x" * 1048576)
             unit_result = run([unit_exe], env=env)
+            if "frame line budget: 7 assertions" not in unit_result.stdout:
+                raise SystemExit(f"frame line budget unit assertions missing:\n{unit_result.stdout}")
+
+            reject_exe = os.path.join(tmp, "frame_line_budget_reject")
+            build(capstanc, cc, cflags, reject, reject_exe)
+            result = run([reject_exe], expected=101)
+            if "shroud: frame text line budget exceeded" not in result.stdout:
+                raise SystemExit(f"trusted aggregate line-budget diagnostic missing:\n{result.stdout}")
+
+            tainted_reject = os.path.join(ROOT, "tests", "shroud", "frame_line_budget_tainted_reject.cap")
+            tainted_exe = os.path.join(tmp, "frame_line_budget_tainted_reject")
+            build(capstanc, cc, cflags, tainted_reject, tainted_exe)
+            tainted_result = run([tainted_exe], expected=101)
+            if "shroud: frame text line budget exceeded" not in tainted_result.stdout:
+                raise SystemExit(f"Tainted aggregate line-budget diagnostic missing:\n{tainted_result.stdout}")
         finally:
             if os.path.exists(payload_path):
                 os.unlink(payload_path)
-        if "frame line budget: 7 assertions" not in unit_result.stdout:
-            raise SystemExit(f"frame line budget unit assertions missing:\n{unit_result.stdout}")
-
-        reject_exe = os.path.join(tmp, "frame_line_budget_reject")
-        build(capstanc, cc, cflags, reject, reject_exe)
-        result = run([reject_exe], expected=101)
-        if "shroud: frame text line budget exceeded" not in result.stdout:
-            raise SystemExit(f"aggregate line-budget diagnostic missing:\n{result.stdout}")
 
     peak = re.search(r"peak_heap=(\d+)", unit_result.stderr + unit_result.stdout)
     if not peak:
         raise SystemExit("frame line budget: CAPSTAN_GC_STATS did not report peak_heap")
     heap_note = f"; peak Capstan GC heap {int(peak.group(1)) / (1024 * 1024):.1f} MiB"
-    print("frame line budget: 6 unit assertions; explicit/soft wrap, full-size untrusted input and multi-view "
-          "boundaries; one-line-over tree rejected" + heap_note)
+    print("frame line budget: 7 unit assertions; explicit/soft wrap, full-size untrusted input and multi-view "
+          "boundaries; trusted and Tainted one-line-over trees rejected" + heap_note)
     return 0
 
 
