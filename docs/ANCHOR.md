@@ -239,13 +239,27 @@ run proves only that this compiler version accepted this source under these flag
 - local symbol/file navigation where supported;
 - reproducible build record and toolchain identity.
 
-**A4 — Assurance and security views:**
-- assurance-register reader, evidence provenance/freshness;
-- runtime-check catalogue and static-vs-runtime explanation;
-- no package trust or capability UI until those underlying APIs exist.
+**A4 — Visual development and live preview:**
+- Shroud component palette, hierarchy/tree, design canvas and properties inspector;
+- responsive and theme previews, accessibility inspection and interactive preview;
+- source-aware, bidirectional transformations between a constrained visual subset and
+  Capstan source; source remains authoritative and round-trip edits preserve unrelated
+  comments, formatting and code;
+- no separate proprietary visual document as a competing source of truth.
 
-Debugging, refactoring, package management, plugin support, documentation browser,
-semantic tokens and advanced code navigation remain later milestones.
+**A5 — Security assurance and trusted component catalogue:**
+- assurance-register reader, evidence provenance/freshness and static/runtime property
+  catalogue;
+- curated, versioned catalogue of reusable Capstan components, including authentication
+  and authorisation building blocks;
+- component assurance records, dependency closure, signatures, reproducible build
+  identity, security review, tests/fuzzing and vulnerability/advisory status;
+- project-level verification of selected component versions and configurations;
+- no “secure” or “verified” label without scoped, current, independently checkable evidence.
+
+**Later — Advanced development workflow:**
+Debugging, semantic refactoring, package management, isolated extensions, documentation
+browser, semantic tokens and advanced code navigation require stable underlying APIs.
 
 ## 9. Acceptance criteria for A0
 
@@ -256,3 +270,83 @@ semantic tokens and advanced code navigation remain later milestones.
   no problems for the prototype.
 - The docs clearly label absent interfaces and planned work.
 - No assurance claim is shown as proven without verifiable evidence.
+
+
+## 9. WYSIWYG Shroud designer
+
+The visual designer is a first-class Anchor workflow, not a separate application or a
+replacement for Capstan source. It is built entirely in Capstan and rendered by Shroud.
+The initial design surface is intentionally limited to a declarative subset of Shroud
+views whose structure and properties can be represented and edited without executing
+arbitrary project code.
+
+The designer should provide:
+- a searchable component palette;
+- a hierarchical component tree with selection, reordering and nesting;
+- a canvas with selection outlines, resize/layout handles and interactive preview;
+- a properties inspector for layout, typography, colour, state and accessibility;
+- viewport and breakpoint previews, light/dark themes and reusable design tokens;
+- accessibility checks and visual regression/diff support;
+- selection-to-source mapping in both directions.
+
+**Source authority and round-trip safety:** Capstan source remains authoritative.
+Visual edits must be expressed as source-aware transformations over compiler-recognised
+syntax, not by serialising an unrelated visual model over the user's file. Code edits
+must refresh the visual projection. A selection in either view must map to the same
+component/source range. Transformations must preserve comments, formatting and
+unrelated expressions; if a transformation cannot be made safely, the designer must
+refuse the edit and explain why rather than silently rewriting or dropping code.
+
+This requires a compiler-supported parse/source-map/transformation contract and Shroud
+component metadata. Neither exists as a complete current interface; A4 is therefore a
+design target, not a claim about current functionality. The designer must never execute
+untrusted project code merely to draw the canvas. Preview execution, if later required,
+must use a separate constrained process with explicit capabilities and resource limits.
+
+## 10. Curated security-reviewed component catalogue
+
+Anchor should make secure implementation the easiest path by offering prebuilt,
+reusable Capstan components for security-sensitive tasks. Initial candidate families
+include authentication (passkeys/WebAuthn, OIDC/OAuth client integration, MFA, session
+lifecycle and password verification), authorisation (role/attribute-based policy
+building blocks), secure credential and secret handling, cryptographic protocols,
+input/serialization validation, secure network clients and audit logging.
+
+The catalogue is not an untrusted plugin marketplace. Components are reviewed and
+published through a controlled release process, with source available and pinned,
+versioned dependencies. The package manager, signature verification and capability
+interfaces are prerequisites; none should be implied to exist in the current baseline.
+
+Each catalogue entry must carry a machine-readable assurance record containing at least:
+- exact component version, source revision, package identity and transitive dependency
+  closure;
+- maintainer and reviewer identities, review date, review scope and threat model;
+- supported protocols/algorithms and explicit configuration assumptions;
+- test, conformance, fuzz, static-analysis and (where applicable) formal-verification
+  results, each tied to exact source and tool versions;
+- SBOM, reproducible-build result, signed release and provenance/attestation references;
+- known limitations, security advisories, affected-version ranges and remediation status;
+- capability requirements, data-handling behaviour and upgrade/compatibility notes.
+
+**Assurance is scoped, not absolute.** Avoid a binary “secure” badge. Distinguish at
+least: unreviewed; reviewed; tests passing; provenance verified; independently
+audited; formally verified for a stated property. A component can satisfy several
+dimensions independently. Show the exact claims and evidence, not a single composite
+score. Expired, withdrawn, vulnerable, unverifiable or configuration-mismatched
+components must be visibly downgraded; absence of known advisories is not proof of
+safety.
+
+For authentication, Anchor should favour standard, interoperable protocols and
+well-maintained implementations over bespoke cryptography or home-grown protocol
+design. The catalogue must distinguish an authentication *mechanism* from an
+application's complete identity and access-management policy. Correctness depends on
+deployment, relying-party configuration, recovery flows, session handling, rate limits,
+origin validation, key storage and operational procedures. Templates should expose
+security-relevant choices, provide safe defaults, and explain any residual application
+responsibilities.
+
+The developer workflow should allow a component to be inspected, added at an exact
+version, locked, updated deliberately and verified offline from cached signed material.
+No dependency installation or update occurs merely by opening a workspace. A project's
+selected components and assurance records become part of its reproducible build and
+security evidence. Anchor must never silently upgrade a security-sensitive dependency.
