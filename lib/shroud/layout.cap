@@ -65,7 +65,6 @@ Laid layout_root(Ui ui, View root, int w, int h) {
     return l;
 }
 
-
 // Explicit keys are public widget identities. A duplicate must never make hit testing
 // resolve a visually selected widget to a different node with the same id.
 void collect_layout_nodes(Laid l, List<Laid> out) {
