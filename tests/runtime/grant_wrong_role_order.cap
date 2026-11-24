@@ -7,7 +7,7 @@ protected(CanTransfer) void transfer(Grant<CanTransfer> g, Account source, Accou
 int main() {
     Account source = new Account{owner: 1, balance: 500};
     Account destination = new Account{owner: 2, balance: 100};
-    if (let g = authorize CanTransfer(source, destination)) { transfer(g, destination, source); }
+    if (let g = authorize CanTransfer(source, destination)) { transfer(g, source, destination); transfer(g, destination, source); }
     return 0;
 }
 test "transfer policy is directional" { assert_granted CanTransfer(new Account{owner: 1, balance: 500}, new Account{owner: 2, balance: 100}); assert_denied CanTransfer(new Account{owner: 2, balance: 100}, new Account{owner: 1, balance: 500}); }
