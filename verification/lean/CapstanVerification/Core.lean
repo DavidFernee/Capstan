@@ -180,6 +180,15 @@ def executeAdd {n : Nat} {types : RegTypes n}
     | .error e => .error e
     | .ok result => .ok (write regs instr.dst (.int result))
 
+
+/-- A failed lhs read wins before any rhs-read outcome is considered. -/
+theorem executeAdd_left_read_error_precedence
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    (instr : AddInstr n types) (e : Trap)
+    (hleft : readInt regs instr.lhs = .error e) :
+    executeAdd regs instr = .error e := by
+  simp [executeAdd, hleft]
+
 /-- A successful typed add instruction preserves the register-file invariant. -/
 theorem executeAdd_preserves_well_typed
     {n : Nat} {types : RegTypes n} {regs next : Registers n}
