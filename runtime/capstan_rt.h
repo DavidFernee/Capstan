@@ -1181,7 +1181,7 @@ static bool cap_parse_password_record(CapStr *tagged,
                                       unsigned char want[32]) {
     static const char prefix[] = "cap1$pbkdf2-sha256$";
     const size_t prefix_len = sizeof prefix - 1;
-    if (!tagged || tagged->len < 0 || !tagged->data) return false;
+    if (!tagged || tagged->len < 0) return false;
     size_t n = (size_t)tagged->len;
     if (n < prefix_len + 1 + 1 + 32 + 1 + 64) return false;
     if (memcmp(tagged->data, prefix, prefix_len) != 0) return false;
@@ -1205,7 +1205,7 @@ static bool cap_parse_password_record(CapStr *tagged,
 }
 
 static bool cap_verify_password(CapStr *pw, CapStr *tagged) {
-    if (!pw || pw->len < 0 || !pw->data) return false;
+    if (!pw || pw->len < 0) return false;
     unsigned char salt[16] = {0}, want[32] = {0}, got[32] = {0};
     if (!cap_parse_password_record(tagged, salt, want)) {
         cap_wipe(salt, sizeof salt);
