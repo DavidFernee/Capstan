@@ -37,7 +37,7 @@ def validateRawInstruction {n m : Nat} {types : RegTypes n}
       | none => none
       | some dst =>
           if htype : types dst = .int then
-            if hvalue : inI64 value then
+            if hvalue : inI64B value = true then
               some (.constInt dst value htype hvalue)
             else none
           else none
@@ -106,7 +106,7 @@ theorem machineInstr_targets_in_range
 theorem validateRawInstruction_target_sound
     {n m : Nat} {types : RegTypes n}
     (raw : RawInstr) (instr : MachineInstr n m types)
-    (h : validateRawInstruction raw = some instr) :
+    (_h : validateRawInstruction raw = some instr) :
     MachineInstrTargetsInRange instr :=
   machineInstr_targets_in_range instr
 
@@ -121,7 +121,7 @@ theorem validateRawInstruction_constInt_type_sound
   | none => simp [hindex] at h
   | some index =>
       by_cases htype : types index = .int
-      · by_cases hvalue : inI64 value
+      · by_cases hvalue : inI64B value = true
         · simp [hindex, htype, hvalue] at h
           cases h
           exact ⟨index, htype, hvalue⟩
