@@ -54,9 +54,11 @@ or stream. The encoder therefore still has to materialise:
 2. bounded 4 KiB string chunks;
 3. the final joined output string.
 
-The conversion reuses a cached table of the 256 possible one-byte strings.
-Each 4 KiB batch joins references to that table, then the batch strings are
-joined once. It does not allocate a new CapStr object for every output byte.
+The conversion reuses a cached table of the 256 possible one-byte strings and
+one 4 KiB `parts` list across all batches. Each batch overwrites that fixed list
+with byte-string references (clearing unused tail entries), joins it to one
+chunk string, and then joins the chunk strings once. It does not allocate a new
+CapStr object for every output byte or a fresh growing parts list for every batch.
 
 The runtime's `CapList` stores 8-byte `CapVal` entries and doubles capacity
 from an initial capacity of 8. For the 1023×512 maximum accepted test case:
