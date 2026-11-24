@@ -10,11 +10,10 @@ struct Model {
     string project;
     string file;
     string status;
-    bool security_selected;
 }
 
-View nav_item(string label, string action, bool selected) {
-    View v = button(label, action).key(action);
+View nav_item(string label, bool selected) {
+    View v = text(label).key("nav-" + label).padding_xy(12, 5);
     if (selected) { return v.accent(); }
     return v.subtle();
 }
@@ -30,10 +29,10 @@ View view_of(Model m) {
         .add(column().spacing(8).padding(8).min_width(190)
             .add(text("WORKSPACE").bold())
             .add(text(m.project))
-            .add(nav_item("Explorer", "explorer", !m.security_selected))
-            .add(nav_item("Security", "security", m.security_selected))
-            .add(nav_item("Build & test", "build", false))
-            .add(nav_item("Documentation", "docs", false)))
+            .add(nav_item("Explorer", true))
+            .add(nav_item("Security", false))
+            .add(nav_item("Build & test", false))
+            .add(nav_item("Documentation", false)))
         .add(column().spacing(10).padding(8).grow(1)
             .add(row().spacing(8)
                 .add(text(m.file).bold())
@@ -51,33 +50,12 @@ View view_of(Model m) {
             .add(text("No live compiler connection in A0."))
             .add(text("Run capstan check explicitly; results are not inferred."))));
     root.add(divider());
-    string posture = "No assurance verdict available";
-    if (m.security_selected) {
-        posture = "Evidence view · no project evidence loaded";
-    }
     root.add(row().spacing(8)
         .add(text("SECURITY POSTURE").bold())
-        .add(text(posture).grow(1))
+        .add(text("No assurance verdict available").grow(1))
         .add(text("Compiler: 0.4.0")));
     root.add(text(m.status));
     return root;
-}
-
-void update(Model m, Msg msg) {
-    if (msg.action == "security") {
-        m.security_selected = true;
-        m.status = "Assurance data is not loaded; status remains unknown.";
-    }
-    if (msg.action == "explorer") {
-        m.security_selected = false;
-        m.status = "Workspace navigation is a static A0 placeholder.";
-    }
-    if (msg.action == "build") {
-        m.status = "Build runner is not connected in A0.";
-    }
-    if (msg.action == "docs") {
-        m.status = "Documentation browser is planned, not implemented.";
-    }
 }
 
 int main() {
@@ -91,7 +69,7 @@ int main() {
     if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
     if (let f = regular) {
         if (let fb = bold) {
-            Model m = new Model{project: "Capstan", file: "examples/patient_records.cap", status: "A0 prototype · headless PNG · no commands executed", security_selected: false};
+            Model m = new Model{project: "Capstan", file: "examples/patient_records.cap", status: "A0 prototype · headless PNG · static navigation · no commands executed"};
             Ui ui = new_ui(f, fb, light_theme(), 1100, 720, 256);
             ui.render(view_of(m), 1000);
             if (!png_write(out + "/anchor.png", ui.pixmap)) { println("could not write Anchor preview"); return 1; }
