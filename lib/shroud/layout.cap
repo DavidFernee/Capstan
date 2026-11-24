@@ -265,7 +265,7 @@ Size measure_text(Ui ui, View v, Laid l, int max_w, List<int> line_count) {
             allow_truncate = true;
         }
     }
-    l.lines = wrap_lines(f, size, l.cps, wrap, max_lines, allow_truncate);
+    l.lines = wrap_lines_limited(f, size, l.cps, wrap, max_lines, allow_truncate);
     int n = l.lines.len() / 2;
     line_count[0] += n;
     int w = 0;
