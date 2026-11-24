@@ -5,7 +5,7 @@ A green result is scoped to the exact source revision and verification layer sta
 
 ## Current verified model result
 
-<badge>Model-only proof result</badge>
+**Result classification: model-only proof**
 
 - **Commit:** `ec7ae1ae5c552a8957f71e4f8671d802990ef5e4`
 - **Formal CI run:** [45359603435](https://github.com/DavidFernee/Capstan/actions/runs/45359603435)
