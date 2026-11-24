@@ -1359,3 +1359,26 @@ Generic support must preserve this distinction after full type substitution:
 - Test global roots under forced collection during initialisation, including generic struct/enum/Result values, nested collections, optional scalar boxes, and Secret references. Verify that a rooted aggregate retains all transitively reachable objects and that removing the global root permits eventual reclamation (allowing conservative false retention).
 
 Current evidence: `compiler/codegen.cap` calls `cap_gc_root((void **)&g_<name>)` for non-scalar constants before emitting the initialiser assignment; `runtime/capstan_gc.h` traverses the registered root slots on every collection. The new generic root cases are acceptance criteria, not existing generic functionality.
+
+
+## 38. Clear vacated pointer slots in traced collection backing storage
+
+The collector scans the full allocated size of kind-0 objects, not the logical `CapList.len` or `CapMap.len`. The current collection operations reduce logical length without consistently clearing the vacated backing slots:
+
+- `cap_list_pop_p` decrements `len` but leaves the old `CapVal.p` in the slot.
+- `cap_list_clear` sets `len = 0` without clearing any elements.
+- `cap_list_remove` shifts elements left and decrements `len`, leaving a duplicate of the former last element in the now-unused final slot.
+- `cap_map_remove` shifts keys and values left and decrements `len`, leaving the former final key/value in unused capacity.
+
+Because the list/map backing arrays are kind 0, those stale pointer-shaped words remain collector roots for as long as the collection and its backing arrays remain live. A Secret removed from a still-live collection can therefore remain reachable and unwiped; this is not a collector false positive but a stale reference retained in the collection's allocated storage. The same issue unnecessarily retains ordinary objects and can amplify memory pressure.
+
+Required runtime correction and regression coverage:
+
+- After preserving any value being returned, clear the vacated `CapVal` slot in pointer-valued list pop/remove operations. After shifting during remove, clear the final now-unused slot.
+- `cap_list_clear` must clear the formerly live element range before or as it resets the logical length. Do not clear a slot before a returned value has been copied out.
+- After `cap_map_remove` shifts entries, clear both the final unused key slot and value slot before any subsequent allocation/collection.
+- Keep `cap_list_pop_peek_i` semantics intact: it returns a pointer to an integer slot for immediate unboxed inspection, not a managed object reference. Do not invalidate that slot before the caller reads it.
+- Add direct unit assertions that vacated slots are zero/null after pop, clear, remove and map remove, plus GC-stress tests showing a Secret held only in a removed/cleared entry becomes eligible for reclamation once the returned value and all other roots are gone. Account for conservative stack/register false retention in the reclamation test.
+- Apply the same rule to future generic collection representations and any pointer-bearing buffer whose logical length can shrink.
+
+This is a current runtime finding, not merely a generic-feature acceptance criterion. PR #51's current branch has the same operations and should address it there; this type-system assurance branch records the dependency and does not modify runtime code.
