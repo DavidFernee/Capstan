@@ -39,16 +39,6 @@ def typedRegister? {n : Nat} (types : RegTypes n)
   let i ← finOfNat? n index
   if h : types i = expected then some ⟨i, h⟩ else none
 
-/-- A successful natural-to-finite conversion preserves the index value. -/
-theorem finOfNat?_value {bound index : Nat} {i : Fin bound}
-    (h : finOfNat? bound index = some i) : i.val = index := by
-  unfold finOfNat? at h
-  split at h
-  · injection h with hi
-    subst i
-    rfl
-  · contradiction
-
 /-- Validate a raw instruction into the existing intrinsically typed machine syntax. -/
 def validateMachineInstr {n m : Nat} {types : RegTypes n}
     (raw : RawMachineInstr) : Option (MachineInstr n m types) := do
