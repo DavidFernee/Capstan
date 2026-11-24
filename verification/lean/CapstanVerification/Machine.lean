@@ -54,6 +54,15 @@ structure MachineState (n m : Nat) (types : RegTypes n) where
   registers : Registers n
   registers_well_typed : WellTyped types registers
 
+/-- Construct the initial machine state at the program's declared entry point. -/
+def initialMachineState {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types)
+    (registers : Registers n)
+    (hregisters : WellTyped types registers) : MachineState n m types :=
+  { pc := program.entry
+    registers := registers
+    registers_well_typed := hregisters }
+
 /-- Every step either advances, halts, or produces a defined explicit trap. -/
 inductive MachineOutcome (n m : Nat) (types : RegTypes n) where
   | nextState (state : MachineState n m types)
