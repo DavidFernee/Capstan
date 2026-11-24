@@ -56,8 +56,49 @@ List<int> codepoints_of(View v) {
     return text_codepoints(v.text);
 }
 
+// Bound cumulative view-tree text and metadata before allocating per-view
+// code-point and line arrays. Per-value limits alone allow MAX_VIEWS separate
+// large strings to amplify memory and layout work (CWE-400).
+const int MAX_FRAME_TEXT_BYTES = 262144;
+
+bool frame_text_budget_add(List<int> budget, int n) {
+    if (n < 0 || n > MAX_FRAME_TEXT_BYTES - budget[0]) { return false; }
+    budget[0] += n;
+    return true;
+}
+
+// budget[0] is aggregate string bytes; budget[1] is view count. Count every
+// string retained by a view, not only the text currently painted: keys and
+// accessibility metadata also feed identity, inspection and serialization.
+bool preflight_frame_view(View v, List<int> budget, int depth) {
+    if (depth > MAX_DEPTH) { return false; }
+    budget[1] += 1;
+    if (budget[1] > MAX_VIEWS) { return false; }
+    if (!frame_text_budget_add(budget, v.text.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.value.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.action.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.key.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.label.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.hint.len())) { return false; }
+    for (int i = 0; i < v.kids.len(); i += 1) {
+        if (!preflight_frame_view(v.kids[i], budget, depth + 1)) { return false; }
+    }
+    return true;
+}
+
+bool frame_text_budget_valid(View root) {
+    List<int> budget = new List<int>();
+    budget.push(0);
+    budget.push(0);
+    return preflight_frame_view(root, budget, 0);
+}
+
 // Lays out the whole tree for a window of the given size (FX).
 Laid layout_root(Ui ui, View root, int w, int h) {
+    if (!frame_text_budget_valid(root)) {
+        println("shroud: frame view or text budget exceeded");
+        exit(101);
+    }
     ui.view_count = 0;
     Laid l = measure(ui, root, tight(w, h), "r", 0);
     uniquify_layout_ids(l, ui);
