@@ -82,6 +82,13 @@ else
   bad "CCAM source-to-IR lowering" "$out"
 fi
 
+section "Capstan-native verification: freestanding Linux x86-64 native backend"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
+  ok "CCAM emits freestanding x86-64 assembly without C runtime references"
+else
+  bad "CCAM native x86-64 backend" "$out"
+fi
+
 section "unit"
 if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tmp/unit")"; then ok "$out"; else bad "runtime unit tests" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
