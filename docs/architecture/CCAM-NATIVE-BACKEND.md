@@ -47,7 +47,7 @@ The prototype maps dynamic trap classes to distinct process exit statuses: integ
 
 The emitter first calls the multi-function CCAM validator. Tests generate assembly from checked Capstan source for a direct `add(19, 23)` call and verify that the output contains a freestanding `_start`, direct function calls, syscall exit, and configured resource limits, with no C include or Capstan runtime reference.
 
-On Linux x86-64, the integration test assembles with `as --64`, links directly with `ld`, and executes the resulting ELF. The expected process exit status is 42. Additional freestanding execution vectors cover a loop/conditional, overflow, division by zero, step limit, call-depth limit, and an uninitialised-register read. The tests do not use a C compiler or C runtime to build or run the target programs. Other CI platforms currently check code generation only; the Linux ELF artifact is not portable to macOS or Windows.
+On Linux x86-64, the integration test assembles with `as --64`, links directly with `ld`, and executes the resulting ELF. The expected process exit status is 42. Additional freestanding execution vectors cover a loop/conditional, addition and signed-division overflow, division by zero, step limit, call-depth limit, and an uninitialised-register read. Each ELF is checked to have no `PT_INTERP` program header and no undefined external symbols before execution. The tests do not use a C compiler or C runtime to build or run the target programs. Other CI platforms currently check code generation only; the Linux ELF artifact is not portable to macOS or Windows.
 
 ## 5. Explicit gaps
 
