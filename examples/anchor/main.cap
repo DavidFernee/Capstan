@@ -78,7 +78,14 @@ int main() {
             }
             List<string> problems = a11y_problems(ui);
             for (int i = 0; i < problems.len(); i += 1) { println("accessibility: " + problems[i]); }
-            println("Anchor A0 rendered to " + out + "/anchor.png");
+
+            Ui dark = new_ui(f, fb, dark_theme(), 1100, 720, 256);
+            dark.render(view_of(m), 1000);
+            if (!png_write(out + "/anchor-dark.png", dark.pixmap)) { println("could not write dark Anchor preview"); return 1; }
+            List<string> dark_problems = a11y_problems(dark);
+            for (int j = 0; j < dark_problems.len(); j += 1) { println("accessibility: " + dark_problems[j]); }
+
+            println("Anchor A0 rendered in light and dark themes to " + out);
             return 0;
         }
     }
