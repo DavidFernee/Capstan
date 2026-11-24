@@ -328,8 +328,166 @@ static void test_files(void) {
     rmdir(dir);
 }
 
+static int expect_runtime_panic(void (*fn)(void));
+static void trigger_negative_string_length(void) {
+    (void)cap_str_new(NULL, -1);
+}
+static void trigger_null_string_source(void) {
+    (void)cap_str_new(NULL, 1);
+}
+static void trigger_negative_permanent_string_length(void) {
+    (void)cap_str_perm(NULL, -1);
+}
+static void trigger_string_expansion_overflow(void) {
+    (void)cap_rt_checked_string_bytes(INT64_MAX, 6, 1, 0);
+}
+static void trigger_escape_length_overflow(void) {
+    CapStr forged = {.len = INT64_MAX};
+    (void)cap_escape_html(&forged);
+}
+static void trigger_concat_invalid_operand(void) {
+    CapStr bad = {.len = -1};
+    CapStr good = {.len = 1};
+    (void)cap_str_concat(&bad, &good, 0);
+}
+static void trigger_join_invalid_collection(void) {
+    CapList parts = {.len = 2, .cap = 1, .items = NULL};
+    (void)cap_join(&parts, CAP_LIT("", 0), 0);
+}
+static void test_string_allocation_bounds(void) {
+    CHECK(expect_runtime_panic(trigger_negative_string_length));
+    CHECK(expect_runtime_panic(trigger_null_string_source));
+    CHECK(expect_runtime_panic(trigger_negative_permanent_string_length));
+    CHECK(expect_runtime_panic(trigger_string_expansion_overflow));
+    CHECK(expect_runtime_panic(trigger_escape_length_overflow));
+    CHECK(expect_runtime_panic(trigger_concat_invalid_operand));
+    CHECK(expect_runtime_panic(trigger_join_invalid_collection));
+    size_t max_plain = CAP_MAX_LEN - sizeof(CapStr) - 1;
+    CHECK(cap_rt_checked_string_bytes((int64_t)max_plain, 1, 1, 0) == CAP_MAX_LEN);
+    size_t max_html = (CAP_MAX_LEN - sizeof(CapStr) - 1) / 6;
+    CHECK(cap_rt_checked_string_bytes((int64_t)max_html, 6, 1, 0) ==
+          sizeof(CapStr) + max_html * 6 + 1);
+    CapStr *plain = cap_str_new("abc", 3);
+    CHECK(plain->len == 3 && memcmp(plain->data, "abc", 3) == 0);
+}
+
 /* Shifts and wrapping arithmetic at the edges of the 64-bit range (no panics here;
    the stops are covered by tests/runtime/shift_*.cap). */
+static int expect_runtime_panic(void (*fn)(void));
+static void trigger_gc_add_overflow(void) {
+    (void)cap_gc_checked_add(SIZE_MAX, 1);
+}
+static void trigger_gc_mul_overflow(void) {
+    (void)cap_gc_checked_mul(SIZE_MAX, 2);
+}
+static void trigger_gc_capacity_overflow(void) {
+    (void)cap_gc_next_capacity(0, SIZE_MAX, 8, sizeof(CapLarge));
+}
+static void trigger_gc_heap_invariant(void) {
+    (void)cap_gc_heap_would_exceed(0);
+}
+static void trigger_full_page_table_lookup(void) {
+    (void)cap_gc_page_of((uintptr_t)0x30000);
+}
+static void trigger_null_registered_root(void) {
+    cap_gc_root(NULL);
+}
+static void trigger_full_page_table_insert(void) {
+    CapPage pg = {.base = (char *)(uintptr_t)0x30000};
+    cap_gc_ptab_insert(&pg);
+}
+static void trigger_null_page_table_insert(void) {
+    cap_gc_ptab_insert(NULL);
+}
+static void trigger_duplicate_page_table_insert(void) {
+    CapPage duplicate = {.base = (char *)(uintptr_t)0x10000};
+    cap_gc_ptab_insert(&duplicate);
+}
+static void trigger_bad_heap_limit_suffix(void) {
+    (void)cap_gc_parse_heap_limit("12MB");
+}
+static void trigger_heap_limit_shift_overflow(void) {
+    (void)cap_gc_parse_heap_limit("18446744073709551615G");
+}
+static void trigger_negative_heap_limit(void) {
+    (void)cap_gc_parse_heap_limit("-1");
+}
+static void trigger_signed_heap_limit(void) {
+    (void)cap_gc_parse_heap_limit(" -1");
+}
+static void trigger_plus_heap_limit(void) {
+    (void)cap_gc_parse_heap_limit("+1");
+}
+static void test_gc_allocator_arithmetic(void) {
+    CHECK(expect_runtime_panic(trigger_gc_add_overflow));
+    CHECK(expect_runtime_panic(trigger_gc_mul_overflow));
+    CHECK(expect_runtime_panic(trigger_gc_capacity_overflow));
+    CHECK(expect_runtime_panic(trigger_bad_heap_limit_suffix));
+    CHECK(expect_runtime_panic(trigger_heap_limit_shift_overflow));
+    CHECK(expect_runtime_panic(trigger_negative_heap_limit));
+    CHECK(expect_runtime_panic(trigger_signed_heap_limit));
+    CHECK(expect_runtime_panic(trigger_plus_heap_limit));
+    CHECK(cap_gc_parse_heap_limit("128K") == ((size_t)128 << 10));
+    CHECK(cap_gc_parse_heap_limit("0") == 0);
+    CHECK(cap_gc_effective_heap_limit(cap_gc_parse_heap_limit("0")) == CAP_MAX_LEN);
+    CHECK(cap_gc_effective_heap_limit((size_t)CAP_MAX_LEN + 1) == CAP_MAX_LEN);
+    CHECK(cap_gc_effective_heap_limit((size_t)128 << 20) == ((size_t)128 << 20));
+    CHECK(cap_gc_parse_heap_limit("1G") == ((size_t)1 << 30));
+    CHECK(cap_gc_physical_heap_limit(1024, 4096) == ((size_t)3 << 20));
+    CHECK(cap_gc_physical_heap_limit(SIZE_MAX, 4096) == CAP_MAX_LEN);
+    CHECK(cap_gc_physical_heap_limit(0, 4096) == ((size_t)1 << 34));
+    size_t saved_heap = cap_gc.heap, saved_limit = cap_gc.max_heap;
+    cap_gc.heap = 100;
+    cap_gc.max_heap = 101;
+    CHECK(!cap_gc_heap_would_exceed(1));
+    CHECK(cap_gc_heap_would_exceed(2));
+    cap_gc.heap = 1;
+    cap_gc.max_heap = 0;
+    CHECK(!cap_gc_heap_would_exceed(SIZE_MAX));
+    cap_gc.heap = 100;
+    cap_gc.max_heap = 99;
+    CHECK(expect_runtime_panic(trigger_gc_heap_invariant));
+    cap_gc.heap = saved_heap;
+    cap_gc.max_heap = saved_limit;
+    CHECK(cap_gc_saturating_add(SIZE_MAX - 1, 2) == SIZE_MAX);
+    CHECK(cap_gc_next_capacity(64, 128, 64, sizeof(CapPage *)) == 128);
+    CHECK(expect_runtime_panic(trigger_null_registered_root));
+    CHECK(expect_runtime_panic(trigger_null_page_table_insert));
+    {
+        size_t saved_cap = cap_gc.ptab_cap, saved_pages = cap_gc.npages;
+        cap_gc.ptab_cap = 0; cap_gc.npages = 1;
+        CHECK(expect_runtime_panic(trigger_full_page_table_insert));
+        cap_gc.ptab_cap = saved_cap; cap_gc.npages = saved_pages;
+    }
+    {
+        CapPage **saved_table = cap_gc.ptab;
+        size_t saved_cap = cap_gc.ptab_cap;
+        cap_gc.ptab = NULL; cap_gc.ptab_cap = 2;
+        CHECK(expect_runtime_panic(trigger_full_page_table_lookup));
+        cap_gc.ptab = saved_table; cap_gc.ptab_cap = saved_cap;
+    }
+    {
+        CapPage existing = {.base = (char *)(uintptr_t)0x10000};
+        CapPage *table[4] = {&existing, NULL, NULL, NULL};
+        CapPage **saved_table = cap_gc.ptab;
+        size_t saved_cap = cap_gc.ptab_cap, saved_pages = cap_gc.npages;
+        cap_gc.ptab = table; cap_gc.ptab_cap = 4; cap_gc.npages = 1;
+        CHECK(expect_runtime_panic(trigger_duplicate_page_table_insert));
+        cap_gc.ptab = saved_table; cap_gc.ptab_cap = saved_cap; cap_gc.npages = saved_pages;
+    }
+    {
+        CapPage first = {.base = (char *)(uintptr_t)0x10000};
+        CapPage second = {.base = (char *)(uintptr_t)0x20000};
+        CapPage *full_table[2] = {&first, &second};
+        CapPage **saved_table = cap_gc.ptab;
+        size_t saved_cap = cap_gc.ptab_cap, saved_pages = cap_gc.npages;
+        cap_gc.ptab = full_table; cap_gc.ptab_cap = 2; cap_gc.npages = 0;
+        CHECK(expect_runtime_panic(trigger_full_page_table_lookup));
+        CHECK(expect_runtime_panic(trigger_full_page_table_insert));
+        cap_gc.ptab = saved_table; cap_gc.ptab_cap = saved_cap; cap_gc.npages = saved_pages;
+    }
+}
+
 static void test_bitwise(void) {
     CHECK(cap_as_signed(0) == 0 && cap_as_signed(UINT64_MAX) == -1);
     CHECK(cap_as_signed((uint64_t)INT64_MAX) == INT64_MAX && cap_as_signed((uint64_t)INT64_MAX + 1) == INT64_MIN);
@@ -631,6 +789,8 @@ int main(void) {
     test_secret_eq();
     test_files();
     test_bitwise();
+    test_string_allocation_bounds();
+    test_gc_allocator_arithmetic();
     test_runtime_growth_arithmetic();
     test_collections();
     test_arithmetic();

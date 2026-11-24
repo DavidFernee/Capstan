@@ -849,6 +849,20 @@ class Gen:
             self.scopes[-1].add(s[1])
         elif k == "assign":
             tgt, op, rhs = s[1], s[2], self.e(s[3])
+            if op != "=" and tgt[0] == "field":
+                # Match the native backend: evaluate the field receiver once,
+                # read the old value, then evaluate the RHS and write back.
+                receiver = self.fresh()
+                old = self.fresh()
+                right = self.fresh()
+                value = self.fresh()
+                self.emit(ind, f"{receiver} = {self.e(tgt[1])}")
+                self.emit(ind, f"{old} = {receiver}.u_{tgt[2]}")
+                self.emit(ind, f"{right} = {self.e(s[3])}")
+                fn = "_plus" if op == "+=" else "_sub"
+                self.emit(ind, f"{value} = {fn}({old}, {right})")
+                self.emit(ind, f"{receiver}.u_{tgt[2]} = {value}")
+                return
             if op != "=":
                 rhs = self.e(("bin", op[0], tgt, s[3]))
             if tgt[0] == "index":
