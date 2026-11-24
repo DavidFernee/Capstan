@@ -163,8 +163,13 @@ theorem pushCallFrame_within_limit
     {Frame : Type} (stack : CallStack Frame) (callee : Frame)
     (next : CallStack Frame)
     (h : pushCallFrame stack callee = .ok next) :
-    next.frames.length ≤ next.maxDepth :=
-  next.within_limit
+    next.frames.length ≤ stack.maxDepth := by
+  unfold pushCallFrame at h
+  by_cases hdepth : stack.frames.length < stack.maxDepth
+  · simp [hdepth] at h
+    cases h
+    exact next.within_limit
+  · simp [hdepth] at h
 
 /-- A full call stack traps before another frame is pushed. -/
 theorem pushCallFrame_exhausted_traps
