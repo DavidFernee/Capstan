@@ -13,7 +13,8 @@ int main() {
     if (pixmap_size_valid(16385, 1) != false) { return 8; }
     if (a.len() > 0 && a[0] == "reject") {
         Pixmap pm = new_pixmap(4096, 4097);
-        return pm.px.len() == 0 ? 9 : 10;
+        if (pm.px.len() == 0) { return 9; }
+        return 10;
     }
     Pixmap small = new_pixmap(2, 3);
     if (small.px.len() != 6) { return 11; }
