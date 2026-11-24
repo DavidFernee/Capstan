@@ -11,6 +11,32 @@ It MUST identify every release and its complete dependency closure immutably; ma
 
 It MUST NOT label a component simply “secure” or “verified” without a named property, scope, subject, verifier and evidence; treat a signature, tests, audit or absence of advisories as proof of benign code; install, execute or upgrade packages merely because a workspace opens; silently change a locked dependency graph; or allow transitive dependencies to acquire capabilities implicitly.
 
+## 1A. Existing repository baseline
+
+The repository already has meaningful release-level supply-chain controls:
+- scripts/sbom.py emits deterministic CycloneDX 1.6 and SPDX 2.3 SBOMs for a Capstan
+  source archive, including per-file hashes and declared build/runtime requirements;
+- scripts/sbom-validate.py validates those SBOMs against the official schemas;
+- .github/workflows/release.yml builds on Linux (GCC and Clang) and macOS (Clang),
+  produces reproducibility reports, generates SBOMs, and signs release assets;
+- GitHub artifact attestations provide build provenance, and release assets carry
+  keyless Sigstore bundles;
+- scripts/verify-release.sh checks checksums, signatures, provenance, SBOM consistency
+  and reproducibility, with an optional local rebuild.
+
+These are concrete release controls and should be reused. Their scope must not be
+overstated: the current SBOM describes the Capstan source archive, build tools and
+runtime dependency; it does not yet describe a third-party Capstan package graph because
+a package manager/catalogue is not implemented. The release verifier checks a tagged
+Capstan release, not arbitrary component descriptors, transitive package locks,
+component-level assurance statements, catalogue trust snapshots or advisory freshness.
+
+The verifier's --skip-signatures and --skip-attestations options are diagnostic escape
+hatches: using them omits identity/provenance checks. A successful run with either option
+must not be presented as authenticated release verification. Likewise, local verification
+of cached files does not establish current revocation status. The catalogue verifier
+will need explicit trust-snapshot and offline-freshness semantics described below.
+
 ## 2. Core records and identity
 
 The design separates five record types. They may be encoded together, but their semantics and identities MUST remain distinct.
