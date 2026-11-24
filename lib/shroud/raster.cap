@@ -18,8 +18,17 @@ const int SUBSAMPLES = 16;              // sub-scanlines per pixel row
 const int SUB_STEP = 16;                // FX / SUBSAMPLES
 const int FULL_COVER = 4096;            // FX * SUBSAMPLES
 
-// The largest pixmap Shroud will allocate: 16384 x 16384 (CWE-789).
+// Bound both dimensions and total allocation (CWE-789). A side-only limit of
+// 16384 permitted 268 million 64-bit pixels (about 2 GiB before list overhead).
+// 16 million pixels bounds the pixel payload to about 128 MiB on 64-bit targets.
 const int MAX_PIXMAP_SIDE = 16384;
+const int MAX_PIXMAP_PIXELS = 16777216;
+
+bool pixmap_size_valid(int w, int h) {
+    if (w < 1 || h < 1 || w > MAX_PIXMAP_SIDE || h > MAX_PIXMAP_SIDE) { return false; }
+    // Division avoids overflowing w * h while validating attacker-controlled sizes.
+    return w <= MAX_PIXMAP_PIXELS / h;
+}
 
 // Premultiplied 0xAARRGGBB pixels, row by row.
 struct Pixmap {
@@ -36,7 +45,7 @@ struct Pixmap {
 }
 
 Pixmap new_pixmap(int w, int h) {
-    if (w < 1 || h < 1 || w > MAX_PIXMAP_SIDE || h > MAX_PIXMAP_SIDE) {
+    if (!pixmap_size_valid(w, h)) {
         println("shroud: pixmap size out of range");
         exit(101);
     }

@@ -6,19 +6,25 @@
 // carries offsets and counts that point elsewhere in the file. In Capstan an
 // out-of-range offset cannot corrupt memory, and this parser goes further: it never
 // reads outside the file at all. Every read goes through a FontReader, which returns
-// 0 and records the failure for any read out of bounds, so a damaged or hostile font
-// is refused (font_load gives none) or a damaged glyph is drawn empty, never a stop.
+// 0 and records the failure for any read out of bounds. This is a whole-file bound,
+// not yet a guarantee that every cmap/loca/hmtx read stays within its owning table;
+// those table-local spans are tracked separately in issue #121. A damaged font is
+// refused (font_load gives none) or a damaged glyph is drawn empty, never a stop.
 //
 // Supported: TrueType outlines ('glyf'), simple and composite glyphs, 'cmap' formats 4
 // and 12, horizontal metrics. Not yet: CFF outlines (.otf), hinting, variable fonts,
 // kerning and shaping (see docs/SHROUD.md).
 
 // Limits on what a font may make us do (CWE-400).
-const int MAX_FONT_BYTES = 33554432;        // 32 MiB
+const int MAX_FONT_BYTES = 33554432;                 // 32 MiB
 const int MAX_GLYPH_POINTS = 4096;
 const int MAX_COMPOSITE_DEPTH = 8;
 const int MAX_COMPOSITE_PARTS = 64;
-const int MAX_CACHED_GLYPHS = 4096;         // rasterised glyphs kept per font
+const int MAX_GLYPH_POINTS_TOTAL = 16384;            // across all components of one glyph
+const int MAX_COMPOSITE_COMPONENTS_TOTAL = 256;      // across all nesting levels
+const int MAX_CACHED_GLYPHS = 4096;                  // rasterised glyphs kept per font
+const int MAX_GLYPH_MASK_PIXELS = 262144;            // at most 256K alpha pixels in one glyph
+const int MAX_CACHED_GLYPH_PIXELS = 1048576;         // aggregate alpha pixels per font
 
 struct FontReader {
     List<int> b;
@@ -60,6 +66,7 @@ struct Font {
     int cmap_format;
     Map<GlyphMask> cache;
     int cached;
+    int cached_pixels;
 }
 
 // One rasterised glyph: an alpha mask whose top-left pixel is at (left, top)
@@ -70,6 +77,22 @@ struct GlyphMask {
     int w;
     int h;
     List<int> alpha;
+}
+
+bool glyph_points_fit(int remaining, int requested) {
+    return remaining >= 0 && requested >= 0 && requested <= remaining;
+}
+
+bool glyph_component_available(int remaining) { return remaining > 0; }
+
+bool glyph_mask_size_valid(int w, int h) {
+    if (w < 1 || h < 1) { return false; }
+    return w <= MAX_GLYPH_MASK_PIXELS / h;
+}
+
+bool glyph_cache_fits(int current, int added) {
+    if (current < 0 || added < 0 || current > MAX_CACHED_GLYPH_PIXELS) { return false; }
+    return added <= MAX_CACHED_GLYPH_PIXELS - current;
 }
 
 int tag_of(string t) { return (t.at(0) << 24) | (t.at(1) << 16) | (t.at(2) << 8) | t.at(3); }
@@ -112,7 +135,7 @@ Font? font_load(Tainted data) {
     if (head < 0 || hhea < 0 || maxp < 0 || cmap < 0 || loca < 0 || hmtx < 0 || glyf < 0) { return none; }
     int upem = r.u16(head + 18);
     if (upem < 16 || upem > 16384) { return none; }
-    Font f = new Font{r: r, units_per_em: upem, ascent: r.i16(hhea + 4), descent: r.i16(hhea + 6), line_gap: r.i16(hhea + 8), num_glyphs: r.u16(maxp + 4), num_hmetrics: r.u16(hhea + 34), loca_long: r.i16(head + 50), t_loca: loca, t_glyf: glyf, glyf_len: glyf_len, t_hmtx: hmtx, cmap_at: -1, cmap_format: 0, cache: new Map<GlyphMask>(), cached: 0};
+    Font f = new Font{r: r, units_per_em: upem, ascent: r.i16(hhea + 4), descent: r.i16(hhea + 6), line_gap: r.i16(hhea + 8), num_glyphs: r.u16(maxp + 4), num_hmetrics: r.u16(hhea + 34), loca_long: r.i16(head + 50), t_loca: loca, t_glyf: glyf, glyf_len: glyf_len, t_hmtx: hmtx, cmap_at: -1, cmap_format: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
     if (f.num_hmetrics < 1 || f.num_hmetrics > f.num_glyphs) { return none; }
     // Prefer a full-Unicode subtable (format 12), then the BMP one (format 4).
     int nsub = r.u16(cmap + 2);
@@ -200,6 +223,13 @@ int glyph_start(Font f, int g) {
 // 1/16384 units (F2Dot14) and offset (dx, dy) in font units apply first, for parts of
 // composite glyphs. Returns false if the glyph is damaged.
 bool glyph_outline(Font f, int g, Path p, int num, int den, int ox, int oy, List<int> m, int depth) {
+    List<int> budget = new List<int>();
+    budget.push(MAX_GLYPH_POINTS_TOTAL);
+    budget.push(MAX_COMPOSITE_COMPONENTS_TOTAL);
+    return glyph_outline_budgeted(f, g, p, num, den, ox, oy, m, depth, budget);
+}
+
+bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int oy, List<int> m, int depth, List<int> budget) {
     if (g < 0 || g >= f.num_glyphs || depth > MAX_COMPOSITE_DEPTH) { return false; }
     FontReader r = f.r;
     int start = glyph_start(f, g);
@@ -208,7 +238,7 @@ bool glyph_outline(Font f, int g, Path p, int num, int den, int ox, int oy, List
     if (end == start) { return true; }       // empty glyph, such as a space
     int at = f.t_glyf + start;
     int contours = r.i16(at);
-    if (contours < 0) { return composite_outline(f, at, end + f.t_glyf, p, num, den, ox, oy, m, depth); }
+    if (contours < 0) { return composite_outline(f, at, end + f.t_glyf, p, num, den, ox, oy, m, depth, budget); }
     int ep = at + 10;
     int npts = 0;
     List<int> ends = new List<int>();
@@ -218,7 +248,8 @@ bool glyph_outline(Font f, int g, Path p, int num, int den, int ox, int oy, List
         ends.push(e);
         npts = e + 1;
     }
-    if (npts > MAX_GLYPH_POINTS) { return false; }
+    if (npts > MAX_GLYPH_POINTS || !glyph_points_fit(budget[0], npts)) { return false; }
+    budget[0] -= npts;
     int ins = ep + 2 * contours;
     int pos = ins + 2 + r.u16(ins);
     List<int> flags = new List<int>();
@@ -321,14 +352,15 @@ void emit_contour(Path p, List<int> px, List<int> py, List<int> flags, int first
     p.close();
 }
 
-bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int ox, int oy, List<int> m, int depth) {
+bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int ox, int oy, List<int> m, int depth, List<int> budget) {
     FontReader r = f.r;
     int pos = at + 10;
     int parts = 0;
     bool more = true;
     while (more) {
-        if (parts >= MAX_COMPOSITE_PARTS || pos + 4 > limit) { return false; }
+        if (parts >= MAX_COMPOSITE_PARTS || !glyph_component_available(budget[1]) || pos + 4 > limit) { return false; }
         parts += 1;
+        budget[1] -= 1;
         int flags = r.u16(pos);
         int g = r.u16(pos + 2);
         pos += 4;
@@ -374,7 +406,7 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
         m2.push((m[1] * c + m[3] * d) / 16384);
         m2.push(m[4] + (m[0] * dx + m[2] * dy) / 16384);
         m2.push(m[5] + (m[1] * dx + m[3] * dy) / 16384);
-        if (!glyph_outline(f, g, p, num, den, ox, oy, m2, depth + 1)) { return false; }
+        if (!glyph_outline_budgeted(f, g, p, num, den, ox, oy, m2, depth + 1, budget)) { return false; }
         more = (flags & 32) != 0;
         if (!r.ok) { return false; }
     }
@@ -427,7 +459,7 @@ GlyphMask glyph_mask(Font f, int g, int size, int phase) {
             // A glyph more than four ems across is damaged or hostile: drawing it
             // would cost time out of all proportion to the text (CWE-400).
             int limit = int_max(64, 4 * fx_ceil(size));
-            if (w > 0 && h > 0 && w <= limit && h <= limit) {
+            if (w > 0 && h > 0 && w <= limit && h <= limit && glyph_mask_size_valid(w, h)) {
                 // Rasterise into a scratch pixmap, shifted so the mask starts at (0, 0).
                 Pixmap pm = new_pixmap(w, h);
                 Canvas cv = new_canvas(pm);
@@ -445,11 +477,14 @@ GlyphMask glyph_mask(Font f, int g, int size, int phase) {
             }
         }
     }
-    if (f.cached >= MAX_CACHED_GLYPHS) {
+    int mask_pixels = mask.w * mask.h;
+    if (f.cached >= MAX_CACHED_GLYPHS || !glyph_cache_fits(f.cached_pixels, mask_pixels)) {
         f.cache = new Map<GlyphMask>();
         f.cached = 0;
+        f.cached_pixels = 0;
     }
     f.cache.set(key, mask);
     f.cached += 1;
+    f.cached_pixels += mask_pixels;
     return mask;
 }

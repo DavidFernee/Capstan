@@ -327,6 +327,19 @@ def check_single_line_budget(capstanc, cc, cflags, tmp):
     return f"65,536-byte alternating input -> 32,768 retained bytes; total Capstan allocation {allocated} bytes"
 
 
+def check_pixmap_limits(capstanc, cc, cflags, tmp):
+    exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits.cap", "pixmap-limits")
+    ok = run(exe)
+    if ok.stdout.strip() != "resource limits: 29 assertions and glyph cache exercised":
+        sys.exit(f"pixmap limits: unexpected output: {ok.stdout!r}")
+    rejected_exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits_reject.cap", "pixmap-reject")
+    rejected = run(rejected_exe, check=False)
+    if rejected.returncode != 101 or "pixmap size out of range" not in rejected.stdout:
+        sys.exit(f"pixmap limits: oversized constructor request was not rejected: exit {rejected.returncode}\\n{rejected.stdout}{rejected.stderr}")
+    return "29 resource-budget assertions including recursive composite budget; glyph cache exercised; oversized pixmap rejected before allocation"
+
+
+
 def check_golden(capstanc, cc, cflags, tmp, update):
     exe = build(capstanc, cc, cflags, tmp, "examples/shroud/gallery.cap", "gallery")
     out = os.path.join(tmp, "frames")
@@ -378,6 +391,7 @@ def main():
         report.append("utf-8: " + check_utf8(vec, tmp))
         report.append("png: " + check_png(vec, tmp))
         report.append("font fuzz: " + check_fuzz(vec, tmp))
+        report.append("pixmap limits: " + check_pixmap_limits(capstanc, cc, cflags, tmp))
         report.append("single-line filtering: " + check_single_line_budget(capstanc, cc, cflags, tmp))
         report.append("golden: " + check_golden(capstanc, cc, cflags, tmp, update))
         print("\n".join(report))
