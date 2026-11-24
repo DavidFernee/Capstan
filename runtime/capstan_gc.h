@@ -140,7 +140,17 @@ static size_t cap_gc_next_capacity(size_t current, size_t required, size_t initi
     }
     return n;
 }
+#ifdef CAP_GC_TESTING
+/* A negative value disables injection; zero fails the next metadata request.
+   This control is absent from every production build. */
+static long cap_gc_test_meta_fail_after = -1;
+#endif
+
 static void *cap_gc_meta(size_t n) {
+#ifdef CAP_GC_TESTING
+    if (cap_gc_test_meta_fail_after == 0) cap_gc_oom();
+    if (cap_gc_test_meta_fail_after > 0) cap_gc_test_meta_fail_after--;
+#endif
     void *p = calloc(1, n ? n : 1);
     if (!p) cap_gc_oom();
     return p;
