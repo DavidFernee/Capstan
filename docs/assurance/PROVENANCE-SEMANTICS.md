@@ -682,3 +682,8 @@ The redesign is ready for implementation review when:
 - The implementation plan preserves fail-closed behaviour.
 
 **Final status:** This document defines a proposed semantic target. It is not evidence that the current compiler meets that target. Implementation, tests, and mechanised proofs remain separate deliverables.
+
+
+## 18. Abstract-domain formalisation companion
+
+The concrete path, symbolic-origin, dependency-kind, lattice, and summary-substitution definitions are refined in [PROVENANCE-ABSTRACT-DOMAIN.md](PROVENANCE-ABSTRACT-DOMAIN.md). That addendum is part of this proposal and should be reviewed together with this document. In particular, the dependency lattice is a may-analysis, while validation and context certificates are must-facts; their join operators therefore have opposite polarity.
