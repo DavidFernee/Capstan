@@ -1403,7 +1403,12 @@ static CapStr *cap_hash_password(CapStr *pw) {
     int n = snprintf(out, sizeof out, "cap1$pbkdf2-sha256$%d$%s$%s", CAP_PBKDF2_ITER, shex, dhex);
     /* dhex is a second stack copy of the password-derived verifier key. */
     cap_wipe(dhex, sizeof dhex);
-    return cap_str_new(out, n);
+    CapStr *record = cap_str_new(out, n);
+    /* The returned CapStr owns the persistent record; clear temporary stack copies. */
+    cap_wipe(salt, sizeof salt);
+    cap_wipe(shex, sizeof shex);
+    cap_wipe(out, sizeof out);
+    return record;
 }
 
 static int cap_unhex(const char *h, size_t n, unsigned char *out) {
