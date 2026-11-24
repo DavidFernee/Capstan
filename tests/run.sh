@@ -91,12 +91,18 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
       local name="$1" expected="$2"
       if as --64 "$ROOT/build/$name.s" -o "$tmp/$name.o" &&
          ld -o "$tmp/$name" "$tmp/$name.o"; then
-        "$tmp/$name"
-        local status=$?
-        if [[ $status -eq $expected ]]; then
-          ok "freestanding $name exits $expected without C runtime"
+        if readelf -l "$tmp/$name" | grep -q "INTERP"; then
+          bad "freestanding $name runtime audit" "ELF unexpectedly has an interpreter"
+        elif [[ -n "$(nm -u "$tmp/$name")" ]]; then
+          bad "freestanding $name runtime audit" "ELF has undefined external symbols"
         else
-          bad "freestanding $name exit status" "expected $expected, got $status"
+          "$tmp/$name"
+          local status=$?
+          if [[ $status -eq $expected ]]; then
+            ok "freestanding $name exits $expected with no interpreter or undefined symbols"
+          else
+            bad "freestanding $name exit status" "expected $expected, got $status"
+          fi
         fi
       else
         bad "freestanding $name assembly/link" "GNU as or ld rejected generated assembly"
