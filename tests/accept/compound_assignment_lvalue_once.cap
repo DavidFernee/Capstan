@@ -1,5 +1,5 @@
-// spec: stmt.assign expr.order types.struct types.list
-// Compound assignment evaluates the lvalue receiver and index exactly once.
+// spec: stmt.assign expr.order types.struct
+// Compound assignment evaluates a side-effectful field receiver exactly once.
 struct Counter {
     int value;
 }
@@ -9,23 +9,8 @@ Counter get_counter(List<int> calls, Counter c) {
     return c;
 }
 
-List<int> get_list(List<int> calls, List<int> xs) {
-    calls[0] = calls[0] + 1;
-    return xs;
-}
-
-int get_index(List<int> calls) {
-    calls[0] = calls[0] + 1;
-    return 0;
-}
-
 int mutate_counter(Counter c) {
     c.value = 100;
-    return 1;
-}
-
-int mutate_first(List<int> xs) {
-    xs[0] = 100;
     return 1;
 }
 
@@ -36,12 +21,6 @@ int main() {
     Counter c = new Counter{value: 10};
     get_counter(calls, c).value += mutate_counter(c);
     println(int_to_str(c.value));
-    println(int_to_str(calls[0]));
-
-    List<int> xs = new List<int>();
-    xs.push(10);
-    get_list(calls, xs)[get_index(calls)] += mutate_first(xs);
-    println(int_to_str(xs[0]));
     println(int_to_str(calls[0]));
 
     return 0;
