@@ -138,21 +138,25 @@ List<int> png_encode(Pixmap pm) {
 }
 
 // The runtime's current file API accepts strings, not byte slices. Reuse the
-// 256 one-byte strings and join bounded chunks instead of allocating one CapStr
-// object for every output byte.
+// 256 one-byte strings and one parts list across bounded chunks instead of
+// allocating a CapStr or a growing list for every output byte/batch.
 const int PNG_STRING_CHUNK_BYTES = 4096;
 
 string bytes_text(List<int> bytes) {
     List<string> byte_strings = new List<string>();
     for (int i = 0; i < 256; i += 1) { byte_strings.push(char_str(i)); }
+    List<string> parts = new List<string>();
+    for (int j = 0; j < PNG_STRING_CHUNK_BYTES; j += 1) { parts.push(""); }
     List<string> chunks = new List<string>();
     int from = 0;
     while (from < bytes.len()) {
-        int to = int_min(from + PNG_STRING_CHUNK_BYTES, bytes.len());
-        List<string> parts = new List<string>();
-        for (int j = from; j < to; j += 1) { parts.push(byte_strings[bytes[j]]); }
+        int count = int_min(PNG_STRING_CHUNK_BYTES, bytes.len() - from);
+        for (int j = 0; j < PNG_STRING_CHUNK_BYTES; j += 1) {
+            if (j < count) { parts[j] = byte_strings[bytes[from + j]]; }
+            else { parts[j] = ""; }
+        }
         chunks.push(join(parts, ""));
-        from = to;
+        from += count;
     }
     return join(chunks, "");
 }
