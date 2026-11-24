@@ -716,6 +716,7 @@ void gen_grant_checks(Gen g, Node f) {
     if (let pol = g.c.policies.get(f.s2)) {
         int id = 0;
         if (let pid = g.c.policy_ids.get(f.s2)) { id = pid; }
+        emit(g, "cap_grant_policy_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", " + loc(f) + ");");
         for (int i = 1; i < f.n; i += 1) {
             Type pt = ty_of(f.kids[i]);
             int ordinal = 0;
