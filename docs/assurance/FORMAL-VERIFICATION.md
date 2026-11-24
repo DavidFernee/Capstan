@@ -12,8 +12,8 @@ passing tests provide execution evidence, not mathematical proof.
 
 The initial Lean model revision passed checked-add soundness, completeness and exactness,
 plus target page-release failure preservation, exact successful accounting decrement and
-idempotence. A subsequent revision now models checked-add overflow as an explicit fatal
-outcome and adds a corresponding theorem; that new theorem is awaiting exact-head CI.
+idempotence. The current revision also models checked-add overflow as an explicit fatal outcome and
+proves it in exact-head CI run 45360322725.
 These are abstract-model theorems only; they do not yet verify the C code. Exact toolchain
 inputs and run evidence are in the [proof-run ledger](../../formal/PROOF-RUNS.md).
 
