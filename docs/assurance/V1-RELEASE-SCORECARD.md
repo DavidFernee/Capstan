@@ -67,16 +67,24 @@ release commit. A gate with UNKNOWN evidence is not satisfied.
 
 ## Platform execution matrix
 
-| Platform / architecture | Release backend | C-free path demonstrated | System boundary / TCB | Conformance evidence | Status |
-|---|---|---|---|---|---|
-| Linux | | UNKNOWN | | | BLOCKED |
-| macOS | | UNKNOWN | | | BLOCKED |
-| Windows | | UNKNOWN | | | BLOCKED |
-| Other claimed platform | | UNKNOWN | | | BLOCKED |
+Linux, macOS and Windows are the minimum major-platform targets for the v1.0 C-free gate.
+Record each supported architecture separately; one passing architecture does not establish
+another. A valid C-free path must not generate C, require a C compiler, or depend on a
+Capstan-owned C runtime to compile or execute a supported program.
 
-Do not list a platform as supported for the v1.0 assurance claim until its row is complete.
-Vendor system libraries and the operating-system kernel may remain below the Capstan boundary,
-but must be named as TCB dependencies and their returned data treated as untrusted.
+| Platform / architecture | Release backend | No generated C / C compiler / Capstan C runtime | System boundary / TCB | Conformance evidence | Status |
+|---|---|---|---|---|---|
+| Linux (x86_64) | | UNKNOWN | | | BLOCKED |
+| Linux (aarch64) | | UNKNOWN | | | BLOCKED |
+| macOS (arm64) | | UNKNOWN | | | BLOCKED |
+| macOS (x86_64) | | UNKNOWN | | | BLOCKED |
+| Windows (x86_64) | | UNKNOWN | | | BLOCKED |
+| Windows (arm64) | | UNKNOWN | | | BLOCKED |
+| Other target | | UNKNOWN | | | BLOCKED |
+
+Do not list a platform/architecture as supported for the v1.0 assurance claim until its row is
+complete. Vendor system libraries and the operating-system kernel may remain below the Capstan
+boundary, but must be named as TCB dependencies and their returned data treated as untrusted.
 
 ## Proof register
 
