@@ -10,7 +10,7 @@ namespace CapstanFormal
 /-- Mathematical model of the C checked-add helper.
     The limit represents SIZE_MAX; inputs are natural-number encodings of size_t values. -/
 def checkedAdd (limit a b : Nat) : Option Nat :=
-  if h : a ≤ limit ∧ b ≤ limit - a then some (a + b) else none
+  if a ≤ limit ∧ b ≤ limit - a then some (a + b) else none
 
 /-- A successful checked addition returns the exact mathematical sum, within limit. -/
 theorem checkedAdd_sound (limit a b result : Nat)
@@ -19,12 +19,8 @@ theorem checkedAdd_sound (limit a b result : Nat)
   unfold checkedAdd at h
   by_cases hfit : a ≤ limit ∧ b ≤ limit - a
   · simp [hfit] at h
-    cases h
-    constructor
-    · rfl
-    · omega
+    constructor <;> omega
   · simp [hfit] at h
-    contradiction
 
 /-- Every in-range mathematical sum is accepted by the checked-add model. -/
 theorem checkedAdd_complete (limit a b : Nat)
@@ -63,14 +59,13 @@ def releasePage (ledger : PageLedger) (adviceSucceeded : Bool)
   | .released => ledger
   | .resident =>
       if adviceSucceeded then
-        { ledger with backing := .released,
-          heapBytes := ledger.heapBytes - pageBytes }
+        { backing := .released, heapBytes := ledger.heapBytes - pageBytes }
       else ledger
 
 /-- Failed OS advice must not change page state or heap accounting. -/
 theorem release_failure_preserves (ledger : PageLedger) (pageBytes : Nat) :
     releasePage ledger false pageBytes = ledger := by
-  cases ledger.backing <;> simp [releasePage]
+  cases h : ledger.backing <;> simp [releasePage, h]
 
 /-- Successful advice for a resident page changes its state and subtracts exactly
     one page charge, assuming the accounting precondition. -/
@@ -79,19 +74,17 @@ theorem release_success_exact (ledger : PageLedger) (pageBytes : Nat)
     (hAccounted : pageBytes ≤ ledger.heapBytes) :
     let after := releasePage ledger true pageBytes
     after.backing = .released ∧ after.heapBytes + pageBytes = ledger.heapBytes := by
-  cases ledger with
-  | mk backing heapBytes =>
-    cases backing with
-    | resident =>
-      simp [releasePage]
+  cases h : ledger.backing with
+  | resident =>
+      simp [releasePage, h]
       omega
-    | released =>
-      simp_all
+  | released =>
+      simp [h] at hResident
 
 /-- Release is idempotent: a second release cannot decrement accounting again. -/
 theorem release_idempotent (ledger : PageLedger) (pageBytes : Nat) :
     releasePage (releasePage ledger true pageBytes) true pageBytes =
       releasePage ledger true pageBytes := by
-  cases ledger.backing <;> simp [releasePage]
+  cases h : ledger.backing <;> simp [releasePage, h]
 
 end CapstanFormal
