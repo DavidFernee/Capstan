@@ -54,7 +54,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 | #98 | Open, draft, targets main | `1e9623e188cca2bc1d811acbb37355d80f66b4d4` | No PR-triggered run associated with latest head at inspection | Collector metadata/accounting owner; overlaps #51. Latest CI status needs confirmation. |
 | #105 | Open, draft, targets main | `e02af781049e432cfaf444221bfad9eb0eb636b4` | Run 45344590867 success (four jobs) | Runtime string-allocation/expansion bounds; Worker 8 password parser is stacked on this branch. Independent review and integration remain. |
 | #108 | Closed, superseded (not merged) | `b74404546488e93ba6e5a8bea7fbe83c60396f6f` | Run 45346991634 success (all four jobs) | Original parser branch passed CI and Worker 7 review; rebased successor is PR #113 on v07. |
-| #113 | Open, draft, stacked on #111 | `7251fc0b1dbf9b67ba253c59326590b3c8c2993c` | Run 45348627204 queued on exact head | Strict parser and full regression suite carried onto v07 runtime base; new combined CI and owner review pending. |
+| #113 | Open, draft, stacked on #111 | `7b0fc086862dc78a95b4853676d3972b84d2d3a9` | No PR-triggered run associated with latest test-strengthening head yet; prior run 45348627204 was on preceding head | Strict parser and regressions carried onto v07 runtime base; PBKDF2 call counter now covers every malformed-record class; fresh exact-head CI and owner review pending. |
 
 Previously merged changes reconciled as already addressed for their specific scope: #27 (taint/run/HTML attack findings), #29 (bounded read_file/FIFO behaviour), #56 (review documentation only), #67 (taint fixpoint fails closed), #73 (NUL environment names and bounded read_line), and #78 (grant-role capacity). These do not close the distinct findings above.
 
@@ -79,9 +79,9 @@ No finding in this initial register is marked `ACCEPTED`.
 
 **Original PR #108:** [superseded, closed unmerged](https://github.com/DavidFernee/Capstan/pull/108). Its exact head `b74404546488e93ba6e5a8bea7fbe83c60396f6f` passed all four CI jobs and Worker 7's source re-review. PR #105 was subsequently closed and replaced by PR #111 after PR #86 merged, so the parser patch has been carried forward into **PR #113**: [rebased password verifier remediation](https://github.com/DavidFernee/Capstan/pull/113).  
 **Branch:** `remediation/password-record-parser-v2`  
-**Head:** `7251fc0b1dbf9b67ba253c59326590b3c8c2993c`  
+**Head:** `7b0fc086862dc78a95b4853676d3972b84d2d3a9`  
 **Base:** Worker 4's `runtime/string-allocation-bounds-v07` (PR #111), based on current `main`.  
-**CI:** exact-head run `45348627204` queued. The original parser code passed its prior matrix, but the new combined v07 commit must pass independently.
+**CI:** a test-only strengthening moved the PBKDF2 call-count snapshot ahead of all malformed-record cases and asserts no rejected record enters the KDF. The prior run `45348627204` was for the preceding head; no run is yet associated with the latest commit. The new combined v07 commit must pass independently.
 
 The patch replaces C-string parsing with a strict parser bounded by `CapStr.len`. It rejects embedded NULs, suffix bytes, malformed separators, signs, whitespace, leading zeroes, non-ASCII/non-decimal costs, uppercase/non-hex fields, and any record whose cost is not exactly the current 600,000-iteration generation profile. This is a current-format-only decision pending confirmation that no supported lower-cost legacy records exist; lower-cost records are not silently accepted. `cap_needs_rehash()` now uses the same parser, so a valid-looking prefix cannot be classified as current without validating the entire record. Parsed salt, expected digest and computed digest scratch are wiped.
 
