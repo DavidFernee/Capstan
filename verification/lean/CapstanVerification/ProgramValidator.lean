@@ -46,72 +46,72 @@ def validateMachineInstr {n m : Nat} {types : RegTypes n}
   | .constInt dst value =>
       let d ← typedRegister? types dst .int
       if hv : inI64B value = true then
-        exact .constInt d.1 value d.2 hv
+        pure .constInt d.1 value d.2 hv
       else none
   | .constBool dst value =>
       let d ← typedRegister? types dst .bool
-      exact .constBool d.1 value d.2
+      pure .constBool d.1 value d.2
   | .move dst src =>
       let d ← finOfNat? n dst
       let s ← finOfNat? n src
       if hs : types d = types s then
-        exact .move ⟨d, s, hs⟩
+        pure .move ⟨d, s, hs⟩
       else none
   | .add dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      exact .add ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure .add ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .sub dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      exact .sub ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure .sub ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .mul dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      exact .mul ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure .mul ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .div dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      exact .div ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure .div ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .rem dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      exact .rem ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure .rem ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .lessThan dst lhs rhs =>
       let d ← typedRegister? types dst .bool
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      exact .lessThan ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure .lessThan ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .equal dst lhs rhs =>
       let d ← typedRegister? types dst .bool
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      exact .equal ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure .equal ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .booleanNot dst src =>
       let d ← typedRegister? types dst .bool
       let s ← typedRegister? types src .bool
-      exact .booleanNot ⟨d.1, s.1, d.2, s.2⟩
+      pure .booleanNot ⟨d.1, s.1, d.2, s.2⟩
   | .jump target =>
       let t ← finOfNat? m target
-      exact .jump t
+      pure .jump t
   | .branch cond ifTrue ifFalse =>
       let c ← typedRegister? types cond .bool
       let t ← finOfNat? m ifTrue
       let f ← finOfNat? m ifFalse
-      exact .branch ⟨c.1, c.2, t, f⟩
+      pure .branch ⟨c.1, c.2, t, f⟩
   | .retInt src =>
       let s ← typedRegister? types src .int
-      exact .retInt s.1 s.2
+      pure .retInt s.1 s.2
   | .retBool src =>
       let s ← typedRegister? types src .bool
-      exact .retBool s.1 s.2
-  | .retVoid => exact .retVoid
-  | .explicitTrap reason => exact .explicitTrap reason
+      pure .retBool s.1 s.2
+  | .retVoid => pure .retVoid
+  | .explicitTrap reason => pure .explicitTrap reason
 
 /-- Function-level return contract for a single CCAM function. -/
 inductive RawReturnType where
@@ -162,7 +162,7 @@ def validateSingleFrameProgram {n m : Nat} {types : RegTypes n}
     let typed : Fin (m + 1) → MachineInstr n (m + 1) types :=
       fun pc => (decoded pc).get (hall pc)
     if hlast : machineInstrIsTerminal (typed (Fin.last m)) = true then
-      exact {
+      pure {
         code := typed
         entry := entry
         last_is_terminal := hlast
