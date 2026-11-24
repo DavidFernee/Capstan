@@ -421,7 +421,7 @@ static void cap_gc_new_page(int atomic, int cls) {
         if (pg->released) {
             if (cap_gc_heap_would_exceed(CAP_PAGE_SIZE))
                 cap_panic("memory limit exceeded while reusing a page", "CWE-400", 0);
-            cap_gc.heap += CAP_PAGE_SIZE;
+            cap_gc.heap = cap_gc_checked_add(cap_gc.heap, CAP_PAGE_SIZE);
             cap_gc.reused_total = cap_gc_saturating_add(cap_gc.reused_total, 1);
         }
         cap_gc_format_page(pg, atomic, cls);
@@ -449,7 +449,7 @@ static void cap_gc_new_page(int atomic, int cls) {
     cap_gc.pages[cap_gc.npages++] = pg;
     if (cap_gc_heap_would_exceed(CAP_PAGE_SIZE))
         cap_panic("memory limit exceeded while allocating a page", "CWE-400", 0);
-    cap_gc.heap += CAP_PAGE_SIZE;
+    cap_gc.heap = cap_gc_checked_add(cap_gc.heap, CAP_PAGE_SIZE);
     cap_gc_range((uintptr_t)pg->base, (uintptr_t)pg->base + CAP_PAGE_SIZE);
 }
 
