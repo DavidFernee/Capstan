@@ -18,6 +18,8 @@ const int MAX_FONT_BYTES = 33554432;        // 32 MiB
 const int MAX_GLYPH_POINTS = 4096;
 const int MAX_COMPOSITE_DEPTH = 8;
 const int MAX_COMPOSITE_PARTS = 64;
+const int MAX_GLYPH_POINTS_TOTAL = 16384;          // across all components of one glyph
+const int MAX_COMPOSITE_COMPONENTS_TOTAL = 256;    // across all nesting levels
 const int MAX_CACHED_GLYPHS = 4096;         // rasterised glyphs kept per font
 const int MAX_GLYPH_MASK_PIXELS = 262144;   // at most 256K alpha pixels in one glyph
 const int MAX_CACHED_GLYPH_PIXELS = 1048576; // aggregate alpha pixels per font
@@ -74,6 +76,12 @@ struct GlyphMask {
     int h;
     List<int> alpha;
 }
+
+bool glyph_points_fit(int remaining, int requested) {
+    return remaining >= 0 && requested >= 0 && requested <= remaining;
+}
+
+bool glyph_component_available(int remaining) { return remaining > 0; }
 
 bool glyph_mask_size_valid(int w, int h) {
     if (w < 1 || h < 1) { return false; }
@@ -213,6 +221,13 @@ int glyph_start(Font f, int g) {
 // 1/16384 units (F2Dot14) and offset (dx, dy) in font units apply first, for parts of
 // composite glyphs. Returns false if the glyph is damaged.
 bool glyph_outline(Font f, int g, Path p, int num, int den, int ox, int oy, List<int> m, int depth) {
+    List<int> budget = new List<int>();
+    budget.push(MAX_GLYPH_POINTS_TOTAL);
+    budget.push(MAX_COMPOSITE_COMPONENTS_TOTAL);
+    return glyph_outline_budgeted(f, g, p, num, den, ox, oy, m, depth, budget);
+}
+
+bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int oy, List<int> m, int depth, List<int> budget) {
     if (g < 0 || g >= f.num_glyphs || depth > MAX_COMPOSITE_DEPTH) { return false; }
     FontReader r = f.r;
     int start = glyph_start(f, g);
@@ -221,7 +236,7 @@ bool glyph_outline(Font f, int g, Path p, int num, int den, int ox, int oy, List
     if (end == start) { return true; }       // empty glyph, such as a space
     int at = f.t_glyf + start;
     int contours = r.i16(at);
-    if (contours < 0) { return composite_outline(f, at, end + f.t_glyf, p, num, den, ox, oy, m, depth); }
+    if (contours < 0) { return composite_outline(f, at, end + f.t_glyf, p, num, den, ox, oy, m, depth, budget); }
     int ep = at + 10;
     int npts = 0;
     List<int> ends = new List<int>();
@@ -231,7 +246,8 @@ bool glyph_outline(Font f, int g, Path p, int num, int den, int ox, int oy, List
         ends.push(e);
         npts = e + 1;
     }
-    if (npts > MAX_GLYPH_POINTS) { return false; }
+    if (npts > MAX_GLYPH_POINTS || !glyph_points_fit(budget[0], npts)) { return false; }
+    budget[0] -= npts;
     int ins = ep + 2 * contours;
     int pos = ins + 2 + r.u16(ins);
     List<int> flags = new List<int>();
@@ -334,14 +350,15 @@ void emit_contour(Path p, List<int> px, List<int> py, List<int> flags, int first
     p.close();
 }
 
-bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int ox, int oy, List<int> m, int depth) {
+bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int ox, int oy, List<int> m, int depth, List<int> budget) {
     FontReader r = f.r;
     int pos = at + 10;
     int parts = 0;
     bool more = true;
     while (more) {
-        if (parts >= MAX_COMPOSITE_PARTS || pos + 4 > limit) { return false; }
+        if (parts >= MAX_COMPOSITE_PARTS || !glyph_component_available(budget[1]) || pos + 4 > limit) { return false; }
         parts += 1;
+        budget[1] -= 1;
         int flags = r.u16(pos);
         int g = r.u16(pos + 2);
         pos += 4;
@@ -387,7 +404,7 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
         m2.push((m[1] * c + m[3] * d) / 16384);
         m2.push(m[4] + (m[0] * dx + m[2] * dy) / 16384);
         m2.push(m[5] + (m[1] * dx + m[3] * dy) / 16384);
-        if (!glyph_outline(f, g, p, num, den, ox, oy, m2, depth + 1)) { return false; }
+        if (!glyph_outline_budgeted(f, g, p, num, den, ox, oy, m2, depth + 1, budget)) { return false; }
         more = (flags & 32) != 0;
         if (!r.ok) { return false; }
     }
