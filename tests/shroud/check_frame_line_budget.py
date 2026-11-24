@@ -2,8 +2,10 @@
 """Strict-build and exercise Shroud's aggregate rendered-line budget."""
 
 import os
+import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LIB = sorted(
@@ -13,8 +15,8 @@ LIB = sorted(
 )
 
 
-def run(argv, expected=0):
-    result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True)
+def run(argv, expected=0, env=None):
+    result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, env=env)
     if result.returncode != expected:
         raise SystemExit(
             f"expected exit {expected}, got {result.returncode}: {' '.join(argv)}\n"
@@ -40,10 +42,12 @@ def main():
 
     unit = os.path.join(ROOT, "tests", "shroud", "frame_line_budget.cap")
     reject = os.path.join(ROOT, "tests", "shroud", "frame_line_budget_reject.cap")
-    with __import__("tempfile").TemporaryDirectory(prefix="capstan-frame-lines-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="capstan-frame-lines-") as tmp:
         unit_exe = os.path.join(tmp, "frame_line_budget")
         build(capstanc, cc, cflags, unit, unit_exe)
-        result = run([unit_exe])
+        env = os.environ.copy()
+        env["CAPSTAN_GC_STATS"] = "1"
+        result = run([unit_exe], env=env)
         if "frame line budget: 5 assertions" not in result.stdout:
             raise SystemExit(f"frame line budget unit assertions missing:\n{result.stdout}")
 
@@ -53,7 +57,11 @@ def main():
         if "shroud: frame text line budget exceeded" not in result.stdout:
             raise SystemExit(f"aggregate line-budget diagnostic missing:\n{result.stdout}")
 
-    print("frame line budget: 5 unit assertions; explicit/soft wrap and multi-view boundaries; one-line-over tree rejected")
+    peak = re.search(r"peak_heap=(\\d+)", result.stderr + result.stdout)
+    heap_note = (f"; peak Capstan GC heap {int(peak.group(1)) / (1024 * 1024):.1f} MiB"
+                 if peak else "; peak Capstan GC heap metric unavailable")
+    print("frame line budget: 5 unit assertions; explicit/soft wrap and multi-view "
+          "boundaries; one-line-over tree rejected" + heap_note)
     return 0
 
 
