@@ -1,0 +1,41 @@
+// Regression tests for bounded raster and font allocations (CWE-789/CWE-400).
+// The constructor-rejection case is built separately because it must exit 101.
+
+int main() {
+    if (pixmap_size_valid(1, 1) != true) { return 1; }
+    if (pixmap_size_valid(4096, 4096) != true) { return 2; }
+    if (pixmap_size_valid(16384, 1024) != true) { return 3; }
+    if (pixmap_size_valid(4096, 4097) != false) { return 4; }
+    if (pixmap_size_valid(16384, 1025) != false) { return 5; }
+    if (pixmap_size_valid(16384, 16384) != false) { return 6; }
+    if (pixmap_size_valid(0, 1) != false) { return 7; }
+    if (pixmap_size_valid(1, 0) != false) { return 8; }
+    if (pixmap_size_valid(-1, 1) != false) { return 9; }
+    if (pixmap_size_valid(16385, 1) != false) { return 10; }
+    Pixmap small = new_pixmap(2, 3);
+    if (small.px.len() != 6) { return 11; }
+    if (glyph_points_fit(16384, 4096) != true) { return 12; }
+    if (glyph_points_fit(4095, 4096) != false) { return 13; }
+    if (glyph_points_fit(-1, 1) != false) { return 14; }
+    if (glyph_component_available(1) != true) { return 15; }
+    if (glyph_component_available(0) != false) { return 16; }
+    if (glyph_mask_size_valid(512, 512) != true) { return 17; }
+    if (glyph_mask_size_valid(513, 512) != false) { return 18; }
+    if (glyph_mask_size_valid(0, 1) != false) { return 19; }
+    if (glyph_cache_fits(786432, 262144) != true) { return 20; }
+    if (glyph_cache_fits(786433, 262144) != false) { return 21; }
+    if (glyph_cache_fits(-1, 1) != false) { return 22; }
+    if (glyph_cache_fits(MAX_CACHED_GLYPH_PIXELS, 1) != false) { return 23; }
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
+        if (let font = font_load(data)) {
+            for (int cp = 33; cp < 127; cp += 1) {
+                GlyphMask _cached = glyph_mask(font, glyph_index(font, cp), fx(256), 0);
+            }
+            if (font.cached_pixels > MAX_CACHED_GLYPH_PIXELS) { return 24; }
+            GlyphMask huge = glyph_mask(font, glyph_index(font, 65), fx(1000), 0);
+            if (huge.w != 0 || huge.h != 0) { return 25; }
+        } else { return 26; }
+    } else { return 27; }
+    println("resource limits: 23 assertions and glyph cache exercised");
+    return 0;
+}

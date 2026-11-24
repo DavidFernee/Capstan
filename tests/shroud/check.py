@@ -18,7 +18,8 @@ Run from anywhere; paths are relative to the repository root.
 5. png         the encoder's output decoded by zlib and compared pixel by pixel
 6. font fuzz   damaged fonts (bit flips, truncation, hostile offsets and counts):
                each is refused or drawn, and the program never stops or crashes
-7. golden      the example gallery renders to the recorded SHA-256 of every frame.
+7. resource    pixmap dimensions/area, glyph-mask/cache budgets and recursive-font work limits.
+8. golden      the example gallery renders to the recorded SHA-256 of every frame.
                Rendering is integer arithmetic only, so this holds on every platform.
 """
 import hashlib, os, random, struct, subprocess, sys, tempfile, zlib
@@ -302,6 +303,18 @@ def check_fuzz(exe, tmp):
     return f"{len(paths)} damaged fonts: {r.stdout.strip()[5:]}, no stops"
 
 
+def check_pixmap_limits(capstanc, cc, cflags, tmp):
+    exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits.cap", "pixmap-limits")
+    ok = run(exe)
+    if ok.stdout.strip() != "resource limits: 23 assertions and glyph cache exercised":
+        sys.exit(f"pixmap limits: unexpected output: {ok.stdout!r}")
+    rejected_exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits_reject.cap", "pixmap-reject")
+    rejected = run(rejected_exe, check=False)
+    if rejected.returncode != 101 or "pixmap size out of range" not in rejected.stdout:
+        sys.exit(f"pixmap limits: oversized constructor request was not rejected: exit {rejected.returncode}\\n{rejected.stdout}{rejected.stderr}")
+    return "23 resource-budget assertions; glyph cache exercised; oversized pixmap rejected before allocation"
+
+
 def check_golden(capstanc, cc, cflags, tmp, update):
     exe = build(capstanc, cc, cflags, tmp, "examples/shroud/gallery.cap", "gallery")
     out = os.path.join(tmp, "frames")
@@ -353,6 +366,7 @@ def main():
         report.append("utf-8: " + check_utf8(vec, tmp))
         report.append("png: " + check_png(vec, tmp))
         report.append("font fuzz: " + check_fuzz(vec, tmp))
+        report.append("pixmap limits: " + check_pixmap_limits(capstanc, cc, cflags, tmp))
         report.append("golden: " + check_golden(capstanc, cc, cflags, tmp, update))
         print("\n".join(report))
 
