@@ -25,7 +25,7 @@ const int MAX_PIXMAP_SIDE = 16384;
 const int MAX_PIXMAP_PIXELS = 16777216;
 
 bool pixmap_size_valid(int w, int h) {
-    if (!pixmap_size_valid(w, h)) { return false; }
+    if (w < 1 || h < 1 || w > MAX_PIXMAP_SIDE || h > MAX_PIXMAP_SIDE) { return false; }
     // Division avoids overflowing w * h while validating attacker-controlled sizes.
     return w <= MAX_PIXMAP_PIXELS / h;
 }
