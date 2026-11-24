@@ -205,7 +205,9 @@ static void cap_install_stack_guard(char *low) {
 }
 
 static size_t cap_gc_parse_heap_limit(const char *text) {
-    if (!text || !*text || *text == '-')
+    /* Accept decimal digits followed by at most one binary suffix; do not
+       let strtoull's permissive whitespace/sign handling normalize bad input. */
+    if (!text || text[0] < '0' || text[0] > '9')
         cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
     errno = 0;
     char *end = NULL;
@@ -280,6 +282,9 @@ static size_t cap_gc_slot(uintptr_t pageno, size_t cap) {
 static void cap_gc_ptab_insert(CapPage *pg) {
     if (cap_gc.ptab_cap && !cap_gc.ptab)
         cap_panic("page-table storage is missing", "CWE-476", 0);
+    if ((!cap_gc.ptab_cap && cap_gc.npages) ||
+        (cap_gc.ptab_cap && cap_gc.npages > cap_gc.ptab_cap / 2))
+        cap_panic("page-table page-count invariant violated", "CWE-682", 0);
     if (cap_gc.ptab_cap &&
         (cap_gc.ptab_cap & (cap_gc.ptab_cap - 1)) != 0)
         cap_panic("page-table capacity is not a power of two", "CWE-682", 0);
