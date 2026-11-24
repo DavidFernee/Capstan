@@ -362,7 +362,8 @@ static void cap_gc_release(CapPage *pg) {
 static void cap_gc_spare_page(CapPage *pg, int release) {
     pg->spare = 1;
     if (release) cap_gc_release(pg);
-    if (cap_gc.nspare > cap_gc.capspare)
+    if (cap_gc.nspare > cap_gc.capspare ||
+        (cap_gc.capspare > 0 && !cap_gc.spare))
         cap_panic("spare-page metadata invariant violated", "CWE-682", 0);
     if (cap_gc.nspare == cap_gc.capspare) {
         size_t nc = cap_gc_next_capacity(cap_gc.capspare,
@@ -424,7 +425,8 @@ static void cap_gc_new_page(int atomic, int cls) {
     CapPage *pg = (CapPage *)cap_gc_meta(sizeof(CapPage));
     pg->base = (char *)mem;
     cap_gc_format_page(pg, atomic, cls);
-    if (cap_gc.npages > cap_gc.cappages)
+    if (cap_gc.npages > cap_gc.cappages ||
+        (cap_gc.cappages > 0 && !cap_gc.pages))
         cap_panic("page metadata invariant violated", "CWE-682", 0);
     if (cap_gc.npages == cap_gc.cappages) {
         size_t nc = cap_gc_next_capacity(cap_gc.cappages,
@@ -447,7 +449,10 @@ static void cap_gc_new_page(int atomic, int cls) {
 /* ---- marking ------------------------------------------------------------ */
 
 static void cap_gc_push(void *p, size_t n) {
-    if (cap_gc.msp > cap_gc.mcap || cap_gc.mcap - cap_gc.msp < 2) {
+    if (cap_gc.msp > cap_gc.mcap ||
+        (cap_gc.mcap > 0 && !cap_gc.mstack))
+        cap_panic("mark-stack metadata invariant violated", "CWE-682", 0);
+    if (cap_gc.mcap - cap_gc.msp < 2) {
         size_t nc = cap_gc_next_capacity(cap_gc.mcap,
                                          cap_gc_checked_add(cap_gc.msp, 2),
                                          1024, sizeof(void *));
@@ -627,6 +632,9 @@ static void *cap_gc_alloc(size_t n, int atomic) {
         }
         void *p = calloc(1, n);
         if (!p) cap_gc_oom();
+        if (cap_gc.nlarge > cap_gc.caplarge ||
+            (cap_gc.caplarge > 0 && !cap_gc.large))
+            cap_panic("large-object metadata invariant violated", "CWE-682", 0);
         if (cap_gc.nlarge == cap_gc.caplarge) {
             size_t nc = cap_gc_next_capacity(cap_gc.caplarge,
                                              cap_gc_checked_add(cap_gc.nlarge, 1),
