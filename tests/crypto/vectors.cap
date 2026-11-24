@@ -110,7 +110,8 @@ int main() {
     bounds_ok = bounds_ok && pbkdf2_sha256(long_pw, empty, 1, 32).len() == 0;
     bounds_ok = bounds_ok && pbkdf2_sha256(empty, long_salt, 1, 32).len() == 0;
     bounds_ok = bounds_ok && pbkdf2_sha256(invalid_byte, empty, 1, 32).len() == 0;
-    println(bounds_ok ? "pbkdf2-bounds ok" : "pbkdf2-bounds FAIL");
+    if (bounds_ok) { println("pbkdf2-bounds ok"); }
+    else { println("pbkdf2-bounds FAIL"); }
     println("pbkdf2-empty " + to_hex(pbkdf2_sha256(empty, empty, 1, 32)));
     return 0;
 }
