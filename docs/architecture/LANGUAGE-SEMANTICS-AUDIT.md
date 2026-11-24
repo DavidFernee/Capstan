@@ -36,7 +36,7 @@ C does not specify the evaluation order of function arguments. If the RHS mutate
 
 The runtime defines `CAP_READ_LINE_MAX = 1 << 20` and traps when a line exceeds 1 MiB. The runtime comment documents this limit. The `read_line()` row in `docs/SPEC.md` documents byte preservation and EOF behaviour but does not state the 1 MiB bound or its failure mode.
 
-**Required specification update:** PR #93 now adds the limit to `docs/SPEC.md`: 1,048,576 payload bytes, excluding the terminating newline. Exactly 1 MiB is accepted; the next non-newline byte causes a controlled runtime trap (CWE-789). The runtime unit tests cover max bytes with newline and max-plus-one payload bytes. EOF immediately after exactly 1 MiB appears accepted by source inspection but is not yet a dedicated regression; this boundary has been handed to the runtime/test owner. This is a compatibility contract, not merely an implementation tuning parameter.
+**Required specification update:** PR #93 now adds the limit to `docs/SPEC.md`: 1,048,576 payload bytes, excluding the terminating newline. Exactly 1 MiB is accepted; the next non-newline byte causes a controlled runtime trap (CWE-789). The runtime unit tests cover max bytes with newline and max-plus-one payload bytes. PR #93 adds `tests/unit/read_line_eof.py` to cover exactly 1 MiB followed immediately by EOF through the public native API; its CI is pending. This is a compatibility contract, not merely an implementation tuning parameter.
 
 ### 2.4 Proven remainder helper needs an explicit overflow guard
 
