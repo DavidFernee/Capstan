@@ -1,0 +1,13 @@
+int main() {
+    List<Tainted> pieces = new List<Tainted>();
+    pieces.push(taint("left"));
+    pieces.push(taint("right"));
+    Tainted filtered = join(pieces, "-");
+    println(int_to_str(filtered.len()));
+
+    List<string> trusted = new List<string>();
+    trusted.push("left");
+    trusted.push("right");
+    println(join(trusted, "-"));
+    return 0;
+}
