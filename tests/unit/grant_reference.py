@@ -152,6 +152,31 @@ def self_test():
                not may_enter(g, "CanDebit", ptypes, ptypes, (500, account), pred, shapes),
                not may_enter(g, "Other", ptypes, ptypes, (10, account), pred, shapes),
                not may_enter(g, "CanDebit", ptypes, ptypes, (10, account), lambda *_: False, shapes)]
+    # Scalar type confusion must not make bool interchangeable with int.
+    checks += [not equivalent(I, True, 1, shapes),
+               equivalent(Ty("bool"), True, True, shapes),
+               not equivalent(Ty("bool"), True, 1, shapes)]
+    # Strings compare bytes, not allocation identity or Python object identity.
+    checks += [equivalent(Ty("string"), b"", bytes(bytearray()), shapes),
+               not equivalent(Ty("string"), "x", b"x", shapes)]
+    # Each reference-bearing type is identity-based, including maps and lists.
+    for kind in ("list", "map"):
+        T = Ty(kind)
+        checks += [equivalent(T, Ref(token), Ref(token), shapes),
+                   not equivalent(T, Ref(token), Ref(object()), shapes)]
+    # Nested optionals recurse through both presence bits and payloads.
+    OO = Ty("optional<optional<int>>")
+    checks += [equivalent(OO, Opt(True, Opt(False)), Opt(True, Opt(False)), shapes),
+               not equivalent(OO, Opt(True, Opt(False)), Opt(True, Opt(True, 0)), shapes),
+               not equivalent(OO, Opt(True, Opt(True, 1)), Opt(True, Opt(True, 2)), shapes)]
+    # Enum identity, declared tags, and payload shape are all part of the relation.
+    checks += [not equivalent(E, Enum("Other", "Amount", (10,)), Enum("Other", "Amount", (10,)), shapes),
+               not equivalent(E, Enum("Debit", "Missing", (10,)), Enum("Debit", "Missing", (10,)), shapes),
+               not equivalent(E, Enum("Debit", "Amount", (10,)), Enum("Debit", "Amount", (True,)), shapes)]
+    # Protected-call arity and policy identity fail closed.
+    checks += [not may_enter(g, "CanDebit", ptypes, ptypes, (10,), pred, shapes),
+               not may_enter(g, "CanDebit", ptypes, ptypes, (10, account, account), pred, shapes),
+               not may_enter(g, "CanDebit", (I,), (I,), (10,), lambda *_: True, shapes)]
     if not all(checks):
         raise AssertionError("grant reference self-check failed: %d/%d" % (checks.count(True), len(checks)))
     print("grant reference semantics: %d specification self-checks passed" % len(checks))

@@ -69,6 +69,7 @@ if out="$($PY "$ROOT/tests/unit/escape_log_agree.py" 2>&1)"; then ok "$out"; els
 if out="$($PY "$ROOT/tests/unit/siphash_agree.py" 2>&1)"; then ok "$out"; else bad "siphash" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_json_agree.py" 2>&1)"; then ok "$out"; else bad "escape_json agreement" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/lint_table.py" 2>&1)"; then ok "$out"; else bad "lint table" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/grant_reference.py" 2>&1)"; then ok "$out"; else bad "grant reference semantics" "$out"; fi
 
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do
