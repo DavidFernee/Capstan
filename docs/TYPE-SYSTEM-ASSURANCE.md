@@ -1282,3 +1282,26 @@ Parsing requirements:
 Before semantic analysis, AST invariants must guarantee unique binders per scope, ordered argument lists, distinct unresolved type-variable references (not nominal names), explicit interface/impl node kinds, and no semantic consumption of malformed partial nodes.
 
 Tests must cover documented syntax and expected AST shape; nested generic closers versus shifts/comparisons; malformed syntax and recovery; source locations; parser depth/work limits; fuzzing; and bootstrap/self-hosted parser agreement. This is a prerequisite, not a claim that current Capstan supports these constructs.
+
+
+## 35. Runtime allocation kinds, specialised layouts and secret reclamation
+
+The current collector is a non-moving conservative mark/sweep collector in `runtime/capstan_gc.h`. Its allocation contract is three-way: kind 0 may contain pointers and is scanned; kind 1 is pointer-free and is not scanned; kind 2 is pointer-free secret storage and is not scanned, then wiped when reclaimed. This is an allocation property, not a C type-name or source-level generic property.
+
+Small allocations (up to 2 KiB) are page/size-class managed. Large allocations are individually allocated and tracked in sorted metadata. Both paths preserve the allocation kind. On small-object sweep, kind-2 slots are zeroed before their first word is reused for the free-list link. The secret environment value is represented as a `CapStr`; its length header occupies that first word and its payload begins after it. The existing unit test correctly checks the payload, not the overwritten allocator header. Large kind-2 objects are volatile-zeroed in full before `free`.
+
+Required v0.5 invariants:
+
+- Every concrete specialised layout must select a compatible allocation kind. Any layout that can contain a managed pointer must use kind 0; it must never be allocated as kind 1 or 2. Pointer-free data may use kind 1. Secret payloads must use kind 2 and must remain pointer-free.
+- A closure environment containing a `Secret` reference is a kind-0 traced object; the secret payload remains a separate kind-2 object. Do not mark the whole environment secret merely because it contains a secret reference.
+- Specialisation must not infer pointer-freedom from source-level generic syntax, field names, or a partial scan. The fully substituted field/payload layout must determine the allocation contract. Unknown or opaque layouts fail closed.
+- Keep tracing and wiping orthogonal: kind 0 is scanned; kind 1 is not; kind 2 is not and is wiped on reclamation. A pointer-bearing object must never be placed in kind 2, since it would not be traced.
+- Preserve this contract for structs, enums, collection backing storage, closure environments, nested captures and any future task/async frames. Tests must include one generic template instantiated with both pointer-free and pointer-bearing arguments.
+
+Current evidence and remaining gap:
+
+- `runtime/capstan_gc.h` implements the three allocation kinds, conservative stack/register/global-root scanning, small-page sweeping and a distinct large-object sweep. `runtime/capstan_rt.h` routes `cap_alloc`, `cap_alloc_atomic` and `cap_alloc_secret` to kinds 0, 1 and 2 respectively.
+- `tests/unit/test_runtime.c:test_secret_wipe` creates 200 short environment secrets and checks their payload bytes after collection. This exercises the small-object path only; it does not establish the large kind-2 reclamation path.
+- Add a large-secret regression that verifies the wipe occurs before the large block is released (for example, through a test-only reclamation observer or allocator hook). Do not make the test read memory after `free`, which would itself be undefined behaviour. Retain the small-object payload test and include boundary sizes around the 2 KiB small/large threshold.
+- Test closure/environment reachability separately from payload erasure: a live traced environment must retain its secret payload, and after the environment and all other roots disappear the payload must be wiped on reclamation. Account for conservative false retention; do not promise deterministic lexical-scope erasure.
+- These are acceptance criteria and a description of the current collector, not a claim that generic specialisation or closure support is implemented.
