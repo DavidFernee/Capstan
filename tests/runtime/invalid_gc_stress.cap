@@ -2,6 +2,7 @@
 // expect-runtime: CWE-20
 // env: CAPSTAN_GC_STRESS=not-a-number
 int main() {
-    println("initialise runtime");
+    List<int> values = new List<int>();
+    values.push(1);
     return 0;
 }
