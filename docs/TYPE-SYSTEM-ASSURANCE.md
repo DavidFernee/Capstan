@@ -213,3 +213,21 @@ An early growth diagnostic is useful, but the hard global budget remains the saf
 - A deliberately deep type tree fails within the node/work budget rather than exhausting the host stack.
 
 These tests should precede generic code generation. Until the type-variable identity, nominal identity and substitution contracts are settled, adding parser syntax alone would create an unstable foundation for constraints, coherence, diagnostics and monomorphisation.
+
+
+## 11. Module identity and name resolution are prerequisites, not just visibility checks
+
+The current compiler does not yet have the module model described by the v0.5 proposal. The import loader in compiler/main.cap flattens declarations from every loaded file into one List<Node>. Node.file preserves the source-file index, but compiler/checker.cap registers top-level declarations in global maps keyed by the unqualified source name (for example structs, enums, functions, policies and constants). Type normalisation and lookup then resolve by that name. The loader records import origin only for read-error reporting; it does not retain a durable importer-to-imported-module graph for semantic access checks.
+
+Consequently, adding a public/private flag and checking Node.file at a few reference sites would not be enough. Before module visibility can be implemented safely, the design must define:
+
+1. **Module identity:** a stable identity for each loaded source module, distinct from its path spelling. Define whether identity is canonicalised filesystem identity, a compiler-assigned module ID within one build, or a package/module name. State the treatment of symlinks and the same file reached through multiple import paths.
+2. **Import graph:** retain directed import edges, including the importing module and import declaration location. Define whether visibility is direct-import-only or transitive, and whether re-export exists. The current breadth-first loader does not preserve these semantics as a graph.
+3. **Name resolution:** define how an unqualified identifier resolves when two imported modules export the same name. Define qualified names/aliases or an explicit ambiguity error. Resolution must not depend on traversal order or whichever declaration overwrites a Map entry.
+4. **Declaration identity:** resolve each nominal type, function, interface, policy and constant reference to a declaration identity before type equality, substitution, overload/impl lookup or code generation. A short name is not a stable key.
+5. **Member/associated visibility:** specify how method declarations lifted out of struct bodies retain their owning module/type and visibility, and how enum variants and interface implementations participate in access checks.
+6. **Public signature closure:** check every type reachable from an exported declaration, including generic parameters/bounds, nested generic arguments, fields, enum payloads, function parameters/returns, interface methods and impl methods. Aliases/re-exports must not create an alternate path to a private declaration.
+
+Required tests: two imported modules exporting the same type/function name; one private and one public declaration with the same short name; direct versus transitive imports; import-order permutations; the same source reached through two paths; symlink/path alias policy where supported; public signatures that leak private types through nested generic arguments or constraints; and method/variant access across module boundaries. All should produce deterministic resolution independent of import queue order.
+
+This is a design dependency for generic substitution and coherence as well as visibility: canonical type and implementation identities cannot be made reliable while nominal resolution remains name-only. It should be resolved before a module-visibility implementation or generic cache is built on top of the current global maps.
