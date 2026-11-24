@@ -1,0 +1,105 @@
+// Anchor A0: a headless workbench composition using Shroud S0.
+// Run from the repository root. This is a UI shell, not yet an editor or IDE host.
+//
+//   make bootstrap
+//   ./build/capstanc build -o /tmp/anchor.c lib/shroud/geom.cap lib/shroud/color.cap lib/shroud/path.cap lib/shroud/raster.cap lib/shroud/png.cap lib/shroud/ttf.cap lib/shroud/text.cap lib/shroud/theme.cap lib/shroud/view.cap lib/shroud/layout.cap lib/shroud/paint.cap lib/shroud/a11y.cap lib/shroud/ui.cap examples/anchor/main.cap
+//   cc -O2 -Iruntime /tmp/anchor.c -o /tmp/anchor
+//   mkdir -p /tmp/anchor-out && /tmp/anchor /tmp/anchor-out
+
+struct Model {
+    string project;
+    string file;
+    string status;
+    bool security_selected;
+}
+
+View nav_item(string label, string action, bool selected) {
+    View v = button(label, action).key(action);
+    if (selected) { return v.accent(); }
+    return v.subtle();
+}
+
+View view_of(Model m) {
+    View root = column().spacing(0).padding(12).align(ALIGN_START, ALIGN_STRETCH);
+    root.add(row().spacing(12)
+        .add(text("ANCHOR").font_size(22).bold())
+        .add(text("Capstan development environment").grow(1))
+        .add(text("A0 · Shroud S0")));
+    root.add(divider());
+    root.add(row().spacing(12).align(ALIGN_START, ALIGN_STRETCH)
+        .add(column().spacing(8).padding(8).min_width(190)
+            .add(text("WORKSPACE").bold())
+            .add(text(m.project))
+            .add(nav_item("Explorer", "explorer", !m.security_selected))
+            .add(nav_item("Security", "security", m.security_selected))
+            .add(nav_item("Build & test", "build", false))
+            .add(nav_item("Documentation", "docs", false)))
+        .add(column().spacing(10).padding(8).grow(1)
+            .add(row().spacing(8)
+                .add(text(m.file).bold())
+                .add(text("· read-only preview")))
+            .add(divider())
+            .add(text("01  policy ReadRecord(User u, Record r) {"))
+            .add(text("02      return u.id == r.patient_id;"))
+            .add(text("03  }"))
+            .add(text(""))
+            .add(text("04  void show(User u, Record r) {"))
+            .add(text("05      // Compiler diagnostics arrive through capstan lsp"))
+            .add(text("06  }"))
+            .add(divider())
+            .add(text("PROBLEMS").bold())
+            .add(text("No live compiler connection in A0."))
+            .add(text("Run capstan check explicitly; results are not inferred."))));
+    root.add(divider());
+    root.add(row().spacing(8)
+        .add(text("SECURITY POSTURE").bold())
+        .add(text(m.security_selected ? "Evidence view · no project evidence loaded" : "No assurance verdict available").grow(1))
+        .add(text("Compiler: 0.4.0")));
+    root.add(text(m.status));
+    return root;
+}
+
+void update(Model m, Msg msg) {
+    if (msg.action == "security") {
+        m.security_selected = true;
+        m.status = "Assurance data is not loaded; status remains unknown.";
+    }
+    if (msg.action == "explorer") {
+        m.security_selected = false;
+        m.status = "Workspace navigation is a static A0 placeholder.";
+    }
+    if (msg.action == "build") {
+        m.status = "Build runner is not connected in A0.";
+    }
+    if (msg.action == "docs") {
+        m.status = "Documentation browser is planned, not implemented.";
+    }
+}
+
+int main() {
+    List<string> args0 = args();
+    string out = "/tmp";
+    if (args0.len() > 0) { out = args0[0]; }
+
+    Font? regular = none;
+    Font? bold = none;
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
+    if (let f = regular) {
+        if (let fb = bold) {
+            Model m = new Model{project: "Capstan", file: "examples/patient_records.cap", status: "A0 prototype · headless PNG · no commands executed", security_selected: false};
+            Ui ui = new_ui(f, fb, light_theme(), 1100, 720, 256);
+            ui.render(view_of(m), 1000);
+            if (!png_write(out + "/anchor.png", ui.pixmap)) { println("could not write Anchor preview"); return 1; }
+            if (let tree = a11y_tree(ui)) {
+                if (!write_file(out + "/anchor-a11y.json", a11y_json(tree) + "\n")) { println("could not write accessibility tree"); return 1; }
+            }
+            List<string> problems = a11y_problems(ui);
+            for (int i = 0; i < problems.len(); i += 1) { println("accessibility: " + problems[i]); }
+            println("Anchor A0 rendered to " + out + "/anchor.png");
+            return 0;
+        }
+    }
+    println("could not load Shroud fonts; run from the repository root");
+    return 1;
+}
