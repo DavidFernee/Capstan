@@ -86,7 +86,7 @@ if not binary.search(c):
     print("binary operands do not materialise the left string literal before fn_make()")
     raise SystemExit(1)
 
-query = re.search(r'CAP_LIT\("select \?",\s*8\)', c)
+query = re.search(r'CAP_LIT\("select \\?\?",\s*8\)', c)
 query_arg = re.search(r'__auto_type\s+\w+\s*=\s*fn_make\(\)', c[query.end():]) if query else None
 if not query:
     print("sql_query literal is missing from generated C")
