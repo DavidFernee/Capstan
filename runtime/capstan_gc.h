@@ -311,7 +311,8 @@ static void cap_gc_release(CapPage *pg) {
     madvise(pg->base, CAP_PAGE_SIZE, MADV_DONTNEED);
 #endif
     pg->released = 1;
-    if (cap_gc.heap < CAP_PAGE_SIZE) cap_panic("collector heap accounting underflow", "CWE-682", 0);\n    cap_gc.heap -= CAP_PAGE_SIZE;
+    if (cap_gc.heap < CAP_PAGE_SIZE) cap_panic("collector heap accounting underflow", "CWE-682", 0);
+    cap_gc.heap -= CAP_PAGE_SIZE;
     cap_gc.released_total++;
 }
 
@@ -328,7 +329,8 @@ static void cap_gc_spare_page(CapPage *pg, int release) {
         cap_gc.spare = ns;
         cap_gc.capspare = nc;
     }
-    cap_gc.spare[cap_gc.nspare] = pg;\n    cap_gc.nspare++;
+    cap_gc.spare[cap_gc.nspare] = pg;
+    cap_gc.nspare++;
 }
 
 /* Set up a page's metadata for size class `cls` and thread its slots onto the free list. */
@@ -384,7 +386,8 @@ static void cap_gc_new_page(int atomic, int cls) {
         cap_gc.cappages = nc;
     }
     cap_gc_ptab_insert(pg);
-    cap_gc.pages[cap_gc.npages] = pg;\n    cap_gc.npages++;
+    cap_gc.pages[cap_gc.npages] = pg;
+    cap_gc.npages++;
     cap_gc.heap = cap_gc_account_add(cap_gc.heap, CAP_PAGE_SIZE);
     cap_gc_range((uintptr_t)pg->base, (uintptr_t)pg->base + CAP_PAGE_SIZE);
 }
@@ -628,7 +631,8 @@ static void cap_gc_root(void **addr) {
         cap_gc.roots = nr;
         cap_gc.caproots = nc;
     }
-    cap_gc.roots[cap_gc.nroots] = addr;\n    cap_gc.nroots++;
+    cap_gc.roots[cap_gc.nroots] = addr;
+    cap_gc.nroots++;
 }
 
 #endif
