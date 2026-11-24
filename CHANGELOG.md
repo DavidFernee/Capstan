@@ -6,6 +6,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 
 ## 0.4.0 (unreleased)
 - Security: reject embedded-NUL `secret_env` names at compile time and runtime; cap `read_line()` input at 1 MiB with a fail-closed CWE-789 diagnostic and boundary regressions
+- Authorisation: reject policies with more than eight struct-identity roles at compile time instead of accepting code that later fails closed at runtime
 - Security: the compiler refuses to proceed when interprocedural taint summaries exhaust their fixpoint budget; a deep helper-chain regression prevents CWE-20 laundering through incomplete analysis
 - Assurance: CI and release assembly fail when active or qualified claims have stale reviews/evidence; empty claim inventories are invalid, and stale MEM-001 is downgraded pending re-review
 - Assurance: claim reviews and evidence now report stale status when covered implementation or evidence artifacts change after their recorded Git revision

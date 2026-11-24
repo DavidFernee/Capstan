@@ -3,6 +3,8 @@
 // Every rule that makes a weakness class impossible to write lives here.
 // Diagnostics carry the CWE number of the weakness they prevent.
 
+const int MAX_GRANT_OBJECT_ROLES = 8;
+
 struct Checker {
     Ctx ctx;
     Map<Node> structs;
@@ -889,7 +891,6 @@ string banned_hint(string name) {
 bool is_literal_str(Node e) {
     return e.k == N_STR;
 }
-
 // Node.s stores the C-escaped literal body, not its decoded bytes. The lexer
 // encodes a NUL byte as the three-digit octal escape \\000. Skip escaped
 // backslashes/quotes/question marks so a literal backslash followed by "000"
@@ -905,6 +906,7 @@ bool literal_has_nul(Node e) {
     }
     return false;
 }
+
 
 // Arguments for print-like and storage sinks: anything stringish, but never secrets.
 void sink_string(Checker c, Node arg, string what, bool allow_tainted) {
@@ -1515,6 +1517,15 @@ bool trivially_permits(Node body) {
 void check_policy(Checker c, Node p) {
     Node body = p.kids[p.n];
     bool is_public = p.s2 == "public";
+    // Keep this bound in sync with CAP_GRANT_MAX in runtime/capstan_rt.h.
+    // The runtime stores struct-identity roles in a fixed-size grant array.
+    int object_roles = 0;
+    for (int i = 0; i < p.n; i += 1) {
+        if (ty_of(p.kids[i]).k == TY_STRUCT) { object_roles += 1; }
+    }
+    if (object_roles > MAX_GRANT_OBJECT_ROLES) {
+        error_at(c.ctx, p, "", "policy '" + p.s + "' has more than 8 struct parameters; grants support at most 8 object roles");
+    }
     for (int i = 0; i < p.n; i += 1) {
         Node prm = p.kids[i];
         Type pt = ty_of(prm);

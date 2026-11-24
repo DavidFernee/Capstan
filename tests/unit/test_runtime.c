@@ -322,6 +322,7 @@ static void test_files(void) {
     if (!rejected) (void)cap_read_line();
     cap_test_mode = old_test_mode;
     CHECK(rejected);
+    CHECK(cap_read_line() == NULL);
     remove(in);
     remove(path);
     rmdir(dir);
@@ -510,7 +511,7 @@ __attribute__((noinline)) static void make_secrets(void) {
 }
 static void test_secret_env_name(void) {
     setenv("CAPSTAN_UNIT_SECRET_PREFIX", "prefix-value", 1);
-    static const char truncated_name[] = "CAPSTAN_UNIT_SECRET_PREFIX\0SUFFIX";
+    static const char truncated_name[] = "CAPSTAN_UNIT_SECRET_PREFIX\\0SUFFIX";
     CHECK(cap_secret_env(cap_str_new(truncated_name, (int64_t)sizeof truncated_name - 1)) == NULL);
     unsetenv("CAPSTAN_UNIT_SECRET_PREFIX");
 }

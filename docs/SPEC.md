@@ -114,7 +114,7 @@ explicitly. Their meaning therefore never depends on precedence.
 | `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
-| `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\\n`, every byte kept (NUL included), or `none` at EOF; a line longer than 1 MiB stops with CWE-789 rather than growing without bound |
+| `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input |
 | `read_bytes(n)` → `Tainted?`, `flush()` | `read_bytes` reads exactly `n` bytes of standard input (fewer only if the input ends first), every byte kept, or gives `none` at end of input; `read_bytes(0)` is `""`. `n` outside 0..2^30 stops the program (CWE-789); memory grows with the bytes read, not with `n`. `flush()` writes out everything printed so far, for programs that converse over a pipe (a language server, say) |
 | `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | |
@@ -131,11 +131,24 @@ explicitly. Their meaning therefore never depends on precedence.
 | `wrapping_shl(a, n)` → `int` | `a << n` modulo 2^64; `n` must be 0..63 (CWE-1335) |
 | `sql_query("literal", params...)` | query text must be a literal; values are bound parameters |
 | `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; every computed (non-literal) argument must follow a literal `"--"` (CWE-88). If the program is a shell, interpreter or launcher (`sh`, `bash`, `env`, `xargs`, `sudo`, `ssh`, `python…`, `perl…`, `node` and others, matched without directory or `.exe`), every argument must be a literal (CWE-78) |
-| `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | environment variable names must be string literals without embedded NUL (CWE-158); `secret_env` copies the value into a managed Secret but does not remove the host process-environment copy; `secret_eq` comparison behaviour is documented separately |
+| `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | environment variable names must be string literals without embedded NUL (CWE-158); `secret_env` copies the value into a managed Secret but does not remove the host process-environment copy; `secret_eq` comparison is content-independent for equal-length inputs, with operand lengths public |
 | `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…`; not for passwords (CWE-916); `hash()` of a `Secret` is an error (CWE-532), `hash_verify()` of one is allowed |
 | `hash_password(p)`, `verify_password(p, h)`, `needs_rehash(h)` | PBKDF2-SHA256 with 600,000 iterations; output carries its algorithm and cost |
 
 In v0.1, `sql_query` and `run` are demonstration sinks: they print what they would execute.
+
+
+## Secret comparison
+
+`secret_eq(secret, other)` avoids content-dependent early exit for equal-length
+operands. It is **not length-hiding**: the comparison work depends on the operand
+lengths, and a length mismatch is observable. Treat both lengths as public. Do not
+use this API where a secret's length is itself confidential or where an attacker can
+use timing to discover it. In particular, do not use it as a variable-length password
+verifier; use `hash_password()` and `verify_password()` for passwords. A future
+length-hiding API would require a fixed public representation/bound and separate
+implementation and verification evidence. The current runtime/C compiler is not
+claimed to provide that property.
 
 ## Authorisation
 
