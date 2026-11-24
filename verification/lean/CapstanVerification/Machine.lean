@@ -52,6 +52,51 @@ structure FiniteProgram (n m : Nat) (types : RegTypes n) where
   last_is_terminal :
     machineInstrIsTerminal (code (Fin.last m)) = true
 
+/-- The deterministic instruction budget from the CCAM resource contract. -/
+structure StepBudget where
+  limit : Nat
+  used : Nat
+
+/-- Consume one instruction slot, trapping before execution when the budget is exhausted. -/
+def consumeStep (budget : StepBudget) : Except Trap StepBudget :=
+  if budget.used < budget.limit then
+    .ok { budget with used := budget.used + 1 }
+  else
+    .error .instructionLimit
+
+/-- A successful budget consumption increments the counter exactly once. -/
+theorem consumeStep_increments
+    (budget : StepBudget) (next : StepBudget)
+    (h : consumeStep budget = .ok next) :
+    next.used = budget.used + 1 := by
+  unfold consumeStep at h
+  by_cases hlimit : budget.used < budget.limit
+  · simp [hlimit] at h
+    cases h
+    rfl
+  · simp [hlimit] at h
+
+/-- A successful budget consumption never exceeds the configured maximum. -/
+theorem consumeStep_within_limit
+    (budget : StepBudget) (next : StepBudget)
+    (h : consumeStep budget = .ok next) :
+    next.used ≤ budget.limit := by
+  unfold consumeStep at h
+  by_cases hlimit : budget.used < budget.limit
+  · simp [hlimit] at h
+    cases h
+    exact Nat.succ_le_of_lt hlimit
+  · simp [hlimit] at h
+
+/-- An exhausted budget traps before another instruction can be consumed. -/
+theorem consumeStep_exhausted_traps
+    (budget : StepBudget)
+    (h : budget.limit ≤ budget.used) :
+    consumeStep budget = .error .instructionLimit := by
+  unfold consumeStep
+  have hnot : ¬ budget.used < budget.limit := Nat.not_lt.mpr h
+  simp [hnot]
+
 /-- A running state for the single-frame machine. -/
 structure MachineState (n m : Nat) (types : RegTypes n) where
   pc : Fin (m + 1)
