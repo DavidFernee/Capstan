@@ -205,7 +205,7 @@ List<int> pbkdf2_sha256(List<int> password, List<int> salt, int iterations, int 
     // The salt || INT(block) message is invariant in length and salt content.
     // Allocate/copy it once and update only the four-byte block counter.
     List<int> first = concat_bytes(salt, zeros(4));
-    List<int> counter = salt.len();
+    int counter = salt.len();
     List<int> k = sha256_constants();
     List<int> w = zeros(64);
     List<int> inner = new List<int>();
