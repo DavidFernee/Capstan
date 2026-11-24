@@ -49,6 +49,11 @@ The source reference promises left-to-right evaluation. The original field and i
 
 The runtime caps the payload at 1,048,576 bytes, excluding the terminating newline. Exactly 1 MiB is accepted (including EOF immediately after that payload); the next non-newline byte traps with CWE-789. PR #93 adds the existing bound and over-limit outcome to the `docs/SPEC.md` row. The runtime unit suite tests exactly 1 MiB followed by newline and max-plus-one rejection. PR #93 adds `tests/unit/read_line_eof.py`, which exercises the public native API with exactly 1 MiB followed immediately by EOF. Treat the limit as a compatibility fact, not as a new CCAM feature.
 
+
+### 3.4 Literal-first `sql_query` / `run` calls
+
+These builtins require a string-literal first argument, but literal materialisation is not pure: `CAP_LIT` lazily allocates and can fail. The current special `gen_call` path evaluates later arguments and allocates the internal parameter/argv list before materialising argument zero, violating source-order evaluation. PR #133 proposes explicit left-to-right materialisation of the literal and all later arguments before the compiler-generated list allocation, with generated-C regressions for both builtins. Until that PR is merged and its exact-head CI passes, the current backend remains non-conforming for this special path. The C-free IO/effects extension must model the same ordering explicitly.
+
 ## 4. Compatibility policy
 
 - Existing observable behaviour is preserved by default when migrating the C-free implementation.
