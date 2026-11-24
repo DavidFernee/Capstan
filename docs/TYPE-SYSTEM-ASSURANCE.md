@@ -801,7 +801,9 @@ A failure in any instantiation invalidates the compilation's code-generation eli
 
 ### 24.2 Whole-program emission barrier
 
-Complete discovery and validation of the full root compilation closure and all reachable required instantiations before opening or truncating the final C output path. Build the complete checked representation first; only then begin emission. If output is streamed, write to a temporary file and atomically publish it only after successful completion, with cleanup on failure.
+The current `compiler/main.cap` already prints diagnostics and checks `error_count` before calling `generate` or `write_file`; it also builds the generated C as a complete string before writing it. Preserve this useful baseline invariant when adding generic instantiation: complete discovery and validation of the full root compilation closure and all reachable required instantiations before calling `generate`, and complete generation before opening or truncating the final C output path.
+
+If future code generation is streamed, write to a temporary file and atomically publish it only after successful completion, with cleanup on failure. The current direct `write_file` path should also be reviewed for I/O-failure behaviour so an unsuccessful write cannot leave a truncated previously valid output.
 
 The compiler must not let declaration order affect whether an instantiation is checked before emission. Interface lookup, generic recursion discovery and visibility analysis must be complete before code generation starts.
 
