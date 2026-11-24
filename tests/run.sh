@@ -61,6 +61,13 @@ if cmp -s "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md"; then ok "AGENTS.md and CLAUDE.md 
 section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
+section "Capstan-native verification: CCAM arithmetic and typed registers"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
+  ok "CCAM checked arithmetic, signed remainder and typed-register validation tests"
+else
+  bad "CCAM Capstan arithmetic and register validation" "$out"
+fi
+
 section "unit"
 if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tmp/unit")"; then ok "$out"; else bad "runtime unit tests" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
@@ -181,9 +188,13 @@ section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 
 if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
   ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
 else bad "shroud" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
 printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
 if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
   if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud under ASan+UBSan, damaged fonts included: no reports"; else bad "shroud (sanitizers)" "$out"; fi
+  if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame text budget under ASan+UBSan: $out"; else bad "shroud frame text budget (sanitizers)" "$out"; fi
+  if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame line budget under ASan+UBSan: $out"; else bad "shroud frame line budget (sanitizers)" "$out"; fi
 else
   echo "  skip  sanitizers not available for $CC"
 fi
