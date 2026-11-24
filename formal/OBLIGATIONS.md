@@ -1,6 +1,6 @@
 # Allocator and collector proof-obligation matrix
 
-**Baseline:** `e54edb6bbccab24acab9f2d002a98a09e56c443f`  
+**Baseline:** `bc0a283df5a964e7340cd48ec8ce4a1e8fb3acde`  
 **Status:** implementation obligations remain open; selected abstract-model obligations are proved at model-only level as recorded below.
 
 | ID | Property | Required evidence | Current status / blocker |
