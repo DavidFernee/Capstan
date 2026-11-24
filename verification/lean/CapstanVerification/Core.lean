@@ -93,7 +93,7 @@ def checkedDiv (a b : Int) : Except Trap Int :=
 
 def checkedRem (a b : Int) : Except Trap Int :=
   if b = 0 then .error .divisionByZero
-  else if a = minI64 ∧ b = -1 then .error .integerOverflow
+  else if a = minI64 ∧ b = -1 then .ok 0
   else .ok (a - truncDiv a b * b)
 
 
@@ -338,8 +338,8 @@ theorem checkedDiv_min_neg_one_traps :
     checkedDiv minI64 (-1) = .error .integerOverflow := by
   simp [checkedDiv]
 
-theorem checkedRem_min_neg_one_traps :
-    checkedRem minI64 (-1) = .error .integerOverflow := by
+theorem checkedRem_min_neg_one_zero :
+    checkedRem minI64 (-1) = .ok 0 := by
   simp [checkedRem]
 
 /-!
