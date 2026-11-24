@@ -29,7 +29,8 @@ The source-level core subset consists of:
 - integer and boolean literals;
 - local variable reads and initialising declarations;
 - assignment to local variables;
-- unary boolean negation (`!`) and checked integer negation (`-`), plus binary scalar operations;
+- integer arithmetic (`+`, `-`, `*`, `/`, `%`) and integer comparisons (`==`, `!=`, `<`, `<=`, `>`, `>=`);
+- boolean negation (`!`), short-circuit conjunction/disjunction (`&&`, `||`), and boolean equality/inequality (`==`, `!=`);
 - conditional and unconditional control flow;
 - direct function calls and returns;
 - explicit traps in the machine-level representation.
