@@ -70,6 +70,17 @@ fi
 
 section "unit"
 if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tmp/unit")"; then ok "$out"; else bad "runtime unit tests" "$out"; fi
+
+section "crypto scratch erasure: SHA-256 compression locals at every optimization level"
+for opt in 0 2 3; do
+  if "$CC" "-O$opt" -std=gnu11 -w -I"$ROOT/runtime" \
+      "$ROOT/tests/unit/test_sha256_wipe.c" -o "$tmp/sha256-wipe-O$opt" &&
+      "$tmp/sha256-wipe-O$opt"; then
+    ok "SHA-256 message schedule and working words wiped at -O$opt"
+  else
+    bad "SHA-256 scratch wipe at -O$opt" "observer detected a nonzero byte, wrong region size, or missing wipe"
+  fi
+done
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/ranges_props.py" 2>&1)"; then ok "$out"; else bad "range properties" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/codegen_literal_order.py" "$C" "$tmp" 2>&1)"; then ok "$out"; else bad "literal operand sequencing" "$out"; fi
