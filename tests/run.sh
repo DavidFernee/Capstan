@@ -88,10 +88,8 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
   if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
     if as --64 "$ROOT/build/ccam-native-x64.s" -o "$tmp/ccam-native-x64.o" &&
        ld -o "$tmp/ccam-native-x64" "$tmp/ccam-native-x64.o"; then
-      set +e
       "$tmp/ccam-native-x64"
       native_status=$?
-      set -e
       if [[ $native_status -eq 42 ]]; then
         ok "freestanding ELF executes 19 + 23 = 42 with direct as/ld and no C runtime"
       else
