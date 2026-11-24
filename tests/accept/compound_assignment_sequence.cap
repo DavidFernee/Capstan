@@ -1,0 +1,37 @@
+// spec: stmt.assign
+// Compound assignment reads and retains the old value before a mutating RHS.
+struct Counter {
+    int value;
+    string text;
+}
+
+int mutate_counter(Counter c) {
+    c.value = 100;
+    return 1;
+}
+
+string mutate_text(Counter c) {
+    c.text = "changed";
+    return "!";
+}
+
+int mutate_first(List<int> xs) {
+    xs[0] = 100;
+    return 1;
+}
+
+int main() {
+    Counter c = new Counter{value: 10, text: "old"};
+    c.value += mutate_counter(c);
+    println(int_to_str(c.value));
+
+    c.text += mutate_text(c);
+    println(c.text);
+
+    List<int> xs = new List<int>();
+    xs.push(10);
+    xs[0] += mutate_first(xs);
+    println(int_to_str(xs[0]));
+
+    return 0;
+}
