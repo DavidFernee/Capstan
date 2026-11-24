@@ -160,17 +160,17 @@ Write `F[pc]` for the active instruction and `R[i]` for a register cell.
 
 - `const_i(dst, n)`: write `Int64(n)` to `dst`; advance `pc` by one.
 - `const_b(dst, b)`: write `Bool(b)` to `dst`; advance `pc` by one.
-- `move(dst, src)`: read `src`, write the same typed value to `dst`, advance `pc).
+- `move(dst, src)`: read `src`, write the same typed value to `dst`, advance `pc`.
 - `add_i/sub_i/mul_i/div_i/rem_i(dst, lhs, rhs)`: read `lhs`, then `rhs`; apply the exact mathematical operation from `LANGUAGE-CORE.md`; if successful, write `dst` and advance `pc`; otherwise produce the operation's trap with no destination write.
-- `eq_i/lt_i(dst, lhs, rhs)`: read `lhs`, then `rhs`; write the corresponding boolean comparison and advance `pc).
-- `not_b(dst, src)`: read `src`; write its boolean negation and advance `pc).
+- `eq_i/lt_i(dst, lhs, rhs)`: read `lhs`, then `rhs`; write the corresponding boolean comparison and advance `pc`.
+- `not_b(dst, src)`: read `src`; write its boolean negation and advance `pc`.
 
 The register type validator requires each operand and destination to have the exact type expected by the instruction. Operand reads are left-to-right, not simultaneous or unordered.
 
 ### 10.5 Control flow
 
 - `jump(target)`: set `pc := target`.
-- `branch(cond, yes, no)`: read `cond`; if true set `pc := yes`, otherwise `pc := no).
+- `branch(cond, yes, no)`: read `cond`; if true set `pc := yes`, otherwise `pc := no`.
 - Both targets are validated instruction indices in the current function. No implicit fall-through target exists beyond the function's final instruction.
 
 ### 10.6 Calls
@@ -178,8 +178,8 @@ The register type validator requires each operand and destination to have the ex
 For `call(dst, callee, args)`:
 1. read each argument register in list order, checking initialisation and type;
 2. if the current frame depth is already `maxDepth`, produce `call_depth_exceeded` without pushing a frame;
-3. advance the caller frame's `pc) to its continuation instruction;
-4. push a fresh callee frame with the argument values in its parameter registers, all other registers `Uninit`, `pc = 0`, and `retDst = dst).
+3. advance the caller frame's `pc` to its continuation instruction;
+4. push a fresh callee frame with the argument values in its parameter registers, all other registers `Uninit`, `pc = 0`, and `retDst = dst`.
 
 The entry frame has depth 1. A call at the depth limit is an executed instruction and therefore consumes one step; if the step budget is already exhausted, `step_limit_exceeded` takes precedence before call operands are read.
 
@@ -188,7 +188,7 @@ The entry frame has depth 1. A call at the depth limit is an executed instructio
 For `ret(src)`:
 1. read and type-check `src` before modifying the frame stack;
 2. if the active frame is the entry frame, produce `Halt(value)`;
-3. otherwise pop the callee frame and write the returned value to the caller's validated `retDst), leaving the caller PC at the continuation set by the call.
+3. otherwise pop the callee frame and write the returned value to the caller's validated `retDst`, leaving the caller PC at the continuation set by the call.
 
 For `ret_void`, the same frame transition occurs without a value write; returning from the entry frame produces `HaltVoid`.
 
