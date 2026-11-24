@@ -41,6 +41,21 @@ The machine's external data format is JSON. A JSON integer is accepted only if i
 
 A register type vector is validated in full before any register file is constructed. The only valid tags are `"int"` and `"bool"`; unknown, empty, null, numeric or otherwise malformed tags are validation errors.
 
+### 2.1 Program and function schemas
+
+The program document is an object with exactly two fields: `entry:string` and `functions:array-of-function-objects`. The entry value names exactly one function in the array. Duplicate object keys are invalid at every level; a parser that silently keeps the first or last duplicate key is non-conforming.
+
+Each function object has exactly these fields:
+- `name:string`: unique non-empty function name;
+- `register_types:array-of-string`: one `"int"` or `"bool"` tag per register;
+- `parameter_count:integer`: number of leading parameter registers;
+- `return_type:string`: exactly `"int"`, `"bool"` or `"void"`;
+- `instructions:array-of-instruction-objects`: non-empty instruction sequence.
+
+Missing or extra fields, a non-object function, a non-array register or instruction field, invalid scalar types, or an out-of-range parameter count are validation errors. The entry function MUST have zero parameters and return either `"int"` or `"void"`. Internal functions may have any supported parameter count and return `"int"`, `"bool"` or `"void"`.
+
+The execution limits `maxSteps` and `maxDepth` are evaluator configuration, not program fields. Both are non-negative integers; `maxDepth` MUST be at least one. Implementations MUST reject malformed configuration before creating the entry frame.
+
 ## 3. Instruction set
 
 Each instruction is a JSON object with an `op` field. Register and instruction indices are zero-based.
