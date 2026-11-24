@@ -39,6 +39,7 @@
 - option/tag/payload validity and exhaustive-match guarantees;
 - collection mutation sequencing and iterator/insertion-order rules;
 - GC root model covering registers, frames, globals and temporary values;
+- string-literal storage semantics: either immutable static program data or an explicit dynamic allocation/evaluation effect, never hidden lazy first-use allocation with unspecified ordering;
 - pointer classification, allocation-size overflow checks and heap-limit accounting.
 
 **Exit gate:** no source program in the supported subset can forge a reference, read outside a live object, confuse object layouts, use a reclaimed object or corrupt collector roots; tests include GC stress and adversarial aliasing.
