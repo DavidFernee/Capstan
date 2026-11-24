@@ -694,3 +694,27 @@ The full design, the comparison with WinUI 3, SwiftUI, Qt and Flutter, and the r
 | S6 | live preview in the IDE, inspector, hot reload, visual designer | IDE Phase B |
 | S7 | WCAG 2.2 AA, EN 301 549 and Section 508 conformance; localisation; protective markings, capture-proof secret windows, `SecureField` yielding `Secret` | v0.8 |
 | S8 | iOS, Android, and the web through the WebAssembly backend | T10 |
+
+
+## 13. Anchor: Capstan IDE
+
+Anchor is the integrated development environment built on Shroud and the existing Capstan
+compiler tooling. It is a client of the compiler and language server, not a second
+implementation of language semantics or a source of security verdicts. Its architecture,
+threat model, Shroud integration contract and milestones are in [ANCHOR.md](ANCHOR.md).
+
+| Milestone | Work | Needs |
+|---|---|---|
+| A0 *(prototype)* | Architecture, threat model, Shroud S0 workbench composition, honest status/evidence model | Shroud S0, current CLI and LSP |
+| A1 | Native host/embedder decision, supervised LSP and compiler process adapters, bounded output and cancellation | Shroud S1 coordination; host process adapter |
+| A2 | Confined workspace model, multi-line editor, compiler-backed token/highlighting contract, save/reload | Shroud S2; compiler token API agreement |
+| A3 | Diagnostics, explicit check/build/test/format commands, reproducible build identity and local navigation | Existing compiler CLI/LSP; future LSP navigation requests |
+| A4 | Assurance evidence inspector, static/runtime property catalogue, evidence freshness and dependency provenance | Assurance records and verifiers; v0.6 capability interfaces |
+| Later | Debugger, semantic refactoring, package manager, plugin isolation, documentation browser, hot reload and visual designer | Stable underlying compiler/runtime/package/debug APIs |
+
+Anchor's security UI must distinguish compiler rejections, runtime checks, assurance
+claims, evidence and dependency trust. A clean compile is not a project security proof;
+missing, stale or unverifiable evidence is unknown, never green. Workspace opening must
+not execute project code. Build commands use explicit executables and argument vectors,
+never shell interpolation. Project hooks and in-process plugins are out of scope until
+a separately reviewed capability and isolation design exists.
