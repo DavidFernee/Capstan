@@ -1,6 +1,6 @@
 # Standard-library inventory and v0.6 roadmap
 
-**Status:** initial inventory and design proposal, 24 November 2026. This document records the current public surface visible in `docs/SPEC.md`, `docs/DESIGN-MAP.md`, `lib/crypto.cap`, `lib/shroud/` references and the test harness. It is not a claim that the v0.6 APIs below exist. The T1 standard-library integration is being developed separately on `feature/t1-stdlib`; this assessment deliberately does not change its files or compiler/runtime integration.
+**Status:** initial inventory and design proposal, 24 November 2026. This document records the current public surface visible in `docs/SPEC.md`, `docs/DESIGN-MAP.md`, `lib/crypto.cap`, `lib/shroud/` references and the test harness. It is not a claim that the v0.6 APIs below exist. The T1 standard-library integration has been claimed as a separate workstream. The claimed `feature/t1-stdlib` branch was not visible in the remote branch listing at this review snapshot, so its implementation state and API boundary remain unverified. This assessment deliberately does not change its files or compiler/runtime integration.
 
 ## Executive assessment
 
@@ -20,7 +20,7 @@ A second foundational gap is text semantics: the language reference defines `str
 | Iteration and ranges | `for`, `while`, range analysis | No first-class lazy iterator/range library contract. Avoid APIs whose iteration can hide unbounded work or invalidate collection traversal assumptions. |
 | Optional and errors | `T?`, `none`, `if (let ...)`; runtime checks stop safely | Optional exists. `Result<T,E>` and `?` propagation are on the v0.5 abstraction roadmap and must be coordinated with compiler work; stdlib APIs must not invent a parallel error convention. |
 | Numerics | checked signed 64-bit arithmetic; explicit wrapping operations; bitwise operations and shifts | Safe checked defaults. Parsing/formatting coverage is incomplete; design map T4 calls for Capstan number conversion replacing libc formatting/parsing. |
-| Filesystem | `read_file(path[, max]) -> Tainted?`, `write_file(path,data) -> bool`, `validate_path` | Read size is bounded (default 2^30 bytes, maximum 2^30); FIFO open is nonblocking; NUL paths are refused. Still ambient path authority, no directory capability, no race-resistant root confinement, no structured error, no atomic write contract. `validate_path` alone cannot prevent symlink or TOCTOU traversal. |
+| Filesystem | `read_file(path[, max]) -> Tainted?`, `write_file(path,data) -> bool`, `validate_path` | Read size is bounded (default 2^30 bytes, maximum 2^30); the implementation attempts a nonblocking open but clears `O_NONBLOCK` before reading, so a FIFO with no writer can still block. NUL paths are refused. Still ambient path authority, no directory capability, no race-resistant root confinement, no structured error, no atomic write contract. `validate_path` alone cannot prevent symlink or TOCTOU traversal. |
 | Process and SQL | `run(literal, args...)`, `sql_query(literal, params...)` | Both are documented as demonstration sinks that print rather than execute. Their literal/parameter constraints are useful, but are not production process or database APIs. |
 | Networking | No general network API in the language reference | Capability-scoped host access, DNS/address parsing, bounded protocol parsing, connect/read/write deadlines and response limits remain to be designed. |
 | Structured I/O and parsing | LSP has a Capstan JSON parser/writer; `escape_json`; `read_bytes(n)`, `read_line()`, `flush()` | JSON functionality exists in application code, not yet as a reusable standard API. Need strict decoder semantics, bounded nesting/tokens/strings, duplicate-key policy and taint-preserving decoded values. |
@@ -52,6 +52,10 @@ A second foundational gap is text semantics: the language reference defines `str
 9. **Network access must be capability- and budget-bound.** The API must not accept arbitrary URLs as implicit authority. A network capability should bind allowed hosts/ports (and ideally resolved address policy), protocol, maximum request/response bytes, connection count and deadlines. Redirects must be re-authorised at every hop. DNS rebinding, private/link-local address access, proxy inheritance and TLS verification policy require explicit treatment.
 
 10. **Determinism and clocks.** Date/time APIs must distinguish wall-clock timestamps from monotonic elapsed-time measurement. Timeouts use monotonic deadlines. Tests need an injectable clock capability; parsing must require explicit timezone/offset semantics and must not depend on machine locale.
+
+11. **`read_file` does not meet its documented nonblocking FIFO behaviour (high confidence, availability).** `cap_read_file_max()` opens with `O_NONBLOCK`, but after `fstat()` it unconditionally clears that flag with `fcntl(fd, F_SETFL, fl & ~O_NONBLOCK)` before calling `fread()`. For a FIFO opened read-only with no writer, the nonblocking open can succeed immediately; clearing the flag means the subsequent read can wait indefinitely for a writer. The current `tests/unit/test_runtime.c::test_files()` covers regular files, directories, NUL paths and `/proc/self/status`, but contains no FIFO/no-writer regression case. This contradicts both the runtime comment and `docs/SPEC.md`, which say opening never blocks and a FIFO with no writer reads as empty. **Recommendation:** decide and document the intended FIFO semantics; if `read_file` must be nonblocking, do not clear `O_NONBLOCK` for FIFOs (and handle `EAGAIN`/EOF explicitly), or reject non-regular files if that is the actual contract. Add a bounded subprocess test with a FIFO and no writer so a regression cannot hang the entire test runner; separately test a FIFO with a writer and the chosen EOF/partial-read semantics. A timeout in the test harness is essential.
+
+12. **Path validation is not automatically applied by file I/O.** The runtime helper used by `read_file` and `write_file`, `cap_path_ok()`, checks only that the path is nonempty and contains no NUL byte. It does not call `cap_validate_path()`, reject absolute paths or `..`, or prevent symlink traversal. This is consistent with the current ambient-path API, but means the existence of `validate_path()` must not be read as an enforcement boundary for filesystem access. Even passing a `validate_path()` result would not prevent symlink/TOCTOU escape. Keep this distinction explicit until handle-relative directory capabilities replace ambient paths.
 
 ### Existing strengths to preserve
 
@@ -101,7 +105,7 @@ The sequence below is a proposal, not an assertion that all listed work fits int
 
 ## 5. Implementation and test sequencing
 
-1. Complete the inventory and review the T1 integration boundary before touching standard-library source. T1 currently owns `lib/std/`, the crypto migration, and compiler/bootstrap/LSP integration.
+1. Complete the inventory and review the T1 integration boundary before touching standard-library source. The T1 workstream has claimed `lib/std/`, the crypto migration, and compiler/bootstrap/LSP integration, but its claimed `feature/t1-stdlib` branch was not visible remotely at this review snapshot; verify the actual handoff before editing overlapping files.
 2. Resolve the v0.5 `Result<T,E>` and visibility contract with the type-system workstream. Avoid introducing a temporary result convention that must be broken later.
 3. Agree filesystem capability semantics with the runtime workstream before implementing file handles or directory traversal.
 4. Implement one narrow, independently testable API slice per PR. Every slice includes spec text, conformance-area coverage, positive/negative tests, boundary tests, adversarial/fuzz tests where parsing is involved, examples and changelog notes.
@@ -109,7 +113,7 @@ The sequence below is a proposal, not an assertion that all listed work fits int
 
 ## 6. Coordination and current status
 
-- T1 standard-library integration is actively claimed on `feature/t1-stdlib`; it includes `lib/std/`, migration of `lib/crypto.cap`, and compiler/bootstrap/LSP integration. This document intentionally avoids those files.
+- T1 standard-library integration has claimed `lib/std/`, migration of `lib/crypto.cap`, and compiler/bootstrap/LSP integration. The claimed `feature/t1-stdlib` branch was not visible remotely at this review snapshot; implementation status and API boundaries remain unverified. This document intentionally avoids those files.
 - The v0.5 type-system design is proposed in PR #49; a separate compiler/type-system workstream is active. `Result<T,E>` availability and generic API syntax must be agreed before library APIs depend on them.
 - Runtime and memory-management work is separate; filesystem/network resource handles require an explicit handoff before implementation.
 - Shroud is separately claimed and lives under `lib/shroud/`; this workstream does not modify it.
