@@ -132,4 +132,14 @@ relation, function stack, structural validator, evaluator, or compiler relation.
 The next semantics increment must follow CCAM.md and its conformance vectors.
 -/
 
+/- Audit the axiom dependencies of the initial theorem set in the build log. -/
+#print axioms write_preserves_well_typed
+#print axioms checkedAdd_sound
+#print axioms checkedSub_sound
+#print axioms checkedMul_sound
+#print axioms checkedDiv_zero_traps
+#print axioms checkedRem_zero_traps
+#print axioms checkedDiv_min_neg_one_traps
+#print axioms checkedRem_min_neg_one_traps
+
 end CapstanVerification
