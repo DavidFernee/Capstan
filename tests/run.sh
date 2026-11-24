@@ -55,6 +55,9 @@ section() { echo; echo "== $1"; }
 
 [[ -x "$C" ]] || make -s -C "$ROOT" bootstrap
 
+section "agent instructions: AGENTS.md (Codex) and CLAUDE.md (Claude) are identical"
+if cmp -s "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md"; then ok "AGENTS.md and CLAUDE.md match"; else bad "AGENTS.md and CLAUDE.md differ; change both together" "$(diff "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md" | head -20)"; fi
+
 section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
