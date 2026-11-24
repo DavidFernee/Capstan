@@ -1,6 +1,6 @@
 # Compiler Contract: Lowering the Checked Source Core to CCAM
 
-**Status:** compiler architecture proposal; dependent on review of the language-semantics and CCAM contracts  
+**Status:** target compiler contract; dependent on review of the language-semantics and CCAM contracts. PR #162 implements an initial, deliberately narrower scalar lowering stage; it is not yet conformant to the complete subset specified here.  
 **Owner:** Compiler Architecture workstream  
 **Related:** `LANGUAGE-CORE.md`, `TYPED-IR.md`, `CCAM.md`, `COMPILER-PIPELINE-AUDIT.md`
 
@@ -44,6 +44,12 @@ The first lowering implementation should support only constructs expressible by 
 The exact accepted subset must be checked against the final normative core and the source checker. The presence of a source AST node or the fact that the existing C backend handles it does not make it supported by the C-free compiler.
 
 The first implementation must reject unsupported constructs with a structured compiler diagnostic. It must never emit a placeholder instruction, silently coerce a value, or fall back to generated C.
+
+### 2.1 Current staged implementation (PR #162)
+
+PR #162 implements an initial vertical slice that is narrower than the target list above. It currently supports integer/boolean literals and locals, local initialization and assignment, checked integer arithmetic, integer comparisons and their derived forms, boolean negation, short-circuit `&&` / `||`, direct function calls, returns, and `if` / `else`. It parses and checks actual source before lowering, validates the resulting in-memory CCAM function table, and executes it with the Capstan-native evaluator. The current tests invoke this API directly; it is not yet wired into `compiler/main.cap`, the compiler CLI, or the production build/run path, which still uses generated C.
+
+The current implementation supports `while`, `for`, `break`, and `continue` with explicit loop-target fixups; it also rejects local shadowing rather than risking a name-to-register aliasing error. The remaining supported-subset list above is the intended target contract, not a claim that PR #162 implements every listed construct.
 
 Explicitly excluded until separately specified and implemented: strings, structs, enums, optionals, lists, maps, heap references, methods, closures, taint, secrets, grants, IO, policies, cryptographic operations, FFI and concurrency. Bitwise operations, shifts, wrapping arithmetic, boolean equality and indirect calls are also excluded from this initial slice.
 
@@ -98,7 +104,7 @@ It emits all instructions required to compute that value before returning. The r
 
 - Integer literal: allocate an `int` register and emit `const_i`.
 - Boolean literal: allocate a `bool` register and emit `const_b`.
-- Local read: resolve the name to its fixed register and return that register/type. The source checker must already have established declaration and type correctness.
+- Local read: resolve the name to its fixed register, emit a `move` into a fresh temporary, and return the snapshot register/type. This preserves left-to-right value evaluation if a later operand or call has effects. The source checker must already have established declaration and type correctness.
 - Local declaration: lower the initializer completely, allocate the declared local register and emit `move` into it.
 - Local assignment: lower the RHS completely, then emit `move` into the target local register.
 
@@ -170,7 +176,7 @@ Use instruction indices as basic-block positions. Emit explicit `jump` and `bran
 - **Return:** lower the return expression completely, then emit `ret`; emit `ret_void` for a void return. The enclosing function signature must agree.
 - **Function call:** lower arguments completely from left to right, then emit one `call` with their resulting registers in source order. Allocate a result register for `int` or `bool` return; use null destination only for a void return. The callee's signature is checked against the call before emission.
 
-Every completed function must have valid branch targets and no reachable path that falls off the instruction sequence. A final validator checks this independently of the lowering algorithm.
+Every completed function must have valid branch targets and no reachable path that falls off the instruction sequence. A final validator checks this independently of the lowering algorithm. PR #162 implements if/else and short-circuit branches, plus loop-target stacks and break/continue fixups for the supported while/for subset.
 
 ## 6. Locations and source diagnostics
 
