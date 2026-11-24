@@ -126,16 +126,19 @@ def main():
         exe = os.path.join(tmp, "png_budget")
         accepted = os.path.join(tmp, "accepted.png")
         rejected = os.path.join(tmp, "must_not_exist.png")
+        binary = os.path.join(tmp, "all_bytes.bin")
         run([capstanc, "build", "--strict", "-o", c_source] + LIB +
             ["tests/shroud/png_budget.cap"])
         run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), c_source, "-o", exe])
-        result = run([exe, accepted, rejected])
-        if "png budget: 19 assertions" not in result.stdout:
+        result = run([exe, accepted, rejected, binary])
+        if "png budget: 20 assertions" not in result.stdout:
             fail(f"regression program did not report its assertions: {result.stdout!r}")
         if not os.path.isfile(accepted):
             fail("accepted PNG was not written")
         if os.path.exists(rejected):
             fail("over-budget png_write created an output file")
+        if open(binary, "rb").read() != bytes(range(256)):
+            fail("byte-to-string conversion did not preserve all 256 byte values")
 
         width, height, idat = parse_png(accepted)
         if (width, height) != (128, 128):
@@ -153,7 +156,7 @@ def main():
             row = raw[y * len(expected_row):(y + 1) * len(expected_row)]
             if row != expected_row:
                 fail(f"decoded pixels differ on row {y}")
-        print(f"png budget: 19 Capstan assertions; {width}x{height} RGBA; "
+        print(f"png budget: 20 Capstan assertions; {width}x{height} RGBA; "
               f"{blocks} stored DEFLATE blocks; CRC, zlib, Adler and every pixel verified; "
               "over-budget write produced no file")
 
