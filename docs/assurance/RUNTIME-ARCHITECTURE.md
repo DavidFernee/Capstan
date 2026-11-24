@@ -48,14 +48,14 @@ There are no generation bits, minor collections, card table, write barriers, rem
 |---|---|---|
 | Use-after-free / double-free | No language-level free; tracing reclamation | Strong mitigation for well-typed programs, not an end-to-end proof. Audit every C pointer path and allocator state transition; add invariant checks and adversarial stale/interior-pointer tests. |
 | Bounds and object identity | Runtime checks exist for collection access; collector recognises interior pointers | Specify object-start/slot arithmetic and validate all lengths before pointer arithmetic. A collector's reachability lookup is not a dereference bounds check. |
-| Allocation-size arithmetic | Heap and metadata sizes use size_t; dynamic metadata arrays grow by doubling and multiply element counts | Audit every addition, doubling and multiplication before allocation. Add checked size helpers and fail closed on overflow before changing allocator state. |
-| OOM | calloc/page allocation failures terminate; some heap-limit paths panic | Distinguish user heap-limit failure from metadata OOM. Ensure failed metadata growth leaves all existing state intact. |
-| Secrets | Secret allocations are wiped when reclaimed by collection | This is nondeterministic erasure, not prompt erasure. The small-object path currently uses ordinary memset; replace with a non-elidable wipe primitive and test generated code/optimised builds. Define explicit destruction/zeroing before claiming deterministic erasure. |
+| Allocation-size arithmetic | This branch checks metadata-array multiplication/growth, heap and allocation counters, and the spare-page reserve calculation | Continue auditing pointer ranges and failure atomicity; add allocator-failure injection and platform-sized boundary tests. |
+| OOM | Metadata and backing-allocation failures terminate; heap-limit failures panic. Metadata allocation failure is not yet fault-injected. | Add failure injection at every metadata allocation site and prove that no partially updated state is observable before termination. |
+| Secrets | Small and large secret allocations use volatile-store wiping when reclaimed; small secret-page free-list metadata is out of line | Reclamation is nondeterministic, not prompt erasure. Environment-source copies and compiler/register/swap/core-dump copies are outside this guarantee; explicit destruction remains unimplemented. |
 | Finalisation | No finaliser/destructor protocol in the collector | Keep it that way until a precise, non-resurrecting, bounded, non-throwing finalisation model exists. Never use GC timing for file, lock, transaction or secret cleanup. |
 | Resources | Existing I/O helpers perform bounded operations; no general RAII/linear resource model | v0.6 capabilities need explicit close/consume semantics and failure-path tests. GC may be a last-resort memory reclamation mechanism only. |
 | Aliasing / ownership | No exposed raw pointers; structs, lists, maps and grants are traced heap objects | Specify aliasing as shared reachability, not unique ownership. v0.5 closure capture must keep environments rooted; grant/capability containment must be transitive. |
 | Concurrency | No language threads/tasks yet; collector state is global and unsynchronised | Explicitly unsupported. Do not expose threads or async callbacks until root registration, stop-the-world/safepoint protocol, allocator synchronization and data-race rules are implemented. |
-| Stack | Stack guard uses platform-specific discovery and signal handling; fallback stack-top heuristic exists | Test stack direction, alternate-stack installation failure, nested signals, platform bounds and sanitiser interaction. The fallback must not silently imply a reliable guard. |
+| Stack | Signal-fault classification uses overflow-safe integer bounds; alternate-stack and handler installation failures fail closed | Continue platform-specific tests for stack discovery, nested signals, alternate-stack failure and sanitiser interaction. |
 | Type confusion | Static type checking and typed code generation; GC itself scans conservatively | Document runtime object layout and allocation-kind invariants. Add debug headers/canaries or equivalent metadata checks where practical. |
 
 ### High-priority code audit targets
@@ -124,6 +124,9 @@ For capabilities, files, sockets, processes, locks and transactions, use explici
 ### Secrets
 
 - GC reachability may keep a secret alive; it cannot promise erasure at a chosen time.
+- The current secret comparison helper runs a content-independent loop for equal-length inputs, but length mismatch is observable and the loop length is the shorter input length. Do not describe it as length-hiding constant time.
+- secret_env copies the process environment value into a managed secret allocation; it does not erase the original environment string. The host process and launcher remain responsible for that source copy's lifetime.
+
 - Provide a non-elidable wipe operation and a non-copying/linear secret container where feasible.
 - Define whether secrets can be captured by closures, stored in aggregates, formatted, cloned or returned. Prefer prohibiting implicit copies and requiring explicit audited duplication.
 - Wipe all owned copies on explicit destruction and on any eventual collector reclamation.
