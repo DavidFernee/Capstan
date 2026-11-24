@@ -1910,7 +1910,9 @@ CCAMFrameCreateResult ccam_frame_create(
 CCAMFrameStackCreateResult ccam_frame_stack_create(
     CCAMFrame entry, int max_depth
 ) {
-    if (max_depth < 1 || entry.caller_destination != -1) {
+    if (max_depth < 1 || entry.caller_destination != -1 ||
+        (entry.return_type != CCAM_RETURN_INT &&
+         entry.return_type != CCAM_RETURN_VOID)) {
         return new CCAMFrameStackCreateResult{
             ok: false,
             stack: new CCAMFrameStack{
@@ -2162,4 +2164,68 @@ test "CCAM frame creation rejects uninitialised arguments" {
         function, 1, caller.registers, args, -1);
     assert(!rejected.ok && rejected.error == "uninitialised_register");
     assert(rejected.frame.instructions.len() == 0);
+}
+
+test "CCAM frame stack supports boolean and void nested returns" {
+    List<int> caller_types = new List<int>();
+    caller_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    caller_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMFunction entry_function = new CCAMFunction{
+        name: "entry", register_types: caller_types,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: caller_code
+    };
+    CCAMFrameCreateResult entry = ccam_frame_create(
+        entry_function, 0, new List<CCAMRegister>(), new List<int>(), -1);
+    assert(entry.ok);
+    CCAMRegisterFileResult caller_regs = ccam_registers_create(caller_types);
+    assert(ccam_register_write_bool(caller_regs.registers, 0, true) == "");
+    entry.frame.registers = caller_regs.registers;
+
+    List<int> bool_types = new List<int>();
+    bool_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> bool_code = new List<CCAMInstruction>();
+    CCAMInstruction bool_ret = ccam_instruction(CCAM_OP_RET);
+    bool_ret.lhs = 0;
+    bool_code.push(bool_ret);
+    CCAMFunction bool_function = new CCAMFunction{
+        name: "predicate", register_types: bool_types,
+        parameter_count: 1, return_type: CCAM_RETURN_BOOL,
+        instructions: bool_code
+    };
+    List<int> bool_args = new List<int>();
+    bool_args.push(0);
+    CCAMFrameCreateResult bool_frame = ccam_frame_create(
+        bool_function, 1, caller_regs.registers, bool_args, 0);
+    assert(bool_frame.ok);
+    CCAMFrameStackCreateResult bool_stack = ccam_frame_stack_create(entry.frame, 2);
+    assert(bool_stack.ok);
+    assert(ccam_frame_stack_push(bool_stack.stack, bool_frame.frame) == "");
+    CCAMFrameReturnResult bool_result = ccam_frame_stack_return_bool(
+        bool_stack.stack, 0);
+    assert(bool_result.ok && bool_result.bool_value);
+    assert(bool_stack.stack.frames.len() == 1);
+    assert(ccam_register_read_bool(bool_stack.stack.frames[0].registers, 0).bool_value);
+
+    List<int> void_types = new List<int>();
+    List<CCAMInstruction> void_code = new List<CCAMInstruction>();
+    void_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMFunction void_function = new CCAMFunction{
+        name: "side_effect", register_types: void_types,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: void_code
+    };
+    CCAMFrameCreateResult void_frame = ccam_frame_create(
+        void_function, 2, caller_regs.registers, new List<int>(), -1);
+    assert(void_frame.ok);
+    CCAMFrameStackCreateResult void_stack = ccam_frame_stack_create(entry.frame, 2);
+    assert(void_stack.ok);
+    assert(ccam_frame_stack_push(void_stack.stack, void_frame.frame) == "");
+    CCAMFrameReturnResult void_result = ccam_frame_stack_return_void(void_stack.stack);
+    assert(void_result.ok && !void_result.entry_void);
+    assert(void_stack.stack.frames.len() == 1);
+
+    CCAMFrameStackCreateResult invalid_entry = ccam_frame_stack_create(bool_frame.frame, 2);
+    assert(!invalid_entry.ok && invalid_entry.error == "invalid_call_stack_configuration");
 }
