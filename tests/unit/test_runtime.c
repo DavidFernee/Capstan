@@ -6,6 +6,7 @@
  *   HMAC-SHA256   RFC 4231 test cases 1, 2 and 6
  *   PBKDF2-SHA256 RFC 7914 section 11
  */
+#define CAP_PBKDF2_TEST_HOOK 1
 #include "capstan_rt.h"
 
 static int failures = 0, checks = 0;
@@ -146,7 +147,32 @@ static void test_passwords(void) {
     excessive[126] = '\0';
     CapStr *excessive_record = cap_str_new(excessive, 126);
     CHECK(cap_needs_rehash(excessive_record));
+    unsigned calls_before_rejected_records = cap_pbkdf2_test_calls;
     CHECK(!cap_verify_password(pw, excessive_record));
+    CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
+
+    CapStr negative_record = {.len = -1, .data = current_record};
+    CHECK(cap_needs_rehash(&negative_record));
+    CHECK(!cap_verify_password(pw, &negative_record));
+    CapStr missing_record_data = {.len = 123, .data = NULL};
+    CHECK(cap_needs_rehash(&missing_record_data));
+    CHECK(!cap_verify_password(pw, &missing_record_data));
+
+    char just_over_limit[124];
+    memcpy(just_over_limit, current_record, sizeof just_over_limit);
+    just_over_limit[24] = '1';          /* 600001: first cost above the profile */
+    CapStr *over_limit_record = cap_str_new(just_over_limit, 123);
+    CHECK(cap_needs_rehash(over_limit_record));
+    CHECK(!cap_verify_password(pw, over_limit_record));
+    CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
+
+    char non_ascii_cost[124];
+    memcpy(non_ascii_cost, current_record, sizeof non_ascii_cost);
+    non_ascii_cost[19] = (char)0xD9;     /* non-ASCII digit-like byte */
+    CapStr *non_ascii_record = cap_str_new(non_ascii_cost, 123);
+    CHECK(cap_needs_rehash(non_ascii_record));
+    CHECK(!cap_verify_password(pw, non_ascii_record));
+    CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
     CHECK(!cap_hash_verify(CAP_LIT("abc", 3), CAP_LIT("md5$900150983cd24fb0d6963f7d28e17f72", 36)));
 }
 
