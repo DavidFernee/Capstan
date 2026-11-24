@@ -702,9 +702,11 @@ string grant_value_equal(Type t, string x, string y) {
         if (is_scalar(inner)) { ix = "(*" + x + ")"; iy = "(*" + y + ")"; }
         return "((" + x + " == NULL && " + y + " == NULL) || (" + x + " != NULL && " + y + " != NULL && " + grant_value_equal(inner, ix, iy) + "))";
     }
-    if (t.k == TY_STR || t.k == TY_TAINT || t.k == TY_SECRET || t.k == TY_HTML || t.k == TY_LOG) {
+    if (t.k == TY_STR || t.k == TY_TAINT || t.k == TY_HTML || t.k == TY_LOG) {
         return "cap_str_eq(" + x + ", " + y + ")";
     }
+    // Secret values are opaque capabilities; compare their identity, never their contents.
+    if (t.k == TY_SECRET) { return "(" + x + " == " + y + ")"; }
     if (t.k == TY_ENUM) { return "((" + x + ")->tag == (" + y + ")->tag)"; }
     return "(" + x + " == " + y + ")";
 }
