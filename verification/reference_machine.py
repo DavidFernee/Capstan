@@ -86,11 +86,11 @@ def validate(program: dict[str, Any]) -> dict[str, Function]:
         params, ret, code = raw["parameter_count"], raw["return_type"], raw["code"]
         if not isinstance(name, str) or not name or name in functions:
             raise InvalidProgram(f"invalid or duplicate function name: {name!r}")
-        if not isinstance(types, list) or any(t not in VALID_TYPES for t in types):
+        if not isinstance(types, list) or any(not isinstance(t, str) or t not in VALID_TYPES for t in types):
             raise InvalidProgram(f"{name}: invalid register type vector")
         if type(params) is not int or not 0 <= params <= len(types):
             raise InvalidProgram(f"{name}: invalid parameter count")
-        if ret not in VALID_RETURNS or not isinstance(code, list) or not code:
+        if not isinstance(ret, str) or ret not in VALID_RETURNS or not isinstance(code, list) or not code:
             raise InvalidProgram(f"{name}: invalid return type or empty code")
         functions[name] = Function(name, types, params, ret, code)
     if program["entry"] not in functions:
