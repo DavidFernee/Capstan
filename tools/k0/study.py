@@ -449,8 +449,10 @@ def main():
     if "--year" in args:
         year = int(args[args.index("--year") + 1])
     study_commit = study_snapshot(ROOT)
-    rows = load(args[0], year)
     snapshot = source_snapshot(args[0])
+    rows = load(args[0], year)
+    if source_snapshot(args[0]) != snapshot:
+        raise RuntimeError("CVE List source changed while the study population was being read")
     atlas = atlas_verdicts()
     rpath = os.path.join(HERE, "data", f"reviewed-{year}.csv")
     label_overrides = load_reviewed(rows, rpath)
