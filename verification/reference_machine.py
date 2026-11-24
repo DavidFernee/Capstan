@@ -205,6 +205,8 @@ def execute(program: dict[str, Any], args: list[Any] | None = None, *,
         raise ValueError("max_call_depth must be a positive integer")
     entry = functions[program["entry"]]
     args = [] if args is None else args
+    if not isinstance(args, list):
+        raise ValueError("entry arguments must be a list")
     if len(args) != entry.parameter_count:
         raise ValueError("wrong entry argument count")
     if any(not _matches(v, t) for v, t in zip(args, entry.register_types)):
