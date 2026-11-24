@@ -1,6 +1,6 @@
 # Machine-checked runtime verification
 
-**Status:** programme established; initial Lean theorems have been authored but await the first CI proof run. No C implementation theorem has been machine-checked.  
+**Status:** initial abstract-model theorems are machine-checked; no C implementation theorem has been machine-checked.  
 **Implementation baseline inspected:** `e54edb6bbccab24acab9f2d002a98a09e56c443f`.
 
 ## Purpose
@@ -10,9 +10,10 @@ garbage-collector properties, then connecting those properties to the concrete C
 implementation. It is intentionally separate from ordinary regression testing:
 passing tests provide execution evidence, not mathematical proof.
 
-The first Lean model currently states and attempts to prove checked-add soundness/completeness
-and target page-release failure preservation, exact successful accounting decrement, and
-idempotence. These are abstract-model theorems only; they do not yet verify the C code.
+The initial Lean model has machine-checked proofs of checked-add soundness, completeness
+and exactness, plus target page-release failure preservation, exact successful accounting
+decrement and idempotence. These are abstract-model theorems only; they do not yet verify
+the C code. Exact toolchain inputs and run evidence are in the [proof-run ledger](../../formal/PROOF-RUNS.md).
 
 The normative starting points are:
 
@@ -71,7 +72,8 @@ code invalidate the corresponding evidence until it is rerun and reviewed.
 
 No assurance claim is promoted merely because a proof file exists or a CI job was
 configured. The proof must actually be checked, and the refinement boundary must be
-documented. The first proof CI run is pending; no completed proof result is claimed.
+documented. The initial abstract-model result is checked; no C implementation result is
+claimed.
 
 ## Explicit exclusions
 
