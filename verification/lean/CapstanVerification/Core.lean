@@ -137,6 +137,29 @@ def readInt {n : Nat} (regs : Registers n) (index : Fin n) : Except Trap Int :=
   | some (.int value) => .ok value
   | some (.bool _) => .error .typeMismatch
 
+
+/-- A successful read from a statically integer register yields an in-range integer. -/
+theorem readInt_success_in_range
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    (hregs : WellTyped types regs)
+    (index : Fin n) (hindex : types index = .int)
+    (value : Int)
+    (hread : readInt regs index = .ok value) :
+    inI64 value := by
+  unfold readInt at hread
+  cases hreg : regs index with
+  | none =>
+    simp [hreg] at hread
+  | some v =>
+    cases v with
+    | int x =>
+      simp [hreg] at hread
+      cases hread
+      have htyped := hregs index (.int x) hreg
+      simpa [hasType, hindex] using htyped
+    | bool b =>
+      simp [hreg] at hread
+
 /-- An addition instruction carries its static register-type obligations. -/
 structure AddInstr (n : Nat) (types : RegTypes n) where
   dst : Fin n
