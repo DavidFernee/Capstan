@@ -130,7 +130,7 @@ def main():
             ["tests/shroud/png_budget.cap"])
         run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), c_source, "-o", exe])
         result = run([exe, accepted, rejected])
-        if "png budget: 18 assertions" not in result.stdout:
+        if "png budget: 19 assertions" not in result.stdout:
             fail(f"regression program did not report its assertions: {result.stdout!r}")
         if not os.path.isfile(accepted):
             fail("accepted PNG was not written")
@@ -153,7 +153,7 @@ def main():
             row = raw[y * len(expected_row):(y + 1) * len(expected_row)]
             if row != expected_row:
                 fail(f"decoded pixels differ on row {y}")
-        print(f"png budget: 18 Capstan assertions; {width}x{height} RGBA; "
+        print(f"png budget: 19 Capstan assertions; {width}x{height} RGBA; "
               f"{blocks} stored DEFLATE blocks; CRC, zlib, Adler and every pixel verified; "
               "over-budget write produced no file")
 
