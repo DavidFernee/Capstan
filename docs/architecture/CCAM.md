@@ -77,7 +77,7 @@ A machine state consists of:
 
 The active frame is the top of the stack. One transition executes exactly one instruction and increments the step counter. A call pushes a new frame and transfers control to its first instruction. A return pops the frame and writes its result to the caller destination (if present). Returning from the entry function produces the final value. Reaching the step or call-depth limit traps deterministically.
 
-This prototype's interpreter may use host data structures to represent the abstract state, but those structures are not part of the machine semantics.
+The executable evaluator, register files, frames, instruction sequences, and conformance tests are to be represented using Capstan types and collections. Host-language data structures or a host-language interpreter are not an acceptable implementation of CCAM. The current compiler bootstrap may temporarily be used to compile and run this Capstan source; that bootstrap boundary does not alter the implementation-language requirement.
 
 ## 6. Observable outcomes
 
