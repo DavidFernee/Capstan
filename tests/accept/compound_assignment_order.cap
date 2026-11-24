@@ -1,0 +1,30 @@
+// spec: stmt.assign expr.order types.struct types.list
+// Compound assignment must read the old target value before evaluating an RHS
+// that mutates the same object/list. MIN % -1 preserves the existing result 0.
+struct Counter { int value; }
+
+int mutate_counter(Counter c) {
+    c.value = 100;
+    return 1;
+}
+
+int mutate_first(List<int> xs) {
+    xs[0] = 100;
+    return 1;
+}
+
+int main() {
+    Counter c = new Counter{value: 10};
+    c.value += mutate_counter(c);
+    println(int_to_str(c.value));
+
+    List<int> xs = new List<int>();
+    xs.push(10);
+    xs[0] += mutate_first(xs);
+    println(int_to_str(xs[0]));
+
+    int min = -9223372036854775807 - 1;
+    println(int_to_str(min % -1));
+    println(int_to_str(-7 % 3) + " " + int_to_str(7 % -3) + " " + int_to_str(-7 % -3) + " " + int_to_str(7 % 3));
+    return 0;
+}
