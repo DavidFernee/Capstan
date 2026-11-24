@@ -1123,7 +1123,14 @@ static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
 
 #define CAP_PBKDF2_ITER 600000
 
+#ifdef CAP_PBKDF2_TEST_HOOK
+static unsigned cap_pbkdf2_test_calls;
+#endif
+
 static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
+#ifdef CAP_PBKDF2_TEST_HOOK
+    cap_pbkdf2_test_calls++;
+#endif
     unsigned char msg[64 + 4], u[32], t[32];
     memcpy(msg, salt, sn);
     msg[sn] = 0; msg[sn+1] = 0; msg[sn+2] = 0; msg[sn+3] = 1;
