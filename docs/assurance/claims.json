@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0.0",
+  "snapshot": {
+    "repository": "DavidFernee/Capstan",
+    "commit": "e9bd2ba77195e0b114bbdee9b16b65e5963bd1db"
+  },
+  "claims": [
+    {
+      "id": "MEM-001",
+      "title": "Bounds-checked string and list access",
+      "statement": "For programs compiled as Capstan, string and list indexing outside the valid range is detected and terminates safely rather than performing an out-of-bounds access.",
+      "scope": [
+        "Capstan-language programs compiled by the repository compiler",
+        "String and list indexing operations covered by the language specification and runtime"
+      ],
+      "state": "qualified",
+      "assumptions": [
+        "The Capstan compiler and generated-code checks behave as specified.",
+        "The C compiler, C runtime, operating system and platform C library are within the trusted computing base."
+      ],
+      "dependencies": [
+        "compiler/main.cap",
+        "compiler/checker.cap",
+        "compiler/codegen.cap",
+        "runtime/capstan_rt.h",
+        "The selected C compiler and platform C library"
+      ],
+      "limitations": [
+        "This claim does not establish memory safety of the C runtime itself.",
+        "It does not cover future foreign-function interfaces or unsafe platform extensions.",
+        "A test fixture's presence is not evidence that it passed on the snapshot revision."
+      ],
+      "evidence": [
+        {
+          "kind": "specification",
+          "result": "available",
+          "artifacts": [
+            "docs/SPEC.md",
+            "docs/assurance/MEMORY-SAFETY.md"
+          ],
+          "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
+          "revision": "e9bd2ba77195e0b114bbdee9b16b65e5963bd1db",
+          "notes": "Documents the intended language guarantee and the memory-safety boundary."
+        },
+        {
+          "kind": "test",
+          "result": "available",
+          "artifacts": [
+            "tests/runtime/out_of_bounds_read.cap",
+            "tests/runtime/out_of_bounds_write.cap",
+            "tests/runtime/negative_index.cap",
+            "tests/run.sh"
+          ],
+          "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
+          "revision": "e9bd2ba77195e0b114bbdee9b16b65e5963bd1db",
+          "notes": "Fixtures are present in this snapshot. No passing run is asserted by this record."
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-11-24",
+        "reviewed_commit": "e9bd2ba77195e0b114bbdee9b16b65e5963bd1db"
+      }
+    }
+  ]
+}

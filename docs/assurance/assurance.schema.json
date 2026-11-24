@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DavidFernee/Capstan/blob/main/docs/assurance/assurance.schema.json",
+  "title": "Capstan assurance claims manifest",
+  "description": "Claim-scoped assurance records. Evidence kinds are independent dimensions, not a single maturity ladder.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "snapshot",
+    "claims"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "commit"
+      ],
+      "properties": {
+        "repository": {
+          "const": "DavidFernee/Capstan"
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/claim"
+      }
+    }
+  },
+  "$defs": {
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "statement",
+        "scope",
+        "state",
+        "assumptions",
+        "dependencies",
+        "limitations",
+        "evidence",
+        "review"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9]+-[0-9]{3}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 3
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 20
+        },
+        "scope": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 3
+          }
+        },
+        "state": {
+          "enum": [
+            "proposed",
+            "active",
+            "qualified",
+            "withdrawn"
+          ]
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3
+          }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 2
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidence"
+          }
+        },
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reviewed_at",
+            "reviewed_commit"
+          ],
+          "properties": {
+            "reviewed_at": {
+              "type": "string",
+              "format": "date"
+            },
+            "reviewed_commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "result",
+        "artifacts",
+        "procedure",
+        "revision"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "specification",
+            "test",
+            "static-analysis",
+            "model-check",
+            "mechanical-proof",
+            "independent-review",
+            "reproducible-build",
+            "other"
+          ]
+        },
+        "result": {
+          "enum": [
+            "planned",
+            "available",
+            "not-run",
+            "passed",
+            "failed",
+            "superseded"
+          ]
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "procedure": {
+          "type": "string",
+          "minLength": 3
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "verification": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "commit",
+            "run_url"
+          ],
+          "properties": {
+            "commit": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "run_url": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "result": {
+                "const": "passed"
+              }
+            },
+            "required": [
+              "result"
+            ]
+          },
+          "then": {
+            "required": [
+              "verification"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}
