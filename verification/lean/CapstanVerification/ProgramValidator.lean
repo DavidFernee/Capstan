@@ -196,7 +196,9 @@ theorem validateSingleFrameProgram_entry_sound
       have he : entry = program.entry := congrArg FiniteProgram.entry hp
       have hval : entry.val = raw.entry := by
         have hm := congrArg (Option.map Fin.val) hentry
-        simpa [finOfNat?] using hm
+        have hraw : raw.entry = entry.val := by
+          simpa [finOfNat?] using hm
+        exact hraw.symm
       rw [← he]
       exact hval
 
