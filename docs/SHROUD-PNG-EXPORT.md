@@ -89,20 +89,21 @@ RSS ceiling.
 
 The standalone verifier runs three actual exports (128×128, 560×520 and
 1023×512), independently decodes them, and records `CAPSTAN_GC_STATS` peak
-heap for the combined test process. Exact-head CI run
-`45347762206` on commit
-`e4204d863f75c8c72dff2c7474b7a388c27f3f89` passed all four jobs:
+heap for the combined test process. After reusing one bounded 4 KiB parts list
+across conversion chunks, exact-head CI run `45350392496` on commit
+`c1d6386a9d96b4dcecf67bd7394251ffa875fdf8` passed all four jobs:
 
 | Runner | Normal peak GC heap | ASan+UBSan peak GC heap |
 |---|---:|---:|
-| macOS / Clang | 48.3 MiB | 56.4 MiB |
-| Ubuntu / Clang | 50.8 MiB | 56.4 MiB |
-| Ubuntu / GCC | 56.9 MiB | 56.7 MiB |
+| macOS / Clang | 43.0 MiB | 47.0 MiB |
+| Ubuntu / Clang | 43.0 MiB | 47.0 MiB |
+| Ubuntu / GCC | 47.1 MiB | 56.9 MiB |
 
 These are measured Capstan GC heap high-water marks for the combined test
 workload, not resident-set-size measurements, not a worst-case bound for a
 whole application, and not evidence that all allocator/OS memory is included.
-The measured maximum is consistent with the allocation derivation above.
+The values are consistent with the allocation derivation above; the GCC
+sanitizer run is the highest observed heap at 56.9 MiB.
 
 ## 4. Verification
 
