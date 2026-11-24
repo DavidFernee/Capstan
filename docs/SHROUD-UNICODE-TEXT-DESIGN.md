@@ -285,3 +285,53 @@ fuzzing and resource-budget gates pass on the supported build matrix.
 - Do not claim Unicode conformance from a hand-selected example corpus.
 - Do not treat successful pixel rendering as proof of correct caret movement,
   selection, copy/paste or accessibility.
+
+
+## 9. Mandatory Unicode data and security edge-case contract
+
+The Unicode data manifest is a release and conformance prerequisite, not optional
+implementation bookkeeping. Before any Unicode algorithm is declared conformant,
+the repository must contain a machine-readable manifest recording:
+
+- the exact Unicode version (including any separately versioned UAX/UTS data);
+- each upstream data file's canonical source, version, retrieval revision or
+  immutable digest, and licence;
+- the algorithm/test-suite version to which each file applies;
+- any local tailoring, exclusions or generated derivatives, with reproducible
+  generation instructions and their own digest.
+
+The implementation, test runner and release metadata must identify the same
+manifest revision. A data-version mismatch is a conformance failure. Upgrading
+Unicode data requires an explicit compatibility review and rerunning the
+relevant official suites; silently following the host's Unicode database is
+prohibited.
+
+For malformed UTF-8, each maximal-subpart replacement scalar must retain the
+complete half-open source byte interval `[start,end)` consumed by that
+replacement. Adjacent malformed subparts must remain distinct where the
+decoder's maximal-subpart algorithm distinguishes them. A mapping may not
+invent a one-byte source span for a multi-byte malformed subpart, collapse
+separate malformed spans, or point into the middle of a valid scalar. Tests
+must assert byte-for-byte reconstruction of the original input from the
+ordered source spans, including invalid leading bytes, truncated sequences,
+stray continuation bytes and invalid continuation boundaries.
+
+Budget exhaustion is a presentation failure, never a text transformation.
+The logical scalar sequence, original UTF-8 bytes and Tainted provenance remain
+unchanged. Each stage must choose one documented deterministic outcome:
+(a) return an explicit bounded layout error while retaining the logical value,
+or (b) use a specified safe fallback representation that preserves the full
+logical/source mapping and clearly reports that shaping or layout is degraded.
+It must not truncate, normalise, drop controls, reorder by an ad-hoc algorithm,
+or silently omit source spans. If the fallback itself cannot satisfy the
+resource budget, it must return the explicit layout error.
+
+Password and other secret-bearing values are excluded from security annotation
+generation by default, not merely hidden at the final rendering layer. No
+secret value, substring, scalar, byte span, control name derived from the
+secret, confusable skeleton, source mapping, or annotation may be copied into
+diagnostics, logs, inspectors, debug views, telemetry or accessibility output.
+Password widgets expose only policy-approved non-content metadata (for example,
+length buckets if explicitly approved); the default is no value-derived
+metadata. This exclusion applies to intermediate caches and error paths as
+well as successful rendering.
