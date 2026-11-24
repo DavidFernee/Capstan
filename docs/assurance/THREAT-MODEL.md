@@ -1,9 +1,10 @@
 # Capstan threat model
 
 What Capstan defends against, what it assumes, what it trusts today, what is out of scope, and what
-risk remains. It describes Capstan 0.4.0 (unreleased) as it is in this repository, and is the
-maintained threat model called for in [DESIGN-MAP.md](../DESIGN-MAP.md), section 8. Every claim
-refers to a document or test in the repository.
+risk remains. It describes the integrated repository state reviewed on 2026-11-24, and is the
+maintained threat model called for in [DESIGN-MAP.md](../DESIGN-MAP.md). The default execution path
+is still generated C plus the C runtime; the C-free/CCAM programme is not yet the production path.
+Every claim refers to a document, implementation path or test in the repository.
 
 ## 1. What is being protected
 
@@ -21,7 +22,7 @@ refers to a document or test in the repository.
 | **A1. Remote or local user of a Capstan program** (the main adversary) | Controls any input the program reads: standard input, files, environment variables | Input arrives as `Tainted`; it reaches queries, commands, logs, HTML, files and policies only through validators and escapers, or an audited `trust()`. Memory errors and overflow cannot be written or stop safely (sections 3.1 and 3.2) |
 | **A2. A well-meaning developer who makes mistakes** | Writes ordinary code under time pressure | The compiler refuses vulnerable code with a CWE-numbered error; `--strict` and `--release` add stricter checks, including mandatory denial tests for policies |
 | **A3. A supplier of hostile source to the compiler** | Gives the compiler arbitrary bytes as source | The compiler reads source as `Tainted` and emits text into C only through `validate_ident()`, `validate_int()` and `escape_c()`; mutation fuzzing checks that corrupted programs never crash or hang it and that accepted programs give valid C ([TESTING.md](../TESTING.md), fuzz); 100,000-deep nesting gets a diagnostic, not a crash (limits) |
-| **A4. Someone who tampers with a compiler binary or build** | Replaces a compiler binary, or a C compiler, with one that inserts flaws | The compiler must reproduce its own C byte for byte, also when built with a different C compiler and when bootstrapped from the independent Python stage 0 (diverse double-compiling; `tests/run.sh`, bootstrap). Releases publish SHA-256 checksums |
+| **A4. Someone who tampers with a compiler binary or build** | Replaces a compiler binary, C compiler or build input with one that inserts flaws | The compiler's self-hosting fixpoint and diverse bootstrap checks provide evidence about compiler reproduction, not a proof against a malicious toolchain. The release workflow defines SHA-256 checksums, keyless Sigstore signatures, CycloneDX/SPDX SBOMs and GitHub artifact attestations; each published release still requires verification of its actual assets and attestations |
 
 Not considered an adversary Capstan can stop: a **malicious developer** with commit access. A
 deliberate backdoor written as ordinary logic (CWE-912) is indistinguishable from intended logic
@@ -83,19 +84,34 @@ Capstan's guarantees hold only if all of these are true:
 
 ## 5. Trusted base today
 
-These components are not written in Capstan, so Capstan's guarantees do not cover them. A bug in any
-of them can break a guarantee.
+These components are not written in Capstan, so Capstan's language-level guarantees do not cover
+them. A bug in any of them can break a guarantee. The table describes the current integrated
+execution and build path, not the intended C-free destination.
 
 | Component | Role | Size or source | How it is checked meanwhile | Plan to reduce ([DESIGN-MAP.md](../DESIGN-MAP.md), section 6) |
 |---|---|---|---|---|
-| Runtime (`runtime/capstan_rt.h`, `runtime/capstan_gc.h`) | Run-time checks, strings, collections, SHA-256, HMAC, PBKDF2, file and line I/O, garbage collector, stack guard | About 1,400 lines of C | Unit tests against published vectors (FIPS 180-2, RFC 4231, RFC 7914); ASan and UBSan; collector stress; differential fuzzing | T1 to T5 move the standard library, crypto, formatting and parsing into Capstan; T7 and T8 put the runtime in verified Capstan |
-| C standard library | I/O, memory, number formatting and parsing used by the runtime | The platform's libc | Indirectly, through the runtime tests and sanitiser runs | T4 replaces `snprintf` and `strtol`; T6 removes libc with a thin system-call layer |
-| C compiler (GCC or Clang) | Compiles generated C and the runtime | The platform's compiler | Identical behaviour at `-O0`, `-O2` and `-O3` with both compilers; diverse double-compiling | T9 CompCert option; T10 WebAssembly and T11 native backends remove C |
-| Capstan compiler | Checks and translates Capstan | `compiler/*.cap`, written in Capstan | Passes its own `--strict --release` checks; conformance, fuzzing, coverage, mutation testing | T12 functional verification of the checker |
-| Python 3 and stage 0 (`bootstrap/capstan0.py`) | Translates the compiler once to start the bootstrap | A small, unchecked Python translator, plus the Python interpreter | Must bootstrap to the byte-identical compiler; used as the second implementation in differential tests | Kept as an independent route for diverse double-compiling, not depended on once the native backend exists |
-| Shell scripts (`bin/capstan`, `Makefile`, `tests/run.sh`, `scripts/release-check.sh`) | Drive the C compiler, tests and release checks | Bash and Make | Exercised by every test run | Not yet planned |
+| Runtime (`runtime/capstan_rt.h`, `runtime/capstan_gc.h`) | Run-time checks, strings, collections, SHA-256, HMAC, PBKDF2, file and line I/O, garbage collector, stack guard | C implementation (line count is revision-dependent) | Runtime unit tests, ASan/UBSan, collector stress and differential fuzzing; these test but do not prove runtime correctness | C-free runtime implementation is a future target; no verified replacement is integrated |
+| C standard library | I/O, memory, number formatting and parsing used by the runtime | The platform's libc | Indirectly, through runtime tests and sanitiser runs | Removal requires an implemented and tested platform interface; no such C-free replacement is integrated |
+| C compiler (GCC or Clang) | Compiles generated C and the runtime | The platform's compiler | Cross-compiler and optimisation-level conformance plus bootstrap checks; these do not prove compiler correctness | Removed from the execution TCB only after a C-free native backend is implemented, validated and made the default |
+| Capstan compiler | Checks and translates Capstan source and emits C | `compiler/*.cap`, written in Capstan | Self-hosting, conformance, fuzzing, coverage and mutation testing; no end-to-end formal correctness proof | Selected Lean proofs cover a separate CCAM model fragment; source checking, lowering and compiler refinement remain unproved |
+| Python 3 and stage 0 (`bootstrap/capstan0.py`) | Translates the compiler once to start the bootstrap | A small, unchecked Python translator, plus the Python interpreter | Bootstrap fixpoint and differential tests; Python and stage 0 remain trusted build dependencies | Retain as a diverse bootstrap route or replace only through a separately reviewed reproducible bootstrap design |
+| Generated C and native toolchain | Current backend output compiled into executable code | Generated C plus GCC/Clang and platform linker | Tested through compiler/runtime suites and cross-compiler CI; no proof of C codegen correctness | C-free native backend and runtime are future work; current path remains in the TCB |
+| Shell scripts (`bin/capstan`, `Makefile`, `tests/run.sh`, `scripts/release-check.sh`) | Drive the C compiler, tests and release checks | Bash and Make | Exercised by test and release workflows | Must be reviewed as part of any bootstrap/backend transition |
 | Operating system and hardware | Process isolation, memory, signals, files | The platform | Not tested by Capstan | seL4 or a Capstan microkernel are long-term options (section 7, K3) |
-| GitHub and its hosted runners | Host the authoritative source, run CI and build releases | `.github/workflows/` | Every check runs on three platforms before a release is published; releases carry keyless Sigstore signatures, CycloneDX and SPDX SBOMs and GitHub artifact attestations; actions are pinned by commit | An independent rebuild outside GitHub and SLSA Build Level 3 (section 8) |
+| GitHub and its hosted runners | Host source, CI and release assembly | `.github/workflows/` | Actions are SHA-pinned; release workflow defines checksums, keyless Sigstore signatures, CycloneDX/SPDX SBOMs and GitHub artifact attestations. Workflow configuration is not proof of a successful release or an independent rebuild | Independent rebuild outside GitHub and a higher-assurance provenance process remain future work |
+
+## 5.1 Formal-verification boundary
+
+The active C-free programme uses CCAM as the proposed canonical typed core IR and Lean 4
+to check selected mathematical properties of a model. Current proofs cover a finite
+single-frame machine fragment and selected signed-64/register/arithmetic invariants. They
+do not establish that the Capstan parser or checker is sound, that source lowering preserves
+semantics, that the CCAM validator is sound, that the complete machine makes progress or
+traps correctly, that heap/GC/calls/concurrency are safe, or that native code is equivalent
+to CCAM. The Lean kernel, Lean libraries and theorem axioms are part of the proof-assurance
+boundary; proof results also depend on model adequacy and the correspondence between model
+and implementation. No such end-to-end correspondence is currently proved. These proofs
+are not evidence that the current C-backed runtime has become memory-safe.
 
 ## 6. Out of scope
 
