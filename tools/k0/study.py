@@ -105,7 +105,10 @@ SPECTRE_V1 = re.compile(r"nospec|array_index|\bindex\b|opcode|speculat\w* (load|
 # teardown and its callbacks is what K1.5 rules out. Races in ordering logic beyond these stay logic.
 DATA_RACE = re.compile(r"data-race|kcsan|read_once|write_once|without (holding |taking )?(the )?\w* ?lock|"
                        r"(missing|no|under|outside( of)?) (the )?\w* ?(lock|rcu)|concurrent(ly)? (access|modif|updat|writ)|"
-                       r"\b(unregist\w*|remov(e|al|ing)|teardown|unbind|unload\w*|detach\w*)\b", re.I)
+                       r"\b(?:device|driver|netdev|interface|adapter|callback|workqueue|resource)\b.{0,50}"
+                       r"\b(?:unregist\w*|remov(e|al|ing)|teardown|unbind|unload\w*|detach\w*)\b|"
+                       r"\b(?:unregist\w*|remov(e|al|ing)|teardown|unbind|unload\w*|detach\w*)\b.{0,50}"
+                       r"\b(?:device|driver|netdev|interface|adapter|callback|workqueue|resource)\b", re.I)
 # Hangs: only loops driven by data (corrupt images, packets, devices) are what K1.9's bounded loops
 # turn into errors. A hang waiting on hardware or firmware stays a logic or platform fault.
 DATA_LOOP = re.compile(r"infinite loop|endless loop|loops? forever|never (terminates|ends|exits)|"
