@@ -41,12 +41,12 @@ def machineInstrIsTerminal {n m : Nat} {types : RegTypes n} :
   | .explicitTrap _ => true
   | _ => false
 
-/-- A finite, non-empty instruction vector with an intrinsically valid entry and targets. -/
+/-- A finite instruction table indexed by Fin, with intrinsically valid entry and targets. -/
 structure FiniteProgram (n m : Nat) (types : RegTypes n) where
-  code : Vector (MachineInstr n (m + 1) types) (m + 1)
+  code : Fin (m + 1) → MachineInstr n (m + 1) types
   entry : Fin (m + 1)
   last_is_terminal :
-    machineInstrIsTerminal (code.get (Fin.last m)) = true
+    machineInstrIsTerminal (code (Fin.last m)) = true
 
 /-- A running state for the single-frame machine. -/
 structure MachineState (n m : Nat) (types : RegTypes n) where
@@ -73,7 +73,7 @@ def sequentialPC {m : Nat} (pc : Fin (m + 1)) : Fin (m + 1) :=
 def machineStep {n m : Nat} {types : RegTypes n}
     (program : FiniteProgram n m types) (state : MachineState n m types) :
     MachineOutcome n m types :=
-  match program.code.get state.pc with
+  match program.code state.pc with
   | .constInt dst value hdst hvalue =>
       .nextState {
         pc := sequentialPC state.pc
