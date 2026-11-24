@@ -11,7 +11,7 @@ It MUST identify every release and its complete dependency closure immutably; ma
 
 It MUST NOT label a component simply “secure” or “verified” without a named property, scope, subject, verifier and evidence; treat a signature, tests, audit or absence of advisories as proof of benign code; install, execute or upgrade packages merely because a workspace opens; silently change a locked dependency graph; or allow transitive dependencies to acquire capabilities implicitly.
 
-## 1A. Existing repository baseline
+## Existing repository baseline
 
 The repository already has meaningful release-level supply-chain controls:
 - scripts/sbom.py emits deterministic CycloneDX 1.6 and SPDX 2.3 SBOMs for a Capstan
