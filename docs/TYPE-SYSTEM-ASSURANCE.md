@@ -46,7 +46,7 @@ The following gates apply to the implementation stages in PR #49. Each security-
 | Grant containment | Generic values with no grants instantiate normally | `Box<Grant<P>>`, nested `List<Box<Grant<P>>>`, generic enum payload, optional/wrapper nesting, return/storage/constant/capture through a type parameter | Every storage, return and capture prohibition is applied after substitution and recursively |
 | Generic function inference | One uniquely inferred solution; explicit type arguments; nested argument constraints | Unused type parameter, ambiguous solution, inconsistent arguments, inference that would widen `Tainted` or `Secret` | Inference succeeds only when there is exactly one solution under invariant equality |
 | Constraint checking | A declared interface implementation satisfies every required signature | Missing method, wrong parameter/return type, visibility mismatch, method with same name but no declared impl | Generic bodies can use only operations justified by declared constraints |
-| Coherence | One implementation; repeated use of same resolved implementation | Duplicate impl in one file, duplicate across imports, overlapping impls, reverse import order | At most one applicable implementation exists across the complete compilation/link unit; source order cannot select a winner |
+| Coherence | One implementation; repeated use of same resolved implementation | Duplicate impl in one file, duplicate across imports, overlapping concrete or parameterised impl heads, unconstrained impl parameters, reverse import order | At most one applicable implementation exists across the complete compilation/link unit; source order cannot select a winner |
 | Module visibility | Public generic declaration over public types; private helper used inside its defining module | Access private declaration through alias, nested type, generic bound, interface, enum variant or re-export; public signature exposes private type | Visibility is checked at every reference and over all public signature components |
 | Recursive data types | Stable recursive shape such as `Node<T> { List<Node<T>> children; }`; ordinary recursive function | Infinite type expansion; unguarded or malformed recursion if disallowed by representation | Stable recursion is accepted; expanding instantiation is rejected with a bounded diagnostic |
 | Instantiation termination | Finite mutually recursive templates with stable arguments | `F<T> -> F<List<T>>`; mutually expanding `A<T> -> B<List<T>> -> A<List<List<T>>>` | Cycle detection distinguishes same-instantiation recursion from strictly expanding arguments |
@@ -254,3 +254,25 @@ The following is a conservative minimum contract, not a requirement for a packag
 6. **Path/graph adversarial tests.** Cover same-named declarations in sibling imports, direct versus transitive access, aliases, ambiguity independent of import order, repeated imports, normalized path aliases, symlink aliases where supported, and private-type leaks through generic bounds, fields, variants and methods.
 
 **Dependency gate:** module and declaration identity must be settled before generic nominal types and interface coherence are accepted as complete. If implementation is staged later, generic implementation must remain blocked from relying on unqualified global-name identity in the interim. These tests are distinct from ordinary visibility-flag tests: they establish which declaration a reference denotes before asking whether that declaration is accessible.
+
+
+## 13. Generic implementation declarations must be in scope or explicitly excluded
+
+The v0.5 proposal introduces generic structs, enums and functions, and generic interfaces, but its only `impl` example is concrete:
+
+```capstan
+impl Comparable<int> for int {
+    bool less(int self, int other) { return self < other; }
+}
+```
+
+It does not specify whether an implementation may bind its own type parameters, for example `impl<T> Comparable<T> for Box<T>`, or how such parameters are constrained and included in coherence. This is a material language-scope decision, not merely syntax polish.
+
+There are two coherent choices:
+
+1. **Support generic impls in v0.5.** Define binder identity and constraints on impl parameters, orphan ownership, and overlap checking over parameterised impl heads after substitution. Required cases include duplicate generic impls, overlapping heads such as `impl<T> I for Box<T>` versus `impl I for Box<int>`, unconstrained parameters, and coherence across the complete import closure.
+2. **Exclude generic impls in v0.5.** State that impl heads must be fully concrete, reject free type parameters in impl heads, and document the limitation: generic types cannot provide one interface implementation uniformly for all type arguments. Do not silently approximate a generic impl as a finite set of observed instantiations.
+
+Whichever choice is made, coherence must use resolved interface/type declaration identities and be independent of source and import order. If generic impls are deferred, the design must avoid syntax or inference that accidentally accepts them.
+
+The acceptance matrix must not assume generic impls exist until the proposal explicitly selects the first option. The compiler must not accidentally accept an unconstrained or overlapping implementation merely because a concrete test instantiation happens to be unique.
