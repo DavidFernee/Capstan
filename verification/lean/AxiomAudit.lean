@@ -47,6 +47,11 @@ import CapstanVerification.RuntimeBridge
 #print axioms CapstanVerification.popNestedCallFrame
 #print axioms CapstanVerification.popNestedCallFrame_restores_caller
 #print axioms CapstanVerification.popNestedCallFrame_decreases_depth
+#print axioms CapstanVerification.popNestedCallFrame_entry_refused
+
+#print axioms CapstanVerification.popNestedCallFrame
+#print axioms CapstanVerification.popNestedCallFrame_restores_caller
+#print axioms CapstanVerification.popNestedCallFrame_decreases_depth
 #print axioms CapstanVerification.popNestedCallFrame_within_limit
 #print axioms CapstanVerification.popNestedCallFrame_entry_refused
 
