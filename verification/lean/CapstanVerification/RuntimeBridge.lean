@@ -210,7 +210,7 @@ structure RuntimeRegisterFileRelation {n : Nat}
   type_at : ∀ i, runtimeTypeAt runtime i.val = some (types i)
   value_at : ∀ i, runtimeValueAt runtime i.val = regs i
 
-private theorem fin_eq_of_val_eq {n : Nat} {a b : Fin n}
+theorem fin_eq_of_val_eq {n : Nat} {a b : Fin n}
     (h : a.val = b.val) : a = b := by
   cases a with
   | mk av ah =>
