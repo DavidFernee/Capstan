@@ -14,15 +14,15 @@
 // kerning and shaping (see docs/SHROUD.md).
 
 // Limits on what a font may make us do (CWE-400).
-const int MAX_FONT_BYTES = 33554432;        // 32 MiB
+const int MAX_FONT_BYTES = 33554432;                 // 32 MiB
 const int MAX_GLYPH_POINTS = 4096;
 const int MAX_COMPOSITE_DEPTH = 8;
 const int MAX_COMPOSITE_PARTS = 64;
 const int MAX_GLYPH_POINTS_TOTAL = 16384;          // across all components of one glyph
 const int MAX_COMPOSITE_COMPONENTS_TOTAL = 256;    // across all nesting levels
-const int MAX_CACHED_GLYPHS = 4096;         // rasterised glyphs kept per font
-const int MAX_GLYPH_MASK_PIXELS = 262144;   // at most 256K alpha pixels in one glyph
-const int MAX_CACHED_GLYPH_PIXELS = 1048576; // aggregate alpha pixels per font
+const int MAX_CACHED_GLYPHS = 4096;                  // rasterised glyphs kept per font
+const int MAX_GLYPH_MASK_PIXELS = 262144;            // at most 256K alpha pixels in one glyph
+const int MAX_CACHED_GLYPH_PIXELS = 1048576;         // aggregate alpha pixels per font
 
 struct FontReader {
     List<int> b;
