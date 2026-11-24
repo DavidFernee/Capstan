@@ -1300,6 +1300,8 @@ static CapStr *cap_hash_password(CapStr *pw) {
     cap_hex(salt, 16, shex); cap_hex(dk, 32, dhex);
     cap_wipe(dk, sizeof dk);
     int n = snprintf(out, sizeof out, "cap1$pbkdf2-sha256$%d$%s$%s", CAP_PBKDF2_ITER, shex, dhex);
+    /* dhex is a second stack copy of the password-derived verifier key. */
+    cap_wipe(dhex, sizeof dhex);
     return cap_str_new(out, n);
 }
 
