@@ -43,6 +43,11 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.pushCallFrame_increments_depth
 #print axioms CapstanVerification.pushCallFrame_within_limit
 #print axioms CapstanVerification.pushCallFrame_exhausted_traps
+#print axioms CapstanVerification.popNestedCallFrame
+#print axioms CapstanVerification.popNestedCallFrame_restores_caller
+#print axioms CapstanVerification.popNestedCallFrame_decreases_depth
+#print axioms CapstanVerification.popNestedCallFrame_entry_refused
+
 #print axioms CapstanVerification.consumeStep
 #print axioms CapstanVerification.consumeStep_increments
 #print axioms CapstanVerification.consumeStep_within_limit
