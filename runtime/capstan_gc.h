@@ -269,21 +269,37 @@ static void cap_gc_init(void) {
     if (cap_gc.max_heap == 0 || cap_gc.max_heap > CAP_MAX_LEN) cap_gc.max_heap = CAP_MAX_LEN;
     char *low = NULL;
 #if defined(__APPLE__)
-    cap_gc.stack_top = (char *)pthread_get_stackaddr_np(pthread_self());
-    low = cap_gc.stack_top - pthread_get_stacksize_np(pthread_self());
+    uintptr_t stack_top = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
+    size_t stack_size = pthread_get_stacksize_np(pthread_self());
+    if (stack_size > stack_top)
+        cap_panic("invalid thread stack bounds", "CWE-682", 0);
+    cap_gc.stack_top = (char *)stack_top;
+    low = (char *)(stack_top - stack_size);
 #elif defined(__linux__)
     pthread_attr_t attr;
-    void *addr; size_t size;
-    if (pthread_getattr_np(pthread_self(), &attr) == 0 && pthread_attr_getstack(&attr, &addr, &size) == 0) {
-        cap_gc.stack_top = (char *)addr + size;
-        low = (char *)addr;
+    void *addr = NULL;
+    size_t size = 0;
+    if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+        int stack_result = pthread_attr_getstack(&attr, &addr, &size);
         pthread_attr_destroy(&attr);
+        if (stack_result == 0) {
+            uintptr_t stack_base = (uintptr_t)addr;
+            if (size > UINTPTR_MAX - stack_base)
+                cap_panic("invalid thread stack bounds", "CWE-682", 0);
+            cap_gc.stack_top = (char *)(stack_base + size);
+            low = (char *)stack_base;
+        }
     }
 #endif
 #ifndef CAP_ASAN
     if (low) cap_install_stack_guard(low);   /* AddressSanitizer installs its own */
 #endif
-    if (!cap_gc.stack_top) cap_gc.stack_top = (char *)__builtin_frame_address(0) + 4096;
+    if (!cap_gc.stack_top) {
+        uintptr_t frame = (uintptr_t)__builtin_frame_address(0);
+        if (frame > UINTPTR_MAX - 4096)
+            cap_panic("invalid fallback stack bounds", "CWE-682", 0);
+        cap_gc.stack_top = (char *)(frame + 4096);
+    }
 }
 
 /* ---- page table ------------------------------------------------------ */
