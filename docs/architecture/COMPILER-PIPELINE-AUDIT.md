@@ -7,7 +7,7 @@
 
 ## 1. Scope and evidence
 
-This is a source-level first pass, not a completed line-by-line inventory. It records the implementation observed in the repository and separates facts from design decisions still requiring coordination. The C-free lane must not redefine the Capstan Core Abstract Machine (CCAM). CCAM owns instruction semantics, machine state, traps and deterministic execution limits; this compiler workstream consumes that contract and owns the source/typed-IR/backend boundaries.
+This is a source-level first pass, not a completed line-by-line inventory. It records the implementation observed in the repository and separates facts from design decisions still requiring coordination. The mainline now also includes the merged left-to-right compound-assignment and lazy-string-literal fixes (PRs #97 and #109); these improve the existing C backend but do not alter the C-free pipeline boundary described here. The C-free lane must not redefine the Capstan Core Abstract Machine (CCAM). CCAM owns instruction semantics, machine state, traps and deterministic execution limits; this compiler workstream consumes that contract and owns the source/typed-IR/backend boundaries.
 
 ## 2. Current compilation pipeline
 
