@@ -55,7 +55,7 @@ def main():
         finally:
             if os.path.exists(payload_path):
                 os.unlink(payload_path)
-        if "frame line budget: 6 assertions" not in unit_result.stdout:
+        if "frame line budget: 7 assertions" not in unit_result.stdout:
             raise SystemExit(f"frame line budget unit assertions missing:\n{unit_result.stdout}")
 
         reject_exe = os.path.join(tmp, "frame_line_budget_reject")
