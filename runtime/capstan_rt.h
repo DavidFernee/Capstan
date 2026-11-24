@@ -334,12 +334,18 @@ static inline void cap_list_set_proved(CapList *l, int64_t i, CapVal v, int64_t 
 
 static void *cap_list_pop_p(CapList *l) {
     if (l->len == 0) return NULL;
-    return l->items[--l->len].p;
+    int64_t last = --l->len;
+    void *value = l->items[last].p;
+    l->items[last] = cap_vp(NULL);
+    return value;
 }
 
 static int64_t *cap_list_pop_i(CapList *l) {
     if (l->len == 0) return NULL;
-    return cap_box_int(l->items[--l->len].i);
+    int64_t last = --l->len;
+    int64_t value = l->items[last].i;
+    l->items[last] = cap_vi(0);
+    return cap_box_int(value);
 }
 
 /* Unboxed form for `if (let v = xs.pop())`, read immediately (see cap_map_peek_i). */
@@ -348,13 +354,17 @@ static int64_t *cap_list_pop_peek_i(CapList *l) {
     return &l->items[--l->len].i;
 }
 
-static void cap_list_clear(CapList *l) { l->len = 0; }
+static void cap_list_clear(CapList *l) {
+    if (l->len > 0) memset(l->items, 0, (size_t)l->len * sizeof(CapVal));
+    l->len = 0;
+}
 
 static CapVal cap_list_remove(CapList *l, int64_t i, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-125", loc);
     CapVal v = l->items[i];
     memmove(l->items + i, l->items + i + 1, sizeof(CapVal) * (size_t)(l->len - i - 1));
     l->len--;
+    l->items[l->len] = cap_vp(NULL);
     return v;
 }
 
@@ -669,6 +679,9 @@ static bool cap_map_remove(CapMap *m, CapStr *k) {
     memmove(m->keys + pos, m->keys + pos + 1, sizeof(CapStr *) * (size_t)(m->len - pos - 1));
     memmove(m->vals + pos, m->vals + pos + 1, sizeof(CapVal) * (size_t)(m->len - pos - 1));
     m->len--;
+    /* Clear vacated traced slots before reindexing can allocate and collect. */
+    m->keys[m->len] = NULL;
+    m->vals[m->len] = cap_vp(NULL);
     cap_map_reindex(m, m->index_cap);
     return true;
 }

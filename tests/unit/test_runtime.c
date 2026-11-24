@@ -6,7 +6,9 @@
  *   HMAC-SHA256   RFC 4231 test cases 1, 2 and 6
  *   PBKDF2-SHA256 RFC 7914 section 11
  */
+#define CAP_GC_TESTING 1
 #include "capstan_rt.h"
+#include <sys/wait.h>
 
 static int failures = 0, checks = 0;
 static const char *unit_files[] = {"unit"};
@@ -713,6 +715,234 @@ __attribute__((noinline)) static void collect_clean(void) {
 #endif
     cap_gc_collect();
 }
+static void test_gc_release_accounting(void) {
+    CapPage page;
+    memset(&page, 0, sizeof page);
+    size_t saved_heap = cap_gc.heap;
+    size_t saved_released = cap_gc.released_total;
+    cap_gc.heap = CAP_PAGE_SIZE;
+    cap_gc_account_release(&page, 0); /* simulated madvise failure */
+    CHECK(!page.released);
+    CHECK(cap_gc.heap == CAP_PAGE_SIZE);
+    CHECK(cap_gc.released_total == saved_released);
+    cap_gc_account_release(&page, 1); /* confirmed release */
+    CHECK(page.released);
+    CHECK(cap_gc.heap == 0);
+    CHECK(cap_gc.released_total == saved_released + 1);
+    cap_gc_account_release(&page, 1); /* repeated release is idempotent */
+    CHECK(cap_gc.heap == 0);
+    CHECK(cap_gc.released_total == saved_released + 1);
+    cap_gc.heap = saved_heap;
+    cap_gc.released_total = saved_released;
+}
+
+static void test_gc_stack_bounds(void) {
+    uintptr_t low = 0, high = 0;
+    CHECK(cap_gc_stack_bounds((uintptr_t)0x1000, 0x2000, &low, &high));
+    CHECK(low == (uintptr_t)0x1000 && high == (uintptr_t)0x3000);
+    CHECK(!cap_gc_stack_bounds((uintptr_t)0x1000, 0, &low, &high));
+    CHECK(!cap_gc_stack_bounds(UINTPTR_MAX - 7, 16, &low, &high));
+}
+
+#define CAP_NLARGE_SECRETS 16
+static uintptr_t large_secret_addrs[CAP_NLARGE_SECRETS];
+static uintptr_t large_secret_wiped_addrs[CAP_NLARGE_SECRETS];
+static size_t large_secret_wipe_observations;
+static int large_secret_wipe_clean;
+
+static void observe_large_secret_wipe(const void *memory, size_t n) {
+    uintptr_t address = (uintptr_t)memory;
+    const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
+    if (n == 0 || n % CAP_PAGE_SIZE != 0) large_secret_wipe_clean = 0;
+    for (size_t i = 0; i < n; i++)
+        if (bytes[i] != 0) large_secret_wipe_clean = 0;
+    size_t records = 0;
+    for (size_t i = 0; i < cap_gc.nlarge; i++) {
+        if ((uintptr_t)cap_gc.large[i].base == address) {
+            records++;
+            if (cap_gc.large[i].alloc_size != n || cap_gc.large[i].atomic != 2)
+                large_secret_wipe_clean = 0;
+        }
+    }
+    if (records != 1) large_secret_wipe_clean = 0;
+    int original = 0;
+    for (int i = 0; i < CAP_NLARGE_SECRETS; i++) {
+        uintptr_t expected = large_secret_addrs[i] ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+        if (expected == address) original++;
+    }
+    if (original > 1) large_secret_wipe_clean = 0;
+    if (original == 0) return;
+    if (n < 8192) large_secret_wipe_clean = 0;
+    size_t ordinal = large_secret_wipe_observations++;
+    if (ordinal >= CAP_NLARGE_SECRETS) {
+        large_secret_wipe_clean = 0;
+        return;
+    }
+    large_secret_wiped_addrs[ordinal] = address;
+}
+
+__attribute__((noinline)) static void make_large_secrets_for_wipe(void) {
+    for (int i = 0; i < CAP_NLARGE_SECRETS; i++) {
+        unsigned char *p = (unsigned char *)cap_gc_alloc(8192, 2);
+        memset(p, 0xa5, 8192);
+        large_secret_addrs[i] = (uintptr_t)p ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+    }
+}
+
+static void test_gc_large_secret_mapping(void) {
+    size_t heap_before = cap_gc.heap;
+    large_secret_wipe_observations = 0;
+    large_secret_wipe_clean = 1;
+    cap_gc_test_secret_wipe_hook = observe_large_secret_wipe;
+    make_large_secrets_for_wipe();
+    collect_clean();
+    int retained = 0;
+    for (int j = 0; j < CAP_NLARGE_SECRETS; j++) {
+        uintptr_t address = large_secret_addrs[j] ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+        int records = 0;
+        for (size_t i = 0; i < cap_gc.nlarge; i++)
+            if ((uintptr_t)cap_gc.large[i].base == address) records++;
+        if (records > 1) large_secret_wipe_clean = 0;
+        retained += records;
+    }
+    for (size_t j = 0; j < large_secret_wipe_observations; j++) {
+        int records = 0;
+        for (size_t i = 0; i < cap_gc.nlarge; i++)
+            if ((uintptr_t)cap_gc.large[i].base == large_secret_wiped_addrs[j]) records++;
+        if (records != 0) large_secret_wipe_clean = 0;
+    }
+    cap_gc_test_secret_wipe_hook = NULL;
+    size_t heap_after = cap_gc.heap;
+    CHECK(large_secret_wipe_observations >= CAP_NLARGE_SECRETS - 1);
+    CHECK(large_secret_wipe_clean);
+    CHECK(retained <= 1);
+    CHECK(heap_after <= heap_before + CAP_PAGE_SIZE);
+    const volatile unsigned char *fresh = (const volatile unsigned char *)cap_gc_alloc(8192, 2);
+    int zeroed = 1;
+    for (size_t i = 0; i < 8192; i++) if (fresh[i] != 0) zeroed = 0;
+    CHECK(zeroed);
+}
+
+static void test_gc_secret_free_slots(void) {
+    size_t checked = 0;
+    int clean = 1;
+    uint8_t seen[CAP_PAGE_SIZE / 16];
+    for (size_t i = 0; i < cap_gc.npages; i++) {
+        CapPage *pg = cap_gc.pages[i];
+        if (pg->atomic != 2) continue;
+        if (!pg->free_slots || pg->free_count > pg->free_cap ||
+            pg->free_cap != pg->nobj || pg->nobj > sizeof seen) {
+            clean = 0;
+            continue;
+        }
+        memset(seen, 0, pg->nobj);
+        for (uint32_t j = 0; j < pg->free_count; j++) {
+            uint32_t slot = pg->free_slots[j];
+            if (slot >= pg->nobj || seen[slot] || pg->alloc[slot]) {
+                clean = 0;
+                continue;
+            }
+            seen[slot] = 1;
+            const volatile unsigned char *bytes =
+                (const volatile unsigned char *)(pg->base + (size_t)slot * pg->objsize);
+            for (uint32_t k = 0; k < pg->objsize; k++)
+                if (bytes[k] != 0) clean = 0;
+            checked++;
+        }
+        for (uint32_t j = 0; j < pg->nobj; j++)
+            if (!pg->alloc[j] && !seen[j]) clean = 0;
+    }
+    CHECK(checked > 0 && clean);
+}
+
+enum {
+    GC_META_ROOT,
+    GC_META_MARK_STACK,
+    GC_META_PAGE,
+    GC_META_SECRET_PAGE,
+    GC_META_SPARE,
+    GC_META_LARGE
+};
+
+static void reset_gc_page_metadata_for_child(void) {
+    cap_gc.spare = NULL;
+    cap_gc.nspare = cap_gc.capspare = 0;
+    cap_gc.pages = NULL;
+    cap_gc.npages = cap_gc.cappages = 0;
+    cap_gc.ptab = NULL;
+    cap_gc.ptab_cap = 0;
+}
+
+static void trigger_gc_metadata_site(int site) {
+    void *value = NULL;
+    switch (site) {
+    case GC_META_ROOT:
+        cap_gc.roots = NULL;
+        cap_gc.nroots = cap_gc.caproots = 0;
+        cap_gc_root(&value);
+        break;
+    case GC_META_MARK_STACK:
+        cap_gc.mstack = NULL;
+        cap_gc.msp = cap_gc.mcap = 0;
+        cap_gc_push(&value, sizeof value);
+        break;
+    case GC_META_PAGE:
+        reset_gc_page_metadata_for_child();
+        cap_gc_new_page(0, 0);
+        break;
+    case GC_META_SECRET_PAGE:
+        reset_gc_page_metadata_for_child();
+        cap_gc_new_page(2, 0);
+        break;
+    case GC_META_SPARE: {
+        CapPage page;
+        memset(&page, 0, sizeof page);
+        cap_gc.spare = NULL;
+        cap_gc.nspare = cap_gc.capspare = 0;
+        cap_gc_spare_page(&page, 0);
+        break;
+    }
+    case GC_META_LARGE:
+        cap_gc.large = NULL;
+        cap_gc.nlarge = cap_gc.caplarge = 0;
+        cap_gc.since = 0;
+        cap_gc.threshold = SIZE_MAX;
+        cap_gc.stress = 0;
+        cap_gc.max_heap = 0;
+        (void)cap_gc_alloc(8192, 2);
+        break;
+    default:
+        _exit(90);
+    }
+}
+
+static void expect_gc_metadata_oom(int site, long successful_allocations) {
+    pid_t pid = fork();
+    CHECK(pid >= 0);
+    if (pid < 0) return;
+    if (pid == 0) {
+        (void)freopen("/dev/null", "w", stdout);
+        (void)freopen("/dev/null", "w", stderr);
+        cap_gc_test_meta_fail_after = successful_allocations;
+        trigger_gc_metadata_site(site);
+        _exit(0);
+    }
+    int status = 0;
+    pid_t waited;
+    do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
+    CHECK(waited == pid);
+    CHECK(waited == pid && WIFEXITED(status) && WEXITSTATUS(status) == 102);
+}
+
+static void test_gc_metadata_oom(void) {
+    expect_gc_metadata_oom(GC_META_ROOT, 0);
+    expect_gc_metadata_oom(GC_META_MARK_STACK, 0);
+    expect_gc_metadata_oom(GC_META_SPARE, 0);
+    expect_gc_metadata_oom(GC_META_LARGE, 0);
+    for (long i = 0; i < 5; i++) expect_gc_metadata_oom(GC_META_PAGE, i);
+    for (long i = 0; i < 6; i++) expect_gc_metadata_oom(GC_META_SECRET_PAGE, i);
+}
+
 static void test_gc_release(void) {
     cap_gc_collect();
     size_t released_before = cap_gc.released_total, heap_before = cap_gc.heap;
@@ -773,6 +1003,75 @@ static void test_secret_wipe(void) {
     CHECK(wiped >= CAP_NSECRETS - 4);
 }
 
+static void test_collection_slot_clearing(void) {
+    CapList *list = cap_list_new();
+    CapStr *a = cap_str_new("slot-a", 6);
+    CapStr *b = cap_str_new("slot-b", 6);
+    CapStr *c = cap_str_new("slot-c", 6);
+    cap_list_push(list, cap_vp(a));
+    CHECK(cap_list_pop_p(list) == a);
+    CHECK(list->len == 0 && list->items[0].p == NULL);
+    cap_list_push(list, cap_vi(17));
+    int64_t *boxed = cap_list_pop_i(list);
+    CHECK(boxed && *boxed == 17);
+    CHECK(list->len == 0 && list->items[0].i == 0);
+    cap_list_push(list, cap_vp(a));
+    cap_list_push(list, cap_vp(b));
+    CapVal *slots = list->items;
+    cap_list_clear(list);
+    CHECK(list->len == 0 && slots[0].p == NULL && slots[1].p == NULL);
+    cap_list_push(list, cap_vp(a));
+    cap_list_push(list, cap_vp(b));
+    cap_list_push(list, cap_vp(c));
+    CapVal removed = cap_list_remove(list, 1, 0);
+    CHECK(removed.p == b);
+    CHECK(list->len == 2 && list->items[0].p == a && list->items[1].p == c);
+    CHECK(list->items[2].p == NULL);
+    CapMap *map = cap_map_new();
+    CapStr *ka = cap_str_new("key-a", 5);
+    CapStr *kb = cap_str_new("key-b", 5);
+    CapStr *va = cap_str_new("value-a", 7);
+    CapStr *vb = cap_str_new("value-b", 7);
+    cap_map_set(map, ka, cap_vp(va));
+    cap_map_set(map, kb, cap_vp(vb));
+    CHECK(cap_map_remove(map, ka));
+    CHECK(map->len == 1 && map->keys[0] == kb && map->vals[0].p == vb);
+    CHECK(map->keys[1] == NULL && map->vals[1].p == NULL);
+}
+
+static void test_secret_page_free_stack(void) {
+    void *memory = NULL;
+    CHECK(posix_memalign(&memory, CAP_PAGE_SIZE, CAP_PAGE_SIZE) == 0);
+    if (!memory) return;
+    memset(memory, 0xa5, CAP_PAGE_SIZE);
+    CapPage page;
+    memset(&page, 0, sizeof page);
+    page.base = (char *)memory;
+    cap_gc_format_page(&page, 2, 0);
+    CHECK(page.free_slots != NULL);
+    CHECK(page.free_count == page.nobj && page.free_cap == page.nobj);
+    int all_zero = 1;
+    const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
+    for (size_t i = 0; i < CAP_PAGE_SIZE; i++) if (bytes[i] != 0) all_zero = 0;
+    CHECK(all_zero);
+    unsigned char *seen = (unsigned char *)calloc(page.nobj, 1);
+    CHECK(seen != NULL);
+    if (seen) {
+        int unique = 1;
+        for (uint32_t i = 0; i < page.free_count; i++) {
+            uint32_t idx = page.free_slots[i];
+            if (idx >= page.nobj || seen[idx]) unique = 0;
+            else seen[idx] = 1;
+        }
+        CHECK(unique);
+        free(seen);
+    }
+    free(page.free_slots);
+    free(page.alloc);
+    free(page.mark);
+    free(memory);
+}
+
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
@@ -793,12 +1092,19 @@ int main(void) {
     test_gc_allocator_arithmetic();
     test_runtime_growth_arithmetic();
     test_collections();
+    test_collection_slot_clearing();
     test_arithmetic();
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
+    test_gc_metadata_oom();
+    test_gc_release_accounting();
+    test_gc_stack_bounds();
+    test_secret_page_free_stack();
     test_gc_release();
     test_secret_env_name();
     test_secret_wipe();
+    test_gc_secret_free_slots();
+    test_gc_large_secret_mapping();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
