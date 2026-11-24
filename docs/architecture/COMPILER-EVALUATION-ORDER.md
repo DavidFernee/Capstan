@@ -16,6 +16,8 @@ is therefore not a valid implementation of Capstan's left-to-right rule. The com
 
 The backend uses GNU C statement expressions and temporaries for this purpose. That is a compatibility mechanism for v0.6, not part of the C-free architecture.
 
+This assurance branch is stacked on PR #97. Its base contains the explicit compound-assignment sequencing implementation and the post-RHS stale-index regression; PR #93 supplies the normative source-level rule and additional conformance cases.
+
 ## 2. Current lowering strategy
 
 | Source construct | Lowering strategy | Assurance condition |
