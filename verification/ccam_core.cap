@@ -1996,6 +1996,7 @@ CCAMFrameReturnResult ccam_frame_stack_return_int(
         };
     }
     CCAMFrame caller = stack.frames[top - 1];
+    if (!ccam_frame_is_valid(caller)) return ccam_frame_return_error("invalid_call_stack");
     int dst = callee.caller_destination;
     if (dst < 0 || dst >= caller.registers.len() ||
         caller.registers[dst].declared_type != CCAM_TYPE_INT) {
@@ -2046,6 +2047,9 @@ CCAMFrameReturnResult ccam_frame_stack_return_void(CCAMFrameStack stack) {
     if (stack.frames.len() == 0) return ccam_frame_return_error("invalid_call_stack");
     CCAMFrame callee = stack.frames[stack.frames.len() - 1];
     if (!ccam_frame_is_valid(callee)) return ccam_frame_return_error("invalid_call_stack");
+    if (stack.frames.len() > 1 && !ccam_frame_is_valid(stack.frames[stack.frames.len() - 2])) {
+        return ccam_frame_return_error("invalid_call_stack");
+    }
     if (callee.return_type != CCAM_RETURN_VOID || callee.caller_destination != -1) {
         return ccam_frame_return_error("return_type_mismatch");
     }
