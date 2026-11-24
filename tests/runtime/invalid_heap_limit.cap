@@ -2,6 +2,7 @@
 // expect-runtime: CWE-20
 // env: CAPSTAN_MAX_HEAP=1T
 int main() {
-    println("initialise runtime");
+    List<int> values = new List<int>();
+    values.push(1);
     return 0;
 }
