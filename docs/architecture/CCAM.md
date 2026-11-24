@@ -85,9 +85,9 @@ The executable evaluator, register files, frames, instruction sequences, and con
 Execution returns exactly one of:
 - `Halt(value)` for a successful non-void entry-function return;
 - `HaltVoid` for a successful void entry-function return; or
-- `Trap(code, pc, function)` for a defined dynamic machine trap.
+- `Trap(code, function, pc)` for a defined dynamic machine trap.
 
-A complete source-program entry has zero arguments and returns `int` or `void`. Internal functions may return `int`, `bool` or `void. Structural program errors are reported as validation failures before execution, not as dynamic traps.
+A complete source-program entry has zero arguments and returns `int` or `void`. Internal functions may return `int`, `bool` or `void`. Structural program errors are reported as validation failures before execution, not as dynamic traps.
 
 The Capstan implementation must represent machine traps as explicit values or controlled results. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected before execution.
 
