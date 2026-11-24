@@ -678,13 +678,16 @@ static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
 static CapStr *cap_read_file(CapStr *path) { return cap_read_file_max(path, CAP_READ_FILE_DEFAULT, 0); }
 
 /* One line of standard input without its newline, or none at end of input. Every
-   byte is kept, including NUL bytes. */
+   byte is kept, including NUL bytes. Lines are capped at 1 MiB (CWE-789). */
+#define CAP_READ_LINE_MAX ((int64_t)1 << 20)
 static CapStr *cap_read_line(void) {
     CapBuf b = cap_buf_new(128);
     int c, got = 0;
     while ((c = getc(stdin)) != EOF) {
         got = 1;
         if (c == '\n') break;
+        if (b.s->len >= CAP_READ_LINE_MAX)
+            cap_panic("read_line() input exceeds 1 MiB", "CWE-789", 0);
         char ch = (char)c;
         cap_buf_put(&b, &ch, 1);
     }
@@ -961,6 +964,10 @@ static void cap_run(CapStr *prog, CapList *argv) {
 /* ------------------------------------------------------------------ */
 
 static CapStr *cap_secret_env(CapStr *name) {
+    /* getenv() accepts a NUL-terminated name, while CapStr is length-delimited.
+       Reject embedded NULs rather than silently resolving a truncated name. */
+    if (!name || name->len < 0 ||
+        memchr(name->data, '\0', (size_t)name->len) != NULL) return NULL;
     const char *v = getenv(name->data);
     if (!v) return NULL;
     int64_t n = (int64_t)strlen(v);
