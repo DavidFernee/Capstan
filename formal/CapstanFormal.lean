@@ -7,14 +7,20 @@
 
 namespace CapstanFormal
 
+/-- Explicit result of checked arithmetic: success returns a value; overflow is fatal. -/
+inductive CheckedAddResult where
+  | success (value : Nat)
+  | fatal
+  deriving DecidableEq, Repr
+
 /-- Mathematical model of the C checked-add helper.
     The limit represents SIZE_MAX; inputs are natural-number encodings of size_t values. -/
-def checkedAdd (limit a b : Nat) : Option Nat :=
-  if a ≤ limit ∧ b ≤ limit - a then some (a + b) else none
+def checkedAdd (limit a b : Nat) : CheckedAddResult :=
+  if a ≤ limit ∧ b ≤ limit - a then .success (a + b) else .fatal
 
 /-- A successful checked addition returns the exact mathematical sum, within limit. -/
 theorem checkedAdd_sound (limit a b result : Nat)
-    (h : checkedAdd limit a b = some result) :
+    (h : checkedAdd limit a b = .success result) :
     result = a + b ∧ a + b ≤ limit := by
   unfold checkedAdd at h
   by_cases hfit : a ≤ limit ∧ b ≤ limit - a
@@ -25,19 +31,27 @@ theorem checkedAdd_sound (limit a b result : Nat)
 /-- Every in-range mathematical sum is accepted by the checked-add model. -/
 theorem checkedAdd_complete (limit a b : Nat)
     (h : a + b ≤ limit) :
-    checkedAdd limit a b = some (a + b) := by
+    checkedAdd limit a b = .success (a + b) := by
   unfold checkedAdd
   have hfit : a ≤ limit ∧ b ≤ limit - a := by omega
   simp [hfit]
 
 /-- The checked-add model accepts exactly the sums representable below limit. -/
 theorem checkedAdd_exact (limit a b : Nat) :
-    (∃ result, checkedAdd limit a b = some result) ↔ a + b ≤ limit := by
+    (∃ result, checkedAdd limit a b = .success result) ↔ a + b ≤ limit := by
   constructor
   · rintro ⟨result, h⟩
     exact (checkedAdd_sound limit a b result h).2
   · intro h
     exact ⟨a + b, checkedAdd_complete limit a b h⟩
+
+/-- Overflow takes the terminal fatal outcome; it is not a recoverable return. -/
+theorem checkedAdd_overflow_fatal (limit a b : Nat)
+    (h : limit < a + b) :
+    checkedAdd limit a b = .fatal := by
+  unfold checkedAdd
+  have hfit : ¬ (a ≤ limit ∧ b ≤ limit - a) := by omega
+  simp [hfit]
 
 /-- Whether the OS accepted an advice operation on a retained page. -/
 inductive PageBacking where
