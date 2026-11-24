@@ -47,6 +47,9 @@ int main() {
     List<string> a = args();
     if (a.len() > 0 && !png_write(a[0], multi)) { return 18; }
     if (a.len() > 1 && png_write(a[1], over)) { return 19; }
-    println("png budget: 19 assertions");
+    List<int> all_bytes = new List<int>();
+    for (int i = 0; i < 256; i += 1) { all_bytes.push(i); }
+    if (a.len() > 2 && !write_file(a[2], bytes_text(all_bytes))) { return 20; }
+    println("png budget: 20 assertions");
     return 0;
 }
