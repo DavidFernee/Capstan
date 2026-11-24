@@ -28,11 +28,14 @@ void utf8_push(List<int> out, int b0, int b1, int b2, int b3, int n) {
 
 bool is_cont(int b) { return (b & 0xC0) == 0x80; }
 
-// Decodes UTF-8 bytes (0..255) into code points, strictly: overlong forms,
-// surrogates and values above U+10FFFF are invalid, and each invalid sequence gives
-// one U+FFFD (the "maximal subpart" practice of Unicode, chapter 3).
-List<int> utf8_decode(List<int> b) {
-    List<int> out = new List<int>();
+struct Utf8Decoded {
+    List<int> codepoints;
+    List<int> byte_ends;
+}
+
+// Strict UTF-8 decoding with optional byte-end offsets. Invalid sequences use the
+// maximal-subpart replacement behaviour documented above.
+void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
     int i = 0;
     int n = b.len();
     while (i < n) {
@@ -40,6 +43,7 @@ List<int> utf8_decode(List<int> b) {
         if (b0 < 0x80) {
             out.push(b0);
             i += 1;
+            if (let offsets = ends) { offsets.push(i); }
             continue;
         }
         int need = 0;
@@ -58,6 +62,7 @@ List<int> utf8_decode(List<int> b) {
         } else {
             out.push(REPLACEMENT_CHAR);
             i += 1;
+            if (let offsets = ends) { offsets.push(i); }
             continue;
         }
         // Check the continuation bytes; the first has a narrower range.
@@ -81,6 +86,7 @@ List<int> utf8_decode(List<int> b) {
         if (bad) {
             out.push(REPLACEMENT_CHAR);
             i += 1 + got;
+            if (let offsets = ends) { offsets.push(i); }
             continue;
         }
         int b1 = b[i + 1];
@@ -90,7 +96,20 @@ List<int> utf8_decode(List<int> b) {
         if (need >= 3) { b3 = b[i + 3]; }
         utf8_push(out, b0, b1, b2, b3, need + 1);
         i += need + 1;
+        if (let offsets = ends) { offsets.push(i); }
     }
+}
+
+Utf8Decoded utf8_decode_with_ends(List<int> b) {
+    List<int> out = new List<int>();
+    List<int> ends = new List<int>();
+    utf8_decode_into(b, out, ends);
+    return new Utf8Decoded{codepoints: out, byte_ends: ends};
+}
+
+List<int> utf8_decode(List<int> b) {
+    List<int> out = new List<int>();
+    utf8_decode_into(b, out, none);
     return out;
 }
 
