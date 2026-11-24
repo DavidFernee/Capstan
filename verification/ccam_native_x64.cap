@@ -430,6 +430,28 @@ test "CCAM x86-64 backend emits step and call-depth guards" {
         "build/ccam-native-x64-depth-limit.s", 100, 1));
 }
 
+
+test "CCAM x86-64 backend preserves uninitialised register traps" {
+    List<int> register_types = new List<int>();
+    register_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> instructions = new List<CCAMInstruction>();
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+    ret.lhs = 0;
+    instructions.push(ret);
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main",
+        register_types: register_types,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_INT,
+        instructions: instructions,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(functions, 0, 100, 16);
+    assert(native.ok);
+    assert(write_file("build/ccam-native-x64-uninitialised.s", native.assembly));
+}
+
 test "CCAM x86-64 backend rejects unsupported argument counts" {
     List<int> types = new List<int>();
     for (int i = 0; i < 7; i += 1) { types.push(CCAM_TYPE_INT); }
