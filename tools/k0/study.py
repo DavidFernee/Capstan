@@ -452,14 +452,14 @@ def main():
     snapshot = source_snapshot(args[0])
     atlas = atlas_verdicts()
     rpath = os.path.join(HERE, "data", f"reviewed-{year}.csv")
-    reviewed = load_reviewed(rows, rpath)
+    label_overrides = load_reviewed(rows, rpath)
     for r in rows:
         cls, cwe, ev = classify(r["title"], r["desc"])
         r["class"], r["cwe"], r["evidence"] = cls, cwe, ev
         r["auto_class"], r["method"] = cls, "classifier"
-        if r["id"] in reviewed:
-            r["class"], r["method"] = reviewed[r["id"]], "reviewed"
-            r["cwe"], r["evidence"] = CLASS_CWE.get(r["class"], ""), "read by a reviewer"
+        if r["id"] in label_overrides:
+            r["class"], r["method"] = label_overrides[r["id"]], "labelled"
+            r["cwe"], r["evidence"] = CLASS_CWE.get(r["class"], ""), "checked-in label override"
         r["bucket"], r["atlas"] = bucket_for_class(r["class"], atlas)
         r["subsystem"] = subsystem(r["files"])
         r["projected"], r["via"] = projected(r)
@@ -469,7 +469,7 @@ def main():
     by_bucket = collections.Counter(r["bucket"] for r in rows)
     by_class = collections.Counter((r["class"], r["cwe"], r["bucket"]) for r in rows)
     known = n - by_bucket[UNKNOWN]
-    n_reviewed = sum(r["method"] == "reviewed" for r in rows)
+    n_label_overrides = sum(r["method"] == "labelled" for r in rows)
     memory_classes = {"use-after-free", "double or invalid free", "out-of-bounds read",
                       "out-of-bounds write", "NULL dereference", "uninitialised memory"}
     mem = sum(1 for r in rows if r["class"] in memory_classes)
@@ -491,7 +491,8 @@ def main():
     tuning = check_labels(rows, atlas, "labels.csv")
     heldout = check_labels(rows, atlas, "labels-heldout.csv")
     json.dump({"year": year, "source_repository": "https://github.com/CVEProject/cvelistV5",
-               "source_commit": snapshot, "study_commit": study_commit, "total": n, "reviewed": n_reviewed,\n               "independent_review_status": "NOT PERFORMED", "assurance_use": "RESEARCH ONLY",
+               "source_commit": snapshot, "study_commit": study_commit, "total": n, "label_overrides": n_label_overrides,
+               "independent_review_status": "NOT PERFORMED", "assurance_use": "RESEARCH ONLY",
                "buckets": {b: by_bucket[b] for b in BUCKETS}, "memory_safety": mem,
                "with_k1": {b: proj[b] for b in BUCKETS},
                "k1_10_proof_eligibility_projection": {b: fin[b] for b in BUCKETS + [PROOF_ELIGIBLE]},
@@ -508,8 +509,8 @@ def main():
     p(f"Study implementation commit: `{study_commit}`. CVE List source commit: `{snapshot}`.")
     p("**Validation status: NOT INDEPENDENTLY VALIDATED.** The checked-in label overrides were produced by the same AI assistant that developed the classifier; independent human relabelling has not been completed. This is a research estimate, not release assurance. Do not interpret K1 projections or proof-eligibility ceilings as implemented Capstan capability.\n")
     p(f"**{n:,} CVEs** published in {year} by the Linux kernel's CVE Numbering Authority. "
-      f"{n - n_reviewed:,} were classified automatically from their fix descriptions and {n_reviewed:,} were "
-      f"read and classified by a reviewer, because the rules could not decide them or decided them wrongly. "
+      f"{n - n_label_overrides:,} were classified automatically from their fix descriptions and "
+      f"{n_label_overrides:,} received checked-in label overrides. "
       f"{by_bucket[UNKNOWN]} remain undeterminable from the record.\n")
     p("| Outcome / measure | Today | K1.1-K1.9 design projection | K1.10 proof-eligibility ceiling (not proof) |")
     p("|---|---|---|---|")
@@ -607,10 +608,11 @@ def main():
       "reports quoted in it (KASAN, UBSAN, KMSAN, KCSAN, lockdep, kmemleak). The rules are regular expressions "
       "in `tools/k0/classify.py`, tried in a fixed order. Memory-safety classes are tried first, so a race "
       "that ends in a use-after-free counts as a use-after-free: that is what a language has to stop.")
-    p(f"3. **Review.** Every CVE the rules could not decide, and every one they called speculative execution, "
-      f"was read and classified by a reviewer ({n_reviewed:,} in all, `tools/k0/data/reviewed-{year}.csv`). "
-      "The review label replaces the automatic one. Where a fix states its consequence (\"leads to a NULL "
-      "dereference\"), the consequence decides, as in step 2.")
+    p(f"3. **Label overrides.** The checked-in tools/k0/data/reviewed-{year}.csv file overrides "
+      f"{n_label_overrides:,} automatic classifications. These labels were produced by the same AI assistant "
+      "that developed the classifier; they are not independent ground truth. Independent human relabelling "
+      "is required before the results can be treated as independently validated. Where a fix states its "
+      "consequence (leads to a NULL dereference), the consequence decides, as in step 2.")
     p("4. **The atlas.** Each class's CWE is looked up in the [CWE atlas](CWE-ATLAS.md), taking its weakest "
       "verdict, then the kernel adjustments above are applied.")
     if heldout:
@@ -627,8 +629,8 @@ def main():
               f"{pct(c2, t2)} and {pct(o2, t2)}.")
     p("")
     p("## Limits\n")
-    p("- The review and both check samples were done by Claude, the AI assistant that wrote the classifier. "
-      "An independent reviewer relabelling them is the next step for the study's credibility.")
+    p("- The label overrides and both check samples were produced by Claude, the AI assistant that wrote "
+      "the classifier. They are not independent human review and must not be treated as ground truth.")
     p("- The automatic classification is right about 60% of the time on class and 70% on outcome (held-out "
       "sample); it does not overstate prevention there, but individual rows can be wrong. Every row is in "
       "`tools/k0/data/` with how it was classified.")
@@ -642,7 +644,7 @@ def main():
     p("")
     open(os.path.join(ROOT, "docs", "K0-KERNEL-CVES.md"), "w").write("\n".join(out))
 
-    print(f"{n} CVEs ({n_reviewed} reviewed); " + "; ".join(f"{b}: {by_bucket[b]}" for b in BUCKETS))
+    print(f"{n} CVEs ({n_label_overrides} label overrides); " + "; ".join(f"{b}: {by_bucket[b]}" for b in BUCKETS))
     print(f"prevented today {pct(prevented, known)}, with K1 {pct(proj_prevented, known)}, "
           f"K1.10 proof-eligibility ceiling (not proven) {pct(fin_candidate, known)}")
     for name, lab in (("tuning", tuning), ("held-out", heldout)):

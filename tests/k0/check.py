@@ -101,6 +101,7 @@ with tempfile.TemporaryDirectory() as temporary:
     subprocess.run(["git", "-C", str(root), "add", "snapshot.txt", "cves"], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
     commit = study.source_snapshot(str(root))
+    assert study.study_snapshot(str(root)) == commit
     assert len(commit) == 40 and all(ch in "0123456789abcdef" for ch in commit)
     # A sparse checkout can hide tracked files from status while leaving the tree clean.
     subprocess.run(["git", "-C", str(root), "update-index", "--skip-worktree",
@@ -116,6 +117,12 @@ with tempfile.TemporaryDirectory() as temporary:
     subprocess.run(["git", "-C", str(root), "update-index", "--no-skip-worktree",
                     "cves/1999/0xxx/CVE-1999-0001.json"], check=True)
     (root / "untracked.json").write_text("{}", encoding="utf-8")
+    try:
+        study.study_snapshot(str(root))
+    except RuntimeError as error:
+        assert "dirty" in str(error)
+    else:
+        raise AssertionError("dirty Capstan study source was accepted")
     try:
         study.source_snapshot(str(root))
     except RuntimeError as error:
