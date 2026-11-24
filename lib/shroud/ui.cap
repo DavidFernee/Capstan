@@ -444,16 +444,23 @@ Tainted single_line(Tainted s) {
     // unbounded paste merely to discard it.
     if (s.len() > MAX_FIELD_BYTES) { return s; }
     Utf8Decoded decoded = utf8_decode_with_ends(tainted_bytes(s));
-    Tainted out = taint("");
+    // Collect retained byte spans, then use join()'s single output allocation.
+    // Repeated string concatenation here copied O(n^2) bytes for alternating
+    // controls and printable text.
+    List<Tainted> parts = new List<Tainted>();
     int start = 0;
     int before = 0;
+    bool removed = false;
     for (int i = 0; i < decoded.codepoints.len(); i += 1) {
         int end = decoded.byte_ends[i];
         if (is_single_line_control(decoded.codepoints[i])) {
-            out = out + s.slice(start, before);
+            if (before > start) { parts.push(s.slice(start, before)); }
             start = end;
+            removed = true;
         }
         before = end;
     }
-    return out + s.slice(start, s.len());
+    if (!removed) { return s; }
+    if (start < s.len()) { parts.push(s.slice(start, s.len())); }
+    return join(parts, "");
 }
