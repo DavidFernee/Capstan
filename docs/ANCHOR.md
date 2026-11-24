@@ -109,7 +109,7 @@ workspace browser or process controller.
 Anchor targets the public S0 surface in `lib/shroud/*.cap`:
 
 - compose `View` values using `column`, `row`, `box`, `text`, `button`,
-  `text_field`, `scroll_view`, `divider` and modifiers;
+  `text_field`, `scroll`, `divider` and modifiers;
 - build the interface from an application model;
 - receive `Msg` values from `Ui.handle(Event)` and update the model outside widgets;
 - render via `Ui.render(View, monotonic_time_ms)`, present `Ui.pixmap` through a
