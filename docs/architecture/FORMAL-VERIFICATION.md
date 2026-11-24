@@ -1,12 +1,13 @@
 # Capstan formal verification strategy
 
 **Status:** initial proof programme; deliberately partial  
-**Work branch:** verification/ccam-formal-core  
+**Work branch:** verification/ccam-formal-core-stacked  
+**Dependency:** draft PR #81, branch architecture/c-free-formal-foundation. This is a stacked proof PR: its normative CCAM specification and Capstan executable semantics are supplied by that dependency. Retarget/synchronise this proof PR after #81 integrates.
 **Semantic authority:** docs/SPEC.md and docs/architecture/CCAM.md
 
 ## 1. Current evidence and claims
 
-The repository had no machine-checked proof development at the start of this work. The CCAM Capstan source and its tests are executable semantics and conformance evidence, not proofs. The compiler bootstrap fixpoint establishes byte-for-byte reproducibility of generated output between bootstrap stages; it does not prove that the compiler implements the language specification. Conventional tests, fuzzing, sanitizers, self-hosting and reproducible builds must not be labelled formal verification.
+The mainline snapshot initially had no machine-checked proof development. The normative CCAM v0.1 specification and Capstan-native arithmetic/register substrate currently live in draft PR #81, so this proof work is stacked on that branch and reads docs/architecture/CCAM.md as its semantic authority. The CCAM Capstan source and its tests are executable semantics and conformance evidence, not proofs. The compiler bootstrap fixpoint establishes byte-for-byte reproducibility of generated output between bootstrap stages; it does not prove that the compiler implements the language specification. Conventional tests, fuzzing, sanitizers, self-hosting and reproducible builds must not be labelled formal verification.
 
 The current CCAM specification is intentionally narrow: signed 64-bit integers, booleans, typed local registers, checked arithmetic, branches, direct calls/returns, explicit traps, and deterministic step/depth limits. Its exclusions (heap/GC, taint, secrets, grants, IO, concurrency and cryptography) remain outside the model.
 
@@ -41,15 +42,15 @@ Do not model every surface feature before the small core is coherent. New instru
 
 ## 4. Initial mechanised results
 
-The initial Lean model is in verification/lean/CapstanVerification/Core.lean.
+The initial Lean model is in verification/lean/CapstanVerification/Core.lean. Its value typing constrains integers to the signed-64 range; checked addition, subtraction and multiplication use mathematical integer operations followed by the CCAM range check. Division uses an explicit truncation-toward-zero quotient, and remainder is defined from that quotient as a - q*b. Zero divisors and MIN/-1 are explicit traps, matching CCAM v0.1.
 
 Current theorem statements:
 - write_preserves_well_typed: updating a register with a value matching its declared type preserves the register-file typing invariant.
-- checkedAdd_sound: a successful checked mathematical addition returns a signed-64 result.
-- checkedDiv_zero_traps: division by zero returns the explicit CCAM division trap.
-- checkedDiv_min_neg_one_traps: signed-64 minimum divided by negative one returns the explicit overflow trap.
+- checkedAdd_sound, checkedSub_sound and checkedMul_sound: successful checked arithmetic returns a signed-64 result.
+- checkedDiv_zero_traps and checkedRem_zero_traps: division/remainder by zero returns the explicit CCAM division trap.
+- checkedDiv_min_neg_one_traps and checkedRem_min_neg_one_traps: signed-64 minimum divided/remaindered by negative one returns the explicit overflow trap.
 
-These are small foundational lemmas. They do **not** establish type preservation for a CCAM program, progress, memory safety, function-call correctness, compiler correctness, or native-code correctness. The arithmetic model uses mathematical integers; the link to Capstan's actual int and executable arithmetic routines remains to be proved and tested.
+These are small foundational lemmas. They are still pending a successful CI build on this stacked branch. They do **not** establish type preservation for a CCAM program, progress, memory safety, function-call correctness, compiler correctness, or native-code correctness. The arithmetic model uses mathematical integers; the link to Capstan's actual int and executable arithmetic routines remains to be proved and tested.
 
 ## 5. Typed IR proof architecture
 
