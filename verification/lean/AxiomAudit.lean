@@ -88,3 +88,10 @@ import CapstanVerification.RuntimeBridge
 #print axioms CapstanVerification.runtimeReadInt_corresponds
 #print axioms CapstanVerification.runtimeReadBool_corresponds
 #print axioms CapstanVerification.runtimeRelation_preserves_well_typed
+
+#print axioms CapstanVerification.runtimeSetAt
+#print axioms CapstanVerification.runtimeSetAt_get_same_of_exists
+#print axioms CapstanVerification.runtimeSetAt_get_other_of_exists
+#print axioms CapstanVerification.runtimeWriteRegister
+#print axioms CapstanVerification.runtimeWriteRegister_target
+#print axioms CapstanVerification.runtimeWriteRegister_other_unchanged
