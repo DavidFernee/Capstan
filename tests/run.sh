@@ -99,6 +99,26 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     else
       bad "freestanding ELF assembly/link" "GNU as or ld rejected generated assembly"
     fi
+    native_run() {
+      local name="$1" expected="$2"
+      if as --64 "$ROOT/build/$name.s" -o "$tmp/$name.o" &&
+         ld -o "$tmp/$name" "$tmp/$name.o"; then
+        "$tmp/$name"
+        local status=$?
+        if [[ $status -eq $expected ]]; then
+          ok "freestanding $name exits $expected without C runtime"
+        else
+          bad "freestanding $name exit status" "expected $expected, got $status"
+        fi
+      else
+        bad "freestanding $name assembly/link" "GNU as or ld rejected generated assembly"
+      fi
+    }
+    native_run ccam-native-x64-loop 42
+    native_run ccam-native-x64-overflow 70
+    native_run ccam-native-x64-divzero 71
+    native_run ccam-native-x64-step-limit 73
+    native_run ccam-native-x64-depth-limit 74
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
