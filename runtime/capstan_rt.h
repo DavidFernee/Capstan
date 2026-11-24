@@ -1232,7 +1232,14 @@ static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
 
 #define CAP_PBKDF2_ITER 600000
 
+#ifdef CAP_PBKDF2_TEST_HOOK
+static unsigned cap_pbkdf2_test_calls;
+#endif
+
 static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
+#ifdef CAP_PBKDF2_TEST_HOOK
+    cap_pbkdf2_test_calls++;
+#endif
     unsigned char msg[64 + 4], u[32], t[32];
     memcpy(msg, salt, sn);
     msg[sn] = 0; msg[sn+1] = 0; msg[sn+2] = 0; msg[sn+3] = 1;
@@ -1274,30 +1281,58 @@ static int cap_unhex(const char *h, size_t n, unsigned char *out) {
     return 1;
 }
 
+static bool cap_parse_password_record(CapStr *tagged,
+                                      unsigned char salt[16],
+                                      unsigned char want[32]) {
+    static const char prefix[] = "cap1$pbkdf2-sha256$";
+    const size_t prefix_len = sizeof prefix - 1;
+    if (!tagged || tagged->len < 0) return false;
+    size_t n = (size_t)tagged->len;
+    if (n < prefix_len + 1 + 1 + 32 + 1 + 64) return false;
+    if (memcmp(tagged->data, prefix, prefix_len) != 0) return false;
+
+    /* Canonical positive decimal: no sign, whitespace, or leading zero. */
+    size_t i = prefix_len;
+    if (tagged->data[i] < '1' || tagged->data[i] > '9') return false;
+    unsigned iter = 0;
+    while (i < n && tagged->data[i] >= '0' && tagged->data[i] <= '9') {
+        unsigned digit = (unsigned)(tagged->data[i] - '0');
+        if (iter > ((unsigned)CAP_PBKDF2_ITER - digit) / 10u) return false;
+        iter = iter * 10u + digit;
+        i++;
+    }
+    if (iter != (unsigned)CAP_PBKDF2_ITER) return false;
+    if (i >= n || tagged->data[i++] != '$') return false;
+    if (n - i != 32 + 1 + 64 || tagged->data[i + 32] != '$') return false;
+    if (!cap_unhex(tagged->data + i, 16, salt)) return false;
+    if (!cap_unhex(tagged->data + i + 33, 32, want)) return false;
+    return true;
+}
+
 static bool cap_verify_password(CapStr *pw, CapStr *tagged) {
-    const char *pre = "cap1$pbkdf2-sha256$";
-    size_t pl = strlen(pre);
-    if ((size_t)tagged->len < pl || memcmp(tagged->data, pre, pl) != 0) return false;
-    const char *p = tagged->data + pl;
-    char *end;
-    long iter = strtol(p, &end, 10);
-    if (*end != '$' || iter < 1 || iter > 100000000) return false;
-    p = end + 1;
-    if (strlen(p) != 32 + 1 + 64 || p[32] != '$') return false;
-    unsigned char salt[16], want[32], got[32];
-    if (!cap_unhex(p, 16, salt) || !cap_unhex(p + 33, 32, want)) return false;
-    cap_pbkdf2(pw->data, (size_t)pw->len, salt, 16, (int)iter, got);
+    if (!pw || pw->len < 0) return false;
+    unsigned char salt[16] = {0}, want[32] = {0}, got[32] = {0};
+    if (!cap_parse_password_record(tagged, salt, want)) {
+        cap_wipe(salt, sizeof salt);
+        cap_wipe(want, sizeof want);
+        return false;
+    }
+    cap_pbkdf2(pw->data, (size_t)pw->len, salt, 16, CAP_PBKDF2_ITER, got);
     bool ok = cap_ct_eq((const char *)got, 32, (const char *)want, 32);
+    cap_wipe(salt, sizeof salt);
+    cap_wipe(want, sizeof want);
     cap_wipe(got, sizeof got);
     return ok;
 }
 
-/* True when a stored value uses an algorithm or cost the current version has superseded. */
+/* True only for a complete, canonical record using the current profile.
+   Malformed records must be rehashed/rejected, never accepted by prefix alone. */
 static bool cap_needs_rehash(CapStr *tagged) {
-    char cur[40];
-    snprintf(cur, sizeof cur, "cap1$pbkdf2-sha256$%d$", CAP_PBKDF2_ITER);
-    size_t n = strlen(cur);
-    return !((size_t)tagged->len > n && memcmp(tagged->data, cur, n) == 0);
+    unsigned char salt[16] = {0}, want[32] = {0};
+    bool current = cap_parse_password_record(tagged, salt, want);
+    cap_wipe(salt, sizeof salt);
+    cap_wipe(want, sizeof want);
+    return !current;
 }
 
 /* ------------------------------------------------------------------ */
