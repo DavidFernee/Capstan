@@ -444,7 +444,7 @@ def main():
         today = pct(by_bucket[b], known) if b != PROOF_ELIGIBLE else "\u2013"
         k1 = pct(proj[b], known) if b != PROOF_ELIGIBLE else "\u2013"
         p(f"| {b} | {today} | {k1} | {pct(fin[b], known)} |")
-    p(f"| **Prevented / potentially addressable** | **{pct(prevented, known)}** | **{pct(proj_prevented, known)}** | "
+    p(f"| **Prevented / proof-eligible ceiling (unverified)** | **{pct(prevented, known)}** | **{pct(proj_prevented, known)}** | "
       f"**{pct(fin_candidate, known)}** |")
     p("")
     p(f"Shares are of the {known:,} CVEs whose weakness is known. Today's column is a measurement of "
@@ -459,10 +459,10 @@ def main():
       f"{pct(by_bucket[RUNTIME], known)} stopped safely at run time.")
     p("- A safe stop in the kernel is still a crash (a denial of service), but not a corruption an attacker "
       "can turn into code execution or privilege escalation.\n")
-    rest = [r for r in rows if r["final"] in (LOGIC, OUTSIDE)]
+    rest = [r for r in rows if r["final"] in (LOGIC, OUTSIDE, PROOF_ELIGIBLE)]
     rc = collections.Counter(r["class"] for r in rest)
-    p("### What no design here removes\n")
-    p(f"{len(rest)} CVEs ({pct(len(rest), known)}) stay possible even with every design item, and "
+    p("### What remains unresolved or requires proof evidence\n")
+    p(f"{len(rest)} CVEs ({pct(len(rest), known)}) remain unresolved in this projection; K1.10 candidates are not counted as proven, and ")
       f"{by_bucket[UNKNOWN]} cannot be judged:\n")
     p("| Class | CVEs | Why |")
     p("|---|---|---|")
@@ -473,7 +473,9 @@ def main():
            "Capstan applies the vendor's barriers, but the leak is in the hardware.",
            "logic error": "Code outside the specified core: proof (K1.10) needs a specification to prove against.",
            "insufficient validation": "As logic error.", "race condition": "As logic error.",
-           "hang or infinite loop": "As logic error."}
+           "hang or infinite loop": "As logic error.",
+           "use-after-free": "K1.1 ownership/lifetime projection; implementation and proof not yet established.",
+           "double or invalid free": "K1.1 ownership/release projection; implementation and proof not yet established."}
     for c, k in rc.most_common():
         p(f"| {c} | {k} | {why.get(c, '')} |")
     p("")
@@ -497,7 +499,7 @@ def main():
         p(f"| {cls} | {c:,} | {b} | {v} |")
     p("")
     p("Races and hangs count for K1.2, K1.5 and K1.9 only where the description shows the pattern those items "
-      "target (a data race or teardown race; a loop driven by untrusted data). The rest fall to K1.10.\n")
+      "target (a data race or teardown race; a loop driven by untrusted data). Other logic cases are only candidates for K1.10 specification and proof work; none is counted as proved.\n")
     p("## Kernel adjustments to the atlas\n")
     p("The atlas judges Capstan as it is today, for application code. Where its verdict depends on a feature "
       "kernel code cannot use, or on a construct Capstan simply lacks, the study counts the class as outside "
