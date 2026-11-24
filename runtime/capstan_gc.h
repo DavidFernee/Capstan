@@ -32,6 +32,7 @@
 #define CAPSTAN_GC_H
 
 #include <stdint.h>
+#include <errno.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -203,14 +204,33 @@ static void cap_gc_init(void) {
     const char *mh = getenv("CAPSTAN_MAX_HEAP");
     if (mh) {
         char *end;
+        errno = 0;
         unsigned long long v = strtoull(mh, &end, 10);
-        if (*end == 'K' || *end == 'k') v <<= 10;
-        else if (*end == 'M' || *end == 'm') v <<= 20;
-        else if (*end == 'G' || *end == 'g') v <<= 30;
-        cap_gc.max_heap = (size_t)v;
+        if (mh == end || errno == ERANGE)
+            cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-20", 0);
+        unsigned shift = 0;
+        if (*end == 'K' || *end == 'k') shift = 10;
+        else if (*end == 'M' || *end == 'm') shift = 20;
+        else if (*end == 'G' || *end == 'g') shift = 30;
+        if (shift) {
+            if (v > ((unsigned long long)CAP_MAX_LEN >> shift))
+                v = CAP_MAX_LEN;
+            else
+                v <<= shift;
+            end++;
+        }
+        if (*end != '\0')
+            cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-20", 0);
+        cap_gc.max_heap = v > CAP_MAX_LEN ? CAP_MAX_LEN : (size_t)v;
     } else {
         long pages = sysconf(_SC_PHYS_PAGES), psize = sysconf(_SC_PAGESIZE);
-        cap_gc.max_heap = pages > 0 && psize > 0 ? (size_t)pages / 4 * 3 * (size_t)psize : (size_t)1 << 34;
+        if (pages > 0 && psize > 0) {
+            size_t physical_quarters = (size_t)pages / 4 * 3, total;
+            cap_gc.max_heap = cap_gc_size_mul(physical_quarters, (size_t)psize, &total)
+                ? total : CAP_MAX_LEN;
+        } else {
+            cap_gc.max_heap = (size_t)1 << 34;
+        }
     }
     /* Never more than 2^48 bytes: every string and collection is then shorter than
        2^48 elements, a bound the compiler's range analysis relies on. */
@@ -401,7 +421,7 @@ static void cap_gc_consider(uintptr_t v) {
         size_t mid = (lo + hi) / 2;
         CapLarge *l = &cap_gc.large[mid];
         if (v < (uintptr_t)l->base) hi = mid;
-        else if (v >= (uintptr_t)l->base + l->size) lo = mid + 1;
+        else if (v - (uintptr_t)l->base >= l->size) lo = mid + 1;
         else {
             if (!l->mark) {
                 l->mark = 1;
@@ -413,8 +433,15 @@ static void cap_gc_consider(uintptr_t v) {
 }
 
 CAP_NO_SANITIZE static void cap_gc_scan(char *a, char *b) {
-    uintptr_t p = ((uintptr_t)a + sizeof(void *) - 1) & ~(uintptr_t)(sizeof(void *) - 1);
-    for (; p + sizeof(void *) <= (uintptr_t)b; p += sizeof(void *)) cap_gc_consider(*(uintptr_t *)p);
+    uintptr_t p = (uintptr_t)a, end = (uintptr_t)b;
+    uintptr_t misalignment = p & (sizeof(void *) - 1);
+    if (misalignment) {
+        uintptr_t adjust = sizeof(void *) - misalignment;
+        if (adjust > UINTPTR_MAX - p) return;
+        p += adjust;
+    }
+    for (; p <= end && end - p >= sizeof(void *); p += sizeof(void *))
+        cap_gc_consider(*(uintptr_t *)p);
 }
 
 static void cap_gc_drain(void) {
