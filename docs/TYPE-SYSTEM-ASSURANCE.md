@@ -446,6 +446,8 @@ A grant obtained in a protected function may be used locally for the protected o
 
 A closure may capture a Secret directly or through an aggregate only under the section 16 allocation rule. The closure environment is pointer-scanned; all intermediate aggregates/containers must also be correctly traced; the original kind-2 secret payload remains reachable through that graph. Do not copy secret bytes into ordinary closure storage. Reclamation and wiping remain collection-time guarantees, not deterministic destruction.
 
+The current runtime provides a useful starting point for container tracing: `CapList` and `CapMap` headers are allocated with `cap_alloc`; list `items`, map `keys` and map `vals` backing arrays are also allocated with `cap_alloc`, so pointer-bearing entries are scanned. The map's integer index table is allocated atomically because it contains indices, not pointers. This representation should be preserved or equivalently proven in any generic/container or closure-environment redesign. In particular, a `List<Secret>` stores opaque pointers in scanned `CapVal` entries; the secret payload itself remains a separate kind-2 allocation.
+
 ### 17.5 Required adversarial tests
 
 - Nested closure captures a function parameter; outer closure is returned; repeated forced collections; inner closure remains valid after creator returns.
