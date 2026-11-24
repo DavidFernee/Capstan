@@ -3,12 +3,13 @@
 This ledger records proof-checking attempts, including failures and superseded runs.
 A green result is scoped to the exact source revision and verification layer stated.
 
-## Verified abstract model at its exact revision
+## Current verified abstract-model result
 
 **Result classification: model-only proof**
 
-- **Commit:** `ec7ae1ae5c552a8957f71e4f8671d802990ef5e4`
-- **Formal CI run:** [45359603435](https://github.com/DavidFernee/Capstan/actions/runs/45359603435)
+- **Commit:** `0e57f9a68082d7be4e88aad9f6c403498c79763a`
+- **Base:** `bbe4fe2227a48ac266ba9d3e4dd6093a60ce4f10`
+- **Formal CI run:** [45360322725](https://github.com/DavidFernee/Capstan/actions/runs/45360322725)
 - **Date:** 2026-11-24
 - **Lean toolchain:** `leanprover/lean4:v4.36.0`
 - **Lean project:** `formal/CapstanFormal.lean`
@@ -17,9 +18,9 @@ Checks completed successfully:
 
 1. Lake build of `CapstanFormal`.
 2. Lean's bundled `leanchecker`.
-3. `axiom-audit`: 65 declarations under `CapstanFormal`; dependencies were all within
+3. `axiom-audit`: 98 declarations under `CapstanFormal`; dependencies were all within
    `propext`, `Classical.choice`, and `Quot.sound`.
-4. Pinned Nanoda 0.4.32 independently checked **60,041 declarations with no errors**.
+4. Pinned Nanoda 0.4.32 independently checked **60,073 declarations with no errors**.
    It skipped the exported but unpermitted `sorryAx`; the separate axiom audit confirms
    no `CapstanFormal` declaration depends on it.
 5. Negative control: a deliberately invalid theorem claiming `False` was rejected by
@@ -38,23 +39,18 @@ Pinned independent-checker inputs:
 - `checkedAdd_sound`
 - `checkedAdd_complete`
 - `checkedAdd_exact`
+- `checkedAdd_overflow_fatal`
 - `release_failure_preserves`
 - `release_success_exact`
 - `release_idempotent`
 
-**Scope limitation:** these theorems apply only to the abstract model at the exact commit
-above. They do not establish that the current C runtime implements the model. In
-particular, that revision represented checked-add overflow as an `Option.none`; it proved
-that no out-of-range sum was returned, but did not yet encode the C helper's terminal
-panic outcome explicitly. Therefore ARITH-01 was only partially discharged at that
-revision. The current branch adds an explicit `fatal` outcome and a new theorem; that
-revision must pass CI before ARITH-01 is marked proved model-only. The current C
-`cap_gc_release` also still ignores `madvise` failure, so implementation refinement is
-blocked until that code is corrected and connected to the specification.
+**Scope limitation:** these are theorems about the abstract Lean model. They do not
+establish that the current C runtime implements the model. In particular, the current C
+`cap_gc_release` still ignores `madvise` failure; implementation refinement is blocked
+until that code is corrected and connected to the specification. No C implementation
+theorem or whole-collector correctness theorem is claimed.
 
-## Current revision awaiting verification
-
-- **Commit:** `69c10c15c9196ad97617151a9ca78cd5cc24a7be`\n- **Change:** checked-add now returns an explicit `CheckedAddResult.success` or\n  terminal `CheckedAddResult.fatal`, with `checkedAdd_overflow_fatal` proving that\n  out-of-range sums take the fatal outcome.\n- **Status:** not yet checked by CI at this exact revision.\n\n## Earlier attempts and corrections
+## Earlier attempts and corrections
 
 | Run | Commit | Result | Finding and correction |
 |---|---|---|---|
@@ -63,7 +59,9 @@ blocked until that code is corrected and connected to the specification.
 | [45358265288](https://github.com/DavidFernee/Capstan/actions/runs/45358265288) | `378f116109bd11ebb7a2dfbf57f19ba897444914` | Failed | Initial Lean proof scripts contained syntax and proof errors. Corrected against compiler diagnostics; no theorem was marked proved. |
 | [45358427741](https://github.com/DavidFernee/Capstan/actions/runs/45358427741) | `866f6222dae9b2a129c752a14b7a8146c0315a10` | Failed | Convenience Nanoda action could not detect the module root in the Lake TOML package. Replaced it with a project-owned invocation. |
 | [45358699169](https://github.com/DavidFernee/Capstan/actions/runs/45358699169) | `4350a81d08db19247d1bf291638dc24412a26464` | Failed | Older Nanoda debug revision was incompatible with the current NDJSON export format. Updated to signed Nanoda 0.4.32 master and pinned all checker inputs. |
-| [45359093086](https://github.com/DavidFernee/Capstan/actions/runs/45359093086) | `b09714a70c6daeecc703f4e7b95770729c96ff9d` | Passed, superseded | All type checks passed, but optional axiom pretty-printing emitted a non-fatal diagnostic because no output destination was configured. Disabled that unrelated output; clean run is 45359603435. |
+| [45359093086](https://github.com/DavidFernee/Capstan/actions/runs/45359093086) | `b09714a70c6daeecc703f4e7b95770729c96ff9d` | Passed, superseded | All type checks passed, but optional axiom pretty-printing emitted a non-fatal diagnostic. Disabled that unrelated output. |
+| [45359603435](https://github.com/DavidFernee/Capstan/actions/runs/45359603435) | `ec7ae1ae5c552a8957f71e4f8671d802990ef5e4` | Passed, superseded | Clean run for the earlier model where overflow was represented as an absent result; later strengthened to explicit fatal outcome. |
+| [45360322725](https://github.com/DavidFernee/Capstan/actions/runs/45360322725) | `0e57f9a68082d7be4e88aad9f6c403498c79763a` | Passed | Current model including explicit `CheckedAddResult.fatal` and `checkedAdd_overflow_fatal`; all checks above passed. |
 
 Runs cancelled while newer PR events superseded them are omitted from the failure table;
 they did not produce a proof result.
@@ -76,6 +74,3 @@ they did not produce a proof result.
 4. Add the C-facing ACSL/Frama-C pilot and a concrete refinement argument.
 5. Revisit collector reachability only after root-scanning and physical-object-layout
    assumptions are explicit.
-
-No C implementation theorem, whole-collector correctness theorem, or complete memory
-safety proof is claimed by this ledger.
