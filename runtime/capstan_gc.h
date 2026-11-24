@@ -512,8 +512,12 @@ static CapPage *cap_gc_find_secret_page(int cls) {
     for (size_t i = 0; i < cap_gc.npages; i++) {
         CapPage *pg = cap_gc.pages[i];
         if (!pg->spare && pg->atomic == 2 &&
-            pg->objsize == cap_class_size[cls] && pg->free_count)
-            return pg;
+            pg->objsize == cap_class_size[cls]) {
+            if (!pg->free_slots || pg->free_cap != pg->nobj ||
+                pg->free_count > pg->free_cap)
+                cap_panic("secret-page free-slot metadata invariant failed", "CWE-682", 0);
+            if (pg->free_count) return pg;
+        }
     }
     return NULL;
 }
@@ -762,7 +766,8 @@ static void *cap_gc_alloc(size_t n, int atomic) {
     }
     if (atomic == 2) {
         CapPage *pg = cap_gc_find_secret_page(cls);
-        if (!pg || !pg->free_count)
+        if (!pg || !pg->free_slots || !pg->free_count ||
+            pg->free_count > pg->free_cap || pg->free_cap != pg->nobj)
             cap_panic("secret-page free-slot invariant failed", "CWE-682", 0);
         uint32_t idx = pg->free_slots[--pg->free_count];
         if (idx >= pg->nobj || pg->alloc[idx])
