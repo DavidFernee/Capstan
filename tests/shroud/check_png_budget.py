@@ -168,7 +168,7 @@ def main():
         near_raw_length = (1 + 4 * near_width) * near_height
         near_blocks = check_stored_deflate(near_idat, near_raw_length)
         near_raw = zlib.decompress(near_idat)
-        near_row = b"\\x00" + bytes((0x33, 0x66, 0x99, 0xFF)) * near_width
+        near_row = b"\x00" + bytes((0x33, 0x66, 0x99, 0xFF)) * near_width
         for y in range(near_height):
             row = near_raw[y * len(near_row):(y + 1) * len(near_row)]
             if row != near_row:
