@@ -85,7 +85,9 @@ string from_val(Type t, string code) {
 }
 
 bool is_simple(Node n) {
-    return n.k == N_INT || n.k == N_STR || n.k == N_BOOL || n.k == N_NONE || n.k == N_VAR;
+    // CAP_LIT performs lazy static-pointer initialisation and allocation, so a
+    // string literal is effectful until its representation becomes static data.
+    return n.k == N_INT || n.k == N_BOOL || n.k == N_NONE || n.k == N_VAR;
 }
 
 // Evaluate operands into temporaries, left to right, when more than one could
@@ -490,6 +492,8 @@ string gen_simple(Gen g, Node s) {
                 string index = fresh(g);
                 string list_type = "cap_list";
                 if (is_blist(ty_of(target.kids[0]))) { list_type = "cap_blist"; }
+                // A proved setter is valid only when range analysis has
+                // excluded RHS effects that could shrink this collection.
                 string su = "";
                 if (index_safe(g.r, target.kids[0], target.kids[1])) { su = "_proved"; }
                 string read_old = "";
