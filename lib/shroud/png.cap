@@ -65,6 +65,9 @@ bool png_raw_size_valid(int w, int h) {
 // Empty means the image exceeds the export budget and was rejected.
 List<int> png_encode(Pixmap pm) {
     if (!png_raw_size_valid(pm.w, pm.h)) { return new List<int>(); }
+    // Pixmap is a public value type; reject malformed backing storage rather
+    // than allowing get() to index outside the supplied pixel list.
+    if (pm.px.len() != pm.w * pm.h) { return new List<int>(); }
 
     int row_bytes = 1 + 4 * pm.w;
     int raw_len = row_bytes * pm.h;
