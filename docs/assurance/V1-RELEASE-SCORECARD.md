@@ -74,12 +74,9 @@ Capstan-owned C runtime to compile or execute a supported program.
 
 | Platform / architecture | Release backend | No generated C / C compiler / Capstan C runtime | System boundary / TCB | Conformance evidence | Status |
 |---|---|---|---|---|---|
-| Linux (declare architecture) | | UNKNOWN | | | BLOCKED |
-| Linux (declare architecture) | | UNKNOWN | | | BLOCKED |
-| macOS (declare architecture) | | UNKNOWN | | | BLOCKED |
-| macOS (declare architecture) | | UNKNOWN | | | BLOCKED |
-| Windows (declare architecture) | | UNKNOWN | | | BLOCKED |
-| Windows (declare architecture) | | UNKNOWN | | | BLOCKED |
+| Linux (list each supported architecture) | | UNKNOWN | | | BLOCKED |
+| macOS (list each supported architecture) | | UNKNOWN | | | BLOCKED |
+| Windows (list each supported architecture) | | UNKNOWN | | | BLOCKED |
 | Other target | | UNKNOWN | | | BLOCKED |
 
 Do not list a platform/architecture as supported for the v1.0 assurance claim until its row is
