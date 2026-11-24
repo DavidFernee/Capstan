@@ -104,7 +104,7 @@ The machine MUST validate a complete program before executing its first instruct
 - calls to unknown functions, wrong arity, or incompatible return destinations;
 - a return instruction incompatible with its enclosing function;
 - any control-flow path that can fall off the end of a function;
-- malformed explicit trap codes.
+- malformed explicit trap reason strings (the reason is 1–64 ASCII characters matching `[a-z][a-z0-9_]{0,63}`).
 
 Structural validation MUST be deterministic and MUST NOT execute program instructions.
 
@@ -129,7 +129,7 @@ For a fixed validated program, arguments and machine limits, execution has one d
 
 A dynamic trap is terminal. The observable machine result is:
 
-`Halt(value)`, `HaltVoid`, or `Trap(code, function, pc)`.
+`Halt(value)`, `HaltVoid`, or `Trap(code, function, pc, detail)`. `detail` is absent for ordinary machine traps and contains the validated reason string only for `explicit_trap`.
 
 The initial stable trap codes are:
 - `integer_overflow`
@@ -139,7 +139,7 @@ The initial stable trap codes are:
 - `register_type_mismatch` (defence-in-depth; structurally invalid typed programs should be rejected before execution)
 - `step_limit_exceeded`
 - `call_depth_exceeded`
-- `explicit_trap` (with a separately validated application reason)
+- `explicit_trap` (with a separately validated application reason matching `[a-z][a-z0-9_]{0,63}`)
 
 The machine MUST NOT expose host exceptions, signals, undefined behaviour or process crashes as substitutes for these outcomes. A malformed program description is reported as a validation failure and is not converted into a dynamic trap.
 
