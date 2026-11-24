@@ -363,7 +363,7 @@ def _is_cvelist_origin(remote):
         parsed = urlsplit(remote)
     except ValueError:
         return False
-    if parsed.scheme not in ("https", "ssh", "git") or parsed.hostname != "github.com":
+    if parsed.scheme not in ("https", "ssh") or parsed.hostname != "github.com":
         return False
     if parsed.query or parsed.fragment:
         return False
