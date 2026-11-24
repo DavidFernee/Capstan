@@ -1787,6 +1787,7 @@ struct CCAMFrame {
     int pc;
     int return_type;
     int caller_destination;
+    List<int> register_types;
     List<CCAMRegister> registers;
     List<CCAMInstruction> instructions;
 }
@@ -1817,6 +1818,7 @@ CCAMFrame ccam_empty_frame() {
     return new CCAMFrame{
         function_index: 0, pc: 0, return_type: CCAM_RETURN_VOID,
         caller_destination: -1,
+        register_types: new List<int>(),
         registers: new List<CCAMRegister>(),
         instructions: new List<CCAMInstruction>()
     };
@@ -1831,6 +1833,25 @@ CCAMFrameReturnResult ccam_frame_return_error(string error) {
         ok: false, entry_return: false, entry_void: false,
         int_value: 0, bool_value: false, error: error
     };
+}
+
+bool ccam_frame_is_valid(CCAMFrame frame) {
+    if (frame.function_index < 0 || frame.pc < 0 ||
+        frame.pc >= frame.instructions.len() ||
+        frame.register_types.len() > CCAM_MAX_REGISTERS ||
+        frame.instructions.len() > CCAM_MAX_INSTRUCTIONS ||
+        frame.register_types.len() != frame.registers.len()) {
+        return false;
+    }
+    for (int i = 0; i < frame.register_types.len(); i += 1) {
+        int expected = frame.register_types[i];
+        if ((expected != CCAM_TYPE_INT && expected != CCAM_TYPE_BOOL) ||
+            frame.registers[i].declared_type != expected) {
+            return false;
+        }
+    }
+    return ccam_validate_single_frame(
+        frame.register_types, frame.instructions, frame.return_type).ok;
 }
 
 CCAMFrameCreateResult ccam_frame_create(
@@ -1894,6 +1915,10 @@ CCAMFrameCreateResult ccam_frame_create(
         }
     }
 
+    List<int> copied_types = new List<int>();
+    for (int i = 0; i < function.register_types.len(); i += 1) {
+        copied_types.push(function.register_types[i]);
+    }
     List<CCAMInstruction> copied = new List<CCAMInstruction>();
     for (int i = 0; i < function.instructions.len(); i += 1) {
         copied.push(ccam_copy_instruction(function.instructions[i]));
@@ -1902,6 +1927,7 @@ CCAMFrameCreateResult ccam_frame_create(
         function_index: function_index, pc: 0,
         return_type: function.return_type,
         caller_destination: caller_destination,
+        register_types: copied_types,
         registers: created.registers, instructions: copied
     };
     return new CCAMFrameCreateResult{ok: true, frame: frame, error: ""};
@@ -1911,6 +1937,7 @@ CCAMFrameStackCreateResult ccam_frame_stack_create(
     CCAMFrame entry, int max_depth
 ) {
     if (max_depth < 1 || entry.caller_destination != -1 ||
+        !ccam_frame_is_valid(entry) ||
         (entry.return_type != CCAM_RETURN_INT &&
          entry.return_type != CCAM_RETURN_VOID)) {
         return new CCAMFrameStackCreateResult{
@@ -1931,7 +1958,10 @@ CCAMFrameStackCreateResult ccam_frame_stack_create(
 }
 
 string ccam_frame_stack_push(CCAMFrameStack stack, CCAMFrame callee) {
-    if (stack.frames.len() == 0) return "invalid_call_stack";
+    if (stack.max_depth < 1 || stack.frames.len() == 0 ||
+        stack.frames.len() > stack.max_depth || !ccam_frame_is_valid(callee)) {
+        return "invalid_call_stack";
+    }
     if (stack.frames.len() >= stack.max_depth) return "call_depth_exceeded";
     CCAMFrame caller = stack.frames[stack.frames.len() - 1];
     if (callee.return_type == CCAM_RETURN_VOID) {
