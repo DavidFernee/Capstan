@@ -1530,6 +1530,7 @@ test "CCAM validator permits unreachable fallthrough but validates unreachable i
         types, code, CCAM_RETURN_INT);
     assert(result.ok);
 
+    List<int> no_registers = new List<int>();
     List<CCAMInstruction> invalid_unreachable = new List<CCAMInstruction>();
     i = ccam_instruction(CCAM_OP_JUMP);
     i.target = 2;
