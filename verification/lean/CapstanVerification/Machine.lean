@@ -22,6 +22,8 @@ inductive MachineInstr (n m : Nat) (types : RegTypes n) where
   | add (instr : AddInstr n types)
   | sub (instr : CheckedIntInstr n types)
   | mul (instr : CheckedIntInstr n types)
+  | div (instr : CheckedIntInstr n types)
+  | rem (instr : CheckedIntInstr n types)
   | lessThan (instr : LtInstr n types)
   | equal (instr : EqInstr n types)
   | booleanNot (instr : NotInstr n types)
@@ -142,6 +144,28 @@ def machineStep {n m : Nat} {types : RegTypes n}
             registers_well_typed :=
               executeCheckedIntOp_preserves_well_typed
                 state.registers_well_typed mulIntOp instr hmul
+          }
+  | .div instr =>
+      match hdiv : executeCheckedIntOp divIntOp state.registers instr with
+      | .error e => .trap e
+      | .ok registers =>
+          .nextState {
+            pc := sequentialPC state.pc
+            registers := registers
+            registers_well_typed :=
+              executeCheckedIntOp_preserves_well_typed
+                state.registers_well_typed divIntOp instr hdiv
+          }
+  | .rem instr =>
+      match hrem : executeCheckedIntOp remIntOp state.registers instr with
+      | .error e => .trap e
+      | .ok registers =>
+          .nextState {
+            pc := sequentialPC state.pc
+            registers := registers
+            registers_well_typed :=
+              executeCheckedIntOp_preserves_well_typed
+                state.registers_well_typed remIntOp instr hrem
           }
   | .lessThan instr =>
       match hlt : executeLt state.registers instr with
