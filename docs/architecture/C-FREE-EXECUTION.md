@@ -166,8 +166,21 @@ The next baseline pass should enumerate:
 This inventory is required before selecting the first native target or estimating the size of the replacement runtime.
 
 
-## Appendix B. First executable vertical slice
+## Appendix B. Capstan-native implementation rule
 
-CCAM v0.1 is now specified in `docs/architecture/CCAM.md` and has an executable Python reference prototype in `verification/reference_machine.py`. The prototype covers typed integer/boolean registers, checked signed-64 arithmetic, branches, calls/returns, traps and deterministic resource limits. Its conformance tests run independently of the C toolchain and are included in the repository CI workflow.
+The initial Python reference-machine implementation has been removed. It was the
+wrong implementation boundary for this programme: an executable prototype in a
+second implementation language would make the intended self-hosted transition
+less direct and create a parallel artefact to maintain.
 
-This is deliberately not presented as the final implementation language or as a formally verified runtime. Python is a temporary executable notation for the abstract machine while the machine definition and proof-assistant choice are reviewed. It must not become a production dependency or part of the eventual trusted computing base. The next formalisation step is to encode the same machine state and transition relation in the selected proof assistant, then prove register typing preservation and progress-or-trap before extending the machine with heap or security features.
+The CCAM specification remains as a language-neutral description, but its
+executable implementation and conformance tests are required to be Capstan
+source from the first implementation. The existing bootstrap may temporarily
+execute Capstan source through the current compiler/C path; that is solely a
+bootstrap mechanism and must not be mistaken for the target architecture.
+
+No Python or C interpreter/runtime for CCAM is to be introduced. The next
+implementation increment is a Capstan-native, typed CCAM representation and
+small evaluator, with Capstan-written positive and negative tests. Only after
+that vertical slice is running should the machine be extended to heap,
+collections, taint, secrets, grants, and IO.
