@@ -46,10 +46,10 @@ The refreshed register is based on current main at `647e890b00f263bbf925ac3c0317
 | #51 | Open, draft; not synchronised | `d6f97beb05962b7f8ef43f5e0ea8434be06450fa`; historical CI only | GC secret-page/accounting work is valuable, but current-main page-table hardening must be preserved and stale pointer-bearing collection slots still need clearing. |
 | #72 | Merged | `8975c2799f536833ebb26d33269b292420954a57`; run `45381489063` passed all four jobs | Linear single-line filtering and Tainted join are integrated; 4.16 MiB measured allocation for the 64 KiB adversarial input. |
 | #79 | Merged | `2be9da58b080a95260037a5aa80b1c2b86d0ed25`; CI `45384184632`, formal `45384184887` passed | Pixmap/font budgets and recursive composite regression integrated; TrueType table-local bounds under issue #121 remain. |
-| #87 | Open, draft; synchronised with current main | `580a9c754903f4d3bfbd12a4a7e38a1aec162938`; generated atlas correction and post-merge assessment committed, fresh CI pending | Independent architecture/crypto assessment; CWE atlas is wired into standard tests. Findings are not implementation fixes. |
+| #87 | Open, draft; synchronised with current main | `3df891d0795cfb4d99e2a53d91a08862f15d5221`; generated CWE-atlas ordering correction committed, fresh CI pending | Independent architecture/crypto assessment; CWE atlas is wired into standard tests. Findings are not implementation fixes. |
 | #124 | Merged | `647e890b00f263bbf925ac3c0317b10b7d8e22a`; CI and formal workflow passed | C-free core semantics and typed-IR contract; missing short-circuit conformance row corrected and Tainted join contract retained. |
-| #131 | Open, draft; this register | Refreshing snapshot after #53, #79 and #124 merges | Register keeps implementation, CI, independent review and policy acceptance as separate states. |
-| #134 | Open, draft; synchronised with current main | `06c7e10a4715ff57a59129b6dfd89873f0abdef0`; previous head CI `45385929307` passed, fresh current-head CI pending | Canonical 123-byte, 600,000-iteration verifier record; 256-byte password cap; current-only pre-release compatibility policy. |
+| #131 | Open, draft; this register | Head `66efc26d7209c464272b79c464f193a4c5a99afc`; CI `45388095955` passed all three platform tests and supply-chain; formal `45388096001` passed both jobs | Documentation-only register; no review submission yet. |
+| #134 | Open, draft; synchronised with current main | `912fd09f5268b9d7e9fc6fa97dfe9609522f388e`; previous head CI `45387666842` failed because tests treated the flexible-array member `CapStr.data` as nullable; impossible null-member checks/tests removed, fresh exact-head CI pending | Canonical 123-byte, 600,000-iteration verifier record; 256-byte password cap; current-only pre-release compatibility policy. |
 | #53 | Merged | Anchor smoke and full CI passed on synchronised head | Anchor A0 headless workbench prototype; no live editor, LSP or package manager claim. |
 
 ### Recently integrated evidence
@@ -82,10 +82,10 @@ No finding in this initial register is marked `ACCEPTED`.
 
 **Current successor:** PR #134 — [password verifier on current main](https://github.com/DavidFernee/Capstan/pull/134)  
 **Branch:** `remediation/w8-password-parser-main2-20261124`  
-**Current head:** `06c7e10a4715ff57a59129b6dfd89873f0abdef0`  
+**Current head at this register revision:** `912fd09f5268b9d7e9fc6fa97dfe9609522f388e`  
 **Base:** current `main` at `647e890b00f263bbf925ac3c0317b10b7d8e22a`; branch includes a two-parent sync commit.
 
-**CI:** exact-head run `45385929307` passed all four jobs and formal run `45385929384` passed on pre-sync head `ad3a6b54daf80acb5ab5827eb9005c8c5a08623a`. The current head `06c7e10a4715ff57a59129b6dfd89873f0abdef0` includes the latest mainline documentation and requires fresh exact-head CI.
+**CI:** exact-head run `45385929307` passed all four jobs and formal run `45385929384` passed on pre-sync head `ad3a6b54daf80acb5ab5827eb9005c8c5a08623a`. The earlier head `06c7e10a4715ff57a59129b6dfd89873f0abdef0` failed all three platform jobs because the tests attempted to assign NULL to the flexible-array member `CapStr.data`, and production guards tested that array as a nullable pointer. The current head removes those invalid checks and impossible tests while retaining NULL-struct, negative-length, canonical-record and overlong-input tests. Fresh exact-head CI is running.
 
 The parser requires the exact 123-byte canonical record and exactly 600,000 PBKDF2 iterations. It rejects malformed separators, signs, whitespace, leading zeroes, non-decimal costs, uppercase/non-hex fields, embedded NULs and suffix bytes before KDF invocation. The same parser drives `cap_needs_rehash()`.
 
@@ -95,4 +95,4 @@ Password input is capped at 256 bytes on both hash and verify paths. Oversized h
 
 **Coordination:** runtime-owner and chief-architect acceptance, plus an independent adversarial review of the updated exact head, remain pending. The generic `pbkdf2_sha256` API still needs independent password/salt/iteration/output bounds (R8-CRYPTO-002/003). SHA-256 compression scratch wiping remains separate (R8-CRYPTO-004).
 
-**State:** `FIX SUBMITTED`; exact-head CI pending. Do not mark accepted until the current head has passed CI and the subsystem owner and architect have reviewed the security boundary.
+**State:** `FIX SUBMITTED`; invalid flexible-array nullability assumptions corrected; exact-head CI pending. Do not mark accepted until the current head has passed CI and the subsystem owner and architect have reviewed the security boundary.
