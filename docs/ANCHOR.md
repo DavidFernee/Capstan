@@ -129,13 +129,23 @@ person saw a control. A `.danger()` style/guard is not an informed-consent confi
 dialog. Irreversible operations still require an explicit application confirmation
 flow that identifies the action and target.
 
-**Pending Shroud integration fixes:** duplicate explicit view keys can currently make
-hit testing and action/focus resolution refer to different nodes; the follow-up is
-tracked in PR #57. Accessibility serialization currently needs the same deceptive-
-character sanitisation as visual rendering; the follow-up is PR #58. Until those
-changes are merged and verified, Anchor must use unique keys and must not assume the
-accessibility JSON is equivalent to the rendered text for untrusted input. These are
-known S0 integration constraints, not APIs Anchor should patch locally.
+**Pending Shroud integration fixes (24 November 2026):**
+- PR #57 fixes duplicate explicit view-key identity confusion. Anchor still supplies
+  unique keys and must not rely on duplicate-key state retention.
+- PR #58 applies the visual deceptive-character sanitiser to accessibility names and
+  non-password text-field values. Until merged, Anchor must not treat accessibility
+  JSON as equivalent to the rendered text for untrusted input.
+- PR #63 makes disabled interactive widgets block pointer-through without receiving
+  focus or messages. Until merged, Anchor must not rely on disabled overlays to block
+  underlying controls.
+- PR #65 changes text-field caret placement from quadratic to linear work while
+  preserving malformed UTF-8 and secure-field semantics. This is relevant to a future
+  editor/input surface, not a substitute for the still-missing multiline editor.
+
+PRs #57, #58 and #63 have passed their reported cross-platform and supply-chain checks
+but remain unmerged; #65 is still draft with CI in progress. Anchor consumes the
+current `main` Shroud API and must not locally patch these behaviours or assume a
+proposed PR is present before it lands.
 
 S0 constraints are explicit: string action names and int/Tainted payloads; no generic
 `View<M>`; no native window, clipboard, IME, multi-line editor, tabs, split panes,
