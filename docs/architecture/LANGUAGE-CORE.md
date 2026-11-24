@@ -43,7 +43,8 @@ The source compiler MUST reject a core expression whose operands or result do no
 Let `Σ` be the complete function-signature environment, where
 `Σ(f) = (T1, ..., Tn) -> R`, each parameter type `Ti` is `int` or `bool`,
 and the result type `R` is `int`, `bool` or `void`. Let `Γ` map the
-currently in-scope, initialised local names to `int` or `bool`. Function
+currently in-scope, initialised variable names (parameters and locals) to
+`int` or `bool`. Function
 signatures are collected before checking bodies, so direct recursion is
 well-defined. Parameter names and local names must be unique within their
 scope. A local enters `Γ` only after its initialiser has type-checked; this
