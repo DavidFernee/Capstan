@@ -35,6 +35,12 @@ def RuntimeRegister.value? (reg : RuntimeRegister) : Option Val :=
   else
     none
 
+/-- An initialized runtime register exposes exactly its typed payload. -/
+theorem RuntimeRegister.value?_of_initialized
+    (reg : RuntimeRegister) (h : reg.initialized = true) :
+    reg.value? = some reg.asVal := by
+  simp [RuntimeRegister.value?, RuntimeRegister.asVal, h]
+
 /-- Dynamic list lookup used by the native register-file representation. -/
 def runtimeRegisterAt (registers : List RuntimeRegister) (index : Nat) :
     Option RuntimeRegister :=
