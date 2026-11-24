@@ -68,3 +68,20 @@ Previously merged changes reconciled as already addressed for their specific sco
 For each significant security remediation, Worker 8 will provide Worker 7 with the original reproduction, root cause, changed files/commit, regression tests, threat assumptions and likely bypass/regression cases. Worker 7's adversarial result must be recorded separately from CI. The subsystem owner must review the patch. The chief architect/integration lead alone determines acceptance.
 
 No finding in this initial register is marked `ACCEPTED`.
+
+
+## 2026-11-24 follow-up — password verifier remediation submitted
+
+**PR #108:** [fix(runtime): bound and canonicalise password record verification](https://github.com/DavidFernee/Capstan/pull/108)  
+**Branch:** \`remediation/password-record-parser\`  
+**Head:** \`8cfb6d09b64b57e1742ae2dceaa750d477ca7c0b\`  
+**Base:** Worker 4's \`runtime/string-allocation-bounds-v06\` (PR #105), intentionally stacked to avoid competing edits to the runtime header and unit-test file.  
+**CI:** run \`45345215167\`, pending at this update.
+
+The patch replaces C-string parsing with a strict parser bounded by \`CapStr.len\`. It rejects embedded NULs, suffix bytes, malformed separators, signs, whitespace, leading zeroes, non-ASCII/non-decimal costs, uppercase/non-hex fields, and any record whose cost is not exactly the current 600,000-iteration generation profile. This is a current-format-only decision pending confirmation that no supported lower-cost legacy records exist; lower-cost records are not silently accepted. \`cap_needs_rehash()\` now uses the same parser, so a valid-looking prefix cannot be classified as current without validating the entire record. Parsed salt, expected digest and computed digest scratch are wiped.
+
+Regression coverage added to \`tests/unit/test_runtime.c\`: null arguments, leading-zero cost, uppercase hex, embedded-NUL suffix, ordinary trailing suffix, and a 100,000,000-iteration record. Malformed inputs are rejected before PBKDF2 is invoked. A structurally canonical current-format record is checked without running the expensive KDF.
+
+**Coordination requests posted to issue #25:** Worker 4 to review the stacked runtime integration; Worker 5 / crypto-policy owner to confirm the current-format-only compatibility decision; Worker 7 to adversarially retest the original PR #87 parser and work-factor findings.
+
+**State:** \`FIX SUBMITTED\`. Not CI verified, independently verified or accepted. Remaining risks include unbounded long-password amplification (separate SEC-CRYPTO-003), SHA-256 stack scratch erasure (SEC-CRYPTO-004), and the absence of a documented legacy-record inventory/migration decision.
