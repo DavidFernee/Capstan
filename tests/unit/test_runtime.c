@@ -351,10 +351,24 @@ static void trigger_gc_capacity_overflow(void) {
 static void trigger_gc_heap_invariant(void) {
     (void)cap_gc_heap_would_exceed(0);
 }
+static void trigger_bad_heap_limit_suffix(void) {
+    (void)cap_gc_parse_heap_limit("12MB");
+}
+static void trigger_heap_limit_shift_overflow(void) {
+    (void)cap_gc_parse_heap_limit("18446744073709551615G");
+}
+static void trigger_negative_heap_limit(void) {
+    (void)cap_gc_parse_heap_limit("-1");
+}
 static void test_gc_allocator_arithmetic(void) {
     CHECK(expect_gc_panic(trigger_gc_add_overflow));
     CHECK(expect_gc_panic(trigger_gc_mul_overflow));
     CHECK(expect_gc_panic(trigger_gc_capacity_overflow));
+    CHECK(expect_gc_panic(trigger_bad_heap_limit_suffix));
+    CHECK(expect_gc_panic(trigger_heap_limit_shift_overflow));
+    CHECK(expect_gc_panic(trigger_negative_heap_limit));
+    CHECK(cap_gc_parse_heap_limit("128K") == ((size_t)128 << 10));
+    CHECK(cap_gc_parse_heap_limit("1G") == ((size_t)1 << 30));
     size_t saved_heap = cap_gc.heap, saved_limit = cap_gc.max_heap;
     cap_gc.heap = 100;
     cap_gc.max_heap = 101;
