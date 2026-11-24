@@ -256,7 +256,7 @@ through the WebAssembly backend (T10) drawing to a canvas, with a DOM accessibil
 `tests/shroud/check.py` runs in every suite run (`tests/run.sh`, section "shroud"), with warnings
 as errors and again under AddressSanitizer and UndefinedBehaviorSanitizer:
 
-- **behaviour**: 75 assertions on layout, buttons, guards, keyboard and focus, text editing,
+- **behaviour**: 78 assertions on layout, buttons, guards, keyboard and focus, text editing,
   untrusted text, accessibility, themes, scrolling, compositing and high-DPI scaling
   (`tests/shroud/behaviour.cap`);
 - **rasteriser**: 200 random polygons compared pixel by pixel with their exact area coverage,
