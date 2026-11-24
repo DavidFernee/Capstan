@@ -106,14 +106,17 @@ struct Ui {
     bool focus_visible;
     Map<int> scroll;        // scroll offsets by id
     Map<int> caret;         // text field carets (byte offsets) by id
-    Map<int> shown_at;      // guarded controls: when each appeared where it is
+    Map<int> shown_at;      // guarded controls: when each appeared or changed
     Map<string> shown_where;
+    Map<int> guard_generation; // last render in which each guarded control appeared
+    int render_generation;
     List<string> problems;  // accessibility problems found while drawing
     int view_count;
     int now_ms;
 
     // Lays out and draws `root`, the whole interface, at time `time_ms`.
     void render(View root, int time_ms) {
+        self.render_generation += 1;
         self.now_ms = time_ms;
         self.problems = new List<string>();
         Laid l = layout_root(self, root, self.pixmap.w * FX, self.pixmap.h * FX);
@@ -125,13 +128,18 @@ struct Ui {
             Laid n = all[i];
             if (n.id == self.focus && n.v.focusable()) { focus_alive = true; }
             if (n.v.guard) {
-                string where = $"{n.frame.x},{n.frame.y},{n.frame.w},{n.frame.h}";
+                string where = $"{n.frame.x},{n.frame.y},{n.frame.w},{n.frame.h}|{n.v.kind}|{n.v.style}|{n.v.action}|{n.v.text}|{n.v.label}|{n.v.hint}|{n.v.disabled}";
+                int last_generation = 0;
+                if (let g = self.guard_generation.get(n.id)) { last_generation = g; }
                 bool same = false;
-                if (let w = self.shown_where.get(n.id)) { same = w == where; }
+                if (let w = self.shown_where.get(n.id)) {
+                    same = w == where && last_generation == self.render_generation - 1;
+                }
                 if (!same) {
                     self.shown_where.set(n.id, where);
                     self.shown_at.set(n.id, time_ms);
                 }
+                self.guard_generation.set(n.id, self.render_generation);
             }
         }
         if (!focus_alive) { self.focus = ""; }
@@ -290,7 +298,7 @@ struct Ui {
 }
 
 Ui new_ui(Font font, Font bold, Theme theme, int width_px, int height_px, int scale) {
-    return new Ui{font: font, bold_font: bold, theme: theme, scale: clamp(scale, 64, 1024), pixmap: new_pixmap(width_px, height_px), root: none, hover: "", pressed: "", focus: "", focus_visible: false, scroll: new Map<int>(), caret: new Map<int>(), shown_at: new Map<int>(), shown_where: new Map<string>(), problems: new List<string>(), view_count: 0, now_ms: 0};
+    return new Ui{font: font, bold_font: bold, theme: theme, scale: clamp(scale, 64, 1024), pixmap: new_pixmap(width_px, height_px), root: none, hover: "", pressed: "", focus: "", focus_visible: false, scroll: new Map<int>(), caret: new Map<int>(), shown_at: new Map<int>(), shown_where: new Map<string>(), guard_generation: new Map<int>(), render_generation: 0, problems: new List<string>(), view_count: 0, now_ms: 0};
 }
 
 Msg msg(string action, int value) { return new Msg{action: action, value: value, text: taint("")}; }
