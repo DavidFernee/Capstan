@@ -53,6 +53,11 @@ A bounds fact established before the RHS is not by itself sufficient for the fin
 
 PR #93 adds `tests/runtime/compound_assignment_invalidated_index.cap`: after `i < xs.len()` establishes an index condition, the compound-assignment RHS removes the element. The final store must trap with CWE-787 because the retained index is no longer within the current logical length. Because this RHS contains a user-function call, the region guard should disable the list-length fact and keep the final store checked; this test verifies that dynamic post-RHS validation. It is not evidence that every future mutating operation is already classified by `may_shrink`.
 
+
+### 2.6 String-literal materialisation is an effect in the current backend
+
+The runtime `CAP_LIT` macro lazily initialises a static pointer by calling `cap_str_perm`, which uses `malloc` and can terminate through the OOM path. Therefore the first evaluation of a string literal is not a pure C constant in the current backend. Treating `N_STR` as a simple operand allowed C argument evaluation order to move that allocation after a later effectful call, contrary to source left-to-right evaluation. Draft PR #109 removes `N_STR` from the simple-operand class and adds generated-C regressions for call arguments and concatenation operands. Its CI/review status must be checked before treating the correction as integrated. The C-free architecture should decide whether literals are immutable static data (with an explicit resource-compatibility decision) or effectful initialisation operations; it must not silently inherit the current C macro.
+
 ## 3. Normative semantic requirements for the C-free core
 
 1. **Deterministic sequencing:** all observable subexpressions have a specified order. The IR must make effectful ordering explicit.
