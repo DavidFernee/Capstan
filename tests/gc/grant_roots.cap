@@ -1,0 +1,22 @@
+// spec: auth.grant memory.gc
+// A live grant must retain its policy arguments through repeated collections.
+struct User { int id; }
+struct Doc { int owner; string body; }
+policy ReadDoc(User user, Doc doc) { return user.id == doc.owner; }
+protected(ReadDoc) string read_doc(Grant<ReadDoc> grant, Doc doc) { return doc.body; }
+
+int main() {
+    User user = new User{id: 7};
+    Doc doc = new Doc{owner: 7, body: "grant survived collection"};
+    if (let grant = authorize ReadDoc(user, doc)) {
+        for (int i = 0; i < 2000; i += 1) {
+            string churn = "allocation " + int_to_str(i);
+            List<string> temporary = new List<string>();
+            temporary.push(churn);
+        }
+        println(read_doc(grant, doc));
+    } else {
+        println("unexpected denial");
+    }
+    return 0;
+}

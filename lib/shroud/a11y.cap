@@ -20,6 +20,29 @@ struct A11yNode {
     List<A11yNode> kids;
 }
 
+// Convert already-sanitised code points back to UTF-8. The accessibility tree must
+// expose the same visible characters as the renderer, not the original Tainted bytes.
+string utf8_from_codepoints(List<int> cps) {
+    string out = "";
+    for (int i = 0; i < cps.len(); i += 1) {
+        int cp = cps[i];
+        if (cp < 0x80) {
+            out = out + char_str(cp);
+        } else if (cp < 0x800) {
+            out = out + char_str(0xC0 | (cp >> 6)) + char_str(0x80 | (cp & 0x3F));
+        } else if (cp < 0x10000) {
+            out = out + char_str(0xE0 | (cp >> 12)) + char_str(0x80 | ((cp >> 6) & 0x3F)) + char_str(0x80 | (cp & 0x3F));
+        } else {
+            out = out + char_str(0xF0 | (cp >> 18)) + char_str(0x80 | ((cp >> 12) & 0x3F)) + char_str(0x80 | ((cp >> 6) & 0x3F)) + char_str(0x80 | (cp & 0x3F));
+        }
+    }
+    return out;
+}
+
+string visible_untrusted_text(Tainted value) {
+    return utf8_from_codepoints(untrusted_codepoints(value));
+}
+
 string role_of(View v) {
     int k = v.kind;
     if (k == K_TEXT) { return "text"; }
@@ -41,7 +64,7 @@ string role_of(View v) {
 // The accessible name, escaped for JSON: the label if set, otherwise the visible text.
 string name_of(View v) {
     if (v.label != "") { return escape_json(v.label); }
-    if (v.kind == K_TEXT && v.has_value) { return escape_json(v.value); }
+    if (v.kind == K_TEXT && v.has_value) { return escape_json(visible_untrusted_text(v.value)); }
     if (v.kind == K_TEXT_FIELD) { return escape_json(v.hint); }
     return escape_json(v.text);
 }
@@ -51,7 +74,7 @@ string value_of(View v) {
     if (k == K_TEXT_FIELD) {
         // A password's value is never exposed; screen readers announce its length.
         if (v.secure) { return $"{untrusted_codepoints(v.value).len()} characters"; }
-        return escape_json(v.value);
+        return escape_json(visible_untrusted_text(v.value));
     }
     if (k == K_SLIDER || k == K_PROGRESS) { return $"{v.num}"; }
     return "";

@@ -195,6 +195,8 @@ if [[ -n "$peak" ]] && (( peak < 64 * 1024 * 1024 && total > 500 * 1024 * 1024 )
 else bad "churn" "$stats"; fi
 "$C" build -o "$tmp/integ.c" "$ROOT/tests/gc/integrity.cap" >/dev/null && "$CC" $CFLAGS "$tmp/integ.c" -o "$tmp/integ"
 if CAPSTAN_GC_STRESS=1 "$tmp/integ" | diff -q - "$ROOT/tests/gc/integrity.out" >/dev/null; then ok "integrity with a collection on every allocation"; else bad "integrity" "values changed under GC stress"; fi
+"$C" build -o "$tmp/grant_roots.c" "$ROOT/tests/gc/grant_roots.cap" >/dev/null && "$CC" $CFLAGS "$tmp/grant_roots.c" -o "$tmp/grant_roots"
+if CAPSTAN_GC_STRESS=1 "$tmp/grant_roots" | diff -q - "$ROOT/tests/gc/grant_roots.out" >/dev/null; then ok "grant and policy arguments remain rooted under GC stress"; else bad "grant GC roots" "grant or policy arguments did not survive collection"; fi
 if CAPSTAN_GC_STRESS=1000 "$C" build -o "$tmp/gcself.c" $SRC && "$C" build -o "$tmp/self.c" $SRC && cmp -s "$tmp/gcself.c" "$tmp/self.c"; then ok "compiler output identical under GC stress"; else bad "gc self-compile" "output differs"; fi
 
 section "limits"
