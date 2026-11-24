@@ -456,24 +456,61 @@ string gen_simple(Gen g, Node s) {
         Type tt = ty_of(target);
         string rcode = coerce(gen_expr(g, rhs), ty_of(rhs), tt);
         if (s.s != "=") {
-            string tcode = gen_expr(g, target);
-            string val = "";
+            // Compound assignment is sequenced explicitly. C does not specify
+            // function-argument evaluation order, so never place the old-value
+            // read and a potentially mutating RHS in the same generated call.
+            string old = fresh(g);
+            string right = fresh(g);
+            string value = fresh(g);
+            string rhs_code = "__auto_type " + right + " = " + rcode + "; ";
+            string value_code = "";
             if (is_texty(tt)) {
-                val = "cap_str_concat(" + tcode + ", " + rcode + ", " + loc(s) + ")";
+                value_code = "cap_str_concat(" + old + ", " + right + ", " + loc(s) + ")";
             } else {
                 string cf = "cap_add";
                 if (s.s == "-=") { cf = "cap_sub"; }
                 string cop = "+";
                 if (s.s == "-=") { cop = "-"; }
                 if (compound_safe(g.r, cop, target, rhs)) { cf = cf + "_proved"; }
-                val = cf + "(" + tcode + ", " + rcode + ", " + loc(s) + ")";
+                value_code = cf + "(" + old + ", " + right + ", " + loc(s) + ")";
+            }
+            if (target.k == N_VAR) {
+                return "({ __auto_type " + old + " = " + gen_expr(g, target) + "; " + rhs_code
+                    + "__auto_type " + value + " = " + value_code + "; "
+                    + gen_expr(g, target) + " = " + value + "; })";
+            }
+            if (target.k == N_GETF) {
+                string object = fresh(g);
+                string field = target.s;
+                return "({ __auto_type " + object + " = " + gen_expr(g, target.kids[0]) + "; "
+                    + "__auto_type " + old + " = " + object + "->f_" + field + "; " + rhs_code
+                    + "__auto_type " + value + " = " + value_code + "; "
+                    + object + "->f_" + field + " = " + value + "; })";
             }
             if (target.k == N_INDEX) {
+                string list = fresh(g);
+                string index = fresh(g);
+                string list_type = "cap_list";
+                if (is_blist(ty_of(target.kids[0]))) { list_type = "cap_blist"; }
                 string su = "";
                 if (index_safe(g.r, target.kids[0], target.kids[1])) { su = "_proved"; }
-                return "cap_list_set" + su + "(" + gen_expr(g, target.kids[0]) + ", " + gen_expr(g, target.kids[1]) + ", " + to_val(tt, val) + ", " + loc(s) + ")";
+                string read_old = "";
+                string write_new = "";
+                if (list_type == "cap_blist") {
+                    read_old = "cap_blist_get" + su + "(" + list + ", " + index + ", " + loc(s) + ")";
+                    write_new = "cap_blist_set" + su + "(" + list + ", " + index + ", " + value + ", " + loc(s) + "); ";
+                } else {
+                    read_old = from_val(tt, "cap_list_get" + su + "(" + list + ", " + index + ", " + loc(s) + ")");
+                    write_new = "cap_list_set" + su + "(" + list + ", " + index + ", " + to_val(tt, value) + ", " + loc(s) + "); ";
+                }
+                return "({ __auto_type " + list + " = " + gen_expr(g, target.kids[0]) + "; "
+                    + "__auto_type " + index + " = " + gen_expr(g, target.kids[1]) + "; "
+                    + "__auto_type " + old + " = " + read_old + "; " + rhs_code
+                    + "__auto_type " + value + " = " + value_code + "; " + write_new + "})";
             }
-            return tcode + " = " + val;
+            // The checker should make this unreachable; retain a safe diagnostic
+            // placeholder rather than reintroducing an unordered expression.
+            return "cap_unreachable(" + loc(s) + ")";
         }
         if (target.k == N_VAR) { return "u_" + target.s + " = " + rcode; }
         if (target.k == N_GETF) {
