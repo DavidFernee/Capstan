@@ -147,6 +147,33 @@ void test_duplicate_keys(Tally t, Ui ui) {
         "identity: duplicate keys are reported to accessibility diagnostics", join(a11y_problems(ui), "; "));
 }
 
+void test_duplicate_key_collisions(Tally t, Ui ui) {
+    // Reserve a run of generated-looking keys. Repeated duplicates of the same
+    // original key should continue from the previous suffix, not rescan the run.
+    View v = column()
+        .add(text("first").key("collision"))
+        .add(text("duplicate one").key("collision"))
+        .add(text("reserved two").key("collision#shroud-duplicate-2"))
+        .add(text("duplicate two").key("collision"))
+        .add(text("reserved three").key("collision#shroud-duplicate-3"))
+        .add(text("duplicate three").key("collision"))
+        .add(text("reserved four").key("collision#shroud-duplicate-4"))
+        .add(text("reserved five").key("collision#shroud-duplicate-5"))
+        .add(text("reserved six").key("collision#shroud-duplicate-6"))
+        .add(text("reserved seven").key("collision#shroud-duplicate-7"));
+    ui.render(v, 0);
+    if (let root = ui.root) {
+        expect(t, root.kids[1].id == "collision#shroud-duplicate-8",
+            "identity: first duplicate skips reserved generated-looking keys", root.kids[1].id);
+        expect(t, root.kids[3].id == "collision#shroud-duplicate-9",
+            "identity: later duplicate continues after prior suffix", root.kids[3].id);
+        expect(t, root.kids[5].id == "collision#shroud-duplicate-10",
+            "identity: suffix allocation does not rescan prior collisions", root.kids[5].id);
+    } else {
+        expect(t, false, "identity: collision test root exists", "none");
+    }
+}
+
 void test_keyboard(Tally t, Ui ui) {
     View v = column().add(button("One", "one").key("k1")).add(text("label")).add(checkbox("Two", false, "two").key("k2")).add(button("Three", "three").disabled(true).key("k3")).add(slider(5, 0, 10, "s").key("k4").label("Level"));
     ui.render(v, 0);
@@ -354,6 +381,7 @@ int main() {
             test_layout(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_buttons_and_guard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_duplicate_keys(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_duplicate_key_collisions(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_keyboard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_text_field(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
