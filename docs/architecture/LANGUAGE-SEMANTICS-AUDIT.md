@@ -42,7 +42,7 @@ The runtime defines `CAP_READ_LINE_MAX = 1 << 20` and traps when a line exceeds 
 
 The runtime's ordinary `cap_mod` handles `INT64_MIN % -1` explicitly. The corresponding `cap_mod_proved` helper currently evaluates C's `a % b` directly. In C, signed division and remainder are undefined when the quotient is not representable, including `INT64_MIN % -1`.
 
-**Status:** confirmed unsafe host-language operation in the helper body; whether the checker can ever select this helper for the boundary pair must be established by tracing the range-proof predicate and a targeted regression. A proof-based fast path must either prove the exceptional pair impossible or retain a defined special case. A source-level proof must never license undefined behaviour in the implementation language.
+**Status:** the helper body is unsafe if called outside its precondition, but source inspection of `compiler/ranges.cap::bin_safe` shows an explicit `no_min_by_minus_one` guard: the proven form is not selected when the dividend interval includes `INT64_MIN` and the divisor interval includes `-1`. This is a sound-looking exclusion, not yet an executed regression or a formal proof of the range analysis. Retain the guard, add a boundary regression that confirms the exceptional pair uses the checked helper, and keep the helper precondition documented. A proof-based fast path must never license undefined behaviour in the implementation language.
 
 ## 3. Normative semantic requirements for the C-free core
 
