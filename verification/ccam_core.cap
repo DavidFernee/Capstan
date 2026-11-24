@@ -1,0 +1,355 @@
+// CCAM's first executable slice, implemented in Capstan itself.
+// This file intentionally contains no host-language implementation.
+//
+// The result type makes arithmetic failure explicit so the evaluator never
+// relies on the host runtime's overflow trap as a language-level outcome.
+
+const int CCAM_I64_MAX = 0x7FFFFFFFFFFFFFFF;
+const int CCAM_I64_MIN = -0x7FFFFFFFFFFFFFFF - 1;
+
+struct CCAMIntResult {
+    bool ok;
+    int value;
+    string trap;
+}
+
+CCAMIntResult ccam_add(int a, int b) {
+    if (b > 0 && a > CCAM_I64_MAX - b) {
+        return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+    }
+    if (b < 0 && a < CCAM_I64_MIN - b) {
+        return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+    }
+    return new CCAMIntResult{ok: true, value: a + b, trap: ""};
+}
+
+CCAMIntResult ccam_sub(int a, int b) {
+    if (b < 0 && a > CCAM_I64_MAX + b) {
+        return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+    }
+    if (b > 0 && a < CCAM_I64_MIN + b) {
+        return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+    }
+    return new CCAMIntResult{ok: true, value: a - b, trap: ""};
+}
+
+CCAMIntResult ccam_mul(int a, int b) {
+    if (a == 0 || b == 0) {
+        return new CCAMIntResult{ok: true, value: 0, trap: ""};
+    }
+    if ((a == CCAM_I64_MIN && b == -1) || (b == CCAM_I64_MIN && a == -1)) {
+        return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+    }
+    if (a > 0) {
+        if (b > 0 && a > CCAM_I64_MAX / b) {
+            return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+        }
+        if (b < 0 && b < CCAM_I64_MIN / a) {
+            return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+        }
+    } else {
+        if (b > 0 && a < CCAM_I64_MIN / b) {
+            return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+        }
+        if (b < 0 && a < CCAM_I64_MAX / b) {
+            return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+        }
+    }
+    return new CCAMIntResult{ok: true, value: a * b, trap: ""};
+}
+
+CCAMIntResult ccam_div(int a, int b) {
+    if (b == 0) {
+        return new CCAMIntResult{ok: false, value: 0, trap: "division_by_zero"};
+    }
+    if (a == CCAM_I64_MIN && b == -1) {
+        return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+    }
+    return new CCAMIntResult{ok: true, value: a / b, trap: ""};
+}
+
+CCAMIntResult ccam_rem(int a, int b) {
+    if (b == 0) {
+        return new CCAMIntResult{ok: false, value: 0, trap: "division_by_zero"};
+    }
+    if (a == CCAM_I64_MIN && b == -1) {
+        return new CCAMIntResult{ok: true, value: 0, trap: ""};
+    }
+    return new CCAMIntResult{ok: true, value: a % b, trap: ""};
+}
+
+int main() {
+    CCAMIntResult r = ccam_add(20, 22);
+    assert(r.ok && r.value == 42);
+    r = ccam_add(CCAM_I64_MAX, 1);
+    assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_sub(CCAM_I64_MIN, 1);
+    assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_sub(CCAM_I64_MAX, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_sub(20, 22);
+    assert(r.ok && r.value == -2);
+    r = ccam_mul(6, 7);
+    assert(r.ok && r.value == 42);
+    r = ccam_mul(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_mul(CCAM_I64_MIN, 1);
+    assert(r.ok && r.value == CCAM_I64_MIN);
+    r = ccam_mul(-3037000500, -3037000500);
+    assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_mul(-3037000499, -3037000499);
+    assert(r.ok);
+    r = ccam_div(-7, 3);
+    assert(r.ok && r.value == -2);
+    r = ccam_div(1, 0);
+    assert(!r.ok && r.trap == "division_by_zero");
+    r = ccam_rem(1, 0);
+    assert(!r.ok && r.trap == "division_by_zero");
+    r = ccam_div(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_rem(-7, 3);
+    assert(r.ok && r.value == -1);
+    r = ccam_rem(7, -3);
+    assert(r.ok && r.value == 1);
+    r = ccam_rem(-7, -3);
+    assert(r.ok && r.value == -1);
+    r = ccam_rem(7, 3);
+    assert(r.ok && r.value == 1);
+    r = ccam_rem(CCAM_I64_MIN, -1);
+    assert(r.ok && r.value == 0);
+    println("CCAM Capstan arithmetic: ok");
+    return 0;
+}
+
+test "CCAM addition traps on signed overflow" {
+    CCAMIntResult r = ccam_add(CCAM_I64_MAX, 1);
+    assert(!r.ok && r.trap == "integer_overflow");
+}
+
+test "CCAM multiplication traps on signed overflow" {
+    CCAMIntResult r = ccam_mul(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
+}
+
+test "CCAM division truncates toward zero" {
+    CCAMIntResult r = ccam_div(-7, 3);
+    assert(r.ok && r.value == -2);
+}
+
+test "CCAM subtraction checks both overflow directions" {
+    CCAMIntResult hi = ccam_sub(CCAM_I64_MAX, -1);
+    CCAMIntResult lo = ccam_sub(CCAM_I64_MIN, 1);
+    assert(!hi.ok && !lo.ok);
+}
+
+test "CCAM multiplication handles negative boundaries" {
+    CCAMIntResult min_ok = ccam_mul(CCAM_I64_MIN, 1);
+    CCAMIntResult overflow = ccam_mul(-3037000500, -3037000500);
+    assert(min_ok.ok && min_ok.value == CCAM_I64_MIN);
+    assert(!overflow.ok && overflow.trap == "integer_overflow");
+}
+
+test "CCAM division rejects minimum divided by negative one" {
+    CCAMIntResult r = ccam_div(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
+}
+
+test "CCAM remainder has dividend sign for every sign combination" {
+    CCAMIntResult a = ccam_rem(-7, 3);
+    CCAMIntResult b = ccam_rem(7, -3);
+    CCAMIntResult c = ccam_rem(-7, -3);
+    CCAMIntResult d = ccam_rem(7, 3);
+    assert(a.ok && a.value == -1);
+    assert(b.ok && b.value == 1);
+    assert(c.ok && c.value == -1);
+    assert(d.ok && d.value == 1);
+}
+
+test "CCAM remainder of minimum by negative one is zero" {
+    CCAMIntResult r = ccam_rem(CCAM_I64_MIN, -1);
+    assert(r.ok && r.value == 0);
+}
+
+
+// Typed register-file substrate for the CCAM evaluator. Register contents are
+// represented as Capstan values; the declared type and initialisation bit are
+// independent, so an uninitialised read is never confused with integer zero.
+const int CCAM_TYPE_INT = 1;
+const int CCAM_TYPE_BOOL = 2;
+
+struct CCAMRegister {
+    int declared_type;
+    bool initialized;
+    int int_value;
+    bool bool_value;
+}
+
+struct CCAMRegisterResult {
+    bool ok;
+    int int_value;
+    bool bool_value;
+    string trap;
+}
+
+struct CCAMRegisterFileResult {
+    bool ok;
+    List<CCAMRegister> registers;
+    string error;
+}
+
+CCAMRegisterResult ccam_register_error(string trap) {
+    return new CCAMRegisterResult{ok: false, int_value: 0, bool_value: false, trap: trap};
+}
+
+CCAMRegisterResult ccam_register_int(int value) {
+    return new CCAMRegisterResult{ok: true, int_value: value, bool_value: false, trap: ""};
+}
+
+CCAMRegisterResult ccam_register_bool(bool value) {
+    return new CCAMRegisterResult{ok: true, int_value: 0, bool_value: value, trap: ""};
+}
+
+CCAMRegisterFileResult ccam_registers_create(List<int> types) {
+    // Validate the complete type vector before constructing any register.
+    for (int i = 0; i < types.len(); i += 1) {
+        int declared_type = types[i];
+        if (declared_type != CCAM_TYPE_INT && declared_type != CCAM_TYPE_BOOL) {
+            List<CCAMRegister> empty = new List<CCAMRegister>();
+            return new CCAMRegisterFileResult{
+                ok: false,
+                registers: empty,
+                error: "invalid_register_type"
+            };
+        }
+    }
+
+    List<CCAMRegister> registers = new List<CCAMRegister>();
+    for (int i = 0; i < types.len(); i += 1) {
+        int declared_type = types[i];
+        CCAMRegister reg = new CCAMRegister{
+            declared_type: declared_type,
+            initialized: false,
+            int_value: 0,
+            bool_value: false
+        };
+        registers.push(reg);
+    }
+    return new CCAMRegisterFileResult{ok: true, registers: registers, error: ""};
+}
+
+CCAMRegisterResult ccam_register_read_int(List<CCAMRegister> registers, int index) {
+    if (index < 0 || index >= registers.len()) {
+        return ccam_register_error("invalid_register");
+    }
+    CCAMRegister reg = registers[index];
+    if (!reg.initialized) {
+        return ccam_register_error("uninitialised_register");
+    }
+    if (reg.declared_type != CCAM_TYPE_INT) {
+        return ccam_register_error("register_type_mismatch");
+    }
+    return ccam_register_int(reg.int_value);
+}
+
+CCAMRegisterResult ccam_register_read_bool(List<CCAMRegister> registers, int index) {
+    if (index < 0 || index >= registers.len()) {
+        return ccam_register_error("invalid_register");
+    }
+    CCAMRegister reg = registers[index];
+    if (!reg.initialized) {
+        return ccam_register_error("uninitialised_register");
+    }
+    if (reg.declared_type != CCAM_TYPE_BOOL) {
+        return ccam_register_error("register_type_mismatch");
+    }
+    return ccam_register_bool(reg.bool_value);
+}
+
+string ccam_register_write_int(List<CCAMRegister> registers, int index, int value) {
+    if (index < 0 || index >= registers.len()) {
+        return "invalid_register";
+    }
+    CCAMRegister reg = registers[index];
+    if (reg.declared_type != CCAM_TYPE_INT) {
+        return "register_type_mismatch";
+    }
+    reg.int_value = value;
+    reg.initialized = true;
+    return "";
+}
+
+string ccam_register_write_bool(List<CCAMRegister> registers, int index, bool value) {
+    if (index < 0 || index >= registers.len()) {
+        return "invalid_register";
+    }
+    CCAMRegister reg = registers[index];
+    if (reg.declared_type != CCAM_TYPE_BOOL) {
+        return "register_type_mismatch";
+    }
+    reg.bool_value = value;
+    reg.initialized = true;
+    return "";
+}
+
+test "CCAM register files preserve declared types and uninitialised state" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL);
+    CCAMRegisterFileResult created = ccam_registers_create(types);
+    assert(created.ok);
+    List<CCAMRegister> registers = created.registers;
+    CCAMRegisterResult read_int = ccam_register_read_int(registers, 0);
+    assert(!read_int.ok && read_int.trap == "uninitialised_register");
+    assert(ccam_register_write_int(registers, 0, 42) == "");
+    assert(ccam_register_write_bool(registers, 1, true) == "");
+    read_int = ccam_register_read_int(registers, 0);
+    CCAMRegisterResult read_bool = ccam_register_read_bool(registers, 1);
+    assert(read_int.ok && read_int.int_value == 42);
+    assert(read_bool.ok && read_bool.bool_value);
+}
+
+test "CCAM register files reject invalid indices and type confusion" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    CCAMRegisterFileResult created = ccam_registers_create(types);
+    assert(created.ok);
+    List<CCAMRegister> registers = created.registers;
+    assert(ccam_register_write_bool(registers, 0, true) == "register_type_mismatch");
+    assert(ccam_register_write_int(registers, 1, 9) == "invalid_register");
+    assert(ccam_register_write_int(registers, 0, 1) == "");
+    CCAMRegisterResult wrong_type = ccam_register_read_bool(registers, 0);
+    CCAMRegisterResult bad_index = ccam_register_read_int(registers, -1);
+    assert(!wrong_type.ok && wrong_type.trap == "register_type_mismatch");
+    assert(!bad_index.ok && bad_index.trap == "invalid_register");
+}
+
+test "CCAM remainder by zero traps" {
+    CCAMIntResult r = ccam_rem(7, 0);
+    assert(!r.ok && r.trap == "division_by_zero");
+}
+
+
+test "CCAM register-file constructor rejects unknown type tags" {
+    List<int> unknown = new List<int>();
+    unknown.push(0);
+    CCAMRegisterFileResult zero = ccam_registers_create(unknown);
+    assert(!zero.ok && zero.error == "invalid_register_type");
+
+    List<int> negative = new List<int>();
+    negative.push(-1);
+    CCAMRegisterFileResult negative_result = ccam_registers_create(negative);
+    assert(!negative_result.ok && negative_result.error == "invalid_register_type");
+
+    List<int> future = new List<int>();
+    future.push(3);
+    CCAMRegisterFileResult future_result = ccam_registers_create(future);
+    assert(!future_result.ok && future_result.error == "invalid_register_type");
+
+    List<int> mixed = new List<int>();
+    mixed.push(CCAM_TYPE_INT);
+    mixed.push(CCAM_TYPE_BOOL);
+    mixed.push(0);
+    CCAMRegisterFileResult mixed_result = ccam_registers_create(mixed);
+    assert(!mixed_result.ok && mixed_result.error == "invalid_register_type");
+    assert(mixed_result.registers.len() == 0);
+}
