@@ -41,8 +41,12 @@ theorem RuntimeRegister.asVal_hasType
     hasType reg.asVal reg.declaredType := by
   cases reg with
   | mk declaredType _ intValue intValue_in_range boolValue =>
-      cases htype : declaredType <;>
-        simp [RuntimeRegister.asVal, hasType, hasTypeB, htype, inI64, intValue_in_range]
+      cases htype : declaredType with
+      | int =>
+          simpa [RuntimeRegister.asVal, hasType, hasTypeB, htype, inI64] using
+            intValue_in_range
+      | bool =>
+          simp [RuntimeRegister.asVal, hasType, hasTypeB, htype]
 
 /-- An initialized runtime register exposes exactly its typed payload. -/
 theorem RuntimeRegister.value?_of_initialized
@@ -259,7 +263,9 @@ theorem runtimeWriteRegister_preserves_relation
         runtimeWriteRegister_other_unchanged
           runtime updated index.val j.val replacement hwrite hjiVal
       have hvalue : runtimeValueAt updated j.val = runtimeValueAt runtime j.val := by
-        simp [runtimeValueAt, hother]
+        change (runtimeRegisterAt updated j.val).bind RuntimeRegister.value? =
+          (runtimeRegisterAt runtime j.val).bind RuntimeRegister.value?
+        rw [hother]
       rw [hvalue, hrel.value_at j]
       simp [write, hji]
 
