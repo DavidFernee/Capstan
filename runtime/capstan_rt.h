@@ -282,7 +282,8 @@ static CapList *cap_list_new(void) {
 }
 
 static inline void cap_list_push(CapList *l, CapVal v) {
-    if (CAP_UNLIKELY(l->len < 0 || l->cap < 0 || l->len > l->cap))
+    if (CAP_UNLIKELY(l->len < 0 || l->cap < 0 || l->len > l->cap ||
+                     (l->cap > 0 && !l->items)))
         cap_panic("invalid list length/capacity", "CWE-682", 0);
     if (CAP_UNLIKELY(l->len == l->cap)) {
         if (l->len == INT64_MAX)
@@ -383,7 +384,8 @@ typedef struct CapBList { int64_t len, cap; bool *items; } CapBList;
 static CapBList *cap_blist_new(void) { return (CapBList *)cap_alloc(sizeof(CapBList)); }
 
 static inline void cap_blist_push(CapBList *l, bool v) {
-    if (CAP_UNLIKELY(l->len < 0 || l->cap < 0 || l->len > l->cap))
+    if (CAP_UNLIKELY(l->len < 0 || l->cap < 0 || l->len > l->cap ||
+                     (l->cap > 0 && !l->items)))
         cap_panic("invalid boolean-list length/capacity", "CWE-682", 0);
     if (CAP_UNLIKELY(l->len == l->cap)) {
         if (l->len == INT64_MAX)
