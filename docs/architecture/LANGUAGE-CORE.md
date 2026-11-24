@@ -58,6 +58,7 @@ operator signatures:
 | `true`, `false` | none | `bool` |
 | local `x` | `x:T ∈ Γ` | `T` |
 | `+ - * / %` | `int, int` | `int` |
+| unary `-` | `int` | `int` (checked; `-MIN` traps) |
 | `< <= > >=` | `int, int` | `bool` |
 | `== !=` | two operands of the same type, either `int` or `bool` | `bool` |
 | `!` | `bool` | `bool` |
