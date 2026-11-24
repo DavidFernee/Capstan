@@ -21,29 +21,32 @@ int main() {
     if (encoded[encoded.len() - 8] != 73 || encoded[encoded.len() - 7] != 69 ||
         encoded[encoded.len() - 6] != 78 || encoded[encoded.len() - 5] != 68) { return 12; }
 
+    Pixmap malformed = new Pixmap{w: 2, h: 2, px: new List<int>()};
+    if (png_encode(malformed).len() != 0) { return 13; }
+
     // This image sits just below the raw-byte ceiling and spans many DEFLATE
     // stored blocks. It exercises the full accepted export path.
     Pixmap boundary = new_pixmap(511, 512);
     boundary.clear(0xFF336699);
     List<int> boundary_bytes = png_encode(boundary);
-    if (boundary_bytes.len() == 0) { return 13; }
+    if (boundary_bytes.len() == 0) { return 14; }
 
     // The Pixmap is valid under the raster budget but exceeds the stricter PNG
     // budget. Rejection must happen before any PNG output allocation.
     Pixmap over = new_pixmap(512, 512);
     List<int> rejected = png_encode(over);
-    if (rejected.len() != 0) { return 14; }
+    if (rejected.len() != 0) { return 15; }
 
     // Repeated accepted exports must remain deterministic.
     List<int> again = png_encode(small);
-    if (again.len() != encoded.len()) { return 15; }
+    if (again.len() != encoded.len()) { return 16; }
     for (int i = 0; i < encoded.len(); i += 1) {
-        if (again[i] != encoded[i]) { return 16; }
+        if (again[i] != encoded[i]) { return 17; }
     }
 
     List<string> a = args();
-    if (a.len() > 0 && !png_write(a[0], boundary)) { return 17; }
-    if (a.len() > 1 && png_write(a[1], over)) { return 18; }
-    println("png budget: 18 assertions");
+    if (a.len() > 0 && !png_write(a[0], boundary)) { return 18; }
+    if (a.len() > 1 && png_write(a[1], over)) { return 19; }
+    println("png budget: 19 assertions");
     return 0;
 }
