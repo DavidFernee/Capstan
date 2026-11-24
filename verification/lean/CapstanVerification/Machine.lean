@@ -336,14 +336,8 @@ theorem budgetedMachineStep_budget_within_limit
     (program : FiniteProgram n m types)
     (state : BudgetedMachineState n m types) :
     (budgetedMachineStep program state).budget.used ≤
-      (budgetedMachineStep program state).budget.limit := by
-  exact (budgetedMachineStep program state).budget.within_limit
-  unfold budgetedMachineStep BudgetedMachineOutcome.budget
-  cases hbudget : consumeStep state.budget with
-  | error reason =>
-      simp [hbudget]
-  | ok nextBudget =>
-      cases hstep : machineStep program state.machine <;> simp [hbudget, hstep]
+      (budgetedMachineStep program state).budget.limit :=
+  (budgetedMachineStep program state).budget.within_limit
 
 /-- If budget remains, every outcome accounts for exactly one executed instruction. -/
 theorem budgetedMachineStep_consumes_one
@@ -352,8 +346,15 @@ theorem budgetedMachineStep_consumes_one
     (state : BudgetedMachineState n m types)
     (havailable : state.budget.used < state.budget.limit) :
     (budgetedMachineStep program state).budget.used = state.budget.used + 1 := by
+  have hconsume : consumeStep state.budget =
+      .ok {
+        limit := state.budget.limit
+        used := state.budget.used + 1
+        within_limit := Nat.succ_le_of_lt havailable
+      } := by
+    simp [consumeStep, havailable]
   unfold budgetedMachineStep
-  simp only [consumeStep, if_pos havailable]
+  rw [hconsume]
   cases hstep : machineStep program state.machine <;>
     simp [hstep, BudgetedMachineOutcome.budget]
 
