@@ -435,6 +435,9 @@ test "CCAM x86-64 backend emits checked overflow and division traps" {
     assert(ccam_x64_write_test_program(
         "int main() { int numerator = 1; int denominator = 0; return numerator / denominator; }",
         "build/ccam-native-x64-divzero.s", 100, 16));
+    assert(ccam_x64_write_test_program(
+        "int main() { int minimum = -9223372036854775807 - 1; return minimum / -1; }",
+        "build/ccam-native-x64-div-overflow.s", 100, 16));
 }
 
 test "CCAM x86-64 backend emits step and call-depth guards" {
