@@ -717,12 +717,14 @@ The visual designer is built in Capstan using Shroud. Capstan source remains aut
 visual edits must use source-aware transformations and preserve unrelated comments,
 formatting and code. No current compiler API is assumed to provide this yet.
 
-The component catalogue is curated, not an arbitrary plugin marketplace. Every entry is
-version-pinned and accompanied by scoped, current evidence: source and dependency identity,
-review scope, tests/fuzzing, provenance/signatures, known vulnerabilities, configuration
-assumptions and capability requirements. Authentication components should use established
-protocols and safe defaults, not bespoke cryptography. “Verified secure” is never an
-unqualified or permanent claim.
+The component catalogue is curated, not an arbitrary plugin marketplace. Its proposed
+record model, assurance dimensions, offline/revocation semantics, capability policy and
+acceptance gates are specified in [ANCHOR-COMPONENT-CATALOGUE.md](ANCHOR-COMPONENT-CATALOGUE.md).
+Every entry is version-pinned and accompanied by scoped evidence. Authentication components
+should use established protocols and safe defaults, not bespoke cryptography. “Verified
+secure” is never an unqualified or permanent claim. Automatic remediation must follow the
+supply-chain gates in section 5: changes are reviewable, attributable and reversible; no
+capability or trust-root increase is applied automatically.
 
 Anchor's security UI must distinguish compiler rejections, runtime checks, assurance
 claims, evidence and dependency trust. A clean compile is not a project security proof;
