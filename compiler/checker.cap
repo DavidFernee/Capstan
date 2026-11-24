@@ -1586,9 +1586,21 @@ void check_fn(Checker c, Node f) {
             if (!ok) {
                 error_at(c.ctx, f, "CWE-862", "protected(" + f.s2 + ") function '" + f.s + "' must take Grant<" + f.s2 + "> as its first parameter");
             }
-            // If a protected function accepts objects of a type used more than once by
-            // its policy, it must accept every such parameter. Otherwise the role mapping
-            // would be ambiguous and could collapse distinct policy arguments.
+            // Every protected-function argument must be represented in the policy.
+            // Otherwise a caller could vary an unexamined value (for example, a debit amount)
+            // while presenting a grant for a different, authorised request.
+            for (int i = 1; i < f.n; i += 1) {
+                Type ft = ty_of(f.kids[i]);
+                bool found = false;
+                for (int j = 0; j < pol.n; j += 1) {
+                    if (type_eq(ty_of(pol.kids[j]), ft)) { found = true; }
+                }
+                if (!found) {
+                    error_at(c.ctx, f.kids[i], "CWE-639", "protected(" + f.s2 + ") parameter '" + f.kids[i].s + "' is not bound by policy '" + f.s2 + "'; include this argument in the policy or remove it from the protected function");
+                }
+            }
+            // Parameters of a repeated type are matched by occurrence, so a protected
+            // function must accept all policy arguments of that type or none.
             for (int i = 0; i < pol.n; i += 1) {
                 Type pt = ty_of(pol.kids[i]);
                 if (pt.k != TY_VOID && pt.k != TY_ERR && pt.k != TY_NONE) {
