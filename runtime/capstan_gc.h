@@ -118,6 +118,8 @@ typedef struct CapPage {
     int released;            /* spare, and its memory has been returned to the OS */
     uint8_t *alloc;
     uint8_t *mark;
+    uint32_t *free_slots;       /* out-of-line indices for secret pages */
+    uint32_t free_count, free_cap;
 } CapPage;
 
 typedef struct { char *base; size_t size; int atomic, mark; } CapLarge;
@@ -161,6 +163,13 @@ static void *cap_gc_meta(size_t n) {
 
 static void *cap_gc_meta_array(size_t count, size_t element_size) {
     return cap_gc_meta(cap_gc_checked_mul(count, element_size));
+}
+
+/* Volatile clearing for secret page payloads; allocator metadata must not
+   be written into a secret slot after it has been wiped. */
+static void cap_gc_wipe(void *memory, size_t n) {
+    volatile unsigned char *p = (volatile unsigned char *)memory;
+    while (n--) *p++ = 0;
 }
 
 static void cap_gc_report(void) {
@@ -431,15 +440,30 @@ static void cap_gc_format_page(CapPage *pg, int atomic, int cls) {
         memset(pg->alloc, 0, nobj);
         memset(pg->mark, 0, nobj);
     }
+    if (pg->free_slots && (atomic != 2 || pg->free_cap != nobj)) {
+        free(pg->free_slots);
+        pg->free_slots = NULL;
+        pg->free_cap = pg->free_count = 0;
+    }
+    if (atomic == 2 && !pg->free_slots) {
+        pg->free_slots = (uint32_t *)cap_gc_meta_array(nobj, sizeof(uint32_t));
+        pg->free_cap = nobj;
+    }
     pg->objsize = cap_class_size[cls];
     pg->nobj = nobj;
     pg->atomic = atomic;
+    if (atomic == 2) cap_gc_wipe(pg->base, CAP_PAGE_SIZE);
     pg->spare = 0;
     pg->released = 0;
+    pg->free_count = 0;
     for (uint32_t i = pg->nobj; i-- > 0;) {
-        void **slot = (void **)(pg->base + (size_t)i * pg->objsize);
-        *slot = cap_gc.freelist[atomic][cls];
-        cap_gc.freelist[atomic][cls] = slot;
+        if (atomic == 2) {
+            pg->free_slots[pg->free_count++] = i;
+        } else {
+            void **slot = (void **)(pg->base + (size_t)i * pg->objsize);
+            *slot = cap_gc.freelist[atomic][cls];
+            cap_gc.freelist[atomic][cls] = slot;
+        }
     }
 }
 
@@ -482,6 +506,21 @@ static void cap_gc_new_page(int atomic, int cls) {
         cap_panic("memory limit exceeded while allocating a page", "CWE-400", 0);
     cap_gc.heap = cap_gc_checked_add(cap_gc.heap, CAP_PAGE_SIZE);
     cap_gc_range((uintptr_t)pg->base, (uintptr_t)pg->base + CAP_PAGE_SIZE);
+}
+
+static CapPage *cap_gc_find_secret_page(int cls) {
+    for (size_t i = 0; i < cap_gc.npages; i++) {
+        CapPage *pg = cap_gc.pages[i];
+        if (!pg->spare && pg->atomic == 2 &&
+            pg->objsize == cap_class_size[cls] && pg->free_count)
+            return pg;
+    }
+    return NULL;
+}
+
+static int cap_gc_has_free(int atomic, int cls) {
+    return atomic == 2 ? cap_gc_find_secret_page(cls) != NULL
+                       : cap_gc.freelist[atomic][cls] != NULL;
 }
 
 /* ---- marking ------------------------------------------------------------ */
@@ -583,13 +622,20 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         while (cap_class_size[cls] != pg->objsize) cls++;
         int any = 0;
         void *head = cap_gc.freelist[pg->atomic][cls];
+        if (pg->atomic == 2) pg->free_count = 0;
         for (uint32_t j = pg->nobj; j-- > 0;) {
             if (pg->mark[j]) {
                 pg->mark[j] = 0;
                 live = cap_gc_checked_add(live, pg->objsize);
                 any = 1;
+            } else if (pg->atomic == 2) {
+                if (pg->alloc[j])
+                    cap_gc_wipe(pg->base + (size_t)j * pg->objsize, pg->objsize);
+                pg->alloc[j] = 0;
+                if (pg->free_count >= pg->free_cap)
+                    cap_panic("secret-page free-slot metadata overflow", "CWE-682", 0);
+                pg->free_slots[pg->free_count++] = j;
             } else {
-                if (pg->atomic == 2 && pg->alloc[j]) memset(pg->base + (size_t)j * pg->objsize, 0, pg->objsize);
                 pg->alloc[j] = 0;
                 void **slot = (void **)(pg->base + (size_t)j * pg->objsize);
                 *slot = cap_gc.freelist[pg->atomic][cls];
@@ -599,7 +645,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         if (!any) {
             /* Unthread this page's slots again: they were pushed last, so the free
                list resumes at the head it had before this page. */
-            cap_gc.freelist[pg->atomic][cls] = head;
+            if (pg->atomic != 2) cap_gc.freelist[pg->atomic][cls] = head;
             /* Gather empty pages at the front by swapping (page order does not matter). */
             cap_gc.pages[i] = cap_gc.pages[nempty];
             cap_gc.pages[nempty] = pg;
@@ -697,12 +743,12 @@ static void *cap_gc_alloc(size_t n, int atomic) {
     if (cap_gc.nspare > cap_gc.capspare ||
         (cap_gc.nspare > 0 && !cap_gc.spare))
         cap_panic("spare-page storage invariant violated", "CWE-682", 0);
-    if (!cap_gc.freelist[atomic][cls]) {
+    if (!cap_gc_has_free(atomic, cls)) {
         size_t page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
                            ? 0 : (size_t)CAP_PAGE_SIZE;
         if (cap_gc_heap_would_exceed(page_charge)) {
             cap_gc_collect();
-            if (!cap_gc.freelist[atomic][cls]) {
+            if (!cap_gc_has_free(atomic, cls)) {
                 page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
                             ? 0 : (size_t)CAP_PAGE_SIZE;
                 if (cap_gc_heap_would_exceed(page_charge))
@@ -710,9 +756,21 @@ static void *cap_gc_alloc(size_t n, int atomic) {
             }
         }
     }
-    if (!cap_gc.freelist[atomic][cls]) {
+    if (!cap_gc_has_free(atomic, cls)) {
         cap_gc_new_page(atomic, cls);
         if (cap_gc.heap > cap_gc.peak_heap) cap_gc.peak_heap = cap_gc.heap;
+    }
+    if (atomic == 2) {
+        CapPage *pg = cap_gc_find_secret_page(cls);
+        if (!pg || !pg->free_count)
+            cap_panic("secret-page free-slot invariant failed", "CWE-682", 0);
+        uint32_t idx = pg->free_slots[--pg->free_count];
+        if (idx >= pg->nobj || pg->alloc[idx])
+            cap_panic("secret-page allocation bitmap invariant failed", "CWE-682", 0);
+        pg->alloc[idx] = 1;
+        void *secret_slot = pg->base + (size_t)idx * pg->objsize;
+        memset(secret_slot, 0, pg->objsize);
+        return secret_slot;
     }
     void **slot = (void **)cap_gc.freelist[atomic][cls];
     cap_gc.freelist[atomic][cls] = *slot;

@@ -830,6 +830,39 @@ static void test_collection_slot_clearing(void) {
     CHECK(map->keys[1] == NULL && map->vals[1].p == NULL);
 }
 
+static void test_secret_page_free_stack(void) {
+    void *memory = NULL;
+    CHECK(posix_memalign(&memory, CAP_PAGE_SIZE, CAP_PAGE_SIZE) == 0);
+    if (!memory) return;
+    memset(memory, 0xa5, CAP_PAGE_SIZE);
+    CapPage page;
+    memset(&page, 0, sizeof page);
+    page.base = (char *)memory;
+    cap_gc_format_page(&page, 2, 0);
+    CHECK(page.free_slots != NULL);
+    CHECK(page.free_count == page.nobj && page.free_cap == page.nobj);
+    int all_zero = 1;
+    const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
+    for (size_t i = 0; i < CAP_PAGE_SIZE; i++) if (bytes[i] != 0) all_zero = 0;
+    CHECK(all_zero);
+    unsigned char *seen = (unsigned char *)calloc(page.nobj, 1);
+    CHECK(seen != NULL);
+    if (seen) {
+        int unique = 1;
+        for (uint32_t i = 0; i < page.free_count; i++) {
+            uint32_t idx = page.free_slots[i];
+            if (idx >= page.nobj || seen[idx]) unique = 0;
+            else seen[idx] = 1;
+        }
+        CHECK(unique);
+        free(seen);
+    }
+    free(page.free_slots);
+    free(page.alloc);
+    free(page.mark);
+    free(memory);
+}
+
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
@@ -855,6 +888,7 @@ int main(void) {
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
     test_gc_release_accounting();
+    test_secret_page_free_stack();
     test_gc_release();
     test_secret_env_name();
     test_secret_wipe();
