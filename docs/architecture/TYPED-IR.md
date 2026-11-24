@@ -43,7 +43,7 @@ The initial instruction vocabulary is the CCAM v0.1 vocabulary:
 - calls and returns: `call`, `ret`, `ret_void`;
 - explicit termination: `trap`.
 
-The instruction schemas in `docs/architecture/CCAM.md` are retained, subject to the semantic corrections in `LANGUAGE-CORE.md`. Each instruction is atomic at the machine-state level. Operands are read in the order in which they are listed in its schema. An instruction either completes its single state transition or produces one terminal trap; no partial register write is observable on a trap.
+The instruction schemas in `docs/architecture/CCAM.md` are retained, subject to the semantic corrections in `LANGUAGE-CORE.md`. Source unary integer negation is lowered to checked `sub_i(zero, operand)`; it is not a separate v0.1 instruction. This preserves the `MIN` overflow trap. Each instruction is atomic at the machine-state level. Operands are read in the order in which they are listed in its schema. An instruction either completes its single state transition or produces one terminal trap; no partial register write is observable on a trap.
 
 A call reads/checks its argument registers in list order, then pushes a callee frame. A return reads/checks its result before popping the frame and writing the caller destination. A non-void callee MUST have a compatible caller destination; a void callee MUST have none.
 
