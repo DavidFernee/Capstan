@@ -101,14 +101,28 @@ bool ccam_x64_emit_instruction(
         ccam_x64_line(output, "    jne " + safe);
         ccam_x64_line(output, "    movabsq $-9223372036854775808, %rdx");
         ccam_x64_line(output, "    cmpq %rdx, %rax");
-        ccam_x64_line(output, "    je .Lcap_trap_overflow");
-        ccam_x64_line(output, safe + ":");
-        ccam_x64_line(output, "    cqo");
-        ccam_x64_line(output, "    idivq %rcx");
+        string done = ".Lcap_f" + int_to_str(function_index) + "_divdone" + int_to_str(instruction_index);
         if (instruction.op == CCAM_OP_REM_I) {
+            string rem_min = ".Lcap_f" + int_to_str(function_index) + "_remmin" + int_to_str(instruction_index);
+            ccam_x64_line(output, "    je " + rem_min);
+            ccam_x64_line(output, safe + ":");
+            ccam_x64_line(output, "    cqo");
+            ccam_x64_line(output, "    idivq %rcx");
             ccam_x64_line(output, "    movq %rdx, %rax");
+            ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+            ccam_x64_line(output, "    jmp " + done);
+            ccam_x64_line(output, rem_min + ":");
+            // x86 idiv traps for MIN/-1 even though CCAM remainder is zero.
+            ccam_x64_line(output, "    movq $0, %rax");
+            ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+            ccam_x64_line(output, done + ":");
+        } else {
+            ccam_x64_line(output, "    je .Lcap_trap_overflow");
+            ccam_x64_line(output, safe + ":");
+            ccam_x64_line(output, "    cqo");
+            ccam_x64_line(output, "    idivq %rcx");
+            ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
         }
-        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
         return true;
     }
     if (instruction.op == CCAM_OP_EQ_I || instruction.op == CCAM_OP_LT_I) {
@@ -318,7 +332,8 @@ test "CCAM x86-64 backend emits freestanding checked native assembly" {
         lowered.functions, lowered.entry_function, 100, 16);
     assert(native.ok && native.error == "");
     assert(ccam_x64_contains(native.assembly, ".globl _start"));
-    assert(ccam_x64_contains(native.assembly, "call " + ccam_x64_function_label(lowered.entry_function)));\n    assert(ccam_x64_contains(native.assembly, "call cap_fn_0"));
+    assert(ccam_x64_contains(native.assembly, "call " + ccam_x64_function_label(lowered.entry_function)));
+    assert(ccam_x64_contains(native.assembly, "call cap_fn_0"));
     assert(ccam_x64_contains(native.assembly, "syscall"));
     assert(ccam_x64_contains(native.assembly, "cap_max_steps: .quad 100"));
     assert(ccam_x64_contains(native.assembly, "cap_max_depth: .quad 16"));
@@ -341,4 +356,59 @@ test "CCAM x86-64 backend rejects unsupported argument counts" {
     });
     CCAMNativeResult native = ccam_x64_emit_linux_elf(functions, 0, 100, 16);
     assert(!native.ok && native.assembly == "");
+}
+
+
+CCAMNativeResult ccam_x64_emit_boundary_program(int operation, string path) {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction instruction = ccam_instruction(CCAM_OP_CONST_I);
+    instruction.dst = 0;
+    instruction.int_value = CCAM_I64_MIN;
+    code.push(instruction);
+    instruction = ccam_instruction(CCAM_OP_CONST_I);
+    instruction.dst = 1;
+    instruction.int_value = -1;
+    code.push(instruction);
+    instruction = ccam_instruction(operation);
+    instruction.dst = 2;
+    instruction.lhs = 0;
+    instruction.rhs = 1;
+    code.push(instruction);
+    instruction = ccam_instruction(CCAM_OP_RET);
+    instruction.lhs = 2;
+    code.push(instruction);
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main",
+        register_types: types,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_INT,
+        instructions: code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(functions, 0, 10, 1);
+    if (native.ok) {
+        if (!write_file(path, native.assembly)) {
+            return new CCAMNativeResult{ok: false, assembly: "", error: "fixture_write_failed"};
+        }
+    }
+    return native;
+}
+
+test "CCAM x86-64 remainder preserves MIN modulo negative one" {
+    CCAMNativeResult native = ccam_x64_emit_boundary_program(
+        CCAM_OP_REM_I, "build/ccam-native-x64-rem-min.s");
+    assert(native.ok);
+    assert(ccam_x64_contains(native.assembly, "_remmin"));
+}
+
+test "CCAM x86-64 division traps on MIN divided by negative one" {
+    CCAMNativeResult native = ccam_x64_emit_boundary_program(
+        CCAM_OP_DIV_I, "build/ccam-native-x64-div-min.s");
+    assert(native.ok);
+    assert(ccam_x64_contains(native.assembly, "je .Lcap_trap_overflow"));
 }
