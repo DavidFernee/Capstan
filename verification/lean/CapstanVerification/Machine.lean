@@ -259,6 +259,13 @@ theorem pushCallFrame_exhausted_traps
   have hnot : ¬ stack.frames.length < stack.maxDepth := Nat.not_lt.mpr hfull
   simp [hnot]
 
+/-- The final instruction cannot fall through to a sequential successor. -/
+theorem finiteProgram_final_instruction_has_control_effect
+    {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types) :
+    HasExplicitControlEffect (program.code (Fin.last m)) :=
+  (machineInstrIsTerminal_iff_control_effect _).mp program.last_is_terminal
+
 /-- A running state for the single-frame machine. -/
 structure MachineState (n m : Nat) (types : RegTypes n) where
   pc : Fin (m + 1)
