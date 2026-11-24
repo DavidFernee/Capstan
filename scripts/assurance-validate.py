@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Validate claim-scoped assurance records and report evidence freshness.
+"""Validate claim-scoped assurance records and enforce freshness for live claims.
 
-Freshness is computed against the checked-out HEAD using Git history. A changed
-covered implementation path does not silently preserve an old review/evidence
-record. By default stale records are reported (so legacy records remain visible);
---require-fresh makes them a validation failure for release-gating use.
+Freshness is computed against the checked-out HEAD using Git history. Proposed and
+withdrawn claims remain visible with stale-record diagnostics, but only active or
+qualified claims are release-gated on fresh review and evidence.
 """
 import argparse
 import json
@@ -21,6 +20,11 @@ def inside_repo(path):
         return False
     parts = path.split("/")
     return all(p not in ("", ".", "..") for p in parts)
+
+
+def requires_freshness(state):
+    """Only claims presented as live assurance must have current evidence."""
+    return state in ("active", "qualified")
 
 
 def git(*args):
@@ -47,7 +51,7 @@ def main():
     ap.add_argument("--schema", default="docs/assurance/assurance.schema.json")
     ap.add_argument("--manifest", default="docs/assurance/claims.json")
     ap.add_argument("--require-fresh", action="store_true",
-                    help="fail if any claim review or evidence is stale")
+                    help="fail if an active or qualified claim has stale review or evidence")
     args = ap.parse_args()
     try:
         import jsonschema
@@ -93,6 +97,15 @@ def main():
 
     ids = set()
     stale_count = 0
+    gated_stale_count = 0
+
+    def record_stale(claim, description):
+        nonlocal stale_count, gated_stale_count
+        stale_count += 1
+        if requires_freshness(claim.get("state")):
+            gated_stale_count += 1
+        print("  STALE %s %s" % (claim.get("id", "<missing>"), description))
+
     for claim in manifest.get("claims", []):
         cid = claim.get("id", "<missing>")
         if cid in ids:
@@ -118,12 +131,10 @@ def main():
             try:
                 changed = changed_paths(review_revision, coverage)
                 if changed:
-                    stale_count += 1
-                    print("  STALE %s review: covered implementation changed since %s: %s" %
-                          (cid, review_revision, ", ".join(changed)))
+                    record_stale(claim, "review: covered implementation changed since %s: %s" %
+                                 (review_revision, ", ".join(changed)))
             except ValueError as e:
-                stale_count += 1
-                print("  STALE %s review: %s" % (cid, e))
+                record_stale(claim, "review: %s" % e)
         for ei, evidence in enumerate(claim.get("evidence", [])):
             artifacts = evidence.get("artifacts", [])
             safe_artifacts = True
@@ -150,13 +161,11 @@ def main():
                 try:
                     changed = changed_paths(revision, paths)
                     if changed:
-                        stale_count += 1
-                        print("  STALE %s evidence[%d] (%s): changed since %s: %s" %
-                              (cid, ei, evidence.get("kind", "unknown"), revision,
-                               ", ".join(changed)))
+                        record_stale(
+                            claim, "evidence[%d] (%s): changed since %s: %s" %
+                            (ei, evidence.get("kind", "unknown"), revision, ", ".join(changed)))
                 except ValueError as e:
-                    stale_count += 1
-                    print("  STALE %s evidence[%d]: %s" % (cid, ei, e))
+                    record_stale(claim, "evidence[%d]: %s" % (ei, e))
             verification = evidence.get("verification")
             if evidence.get("result") == "passed" and verification:
                 if not re.fullmatch(r"[0-9a-f]{40}", verification.get("commit", "")):
@@ -169,13 +178,13 @@ def main():
                     print("  %s evidence[%d]: passed evidence needs a GitHub run/review URL" % (cid, ei))
                     failed = True
 
-    if stale_count and args.require_fresh:
-        print("assurance-validate: %d stale review/evidence record(s)" % stale_count)
+    if gated_stale_count and args.require_fresh:
+        print("assurance-validate: %d stale record(s) on active/qualified claims" % gated_stale_count)
         failed = True
     if failed:
         return 1
-    print("assurance-validate: %d claim(s), schema valid, evidence paths resolve; HEAD %s; %d stale record(s)" %
-          (len(manifest.get("claims", [])), head_sha, stale_count))
+    print("assurance-validate: %d claim(s), schema valid, evidence paths resolve; HEAD %s; %d stale record(s), %d on active/qualified claims" %
+          (len(manifest.get("claims", [])), head_sha, stale_count, gated_stale_count))
     return 0
 
 
