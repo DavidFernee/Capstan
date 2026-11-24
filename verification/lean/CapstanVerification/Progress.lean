@@ -74,7 +74,7 @@ theorem runFuel_fuel_exhausted_state_well_typed
   | zero =>
       simp [runFuel] at h
       cases h
-      exact MachineState.registers_well_typed state
+      exact MachineState.registers_well_typed final
   | succ fuel ih =>
       simp only [runFuel] at h
       cases hstep : machineStep program state with
