@@ -1,0 +1,8 @@
+// spec: memory.gc
+// expect-runtime: CWE-1284
+// env: CAPSTAN_MAX_HEAP=1T
+int main() {
+    List<int> values = new List<int>();
+    values.push(1);
+    return 0;
+}
