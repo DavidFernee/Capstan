@@ -588,7 +588,21 @@ static void test_gc_large_secret_mapping(void) {
     int retained = 0;
     for (size_t i = 0; i < cap_gc.nlarge; i++)
         if ((uintptr_t)cap_gc.large[i].base == address) retained = 1;
-    CHECK(!retained && cap_gc.heap <= heap_before);
+    size_t heap_after = cap_gc.heap;
+    if (retained || heap_after > heap_before) {
+        fprintf(stderr,
+                "large-secret reclamation diagnostic: retained=%d heap_before=%zu heap_after=%zu address=%" PRIxPTR "\\n",
+                retained, heap_before, heap_after, address);
+        for (size_t i = 0; i < cap_gc.nlarge; i++) {
+            CapLarge *large = &cap_gc.large[i];
+            if ((uintptr_t)large->base == address)
+                fprintf(stderr,
+                        "  matching allocation: size=%zu alloc_size=%zu atomic=%d mark=%d\\n",
+                        large->size, large->alloc_size, large->atomic, large->mark);
+        }
+    }
+    CHECK(!retained);
+    CHECK(heap_after <= heap_before);
 
     const volatile unsigned char *fresh = (const volatile unsigned char *)cap_gc_alloc(8192, 2);
     int zeroed = 1;
