@@ -1,0 +1,39 @@
+// Unit regressions for cumulative frame text/metadata preflight.
+string repeat_ascii(int n) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < n; i += 1) { parts.push("x"); }
+    return join(parts, "");
+}
+
+View nested_view(int depth) {
+    if (depth == 0) { return text(""); }
+    return column().add(nested_view(depth - 1));
+}
+
+int main() {
+    List<int> budget = new List<int>();
+    budget.push(0);
+    if (!frame_text_budget_add(budget, MAX_FRAME_TEXT_BYTES)) { return 1; }
+    if (frame_text_budget_add(budget, 1)) { return 2; }
+    if (!frame_text_budget_add(budget, 0)) { return 3; }
+
+    View ordinary = column()
+        .add(text("Capstan"))
+        .add(button("Continue", "continue").label("Continue"));
+    if (!frame_text_budget_valid(ordinary)) { return 4; }
+
+    // Each string is below the per-value MAX_TEXT_BYTES limit, but together
+    // they exceed the aggregate per-frame budget.
+    string large = repeat_ascii(150000);
+    View aggregate = column().add(text(large)).add(text(large));
+    if (frame_text_budget_valid(aggregate)) { return 5; }
+
+    // Metadata is included, not just painted text.
+    View metadata = box().key(large).hint(large);
+    if (frame_text_budget_valid(metadata)) { return 6; }
+
+    if (frame_text_budget_valid(nested_view(MAX_DEPTH + 1))) { return 7; }
+
+    println("frame text budget: 7 assertions");
+    return 0;
+}
