@@ -1077,6 +1077,40 @@ test "CCAM source lowering patches nested break and continue targets" {
     assert(machine.trap_code == "");
 }
 
+
+test "CCAM source lowering supports recursive direct calls" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("recursive-lowering.cap");
+    Tainted source = taint("int countdown(int value) { if (value < 1) { return 42; } return countdown(value - 1); } int main() { return countdown(3); }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok && lowered.functions.len() == 2);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
 test "CCAM source lowering emits direct calls and returns" {
     Ctx context = new Ctx{
         files: new List<string>(),
