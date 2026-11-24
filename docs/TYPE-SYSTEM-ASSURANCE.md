@@ -276,3 +276,46 @@ There are two coherent choices:
 Whichever choice is made, coherence must use resolved interface/type declaration identities and be independent of source and import order. If generic impls are deferred, the design must avoid syntax or inference that accidentally accepts them.
 
 The acceptance matrix must not assume generic impls exist until the proposal explicitly selects the first option. The compiler must not accidentally accept an unconstrained or overlapping implementation merely because a concrete test instantiation happens to be unique.
+
+
+## 14. Generic inference and interface dispatch must preserve security effects
+
+The v0.5 proposal says that generic arguments are inferred from value arguments when there is exactly one valid solution, and that interface calls are resolved to direct calls after monomorphisation. Those are reasonable implementation choices, but the design does not yet define the inference relation or how protected-call requirements survive interface abstraction.
+
+### 14.1 Inference must be structural and qualifier-preserving
+
+Inference should be a bounded structural unification operation over the declared parameter types and actual argument types. It must not be a permissive conversion search. In particular:
+
+- A type variable is identified by its declaration binder and ordinal, never by its spelling.
+- Matching a type constructor requires the same constructor and arity; nominal types require the same resolved declaration identity.
+- Repeated occurrences of one type variable must infer exactly the same type. Conflicting candidates are an error, not a widening opportunity.
+- Security-relevant leaves remain exact: `Tainted`, `Secret`, `Html`, `LogText` and `Grant<P>` cannot be erased, converted to a weaker qualifier or inferred as an unrelated nominal type.
+- Inference uses only the value-argument positions specified by the proposal. It must not silently use expected return type, ambient context, declaration order or runtime values to choose a candidate.
+- Every declared type parameter must have one complete solution. Unused or underconstrained parameters require explicit type arguments or a diagnostic.
+- The inferred substitution is immutable and is then passed through the same bounded substitution, type validation, constraint checking and grant-containment checks as explicit type arguments.
+
+Required tests include repeated-variable conflict; nested `List<T>` and optional matching; same-short-name nominal types from different modules; explicit versus inferred argument equivalence; `Tainted` and `Secret` preservation through nested arguments; `Grant<P>` versus `Grant<Q>`; and an ambiguous or unused type variable. Permuting argument/declaration/import order must not change the result.
+
+### 14.2 Protected-call requirements are part of an interface method contract
+
+In the current checker, a direct protected call is not accepted merely because its arguments otherwise match. `check_call` resolves the concrete function declaration, reads its `protected(P)` annotation, and requires a first argument of exactly `Grant<P>`. The protected function body is separately checked with a privileged context. This is an explicit security boundary.
+
+The v0.5 interface proposal describes method signatures and static dispatch, but does not specify how a protected implementation's policy requirement is represented in the interface contract. A generic caller checked only against an ordinary-looking interface signature must not be able to dispatch to a protected implementation, nor may an implementation silently introduce or weaken a protection requirement.
+
+The design must choose and specify a rule. The minimum safe contract is:
+
+1. A protected interface method declares its policy identity and grant parameter position as part of its callable signature/effect.
+2. A generic call must provide exactly the corresponding `Grant<P>`; a grant for another policy is not substitutable.
+3. An implementation must match the interface's protection contract exactly. It cannot weaken a protected requirement, substitute another policy, or add an undeclared protected requirement.
+4. After substitution and implementation selection, the concrete target is checked against the interface contract before code generation.
+5. The implementation body is checked under the same privileged-context rules as an ordinary protected function. Calling through an interface does not itself confer privilege.
+
+Required negative tests: call without a grant; wrong-policy grant; implementation effect mismatch in either direction; generic substitution changing the policy identity; and an interface call whose selected implementation cannot be proven unique. Positive tests must show that the correct grant permits the protected operation without granting ambient privilege to the generic caller.
+
+### 14.3 Grant non-escape must be one recursive rule
+
+The current checker already uses recursive `contains_grant` for function returns, struct fields, enum payloads and constants. The generic implementation must preserve that property through arbitrarily nested type constructors and type-variable substitution. Do not duplicate shallow checks such as testing only whether the immediate collection element is `TY_GRANT`.
+
+Define a single recursive, bounded predicate over the fully substituted type and apply it consistently to every position that can extend a grant's lifetime or hide it from a caller: aggregate storage, return values, closure environments/captures, constants, and any future generic container or interface-associated value. Keep the intentional request-scoped local/parameter use distinct from heap storage and escape. Test nested wrappers (including optional and multiple aggregate layers), aliases, substituted type variables, and closure capture. The rule must be evaluated after substitution as well as on declaration templates.
+
+These requirements close a gap between the existing concrete protected-call model and the proposed generic/static-dispatch model. They do not require runtime dispatch or a general-purpose effect system; they require the existing policy/grant semantics to remain explicit and invariant under abstraction.
