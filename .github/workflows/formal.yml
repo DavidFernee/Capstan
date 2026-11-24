@@ -48,7 +48,7 @@ jobs:
         shell: bash
         env:
           LEAN4EXPORT_SHA: df81913eee5519d5a88ae5b0fd701b5298cc29ab
-          NANODA_LIB_SHA: e5438ac0a85a036b6dfe093aa457bc3448498014
+          NANODA_LIB_SHA: 0da9f98feadd3a0a2ef4b3dbcf52a298a6fef929
         run: |
           set -euo pipefail
 
