@@ -3,6 +3,7 @@ import CapstanVerification.RuntimeBridge
 import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
+import CapstanVerification.Reachability
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -134,3 +135,8 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.validateRawInstruction_constInt_type_sound
 #print axioms CapstanVerification.validateRawInstruction_constBool_type_sound
 #print axioms CapstanVerification.validateRawInstruction_jump_target_sound
+
+#print axioms CapstanVerification.validateRawInstruction_branch_targets_sound
+#print axioms CapstanVerification.entry_pc_reachable
+#print axioms CapstanVerification.reachable_final_instruction_terminal
+#print axioms CapstanVerification.reachable_ordinary_has_fallthrough
