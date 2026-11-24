@@ -128,7 +128,7 @@ For a fixed validated program, arguments and machine limits, execution has one d
 
 A dynamic trap is terminal. The observable machine result is:
 
-`Halt(value)` or `Trap(code, function, pc)`.
+`Halt(value)`, `HaltVoid`, or `Trap(code, function, pc)`.
 
 The initial stable trap codes are:
 - `integer_overflow`
