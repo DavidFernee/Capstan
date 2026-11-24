@@ -172,7 +172,7 @@ def main():
             row = gallery_raw[y * len(gallery_row):(y + 1) * len(gallery_row)]
             if row != gallery_row:
                 fail(f"560x520 gallery-size decoded pixels differ on row {y}")
-        peak = re.search(r"peak_heap=(\\d+)", result.stderr + result.stdout)
+        peak = re.search(r"peak_heap=(\d+)", result.stderr + result.stdout)
         heap_note = (f"; peak Capstan heap {int(peak.group(1)) / (1024 * 1024):.1f} MiB"
                      if peak else "; peak Capstan heap metric unavailable")
         print(f"png budget: 21 Capstan assertions; {width}x{height} RGBA / "
