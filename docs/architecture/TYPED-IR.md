@@ -25,7 +25,7 @@ A CCAM program is a finite, immutable collection of functions plus one designate
 - a parameter count;
 - a return type;
 - a finite instruction sequence;
-- source-location metadata for diagnostics and trap mapping.
+- an optional out-of-band source-map side table for diagnostics and trap mapping. Source metadata is not part of the CCAM v0.1 program/instruction JSON schema and cannot affect execution.
 
 Register and instruction indices are zero-based. Indices are local to a function. Source locations are metadata and do not affect execution semantics.
 
