@@ -37,6 +37,58 @@ The source-level core subset consists of:
 
 The source compiler MUST reject a core expression whose operands or result do not match the operation's declared types. The machine MUST independently validate the instruction program's structural type constraints.
 
+
+### 2.1 Core typing judgement
+
+Let `Σ` be the complete function-signature environment, where
+`Σ(f) = (T1, ..., Tn) -> R`, each parameter type `Ti` is `int` or `bool`,
+and the result type `R` is `int`, `bool` or `void`. Let `Γ` map the
+currently in-scope, initialised local names to `int` or `bool`. Function
+signatures are collected before checking bodies, so direct recursion is
+well-defined. Parameter names and local names must be unique within their
+scope. A local enters `Γ` only after its initialiser has type-checked; this
+matches the source rule that every variable is initialised at declaration.
+
+The judgement `Γ;Σ ⊢ e : T` is syntax-directed and has exactly these core
+operator signatures:
+
+| Expression form | Required operand types | Result type |
+|---|---|---|
+| integer literal | signed-64 representable literal | `int` |
+| `true`, `false` | none | `bool` |
+| local `x` | `x:T ∈ Γ` | `T` |
+| `+ - * / %` | `int, int` | `int` |
+| `< <= > >=` | `int, int` | `bool` |
+| `== !=` | two operands of the same type, either `int` or `bool` | `bool` |
+| `!` | `bool` | `bool` |
+| `&& ||` | `bool, bool` | `bool` |
+| `f(e1, ..., en)` | `Σ(f)=(T1,...,Tn)->R` and each `Γ;Σ ⊢ ei:Ti` | `R`, provided `R != void` |
+
+A void-returning call is permitted only as a statement; it is not an expression
+and cannot be used as an operand, initialiser, argument value or return value.
+No implicit conversions, integer/boolean interchange, or coercions from
+`void` exist.
+
+The statement judgement is checked against the enclosing function result type:
+
+| Statement form | Typing requirement |
+|---|---|
+| `int x = e;` / `bool x = e;` | `e` has exactly the declared type; then add `x:T` to the block environment. |
+| `x = e;` | `x:T ∈ Γ` and `e:T`. |
+| scalar `x op= e;` | `x:int ∈ Γ` and `e:int`; `op` is one of `+ - * / %`. |
+| `if (e) s1 else s2` | `e:bool`; check both branches under the incoming environment. |
+| `while (e) s` | `e:bool`; check the body under the incoming environment. |
+| `return e;` | the enclosing function returns `T != void` and `e:T`. |
+| `return;` | the enclosing function returns `void`. |
+| `break;`, `continue;` | occur only within a loop. |
+
+Block-local declarations do not escape their block. Every variable read must
+refer to a name in `Γ`; because declarations require initialisers, an
+uninitialised local is a source typing error. The CCAM register model is more
+defensive: non-parameter registers start uninitialised and a read of one traps,
+so malformed or incorrectly lowered programs cannot turn this source guarantee
+into an unchecked host-language read.
+
 ## 3. Evaluation and sequencing
 
 ### 3.1 General rule
