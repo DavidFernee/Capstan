@@ -1,7 +1,7 @@
 # Compiler assurance, adversarial testing and performance plan
 
 **Status:** test strategy for the C-free compiler workstream  
-**Date:** 2026-11-24  
+**Branch:** `compiler/direct-native-prototype-v02`
 **Branch:** `compiler/direct-native-prototype`  
 **Semantic authority:** CCAM specification and Capstan-native executable implementation; no parallel semantics are introduced here.
 
@@ -12,7 +12,9 @@ The current main-branch baseline contains the C-generating compiler, C runtime a
 Observed PR #81 state:
 - `docs/architecture/CCAM.md` defines CCAM v0.1 for signed-64 integers, booleans, typed local registers, arithmetic, branches, calls/returns, traps and deterministic step/call-depth limits.
 - `verification/ccam_core.cap` currently implements checked arithmetic and a typed register-file substrate. It is not yet a complete evaluator.
-- PR #81's exact head `8591cc152ca40330e419b48282afce2f4dd32903` passed all four required CI jobs in run `45352697607`. Its the earlier semantic-correction PR #100 passed its exact-head matrix, then was superseded because the foundation branch advanced. Replacement PR #132 is now based on the current PR #81 head and its exact-head CI run `45356519255` is in progress. These CI results are not evidence of a completed evaluator, native backend or end-to-end formal proof. PR #124's source-language core/typed-IR contract and PR #89's formal refinement work remain separate review items.
+- PR #81's exact head `8591cc152ca40330e419b48282afce2f4dd32903` passed all four required CI jobs in run `45352697607`. Replacement semantic-correction PR #132, based on the current PR #81 head, also passed all four jobs in run `45356519255`.
+- PR #89's latest exact head `8a0831d93474552a6f3f9404513d03e75b76b7fa` passed the Lean 4.19 formal-verification job in run `45360472678`, including the pinned lean4checker replay and axiom audit. The audit reports `runtimeWriteRegister_preserves_relation` depends on `[propext, Quot.sound]`; this is an abstract refinement result, not a proof of the Capstan-native mutable implementation.
+- These CI and proof results do not establish a completed evaluator, native backend or end-to-end compiler correctness. PR #124's source-language core/typed-IR contract remains a separate review item.
 
 The first native backend must wait for the CCAM instruction/evaluator interfaces and the formal/runtime owners' agreement. This plan can be adopted now without creating a competing machine.
 
