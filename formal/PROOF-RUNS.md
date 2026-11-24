@@ -52,7 +52,9 @@ revision must pass CI before ARITH-01 is marked proved model-only. The current C
 `cap_gc_release` also still ignores `madvise` failure, so implementation refinement is
 blocked until that code is corrected and connected to the specification.
 
-## Current revision awaiting verification\n\n- **Commit:** `69c10c15c9196ad97617151a9ca78cd5cc24a7be`\n- **Change:** checked-add now returns an explicit `CheckedAddResult.success` or\n  terminal `CheckedAddResult.fatal`, with `checkedAdd_overflow_fatal` proving that\n  out-of-range sums take the fatal outcome.\n- **Status:** not yet checked by CI at this exact revision.\n\n## Earlier attempts and corrections
+## Current revision awaiting verification
+
+- **Commit:** `69c10c15c9196ad97617151a9ca78cd5cc24a7be`\n- **Change:** checked-add now returns an explicit `CheckedAddResult.success` or\n  terminal `CheckedAddResult.fatal`, with `checkedAdd_overflow_fatal` proving that\n  out-of-range sums take the fatal outcome.\n- **Status:** not yet checked by CI at this exact revision.\n\n## Earlier attempts and corrections
 
 | Run | Commit | Result | Finding and correction |
 |---|---|---|---|
