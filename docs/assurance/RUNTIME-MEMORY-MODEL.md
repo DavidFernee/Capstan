@@ -75,7 +75,7 @@ Secrets that require deterministic destruction likewise require an explicit dest
 
 ## 5. Secret-memory semantics
 
-The secret allocation kind is intended to reduce residual secret data in reclaimed managed storage. The collector attempts to wipe unreachable secret allocations during sweep. Large secret allocations use a volatile byte-wise wipe before the underlying allocation is freed; small secret slots are cleared before being returned to their page's free list.
+The secret allocation kind is intended to reduce residual secret data in reclaimed managed storage. The collector attempts to wipe unreachable secret allocations during sweep. On current main, large secret allocations use a volatile byte-wise wipe before the underlying allocation is freed. Small secret slots are passed through `memset` during sweep, but the allocator then writes the free-list link into the first pointer-sized word of each slot. Consequently, the entire small secret slot is not zero while it is free, and the current-main implementation does not satisfy a full-slot-erasure invariant. PR #51 proposes out-of-line free-slot metadata and a non-elidable wipe to avoid reusing secret payload bytes for allocator links; this remains unintegrated and requires exact-head validation.
 
 This behaviour has important limits:
 
