@@ -1,6 +1,6 @@
 // Direct regression for PNG export's preflight budget and actual encoder path.
-// The Python Shroud harness independently decodes the emitted PNG in a follow-up
-// integration step; this program exercises both accepted and rejected dimensions.
+// When given paths, write an accepted multi-block PNG and verify oversize writes
+// fail without creating output. The Python harness independently decodes the file.
 
 int main() {
     if (!png_raw_size_valid(1, 1)) { return 1; }
@@ -21,18 +21,29 @@ int main() {
     if (encoded[encoded.len() - 8] != 73 || encoded[encoded.len() - 7] != 69 ||
         encoded[encoded.len() - 6] != 78 || encoded[encoded.len() - 5] != 68) { return 12; }
 
-    // The Pixmap is valid under the raster budget but must be rejected by the
-    // stricter PNG export budget before allocating any PNG output buffer.
+    // This image sits just below the raw-byte ceiling and spans many DEFLATE
+    // stored blocks. It exercises the full accepted export path.
+    Pixmap boundary = new_pixmap(511, 512);
+    boundary.clear(0xFF336699);
+    List<int> boundary_bytes = png_encode(boundary);
+    if (boundary_bytes.len() == 0) { return 13; }
+
+    // The Pixmap is valid under the raster budget but exceeds the stricter PNG
+    // budget. Rejection must happen before any PNG output allocation.
     Pixmap over = new_pixmap(512, 512);
     List<int> rejected = png_encode(over);
-    if (rejected.len() != 0) { return 13; }
+    if (rejected.len() != 0) { return 14; }
 
     // Repeated accepted exports must remain deterministic.
     List<int> again = png_encode(small);
-    if (again.len() != encoded.len()) { return 14; }
+    if (again.len() != encoded.len()) { return 15; }
     for (int i = 0; i < encoded.len(); i += 1) {
-        if (again[i] != encoded[i]) { return 15; }
+        if (again[i] != encoded[i]) { return 16; }
     }
-    println("png budget: 15 assertions");
+
+    List<string> a = args();
+    if (a.len() > 0 && !png_write(a[0], boundary)) { return 17; }
+    if (a.len() > 1 && png_write(a[1], over)) { return 18; }
+    println("png budget: 18 assertions");
     return 0;
 }
