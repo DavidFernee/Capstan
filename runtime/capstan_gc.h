@@ -282,6 +282,8 @@ static size_t cap_gc_slot(uintptr_t pageno, size_t cap) {
 }
 
 static void cap_gc_ptab_insert(CapPage *pg) {
+    if (!pg || !pg->base)
+        cap_panic("invalid page-table insertion record", "CWE-476", 0);
     if (cap_gc.ptab_cap && !cap_gc.ptab)
         cap_panic("page-table storage is missing", "CWE-476", 0);
     if ((!cap_gc.ptab_cap && cap_gc.npages) ||
@@ -301,9 +303,15 @@ static void cap_gc_ptab_insert(CapPage *pg) {
         for (size_t i = 0; i < cap_gc.ptab_cap; i++) {
             CapPage *p = cap_gc.ptab[i];
             if (!p) continue;
-            size_t s = cap_gc_slot((uintptr_t)p->base >> CAP_PAGE_SHIFT, nc);
+            if (!p->base)
+                cap_panic("page-table contains a page without a base", "CWE-682", 0);
+            uintptr_t page_no = (uintptr_t)p->base >> CAP_PAGE_SHIFT;
+            size_t s = cap_gc_slot(page_no, nc);
             size_t probes = 0;
             while (nt[s] && probes < nc) {
+                if (!nt[s]->base ||
+                    ((uintptr_t)nt[s]->base >> CAP_PAGE_SHIFT) == page_no)
+                    cap_panic("page-table contains a duplicate or invalid page", "CWE-682", 0);
                 s = (s + 1) & (nc - 1);
                 probes++;
             }
@@ -315,12 +323,17 @@ static void cap_gc_ptab_insert(CapPage *pg) {
         cap_gc.ptab = nt;
         cap_gc.ptab_cap = nc;
     }
-    size_t s = cap_gc_slot((uintptr_t)pg->base >> CAP_PAGE_SHIFT, cap_gc.ptab_cap);
+    uintptr_t page_no = (uintptr_t)pg->base >> CAP_PAGE_SHIFT;
+    size_t s = cap_gc_slot(page_no, cap_gc.ptab_cap);
     for (size_t probes = 0; probes < cap_gc.ptab_cap; probes++) {
-        if (!cap_gc.ptab[s]) {
+        CapPage *existing = cap_gc.ptab[s];
+        if (!existing) {
             cap_gc.ptab[s] = pg;
             return;
         }
+        if (!existing->base ||
+            ((uintptr_t)existing->base >> CAP_PAGE_SHIFT) == page_no)
+            cap_panic("duplicate or invalid page-table entry", "CWE-682", 0);
         s = (s + 1) & (cap_gc.ptab_cap - 1);
     }
     cap_panic("page table has no insertion slot", "CWE-400", 0);
@@ -337,6 +350,8 @@ static CapPage *cap_gc_page_of(uintptr_t addr) {
     for (size_t probes = 0; probes < cap_gc.ptab_cap; probes++) {
         CapPage *pg = cap_gc.ptab[s];
         if (!pg) return NULL;
+        if (!pg->base)
+            cap_panic("page-table entry has no base", "CWE-682", 0);
         if (((uintptr_t)pg->base >> CAP_PAGE_SHIFT) == pageno) return pg;
         s = (s + 1) & (cap_gc.ptab_cap - 1);
     }
