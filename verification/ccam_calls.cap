@@ -14,6 +14,11 @@ import "ccam_core.cap";
 const int CCAM_OP_CALL = 17;
 const int CCAM_MAX_FUNCTIONS = 4096;
 const int CCAM_MAX_CALL_ARGUMENTS = 262144;
+const int CCAM_MAX_TOTAL_REGISTERS = 262144;
+const int CCAM_MAX_FUNCTION_NAME_BYTES = 1024;
+const int CCAM_MAX_TOTAL_FUNCTION_NAME_BYTES = 262144;
+const int CCAM_MAX_CALL_DEPTH = 256;
+const int CCAM_MAX_STEPS = 10000000;
 
 struct CCAMCallSite {
     int instruction_index;
@@ -224,11 +229,11 @@ CCAMValidationResult ccam_validate_call_sites(
     return ccam_validation_ok();
 }
 
-// The single-frame validator remains the authority for all ordinary
-// instructions and control flow. A call is temporarily represented as a jump
-// to its sequential continuation for that check; call-specific signature and
-// destination checks are performed above. A call at the final instruction is
-// therefore rejected as reachable fall-through.
+// The single-frame validator remains the authority for ordinary opcode
+// operands, return contracts and branch targets. For that static pass, CALL is
+// replaced with a valid terminal TRAP placeholder; the separate worklist pass
+// below models CALL's sequential continuation edge and rejects reachable
+// fall-through after a call. Call signatures and destinations are checked above.
 CCAMValidationResult ccam_validate_multi_function(
     List<CCAMFunction> functions,
     int entry_function
@@ -241,15 +246,28 @@ CCAMValidationResult ccam_validate_multi_function(
     }
 
     int total_instructions = 0;
+    int total_registers = 0;
+    int total_name_bytes = 0;
     int total_call_arguments = 0;
     Map<int> function_names = new Map<int>();
-    // Validate every function descriptor before inspecting any call-site
-    // signature. A call may target a later function in the table.
+    // Bound aggregate metadata before allocating per-function validation or
+    // machine-copy storage. A call may target a later function in the table.
     for (int i = 0; i < functions.len(); i += 1) {
         CCAMFunction fn = functions[i];
-        if (fn.name == "") {
-            return ccam_validation_error("invalid_function_name");
+        int name_bytes = fn.name.len();
+        if (name_bytes == 0) return ccam_validation_error("invalid_function_name");
+        if (name_bytes > CCAM_MAX_FUNCTION_NAME_BYTES) {
+            return ccam_validation_error("function_name_limit_exceeded");
         }
+        for (int byte_index = 0; byte_index < name_bytes; byte_index += 1) {
+            if (fn.name.at(byte_index) == 0) {
+                return ccam_validation_error("invalid_function_name");
+            }
+        }
+        if (name_bytes > CCAM_MAX_TOTAL_FUNCTION_NAME_BYTES - total_name_bytes) {
+            return ccam_validation_error("total_function_name_limit_exceeded");
+        }
+        total_name_bytes += name_bytes;
         if (function_names.has(fn.name)) {
             return ccam_validation_error("duplicate_function_name");
         }
@@ -266,19 +284,24 @@ CCAMValidationResult ccam_validate_multi_function(
         if (fn.register_types.len() > CCAM_MAX_REGISTERS) {
             return ccam_validation_error("register_limit_exceeded");
         }
-        total_instructions += fn.instructions.len();
-        if (total_instructions > CCAM_MAX_INSTRUCTIONS) {
+        if (fn.register_types.len() > CCAM_MAX_TOTAL_REGISTERS - total_registers) {
+            return ccam_validation_error("total_register_limit_exceeded");
+        }
+        total_registers += fn.register_types.len();
+        if (fn.instructions.len() > CCAM_MAX_INSTRUCTIONS - total_instructions) {
             return ccam_validation_error("instruction_limit_exceeded");
         }
+        total_instructions += fn.instructions.len();
     }
 
     for (int i = 0; i < functions.len(); i += 1) {
         CCAMFunction fn = functions[i];
         for (int site_index = 0; site_index < fn.call_sites.len(); site_index += 1) {
-            total_call_arguments += fn.call_sites[site_index].argument_registers.len();
-            if (total_call_arguments > CCAM_MAX_CALL_ARGUMENTS) {
+            int argument_count = fn.call_sites[site_index].argument_registers.len();
+            if (argument_count > CCAM_MAX_CALL_ARGUMENTS - total_call_arguments) {
                 return ccam_validation_error("call_argument_limit_exceeded");
             }
+            total_call_arguments += argument_count;
         }
         CCAMValidationResult calls = ccam_validate_call_sites(functions, i);
         if (!calls.ok) {
@@ -352,10 +375,22 @@ CCAMCallMachineCreateResult ccam_call_machine_create(
             error: "invalid_step_limit"
         };
     }
+    if (max_steps > CCAM_MAX_STEPS) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(),
+            error: "configured_step_limit_too_large"
+        };
+    }
     if (max_depth < 1) {
         return new CCAMCallMachineCreateResult{
             ok: false, machine: ccam_empty_call_machine(),
             error: "invalid_call_depth_limit"
+        };
+    }
+    if (max_depth > CCAM_MAX_CALL_DEPTH) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(),
+            error: "configured_call_depth_too_large"
         };
     }
     CCAMValidationResult validation = ccam_validate_multi_function(
@@ -911,4 +946,100 @@ test "CCAM multi-function validator rejects mismatched call signatures" {
     });
     CCAMValidationResult result = ccam_validate_multi_function(functions, 0);
     assert(!result.ok && result.error == "call_argument_type_mismatch");
+}
+
+test "CCAM multi-function validator enforces aggregate register limits" {
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    for (int f = 0; f < 64; f += 1) {
+        List<int> types = new List<int>();
+        for (int r = 0; r < CCAM_MAX_REGISTERS; r += 1) types.push(CCAM_TYPE_INT);
+        functions.push(new CCAMFunction{
+            name: "f" + int_to_str(f), register_types: types,
+            parameter_count: 0, return_type: CCAM_RETURN_VOID,
+            instructions: terminal, call_sites: new List<CCAMCallSite>()
+        });
+    }
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    List<int> extra = new List<int>();
+    extra.push(CCAM_TYPE_INT);
+    functions.push(new CCAMFunction{
+        name: "over", register_types: extra,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: terminal, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "total_register_limit_exceeded");
+}
+
+test "CCAM multi-function validator bounds names and rejects embedded NUL" {
+    string name = "n";
+    for (int i = 1; i < CCAM_MAX_FUNCTION_NAME_BYTES; i += 1) name = name + "a";
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: name, register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: terminal, call_sites: new List<CCAMCallSite>()
+    });
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    functions[0].name = name + "a";
+    CCAMValidationResult too_long = ccam_validate_multi_function(functions, 0);
+    assert(!too_long.ok && too_long.error == "function_name_limit_exceeded");
+    functions[0].name = "bad" + char_str(0) + "name";
+    CCAMValidationResult nul_name = ccam_validate_multi_function(functions, 0);
+    assert(!nul_name.ok && nul_name.error == "invalid_function_name");
+}
+
+test "CCAM multi-function validator bounds aggregate function-name bytes" {
+    string padding = "";
+    for (int i = 0; i < CCAM_MAX_FUNCTION_NAME_BYTES; i += 1) padding = padding + "x";
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    for (int i = 0; i < 256; i += 1) {
+        string prefix = int_to_str(i);
+        string name = prefix + padding.slice(0, CCAM_MAX_FUNCTION_NAME_BYTES - prefix.len());
+        functions.push(new CCAMFunction{
+            name: name, register_types: new List<int>(),
+            parameter_count: 0, return_type: CCAM_RETURN_VOID,
+            instructions: terminal, call_sites: new List<CCAMCallSite>()
+        });
+    }
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    string prefix = "256";
+    string over_name = prefix + padding.slice(0, CCAM_MAX_FUNCTION_NAME_BYTES - prefix.len());
+    functions.push(new CCAMFunction{
+        name: over_name, register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: terminal, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "total_function_name_limit_exceeded");
+}
+
+test "CCAM call machine enforces configuration ceilings before construction" {
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: terminal, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult exact = ccam_call_machine_create(
+        functions, 0, CCAM_MAX_STEPS, CCAM_MAX_CALL_DEPTH);
+    assert(exact.ok);
+    CCAMCallMachineCreateResult too_many_steps = ccam_call_machine_create(
+        functions, 0, CCAM_MAX_STEPS + 1, CCAM_MAX_CALL_DEPTH);
+    assert(!too_many_steps.ok &&
+           too_many_steps.error == "configured_step_limit_too_large");
+    assert(too_many_steps.machine.halted && too_many_steps.machine.functions.len() == 0);
+    CCAMCallMachineCreateResult too_deep = ccam_call_machine_create(
+        functions, 0, CCAM_MAX_STEPS, CCAM_MAX_CALL_DEPTH + 1);
+    assert(!too_deep.ok &&
+           too_deep.error == "configured_call_depth_too_large");
+    assert(too_deep.machine.halted && too_deep.machine.frames.len() == 0);
 }
