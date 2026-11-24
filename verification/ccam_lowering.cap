@@ -901,6 +901,40 @@ test "CCAM source lowering compiles scalar locals and executes 42" {
 
 
 
+
+test "CCAM source lowering preserves checked integer overflow traps" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("overflow-lowering.cap");
+    Tainted source = taint("int main() { return 9223372036854775807 + 1; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.trap_code == "integer_overflow");
+    assert(!machine.halt_has_value);
+}
+
 test "CCAM source lowering rejects constructs outside its declared subset" {
     Ctx context = new Ctx{
         files: new List<string>(),
