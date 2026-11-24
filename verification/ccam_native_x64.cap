@@ -6,6 +6,8 @@
 import "ccam_lowering.cap";
 
 const int CCAM_X64_MAX_ARGUMENTS = 6;
+const int CCAM_X64_MAX_NATIVE_INSTRUCTIONS = 8192;
+const int CCAM_X64_MAX_NATIVE_REGISTERS = 65536;
 
 struct CCAMNativeResult {
     bool ok;
@@ -271,6 +273,18 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     int max_steps,
     int max_depth
 ) {
+    int total_native_instructions = 0;
+    int total_native_registers = 0;
+    for (int i = 0; i < functions.len(); i += 1) {
+        total_native_instructions += functions[i].instructions.len();
+        total_native_registers += functions[i].register_types.len();
+    }
+    if (total_native_instructions > CCAM_X64_MAX_NATIVE_INSTRUCTIONS ||
+        total_native_registers > CCAM_X64_MAX_NATIVE_REGISTERS) {
+        return new CCAMNativeResult{
+            ok: false, assembly: "", error: "native_resource_limit"
+        };
+    }
     CCAMValidationResult valid = ccam_validate_multi_function(functions, entry_function);
     if (!valid.ok) {
         return new CCAMNativeResult{ok: false, assembly: "", error: "invalid_ccam:" + valid.error};
@@ -450,6 +464,26 @@ test "CCAM x86-64 backend preserves uninitialised register traps" {
     CCAMNativeResult native = ccam_x64_emit_linux_elf(functions, 0, 100, 16);
     assert(native.ok);
     assert(write_file("build/ccam-native-x64-uninitialised.s", native.assembly));
+}
+
+
+test "CCAM x86-64 backend bounds native instruction expansion" {
+    List<CCAMInstruction> instructions = new List<CCAMInstruction>();
+    for (int i = 0; i < CCAM_X64_MAX_NATIVE_INSTRUCTIONS; i += 1) {
+        CCAMInstruction jump = ccam_instruction(CCAM_OP_JUMP);
+        jump.target = CCAM_X64_MAX_NATIVE_INSTRUCTIONS;
+        instructions.push(jump);
+    }
+    instructions.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: instructions, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(functions, 0, 100, 16);
+    assert(!native.ok && native.error == "native_resource_limit");
+    assert(native.assembly == "");
 }
 
 test "CCAM x86-64 backend rejects unsupported argument counts" {
