@@ -157,7 +157,7 @@ structure RawSingleFrameProgram (n m : Nat) (types : RegTypes n) where
 def validateSingleFrameProgram {n m : Nat} {types : RegTypes n}
     (raw : RawSingleFrameProgram n m types) : Option (FiniteProgram n m types) := do
   let entry ← finOfNat? (m + 1) raw.entry
-  let decoded := fun pc => validateFunctionInstr (m := n) (m := m + 1) raw.returnType (raw.code pc)
+  let decoded := fun pc => validateFunctionInstr (m := m + 1) raw.returnType (raw.code pc)
   if hall : ∀ pc, (decoded pc).isSome then
     let typed : Fin (m + 1) → MachineInstr n (m + 1) types :=
       fun pc => (decoded pc).get (hall pc)
