@@ -282,6 +282,7 @@ STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap lib/*.c
 if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then
   ok "$(wc -w <<<"$STYLED") repository sources are formatted"
 else
+  # Show the formatter rewrite so house-style failures are actionable in CI.
   while IFS= read -r f; do
     [[ -f "$f" ]] || continue
     cp "$f" "$tmp/house-style.before"
