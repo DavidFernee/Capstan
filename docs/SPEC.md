@@ -150,8 +150,9 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
 - A grant is bound to the values it was issued for, by policy-argument position (the role).
   Structs and collections are bound by identity; strings by content; scalar and enum values
   by value. Passing a different argument in a policy role stops with CWE-639. A protected
-  function that accepts parameters of a type used by its policy must accept all policy
-  parameters of that type or none; this keeps repeated same-typed roles unambiguous.
+  function parameters must be represented in the policy; extra unbound parameters are rejected.
+  For repeated types, it must accept all policy parameters of that type or none, keeping roles
+  unambiguous.
 - Policy analysis:
   - `return true;` without `public` is an error (CWE-862).
   - `Tainted` parameters are an error (CWE-807).
