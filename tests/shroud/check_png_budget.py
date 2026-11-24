@@ -164,7 +164,7 @@ def main():
         gallery_raw_length = (1 + 4 * gallery_width) * gallery_height
         gallery_blocks = check_stored_deflate(gallery_idat, gallery_raw_length)
         gallery_raw = zlib.decompress(gallery_idat)
-        gallery_row = b"\\x00" + bytes((0x33, 0x66, 0x99, 0xFF)) * gallery_width
+        gallery_row = b"\x00" + bytes((0x33, 0x66, 0x99, 0xFF)) * gallery_width
         for y in range(gallery_height):
             row = gallery_raw[y * len(gallery_row):(y + 1) * len(gallery_row)]
             if row != gallery_row:
