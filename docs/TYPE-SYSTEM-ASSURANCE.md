@@ -563,3 +563,66 @@ An implementation must not weaken a protected requirement, strengthen an unprote
 - Verify concrete target selection and effect revalidation are deterministic across import/declaration order and happen before any C is emitted.
 
 These requirements complement the generic abstract/concrete checking gates and the bounded Grant-containment analysis in sections 15 and 18.
+
+
+## 20. Recursive public-API closure and visibility through generic abstractions
+
+The proposal's rule that a public declaration may not expose a private type is necessary but underspecified. Once generic bounds, interfaces, protected methods and static implementation lookup exist, visibility must be checked over the complete semantic API surface, not only the spelling of the outermost parameter and return types.
+
+### 20.1 Define the exported declaration closure
+
+For every public declaration, compute a finite, cycle-safe closure of all declarations that a caller must know, name, construct, inspect, satisfy or invoke to use that API. At minimum include:
+
+- Function and method parameter types, return types, receiver types, and every nested generic argument and optional/collection/function-type component.
+- Generic parameter bounds and every referenced interface and interface method contract.
+- Every nominal struct field type and enum variant payload type that is externally accessible under the language's field/variant access rules.
+- Types and policy identities referenced by protected method/function contracts, including the exact `Grant<P>` policy argument and grant parameter position.
+- Public constant types and any nominal declarations needed to interpret their values.
+- Any declaration reached recursively through the above types, including nested generic arguments; do not stop at the first public outer type.
+
+A public signature such as `PublicBox<PrivateRecord>` is not API-closed merely because `PublicBox` itself is public. Likewise, a public generic function with a private interface bound or a protected method whose policy is private leaks an unnameable dependency.
+
+The closure algorithm must use resolved declaration identity, not short names, and must terminate on recursive nominal types. Unknown or unresolved declarations fail closed with a visibility diagnostic; they are not treated as public.
+
+### 20.2 Separate type visibility from member visibility
+
+The proposal says struct-field visibility is a separate question and that existing field access rules remain unchanged unless specified. Under the current language, fields are accessed directly and there is no separate field-level visibility syntax. Therefore, for v0.5, either:
+
+1. Treat all fields and enum payload types of an exported nominal type as part of its externally visible API and require their types to be public; or
+2. Introduce explicit member visibility and fully define cross-module construction, field access, pattern matching and generated constructor behaviour.
+
+Do not silently treat a private field as hidden when the language has no private-field mechanism. If member visibility is deferred, option 1 is the conservative rule. The same decision must cover methods declared inside structs, enum variants, and struct-literal construction.
+
+### 20.3 Generic inference must not bypass visibility
+
+Visibility checks apply after name resolution and type inference as well as at explicit source references. A caller must not gain access to a private type by omitting a type argument, relying on inferred return types, selecting an overload/implementation indirectly, or passing a public wrapper whose substituted arguments contain private declarations.
+
+If a public generic API's constraints or substituted concrete type require a private declaration, reject the use at the call site with a deterministic diagnostic. Do not expose private declaration details in diagnostics beyond the minimum needed to identify the inaccessible API boundary.
+
+### 20.4 Interface implementations are part of the API contract
+
+The design must decide whether an implementation in an imported module is visible to all importers in the compilation closure or only within its declaring module. This is not merely an implementation detail: public generic functions may require a concrete implementation to satisfy an interface bound after substitution.
+
+For v0.5, specify explicitly:
+- Whether impl declarations have public/private visibility and what syntax marks an exported impl.
+- Whether an exported impl may mention only public interface and target types.
+- Whether an unexported impl may satisfy a bound outside its declaring module.
+- How orphan ownership and coherence interact with impl visibility.
+- Whether a public generic function's bounds are satisfiable only from exported impls in the caller's compilation closure.
+
+A conservative model is to make impl visibility explicit, allow private impls only for use inside their declaring module, and require an exported impl for cross-module satisfaction. An exported impl must itself be API-closed: its interface, target, method signatures, protection effects and any public constraints must not depend on private declarations.
+
+### 20.5 Required adversarial tests
+
+- Reject a public function whose nested parameter or return type contains a private nominal type, including `PublicBox<Private>` and deeper nesting.
+- Reject a public generic function with a private interface bound, private constraint dependency or private protected policy.
+- Reject an exported struct or enum whose externally accessible field/variant payload contains a private type under the chosen member-visibility model.
+- Reject a public method exposing a private type through its receiver, parameter, return type or protected effect.
+- Reject a public constant whose declared type is private.
+- Verify recursive public types terminate in closure analysis and are accepted only when every reachable exposed dependency is public.
+- Verify inference cannot instantiate a public generic API with a private type to bypass visibility.
+- Verify private impls do not satisfy external generic bounds if the chosen model makes impl visibility explicit; verify exported impls do.
+- Verify a private implementation detail that is not part of any public signature or exported impl remains usable internally without being accidentally exported.
+- Verify diagnostics are deterministic under import order and aliases and do not crash on unresolved or cyclic declaration graphs.
+
+These are design and acceptance requirements, not claims that v0.5 visibility or generic checking is implemented.
