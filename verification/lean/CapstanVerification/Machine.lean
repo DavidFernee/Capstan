@@ -190,7 +190,7 @@ def popNestedCallFrame {Frame : Type}
         within_limit := by
           have hlen : (caller :: rest).length ≤ (callee :: caller :: rest).length := by
             simp
-          exact le_trans hlen stack.within_limit
+          exact Nat.le_trans hlen stack.within_limit
       })
 
 /-- A successful nested return restores the caller at the top of the stack. -/
@@ -200,8 +200,7 @@ theorem popNestedCallFrame_restores_caller
     (hframes : stack.frames = callee :: caller :: rest)
     (h : popNestedCallFrame stack = .ok (callee, next)) :
     next.frames.head? = some caller := by
-  rw [hframes, popNestedCallFrame] at h
-  simp at h
+  simp [popNestedCallFrame, hframes] at h
   cases h
   rfl
 
