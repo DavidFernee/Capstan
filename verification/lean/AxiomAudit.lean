@@ -14,6 +14,11 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.checkedAdd_sound
 #print axioms CapstanVerification.checkedSub_sound
 #print axioms CapstanVerification.checkedMul_sound
+#print axioms CapstanVerification.executeCheckedIntOp_preserves_well_typed
+#print axioms CapstanVerification.subIntOp
+#print axioms CapstanVerification.mulIntOp
+#print axioms CapstanVerification.executeCheckedIntOp
+
 #print axioms CapstanVerification.checkedDiv_zero_traps
 #print axioms CapstanVerification.checkedRem_zero_traps
 #print axioms CapstanVerification.checkedDiv_min_neg_one_traps
