@@ -4,7 +4,7 @@ Hand labels for the K0 kernel CVE study (`tools/k0/study.py`, `docs/K0-KERNEL-CV
 is a CVE from the study year and the class a reader assigned from its fix description, using the
 class names in `tools/k0/classify.py`. The study loader scans every CVE identifier-year directory,
 because identifier year and publication year are not equivalent. Run the study only against a complete
-CVE List V5 checkout with a clean Git working tree; the exact 40-character source commit is recorded in both the report and summary JSON. Incomplete checkouts and malformed Linux-published records are rejected.
+CVE List V5 checkout with a clean Git working tree and a complete materialised JSON inventory; sparse checkouts are rejected by comparing tracked and on-disk records. The exact 40-character source commit is recorded in the report and summary JSON. Incomplete checkouts and malformed Linux-published records are rejected.
 
 - `labels.csv`: 60 CVEs drawn at random. The classifier's rules were refined after this sample was
   read, so its agreement here is optimistic.
@@ -20,6 +20,7 @@ reviewer relabelling them is the next step for the study's credibility.
 Run `python3 tests/k0/check.py` (also part of `tests/run.sh`) to verify that:
 - a CVE assigned in an earlier identifier year but published in the study year is included;
 - incomplete year-directory checkouts and malformed Linux-published records fail closed;
-- source snapshots without Git provenance or with uncommitted/untracked changes are rejected;
+- source snapshots without Git provenance, with uncommitted/untracked changes, or with sparse/missing tracked records are rejected;
+- K1.10 candidates are labelled proof-eligible projections, never as established proofs without implementation-linked machine-checked evidence;
 - teardown and data-race phrases match the K0 projection rule without matching ordinary prose;
 - use-after-free and double-free remain outside today's kernel capability and project only conditionally on K1.1.
