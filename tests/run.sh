@@ -61,11 +61,11 @@ if cmp -s "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md"; then ok "AGENTS.md and CLAUDE.md 
 section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
-section "Capstan-native verification: CCAM checked arithmetic"
+section "Capstan-native verification: CCAM arithmetic and typed registers"
 if out="$("$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
-  ok "CCAM checked arithmetic and overflow/division boundary tests"
+  ok "CCAM checked arithmetic, signed remainder and typed-register validation tests"
 else
-  bad "CCAM Capstan arithmetic" "$out"
+  bad "CCAM Capstan arithmetic and register validation" "$out"
 fi
 
 
