@@ -1961,6 +1961,14 @@ void check_laundering(Checker c, List<Node> decls) {
         }
         rounds += 1;
     }
+    // Never run sink diagnostics against an incomplete summary set. An adversarial
+    // helper chain can require more than 50 rounds; accepting it would turn an
+    // analysis resource limit into a taint-laundering bypass.
+    if (changed) {
+        report(c.ctx, 0, 1, true, "CWE-20",
+            "taint analysis did not reach a fixpoint within 50 rounds; refusing to compile");
+        return;
+    }
     for (int j = 0; j < decls.len(); j += 1) {
         Node d2 = decls[j];
         if (d2.k == N_FN || d2.k == N_POLICY) { flow_body(sums, c.ctx, d2.kids[d2.n], "", true); }
