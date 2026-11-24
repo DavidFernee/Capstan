@@ -40,11 +40,10 @@ traversal.
 - `implementation/`: implementation-facing contracts and refinement evidence.
 - `proofs/`: additional discharged theorem sources and generated proof reports.
 
-The initial Lean model revision passed its pinned Lean, axiom-audit and independent
-Nanoda checks. The current branch extends checked-add semantics with an explicit terminal
-fatal outcome and is awaiting a fresh exact-head proof run. These are model-only results;
-the C implementation refinement remains open. See [the proof-run ledger](PROOF-RUNS.md)
-for exact revisions, CI evidence and failed attempts.
+The current Lean model has passed its pinned Lean, axiom-audit and independent Nanoda
+checks, including the explicit terminal fatal outcome for checked-add overflow. These are
+model-only results; the C implementation refinement remains open. See [the proof-run
+ledger](PROOF-RUNS.md) for exact revisions, CI evidence and failed attempts.
 
 ## Evidence rules
 
