@@ -75,27 +75,37 @@ void collect_layout_nodes(Laid l, List<Laid> out) {
 void uniquify_layout_ids(Laid root, Ui ui) {
     List<Laid> all = new List<Laid>();
     collect_layout_nodes(root, all);
-    for (int i = 0; i < all.len(); i += 1) {
+    Map<int> reserved = new Map<int>();
+    Map<int> seen = new Map<int>();
+    Map<int> assigned = new Map<int>();
+    for (int i = 0; i < all.len(); i += 1) { reserved.set(all[i].id, 1); }
+    for (int j = 0; j < all.len(); j += 1) {
+        string original = all[j].id;
         bool duplicate = false;
-        for (int j = 0; j < i; j += 1) {
-            if (all[j].id == all[i].id) { duplicate = true; }
+        if (let count = seen.get(original)) {
+            duplicate = true;
+            seen.set(original, count + 1);
+        } else {
+            seen.set(original, 1);
         }
         if (duplicate) {
-            int suffix = i;
-            string candidate = $"{all[i].id}#shroud-duplicate-{suffix}";
+            int suffix = j;
+            string candidate = $"{original}#shroud-duplicate-{suffix}";
             bool collision = true;
             while (collision) {
                 collision = false;
-                for (int k = 0; k < all.len(); k += 1) {
-                    if (k != i && all[k].id == candidate) { collision = true; }
-                }
+                if (let r = reserved.get(candidate)) { collision = true; }
+                if (let a = assigned.get(candidate)) { collision = true; }
                 if (collision) {
                     suffix += 1;
-                    candidate = $"{all[i].id}#shroud-duplicate-{suffix}";
+                    candidate = $"{original}#shroud-duplicate-{suffix}";
                 }
             }
-            all[i].id = candidate;
+            all[j].id = candidate;
+            assigned.set(candidate, 1);
             ui.problems.push("duplicate view identity detected; assign unique View.key() values");
+        } else {
+            assigned.set(original, 1);
         }
     }
 }
