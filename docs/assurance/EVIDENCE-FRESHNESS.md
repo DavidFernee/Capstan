@@ -14,11 +14,17 @@ marks the corresponding evidence stale. A revision that is not an ancestor of
 `HEAD` is also stale; this prevents silently accepting evidence from an unrelated
 history. The check uses Git's path-aware diff, not timestamps or branch names.
 
-By default, stale records are reported but do not fail CI. This is deliberate while
-existing claims are being brought under explicit coverage: the report must expose
-the debt without pretending that the underlying claim has been re-reviewed. Release
-automation can use `--require-fresh` to make stale records fatal once the assurance
-owners have refreshed the reviews and evidence.
+Stale records are always reported. The `--require-fresh` gate fails when a claim in
+`active` or `qualified` state has a stale review or evidence item. Proposed claims
+are not presented as current assurance and may retain stale exploratory evidence;
+withdrawn claims are historical. This distinction lets the manifest expose review
+debt without silently treating a stale qualified claim as current. CI and release
+assembly both run the validator with `--require-fresh`.
+
+The manifest must contain at least one claim, and each claim must contain at least
+one evidence record. A repository with an empty claim inventory is invalid. Claims
+whose evidence has become stale must be downgraded to `proposed` until a reviewer
+refreshes the review and evidence at the current implementation revision.
 
 Freshness is not correctness. A fresh test record still needs a real successful run
 pinned to the exact source revision; an artifact's existence is not a passing test.
