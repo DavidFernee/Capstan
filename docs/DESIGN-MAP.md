@@ -35,20 +35,95 @@ operating system underneath remains outside Capstan.
 
 ## 3. Architecture
 
+### 3.1 Current integrated execution path
+
 ```
-            source (.cap)
-                 │
-   lexer ── parser ── checker ──────────── codegen ── C ── GCC/Clang ── native
-                         │  types, taint,                    ▲
-                         │  grants, policies,                │ capstan_rt.h
-                         │  CWE diagnostics                  │ (checks, crypto,
-                         ▼                                   │  collections)
-                 diagnostics ──► CLI today ──► LSP server ──► editors / Capstan IDE
-                                                   ▲
-                                      Capstan Review (Claude), advisory layer
+Capstan source (.cap)
+        │
+        ▼
+Lexer / parser / checker ──► diagnostics / CLI / LSP
+        │
+        ▼
+Capstan code generation ──► generated C ──► GCC or Clang ──► native executable
+                                      │
+                                      └── C runtime and conservative GC
 ```
 
-## 4. Roadmap
+This is the architecture integrated on `main` at the time of this map. The compiler is
+self-hosting, but stage 0 (Python), the generated C, the C compiler, libc, runtime/GC,
+build scripts and host platform remain within the relevant trusted base. The exact
+scope is recorded in [THREAT-MODEL.md](assurance/THREAT-MODEL.md).
+
+### 3.2 C-free target architecture — in progress, not yet the default
+
+```
+Capstan source ──► source validation / lowering ──► validated CCAM
+                                                    │
+                               normative semantics / abstract machine
+                                                    │
+                              Lean model and machine-checked fragments
+                                                    │
+                         future native code generation and runtime
+```
+
+CCAM is being established as the canonical typed core representation. Lean currently
+checks selected value, register, arithmetic and finite-machine properties; it does not
+prove the Capstan compiler, source lowering, complete runtime, GC or generated native
+code correct. The intended future implementation path is C-free, but the target is not
+an implemented or verified end-to-end execution pipeline. See the active C-free
+architecture and semantics work for the precise scope and dependencies.
+
+## 4. Delivery status and roadmap
+
+This section separates implementation status from proposals. A PR, design document,
+workflow or proof fragment is not by itself evidence that a feature has shipped or that
+an assurance claim is established.
+
+### Completed and integrated baseline
+
+The v0.1–v0.3 milestones below describe the historical integrated language baseline.
+The v0.4 performance work is mixed: range analysis, packed booleans, unboxed optionals,
+benchmark CI and empty-page reclamation are present; the remaining items stay explicitly
+listed as incomplete. The current compiler still emits C.
+
+### Active programme: C-free architecture and formal assurance
+
+The C-free programme is tracked separately from the versioned feature roadmap:
+
+- **Architecture foundation:** define the target execution architecture and trust
+  boundaries; this is an active PR-level workstream, not yet the default build.
+- **Normative core semantics:** settle values, evaluation order, checked arithmetic,
+  traps, deterministic limits and machine-state transitions before treating CCAM as
+  normative.
+- **Canonical typed IR:** validate CCAM schemas and typed register/instruction
+  invariants; any future optimisation IR must refine to CCAM rather than replace its
+  semantic authority.
+- **Source lowering:** specify and test source-to-CCAM lowering, including evaluation
+  order, lvalue retention and effect-sensitive revalidation.
+- **Formal model:** continue Lean proofs for explicitly enumerated fragments. Record
+  theorem assumptions, axiom dependencies and unproved properties; do not infer
+  compiler correctness or native-code correctness from fragment proofs.
+- **Native execution:** implement and validate a C-free backend/runtime only after the
+  semantic and lowering contracts are stable. Treat this as a future integration gate.
+
+Dependencies are ordered: architecture foundation → semantic corrections → normative
+CCAM contract → source-lowering contract → proof refinement and executable conformance
+→ native implementation. A dependent proof or lowering branch must not be integrated
+against an obsolete semantic base.
+
+### Active implementation and remediation work
+
+Runtime allocation/collector safety, compiler evaluation sequencing, and Shroud resource
+budgets are separate workstreams. They remain subject to exact-head CI, subsystem-owner
+review, independent adversarial testing where security-sensitive, and post-merge
+integration tests. Their presence in an open PR is not a completed milestone.
+
+### Proposed and long-term research
+
+The versioned v0.5–v1.0 roadmap below remains a proposal unless a capability is
+implemented, tested and integrated. Kernel work, generational GC, concurrency, web,
+package management, SMT policy proofs and optional backends are not implied by the
+C-free programme. Each requires its own design and acceptance evidence.
 
 Each version must keep the self-hosting fixpoint, the full test suite and the
 compiler's own `--strict` check passing, and the repository formatted with `capstan fmt`.
