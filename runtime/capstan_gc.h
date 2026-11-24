@@ -67,6 +67,49 @@
 #define CAP_MIN_THRESHOLD ((size_t)8 << 20)
 #define CAP_KINDS 3          /* 0: may hold pointers, 1: pointer-free, 2: secret (pointer-free, wiped) */
 
+/* Collector metadata and accounting are part of the trusted allocator. Never
+   let a wrapped capacity or byte counter become an undersized allocation or
+   bypass the configured heap limit. */
+static size_t cap_gc_checked_add(size_t a, size_t b) {
+    if (b > SIZE_MAX - a)
+        cap_panic("garbage collector size addition overflow", "CWE-190", 0);
+    return a + b;
+}
+
+static size_t cap_gc_checked_mul(size_t a, size_t b) {
+    if (a && b > SIZE_MAX / a)
+        cap_panic("garbage collector size multiplication overflow", "CWE-190", 0);
+    return a * b;
+}
+
+static size_t cap_gc_next_capacity(size_t current, size_t required,
+                                   size_t initial, size_t element_size) {
+    if (!element_size)
+        cap_panic("zero-sized garbage collector metadata element", "CWE-682", 0);
+    size_t max_count = SIZE_MAX / element_size;
+    if (required > max_count || current > max_count || !initial)
+        cap_panic("garbage collector metadata capacity exceeds SIZE_MAX", "CWE-789", 0);
+    size_t cap = current ? current : initial;
+    if (cap > max_count)
+        cap_panic("initial garbage collector metadata capacity exceeds SIZE_MAX", "CWE-789", 0);
+    while (cap < required) {
+        cap = cap > max_count / 2 ? max_count : cap * 2;
+        if (!cap)
+            cap_panic("garbage collector metadata capacity overflow", "CWE-190", 0);
+    }
+    return cap;
+}
+
+static size_t cap_gc_saturating_add(size_t a, size_t b) {
+    return b > SIZE_MAX - a ? SIZE_MAX : a + b;
+}
+
+static int cap_gc_heap_would_exceed(size_t amount) {
+    if (cap_gc.heap > cap_gc.max_heap)
+        cap_panic("garbage collector heap accounting invariant violated", "CWE-682", 0);
+    return amount > cap_gc.max_heap - cap_gc.heap;
+}
+
 __attribute__((noreturn, cold, noinline)) static void cap_panic(const char *what, const char *cwe, int64_t loc);
 
 static const uint32_t cap_class_size[CAP_NCLASS] =
@@ -110,6 +153,10 @@ static void *cap_gc_meta(size_t n) {
     void *p = calloc(1, n ? n : 1);
     if (!p) cap_gc_oom();
     return p;
+}
+
+static void *cap_gc_meta_array(size_t count, size_t element_size) {
+    return cap_gc_meta(cap_gc_checked_mul(count, element_size));
 }
 
 static void cap_gc_report(void) {
