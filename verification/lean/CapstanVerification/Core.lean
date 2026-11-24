@@ -89,12 +89,12 @@ def truncDiv (a b : Int) : Int :=
 def checkedDiv (a b : Int) : Except Trap Int :=
   if b = 0 then .error .divisionByZero
   else if a = minI64 ∧ b = -1 then .error .integerOverflow
-  else .ok (truncDiv a b)
+  else checkedI64 (truncDiv a b)
 
 def checkedRem (a b : Int) : Except Trap Int :=
   if b = 0 then .error .divisionByZero
   else if a = minI64 ∧ b = -1 then .ok 0
-  else .ok (a - truncDiv a b * b)
+  else checkedI64 (a - truncDiv a b * b)
 
 
 /-- The signed-64 endpoints are accepted by the executable range predicate. -/
@@ -419,6 +419,30 @@ theorem checkedDiv_min_neg_one_traps :
 theorem checkedRem_min_neg_one_zero :
     checkedRem minI64 (-1) = .ok 0 := by
   simp [checkedRem]
+
+
+/-- Any successful checked division returns a signed-64 value. -/
+theorem checkedDiv_sound (a b result : Int)
+    (h : checkedDiv a b = .ok result) : inI64 result := by
+  unfold checkedDiv at h
+  by_cases hz : b = 0
+  · simp [hz] at h
+  · by_cases hov : a = minI64 ∧ b = -1
+    · simp [hz, hov] at h
+    · exact checkedI64_sound (truncDiv a b) result (by simpa [hz, hov] using h)
+
+/-- Any successful checked remainder returns a signed-64 value. -/
+theorem checkedRem_sound (a b result : Int)
+    (h : checkedRem a b = .ok result) : inI64 result := by
+  unfold checkedRem at h
+  by_cases hz : b = 0
+  · simp [hz] at h
+  · by_cases hmin : a = minI64 ∧ b = -1
+    · simp [hz, hmin] at h
+      subst result
+      exact minI64_in_range
+    · exact checkedI64_sound (a - truncDiv a b * b) result
+        (by simpa [hz, hmin] using h)
 
 /-!
 Explicit omissions: there is no instruction syntax, machine state, small-step
