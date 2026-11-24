@@ -210,6 +210,18 @@ structure RuntimeRegisterFileRelation {n : Nat}
   type_at : ∀ i, runtimeTypeAt runtime i.val = some (types i)
   value_at : ∀ i, runtimeValueAt runtime i.val = regs i
 
+private theorem fin_eq_of_val_eq {n : Nat} {a b : Fin n}
+    (h : a.val = b.val) : a = b := by
+  cases a with
+  | mk av ah =>
+      cases b with
+      | mk bv bh =>
+          cases h
+          have hp : ah = bh := Subsingleton.elim _ _
+          cases hp
+          rfl
+
+
 /-- A successful typed runtime replacement preserves the finite/list relation.
 
 The finite model receives the value selected by the replacement's declared
@@ -236,25 +248,28 @@ theorem runtimeWriteRegister_preserves_relation
     value_at := ?_
   }
   · intro j
-    by_cases hji : j = index
-    · subst j
+    by_cases hjiVal : j.val = index.val
+    · have hji : j = index := fin_eq_of_val_eq hjiVal
+      subst j
       have htarget :=
         runtimeWriteRegister_target runtime updated index.val replacement hwrite
       simp [runtimeTypeAt, htarget, hdecl]
-    · have hjiVal : j.val ≠ index.val := Fin.val_ne_of_ne hji
-      have hother :=
+    · have hother :=
         runtimeWriteRegister_other_unchanged
           runtime updated index.val j.val replacement hwrite hjiVal
       simpa [runtimeTypeAt, hother] using hrel.type_at j
   · intro j
-    by_cases hji : j = index
-    · subst j
+    by_cases hjiVal : j.val = index.val
+    · have hji : j = index := fin_eq_of_val_eq hjiVal
+      subst j
       have htarget :=
         runtimeWriteRegister_target runtime updated index.val replacement hwrite
       have hpayload :=
         RuntimeRegister.value?_of_initialized replacement hinit
       simp [runtimeValueAt, htarget, hpayload, write]
-    · have hjiVal : j.val ≠ index.val := Fin.val_ne_of_ne hji
+    · have hjiFin : j ≠ index := by
+        intro heq
+        exact hjiVal (congrArg Fin.val heq)
       have hother :=
         runtimeWriteRegister_other_unchanged
           runtime updated index.val j.val replacement hwrite hjiVal
@@ -263,7 +278,7 @@ theorem runtimeWriteRegister_preserves_relation
           (runtimeRegisterAt runtime j.val).bind RuntimeRegister.value?
         rw [hother]
       rw [hvalue, hrel.value_at j]
-      simp [write, hji]
+      simp [write, hjiFin]
 
 /-- Native-style dynamic integer read, including the invalid-index check. -/
 def runtimeReadInt (registers : List RuntimeRegister) (index : Nat) :
