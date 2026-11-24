@@ -129,4 +129,11 @@ for cls in ("use-after-free", "double or invalid free"):
     projected, via = study.projected(row)
     assert projected == study.COMPILE and "K1.1" in via, (cls, projected, via)
 
-print("K0 population, malformed-source, race-pattern and kernel-memory projection checks passed")
+candidate, via = study.proof_eligible({
+    "projected": study.LOGIC, "class": "logic error", "via": "",
+})
+assert candidate == study.PROOF_ELIGIBLE
+assert "no proof established" in via
+assert "not proven" in study.PROOF_ELIGIBLE
+
+print("K0 population, snapshot completeness, proof-eligibility, race-pattern and kernel-memory projection checks passed")
