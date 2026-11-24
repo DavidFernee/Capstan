@@ -484,6 +484,15 @@ __attribute__((noinline)) static void collect_clean(void) {
     __asm__ volatile("" ::: "memory");
 #if defined(__x86_64__)
     __asm__ volatile("xor %%r12d, %%r12d\n\txor %%r13d, %%r13d\n\txor %%r14d, %%r14d\n\txor %%r15d, %%r15d\n\txor %%ebx, %%ebx" ::: "r12", "r13", "r14", "r15", "rbx", "memory");
+#elif defined(__aarch64__)
+    /* macOS runners are commonly arm64; clear the ABI's callee-saved
+       general-purpose registers as well as the stack before a conservative
+       collection, otherwise a dropped heap pointer can survive in x19-x28. */
+    __asm__ volatile(
+        "mov x19, xzr\n\tmov x20, xzr\n\tmov x21, xzr\n\tmov x22, xzr\n\t"
+        "mov x23, xzr\n\tmov x24, xzr\n\tmov x25, xzr\n\tmov x26, xzr\n\t"
+        "mov x27, xzr\n\tmov x28, xzr"
+        ::: "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27", "x28", "memory");
 #endif
     cap_gc_collect();
 }
