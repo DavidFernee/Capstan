@@ -509,6 +509,13 @@ typedef struct CapMap {
    collide and turn every lookup into a scan of the table (hash flooding, CWE-407).
    cap_siphash is the generic SipHash-c-d; tests check it against the published
    SipHash-2-4 vectors and an independent implementation. */
+/* Defined below with the runtime's volatile byte-store implementation. */
+static void cap_wipe(void *p, size_t n);
+
+#ifdef CAP_SIPHASH_TEST_HOOK
+static void (*cap_siphash_test_wipe_hook)(const void *, size_t) = NULL;
+#endif
+
 #define CAP_ROTL64(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
 #define CAP_SIPROUND do { \
     v0 += v1; v1 = CAP_ROTL64(v1, 13); v1 ^= v0; v0 = CAP_ROTL64(v0, 32); \
@@ -534,7 +541,33 @@ static uint64_t cap_siphash(const unsigned char *in, size_t len, uint64_t k0, ui
     v0 ^= b;
     v2 ^= 0xff;
     for (int r = 0; r < d; r++) CAP_SIPROUND;
-    return v0 ^ v1 ^ v2 ^ v3;
+    uint64_t result = v0 ^ v1 ^ v2 ^ v3;
+    /* These words are key-derived even though the final hash is public. */
+    cap_wipe(&v0, sizeof v0);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&v0, sizeof v0);
+#endif
+    cap_wipe(&v1, sizeof v1);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&v1, sizeof v1);
+#endif
+    cap_wipe(&v2, sizeof v2);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&v2, sizeof v2);
+#endif
+    cap_wipe(&v3, sizeof v3);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&v3, sizeof v3);
+#endif
+    cap_wipe(&k0, sizeof k0);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&k0, sizeof k0);
+#endif
+    cap_wipe(&k1, sizeof k1);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&k1, sizeof k1);
+#endif
+    return result;
 }
 
 static uint64_t cap_map_k0, cap_map_k1;
