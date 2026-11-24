@@ -308,15 +308,15 @@ def check_single_line_budget(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/single_line_budget.cap", "single-line-budget")
     source = os.path.join(tmp, "alternating-controls.txt")
     with open(source, "wb") as f:
-        f.write(b"A\\n" * 32768)
+        f.write(b"A\n" * 32768)
     env = os.environ.copy()
     env["CAPSTAN_GC_STATS"] = "1"
     r = subprocess.run([exe, source], cwd=ROOT, capture_output=True, text=True, env=env)
     if r.returncode != 0:
-        sys.exit(f"single-line budget: exit {r.returncode}:\\n{r.stdout}{r.stderr}")
-    if r.stdout != "32768\\n65\\n65\\n":
+        sys.exit(f"single-line budget: exit {r.returncode}:\n{r.stdout}{r.stderr}")
+    if r.stdout != "32768\n65\n65\n":
         sys.exit(f"single-line budget: incorrect retained bytes: {r.stdout!r}")
-    match = re.search(r"total_allocated=(\\d+)", r.stderr)
+    match = re.search(r"total_allocated=(\d+)", r.stderr)
     if not match:
         sys.exit(f"single-line budget: GC allocation counter missing: {r.stderr!r}")
     allocated = int(match.group(1))
