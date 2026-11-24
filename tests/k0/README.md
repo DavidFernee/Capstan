@@ -1,6 +1,6 @@
 # K0 classifier checks
 
-Hand labels for the K0 kernel CVE study (`tools/k0/study.py`, `docs/K0-KERNEL-CVES.md`). Each row
+Labelled samples for the K0 kernel CVE study (`tools/k0/study.py`, `docs/K0-KERNEL-CVES.md`). Each row
 is a CVE from the study year and the class a reader assigned from its fix description, using the
 class names in `tools/k0/classify.py`. The study loader scans every CVE identifier-year directory,
 because identifier year and publication year are not equivalent. Run the study only against a complete
