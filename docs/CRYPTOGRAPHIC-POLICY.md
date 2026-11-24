@@ -28,9 +28,9 @@ Algorithm selection must be revisited against the current Australian Government 
 - The current runtime generation profile is PBKDF2-HMAC-SHA-256, 600,000 iterations, a fresh 16-byte random salt and a 32-byte derived key. Treat this as the current format profile, not a universal forever-value.
 - Encoded records must carry a strict algorithm identifier, parameter version, iteration count, salt and derived-key encoding. Parsing must reject non-canonical, truncated, oversized, overflowed and trailing data.
 - **Every cost parameter must have both a minimum policy and a hard maximum work budget.** A stored record is untrusted input. The verifier must not accept an arbitrary iteration count simply because it fits an integer.
-- Password byte length is also a KDF cost parameter. Enforce a conservative maximum before hashing or verification begins. In the current runtime, HMAC key normalisation re-hashes a password longer than 64 bytes on every PBKDF2 iteration; until the implementation precomputes the keyed HMAC states once, this creates a multiplicative CPU amplification. A 1 MiB password can cause roughly 16,384 SHA-256 compression blocks of key-normalisation work per HMAC invocation, repeated across the KDF.
-- The current C runtime verifier accepts iteration counts up to 100,000,000 despite generating at 600,000. This ceiling is not accepted as a suitable resource policy and must be reduced to a documented, calibrated ceiling.
-- The Capstan-native `pbkdf2_sha256()` currently has no maximum iteration count, no salt/password size limits and a 1 MiB derived-output ceiling. That API does not yet meet this policy.
+- Password byte length is also a KDF cost parameter. Enforce a conservative maximum before hashing or verification begins. The current native runtime caps verifier passwords at 256 bytes and precomputes keyed HMAC states once per PBKDF2 derivation, avoiding repeated long-key normalisation within the iteration loop. The public Capstan library API separately caps passwords at 256 bytes.
+- The native runtime password verifier accepts only the canonical 600,000-iteration profile. This is a current pre-release compatibility decision, not a general-purpose KDF parameter recommendation.
+- The public Capstan `pbkdf2_sha256()` API now bounds password length (256 bytes), salt length (1,024 bytes), derived output (1,024 bytes), and aggregate work (iterations multiplied by output blocks, at most 600,000 block-iterations). Invalid parameters return an empty list; callers must check that the returned length equals the requested length. This is a per-call bound, not process-wide admission control.
 - A work budget must account for iteration count multiplied by PBKDF2 output blocks, plus input sizes and concurrent requests. Per-request limits do not replace process-wide admission control or rate limiting.
 - Rate limiting, concurrency control and account lockout are application/service concerns and must be separately designed; expensive hashing alone is not a rate limiter.
 - Verification must compare the fixed-length derived key without data-dependent early exit. The encoded cost and format may be parsed before derivation; parsing and error behaviour must not expose password-dependent distinctions.
@@ -105,16 +105,16 @@ FIPS 180-4 or RFC conformance is not FIPS 140-3 module validation. A self-implem
 
 ### Additional current implementation gaps
 
-- Runtime `hash_password()` and `verify_password()` do not enforce a maximum password byte length. Because `cap_hmac_sha256()` re-hashes keys longer than 64 bytes on every PBKDF2 iteration, long attacker-influenced passwords can amplify the intended KDF cost dramatically. The implementation should both enforce a password-size limit and precompute the keyed HMAC states once per derivation.
-- Runtime `cap_sha256_block()` has local message-schedule and working-state scratch that is not explicitly wiped, despite caller-side wiping in `cap_hmac_sha256()`.
-- Runtime `cap_verify_password()` uses NUL-terminated string parsing over a length-bearing `CapStr` and can ignore suffix bytes after an embedded NUL. Complete-record parsing must be length-aware and canonical.
+- Runtime `hash_password()` and `verify_password()` enforce a 256-byte password limit. The native PBKDF2 implementation precomputes the keyed HMAC states once per derivation and reuses them for U1 and subsequent rounds.
+- Runtime `cap_sha256_block()` explicitly wipes its local message schedule and working-state scratch. Optimised machine-code inspection remains necessary before claiming compiler/target-level erasure.
+- Runtime `cap_verify_password()` now uses complete, canonical, length-aware record parsing and rejects embedded NULs and suffix bytes before PBKDF2.
 
 ## 9. Current Capstan status
 
 - Runtime SHA-256, HMAC-SHA-256 and PBKDF2-HMAC-SHA-256 exist in `runtime/capstan_rt.h`; the runtime's password generation profile is 600,000 PBKDF2 iterations with a 16-byte salt and 32-byte derived key.
-- The verifier currently accepts up to 100,000,000 iterations. This is a resource-exhaustion finding requiring remediation.
+- The runtime verifier accepts only the canonical 600,000-iteration profile and rejects malformed records and overlong passwords before PBKDF2.
 - `lib/crypto.cap` implements SHA-256, HMAC-SHA-256 and PBKDF2-HMAC-SHA-256 and is compared against Python `hashlib`/`hmac`, published examples and runtime outputs.
-- The Capstan PBKDF2 API lacks a maximum iteration count and uses ordinary GC-managed `List<int>` scratch. It is not yet suitable as a secret-lifecycle-safe general-purpose API.
+- The public Capstan PBKDF2 API now has per-call input/output and aggregate-work bounds. It still uses ordinary GC-managed `List<int>` values and does not provide deterministic secret destruction; it must not be represented as a secret-lifecycle-safe API.
 - The current test suite does not establish constant-time machine code, complete scratch erasure, a maximum-cost policy or cryptographic-module validation.
 - There is no current public AEAD or general secure-random API in the language reference.
 
