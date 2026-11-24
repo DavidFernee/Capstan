@@ -344,7 +344,7 @@ static void test_bitwise(void) {
     CHECK(cap_shl_proved(5, 3, 0) == 40 && cap_sar_proved(-9, 1, 0) == -5 && cap_shr_proved(-2, 63, 0) == 1);
 }
 
-/* noinline: if inlined into main, its 100,000-key map could stay visible in main's frame. */
+/* Keep the longjmp target in its own frame for deterministic failure tests. */
 __attribute__((noinline)) static int expect_runtime_panic(void (*fn)(void)) {
     cap_test_mode = 1;
     if (setjmp(cap_test_jmp) == 0) {
@@ -369,6 +369,9 @@ static void trigger_negative_buffer_append(void) {
     CapBuf b = cap_buf_new(64);
     cap_buf_put(&b, "x", -1);
 }
+static void trigger_oversized_initial_buffer(void) {
+    (void)cap_buf_new(INT64_MAX);
+}
 
 static void test_runtime_growth_arithmetic(void) {
     CHECK(cap_rt_growth_capacity(0, 1, 8, sizeof(CapVal), 0, 0) == 8);
@@ -379,6 +382,7 @@ static void test_runtime_growth_arithmetic(void) {
     CHECK(expect_runtime_panic(trigger_bad_growth));
     CHECK(expect_runtime_panic(trigger_bad_buffer_length));
     CHECK(expect_runtime_panic(trigger_negative_buffer_append));
+    CHECK(expect_runtime_panic(trigger_oversized_initial_buffer));
 }
 
 static void test_collections(void) {
