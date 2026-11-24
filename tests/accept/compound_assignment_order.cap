@@ -1,4 +1,4 @@
-// spec: stmt.assign
+// spec: stmt.assign expr.order types.struct types.list
 // Compound assignment must read the old target value before evaluating an RHS
 // that mutates the same object/list. MIN % -1 preserves the existing result 0.
 struct Counter { int value; }
