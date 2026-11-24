@@ -27,8 +27,6 @@ jobs:
           lint: false
           mk_all-check: true
           leanchecker: true
-          mk_all-check: true
-          leanchecker: true
           nanoda: true
           nanoda-allow-sorry: false
           axiom-audit: true
