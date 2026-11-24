@@ -48,9 +48,11 @@ Amount(10) must not authorise Amount(500).
 
 The independent model is tests/unit/grant_reference.py. It uses a separate
 algebraic representation and imports no compiler, generated-C or runtime code.
-Self-checks cover role ordering, repeated and unbound types, scalar and string
-substitution, object and secret identity, optional presence and payload, enum tag
-and payload, policy identity, and policy re-evaluation.
+Its self-checks run as part of the standard tests/run.sh unit section. They cover
+role ordering, repeated and unbound types, scalar type confusion, string byte
+semantics, object and secret identity, nested optional presence and payload,
+enum identity/tag/payload shape, protected-call arity, policy identity, and policy
+re-evaluation.
 
 ## Assurance status
 
