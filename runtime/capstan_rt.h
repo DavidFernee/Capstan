@@ -721,8 +721,10 @@ static void cap_buf_put(CapBuf *b, const char *p, int64_t n) {
 
 static CapBuf cap_buf_new(int64_t cap) {
     CapBuf b;
-    b.cap = cap < 64 ? 64 : cap;
-    b.s = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)b.cap);
+    int64_t requested = cap < 64 ? 64 : cap;
+    b.cap = cap_rt_growth_capacity(0, requested, 64, 1, sizeof(CapStr), 0);
+    size_t bytes = cap_rt_checked_bytes((size_t)b.cap, 1, sizeof(CapStr), 0);
+    b.s = (CapStr *)cap_alloc_atomic(bytes);
     b.s->len = 0;
     b.s->data[0] = 0;
     return b;
