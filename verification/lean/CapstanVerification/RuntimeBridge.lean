@@ -197,6 +197,61 @@ structure RuntimeRegisterFileRelation {n : Nat}
   type_at : ∀ i, runtimeTypeAt runtime i.val = some (types i)
   value_at : ∀ i, runtimeValueAt runtime i.val = regs i
 
+/-- A successful typed runtime replacement preserves the finite/list relation.
+
+The finite model receives the value selected by the replacement's declared
+type. The replacement must be initialized and retain the static register type.
+-/
+theorem runtimeWriteRegister_preserves_relation
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    {runtime updated : List RuntimeRegister}
+    (hrel : RuntimeRegisterFileRelation types regs runtime)
+    (index : Fin n) (replacement : RuntimeRegister)
+    (hdecl : replacement.declaredType = types index)
+    (hinit : replacement.initialized = true)
+    (hwrite : runtimeWriteRegister runtime index.val replacement = .ok updated) :
+    RuntimeRegisterFileRelation types
+      (write regs index replacement.asVal) updated := by
+  have hvalueType : hasType replacement.asVal (types index) := by
+    rw [← hdecl]
+    cases htype : replacement.declaredType <;>
+      simp [RuntimeRegister.asVal, hasType, hasTypeB, htype]
+  refine {
+    length_eq := by
+      rw [runtimeWriteRegister_length runtime updated index.val replacement hwrite]
+      exact hrel.length_eq
+    type_at := ?_
+    value_at := ?_
+  }
+  · intro j
+    by_cases hji : j = index
+    · subst j
+      have htarget :=
+        runtimeWriteRegister_target runtime updated index.val replacement hwrite
+      simp [runtimeTypeAt, htarget, hdecl]
+    · have hjiVal : j.val ≠ index.val := by
+        intro heq
+        exact hji (Fin.ext heq)
+      have hother :=
+        runtimeWriteRegister_other_unchanged
+          runtime updated index.val j.val replacement hwrite hjiVal
+      simpa [runtimeTypeAt, hother] using hrel.type_at j
+  · intro j
+    by_cases hji : j = index
+    · subst j
+      have htarget :=
+        runtimeWriteRegister_target runtime updated index.val replacement hwrite
+      have hpayload :=
+        RuntimeRegister.value?_of_initialized replacement hinit
+      simp [runtimeValueAt, htarget, hpayload, write]
+    · have hjiVal : j.val ≠ index.val := by
+        intro heq
+        exact hji (Fin.ext heq)
+      have hother :=
+        runtimeWriteRegister_other_unchanged
+          runtime updated index.val j.val replacement hwrite hjiVal
+      simp [runtimeValueAt, hother, write, hji, hrel.value_at j]
+
 /-- Native-style dynamic integer read, including the invalid-index check. -/
 def runtimeReadInt (registers : List RuntimeRegister) (index : Nat) :
     Except Trap Int :=
