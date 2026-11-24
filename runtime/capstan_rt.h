@@ -519,11 +519,28 @@ static CapMap *cap_map_new(void) {
 }
 
 static int64_t cap_map_find(CapMap *m, CapStr *k) {
+    /* Validate the complete probe invariant before deriving an index or
+       dereferencing any backing array. A corrupt index entry must not turn a
+       lookup into an out-of-bounds read. */
+    if (!m || !k || m->len < 0 || m->cap < 0 || m->len > m->cap ||
+        (m->cap > 0 && (!m->keys || !m->vals)) ||
+        (m->len > 0 && (!m->keys || !m->vals)) ||
+        m->index_cap < 0 ||
+        (m->index_cap != 0 && (m->index_cap & (m->index_cap - 1)) != 0) ||
+        (m->index_cap > 0 && !m->index) ||
+        (m->index_cap == 0 && m->len != 0) ||
+        (m->index_cap > 0 && m->len > m->index_cap / 2))
+        cap_panic("invalid map lookup invariants", "CWE-682", 0);
     if (m->index_cap == 0) return -1;
     uint64_t mask = (uint64_t)m->index_cap - 1;
     uint64_t s = cap_hash_str(k) & mask;
     while (m->index[s]) {
-        int64_t pos = m->index[s] - 1;
+        int64_t entry = m->index[s];
+        if (entry < 1 || entry > m->len)
+            cap_panic("map index entry outside live range", "CWE-125", 0);
+        int64_t pos = entry - 1;
+        if (!m->keys[pos])
+            cap_panic("null key in live map entry", "CWE-476", 0);
         if (cap_str_eq(m->keys[pos], k)) return pos;
         s = (s + 1) & mask;
     }
