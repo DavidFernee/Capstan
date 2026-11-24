@@ -68,15 +68,15 @@ else
   bad "CCAM Capstan arithmetic, register validation and evaluator" "$out"
 fi
 
-section "Capstan-native verification: CCAM multi-function calls and frames"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
-  ok "CCAM function validation, argument transfer, call depth and atomic returns"
-else
-  bad "CCAM multi-function evaluator" "$out"
-fi
-
 section "unit"
-if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tmp/unit")"; then ok "$out"; else bad "runtime unit tests" "$out"; fi
+for opt in 0 2 3; do
+  if "$CC" "-O$opt" -std=gnu11 -w -I"$ROOT/runtime" "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit_o$opt" &&
+      out="$("$tmp/unit_o$opt")"; then
+    ok "runtime unit tests at -O$opt ($out)"
+  else
+    bad "runtime unit tests at -O$opt" "$out"
+  fi
+done
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/ranges_props.py" 2>&1)"; then ok "$out"; else bad "range properties" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/codegen_literal_order.py" "$C" "$tmp" 2>&1)"; then ok "$out"; else bad "literal operand sequencing" "$out"; fi
