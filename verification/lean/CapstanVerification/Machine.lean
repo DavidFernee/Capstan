@@ -179,21 +179,23 @@ entry function is a halt, handled by the enclosing machine semantics.
 -/
 def popNestedCallFrame {Frame : Type}
     (stack : CallStack Frame) : Except Trap (Frame × CallStack Frame) :=
-  match hframes : stack.frames with
-  | [] => .error .invalidControlFlow
-  | [_] => .error .invalidControlFlow
-  | callee :: caller :: rest =>
-      .ok (callee, {
-        frames := caller :: rest
-        maxDepth := stack.maxDepth
-        nonempty := by simp
-        within_limit := by
-          have hlen : (caller :: rest).length ≤ (callee :: caller :: rest).length := by
-            simp
-          have hbound : (callee :: caller :: rest).length ≤ stack.maxDepth := by
-            simpa [hframes] using stack.within_limit
-          exact Nat.le_trans hlen hbound
-      })
+  match stack with
+  | ⟨frames, maxDepth, _nonempty, within_limit⟩ =>
+      match frames with
+      | [] => .error .invalidControlFlow
+      | [_] => .error .invalidControlFlow
+      | callee :: caller :: rest =>
+          .ok (callee, {
+            frames := caller :: rest
+            maxDepth := maxDepth
+            nonempty := by simp
+            within_limit := by
+              have hlen : (caller :: rest).length ≤ (callee :: caller :: rest).length := by
+                simp
+              have hbound : (callee :: caller :: rest).length ≤ maxDepth := by
+                simpa using within_limit
+              exact Nat.le_trans hlen hbound
+          })
 
 /-- A successful nested return restores the caller at the top of the stack. -/
 theorem popNestedCallFrame_restores_caller
@@ -202,17 +204,11 @@ theorem popNestedCallFrame_restores_caller
     (hframes : stack.frames = callee :: caller :: rest)
     (h : popNestedCallFrame stack = .ok (callee, next)) :
     next.frames.head? = some caller := by
-  cases hstack : stack.frames with
-  | nil =>
-      simp [popNestedCallFrame, hstack] at h
-  | cons first tail =>
-      cases htail : tail with
-      | nil =>
-          simp [popNestedCallFrame, hstack, htail] at h
-      | cons second rest =>
-          simp [popNestedCallFrame, hstack, htail] at h
-          cases h
-          simp
+  cases stack with
+  | mk frames maxDepth nonempty within_limit =>
+      simp [popNestedCallFrame, hframes] at h
+      cases h
+      simp
 
 /-- A successful nested return decreases call depth by exactly one. -/
 theorem popNestedCallFrame_decreases_depth
