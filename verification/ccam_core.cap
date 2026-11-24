@@ -1556,6 +1556,11 @@ test "CCAM validator enforces register and instruction admission limits" {
         no_registers, at_instruction_limit, CCAM_RETURN_VOID);
     assert(!too_many_instructions.ok &&
            too_many_instructions.error == "instruction_limit_exceeded");
+    CCAMMachineCreateResult rejected = ccam_machine_create_validated(
+        no_registers, at_instruction_limit, 8, CCAM_RETURN_VOID);
+    assert(!rejected.ok && rejected.error == "instruction_limit_exceeded");
+    assert(rejected.state.halted);
+    assert(rejected.state.instructions.len() == 0);
 }
 
 test "CCAM validated constructor rejects a negative step limit directly" {
