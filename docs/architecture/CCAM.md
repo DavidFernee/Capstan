@@ -1,12 +1,20 @@
 # Capstan Core Abstract Machine (CCAM) v0.1
 
-**Status:** initial machine design; Capstan-native implementation is the required next step. This is deliberately a small subset, not yet the complete Capstan semantics.
+**Status:** normative v0.1 design with a restricted Capstan-native single-frame evaluator in progress (PR #142). The implementation is not yet a conforming v0.1 machine, is not connected to the Lean model, and is not the complete Capstan semantics.
 
 This document defines the intended semantics for the first machine slice. Its executable implementation and conformance tests must be written in Capstan. No Python or C implementation is to serve as the normative reference.
+
+
 
 ## 1. Design boundary
 
 CCAM is a typed, register-based abstract machine. A compiler lowers a checked Capstan core program into a finite collection of functions containing basic-block control flow and explicit operations. The machine is independent of C, C ABIs, host integer overflow, and host evaluation order.
+
+### 1.1 Current implementation boundary
+
+`verification/ccam_core.cap` contains the first executable evaluator slice. It implements typed integer/boolean constants and moves, checked integer arithmetic, integer equality/less-than, boolean negation, jumps, conditional branches, typed integer/boolean returns, void returns, explicit traps, and deterministic instruction-step accounting. The evaluator snapshots the supplied instruction sequence before execution. Its input is an already-validated in-memory instruction sequence; this implementation does not decode JSON or perform the closed structural validation required below.
+
+The current slice is single-frame only. It does not yet implement function tables, direct calls, argument transfer, caller destinations, atomic call returns, call-depth limits, or the complete `maxSteps` / `maxDepth` configuration contract. It is not connected to source lowering or a native backend, and no Lean refinement theorem currently relates it to the formal machine. These are explicit gaps, not implied capabilities. PR #142 is the implementation work item; it must remain non-mergeable until its exact-head tests pass and the semantic boundary has been independently reviewed.
 
 This initial version deliberately includes only:
 - signed 64-bit integers and booleans;
