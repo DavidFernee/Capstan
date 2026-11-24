@@ -1102,8 +1102,12 @@ Type check_call(Checker c, Node e) {
     }
     if (f == "secret_env") {
         want_args(c, e, 0, 1, f);
-        if (n == 1 && !is_literal_str(e.kids[0])) {
-            error_at(c.ctx, e, "", "secret_env() takes the variable name as a string literal");
+        if (n == 1) {
+            if (!is_literal_str(e.kids[0])) {
+                error_at(c.ctx, e, "", "secret_env() takes the variable name as a string literal");
+            } else if (contains(e.kids[0].s, "\0")) {
+                error_at(c.ctx, e.kids[0], "CWE-158", "secret_env() variable name must not contain NUL");
+            }
         }
         return mk_wrap(TY_OPT, mk_type(TY_SECRET));
     }
