@@ -29,13 +29,17 @@ where `-2^63 <= n <= 2^63-1` and `b` is exactly true or false. Booleans are not 
 A register file is a finite vector with a fixed type vector `register_types` whose entries are `"int"` or `"bool"`. Every register is initially uninitialised. Reading an uninitialised register traps. A write must match the declared register type.
 
 Each function declares:
-- a unique name;
-- a register type vector;
-- a parameter count;
+- a unique, non-empty name;
+- a register type vector containing only `"int"` and `"bool"`;
+- a parameter count in the range `0..register_types.length`;
 - a return type (`"int"`, `"bool"`, or `"void"`);
-- a sequence of instructions.
+- a non-empty sequence of instructions.
 
 The first `parameter_count` registers are parameters. At invocation, argument count and types must match those registers exactly. All other registers begin uninitialised.
+
+The machine's external data format is JSON. A JSON integer is accepted only if its mathematical value is integral and lies in the signed-64 range; booleans, strings, null and non-integral numbers are not integers. A boolean field accepts only JSON `true` or `false`. Register and instruction indices are non-negative JSON integers in the range representable by the host-independent CCAM index domain; implementations MUST reject values outside their configured finite program bounds before indexing. A name is a non-empty string of Unicode scalar values with no embedded NUL. Function names are unique by exact scalar-value sequence; no locale or case folding is applied.
+
+A register type vector is validated in full before any register file is constructed. The only valid tags are `"int"` and `"bool"`; unknown, empty, null, numeric or otherwise malformed tags are validation errors.
 
 ## 3. Instruction set
 
@@ -58,7 +62,30 @@ Each instruction is a JSON object with an `op` field. Register and instruction i
 | `ret_void` | none | Return from a void function. |
 | `trap` | `reason` | Terminate execution with the named explicit trap. |
 
-A function may not fall off the end of its instruction sequence. Every branch/jump target must be within the function. Calls must name an existing function. Structural validation MUST reject duplicate/empty function names, an absent or invalid entry, unknown type tags, invalid register or instruction indices, static operand/destination type mismatches, wrong call arity/signature, incompatible return destinations, invalid return instructions, out-of-range branch targets and any path that can fall off a function. Validation is deterministic and completes before the first instruction executes. A malformed program is a validation error, not a runtime trap. Dynamic checks remain mandatory even for validated programs, including uninitialised-register reads and resource limits.
+### 3.1 Closed instruction schemas
+
+Every instruction object MUST contain exactly the fields listed below: the `op` field and the required operands. Unknown fields, missing fields, duplicate JSON object keys, and fields of the wrong JSON type are validation errors. Optionality is represented explicitly as JSON `null`; omitted fields are never treated as null.
+
+| Opcode | Exact fields and JSON types | Static constraints |
+|---|---|---|
+| `const_i` | `op:string, dst:integer, value:integer` | `value` is signed-64; `dst` declares `int`. |
+| `const_b` | `op:string, dst:integer, value:boolean` | `dst` declares `bool`. |
+| `move` | `op:string, dst:integer, src:integer` | Both registers exist and have the same declared type. |
+| `add_i`, `sub_i`, `mul_i`, `div_i`, `rem_i` | `op:string, dst:integer, lhs:integer, rhs:integer` | All registers exist and declare `int`. |
+| `eq_i`, `lt_i` | `op:string, dst:integer, lhs:integer, rhs:integer` | `lhs` and `rhs` declare `int`; `dst` declares `bool`. |
+| `not_b` | `op:string, dst:integer, src:integer` | `src` and `dst` declare `bool`. |
+| `jump` | `op:string, target:integer` | `target` is an instruction index in the same function. |
+| `branch` | `op:string, cond:integer, if_true:integer, if_false:integer` | `cond` declares `bool`; both targets are in the same function. |
+| `call` | `op:string, dst:integer-or-null, function:string, args:array-of-integers` | `function` exists; argument count and register types match parameters in order. `dst` is null iff the callee returns void; otherwise it is a valid register whose declared type exactly matches the callee return type. `args` contains exactly one valid register index per parameter. |
+| `ret` | `op:string, src:integer` | Current function returns `int` or `bool`; `src` exists and matches that type. |
+| `ret_void` | `op:string` | Current function returns `void`. |
+| `trap` | `op:string, reason:string` | `reason` matches the explicit-trap grammar below. |
+
+All instruction indices, register indices and call argument indices are checked against the owning function before execution. No opcode accepts additional fields. An opcode not listed above is invalid.
+
+An explicit trap reason is 1–64 ASCII characters and MUST match `[a-z][a-z0-9_]{0,63}`. The machine reports it as `Trap(explicit_trap, function, pc, reason)`; it is not conflated with a built-in machine trap code. The grammar is intentionally closed to arbitrary objects, numbers, empty strings and unbounded payloads. Application-defined reasons use this grammar and do not create new machine trap classes.
+
+A function may not fall off the end of its instruction sequence. Every branch/jump target must be within the function. Calls must name an existing function. Structural validation MUST reject duplicate/empty function names, an absent or invalid entry, unknown type tags, invalid register or instruction indices, static operand/destination type mismatches, wrong call arity/signature, incompatible return destinations, invalid return instructions, malformed explicit-trap reasons, duplicate/unknown/missing instruction fields, out-of-range branch targets and any path that can fall off a function. Validation is deterministic and completes before the first instruction executes. A malformed program is a validation error, not a runtime trap. Dynamic checks remain mandatory even for validated programs, including uninitialised-register reads and resource limits.
 
 ## 4. Arithmetic semantics
 
@@ -89,7 +116,7 @@ Execution returns exactly one of:
 
 A complete source-program entry has zero arguments and returns `int` or `void`. Internal functions may return `int`, `bool` or `void`. Structural program errors are reported as validation failures before execution, not as dynamic traps.
 
-The initial dynamic trap codes are `integer_overflow`, `division_by_zero`, `uninitialised_register`, `invalid_register` and `register_type_mismatch` (the last two are defensive checks for conditions that validation should make unreachable), `step_limit_exceeded`, `call_depth_exceeded`, and `explicit_trap` with a validated reason. The Capstan implementation must represent machine traps as explicit values or controlled results. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected before execution.
+The initial dynamic trap codes are `integer_overflow`, `division_by_zero`, `uninitialised_register`, `invalid_register` and `register_type_mismatch` (the last two are defensive checks for conditions that validation should make unreachable), `step_limit_exceeded`, `call_depth_exceeded`, and `explicit_trap` with a validated reason detail. The Capstan implementation must represent machine traps as explicit values or controlled results. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected before execution.
 
 ## 7. Determinism and evaluation order
 
