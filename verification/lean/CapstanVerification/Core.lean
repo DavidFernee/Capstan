@@ -405,19 +405,6 @@ def mulIntOp : CheckedIntOp where
     exact checkedMul_sound a b result h
 
 
-/-- Checked division is an instance of the generic typed binary operation. -/
-def divIntOp : CheckedIntOp where
-  run := checkedDiv
-  result_in_range := by
-    intro a b result h
-    exact checkedDiv_sound a b result h
-
-/-- Checked remainder is an instance of the generic typed binary operation. -/
-def remIntOp : CheckedIntOp where
-  run := checkedRem
-  result_in_range := by
-    intro a b result h
-    exact checkedRem_sound a b result h
 
 theorem checkedDiv_zero_traps (a : Int) :
     checkedDiv a 0 = .error .divisionByZero := by
@@ -458,6 +445,20 @@ theorem checkedRem_sound (a b result : Int)
       exact minI64_in_range
     · exact checkedI64_sound (a - truncDiv a b * b) result
         (by simpa [hz, hmin] using h)
+
+/-- Checked division is an instance of the generic typed binary operation. -/
+def divIntOp : CheckedIntOp where
+  run := checkedDiv
+  result_in_range := by
+    intro a b result h
+    exact checkedDiv_sound a b result h
+
+/-- Checked remainder is an instance of the generic typed binary operation. -/
+def remIntOp : CheckedIntOp where
+  run := checkedRem
+  result_in_range := by
+    intro a b result h
+    exact checkedRem_sound a b result h
 
 /-!
 Explicit omissions: there is no instruction syntax, machine state, small-step
