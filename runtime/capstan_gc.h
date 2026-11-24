@@ -518,6 +518,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         } else {
             if (l.atomic == 2) { volatile char *w = l.base; for (size_t z = 0; z < l.size; z++) w[z] = 0; }
             free(l.base);
+            if (cap_gc.heap < l.size) cap_panic("collector heap accounting underflow", "CWE-682", 0);
             cap_gc.heap -= l.size;
         }
     }
@@ -546,7 +547,7 @@ static void *cap_gc_alloc(size_t n, int atomic) {
     if (n > cap_class_size[CAP_NCLASS - 1]) {
         if (cap_gc.max_heap && cap_gc_would_exceed_heap(n)) {
             cap_gc_collect();
-            if (cap_gc.heap + n > cap_gc.max_heap) cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+            if (cap_gc_would_exceed_heap(n)) cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
         }
         void *p = calloc(1, n);
         if (!p) cap_gc_oom();
@@ -573,7 +574,7 @@ static void *cap_gc_alloc(size_t n, int atomic) {
     while (cap_class_size[cls] < n) cls++;
     if (!cap_gc.freelist[atomic][cls] && cap_gc.max_heap && cap_gc_would_exceed_heap(CAP_PAGE_SIZE)) {
         cap_gc_collect();
-        if (!cap_gc.freelist[atomic][cls] && cap_gc.heap + CAP_PAGE_SIZE > cap_gc.max_heap)
+        if (!cap_gc.freelist[atomic][cls] && cap_gc_would_exceed_heap(CAP_PAGE_SIZE))
             cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
     }
     if (!cap_gc.freelist[atomic][cls]) {
