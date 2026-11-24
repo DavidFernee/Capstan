@@ -172,7 +172,7 @@ theorem machineStep_preserves_well_typed
     | .haltVoid => True
     | .trap _ => True := by
   cases machineStep program state with
-  | continue next => exact next.registers_well_typed
+  | nextState next => exact next.registers_well_typed
   | halt value => trivial
   | haltVoid => trivial
   | trap reason => trivial
