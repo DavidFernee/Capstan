@@ -157,6 +157,22 @@ class ReferenceMachineTests(unittest.TestCase):
         with self.assertRaisesRegex(MachineTrap, "invalid_pc"):
             execute(p)
 
+    def test_malformed_type_descriptor_is_rejected_cleanly(self):
+        p = program([{"op": "ret", "src": 0}], [["not", "a", "type"]])
+        with self.assertRaises(InvalidProgram):
+            execute(p)
+
+    def test_runtime_trap_reports_faulting_instruction(self):
+        p = program([
+            {"op": "const_i", "dst": 0, "value": 1},
+            {"op": "const_i", "dst": 1, "value": 0},
+            {"op": "div_i", "dst": 2, "lhs": 0, "rhs": 1},
+            {"op": "ret", "src": 2},
+        ], ["int", "int", "int"])
+        with self.assertRaises(MachineTrap) as caught:
+            execute(p)
+        self.assertEqual(caught.exception.pc, 2)
+
     def test_explicit_trap(self):
         p = program([{"op": "trap", "reason": "user_trap"}], [], ret="void")
         with self.assertRaisesRegex(MachineTrap, "user_trap"):
