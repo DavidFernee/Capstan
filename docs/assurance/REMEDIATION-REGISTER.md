@@ -65,7 +65,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 | #122 | Closed, superseded (not merged) | `8294cd700b35adc312475b017f739bd5f8223246` | No usable CI; test-file update malformed and draft closed | Do not merge. Corrected clean rebase is PR #134. |
 | #127 | Closed, superseded (not merged) | `70cbcdd240c469ab7d58b8532f79e84fe386e47b` | No exact-head CI; obsolete v07 base after #118 merged | Do not merge. Corrected current-main rebase is PR #134. |
 | #134 | Open, draft, targets main | `293200fac44195eb535ebd459bc26f68e7dfed6c` | Run 45355459313 pending on latest head; previous run 45355230879 was cancelled after follow-up test commit | Current-main password parser; Worker 7 re-review, Worker 4 runtime approval, Worker 5 crypto policy and architect acceptance pending. |
-| #131 | Open, draft, targets main | `9db35fb6f81eece4e1594a33f983869eae475cc5` | Documentation-only; no acceptance claims | Refreshed living remediation register on current main. |
+| #131 | Open, draft, targets main | `c3724b3fd4dd62bce43aee722c71e39c591745b2` | Documentation-only; no acceptance claims | Refreshed living remediation register on current main. |
 
 Previously merged changes reconciled as already addressed for their specific scope: #27 (taint/run/HTML attack findings), #29 (bounded read_file/FIFO behaviour), #56 (review documentation only), #67 (taint fixpoint fails closed), #73 (NUL environment names and bounded read_line), and #78 (grant-role capacity). These do not close the distinct findings above.
 
