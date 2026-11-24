@@ -1232,3 +1232,75 @@ test "CCAM multi-function evaluator executes nested recursive calls" {
     assert(machine.steps == 26 && machine.frame_depth == 1);
     assert(machine.trap_code == "");
 }
+
+test "CCAM multi-function validator enforces the function-count boundary" {
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    for (int i = 0; i < CCAM_MAX_FUNCTIONS; i += 1) {
+        functions.push(new CCAMFunction{
+            name: "f" + int_to_str(i),
+            register_types: new List<int>(),
+            parameter_count: 0,
+            return_type: CCAM_RETURN_VOID,
+            instructions: terminal,
+            call_sites: new List<CCAMCallSite>()
+        });
+    }
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    functions.push(new CCAMFunction{
+        name: "too_many",
+        register_types: new List<int>(),
+        parameter_count: 0,
+        return_type: CCAM_RETURN_VOID,
+        instructions: terminal,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "function_limit_exceeded");
+}
+
+test "CCAM multi-function validator enforces aggregate call-argument boundary" {
+    List<int> register_types = new List<int>();
+    for (int i = 0; i < CCAM_MAX_REGISTERS; i += 1) {
+        register_types.push(CCAM_TYPE_INT);
+    }
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    for (int site = 0; site < 64; site += 1) {
+        caller_code.push(ccam_instruction(CCAM_OP_CALL));
+        List<int> args = new List<int>();
+        for (int arg = 0; arg < CCAM_MAX_REGISTERS; arg += 1) args.push(arg);
+        sites.push(new CCAMCallSite{
+            instruction_index: site, callee_index: 1,
+            argument_registers: args,
+            destination_register: 0, has_destination: false
+        });
+    }
+    caller_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    callee_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: register_types,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: caller_code, call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "callee", register_types: register_types,
+        parameter_count: CCAM_MAX_REGISTERS, return_type: CCAM_RETURN_VOID,
+        instructions: callee_code, call_sites: new List<CCAMCallSite>()
+    });
+    assert(ccam_validate_multi_function(functions, 0).ok);
+
+    caller_code.push(ccam_instruction(CCAM_OP_CALL));
+    List<int> extra_args = new List<int>();
+    extra_args.push(0);
+    sites.push(new CCAMCallSite{
+        instruction_index: 65, callee_index: 1,
+        argument_registers: extra_args,
+        destination_register: 0, has_destination: false
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "call_argument_limit_exceeded");
+}
