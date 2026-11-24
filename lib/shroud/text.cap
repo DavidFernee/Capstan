@@ -33,10 +33,6 @@ struct Utf8Decoded {
     List<int> byte_ends;
 }
 
-void utf8_push_end(List<int>? ends, int at) {
-    if (let offsets = ends) { offsets.push(at); }
-}
-
 // Strict UTF-8 decoding with optional byte-end offsets. Invalid sequences use the
 // maximal-subpart replacement behaviour documented above.
 void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
@@ -47,7 +43,7 @@ void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
         if (b0 < 0x80) {
             out.push(b0);
             i += 1;
-            utf8_push_end(ends, i);
+            if (let offsets = ends) { offsets.push(i); }
             continue;
         }
         int need = 0;
@@ -66,7 +62,7 @@ void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
         } else {
             out.push(REPLACEMENT_CHAR);
             i += 1;
-            utf8_push_end(ends, i);
+            if (let offsets = ends) { offsets.push(i); }
             continue;
         }
         // Check the continuation bytes; the first has a narrower range.
@@ -90,7 +86,7 @@ void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
         if (bad) {
             out.push(REPLACEMENT_CHAR);
             i += 1 + got;
-            utf8_push_end(ends, i);
+            if (let offsets = ends) { offsets.push(i); }
             continue;
         }
         int b1 = b[i + 1];
@@ -100,7 +96,7 @@ void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
         if (need >= 3) { b3 = b[i + 3]; }
         utf8_push(out, b0, b1, b2, b3, need + 1);
         i += need + 1;
-        utf8_push_end(ends, i);
+        if (let offsets = ends) { offsets.push(i); }
     }
 }
 
