@@ -42,7 +42,7 @@ theorem RuntimeRegister.asVal_hasType
   cases reg with
   | mk declaredType _ intValue intValue_in_range boolValue =>
       cases htype : declaredType <;>
-        simp [RuntimeRegister.asVal, hasType, hasTypeB, htype, intValue_in_range]
+        simp [RuntimeRegister.asVal, hasType, hasTypeB, htype, inI64, intValue_in_range]
 
 /-- An initialized runtime register exposes exactly its typed payload. -/
 theorem RuntimeRegister.value?_of_initialized
@@ -258,7 +258,10 @@ theorem runtimeWriteRegister_preserves_relation
       have hother :=
         runtimeWriteRegister_other_unchanged
           runtime updated index.val j.val replacement hwrite hjiVal
-      simp [runtimeValueAt, hother, write, hji, hrel.value_at j]
+      have hvalue : runtimeValueAt updated j.val = runtimeValueAt runtime j.val := by
+        simp [runtimeValueAt, hother]
+      rw [hvalue, hrel.value_at j]
+      simp [write, hji]
 
 /-- Native-style dynamic integer read, including the invalid-index check. -/
 def runtimeReadInt (registers : List RuntimeRegister) (index : Nat) :
