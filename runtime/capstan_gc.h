@@ -184,19 +184,35 @@ static void cap_gc_report(void) {
 static char *cap_stack_low = NULL;
 static char cap_altstack[65536];
 
+static int cap_gc_stack_bounds(uintptr_t base, size_t size,
+                                   uintptr_t *low, uintptr_t *high) {
+    if (!size || size > UINTPTR_MAX - base) return 0;
+    uintptr_t end = base + size;
+    *low = base;
+    *high = end;
+    return 1;
+}
+
 static void cap_segv_handler(int sig, siginfo_t *si, void *uc) {
     (void)sig; (void)uc;
-    char *a = (char *)si->si_addr;
-    const char *msg;
-    int code = 101;
-    if (cap_stack_low && a < cap_stack_low + 65536 && a + (1 << 24) > cap_stack_low) {
-        msg = "runtime check failed: stack overflow, recursion too deep [CWE-674 prevented]\n";
-    } else {
-        msg = "capstan: internal error: invalid memory access; please report this as a bug\n";
-        code = 105;
+    uintptr_t address = (uintptr_t)si->si_addr;
+    uintptr_t low = (uintptr_t)cap_stack_low;
+    uintptr_t lower = low > ((uintptr_t)1 << 24) ? low - ((uintptr_t)1 << 24) : 0;
+    uintptr_t upper = low > UINTPTR_MAX - 65536 ? UINTPTR_MAX : low + 65536;
+    static const char overflow_msg[] =
+        "runtime check failed: stack overflow, recursion too deep [CWE-674 prevented]\n";
+    static const char fault_msg[] =
+        "capstan: internal error: invalid memory access; please report this as a bug\n";
+    const char *msg = fault_msg;
+    size_t msg_len = sizeof fault_msg - 1;
+    int code = 105;
+    if (cap_stack_low && address >= lower && address < upper) {
+        msg = overflow_msg;
+        msg_len = sizeof overflow_msg - 1;
+        code = 101;
     }
-    ssize_t w = write(2, msg, strlen(msg));
-    (void)w;
+    ssize_t written = write(2, msg, msg_len);
+    (void)written;
     _exit(code);
 }
 
@@ -206,14 +222,15 @@ static void cap_install_stack_guard(char *low) {
     ss.ss_sp = cap_altstack;
     ss.ss_size = sizeof cap_altstack;
     ss.ss_flags = 0;
-    if (sigaltstack(&ss, NULL) != 0) return;
+    if (sigaltstack(&ss, NULL) != 0)
+        cap_panic("unable to install stack overflow signal stack", "CWE-674", 0);
     struct sigaction sa;
     memset(&sa, 0, sizeof sa);
     sa.sa_sigaction = cap_segv_handler;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGBUS, &sa, NULL);
+    if (sigaction(SIGSEGV, &sa, NULL) != 0 || sigaction(SIGBUS, &sa, NULL) != 0)
+        cap_panic("unable to install stack overflow signal handler", "CWE-674", 0);
 }
 
 static size_t cap_gc_parse_heap_limit(const char *text) {
@@ -283,21 +300,36 @@ static void cap_gc_init(void) {
     cap_gc.max_heap = cap_gc_effective_heap_limit(cap_gc.max_heap);
     char *low = NULL;
 #if defined(__APPLE__)
-    cap_gc.stack_top = (char *)pthread_get_stackaddr_np(pthread_self());
-    low = cap_gc.stack_top - pthread_get_stacksize_np(pthread_self());
+    uintptr_t stack_top = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
+    size_t stack_size = pthread_get_stacksize_np(pthread_self());
+    if (stack_size > stack_top)
+        cap_panic("invalid thread stack bounds", "CWE-682", 0);
+    uintptr_t stack_low, checked_top;
+    if (!cap_gc_stack_bounds(stack_top - stack_size, stack_size, &stack_low, &checked_top))
+        cap_panic("invalid thread stack bounds", "CWE-682", 0);
+    cap_gc.stack_top = (char *)checked_top;
+    low = (char *)stack_low;
 #elif defined(__linux__)
     pthread_attr_t attr;
-    void *addr; size_t size;
-    if (pthread_getattr_np(pthread_self(), &attr) == 0 && pthread_attr_getstack(&attr, &addr, &size) == 0) {
-        cap_gc.stack_top = (char *)addr + size;
-        low = (char *)addr;
+    void *addr = NULL;
+    size_t size = 0;
+    if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+        int stack_result = pthread_attr_getstack(&attr, &addr, &size);
         pthread_attr_destroy(&attr);
+        if (stack_result == 0) {
+            uintptr_t stack_low, stack_high;
+            if (!cap_gc_stack_bounds((uintptr_t)addr, size, &stack_low, &stack_high))
+                cap_panic("invalid thread stack bounds", "CWE-682", 0);
+            cap_gc.stack_top = (char *)stack_high;
+            low = (char *)stack_low;
+        }
     }
 #endif
+    if (!low || !cap_gc.stack_top)
+        cap_panic("unable to determine reliable thread stack bounds", "CWE-674", 0);
 #ifndef CAP_ASAN
-    if (low) cap_install_stack_guard(low);   /* AddressSanitizer installs its own */
+    cap_install_stack_guard(low);   /* AddressSanitizer installs its own */
 #endif
-    if (!cap_gc.stack_top) cap_gc.stack_top = (char *)__builtin_frame_address(0) + 4096;
 }
 
 /* ---- page table ------------------------------------------------------ */

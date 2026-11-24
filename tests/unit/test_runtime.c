@@ -734,6 +734,14 @@ static void test_gc_release_accounting(void) {
     cap_gc.released_total = saved_released;
 }
 
+static void test_gc_stack_bounds(void) {
+    uintptr_t low = 0, high = 0;
+    CHECK(cap_gc_stack_bounds((uintptr_t)0x1000, 0x2000, &low, &high));
+    CHECK(low == (uintptr_t)0x1000 && high == (uintptr_t)0x3000);
+    CHECK(!cap_gc_stack_bounds((uintptr_t)0x1000, 0, &low, &high));
+    CHECK(!cap_gc_stack_bounds(UINTPTR_MAX - 7, 16, &low, &high));
+}
+
 static void test_gc_release(void) {
     cap_gc_collect();
     size_t released_before = cap_gc.released_total, heap_before = cap_gc.heap;
@@ -888,6 +896,7 @@ int main(void) {
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
     test_gc_release_accounting();
+    test_gc_stack_bounds();
     test_secret_page_free_stack();
     test_gc_release();
     test_secret_env_name();
