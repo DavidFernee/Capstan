@@ -29,7 +29,6 @@ inductive MachineInstr (n m : Nat) (types : RegTypes n) where
   | retBool (src : Fin n) (src_is_bool : types src = .bool)
   | retVoid
   | explicitTrap (reason : Trap)
-  deriving Repr
 
 /-- Whether an instruction transfers control or terminates rather than falling through. -/
 def machineInstrIsTerminal {n m : Nat} {types : RegTypes n} :
