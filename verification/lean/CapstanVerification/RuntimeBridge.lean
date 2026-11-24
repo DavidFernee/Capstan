@@ -39,8 +39,10 @@ def RuntimeRegister.value? (reg : RuntimeRegister) : Option Val :=
 theorem RuntimeRegister.value?_of_initialized
     (reg : RuntimeRegister) (h : reg.initialized = true) :
     reg.value? = some reg.asVal := by
-  cases htype : reg.declaredType <;>
-    simp [RuntimeRegister.value?, RuntimeRegister.asVal, h, htype]
+  cases reg with
+  | mk declaredType initialized intValue intValue_in_range boolValue =>
+      cases htype : declaredType <;>
+        simp [RuntimeRegister.value?, RuntimeRegister.asVal, h, htype]
 
 /-- Dynamic list lookup used by the native register-file representation. -/
 def runtimeRegisterAt (registers : List RuntimeRegister) (index : Nat) :
