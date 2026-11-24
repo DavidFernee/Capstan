@@ -1718,7 +1718,7 @@ test "CCAM validator permits unreachable fallthrough but validates unreachable i
 test "CCAM validator uses a worklist for backward control-flow chains" {
     List<int> no_registers = new List<int>();
     List<CCAMInstruction> code = new List<CCAMInstruction>();
-    const int instruction_count = 512;
+    int instruction_count = 512;
 
     // The first jump reaches the final instruction. Each subsequent jump
     // walks one instruction backwards, requiring many full scans in the
