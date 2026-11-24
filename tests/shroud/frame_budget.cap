@@ -49,6 +49,12 @@ int main() {
     too_many_views.push(MAX_VIEWS);
     if (preflight_frame_view(text(""), too_many_views, 0)) { return 10; }
 
-    println("frame text budget: 10 assertions");
+    // View values can share mutable child lists; a cycle must stop at MAX_DEPTH.
+    View cycle_a = column();
+    View cycle_b = column().add(cycle_a);
+    cycle_a.add(cycle_b);
+    if (frame_text_budget_valid(cycle_a)) { return 11; }
+
+    println("frame text budget: 11 assertions");
     return 0;
 }
