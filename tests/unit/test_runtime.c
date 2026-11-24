@@ -471,6 +471,24 @@ __attribute__((noinline)) static void collect_clean(void) {
 #endif
     cap_gc_collect();
 }
+static void test_gc_release_accounting(void) {
+    CapPage page;
+    memset(&page, 0, sizeof page);
+    size_t saved_heap = cap_gc.heap;
+    size_t saved_released = cap_gc.released_total;
+    cap_gc.heap = CAP_PAGE_SIZE;
+    cap_gc_account_release(&page, 0); /* simulated madvise failure */
+    CHECK(!page.released);
+    CHECK(cap_gc.heap == CAP_PAGE_SIZE);
+    CHECK(cap_gc.released_total == saved_released);
+    cap_gc_account_release(&page, 1); /* confirmed release */
+    CHECK(page.released);
+    CHECK(cap_gc.heap == 0);
+    CHECK(cap_gc.released_total == saved_released + 1);
+    cap_gc.heap = saved_heap;
+    cap_gc.released_total = saved_released;
+}
+
 static void test_gc_release(void) {
     cap_gc_collect();
     size_t released_before = cap_gc.released_total, heap_before = cap_gc.heap;
@@ -599,6 +617,7 @@ int main(void) {
     test_gc_wipe_primitive();
     test_gc_checked_arithmetic();
     test_gc();
+    test_gc_release_accounting();
     test_gc_release();
     test_secret_wipe();
     test_gc_secret_free_slots();
