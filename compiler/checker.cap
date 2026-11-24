@@ -3,6 +3,8 @@
 // Every rule that makes a weakness class impossible to write lives here.
 // Diagnostics carry the CWE number of the weakness they prevent.
 
+const int MAX_GRANT_OBJECT_ROLES = 8;
+
 struct Checker {
     Ctx ctx;
     Map<Node> structs;
@@ -1501,7 +1503,7 @@ void check_policy(Checker c, Node p) {
     for (int i = 0; i < p.n; i += 1) {
         if (ty_of(p.kids[i]).k == TY_STRUCT) { object_roles += 1; }
     }
-    if (object_roles > 8) {
+    if (object_roles > MAX_GRANT_OBJECT_ROLES) {
         error_at(c.ctx, p, "", "policy '" + p.s + "' has more than 8 struct parameters; grants support at most 8 object roles");
     }
     for (int i = 0; i < p.n; i += 1) {
