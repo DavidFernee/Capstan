@@ -518,6 +518,32 @@ static void test_secret_wipe(void) {
     CHECK(wiped >= CAP_NSECRETS - 4);
 }
 
+static void test_gc_secret_free_slots(void) {
+    size_t checked = 0;
+    int clean = 1;
+    for (size_t i = 0; i < cap_gc.npages; i++) {
+        CapPage *pg = cap_gc.pages[i];
+        if (pg->atomic != 2) continue;
+        if (!pg->free_slots || pg->free_count > pg->free_cap) {
+            clean = 0;
+            continue;
+        }
+        for (uint32_t j = 0; j < pg->free_count; j++) {
+            uint32_t slot = pg->free_slots[j];
+            if (slot >= pg->nobj) {
+                clean = 0;
+                continue;
+            }
+            const volatile unsigned char *bytes =
+                (const volatile unsigned char *)(pg->base + (size_t)slot * pg->objsize);
+            for (uint32_t k = 0; k < pg->objsize; k++)
+                if (bytes[k] != 0) clean = 0;
+            checked++;
+        }
+    }
+    CHECK(checked > 0 && clean);
+}
+
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
@@ -542,6 +568,7 @@ int main(void) {
     test_gc();
     test_gc_release();
     test_secret_wipe();
+    test_gc_secret_free_slots();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
