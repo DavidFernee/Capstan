@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import sys
+import subprocess
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -74,6 +75,24 @@ with tempfile.TemporaryDirectory() as temporary:
         assert "cannot read CVE record" in str(error)
     else:
         raise AssertionError("malformed Linux CVE record was silently skipped")
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = pathlib.Path(temporary)
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.email", "k0-test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(root), "config", "user.name", "K0 test"], check=True)
+    (root / "snapshot.txt").write_text("pinned source", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "snapshot.txt"], check=True)
+    subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
+    commit = study.source_snapshot(str(root))
+    assert len(commit) == 40 and all(ch in "0123456789abcdef" for ch in commit)
+    (root / "untracked.json").write_text("{}", encoding="utf-8")
+    try:
+        study.source_snapshot(str(root))
+    except RuntimeError as error:
+        assert "dirty" in str(error)
+    else:
+        raise AssertionError("dirty CVE source snapshot was accepted")
 
 for phrase in (
     "device unregistration races with ethtool",
