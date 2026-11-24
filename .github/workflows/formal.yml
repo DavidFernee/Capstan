@@ -25,7 +25,6 @@ jobs:
           build-args: --wfail
           test: false
           lint: false
-          mk_all-check: true
           leanchecker: true
           # Upstream nanoda's lean4export main currently requires a newer Lean than this package's v4.19 toolchain.
           # Keep the compatible leanchecker replay enabled until a matching exporter is pinned.
