@@ -326,6 +326,76 @@ theorem checkedMul_sound (a b result : Int)
     (h : checkedMul a b = .ok result) : inI64 result := by
   exact checkedI64_sound (a * b) result h
 
+
+/-- A checked integer operation whose successful results are signed-64 values. -/
+structure CheckedIntOp where
+  run : Int → Int → Except Trap Int
+  result_in_range :
+    ∀ a b result, run a b = .ok result → inI64 result
+
+/-- A typed binary integer instruction shared by subtraction and multiplication. -/
+structure CheckedIntInstr (n : Nat) (types : RegTypes n) where
+  dst : Fin n
+  lhs : Fin n
+  rhs : Fin n
+  dst_is_int : types dst = .int
+  lhs_is_int : types lhs = .int
+  rhs_is_int : types rhs = .int
+
+/-- Execute a checked binary operation with left-to-right operand-read precedence. -/
+def executeCheckedIntOp {n : Nat} {types : RegTypes n}
+    (op : CheckedIntOp) (regs : Registers n)
+    (instr : CheckedIntInstr n types) : Except Trap (Registers n) :=
+  match readInt regs instr.lhs, readInt regs instr.rhs with
+  | .error e, _ => .error e
+  | _, .error e => .error e
+  | .ok a, .ok b =>
+      match op.run a b with
+      | .error e => .error e
+      | .ok result => .ok (write regs instr.dst (.int result))
+
+/-- Every successful checked binary operation preserves register typing. -/
+theorem executeCheckedIntOp_preserves_well_typed
+    {n : Nat} {types : RegTypes n} {regs next : Registers n}
+    (hregs : WellTyped types regs)
+    (op : CheckedIntOp)
+    (instr : CheckedIntInstr n types)
+    (hstep : executeCheckedIntOp op regs instr = .ok next) :
+    WellTyped types next := by
+  unfold executeCheckedIntOp at hstep
+  cases hleft : readInt regs instr.lhs with
+  | error e =>
+      simp [hleft] at hstep
+  | ok a =>
+      cases hright : readInt regs instr.rhs with
+      | error e =>
+          simp [hleft, hright] at hstep
+      | ok b =>
+          cases hop : op.run a b with
+          | error e =>
+              simp [hleft, hright, hop] at hstep
+          | ok result =>
+              simp [hleft, hright, hop] at hstep
+              cases hstep
+              have hresult : inI64 result := op.result_in_range a b result hop
+              have hvalue : hasType (.int result) (types instr.dst) := by
+                simpa [hasType, hasTypeB, instr.dst_is_int, inI64] using hresult
+              exact write_preserves_well_typed hregs instr.dst (.int result) hvalue
+
+/-- Checked subtraction is an instance of the generic typed binary operation. -/
+def subIntOp : CheckedIntOp where
+  run := checkedSub
+  result_in_range := by
+    intro a b result h
+    exact checkedSub_sound a b result h
+
+/-- Checked multiplication is an instance of the generic typed binary operation. -/
+def mulIntOp : CheckedIntOp where
+  run := checkedMul
+  result_in_range := by
+    intro a b result h
+    exact checkedMul_sound a b result h
+
 theorem checkedDiv_zero_traps (a : Int) :
     checkedDiv a 0 = .error .divisionByZero := by
   simp [checkedDiv]
