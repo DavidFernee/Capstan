@@ -60,8 +60,45 @@ List<int> codepoints_of(View v) {
 Laid layout_root(Ui ui, View root, int w, int h) {
     ui.view_count = 0;
     Laid l = measure(ui, root, tight(w, h), "r", 0);
+    uniquify_layout_ids(l, ui);
     place(l, 0, 0);
     return l;
+}
+
+
+// Explicit keys are public widget identities. A duplicate must never make hit testing
+// resolve a visually selected widget to a different node with the same id.
+void collect_layout_nodes(Laid l, List<Laid> out) {
+    out.push(l);
+    for (int i = 0; i < l.kids.len(); i += 1) { collect_layout_nodes(l.kids[i], out); }
+}
+
+void uniquify_layout_ids(Laid root, Ui ui) {
+    List<Laid> all = new List<Laid>();
+    collect_layout_nodes(root, all);
+    for (int i = 0; i < all.len(); i += 1) {
+        bool duplicate = false;
+        for (int j = 0; j < i; j += 1) {
+            if (all[j].id == all[i].id) { duplicate = true; }
+        }
+        if (duplicate) {
+            int suffix = i;
+            string candidate = $"{all[i].id}#shroud-duplicate-{suffix}";
+            bool collision = true;
+            while (collision) {
+                collision = false;
+                for (int k = 0; k < all.len(); k += 1) {
+                    if (k != i && all[k].id == candidate) { collision = true; }
+                }
+                if (collision) {
+                    suffix += 1;
+                    candidate = $"{all[i].id}#shroud-duplicate-{suffix}";
+                }
+            }
+            all[i].id = candidate;
+            ui.problems.push("duplicate view identity detected; assign unique View.key() values");
+        }
+    }
 }
 
 // Turns child frames, stored relative to their parent while measuring, into absolute
