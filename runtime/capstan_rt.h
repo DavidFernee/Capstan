@@ -1189,6 +1189,17 @@ static void cap_sha256_block(CapSha256 *s, const unsigned char *p) {
     cap_wipe(&c, sizeof c); cap_wipe(&d, sizeof d);
     cap_wipe(&e, sizeof e); cap_wipe(&f, sizeof f);
     cap_wipe(&g, sizeof g); cap_wipe(&h, sizeof h);
+#ifdef CAP_SHA256_WIPE_TEST_HOOK
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)w, sizeof w);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&a, sizeof a);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&b, sizeof b);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&c, sizeof c);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&d, sizeof d);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&e, sizeof e);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&f, sizeof f);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&g, sizeof g);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&h, sizeof h);
+#endif
 }
 
 static void cap_sha256_init(CapSha256 *s) {

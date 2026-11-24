@@ -8,8 +8,18 @@
  */
 #define CAP_GC_TESTING 1
 #define CAP_PBKDF2_TEST_HOOK 1
+#define CAP_SHA256_WIPE_TEST_HOOK 1
+#include <stddef.h>
+static void cap_sha256_wipe_test_observe(const volatile unsigned char *p, size_t n);
 #include "capstan_rt.h"
 #include <sys/wait.h>
+
+static unsigned sha256_wipe_observations = 0;
+static unsigned sha256_wipe_failures = 0;
+static void cap_sha256_wipe_test_observe(const volatile unsigned char *p, size_t n) {
+    sha256_wipe_observations++;
+    for (size_t i = 0; i < n; i++) if (p[i] != 0) sha256_wipe_failures++;
+}
 
 static int failures = 0, checks = 0;
 static const char *unit_files[] = {"unit"};
@@ -31,6 +41,8 @@ static int sha_hex_is(const void *data, size_t n, const char *want) {
 }
 
 static void test_sha256(void) {
+    unsigned wipe_observations_before = sha256_wipe_observations;
+    unsigned wipe_failures_before = sha256_wipe_failures;
     CHECK(sha_hex_is("", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
     CHECK(sha_hex_is("abc", 3, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
     const char *m448 = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
@@ -55,6 +67,8 @@ static void test_sha256(void) {
     const volatile unsigned char *state_bytes = (const volatile unsigned char *)&state;
     for (size_t i = 0; i < sizeof state; i++) if (state_bytes[i] != 0) state_wiped = 0;
     CHECK(state_wiped);
+    CHECK(sha256_wipe_observations > wipe_observations_before);
+    CHECK(sha256_wipe_failures == wipe_failures_before);
     cap_wipe(state_digest, sizeof state_digest);
 }
 
