@@ -57,6 +57,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Lint the workflows (actionlint, with shellcheck on every run step)
         # The release binary, pinned by its SHA-256 (from the release's checksums file).
         env:

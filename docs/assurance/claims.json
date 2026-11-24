@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "e9bd2ba77195e0b114bbdee9b16b65e5963bd1db"
+    "commit": "48d59e406c204a582a01e77824def845dab8b32f"
   },
   "claims": [
     {
@@ -59,7 +59,13 @@
       "review": {
         "reviewed_at": "2026-11-24",
         "reviewed_commit": "e9bd2ba77195e0b114bbdee9b16b65e5963bd1db"
-      }
+      },
+      "covers": [
+        "compiler/main.cap",
+        "compiler/checker.cap",
+        "compiler/codegen.cap",
+        "runtime/capstan_rt.h"
+      ]
     }
   ]
 }

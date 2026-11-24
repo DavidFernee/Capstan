@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""Validate claim-scoped assurance records without network access.
+"""Validate claim-scoped assurance records and report evidence freshness.
 
-Usage:
-  python3 scripts/assurance-validate.py [--schema PATH] [--manifest PATH]
-
-The JSON Schema validates structure. This script additionally checks unique claim
-identifiers, repository-relative evidence paths, and pinned verification metadata.
-It deliberately does not infer that a test passed merely because a fixture exists.
+Freshness is computed against the checked-out HEAD using Git history. A changed
+covered implementation path does not silently preserve an old review/evidence
+record. By default stale records are reported (so legacy records remain visible);
+--require-fresh makes them a validation failure for release-gating use.
 """
 import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -24,10 +23,31 @@ def inside_repo(path):
     return all(p not in ("", ".", "..") for p in parts)
 
 
+def git(*args):
+    return subprocess.run(
+        ["git", *args], cwd=ROOT, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, check=False)
+
+
+def changed_paths(revision, paths):
+    """Return paths changed from revision to HEAD, or raise on invalid history."""
+    ancestor = git("merge-base", "--is-ancestor", revision, "HEAD")
+    if ancestor.returncode != 0:
+        raise ValueError("revision is not an ancestor of HEAD: " + revision)
+    # Treat manifest entries as literal repository paths, not Git pathspec syntax.
+    pathspecs = [":(literal)" + path for path in paths]
+    result = git("diff", "--name-only", "--no-renames", revision, "HEAD", "--", *pathspecs)
+    if result.returncode != 0:
+        raise ValueError(result.stderr.strip() or "git diff failed")
+    return [p for p in result.stdout.splitlines() if p]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--schema", default="docs/assurance/assurance.schema.json")
     ap.add_argument("--manifest", default="docs/assurance/claims.json")
+    ap.add_argument("--require-fresh", action="store_true",
+                    help="fail if any claim review or evidence is stale")
     args = ap.parse_args()
     try:
         import jsonschema
@@ -56,44 +76,106 @@ def main():
         print("  schema: %s: %s" % (where, e.message))
         failed = True
 
+    head = git("rev-parse", "HEAD")
+    if head.returncode != 0:
+        sys.exit("assurance-validate: must run inside a Git checkout")
+    head_sha = head.stdout.strip()
+    snapshot = manifest.get("snapshot", {}).get("commit", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", snapshot):
+        print("  snapshot: missing full commit SHA")
+        failed = True
+    else:
+        try:
+            changed_paths(snapshot, [])
+        except ValueError as e:
+            print("  snapshot: %s" % e)
+            failed = True
+
     ids = set()
-    for ci, claim in enumerate(manifest.get("claims", [])):
+    stale_count = 0
+    for claim in manifest.get("claims", []):
         cid = claim.get("id", "<missing>")
         if cid in ids:
             print("  claim: duplicate identifier %s" % cid)
             failed = True
         ids.add(cid)
+        coverage = claim.get("covers", [])
+        for path in coverage:
+            if not inside_repo(path):
+                print("  %s: unsafe covered path %r" % (cid, path))
+                failed = True
+                continue
+            full = os.path.realpath(os.path.join(ROOT, path))
+            root_real = os.path.realpath(ROOT)
+            if os.path.commonpath((root_real, full)) != root_real:
+                print("  %s: covered path resolves outside repository: %s" % (cid, path))
+                failed = True
+            elif not os.path.exists(full):
+                print("  %s: covered path does not exist: %s" % (cid, path))
+                failed = True
+        review_revision = claim.get("review", {}).get("reviewed_commit", "")
+        if re.fullmatch(r"[0-9a-f]{40}", review_revision) and coverage:
+            try:
+                changed = changed_paths(review_revision, coverage)
+                if changed:
+                    stale_count += 1
+                    print("  STALE %s review: covered implementation changed since %s: %s" %
+                          (cid, review_revision, ", ".join(changed)))
+            except ValueError as e:
+                stale_count += 1
+                print("  STALE %s review: %s" % (cid, e))
         for ei, evidence in enumerate(claim.get("evidence", [])):
-            for path in evidence.get("artifacts", []):
+            artifacts = evidence.get("artifacts", [])
+            safe_artifacts = True
+            for path in artifacts:
                 if not inside_repo(path):
                     print("  %s evidence[%d]: unsafe repository path %r" % (cid, ei, path))
                     failed = True
+                    safe_artifacts = False
                     continue
                 full = os.path.realpath(os.path.join(ROOT, path))
                 root_real = os.path.realpath(ROOT)
                 if os.path.commonpath((root_real, full)) != root_real:
                     print("  %s evidence[%d]: artifact resolves outside repository: %s" % (cid, ei, path))
                     failed = True
+                    safe_artifacts = False
                     continue
                 if not os.path.isfile(full):
                     print("  %s evidence[%d]: artifact does not exist: %s" % (cid, ei, path))
                     failed = True
+                    safe_artifacts = False
+            revision = evidence.get("revision", "")
+            if re.fullmatch(r"[0-9a-f]{40}", revision) and safe_artifacts:
+                paths = list(dict.fromkeys(artifacts + coverage))
+                try:
+                    changed = changed_paths(revision, paths)
+                    if changed:
+                        stale_count += 1
+                        print("  STALE %s evidence[%d] (%s): changed since %s: %s" %
+                              (cid, ei, evidence.get("kind", "unknown"), revision,
+                               ", ".join(changed)))
+                except ValueError as e:
+                    stale_count += 1
+                    print("  STALE %s evidence[%d]: %s" % (cid, ei, e))
             verification = evidence.get("verification")
             if evidence.get("result") == "passed" and verification:
                 if not re.fullmatch(r"[0-9a-f]{40}", verification.get("commit", "")):
                     print("  %s evidence[%d]: passed evidence lacks a full commit SHA" % (cid, ei))
                     failed = True
-                if verification.get("commit") != evidence.get("revision"):
+                if verification.get("commit") != revision:
                     print("  %s evidence[%d]: verification commit differs from evidence revision" % (cid, ei))
                     failed = True
                 if not verification.get("run_url", "").startswith("https://github.com/"):
                     print("  %s evidence[%d]: passed evidence needs a GitHub run/review URL" % (cid, ei))
                     failed = True
 
+    if stale_count and args.require_fresh:
+        print("assurance-validate: %d stale review/evidence record(s)" % stale_count)
+        failed = True
     if failed:
         return 1
-    print("assurance-validate: %d claim(s), schema valid, all evidence paths resolve" %
-          len(manifest.get("claims", [])))
+    print("assurance-validate: %d claim(s), schema valid, evidence paths resolve; HEAD %s; %d stale record(s)" %
+          (len(manifest.get("claims", [])), head_sha, stale_count))
     return 0
 
 
