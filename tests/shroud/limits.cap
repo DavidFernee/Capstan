@@ -1,0 +1,22 @@
+// Regression tests for bounded pixmap allocation (CWE-789).
+// The oversized case exercises the constructor's fail-closed path without allocating.
+
+int main() {
+    List<string> a = args();
+    if (pixmap_size_valid(1, 1) != true) { return 1; }
+    if (pixmap_size_valid(4096, 4096) != true) { return 2; }
+    if (pixmap_size_valid(4096, 4097) != false) { return 3; }
+    if (pixmap_size_valid(16384, 16384) != false) { return 4; }
+    if (pixmap_size_valid(0, 1) != false) { return 5; }
+    if (pixmap_size_valid(1, 0) != false) { return 6; }
+    if (pixmap_size_valid(-1, 1) != false) { return 7; }
+    if (pixmap_size_valid(16385, 1) != false) { return 8; }
+    if (a.len() > 0 && a[0] == "reject") {
+        Pixmap pm = new_pixmap(4096, 4097);
+        return pm.px.len() == 0 ? 9 : 10;
+    }
+    Pixmap small = new_pixmap(2, 3);
+    if (small.px.len() != 6) { return 11; }
+    println("pixmap limits: 8 assertions");
+    return 0;
+}
