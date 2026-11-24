@@ -585,7 +585,7 @@ static int large_secret_wipe_clean;
 static void observe_large_secret_wipe(const void *memory, size_t n) {
     uintptr_t address = (uintptr_t)memory;
     const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
-    if (n < 8192 || n % CAP_PAGE_SIZE != 0) large_secret_wipe_clean = 0;
+    if (n == 0 || n % CAP_PAGE_SIZE != 0) large_secret_wipe_clean = 0;
     for (size_t i = 0; i < n; i++)
         if (bytes[i] != 0) large_secret_wipe_clean = 0;
 
@@ -608,6 +608,7 @@ static void observe_large_secret_wipe(const void *memory, size_t n) {
     }
     if (original > 1) large_secret_wipe_clean = 0;
     if (original == 0) return;
+    if (n < 8192) large_secret_wipe_clean = 0;
 
     size_t ordinal = large_secret_wipe_observations++;
     if (ordinal >= CAP_NLARGE_SECRETS) {
