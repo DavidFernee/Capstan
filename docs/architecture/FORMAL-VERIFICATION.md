@@ -76,7 +76,7 @@ The proof assistant's kernel checks theorem terms, but the overall assurance cla
 | Lean standard library | Imported foundation | Audit imported declarations; no unreviewed axioms |
 | CCAM normative specification | Human-authored specification | Review authority; model-to-spec correspondence is not yet proved |
 | Lean CCAM model | Partial definitions | Inspect definitions; not a complete machine |
-| Theorems in Core.lean | Machine checked only when built successfully | Do not claim CI-verified until a proof build passes |
+| Theorems in Core.lean | Machine-checked on Lean 4.19.0, run 45340032027, PR merge commit 86a5d96 | The listed theorem statements passed `lake build --wfail`; the source scan also found no `sorry`, `admit` or local `axiom` declarations |
 | Capstan CCAM implementation | Executable Capstan source | Tests/conformance only; not proved equivalent to Lean |
 | Existing bootstrap, generated C, C compiler/runtime | Current implementation dependencies | Outside the proof model and part of present TCB |
 | Native backend, assembler, linker, OS, hardware | Future dependencies | Not yet modelled or verified |
@@ -94,7 +94,7 @@ No theorem in this programme should rely on sorry, admit, custom axioms, uncheck
 
 | Stage | Evidence required |
 |---|---|
-| P0: environment | Pinned Lean toolchain; clean CI proof build |
+| P0: environment | <badge>Complete on PR #89</badge> Pinned Lean 4.19.0, dependency-free Lake manifest, clean CI proof build and unfinished-proof scan |
 | P1: core | Complete small-step semantics and mechanically checked preservation + progress-or-trap |
 | P2: calls/control flow | Valid target and call graph invariants; return destination/type preservation; bounded stack |
 | P3: IR | Typed IR definitions and source/IR/CCAM simulation theorems |
