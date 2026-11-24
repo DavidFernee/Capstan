@@ -1,0 +1,12 @@
+int main() {
+    List<string> argv = args();
+    if (argv.len() != 1) { return 2; }
+    if (let input = read_file(argv[0], 65536)) {
+        Tainted output = single_line(input);
+        println(int_to_str(output.len()));
+        println(int_to_str(output.at(0)));
+        println(int_to_str(output.at(output.len() - 1)));
+        return 0;
+    }
+    return 3;
+}

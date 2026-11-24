@@ -435,17 +435,32 @@ List<int> codepoints_of_slice(View v, int bytes) {
     return cps;
 }
 
-// Typed text for a single-line field: line breaks and other control characters are
-// dropped (a paste cannot smuggle a newline into a one-line value).
+bool is_single_line_control(int cp) {
+    return cp < 0x20 || (cp >= 0x7F && cp <= 0x9F) || cp == 0x2028 || cp == 0x2029;
+}
+
 Tainted single_line(Tainted s) {
-    Tainted out = taint("");
+    // Oversized events are rejected by the field-size check. Do not decode an
+    // unbounded paste merely to discard it.
+    if (s.len() > MAX_FIELD_BYTES) { return s; }
+    Utf8Decoded decoded = utf8_decode_with_ends(tainted_bytes(s));
+    // Collect retained byte spans, then use join()'s single output allocation.
+    // Repeated string concatenation here copied O(n^2) bytes for alternating
+    // controls and printable text.
+    List<Tainted> parts = new List<Tainted>();
     int start = 0;
-    for (int i = 0; i < s.len(); i += 1) {
-        int b = s.at(i);
-        if (b < 0x20 || b == 0x7F) {
-            out = out + s.slice(start, i);
-            start = i + 1;
+    int before = 0;
+    bool removed = false;
+    for (int i = 0; i < decoded.codepoints.len(); i += 1) {
+        int end = decoded.byte_ends[i];
+        if (is_single_line_control(decoded.codepoints[i])) {
+            if (before > start) { parts.push(s.slice(start, before)); }
+            start = end;
+            removed = true;
         }
+        before = end;
     }
-    return out + s.slice(start, s.len());
+    if (!removed) { return s; }
+    if (start < s.len()) { parts.push(s.slice(start, s.len())); }
+    return join(parts, "");
 }

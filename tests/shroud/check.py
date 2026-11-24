@@ -21,7 +21,7 @@ Run from anywhere; paths are relative to the repository root.
 7. golden      the example gallery renders to the recorded SHA-256 of every frame.
                Rendering is integer arithmetic only, so this holds on every platform.
 """
-import hashlib, os, random, struct, subprocess, sys, tempfile, zlib
+import hashlib, os, random, re, struct, subprocess, sys, tempfile, zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 LIB = sorted(os.path.join("lib/shroud", f) for f in os.listdir(os.path.join(ROOT, "lib/shroud")) if f.endswith(".cap"))
@@ -302,6 +302,31 @@ def check_fuzz(exe, tmp):
     return f"{len(paths)} damaged fonts: {r.stdout.strip()[5:]}, no stops"
 
 
+
+
+def check_single_line_budget(capstanc, cc, cflags, tmp):
+    exe = build(capstanc, cc, cflags, tmp, "tests/shroud/single_line_budget.cap", "single-line-budget")
+    source = os.path.join(tmp, "alternating-controls.txt")
+    with open(source, "wb") as f:
+        f.write(b"A\n" * 32768)
+    env = os.environ.copy()
+    env["CAPSTAN_GC_STATS"] = "1"
+    r = subprocess.run([exe, source], cwd=ROOT, capture_output=True, text=True, env=env)
+    if r.returncode != 0:
+        sys.exit(f"single-line budget: exit {r.returncode}:\n{r.stdout}{r.stderr}")
+    if r.stdout != "32768\n65\n65\n":
+        sys.exit(f"single-line budget: incorrect retained bytes: {r.stdout!r}")
+    match = re.search(r"total_allocated=(\d+)", r.stderr)
+    if not match:
+        sys.exit(f"single-line budget: GC allocation counter missing: {r.stderr!r}")
+    allocated = int(match.group(1))
+    # 32,768 alternating retained spans must be assembled in one join, not
+    # by repeatedly copying the growing prefix (which allocates ~512 MiB).
+    if allocated > 16 * 1024 * 1024:
+        sys.exit(f"single-line budget: allocation amplification: {allocated} bytes")
+    return f"65,536-byte alternating input -> 32,768 retained bytes; total Capstan allocation {allocated} bytes"
+
+
 def check_golden(capstanc, cc, cflags, tmp, update):
     exe = build(capstanc, cc, cflags, tmp, "examples/shroud/gallery.cap", "gallery")
     out = os.path.join(tmp, "frames")
@@ -353,6 +378,7 @@ def main():
         report.append("utf-8: " + check_utf8(vec, tmp))
         report.append("png: " + check_png(vec, tmp))
         report.append("font fuzz: " + check_fuzz(vec, tmp))
+        report.append("single-line filtering: " + check_single_line_budget(capstanc, cc, cflags, tmp))
         report.append("golden: " + check_golden(capstanc, cc, cflags, tmp, update))
         print("\n".join(report))
 

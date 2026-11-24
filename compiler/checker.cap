@@ -1029,8 +1029,15 @@ Type check_call(Checker c, Node e) {
     if (f == "join") {
         want_args(c, e, 0, 2, f);
         if (n == 2) {
-            expect_type(c, e, ty_of(e.kids[0]), mk_wrap(TY_LIST, mk_type(TY_STR)), "join()");
+            Type parts = ty_of(e.kids[0]);
             expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_STR), "join() separator");
+            if (parts.k == TY_LIST && parts.args.len() == 1 && parts.args[0].k == TY_TAINT) {
+                // cap_join() allocates the joined bytes once; retain the
+                // untrusted type when any input part is Tainted.
+                expect_type(c, e, parts, mk_wrap(TY_LIST, mk_type(TY_TAINT)), "join()");
+                return mk_type(TY_TAINT);
+            }
+            expect_type(c, e, parts, mk_wrap(TY_LIST, mk_type(TY_STR)), "join()");
         }
         return mk_type(TY_STR);
     }
