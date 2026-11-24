@@ -16,7 +16,8 @@
 | LARGE-01 | Large-object records are sorted, unique and non-overlapping. | Insertion/sort/search proofs and pointer-range bounds. | Not started. |
 | MARK-01 | Mark-stack depth is bounded and work items refer to allocated objects. | Push/drain transition proofs. | Not started. |
 | GC-01 | Marking reaches every object reachable from the abstract roots. | Inductive graph-reachability theorem. | Not started; root completeness is a premise. |
-| GC-02 | Sweep never reclaims an object marked reachable. | Theorem from GC-01 plus sweep invariant. | Not started. |\n| GC-03 | Abstract scanning matches physical bytes scanned by C, including stale pointer words in vacated container capacity. | Representation contract plus container mutation correspondence. | Not started; logical removal does not itself clear conservative scan words. |
+| GC-02 | Sweep never reclaims an object marked reachable. | Theorem from GC-01 plus sweep invariant. | Not started. |
+| GC-03 | Abstract scanning matches physical bytes scanned by C, including stale pointer words in vacated container capacity. | Representation contract plus container mutation correspondence. | Not started; logical removal does not itself clear conservative scan words. |
 | ACCOUNT-01 | Heap accounting equals retained page backing plus registered large-object bytes. | Transition proof with explicit OS outcomes. | Blocked by unchecked `madvise` result in baseline C. |
 | ACCOUNT-02 | Each successful acquire/release changes accounting exactly once; failed release does not. | Transition proof, exact-delta implementation test, C refinement. | Model semantics drafted; baseline C release implementation blocks implementation proof. |
 | SECRET-01 | Secret payload is wiped before reuse or release. | Wipe primitive review, state proof, direct byte-observation tests. | Not satisfied by baseline small-slot in-band free-list link. |
