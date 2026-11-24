@@ -295,6 +295,37 @@ bool ccam_x64_contains(string value, string needle) {
     return false;
 }
 
+
+bool ccam_x64_write_test_program(
+    string source_text,
+    string output_path,
+    int max_steps,
+    int max_depth
+) {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("native-backend-test.cap");
+    Tainted source = taint(source_text);
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    if (error_count(context) != 0) { return false; }
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    if (!lowered.ok) { return false; }
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(
+        lowered.functions, lowered.entry_function, max_steps, max_depth);
+    if (!native.ok) { return false; }
+    return write_file(output_path, native.assembly);
+}
+
 test "CCAM x86-64 backend emits freestanding checked native assembly" {
     Ctx context = new Ctx{
         files: new List<string>(),
@@ -325,6 +356,31 @@ test "CCAM x86-64 backend emits freestanding checked native assembly" {
     assert(!ccam_x64_contains(native.assembly, "#include"));
     assert(!ccam_x64_contains(native.assembly, "capstan_rt"));
     assert(write_file("build/ccam-native-x64.s", native.assembly));
+}
+
+
+test "CCAM x86-64 backend emits loop and conditional control flow" {
+    assert(ccam_x64_write_test_program(
+        "int main() { int value = 0; while (value < 42) { value += 6; } if (value == 42) { return value; } return 0; }",
+        "build/ccam-native-x64-loop.s", 1000, 16));
+}
+
+test "CCAM x86-64 backend emits checked overflow and division traps" {
+    assert(ccam_x64_write_test_program(
+        "int main() { return 9223372036854775807 + 1; }",
+        "build/ccam-native-x64-overflow.s", 100, 16));
+    assert(ccam_x64_write_test_program(
+        "int main() { int numerator = 1; int denominator = 0; return numerator / denominator; }",
+        "build/ccam-native-x64-divzero.s", 100, 16));
+}
+
+test "CCAM x86-64 backend emits step and call-depth guards" {
+    assert(ccam_x64_write_test_program(
+        "int main() { return 42; }",
+        "build/ccam-native-x64-step-limit.s", 0, 16));
+    assert(ccam_x64_write_test_program(
+        "int recurse(int value) { return recurse(value); } int main() { return recurse(1); }",
+        "build/ccam-native-x64-depth-limit.s", 100, 1));
 }
 
 test "CCAM x86-64 backend rejects unsupported argument counts" {
