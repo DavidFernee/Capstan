@@ -95,6 +95,30 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
       else
         bad "freestanding ELF exit status" "expected 42, got $native_status"
       fi
+    if as --64 "$ROOT/build/ccam-native-x64-rem-min.s" -o "$tmp/ccam-rem-min.o" &&
+       ld -o "$tmp/ccam-rem-min" "$tmp/ccam-rem-min.o"; then
+      "$tmp/ccam-rem-min"
+      native_status=$?
+      if [[ $native_status -eq 0 ]]; then
+        ok "native INT64_MIN % -1 returns zero (CCAM remainder semantics)"
+      else
+        bad "native remainder boundary" "expected 0, got $native_status"
+      fi
+    else
+      bad "native remainder boundary assembly/link" "GNU as or ld rejected generated assembly"
+    fi
+    if as --64 "$ROOT/build/ccam-native-x64-div-min.s" -o "$tmp/ccam-div-min.o" &&
+       ld -o "$tmp/ccam-div-min" "$tmp/ccam-div-min.o"; then
+      "$tmp/ccam-div-min"
+      native_status=$?
+      if [[ $native_status -eq 70 ]]; then
+        ok "native INT64_MIN / -1 traps as integer overflow"
+      else
+        bad "native division boundary" "expected overflow status 70, got $native_status"
+      fi
+    else
+      bad "native division boundary assembly/link" "GNU as or ld rejected generated assembly"
+    fi
     else
       bad "freestanding ELF assembly/link" "GNU as or ld rejected generated assembly"
     fi
