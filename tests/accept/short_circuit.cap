@@ -1,6 +1,8 @@
 // spec: types.bool expr.order expr.short_circuit
 // A suppressed boolean RHS must not execute, even when it would trap.
 int main() {
+    // A variable divisor avoids the checker's static literal-zero diagnostic;
+    // the runtime division trap must be suppressed by short-circuit evaluation.
     int zero = 0;
     bool a = false && (1 / zero == 0);
     bool b = true || (1 / zero == 0);
