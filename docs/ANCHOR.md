@@ -272,7 +272,7 @@ browser, semantic tokens and advanced code navigation require stable underlying 
 - No assurance claim is shown as proven without verifiable evidence.
 
 
-## 9. WYSIWYG Shroud designer
+## 10. WYSIWYG Shroud designer
 
 The visual designer is a first-class Anchor workflow, not a separate application or a
 replacement for Capstan source. It is built entirely in Capstan and rendered by Shroud.
@@ -303,7 +303,10 @@ design target, not a claim about current functionality. The designer must never 
 untrusted project code merely to draw the canvas. Preview execution, if later required,
 must use a separate constrained process with explicit capabilities and resource limits.
 
-## 10. Curated security-reviewed component catalogue
+## 11. Curated security-reviewed component catalogue
+
+See [ANCHOR-COMPONENT-CATALOGUE.md](ANCHOR-COMPONENT-CATALOGUE.md) for the proposed record model, verification procedure, offline/revocation semantics, capability policy, authentication review profiles and acceptance gates.
+
 
 Anchor should make secure implementation the easiest path by offering prebuilt,
 reusable Capstan components for security-sensitive tasks. Initial candidate families
