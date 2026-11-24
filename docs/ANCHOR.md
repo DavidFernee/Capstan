@@ -350,3 +350,79 @@ version, locked, updated deliberately and verified offline from cached signed ma
 No dependency installation or update occurs merely by opening a workspace. A project's
 selected components and assurance records become part of its reproducible build and
 security evidence. Anchor must never silently upgrade a security-sensitive dependency.
+
+
+### Catalogue contract and developer workflow
+
+The catalogue should be split into four independently verifiable artifacts:
+
+1. **Catalogue entry:** human-readable description, ownership, supported Capstan
+   versions, API surface, configuration schema and security-relevant defaults.
+2. **Immutable package:** exact source revision and content digest, with a complete,
+   pinned transitive dependency graph. A mutable tag or branch is never a dependency
+   identity.
+3. **Assurance bundle:** signed metadata linking review reports, tests, fuzz campaigns,
+   formal claims, SBOM, build provenance and advisories to that exact package graph.
+4. **Project lock record:** the exact selected package versions, digests, dependency
+   closure, required capabilities and assurance-bundle identities used by the build.
+
+A proposed component manifest should declare at least: package identity/version;
+public API and compatibility range; source digest; dependency constraints; required
+capabilities; data classifications and taint behaviour; secret inputs/outputs and
+lifecycle; supported protocols/algorithms; configuration schema and safe defaults;
+resource limits; threat model; maintainer/reviewer; and links to machine-readable
+assurance and advisory records. The manifest is a declarative, size-bounded data format,
+not executable project configuration.
+
+The intended user flow is:
+
+1. Search or browse the curated catalogue and compare supported use cases, assumptions,
+   required capabilities and assurance evidence.
+2. Inspect source, API, configuration defaults, dependency closure and known limitations.
+3. Add one exact version; Anchor writes a lock record and shows every requested capability.
+4. Verify package digests, signatures and provenance, then validate assurance evidence
+   against the selected source and dependency graph.
+5. Compile and test the project; record the compiler/toolchain identity and the component
+   lock/evidence identities in the build record.
+6. Review updates as explicit changes. Security advisories may trigger an alert and
+   explain affected versions, but must not silently rewrite the lockfile or upgrade code.
+
+The verification display must be multidimensional rather than a single score. At minimum,
+show source identity, signature/provenance validity, test status, audit status, formal
+properties (with their exact statement and scope), current advisories, configuration
+conformance and capability review separately. A successful test campaign is evidence
+about tested behaviour, not proof of absence of vulnerabilities. A signature establishes
+publisher identity/integrity under a trust policy, not code safety. Formal verification
+of one property does not establish that the whole component is secure.
+
+### Initial authentication component families
+
+The first catalogue candidates should be deliberately narrow, protocol-based building
+blocks rather than a generic “login” black box:
+
+- **Passkeys/WebAuthn relying-party integration:** challenge generation and validation,
+  origin/RP-ID checks, credential lifecycle and counter/backup-state handling where
+  applicable.
+- **OIDC relying-party client:** issuer and audience validation, nonce/state/PKCE
+  handling, redirect URI policy, token validation and key rotation.
+- **MFA orchestration:** factor enrolment, step-up policy, recovery and rate limiting,
+  with explicit treatment of weaker fallback channels.
+- **Password verification:** standard password-hashing schemes and parameters, bounded
+  work factors, constant-time verification where required, and secure secret handling.
+- **Session lifecycle:** opaque session identifiers, rotation, expiry, revocation,
+  CSRF protections and secure cookie policy where applicable.
+- **Authorisation policy components:** deny-by-default policy evaluation, explicit
+  resource/action/subject inputs, auditable decisions and tests for privilege boundaries.
+
+These components must not hide deployment-critical choices. The application remains
+responsible for identity proofing, account recovery policy, tenant isolation, authorization
+rules, operational monitoring and incident response unless a component's reviewed
+contract explicitly covers them. No catalogue entry should encourage bespoke cryptography
+or custom protocol implementations.
+
+**Current readiness warning:** the repository's existing crypto standard-library API
+has a separate security review in progress (draft PR #56) that identified concrete
+input-bound, resource-exhaustion and secret-lifecycle concerns. Those APIs and any
+components depending on them must remain unverified until the review is resolved and
+the exact implementation passes its required tests and independent checks. This is an
+example of why catalogue status must be evidence-driven rather than aspirational.
