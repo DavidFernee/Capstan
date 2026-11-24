@@ -892,14 +892,25 @@ bool is_literal_str(Node e) {
     return e.k == N_STR;
 }
 // Node.s stores the C-escaped literal body, not its decoded bytes. The lexer
-// encodes a NUL byte as the three-digit octal escape \\000. Skip escaped
+// encodes a NUL byte as the three-digit octal escape \000. Skip escaped
 // backslashes/quotes/question marks so a literal backslash followed by "000"
 // is not mistaken for an embedded NUL.
 bool literal_has_nul(Node e) {
     int i = 0;
     while (i < e.s.len()) {
-        if (e.s.at(i) != '\\') { i += 1; continue; }
+        if (e.s.at(i) != '\\') {
+            i += 1;
+            continue;
+        }
         i += 1;
+        if (i + 2 < e.s.len() && e.s.at(i) == '0' &&
+            e.s.at(i + 1) == '0' && e.s.at(i + 2) == '0') {
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}        i += 1;
         if (i + 2 < e.s.len() && e.s.at(i) == '0' &&
             e.s.at(i + 1) == '0' && e.s.at(i + 2) == '0') { return true; }
         i += 1;
