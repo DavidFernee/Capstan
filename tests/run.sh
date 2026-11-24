@@ -70,6 +70,7 @@ fi
 
 section "unit"
 if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tmp/unit")"; then ok "$out"; else bad "runtime unit tests" "$out"; fi
+if "$CC" -O3 -std=gnu11 -w -I"$ROOT/runtime" "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit_o3" && out="$("$tmp/unit_o3")"; then ok "runtime unit tests at -O3 ($out)"; else bad "runtime unit tests at -O3" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/ranges_props.py" 2>&1)"; then ok "$out"; else bad "range properties" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/codegen_literal_order.py" "$C" "$tmp" 2>&1)"; then ok "$out"; else bad "literal operand sequencing" "$out"; fi
