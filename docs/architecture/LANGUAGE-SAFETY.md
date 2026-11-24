@@ -34,7 +34,7 @@ These are the first preservation/progress theorem targets.
 
 1. Every source-level observable expression is evaluated in its specified order.
 2. A trap prevents all subsequent effects in the expression/statement.
-3. Each assignable location is evaluated exactly once for assignment; compound assignment reads the old value before evaluating the RHS and writes only after successful computation.
+3. Each assignable location is evaluated exactly once for assignment; compound assignment reads the old value before evaluating the RHS and writes only after successful computation. A field target retains its receiver object identity; a direct indexed target retains its container and index.
 4. Short-circuit operators do not evaluate a suppressed RHS.
 5. Calls receive fully evaluated arguments in source order.
 6. A failed dynamic operand read prevents later operand reads.
@@ -56,7 +56,7 @@ A compiler pass may reorder operations only where it proves the reordering obser
 
 These properties are required before the C-free machine can claim memory safety for structs, strings, lists, maps, optionals or closures. The existing v0.6 runtime baseline is documented in [`docs/assurance/RUNTIME-MEMORY-MODEL.md`](https://github.com/DavidFernee/Capstan/blob/main/docs/assurance/RUNTIME-MEMORY-MODEL.md): it uses a non-moving conservative mark-and-sweep collector, so false retention is possible and logical unreachability does not imply prompt reclamation. The C-free extension must specify its own abstract heap/lifetime semantics and prove or test its implementation refinement; it must not infer exact reachability or deterministic destruction from the presence of GC.
 
-- **Bounds:** every indexed access is within the live logical length, not merely allocated capacity. For compound assignment, the old-value read and final write are separate accesses; bounds/liveness must be revalidated or soundly proved preserved after the RHS because it may mutate the aggregate. A pre-RHS range proof alone cannot justify an unchecked post-RHS store.
+- **Bounds and location identity:** every direct indexed access is within the live logical length, not merely allocated capacity. For direct indexed-element compound assignment, the old-value read and final write are separate accesses; the retained container/index must be revalidated or soundly proved preserved after the RHS. A pre-RHS range proof alone cannot justify an unchecked post-RHS store. For a field target, evaluate the receiver once and retain that object reference as a live root; the write targets that same object after the RHS, even if the RHS changes the collection slot from which the receiver was obtained. Do not re-read the collection slot or silently retarget the field write.
 - **Lifetime:** every dereferenced object is live for the duration of the access.
 - **Representation:** each object layout and field offset agrees with its declared type.
 - **Aliasing:** object identity and shared mutation are explicit; no optimisation may assume uniqueness without proof.
