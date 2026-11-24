@@ -25,13 +25,22 @@ jobs:
           build-args: --wfail
           test: false
           lint: false
-          leanchecker: true
+          leanchecker: false
           # Upstream nanoda's lean4export main currently requires a newer Lean than this package's v4.19 toolchain.
           # Keep the compatible leanchecker replay enabled until a matching exporter is pinned.
           nanoda: false
       - name: Build proof library root explicitly
         working-directory: verification/lean
         run: lake build CapstanVerification --wfail
+      - name: Replay proof library with pinned Lean 4.19 checker
+        working-directory: verification/lean
+        shell: bash
+        run: |
+          git clone --depth 1 --branch v4.19.0 https://github.com/leanprover/lean4checker.git lean4checker
+          test "$(git -C lean4checker rev-parse HEAD)" = "e11f65c651edd58d68ba260015d2bfde5102cd7f"
+          cmp -s lean-toolchain lean4checker/lean-toolchain
+          (cd lean4checker && lake build)
+          lake env lean4checker/.lake/build/bin/lean4checker --fresh CapstanVerification
       - name: Report theorem axiom dependencies
         working-directory: verification/lean
         run: lake env lean AxiomAudit.lean
