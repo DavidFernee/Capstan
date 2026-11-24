@@ -22,6 +22,7 @@ import os
 import re
 import sys
 import subprocess
+from urllib.parse import urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -354,8 +355,30 @@ def check_labels(classified, atlas, name):
     return total, same_class, same_outcome, misses, prevented
 
 
+def _is_cvelist_origin(remote):
+    """Recognise the canonical CVEProject/cvelistV5 GitHub origin URL."""
+    if remote.startswith("git@github.com:"):
+        remote = "ssh://git@github.com/" + remote.split(":", 1)[1]
+    try:
+        parsed = urlsplit(remote)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("https", "ssh", "git") or parsed.hostname != "github.com":
+        return False
+    if parsed.query or parsed.fragment:
+        return False
+    path = parsed.path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    return path.casefold() == "cveproject/cvelistv5"
+
+
 def source_snapshot(cvelist):
-    """Return the exact, clean Git commit for the source population or fail closed."""
+    """Return the exact, clean Git commit after checking the configured origin identity.
+
+    The origin URL is repository metadata, not cryptographic proof of remote
+    authenticity or commit authorship; consumers must still pin the reported commit.
+    """
     try:
         commit = subprocess.run(
             ["git", "-C", cvelist, "rev-parse", "--verify", "HEAD"],
@@ -365,10 +388,18 @@ def source_snapshot(cvelist):
             ["git", "-C", cvelist, "status", "--porcelain", "--untracked-files=all"],
             check=True, capture_output=True, text=True,
         ).stdout
+        origin = subprocess.run(
+            ["git", "-C", cvelist, "remote", "get-url", "origin"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
     except (OSError, subprocess.CalledProcessError) as error:
         raise RuntimeError(
-            "CVE List source must be a Git checkout with a verifiable commit"
+            "CVE List source must be a Git checkout with a verifiable commit and origin"
         ) from error
+    if not _is_cvelist_origin(origin):
+        raise RuntimeError(
+            "CVE List origin must be https://github.com/CVEProject/cvelistV5"
+        )
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise RuntimeError(f"invalid CVE List Git commit: {commit!r}")
     if status:
