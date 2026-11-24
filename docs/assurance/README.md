@@ -9,7 +9,8 @@ Documents for organisations assessing Capstan, in particular government and defe
 | [THREAT-MODEL.md](THREAT-MODEL.md) | What Capstan defends against, its assumptions, its trusted base today, what is out of scope and the residual risks |
 | [GRANT-SECURITY.md](GRANT-SECURITY.md) | Reference semantics and claim-specific assurance for policy grants, including limits and differential verification plan |
 | [ISM-MAPPING.md](ISM-MAPPING.md) | The toolchain, process and tests mapped to the ISM's software development controls (September 2026) and NIST SP 800-218 (SSDF 1.1) |
-| [EVIDENCE-FRESHNESS.md](EVIDENCE-FRESHNESS.md) | How implementation and evidence changes invalidate assurance reviews and records |\n| [FORMAL-VERIFICATION.md](FORMAL-VERIFICATION.md) | Machine-checked runtime verification scope, implementation blockers, proof layers and evidence status |
+| [EVIDENCE-FRESHNESS.md](EVIDENCE-FRESHNESS.md) | How implementation and evidence changes invalidate assurance reviews and records |
+| [FORMAL-VERIFICATION.md](FORMAL-VERIFICATION.md) | Machine-checked runtime verification scope, implementation blockers, proof layers and evidence status |
 
 These documents describe the repository as it is, and claim only what it demonstrates. They are
 maintained with each release: before a release is tagged, each is checked against the code, tests
