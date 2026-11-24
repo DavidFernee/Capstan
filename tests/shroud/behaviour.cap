@@ -137,9 +137,14 @@ void test_duplicate_keys(Tally t, Ui ui) {
         int x = visible.frame.x + visible.frame.w / 2;
         int y = visible.frame.y + visible.frame.h / 2;
         List<Msg> down = ui.handle(pointer_event(EV_POINTER_DOWN, x, y, 1100));
+        expect(t, ui.focus == visible.id,
+            "identity: focus resolves to the visible duplicate", ui.focus);
         List<Msg> up = ui.handle(pointer_event(EV_POINTER_UP, x, y, 1150));
         expect(t, down.len() == 0 && up.len() == 1 && up[0].action == "keep",
             "identity: hit testing activates the visible duplicate", $"{down.len()} down, {up.len()} up");
+        List<Msg> keyboard = ui.handle(key_event(KEY_ENTER, 0, 1200));
+        expect(t, keyboard.len() == 1 && keyboard[0].action == "keep",
+            "identity: keyboard activation resolves the same visible duplicate", $"{keyboard.len()} messages");
     } else {
         expect(t, false, "identity: laid-out root exists", "none");
     }
@@ -165,11 +170,11 @@ void test_duplicate_key_collisions(Tally t, Ui ui) {
     ui.render(v, 0);
     if (let root = ui.root) {
         expect(t, root.kids[2].id == "collision#shroud-duplicate-8",
-            "identity: first duplicate skips reserved generated-looking keys", root.kids[1].id);
+            "identity: first duplicate skips reserved generated-looking keys", root.kids[2].id);
         expect(t, root.kids[4].id == "collision#shroud-duplicate-9",
-            "identity: later duplicate continues after prior suffix", root.kids[3].id);
+            "identity: later duplicate continues after prior suffix", root.kids[4].id);
         expect(t, root.kids[6].id == "collision#shroud-duplicate-10",
-            "identity: suffix allocation does not rescan prior collisions", root.kids[5].id);
+            "identity: suffix allocation does not rescan prior collisions", root.kids[6].id);
     } else {
         expect(t, false, "identity: collision test root exists", "none");
     }
