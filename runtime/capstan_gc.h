@@ -104,12 +104,6 @@ static size_t cap_gc_saturating_add(size_t a, size_t b) {
     return b > SIZE_MAX - a ? SIZE_MAX : a + b;
 }
 
-static int cap_gc_heap_would_exceed(size_t amount) {
-    if (cap_gc.heap > cap_gc.max_heap)
-        cap_panic("garbage collector heap accounting invariant violated", "CWE-682", 0);
-    return amount > cap_gc.max_heap - cap_gc.heap;
-}
-
 __attribute__((noreturn, cold, noinline)) static void cap_panic(const char *what, const char *cwe, int64_t loc);
 
 static const uint32_t cap_class_size[CAP_NCLASS] =
@@ -143,6 +137,12 @@ static struct {
     CapPage **spare; size_t nspare, capspare;  /* empty pages, reused before new ones */
     size_t released_total, reused_total;
 } cap_gc;
+
+static int cap_gc_heap_would_exceed(size_t amount) {
+    if (cap_gc.heap > cap_gc.max_heap)
+        cap_panic("garbage collector heap accounting invariant violated", "CWE-682", 0);
+    return amount > cap_gc.max_heap - cap_gc.heap;
+}
 
 static void cap_gc_oom(void) {
     fprintf(stderr, "capstan: out of memory\n");
