@@ -713,6 +713,27 @@ __attribute__((noinline)) static void collect_clean(void) {
 #endif
     cap_gc_collect();
 }
+static void test_gc_release_accounting(void) {
+    CapPage page;
+    memset(&page, 0, sizeof page);
+    size_t saved_heap = cap_gc.heap;
+    size_t saved_released = cap_gc.released_total;
+    cap_gc.heap = CAP_PAGE_SIZE;
+    cap_gc_account_release(&page, 0); /* simulated madvise failure */
+    CHECK(!page.released);
+    CHECK(cap_gc.heap == CAP_PAGE_SIZE);
+    CHECK(cap_gc.released_total == saved_released);
+    cap_gc_account_release(&page, 1); /* confirmed release */
+    CHECK(page.released);
+    CHECK(cap_gc.heap == 0);
+    CHECK(cap_gc.released_total == saved_released + 1);
+    cap_gc_account_release(&page, 1); /* repeated release is idempotent */
+    CHECK(cap_gc.heap == 0);
+    CHECK(cap_gc.released_total == saved_released + 1);
+    cap_gc.heap = saved_heap;
+    cap_gc.released_total = saved_released;
+}
+
 static void test_gc_release(void) {
     cap_gc_collect();
     size_t released_before = cap_gc.released_total, heap_before = cap_gc.heap;
@@ -773,6 +794,42 @@ static void test_secret_wipe(void) {
     CHECK(wiped >= CAP_NSECRETS - 4);
 }
 
+static void test_collection_slot_clearing(void) {
+    CapList *list = cap_list_new();
+    CapStr *a = cap_str_new("slot-a", 6);
+    CapStr *b = cap_str_new("slot-b", 6);
+    CapStr *c = cap_str_new("slot-c", 6);
+    cap_list_push(list, cap_vp(a));
+    CHECK(cap_list_pop_p(list) == a);
+    CHECK(list->len == 0 && list->items[0].p == NULL);
+    cap_list_push(list, cap_vi(17));
+    int64_t *boxed = cap_list_pop_i(list);
+    CHECK(boxed && *boxed == 17);
+    CHECK(list->len == 0 && list->items[0].i == 0);
+    cap_list_push(list, cap_vp(a));
+    cap_list_push(list, cap_vp(b));
+    CapVal *slots = list->items;
+    cap_list_clear(list);
+    CHECK(list->len == 0 && slots[0].p == NULL && slots[1].p == NULL);
+    cap_list_push(list, cap_vp(a));
+    cap_list_push(list, cap_vp(b));
+    cap_list_push(list, cap_vp(c));
+    CapVal removed = cap_list_remove(list, 1, 0);
+    CHECK(removed.p == b);
+    CHECK(list->len == 2 && list->items[0].p == a && list->items[1].p == c);
+    CHECK(list->items[2].p == NULL);
+    CapMap *map = cap_map_new();
+    CapStr *ka = cap_str_new("key-a", 5);
+    CapStr *kb = cap_str_new("key-b", 5);
+    CapStr *va = cap_str_new("value-a", 7);
+    CapStr *vb = cap_str_new("value-b", 7);
+    cap_map_set(map, ka, cap_vp(va));
+    cap_map_set(map, kb, cap_vp(vb));
+    CHECK(cap_map_remove(map, ka));
+    CHECK(map->len == 1 && map->keys[0] == kb && map->vals[0].p == vb);
+    CHECK(map->keys[1] == NULL && map->vals[1].p == NULL);
+}
+
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
@@ -793,9 +850,11 @@ int main(void) {
     test_gc_allocator_arithmetic();
     test_runtime_growth_arithmetic();
     test_collections();
+    test_collection_slot_clearing();
     test_arithmetic();
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
+    test_gc_release_accounting();
     test_gc_release();
     test_secret_env_name();
     test_secret_wipe();

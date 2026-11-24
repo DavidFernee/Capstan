@@ -374,18 +374,27 @@ static void cap_gc_range(uintptr_t a, uintptr_t b) {
    With `release`, its memory also goes back to the operating system. Either
    way the address range stays reserved and the page stays in the page table
    with nothing allocated, so a stale pointer into it still maps to nothing. */
-static void cap_gc_release(CapPage *pg) {
-    if (pg->released) return;
+/* Update accounting only after the OS confirms the page-release advice.
+   Keeping this separate makes failed advice and repeated release deterministic to test. */
+static void cap_gc_account_release(CapPage *pg, int advice_succeeded) {
+    if (pg->released || !advice_succeeded) return;
     if (cap_gc.heap < CAP_PAGE_SIZE)
         cap_panic("page release would underflow heap accounting", "CWE-682", 0);
-#if defined(__APPLE__)
-    madvise(pg->base, CAP_PAGE_SIZE, MADV_FREE);
-#elif defined(MADV_DONTNEED)
-    madvise(pg->base, CAP_PAGE_SIZE, MADV_DONTNEED);
-#endif
     pg->released = 1;
     cap_gc.heap -= CAP_PAGE_SIZE;
     cap_gc.released_total = cap_gc_saturating_add(cap_gc.released_total, 1);
+}
+
+static void cap_gc_release(CapPage *pg) {
+    if (pg->released) return;
+    int advised = 0;
+#if defined(__APPLE__)
+    advised = madvise(pg->base, CAP_PAGE_SIZE, MADV_FREE) == 0;
+#elif defined(MADV_DONTNEED)
+    advised = madvise(pg->base, CAP_PAGE_SIZE, MADV_DONTNEED) == 0;
+#endif
+    /* Unsupported advice and OS errors leave the mapping counted and retryable. */
+    cap_gc_account_release(pg, advised);
 }
 
 static void cap_gc_spare_page(CapPage *pg, int release) {
