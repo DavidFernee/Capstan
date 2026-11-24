@@ -121,7 +121,7 @@ The S0 `a11y_tree()`/JSON output provides roles, names, values, states and bound
 
 S1's platform bridge must:
 - expose native accessible objects whose role, name, value, disabled/checked/focused state and bounds derive from the same Shroud view/layout state used for painting and input;
-- use Shroud's sanitised visible representation for untrusted text; never reintroduce original bidi or invisible controls into the native accessible name/value;
+- use Shroud's single approved accessibility presentation model, aligned with the logical-text/source-map and security-annotation policy in `docs/SHROUD-UNICODE-TEXT-DESIGN.md`; the host must not independently re-sanitise, reorder or reintroduce raw control characters; secret values remain excluded;
 - keep password values undisclosed, including through notifications, debug logs and platform value interfaces;
 - map native accessibility actions back through the same Shroud event/action path, with the same disabled, guarded and focus checks as pointer/keyboard input;
 - notify assistive technology when the tree, focus, value, checked state or bounds change, without exposing stale nodes after rebuild/destruction;
