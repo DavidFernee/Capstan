@@ -1770,3 +1770,506 @@ test "CCAM validator enforces return contracts and terminal paths" {
     result = ccam_validate_single_frame(ints, loop, CCAM_RETURN_INT);
     assert(result.ok);
 }
+
+// Typed frame construction and atomic call/return substrate. CALL dispatch is
+// intentionally a later integration step; this code establishes the frame
+// invariants and transition helpers first.
+struct CCAMFunction {
+    string name;
+    List<int> register_types;
+    int parameter_count;
+    int return_type;
+    List<CCAMInstruction> instructions;
+}
+struct CCAMFrame {
+    int function_index;
+    int pc;
+    int return_type;
+    int caller_destination;
+    List<int> register_types;
+    List<CCAMRegister> registers;
+    List<CCAMInstruction> instructions;
+}
+struct CCAMFrameCreateResult {
+    bool ok;
+    CCAMFrame frame;
+    string error;
+}
+struct CCAMFrameStack {
+    List<CCAMFrame> frames;
+    int max_depth;
+}
+struct CCAMFrameStackCreateResult {
+    bool ok;
+    CCAMFrameStack stack;
+    string error;
+}
+struct CCAMFrameReturnResult {
+    bool ok;
+    bool entry_return;
+    bool entry_void;
+    int int_value;
+    bool bool_value;
+    string error;
+}
+
+CCAMFrame ccam_empty_frame() {
+    return new CCAMFrame{
+        function_index: 0, pc: 0, return_type: CCAM_RETURN_VOID,
+        caller_destination: -1,
+        register_types: new List<int>(),
+        registers: new List<CCAMRegister>(),
+        instructions: new List<CCAMInstruction>()
+    };
+}
+CCAMFrameCreateResult ccam_frame_error(string error) {
+    return new CCAMFrameCreateResult{
+        ok: false, frame: ccam_empty_frame(), error: error
+    };
+}
+CCAMFrameReturnResult ccam_frame_return_error(string error) {
+    return new CCAMFrameReturnResult{
+        ok: false, entry_return: false, entry_void: false,
+        int_value: 0, bool_value: false, error: error
+    };
+}
+
+bool ccam_frame_is_valid(CCAMFrame frame) {
+    if (frame.function_index < 0 || frame.pc < 0 ||
+        frame.pc >= frame.instructions.len() ||
+        frame.register_types.len() > CCAM_MAX_REGISTERS ||
+        frame.instructions.len() > CCAM_MAX_INSTRUCTIONS ||
+        frame.register_types.len() != frame.registers.len()) {
+        return false;
+    }
+    for (int i = 0; i < frame.register_types.len(); i += 1) {
+        int expected = frame.register_types[i];
+        if ((expected != CCAM_TYPE_INT && expected != CCAM_TYPE_BOOL) ||
+            frame.registers[i].declared_type != expected) {
+            return false;
+        }
+    }
+    return ccam_validate_single_frame(
+        frame.register_types, frame.instructions, frame.return_type).ok;
+}
+
+CCAMFrameCreateResult ccam_frame_create(
+    CCAMFunction function,
+    int function_index,
+    List<CCAMRegister> caller_registers,
+    List<int> argument_registers,
+    int caller_destination
+) {
+    if (function.name == "" || function_index < 0) {
+        return ccam_frame_error("invalid_function");
+    }
+    if (function.parameter_count < 0 ||
+        function.parameter_count > function.register_types.len() ||
+        argument_registers.len() != function.parameter_count) {
+        return ccam_frame_error("invalid_argument_count");
+    }
+    if (function.register_types.len() > CCAM_MAX_REGISTERS ||
+        function.instructions.len() > CCAM_MAX_INSTRUCTIONS) {
+        return ccam_frame_error("program_limit_exceeded");
+    }
+    CCAMValidationResult validation = ccam_validate_single_frame(
+        function.register_types, function.instructions, function.return_type);
+    if (!validation.ok) {
+        return ccam_frame_error(validation.error);
+    }
+
+    // Read and snapshot arguments left-to-right before allocating the callee.
+    List<CCAMRegister> values = new List<CCAMRegister>();
+    for (int i = 0; i < argument_registers.len(); i += 1) {
+        int source_index = argument_registers[i];
+        if (source_index < 0 || source_index >= caller_registers.len()) {
+            return ccam_frame_error("invalid_argument_register");
+        }
+        CCAMRegister source = caller_registers[source_index];
+        if (!source.initialized) {
+            return ccam_frame_error("uninitialised_register");
+        }
+        if (source.declared_type != function.register_types[i]) {
+            return ccam_frame_error("argument_type_mismatch");
+        }
+        values.push(source);
+    }
+
+    CCAMRegisterFileResult created = ccam_registers_create(function.register_types);
+    if (!created.ok) {
+        return ccam_frame_error(created.error);
+    }
+    for (int i = 0; i < values.len(); i += 1) {
+        CCAMRegister value = values[i];
+        string error = "";
+        if (value.declared_type == CCAM_TYPE_INT) {
+            error = ccam_register_write_int(created.registers, i, value.int_value);
+        } else if (value.declared_type == CCAM_TYPE_BOOL) {
+            error = ccam_register_write_bool(created.registers, i, value.bool_value);
+        } else {
+            error = "argument_type_mismatch";
+        }
+        if (error != "") {
+            return ccam_frame_error(error);
+        }
+    }
+
+    List<int> copied_types = new List<int>();
+    for (int i = 0; i < function.register_types.len(); i += 1) {
+        copied_types.push(function.register_types[i]);
+    }
+    List<CCAMInstruction> copied = new List<CCAMInstruction>();
+    for (int i = 0; i < function.instructions.len(); i += 1) {
+        copied.push(ccam_copy_instruction(function.instructions[i]));
+    }
+    CCAMFrame frame = new CCAMFrame{
+        function_index: function_index, pc: 0,
+        return_type: function.return_type,
+        caller_destination: caller_destination,
+        register_types: copied_types,
+        registers: created.registers, instructions: copied
+    };
+    return new CCAMFrameCreateResult{ok: true, frame: frame, error: ""};
+}
+
+CCAMFrameStackCreateResult ccam_frame_stack_create(
+    CCAMFrame entry, int max_depth
+) {
+    if (max_depth < 1 || entry.caller_destination != -1 ||
+        !ccam_frame_is_valid(entry) ||
+        (entry.return_type != CCAM_RETURN_INT &&
+         entry.return_type != CCAM_RETURN_VOID)) {
+        return new CCAMFrameStackCreateResult{
+            ok: false,
+            stack: new CCAMFrameStack{
+                frames: new List<CCAMFrame>(), max_depth: 0
+            },
+            error: "invalid_call_stack_configuration"
+        };
+    }
+    List<CCAMFrame> frames = new List<CCAMFrame>();
+    frames.push(entry);
+    return new CCAMFrameStackCreateResult{
+        ok: true,
+        stack: new CCAMFrameStack{frames: frames, max_depth: max_depth},
+        error: ""
+    };
+}
+
+string ccam_frame_stack_push(CCAMFrameStack stack, CCAMFrame callee) {
+    if (stack.max_depth < 1 || stack.frames.len() == 0 ||
+        stack.frames.len() > stack.max_depth || !ccam_frame_is_valid(callee)) {
+        return "invalid_call_stack";
+    }
+    if (stack.frames.len() >= stack.max_depth) return "call_depth_exceeded";
+    CCAMFrame caller = stack.frames[stack.frames.len() - 1];
+    if (!ccam_frame_is_valid(caller)) return "invalid_call_stack";
+    if (callee.return_type == CCAM_RETURN_VOID) {
+        if (callee.caller_destination != -1) return "return_type_mismatch";
+    } else {
+        int dst = callee.caller_destination;
+        if (dst < 0 || dst >= caller.registers.len()) return "invalid_call_destination";
+        int expected = CCAM_TYPE_INT;
+        if (callee.return_type == CCAM_RETURN_BOOL) expected = CCAM_TYPE_BOOL;
+        else if (callee.return_type != CCAM_RETURN_INT) return "invalid_return_type";
+        if (caller.registers[dst].declared_type != expected) return "return_type_mismatch";
+    }
+    stack.frames.push(callee);
+    return "";
+}
+
+CCAMFrameReturnResult ccam_frame_stack_return_int(
+    CCAMFrameStack stack, int source_register
+) {
+    if (stack.frames.len() == 0) return ccam_frame_return_error("invalid_call_stack");
+    int top = stack.frames.len() - 1;
+    CCAMFrame callee = stack.frames[top];
+    if (!ccam_frame_is_valid(callee)) return ccam_frame_return_error("invalid_call_stack");
+    if (callee.return_type != CCAM_RETURN_INT) return ccam_frame_return_error("return_type_mismatch");
+    CCAMRegisterResult value = ccam_register_read_int(callee.registers, source_register);
+    if (!value.ok) return ccam_frame_return_error(value.trap);
+    if (stack.frames.len() == 1) {
+        return new CCAMFrameReturnResult{
+            ok: true, entry_return: true, entry_void: false,
+            int_value: value.int_value, bool_value: false, error: ""
+        };
+    }
+    CCAMFrame caller = stack.frames[top - 1];
+    if (!ccam_frame_is_valid(caller)) return ccam_frame_return_error("invalid_call_stack");
+    int dst = callee.caller_destination;
+    if (dst < 0 || dst >= caller.registers.len() ||
+        caller.registers[dst].declared_type != CCAM_TYPE_INT) {
+        return ccam_frame_return_error("return_type_mismatch");
+    }
+    // All fallible checks precede the caller write and callee pop.
+    string error = ccam_register_write_int(caller.registers, dst, value.int_value);
+    if (error != "") return ccam_frame_return_error(error);
+    if (let _removed = stack.frames.pop()) {}
+    return new CCAMFrameReturnResult{
+        ok: true, entry_return: false, entry_void: false,
+        int_value: value.int_value, bool_value: false, error: ""
+    };
+}
+
+CCAMFrameReturnResult ccam_frame_stack_return_bool(
+    CCAMFrameStack stack, int source_register
+) {
+    if (stack.frames.len() == 0) return ccam_frame_return_error("invalid_call_stack");
+    int top = stack.frames.len() - 1;
+    CCAMFrame callee = stack.frames[top];
+    if (!ccam_frame_is_valid(callee)) return ccam_frame_return_error("invalid_call_stack");
+    if (callee.return_type != CCAM_RETURN_BOOL) return ccam_frame_return_error("return_type_mismatch");
+    CCAMRegisterResult value = ccam_register_read_bool(callee.registers, source_register);
+    if (!value.ok) return ccam_frame_return_error(value.trap);
+    if (stack.frames.len() == 1) {
+        return new CCAMFrameReturnResult{
+            ok: true, entry_return: true, entry_void: false,
+            int_value: 0, bool_value: value.bool_value, error: ""
+        };
+    }
+    CCAMFrame caller = stack.frames[top - 1];
+    if (!ccam_frame_is_valid(caller)) return ccam_frame_return_error("invalid_call_stack");
+    int dst = callee.caller_destination;
+    if (dst < 0 || dst >= caller.registers.len() ||
+        caller.registers[dst].declared_type != CCAM_TYPE_BOOL) {
+        return ccam_frame_return_error("return_type_mismatch");
+    }
+    string error = ccam_register_write_bool(caller.registers, dst, value.bool_value);
+    if (error != "") return ccam_frame_return_error(error);
+    if (let _removed = stack.frames.pop()) {}
+    return new CCAMFrameReturnResult{
+        ok: true, entry_return: false, entry_void: false,
+        int_value: 0, bool_value: value.bool_value, error: ""
+    };
+}
+
+CCAMFrameReturnResult ccam_frame_stack_return_void(CCAMFrameStack stack) {
+    if (stack.frames.len() == 0) return ccam_frame_return_error("invalid_call_stack");
+    CCAMFrame callee = stack.frames[stack.frames.len() - 1];
+    if (!ccam_frame_is_valid(callee)) return ccam_frame_return_error("invalid_call_stack");
+    if (stack.frames.len() > 1 && !ccam_frame_is_valid(stack.frames[stack.frames.len() - 2])) {
+        return ccam_frame_return_error("invalid_call_stack");
+    }
+    if (callee.return_type != CCAM_RETURN_VOID || callee.caller_destination != -1) {
+        return ccam_frame_return_error("return_type_mismatch");
+    }
+    if (stack.frames.len() == 1) {
+        return new CCAMFrameReturnResult{
+            ok: true, entry_return: false, entry_void: true,
+            int_value: 0, bool_value: false, error: ""
+        };
+    }
+    if (let _removed = stack.frames.pop()) {}
+    return new CCAMFrameReturnResult{
+        ok: true, entry_return: false, entry_void: false,
+        int_value: 0, bool_value: false, error: ""
+    };
+}
+
+test "CCAM frame creation snapshots typed arguments left-to-right" {
+    List<int> caller_types = new List<int>();
+    caller_types.push(CCAM_TYPE_INT);
+    caller_types.push(CCAM_TYPE_BOOL);
+    CCAMRegisterFileResult caller = ccam_registers_create(caller_types);
+    assert(caller.ok);
+    assert(ccam_register_write_int(caller.registers, 0, 41) == "");
+    assert(ccam_register_write_bool(caller.registers, 1, true) == "");
+
+    List<int> callee_types = new List<int>();
+    callee_types.push(CCAM_TYPE_INT);
+    callee_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+    ret.lhs = 0;
+    code.push(ret);
+    CCAMFunction function = new CCAMFunction{
+        name: "callee", register_types: callee_types,
+        parameter_count: 2, return_type: CCAM_RETURN_INT,
+        instructions: code
+    };
+    List<int> args = new List<int>();
+    args.push(0);
+    args.push(1);
+    CCAMFrameCreateResult frame = ccam_frame_create(
+        function, 1, caller.registers, args, 2);
+    assert(frame.ok);
+    assert(frame.frame.function_index == 1 && frame.frame.pc == 0);
+    assert(frame.frame.registers[0].initialized && frame.frame.registers[0].int_value == 41);
+    assert(frame.frame.registers[1].initialized && frame.frame.registers[1].bool_value);
+
+    // Caller mutation after construction cannot rewrite the executing frame.
+    callee_types[0] = CCAM_TYPE_BOOL;
+    code[0].lhs = 1;
+    assert(frame.frame.register_types[0] == CCAM_TYPE_INT);
+    assert(frame.frame.instructions[0].lhs == 0);
+}
+
+test "CCAM frame stack enforces depth and performs atomic integer return" {
+    List<int> entry_types = new List<int>();
+    entry_types.push(CCAM_TYPE_INT);
+    entry_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> entry_code = new List<CCAMInstruction>();
+    entry_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMFunction entry_function = new CCAMFunction{
+        name: "entry", register_types: entry_types,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: entry_code
+    };
+    List<CCAMRegister> no_regs = new List<CCAMRegister>();
+    List<int> no_args = new List<int>();
+    CCAMFrameCreateResult entry = ccam_frame_create(
+        entry_function, 0, no_regs, no_args, -1);
+    assert(entry.ok);
+    CCAMRegisterFileResult caller_regs = ccam_registers_create(entry_types);
+    assert(caller_regs.ok);
+    assert(ccam_register_write_int(caller_regs.registers, 0, 42) == "");
+    entry.frame.registers = caller_regs.registers;
+
+    List<int> callee_types = new List<int>();
+    callee_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+    ret.lhs = 0;
+    callee_code.push(ret);
+    CCAMFunction callee_function = new CCAMFunction{
+        name: "callee", register_types: callee_types,
+        parameter_count: 1, return_type: CCAM_RETURN_INT,
+        instructions: callee_code
+    };
+    List<int> args = new List<int>();
+    args.push(0);
+    CCAMFrameCreateResult callee = ccam_frame_create(
+        callee_function, 1, caller_regs.registers, args, 1);
+    assert(callee.ok);
+
+    CCAMFrameStackCreateResult shallow = ccam_frame_stack_create(entry.frame, 1);
+    CCAMFrameStackCreateResult stack = ccam_frame_stack_create(entry.frame, 2);
+    assert(shallow.ok && stack.ok);
+    assert(ccam_frame_stack_push(shallow.stack, callee.frame) == "call_depth_exceeded");
+    assert(shallow.stack.frames.len() == 1);
+    assert(ccam_frame_stack_push(stack.stack, callee.frame) == "");
+    CCAMFrameReturnResult returned = ccam_frame_stack_return_int(stack.stack, 0);
+    assert(returned.ok && !returned.entry_return && returned.int_value == 42);
+    assert(stack.stack.frames.len() == 1);
+    assert(ccam_register_read_int(stack.stack.frames[0].registers, 1).int_value == 42);
+}
+
+test "CCAM frame stack rejects return destination mismatch without popping" {
+    List<int> entry_types = new List<int>();
+    entry_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> entry_code = new List<CCAMInstruction>();
+    entry_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMFunction entry_function = new CCAMFunction{
+        name: "entry", register_types: entry_types,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: entry_code
+    };
+    CCAMFrameCreateResult entry = ccam_frame_create(
+        entry_function, 0, new List<CCAMRegister>(),
+        new List<int>(), -1);
+    assert(entry.ok);
+    CCAMFrameStackCreateResult stack = ccam_frame_stack_create(entry.frame, 2);
+
+    List<int> result_types = new List<int>();
+    result_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> result_code = new List<CCAMInstruction>();
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+    ret.lhs = 0;
+    result_code.push(ret);
+    CCAMFunction result_function = new CCAMFunction{
+        name: "result", register_types: result_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: result_code
+    };
+    CCAMFrameCreateResult callee = ccam_frame_create(
+        result_function, 1, new List<CCAMRegister>(),
+        new List<int>(), 0);
+    assert(callee.ok);
+    assert(ccam_frame_stack_push(stack.stack, callee.frame) == "return_type_mismatch");
+    assert(stack.stack.frames.len() == 1);
+}
+
+test "CCAM frame creation rejects uninitialised arguments" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    CCAMRegisterFileResult caller = ccam_registers_create(types);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+    ret.lhs = 0;
+    code.push(ret);
+    CCAMFunction function = new CCAMFunction{
+        name: "callee", register_types: types,
+        parameter_count: 1, return_type: CCAM_RETURN_INT,
+        instructions: code
+    };
+    List<int> args = new List<int>();
+    args.push(0);
+    CCAMFrameCreateResult rejected = ccam_frame_create(
+        function, 1, caller.registers, args, -1);
+    assert(!rejected.ok && rejected.error == "uninitialised_register");
+    assert(rejected.frame.instructions.len() == 0);
+}
+
+test "CCAM frame stack supports boolean and void nested returns" {
+    List<int> caller_types = new List<int>();
+    caller_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    caller_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMFunction entry_function = new CCAMFunction{
+        name: "entry", register_types: caller_types,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: caller_code
+    };
+    CCAMFrameCreateResult entry = ccam_frame_create(
+        entry_function, 0, new List<CCAMRegister>(), new List<int>(), -1);
+    assert(entry.ok);
+    CCAMRegisterFileResult caller_regs = ccam_registers_create(caller_types);
+    assert(ccam_register_write_bool(caller_regs.registers, 0, true) == "");
+    entry.frame.registers = caller_regs.registers;
+
+    List<int> bool_types = new List<int>();
+    bool_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> bool_code = new List<CCAMInstruction>();
+    CCAMInstruction bool_ret = ccam_instruction(CCAM_OP_RET);
+    bool_ret.lhs = 0;
+    bool_code.push(bool_ret);
+    CCAMFunction bool_function = new CCAMFunction{
+        name: "predicate", register_types: bool_types,
+        parameter_count: 1, return_type: CCAM_RETURN_BOOL,
+        instructions: bool_code
+    };
+    List<int> bool_args = new List<int>();
+    bool_args.push(0);
+    CCAMFrameCreateResult bool_frame = ccam_frame_create(
+        bool_function, 1, caller_regs.registers, bool_args, 0);
+    assert(bool_frame.ok);
+    CCAMFrameStackCreateResult bool_stack = ccam_frame_stack_create(entry.frame, 2);
+    assert(bool_stack.ok);
+    assert(ccam_frame_stack_push(bool_stack.stack, bool_frame.frame) == "");
+    CCAMFrameReturnResult bool_result = ccam_frame_stack_return_bool(
+        bool_stack.stack, 0);
+    assert(bool_result.ok && bool_result.bool_value);
+    assert(bool_stack.stack.frames.len() == 1);
+    assert(ccam_register_read_bool(bool_stack.stack.frames[0].registers, 0).bool_value);
+
+    List<int> void_types = new List<int>();
+    List<CCAMInstruction> void_code = new List<CCAMInstruction>();
+    void_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMFunction void_function = new CCAMFunction{
+        name: "side_effect", register_types: void_types,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: void_code
+    };
+    CCAMFrameCreateResult void_frame = ccam_frame_create(
+        void_function, 2, caller_regs.registers, new List<int>(), -1);
+    assert(void_frame.ok);
+    CCAMFrameStackCreateResult void_stack = ccam_frame_stack_create(entry.frame, 2);
+    assert(void_stack.ok);
+    assert(ccam_frame_stack_push(void_stack.stack, void_frame.frame) == "");
+    CCAMFrameReturnResult void_result = ccam_frame_stack_return_void(void_stack.stack);
+    assert(void_result.ok && !void_result.entry_void);
+    assert(void_stack.stack.frames.len() == 1);
+
+    CCAMFrameStackCreateResult invalid_entry = ccam_frame_stack_create(bool_frame.frame, 2);
+    assert(!invalid_entry.ok && invalid_entry.error == "invalid_call_stack_configuration");
+}
