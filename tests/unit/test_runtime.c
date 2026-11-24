@@ -6,6 +6,7 @@
  *   HMAC-SHA256   RFC 4231 test cases 1, 2 and 6
  *   PBKDF2-SHA256 RFC 7914 section 11
  */
+#define CAP_GC_TESTING 1
 #include "capstan_rt.h"
 
 static int failures = 0, checks = 0;
@@ -576,6 +577,16 @@ static void test_secret_wipe(void) {
 
 #define CAP_NLARGE_SECRETS 16
 static uintptr_t large_secret_addrs[CAP_NLARGE_SECRETS];
+static size_t large_secret_wipe_observations;
+static int large_secret_wipe_clean;
+
+static void observe_large_secret_wipe(const void *memory, size_t n) {
+    const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
+    large_secret_wipe_observations++;
+    if (n < 8192 || n % CAP_PAGE_SIZE != 0) large_secret_wipe_clean = 0;
+    for (size_t i = 0; i < n; i++)
+        if (bytes[i] != 0) large_secret_wipe_clean = 0;
+}
 
 __attribute__((noinline)) static void make_large_secrets_for_wipe(void) {
     for (int i = 0; i < CAP_NLARGE_SECRETS; i++) {
@@ -587,6 +598,9 @@ __attribute__((noinline)) static void make_large_secrets_for_wipe(void) {
 
 static void test_gc_large_secret_mapping(void) {
     size_t heap_before = cap_gc.heap;
+    large_secret_wipe_observations = 0;
+    large_secret_wipe_clean = 1;
+    cap_gc_test_secret_wipe_hook = observe_large_secret_wipe;
     make_large_secrets_for_wipe();
     collect_clean();
 
@@ -604,7 +618,10 @@ static void test_gc_large_secret_mapping(void) {
             }
         }
     }
+    cap_gc_test_secret_wipe_hook = NULL;
     size_t heap_after = cap_gc.heap;
+    CHECK(large_secret_wipe_observations >= CAP_NLARGE_SECRETS - 1);
+    CHECK(large_secret_wipe_clean);
     /* Conservative collection may retain an occasional stale register/stack
        value. Require reclamation of at least 15 of 16 independent mappings. */
     CHECK(retained <= 1);
