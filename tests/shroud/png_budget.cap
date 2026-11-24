@@ -35,6 +35,10 @@ int main() {
     Pixmap gallery = new_pixmap(560, 520);
     gallery.clear(0xFF336699);
 
+    // Exercise a real export immediately below the full 2 MiB raw-byte cap.
+    Pixmap near_limit = new_pixmap(1023, 512);
+    near_limit.clear(0xFF336699);
+
     // The Pixmap is valid under the raster budget but exceeds the stricter PNG
     // budget. Rejection must happen before any PNG output allocation.
     Pixmap over = new_pixmap(1024, 512);
@@ -55,6 +59,7 @@ int main() {
     for (int i = 0; i < 256; i += 1) { all_bytes.push(i); }
     if (a.len() > 2 && !write_file(a[2], bytes_text(all_bytes))) { return 20; }
     if (a.len() > 3 && !png_write(a[3], gallery)) { return 21; }
-    println("png budget: 21 assertions");
+    if (a.len() > 4 && !png_write(a[4], near_limit)) { return 22; }
+    println("png budget: 22 assertions");
     return 0;
 }
