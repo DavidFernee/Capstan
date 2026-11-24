@@ -25,5 +25,6 @@ int main() {
 
     int min = -9223372036854775807 - 1;
     println(int_to_str(min % -1));
+    println(int_to_str(-7 % 3) + " " + int_to_str(7 % -3) + " " + int_to_str(-7 % -3) + " " + int_to_str(7 % 3));
     return 0;
 }
