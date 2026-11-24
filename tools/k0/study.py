@@ -32,7 +32,7 @@ from classify import RULES, classify  # noqa: E402
 COMPILE, RUNTIME, LOGIC, OUTSIDE, UNKNOWN = (
     "Prevented at compile time", "Stopped safely at run time", "Logic error: beyond any language",
     "Outside Capstan's current reach", "Not determinable from the record")
-PROVED = "Proved absent against a specification"
+PROOF_ELIGIBLE = "Potentially proof-eligible (not proven)"
 BUCKETS = [COMPILE, RUNTIME, LOGIC, OUTSIDE, UNKNOWN]
 
 # Classes used only in the reviewed labels (tools/k0/data/reviewed-<year>.csv), with their CWE and,
@@ -100,7 +100,7 @@ PROJECTION = {
 }
 # K1.10: proof against a specification. Applies to what K1.1-K1.9 leave as logic errors, for code
 # whose behaviour is specified. Hardware faults and build errors stay outside any proof of the code.
-PROVABLE = {"logic error", "insufficient validation", "race condition", "hang or infinite loop"}
+PROOF_ELIGIBLE_CLASSES = {"logic error", "insufficient validation", "race condition", "hang or infinite loop"}
 SPECTRE_V1 = re.compile(r"nospec|array_index|\bindex\b|opcode|speculat\w* (load|read|access)", re.I)
 # Races split: a race on shared data is a data race, which K1.2 rejects; a race between a device's
 # teardown and its callbacks is what K1.5 rules out. Races in ordering logic beyond these stay logic.
@@ -260,10 +260,10 @@ def subsystem(files):
     return top[0]
 
 
-def proved(r):
-    """Outcome with K1.10 as well as K1.1-K1.9."""
-    if r["projected"] == LOGIC and r["class"] in PROVABLE:
-        return PROVED, "K1.10 proof against a specification"
+def proof_eligible(r):
+    """Identify K1.10 candidates; this is a design projection, not a proof result."""
+    if r["projected"] == LOGIC and r["class"] in PROOF_ELIGIBLE_CLASSES:
+        return PROOF_ELIGIBLE, "K1.10 proof eligibility only; no proof established"
     return r["projected"], r["via"]
 
 
@@ -346,7 +346,7 @@ def source_snapshot(cvelist):
         tracked = subprocess.run(
             ["git", "-C", cvelist, "ls-files", "-z", "--", "cves"],
             check=True, capture_output=True,
-        ).stdout.decode("utf-8").split("\\0")
+        ).stdout.decode("utf-8").split("\0")
     except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
         raise RuntimeError("cannot enumerate tracked CVE List source files") from error
     tracked_json = {path for path in tracked if path.endswith(".json")}
@@ -392,7 +392,7 @@ def main():
         r["bucket"], r["atlas"] = bucket_for_class(r["class"], atlas)
         r["subsystem"] = subsystem(r["files"])
         r["projected"], r["via"] = projected(r)
-        r["final"], r["final_via"] = proved(r)
+        r["final"], r["final_via"] = proof_eligible(r)
 
     n = len(rows)
     by_bucket = collections.Counter(r["bucket"] for r in rows)
@@ -406,7 +406,7 @@ def main():
     proj = collections.Counter(r["projected"] for r in rows)
     proj_prevented = proj[COMPILE] + proj[RUNTIME]
     fin = collections.Counter(r["final"] for r in rows)
-    fin_prevented = fin[COMPILE] + fin[RUNTIME] + fin[PROVED]
+    fin_candidate = fin[COMPILE] + fin[RUNTIME] + fin[PROOF_ELIGIBLE]
 
     os.makedirs(os.path.join(HERE, "data"), exist_ok=True)
     with open(os.path.join(HERE, "data", f"kernel-cves-{year}.csv"), "w", newline="") as f:
@@ -423,7 +423,7 @@ def main():
                "source_commit": snapshot, "total": n, "reviewed": n_reviewed,
                "buckets": {b: by_bucket[b] for b in BUCKETS}, "memory_safety": mem,
                "with_k1": {b: proj[b] for b in BUCKETS},
-               "with_k1_10": {b: fin[b] for b in BUCKETS + [PROVED]},
+               "k1_10_proof_eligibility_projection": {b: fin[b] for b in BUCKETS + [PROOF_ELIGIBLE]},
                "heldout": heldout[:3] if heldout else None},
               open(os.path.join(HERE, "data", f"summary-{year}.json"), "w"), indent=1)
 
@@ -438,18 +438,20 @@ def main():
       f"{n - n_reviewed:,} were classified automatically from their fix descriptions and {n_reviewed:,} were "
       f"read and classified by a reviewer, because the rules could not decide them or decided them wrongly. "
       f"{by_bucket[UNKNOWN]} remain undeterminable from the record.\n")
-    p("| Outcome had the code been written in Capstan | Today | With K1.1 to K1.9 | With K1.10 proofs |")
+    p("| Outcome / measure | Today | K1.1-K1.9 design projection | K1.10 proof-eligibility ceiling (not proof) |")
     p("|---|---|---|---|")
-    for b in [COMPILE, RUNTIME, PROVED, LOGIC, OUTSIDE]:
-        today = pct(by_bucket[b], known) if b != PROVED else "\u2013"
-        k1 = pct(proj[b], known) if b != PROVED else "\u2013"
+    for b in [COMPILE, RUNTIME, PROOF_ELIGIBLE, LOGIC, OUTSIDE]:
+        today = pct(by_bucket[b], known) if b != PROOF_ELIGIBLE else "\u2013"
+        k1 = pct(proj[b], known) if b != PROOF_ELIGIBLE else "\u2013"
         p(f"| {b} | {today} | {k1} | {pct(fin[b], known)} |")
-    p(f"| **Prevented or proved absent** | **{pct(prevented, known)}** | **{pct(proj_prevented, known)}** | "
-      f"**{pct(fin_prevented, known)}** |")
+    p(f"| **Prevented / potentially addressable** | **{pct(prevented, known)}** | **{pct(proj_prevented, known)}** | "
+      f"**{pct(fin_candidate, known)}** |")
     p("")
     p(f"Shares are of the {known:,} CVEs whose weakness is known. Today's column is a measurement of "
-      "Capstan as it stands; the other two are projections of designs in [DESIGN-MAP.md](DESIGN-MAP.md) "
-      "section 7, which hold only if those designs are built as specified, and which K2 tests on real kernel code.\n")
+      "Capstan as it stands; the other columns are projections, not implementation evidence. The K1.1-K1.9 "
+      "column assumes those designs are built as specified. The K1.10 column only identifies classes that "
+      "might be candidates for proof; it does not establish that specifications or machine-checked proofs "
+      "exist. K2 must test the designs on real kernel code.\n")
     p(f"- **{pct(mem, n)} of all CVEs** ({mem:,}) are memory-safety bugs: use-after-free, double free, "
       "out-of-bounds access, NULL dereference and uninitialised memory. This is a weakness count, not "
       "a claim that kernel-mode Capstan currently prevents them; UAF and double-free coverage depends on K1.1.")
@@ -475,9 +477,10 @@ def main():
     for c, k in rc.most_common():
         p(f"| {c} | {k} | {why.get(c, '')} |")
     p("")
-    p("K1.10's proofs apply to the logic errors only where the component's behaviour is specified, and a "
-      "proof is only as good as its specification. The study counts every logic error in a provable class as "
-      "proved absent, so that column is the ceiling the design aims at, not a forecast.\n")
+    p("K1.10 proof eligibility is only a candidate ceiling. No CVE is counted as formally established: "
+      "each candidate requires a concrete specification, an applicable machine-checked proof, and evidence "
+      "that the proof corresponds to the production implementation. Without those artefacts, it remains "
+      "a projection and must not be reported as a prevented vulnerability.\n")
     p("## By weakness class (today)\n")
     p("| Class | CWE | CVEs | Share | Outcome | Atlas verdict |")
     p("|---|---|---|---|---|---|")
@@ -566,7 +569,7 @@ def main():
 
     print(f"{n} CVEs ({n_reviewed} reviewed); " + "; ".join(f"{b}: {by_bucket[b]}" for b in BUCKETS))
     print(f"prevented today {pct(prevented, known)}, with K1 {pct(proj_prevented, known)}, "
-          f"with K1.10 {pct(fin_prevented, known)}")
+          f"K1.10 proof-eligibility ceiling (not proven) {pct(fin_candidate, known)}")
     for name, lab in (("tuning", tuning), ("held-out", heldout)):
         if lab:
             print(f"{name}: class {lab[1]}/{lab[0]}, outcome {lab[2]}/{lab[0]}")
