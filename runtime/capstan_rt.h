@@ -163,8 +163,26 @@ static int64_t *cap_box_int(int64_t v) {
 
 typedef struct CapStr { int64_t len; char data[]; } CapStr;
 
+/* All string allocation sizes are checked before converting a signed length
+   to size_t or multiplying for an escaping expansion. */
+static size_t cap_rt_checked_string_bytes(int64_t len, size_t expansion,
+                                          size_t extra, int64_t loc) {
+    if (len < 0 || !expansion || extra > CAP_MAX_LEN ||
+        sizeof(CapStr) > CAP_MAX_LEN - extra ||
+        sizeof(CapStr) > SIZE_MAX - extra)
+        cap_panic("invalid string allocation length", "CWE-682", loc);
+    size_t available = CAP_MAX_LEN - sizeof(CapStr) - extra;
+    size_t size_available = SIZE_MAX - sizeof(CapStr) - extra;
+    if ((uint64_t)len > available / expansion ||
+        (uint64_t)len > size_available / expansion)
+        cap_panic("string allocation exceeds runtime limit", "CWE-789", loc);
+    return sizeof(CapStr) + (size_t)len * expansion + extra;
+}
+
 static CapStr *cap_str_new(const char *s, int64_t n) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
+    if (n > 0 && !s)
+        cap_panic("null source for non-empty string", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(n, 1, 1, 0));
     r->len = n;
     if (n > 0) memcpy(r->data, s, (size_t)n);
     r->data[n] = 0;
@@ -173,7 +191,9 @@ static CapStr *cap_str_new(const char *s, int64_t n) {
 
 /* String literals are allocated once per site, outside the collected heap. */
 static CapStr *cap_str_perm(const char *s, int64_t n) {
-    CapStr *r = (CapStr *)malloc(sizeof(CapStr) + (size_t)n + 1);
+    if (n > 0 && !s)
+        cap_panic("null source for non-empty permanent string", "CWE-476", 0);
+    CapStr *r = (CapStr *)malloc(cap_rt_checked_string_bytes(n, 1, 1, 0));
     if (!r) cap_gc_oom();
     r->len = n;
     if (n > 0) memcpy(r->data, s, (size_t)n);
@@ -184,8 +204,10 @@ static CapStr *cap_str_perm(const char *s, int64_t n) {
     if (!_cap_lit) { _cap_lit = cap_str_perm((s), (n)); } _cap_lit; })
 
 static CapStr *cap_str_concat(CapStr *a, CapStr *b, int64_t loc) {
+    if (!a || !b || a->len < 0 || b->len < 0)
+        cap_panic("invalid string operand", "CWE-682", loc);
     int64_t n = cap_add(a->len, b->len, loc);
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(n, 1, 1, loc));
     r->len = n;
     memcpy(r->data, a->data, (size_t)a->len);
     memcpy(r->data + a->len, b->data, (size_t)b->len);
@@ -233,6 +255,44 @@ static CapStr *cap_char_str(int64_t c, int64_t loc) {
 /* Lists: growable, bounds-checked                                     */
 /* ------------------------------------------------------------------ */
 
+/* Checked container/buffer sizing. The collector caps individual managed
+   allocations at CAP_MAX_LEN; include the object header when sizing payloads. */
+static size_t cap_rt_max_count(size_t element_size, size_t overhead, int64_t loc) {
+    if (!element_size || overhead > CAP_MAX_LEN)
+        cap_panic("invalid allocation element size", "CWE-190", loc);
+    size_t max_bytes = CAP_MAX_LEN - overhead;
+    size_t count = max_bytes / element_size;
+    return count > (size_t)INT64_MAX ? (size_t)INT64_MAX : count;
+}
+
+static int64_t cap_rt_growth_capacity(int64_t current, int64_t required,
+                                      int64_t initial, size_t element_size,
+                                      size_t overhead, int64_t loc) {
+    size_t max_count = cap_rt_max_count(element_size, overhead, loc);
+    if (current < 0 || required < 0 || initial <= 0 ||
+        (uint64_t)current > max_count || (uint64_t)required > max_count)
+        cap_panic("container capacity exceeds allocation limit", "CWE-789", loc);
+    size_t cap = current ? (size_t)current : (size_t)initial;
+    if (cap > max_count)
+        cap_panic("initial container capacity exceeds allocation limit", "CWE-789", loc);
+    while (cap < (size_t)required) {
+        if (cap > max_count / 2) cap = max_count;
+        else cap *= 2;
+        if (cap == 0)
+            cap_panic("container capacity growth overflow", "CWE-190", loc);
+    }
+    return (int64_t)cap;
+}
+
+static size_t cap_rt_checked_bytes(size_t count, size_t element_size,
+                                   size_t overhead, int64_t loc) {
+    if (!element_size || overhead > CAP_MAX_LEN ||
+        count > (CAP_MAX_LEN - overhead) / element_size ||
+        count > (SIZE_MAX - overhead) / element_size)
+        cap_panic("allocation size exceeds runtime limit", "CWE-789", loc);
+    return overhead + count * element_size;
+}
+
 typedef union CapVal { int64_t i; void *p; } CapVal;
 static inline CapVal cap_vi(int64_t i) { CapVal v; v.i = i; return v; }
 static inline CapVal cap_vp(void *p) { CapVal v; v.p = p; return v; }
@@ -244,10 +304,16 @@ static CapList *cap_list_new(void) {
 }
 
 static inline void cap_list_push(CapList *l, CapVal v) {
+    if (CAP_UNLIKELY(!l || l->len < 0 || l->cap < 0 || l->len > l->cap ||
+                     (l->cap > 0 && !l->items)))
+        cap_panic("invalid list length/capacity", "CWE-682", 0);
     if (CAP_UNLIKELY(l->len == l->cap)) {
-        int64_t nc = l->cap ? l->cap * 2 : 8;
-        CapVal *ni = (CapVal *)cap_alloc(sizeof(CapVal) * (size_t)nc);
-        if (l->len) memcpy(ni, l->items, sizeof(CapVal) * (size_t)l->len);
+        if (l->len == INT64_MAX)
+            cap_panic("list length exceeds allocation limit", "CWE-789", 0);
+        int64_t nc = cap_rt_growth_capacity(l->cap, l->len + 1, 8, sizeof(CapVal), 0, 0);
+        size_t bytes = cap_rt_checked_bytes((size_t)nc, sizeof(CapVal), 0, 0);
+        CapVal *ni = (CapVal *)cap_alloc(bytes);
+        if (l->len) memcpy(ni, l->items, cap_rt_checked_bytes((size_t)l->len, sizeof(CapVal), 0, 0));
         l->items = ni;
         l->cap = nc;
     }
@@ -340,10 +406,16 @@ typedef struct CapBList { int64_t len, cap; bool *items; } CapBList;
 static CapBList *cap_blist_new(void) { return (CapBList *)cap_alloc(sizeof(CapBList)); }
 
 static inline void cap_blist_push(CapBList *l, bool v) {
+    if (CAP_UNLIKELY(!l || l->len < 0 || l->cap < 0 || l->len > l->cap ||
+                     (l->cap > 0 && !l->items)))
+        cap_panic("invalid boolean-list length/capacity", "CWE-682", 0);
     if (CAP_UNLIKELY(l->len == l->cap)) {
-        int64_t nc = l->cap ? l->cap * 2 : 16;
-        bool *ni = (bool *)cap_alloc_atomic((size_t)nc * sizeof(bool));
-        if (l->len) memcpy(ni, l->items, (size_t)l->len * sizeof(bool));
+        if (l->len == INT64_MAX)
+            cap_panic("boolean-list length exceeds allocation limit", "CWE-789", 0);
+        int64_t nc = cap_rt_growth_capacity(l->cap, l->len + 1, 16, sizeof(bool), 0, 0);
+        size_t bytes = cap_rt_checked_bytes((size_t)nc, sizeof(bool), 0, 0);
+        bool *ni = (bool *)cap_alloc_atomic(bytes);
+        if (l->len) memcpy(ni, l->items, cap_rt_checked_bytes((size_t)l->len, sizeof(bool), 0, 0));
         l->items = ni;
         l->cap = nc;
     }
@@ -385,12 +457,19 @@ static void cap_blist_insert(CapBList *l, int64_t i, bool v, int64_t loc) {
 }
 
 static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {
+    if (!parts || !sep || parts->len < 0 || parts->cap < 0 ||
+        parts->len > parts->cap || sep->len < 0 ||
+        (parts->cap > 0 && !parts->items))
+        cap_panic("invalid string join operands", "CWE-682", loc);
     int64_t total = 0;
     for (int64_t i = 0; i < parts->len; i++) {
-        total = cap_add(total, ((CapStr *)parts->items[i].p)->len, loc);
+        CapStr *part = (CapStr *)parts->items[i].p;
+        if (!part || part->len < 0)
+            cap_panic("invalid string in join parts", "CWE-682", loc);
+        total = cap_add(total, part->len, loc);
         if (i > 0) total = cap_add(total, sep->len, loc);
     }
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)total + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(total, 1, 1, loc));
     r->len = total;
     char *w = r->data;
     for (int64_t i = 0; i < parts->len; i++) {
@@ -471,19 +550,41 @@ static CapMap *cap_map_new(void) {
 }
 
 static int64_t cap_map_find(CapMap *m, CapStr *k) {
+    /* Validate the complete probe invariant before deriving an index or
+       dereferencing any backing array. A corrupt index entry must not turn a
+       lookup into an out-of-bounds read. */
+    if (!m || !k || m->len < 0 || m->cap < 0 || m->len > m->cap ||
+        (m->cap > 0 && (!m->keys || !m->vals)) ||
+        (m->len > 0 && (!m->keys || !m->vals)) ||
+        m->index_cap < 0 ||
+        (m->index_cap != 0 && (m->index_cap & (m->index_cap - 1)) != 0) ||
+        (m->index_cap > 0 && !m->index) ||
+        (m->index_cap == 0 && m->len != 0) ||
+        (m->index_cap > 0 && m->len > m->index_cap / 2))
+        cap_panic("invalid map lookup invariants", "CWE-682", 0);
     if (m->index_cap == 0) return -1;
     uint64_t mask = (uint64_t)m->index_cap - 1;
     uint64_t s = cap_hash_str(k) & mask;
-    while (m->index[s]) {
-        int64_t pos = m->index[s] - 1;
+    for (int64_t probes = 0; probes < m->index_cap; probes++) {
+        int64_t entry = m->index[s];
+        if (entry == 0) return -1;
+        if (entry < 1 || entry > m->len)
+            cap_panic("map index entry outside live range", "CWE-125", 0);
+        int64_t pos = entry - 1;
+        if (!m->keys[pos])
+            cap_panic("null key in live map entry", "CWE-476", 0);
         if (cap_str_eq(m->keys[pos], k)) return pos;
         s = (s + 1) & mask;
     }
-    return -1;
+    cap_panic("map index has no empty slot", "CWE-400", 0);
 }
 
 static void cap_map_reindex(CapMap *m, int64_t newcap) {
-    m->index = (int64_t *)cap_alloc_atomic(sizeof(int64_t) * (size_t)newcap);
+    if (newcap <= 0 || (newcap & (newcap - 1)) != 0)
+        cap_panic("invalid map index capacity", "CWE-682", 0);
+    size_t bytes = cap_rt_checked_bytes((size_t)newcap, sizeof(int64_t), 0, 0);
+    int64_t *new_index = (int64_t *)cap_alloc_atomic(bytes);
+    m->index = new_index;
     m->index_cap = newcap;
     uint64_t mask = (uint64_t)newcap - 1;
     for (int64_t pos = 0; pos < m->len; pos++) {
@@ -496,21 +597,45 @@ static void cap_map_reindex(CapMap *m, int64_t newcap) {
 static void cap_map_set(CapMap *m, CapStr *k, CapVal v) {
     int64_t pos = cap_map_find(m, k);
     if (pos >= 0) { m->vals[pos] = v; return; }
+    if (CAP_UNLIKELY(m->len < 0 || m->cap < 0 || m->len > m->cap ||
+                     m->index_cap < 0 ||
+                     (m->index_cap != 0 && (m->index_cap & (m->index_cap - 1)) != 0)))
+        cap_panic("invalid map length/capacity", "CWE-682", 0);
     if (m->len == m->cap) {
-        int64_t nc = m->cap ? m->cap * 2 : 8;
-        CapStr **nk = (CapStr **)cap_alloc(sizeof(CapStr *) * (size_t)nc);
-        CapVal *nv = (CapVal *)cap_alloc(sizeof(CapVal) * (size_t)nc);
+        if (m->len == INT64_MAX)
+            cap_panic("map length exceeds allocation limit", "CWE-789", 0);
+        int64_t nc = cap_rt_growth_capacity(m->cap, m->len + 1, 8,
+                                            sizeof(CapVal) > sizeof(CapStr *) ? sizeof(CapVal) : sizeof(CapStr *),
+                                            0, 0);
+        CapStr **nk = (CapStr **)cap_alloc(cap_rt_checked_bytes((size_t)nc, sizeof(CapStr *), 0, 0));
+        CapVal *nv = (CapVal *)cap_alloc(cap_rt_checked_bytes((size_t)nc, sizeof(CapVal), 0, 0));
         if (m->len) {
-            memcpy(nk, m->keys, sizeof(CapStr *) * (size_t)m->len);
-            memcpy(nv, m->vals, sizeof(CapVal) * (size_t)m->len);
+            size_t key_bytes = cap_rt_checked_bytes((size_t)m->len, sizeof(CapStr *), 0, 0);
+            size_t val_bytes = cap_rt_checked_bytes((size_t)m->len, sizeof(CapVal), 0, 0);
+            memcpy(nk, m->keys, key_bytes);
+            memcpy(nv, m->vals, val_bytes);
         }
         m->keys = nk; m->vals = nv; m->cap = nc;
     }
-    m->keys[m->len] = k;
-    m->vals[m->len] = v;
-    m->len++;
-    if (m->len * 2 > m->index_cap) cap_map_reindex(m, m->index_cap ? m->index_cap * 2 : 16);
-    else {
+    if (m->len == INT64_MAX)
+        cap_panic("map length exceeds allocation limit", "CWE-789", 0);
+    int64_t new_len = m->len + 1;
+    if (m->index_cap == 0 || new_len > m->index_cap / 2) {
+        if (new_len > INT64_MAX / 2)
+            cap_panic("map index capacity overflow", "CWE-190", 0);
+        int64_t required = new_len * 2;
+        int64_t newcap = cap_rt_growth_capacity(m->index_cap, required, 16,
+                                                sizeof(int64_t), 0, 0);
+        /* Publish the entry before allocation: a collection during index
+           growth must see the new key/value through the map's traced arrays. */
+        m->keys[m->len] = k;
+        m->vals[m->len] = v;
+        m->len = new_len;
+        cap_map_reindex(m, newcap);
+    } else {
+        m->keys[m->len] = k;
+        m->vals[m->len] = v;
+        m->len = new_len;
         uint64_t mask = (uint64_t)m->index_cap - 1;
         uint64_t s = cap_hash_str(k) & mask;
         while (m->index[s]) s = (s + 1) & mask;
@@ -620,24 +745,37 @@ static bool cap_path_ok(CapStr *path) {
 typedef struct CapBuf { CapStr *s; int64_t cap; } CapBuf;
 
 static void cap_buf_put(CapBuf *b, const char *p, int64_t n) {
-    if (b->s->len + n + 1 > b->cap) {
-        int64_t nc = b->cap * 2;
-        while (b->s->len + n + 1 > nc) nc *= 2;
-        CapStr *ns = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)nc);
+    if (!b || !b->s || n < 0 || b->s->len < 0 || b->cap < 1 ||
+        b->s->len >= b->cap || (n > 0 && !p))
+        cap_panic("invalid byte-buffer state or append length", "CWE-682", 0);
+    if (n > INT64_MAX - b->s->len - 1)
+        cap_panic("byte-buffer length overflow", "CWE-190", 0);
+    int64_t required = b->s->len + n + 1;
+    if (required > (int64_t)(CAP_MAX_LEN - sizeof(CapStr)))
+        cap_panic("byte-buffer exceeds allocation limit", "CWE-789", 0);
+    if (required > b->cap) {
+        int64_t nc = cap_rt_growth_capacity(b->cap, required, 64, 1,
+                                            sizeof(CapStr), 0);
+        size_t bytes = cap_rt_checked_bytes((size_t)nc, 1, sizeof(CapStr), 0);
+        CapStr *ns = (CapStr *)cap_alloc_atomic(bytes);
         ns->len = b->s->len;
         memcpy(ns->data, b->s->data, (size_t)b->s->len);
         b->s = ns;
         b->cap = nc;
     }
-    memcpy(b->s->data + b->s->len, p, (size_t)n);
-    b->s->len += n;
+    if (n) memcpy(b->s->data + b->s->len, p, (size_t)n);
+    b->s->len = required - 1;
     b->s->data[b->s->len] = 0;
 }
 
 static CapBuf cap_buf_new(int64_t cap) {
     CapBuf b;
-    b.cap = cap < 64 ? 64 : cap;
-    b.s = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)b.cap);
+    if (cap < 0)
+        cap_panic("negative byte-buffer initial capacity", "CWE-682", 0);
+    int64_t requested = cap < 64 ? 64 : cap;
+    b.cap = cap_rt_growth_capacity(0, requested, 64, 1, sizeof(CapStr), 0);
+    size_t bytes = cap_rt_checked_bytes((size_t)b.cap, 1, sizeof(CapStr), 0);
+    b.s = (CapStr *)cap_alloc_atomic(bytes);
     b.s->len = 0;
     b.s->data[0] = 0;
     return b;
@@ -760,7 +898,8 @@ static int64_t *cap_validate_int(CapStr *t) {
 
 /* Escape arbitrary bytes into the body of a C string literal. */
 static CapStr *cap_escape_c(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 4 + 1);
+    if (!t) cap_panic("null string passed to cap_escape_c", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 4, 1, 0));
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
         unsigned char c = (unsigned char)t->data[i];
@@ -776,7 +915,8 @@ static CapStr *cap_escape_c(CapStr *t) {
 }
 
 static CapStr *cap_escape_html(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 6 + 1);
+    if (!t) cap_panic("null string passed to cap_escape_html", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 6, 1, 0));
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
         char c = t->data[i];
@@ -825,7 +965,8 @@ static int64_t *cap_validate_range(CapStr *t, int64_t lo, int64_t hi) {
 /* One CSV field: always quoted, quotes doubled, and a leading = + - @ tab or CR
    neutralised with an apostrophe so spreadsheets do not run it (CWE-1236). */
 static CapStr *cap_escape_csv(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 2 + 4);
+    if (!t) cap_panic("null string passed to cap_escape_csv", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 2, 4, 0));
     char *w = r->data;
     *w++ = '"';
     if (t->len > 0 && t->data[0] != 0 && strchr("=+-@\t\r", t->data[0])) *w++ = '\'';
@@ -873,7 +1014,8 @@ static bool cap_log_hostile(uint32_t cp) {
    ASCII controls, invalid UTF-8, and the hostile code points above become \xNN
    escapes, one per byte. Printable ASCII and other valid UTF-8 text are kept. */
 static CapStr *cap_escape_log(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 4 + 1);
+    if (!t) cap_panic("null string passed to cap_escape_log", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 4, 1, 0));
     char *w = r->data;
     const unsigned char *s = (const unsigned char *)t->data;
     int64_t i = 0;
@@ -903,7 +1045,8 @@ static CapStr *cap_escape_log(CapStr *t) {
    valid UTF-8 is kept; each invalid byte becomes U+FFFD, so the output is always
    valid JSON. */
 static CapStr *cap_escape_json(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 6 + 1);
+    if (!t) cap_panic("null string passed to cap_escape_json", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 6, 1, 0));
     char *w = r->data;
     const unsigned char *s = (const unsigned char *)t->data;
     int64_t i = 0;
@@ -970,8 +1113,11 @@ static CapStr *cap_secret_env(CapStr *name) {
         memchr(name->data, '\0', (size_t)name->len) != NULL) return NULL;
     const char *v = getenv(name->data);
     if (!v) return NULL;
-    int64_t n = (int64_t)strlen(v);
-    CapStr *r = (CapStr *)cap_alloc_secret(sizeof(CapStr) + (size_t)n + 1);
+    size_t value_len = strlen(v);
+    if (value_len > INT64_MAX)
+        cap_panic("secret environment value exceeds string length range", "CWE-789", 0);
+    int64_t n = (int64_t)value_len;
+    CapStr *r = (CapStr *)cap_alloc_secret(cap_rt_checked_string_bytes(n, 1, 1, 0));
     r->len = n;
     memcpy(r->data, v, (size_t)n);
     r->data[n] = 0;
