@@ -129,13 +129,14 @@ def main():
         rejected = os.path.join(tmp, "must_not_exist.png")
         binary = os.path.join(tmp, "all_bytes.bin")
         gallery = os.path.join(tmp, "gallery_560x520.png")
+        near_limit = os.path.join(tmp, "near_limit_1023x512.png")
         run([capstanc, "build", "--strict", "-o", c_source] + LIB +
             ["tests/shroud/png_budget.cap"])
         run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), c_source, "-o", exe])
         env = os.environ.copy()
         env["CAPSTAN_GC_STATS"] = "1"
-        result = run([exe, accepted, rejected, binary, gallery], env=env)
-        if "png budget: 21 assertions" not in result.stdout:
+        result = run([exe, accepted, rejected, binary, gallery, near_limit], env=env)
+        if "png budget: 22 assertions" not in result.stdout:
             fail(f"regression program did not report its assertions: {result.stdout!r}")
         if not os.path.isfile(accepted):
             fail("accepted PNG was not written")
@@ -161,6 +162,18 @@ def main():
             if row != expected_row:
                 fail(f"decoded pixels differ on row {y}")
 
+        near_width, near_height, near_idat = parse_png(near_limit)
+        if (near_width, near_height) != (1023, 512):
+            fail(f"unexpected near-limit dimensions {near_width}x{near_height}")
+        near_raw_length = (1 + 4 * near_width) * near_height
+        near_blocks = check_stored_deflate(near_idat, near_raw_length)
+        near_raw = zlib.decompress(near_idat)
+        near_row = b"\\x00" + bytes((0x33, 0x66, 0x99, 0xFF)) * near_width
+        for y in range(near_height):
+            row = near_raw[y * len(near_row):(y + 1) * len(near_row)]
+            if row != near_row:
+                fail(f"near-limit decoded pixels differ on row {y}")
+
         gallery_width, gallery_height, gallery_idat = parse_png(gallery)
         if (gallery_width, gallery_height) != (560, 520):
             fail(f"reference-gallery export has dimensions {gallery_width}x{gallery_height}")
@@ -175,9 +188,10 @@ def main():
         peak = re.search(r"peak_heap=(\d+)", result.stderr + result.stdout)
         heap_note = (f"; peak Capstan heap {int(peak.group(1)) / (1024 * 1024):.1f} MiB"
                      if peak else "; peak Capstan heap metric unavailable")
-        print(f"png budget: 21 Capstan assertions; {width}x{height} RGBA / "
-              f"{gallery_width}x{gallery_height} gallery-size RGBA; "
-              f"{blocks} / {gallery_blocks} stored DEFLATE blocks; CRC, zlib, Adler "
+        print(f"png budget: 22 Capstan assertions; {width}x{height} RGBA / "
+              f"{gallery_width}x{gallery_height} gallery-size / "
+              f"{near_width}x{near_height} near-limit RGBA; "
+              f"{blocks} / {gallery_blocks} / {near_blocks} stored DEFLATE blocks; CRC, zlib, Adler "
               "and every pixel verified; all 256 byte values preserved; "
               "over-budget write produced no file" + heap_note)
 
