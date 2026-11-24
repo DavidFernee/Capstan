@@ -34,10 +34,52 @@ jobs:
           lake-package-directory: formal
           use-mathlib-cache: "false"
           leanchecker: "true"
-          nanoda: "true"
-          nanoda-allow-sorry: "false"
+          nanoda: "false"
           axiom-audit: "true"
           axiom-audit-root: "CapstanFormal"
+      - name: Install pinned Rust toolchain for Nanoda
+        shell: bash
+        run: |
+          rustup toolchain install 1.100.0 --profile minimal
+          rustup run 1.100.0 rustc --version
+          rustup run 1.100.0 cargo --version
+      - name: Independently check Lean declarations with pinned Nanoda
+        working-directory: formal
+        shell: bash
+        env:
+          LEAN4EXPORT_SHA: df81913eee5519d5a88ae5b0fd701b5298cc29ab
+          NANODA_LIB_SHA: e5438ac0a85a036b6dfe093aa457bc3448498014
+        run: |
+          set -euo pipefail
+
+          git init _lean4export
+          git -C _lean4export remote add origin https://github.com/leanprover/lean4export.git
+          git -C _lean4export fetch --depth 1 origin "$LEAN4EXPORT_SHA"
+          git -C _lean4export checkout --detach FETCH_HEAD
+          test "$(git -C _lean4export rev-parse HEAD)" = "$LEAN4EXPORT_SHA"
+          cp lean-toolchain _lean4export/lean-toolchain
+          (cd _lean4export && lake build)
+
+          git init _nanoda_lib
+          git -C _nanoda_lib remote add origin https://github.com/ammkrn/nanoda_lib.git
+          git -C _nanoda_lib fetch --depth 1 origin "$NANODA_LIB_SHA"
+          git -C _nanoda_lib checkout --detach FETCH_HEAD
+          test "$(git -C _nanoda_lib rev-parse HEAD)" = "$NANODA_LIB_SHA"
+          rustup run 1.100.0 cargo build --locked --release --manifest-path _nanoda_lib/Cargo.toml
+
+          lake env _lean4export/.lake/build/bin/lean4export CapstanFormal > "$RUNNER_TEMP/capstan-formal-export.txt"
+          cat > "$RUNNER_TEMP/capstan-nanoda.json" <<EOF
+          {
+            "export_file_path": "$RUNNER_TEMP/capstan-formal-export.txt",
+            "use_stdin": false,
+            "permitted_axioms": ["propext", "Classical.choice", "Quot.sound", "Lean.trustCompiler"],
+            "unpermitted_axiom_hard_error": false,
+            "nat_extension": true,
+            "string_extension": true,
+            "print_success_message": true
+          }
+          EOF
+          _nanoda_lib/target/release/nanoda_bin "$RUNNER_TEMP/capstan-nanoda.json"
       - name: Negative control — reject an invalid theorem
         working-directory: formal
         shell: bash
