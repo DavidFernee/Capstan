@@ -91,7 +91,7 @@ void uniquify_layout_ids(Laid root, Ui ui) {
         }
         if (duplicate) {
             int suffix = j;
-            if (let next = next_suffix.get(original)) { suffix = int_max(suffix, next); }
+            if (let next = next_suffix.get(original)) { if (next > suffix) { suffix = next; } }
             string candidate = $"{original}#shroud-duplicate-{suffix}";
             bool collision = true;
             while (collision) {
