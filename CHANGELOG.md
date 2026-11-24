@@ -5,6 +5,8 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Security: the compiler refuses to proceed when interprocedural taint summaries exhaust their fixpoint budget; a deep helper-chain regression prevents CWE-20 laundering through incomplete analysis
+- Assurance: CI and release assembly fail when active or qualified claims have stale reviews/evidence; empty claim inventories are invalid, and stale MEM-001 is downgraded pending re-review
 - Assurance: claim reviews and evidence now report stale status when covered implementation or evidence artifacts change after their recorded Git revision
 - Shroud, the cross-platform GUI library, begins (`lib/shroud/`, design in `docs/SHROUD.md`), written
   entirely in Capstan: an anti-aliased integer rasteriser, a hardened TrueType parser, strict UTF-8

@@ -35,7 +35,8 @@
       "type": "array",
       "items": {
         "$ref": "#/$defs/claim"
-      }
+      },
+      "minItems": 1
     }
   },
   "$defs": {
@@ -109,7 +110,8 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/evidence"
-          }
+          },
+          "minItems": 1
         },
         "review": {
           "type": "object",
