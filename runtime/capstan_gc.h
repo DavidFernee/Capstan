@@ -34,6 +34,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include <setjmp.h>
@@ -69,6 +70,43 @@
 
 __attribute__((noreturn, cold, noinline)) static void cap_panic(const char *what, const char *cwe, int64_t loc);
 
+/* Collector metadata and accounting are part of the trusted allocator. Never
+   let a wrapped capacity or byte counter become an undersized allocation or
+   bypass the configured heap limit. */
+static size_t cap_gc_checked_add(size_t a, size_t b) {
+    if (b > SIZE_MAX - a)
+        cap_panic("garbage collector size addition overflow", "CWE-190", 0);
+    return a + b;
+}
+
+static size_t cap_gc_checked_mul(size_t a, size_t b) {
+    if (a && b > SIZE_MAX / a)
+        cap_panic("garbage collector size multiplication overflow", "CWE-190", 0);
+    return a * b;
+}
+
+static size_t cap_gc_next_capacity(size_t current, size_t required,
+                                   size_t initial, size_t element_size) {
+    if (!element_size)
+        cap_panic("zero-sized garbage collector metadata element", "CWE-682", 0);
+    size_t max_count = SIZE_MAX / element_size;
+    if (required > max_count || current > max_count || !initial)
+        cap_panic("garbage collector metadata capacity exceeds SIZE_MAX", "CWE-789", 0);
+    size_t cap = current ? current : initial;
+    if (cap > max_count)
+        cap_panic("initial garbage collector metadata capacity exceeds SIZE_MAX", "CWE-789", 0);
+    while (cap < required) {
+        cap = cap > max_count / 2 ? max_count : cap * 2;
+        if (!cap)
+            cap_panic("garbage collector metadata capacity overflow", "CWE-190", 0);
+    }
+    return cap;
+}
+
+static size_t cap_gc_saturating_add(size_t a, size_t b) {
+    return b > SIZE_MAX - a ? SIZE_MAX : a + b;
+}
+
 static const uint32_t cap_class_size[CAP_NCLASS] =
     {16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048};
 
@@ -101,6 +139,15 @@ static struct {
     size_t released_total, reused_total;
 } cap_gc;
 
+static int cap_gc_heap_would_exceed(size_t amount) {
+    /* Zero is an uncapped sentinel for direct helper use. Initialization
+       normalizes an explicit CAPSTAN_MAX_HEAP=0 to the hard CAP_MAX_LEN ceiling. */
+    if (cap_gc.max_heap == 0) return 0;
+    if (cap_gc.heap > cap_gc.max_heap)
+        cap_panic("garbage collector heap accounting invariant violated", "CWE-682", 0);
+    return amount > cap_gc.max_heap - cap_gc.heap;
+}
+
 static void cap_gc_oom(void) {
     fprintf(stderr, "capstan: out of memory\n");
     exit(102);
@@ -110,6 +157,10 @@ static void *cap_gc_meta(size_t n) {
     void *p = calloc(1, n ? n : 1);
     if (!p) cap_gc_oom();
     return p;
+}
+
+static void *cap_gc_meta_array(size_t count, size_t element_size) {
+    return cap_gc_meta(cap_gc_checked_mul(count, element_size));
 }
 
 static void cap_gc_report(void) {
@@ -156,6 +207,42 @@ static void cap_install_stack_guard(char *low) {
     sigaction(SIGBUS, &sa, NULL);
 }
 
+static size_t cap_gc_parse_heap_limit(const char *text) {
+    /* Accept decimal digits followed by at most one binary suffix; do not
+       let strtoull's permissive whitespace/sign handling normalize bad input. */
+    if (!text || text[0] < '0' || text[0] > '9')
+        cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
+    errno = 0;
+    char *end = NULL;
+    unsigned long long value = strtoull(text, &end, 10);
+    if (errno == ERANGE || end == text)
+        cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
+    unsigned shift = 0;
+    if (*end == 'K' || *end == 'k') shift = 10;
+    else if (*end == 'M' || *end == 'm') shift = 20;
+    else if (*end == 'G' || *end == 'g') shift = 30;
+    if (shift) end++;
+    if (*end != '\0' || (shift && value > (~0ULL >> shift)))
+        cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
+    value <<= shift;
+    if (value > CAP_MAX_LEN) value = CAP_MAX_LEN;
+    return (size_t)value;
+}
+
+static size_t cap_gc_effective_heap_limit(size_t configured) {
+    /* Zero disables the user-selected lower cap, not the hard object-size ceiling. */
+    return configured == 0 || configured > CAP_MAX_LEN
+         ? (size_t)CAP_MAX_LEN : configured;
+}
+
+static size_t cap_gc_physical_heap_limit(size_t physical_pages, size_t page_size) {
+    if (!physical_pages || !page_size) return (size_t)1 << 34;
+    if (physical_pages > CAP_MAX_LEN / page_size) return CAP_MAX_LEN;
+    size_t physical_bytes = physical_pages * page_size;
+    size_t limit = (physical_bytes / 4) * 3 + ((physical_bytes % 4) * 3) / 4;
+    return limit ? limit : CAP_MAX_LEN;
+}
+
 static void cap_gc_init(void) {
     if (cap_gc.inited) return;
     cap_gc.inited = 1;
@@ -166,19 +253,16 @@ static void cap_gc_init(void) {
     if (getenv("CAPSTAN_GC_STATS")) { cap_gc.stats = 1; atexit(cap_gc_report); }
     const char *mh = getenv("CAPSTAN_MAX_HEAP");
     if (mh) {
-        char *end;
-        unsigned long long v = strtoull(mh, &end, 10);
-        if (*end == 'K' || *end == 'k') v <<= 10;
-        else if (*end == 'M' || *end == 'm') v <<= 20;
-        else if (*end == 'G' || *end == 'g') v <<= 30;
-        cap_gc.max_heap = (size_t)v;
+        cap_gc.max_heap = cap_gc_parse_heap_limit(mh);
     } else {
         long pages = sysconf(_SC_PHYS_PAGES), psize = sysconf(_SC_PAGESIZE);
-        cap_gc.max_heap = pages > 0 && psize > 0 ? (size_t)pages / 4 * 3 * (size_t)psize : (size_t)1 << 34;
+        cap_gc.max_heap = pages > 0 && psize > 0
+                        ? cap_gc_physical_heap_limit((size_t)pages, (size_t)psize)
+                        : (size_t)1 << 34;
     }
     /* Never more than 2^48 bytes: every string and collection is then shorter than
        2^48 elements, a bound the compiler's range analysis relies on. */
-    if (cap_gc.max_heap == 0 || cap_gc.max_heap > CAP_MAX_LEN) cap_gc.max_heap = CAP_MAX_LEN;
+    cap_gc.max_heap = cap_gc_effective_heap_limit(cap_gc.max_heap);
     char *low = NULL;
 #if defined(__APPLE__)
     cap_gc.stack_top = (char *)pthread_get_stackaddr_np(pthread_self());
@@ -205,34 +289,80 @@ static size_t cap_gc_slot(uintptr_t pageno, size_t cap) {
 }
 
 static void cap_gc_ptab_insert(CapPage *pg) {
-    if ((cap_gc.npages + 1) * 2 > cap_gc.ptab_cap) {
-        size_t nc = cap_gc.ptab_cap ? cap_gc.ptab_cap * 2 : 64;
-        CapPage **nt = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
+    if (!pg || !pg->base)
+        cap_panic("invalid page-table insertion record", "CWE-476", 0);
+    if (cap_gc.ptab_cap && !cap_gc.ptab)
+        cap_panic("page-table storage is missing", "CWE-476", 0);
+    if ((!cap_gc.ptab_cap && cap_gc.npages) ||
+        (cap_gc.ptab_cap && cap_gc.npages > cap_gc.ptab_cap / 2))
+        cap_panic("page-table page-count invariant violated", "CWE-682", 0);
+    if (cap_gc.ptab_cap &&
+        (cap_gc.ptab_cap & (cap_gc.ptab_cap - 1)) != 0)
+        cap_panic("page-table capacity is not a power of two", "CWE-682", 0);
+    if (!cap_gc.ptab_cap || cap_gc.npages >= cap_gc.ptab_cap / 2) {
+        size_t required = cap_gc.ptab_cap
+                        ? cap_gc_checked_mul(cap_gc.ptab_cap, 2) : 64;
+        size_t minimum = cap_gc_checked_add(cap_gc.npages, 1);
+        if (required < minimum) required = minimum;
+        size_t nc = cap_gc_next_capacity(cap_gc.ptab_cap, required,
+                                         64, sizeof(CapPage *));
+        CapPage **nt = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
         for (size_t i = 0; i < cap_gc.ptab_cap; i++) {
             CapPage *p = cap_gc.ptab[i];
             if (!p) continue;
-            size_t s = cap_gc_slot((uintptr_t)p->base >> CAP_PAGE_SHIFT, nc);
-            while (nt[s]) s = (s + 1) & (nc - 1);
+            if (!p->base)
+                cap_panic("page-table contains a page without a base", "CWE-682", 0);
+            uintptr_t page_no = (uintptr_t)p->base >> CAP_PAGE_SHIFT;
+            size_t s = cap_gc_slot(page_no, nc);
+            size_t probes = 0;
+            while (nt[s] && probes < nc) {
+                if (!nt[s]->base ||
+                    ((uintptr_t)nt[s]->base >> CAP_PAGE_SHIFT) == page_no)
+                    cap_panic("page-table contains a duplicate or invalid page", "CWE-682", 0);
+                s = (s + 1) & (nc - 1);
+                probes++;
+            }
+            if (probes == nc)
+                cap_panic("page-table rehash found no empty slot", "CWE-400", 0);
             nt[s] = p;
         }
         free(cap_gc.ptab);
         cap_gc.ptab = nt;
         cap_gc.ptab_cap = nc;
     }
-    size_t s = cap_gc_slot((uintptr_t)pg->base >> CAP_PAGE_SHIFT, cap_gc.ptab_cap);
-    while (cap_gc.ptab[s]) s = (s + 1) & (cap_gc.ptab_cap - 1);
-    cap_gc.ptab[s] = pg;
+    uintptr_t page_no = (uintptr_t)pg->base >> CAP_PAGE_SHIFT;
+    size_t s = cap_gc_slot(page_no, cap_gc.ptab_cap);
+    for (size_t probes = 0; probes < cap_gc.ptab_cap; probes++) {
+        CapPage *existing = cap_gc.ptab[s];
+        if (!existing) {
+            cap_gc.ptab[s] = pg;
+            return;
+        }
+        if (!existing->base ||
+            ((uintptr_t)existing->base >> CAP_PAGE_SHIFT) == page_no)
+            cap_panic("duplicate or invalid page-table entry", "CWE-682", 0);
+        s = (s + 1) & (cap_gc.ptab_cap - 1);
+    }
+    cap_panic("page table has no insertion slot", "CWE-400", 0);
 }
 
 static CapPage *cap_gc_page_of(uintptr_t addr) {
     if (!cap_gc.ptab_cap) return NULL;
+    if (!cap_gc.ptab)
+        cap_panic("page-table storage is missing", "CWE-476", 0);
     uintptr_t pageno = addr >> CAP_PAGE_SHIFT;
+    if ((cap_gc.ptab_cap & (cap_gc.ptab_cap - 1)) != 0)
+        cap_panic("page-table capacity is not a power of two", "CWE-682", 0);
     size_t s = cap_gc_slot(pageno, cap_gc.ptab_cap);
-    while (cap_gc.ptab[s]) {
-        if (((uintptr_t)cap_gc.ptab[s]->base >> CAP_PAGE_SHIFT) == pageno) return cap_gc.ptab[s];
+    for (size_t probes = 0; probes < cap_gc.ptab_cap; probes++) {
+        CapPage *pg = cap_gc.ptab[s];
+        if (!pg) return NULL;
+        if (!pg->base)
+            cap_panic("page-table entry has no base", "CWE-682", 0);
+        if (((uintptr_t)pg->base >> CAP_PAGE_SHIFT) == pageno) return pg;
         s = (s + 1) & (cap_gc.ptab_cap - 1);
     }
-    return NULL;
+    cap_panic("page table has no empty slot", "CWE-400", 0);
 }
 
 static void cap_gc_range(uintptr_t a, uintptr_t b) {
@@ -246,6 +376,8 @@ static void cap_gc_range(uintptr_t a, uintptr_t b) {
    with nothing allocated, so a stale pointer into it still maps to nothing. */
 static void cap_gc_release(CapPage *pg) {
     if (pg->released) return;
+    if (cap_gc.heap < CAP_PAGE_SIZE)
+        cap_panic("page release would underflow heap accounting", "CWE-682", 0);
 #if defined(__APPLE__)
     madvise(pg->base, CAP_PAGE_SIZE, MADV_FREE);
 #elif defined(MADV_DONTNEED)
@@ -253,15 +385,20 @@ static void cap_gc_release(CapPage *pg) {
 #endif
     pg->released = 1;
     cap_gc.heap -= CAP_PAGE_SIZE;
-    cap_gc.released_total++;
+    cap_gc.released_total = cap_gc_saturating_add(cap_gc.released_total, 1);
 }
 
 static void cap_gc_spare_page(CapPage *pg, int release) {
     pg->spare = 1;
     if (release) cap_gc_release(pg);
+    if (cap_gc.nspare > cap_gc.capspare ||
+        (cap_gc.capspare > 0 && !cap_gc.spare))
+        cap_panic("spare-page metadata invariant violated", "CWE-682", 0);
     if (cap_gc.nspare == cap_gc.capspare) {
-        size_t nc = cap_gc.capspare ? cap_gc.capspare * 2 : 16;
-        CapPage **ns = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
+        size_t nc = cap_gc_next_capacity(cap_gc.capspare,
+                                         cap_gc_checked_add(cap_gc.nspare, 1),
+                                         16, sizeof(CapPage *));
+        CapPage **ns = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
         if (cap_gc.nspare) memcpy(ns, cap_gc.spare, sizeof(CapPage *) * cap_gc.nspare);
         free(cap_gc.spare);
         cap_gc.spare = ns;
@@ -298,11 +435,16 @@ static void cap_gc_format_page(CapPage *pg, int atomic, int cls) {
 }
 
 static void cap_gc_new_page(int atomic, int cls) {
+    if (cap_gc.nspare > cap_gc.capspare ||
+        (cap_gc.nspare > 0 && !cap_gc.spare))
+        cap_panic("spare-page storage invariant violated", "CWE-682", 0);
     if (cap_gc.nspare) {
         CapPage *pg = cap_gc.spare[--cap_gc.nspare];
         if (pg->released) {
-            cap_gc.heap += CAP_PAGE_SIZE;
-            cap_gc.reused_total++;
+            if (cap_gc_heap_would_exceed(CAP_PAGE_SIZE))
+                cap_panic("memory limit exceeded while reusing a page", "CWE-400", 0);
+            cap_gc.heap = cap_gc_checked_add(cap_gc.heap, CAP_PAGE_SIZE);
+            cap_gc.reused_total = cap_gc_saturating_add(cap_gc.reused_total, 1);
         }
         cap_gc_format_page(pg, atomic, cls);
         return;
@@ -312,9 +454,14 @@ static void cap_gc_new_page(int atomic, int cls) {
     CapPage *pg = (CapPage *)cap_gc_meta(sizeof(CapPage));
     pg->base = (char *)mem;
     cap_gc_format_page(pg, atomic, cls);
+    if (cap_gc.npages > cap_gc.cappages ||
+        (cap_gc.cappages > 0 && !cap_gc.pages))
+        cap_panic("page metadata invariant violated", "CWE-682", 0);
     if (cap_gc.npages == cap_gc.cappages) {
-        size_t nc = cap_gc.cappages ? cap_gc.cappages * 2 : 16;
-        CapPage **np = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
+        size_t nc = cap_gc_next_capacity(cap_gc.cappages,
+                                         cap_gc_checked_add(cap_gc.npages, 1),
+                                         16, sizeof(CapPage *));
+        CapPage **np = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
         if (cap_gc.npages) memcpy(np, cap_gc.pages, sizeof(CapPage *) * cap_gc.npages);
         free(cap_gc.pages);
         cap_gc.pages = np;
@@ -322,16 +469,23 @@ static void cap_gc_new_page(int atomic, int cls) {
     }
     cap_gc_ptab_insert(pg);
     cap_gc.pages[cap_gc.npages++] = pg;
-    cap_gc.heap += CAP_PAGE_SIZE;
+    if (cap_gc_heap_would_exceed(CAP_PAGE_SIZE))
+        cap_panic("memory limit exceeded while allocating a page", "CWE-400", 0);
+    cap_gc.heap = cap_gc_checked_add(cap_gc.heap, CAP_PAGE_SIZE);
     cap_gc_range((uintptr_t)pg->base, (uintptr_t)pg->base + CAP_PAGE_SIZE);
 }
 
 /* ---- marking ------------------------------------------------------------ */
 
 static void cap_gc_push(void *p, size_t n) {
-    if (cap_gc.msp + 2 > cap_gc.mcap) {
-        size_t nc = cap_gc.mcap ? cap_gc.mcap * 2 : 1024;
-        void **ns = (void **)cap_gc_meta(sizeof(void *) * nc);
+    if (cap_gc.msp > cap_gc.mcap ||
+        (cap_gc.mcap > 0 && !cap_gc.mstack))
+        cap_panic("mark-stack metadata invariant violated", "CWE-682", 0);
+    if (cap_gc.mcap - cap_gc.msp < 2) {
+        size_t nc = cap_gc_next_capacity(cap_gc.mcap,
+                                         cap_gc_checked_add(cap_gc.msp, 2),
+                                         1024, sizeof(void *));
+        void **ns = (void **)cap_gc_meta_array(nc, sizeof(void *));
         if (cap_gc.msp) memcpy(ns, cap_gc.mstack, sizeof(void *) * cap_gc.msp);
         free(cap_gc.mstack);
         cap_gc.mstack = ns;
@@ -394,7 +548,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
     jmp_buf regs;                       /* spill callee-saved registers onto the stack */
     __builtin_unwind_init();
     setjmp(regs);
-    cap_gc.collections++;
+    cap_gc.collections = cap_gc_saturating_add(cap_gc.collections, 1);
     if (cap_gc.nlarge) qsort(cap_gc.large, cap_gc.nlarge, sizeof(CapLarge), cap_gc_large_cmp);
     for (size_t i = 0; i < cap_gc.nroots; i++) {
         cap_gc_consider((uintptr_t)*cap_gc.roots[i]);
@@ -423,7 +577,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         for (uint32_t j = pg->nobj; j-- > 0;) {
             if (pg->mark[j]) {
                 pg->mark[j] = 0;
-                live += pg->objsize;
+                live = cap_gc_checked_add(live, pg->objsize);
                 any = 1;
             } else {
                 if (pg->atomic == 2 && pg->alloc[j]) memset(pg->base + (size_t)j * pg->objsize, 0, pg->objsize);
@@ -468,10 +622,12 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         CapLarge l = cap_gc.large[i];
         if (l.mark) {
             l.mark = 0;
-            live += l.size;
+            live = cap_gc_checked_add(live, l.size);
             cap_gc.large[keep++] = l;
         } else {
             if (l.atomic == 2) { volatile char *w = l.base; for (size_t z = 0; z < l.size; z++) w[z] = 0; }
+            if (cap_gc.heap < l.size)
+                cap_panic("large-object release would underflow heap accounting", "CWE-682", 0);
             free(l.base);
             cap_gc.heap -= l.size;
         }
@@ -486,24 +642,33 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
 
 static void *cap_gc_alloc(size_t n, int atomic) {
     if (!cap_gc.inited) cap_gc_init();
+    if (atomic < 0 || atomic >= CAP_KINDS)
+        cap_panic("invalid allocation kind", "CWE-682", 0);
     if (n == 0) n = 1;
-    cap_gc.since += n;
-    cap_gc.total += n;
+    if (n > CAP_MAX_LEN)
+        cap_panic("allocation exceeds maximum object size", "CWE-789", 0);
+    cap_gc.since = cap_gc_saturating_add(cap_gc.since, n);
+    cap_gc.total = cap_gc_saturating_add(cap_gc.total, n);
     if (cap_gc.stress > 0) {
         if (++cap_gc.stress_count >= cap_gc.stress) { cap_gc.stress_count = 0; cap_gc_collect(); }
     } else if (cap_gc.since > cap_gc.threshold) {
         cap_gc_collect();
     }
     if (n > cap_class_size[CAP_NCLASS - 1]) {
-        if (cap_gc.max_heap && cap_gc.heap + n > cap_gc.max_heap) {
+        if (cap_gc_heap_would_exceed(n)) {
             cap_gc_collect();
-            if (cap_gc.heap + n > cap_gc.max_heap) cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+            if (cap_gc_heap_would_exceed(n)) cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
         }
         void *p = calloc(1, n);
         if (!p) cap_gc_oom();
+        if (cap_gc.nlarge > cap_gc.caplarge ||
+            (cap_gc.caplarge > 0 && !cap_gc.large))
+            cap_panic("large-object metadata invariant violated", "CWE-682", 0);
         if (cap_gc.nlarge == cap_gc.caplarge) {
-            size_t nc = cap_gc.caplarge ? cap_gc.caplarge * 2 : 64;
-            CapLarge *nl = (CapLarge *)cap_gc_meta(sizeof(CapLarge) * nc);
+            size_t nc = cap_gc_next_capacity(cap_gc.caplarge,
+                                             cap_gc_checked_add(cap_gc.nlarge, 1),
+                                             64, sizeof(CapLarge));
+            CapLarge *nl = (CapLarge *)cap_gc_meta_array(nc, sizeof(CapLarge));
             if (cap_gc.nlarge) memcpy(nl, cap_gc.large, sizeof(CapLarge) * cap_gc.nlarge);
             free(cap_gc.large);
             cap_gc.large = nl;
@@ -513,17 +678,28 @@ static void *cap_gc_alloc(size_t n, int atomic) {
         size_t at = cap_gc.nlarge++;
         while (at > 0 && (uintptr_t)cap_gc.large[at - 1].base > (uintptr_t)p) { cap_gc.large[at] = cap_gc.large[at - 1]; at--; }
         cap_gc.large[at] = l;
-        cap_gc.heap += n;
+        cap_gc.heap = cap_gc_checked_add(cap_gc.heap, n);
         if (cap_gc.heap > cap_gc.peak_heap) cap_gc.peak_heap = cap_gc.heap;
         cap_gc_range((uintptr_t)p, (uintptr_t)p + n);
         return p;
     }
     int cls = 0;
     while (cap_class_size[cls] < n) cls++;
-    if (!cap_gc.freelist[atomic][cls] && cap_gc.max_heap && cap_gc.heap + CAP_PAGE_SIZE > cap_gc.max_heap) {
-        cap_gc_collect();
-        if (!cap_gc.freelist[atomic][cls] && cap_gc.heap + CAP_PAGE_SIZE > cap_gc.max_heap)
-            cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+    if (cap_gc.nspare > cap_gc.capspare ||
+        (cap_gc.nspare > 0 && !cap_gc.spare))
+        cap_panic("spare-page storage invariant violated", "CWE-682", 0);
+    if (!cap_gc.freelist[atomic][cls]) {
+        size_t page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
+                           ? 0 : (size_t)CAP_PAGE_SIZE;
+        if (cap_gc_heap_would_exceed(page_charge)) {
+            cap_gc_collect();
+            if (!cap_gc.freelist[atomic][cls]) {
+                page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
+                            ? 0 : (size_t)CAP_PAGE_SIZE;
+                if (cap_gc_heap_would_exceed(page_charge))
+                    cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+            }
+        }
     }
     if (!cap_gc.freelist[atomic][cls]) {
         cap_gc_new_page(atomic, cls);
@@ -539,14 +715,23 @@ static void *cap_gc_alloc(size_t n, int atomic) {
 
 /* Register the address of a global that may hold a pointer into the heap. */
 static void cap_gc_root(void **addr) {
+    if (!addr)
+        cap_panic("null registered root slot", "CWE-476", 0);
+    if (cap_gc.nroots > cap_gc.caproots ||
+        (cap_gc.caproots > 0 && !cap_gc.roots))
+        cap_panic("root metadata invariant violated", "CWE-682", 0);
     if (cap_gc.nroots == cap_gc.caproots) {
-        size_t nc = cap_gc.caproots ? cap_gc.caproots * 2 : 64;
-        void ***nr = (void ***)cap_gc_meta(sizeof(void **) * nc);
+        size_t nc = cap_gc_next_capacity(cap_gc.caproots,
+                                         cap_gc_checked_add(cap_gc.nroots, 1),
+                                         64, sizeof(void **));
+        void ***nr = (void ***)cap_gc_meta_array(nc, sizeof(void **));
         if (cap_gc.nroots) memcpy(nr, cap_gc.roots, sizeof(void **) * cap_gc.nroots);
         free(cap_gc.roots);
         cap_gc.roots = nr;
         cap_gc.caproots = nc;
     }
+    if (cap_gc.nroots >= cap_gc.caproots)
+        cap_panic("root metadata capacity invariant violated", "CWE-682", 0);
     cap_gc.roots[cap_gc.nroots++] = addr;
 }
 

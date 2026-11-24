@@ -123,6 +123,63 @@ void test_buttons_and_guard(Tally t, Ui ui) {
     expect_int(t, m6.len() + m7.len(), 0, "button: release elsewhere cancels");
 }
 
+void test_duplicate_keys(Tally t, Ui ui) {
+    // Both controls overlap. The later sibling is painted and hit-tested on top.
+    // Reusing a key must not route its click to the earlier, visually covered sibling.
+    View v = stack().width(200).height(60)
+        .add(button("Delete", "delete").key("collision"))
+        .add(button("Keep", "keep").key("collision"));
+    ui.render(v, 1000);
+    if (let root = ui.root) {
+        Laid covered = root.kids[0];
+        Laid visible = root.kids[1];
+        expect(t, covered.id != visible.id, "identity: duplicate keys receive distinct laid-out ids", $"{covered.id} / {visible.id}");
+        int x = visible.frame.x + visible.frame.w / 2;
+        int y = visible.frame.y + visible.frame.h / 2;
+        List<Msg> down = ui.handle(pointer_event(EV_POINTER_DOWN, x, y, 1100));
+        expect(t, ui.focus == visible.id,
+            "identity: focus resolves to the visible duplicate", ui.focus);
+        List<Msg> up = ui.handle(pointer_event(EV_POINTER_UP, x, y, 1150));
+        expect(t, down.len() == 0 && up.len() == 1 && up[0].action == "keep",
+            "identity: hit testing activates the visible duplicate", $"{down.len()} down, {up.len()} up");
+        List<Msg> keyboard = ui.handle(key_event(KEY_ENTER, 0, 1200));
+        expect(t, keyboard.len() == 1 && keyboard[0].action == "keep",
+            "identity: keyboard activation resolves the same visible duplicate", $"{keyboard.len()} messages");
+    } else {
+        expect(t, false, "identity: laid-out root exists", "none");
+    }
+    expect(t, contains(join(a11y_problems(ui), "; "), "duplicate view identity"),
+        "identity: duplicate keys are reported to accessibility diagnostics", join(a11y_problems(ui), "; "));
+}
+
+void test_duplicate_key_collisions(Tally t, Ui ui) {
+    // Reserve a run of generated-looking keys. Repeated duplicates of the same
+    // original key should continue from the previous suffix, not rescan the run.
+    View v = column()
+        .add(text("first").key("collision"))
+        .add(text("reserved one").key("collision#shroud-duplicate-1"))
+        .add(text("duplicate one").key("collision"))
+        .add(text("reserved two").key("collision#shroud-duplicate-2"))
+        .add(text("duplicate two").key("collision"))
+        .add(text("reserved three").key("collision#shroud-duplicate-3"))
+        .add(text("duplicate three").key("collision"))
+        .add(text("reserved four").key("collision#shroud-duplicate-4"))
+        .add(text("reserved five").key("collision#shroud-duplicate-5"))
+        .add(text("reserved six").key("collision#shroud-duplicate-6"))
+        .add(text("reserved seven").key("collision#shroud-duplicate-7"));
+    ui.render(v, 0);
+    if (let root = ui.root) {
+        expect(t, root.kids[2].id == "collision#shroud-duplicate-8",
+            "identity: first duplicate skips reserved generated-looking keys", root.kids[2].id);
+        expect(t, root.kids[4].id == "collision#shroud-duplicate-9",
+            "identity: later duplicate continues after prior suffix", root.kids[4].id);
+        expect(t, root.kids[6].id == "collision#shroud-duplicate-10",
+            "identity: suffix allocation does not rescan prior collisions", root.kids[6].id);
+    } else {
+        expect(t, false, "identity: collision test root exists", "none");
+    }
+}
+
 void test_disabled_hit_blocking(Tally t, Ui ui) {
     // The disabled checkbox is visually on top of an enabled button.
     // It must block the click rather than pass it through to the button below.
@@ -445,6 +502,8 @@ int main() {
         if (let fb = bold) {
             test_layout(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_buttons_and_guard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_duplicate_keys(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_duplicate_key_collisions(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_disabled_hit_blocking(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_keyboard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_text_field(t, new_ui(f, fb, light_theme(), 640, 480, 256));
