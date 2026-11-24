@@ -43,24 +43,6 @@ theorem machineStep_deterministic
     left = right :=
   hleft.symm.trans hright
 
-/-- Any continuing one-step result carries the register-typing invariant. -/
-theorem machineStep_progress_preserves_register_types
-    {n m : Nat} {types : RegTypes n}
-    (program : FiniteProgram n m types)
-    (state next : MachineState n m types)
-    (hstep : machineStep program state = .nextState next) :
-    WellTyped types next.registers := by
-  exact next.registers_well_typed
-
-/-- Any continuing one-step result has an in-range program counter. -/
-theorem machineStep_progress_preserves_pc_bounds
-    {n m : Nat} {types : RegTypes n}
-    (program : FiniteProgram n m types)
-    (state next : MachineState n m types)
-    (hstep : machineStep program state = .nextState next) :
-    next.pc.val < m + 1 := by
-  exact next.pc.isLt
-
 /-- Result of executing at most a fixed number of single-frame instructions. -/
 inductive BoundedExecutionResult (n m : Nat) (types : RegTypes n) where
   | fuelExhausted (state : MachineState n m types)
@@ -92,7 +74,7 @@ theorem runFuel_fuel_exhausted_state_well_typed
   | zero =>
       simp [runFuel] at h
       cases h
-      exact state.registers_well_typed
+      exact MachineState.registers_well_typed state
   | succ fuel ih =>
       simp only [runFuel] at h
       cases hstep : machineStep program state with
