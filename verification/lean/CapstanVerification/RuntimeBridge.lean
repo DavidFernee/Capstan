@@ -222,6 +222,32 @@ theorem fin_eq_of_val_eq {n : Nat} {a b : Fin n}
           rfl
 
 
+/-- The target register receives the replacement's declared type. -/
+theorem runtimeWriteRegister_type_at_target_preserved
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    {runtime updated : List RuntimeRegister}
+    (index : Fin n) (replacement : RuntimeRegister)
+    (hdecl : replacement.declaredType = types index)
+    (hwrite : runtimeWriteRegister runtime index.val replacement = .ok updated) :
+    runtimeTypeAt updated index.val = some (types index) := by
+  have htarget :=
+    runtimeWriteRegister_target runtime updated index.val replacement hwrite
+  simp [runtimeTypeAt, htarget, hdecl]
+
+/-- Other register indices retain their declared runtime type. -/
+theorem runtimeWriteRegister_type_at_other_preserved
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    {runtime updated : List RuntimeRegister}
+    (hrel : RuntimeRegisterFileRelation types regs runtime)
+    (index : Fin n) (replacement : RuntimeRegister)
+    (j : Fin n) (hjiVal : j.val ≠ index.val)
+    (hwrite : runtimeWriteRegister runtime index.val replacement = .ok updated) :
+    runtimeTypeAt updated j.val = some (types j) := by
+  have hother :=
+    runtimeWriteRegister_other_unchanged
+      runtime updated index.val j.val replacement hwrite hjiVal
+  simpa [runtimeTypeAt, hother] using hrel.type_at j
+
 /-- The type component of a successful runtime replacement preserves the relation. -/
 theorem runtimeWriteRegister_type_at_preserved
     {n : Nat} {types : RegTypes n} {regs : Registers n}
@@ -235,13 +261,8 @@ theorem runtimeWriteRegister_type_at_preserved
   by_cases hjiVal : j.val = index.val
   · have hji : j = index := fin_eq_of_val_eq hjiVal
     subst j
-    have htarget :=
-      runtimeWriteRegister_target runtime updated index.val replacement hwrite
-    simp [runtimeTypeAt, htarget, hdecl]
-  · have hother :=
-      runtimeWriteRegister_other_unchanged
-        runtime updated index.val j.val replacement hwrite hjiVal
-    simpa [runtimeTypeAt, hother] using hrel.type_at j
+    exact runtimeWriteRegister_type_at_target_preserved index replacement hdecl hwrite
+  · exact runtimeWriteRegister_type_at_other_preserved hrel index replacement j hjiVal hwrite
 
 /-- The value component of a successful runtime replacement preserves the relation. -/
 theorem runtimeWriteRegister_value_at_preserved
