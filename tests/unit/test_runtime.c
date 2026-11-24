@@ -8,6 +8,7 @@
  */
 #define CAP_GC_TESTING 1
 #define CAP_PBKDF2_TEST_HOOK 1
+#define CAP_SIPHASH_TEST_HOOK 1
 #include "capstan_rt.h"
 #include <sys/wait.h>
 
@@ -16,6 +17,15 @@ static const char *unit_files[] = {"unit"};
 
 #define CHECK(cond) do { checks++; if (!(cond)) { failures++; \
     fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
+
+static unsigned siphash_wipe_regions;
+static unsigned siphash_wipe_failures;
+
+static void observe_siphash_wipe(const void *memory, size_t n) {
+    const volatile unsigned char *p = (const volatile unsigned char *)memory;
+    siphash_wipe_regions++;
+    for (size_t i = 0; i < n; i++) if (p[i] != 0) siphash_wipe_failures++;
+}
 
 static void hexof(const unsigned char *p, size_t n, char *out) { cap_hex(p, n, out); }
 
@@ -28,6 +38,23 @@ static int sha_hex_is(const void *data, size_t n, const char *want) {
     cap_sha256_final(&s, d);
     hexof(d, 32, h);
     return strcmp(h, want) == 0;
+}
+
+static void test_siphash_wipe(void) {
+    unsigned char key_bytes[16], message[1] = {0};
+    for (int i = 0; i < 16; i++) key_bytes[i] = (unsigned char)i;
+    uint64_t k0 = 0, k1 = 0;
+    for (int i = 7; i >= 0; i--) {
+        k0 = (k0 << 8) | key_bytes[i];
+        k1 = (k1 << 8) | key_bytes[8 + i];
+    }
+    siphash_wipe_regions = siphash_wipe_failures = 0;
+    cap_siphash_test_wipe_hook = observe_siphash_wipe;
+    uint64_t got = cap_siphash(message, 0, k0, k1, 2, 4);
+    cap_siphash_test_wipe_hook = NULL;
+    CHECK(got == UINT64_C(0x726fdb47dd0e0e31));
+    CHECK(siphash_wipe_regions == 6);
+    CHECK(siphash_wipe_failures == 0);
 }
 
 static void test_sha256(void) {
@@ -1226,6 +1253,7 @@ static void test_secret_page_free_stack(void) {
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
+    test_siphash_wipe();
     test_sha256();
     test_hmac();
     test_pbkdf2();
