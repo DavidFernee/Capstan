@@ -895,3 +895,66 @@ If the design chooses contextual inference for enum constructors instead, docume
 - Verify generic enum constructors cannot store Grant directly or through nested payload types.
 
 This is a design and acceptance requirement; it does not claim generic enum construction exists in the current compiler.
+
+
+## 27. Two mandatory validation passes for generic templates
+
+The design currently requires generic bodies to use only operations supplied by declared constraints and says concrete instantiations are checked after substitution. These are distinct obligations. Define two mandatory validation passes so an uninstantiated invalid template is rejected, while a valid abstract template is not rejected merely because its parameters are not yet concrete.
+
+### 27.1 Abstract template validation is unconditional
+
+Validate every generic declaration in the root compilation closure, whether or not any call instantiates it. Build a lexical type-variable environment for each generic binder. Each variable has stable identity (declaration identity plus parameter ordinal), its declared bounds, and its source location.
+
+During this pass:
+
+- Check declaration syntax, binder uniqueness/scope, generic arity, well-formed parameter and return types, field and enum payload declarations, and all body control-flow rules that do not require concrete layout.
+- Type-check expressions symbolically. A type variable supports only language-defined universal operations and operations explicitly supplied by its declared bounds. A concrete type's accidental methods or an implementation visible only at a later call site must not add capabilities to the template.
+- Resolve calls to other generic declarations using their declared signatures and bounds. A caller may discharge a callee's interface requirement only from a matching lexical bound or a concrete, statically known type—not from an arbitrary future instantiation.
+- Require every type variable appearing in a public or private signature to be in scope and every bound to reference a valid interface and well-formed type expression.
+- Check return paths, unreachable code, pattern structure, Result propagation shape, and other type-independent control-flow properties in the abstract body.
+- Run the recursive Grant-containment analysis symbolically. A type variable is not presumed Grant-free. A template that stores, returns or captures an unconstrained variable must either carry a formally specified Grant-free constraint or be rejected at that boundary.
+- Do not execute implementation lookup by guessing a future concrete type. Record symbolic interface obligations only where the language semantics explicitly allow a generic bound to justify them.
+
+A template with no instantiations is still checked. Dead code elimination or monomorphisation reachability must never suppress declaration-level validation.
+
+### 27.2 Concrete instantiation validation is additional, not substitutive
+
+For every canonical concrete instantiation:
+
+1. Substitute all type variables capture-avoidantly using the resolved type-identity environment.
+2. Reject any unresolved variable or malformed substituted type.
+3. Re-check the complete instantiated signature, fields/payloads and body under the concrete environment.
+4. Resolve every recorded interface obligation to exactly one visible concrete implementation in the root coherence closure.
+5. Re-run visibility/API closure, Grant containment, taint/Secret/contextual-output checks, enum exhaustiveness, definite-return, Result propagation and closure-capture checks against the substituted types.
+6. Confirm that the concrete body uses no operation that was unavailable under the abstract template's declared bounds. Concrete substitution may discharge a bound; it must not retroactively grant the template extra source-level capabilities.
+7. Mark the instantiation codegen-eligible only after all checks and global resource accounting succeed.
+
+This second pass catches concrete layout, payload, implementation, qualifier and visibility facts that cannot be established abstractly. It must not make an invalid template valid merely because one selected concrete type happens to have a convenient method or property.
+
+### 27.3 Keep the two diagnostic classes distinct
+
+Diagnostics should identify whether failure belongs to the generic declaration itself or to a particular concrete instantiation. Template diagnostics point to the generic source location and binder/operation; instantiation diagnostics include the canonical concrete type arguments and the originating call chain, with bounded trace depth.
+
+If an abstract check fails, report it once at the template and do not emit repeated copies for every attempted instantiation. If the abstract check succeeds but a concrete check fails, identify the instantiation and the substituted type path responsible. Diagnostic ordering must not depend on which call happened to discover the instantiation first.
+
+### 27.4 Define the supported constraint surface
+
+The design must say whether generic structs and enums can declare bounds in v0.5. The conservative initial choice is to support bounds on generic functions only and exclude bounds on generic nominal declarations until construction, field access, method calls, pattern matching and public API obligations are specified consistently. If nominal bounds are supported, define exactly when they are required and checked.
+
+Also define whether generic bodies may use equality, inequality, formatting, copying, destruction or other built-in operations on an unconstrained `T`. Do not let implementation convenience silently turn these into universal operations. Each operation must either be explicitly universal with defined semantics or be provided by a declared interface bound.
+
+### 27.5 Required adversarial tests
+
+- An invalid generic body is rejected even when no call instantiates it.
+- A generic body that calls a method available only on one current concrete caller type is rejected without a matching declared bound.
+- A generic body calling another generic function succeeds only when its lexical bounds discharge the callee's obligations.
+- An unused/unconstrained type parameter is rejected where inference or well-formedness requires it.
+- A generic body with an unconstrained type variable cannot store, return or capture it if Grant-freedom is not proven.
+- A valid abstract template instantiates for two different concrete types satisfying the same bound, with no dependence on call order.
+- A concrete instantiation exposing a nested Grant, qualifier mismatch, private-type leak, missing impl or invalid Result error type fails even though abstract validation passed.
+- A concrete type with extra methods cannot make an otherwise invalid abstract template pass.
+- A failed instantiation does not cause repeated or order-dependent template diagnostics.
+- Stage-0 and self-hosted compilers agree on abstract and concrete acceptance/rejection.
+- Fuzzed generic bodies cannot bypass abstract checking by remaining uninstantiated or unreachable.
+
+These are acceptance requirements for generic template validation, not claims that the current compiler implements generic templates or either validation pass.
