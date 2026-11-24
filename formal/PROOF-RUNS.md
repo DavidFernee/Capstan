@@ -3,7 +3,7 @@
 This ledger records proof-checking attempts, including failures and superseded runs.
 A green result is scoped to the exact source revision and verification layer stated.
 
-## Current verified model result
+## Verified abstract model at its exact revision
 
 **Result classification: model-only proof**
 
@@ -42,12 +42,17 @@ Pinned independent-checker inputs:
 - `release_success_exact`
 - `release_idempotent`
 
-**Scope limitation:** these are theorems about the abstract Lean model. They do not
-establish that the current C runtime implements the model. In particular, the current
-C `cap_gc_release` still ignores `madvise` failure; implementation refinement is
+**Scope limitation:** these theorems apply only to the abstract model at the exact commit
+above. They do not establish that the current C runtime implements the model. In
+particular, that revision represented checked-add overflow as an `Option.none`; it proved
+that no out-of-range sum was returned, but did not yet encode the C helper's terminal
+panic outcome explicitly. Therefore ARITH-01 was only partially discharged at that
+revision. The current branch adds an explicit `fatal` outcome and a new theorem; that
+revision must pass CI before ARITH-01 is marked proved model-only. The current C
+`cap_gc_release` also still ignores `madvise` failure, so implementation refinement is
 blocked until that code is corrected and connected to the specification.
 
-## Earlier attempts and corrections
+## Current revision awaiting verification\n\n- **Commit:** `69c10c15c9196ad97617151a9ca78cd5cc24a7be`\n- **Change:** checked-add now returns an explicit `CheckedAddResult.success` or\n  terminal `CheckedAddResult.fatal`, with `checkedAdd_overflow_fatal` proving that\n  out-of-range sums take the fatal outcome.\n- **Status:** not yet checked by CI at this exact revision.\n\n## Earlier attempts and corrections
 
 | Run | Commit | Result | Finding and correction |
 |---|---|---|---|
