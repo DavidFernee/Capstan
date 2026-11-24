@@ -176,7 +176,7 @@ Use instruction indices as basic-block positions. Emit explicit `jump` and `bran
 - **Return:** lower the return expression completely, then emit `ret`; emit `ret_void` for a void return. The enclosing function signature must agree.
 - **Function call:** lower arguments completely from left to right, then emit one `call` with their resulting registers in source order. Allocate a result register for `int` or `bool` return; use null destination only for a void return. The callee's signature is checked against the call before emission.
 
-Every completed function must have valid branch targets and no reachable path that falls off the instruction sequence. A final validator checks this independently of the lowering algorithm. PR #159 currently implements the if/else and short-circuit branch forms; loop-target stacks and break/continue fixups remain outstanding.
+Every completed function must have valid branch targets and no reachable path that falls off the instruction sequence. A final validator checks this independently of the lowering algorithm. PR #159 implements if/else and short-circuit branches, plus loop-target stacks and break/continue fixups for the supported while/for subset.
 
 ## 6. Locations and source diagnostics
 
