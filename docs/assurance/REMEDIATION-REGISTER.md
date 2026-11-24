@@ -40,12 +40,12 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 
 | PR | Current inspected status | Head | CI evidence at inspection | Remediation interpretation |
 |---|---|---|---|---|
-| #87 | Open, draft, targets main | `2df07414f52b782e4df0ea3926ec050fa02d9cc5` | Run 45344964290 in progress | Assessment and executable probes; findings are not fixed. Latest head is documentation/assessment revision; cite the earlier run for the reproduced CWE-916 probes. |
+| #87 | Open, draft, targets main | `2df07414f52b782e4df0ea3926ec050fa02d9cc5` | Run 45344964290 success (four jobs) | Assessment and executable probes; findings are not fixed. Latest assessment head passed CI; the earlier run remains the evidence for reproducing the CWE-916 probes. |
 | #51 | Open, draft, targets main; stale base | `d6f97beb05962b7f8ef43f5e0ea8434be06450fa` | Run 45335656200 success on this head | GC hardening submitted; stale-slot and exact accounting evidence remain blockers. |
 | #86 | Open, draft, targets main | `334ebe44c51d9187f2cb82e3533598b7bf094ebf` | Run 45341730284 success | Strong candidate, but still requires independent review and integration. |
 | #97 | Open, draft, targets main | `20fa6374ac9bb0e283484c90a759a702d04c606f` | Run 45342232492 success on this head | Compound-assignment correction submitted; PR #102 extends evidence. |
 | #102 | Open, draft, stacked on #97 | `5b07e45041ff2be9a535ddd671b000a6ebb553bb` | Run 45345049380 in progress | Additional evaluation-order tests; latest exact-head CI not yet complete. |
-| #92 | Open, draft, targets main | `379397c2214fa308ec48e7fec6e5b44114d52d43` | Run 45345911155 queued | Real 560×520 `png_write()` and independent decode/pixel test added; peak allocation accounting remains. |
+| #92 | Open, draft, targets main | `d8f4c681d983bb54c0d34a7d57db70f5f7adc595` | Run 45346456981 in progress | Real 560×520 `png_write()` and independent decode/pixel test added; peak allocation accounting remains. |
 | #103 | Open, draft, targets main | `0e16fc2163e0eda28e8e42a3079bb15178c9dd18` | Run 45343277971 success (four jobs) | Workflow green, but the verifier was not invoked by `tests/run.sh`; regression execution remains unverified. |
 | #79 | Open, draft, targets main | `80676e0c014eec1be0eba196acad0dddc088f267` | Current-base matrix status requires refresh | Nested composite glyph cumulative-budget regression remains. |
 | #93 | Open, draft, targets main | `278a578068a56780c6aaf08139ebfce4daeecef3` | Run 45345218607 in progress | Semantic contract; not a compiler implementation fix. |
@@ -77,15 +77,15 @@ No finding in this initial register is marked `ACCEPTED`.
 ## 2026-11-24 follow-up — password verifier remediation submitted
 
 **PR #108:** [fix(runtime): bound and canonicalise password record verification](https://github.com/DavidFernee/Capstan/pull/108)  
-**Branch:** \`remediation/password-record-parser\`  
-**Head:** \`8cfb6d09b64b57e1742ae2dceaa750d477ca7c0b\`  
-**Base:** Worker 4's \`runtime/string-allocation-bounds-v06\` (PR #105), intentionally stacked to avoid competing edits to the runtime header and unit-test file.  
-**CI:** run \`45345215167\`, pending at this update.
+**Branch:** `remediation/password-record-parser`  
+**Head:** `dd7e6313f677f42d0d319dfd142d3c84fbcf35db`  
+**Base:** Worker 4's `runtime/string-allocation-bounds-v06` (PR #105), intentionally stacked to avoid competing edits to the runtime header and unit-test file.  
+**CI:** run `45346177016` is in progress on the latest head.
 
-The patch replaces C-string parsing with a strict parser bounded by \`CapStr.len\`. It rejects embedded NULs, suffix bytes, malformed separators, signs, whitespace, leading zeroes, non-ASCII/non-decimal costs, uppercase/non-hex fields, and any record whose cost is not exactly the current 600,000-iteration generation profile. This is a current-format-only decision pending confirmation that no supported lower-cost legacy records exist; lower-cost records are not silently accepted. \`cap_needs_rehash()\` now uses the same parser, so a valid-looking prefix cannot be classified as current without validating the entire record. Parsed salt, expected digest and computed digest scratch are wiped.
+The patch replaces C-string parsing with a strict parser bounded by `CapStr.len`. It rejects embedded NULs, suffix bytes, malformed separators, signs, whitespace, leading zeroes, non-ASCII/non-decimal costs, uppercase/non-hex fields, and any record whose cost is not exactly the current 600,000-iteration generation profile. This is a current-format-only decision pending confirmation that no supported lower-cost legacy records exist; lower-cost records are not silently accepted. `cap_needs_rehash()` now uses the same parser, so a valid-looking prefix cannot be classified as current without validating the entire record. Parsed salt, expected digest and computed digest scratch are wiped.
 
-Regression coverage added to \`tests/unit/test_runtime.c\`: null arguments, leading-zero cost, uppercase hex, embedded-NUL suffix, ordinary trailing suffix, and a 100,000,000-iteration record. Malformed inputs are rejected before PBKDF2 is invoked. A structurally canonical current-format record is checked without running the expensive KDF.
+Regression coverage added to `tests/unit/test_runtime.c`: null arguments and null backing data, negative record length, leading-zero cost, uppercase hex, embedded-NUL suffix, ordinary trailing suffix, non-ASCII cost byte, 600001 first-over-limit cost, and a 100,000,000-iteration record. A test-only PBKDF2 call counter asserts malformed records are rejected before KDF invocation. A structurally canonical current-format record is checked without running the expensive KDF.
 
 **Coordination requests posted to issue #25:** Worker 4 to review the stacked runtime integration; Worker 5 / crypto-policy owner to confirm the current-format-only compatibility decision; Worker 7 reviewed the parser structure and requested negative-length, null-data, exact-boundary and pre-KDF-counter tests; these were added on the latest head. Worker 7 re-reviewed head `dd7e6313f677f42d0d319dfd142d3c84fbcf35db` and found no remaining parser bypass; exact-head CI and subsystem-owner approval remain pending.
 
-**State:** \`FIX SUBMITTED\`. Not CI verified, independently verified or accepted. Remaining risks include unbounded long-password amplification (separate SEC-CRYPTO-003), SHA-256 stack scratch erasure (SEC-CRYPTO-004), and the absence of a documented legacy-record inventory/migration decision.
+**State:** `FIX SUBMITTED`. Not CI verified, independently verified or accepted. Remaining risks include unbounded long-password amplification (separate SEC-CRYPTO-003), SHA-256 stack scratch erasure (SEC-CRYPTO-004), and the absence of a documented legacy-record inventory/migration decision.
