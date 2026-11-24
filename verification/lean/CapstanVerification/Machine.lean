@@ -56,7 +56,7 @@ structure MachineState (n m : Nat) (types : RegTypes n) where
 
 /-- Every step either advances, halts, or produces a defined explicit trap. -/
 inductive MachineOutcome (n m : Nat) (types : RegTypes n) where
-  | continue (state : MachineState n m types)
+  | nextState (state : MachineState n m types)
   | halt (value : Val)
   | haltVoid
   | trap (reason : Trap)
@@ -75,7 +75,7 @@ def machineStep {n m : Nat} {types : RegTypes n}
     MachineOutcome n m types :=
   match program.code.get state.pc with
   | .constInt dst value hdst hvalue =>
-      .continue {
+      .nextState {
         pc := sequentialPC state.pc
         registers := write state.registers dst (.int value)
         registers_well_typed := write_preserves_well_typed
@@ -83,7 +83,7 @@ def machineStep {n m : Nat} {types : RegTypes n}
             simpa [hasType, hasTypeB, hdst, inI64] using hvalue)
       }
   | .constBool dst value hdst =>
-      .continue {
+      .nextState {
         pc := sequentialPC state.pc
         registers := write state.registers dst (.bool value)
         registers_well_typed := write_preserves_well_typed
@@ -94,7 +94,7 @@ def machineStep {n m : Nat} {types : RegTypes n}
       match hmove : executeMove state.registers instr with
       | .error e => .trap e
       | .ok registers =>
-          .continue {
+          .nextState {
             pc := sequentialPC state.pc
             registers := registers
             registers_well_typed :=
@@ -104,7 +104,7 @@ def machineStep {n m : Nat} {types : RegTypes n}
       match hadd : executeAdd state.registers instr with
       | .error e => .trap e
       | .ok registers =>
-          .continue {
+          .nextState {
             pc := sequentialPC state.pc
             registers := registers
             registers_well_typed :=
@@ -114,7 +114,7 @@ def machineStep {n m : Nat} {types : RegTypes n}
       match hlt : executeLt state.registers instr with
       | .error e => .trap e
       | .ok registers =>
-          .continue {
+          .nextState {
             pc := sequentialPC state.pc
             registers := registers
             registers_well_typed :=
@@ -124,7 +124,7 @@ def machineStep {n m : Nat} {types : RegTypes n}
       match heq : executeEq state.registers instr with
       | .error e => .trap e
       | .ok registers =>
-          .continue {
+          .nextState {
             pc := sequentialPC state.pc
             registers := registers
             registers_well_typed :=
@@ -134,18 +134,18 @@ def machineStep {n m : Nat} {types : RegTypes n}
       match hnot : executeNot state.registers instr with
       | .error e => .trap e
       | .ok registers =>
-          .continue {
+          .nextState {
             pc := sequentialPC state.pc
             registers := registers
             registers_well_typed :=
               executeNot_preserves_well_typed state.registers_well_typed instr hnot
           }
   | .jump target =>
-      .continue { state with pc := target }
+      .nextState { state with pc := target }
   | .branch instr =>
       match executeBranch state.registers instr with
       | .error e => .trap e
-      | .ok target => .continue { state with pc := target }
+      | .ok target => .nextState { state with pc := target }
   | .retInt src _ =>
       match readInt state.registers src with
       | .error e => .trap e
@@ -167,7 +167,7 @@ theorem machineStep_preserves_well_typed
     (program : FiniteProgram n m types)
     (state : MachineState n m types) :
     match machineStep program state with
-    | .continue next => WellTyped types next.registers
+    | .nextState next => WellTyped types next.registers
     | .halt _ => True
     | .haltVoid => True
     | .trap _ => True := by
