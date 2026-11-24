@@ -1,6 +1,6 @@
 # Capstan
 
-**A programming language with C/Java-style syntax in which the most common classes of security vulnerability cannot be written.**
+**A security-oriented, self-hosting programming language with C/Java-style syntax.** Capstan uses static checks, runtime guards and explicit trust boundaries to prevent or contain classes of defects; the scope and residual gaps are documented in [CWE coverage](docs/CWE-COVERAGE.md) and the [threat model](docs/assurance/THREAT-MODEL.md). These guarantees apply to the Capstan program model, not automatically to the C runtime, compiler toolchain or host platform.
 
 ```java
 policy ReadRecord(User u, Record r) {
@@ -52,6 +52,10 @@ build/stage3.c          must be byte-for-byte identical to stage2.c (the fixpoin
 The compiler also passes its own checks: it reads source files as `Tainted`, and
 text from a source file reaches the generated C only through `validate_ident()`,
 `validate_int()` and `escape_c()`.
+
+## Architecture status
+
+The released development path remains the C-backed implementation shown by the current build: Capstan source is checked and lowered to generated C, then GCC or Clang produces the native executable. The self-hosting compiler and the C runtime/garbage collector are part of the current trusted computing base. The C-free architecture, CCAM typed core IR and Lean verification work are an active, separate development programme; they are not yet the default compiler or a replacement for the current C backend. See [DESIGN-MAP.md](docs/DESIGN-MAP.md) and the proof-boundary discussion in [THREAT-MODEL.md](docs/assurance/THREAT-MODEL.md).
 
 ## Quick start
 
@@ -153,7 +157,7 @@ See [docs/TESTING.md](docs/TESTING.md).
 Capstan (0.4.0, unreleased) is a working, self-hosting language with garbage
 collection, enums, modules, struct methods, a formatter, a language server and range analysis. It is **not yet production-ready**: `sql_query()` and
 `run()` are demonstration sinks that print rather than execute, and there are no
-generics or concurrency yet. See the [design map](docs/DESIGN-MAP.md).
+generics or concurrency yet. The C backend remains the current execution path. The CCAM/C-free and Lean work is under active development and must not be read as an already integrated native backend or an end-to-end proof. See the [design map](docs/DESIGN-MAP.md) and [assurance boundary](docs/assurance/README.md).
 
 ## Performance
 
