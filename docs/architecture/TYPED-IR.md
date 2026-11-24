@@ -131,7 +131,7 @@ Let:
 - `R` be a finite register vector whose cells are `Uninit`, `Int64(n)` or `Bool(b)`;
 - `F = (fn, pc, R, retDst)` be a frame, where `pc` is the next instruction and `retDst` is the destination in the caller, or `None` for the entry frame / void return;
 - `S = (frames, steps)` be a running machine state, with the active frame at the top of a non-empty stack;
-- `Outcome = Running(S) | Halt(v) | HaltVoid | Trap(code, fn, pc)`.
+- `Outcome = Running(S) | Halt(v) | HaltVoid | Trap(code, fn, pc, detail)`.
 
 The program and configured limits are parameters to the transition relation, not mutable state. A frame's register vector has the exact length and type vector declared by its function. Register writes preserve the declared type and set the cell to initialised.
 
@@ -197,7 +197,7 @@ A return whose value is uninitialised traps before the frame is popped. Structur
 
 ### 10.8 Explicit trap
 
-`trap(reason)` produces terminal `Trap(explicit_trap, fn, pc)` with the validated reason attached as diagnostic detail. No caller frame is resumed and no destination is written.
+`trap(reason)` produces terminal `Trap(explicit_trap, fn, pc, reason)` with the validated reason attached as diagnostic detail. The reason is 1–64 ASCII characters matching `[a-z][a-z0-9_]{0,63}`; all other forms are rejected during structural validation. No caller frame is resumed and no destination is written.
 
 ### 10.9 Determinism
 
