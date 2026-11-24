@@ -1,5 +1,5 @@
 // spec: types.int
-// expect-proved: 0
+// expect-proved: 1 // only the unary -1 is proved; remainder stays checked
 // The exceptional pair must stay on the checked remainder path.
 int main() {
     int min = 0x8000000000000000;
