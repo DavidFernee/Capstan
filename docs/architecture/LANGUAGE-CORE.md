@@ -54,12 +54,12 @@ The left operand is always evaluated first. The right operand is evaluated only 
 
 ### 3.3 Assignment
 
-For simple local assignment `x = e`, evaluate `e) completely, then replace the value of `x`.
+For simple local assignment `x = e`, evaluate `e` completely, then replace the value of `x`.
 
 Compound assignment is defined by sequencing, not by textual substitution into an implementation-language expression. For an assignable location `L` and operation `op`, `L op= e` means:
 1. evaluate and retain the location designator exactly once;
 2. read and retain the old value at that location;
-3. evaluate `e);
+3. evaluate `e`;
 4. apply `op` to the retained old value and the new RHS value;
 5. write the result to the retained location.
 
@@ -71,7 +71,7 @@ Integers are signed 64-bit two's-complement values. Let `MIN = -2^63` and `MAX =
 
 For checked addition, subtraction and multiplication, calculate the mathematical integer result first. If it is outside [MIN, MAX], execution traps with `integer_overflow`; otherwise the exact result is returned.
 
-Division and remainder use truncation toward zero. For nonzero divisor `b), define the mathematical quotient `q = trunc(a / b)` and remainder `r = a - q*b`. Therefore `|r| < |b|`, and a nonzero remainder has the sign of `a`.
+Division and remainder use truncation toward zero. For nonzero divisor `b`, define the mathematical quotient `q = trunc(a / b)` and remainder `r = a - q*b`. Therefore `|r| < |b|`, and a nonzero remainder has the sign of `a`.
 
 - If `b == 0`, division and remainder trap with `division_by_zero`.
 - `MIN / -1` traps with `integer_overflow`, because the quotient is not representable as `int`.
