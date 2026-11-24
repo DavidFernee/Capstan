@@ -1010,11 +1010,11 @@ int main(void) {
     test_gc_release_accounting();
     test_gc_stack_bounds();
     test_secret_page_free_stack();
-    test_gc_secret_free_slots();
-    test_gc_large_secret_mapping();
     test_gc_release();
     test_secret_env_name();
     test_secret_wipe();
+    test_gc_secret_free_slots();
+    test_gc_large_secret_mapping();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
