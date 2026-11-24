@@ -123,6 +123,14 @@ static int cap_gc_size_mul(size_t a, size_t b, size_t *out) {
     *out = a * b;
     return 1;
 }
+/* Convert an OS-provided stack base/size pair without pointer arithmetic. */
+static int cap_gc_stack_bounds(uintptr_t base, size_t size, uintptr_t *low, uintptr_t *high) {
+    if (size > UINTPTR_MAX - base) return 0;
+    uintptr_t end = base + size;
+    *low = base;
+    *high = end;
+    return 1;
+}
 static size_t cap_gc_next_capacity(size_t current, size_t required, size_t initial) {
     size_t n = current ? current : initial;
     if (!n) n = 1;
@@ -273,8 +281,11 @@ static void cap_gc_init(void) {
     size_t stack_size = pthread_get_stacksize_np(pthread_self());
     if (stack_size > stack_top)
         cap_panic("invalid thread stack bounds", "CWE-682", 0);
-    cap_gc.stack_top = (char *)stack_top;
-    low = (char *)(stack_top - stack_size);
+    uintptr_t stack_low, checked_top;
+    if (!cap_gc_stack_bounds(stack_top - stack_size, stack_size, &stack_low, &checked_top))
+        cap_panic("invalid thread stack bounds", "CWE-682", 0);
+    cap_gc.stack_top = (char *)checked_top;
+    low = (char *)stack_low;
 #elif defined(__linux__)
     pthread_attr_t attr;
     void *addr = NULL;
@@ -283,11 +294,11 @@ static void cap_gc_init(void) {
         int stack_result = pthread_attr_getstack(&attr, &addr, &size);
         pthread_attr_destroy(&attr);
         if (stack_result == 0) {
-            uintptr_t stack_base = (uintptr_t)addr;
-            if (size > UINTPTR_MAX - stack_base)
+            uintptr_t stack_low, stack_high;
+            if (!cap_gc_stack_bounds((uintptr_t)addr, size, &stack_low, &stack_high))
                 cap_panic("invalid thread stack bounds", "CWE-682", 0);
-            cap_gc.stack_top = (char *)(stack_base + size);
-            low = (char *)stack_base;
+            cap_gc.stack_top = (char *)stack_high;
+            low = (char *)stack_low;
         }
     }
 #endif
@@ -295,10 +306,11 @@ static void cap_gc_init(void) {
     if (low) cap_install_stack_guard(low);   /* AddressSanitizer installs its own */
 #endif
     if (!cap_gc.stack_top) {
-        uintptr_t frame = (uintptr_t)__builtin_frame_address(0);
-        if (frame > UINTPTR_MAX - 4096)
+        uintptr_t stack_low, stack_high;
+        if (!cap_gc_stack_bounds((uintptr_t)__builtin_frame_address(0), 4096,
+                                 &stack_low, &stack_high))
             cap_panic("invalid fallback stack bounds", "CWE-682", 0);
-        cap_gc.stack_top = (char *)(frame + 4096);
+        cap_gc.stack_top = (char *)stack_high;
     }
 }
 
