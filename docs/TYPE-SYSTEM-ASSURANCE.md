@@ -626,3 +626,59 @@ A conservative model is to make impl visibility explicit, allow private impls on
 - Verify diagnostics are deterministic under import order and aliases and do not crash on unresolved or cyclic declaration graphs.
 
 These are design and acceptance requirements, not claims that v0.5 visibility or generic checking is implemented.
+
+
+## 21. Deterministic generic inference, qualifier preservation and call grammar
+
+The v0.5 proposal permits inference from value arguments when there is exactly one solution, but does not define the unification relation, conflict handling, interaction with existing assignability conversions, or concrete call grammar. These are required for a sound implementation.
+
+### 21.1 Define inference as structural unification, not assignability
+
+For v0.5, use a deliberately narrow algorithm:
+
+1. Resolve the generic function and its declared type-parameter binders before examining arguments.
+2. Type-check each value argument exactly once under the ordinary left-to-right evaluation rules.
+3. Unify each formal parameter type with its corresponding actual argument type structurally. A type variable binds to one complete actual type; constructors and nominal declaration identities must match recursively.
+4. Repeated occurrences of one type variable must produce exactly the same type identity. Conflicting deductions are an inference error, not a choice of a common supertype.
+5. Generic arguments are invariant. Do not use assignment conversions, optional lifting, text conversions, interface satisfaction or method-name coincidence to invent a unification result.
+6. Reject an unconstrained type variable. Do not infer from the expected return type, later use of the result, ambient context, runtime values or the set of currently available implementations.
+7. After all type variables are uniquely bound, substitute the complete type vector, validate every declared interface obligation and visibility rule, and only then select concrete implementations and check the instantiated body.
+8. If inference is ambiguous or conflicting, require explicit type arguments or reject the call. Never select a result based on declaration/import order.
+
+The design should state how receiver types contribute to method inference. If they do, use the same structural rule and include the receiver as a specified inference input; do not let method lookup create a second, less constrained inference path.
+
+### 21.2 Preserve security and nominal qualifiers
+
+Inference and substitution must preserve the exact type constructor and nominal identity at every node. In particular:
+
+- `Tainted` must never infer as trusted `string`, nor the reverse.
+- `Secret`, `Html` and `LogText` remain distinct and cannot be erased or widened by inference.
+- `Grant<P>` retains the exact resolved policy declaration identity; matching policy spelling is insufficient.
+- Generic nominal arguments preserve exact declaration identity and invariance.
+- Optional lifting, where allowed by ordinary assignment, occurs only after inference has produced a complete type vector; it must not weaken the unification relation.
+- Interface constraints do not grant conversion or subtyping. They establish only the explicitly declared operations for the exact substituted type.
+
+The same canonical type identity must drive inference, substitution, constraint lookup, implementation selection, visibility and security checks. Diagnostic type strings are not identity keys.
+
+### 21.3 Make explicit type-argument syntax unambiguous
+
+The proposal says explicit type arguments are available but gives no call-site grammar. The parser already uses `<` and `>` as expression operators and adjacent `>` tokens also form shifts and nested type closers. Choose and document a grammar that does not reinterpret ordinary comparisons.
+
+A conservative option is a visibly distinct turbofish form, for example `identity::<int>(7)`, with a dedicated parser production. If the design instead chooses `identity<int>(7)`, require token-aware lookahead and prove that expressions such as `a < b`, `a < b > (c)`, nested generic calls, shifts and chained comparisons retain their existing parse. Do not rely on whitespace conventions.
+
+Specify whether all type parameters must be supplied explicitly or whether a trailing subset may still be inferred. The simpler v0.5 rule is all-or-none explicit arguments, with exact arity and no partially specified lists.
+
+### 21.4 Required adversarial tests
+
+- Infer a single type variable from one argument and from nested generic parameter types.
+- Reject conflicting repeated deductions, including `T` appearing in two argument positions with different actual types.
+- Reject inference from an expected return type, later assignment, method-name coincidence or a merely available impl.
+- Reject unresolved/ambiguous type variables and wrong explicit type-argument arity.
+- Verify optional lifting is applied only after inference and cannot merge `T` with `T?`.
+- Verify `Tainted`, `string`, `Secret`, `Html`, `LogText` and distinct `Grant<P>` identities never unify by widening or spelling.
+- Verify generic constraints are checked after complete substitution and a missing/ambiguous concrete impl is rejected before code generation.
+- Verify inference is independent of source/import order and does not speculate by evaluating arguments more than once.
+- Parser tests cover the chosen explicit type-argument syntax, nested generic closers, `<` comparisons, `>` comparisons, shifts and malformed/partial argument lists.
+- Verify the same call produces identical inferred type identities and diagnostics in bootstrap and self-hosted compiler runs.
+
+These requirements specify acceptance criteria; they do not claim generic inference or the proposed syntax currently exists.
