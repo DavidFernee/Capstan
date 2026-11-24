@@ -222,6 +222,58 @@ theorem fin_eq_of_val_eq {n : Nat} {a b : Fin n}
           rfl
 
 
+/-- The type component of a successful runtime replacement preserves the relation. -/
+theorem runtimeWriteRegister_type_at_preserved
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    {runtime updated : List RuntimeRegister}
+    (hrel : RuntimeRegisterFileRelation types regs runtime)
+    (index : Fin n) (replacement : RuntimeRegister)
+    (hdecl : replacement.declaredType = types index)
+    (hwrite : runtimeWriteRegister runtime index.val replacement = .ok updated) :
+    ∀ j, runtimeTypeAt updated j.val = some (types j) := by
+  intro j
+  by_cases hjiVal : j.val = index.val
+  · have hji : j = index := fin_eq_of_val_eq hjiVal
+    subst j
+    have htarget :=
+      runtimeWriteRegister_target runtime updated index.val replacement hwrite
+    simp [runtimeTypeAt, htarget, hdecl]
+  · have hother :=
+      runtimeWriteRegister_other_unchanged
+        runtime updated index.val j.val replacement hwrite hjiVal
+    simpa [runtimeTypeAt, hother] using hrel.type_at j
+
+/-- The value component of a successful runtime replacement preserves the relation. -/
+theorem runtimeWriteRegister_value_at_preserved
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    {runtime updated : List RuntimeRegister}
+    (hrel : RuntimeRegisterFileRelation types regs runtime)
+    (index : Fin n) (replacement : RuntimeRegister)
+    (hinit : replacement.initialized = true)
+    (hwrite : runtimeWriteRegister runtime index.val replacement = .ok updated) :
+    ∀ j, runtimeValueAt updated j.val = (write regs index replacement.asVal) j := by
+  intro j
+  by_cases hjiVal : j.val = index.val
+  · have hji : j = index := fin_eq_of_val_eq hjiVal
+    subst j
+    have htarget :=
+      runtimeWriteRegister_target runtime updated index.val replacement hwrite
+    have hpayload :=
+      RuntimeRegister.value?_of_initialized replacement hinit
+    simp [runtimeValueAt, htarget, hpayload, write]
+  · have hjiFin : j ≠ index := by
+      intro heq
+      exact hjiVal (congrArg Fin.val heq)
+    have hother :=
+      runtimeWriteRegister_other_unchanged
+        runtime updated index.val j.val replacement hwrite hjiVal
+    have hvalue : runtimeValueAt updated j.val = runtimeValueAt runtime j.val := by
+      change (runtimeRegisterAt updated j.val).bind RuntimeRegister.value? =
+        (runtimeRegisterAt runtime j.val).bind RuntimeRegister.value?
+      rw [hother]
+    rw [hvalue, hrel.value_at j]
+    simp [write, hjiFin]
+
 /-- A successful typed runtime replacement preserves the finite/list relation.
 
 The finite model receives the value selected by the replacement's declared
@@ -237,48 +289,13 @@ theorem runtimeWriteRegister_preserves_relation
     (hwrite : runtimeWriteRegister runtime index.val replacement = .ok updated) :
     RuntimeRegisterFileRelation types
       (write regs index replacement.asVal) updated := by
-  have hvalueType : hasType replacement.asVal (types index) := by
-    rw [← hdecl]
-    exact RuntimeRegister.asVal_hasType replacement
   refine {
     length_eq := by
       rw [runtimeWriteRegister_length runtime updated index.val replacement hwrite]
       exact hrel.length_eq
-    type_at := ?_
-    value_at := ?_
+    type_at := runtimeWriteRegister_type_at_preserved hrel index replacement hdecl hwrite
+    value_at := runtimeWriteRegister_value_at_preserved hrel index replacement hinit hwrite
   }
-  · intro j
-    by_cases hjiVal : j.val = index.val
-    · have hji : j = index := fin_eq_of_val_eq hjiVal
-      subst j
-      have htarget :=
-        runtimeWriteRegister_target runtime updated index.val replacement hwrite
-      simp [runtimeTypeAt, htarget, hdecl]
-    · have hother :=
-        runtimeWriteRegister_other_unchanged
-          runtime updated index.val j.val replacement hwrite hjiVal
-      simpa [runtimeTypeAt, hother] using hrel.type_at j
-  · intro j
-    by_cases hjiVal : j.val = index.val
-    · have hji : j = index := fin_eq_of_val_eq hjiVal
-      subst j
-      have htarget :=
-        runtimeWriteRegister_target runtime updated index.val replacement hwrite
-      have hpayload :=
-        RuntimeRegister.value?_of_initialized replacement hinit
-      simp [runtimeValueAt, htarget, hpayload, write]
-    · have hjiFin : j ≠ index := by
-        intro heq
-        exact hjiVal (congrArg Fin.val heq)
-      have hother :=
-        runtimeWriteRegister_other_unchanged
-          runtime updated index.val j.val replacement hwrite hjiVal
-      have hvalue : runtimeValueAt updated j.val = runtimeValueAt runtime j.val := by
-        change (runtimeRegisterAt updated j.val).bind RuntimeRegister.value? =
-          (runtimeRegisterAt runtime j.val).bind RuntimeRegister.value?
-        rw [hother]
-      rw [hvalue, hrel.value_at j]
-      simp [write, hjiFin]
 
 /-- Native-style dynamic integer read, including the invalid-index check. -/
 def runtimeReadInt (registers : List RuntimeRegister) (index : Nat) :
