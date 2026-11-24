@@ -76,15 +76,21 @@ The statement judgement is checked against the enclosing function result type:
 | `int x = e;` / `bool x = e;` | `e` has exactly the declared type; then add `x:T` to the block environment. |
 | `x = e;` | `x:T ∈ Γ` and `e:T`. |
 | scalar `x op= e;` | `x:int ∈ Γ` and `e:int`; `op` is one of `+ - * / %`. |
-| `if (e) s1 else s2` | `e:bool`; check both branches under the incoming environment. |
-| `while (e) s` | `e:bool`; check the body under the incoming environment. |
+| `if (e) s1 [else s2]` | `e:bool`; check each present branch under the incoming environment. |
+| `while (e) s` | `e:bool`; check `e` as `bool` and the body under the incoming environment. |
+| `for (init; cond; step) s` | check `init` in a loop-local scope; `cond:bool`; check `step` and the body in that scope; loop-local declarations do not escape. |
+| `f(args);` | `f` exists in `Σ`; argument count and types match its signature. A non-void result may be discarded. |
 | `return e;` | the enclosing function returns `T != void` and `e:T`. |
 | `return;` | the enclosing function returns `void`. |
 | `break;`, `continue;` | occur only within a loop. |
 
-Block-local declarations do not escape their block. Every variable read must
-refer to a name in `Γ`; because declarations require initialisers, an
-uninitialised local is a source typing error. The CCAM register model is more
+Block-local declarations do not escape their block. A `for` initializer's
+scope includes its condition, body and step but ends after the loop. Every
+variable read must refer to a name in `Γ`; because declarations require
+initialisers, an uninitialised local is a source typing error. Every reachable
+path through a non-void function must terminate in a return of its declared
+type or a defined trap; every reachable path through a void function may
+return void or fall through to its implicit void completion. The CCAM register model is more
 defensive: non-parameter registers start uninitialised and a read of one traps,
 so malformed or incorrectly lowered programs cannot turn this source guarantee
 into an unchecked host-language read.
