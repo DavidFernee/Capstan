@@ -186,11 +186,14 @@ def popNestedCallFrame {Frame : Type}
 /-- A successful nested return restores the caller at the top of the frame list. -/
 theorem popNestedCallFrame_restores_caller
     {Frame : Type} (stack : CallStack Frame)
+    (result : Frame × List Frame)
     (callee caller : Frame) (rest : List Frame)
     (hframes : stack.frames = callee :: caller :: rest)
-    (h : popNestedCallFrame stack = .ok (callee, caller :: rest)) :
-    (caller :: rest).head? = some caller := by
-  simp
+    (h : popNestedCallFrame stack = .ok result) :
+    result.2.head? = some caller := by
+  simp [popNestedCallFrame, hframes] at h
+  cases h
+  rfl
 
 /-- A successful nested return decreases call depth by exactly one. -/
 theorem popNestedCallFrame_decreases_depth
