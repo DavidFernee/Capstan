@@ -309,7 +309,7 @@ Size measure_flex(Ui ui, View v, Laid l, Constraints c, string id, int depth, bo
             seen += kv2.grow;
             int share = mul_div(free, seen, int_max(1, total_grow)) - given;
             given += share;
-            Laid kl2 = measure(ui, kv2, child_constraints(v, kv2, share, max_cross, share, horizontal), $"{id}.{b}", depth + 1);
+            Laid kl2 = measure(ui, kv2, child_constraints(v, kv2, share, max_cross, share, horizontal), $"{id}.{b}", depth + 1, line_count);
             kids[b] = kl2;
             used += main_of(kl2, horizontal);
         }
@@ -381,7 +381,7 @@ Size measure_stack(Ui ui, View v, Laid l, Constraints c, string id, int depth, L
     int w = 0;
     int h = 0;
     for (int i = 0; i < v.kids.len(); i += 1) {
-        Laid k = measure(ui, v.kids[i], c.loosen(), $"{id}.{i}", depth + 1);
+        Laid k = measure(ui, v.kids[i], c.loosen(), $"{id}.{i}", depth + 1, line_count);
         w = int_max(w, k.frame.w);
         h = int_max(h, k.frame.h);
         l.kids.push(k);
@@ -404,7 +404,7 @@ int align_off(int align, int room) {
 Size measure_scroll(Ui ui, View v, Laid l, Constraints c, string id, int depth, List<int> line_count) {
     if (v.kids.len() == 0) { return size_of(0, 0); }
     Constraints inner = new Constraints{min_w: c.min_w, min_h: 0, max_w: c.max_w, max_h: UNBOUNDED};
-    Laid k = measure(ui, v.kids[0], inner, $"{id}.0", depth + 1);
+    Laid k = measure(ui, v.kids[0], inner, $"{id}.0", depth + 1, line_count);
     l.kids.push(k);
     l.content_h = k.frame.h;
     int w = c.fit_w(k.frame.w);
