@@ -22,5 +22,6 @@ Run `python3 tests/k0/check.py` (also part of `tests/run.sh`) to verify that:
 - incomplete year-directory checkouts and malformed Linux-published records fail closed;
 - source snapshots without Git provenance, with uncommitted/untracked changes, or with sparse/missing tracked records are rejected;
 - K1.10 candidates are labelled proof-eligible projections, never as established proofs without implementation-linked machine-checked evidence;
+- memory-safety consequences in the CNA body outrank non-memory causes in the title;
 - teardown and data-race phrases match the K0 projection rule without matching ordinary prose;
 - use-after-free and double-free remain outside today's kernel capability and project only conditionally on K1.1.
