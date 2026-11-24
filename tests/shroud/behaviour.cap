@@ -1,0 +1,328 @@
+// Shroud behaviour tests: layout, input, focus, text editing, safety and accessibility.
+// Built with lib/shroud/*.cap and run by tests/shroud/check.py from the repository
+// root. Prints "ok <name>" or "FAIL <name>: <detail>" per check and exits 1 on failure.
+
+struct Tally {
+    int failed;
+    int passed;
+}
+
+void expect(Tally t, bool cond, string name, string detail) {
+    if (cond) {
+        t.passed += 1;
+    } else {
+        t.failed += 1;
+        println("FAIL " + name + ": " + detail);
+    }
+}
+
+void expect_int(Tally t, int got, int want, string name) {
+    expect(t, got == want, name, $"got {got}, want {want}");
+}
+
+Laid laid_of(Ui ui, string id) {
+    if (let l = ui.root) {
+        if (let n = find_laid(l, id)) { return n; }
+    }
+    println("FAIL lookup: no view " + id);
+    return new_laid(text(""), "");
+}
+
+List<Msg> click_at(Ui ui, string id, int t) {
+    Laid n = laid_of(ui, id);
+    int x = n.frame.x + n.frame.w / 2;
+    int y = n.frame.y + n.frame.h / 2;
+    List<Msg> a = ui.handle(pointer_event(EV_POINTER_DOWN, x, y, t));
+    List<Msg> b = ui.handle(pointer_event(EV_POINTER_UP, x, y, t + 50));
+    for (int i = 0; i < b.len(); i += 1) { a.push(b[i]); }
+    return a;
+}
+
+void test_layout(Tally t, Ui ui) {
+    // A row of fixed boxes and two flexible ones sharing the rest 1:3.
+    View r = row().spacing(10).width(400).height(50)
+        .add(box().frame(40, 20).key("a"))
+        .add(box().grow(1).key("b"))
+        .add(box().grow(3).key("c"))
+        .add(box().frame(60, 50).key("d"));
+    ui.render(column().add(r), 0);
+    expect_int(t, laid_of(ui, "a").frame.w, fx(40), "row: fixed child keeps its width");
+    // 400 - 40 - 60 - 3 * 10 = 270 to share: 67.5 and 202.5, snapped to pixels.
+    expect_int(t, laid_of(ui, "b").frame.w + laid_of(ui, "c").frame.w, fx(270), "row: flexible children share the rest");
+    expect(t, int_abs(laid_of(ui, "b").frame.w - fx(68)) <= FX, "row: shares are proportional", $"{laid_of(ui, "b").frame.w}");
+    expect_int(t, laid_of(ui, "d").frame.x, fx(340), "row: last child ends at the row's end");
+    expect_int(t, laid_of(ui, "a").frame.y, fx(15), "row: children centred across by default");
+    // Column alignment and padding.
+    View c = column().padding(10).width(200).align(ALIGN_START, ALIGN_END)
+        .add(box().frame(50, 10).key("p"))
+        .add(box().frame(80, 10).key("q").align_self(ALIGN_CENTER));
+    ui.render(column().add(c), 0);
+    expect_int(t, laid_of(ui, "p").frame.x, fx(140), "column: end alignment inside padding");
+    expect_int(t, laid_of(ui, "q").frame.x, fx(60), "column: align_self overrides");
+    expect_int(t, laid_of(ui, "p").frame.y, fx(10), "column: padding offsets the first child");
+    // Space between.
+    View s = row().width(300).align(ALIGN_BETWEEN, ALIGN_START).add(box().frame(20, 10).key("s1")).add(box().frame(20, 10).key("s2")).add(box().frame(20, 10).key("s3"));
+    ui.render(column().add(s), 0);
+    expect_int(t, laid_of(ui, "s2").frame.x, fx(140), "row: space between");
+    expect_int(t, laid_of(ui, "s3").frame.x, fx(280), "row: space between reaches the end");
+    // Text wraps to the space it is given.
+    ui.render(column().add(column().width(120).add(text("one two three four five six seven").key("w"))), 0);
+    expect(t, laid_of(ui, "w").lines.len() / 2 >= 3, "text: wraps in a narrow column", $"{laid_of(ui, "w").lines.len() / 2} lines");
+    expect(t, laid_of(ui, "w").frame.w <= fx(120), "text: stays within its width", "too wide");
+    ui.render(column().add(column().width(120).add(text("one two three four five six seven").max_lines(2).key("w2"))), 0);
+    expect_int(t, laid_of(ui, "w2").lines.len() / 2, 2, "text: max_lines");
+    // A word too long for the line is broken inside.
+    ui.render(column().add(column().width(60).add(text("Supercalifragilistic").key("long"))), 0);
+    expect(t, laid_of(ui, "long").lines.len() / 2 >= 2, "text: long word broken", "not broken");
+}
+
+void test_buttons_and_guard(Tally t, Ui ui) {
+    View v = column().spacing(8).add(button("Save", "save").key("save")).add(button("Erase", "erase").danger().key("erase")).add(button("Off", "off").disabled(true).key("off"));
+    ui.render(v, 1000);
+    List<Msg> m = click_at(ui, "save", 1100);
+    expect(t, m.len() == 1 && m[0].action == "save", "button: click sends its action", $"{m.len()} messages");
+    // A danger button is guarded: a click right after it appeared is ignored.
+    List<Msg> m2 = click_at(ui, "erase", 1100);
+    expect_int(t, m2.len(), 0, "guard: click within 500 ms of appearing is ignored (CWE-1021)");
+    List<Msg> m3 = click_at(ui, "erase", 1600);
+    expect(t, m3.len() == 1 && m3[0].action == "erase", "guard: click after 500 ms is accepted", $"{m3.len()} messages");
+    // When the button moves, the guard starts again.
+    View moved = column().spacing(8).add(text("A new line pushes the button down")).add(button("Save", "save").key("save")).add(button("Erase", "erase").danger().key("erase"));
+    ui.render(moved, 2000);
+    List<Msg> m4 = click_at(ui, "erase", 2100);
+    expect_int(t, m4.len(), 0, "guard: restarts when the control moves");
+    ui.render(v, 2500);
+    List<Msg> m5 = click_at(ui, "off", 3000);
+    expect_int(t, m5.len(), 0, "button: disabled buttons do nothing");
+    // Press on one button and release on another: nothing.
+    ui.render(v, 4000);
+    Laid a = laid_of(ui, "save");
+    Laid b = laid_of(ui, "erase");
+    List<Msg> m6 = ui.handle(pointer_event(EV_POINTER_DOWN, a.frame.x + FX, a.frame.y + FX, 5000));
+    List<Msg> m7 = ui.handle(pointer_event(EV_POINTER_UP, b.frame.x + FX, b.frame.y + FX, 5050));
+    expect_int(t, m6.len() + m7.len(), 0, "button: release elsewhere cancels");
+}
+
+void test_keyboard(Tally t, Ui ui) {
+    View v = column().add(button("One", "one").key("k1")).add(text("label")).add(checkbox("Two", false, "two").key("k2")).add(button("Three", "three").disabled(true).key("k3")).add(slider(5, 0, 10, "s").key("k4").label("Level"));
+    ui.render(v, 0);
+    ui.handle(key_event(KEY_TAB, 0, 10));
+    expect(t, ui.focus == "k1", "focus: Tab goes to the first control", ui.focus);
+    expect(t, ui.focus_visible, "focus: keyboard use shows the focus ring", "hidden");
+    ui.handle(key_event(KEY_TAB, 0, 20));
+    expect(t, ui.focus == "k2", "focus: Tab skips text", ui.focus);
+    ui.handle(key_event(KEY_TAB, 0, 30));
+    expect(t, ui.focus == "k4", "focus: Tab skips disabled controls", ui.focus);
+    ui.handle(key_event(KEY_TAB, 0, 40));
+    expect(t, ui.focus == "k1", "focus: Tab wraps around", ui.focus);
+    ui.handle(key_event(KEY_TAB, MOD_SHIFT, 50));
+    expect(t, ui.focus == "k4", "focus: Shift+Tab goes back", ui.focus);
+    List<Msg> m = ui.handle(key_event(KEY_RIGHT, 0, 60));
+    expect(t, m.len() == 1 && m[0].value == 6, "slider: right arrow steps up", $"{m.len()}");
+    List<Msg> m2 = ui.handle(key_event(KEY_END, 0, 70));
+    expect(t, m2.len() == 1 && m2[0].value == 10, "slider: End goes to the maximum", $"{m2.len()}");
+    ui.handle(key_event(KEY_TAB, MOD_SHIFT, 80));
+    List<Msg> m3 = ui.handle(key_event(KEY_SPACE, 0, 90));
+    expect(t, m3.len() == 1 && m3[0].action == "two" && m3[0].value == 1, "checkbox: Space toggles", $"{m3.len()}");
+    ui.handle(key_event(KEY_TAB, MOD_SHIFT, 100));
+    List<Msg> m4 = ui.handle(key_event(KEY_ENTER, 0, 110));
+    expect(t, m4.len() == 1 && m4[0].action == "one", "button: Enter activates", $"{m4.len()}");
+    // A pointer press hides the focus ring again.
+    click_at(ui, "k1", 200);
+    expect(t, !ui.focus_visible, "focus: pointer use hides the focus ring", "shown");
+    // Focus is dropped when its control disappears.
+    ui.render(column().add(text("gone")), 300);
+    expect(t, ui.focus == "", "focus: cleared when the control goes away", ui.focus);
+}
+
+// Applies text-field messages to `value`, as an application would.
+Tainted apply_text(List<Msg> ms, Tainted value) {
+    Tainted v = value;
+    for (int i = 0; i < ms.len(); i += 1) {
+        if (ms[i].action == "f" && ms[i].value == 0) { v = ms[i].text; }
+    }
+    return v;
+}
+
+void test_text_field(Tally t, Ui ui) {
+    Tainted value = taint("");
+    ui.render(column().add(text_field("f", value, "Name").key("f")), 0);
+    click_at(ui, "f", 10);
+    expect(t, ui.focus == "f", "field: click focuses", ui.focus);
+    value = apply_text(ui.handle(text_event(taint("héllo"), 20)), value);
+    expect(t, value.len() == 6, "field: typed text arrives (UTF-8)", $"{value.len()} bytes");
+    ui.render(column().add(text_field("f", value, "Name").key("f")), 30);
+    // Move left over "o" and "l", then backspace twice: removes "l" and "l".
+    ui.handle(key_event(KEY_LEFT, 0, 40));
+    value = apply_text(ui.handle(key_event(KEY_BACKSPACE, 0, 50)), value);
+    ui.render(column().add(text_field("f", value, "Name").key("f")), 55);
+    value = apply_text(ui.handle(key_event(KEY_BACKSPACE, 0, 60)), value);
+    ui.render(column().add(text_field("f", value, "Name").key("f")), 65);
+    expect_int(t, value.len(), 4, "field: backspace removes whole characters");
+    // The caret is now after the two-byte "é"; backspace removes both bytes.
+    value = apply_text(ui.handle(key_event(KEY_BACKSPACE, 0, 70)), value);
+    ui.render(column().add(text_field("f", value, "Name").key("f")), 75);
+    expect_int(t, value.len(), 2, "field: backspace removes a two-byte character whole");
+    value = apply_text(ui.handle(key_event(KEY_BACKSPACE, 0, 80)), value);
+    expect_int(t, value.len(), 1, "field: backspace at the second character");
+    ui.render(column().add(text_field("f", value, "Name").key("f")), 85);
+    // Pasted line breaks and control characters are dropped from a one-line field.
+    value = apply_text(ui.handle(text_event(taint("a\nb\tc" + char_str(0x1B) + "d"), 90)), value);
+    expect_int(t, value.len(), 5, "field: control characters are not inserted");
+    ui.render(column().add(text_field("f", value, "Name").key("f")), 95);
+    List<Msg> enter = ui.handle(key_event(KEY_ENTER, 0, 100));
+    expect(t, enter.len() == 1 && enter[0].value == 1, "field: Enter submits", $"{enter.len()}");
+}
+
+void test_untrusted_display(Tally t) {
+    // "invoice", RIGHT-TO-LEFT OVERRIDE, "fdp.exe": shown as "invoice?fdp.exe" with a mark.
+    Tainted name = taint("invoice" + char_str(0xE2) + char_str(0x80) + char_str(0xAE) + "fdp.exe");
+    List<int> cps = untrusted_codepoints(name);
+    expect_int(t, cps.len(), 15, "untrusted text: one mark for the override");
+    expect_int(t, cps[7], REPLACEMENT_CHAR, "untrusted text: bidi override is made visible (CWE-451)");
+    List<int> zw = untrusted_codepoints(taint("pay" + char_str(0xE2) + char_str(0x80) + char_str(0x8B) + "pal"));
+    expect_int(t, zw[3], REPLACEMENT_CHAR, "untrusted text: zero-width space is made visible");
+    // The program's own text is left alone.
+    List<int> own = text_codepoints("a" + char_str(0xE2) + char_str(0x80) + char_str(0x8F) + "b");
+    expect_int(t, own[1], 0x200F, "trusted text: marks are kept");
+    // Strict UTF-8: overlong, surrogate and truncated forms become U+FFFD.
+    List<int> bad = utf8_decode(text_bytes_of("A" + char_str(0xC0) + char_str(0xAF) + char_str(0xED) + char_str(0xA0) + char_str(0x80) + char_str(0xE2) + char_str(0x82)));
+    expect_int(t, bad[0], 0x41, "utf-8: ASCII");
+    expect_int(t, bad[1], REPLACEMENT_CHAR, "utf-8: overlong form rejected");
+    expect_int(t, bad.len(), 7, "utf-8: one replacement per maximal subpart");
+}
+
+List<int> text_bytes_of(string s) { return string_bytes(s); }
+
+void test_a11y(Tally t, Ui ui) {
+    View v = column().add(text_field("p", taint("hunter2"), "Password").key("pw")).add(password_field("q", taint("hunter2"), "Secret").key("pw2")).add(button("", "x").key("nameless")).add(button("", "y").label("Close").key("named"));
+    ui.render(v, 0);
+    List<string> problems = a11y_problems(ui);
+    bool nameless = false;
+    bool named = false;
+    for (int i = 0; i < problems.len(); i += 1) {
+        if (problems[i].len() > 14 && problems[i].slice(0, 15) == "button nameless") { nameless = true; }
+        if (problems[i].len() > 11 && problems[i].slice(0, 12) == "button named") { named = true; }
+    }
+    expect(t, nameless, "a11y: a button without a name is reported", join(problems, "; "));
+    expect(t, !named, "a11y: label() names a button", join(problems, "; "));
+    if (let tree = a11y_tree(ui)) {
+        string j = a11y_json(tree);
+        expect(t, contains(j, "\"role\":\"password\""), "a11y: password fields have their own role", j);
+        expect(t, contains(j, "7 characters"), "a11y: password length is announced", j);
+        // The plain field exposes its value; the password field must not.
+        expect_int(t, count_of(j, "hunter2"), 1, "a11y: a password is never exposed");
+    } else {
+        expect(t, false, "a11y: tree exists", "none");
+    }
+    // Text below 4.5:1 contrast is reported while painting.
+    ui.render(column().add(text("faint").foreground(hex_rgb(0xBBBBBB))), 0);
+    expect_int(t, a11y_problems(ui).len(), 1, "a11y: low-contrast text is reported (WCAG 1.4.3)");
+}
+
+bool contains(string hay, string needle) { return count_of(hay, needle) > 0; }
+
+int count_of(string hay, string needle) {
+    int n = 0;
+    for (int i = 0; i + needle.len() <= hay.len(); i += 1) {
+        if (hay.slice(i, i + needle.len()) == needle) { n += 1; }
+    }
+    return n;
+}
+
+void test_themes(Tally t) {
+    List<string> light = theme_problems(light_theme());
+    List<string> dark = theme_problems(dark_theme());
+    expect(t, light.len() == 0, "theme: light passes WCAG 2.2 contrast", join(light, "; "));
+    expect(t, dark.len() == 0, "theme: dark passes WCAG 2.2 contrast", join(dark, "; "));
+    Theme bad = light_theme();
+    bad.text_secondary = hex_rgb(0xAAAAAA);
+    expect(t, theme_problems(bad).len() == 2, "theme: poor contrast is reported", join(theme_problems(bad), "; "));
+    expect_int(t, contrast_x100(hex_rgb(0x000000), hex_rgb(0xFFFFFF)), 2100, "contrast: black on white is 21:1");
+    expect_int(t, contrast_x100(hex_rgb(0x777777), hex_rgb(0xFFFFFF)), 447, "contrast: #777 on white is 4.47:1");
+}
+
+void test_scroll(Tally t, Ui ui) {
+    View list = column();
+    for (int i = 0; i < 40; i += 1) { list.add(button($"Item {i}", "item").key($"item{i}")); }
+    View v = column().add(scroll(list).height(200).key("sc"));
+    ui.render(v, 0);
+    Laid sc = laid_of(ui, "sc");
+    expect_int(t, sc.frame.h, fx(200), "scroll: viewport keeps its height");
+    expect(t, sc.content_h > fx(1000), "scroll: content is measured in full", $"{sc.content_h}");
+    ui.handle(wheel_event(sc.frame.x + FX, sc.frame.y + FX, fx(100), 10));
+    ui.render(v, 20);
+    expect_int(t, laid_of(ui, "item0").frame.y, laid_of(ui, "sc").frame.y - fx(100), "scroll: the wheel moves the content");
+    ui.handle(wheel_event(sc.frame.x + FX, sc.frame.y + FX, fx(100000), 30));
+    ui.render(v, 40);
+    Laid last = laid_of(ui, "item39");
+    expect_int(t, last.frame.bottom(), laid_of(ui, "sc").frame.bottom(), "scroll: clamped at the end");
+    // A control scrolled out of view cannot be clicked through the viewport's edge.
+    Laid first = laid_of(ui, "item0");
+    List<Msg> m = ui.handle(pointer_event(EV_POINTER_DOWN, first.frame.x + FX, first.frame.y + FX, 50));
+    List<Msg> m2 = ui.handle(pointer_event(EV_POINTER_UP, first.frame.x + FX, first.frame.y + FX, 60));
+    expect_int(t, m.len() + m2.len(), 0, "scroll: hidden content is not clickable");
+}
+
+void test_raster(Tally t) {
+    Pixmap pm = new_pixmap(10, 10);
+    Canvas cv = new_canvas(pm);
+    cv.fill_rect(rect(fx(2) + FX_HALF, fx(2), fx(3), fx(1)), solid(0xFF000000));
+    expect_int(t, ch_a(pm.get(2, 2)), 128, "raster: half-covered pixel is half opaque");
+    expect_int(t, ch_a(pm.get(3, 2)), 255, "raster: covered pixel is opaque");
+    expect_int(t, ch_a(pm.get(5, 2)), 128, "raster: right edge");
+    expect_int(t, ch_a(pm.get(6, 2)), 0, "raster: outside untouched");
+    // Even-odd leaves the hole in a ring; nonzero with opposite winding does too.
+    Pixmap pm2 = new_pixmap(20, 20);
+    Canvas cv2 = new_canvas(pm2);
+    cv2.fill_path(path_round_rect_ring(rect_px(0, 0, 20, 20), 0, fx(5)), solid(0xFF000000), FILL_NONZERO);
+    expect_int(t, ch_a(pm2.get(10, 10)), 0, "raster: ring has a hole");
+    expect_int(t, ch_a(pm2.get(2, 10)), 255, "raster: ring is filled");
+    // Clipping.
+    cv2.push_clip(rect_px(0, 0, 5, 5));
+    cv2.fill_rect(rect_px(0, 0, 20, 20), solid(0xFFFF0000));
+    cv2.pop_clip();
+    expect_int(t, ch_r(pm2.get(4, 4)), 255, "raster: inside the clip");
+    expect_int(t, ch_r(pm2.get(5, 5)), 0, "raster: outside the clip");
+    // Compositing is exact at the ends.
+    expect_int(t, over(premultiply(0x80FFFFFF), premultiply(0xFF000000)), 0xFF808080, "colour: 50% white over black");
+    expect_int(t, unpremultiply(premultiply(0xFF336699)), 0xFF336699, "colour: opaque colours survive premultiplying");
+    int back = unpremultiply(premultiply(0x80336699));
+    expect(t, ch_a(back) == 0x80 && int_abs(ch_r(back) - 0x33) <= 1 && int_abs(ch_g(back) - 0x66) <= 1 && int_abs(ch_b(back) - 0x99) <= 1, "colour: translucent colours survive within one step", $"{back}");
+}
+
+void test_scale(Tally t, Font f, Font b) {
+    // At 150% every length in dp is 1.5 device pixels.
+    Ui ui = new_ui(f, b, light_theme(), 300, 200, 384);
+    ui.render(column().add(box().frame(100, 40).key("x")), 0);
+    expect_int(t, laid_of(ui, "x").frame.w, fx(150), "scale: 100 dp is 150 px at 150%");
+    expect_int(t, laid_of(ui, "x").frame.h, fx(60), "scale: heights scale too");
+}
+
+int main() {
+    Font? regular = none;
+    Font? bold = none;
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
+    Tally t = new Tally{failed: 0, passed: 0};
+    if (let f = regular) {
+        if (let fb = bold) {
+            test_layout(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_buttons_and_guard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_keyboard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_text_field(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_scale(t, f, fb);
+        }
+    } else {
+        println("FAIL fonts: could not load lib/shroud/fonts");
+        return 1;
+    }
+    test_untrusted_display(t);
+    test_themes(t);
+    test_raster(t);
+    println($"{t.passed} passed, {t.failed} failed");
+    if (t.failed > 0) { return 1; }
+    return 0;
+}

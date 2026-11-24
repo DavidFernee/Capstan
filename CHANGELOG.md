@@ -5,6 +5,15 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Shroud, the cross-platform GUI library, begins (`lib/shroud/`, design in `docs/SHROUD.md`), written
+  entirely in Capstan: an anti-aliased integer rasteriser, a hardened TrueType parser, strict UTF-8
+  text, constraint layout, sixteen widgets, keyboard navigation and focus, an accessibility tree
+  with WCAG 2.2 checks, and light and dark themes. Text fields yield `Tainted`, deceptive
+  characters in untrusted text are shown rather than obeyed (CWE-451), and danger buttons are
+  guarded against clickjacking (CWE-1021). It renders headless to PNG until the platform embedders
+  arrive. Checked against exact polygon areas, fontTools, Python's UTF-8 decoder and zlib, fuzzed
+  with damaged fonts, and pinned by golden frames that are identical on every platform. It bundles
+  Latin subsets of the DejaVu Sans fonts (Bitstream Vera licence), which the SBOM now lists.
 - IDE supply-chain design (DESIGN-MAP section 5): a live SBOM including the toolchain, continuous
   checks against every vulnerability source with reachability and VEX, and remediation by default
   behind signature, capability, cooling-off, test and compatibility gates

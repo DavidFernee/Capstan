@@ -1,0 +1,10 @@
+# SHA-256 of every file examples/shroud/gallery.cap writes. Regenerate with
+# tests/shroud/check.py CAPSTANC CC --update-golden after an intended change.
+4265dda81a31397f10f860d913ca46040e41dc535ac311456048190c394b9234  dark-1-empty.png
+c500526487cc44f3c723e7a15d1e30d0bfb8cba04381a7706fb92c41393d6394  dark-2-filled.png
+4566fa25b23277b4f2a84189c3e2f966d8694b605f72eab95d84495fa07dd5cb  dark-3-created.png
+ec6d6d48c111cae8ff50198d36d229f0654a7411a27eb6a722830fda3d58a847  dark-a11y.json
+46f71bfae0f57ed3b14135181ccbcd04bc7af92e93457fb0d3424890a111fb8e  light-1-empty.png
+00df7f8480fce3d313645391939d46474431f690b888ca50a66b4200330ed42b  light-2-filled.png
+510264e4a413aed22bcb00b8e96ef7dea59f5d8016721ecaad4f3b3ea1fcd6c6  light-3-created.png
+ec6d6d48c111cae8ff50198d36d229f0654a7411a27eb6a722830fda3d58a847  light-a11y.json

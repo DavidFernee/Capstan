@@ -32,6 +32,8 @@
 #                and tampered releases, and the workflow hardening rules (tests/supply/)
 #   lsp          the language server: the compiler's exact diagnostics for every test program, the
 #                protocol and its errors, sanitizers, and fuzzing of JSON and framing
+#   shroud       GUI library: behaviour, exact raster coverage, fonts, UTF-8, PNG, damaged-font
+#                fuzzing and golden frames, also under sanitizers
 #   coverage     (--full) line coverage of compiler, formatter and runtime, with floors
 #   mutation     (--full) injected compiler bugs must be caught by the suite
 #   bench        (--full) speed against hand-written C, with a regression limit
@@ -171,6 +173,17 @@ if out="$($PY "$ROOT/tests/unit/read_file_bounds.py" "$C" "$CC" $WFLAGS 2>&1)"; 
 section "crypto: lib/crypto.cap against hashlib, the published vectors and the runtime"
 if out="$($PY "$ROOT/tests/crypto/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "crypto" "$out"; fi
 
+section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 decoder, zlib and golden frames"
+if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
+else bad "shroud" "$out"; fi
+printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
+if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
+  if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud under ASan+UBSan, damaged fonts included: no reports"; else bad "shroud (sanitizers)" "$out"; fi
+else
+  echo "  skip  sanitizers not available for $CC"
+fi
+
 section "gc"
 "$C" build -o "$tmp/churn.c" "$ROOT/tests/gc/churn.cap" >/dev/null && "$CC" $CFLAGS "$tmp/churn.c" -o "$tmp/churn"
 stats="$(CAPSTAN_GC_STATS=1 "$tmp/churn" 2>&1 >/dev/null)"
@@ -259,7 +272,7 @@ done
 # Every source file in the repository follows the house style, except the diagnostics
 # and recovery tests (their columns and lexical errors are what they test), formatter inputs and
 # files marked `// fmt: off` (a lexical test that needs tabs and CRLF).
-STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap lib/*.cap examples/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io,crypto}/*.cap 2>/dev/null)
+STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap lib/*.cap lib/shroud/*.cap examples/*.cap examples/shroud/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io,crypto,shroud}/*.cap 2>/dev/null)
 if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then ok "$(wc -w <<<"$STYLED") repository sources are formatted"; else bad "house style" "run bin/capstan fmt on: $out"; fi
 cp "$ROOT/tests/fmt/layout.cap" "$tmp/bad.cap"; printf 'int main() { return 0 @ 1; }\n' > "$tmp/lexerr.cap"; cp "$tmp/lexerr.cap" "$tmp/lexerr.keep"
 "$F" --check "$tmp/bad.cap" >/dev/null; c1=$?; "$F" "$tmp/lexerr.cap" >/dev/null; c2=$?
