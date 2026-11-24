@@ -69,7 +69,8 @@ do. Shroud takes the second approach, for three reasons:
    (exploited in the wild through Chrome), Windows ATMFD CVE-2015-2426, Apple's font parser
    CVE-2015-1155, and the ImageIO and Skia image-decoder chains behind several zero-click
    attacks. In Shroud all of this is Capstan code, where those bugs become safe stops, or, as the
-   font parser is built, are refused before they happen.
+   font parser is built, are refused before they happen. Whole-file bounds checks do not yet
+   enforce every table's declared span; see the font-parser residual risk below.
 3. **Small platform layers.** Each operating system needs only an *embedder* that opens a window,
    presents a pixmap, delivers input events and publishes the accessibility tree. That is a few
    hundred lines per platform rather than a toolkit's worth of wrappers.
@@ -104,9 +105,9 @@ do. Shroud takes the second approach, for three reasons:
 | `lib/shroud/geom.cap` | Fixed-point geometry: 1/256-pixel coordinates (`FX`), rectangles, insets, Flutter-style constraints, integer square root |
 | `lib/shroud/color.cap` | 32-bit ARGB colours, premultiplied compositing with exact integer rounding, WCAG 2.2 relative luminance and contrast ratios |
 | `lib/shroud/path.cap` | Vector paths (lines, quadratic and cubic Béziers), rounded rectangles, ellipses, rings, and flattening with a bounded number of segments |
-| `lib/shroud/raster.cap` | Anti-aliased scanline rasteriser (16 sub-scanlines, exact horizontal coverage), nonzero and even-odd rules, solid and linear-gradient paints, rectangular clip stack, and a fast exact path for axis-aligned rectangles |
+| `lib/shroud/raster.cap` | Anti-aliased scanline rasteriser (16 sub-scanlines, exact horizontal coverage), nonzero and even-odd rules, solid and linear-gradient paints, rectangular clip stack, fast exact axis-aligned rectangles, and pre-allocation pixmap bounds of 16,384 pixels per side and 16,777,216 pixels total |
 | `lib/shroud/png.cap` | PNG encoder (CRC-32, Adler-32, stored DEFLATE) for screenshots and golden tests |
-| `lib/shroud/ttf.cap` | TrueType parser: `cmap` formats 4 and 12, `hmtx`, simple and composite `glyf` outlines with transforms, and a glyph cache. Reads are bounded to the file and fail softly; table-local cmap/loca/hmtx span validation remains an open parser-integrity issue (#121), so malformed fonts may still borrow bytes from adjacent tables |
+| `lib/shroud/ttf.cap` | TrueType parser: `cmap` formats 4 and 12, `hmtx`, simple and composite `glyf` outlines with transforms, and a glyph cache. Resource bounds include a 32 MiB font, 4,096 points per glyph, composite depth 8 / 64 parts, aggregate 16,384 points / 256 components per root glyph, 4,096 cached glyphs, 262,144 pixels per glyph mask and 1,048,576 cached alpha pixels per font. Table-local span enforcement for `cmap`, `loca` and `hmtx` remains open under issue #121 |
 | `lib/shroud/text.cap` | Strict UTF-8 decoding (maximal-subpart replacement, as Unicode specifies), safe display of untrusted text, measuring, glyph drawing at quarter-pixel positions, and line wrapping |
 | `lib/shroud/view.cap` | Views and modifiers: text, user text, button (standard, accent, subtle, danger), row, column, stack, spacer, checkbox, radio, switch, text field, password field, slider, progress bar, divider, box, scroll view |
 | `lib/shroud/theme.cap` | Light and dark themes in current desktop style, each checked against WCAG 2.2 contrast |
@@ -128,10 +129,11 @@ events. It writes each frame as a PNG, in both themes, plus the accessibility tr
 | Accessibility text spoofing | Untrusted `user_text()` names and ordinary text-field values are sanitised with the same visible-character mapping before JSON escaping, so assistive technology does not receive the original bidi/invisible controls while the pixels show replacement marks. This does not yet establish full visual/accessibility-tree equivalence for bounds, clipping, focus or platform bridge behaviour. |
 | Clickjacking and tap-jacking (CWE-1021) | A `guarded()` control, and every `danger()` button, has a 500 ms activation delay after it appears, moves, reappears, or changes its action or visible identity. The delay is measured only against the monotonic clock advanced by `render()`; an input event's timestamp cannot advance or satisfy it. The platform adapter must therefore supply a monotonic render clock from the trusted window system. Input is matched against the last rendered frame. This mitigates some deceptive repositioning/reappearance patterns and future-dated event attempts; it is not a complete defence against arbitrary overlays or synthetic events. The headless library cannot authenticate event provenance, prove that pixels were displayed, or establish that a human saw the control. |
 | Password exposure (CWE-200, CWE-549) | `password_field()` draws dots and never lays out the text. The accessibility tree reports only its length, and the role `password` lets screen readers and remote-access tools treat it as protected. |
-| Memory corruption in font parsing (CWE-125, CWE-787) | The TrueType parser is Capstan. Every read is bounded to the file and records failure on out-of-file access. This does not yet prove table-local bounds: cmap subtable, loca array and hmtx metric/bearing reads may currently consume adjacent-table bytes. That parser-integrity gap is tracked in #121; no native out-of-bounds access has been demonstrated. Fuzzed on every test run, also under ASan+UBSan. |
-| Resource exhaustion (CWE-400, CWE-674, CWE-789) | Limits on font size (32 MiB), points per glyph, composite depth and parts, curve segments, glyph size (four ems), cached glyphs, pixmap size, views per interface, nesting depth, and text-field length. |
+| Memory corruption in font parsing (CWE-125, CWE-787) | The TrueType parser is Capstan. Every read goes through a reader that returns 0 and marks the font bad when a read falls outside the file; glyph locations, end points, flags and composite records have additional validation. A remaining parser-integrity gap is that some cmap, loca and hmtx reads are not yet constrained to their owning table spans (issue #121), so malformed fonts may borrow adjacent-table bytes while remaining inside the file. This is not a demonstrated native out-of-bounds read. The damaged-font corpus is fuzzed on every test run, also under ASan+UBSan. |
+| Resource exhaustion (CWE-400, CWE-674, CWE-789) | Pixmaps are rejected before allocation unless each side is at most 16,384 and total area is at most 16,777,216 pixels (division-based check avoids multiplication overflow). Fonts are limited to 32 MiB; each glyph to 4,096 points, depth 8 and 64 local components; each root composite traversal to 16,384 aggregate points and 256 aggregate components; each glyph mask to 262,144 pixels; and each font cache to 4,096 glyphs / 1,048,576 alpha pixels. Text decoding currently reads at most 1 MiB per value (longer values are truncated; explicit overflow signalling remains a follow-up); a 2 MiB aggregate budget across each view tree's text, value, action, key, label and hint strings is checked before per-view layout decoding/allocations. A second per-frame budget caps rendered lines at 131,072, enforced before line-index appends for explicit newlines and soft wraps; an explicit `max_lines()` limit truncates before generating excess entries. These per-object/per-frame limits are not a process-wide heap guarantee. |
 | Smuggled line breaks | Text typed or pasted into a one-line field loses its control characters, so a paste cannot add a newline to a value written to a log or header. |
 | Inconsistent rendering hiding content | Deterministic integer rendering: what a test sees is exactly what a user sees, on every platform. |
+| Duplicate widget identities (hit-test confusion) | Duplicate explicit `View.key()` values are assigned distinct per-frame laid-out IDs, and the duplicate is reported by `a11y_problems()`. This prevents `hit_id()` and `find_laid()` from resolving the same hit to different widgets. Applications should still provide unique stable keys; the diagnostic does not make duplicate-key state retention meaningful. |
 
 Planned (section 8): `SecureField` producing `Secret` values, screen-capture protection for
 windows that show secrets, taint-aware clipboard (pasted text is `Tainted`, copying from password
@@ -256,6 +258,13 @@ through the WebAssembly backend (T10) drawing to a canvas, with a DOM accessibil
 
 `tests/shroud/check.py` runs in every suite run (`tests/run.sh`, section "shroud"), with warnings
 as errors and again under AddressSanitizer and UndefinedBehaviorSanitizer:
+`tests/shroud/check_frame_budget.py` also runs in the normal and sanitizer paths to verify
+the exact 2 MiB aggregate view-tree text boundary, fail-closed one-byte overflow, cycles,
+nesting depth and view-count limits.
+`tests/shroud/check_frame_line_budget.py` verifies the exact 131,072-line boundary,
+one-line-over rejection across multiple views, soft wrapping, explicit line truncation
+and peak GC heap under normal and ASan+UBSan runs.
+`tests/shroud/check.py` also runs the 29-assertion resource-budget fixture: it checks exact pixmap-area boundaries, per-glyph and per-font cache limits, and a recursive composite glyph whose 325 aggregate component visits exceed the 256-component root budget. A separate executable confirms a 16,781,312-pixel request exits before allocation. These checks run in both normal and ASan+UBSan paths.
 
 - **behaviour**: 78 assertions on layout, buttons, guards, keyboard and focus, text editing,
   untrusted text, accessibility, themes, scrolling, compositing and high-DPI scaling
