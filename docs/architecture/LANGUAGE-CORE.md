@@ -87,10 +87,10 @@ The statement judgement is checked against the enclosing function result type:
 Block-local declarations do not escape their block. A `for` initializer's
 scope includes its condition, body and step but ends after the loop. Every
 variable read must refer to a name in `Γ`; because declarations require
-initialisers, an uninitialised local is a source typing error. Every reachable
-path through a non-void function must terminate in a return of its declared
-type or a defined trap; every reachable path through a void function may
-return void or fall through to its implicit void completion. The CCAM register model is more
+initialisers, an uninitialised local is a source typing error. A non-void function MUST have no reachable normal-completion path that falls
+through without returning a value of its declared type. A path may instead
+terminate in a defined trap or diverge in a non-terminating loop. A void
+function may return void or fall through to its implicit void completion. The CCAM register model is more
 defensive: non-parameter registers start uninitialised and a read of one traps,
 so malformed or incorrectly lowered programs cannot turn this source guarantee
 into an unchecked host-language read.
