@@ -135,13 +135,19 @@ theorem machineStep_preserves_well_typed
   cases hinstr : program.code.get state.pc with
   | constInt dst value hdst hvalue =>
       simp [hinstr] at hstep
-      cases hstep
+      have hregsEq : write state.registers dst (.int value) = next.registers := by
+        have h := congrArg MachineState.registers hstep
+        simpa using h
+      rw [← hregsEq]
       have htyped : hasType (.int value) (types dst) := by
         simpa [hasType, hasTypeB, hdst, inI64] using hvalue
       exact write_preserves_well_typed hregisters dst (.int value) htyped
   | constBool dst value hdst =>
       simp [hinstr] at hstep
-      cases hstep
+      have hregsEq : write state.registers dst (.bool value) = next.registers := by
+        have h := congrArg MachineState.registers hstep
+        simpa using h
+      rw [← hregsEq]
       have htyped : hasType (.bool value) (types dst) := by
         simp [hasType, hasTypeB, hdst]
       exact write_preserves_well_typed hregisters dst (.bool value) htyped
@@ -151,7 +157,10 @@ theorem machineStep_preserves_well_typed
           simp [hinstr, hmove] at hstep
       | ok registers =>
           simp [hinstr, hmove] at hstep
-          cases hstep
+          have hregsEq : registers = next.registers := by
+            have h := congrArg MachineState.registers hstep
+            simpa using h
+          rw [← hregsEq]
           exact executeMove_preserves_well_typed hregisters instr hmove
   | add instr =>
       cases hadd : executeAdd state.registers instr with
@@ -159,7 +168,10 @@ theorem machineStep_preserves_well_typed
           simp [hinstr, hadd] at hstep
       | ok registers =>
           simp [hinstr, hadd] at hstep
-          cases hstep
+          have hregsEq : registers = next.registers := by
+            have h := congrArg MachineState.registers hstep
+            simpa using h
+          rw [← hregsEq]
           exact executeAdd_preserves_well_typed hregisters instr hadd
   | lessThan instr =>
       cases hlt : executeLt state.registers instr with
@@ -167,7 +179,10 @@ theorem machineStep_preserves_well_typed
           simp [hinstr, hlt] at hstep
       | ok registers =>
           simp [hinstr, hlt] at hstep
-          cases hstep
+          have hregsEq : registers = next.registers := by
+            have h := congrArg MachineState.registers hstep
+            simpa using h
+          rw [← hregsEq]
           exact executeLt_preserves_well_typed hregisters instr hlt
   | equal instr =>
       cases heq : executeEq state.registers instr with
@@ -175,7 +190,10 @@ theorem machineStep_preserves_well_typed
           simp [hinstr, heq] at hstep
       | ok registers =>
           simp [hinstr, heq] at hstep
-          cases hstep
+          have hregsEq : registers = next.registers := by
+            have h := congrArg MachineState.registers hstep
+            simpa using h
+          rw [← hregsEq]
           exact executeEq_preserves_well_typed hregisters instr heq
   | booleanNot instr =>
       cases hnot : executeNot state.registers instr with
@@ -183,11 +201,17 @@ theorem machineStep_preserves_well_typed
           simp [hinstr, hnot] at hstep
       | ok registers =>
           simp [hinstr, hnot] at hstep
-          cases hstep
+          have hregsEq : registers = next.registers := by
+            have h := congrArg MachineState.registers hstep
+            simpa using h
+          rw [← hregsEq]
           exact executeNot_preserves_well_typed hregisters instr hnot
   | jump target =>
       simp [hinstr] at hstep
-      cases hstep
+      have hregsEq : state.registers = next.registers := by
+        have h := congrArg MachineState.registers hstep
+        simpa using h
+      rw [← hregsEq]
       exact hregisters
   | branch instr =>
       cases hbranch : executeBranch state.registers instr with
@@ -195,7 +219,10 @@ theorem machineStep_preserves_well_typed
           simp [hinstr, hbranch] at hstep
       | ok target =>
           simp [hinstr, hbranch] at hstep
-          cases hstep
+          have hregsEq : state.registers = next.registers := by
+            have h := congrArg MachineState.registers hstep
+            simpa using h
+          rw [← hregsEq]
           exact hregisters
   | retInt src hsrc =>
       cases hread : readInt state.registers src with
