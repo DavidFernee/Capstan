@@ -69,7 +69,12 @@ def main():
                     print("  %s evidence[%d]: unsafe repository path %r" % (cid, ei, path))
                     failed = True
                     continue
-                full = os.path.join(ROOT, path)
+                full = os.path.realpath(os.path.join(ROOT, path))
+                root_real = os.path.realpath(ROOT)
+                if os.path.commonpath((root_real, full)) != root_real:
+                    print("  %s evidence[%d]: artifact resolves outside repository: %s" % (cid, ei, path))
+                    failed = True
+                    continue
                 if not os.path.isfile(full):
                     print("  %s evidence[%d]: artifact does not exist: %s" % (cid, ei, path))
                     failed = True
@@ -77,6 +82,9 @@ def main():
             if evidence.get("result") == "passed" and verification:
                 if not re.fullmatch(r"[0-9a-f]{40}", verification.get("commit", "")):
                     print("  %s evidence[%d]: passed evidence lacks a full commit SHA" % (cid, ei))
+                    failed = True
+                if verification.get("commit") != evidence.get("revision"):
+                    print("  %s evidence[%d]: verification commit differs from evidence revision" % (cid, ei))
                     failed = True
                 if not verification.get("run_url", "").startswith("https://github.com/"):
                     print("  %s evidence[%d]: passed evidence needs a GitHub run/review URL" % (cid, ei))
