@@ -52,6 +52,18 @@ with tempfile.TemporaryDirectory() as temporary:
 with tempfile.TemporaryDirectory() as temporary:
     root = pathlib.Path(temporary)
     for y in range(1999, 2026):
+        (root / "cves" / str(y)).mkdir(parents=True)
+    (root / "cves" / "archive").mkdir()
+    try:
+        study.load(str(root), 2025)
+    except RuntimeError as error:
+        assert "unexpected non-year directories" in str(error)
+    else:
+        raise AssertionError("non-year CVE directory was silently ignored")
+
+with tempfile.TemporaryDirectory() as temporary:
+    root = pathlib.Path(temporary)
+    for y in range(1999, 2026):
         if y != 2024:
             (root / "cves" / str(y)).mkdir(parents=True)
     try:

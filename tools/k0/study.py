@@ -160,8 +160,15 @@ def load(cvelist, year):
     if not os.path.isdir(root):
         raise RuntimeError(f"missing CVE List directory: {root}")
 
+    entries = os.listdir(root)
+    unexpected_dirs = sorted(
+        name for name in entries
+        if os.path.isdir(os.path.join(root, name)) and not name.isdigit()
+    )
+    if unexpected_dirs:
+        raise RuntimeError(f"unexpected non-year directories under CVE List cves/: {unexpected_dirs}")
     year_dirs = sorted(
-        (name for name in os.listdir(root)
+        (name for name in entries
          if name.isdigit() and os.path.isdir(os.path.join(root, name))),
         key=int,
     )
