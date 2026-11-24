@@ -208,12 +208,10 @@ theorem validateSingleFrameProgram_entry_sound
       rw [← he]
       exact hval
 
-/-- Every accepted program has an explicit control effect at its final slot. -/
+/-- Every validated finite program has an explicit control effect at its final slot. -/
 theorem validateSingleFrameProgram_final_terminal
     {n m : Nat} {types : RegTypes n}
-    (raw : RawSingleFrameProgram n m types)
-    (program : FiniteProgram n m types)
-    (h : validateSingleFrameProgram raw = some program) :
+    (program : FiniteProgram n m types) :
     HasExplicitControlEffect (program.code (Fin.last m)) :=
   finiteProgram_final_instruction_has_control_effect program
 
