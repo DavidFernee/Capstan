@@ -18,7 +18,7 @@ Run from anywhere; paths are relative to the repository root.
 5. png         the encoder's output decoded by zlib and compared pixel by pixel
 6. font fuzz   damaged fonts (bit flips, truncation, hostile offsets and counts):
                each is refused or drawn, and the program never stops or crashes
-7. pixmap      dimension and total-pixel limits, including constructor rejection.
+7. resource    pixmap dimensions/area, glyph-mask/cache budgets and recursive-font work limits.
 8. golden      the example gallery renders to the recorded SHA-256 of every frame.
                Rendering is integer arithmetic only, so this holds on every platform.
 """
@@ -312,7 +312,7 @@ def check_pixmap_limits(capstanc, cc, cflags, tmp):
     rejected = run(rejected_exe, check=False)
     if rejected.returncode != 101 or "pixmap size out of range" not in rejected.stdout:
         sys.exit(f"pixmap limits: oversized constructor request was not rejected: exit {rejected.returncode}\\n{rejected.stdout}{rejected.stderr}")
-    return "10 dimension/area assertions; oversized constructor request rejected before allocation"
+    return "23 resource-budget assertions; glyph cache exercised; oversized pixmap rejected before allocation"
 
 
 def check_golden(capstanc, cc, cflags, tmp, update):
