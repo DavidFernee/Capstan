@@ -5,9 +5,10 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
-- Anchor A0: IDE architecture and threat model, Shroud S0 workbench prototype, and documented integration milestones; no project commands or assurance verdicts are executed by the prototype
-- Anchor direction: first-class WYSIWYG Shroud designer with Capstan source as the authoritative representation, plus a curated, version-pinned catalogue of security-reviewed components (including authentication); assurance claims must be scoped and evidence-backed, never absolute
-- Anchor component-catalogue contract: immutable package/dependency identity, signed provenance, scoped assurance claims, offline verification with explicit revocation freshness, transitive capability accounting and authentication-specific review gates
+- Anchor A0: headless IDE workbench prototype using Shroud S0; static navigation and read-only preview only, with no live compiler connection or project commands executed
+- Anchor direction: WYSIWYG Shroud designer with Capstan source as the authoritative representation, plus a curated, version-pinned catalogue of security-reviewed components
+- Anchor catalogue contract: immutable package/dependency identity, signed provenance, scoped assurance claims, offline verification with explicit revocation freshness, transitive capability accounting and authentication-specific review gates
+- Security: reject embedded-NUL `secret_env` names at compile time and runtime; cap `read_line()` input at 1 MiB with a fail-closed CWE-789 diagnostic and boundary regressions
 - Authorisation: reject policies with more than eight struct-identity roles at compile time instead of accepting code that later fails closed at runtime
 - Security: the compiler refuses to proceed when interprocedural taint summaries exhaust their fixpoint budget; a deep helper-chain regression prevents CWE-20 laundering through incomplete analysis
 - Assurance: CI and release assembly fail when active or qualified claims have stale reviews/evidence; empty claim inventories are invalid, and stale MEM-001 is downgraded pending re-review
