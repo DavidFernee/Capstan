@@ -354,6 +354,14 @@ def executeCheckedIntOp {n : Nat} {types : RegTypes n}
       | .error e => .error e
       | .ok result => .ok (write regs instr.dst (.int result))
 
+/-- A failed lhs read takes precedence over the rhs read and arithmetic. -/
+theorem executeCheckedIntOp_left_read_error_precedence
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    (op : CheckedIntOp) (instr : CheckedIntInstr n types) (e : Trap)
+    (hleft : readInt regs instr.lhs = .error e) :
+    executeCheckedIntOp op regs instr = .error e := by
+  simp [executeCheckedIntOp, hleft]
+
 /-- Every successful checked binary operation preserves register typing. -/
 theorem executeCheckedIntOp_preserves_well_typed
     {n : Nat} {types : RegTypes n} {regs next : Registers n}
