@@ -80,7 +80,7 @@ theorem runtimeReadInt_corresponds
     (index : Fin n) :
     runtimeReadInt runtime index.val = readInt regs index := by
   have hbound : index.val < runtime.length := by
-    simpa [hrel.length_eq] using index.isLt
+    simp [hrel.length_eq]
   unfold runtimeReadInt
   rw [if_pos hbound, hrel.value_at index]
   cases hvalue : regs index with
@@ -97,7 +97,7 @@ theorem runtimeReadBool_corresponds
     (index : Fin n) :
     runtimeReadBool runtime index.val = readBool regs index := by
   have hbound : index.val < runtime.length := by
-    simpa [hrel.length_eq] using index.isLt
+    simp [hrel.length_eq]
   unfold runtimeReadBool
   rw [if_pos hbound, hrel.value_at index]
   cases hvalue : regs index with
