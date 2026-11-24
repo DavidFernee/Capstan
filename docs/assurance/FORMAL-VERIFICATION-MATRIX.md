@@ -24,7 +24,7 @@ This matrix is the control document for formal-verification claims. A proof is c
 | Addition | Mathematical addition with signed-64 overflow trap | `checkedAdd_sound`, execution preservation and operand-error precedence | Partially proved | State and prove exact arithmetic equation and trap partition for all operands; establish runtime refinement |
 | Subtraction/multiplication | Mathematical operation with signed-64 overflow trap | Generic checked-op preservation and result-range results | Partially proved | Prove full operation equations and exact overflow iff conditions; establish implementation correspondence |
 | Division | Truncation toward zero; zero divisor and MIN/-1 trap | Zero-divisor and MIN/-1 trap results; result-range theorem | Partially proved | Prove quotient equation, sign/absolute-value laws, uniqueness, and equivalence to runtime primitive |
-| Remainder | Remainder equation and remainder-by-zero behaviour | Formal model currently defines MIN % -1 as zero | **Blocked by specification dependency** | Reconcile `CCAM.md` on this branch (which still says MIN/-1 traps) with the corrected semantics proposed in PR #132; integrate the normative correction before claiming conformance |
+| Remainder | Remainder equation and remainder-by-zero behaviour | Formal model defines `MIN % -1` as zero | Partially proved | Prove the full remainder equation, sign and range properties; establish correspondence with the Capstan primitive and evaluator |
 | Comparisons/boolean | Typed integer comparisons and boolean negation | Typed execution and preservation lemmas | Partially proved | Prove exact value-level equations and validator/runtime correspondence |
 | Control-flow targets | Jumps and branches remain within function instruction bounds | `Fin`-indexed targets and bounded PC model; sequential-PC lemmas | Partially proved | Formalise raw decoded targets and prove validator rejection/soundness; cover every branch form |
 | Single-frame step | Each instruction yields continuation, return, or explicit trap | `machineStep`, explicit outcome classification, functional determinism | Proved in restricted model | Establish adequacy against the full CCAM transition contract; include integrated calls and resource limits |
@@ -45,15 +45,11 @@ This matrix is the control document for formal-verification claims. A proof is c
 | Security properties | Confidentiality, integrity, capability isolation and non-interference where promised | Separate security/assurance documents; not implied by current integer/register theorems | Not modelled by this proof slice | Formal threat model, attacker model, property statements, and proofs/refinement for each guarantee |
 | Proof infrastructure | No unfinished proofs/local axioms; explicit dependency and TCB accounting | Pinned Lean 4.19.0 build, unfinished-proof scan, explicit `#print axioms` audit; CI now enables `mk_all` import coverage, `leanchecker`, nanoda with `sorryAx` forbidden, and `axiom-audit` with only `propext` allowed | Partially proved; exact-head multi-checker run pending | Retain these gates, inspect their exact-head output, and consider formal verification of checker implementations; record checker/tool versions and the complete trusted computing base |
 
-## Immediate specification gate: remainder semantics
+## Remainder semantics alignment
 
-There is a concrete semantic conflict which must not be papered over:
+The normative `docs/architecture/CCAM.md` and the formal remainder model now agree that `MIN % -1` returns zero, while `MIN / -1` traps with `integer_overflow`. The earlier matrix note describing a specification conflict was stale and has been removed.
 
-- The `docs/architecture/CCAM.md` currently present on this branch says both `div_i(MIN, -1)` and `rem_i(MIN, -1)` trap.
-- The formal remainder model proves `MIN % -1 = 0`.
-- PR #132 proposes the corrected remainder behaviour, citing preservation of existing Capstan semantics, and also adjusts related machine outcomes, validation, limits and parsing rules. PR #132 is not merged into the architecture base branch at the time of this matrix.
-
-Until the normative document and formal model are based on the same reviewed semantic contract, the remainder theorem is evidence only about the Lean definition. It is not evidence of CCAM conformance. Do not silently change the Lean model to match a stale document or change the document to match a convenient proof.
+This alignment does not establish implementation conformance: the formal remainder model still needs complete equation, sign and range proofs, and a correspondence argument to the Capstan primitive and evaluator. Do not infer evaluator correctness merely from a theorem about the formal definition.
 
 ## Research basis and proof architecture
 
