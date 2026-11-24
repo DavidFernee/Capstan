@@ -34,7 +34,9 @@ def main():
         run([str(COMPILER), "build", "-o", c_file, *SHROUD])
         run([os.environ.get("CC", "cc"), "-O2", "-std=gnu11",
              f"-I{ROOT / 'runtime'}", c_file, "-o", exe])
-        run([exe, tmp])
+        rendered = run([exe, tmp])
+        if "accessibility:" in rendered.stdout:
+            raise AssertionError("Shroud reported accessibility problems: " + rendered.stdout)
         png = pathlib.Path(tmp, "anchor.png").read_bytes()
         if not png.startswith(b"\x89PNG\r\n\x1a\n"):
             raise AssertionError("Anchor did not produce a PNG")
