@@ -56,6 +56,8 @@ def expected(long_vectors):
         it = 1 + g.next() % 20
         dk = 1 + g.next() % 100
         out.append(f"pbkdf2-{it}-{dk} " + hashlib.pbkdf2_hmac("sha256", pw, salt, it, dk).hex())
+    out.append("pbkdf2-bounds ok")
+    out.append("pbkdf2-empty " + hashlib.pbkdf2_hmac("sha256", b"", b"", 1, 32).hex())
     return out
 
 
