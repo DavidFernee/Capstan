@@ -28,6 +28,16 @@ inductive RawInstr where
 def finOfNat? (bound index : Nat) : Option (Fin bound) :=
   if h : index < bound then some ⟨index, h⟩ else none
 
+/-- A successful natural-to-finite conversion preserves the index value. -/
+theorem finOfNat?_value {bound index : Nat} {i : Fin bound}
+    (h : finOfNat? bound index = some i) : i.val = index := by
+  unfold finOfNat? at h
+  split at h
+  · injection h with hi
+    subst i
+    rfl
+  · contradiction
+
 /-- Validate one decoded instruction against a register signature and code size. -/
 def validateRawInstruction {n m : Nat} {types : RegTypes n}
     (raw : RawInstr) : Option (MachineInstr n m types) :=
