@@ -1,8 +1,8 @@
 # Remediation register
 
 **Owner:** Worker 8 — Remediation Engineering  
-**Baseline inspected:** `main` at `8975c2799f536833ebb26d33269b292420954a57`  
-**Last repository inspection:** 2026-11-24 11:45 UTC  
+**Baseline inspected:** `main` at `647e890b00f263bbf925ac3c0317b10b7d8e22a`  
+**Last repository inspection:** 2026-11-24 12:05 UTC  
 **Purpose:** Track findings through reproduction, correction, exact-commit CI, independent verification and architect acceptance. A PR being open or merged is not, by itself, evidence of resolution.
 
 ## State model
@@ -26,7 +26,7 @@ A state advances only when its evidence exists. Historical CI on an earlier head
 | R8-RUNTIME-001 | Runtime PR #51; collection roots / secret lifetime | High for retention and secret-lifetime claims; stale words can conservatively retain objects | REPRODUCED (source-level; #51 does not yet clear vacated pointer slots) | Vacated pointer-bearing backing slots remain unchanged after `cap_list_pop_p`, `cap_list_clear`, `cap_list_remove`, and `cap_map_remove`; both current `main` and PR #51's branch retain these paths. The collector scans full backing allocations, not only logical `len`. `cap_list_pop_i`/`cap_list_pop_peek_i` carry unboxed integer values, not heap pointers, and must preserve their immediate-read contract. | Copy returned pointer values before clearing vacated pointer slots; shift then clear the old tail for remove, clear all former live slots on clear, and clear removed map key/value tails. Add direct slot assertions and Secret-removal/GC-stress tests; do not alter the immediate-read integer peek contract. | Runtime owner; coordinate with PRs #51 and #98. | Secret erasure remains nondeterministic until object becomes unreachable and is collected; stale roots delay that point. |
 | R8-RUNTIME-002 | Runtime PRs #51/#98 superseded by #112; collector accounting/metadata | High impact if arithmetic corrupts allocator state | PARTIALLY REMEDIATED (PR #112 merged; `madvise()` failure atomicity remains open) | PR #112 is merged and adds checked collector metadata growth/accounting. PR #51 remains separate and stale. Review of #112 found `cap_gc_release()` ignores `madvise()` failure but still marks the page released and decrements heap accounting. | Require `madvise()` failure atomicity: only mark released/decrement heap after success; inject a failed advice call and assert state/accounting unchanged; verify exactly one-page decrement on success and idempotent repeat. Sequence follow-up against current main; avoid overlapping GC/runtime edits. | Runtime owner; PR #98 and #51 coordination mandatory. | PR #112 is merged; the `madvise()` failure-atomicity correction and PR #51 vacated-slot clearing remain outstanding. |
 | R8-RUNTIME-003 | Runtime PR #86; containers and byte buffer | High impact on overflow/corrupt metadata | MERGED (PR #86; independent acceptance pending) | PR #86 reports checked growth arithmetic, metadata validation and bounded map probing. CI run 45341730284 passed on head `334ebe44c51d9187f2cb82e3533598b7bf094ebf`. | Recheck current PR head/base and rerun exact-head matrix after integration/rebase; independent review remains required. | Runtime owner; PR #86. | Merged into current main; independent assurance acceptance remains pending. |
-| R8-SHROUD-002 | Shroud PR #79; raster/font aggregate resource budgets | High resource-exhaustion concern | FIX SUBMITTED (nested composite regression added; current-main sync and exact-head CI pending) | PR #79's latest head `9a3b26d17397250e7c953cef92d82e57cafdac49` adds aggregate pixmap/cache/font budgets and a nested composite-glyph regression; its earlier four-job matrix passed, but the branch is not yet synchronised with current main and needs a fresh exact-head run. | Add hostile nested composite-font fixture or test seam proving shared budget exhaustion; run standard Shroud suite and exact-head matrix. | Shroud Worker 6; PR #79. | Per-object/per-font caps are not a process-wide RSS ceiling. |
+| R8-SHROUD-002 | Shroud PR #79; raster/font aggregate resource budgets | High resource-exhaustion concern | MERGED (PR #79; exact-head CI and formal workflow passed) | PR #79 merged as `2be9da58b080a95260037a5aa80b1c2b86d0ed25`; exact-head CI `45384184632` and formal run `45384184887` passed. It enforces pixmap side/area caps, font/glyph/cache limits and a shared recursive composite budget; the 325-visit regression exceeds the 256-visit ceiling. | Preserve the 29-assertion resource fixture, over-limit preallocation rejection and recursive composite regression; continue the separate table-span validation under R8-SHROUD-001. | Shroud Worker 6; issue #121. | Per-object/per-font caps are not a process-wide RSS ceiling. |
 | R8-SHROUD-003 | Shroud PR #92; PNG export | High resource-exhaustion concern; gallery regression end-to-end verified | MERGED (PR #92; independent acceptance and total-memory qualification pending) | PR #92 is merged as `ad436f4d2851aa4c037379841b8eebfb23793612`; it adds a 2 MiB PNG raw-byte cap, 4 KiB fragment batching and the gallery/near-limit verifier. The pre-merge exact-head run `45356416706` passed all four jobs. | Continue measuring simultaneously live output `List<int>`, byte-string references, chunk strings and final joined string; retain independent decode and pixel verification. A bounded binary sink is the longer-term option. | Shroud Worker 6; runtime owner for binary sink. | Raw-byte cap and batching do not establish a total-memory or process-RSS ceiling; measured GC heap is workload-specific. |
 | R8-SHROUD-004 | Shroud PR #103; layout aggregate text budget | High resource-exhaustion concern | MERGED (PR #103; independent re-review/doc qualification pending) | PR #103 is merged as `063ceb290559a565da602006fdd7e0c52c185ca1`; it adds a 2 MiB aggregate frame text preflight, view count/depth/cycle checks and normal/ASan+UBSan verification. | Retain exact-limit/one-over, metadata, depth, cycle and view-count regression coverage on every supported platform. | Shroud Worker 6. | The serialized-input budget is not a process-wide memory bound. The separate line-index amplification is now bounded under R8-SHROUD-006; no universal RSS ceiling is claimed. |
 | R8-COMP-002 | Compiler PRs #97/#102/#109; compound and lazy string-literal evaluation | High semantic correctness impact | IMPLEMENTATION MERGED (independent acceptance pending) | PR #97's compound-assignment sequencing and PR #109's lazy string-literal sequencing are merged. PR #102 closed unmerged; its evidence is historical. Current main retains the `codegen_literal_order.py` unit test and compound-assignment acceptance regressions. | Keep evaluation-order regressions in the standard runner and recheck generated C sequencing whenever lowering changes. | Compiler Worker 5. | Implementation is integrated; independent acceptance of the semantic sequencing contract remains pending. |
@@ -39,23 +39,23 @@ A state advances only when its evidence exists. Historical CI on an earlier head
 
 ## Repository / pull-request snapshot
 
-The refreshed register is based on current main at `8975c2799f536833ebb26d33269b292420954a57`.
+The refreshed register is based on current main at `647e890b00f263bbf925ac3c0317b10b7d8e22a`.
 
 | PR | Current state | Latest head / evidence | Interpretation |
 |---|---|---|---|
 | #51 | Open, draft; not synchronised | `d6f97beb05962b7f8ef43f5e0ea8434be06450fa`; historical CI only | GC secret-page/accounting work is valuable, but current-main page-table hardening must be preserved and stale pointer-bearing collection slots still need clearing. |
 | #72 | Merged | `8975c2799f536833ebb26d33269b292420954a57`; run `45381489063` passed all four jobs | Linear single-line filtering and Tainted join are integrated; 4.16 MiB measured allocation for the 64 KiB adversarial input. |
-| #79 | Open, draft; synchronised with current main | `7bd014e6363a7e9fbe3eb35db416a355808a3acf`; CI and formal workflow passed | Pixmap/font budgets and recursive composite regression are integrated on branch; TrueType table-local bounds under issue #121 remain. |
-| #87 | Open, draft; synchronised with current main | `37ba8dcb48468208c5f4467897f840894fe71008`; atlas docs correction committed, fresh CI pending | Independent architecture/crypto assessment; CWE atlas is wired into standard tests. Findings are not implementation fixes. |
-| #124 | Open, draft; synchronised with current main | `0e8fcf27d25bfbd7a74d0dc10c85aa41d879f4ad`; CI and formal workflow passed | C-free core semantics and typed-IR contract; missing short-circuit conformance row corrected and Tainted join contract retained. |
-| #131 | Open, draft; this register | Refreshing snapshot after #72 merge and password-verifier update | Register keeps implementation, CI, independent review and policy acceptance as separate states. |
-| #134 | Open, draft; synchronised with current main | `ad3a6b54daf80acb5ab5827eb9005c8c5a08623a`; fresh CI/formal workflows running | Canonical 123-byte, 600,000-iteration verifier record; 256-byte password cap; current-only pre-release compatibility policy. |
-| #53 | Open, draft; synchronised with current main | `faf866c7d85e38caa0d4d7fc6403406c199146f4`; Anchor smoke passed, full CI running | Anchor A0 headless workbench prototype; no live editor, LSP or package manager claim. |
+| #79 | Merged | `2be9da58b080a95260037a5aa80b1c2b86d0ed25`; CI `45384184632`, formal `45384184887` passed | Pixmap/font budgets and recursive composite regression integrated; TrueType table-local bounds under issue #121 remain. |
+| #87 | Open, draft; synchronised with current main | `580a9c754903f4d3bfbd12a4a7e38a1aec162938`; generated atlas correction and post-merge assessment committed, fresh CI pending | Independent architecture/crypto assessment; CWE atlas is wired into standard tests. Findings are not implementation fixes. |
+| #124 | Merged | `647e890b00f263bbf925ac3c0317b10b7d8e22a`; CI and formal workflow passed | C-free core semantics and typed-IR contract; missing short-circuit conformance row corrected and Tainted join contract retained. |
+| #131 | Open, draft; this register | Refreshing snapshot after #53, #79 and #124 merges | Register keeps implementation, CI, independent review and policy acceptance as separate states. |
+| #134 | Open, draft; synchronised with current main | `06c7e10a4715ff57a59129b6dfd89873f0abdef0`; previous head CI `45385929307` passed, fresh current-head CI pending | Canonical 123-byte, 600,000-iteration verifier record; 256-byte password cap; current-only pre-release compatibility policy. |
+| #53 | Merged | Anchor smoke and full CI passed on synchronised head | Anchor A0 headless workbench prototype; no live editor, LSP or package manager claim. |
 
 ### Recently integrated evidence
 
-- PR #92 (PNG raw-byte budget), #103 (aggregate frame-byte budget), #117 (frame line-index budget) and #140 (full-size Tainted rejection regression) are merged. Issue #114 remains open for the public 131,072-line compatibility decision.
-- PR #49 (v0.5 type-system design), #52 (type-system assurance matrix), #70 (Shroud S1 host contract), #91 (North Star proposal), #96 (Unicode text policy), #136 (provenance semantics), #139 (allocator/GC abstract-model foundation) and #72 (linear Shroud field filtering) are merged as design/assurance artifacts or scoped fixes, not blanket implementation claims.
+- PR #92 (PNG raw-byte budget), #103 (aggregate frame-byte budget), #117 (frame line-index budget), #140 (full-size Tainted rejection regression), #72 (linear Shroud field filtering) and #79 (pixmap/font resource budgets) are merged. Issue #114 remains open for the public 131,072-line compatibility decision; issue #121 remains open for TrueType table-local span validation.
+- PR #49 (v0.5 type-system design), #52 (type-system assurance matrix), #70 (Shroud S1 host contract), #91 (North Star proposal), #96 (Unicode text policy), #136 (provenance semantics), #139 (allocator/GC abstract-model foundation), #124 (C-free core semantics) and #53 (Anchor A0 prototype) are merged as design/assurance artifacts or scoped fixes, not blanket implementation claims.
 - PRs #97 and #109 are merged for compound-assignment and lazy string-literal sequencing. PR #102 closed unmerged.
 - PR #93 is closed as superseded by #124.
 
@@ -64,9 +64,9 @@ The refreshed register is based on current main at `8975c2799f536833ebb26d33269b
 1. Complete exact-head CI for PR #134, then obtain runtime-owner and architect acceptance. Current-only record compatibility and the 256-byte verifier input cap are now explicit; generic PBKDF2 bounds remain separate.
 2. Coordinate secret scratch and long-password amplification remediation (R8-CRYPTO-003/004) with the runtime crypto owner; keep the GC/collection-slot work separate.
 3. Have the compiler owner address semantic password provenance (R8-COMP-001) using the existing cross-platform regression probes.
-4. Synchronise PR #79 and obtain exact-head CI; then separately close TrueType table-local bounds and confirm aggregate nested composite budgets with adversarial fixtures.
+4. Keep issue #121 TrueType table-local span validation open and independently test its nested offset bounds; PR #79's object/aggregate resource budgets are merged.
 5. Track runtime #51/#98/#86 integration, stale roots, accounting observers and exact-base CI; do not combine overlapping GC changes.
-6. Treat #72, #92, #103, #117 and #140 as integrated; resolve the accessibility serializer amplification (R8-SHROUD-008), PNG live-memory bound and public line-limit compatibility.
+6. Treat #72, #79, #92, #103, #117 and #140 as integrated; resolve the accessibility serializer amplification (R8-SHROUD-008), PNG live-memory bound and public line-limit compatibility.
 7. Keep formal claims bounded to the actual Lean theorems; require CCAM implementation/refinement evidence before promoting the assurance level.
 
 ## Verification and acceptance policy
@@ -82,10 +82,10 @@ No finding in this initial register is marked `ACCEPTED`.
 
 **Current successor:** PR #134 — [password verifier on current main](https://github.com/DavidFernee/Capstan/pull/134)  
 **Branch:** `remediation/w8-password-parser-main2-20261124`  
-**Current head:** `ad3a6b54daf80acb5ab5827eb9005c8c5a08623a`  
-**Base:** current `main` at `8975c2799f536833ebb26d33269b292420954a57`; branch includes a two-parent sync commit.
+**Current head:** `06c7e10a4715ff57a59129b6dfd89873f0abdef0`  
+**Base:** current `main` at `647e890b00f263bbf925ac3c0317b10b7d8e22a`; branch includes a two-parent sync commit.
 
-**CI:** earlier exact-head run `45379958697` passed all four jobs on pre-policy head `e3438ad581421a65a32b4af5789b67465e641f10`. Updated head `ad3a6b54daf80acb5ab5827eb9005c8c5a08623a` adds the password-input bound and requires fresh exact-head CI; run `45385929307` and formal run `45385929384` were in progress at this inspection.
+**CI:** exact-head run `45385929307` passed all four jobs and formal run `45385929384` passed on pre-sync head `ad3a6b54daf80acb5ab5827eb9005c8c5a08623a`. The current head `06c7e10a4715ff57a59129b6dfd89873f0abdef0` includes the latest mainline documentation and requires fresh exact-head CI.
 
 The parser requires the exact 123-byte canonical record and exactly 600,000 PBKDF2 iterations. It rejects malformed separators, signs, whitespace, leading zeroes, non-decimal costs, uppercase/non-hex fields, embedded NULs and suffix bytes before KDF invocation. The same parser drives `cap_needs_rehash()`.
 
