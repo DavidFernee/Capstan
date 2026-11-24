@@ -114,7 +114,7 @@ Where an instruction reads multiple operands, it reads them in the specified lef
 
 ## 7. Machine limits and accounting
 
-The initial CCAM machine has two deterministic limits: maximum instruction steps and maximum call depth.
+The initial CCAM machine has two deterministic limits: maximum instruction steps and maximum call depth. The configuration requires `maxDepth` in `1..2^63-1` and `maxSteps` in `0..2^63-1`; both are exact JSON integers, not booleans or rounded floating-point values.
 
 - The entry frame counts as depth 1.
 - A `call` instruction consumes one instruction step. It traps with `call_depth_exceeded` rather than pushing a frame if the push would exceed the configured maximum.
