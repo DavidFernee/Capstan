@@ -386,6 +386,12 @@ __attribute__((noinline)) static void scrub_stack(int depth) {
     if (depth > 0) scrub_stack(depth - 1);
 }
 
+static void collect_clean(void);
+
+__attribute__((noinline)) static void allocate_gc_short_lived(void) {
+    for (int i = 0; i < 200000; i++) (void)cap_str_new("x", 1);
+}
+
 /* The collector must keep objects reachable only through interior pointers,
    large objects, registered globals, and nested structures. */
 #define CAP_DISGUISE_GC ((uintptr_t)0x3c3c3c3c3c3c3c3cULL)
@@ -434,8 +440,8 @@ static void test_gc(void) {
     for (int i = 0; i < 10000; i++) if (!cap_str_eq((CapStr *)big->items[i].p, cap_int_to_str(i))) ok = 0;
     CHECK(ok);
     size_t before = cap_gc.heap;
-    for (int i = 0; i < 200000; i++) cap_str_new("x", 1);
-    cap_gc_collect();
+    allocate_gc_short_lived();
+    collect_clean();
     CHECK(cap_gc.heap <= before + (size_t)8 * 65536);   /* garbage is reused, not accumulated */
     CHECK(cap_gc.live < (size_t)4 << 20);
 }
