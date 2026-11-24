@@ -241,9 +241,7 @@ theorem runtimeWriteRegister_preserves_relation
       have htarget :=
         runtimeWriteRegister_target runtime updated index.val replacement hwrite
       simp [runtimeTypeAt, htarget, hdecl]
-    · have hjiVal : j.val ≠ index.val := by
-        intro heq
-        exact hji (Fin.ext heq)
+    · have hjiVal : j.val ≠ index.val := Fin.val_ne_of_ne hji
       have hother :=
         runtimeWriteRegister_other_unchanged
           runtime updated index.val j.val replacement hwrite hjiVal
@@ -256,9 +254,7 @@ theorem runtimeWriteRegister_preserves_relation
       have hpayload :=
         RuntimeRegister.value?_of_initialized replacement hinit
       simp [runtimeValueAt, htarget, hpayload, write]
-    · have hjiVal : j.val ≠ index.val := by
-        intro heq
-        exact hji (Fin.ext heq)
+    · have hjiVal : j.val ≠ index.val := Fin.val_ne_of_ne hji
       have hother :=
         runtimeWriteRegister_other_unchanged
           runtime updated index.val j.val replacement hwrite hjiVal
