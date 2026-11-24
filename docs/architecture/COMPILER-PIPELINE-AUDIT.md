@@ -1,7 +1,7 @@
 # Compiler pipeline audit and direct-native backend boundary
 
 **Status:** Initial audit, 2026-11-24  
-**Workstream:** `compiler/direct-native-prototype`  
+**Workstream:** `compiler/direct-native-prototype-v02`  
 **Baseline:** Capstan v0.4 compiler on `main`; v0.6 remains an independent migration baseline  
 **Related programme:** [#80](https://github.com/DavidFernee/Capstan/issues/80), [#81](https://github.com/DavidFernee/Capstan/pull/81)
 
