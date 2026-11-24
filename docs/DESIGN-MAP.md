@@ -239,10 +239,118 @@ Remaining:
   live SBOM, vulnerability checks and default remediation build on these (section 5)
 - audit command: lists every `trust()`, isolated foreign component and suppressed warning in a project
 
-### v1.0 — Stable
-- language and standard library stability guarantee
-- complete specification; optional formal verification of the checker's core rules
-- WebAssembly backend alongside C
+### v1.0 — Stable, C-free execution and assurance gate
+
+v1.0 is not defined by feature completeness alone. It is a security and assurance release:
+the supported execution path must be C-free, its guarantees must be bounded by a published
+threat model, and every in-scope vulnerability class must have an evidence-backed disposition.
+The goal is to prevent or safely contain as close to 100% as technically achievable of software
+vulnerability classes within that threat model. This is not a claim of eliminating hardware,
+firmware, specification, platform or unknown-vulnerability risk.
+
+- language and standard library stability guarantee, with a complete normative language and
+  execution specification
+- a supported production C-free execution path on every platform claimed as supported; no
+  generated-C fallback may be silently selected for a release build. Platform system interfaces
+  remain explicit, typed, bounded and documented trust boundaries
+- C-free compiler/runtime path with documented bootstrap, code-generation and platform TCB;
+  every remaining non-Capstan component is enumerated and justified
+- machine-checked specifications and proof obligations for the core safety checker and
+  security-critical transformations. Proofs must identify assumptions, axioms, trusted checker,
+  model scope and unproved dependencies; fragment proofs must not be presented as whole-compiler
+  or end-to-end execution proofs
+- independent security assessment of the compiler, runtime, platform boundary and release
+  process; all critical/high findings resolved or explicitly accepted with compensating controls
+- reproducible, signed releases with SBOM and build provenance, plus a documented independent
+  verification path
+
+**Mandatory v1.0 security and assurance acceptance criteria**
+
+1. **Threat-model completeness.** Supported platforms, attacker capabilities, assets, security
+   boundaries, trusted computing base (TCB), assumptions and exclusions are current, reviewed
+   and versioned. Every exclusion has a reason and an owner; out-of-scope does not mean risk-free.
+2. **CWE disposition.** Every applicable weakness in the maintained CWE atlas has a tested
+   prevention, tested safe-rejection/containment behaviour, scoped machine-checked proof, or
+   explicit residual-risk disposition. No applicable class may be silently omitted, marked
+   covered because a feature is planned, or counted from an unverified projection.
+3. **Memory safety and lifetime.** All memory operations on the supported execution path have
+   enforceable bounds, validity and lifetime rules. Kernel, DMA, FFI, callbacks, asynchronous
+   completion and externally owned memory require explicit ownership/lifetime contracts;
+   application GC behaviour is not evidence for those domains.
+4. **Concurrency.** Shared-state access, atomicity, lock discipline, callback teardown,
+   cancellation and resource lifetime have enforceable rules and adversarial regression tests.
+   Any claimed race/deadlock prevention is limited to the concurrency model actually implemented.
+5. **Input and resource safety.** Untrusted input crosses typed validation boundaries.
+   Length, allocation, recursion, CPU, concurrency and I/O budgets are explicit and enforced;
+   exhaustion produces a documented safe failure rather than uncontrolled resource consumption.
+6. **Authority and isolation.** Security-sensitive operations require explicit capabilities or
+   grants. Identity binding, least privilege, revocation and isolation boundaries are tested;
+   no security claim rests solely on naming heuristics or advisory AI review.
+7. **Cryptography.** Algorithms, parameters, formats, randomness, key lifecycle and migration
+   policy are explicit. Implementations pass published known-answer and differential tests and
+   receive independent cryptographic review. A passing test suite is not a certification claim.
+8. **Compiler and runtime.** The release compiler, lowering pipeline, optimiser, code generator,
+   runtime and platform adapters have documented specifications, regression/conformance tests,
+   fuzzing and sanitiser coverage where applicable. The TCB is minimised and remaining components
+   are explicitly listed.
+9. **Formal assurance.** Every proof claim names the theorem, model, assumptions, axiom
+   dependencies, checker and code correspondence. Proof coverage is reported per property and
+   component. No proof of an abstract model is described as proof of production implementation
+   unless refinement/correspondence has itself been established.
+10. **Supply chain and release integrity.** Releases are signed, carry SBOMs and provenance,
+    are reproducible within documented limits, and have an independent verification procedure.
+    Toolchain and dependency advisories are monitored.
+11. **Independent assessment.** An external reviewer assesses the threat model, security
+    architecture, compiler/runtime boundary, cryptographic use and release process. Critical
+    and high findings are closed and re-tested, or have a formally recorded exception approved
+    by maintainers with compensating controls.
+12. **No unknowns passed.** Missing, stale, unreviewed, non-reproducible or unverifiable evidence
+    is UNKNOWN, not PASS. v1.0 cannot be declared assurance-complete while an in-scope critical
+    property remains unknown.
+
+**Evidence vocabulary and reporting**
+
+Every security claim and CWE disposition uses distinct evidence states:
+
+- PREVENTED: an enforceable language/compiler rule rejects the unsafe program, with a
+  regression test demonstrating rejection
+- SAFELY REJECTED/CONTAINED: a runtime or boundary check stops the operation without
+  memory corruption or privilege escalation, with a regression test; availability impact is
+  recorded separately
+- FORMALLY ESTABLISHED: a machine-checked theorem applies to the identified implementation
+  through a documented refinement/correspondence argument and explicit assumptions
+- RESIDUAL: the weakness remains possible within the stated scope, with impact, mitigation,
+  owner and acceptance recorded
+- UNKNOWN: evidence is absent, incomplete, stale or not independently reproducible
+
+These states are not interchangeable and must not be collapsed into a single headline
+coverage percentage. Reports may publish separate denominators and rates for prevention,
+safe containment and formally established properties, alongside residual and unknown counts.
+A projected future design is always labelled projection, never current capability.
+
+**Release scorecard**
+
+Maintain a versioned scorecard alongside the threat model. For every property or CWE class it
+records: identifier and scope; threat scenario; evidence state; implementation and test/proof
+references; supported platforms; assumptions and TCB dependencies; residual impact; owner;
+independent reviewer; last verified commit; and release disposition. The scorecard is part of
+the release artefact and must be regenerated from the exact release commit.
+
+**C-free and formal workstream gates**
+
+The C-free path is a v1.0 release requirement, not merely a long-term aspiration. Each platform
+must demonstrate source validation and lowering, typed core representation, code generation,
+runtime/memory management, system-interface integration, bootstrap and conformance tests
+without routing Capstan execution through generated C. Platform vendor libraries and kernels
+may remain below the boundary, but are explicit TCB dependencies and all returned data is
+treated as untrusted. A platform that has not passed this gate must be labelled experimental or
+unsupported for the v1.0 assurance claim.
+
+Formal verification is evidence-scoped: prioritise the checker’s safety rules, semantics-
+preserving compiler transformations, runtime primitives and independent proof checker. Each
+proof obligation must be tied to production code and exact revisions. Testing, fuzzing and
+differential execution remain mandatory defence in depth; proof does not remove the need to
+validate specifications, compiler integration or platform assumptions.
 
 ## 5. Tooling and IDE
 
@@ -431,18 +539,16 @@ Since the kernel's CVE authority assigns a CVE to almost every fix, many are not
 study classifies by weakness rather than counting CVEs, and states its sample and method so the
 result can be reproduced.
 
-**Status: first study done (2025 CVEs).** [K0-KERNEL-CVES.md](K0-KERNEL-CVES.md), generated by
-`tools/k0/study.py`. All 2,702 kernel CVEs published in 2025 were classified: 2,114 automatically
-from their fix descriptions, 588 by reading them. Of the 2,698 whose weakness is known:
-
-| | Today | With K1.1 to K1.9 | With K1.10 proofs |
-|---|---|---|---|
-| Prevented or proved absent | 60.6% | 79.1% | 98.7% |
-
-Every memory-safety bug in the set (52% of all CVEs) is prevented today. What no design removes is
-1.3%: hardware and firmware faults, build configuration errors, and processor speculation flaws
-beyond variant 1. Next: independent relabelling of the review and check samples, reading the fix
-diffs for the four undeterminable CVEs, and the 2026 re-run.
+**Status: historical study under correction; headline figures withdrawn.** The checked-in
+2025 report and generated data are retained as an audit trail, but their population loader and
+kernel memory-safety projection have material defects. Identifier-year scanning omitted delayed
+publications, and application memory management did not establish kernel use-after-free or
+double-free prevention. [PR #153](https://github.com/DavidFernee/Capstan/pull/153) corrects the
+loader and classification rules and adds regression checks. The study has not yet been regenerated
+from a complete, pinned CVE List V5 snapshot, and independent human relabelling remains
+outstanding. Therefore no prior K0 headline percentage is a current completeness or security
+claim. Publish new counts only after a complete source snapshot, reproducible run, independent
+label review and documented sensitivity analysis.
 
 ### K1: kernel-mode prerequisites
 Kernel code cannot use a collector that pauses at arbitrary moments or rely on an operating system
