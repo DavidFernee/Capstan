@@ -59,7 +59,7 @@ List<int> codepoints_of(View v) {
 // Bound cumulative view-tree text and metadata before allocating per-view
 // code-point and line arrays. Per-value limits alone allow MAX_VIEWS separate
 // large strings to amplify memory and layout work (CWE-400).
-const int MAX_FRAME_TEXT_BYTES = 262144;
+const int MAX_FRAME_TEXT_BYTES = 2097152;
 
 bool frame_text_budget_add(List<int> budget, int n) {
     if (n < 0 || n > MAX_FRAME_TEXT_BYTES - budget[0]) { return false; }
