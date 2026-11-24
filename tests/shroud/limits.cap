@@ -32,7 +32,7 @@ int main() {
                 GlyphMask cached = glyph_mask(font, glyph_index(font, cp), fx(256), 0);
             }
             if (font.cached_pixels > MAX_CACHED_GLYPH_PIXELS) { return 24; }
-            GlyphMask huge = glyph_mask(font, glyph_index(font, 65), fx(10000), 0);
+            GlyphMask huge = glyph_mask(font, glyph_index(font, 65), fx(1000), 0);
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
