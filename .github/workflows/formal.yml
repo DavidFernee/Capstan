@@ -1,6 +1,11 @@
 name: formal-verification
 on:
   pull_request:
+  push:
+    branches:
+      - main
+      - 'verification/**'
+      - 'architecture/**'
   workflow_dispatch:
 permissions:
   contents: read
