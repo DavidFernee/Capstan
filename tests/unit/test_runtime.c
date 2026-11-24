@@ -372,6 +372,21 @@ static void trigger_negative_buffer_append(void) {
 static void trigger_oversized_initial_buffer(void) {
     (void)cap_buf_new(INT64_MAX);
 }
+static void trigger_non_power_of_two_map_index(void) {
+    CapMap m = {0};
+    m.index_cap = 3;
+    (void)cap_map_find(&m, CAP_LIT("k", 1));
+}
+static void trigger_out_of_range_map_index_entry(void) {
+    CapMap m = {0};
+    CapStr *key = cap_str_new("k", 1);
+    CapStr *keys[1] = {key};
+    CapVal vals[1] = {{.i = 1}};
+    int64_t index[2] = {2, 2};
+    m.len = 1; m.cap = 1; m.keys = keys; m.vals = vals;
+    m.index = index; m.index_cap = 2;
+    (void)cap_map_find(&m, key);
+}
 
 static void test_runtime_growth_arithmetic(void) {
     CHECK(cap_rt_growth_capacity(0, 1, 8, sizeof(CapVal), 0, 0) == 8);
@@ -383,6 +398,8 @@ static void test_runtime_growth_arithmetic(void) {
     CHECK(expect_runtime_panic(trigger_bad_buffer_length));
     CHECK(expect_runtime_panic(trigger_negative_buffer_append));
     CHECK(expect_runtime_panic(trigger_oversized_initial_buffer));
+    CHECK(expect_runtime_panic(trigger_non_power_of_two_map_index));
+    CHECK(expect_runtime_panic(trigger_out_of_range_map_index_entry));
 }
 
 static void test_collections(void) {
