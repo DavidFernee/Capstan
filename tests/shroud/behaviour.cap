@@ -108,11 +108,12 @@ void test_buttons_and_guard(Tally t, Ui ui) {
     List<Msg> reappeared = click_at(ui, "erase", 5200);
     expect_int(t, reappeared.len(), 0, "guard: reappearing control restarts the delay");
     // Press on one button and release on another: nothing.
-    ui.render(v, 4000);
+    // Keep the trusted event clock monotonic throughout this test.
+    ui.render(v, 5300);
     Laid a = laid_of(ui, "save");
     Laid b = laid_of(ui, "erase");
-    List<Msg> m6 = ui.handle(pointer_event(EV_POINTER_DOWN, a.frame.x + FX, a.frame.y + FX, 5000));
-    List<Msg> m7 = ui.handle(pointer_event(EV_POINTER_UP, b.frame.x + FX, b.frame.y + FX, 5050));
+    List<Msg> m6 = ui.handle(pointer_event(EV_POINTER_DOWN, a.frame.x + FX, a.frame.y + FX, 5400));
+    List<Msg> m7 = ui.handle(pointer_event(EV_POINTER_UP, b.frame.x + FX, b.frame.y + FX, 5450));
     expect_int(t, m6.len() + m7.len(), 0, "button: release elsewhere cancels");
 }
 
