@@ -165,7 +165,7 @@ def executeMove {n : Nat} {types : RegTypes n}
   match readValue regs instr.src with
   | .error e => .error e
   | .ok value =>
-    if hasType value (types instr.dst) then
+    if hasTypeB value (types instr.dst) then
       .ok (write regs instr.dst value)
     else
       .error .typeMismatch
@@ -185,7 +185,8 @@ theorem executeMove_preserves_well_typed
       readValue_success_well_typed hregs instr.src value hread
     have hdst : hasType value (types instr.dst) := by
       simpa [instr.same_type] using hsrc
-    simp [hread, hdst] at hstep
+    have hdstB : hasTypeB value (types instr.dst) = true := hdst
+    simp [hread, hdstB] at hstep
     cases hstep
     exact write_preserves_well_typed hregs instr.dst value hdst
 
@@ -272,7 +273,7 @@ theorem executeAdd_preserves_well_typed
         cases hstep
         have hresult : inI64 result := checkedAdd_sound a b result hadd
         have hvalue : hasType (.int result) (types instr.dst) := by
-          simp [hasType, hasTypeB, instr.dst_is_int, hresult]
+          simpa [hasType, hasTypeB, instr.dst_is_int, inI64] using hresult
         exact write_preserves_well_typed hregs instr.dst (.int result) hvalue
 
 
