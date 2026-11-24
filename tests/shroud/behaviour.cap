@@ -117,6 +117,30 @@ void test_buttons_and_guard(Tally t, Ui ui) {
     expect_int(t, m6.len() + m7.len(), 0, "button: release elsewhere cancels");
 }
 
+void test_duplicate_keys(Tally t, Ui ui) {
+    // Both controls overlap. The later sibling is painted and hit-tested on top.
+    // Reusing a key must not route its click to the earlier, visually covered sibling.
+    View v = stack().width(200).height(60)
+        .add(button("Delete", "delete").key("collision"))
+        .add(button("Keep", "keep").key("collision"));
+    ui.render(v, 1000);
+    if (let root = ui.root) {
+        Laid covered = root.kids[0];
+        Laid visible = root.kids[1];
+        expect(t, covered.id != visible.id, "identity: duplicate keys receive distinct laid-out ids", $"{covered.id} / {visible.id}");
+        int x = visible.frame.x + visible.frame.w / 2;
+        int y = visible.frame.y + visible.frame.h / 2;
+        List<Msg> down = ui.handle(pointer_event(EV_POINTER_DOWN, x, y, 1100));
+        List<Msg> up = ui.handle(pointer_event(EV_POINTER_UP, x, y, 1150));
+        expect(t, down.len() == 0 && up.len() == 1 && up[0].action == "keep",
+            "identity: hit testing activates the visible duplicate", $"{down.len()} down, {up.len()} up");
+    } else {
+        expect(t, false, "identity: laid-out root exists", "none");
+    }
+    expect(t, contains(join(a11y_problems(ui), "; "), "duplicate view identity"),
+        "identity: duplicate keys are reported to accessibility diagnostics", join(a11y_problems(ui), "; "));
+}
+
 void test_keyboard(Tally t, Ui ui) {
     View v = column().add(button("One", "one").key("k1")).add(text("label")).add(checkbox("Two", false, "two").key("k2")).add(button("Three", "three").disabled(true).key("k3")).add(slider(5, 0, 10, "s").key("k4").label("Level"));
     ui.render(v, 0);
@@ -323,6 +347,7 @@ int main() {
         if (let fb = bold) {
             test_layout(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_buttons_and_guard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_duplicate_keys(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_keyboard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_text_field(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
