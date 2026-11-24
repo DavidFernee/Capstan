@@ -369,6 +369,9 @@ static void test_gc_allocator_arithmetic(void) {
     CHECK(expect_gc_panic(trigger_negative_heap_limit));
     CHECK(cap_gc_parse_heap_limit("128K") == ((size_t)128 << 10));
     CHECK(cap_gc_parse_heap_limit("1G") == ((size_t)1 << 30));
+    CHECK(cap_gc_physical_heap_limit(1024, 4096) == ((size_t)3 << 20));
+    CHECK(cap_gc_physical_heap_limit(SIZE_MAX, 4096) == CAP_MAX_LEN);
+    CHECK(cap_gc_physical_heap_limit(0, 4096) == ((size_t)1 << 34));
     size_t saved_heap = cap_gc.heap, saved_limit = cap_gc.max_heap;
     cap_gc.heap = 100;
     cap_gc.max_heap = 101;
