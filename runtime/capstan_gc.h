@@ -101,15 +101,51 @@ static struct {
     size_t released_total, reused_total;
 } cap_gc;
 
-static void cap_gc_oom(void) {
+static __attribute__((noreturn)) void cap_gc_oom(void) {
     fprintf(stderr, "capstan: out of memory\n");
     exit(102);
 }
 
+/* Checked sizing helpers for collector-owned metadata. */
+static int cap_gc_size_add(size_t a, size_t b, size_t *out) {
+    if (b > SIZE_MAX - a) return 0;
+    *out = a + b;
+    return 1;
+}
+static int cap_gc_size_mul(size_t a, size_t b, size_t *out) {
+    if (a && b > SIZE_MAX / a) return 0;
+    *out = a * b;
+    return 1;
+}
+static size_t cap_gc_next_capacity(size_t current, size_t required, size_t initial) {
+    size_t n = current ? current : initial;
+    if (!n) n = 1;
+    while (n < required) {
+        if (n > SIZE_MAX / 2) cap_gc_oom();
+        n *= 2;
+    }
+    return n;
+}
 static void *cap_gc_meta(size_t n) {
     void *p = calloc(1, n ? n : 1);
     if (!p) cap_gc_oom();
     return p;
+}
+
+static void *cap_gc_meta_array(size_t count, size_t element_size) {
+    size_t bytes;
+    if (!cap_gc_size_mul(count, element_size, &bytes)) cap_gc_oom();
+    return cap_gc_meta(bytes);
+}
+static size_t cap_gc_account_add(size_t current, size_t amount) {
+    size_t result;
+    if (!cap_gc_size_add(current, amount, &result))
+        cap_panic("runtime allocation accounting overflow", "CWE-190", 0);
+    return result;
+}
+static int cap_gc_would_exceed_heap(size_t amount) {
+    return cap_gc.max_heap &&
+           (cap_gc.heap > cap_gc.max_heap || amount > cap_gc.max_heap - cap_gc.heap);
 }
 
 static void cap_gc_report(void) {
@@ -205,9 +241,12 @@ static size_t cap_gc_slot(uintptr_t pageno, size_t cap) {
 }
 
 static void cap_gc_ptab_insert(CapPage *pg) {
-    if ((cap_gc.npages + 1) * 2 > cap_gc.ptab_cap) {
-        size_t nc = cap_gc.ptab_cap ? cap_gc.ptab_cap * 2 : 64;
-        CapPage **nt = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
+    size_t entries, needed;
+    if (!cap_gc_size_add(cap_gc.npages, 1, &entries) ||
+        !cap_gc_size_mul(entries, 2, &needed)) cap_gc_oom();
+    if (needed > cap_gc.ptab_cap) {
+        size_t nc = cap_gc_next_capacity(cap_gc.ptab_cap, needed, 64);
+        CapPage **nt = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
         for (size_t i = 0; i < cap_gc.ptab_cap; i++) {
             CapPage *p = cap_gc.ptab[i];
             if (!p) continue;
@@ -260,9 +299,11 @@ static void cap_gc_spare_page(CapPage *pg, int release) {
     pg->spare = 1;
     if (release) cap_gc_release(pg);
     if (cap_gc.nspare == cap_gc.capspare) {
-        size_t nc = cap_gc.capspare ? cap_gc.capspare * 2 : 16;
-        CapPage **ns = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
-        if (cap_gc.nspare) memcpy(ns, cap_gc.spare, sizeof(CapPage *) * cap_gc.nspare);
+        size_t needed;
+        if (!cap_gc_size_add(cap_gc.nspare, 1, &needed)) cap_gc_oom();
+        size_t nc = cap_gc_next_capacity(cap_gc.capspare, needed, 16);
+        CapPage **ns = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
+        if (cap_gc.nspare) memcpy(ns, cap_gc.spare, cap_gc.nspare * sizeof(CapPage *));
         free(cap_gc.spare);
         cap_gc.spare = ns;
         cap_gc.capspare = nc;
@@ -313,9 +354,11 @@ static void cap_gc_new_page(int atomic, int cls) {
     pg->base = (char *)mem;
     cap_gc_format_page(pg, atomic, cls);
     if (cap_gc.npages == cap_gc.cappages) {
-        size_t nc = cap_gc.cappages ? cap_gc.cappages * 2 : 16;
-        CapPage **np = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
-        if (cap_gc.npages) memcpy(np, cap_gc.pages, sizeof(CapPage *) * cap_gc.npages);
+        size_t needed;
+        if (!cap_gc_size_add(cap_gc.npages, 1, &needed)) cap_gc_oom();
+        size_t nc = cap_gc_next_capacity(cap_gc.cappages, needed, 16);
+        CapPage **np = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
+        if (cap_gc.npages) memcpy(np, cap_gc.pages, cap_gc.npages * sizeof(CapPage *));
         free(cap_gc.pages);
         cap_gc.pages = np;
         cap_gc.cappages = nc;
@@ -329,10 +372,12 @@ static void cap_gc_new_page(int atomic, int cls) {
 /* ---- marking ------------------------------------------------------------ */
 
 static void cap_gc_push(void *p, size_t n) {
-    if (cap_gc.msp + 2 > cap_gc.mcap) {
-        size_t nc = cap_gc.mcap ? cap_gc.mcap * 2 : 1024;
-        void **ns = (void **)cap_gc_meta(sizeof(void *) * nc);
-        if (cap_gc.msp) memcpy(ns, cap_gc.mstack, sizeof(void *) * cap_gc.msp);
+    size_t needed;
+    if (!cap_gc_size_add(cap_gc.msp, 2, &needed)) cap_gc_oom();
+    if (needed > cap_gc.mcap) {
+        size_t nc = cap_gc_next_capacity(cap_gc.mcap, needed, 1024);
+        void **ns = (void **)cap_gc_meta_array(nc, sizeof(void *));
+        if (cap_gc.msp) memcpy(ns, cap_gc.mstack, cap_gc.msp * sizeof(void *));
         free(cap_gc.mstack);
         cap_gc.mstack = ns;
         cap_gc.mcap = nc;
