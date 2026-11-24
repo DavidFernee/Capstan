@@ -267,18 +267,22 @@ struct Ui {
         int left = n.frame.x + dp(self, n.v.pad.left);
         // The boundary nearest to x.
         Tainted val = n.v.value;
+        List<int> cps = codepoints_of_slice(n.v, val.len());
+        List<int> ends = utf8_decode_with_ends(tainted_bytes(val)).byte_ends;
         int best = 0;
         int best_d = UNBOUNDED;
-        int b = 0;
-        while (true) {
-            int w = text_width(f, size, codepoints_of_slice(n.v, b), 0, codepoints_of_slice(n.v, b).len());
-            int d = int_abs(left + w - x);
+        int width = 0;
+        int bytes = 0;
+        for (int i = 0; i <= cps.len(); i += 1) {
+            int d = int_abs(left + width - x);
             if (d < best_d) {
                 best_d = d;
-                best = b;
+                best = bytes;
             }
-            if (b >= val.len()) { break; }
-            b = next_boundary(val, b);
+            if (i < cps.len()) {
+                width += glyph_advance(f, glyph_for(f, cps[i]), size);
+                bytes = ends[i];
+            }
         }
         self.caret.set(n.id, best);
     }
