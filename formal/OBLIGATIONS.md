@@ -5,7 +5,7 @@
 
 | ID | Property | Required evidence | Current status / blocker |
 |---|---|---|---|
-| ARITH-01 | Checked addition returns the exact sum iff it fits; otherwise it takes the specified fatal path. | Machine proof of helper plus C refinement. | Proved model-only: `checkedAdd_sound`, `checkedAdd_complete`, `checkedAdd_exact`; Lean 4.36.0 + leanchecker + Nanoda + axiom audit passed (run 45359603435). C refinement not started. |
+| ARITH-01 | Checked addition returns the exact sum iff it fits; otherwise it takes the specified fatal path. | Machine proof of helper plus C refinement. | In progress: previous revision proved success/fits; current revision adds explicit terminal `fatal` result and `checkedAdd_overflow_fatal`. Exact-head proof CI pending. C refinement not started. |
 | ARITH-02 | Checked multiplication returns the exact product iff it fits; otherwise fatal. | Machine proof plus C refinement. | Not started. |
 | ARITH-03 | Capacity growth terminates, is at least required, and its byte size fits. | Machine proof over all machine-sized inputs plus C refinement. | Not started. |
 | PAGE-01 | Page records and page-table entries are unique and consistent. | Model invariant and implementation correspondence. | Not started. |
