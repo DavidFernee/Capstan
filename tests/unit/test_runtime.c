@@ -448,7 +448,7 @@ static void test_gc(void) {
     collect_clean();
     CHECK(cap_gc.heap <= before + (size_t)8 * 65536);   /* garbage is reused, not accumulated */
     if (cap_gc.live >= ((size_t)4 << 20))
-        fprintf(stderr, "GC live-byte diagnostic: live=%zu heap=%zu pages=%zu large=%zu\\n",
+        fprintf(stderr, "GC live-byte diagnostic: live=%zu heap=%zu pages=%zu large=%zu\n",
                 cap_gc.live, cap_gc.heap, cap_gc.npages, cap_gc.nlarge);
     CHECK(cap_gc.live < (size_t)4 << 20);
 }
