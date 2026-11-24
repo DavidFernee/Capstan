@@ -8,6 +8,10 @@ Normative authority: docs/architecture/CCAM.md on the stacked CCAM branch.
 This is not an evaluator and no implementation-refinement theorem is claimed.
 -/
 
+def minI64 : Int := -(2 ^ 63 : Int)
+def maxI64 : Int := (2 ^ 63 : Int) - 1
+def inI64 (x : Int) : Prop := minI64 ≤ x ∧ x ≤ maxI64
+
 inductive Ty where
   | int
   | bool
@@ -22,8 +26,6 @@ def hasType : Val → Ty → Prop
   | .int n, .int => inI64 n
   | .bool _, .bool => True
   | _, _ => False
-where
-  inI64 (x : Int) : Prop := minI64 ≤ x ∧ x ≤ maxI64
 
 abbrev RegTypes (n : Nat) := Fin n → Ty
 abbrev Registers (n : Nat) := Fin n → Option Val
@@ -61,11 +63,6 @@ inductive Trap where
   | instructionLimit
   deriving DecidableEq, Repr
 
-def minI64 : Int := -(2 ^ 63 : Int)
-def maxI64 : Int := (2 ^ 63 : Int) - 1
-
-def inI64 (x : Int) : Prop := minI64 ≤ x ∧ x ≤ maxI64
-
 def checkedI64 (x : Int) : Except Trap Int :=
   if inI64 x then .ok x else .error .integerOverflow
 
@@ -92,12 +89,14 @@ def checkedRem (a b : Int) : Except Trap Int :=
 /-- A successful range check returns a signed-64 value. -/
 theorem checkedI64_sound (x result : Int)
     (h : checkedI64 x = .ok result) : inI64 result := by
-  unfold checkedI64 at h
-  by_cases hx : inI64 x
-  · simp [hx] at h
-    cases h
-    exact hx
-  · simp [hx] at h
+  have hx : inI64 x := by
+    by_contra hnot
+    have : False := by simpa [checkedI64, hnot] using h
+    exact this.elim
+  have heq : x = result := by
+    simpa [checkedI64, hx] using h
+  subst result
+  exact hx
 
 theorem checkedAdd_sound (a b result : Int)
     (h : checkedAdd a b = .ok result) : inI64 result := by
