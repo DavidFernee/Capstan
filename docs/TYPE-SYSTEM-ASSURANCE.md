@@ -1255,3 +1255,4 @@ Enforce global limits on generated specializations, aggregate layout nodes, emit
 - GCC and Clang compile all specialization fixtures at `-O0`, `-O2` and `-O3`; bootstrap and self-hosted output agree.
 
 This section defines required backend work; it does not assert that the current code generator supports generics or that the runtime's generic-layout behaviour has been verified.
+true
