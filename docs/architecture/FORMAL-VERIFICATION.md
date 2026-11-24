@@ -94,7 +94,7 @@ No theorem in this programme should rely on sorry, admit, custom axioms, uncheck
 
 | Stage | Evidence required |
 |---|---|
-| P0: environment | <badge>Complete on PR #89</badge> Pinned Lean 4.19.0, dependency-free Lake manifest, clean CI proof build and unfinished-proof scan |
+| P0: environment | Complete on PR #89 Pinned Lean 4.19.0, dependency-free Lake manifest, clean CI proof build and unfinished-proof scan |
 | P1: core | Complete small-step semantics and mechanically checked preservation + progress-or-trap |
 | P2: calls/control flow | Valid target and call graph invariants; return destination/type preservation; bounded stack |
 | P3: IR | Typed IR definitions and source/IR/CCAM simulation theorems |
