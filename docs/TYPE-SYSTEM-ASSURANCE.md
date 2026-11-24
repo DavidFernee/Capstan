@@ -397,3 +397,67 @@ The guarantee is limited to the managed secret allocation. It does not establish
 - Include a test-only observation mechanism for verifying wipe-before-reuse without exposing raw secret bytes or a production introspection API.
 
 These are separate properties: environment reachability must be correct, grant non-escape must be enforced statically, and secret payload erasure must be verified at the collector boundary.
+
+
+## 17. Closure capture analysis, aliasing and transitive capability non-escape
+
+The closure contract needs an explicit capture-analysis algorithm. “All free-variable bindings” is not sufficient as an implementation requirement unless nested closures, aggregate values and capability-bearing types are covered.
+
+### 17.1 Capture set is lexical, complete and deterministic
+
+For each closure expression, compute the free-variable set relative to that closure's parameters and locally declared bindings. Capture every referenced outer binding exactly once, in deterministic declaration order (with a specified tie-breaker for nested scopes). Do not capture unrelated locals.
+
+Nested closure conversion must be recursive:
+- If an inner closure refers to a binding local to the enclosing closure, the inner closure captures that enclosing binding when it is created.
+- If the enclosing closure needs an outer binding only to create or initialise the inner closure, the enclosing closure must itself capture that binding.
+- A closure returned from a function must carry every binding required by its nested closures; no environment pointer may refer to the creator's stack frame.
+- The compiler must not treat a name as local merely because it appears in an intermediate closure-conversion environment. Preserve the original lexical binding identity through every conversion step.
+
+Capture identity is a binding identity, not just a variable spelling. Shadowed variables in nested scopes must never be conflated. Capture layout and generated environment fields must be deterministic across bootstrap and compiler versions.
+
+### 17.2 By-value means snapshot of the binding, not deep immutability
+
+Specify the following semantics:
+- Scalars and immutable value-like values are copied at closure creation. Later reassignment of the original local binding does not change the captured value.
+- For reference types, the pointer is copied. The referenced object is shared, not cloned; mutations through any alias are observable through the closure.
+- Reassigning the original local reference variable after closure creation does not retarget the closure's captured pointer.
+- A closure environment's binding slots are not implicitly mutable cells. There is no hidden reference capture or shared stack cell.
+- Mutation of a captured heap object remains possible only through the language's ordinary checked mutability rules. The closure does not grant extra mutation authority.
+- Function/closure values are immutable code-plus-environment pairs unless a separately specified operation replaces the entire function value. Calling a closure repeatedly observes mutations to shared captured objects, but not later reassignment of the source binding.
+
+These rules distinguish snapshot semantics from deep-copy semantics and avoid accidental capture-by-reference of local variables.
+
+### 17.3 Grant rejection is a recursive property of the resolved capture type
+
+At closure creation, reject a capture if its fully resolved type contains `Grant<P>) anywhere. The predicate must recurse through:
+- optional and collection constructors;
+- every field of a nominal struct;
+- every payload field of every nominal enum variant;
+- generic type arguments after complete substitution;
+- nested closure/function environment types, if function values can themselves contain captures.
+
+The check must operate on canonical declaration identity, not a short type name, and must be bounded by the compiler's global type traversal/work budget. An unresolved type variable is not evidence that a capture is safe: the template must carry a proof/constraint that excludes Grant, or the capture must be rejected until concrete substitution proves the property.
+
+The same grant-containment predicate must govern all escape boundaries: closure capture, function return, aggregate storage, constants, collection insertion, and any future heap allocation or asynchronous/task capture. Do not implement a weaker closure-specific check.
+
+A grant obtained in a protected function may be used locally for the protected operation, but cannot be retained by a returned closure, nested closure, aggregate, collection or generic wrapper. A closure that does not reference the grant need not capture it.
+
+### 17.4 Secret reachability follows the full captured object graph
+
+A closure may capture a Secret directly or through an aggregate only under the section 16 allocation rule. The closure environment is pointer-scanned; all intermediate aggregates/containers must also be correctly traced; the original kind-2 secret payload remains reachable through that graph. Do not copy secret bytes into ordinary closure storage. Reclamation and wiping remain collection-time guarantees, not deterministic destruction.
+
+### 17.5 Required adversarial tests
+
+- Nested closure captures a function parameter; outer closure is returned; repeated forced collections; inner closure remains valid after creator returns.
+- Nested closure captures a binding that the outer closure itself captures from its creator; verify both environment links and no stack reference.
+- Shadowed variables with the same spelling produce distinct captures and deterministic layouts.
+- Capture a scalar, then reassign the original local; closure sees the creation-time scalar value.
+- Capture a reference to a mutable object, mutate through a second alias, and verify the closure observes the mutation.
+- Reassign the original reference variable to a different object; closure continues to refer to the originally captured object.
+- Reject direct `Grant<P>), optional Grant, collection-wrapped Grant, and any generic wrapper whose concrete substitution contains Grant.
+- Reject a nested closure that captures a Grant even if the enclosing closure does not otherwise expose it; reject an outer closure that must transitively retain a grant to construct the inner closure.
+- Accept a closure in a protected function that does not capture the Grant and does not use it after the protected call.
+- Capture a Secret through a struct/list/enum path; force collections and verify all intermediate objects remain reachable and the secret is wiped only after the complete graph becomes unreachable and a collection occurs.
+- Verify capture ordering and generated output are deterministic across bootstrap, GCC/Clang and `-O0`, `-O2`, `-O3`.
+
+These tests should be added when closure syntax and runtime support land; they are acceptance requirements, not claims about current closure implementation.
