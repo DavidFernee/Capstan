@@ -1,0 +1,22 @@
+// Integration regression: individually valid views that exceed the aggregate
+// rendered-line budget by exactly one line must fail during layout.
+string repeat_newlines(int n) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < n; i += 1) { parts.push("\n"); }
+    return join(parts, "");
+}
+
+int main() {
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
+        if (let font = font_load(data)) {
+            Ui ui = new_ui(font, font, light_theme(), 64, 64, 256);
+            string first = repeat_newlines(MAX_FRAME_LINES / 2 - 1);
+            string second = repeat_newlines(MAX_FRAME_LINES / 2);
+            View root = column().add(text(first)).add(text(second));
+            layout_root(ui, root, fx(64), fx(64));
+            println("unexpectedly accepted aggregate line count");
+            return 1;
+        }
+    }
+    return 2;
+}
