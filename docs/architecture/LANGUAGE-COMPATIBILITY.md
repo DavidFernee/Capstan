@@ -26,7 +26,7 @@ A feature being accepted by the existing compiler does not mean it is supported 
 | Enums and payloads | Tagged variants, exhaustive match | Excluded | Tagged value layout and safe payload access |
 | Optionals | `T?`, `none`, explicit unwrap/control flow | Excluded | Option representation and unwrap semantics |
 | Lists and maps | Mutable collections; checked indexing; insertion-order maps | Excluded | Aggregate state, bounds, mutation order, hashing/resource semantics |
-| Strings and interpolation | Immutable byte sequences; taint-aware concatenation | Excluded | Byte-string value model, allocation, UTF-8 and effects |
+| Strings and interpolation | Immutable byte sequences; current C backend lazily materialises each literal through `CAP_LIT`/`malloc` on first use, which may fail | Excluded | Byte-string value model, static-vs-dynamic literal storage, allocation/resource semantics, UTF-8 and effects |
 | `Tainted`, `Html`, `LogText` | Distinct information-flow/context types | Excluded | Typed information-flow semantics and sink contracts |
 | `Secret` | Restricted credential type and secret runtime allocation | Excluded | Non-disclosure, comparison, copies and zeroisation model |
 | Policies and `Grant<P>` | Policy checks, role binding, revalidation | Excluded | Grant values, identity binding, lifetime and protected-call transitions |
