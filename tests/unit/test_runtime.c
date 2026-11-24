@@ -6,6 +6,7 @@
  *   HMAC-SHA256   RFC 4231 test cases 1, 2 and 6
  *   PBKDF2-SHA256 RFC 7914 section 11
  */
+#define CAP_GC_TESTING 1
 #include "capstan_rt.h"
 
 static int failures = 0, checks = 0;
@@ -742,6 +743,117 @@ static void test_gc_stack_bounds(void) {
     CHECK(!cap_gc_stack_bounds(UINTPTR_MAX - 7, 16, &low, &high));
 }
 
+#define CAP_NLARGE_SECRETS 16
+static uintptr_t large_secret_addrs[CAP_NLARGE_SECRETS];
+static uintptr_t large_secret_wiped_addrs[CAP_NLARGE_SECRETS];
+static size_t large_secret_wipe_observations;
+static int large_secret_wipe_clean;
+
+static void observe_large_secret_wipe(const void *memory, size_t n) {
+    uintptr_t address = (uintptr_t)memory;
+    const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
+    if (n == 0 || n % CAP_PAGE_SIZE != 0) large_secret_wipe_clean = 0;
+    for (size_t i = 0; i < n; i++)
+        if (bytes[i] != 0) large_secret_wipe_clean = 0;
+    size_t records = 0;
+    for (size_t i = 0; i < cap_gc.nlarge; i++) {
+        if ((uintptr_t)cap_gc.large[i].base == address) {
+            records++;
+            if (cap_gc.large[i].alloc_size != n || cap_gc.large[i].atomic != 2)
+                large_secret_wipe_clean = 0;
+        }
+    }
+    if (records != 1) large_secret_wipe_clean = 0;
+    int original = 0;
+    for (int i = 0; i < CAP_NLARGE_SECRETS; i++) {
+        uintptr_t expected = large_secret_addrs[i] ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+        if (expected == address) original++;
+    }
+    if (original > 1) large_secret_wipe_clean = 0;
+    if (original == 0) return;
+    if (n < 8192) large_secret_wipe_clean = 0;
+    size_t ordinal = large_secret_wipe_observations++;
+    if (ordinal >= CAP_NLARGE_SECRETS) {
+        large_secret_wipe_clean = 0;
+        return;
+    }
+    large_secret_wiped_addrs[ordinal] = address;
+}
+
+__attribute__((noinline)) static void make_large_secrets_for_wipe(void) {
+    for (int i = 0; i < CAP_NLARGE_SECRETS; i++) {
+        unsigned char *p = (unsigned char *)cap_gc_alloc(8192, 2);
+        memset(p, 0xa5, 8192);
+        large_secret_addrs[i] = (uintptr_t)p ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+    }
+}
+
+static void test_gc_large_secret_mapping(void) {
+    size_t heap_before = cap_gc.heap;
+    large_secret_wipe_observations = 0;
+    large_secret_wipe_clean = 1;
+    cap_gc_test_secret_wipe_hook = observe_large_secret_wipe;
+    make_large_secrets_for_wipe();
+    collect_clean();
+    int retained = 0;
+    for (int j = 0; j < CAP_NLARGE_SECRETS; j++) {
+        uintptr_t address = large_secret_addrs[j] ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+        int records = 0;
+        for (size_t i = 0; i < cap_gc.nlarge; i++)
+            if ((uintptr_t)cap_gc.large[i].base == address) records++;
+        if (records > 1) large_secret_wipe_clean = 0;
+        retained += records;
+    }
+    for (size_t j = 0; j < large_secret_wipe_observations; j++) {
+        int records = 0;
+        for (size_t i = 0; i < cap_gc.nlarge; i++)
+            if ((uintptr_t)cap_gc.large[i].base == large_secret_wiped_addrs[j]) records++;
+        if (records != 0) large_secret_wipe_clean = 0;
+    }
+    cap_gc_test_secret_wipe_hook = NULL;
+    size_t heap_after = cap_gc.heap;
+    CHECK(large_secret_wipe_observations >= CAP_NLARGE_SECRETS - 1);
+    CHECK(large_secret_wipe_clean);
+    CHECK(retained <= 1);
+    CHECK(heap_after <= heap_before + CAP_PAGE_SIZE);
+    const volatile unsigned char *fresh = (const volatile unsigned char *)cap_gc_alloc(8192, 2);
+    int zeroed = 1;
+    for (size_t i = 0; i < 8192; i++) if (fresh[i] != 0) zeroed = 0;
+    CHECK(zeroed);
+}
+
+static void test_gc_secret_free_slots(void) {
+    size_t checked = 0;
+    int clean = 1;
+    uint8_t seen[CAP_PAGE_SIZE / 16];
+    for (size_t i = 0; i < cap_gc.npages; i++) {
+        CapPage *pg = cap_gc.pages[i];
+        if (pg->atomic != 2) continue;
+        if (!pg->free_slots || pg->free_count > pg->free_cap ||
+            pg->free_cap != pg->nobj || pg->nobj > sizeof seen) {
+            clean = 0;
+            continue;
+        }
+        memset(seen, 0, pg->nobj);
+        for (uint32_t j = 0; j < pg->free_count; j++) {
+            uint32_t slot = pg->free_slots[j];
+            if (slot >= pg->nobj || seen[slot] || pg->alloc[slot]) {
+                clean = 0;
+                continue;
+            }
+            seen[slot] = 1;
+            const volatile unsigned char *bytes =
+                (const volatile unsigned char *)(pg->base + (size_t)slot * pg->objsize);
+            for (uint32_t k = 0; k < pg->objsize; k++)
+                if (bytes[k] != 0) clean = 0;
+            checked++;
+        }
+        for (uint32_t j = 0; j < pg->nobj; j++)
+            if (!pg->alloc[j] && !seen[j]) clean = 0;
+    }
+    CHECK(checked > 0 && clean);
+}
+
 static void test_gc_release(void) {
     cap_gc_collect();
     size_t released_before = cap_gc.released_total, heap_before = cap_gc.heap;
@@ -898,6 +1010,8 @@ int main(void) {
     test_gc_release_accounting();
     test_gc_stack_bounds();
     test_secret_page_free_stack();
+    test_gc_secret_free_slots();
+    test_gc_large_secret_mapping();
     test_gc_release();
     test_secret_env_name();
     test_secret_wipe();
