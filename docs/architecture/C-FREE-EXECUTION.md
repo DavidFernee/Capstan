@@ -179,8 +179,8 @@ source from the first implementation. The existing bootstrap may temporarily
 execute Capstan source through the current compiler/C path; that is solely a
 bootstrap mechanism and must not be mistaken for the target architecture.
 
-No Python or C interpreter/runtime for CCAM is to be introduced. The next
-implementation increment is a Capstan-native, typed CCAM representation and
-small evaluator, with Capstan-written positive and negative tests. Only after
-that vertical slice is running should the machine be extended to heap,
-collections, taint, secrets, grants, and IO.
+No Python or C interpreter/runtime for CCAM is to be introduced. The repository now has a Capstan-native single-frame typed evaluator (merged in PR #142). The following stacked increments are under review: a typed structural validator for that subset (PR #144), a multi-function call-frame evaluator with bounded depth and argument/return transfer (PR #154), and an initial checked-scalar source-to-CCAM lowerer that parses and checks actual Capstan source before validation and execution (PR #162).
+
+The current source-lowering tests exercise a scalar `19 + 23` program, a direct function call, boolean return transfer, compound assignment, short-circuit suppression of a division-by-zero call, checked overflow, and fail-closed rejection of unsupported loops and local shadowing. These are executable tests through the current Capstan compiler/bootstrap and evaluator; they are not evidence of native machine-code generation or a C-free production execution path. The production compiler still emits C and uses the existing C runtime.
+
+The next implementation increments are to complete and integrate the validator and multi-function evaluator, extend lowering to the normative typed source core (including loops and scoped locals), establish validator soundness and source/evaluator refinement in Lean, and then implement a native backend plus the minimum runtime/IO boundary. Heap, collections, taint, secrets, grants, and IO remain later runtime milestones.
