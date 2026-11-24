@@ -180,11 +180,9 @@ section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 
 if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
   ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
 else bad "shroud" "$out"; fi
-if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
 printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
 if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
   if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud under ASan+UBSan, damaged fonts included: no reports"; else bad "shroud (sanitizers)" "$out"; fi
-  if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame text budget under ASan+UBSan: $out"; else bad "shroud frame text budget (sanitizers)" "$out"; fi
 else
   echo "  skip  sanitizers not available for $CC"
 fi
@@ -307,6 +305,16 @@ if "$CC" $SAN "$tmp/lsp.c" -o "$tmp/lspsan" 2>/dev/null; then
   if out="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/sessions.py" "$tmp/lspsan" 2>&1)" && out2="$(CAPSTAN_GC_STRESS=200 $PY "$ROOT/tests/lsp/fuzz.py" "$tmp/lspsan" 20 "${FUZZ_SEED:-$RANDOM}" 2>&1)"; then
     ok "language server clean under ASan+UBSan with GC stress (sessions and fuzzing)"
   else bad "sanitized language server" "$out $out2"; fi
+else
+  echo "  skip  sanitizers not available for $CC"
+fi
+
+# Keep this independent regression section away from the core Shroud runner's
+# insertion point so other Shroud test additions can merge without hunk conflicts.
+section "shroud frame text budget"
+if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
+if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
+  if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame text budget under ASan+UBSan: $out"; else bad "shroud frame text budget (sanitizers)" "$out"; fi
 else
   echo "  skip  sanitizers not available for $CC"
 fi
