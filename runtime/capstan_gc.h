@@ -140,7 +140,8 @@ static struct {
 } cap_gc;
 
 static int cap_gc_heap_would_exceed(size_t amount) {
-    /* Preserve the existing convention: an explicit zero limit disables the cap. */
+    /* Zero is an uncapped sentinel for direct helper use. Initialization
+       normalizes an explicit CAPSTAN_MAX_HEAP=0 to the hard CAP_MAX_LEN ceiling. */
     if (cap_gc.max_heap == 0) return 0;
     if (cap_gc.heap > cap_gc.max_heap)
         cap_panic("garbage collector heap accounting invariant violated", "CWE-682", 0);
