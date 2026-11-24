@@ -912,7 +912,7 @@ test "CCAM source lowering compiles scalar locals and executes 42" {
 
 
 
-test "CCAM source lowering rejects entry functions with parameters" {
+test "CCAM source checker rejects entry functions with parameters" {
     Ctx context = new Ctx{
         files: new List<string>(),
         sources: new List<Tainted>(),
@@ -928,11 +928,7 @@ test "CCAM source lowering rejects entry functions with parameters" {
     List<Node> declarations = parse_program(context, tokens);
     Checker checker = new_checker(context);
     check_program(checker, declarations, true);
-    assert(error_count(context) == 0);
-
-    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
-    assert(!lowered.ok && lowered.error == "invalid_entry_signature");
-    assert(lowered.functions.len() == 0 && lowered.entry_function == -1);
+    assert(error_count(context) > 0);
 }
 
 test "CCAM source lowering preserves checked integer overflow traps" {
