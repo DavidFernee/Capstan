@@ -891,6 +891,26 @@ string banned_hint(string name) {
 bool is_literal_str(Node e) {
     return e.k == N_STR;
 }
+// Node.s stores the C-escaped literal body, not its decoded bytes. The lexer
+// encodes a NUL byte as the three-digit octal escape \000. Skip escaped
+// backslashes/quotes/question marks so a literal backslash followed by "000"
+// is not mistaken for an embedded NUL.
+bool literal_has_nul(Node e) {
+    int i = 0;
+    while (i < e.s.len()) {
+        if (e.s.at(i) != '\\') {
+            i += 1;
+            continue;
+        }
+        i += 1;
+        if (i + 2 < e.s.len() && e.s.at(i) == '0' &&
+            e.s.at(i + 1) == '0' && e.s.at(i + 2) == '0') {
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}
 
 // Arguments for print-like and storage sinks: anything stringish, but never secrets.
 void sink_string(Checker c, Node arg, string what, bool allow_tainted) {
@@ -1104,8 +1124,12 @@ Type check_call(Checker c, Node e) {
     }
     if (f == "secret_env") {
         want_args(c, e, 0, 1, f);
-        if (n == 1 && !is_literal_str(e.kids[0])) {
-            error_at(c.ctx, e, "", "secret_env() takes the variable name as a string literal");
+        if (n == 1) {
+            if (!is_literal_str(e.kids[0])) {
+                error_at(c.ctx, e, "", "secret_env() takes the variable name as a string literal");
+            } else if (literal_has_nul(e.kids[0])) {
+                error_at(c.ctx, e.kids[0], "CWE-158", "secret_env() variable name must not contain NUL");
+            }
         }
         return mk_wrap(TY_OPT, mk_type(TY_SECRET));
     }
@@ -1909,6 +1933,15 @@ Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, string seed, bool repo
         flow_walk(f, body);
         rounds += 1;
     }
+    // Never run sink diagnostics with a partial intraprocedural taint set.
+    // A long reverse dependency chain can require more than 100 passes.
+    if (f.changed) {
+        if (error_count(ctx) == 0) {
+            error_at(ctx, body, "CWE-20",
+                "intraprocedural taint analysis did not reach a fixpoint within 100 rounds; refusing to compile");
+        }
+        return f;
+    }
     if (report) {
         f.report = true;
         flow_walk(f, body);
@@ -1951,6 +1984,7 @@ void check_laundering(Checker c, List<Node> decls) {
             Node d = decls[i];
             if (d.k == N_FN) {
                 FlowSummary s = summarise(sums, c.ctx, d);
+                if (error_count(c.ctx) > 0) { return; }
                 if (let prev = sums.get(d.s)) {
                     if (!same_summary(prev, s)) { changed = true; }
                 } else {
@@ -1969,9 +2003,11 @@ void check_laundering(Checker c, List<Node> decls) {
             "taint analysis did not reach a fixpoint within 50 rounds; refusing to compile");
         return;
     }
+    if (error_count(c.ctx) > 0) { return; }
     for (int j = 0; j < decls.len(); j += 1) {
         Node d2 = decls[j];
         if (d2.k == N_FN || d2.k == N_POLICY) { flow_body(sums, c.ctx, d2.kids[d2.n], "", true); }
         if (d2.k == N_TEST) { flow_body(sums, c.ctx, d2.kids[0], "", true); }
+        if (error_count(c.ctx) > 0) { return; }
     }
 }
