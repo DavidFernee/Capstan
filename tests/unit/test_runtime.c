@@ -521,29 +521,34 @@ static void test_secret_wipe(void) {
 static void test_gc_secret_free_slots(void) {
     size_t checked = 0;
     int clean = 1;
+    uint8_t seen[CAP_PAGE_SIZE / 16];
     for (size_t i = 0; i < cap_gc.npages; i++) {
         CapPage *pg = cap_gc.pages[i];
         if (pg->atomic != 2) continue;
-        if (!pg->free_slots || pg->free_count > pg->free_cap) {
+        if (!pg->free_slots || pg->free_count > pg->free_cap ||
+            pg->free_cap != pg->nobj || pg->nobj > sizeof seen) {
             clean = 0;
             continue;
         }
+        memset(seen, 0, pg->nobj);
         for (uint32_t j = 0; j < pg->free_count; j++) {
             uint32_t slot = pg->free_slots[j];
-            if (slot >= pg->nobj) {
+            if (slot >= pg->nobj || seen[slot] || pg->alloc[slot]) {
                 clean = 0;
                 continue;
             }
+            seen[slot] = 1;
             const volatile unsigned char *bytes =
                 (const volatile unsigned char *)(pg->base + (size_t)slot * pg->objsize);
             for (uint32_t k = 0; k < pg->objsize; k++)
                 if (bytes[k] != 0) clean = 0;
             checked++;
         }
+        for (uint32_t j = 0; j < pg->nobj; j++)
+            if (!pg->alloc[j] && !seen[j]) clean = 0;
     }
     CHECK(checked > 0 && clean);
 }
-
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
