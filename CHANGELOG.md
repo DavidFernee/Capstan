@@ -5,6 +5,9 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Anchor A0: headless IDE workbench prototype using Shroud S0; static navigation and read-only preview only, with no live compiler connection or project commands executed
+- Anchor direction: WYSIWYG Shroud designer with Capstan source as the authoritative representation, plus a curated, version-pinned catalogue of security-reviewed components
+- Anchor catalogue contract: immutable package/dependency identity, signed provenance, scoped assurance claims, offline verification with explicit revocation freshness, transitive capability accounting and authentication-specific review gates
 - Security: reject embedded-NUL `secret_env` names at compile time and runtime; cap `read_line()` input at 1 MiB with a fail-closed CWE-789 diagnostic and boundary regressions
 - Authorisation: reject policies with more than eight struct-identity roles at compile time instead of accepting code that later fails closed at runtime
 - Security: the compiler refuses to proceed when interprocedural taint summaries exhaust their fixpoint budget; a deep helper-chain regression prevents CWE-20 laundering through incomplete analysis

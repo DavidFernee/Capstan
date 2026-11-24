@@ -769,3 +769,40 @@ The full design, the comparison with WinUI 3, SwiftUI, Qt and Flutter, and the r
 | S6 | live preview in the IDE, inspector, hot reload, visual designer | IDE Phase B |
 | S7 | WCAG 2.2 AA, EN 301 549 and Section 508 conformance; localisation; protective markings, capture-proof secret windows, `SecureField` yielding `Secret` | v0.8 |
 | S8 | iOS, Android, and the web through the WebAssembly backend | T10 |
+
+## 13. Anchor: Capstan IDE
+
+Anchor is the integrated development environment built on Shroud and the existing Capstan
+compiler tooling. It is a client of the compiler and language server, not a second
+implementation of language semantics or a source of security verdicts. Its architecture,
+threat model, Shroud integration contract and milestones are in [ANCHOR.md](ANCHOR.md).
+
+| Milestone | Work | Needs |
+|---|---|---|
+| A0 *(prototype)* | Architecture, threat model, Shroud S0 workbench composition, honest status/evidence model | Shroud S0, current CLI and LSP |
+| A1 | Integrate Shroud-owned native host/embedder; supervised LSP and compiler process adapters, bounded output and cancellation | Versioned Shroud S1 host contract; Capstan-native capability-scoped process API (not present in current runtime) |
+| A2 | Confined workspace model, multi-line editor, compiler-backed token/highlighting contract, save/reload | Shroud S2; compiler token API agreement |
+| A3 | Diagnostics, explicit check/build/test/format commands, reproducible build identity and local navigation | Existing compiler CLI/LSP; future LSP navigation requests |
+| A4 | WYSIWYG Shroud designer, live preview, component tree/properties inspector, source-aware bidirectional editing | Shroud visual designer APIs; compiler parse/source-map/transformation contract |
+| A5 | Assurance evidence inspector and curated security-reviewed component catalogue (authentication, authorisation, crypto, secrets, validation, secure networking) | Package manager, signatures, SBOM/provenance, assurance records and verifiers; v0.6 capability interfaces |
+| Later | Debugger, semantic refactoring, isolated extensions, documentation browser, advanced code navigation | Stable underlying compiler/runtime/package/debug APIs |
+
+The visual designer is built in Capstan using Shroud. Capstan source remains authoritative;
+visual edits must use source-aware transformations and preserve unrelated comments,
+formatting and code. No current compiler API is assumed to provide this yet.
+
+The component catalogue is curated, not an arbitrary plugin marketplace. Its proposed
+record model, assurance dimensions, offline/revocation semantics, capability policy and
+acceptance gates are specified in [ANCHOR-COMPONENT-CATALOGUE.md](ANCHOR-COMPONENT-CATALOGUE.md).
+Every entry is version-pinned and accompanied by scoped evidence. Authentication components
+should use established protocols and safe defaults, not bespoke cryptography. “Verified
+secure” is never an unqualified or permanent claim. Automatic remediation must follow the
+supply-chain gates in section 5: changes are reviewable, attributable and reversible; no
+capability or trust-root increase is applied automatically.
+
+Anchor's security UI must distinguish compiler rejections, runtime checks, assurance
+claims, evidence and dependency trust. A clean compile is not a project security proof;
+missing, stale or unverifiable evidence is unknown, never green. Workspace opening must
+not execute project code. Build commands use explicit executables and argument vectors,
+never shell interpolation. Project hooks and in-process plugins are out of scope until
+a separately reviewed capability and isolation design exists.
