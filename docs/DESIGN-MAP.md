@@ -695,7 +695,6 @@ The full design, the comparison with WinUI 3, SwiftUI, Qt and Flutter, and the r
 | S7 | WCAG 2.2 AA, EN 301 549 and Section 508 conformance; localisation; protective markings, capture-proof secret windows, `SecureField` yielding `Secret` | v0.8 |
 | S8 | iOS, Android, and the web through the WebAssembly backend | T10 |
 
-
 ## 13. Anchor: Capstan IDE
 
 Anchor is the integrated development environment built on Shroud and the existing Capstan
