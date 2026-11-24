@@ -56,7 +56,7 @@ The left operand is always evaluated first. The right operand is evaluated only 
 
 For simple local assignment `x = e`, evaluate `e) completely, then replace the value of `x`.
 
-Compound assignment is defined by sequencing, not by textual substitution into an implementation-language expression. For an assignable location `L) and operation `op`, `L op= e` means:
+Compound assignment is defined by sequencing, not by textual substitution into an implementation-language expression. For an assignable location `L` and operation `op`, `L op= e` means:
 1. evaluate and retain the location designator exactly once;
 2. read and retain the old value at that location;
 3. evaluate `e);
