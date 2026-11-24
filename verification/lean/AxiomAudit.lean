@@ -128,3 +128,8 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.finiteProgram_targets_bounded
 
 #print axioms CapstanVerification.validateFunctionInstr_rejects_return_mismatch
+#print axioms CapstanVerification.validateRawInstruction_returns_typed
+#print axioms CapstanVerification.machineInstr_targets_in_range
+#print axioms CapstanVerification.validateRawInstruction_target_sound
+#print axioms CapstanVerification.validateRawInstruction_constInt_type_sound
+#print axioms CapstanVerification.validateRawInstruction_constBool_type_sound
