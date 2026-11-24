@@ -54,7 +54,7 @@ This is an explicit compiler proof obligation, not an intrinsic property of C.
 
 The expected output is `11` and `1001`. These values distinguish left-to-right evaluation from a lowering that executes the mutating call before reading the field.
 
-`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. `tests/accept/compound_assignment_lvalue_once.cap` checks that a side-effectful field receiver, indexed-list base and index expression are each evaluated exactly once before the RHS. `tests/runtime/compound_assignment_invalidated_index.cap` checks that an RHS which shrinks the list causes a controlled bounds trap at the final write rather than an unchecked stale-index store.
+`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. `tests/accept/compound_assignment_lvalue_once.cap` checks that a side-effectful field receiver is evaluated exactly once before the RHS. The current checker restricts indexed compound-assignment targets to simple-indexed elements, so effectful index/base expressions are not currently source-representable; the indexed-list old-value and post-RHS validity paths are covered separately. `tests/runtime/compound_assignment_invalidated_index.cap` checks that an RHS which shrinks the list causes a controlled bounds trap at the final write rather than an unchecked stale-index store.
 
 The fixtures are conformance tests. They do not prove all generated expressions correct, establish that the C compiler behaves identically on every target, or replace a formal source-to-CCAM/native correctness argument.
 
