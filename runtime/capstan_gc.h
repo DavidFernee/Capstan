@@ -383,6 +383,7 @@ static void cap_gc_format_page(CapPage *pg, int atomic, int cls) {
     pg->objsize = cap_class_size[cls];
     pg->nobj = nobj;
     pg->atomic = atomic;
+    if (atomic == 2) cap_gc_wipe(pg->base, CAP_PAGE_SIZE);
     pg->spare = 0;
     pg->released = 0;
     pg->free_count = 0;
