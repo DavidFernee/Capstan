@@ -95,6 +95,8 @@ static void test_passwords(void) {
     CHECK(!cap_verify_password(pw, CAP_LIT("cap1$pbkdf2-sha256$999999999999$00$00", 37)));
     CHECK(!cap_verify_password(pw, NULL));
     CHECK(!cap_verify_password(NULL, h1));
+    CapStr empty_without_data = {.len = 0, .data = NULL};
+    CHECK(!cap_verify_password(&empty_without_data, h1));
 
     /* Exact current grammar: fixed cost, canonical decimal, lowercase hex,
        and complete consumption of the length-bearing CapStr. */
