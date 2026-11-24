@@ -376,11 +376,6 @@ static void trigger_signed_heap_limit(void) {
 static void trigger_plus_heap_limit(void) {
     (void)cap_gc_parse_heap_limit("+1");
 }
-static void trigger_missing_page_table_with_pages(void) {
-    cap_gc.ptab_cap = 0;
-    cap_gc.npages = 1;
-    cap_gc_ptab_insert(&(CapPage){.base = (char *)(uintptr_t)0x40000});
-}
 static void test_gc_allocator_arithmetic(void) {
     CHECK(expect_gc_panic(trigger_gc_add_overflow));
     CHECK(expect_gc_panic(trigger_gc_mul_overflow));
