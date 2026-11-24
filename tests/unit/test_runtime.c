@@ -577,15 +577,53 @@ static void test_secret_wipe(void) {
 
 #define CAP_NLARGE_SECRETS 16
 static uintptr_t large_secret_addrs[CAP_NLARGE_SECRETS];
+static uintptr_t large_secret_wiped_addrs[CAP_NLARGE_SECRETS];
+static size_t large_secret_wiped_sizes[CAP_NLARGE_SECRETS];
+static size_t large_secret_heap_at_hook[CAP_NLARGE_SECRETS];
 static size_t large_secret_wipe_observations;
 static int large_secret_wipe_clean;
 
 static void observe_large_secret_wipe(const void *memory, size_t n) {
+    uintptr_t address = (uintptr_t)memory;
     const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
-    large_secret_wipe_observations++;
+    size_t ordinal = large_secret_wipe_observations++;
+    if (ordinal >= CAP_NLARGE_SECRETS) {
+        large_secret_wipe_clean = 0;
+        return;
+    }
+    large_secret_wiped_addrs[ordinal] = address;
+    large_secret_wiped_sizes[ordinal] = n;
+    large_secret_heap_at_hook[ordinal] = cap_gc.heap;
     if (n < 8192 || n % CAP_PAGE_SIZE != 0) large_secret_wipe_clean = 0;
     for (size_t i = 0; i < n; i++)
         if (bytes[i] != 0) large_secret_wipe_clean = 0;
+
+    /* The hook is inside the actual sweep: the original record must still be
+       present exactly once, with the same rounded mapping size, before munmap. */
+    size_t records = 0;
+    for (size_t i = 0; i < cap_gc.nlarge; i++) {
+        if ((uintptr_t)cap_gc.large[i].base == address) {
+            records++;
+            if (cap_gc.large[i].alloc_size != n || cap_gc.large[i].atomic != 2)
+                large_secret_wipe_clean = 0;
+        }
+    }
+    if (records != 1) large_secret_wipe_clean = 0;
+
+    int original = 0;
+    for (size_t i = 0; i < CAP_NLARGE_SECRETS; i++) {
+        uintptr_t expected = large_secret_addrs[i] ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+        if (expected == address) original++;
+    }
+    if (original != 1) large_secret_wipe_clean = 0;
+
+    /* Between consecutive callbacks, only the preceding mapping's accounting
+       decrement may have occurred. */
+    if (ordinal > 0 &&
+        (large_secret_heap_at_hook[ordinal - 1] < large_secret_wiped_sizes[ordinal - 1] ||
+         cap_gc.heap != large_secret_heap_at_hook[ordinal - 1] -
+                        large_secret_wiped_sizes[ordinal - 1]))
+        large_secret_wipe_clean = 0;
 }
 
 __attribute__((noinline)) static void make_large_secrets_for_wipe(void) {
@@ -607,17 +645,28 @@ static void test_gc_large_secret_mapping(void) {
     int retained = 0;
     for (int j = 0; j < CAP_NLARGE_SECRETS; j++) {
         uintptr_t address = large_secret_addrs[j] ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
-        for (size_t i = 0; i < cap_gc.nlarge; i++) {
-            if ((uintptr_t)cap_gc.large[i].base == address) {
-                retained++;
-                fprintf(stderr,
-                        "large-secret retained mapping: index=%d address=0x%llx size=%zu alloc_size=%zu\\n",
-                        j, (unsigned long long)address,
-                        cap_gc.large[i].size, cap_gc.large[i].alloc_size);
-                break;
-            }
-        }
+        int records = 0;
+        for (size_t i = 0; i < cap_gc.nlarge; i++)
+            if ((uintptr_t)cap_gc.large[i].base == address) records++;
+        if (records > 1) large_secret_wipe_clean = 0;
+        retained += records;
     }
+
+    /* Every observed original mapping must have had its exact record removed.
+       The final callback is immediately before the final unmap/accounting step. */
+    for (size_t j = 0; j < large_secret_wipe_observations; j++) {
+        int records = 0;
+        for (size_t i = 0; i < cap_gc.nlarge; i++)
+            if ((uintptr_t)cap_gc.large[i].base == large_secret_wiped_addrs[j]) records++;
+        if (records != 0) large_secret_wipe_clean = 0;
+    }
+    if (large_secret_wipe_observations > 0) {
+        size_t last = large_secret_wipe_observations - 1;
+        if (large_secret_heap_at_hook[last] < large_secret_wiped_sizes[last] ||
+            cap_gc.heap != large_secret_heap_at_hook[last] - large_secret_wiped_sizes[last])
+            large_secret_wipe_clean = 0;
+    }
+
     cap_gc_test_secret_wipe_hook = NULL;
     size_t heap_after = cap_gc.heap;
     CHECK(large_secret_wipe_observations >= CAP_NLARGE_SECRETS - 1);
