@@ -53,7 +53,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 | #89 | Open, draft, stacked on #81 | `37674157b5e515c915125cd2bb72ee3b6b1b62a3` | CI and formal-verification runs queued | Partial proof evidence only. |
 | #98 | Open, draft, targets main | `1e9623e188cca2bc1d811acbb37355d80f66b4d4` | No PR-triggered run associated with latest head at inspection | Collector metadata/accounting owner; overlaps #51. Latest CI status needs confirmation. |
 | #105 | Open, draft, targets main | `e02af781049e432cfaf444221bfad9eb0eb636b4` | Run 45344590867 success | Runtime string-allocation/expansion bounds; Worker 8 password parser is stacked on this branch. |
-| #108 | Open, draft, stacked on #105 | `68b44fc7b26dd151e3acbe199f7302fe7badfca5` | No run associated with latest head yet; run 45345215167 is for preceding head `8cfb6d09b64b57e1742ae2dceaa750d477ca7c0b` | Strict bounded password-record parser submitted; runtime-owner, policy-owner and Worker 7 retests pending. |
+| #108 | Open, draft, stacked on #105 | `dd7e6313f677f42d0d319dfd142d3c84fbcf35db` | Run 45346177016 pending on latest head | Strict bounded parser plus negative-length/null-data/600001/non-ASCII regressions and test-only pre-KDF call counter; independent retest pending. |
 
 Previously merged changes reconciled as already addressed for their specific scope: #27 (taint/run/HTML attack findings), #29 (bounded read_file/FIFO behaviour), #56 (review documentation only), #67 (taint fixpoint fails closed), #73 (NUL environment names and bounded read_line), and #78 (grant-role capacity). These do not close the distinct findings above.
 
@@ -86,6 +86,6 @@ The patch replaces C-string parsing with a strict parser bounded by \`CapStr.len
 
 Regression coverage added to \`tests/unit/test_runtime.c\`: null arguments, leading-zero cost, uppercase hex, embedded-NUL suffix, ordinary trailing suffix, and a 100,000,000-iteration record. Malformed inputs are rejected before PBKDF2 is invoked. A structurally canonical current-format record is checked without running the expensive KDF.
 
-**Coordination requests posted to issue #25:** Worker 4 to review the stacked runtime integration; Worker 5 / crypto-policy owner to confirm the current-format-only compatibility decision; Worker 7 to adversarially retest the original PR #87 parser and work-factor findings.
+**Coordination requests posted to issue #25:** Worker 4 to review the stacked runtime integration; Worker 5 / crypto-policy owner to confirm the current-format-only compatibility decision; Worker 7 reviewed the parser structure and requested negative-length, null-data, exact-boundary and pre-KDF-counter tests; these were added on the latest head. Updated adversarial retest is pending.
 
 **State:** \`FIX SUBMITTED\`. Not CI verified, independently verified or accepted. Remaining risks include unbounded long-password amplification (separate SEC-CRYPTO-003), SHA-256 stack scratch erasure (SEC-CRYPTO-004), and the absence of a documented legacy-record inventory/migration decision.
