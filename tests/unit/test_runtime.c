@@ -518,6 +518,28 @@ static void test_secret_wipe(void) {
     CHECK(wiped >= CAP_NSECRETS - 4);
 }
 
+__attribute__((noinline)) static uintptr_t make_large_secret_for_wipe(void) {
+    unsigned char *p = (unsigned char *)cap_gc_alloc(8192, 2);
+    memset(p, 0xa5, 8192);
+    return (uintptr_t)p ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+}
+
+static void test_gc_large_secret_mapping(void) {
+    size_t heap_before = cap_gc.heap;
+    uintptr_t encoded = make_large_secret_for_wipe();
+    collect_clean();
+    uintptr_t address = encoded ^ (uintptr_t)0x5a5aa5a55a5aa5a5ULL;
+    int retained = 0;
+    for (size_t i = 0; i < cap_gc.nlarge; i++)
+        if ((uintptr_t)cap_gc.large[i].base == address) retained = 1;
+    CHECK(!retained && cap_gc.heap <= heap_before);
+
+    const volatile unsigned char *fresh = (const volatile unsigned char *)cap_gc_alloc(8192, 2);
+    int zeroed = 1;
+    for (size_t i = 0; i < 8192; i++) if (fresh[i] != 0) zeroed = 0;
+    CHECK(zeroed);
+}
+
 static void test_gc_secret_free_slots(void) {
     size_t checked = 0;
     int clean = 1;
@@ -574,6 +596,7 @@ int main(void) {
     test_gc_release();
     test_secret_wipe();
     test_gc_secret_free_slots();
+    test_gc_large_secret_mapping();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
 }
