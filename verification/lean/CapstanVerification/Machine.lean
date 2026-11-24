@@ -45,6 +45,24 @@ def machineInstrIsTerminal {n m : Nat} {types : RegTypes n} :
   | .explicitTrap _ => true
   | _ => false
 
+/-- Instructions whose control effect is explicit and cannot fall through. -/
+def HasExplicitControlEffect {n m : Nat} {types : RegTypes n} :
+    MachineInstr n m types → Prop
+  | .jump _ => True
+  | .branch _ => True
+  | .retInt _ _ => True
+  | .retBool _ _ => True
+  | .retVoid => True
+  | .explicitTrap _ => True
+  | _ => False
+
+/-- The executable terminal predicate exactly characterizes explicit control effects. -/
+theorem machineInstrIsTerminal_iff_control_effect
+    {n m : Nat} {types : RegTypes n}
+    (instr : MachineInstr n m types) :
+    machineInstrIsTerminal instr = true ↔ HasExplicitControlEffect instr := by
+  cases instr <;> simp [machineInstrIsTerminal, HasExplicitControlEffect]
+
 /-- A finite instruction table indexed by Fin, with intrinsically valid entry and targets. -/
 structure FiniteProgram (n m : Nat) (types : RegTypes n) where
   code : Fin (m + 1) → MachineInstr n (m + 1) types
