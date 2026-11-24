@@ -492,6 +492,9 @@ static void test_gc_release_accounting(void) {
     CHECK(page.released);
     CHECK(cap_gc.heap == 0);
     CHECK(cap_gc.released_total == saved_released + 1);
+    cap_gc_account_release(&page, 1); /* repeated release is idempotent */
+    CHECK(cap_gc.heap == 0);
+    CHECK(cap_gc.released_total == saved_released + 1);
     cap_gc.heap = saved_heap;
     cap_gc.released_total = saved_released;
 }
