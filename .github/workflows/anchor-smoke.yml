@@ -1,0 +1,33 @@
+name: anchor-smoke
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/anchor-smoke.yml"
+      - "compiler/**"
+      - "examples/anchor/**"
+      - "lib/shroud/**"
+      - "runtime/**"
+      - "tests/anchor/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  anchor:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, cc: gcc }
+          - { os: ubuntu-latest, cc: clang }
+          - { os: macos-latest, cc: clang }
+    runs-on: ${{ matrix.os }}
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bootstrap the compiler
+        run: make bootstrap
+      - name: Build, render and inspect Anchor
+        run: python3 -I tests/anchor/check.py
