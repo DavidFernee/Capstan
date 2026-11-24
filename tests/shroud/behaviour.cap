@@ -152,6 +152,7 @@ void test_duplicate_key_collisions(Tally t, Ui ui) {
     // original key should continue from the previous suffix, not rescan the run.
     View v = column()
         .add(text("first").key("collision"))
+        .add(text("reserved one").key("collision#shroud-duplicate-1"))
         .add(text("duplicate one").key("collision"))
         .add(text("reserved two").key("collision#shroud-duplicate-2"))
         .add(text("duplicate two").key("collision"))
@@ -163,11 +164,11 @@ void test_duplicate_key_collisions(Tally t, Ui ui) {
         .add(text("reserved seven").key("collision#shroud-duplicate-7"));
     ui.render(v, 0);
     if (let root = ui.root) {
-        expect(t, root.kids[1].id == "collision#shroud-duplicate-8",
+        expect(t, root.kids[2].id == "collision#shroud-duplicate-8",
             "identity: first duplicate skips reserved generated-looking keys", root.kids[1].id);
-        expect(t, root.kids[3].id == "collision#shroud-duplicate-9",
+        expect(t, root.kids[4].id == "collision#shroud-duplicate-9",
             "identity: later duplicate continues after prior suffix", root.kids[3].id);
-        expect(t, root.kids[5].id == "collision#shroud-duplicate-10",
+        expect(t, root.kids[6].id == "collision#shroud-duplicate-10",
             "identity: suffix allocation does not rescan prior collisions", root.kids[5].id);
     } else {
         expect(t, false, "identity: collision test root exists", "none");
