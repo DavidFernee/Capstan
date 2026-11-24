@@ -259,6 +259,105 @@ def machineStep {n m : Nat} {types : RegTypes n}
   | .retVoid => .haltVoid
   | .explicitTrap reason => .trap reason
 
+/-- A machine state paired with a valid instruction budget. -/
+structure BudgetedMachineState (n m : Nat) (types : RegTypes n) where
+  machine : MachineState n m types
+  budget : StepBudget
+
+/-- Outcomes retain the post-transition budget, including when execution halts or traps. -/
+inductive BudgetedMachineOutcome (n m : Nat) (types : RegTypes n) where
+  | nextState (state : BudgetedMachineState n m types)
+  | halt (value : Val) (budget : StepBudget)
+  | haltVoid (budget : StepBudget)
+  | trap (reason : Trap) (budget : StepBudget)
+
+/-- Extract the budget after any budgeted transition outcome. -/
+def BudgetedMachineOutcome.budget {n m : Nat} {types : RegTypes n} :
+    BudgetedMachineOutcome n m types → StepBudget
+  | .nextState state => state.budget
+  | .halt _ budget => budget
+  | .haltVoid budget => budget
+  | .trap _ budget => budget
+
+/-- Execute one machine instruction under the CCAM instruction budget.
+
+The budget is consumed before instruction execution. A limit trap therefore
+does not execute the next instruction; dynamic traps and halts retain the
+already-consumed budget for the instruction that produced them.
+-/
+def budgetedMachineStep {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types)
+    (state : BudgetedMachineState n m types) :
+    BudgetedMachineOutcome n m types :=
+  match consumeStep state.budget with
+  | .error reason => .trap reason state.budget
+  | .ok nextBudget =>
+      match machineStep program state.machine with
+      | .nextState next =>
+          .nextState { machine := next, budget := nextBudget }
+      | .halt value => .halt value nextBudget
+      | .haltVoid => .haltVoid nextBudget
+      | .trap reason => .trap reason nextBudget
+
+/-- Budgeted transitions preserve the intrinsic register-typing invariant. -/
+theorem budgetedMachineStep_preserves_well_typed
+    {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types)
+    (state : BudgetedMachineState n m types) :
+    match budgetedMachineStep program state with
+    | .nextState next => WellTyped types next.machine.registers
+    | .halt _ _ => True
+    | .haltVoid _ => True
+    | .trap _ _ => True := by
+  unfold budgetedMachineStep
+  cases hbudget : consumeStep state.budget with
+  | error reason =>
+      simp [hbudget]
+  | ok nextBudget =>
+      cases hstep : machineStep program state.machine with
+      | nextState next =>
+          simp [hbudget, hstep]
+          exact next.registers_well_typed
+      | halt value =>
+          simp [hbudget, hstep]
+      | haltVoid =>
+          simp [hbudget, hstep]
+      | trap reason =>
+          simp [hbudget, hstep]
+
+/-- Every budgeted outcome retains a budget within its configured maximum. -/
+theorem budgetedMachineStep_budget_within_limit
+    {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types)
+    (state : BudgetedMachineState n m types) :
+    (budgetedMachineStep program state).budget.within_limit := by
+  unfold budgetedMachineStep BudgetedMachineOutcome.budget
+  cases hbudget : consumeStep state.budget with
+  | error reason =>
+      simp [hbudget]
+  | ok nextBudget =>
+      cases hstep : machineStep program state.machine <;> simp [hbudget, hstep]
+
+/-- If budget remains, every outcome accounts for exactly one executed instruction. -/
+theorem budgetedMachineStep_consumes_one
+    {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types)
+    (state : BudgetedMachineState n m types)
+    (havailable : state.budget.used < state.budget.limit) :
+    (budgetedMachineStep program state).budget.used = state.budget.used + 1 := by
+  unfold budgetedMachineStep BudgetedMachineOutcome.budget consumeStep
+  simp [havailable]
+
+/-- An exhausted budget traps before the next machine instruction is executed. -/
+theorem budgetedMachineStep_exhausted_before_instruction
+    {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types)
+    (state : BudgetedMachineState n m types)
+    (hexhausted : state.budget.limit ≤ state.budget.used) :
+    budgetedMachineStep program state = .trap .instructionLimit state.budget := by
+  unfold budgetedMachineStep
+  rw [consumeStep_exhausted_traps state.budget hexhausted]
+
 /-- Every continuing machine step carries a proof of register-type preservation.
 
 The machine state is intrinsically well-typed: a transition cannot construct a
