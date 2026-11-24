@@ -67,6 +67,8 @@
 #define CAP_MIN_THRESHOLD ((size_t)8 << 20)
 #define CAP_KINDS 3          /* 0: may hold pointers, 1: pointer-free, 2: secret (pointer-free, wiped) */
 
+__attribute__((noreturn, cold, noinline)) static void cap_panic(const char *what, const char *cwe, int64_t loc);
+
 /* Collector metadata and accounting are part of the trusted allocator. Never
    let a wrapped capacity or byte counter become an undersized allocation or
    bypass the configured heap limit. */
@@ -103,8 +105,6 @@ static size_t cap_gc_next_capacity(size_t current, size_t required,
 static size_t cap_gc_saturating_add(size_t a, size_t b) {
     return b > SIZE_MAX - a ? SIZE_MAX : a + b;
 }
-
-__attribute__((noreturn, cold, noinline)) static void cap_panic(const char *what, const char *cwe, int64_t loc);
 
 static const uint32_t cap_class_size[CAP_NCLASS] =
     {16, 32, 48, 64, 96, 128, 192, 256, 384, 512, 768, 1024, 1536, 2048};
