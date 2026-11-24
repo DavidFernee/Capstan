@@ -85,16 +85,32 @@ int main() {
     assert(!r.ok && r.trap == "integer_overflow");
     r = ccam_sub(CCAM_I64_MIN, 1);
     assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_sub(CCAM_I64_MAX, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_sub(20, 22);
+    assert(r.ok && r.value == -2);
     r = ccam_mul(6, 7);
     assert(r.ok && r.value == 42);
     r = ccam_mul(CCAM_I64_MIN, -1);
     assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_mul(CCAM_I64_MIN, 1);
+    assert(r.ok && r.value == CCAM_I64_MIN);
+    r = ccam_mul(-3037000500, -3037000500);
+    assert(!r.ok && r.trap == "integer_overflow");
+    r = ccam_mul(-3037000499, -3037000499);
+    assert(r.ok);
     r = ccam_div(-7, 3);
     assert(r.ok && r.value == -2);
     r = ccam_div(1, 0);
     assert(!r.ok && r.trap == "division_by_zero");
+    r = ccam_div(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
     r = ccam_rem(-7, 3);
     assert(r.ok && r.value == -1);
+    r = ccam_rem(7, -3);
+    assert(r.ok && r.value == 1);
+    r = ccam_rem(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
     println("CCAM Capstan arithmetic: ok");
     return 0;
 }
@@ -112,6 +128,24 @@ test "CCAM multiplication traps on signed overflow" {
 test "CCAM division truncates toward zero" {
     CCAMIntResult r = ccam_div(-7, 3);
     assert(r.ok && r.value == -2);
+}
+
+test "CCAM subtraction checks both overflow directions" {
+    CCAMIntResult hi = ccam_sub(CCAM_I64_MAX, -1);
+    CCAMIntResult lo = ccam_sub(CCAM_I64_MIN, 1);
+    assert(!hi.ok && !lo.ok);
+}
+
+test "CCAM multiplication handles negative boundaries" {
+    CCAMIntResult min_ok = ccam_mul(CCAM_I64_MIN, 1);
+    CCAMIntResult overflow = ccam_mul(-3037000500, -3037000500);
+    assert(min_ok.ok && min_ok.value == CCAM_I64_MIN);
+    assert(!overflow.ok && overflow.trap == "integer_overflow");
+}
+
+test "CCAM division rejects minimum divided by negative one" {
+    CCAMIntResult r = ccam_div(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
 }
 
 test "CCAM remainder has dividend sign" {
