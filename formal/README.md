@@ -35,12 +35,12 @@ traversal.
 - `SPECIFICATION.md`: concrete abstract state and transition-system contract.
 - `OBLIGATIONS.md`: proof-obligation inventory and acceptance criteria.
 - `toolchain/README.md`: proof-tool selection record and reproducibility requirements.
-- `model/`: executable formal definitions (to be added after toolchain selection).
+- `CapstanFormal.lean`: initial Lean model and arithmetic/page-release theorems.
 - `implementation/`: implementation-facing contracts and refinement evidence.
-- `proofs/`: discharged theorem sources and generated proof reports.
+- `proofs/`: additional discharged theorem sources and generated proof reports.
 
-Do not add empty placeholder theorem files or mark an obligation proved without a
-reproducible checker run.
+The first Lean model is now present. Its theorems remain unverified until the pinned CI
+job completes; do not promote their status without a reproducible checker run.
 
 ## Evidence rules
 
