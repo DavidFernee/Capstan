@@ -42,20 +42,20 @@ def machineInstrIsTerminal {n m : Nat} {types : RegTypes n} :
   | _ => false
 
 /-- A finite, non-empty instruction vector with an intrinsically valid entry and targets. -/
-structure FiniteProgram (n : Nat) (types : RegTypes n) where
-  code : Vector (MachineInstr n (n + 1) types) (n + 1)
-  entry : Fin (n + 1)
+structure FiniteProgram (n m : Nat) (types : RegTypes n) where
+  code : Vector (MachineInstr n (m + 1) types) (m + 1)
+  entry : Fin (m + 1)
   last_is_terminal :
-    machineInstrIsTerminal (code.get (Fin.last n)) = true
+    machineInstrIsTerminal (code.get (Fin.last m)) = true
 
 /-- A running state for the single-frame machine. -/
-structure MachineState (n : Nat) (types : RegTypes n) where
-  pc : Fin (n + 1)
+structure MachineState (n m : Nat) (types : RegTypes n) where
+  pc : Fin (m + 1)
   registers : Registers n
 
 /-- Every step either advances, halts, or produces a defined explicit trap. -/
-inductive MachineOutcome (n : Nat) (types : RegTypes n) where
-  | continue (state : MachineState n types)
+inductive MachineOutcome (n m : Nat) (types : RegTypes n) where
+  | continue (state : MachineState n m types)
   | halt (value : Val)
   | haltVoid
   | trap (reason : Trap)
@@ -65,13 +65,13 @@ inductive MachineOutcome (n : Nat) (types : RegTypes n) where
 The program invariant requires the final slot to be a jump, branch, return or
 trap, so a well-formed program never uses the clamped sequential edge.
 -/
-def sequentialPC {n : Nat} (pc : Fin (n + 1)) : Fin (n + 1) :=
-  ⟨min (pc.val + 1) n, by omega⟩
+def sequentialPC {m : Nat} (pc : Fin (m + 1)) : Fin (m + 1) :=
+  ⟨min (pc.val + 1) m, by omega⟩
 
 /-- Total small-step semantics for the finite, typed, single-frame fragment. -/
-def machineStep {n : Nat} {types : RegTypes n}
-    (program : FiniteProgram n types) (state : MachineState n types) :
-    MachineOutcome n types :=
+def machineStep {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types) (state : MachineState n m types) :
+    MachineOutcome n m types :=
   match program.code.get state.pc with
   | .constInt dst value _ _ =>
       .continue { state with
@@ -125,9 +125,9 @@ def machineStep {n : Nat} {types : RegTypes n}
 
 /-- A successful nonterminal machine step preserves all initialized register types. -/
 theorem machineStep_preserves_well_typed
-    {n : Nat} {types : RegTypes n}
-    (program : FiniteProgram n types)
-    (state next : MachineState n types)
+    {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types)
+    (state next : MachineState n m types)
     (hregisters : WellTyped types state.registers)
     (hstep : machineStep program state = .continue next) :
     WellTyped types next.registers := by
@@ -216,8 +216,8 @@ theorem machineStep_preserves_well_typed
 
 /-- Program counters are always in range by construction of the state type. -/
 theorem machineState_pc_is_in_range
-    {n : Nat} {types : RegTypes n} (state : MachineState n types) :
-    state.pc.val < n + 1 :=
+    {n m : Nat} {types : RegTypes n} (state : MachineState n m types) :
+    state.pc.val < m + 1 :=
   state.pc.isLt
 
 end CapstanVerification
