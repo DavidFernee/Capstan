@@ -1,6 +1,7 @@
 import CapstanVerification.Machine
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.Progress
+import CapstanVerification.Validator
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
