@@ -354,6 +354,9 @@ static void trigger_gc_heap_invariant(void) {
 static void trigger_full_page_table_lookup(void) {
     (void)cap_gc_page_of((uintptr_t)0x30000);
 }
+static void trigger_null_registered_root(void) {
+    cap_gc_root(NULL);
+}
 static void trigger_full_page_table_insert(void) {
     CapPage pg = {.base = (char *)(uintptr_t)0x30000};
     cap_gc_ptab_insert(&pg);
@@ -391,6 +394,14 @@ static void test_gc_allocator_arithmetic(void) {
     cap_gc.max_heap = saved_limit;
     CHECK(cap_gc_saturating_add(SIZE_MAX - 1, 2) == SIZE_MAX);
     CHECK(cap_gc_next_capacity(64, 128, 64, sizeof(CapPage *)) == 128);
+    CHECK(expect_gc_panic(trigger_null_registered_root));
+    {
+        CapPage **saved_table = cap_gc.ptab;
+        size_t saved_cap = cap_gc.ptab_cap;
+        cap_gc.ptab = NULL; cap_gc.ptab_cap = 2;
+        CHECK(expect_gc_panic(trigger_full_page_table_lookup));
+        cap_gc.ptab = saved_table; cap_gc.ptab_cap = saved_cap;
+    }
     {
         CapPage first = {.base = (char *)(uintptr_t)0x10000};
         CapPage second = {.base = (char *)(uintptr_t)0x20000};
