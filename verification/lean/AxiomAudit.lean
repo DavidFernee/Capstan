@@ -36,6 +36,13 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.executeNot_preserves_well_typed
 #print axioms CapstanVerification.initialMachineState
 
+
+#print axioms CapstanVerification.initialCallStack
+#print axioms CapstanVerification.pushCallFrame
+#print axioms CapstanVerification.pushCallFrame_top
+#print axioms CapstanVerification.pushCallFrame_increments_depth
+#print axioms CapstanVerification.pushCallFrame_within_limit
+#print axioms CapstanVerification.pushCallFrame_exhausted_traps
 #print axioms CapstanVerification.consumeStep
 #print axioms CapstanVerification.consumeStep_increments
 #print axioms CapstanVerification.consumeStep_within_limit
