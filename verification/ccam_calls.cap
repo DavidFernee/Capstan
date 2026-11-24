@@ -239,7 +239,7 @@ CCAMValidationResult ccam_validate_multi_function(
     int entry_function
 ) {
     if (functions.len() == 0 || functions.len() > CCAM_MAX_FUNCTIONS) {
-        return ccam_validation_error("function_count_limit");
+        return ccam_validation_error("function_limit_exceeded");
     }
     if (entry_function < 0 || entry_function >= functions.len()) {
         return ccam_validation_error("invalid_entry_function");
@@ -1258,6 +1258,30 @@ test "CCAM multi-function validator enforces the function-count boundary" {
     });
     CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
     assert(!rejected.ok && rejected.error == "function_limit_exceeded");
+}
+
+test "CCAM multi-function validator enforces aggregate instruction boundary" {
+    List<CCAMInstruction> maximum = new List<CCAMInstruction>();
+    for (int i = 0; i < CCAM_MAX_INSTRUCTIONS; i += 1) {
+        maximum.push(ccam_instruction(CCAM_OP_RET_VOID));
+    }
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: maximum, call_sites: new List<CCAMCallSite>()
+    });
+    assert(ccam_validate_multi_function(functions, 0).ok);
+
+    List<CCAMInstruction> extra_code = new List<CCAMInstruction>();
+    extra_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    functions.push(new CCAMFunction{
+        name: "extra", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: extra_code, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "instruction_limit_exceeded");
 }
 
 test "CCAM multi-function validator enforces aggregate call-argument boundary" {
