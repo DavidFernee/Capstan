@@ -302,16 +302,11 @@ static void cap_gc_init(void) {
         }
     }
 #endif
+    if (!low || !cap_gc.stack_top)
+        cap_panic("unable to determine reliable thread stack bounds", "CWE-674", 0);
 #ifndef CAP_ASAN
-    if (low) cap_install_stack_guard(low);   /* AddressSanitizer installs its own */
+    cap_install_stack_guard(low);   /* AddressSanitizer installs its own */
 #endif
-    if (!cap_gc.stack_top) {
-        uintptr_t stack_low, stack_high;
-        if (!cap_gc_stack_bounds((uintptr_t)__builtin_frame_address(0), 4096,
-                                 &stack_low, &stack_high))
-            cap_panic("invalid fallback stack bounds", "CWE-682", 0);
-        cap_gc.stack_top = (char *)stack_high;
-    }
 }
 
 /* ---- page table ------------------------------------------------------ */
