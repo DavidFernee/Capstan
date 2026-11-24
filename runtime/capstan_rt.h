@@ -540,6 +540,9 @@ static uint64_t cap_siphash(const unsigned char *in, size_t len, uint64_t k0, ui
 static uint64_t cap_map_k0, cap_map_k1;
 static bool cap_map_keyed;
 
+/* The SipHash key remains process-global; clear its temporary stack copy. */
+static void cap_wipe(void *p, size_t n);
+
 static void cap_map_key_init(void) {
     unsigned char k[16];
     FILE *r = fopen("/dev/urandom", "rb");
@@ -547,6 +550,7 @@ static void cap_map_key_init(void) {
     fclose(r);
     cap_map_k0 = cap_map_k1 = 0;
     for (int i = 7; i >= 0; i--) { cap_map_k0 = (cap_map_k0 << 8) | k[i]; cap_map_k1 = (cap_map_k1 << 8) | k[8 + i]; }
+    cap_wipe(k, sizeof k);
     cap_map_keyed = true;
 }
 
