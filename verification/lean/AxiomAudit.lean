@@ -40,6 +40,12 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.consumeStep_increments
 #print axioms CapstanVerification.consumeStep_within_limit
 #print axioms CapstanVerification.consumeStep_exhausted_traps
+#print axioms CapstanVerification.budgetedMachineStep
+#print axioms CapstanVerification.budgetedMachineStep_preserves_well_typed
+#print axioms CapstanVerification.budgetedMachineStep_budget_within_limit
+#print axioms CapstanVerification.budgetedMachineStep_consumes_one
+#print axioms CapstanVerification.budgetedMachineStep_exhausted_before_instruction
+
 #print axioms CapstanVerification.machineStep
 #print axioms CapstanVerification.machineStep_preserves_well_typed
 #print axioms CapstanVerification.machineState_pc_is_in_range
