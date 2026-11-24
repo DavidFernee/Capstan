@@ -14,7 +14,7 @@ A feature being accepted by the existing compiler does not mean it is supported 
 
 | Existing source feature | Existing contract / implementation fact | Initial CCAM status | Required semantic work |
 |---|---|---|---|
-| `int` | Signed 64-bit, checked ordinary arithmetic | Supported | Align remainder exceptional pair; prove arithmetic |
+| `int` | Signed 64-bit, checked ordinary arithmetic and unary negation | Supported | Align remainder exceptional pair; lower negation through checked subtraction; prove arithmetic |
 | `bool` | Distinct boolean type | Supported | Preserve type separation |
 | Local variables and parameters | Initialised declarations; function parameters | Supported in register model | Define source-to-register lowering |
 | Direct functions | Typed arguments and returns | Supported in narrow form | Define full structural validation and frame rules |
