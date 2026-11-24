@@ -12,6 +12,9 @@
 const int MAX_VIEWS = 100000;
 const int MAX_DEPTH = 200;
 
+// Aggregate rendered text lines per frame, including explicit and soft wraps.
+const int MAX_FRAME_LINES = 131072;
+
 // A view after layout: its frame, in absolute FX device pixels, and its children.
 struct Laid {
     View v;
@@ -56,10 +59,53 @@ List<int> codepoints_of(View v) {
     return text_codepoints(v.text);
 }
 
+// Bound cumulative view-tree text and metadata before allocating per-view
+// code-point and line arrays. Per-value limits alone allow MAX_VIEWS separate
+// large strings to amplify memory and layout work (CWE-400).
+const int MAX_FRAME_TEXT_BYTES = 2097152;
+
+bool frame_text_budget_add(List<int> budget, int n) {
+    if (n < 0 || n > MAX_FRAME_TEXT_BYTES - budget[0]) { return false; }
+    budget[0] += n;
+    return true;
+}
+
+// budget[0] is aggregate string bytes; budget[1] is view count. Count every
+// string retained by a view, not only the text currently painted: keys and
+// accessibility metadata also feed identity, inspection and serialization.
+bool preflight_frame_view(View v, List<int> budget, int depth) {
+    if (depth > MAX_DEPTH) { return false; }
+    budget[1] += 1;
+    if (budget[1] > MAX_VIEWS) { return false; }
+    if (!frame_text_budget_add(budget, v.text.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.value.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.action.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.key.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.label.len())) { return false; }
+    if (!frame_text_budget_add(budget, v.hint.len())) { return false; }
+    for (int i = 0; i < v.kids.len(); i += 1) {
+        if (!preflight_frame_view(v.kids[i], budget, depth + 1)) { return false; }
+    }
+    return true;
+}
+
+bool frame_text_budget_valid(View root) {
+    List<int> budget = new List<int>();
+    budget.push(0);
+    budget.push(0);
+    return preflight_frame_view(root, budget, 0);
+}
+
 // Lays out the whole tree for a window of the given size (FX).
 Laid layout_root(Ui ui, View root, int w, int h) {
+    if (!frame_text_budget_valid(root)) {
+        println("shroud: frame view or text budget exceeded");
+        exit(101);
+    }
     ui.view_count = 0;
-    Laid l = measure(ui, root, tight(w, h), "r", 0);
+    List<int> line_count = new List<int>();
+    line_count.push(0);
+    Laid l = measure(ui, root, tight(w, h), "r", 0, line_count);
     uniquify_layout_ids(l, ui);
     place(l, 0, 0);
     return l;
@@ -125,7 +171,7 @@ void place(Laid l, int x, int y) {
     for (int i = 0; i < l.kids.len(); i += 1) { place(l.kids[i], ax, ay - l.scroll_y); }
 }
 
-Laid measure(Ui ui, View v, Constraints c0, string pid, int depth) {
+Laid measure(Ui ui, View v, Constraints c0, string pid, int depth, List<int> line_count) {
     ui.view_count += 1;
     if (ui.view_count > MAX_VIEWS || depth > MAX_DEPTH) {
         println("shroud: the interface has too many views or is nested too deeply");
@@ -152,7 +198,7 @@ Laid measure(Ui ui, View v, Constraints c0, string pid, int depth) {
     }
     Insets pad = new Insets{left: dp(ui, v.pad.left), top: dp(ui, v.pad.top), right: dp(ui, v.pad.right), bottom: dp(ui, v.pad.bottom)};
     Constraints inner = c.deflate(pad);
-    Size content = measure_content(ui, v, l, inner, id, depth);
+    Size content = measure_content(ui, v, l, inner, id, depth, line_count);
     int w = c.fit_w(content.w + pad.left + pad.right);
     int h = c.fit_h(content.h + pad.top + pad.bottom);
     // Children were placed in the content box; move them inside the padding, and
@@ -166,16 +212,16 @@ Laid measure(Ui ui, View v, Constraints c0, string pid, int depth) {
 }
 
 // Measures what is inside the padding and places any children relative to it.
-Size measure_content(Ui ui, View v, Laid l, Constraints c, string id, int depth) {
+Size measure_content(Ui ui, View v, Laid l, Constraints c, string id, int depth, List<int> line_count) {
     int k = v.kind;
     Theme t = ui.theme;
     if (k == K_TEXT) {
         l.cps = codepoints_of(v);
-        return measure_text(ui, v, l, c.max_w);
+        return measure_text(ui, v, l, c.max_w, line_count);
     }
     if (k == K_BUTTON) {
         l.cps = codepoints_of(v);
-        Size s = measure_text(ui, v, l, c.max_w);
+        Size s = measure_text(ui, v, l, c.max_w, line_count);
         return size_of(int_max(s.w, dp(ui, 32)), int_max(s.h, dp(ui, t.control_height) - dp(ui, v.pad.top + v.pad.bottom)));
     }
     if (k == K_CHECKBOX || k == K_RADIO || k == K_SWITCH) {
@@ -187,7 +233,7 @@ Size measure_content(Ui ui, View v, Laid l, Constraints c, string id, int depth)
             gap = dp(ui, 12);
         }
         if (l.cps.len() == 0) { gap = 0; }
-        Size s2 = measure_text(ui, v, l, sub_bound(c.max_w, mark + gap));
+        Size s2 = measure_text(ui, v, l, sub_bound(c.max_w, mark + gap), line_count);
         return size_of(mark + gap + s2.w, int_max(int_max(dp(ui, 20), s2.h), dp(ui, t.control_height)));
     }
     if (k == K_TEXT_FIELD) {
@@ -198,26 +244,30 @@ Size measure_content(Ui ui, View v, Laid l, Constraints c, string id, int depth)
     if (k == K_PROGRESS) { return size_of(dp(ui, 200), dp(ui, 4)); }
     if (k == K_DIVIDER) { return size_of(dp(ui, 1), dp(ui, 1)); }
     if (k == K_SPACER) { return size_of(0, 0); }
-    if (k == K_ROW) { return measure_flex(ui, v, l, c, id, depth, true); }
-    if (k == K_COLUMN) { return measure_flex(ui, v, l, c, id, depth, false); }
-    if (k == K_STACK || k == K_BOX) { return measure_stack(ui, v, l, c, id, depth); }
-    if (k == K_SCROLL) { return measure_scroll(ui, v, l, c, id, depth); }
+    if (k == K_ROW) { return measure_flex(ui, v, l, c, id, depth, true, line_count); }
+    if (k == K_COLUMN) { return measure_flex(ui, v, l, c, id, depth, false, line_count); }
+    if (k == K_STACK || k == K_BOX) { return measure_stack(ui, v, l, c, id, depth, line_count); }
+    if (k == K_SCROLL) { return measure_scroll(ui, v, l, c, id, depth, line_count); }
     return size_of(0, 0);
 }
 
-Size measure_text(Ui ui, View v, Laid l, int max_w) {
+Size measure_text(Ui ui, View v, Laid l, int max_w, List<int> line_count) {
     Font f = font_of(ui, v);
     int size = text_size_of(ui, v);
     int wrap = max_w;
     if (v.kind == K_BUTTON) { wrap = UNBOUNDED; }
-    l.lines = wrap_lines(f, size, l.cps, wrap);
-    int n = l.lines.len() / 2;
-    if (v.lines != AUTO && v.lines > 0 && n > v.lines) {
-        n = v.lines;
-        List<int> kept = new List<int>();
-        for (int i = 0; i < n * 2; i += 1) { kept.push(l.lines[i]); }
-        l.lines = kept;
+    int remaining_lines = MAX_FRAME_LINES - line_count[0];
+    int max_lines = remaining_lines;
+    bool allow_truncate = false;
+    if (v.lines != AUTO && v.lines > 0) {
+        if (v.lines <= remaining_lines) {
+            max_lines = v.lines;
+            allow_truncate = true;
+        }
     }
+    l.lines = wrap_lines_limited(f, size, l.cps, wrap, max_lines, allow_truncate);
+    int n = l.lines.len() / 2;
+    line_count[0] += n;
     int w = 0;
     for (int j = 0; j < n; j += 1) { w = int_max(w, text_width(f, size, l.cps, l.lines[2 * j], l.lines[2 * j + 1])); }
     if (l.cps.len() == 0 && v.kind != K_TEXT) { return size_of(0, 0); }
@@ -225,7 +275,7 @@ Size measure_text(Ui ui, View v, Laid l, int max_w) {
 }
 
 // Rows (horizontal = true) and columns.
-Size measure_flex(Ui ui, View v, Laid l, Constraints c, string id, int depth, bool horizontal) {
+Size measure_flex(Ui ui, View v, Laid l, Constraints c, string id, int depth, bool horizontal, List<int> line_count) {
     int n = v.kids.len();
     int gap = dp(ui, v.spacing);
     int max_main = c.max_h;
@@ -243,7 +293,7 @@ Size measure_flex(Ui ui, View v, Laid l, Constraints c, string id, int depth, bo
     for (int a = 0; a < n; a += 1) {
         View kv = v.kids[a];
         if (kv.grow <= 0) {
-            Laid kl = measure(ui, kv, child_constraints(v, kv, sub_bound(max_main, used), max_cross, -1, horizontal), $"{id}.{a}", depth + 1);
+            Laid kl = measure(ui, kv, child_constraints(v, kv, sub_bound(max_main, used), max_cross, -1, horizontal), $"{id}.{a}", depth + 1, line_count);
             kids[a] = kl;
             used += main_of(kl, horizontal);
         }
@@ -259,7 +309,7 @@ Size measure_flex(Ui ui, View v, Laid l, Constraints c, string id, int depth, bo
             seen += kv2.grow;
             int share = mul_div(free, seen, int_max(1, total_grow)) - given;
             given += share;
-            Laid kl2 = measure(ui, kv2, child_constraints(v, kv2, share, max_cross, share, horizontal), $"{id}.{b}", depth + 1);
+            Laid kl2 = measure(ui, kv2, child_constraints(v, kv2, share, max_cross, share, horizontal), $"{id}.{b}", depth + 1, line_count);
             kids[b] = kl2;
             used += main_of(kl2, horizontal);
         }
@@ -327,11 +377,11 @@ Constraints child_constraints(View parent, View kid, int main, int max_cross, in
     return new Constraints{min_w: min_cross, min_h: min_main, max_w: max_cross, max_h: main};
 }
 
-Size measure_stack(Ui ui, View v, Laid l, Constraints c, string id, int depth) {
+Size measure_stack(Ui ui, View v, Laid l, Constraints c, string id, int depth, List<int> line_count) {
     int w = 0;
     int h = 0;
     for (int i = 0; i < v.kids.len(); i += 1) {
-        Laid k = measure(ui, v.kids[i], c.loosen(), $"{id}.{i}", depth + 1);
+        Laid k = measure(ui, v.kids[i], c.loosen(), $"{id}.{i}", depth + 1, line_count);
         w = int_max(w, k.frame.w);
         h = int_max(h, k.frame.h);
         l.kids.push(k);
@@ -351,10 +401,10 @@ int align_off(int align, int room) {
     return 0;
 }
 
-Size measure_scroll(Ui ui, View v, Laid l, Constraints c, string id, int depth) {
+Size measure_scroll(Ui ui, View v, Laid l, Constraints c, string id, int depth, List<int> line_count) {
     if (v.kids.len() == 0) { return size_of(0, 0); }
     Constraints inner = new Constraints{min_w: c.min_w, min_h: 0, max_w: c.max_w, max_h: UNBOUNDED};
-    Laid k = measure(ui, v.kids[0], inner, $"{id}.0", depth + 1);
+    Laid k = measure(ui, v.kids[0], inner, $"{id}.0", depth + 1, line_count);
     l.kids.push(k);
     l.content_h = k.frame.h;
     int w = c.fit_w(k.frame.w);
