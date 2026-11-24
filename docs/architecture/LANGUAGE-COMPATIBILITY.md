@@ -43,11 +43,11 @@ The existing runtime defines `INT64_MIN % -1` as zero, while the CCAM v0.1 draft
 
 ### 3.2 Compound assignment order
 
-The source reference promises left-to-right evaluation. The code generator's field and indexed compound-assignment paths nest the old-value read and RHS inside a generated C call expression, where argument evaluation order is unspecified. PR #93's fixture confirmed a GCC-vs-reference mismatch at `-O0`, `-O2` and `-O3` in CI. A lowering fix must explicitly sequence location evaluation, old-value read, RHS, computation and write. The C backend is not allowed to redefine the source rule.
+The source reference promises left-to-right evaluation. The original field and indexed compound-assignment paths nested the old-value read and RHS inside a generated C call expression, where argument evaluation order is unspecified. PR #93's fixture confirmed a GCC-vs-reference mismatch at `-O0`, `-O2` and `-O3` in CI. Draft PR #97 now explicitly sequences location evaluation, old-value read, RHS, computation and write for local, field, indexed and text compound assignment; its exact-head GCC, Clang, macOS and supply-chain jobs passed. PR #102 adds broader operand-order tests and the invalidated-index runtime regression; its corrected exact-head CI is pending. Neither PR is merged, so the fix is not yet on `main`. The range analysis uses `seq_ok` / `may_shrink` guards to suppress list-length facts across potentially shrinking regions; this is fail-closed but not a formal proof of classifier completeness.
 
 ### 3.3 `read_line()` bound
 
-The runtime caps the payload at 1,048,576 bytes, excluding the terminating newline. Exactly 1 MiB is accepted (including EOF immediately after that payload); the next non-newline byte traps with CWE-789. The current reference row documents byte preservation and EOF but omits this bound and over-limit outcome. Treat the limit as a compatibility fact requiring explicit documentation and boundary tests, not as a new CCAM feature.
+The runtime caps the payload at 1,048,576 bytes, excluding the terminating newline. Exactly 1 MiB is accepted (including EOF immediately after that payload); the next non-newline byte traps with CWE-789. PR #93 adds the existing bound and over-limit outcome to the `docs/SPEC.md` row. The runtime unit suite tests exactly 1 MiB followed by newline and max-plus-one rejection; exactly 1 MiB followed immediately by EOF appears accepted by source inspection but still needs its own regression. Treat the limit as a compatibility fact, not as a new CCAM feature.
 
 ## 4. Compatibility policy
 
