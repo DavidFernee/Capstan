@@ -87,6 +87,7 @@ The embedder translates OS events into the existing Shroud event vocabulary. It 
 | Pointer motion | `EV_POINTER_MOVE` | Client-area physical coordinates in FX |
 | Pointer button press/release | `EV_POINTER_DOWN` / `EV_POINTER_UP` | Normalized button policy; S1 initially maps primary activation only |
 | Pointer exits client area | `EV_POINTER_LEAVE` | Clear hover; does not itself imply release |
+| OS cancels/losses pointer capture | **S1 extension:** explicit pointer-cancel transition | Clear pressed state without activation; never synthesize an in-bounds pointer-up |
 | Wheel/trackpad scroll | `EV_WHEEL` | Client coordinates and a documented signed delta convention; normalize platform units before dispatch |
 | Physical/logical key command | `EV_KEY` | Map to Shroud key constants and modifier bits; do not encode committed text as key codes |
 | Committed text | `EV_TEXT` | UTF-8 delivered as `Tainted`; never mark user text trusted |
@@ -95,6 +96,7 @@ Additional requirements:
 
 - Use the native window's focused state. Do not deliver keyboard or text events to an inactive window.
 - Capture the pointer from primary-button down through release/cancel so Shroud receives the terminal event even if the pointer leaves the client area. A release outside the hit target must cancel activation; it must not be converted into an in-bounds release.
+- S0 has no pointer-cancel event. S1 must add an explicit cancel transition (and a window-focus-lost transition) that clears transient pressed/hover state without activating a control. Losing OS capture must never be represented as a successful pointer-up. Window deactivation stops keyboard/text delivery but may preserve the logical widget focus for restoration.
 - Send a leave event when the pointer leaves the client area. Do not synthesize a pointer move to the last in-bounds location on exit.
 - Normalize key repeat deliberately. Repeated navigation/editing keys may be supported; repeated activation keys must not accidentally produce multiple destructive activations.
 - Deliver committed text separately from key events. Do not synthesize text by interpreting keycodes in Shroud or in Anchor.
