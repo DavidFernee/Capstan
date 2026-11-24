@@ -165,3 +165,21 @@ ASan, UBSan, fuzzers, differential tests, coverage and mutation tests are eviden
 The runtime/GC work is isolated on runtime/gc-safety-v06. The active compiler/grant work reported on coordination issue #25 touches runtime/capstan_rt.h; this assessment therefore avoids that shared header and the compiler/codegen. Generational work must coordinate the write-barrier ABI with the compiler contributor before either side changes stores. Shroud and Anchor are out of scope.
 
 The design map currently labels generational collection as a v0.4 remaining item and concurrency as v0.7. This v0.6 work should not silently move concurrency forward or describe an unimplemented collector as complete. Update the map only through a separate coordinated handoff once the design and shared interfaces are agreed.
+
+
+## 9. Initial hardening implemented on this branch
+
+The first implementation pass addresses concrete arithmetic and erasure weaknesses in the collector without changing the collection algorithm:
+
+- Added checked size addition and multiplication helpers, plus checked geometric capacity growth. The page table, page array, spare-page array, mark stack, large-object array and global-root array now size their metadata allocations through checked helpers.
+- Replaced potentially wrapping heap-limit comparisons with subtraction-based checks and guarded heap-accounting additions/subtractions. Allocation counters now fail closed on overflow.
+- Validated allocation-kind indices and rejected allocation requests above the runtime's documented maximum length.
+- Validated GC stress and heap-limit environment values. Heap suffix scaling and the physical-memory-derived default are bounded before conversion or multiplication.
+- Reworked conservative scan alignment and end checks to avoid overflowing the scan pointer while rounding/alignment and checking whether a complete word remains.
+- Replaced small-object secret wiping with a volatile-store wipe primitive; large-object secret reclamation uses the same primitive.
+- Hardened stack-fault classification against pointer-arithmetic overflow and made signal-handler output use fixed lengths. Failure to install the alternate signal stack or handlers now fails closed when stack-guard setup is requested.
+- Added unit coverage for checked addition, multiplication, capacity growth and the wipe primitive, in addition to the existing collector stress and secret-reclamation tests.
+
+These changes do **not** make garbage-collection-time erasure prompt or deterministic: they only ensure the wipe is not elided when reclamation actually occurs. They do not add explicit secret destruction, allocation-failure injection, a generational collector, or concurrency support.
+
+CI is the required executable validation for this branch. Until all GCC/Clang Linux/macOS jobs complete successfully, the implementation should be treated as unverified. The exact commit and CI results are recorded in the pull request.
