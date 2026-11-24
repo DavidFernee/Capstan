@@ -119,6 +119,7 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     native_run ccam-native-x64-divzero 71
     native_run ccam-native-x64-step-limit 73
     native_run ccam-native-x64-depth-limit 74
+    native_run ccam-native-x64-uninitialised 75
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
