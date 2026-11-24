@@ -25,3 +25,6 @@ jobs:
           build-args: --wfail
           test: false
           lint: false
+      - name: Report theorem axiom dependencies
+        working-directory: verification/lean
+        run: lake env lean AxiomAudit.lean
