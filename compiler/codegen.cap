@@ -400,13 +400,24 @@ string gen_call(Gen g, Node e) {
         return gen_expr(g, e.kids[0]);
     }
     if (f == "sql_query" || f == "run") {
-        string lt = fresh(g);
+        // These builtins require a literal first argument, but CAP_LIT is still
+        // effectful: it lazily allocates and may fail. Materialise every source
+        // argument left-to-right before allocating the compiler's argv/params list.
+        string first = fresh(g);
         List<string> parts = new List<string>();
-        parts.push("({ CapList *" + lt + " = cap_list_new(); ");
+        List<string> args = new List<string>();
+        parts.push("({ __auto_type " + first + " = " + gen_expr(g, e.kids[0]) + "; ");
         for (int j = 1; j < e.kids.len(); j += 1) {
-            parts.push("cap_list_push(" + lt + ", cap_vp(" + gen_expr(g, e.kids[j]) + ")); ");
+            string arg = fresh(g);
+            parts.push("__auto_type " + arg + " = " + gen_expr(g, e.kids[j]) + "; ");
+            args.push(arg);
         }
-        parts.push("cap_" + f + "(" + gen_expr(g, e.kids[0]) + ", " + lt + "); })");
+        string lt = fresh(g);
+        parts.push("CapList *" + lt + " = cap_list_new(); ");
+        for (int k = 0; k < args.len(); k += 1) {
+            parts.push("cap_list_push(" + lt + ", cap_vp(" + args[k] + ")); ");
+        }
+        parts.push("cap_" + f + "(" + first + ", " + lt + "); })");
         return join(parts, "");
     }
     Seq s2 = operands(g, e, 0);
