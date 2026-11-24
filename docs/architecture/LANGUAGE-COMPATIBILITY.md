@@ -39,7 +39,7 @@ A feature being accepted by the existing compiler does not mean it is supported 
 
 ### 3.1 Remainder exceptional pair
 
-The existing runtime defines `INT64_MIN % -1` as zero, while the CCAM v0.1 draft says remainder traps with `integer_overflow`. The normative core proposal preserves the existing source behaviour: `MIN / -1` traps, `MIN % -1` returns zero. The CCAM arithmetic implementation and tests must be updated before it is used as a reference oracle.
+The existing runtime defines `INT64_MIN % -1` as zero, while the CCAM v0.1 draft says remainder traps with `integer_overflow`. The normative core proposal preserves the existing source behaviour: `MIN / -1` traps, `MIN % -1` returns zero. The current range analysis has an explicit exclusion for the exceptional pair before selecting the proven C remainder helper; retain and test that precondition. The CCAM arithmetic implementation and tests must be updated before it is used as a reference oracle.
 
 ### 3.2 Compound assignment order
 
