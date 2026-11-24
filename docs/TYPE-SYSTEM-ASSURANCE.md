@@ -138,17 +138,20 @@ Suggested feature test directories are `tests/generics/parser/`, `tests/generics
 
 | Gate | Dependency | Must pass before |
 |---|---|---|
-| G0 — baseline inventory | Existing compiler and tests | Generic syntax work |
-| G1 — parameter identity and structural substitution | G0 | Generic structs/enums/functions |
+| G0 — baseline inventory | Existing compiler and tests | Any v0.5 implementation |
+| G0.5 — module graph, canonical source identity, deterministic lookup and declaration IDs | G0 | Generic nominal identity, substitution keys and interface coherence |
+| G1 — parameter identity and structural substitution | G0, G0.5 | Generic structs/enums/functions |
 | G2 — substituted type validation and qualifier preservation | G1 | Any generic value reaches ordinary checking |
 | G3 — monomorphisation and global resource budgets | G1, G2 | Generic code generation |
-| G4 — constraints and cross-module coherence | G1–G3; module identity model | Interface-constrained generic calls |
+| G4 — constraints and cross-module coherence | G0.5, G1–G3; explicit impl ownership rule | Interface-constrained generic calls |
 | G5 — generic exhaustiveness and payload typing | G1–G3 | Generic enum use in production code |
 | G6 — Result and propagation | G1–G5 | Error propagation syntax |
-| G7 — closures, capture and GC/secret rules | G1–G4; runtime support | Closure expressions and Shroud typed messages |
-| G8 — bootstrap, differential, fuzz and release evidence | G1–G7 | v0.5/v0.6 release claim |
+| G7 — closures, capture and GC/secret rules | G0.5, G1–G4; runtime support | Closure expressions and Shroud typed messages |
+| G8 — bootstrap, differential, fuzz and release evidence | G0–G7 | v0.5/v0.6 release claim |
 
 The sequence is intentionally conservative. No later feature should force a weakening of an earlier security invariant to make its API convenient.
+
+**Ordering clarification:** G0.5 is a semantic prerequisite, not a demand that the entire visibility migration be completed before generics. It establishes the identity and lookup substrate only. Public/private enforcement and recursive API-surface closure may be implemented as a later gate, but no generic nominal type, substitution cache or interface-coherence decision may use an unqualified source name as declaration identity.
 
 
 ## 10. Type identity and substitution contract
