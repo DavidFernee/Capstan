@@ -224,6 +224,14 @@ static size_t cap_gc_parse_heap_limit(const char *text) {
     return (size_t)value;
 }
 
+static size_t cap_gc_physical_heap_limit(size_t physical_pages, size_t page_size) {
+    if (!physical_pages || !page_size) return (size_t)1 << 34;
+    if (physical_pages > CAP_MAX_LEN / page_size) return CAP_MAX_LEN;
+    size_t physical_bytes = physical_pages * page_size;
+    size_t limit = (physical_bytes / 4) * 3 + ((physical_bytes % 4) * 3) / 4;
+    return limit ? limit : CAP_MAX_LEN;
+}
+
 static void cap_gc_init(void) {
     if (cap_gc.inited) return;
     cap_gc.inited = 1;
@@ -237,7 +245,9 @@ static void cap_gc_init(void) {
         cap_gc.max_heap = cap_gc_parse_heap_limit(mh);
     } else {
         long pages = sysconf(_SC_PHYS_PAGES), psize = sysconf(_SC_PAGESIZE);
-        cap_gc.max_heap = pages > 0 && psize > 0 ? (size_t)pages / 4 * 3 * (size_t)psize : (size_t)1 << 34;
+        cap_gc.max_heap = pages > 0 && psize > 0
+                        ? cap_gc_physical_heap_limit((size_t)pages, (size_t)psize)
+                        : (size_t)1 << 34;
     }
     /* Never more than 2^48 bytes: every string and collection is then shorter than
        2^48 elements, a bound the compiler's range analysis relies on. */
