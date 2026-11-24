@@ -706,7 +706,7 @@ threat model, Shroud integration contract and milestones are in [ANCHOR.md](ANCH
 | Milestone | Work | Needs |
 |---|---|---|
 | A0 *(prototype)* | Architecture, threat model, Shroud S0 workbench composition, honest status/evidence model | Shroud S0, current CLI and LSP |
-| A1 | Native host/embedder decision, supervised LSP and compiler process adapters, bounded output and cancellation | Shroud S1 coordination; host process adapter |
+| A1 | Native host/embedder decision, supervised LSP and compiler process adapters, bounded output and cancellation | Shroud S1 coordination; Capstan-native capability-scoped process API (not present in current runtime) |
 | A2 | Confined workspace model, multi-line editor, compiler-backed token/highlighting contract, save/reload | Shroud S2; compiler token API agreement |
 | A3 | Diagnostics, explicit check/build/test/format commands, reproducible build identity and local navigation | Existing compiler CLI/LSP; future LSP navigation requests |
 | A4 | WYSIWYG Shroud designer, live preview, component tree/properties inspector, source-aware bidirectional editing | Shroud visual designer APIs; compiler parse/source-map/transformation contract |
