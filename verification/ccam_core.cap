@@ -194,7 +194,7 @@ struct CCAMRegisterResult {
 struct CCAMRegisterFileResult {
     bool ok;
     List<CCAMRegister> registers;
-    string error;
+    string error = "";
 }
 
 CCAMRegisterResult ccam_register_error(string trap) {
@@ -413,7 +413,7 @@ struct CCAMMachineState {
 struct CCAMMachineCreateResult {
     bool ok;
     CCAMMachineState state;
-    string error;
+    string error = "";
 }
 
 CCAMInstruction ccam_copy_instruction(CCAMInstruction source) {
@@ -536,7 +536,7 @@ void ccam_machine_step(CCAMMachineState state) {
             ccam_machine_trap(state, "register_type_mismatch");
             return;
         }
-        string error;
+        string error = "";
         if (source.declared_type == CCAM_TYPE_INT) {
             error = ccam_register_write_int(
                 state.registers, instruction.dst, source.int_value);
