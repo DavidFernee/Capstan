@@ -1964,6 +1964,7 @@ string ccam_frame_stack_push(CCAMFrameStack stack, CCAMFrame callee) {
     }
     if (stack.frames.len() >= stack.max_depth) return "call_depth_exceeded";
     CCAMFrame caller = stack.frames[stack.frames.len() - 1];
+    if (!ccam_frame_is_valid(caller)) return "invalid_call_stack";
     if (callee.return_type == CCAM_RETURN_VOID) {
         if (callee.caller_destination != -1) return "return_type_mismatch";
     } else {
@@ -1984,6 +1985,7 @@ CCAMFrameReturnResult ccam_frame_stack_return_int(
     if (stack.frames.len() == 0) return ccam_frame_return_error("invalid_call_stack");
     int top = stack.frames.len() - 1;
     CCAMFrame callee = stack.frames[top];
+    if (!ccam_frame_is_valid(callee)) return ccam_frame_return_error("invalid_call_stack");
     if (callee.return_type != CCAM_RETURN_INT) return ccam_frame_return_error("return_type_mismatch");
     CCAMRegisterResult value = ccam_register_read_int(callee.registers, source_register);
     if (!value.ok) return ccam_frame_return_error(value.trap);
@@ -2015,6 +2017,7 @@ CCAMFrameReturnResult ccam_frame_stack_return_bool(
     if (stack.frames.len() == 0) return ccam_frame_return_error("invalid_call_stack");
     int top = stack.frames.len() - 1;
     CCAMFrame callee = stack.frames[top];
+    if (!ccam_frame_is_valid(callee)) return ccam_frame_return_error("invalid_call_stack");
     if (callee.return_type != CCAM_RETURN_BOOL) return ccam_frame_return_error("return_type_mismatch");
     CCAMRegisterResult value = ccam_register_read_bool(callee.registers, source_register);
     if (!value.ok) return ccam_frame_return_error(value.trap);
@@ -2042,6 +2045,7 @@ CCAMFrameReturnResult ccam_frame_stack_return_bool(
 CCAMFrameReturnResult ccam_frame_stack_return_void(CCAMFrameStack stack) {
     if (stack.frames.len() == 0) return ccam_frame_return_error("invalid_call_stack");
     CCAMFrame callee = stack.frames[stack.frames.len() - 1];
+    if (!ccam_frame_is_valid(callee)) return ccam_frame_return_error("invalid_call_stack");
     if (callee.return_type != CCAM_RETURN_VOID || callee.caller_destination != -1) {
         return ccam_frame_return_error("return_type_mismatch");
     }
