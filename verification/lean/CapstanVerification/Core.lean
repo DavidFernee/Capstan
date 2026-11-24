@@ -349,4 +349,138 @@ The next semantics increment must follow CCAM.md and its conformance vectors.
 -/
 
 
+/-! ## Boolean and integer-comparison instruction fragments
+
+These constructors follow the eq_i, lt_i, and not_b operations in
+CCAM v0.1. They remain instruction fragments, not a whole-program evaluator.
+-/
+
+/-- Integer less-than writes a boolean to a statically boolean destination. -/
+structure LtInstr (n : Nat) (types : RegTypes n) where
+  dst : Fin n
+  lhs : Fin n
+  rhs : Fin n
+  dst_is_bool : types dst = .bool
+  lhs_is_int : types lhs = .int
+  rhs_is_int : types rhs = .int
+
+def executeLt {n : Nat} {types : RegTypes n}
+    (regs : Registers n) (instr : LtInstr n types) : Except Trap (Registers n) :=
+  match readInt regs instr.lhs with
+  | .error e => .error e
+  | .ok a =>
+    match readInt regs instr.rhs with
+    | .error e => .error e
+    | .ok b =>
+      .ok (write regs instr.dst (.bool (decide (a < b))))
+
+theorem executeLt_left_read_error_precedence
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    (instr : LtInstr n types) (e : Trap)
+    (hleft : readInt regs instr.lhs = .error e) :
+    executeLt regs instr = .error e := by
+  simp [executeLt, hleft]
+
+theorem executeLt_preserves_well_typed
+    {n : Nat} {types : RegTypes n} {regs next : Registers n}
+    (hregs : WellTyped types regs)
+    (instr : LtInstr n types)
+    (hstep : executeLt regs instr = .ok next) :
+    WellTyped types next := by
+  unfold executeLt at hstep
+  cases hleft : readInt regs instr.lhs with
+  | error e =>
+    simp [hleft] at hstep
+  | ok a =>
+    cases hright : readInt regs instr.rhs with
+    | error e =>
+      simp [hleft, hright] at hstep
+    | ok b =>
+      simp [hleft, hright] at hstep
+      cases hstep
+      have hvalue : hasType (.bool (decide (a < b))) (types instr.dst) := by
+        simp [hasType, hasTypeB, instr.dst_is_bool]
+      exact write_preserves_well_typed hregs instr.dst
+        (.bool (decide (a < b))) hvalue
+
+/-- Integer equality writes a boolean to a statically boolean destination. -/
+structure EqInstr (n : Nat) (types : RegTypes n) where
+  dst : Fin n
+  lhs : Fin n
+  rhs : Fin n
+  dst_is_bool : types dst = .bool
+  lhs_is_int : types lhs = .int
+  rhs_is_int : types rhs = .int
+
+def executeEq {n : Nat} {types : RegTypes n}
+    (regs : Registers n) (instr : EqInstr n types) : Except Trap (Registers n) :=
+  match readInt regs instr.lhs with
+  | .error e => .error e
+  | .ok a =>
+    match readInt regs instr.rhs with
+    | .error e => .error e
+    | .ok b =>
+      .ok (write regs instr.dst (.bool (decide (a = b))))
+
+theorem executeEq_left_read_error_precedence
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    (instr : EqInstr n types) (e : Trap)
+    (hleft : readInt regs instr.lhs = .error e) :
+    executeEq regs instr = .error e := by
+  simp [executeEq, hleft]
+
+theorem executeEq_preserves_well_typed
+    {n : Nat} {types : RegTypes n} {regs next : Registers n}
+    (hregs : WellTyped types regs)
+    (instr : EqInstr n types)
+    (hstep : executeEq regs instr = .ok next) :
+    WellTyped types next := by
+  unfold executeEq at hstep
+  cases hleft : readInt regs instr.lhs with
+  | error e =>
+    simp [hleft] at hstep
+  | ok a =>
+    cases hright : readInt regs instr.rhs with
+    | error e =>
+      simp [hleft, hright] at hstep
+    | ok b =>
+      simp [hleft, hright] at hstep
+      cases hstep
+      have hvalue : hasType (.bool (decide (a = b))) (types instr.dst) := by
+        simp [hasType, hasTypeB, instr.dst_is_bool]
+      exact write_preserves_well_typed hregs instr.dst
+        (.bool (decide (a = b))) hvalue
+
+/-- Boolean negation preserves the declared boolean register type. -/
+structure NotInstr (n : Nat) (types : RegTypes n) where
+  dst : Fin n
+  src : Fin n
+  dst_is_bool : types dst = .bool
+  src_is_bool : types src = .bool
+
+def executeNot {n : Nat} {types : RegTypes n}
+    (regs : Registers n) (instr : NotInstr n types) : Except Trap (Registers n) :=
+  match readBool regs instr.src with
+  | .error e => .error e
+  | .ok value =>
+    .ok (write regs instr.dst (.bool (!value)))
+
+theorem executeNot_preserves_well_typed
+    {n : Nat} {types : RegTypes n} {regs next : Registers n}
+    (hregs : WellTyped types regs)
+    (instr : NotInstr n types)
+    (hstep : executeNot regs instr = .ok next) :
+    WellTyped types next := by
+  unfold executeNot at hstep
+  cases hread : readBool regs instr.src with
+  | error e =>
+    simp [hread] at hstep
+  | ok value =>
+    simp [hread] at hstep
+    cases hstep
+    have hvalue : hasType (.bool (!value)) (types instr.dst) := by
+      simp [hasType, hasTypeB, instr.dst_is_bool]
+    exact write_preserves_well_typed hregs instr.dst (.bool (!value)) hvalue
+
+
 end CapstanVerification
