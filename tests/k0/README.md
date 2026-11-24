@@ -4,7 +4,7 @@ Labelled samples for the K0 kernel CVE study (`tools/k0/study.py`, `docs/K0-KERN
 is a CVE from the study year and the class a reader assigned from its fix description, using the
 class names in `tools/k0/classify.py`. The study loader scans every CVE identifier-year directory,
 because identifier year and publication year are not equivalent. Run the study only against a complete
-CVE List V5 checkout with a clean Git working tree and a complete materialised JSON inventory; sparse checkouts are rejected by comparing tracked and on-disk records. The exact 40-character source commit is recorded in the report and summary JSON. Incomplete checkouts and malformed Linux-published records are rejected.
+CVE List V5 checkout with a clean Git working tree and a complete materialised JSON inventory; sparse checkouts are rejected by comparing tracked and on-disk records. Run from a clean Capstan Git checkout as well. The exact 40-character CVE List and Capstan source commits are recorded in the report and summary JSON. Generated reports explicitly state NOT INDEPENDENTLY VALIDATED / RESEARCH ONLY until blind human relabelling is complete. Incomplete checkouts and malformed Linux-published records are rejected.
 
 - `labels.csv`: 60 CVEs drawn at random. The classifier's rules were refined after this sample was
   read, so its agreement here is optimistic.

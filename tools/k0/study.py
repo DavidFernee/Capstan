@@ -4,8 +4,9 @@ Usage:
     git clone https://github.com/CVEProject/cvelistV5.git CVELIST_DIR
     python3 tools/k0/study.py CVELIST_DIR [--year 2025]
 
-CVELIST_DIR is a complete checkout of https://github.com/CVEProject/cvelistV5. The study scans
-all identifier-year directories (not just the publication year) and takes every CVE published in the
+CVELIST_DIR is a complete, clean Git checkout of https://github.com/CVEProject/cvelistV5. Run
+from a clean Capstan Git checkout too: the study records both exact source commits and rejects dirty
+working trees. The study scans all identifier-year directories (not just the publication year) and takes every CVE published in the
 given calendar year by the Linux kernel's CNA, classifies it from its fix description
 (classify.py), runs each class through the CWE atlas (docs/CWE-ATLAS.md), and writes:
 
