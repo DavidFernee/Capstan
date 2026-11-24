@@ -306,7 +306,7 @@ def check_fuzz(exe, tmp):
 def check_pixmap_limits(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits.cap", "pixmap-limits")
     ok = run(exe)
-    if ok.stdout.strip() != "pixmap limits: 10 assertions":
+    if ok.stdout.strip() != "resource limits: 17 assertions and glyph cache exercised":
         sys.exit(f"pixmap limits: unexpected output: {ok.stdout!r}")
     rejected_exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits_reject.cap", "pixmap-reject")
     rejected = run(rejected_exe, check=False)
