@@ -625,6 +625,7 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
     }
     List<Node> source_functions = new List<Node>();
     Map<int> function_indices = new Map<int>();
+    int total_function_name_bytes = 0;
     for (int i = 0; i < declarations.len(); i += 1) {
         Node declaration = declarations[i];
         if (declaration.k != N_FN) {
@@ -639,6 +640,20 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
                 entry_function: -1, error: "protected_function_not_supported"
             };
         }
+        int name_bytes = declaration.s.len();
+        if (name_bytes == 0 || name_bytes > CCAM_MAX_FUNCTION_NAME_BYTES) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "function_name_limit_exceeded"
+            };
+        }
+        if (name_bytes > CCAM_MAX_TOTAL_FUNCTION_NAME_BYTES - total_function_name_bytes) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "total_function_name_limit_exceeded"
+            };
+        }
+        total_function_name_bytes += name_bytes;
         if (function_indices.has(declaration.s)) {
             return new CCAMLoweringResult{
                 ok: false, functions: new List<CCAMFunction>(),
@@ -666,6 +681,7 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
         };
     }
     List<CCAMFunction> functions = new List<CCAMFunction>();
+    int total_registers = 0;
     int total_instructions = 0;
     int total_call_arguments = 0;
 
@@ -735,6 +751,13 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
                 entry_function: -1, error: context.error
             };
         }
+        if (context.register_types.len() > CCAM_MAX_TOTAL_REGISTERS - total_registers) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "total_register_limit_exceeded"
+            };
+        }
+        total_registers += context.register_types.len();
         total_instructions += context.instructions.len();
         if (total_instructions > CCAM_MAX_INSTRUCTIONS) {
             return new CCAMLoweringResult{
