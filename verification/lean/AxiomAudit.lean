@@ -1,4 +1,4 @@
-import CapstanVerification.Core
+import CapstanVerification.Machine
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
