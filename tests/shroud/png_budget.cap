@@ -24,7 +24,8 @@ int main() {
     // The Pixmap is valid under the raster budget but must be rejected by the
     // stricter PNG export budget before allocating any PNG output buffer.
     Pixmap over = new_pixmap(512, 512);
-    if (png_encode(over).len() != 0) { return 13; }
+    List<int> rejected = png_encode(over);
+    if (rejected.len() != 0) { return 13; }
 
     // Repeated accepted exports must remain deterministic.
     List<int> again = png_encode(small);
