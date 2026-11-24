@@ -25,6 +25,12 @@ static void observe_secret_scratch_wipe(const void *memory, size_t n) {
     secret_scratch_wipe_calls++;
 }
 
+
+static const char *unit_files[] = {"unit"};
+
+#define CHECK(cond) do { checks++; if (!(cond)) { failures++; \
+    fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
+
 static void test_secret_scratch_lifecycle(void) {
     CapSecretScratch scratch = {0};
     unsigned char pattern[97];
@@ -62,10 +68,6 @@ static void test_secret_scratch_lifecycle(void) {
     CHECK(!cap_secret_scratch_init(&scratch, CAP_MAX_LEN + (size_t)1));
     cap_secret_scratch_test_wipe_hook = NULL;
 }
-static const char *unit_files[] = {"unit"};
-
-#define CHECK(cond) do { checks++; if (!(cond)) { failures++; \
-    fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); } } while (0)
 
 static void hexof(const unsigned char *p, size_t n, char *out) { cap_hex(p, n, out); }
 
