@@ -25,6 +25,9 @@ jobs:
           build-args: --wfail
           test: false
           lint: false
+      - name: Build proof library root explicitly
+        working-directory: verification/lean
+        run: lake build CapstanVerification --wfail
       - name: Report theorem axiom dependencies
         working-directory: verification/lean
         run: lake env lean AxiomAudit.lean
