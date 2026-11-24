@@ -63,6 +63,7 @@ The activation guard is measured from the clock passed to `Ui.render`, not from 
 - Native event timestamps may be retained for diagnostics only after validation; they are not authoritative for guard decisions.
 - On suspend/resume, clock discontinuity, or clock-source failure, the host must fail closed: reset/restart guarded-control delays and avoid dispatching queued stale activation events until a fresh frame has been rendered.
 - Event timestamps do not prove human intent, visibility, event provenance, or that a frame reached the display. The guard is a timing mitigation, not proof of informed consent.
+- S0 `Event` has no event-origin/provenance field. If S1 adds diagnostic origin metadata (for example, local pointer, keyboard, committed text, accessibility action or automation), it must be descriptive only. Never authorize a destructive action merely because an event claims to originate from a physical device or a trusted-looking source; accessibility and assistive-technology actions must remain usable and pass through the same Shroud guards.
 
 The current API accepts signed integer milliseconds. S1 must define overflow-safe conversion and wrap handling for the chosen Capstan integer width and host clock source.
 
