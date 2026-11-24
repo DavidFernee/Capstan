@@ -31,6 +31,10 @@ int main() {
     Pixmap multi = new_pixmap(128, 128);
     multi.clear(0xFF336699);
 
+    // Exercise the exact dimensions used by the reference gallery.
+    Pixmap gallery = new_pixmap(560, 520);
+    gallery.clear(0xFF336699);
+
     // The Pixmap is valid under the raster budget but exceeds the stricter PNG
     // budget. Rejection must happen before any PNG output allocation.
     Pixmap over = new_pixmap(1024, 512);
@@ -50,6 +54,7 @@ int main() {
     List<int> all_bytes = new List<int>();
     for (int i = 0; i < 256; i += 1) { all_bytes.push(i); }
     if (a.len() > 2 && !write_file(a[2], bytes_text(all_bytes))) { return 20; }
-    println("png budget: 20 assertions");
+    if (a.len() > 3 && !png_write(a[3], gallery)) { return 21; }
+    println("png budget: 21 assertions");
     return 0;
 }
