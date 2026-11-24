@@ -47,7 +47,8 @@ Each instruction is a JSON object with an `op` field. Register and instruction i
 | `const_b` | `dst, value` | Write boolean literal. |
 | `move` | `dst, src` | Copy a value of the same declared register type. |
 | `add_i`, `sub_i`, `mul_i` | `dst, lhs, rhs` | Signed-64 arithmetic; trap on overflow. |
-| `div_i`, `rem_i` | `dst, lhs, rhs` | Truncation-toward-zero division/remainder; trap on zero divisor and MIN/-1 overflow. |
+| `div_i` | `dst, lhs, rhs` | Signed division truncating toward zero; trap on zero divisor and `MIN / -1` overflow. |
+| `rem_i` | `dst, lhs, rhs` | Signed remainder paired with truncation-toward-zero division; trap on zero divisor; `MIN % -1` returns zero. |
 | `eq_i`, `lt_i` | `dst, lhs, rhs` | Integer equality / signed less-than; write bool. |
 | `not_b` | `dst, src` | Boolean negation. |
 | `jump` | `target` | Set PC to target instruction. |
@@ -57,13 +58,13 @@ Each instruction is a JSON object with an `op` field. Register and instruction i
 | `ret_void` | none | Return from a void function. |
 | `trap` | `reason` | Terminate execution with the named explicit trap. |
 
-A function may not fall off the end of its instruction sequence. Every branch/jump target must be within the function. Calls must name an existing function. Structural validation is performed before execution. Dynamic checks remain mandatory even for validated programs.
+A function may not fall off the end of its instruction sequence. Every branch/jump target must be within the function. Calls must name an existing function. Structural validation MUST reject duplicate/empty function names, an absent or invalid entry, unknown type tags, invalid register or instruction indices, static operand/destination type mismatches, wrong call arity/signature, incompatible return destinations, invalid return instructions, out-of-range branch targets and any path that can fall off a function. Validation is deterministic and completes before the first instruction executes. A malformed program is a validation error, not a runtime trap. Dynamic checks remain mandatory even for validated programs, including uninitialised-register reads and resource limits.
 
 ## 4. Arithmetic semantics
 
 Let `MIN = -2^63` and `MAX = 2^63-1`. For addition, subtraction and multiplication, calculate the mathematical integer result (r). If (r < MIN) or (r > MAX), execution traps with `integer_overflow`; otherwise the result is `Int64(r)`.
 
-Division truncates toward zero. Remainder is defined by (a = q b + r), where (q) is truncation-toward-zero division and (|r| < |b|). Division or remainder by zero traps with `division_by_zero`. `MIN / -1` traps with `integer_overflow`.
+Division truncates toward zero. Remainder is defined mathematically by `a = q*b + r`, where `q` is the unbounded mathematical quotient truncated toward zero and `|r| < |b|`; a nonzero remainder has the sign of the dividend. Division or remainder by zero traps with `division_by_zero`. `MIN / -1` traps with `integer_overflow`. `MIN % -1` returns `0`: the mathematical remainder is representable even though the corresponding quotient is not. The evaluator MUST special-case this pair before using any host remainder operator that could overflow or be undefined. This preserves the existing Capstan source-language behaviour.
 
 No operation wraps, saturates, or depends on host-language overflow behaviour.
 
@@ -75,15 +76,18 @@ A machine state consists of:
 - a monotonically increasing instruction-step counter;
 - configured maximum steps and maximum call depth.
 
-The active frame is the top of the stack. One transition executes exactly one instruction and increments the step counter. A call pushes a new frame and transfers control to its first instruction. A return pops the frame and writes its result to the caller destination (if present). Returning from the entry function produces the final value. Reaching the step or call-depth limit traps deterministically.
+The active frame is the top of a non-empty stack. The entry frame counts as call depth 1. One transition executes exactly one instruction and increments the step counter, including a call, return or explicit trap. A limit of N permits N instructions; if another instruction is required after N have executed, `step_limit_exceeded` occurs before that instruction is executed. Structural validation is outside this budget. A call reads and checks argument registers left-to-right, then checks the call-depth limit; if pushing would exceed the configured maximum, it traps with `call_depth_exceeded` without pushing. Otherwise it advances the caller PC to the continuation and pushes a new frame. A return reads and checks its result before modifying the frame stack; the callee pop and caller-destination write are one atomic transition. Returning from the entry function produces `Halt(value)` or `HaltVoid` for a void entry. Reaching a limit traps deterministically.
 
 The executable evaluator, register files, frames, instruction sequences, and conformance tests are to be represented using Capstan types and collections. Host-language data structures or a host-language interpreter are not an acceptable implementation of CCAM. The current compiler bootstrap may temporarily be used to compile and run this Capstan source; that bootstrap boundary does not alter the implementation-language requirement.
 
 ## 6. Observable outcomes
 
-Execution returns either:
-- `Halt(value)` for a successful entry-function return; or
-- `Trap(code, pc, function)` for a defined machine trap.
+Execution returns exactly one of:
+- `Halt(value)` for a successful non-void entry-function return;
+- `HaltVoid` for a successful void entry-function return; or
+- `Trap(code, pc, function)` for a defined dynamic machine trap.
+
+A complete source-program entry has zero arguments and returns `int` or `void`. Internal functions may return `int`, `bool` or `void. Structural program errors are reported as validation failures before execution, not as dynamic traps.
 
 The Capstan implementation must represent machine traps as explicit values or controlled results. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected before execution.
 
