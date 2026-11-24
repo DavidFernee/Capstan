@@ -188,6 +188,10 @@ Rasteriser, TrueType, text, layout, sixteen widgets, input, focus, accessibility
 themes, headless driver, golden-frame tests.
 
 ### S1: Platform embedders (needs v0.6 capability I/O and the T6 system-call layer)
+
+The normative host/adapter boundary, event and clock trust rules, frame lifetime, DPI contract,
+accessibility bridge requirements and platform acceptance checklist are specified in
+[SHROUD-HOST.md](SHROUD-HOST.md). This is a design contract, not an implemented host API.
 - **Linux, Wayland first.** The Wayland protocol is a documented wire format over a Unix socket,
   so the client can be written entirely in Capstan: `wl_shm` buffers, `xdg-shell` windows,
   `wl_seat` input, `fractional-scale`, `text-input-v3`, clipboard. X11 follows the same way
