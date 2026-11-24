@@ -1232,6 +1232,11 @@ static void cap_hmac_sha256(const unsigned char *key, size_t kn, const unsigned 
     cap_wipe(k, sizeof k); cap_wipe(ipad, sizeof ipad); cap_wipe(opad, sizeof opad); cap_wipe(inner, sizeof inner); cap_wipe(&s, sizeof s);
 }
 
+#ifdef CAP_PBKDF2_TEST_HOOK
+static unsigned cap_pbkdf2_test_calls;
+static unsigned cap_pbkdf2_prepare_calls;
+#endif
+
 /* Prepare the keyed SHA-256 states once for a PBKDF2 derivation. Each state
    includes exactly one 64-byte HMAC pad block (512 bits). Per-message calls
    copy these states, finish the inner/outer hashes, and wipe the copies. */
@@ -1307,11 +1312,6 @@ static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
 #define CAP_PBKDF2_ITER 600000
 #define CAP_PASSWORD_MAX_BYTES 256
 #define CAP_PASSWORD_RECORD_LEN 123
-
-#ifdef CAP_PBKDF2_TEST_HOOK
-static unsigned cap_pbkdf2_test_calls;
-static unsigned cap_pbkdf2_prepare_calls;
-#endif
 
 static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
     if (!pw || !salt || pn > CAP_PASSWORD_MAX_BYTES || sn > 64 ||
