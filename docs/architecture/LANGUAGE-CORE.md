@@ -221,6 +221,8 @@ The initial stable trap codes are:
 
 The machine MUST NOT expose host exceptions, signals, undefined behaviour or process crashes as substitutes for these outcomes. A malformed program description is reported as a validation failure and is not converted into a dynamic trap.
 
+Machine trap codes are semantic categories, not CWE identifiers. Where they correspond to existing source/runtime diagnostics, the mapping is `integer_overflow` → CWE-190, `division_by_zero` → CWE-369, and `call_depth_exceeded` → the existing recursion/stack-exhaustion classification CWE-674. `step_limit_exceeded` is a machine execution-budget outcome with no legacy source-runtime equivalent. `uninitialised_register`, `invalid_register` and `register_type_mismatch` are defensive machine/lowering faults and are not valid outcomes for a correctly lowered, structurally valid source program. `explicit_trap` retains its separately validated application reason as detail; that reason does not create a new machine trap code.
+
 ## 9. Required conformance properties
 
 Every implementation of this core MUST test:
