@@ -62,7 +62,7 @@ The abstract machine state is:
 - stack of frames;
 - each frame: function identity, program counter, typed register vector with initialisation state, and caller return destination;
 - executed instruction count;
-- configured maximum instruction count and call depth.
+- configured maximum instruction count and call depth, each within the signed-64 non-negative integer domain (`maxDepth >= 1`).
 
 The entry frame begins at depth 1, with its PC at the first instruction and all parameter registers initialised from entry arguments (the source-program entry has no arguments). Every executed instruction increments the step count exactly once. A call pushes one frame; a return pops one frame. A successful return from the entry frame yields `Halt(value)` or `HaltVoid`. Reaching a limit yields the specified terminal trap before the prohibited operation takes effect.
 
