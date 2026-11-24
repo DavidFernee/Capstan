@@ -17,4 +17,4 @@ and the other documents ([CWE-COVERAGE.md](../CWE-COVERAGE.md), [CWE-ATLAS.md](.
 [SECURITY.md](../../SECURITY.md)), and against the current edition of the ISM, which ASD publishes
 quarterly, and of the SSDF.
 
-Current as of Capstan 0.4.0 (unreleased).
+Current as of the documentation review on 2026-11-24. The integrated execution path remains the C backend; the C-free/CCAM programme is in progress and Lean proofs cover selected model fragments only. Open pull requests and workflow definitions are not evidence of merged implementation or a completed release. The claim manifest (`claims.json`) is intentionally left in `proposed` state and records an older evidence snapshot; it must be refreshed and reviewed before any assurance claim is promoted.
