@@ -2088,6 +2088,12 @@ test "CCAM frame creation snapshots typed arguments left-to-right" {
     assert(frame.frame.function_index == 1 && frame.frame.pc == 0);
     assert(frame.frame.registers[0].initialized && frame.frame.registers[0].int_value == 41);
     assert(frame.frame.registers[1].initialized && frame.frame.registers[1].bool_value);
+
+    // Caller mutation after construction cannot rewrite the executing frame.
+    callee_types[0] = CCAM_TYPE_BOOL;
+    code[0].lhs = 1;
+    assert(frame.frame.register_types[0] == CCAM_TYPE_INT);
+    assert(frame.frame.instructions[0].lhs == 0);
 }
 
 test "CCAM frame stack enforces depth and performs atomic integer return" {
