@@ -34,7 +34,7 @@ The first implementation-level blockers are concrete:
    erased-free-state invariant.
 3. Allocation and metadata OOM paths are currently fail-stop. The model must preserve
    terminal outcomes and must not claim recoverable failure atomicity.
-4. The collector's root set depends on registered globals, a `setjmp` register spill,
+4. The collector scans every machine word in a pointer-bearing allocation, not just a container's logical live range. A pointer left in a vacated list/map backing slot can therefore remain a conservative edge and delay collection of its referent. Logical removal must not be modelled as physical edge removal unless the backing word is cleared or overwritten. This is a retention/lifetime precision issue; it does not justify reclaiming objects that remain discoverable.\n\nThe collector's root set depends on registered globals, a `setjmp` register spill,
    current-thread stack discovery, compiler behaviour and ABI assumptions. An abstract
    graph-reachability theorem does not prove those concrete roots complete.
 5. libc, the C compiler, platform memory APIs and the current C runtime remain in the
