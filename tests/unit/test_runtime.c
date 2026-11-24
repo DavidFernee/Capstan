@@ -328,17 +328,6 @@ static void test_files(void) {
     rmdir(dir);
 }
 
-/* Shifts and wrapping arithmetic at the edges of the 64-bit range (no panics here;
-   the stops are covered by tests/runtime/shift_*.cap). */
-/* Keep the setjmp target in its own frame for runtime panic tests. */
-__attribute__((noinline)) static int expect_string_panic(void (*fn)(void)) {
-    int old_test_mode = cap_test_mode;
-    cap_test_mode = 1;
-    int rejected = setjmp(cap_test_jmp) != 0;
-    if (!rejected) fn();
-    cap_test_mode = old_test_mode;
-    return rejected;
-}
 static void trigger_negative_string_length(void) {
     (void)cap_str_new(NULL, -1);
 }
@@ -365,13 +354,13 @@ static void trigger_join_invalid_collection(void) {
     (void)cap_join(&parts, CAP_LIT("", 0), 0);
 }
 static void test_string_allocation_bounds(void) {
-    CHECK(expect_string_panic(trigger_negative_string_length));
-    CHECK(expect_string_panic(trigger_null_string_source));
-    CHECK(expect_string_panic(trigger_negative_permanent_string_length));
-    CHECK(expect_string_panic(trigger_string_expansion_overflow));
-    CHECK(expect_string_panic(trigger_escape_length_overflow));
-    CHECK(expect_string_panic(trigger_concat_invalid_operand));
-    CHECK(expect_string_panic(trigger_join_invalid_collection));
+    CHECK(expect_runtime_panic(trigger_negative_string_length));
+    CHECK(expect_runtime_panic(trigger_null_string_source));
+    CHECK(expect_runtime_panic(trigger_negative_permanent_string_length));
+    CHECK(expect_runtime_panic(trigger_string_expansion_overflow));
+    CHECK(expect_runtime_panic(trigger_escape_length_overflow));
+    CHECK(expect_runtime_panic(trigger_concat_invalid_operand));
+    CHECK(expect_runtime_panic(trigger_join_invalid_collection));
     size_t max_plain = CAP_MAX_LEN - sizeof(CapStr) - 1;
     CHECK(cap_rt_checked_string_bytes((int64_t)max_plain, 1, 1, 0) == CAP_MAX_LEN);
     size_t max_html = (CAP_MAX_LEN - sizeof(CapStr) - 1) / 6;
@@ -381,6 +370,8 @@ static void test_string_allocation_bounds(void) {
     CHECK(plain->len == 3 && memcmp(plain->data, "abc", 3) == 0);
 }
 
+/* Shifts and wrapping arithmetic at the edges of the 64-bit range (no panics here;
+   the stops are covered by tests/runtime/shift_*.cap). */
 static void test_bitwise(void) {
     CHECK(cap_as_signed(0) == 0 && cap_as_signed(UINT64_MAX) == -1);
     CHECK(cap_as_signed((uint64_t)INT64_MAX) == INT64_MAX && cap_as_signed((uint64_t)INT64_MAX + 1) == INT64_MIN);
@@ -395,7 +386,92 @@ static void test_bitwise(void) {
     CHECK(cap_shl_proved(5, 3, 0) == 40 && cap_sar_proved(-9, 1, 0) == -5 && cap_shr_proved(-2, 63, 0) == 1);
 }
 
-/* noinline: if inlined into main, its 100,000-key map could stay visible in main's frame. */
+/* Keep the longjmp target in its own frame for deterministic failure tests. */
+__attribute__((noinline)) static int expect_runtime_panic(void (*fn)(void)) {
+    cap_test_mode = 1;
+    if (setjmp(cap_test_jmp) == 0) {
+        fn();
+        cap_test_mode = 0;
+        return 0;
+    }
+    cap_test_mode = 0;
+    return 1;
+}
+
+static void trigger_bad_growth(void) {
+    (void)cap_rt_growth_capacity(0, INT64_MAX, 8, sizeof(CapVal), 0, 0);
+}
+static void trigger_bad_buffer_length(void) {
+    CapBuf b = cap_buf_new(64);
+    b.s->len = INT64_MAX - 1;
+    b.cap = INT64_MAX;
+    cap_buf_put(&b, "x", 1);
+}
+static void trigger_negative_buffer_append(void) {
+    CapBuf b = cap_buf_new(64);
+    cap_buf_put(&b, "x", -1);
+}
+static void trigger_oversized_initial_buffer(void) {
+    (void)cap_buf_new(INT64_MAX);
+}
+static void trigger_negative_initial_buffer(void) {
+    (void)cap_buf_new(-1);
+}
+static void trigger_non_power_of_two_map_index(void) {
+    CapMap m = {0};
+    m.index_cap = 3;
+    (void)cap_map_find(&m, CAP_LIT("k", 1));
+}
+static void trigger_out_of_range_map_index_entry(void) {
+    CapMap m = {0};
+    CapStr *key = cap_str_new("k", 1);
+    CapStr *keys[1] = {key};
+    CapVal vals[1] = {{.i = 1}};
+    int64_t index[2] = {2, 2};
+    m.len = 1; m.cap = 1; m.keys = keys; m.vals = vals;
+    m.index = index; m.index_cap = 2;
+    (void)cap_map_find(&m, key);
+}
+static void trigger_full_map_index(void) {
+    CapMap m = {0};
+    CapStr *stored = cap_str_new("stored", 6);
+    CapStr *missing = cap_str_new("missing", 7);
+    CapStr *keys[1] = {stored};
+    CapVal vals[1] = {{.i = 1}};
+    int64_t index[2] = {1, 1};
+    m.len = 1; m.cap = 1; m.keys = keys; m.vals = vals;
+    m.index = index; m.index_cap = 2;
+    (void)cap_map_find(&m, missing);
+}
+static void trigger_missing_list_storage(void) {
+    CapList l = {.len = 0, .cap = 1, .items = NULL};
+    cap_list_push(&l, cap_vi(1));
+}
+static void trigger_missing_boolean_list_storage(void) {
+    CapBList l = {.len = 0, .cap = 1, .items = NULL};
+    cap_blist_push(&l, true);
+}
+
+static void test_runtime_growth_arithmetic(void) {
+    if (!cap_map_keyed) cap_map_key_init();
+    CHECK(cap_rt_growth_capacity(0, 1, 8, sizeof(CapVal), 0, 0) == 8);
+    CHECK(cap_rt_growth_capacity(8, 9, 8, sizeof(CapVal), 0, 0) == 16);
+    size_t max_items = cap_rt_max_count(sizeof(CapVal), 0, 0);
+    CHECK(cap_rt_growth_capacity((int64_t)max_items - 1, (int64_t)max_items,
+                                 8, sizeof(CapVal), 0, 0) == (int64_t)max_items);
+    CHECK(expect_runtime_panic(trigger_bad_growth));
+    CHECK(expect_runtime_panic(trigger_bad_buffer_length));
+    CHECK(expect_runtime_panic(trigger_negative_buffer_append));
+    CHECK(expect_runtime_panic(trigger_oversized_initial_buffer));
+    CHECK(expect_runtime_panic(trigger_negative_initial_buffer));
+    CHECK(expect_runtime_panic(trigger_non_power_of_two_map_index));
+    CHECK(expect_runtime_panic(trigger_out_of_range_map_index_entry));
+    CHECK(expect_runtime_panic(trigger_full_map_index));
+    CHECK(expect_runtime_panic(trigger_missing_list_storage));
+    CHECK(expect_runtime_panic(trigger_missing_boolean_list_storage));
+}
+
+/* noinline: keep its 100,000-key map out of main's conservative root frame. */
 __attribute__((noinline)) static void test_collections(void) {
     CapMap *m = cap_map_new();
     for (int i = 0; i < 100000; i++) cap_map_set(m, cap_int_to_str(i), cap_vi(i));
@@ -598,6 +674,7 @@ int main(void) {
     test_files();
     test_bitwise();
     test_string_allocation_bounds();
+    test_runtime_growth_arithmetic();
     test_collections();
     test_arithmetic();
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
