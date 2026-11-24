@@ -1,6 +1,6 @@
 # Machine-checked runtime verification
 
-**Status:** programme established; no allocator or collector theorem has yet been machine-checked.  
+**Status:** programme established; initial Lean theorems have been authored but await the first CI proof run. No C implementation theorem has been machine-checked.  
 **Implementation baseline inspected:** `e54edb6bbccab24acab9f2d002a98a09e56c443f`.
 
 ## Purpose
@@ -9,6 +9,10 @@ This programme reduces the trusted runtime base by specifying and proving alloca
 garbage-collector properties, then connecting those properties to the concrete C
 implementation. It is intentionally separate from ordinary regression testing:
 passing tests provide execution evidence, not mathematical proof.
+
+The first Lean model currently states and attempts to prove checked-add soundness/completeness
+and target page-release failure preservation, exact successful accounting decrement, and
+idempotence. These are abstract-model theorems only; they do not yet verify the C code.
 
 The normative starting points are:
 
@@ -67,7 +71,7 @@ code invalidate the corresponding evidence until it is rerun and reviewed.
 
 No assurance claim is promoted merely because a proof file exists or a CI job was
 configured. The proof must actually be checked, and the refinement boundary must be
-documented. The current programme has no completed proof results.
+documented. The first proof CI run is pending; no completed proof result is claimed.
 
 ## Explicit exclusions
 
