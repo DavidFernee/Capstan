@@ -1,5 +1,6 @@
 // spec: types.bool expr.order expr.short_circuit
 // A suppressed boolean RHS must not execute, even when it would trap.
+// Do not lower these operators to eager helper calls.
 int main() {
     bool a = false && (1 / 0 == 0);
     bool b = true || (1 / 0 == 0);
