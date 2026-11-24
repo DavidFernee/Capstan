@@ -158,3 +158,8 @@ permitted. The exact checker run and outcome must be recorded in the proof-run l
 This pins source inputs and Rust toolchain, but does not make Nanoda's implementation
 or Lean4export infallible. They remain part of the independent-checker trust base and
 must be listed as such.
+
+The Nanoda invocation sets `print_axioms: false`: axiom admission is already checked by
+its allowlist and independently audited by `axiom-audit`; optional pretty-printing of
+axiom declarations is not part of the proof check and otherwise emits a non-fatal
+`Unable to print axioms` diagnostic when no pretty-printer destination is configured.
