@@ -1,6 +1,44 @@
 // Regression tests for bounded raster and font allocations (CWE-789/CWE-400).
 // The constructor-rejection case is built separately because it must exit 101.
 
+// A shallow composite graph whose aggregate traversal exceeds the shared budget.
+// Glyph 1 has 64 references to empty glyph 0; glyph 2 has 5 references to glyph 1.
+// Every composite is within the local 64-part cap, but the root traverses 325 parts.
+void limits_append_u16(List<int> bytes, int value) {
+    bytes.push((value >> 8) & 255);
+    bytes.push(value & 255);
+}
+
+Font composite_budget_fixture() {
+    List<int> bytes = new List<int>();
+    // Short loca entries for glyphs 0..3: 0, 0, 394, 434 bytes.
+    limits_append_u16(bytes, 0);
+    limits_append_u16(bytes, 0);
+    limits_append_u16(bytes, 197);
+    limits_append_u16(bytes, 217);
+    // Glyph 1: composite header (10 bytes), then 64 six-byte components.
+    limits_append_u16(bytes, 0xFFFF);
+    for (int h = 0; h < 4; h += 1) { limits_append_u16(bytes, 0); }
+    for (int i = 0; i < 64; i += 1) {
+        limits_append_u16(bytes, i < 63 ? 0x0022 : 0x0002);
+        limits_append_u16(bytes, 0);
+        bytes.push(0); bytes.push(0);
+    }
+    // Glyph 2: composite header, then five references to glyph 1.
+    limits_append_u16(bytes, 0xFFFF);
+    for (int h2 = 0; h2 < 4; h2 += 1) { limits_append_u16(bytes, 0); }
+    for (int j = 0; j < 5; j += 1) {
+        limits_append_u16(bytes, j < 4 ? 0x0022 : 0x0002);
+        limits_append_u16(bytes, 1);
+        bytes.push(0); bytes.push(0);
+    }
+    FontReader reader = new FontReader{b: bytes, ok: true};
+    return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
+        line_gap: 0, num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
+        t_loca: 0, t_glyf: 8, glyf_len: 434, t_hmtx: 0, cmap_at: 0,
+        cmap_format: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
+}
+
 int main() {
     if (pixmap_size_valid(1, 1) != true) { return 1; }
     if (pixmap_size_valid(4096, 4096) != true) { return 2; }
@@ -26,6 +64,11 @@ int main() {
     if (glyph_cache_fits(786433, 262144) != false) { return 21; }
     if (glyph_cache_fits(-1, 1) != false) { return 22; }
     if (glyph_cache_fits(MAX_CACHED_GLYPH_PIXELS, 1) != false) { return 23; }
+    Font composite_font = composite_budget_fixture();
+    Path leaf_path = new_path();
+    if (glyph_outline(composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0) != true) { return 28; }
+    Path aggregate_path = new_path();
+    if (glyph_outline(composite_font, 2, aggregate_path, 1, 1, 0, 0, identity_transform(), 0) != false) { return 29; }
     if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
         if (let font = font_load(data)) {
             for (int cp = 33; cp < 127; cp += 1) {
@@ -36,6 +79,6 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
-    println("resource limits: 27 assertions and glyph cache exercised");
+    println("resource limits: 29 assertions and glyph cache exercised");
     return 0;
 }
