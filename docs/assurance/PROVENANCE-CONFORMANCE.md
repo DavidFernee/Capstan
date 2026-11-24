@@ -2,7 +2,7 @@
 
 **Assessment date:** 2026-11-24  
 **Purpose:** Evidence companion to PROVENANCE-SEMANTICS.md  
-**Status:** Independent source-level assessment; not a runtime test report.
+**Status:** Independent source-level assessment; not a runtime test report. The audit was revalidated against main at `bc0a283df5a964e7340cd48ec8ce4a1e8fb3acde`; the provenance-flow implementation remains unchanged in the reviewed region.
 
 ## 1. Scope and evidence discipline
 
@@ -12,9 +12,9 @@ Primary source snapshots inspected:
 
 | File | Revision |
 |---|---|
-| compiler/checker.cap | b7f0ae9487f9f688822dba55ac4454ade97c8694 |
+| compiler/checker.cap | 9c515141bea8279f4a14a15bb6e387b8eee4a2ce |
 | compiler/parser.cap | 121fda06ac28119ebdbf80f793e42633681fe6b3 |
-| docs/CWE-COVERAGE.md | 3e2cfec884c4da143188688e8433067839b326fb |
+| docs/CWE-COVERAGE.md | 8c01d778788330dd1cf12c1d7b6fd7918e079b0f |
 | tests/cwe/atlas.py | e4273a8b6430ca89640eb67a52386ae6a72eb376 |
 
 Line numbers below refer to these exact file snapshots. A later revision may move them.
@@ -32,16 +32,16 @@ The current analysis is a variable-name-based may-analysis, not the abstract-val
 
 Evidence:
 
-- FlowSummary stores returns_derived, param_to_return, and param_to_sink only (checker.cap:1797–1801).
+- FlowSummary stores returns_derived, param_to_return, and param_to_sink only (checker.cap:1801–1805).
 - Flow stores derived variable names in Map<int> vars (1803–1811).
-- derived() recognises selected AST forms: tainted .at(), marked variables, unary operations, marked field/index bases, selected map .get(), int_to_str(), string concatenation, selected collection reads, arithmetic, wrapping operations, and function summaries (1817–1848).
-- base_marked() recursively reduces a field/index expression to its root variable name (1850–1854); it does not resolve object identity or aliases.
-- flow_walk() marks only int and string local declarations and assignments (1887–1889).
-- Aggregate writes mark a root variable name; push, insert, and set inspect only the final argument (1903–1909).
-- Optional unwrapping is handled for a direct N_IF expression (1911), but a stored optional local is not modelled as a payload-bearing abstract value.
-- Interprocedural summaries seed only parameters whose declared type is TY_INT (1952–1966).
-- Ordinary function summaries are iterated to a fixed point with a 50-round fail-closed limit (1977–2005). Intraprocedural analysis has a 100-round fail-closed limit (1924–1944).
-- The final body pass analyses both functions and policies with an empty seed; there is no policy-parameter summary phase (2007–2012).
+- derived() recognises selected AST forms: tainted .at(), marked variables, unary operations, marked field/index bases, selected map .get(), int_to_str(), string concatenation, selected collection reads, arithmetic, wrapping operations, and function summaries (1821–1852).
+- base_marked() recursively reduces a field/index expression to its root variable name (1854–1858); it does not resolve object identity or aliases.
+- flow_walk() marks only int and string local declarations and assignments (1891–1893).
+- Aggregate writes mark a root variable name; push, insert, and set inspect only the final argument (1907–1913).
+- Optional unwrapping is handled for a direct N_IF expression (1915), but a stored optional local is not modelled as a payload-bearing abstract value.
+- Interprocedural summaries seed only parameters whose declared type is TY_INT (1956–1970).
+- Ordinary function summaries are iterated to a fixed point with a 50-round fail-closed limit (1981–2009). Intraprocedural analysis has a 100-round fail-closed limit (1924–1944).
+- The final body pass analyses both functions and policies with an empty seed; there is no policy-parameter summary phase (2011–2016).
 
 The fixed-point failure behaviour is a positive design property: an exhausted analysis does not silently accept a partial result. The redesign should preserve this property while replacing the coarse domain.
 
@@ -52,24 +52,24 @@ The following entries map the independent TYPE findings to the rules required by
 | Finding | Missing or incomplete rule | Source-level evidence | Assessment |
 |---|---|---|---|
 | TYPE-01 | Context-specific encoder result types and sink contracts | Encoder checker returns generic TY_STR for escape_c, escape_csv, and escape_json; only HTML and log have distinct result types (checker around 1055–1057) | Gap |
-| TYPE-02 | Aggregate parameter paths in summaries | Only TY_INT parameters are seeded (1952–1966) | Gap |
+| TYPE-02 | Aggregate parameter paths in summaries | Only TY_INT parameters are seeded (1956–1970) | Gap |
 | TYPE-03 | Alias-aware abstract heap | base_marked resolves only syntactic root variable name (1850–1859) | Gap |
-| TYPE-04 | Interprocedural heap-write effects | Summary has no heap-effect component (1797–1801); caller summary application only handles return dependencies (1839–1845) | Gap |
-| TYPE-05 | Provenance through generic text conversion | derived() has int_to_str but no to_text transfer (1817–1848) | Gap |
-| TYPE-06 | Provenance through collection-consuming join | Checker types join but derived() has no join rule (checker 1029–1036; 1817–1848) | Gap |
-| TYPE-07 | Provenance through tainted length | No .len() transfer in derived() (1817–1848) | Gap |
-| TYPE-08 | Comparison-result provenance | No comparison or Boolean-result transfer in derived() (1817–1848) | Gap |
-| TYPE-09 | Provenance for Boolean and other local types | Local marking is restricted to TY_INT and TY_STR (1887–1889) | Gap |
-| TYPE-10 | Map key and key-set provenance | set marks from final argument only; keys() has no transfer (1907–1909; 1817–1848) | Gap |
-| TYPE-11 | Scalar string and other non-integer parameter summaries | Summary seeds only TY_INT (1956–1964) | Gap |
-| TYPE-12 | Map membership/removal result provenance | No has or remove transfer in derived() (1817–1848) | Gap |
-| TYPE-13 | Optional values as payload-bearing locals | Direct optional binding is marked at N_IF; declarations only mark int/string (1911; 1887–1889) | Gap |
+| TYPE-04 | Interprocedural heap-write effects | Summary has no heap-effect component (1801–1805); caller summary application only handles return dependencies (1839–1845) | Gap |
+| TYPE-05 | Provenance through generic text conversion | derived() has int_to_str but no to_text transfer (1821–1852) | Gap |
+| TYPE-06 | Provenance through collection-consuming join | Checker types join but derived() has no join rule (checker 1029–1036; 1821–1852) | Gap |
+| TYPE-07 | Provenance through tainted length | No .len() transfer in derived() (1821–1852) | Gap |
+| TYPE-08 | Comparison-result provenance | No comparison or Boolean-result transfer in derived() (1821–1852) | Gap |
+| TYPE-09 | Provenance for Boolean and other local types | Local marking is restricted to TY_INT and TY_STR (1891–1893) | Gap |
+| TYPE-10 | Map key and key-set provenance | set marks from final argument only; keys() has no transfer (1907–1909; 1821–1852) | Gap |
+| TYPE-11 | Scalar string and other non-integer parameter summaries | Summary seeds only TY_INT (1960–1968) | Gap |
+| TYPE-12 | Map membership/removal result provenance | No has or remove transfer in derived() (1821–1852) | Gap |
+| TYPE-13 | Optional values as payload-bearing locals | Direct optional binding is marked at N_IF; declarations only mark int/string (1915; 1891–1893) | Gap |
 | TYPE-14 | Struct constructor field provenance | Aggregate mutation is recognised for assignment; no constructor transfer in flow_walk (1887–1921) | Gap |
-| TYPE-15 | Collection shape/length provenance | No collection .len() transfer or shape domain (1817–1848) | Gap |
-| TYPE-16 | Receiver and struct-parameter summary dependencies | Only int parameters are seeded, so struct receiver paths are not analysed as parameter sources (1956–1964) | Gap |
+| TYPE-15 | Collection shape/length provenance | No collection .len() transfer or shape domain (1821–1852) | Gap |
+| TYPE-16 | Receiver and struct-parameter summary dependencies | Only int parameters are seeded, so struct receiver paths are not analysed as parameter sources (1960–1968) | Gap |
 | TYPE-17 | Enum payload construction and match binding | Parser/checker construct and type enum payloads, but flow analysis has no enum payload or match-binding transfer (parser enum construction; checker match handling; flow 1887–1921) | Gap |
 | TYPE-18 | Map value provenance on trusted-key lookup | get special case tests derived key; it does not consult map value provenance (1825; 1829) | Gap |
-| TYPE-20 | Policy parameter summaries and authorize-site instantiation | Summary fixpoint includes only N_FN; final policy analysis uses empty seed (1983–1996; 2007–2012) | Gap |
+| TYPE-20 | Policy parameter summaries and authorize-site instantiation | Summary fixpoint includes only N_FN; final policy analysis uses empty seed (1987–2000; 2011–2016) | Gap |
 | TYPE-21 | Policy purity/effect checking | Policy bodies receive no effect summary or transitive purity check in this analysis; separate checker review found in_policy is set/reset but not used to gate effects | Gap |
 
 TYPE-19 is withdrawn as a false positive and is not part of this matrix.
