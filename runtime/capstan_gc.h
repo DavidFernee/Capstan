@@ -149,6 +149,13 @@ static int cap_gc_would_exceed_heap(size_t amount) {
            (cap_gc.heap > cap_gc.max_heap || amount > cap_gc.max_heap - cap_gc.heap);
 }
 
+/* Volatile stores prevent the compiler from deleting a wipe whose only purpose
+   is to erase data before the storage is reused or released. */
+static void cap_gc_wipe(void *memory, size_t n) {
+    volatile unsigned char *p = (volatile unsigned char *)memory;
+    while (n--) *p++ = 0;
+}
+
 static void cap_gc_report(void) {
     fprintf(stderr, "gc: collections=%zu total_allocated=%zu live=%zu heap=%zu peak_heap=%zu pages_released=%zu pages_reused=%zu\n",
             cap_gc.collections, cap_gc.total, cap_gc.live, cap_gc.heap, cap_gc.peak_heap,
@@ -501,7 +508,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
                 live += pg->objsize;
                 any = 1;
             } else {
-                if (pg->atomic == 2 && pg->alloc[j]) memset(pg->base + (size_t)j * pg->objsize, 0, pg->objsize);
+                if (pg->atomic == 2 && pg->alloc[j]) cap_gc_wipe(pg->base + (size_t)j * pg->objsize, pg->objsize);
                 pg->alloc[j] = 0;
                 void **slot = (void **)(pg->base + (size_t)j * pg->objsize);
                 *slot = cap_gc.freelist[pg->atomic][cls];
@@ -546,7 +553,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
             live += l.size;
             cap_gc.large[keep++] = l;
         } else {
-            if (l.atomic == 2) { volatile char *w = l.base; for (size_t z = 0; z < l.size; z++) w[z] = 0; }
+            if (l.atomic == 2) cap_gc_wipe(l.base, l.size);
             free(l.base);
             if (cap_gc.heap < l.size) cap_panic("collector heap accounting underflow", "CWE-682", 0);
             cap_gc.heap -= l.size;
