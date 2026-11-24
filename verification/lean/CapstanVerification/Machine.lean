@@ -172,6 +172,69 @@ theorem pushCallFrame_within_limit
     exact Nat.succ_le_of_lt hdepth
   · simp [hdepth] at h
 
+/-- Pop a nested callee and restore its caller as the top frame.
+
+The singleton entry frame is deliberately not popped here: returning from the
+entry function is a halt, handled by the enclosing machine semantics.
+-/
+def popNestedCallFrame {Frame : Type}
+    (stack : CallStack Frame) : Except Trap (Frame × CallStack Frame) :=
+  match stack.frames with
+  | [] => .error .invalidControlFlow
+  | [_] => .error .invalidControlFlow
+  | callee :: caller :: rest =>
+      .ok (callee, {
+        frames := caller :: rest
+        maxDepth := stack.maxDepth
+        nonempty := by simp
+        within_limit := by
+          have hlen : (caller :: rest).length ≤ (callee :: caller :: rest).length := by
+            simp
+          exact le_trans hlen stack.within_limit
+      })
+
+/-- A successful nested return restores the caller at the top of the stack. -/
+theorem popNestedCallFrame_restores_caller
+    {Frame : Type} (stack next : CallStack Frame) (callee caller : Frame)
+    (h : popNestedCallFrame stack = .ok (callee, next)) :
+    next.frames.head? = some caller := by
+  cases hframes : stack.frames with
+  | nil =>
+      simp [popNestedCallFrame, hframes] at h
+  | cons first tail =>
+      cases htail : tail with
+      | nil =>
+          simp [popNestedCallFrame, hframes, htail] at h
+      | cons second rest =>
+          simp [popNestedCallFrame, hframes, htail] at h
+          cases h
+          rfl
+
+/-- A successful nested return decreases call depth by exactly one. -/
+theorem popNestedCallFrame_decreases_depth
+    {Frame : Type} (stack : CallStack Frame)
+    (result : Frame × CallStack Frame)
+    (h : popNestedCallFrame stack = .ok result) :
+    result.2.frames.length + 1 = stack.frames.length := by
+  cases hframes : stack.frames with
+  | nil =>
+      simp [popNestedCallFrame, hframes] at h
+  | cons first tail =>
+      cases htail : tail with
+      | nil =>
+          simp [popNestedCallFrame, hframes, htail] at h
+      | cons second rest =>
+          simp [popNestedCallFrame, hframes, htail] at h
+          cases h
+          simp
+
+/-- The entry frame is retained; its return is not a nested stack pop. -/
+theorem popNestedCallFrame_entry_refused
+    {Frame : Type} (entry : Frame) (stack : CallStack Frame)
+    (hentry : stack.frames = [entry]) :
+    popNestedCallFrame stack = .error .invalidControlFlow := by
+  simp [popNestedCallFrame, hentry]
+
 /-- A full call stack traps before another frame is pushed. -/
 theorem pushCallFrame_exhausted_traps
     {Frame : Type} (stack : CallStack Frame) (callee : Frame)
