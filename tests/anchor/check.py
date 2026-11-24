@@ -22,7 +22,14 @@ SHROUD = [
 
 
 def run(argv, *, cwd=ROOT):
-    return subprocess.run(argv, cwd=cwd, text=True, capture_output=True, check=True)
+    result = subprocess.run(argv, cwd=cwd, text=True, capture_output=True)
+    if result.returncode != 0:
+        command = " ".join(str(part) for part in argv)
+        raise RuntimeError(
+            f"command failed ({result.returncode}): {command}\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+    return result
 
 
 def main():
