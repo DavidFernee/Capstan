@@ -1144,3 +1144,103 @@ test "CCAM machine fails closed after an invalid branch target" {
     assert(state.halted && state.trap_code == "invalid_program_counter");
     assert(state.steps == 2);
 }
+
+
+test "CCAM evaluator dispatches subtraction multiplication and remainder" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 20;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 6;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_SUB_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_MUL_I);
+    i.dst = 3;
+    i.lhs = 2;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_REM_I);
+    i.dst = 4;
+    i.lhs = 3;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 4;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 6);
+    for (int n = 0; n < 6; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.halt_has_value && state.halt_value == 2);
+    assert(state.steps == 6 && state.trap_code == "");
+}
+
+test "CCAM evaluator traps on checked addition overflow" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = CCAM_I64_MAX;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_ADD_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 3);
+    for (int n = 0; n < 3; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.trap_code == "integer_overflow");
+    assert(state.steps == 3 && state.pc == 2);
+}
+
+test "CCAM evaluator traps on division overflow at minimum integer" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = CCAM_I64_MIN;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = -1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_DIV_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 3);
+    for (int n = 0; n < 3; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.trap_code == "integer_overflow");
+    assert(state.steps == 3 && state.pc == 2);
+}
