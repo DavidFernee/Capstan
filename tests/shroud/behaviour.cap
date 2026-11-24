@@ -345,6 +345,31 @@ void test_text_field(Tally t, Ui ui) {
     expect(t, enter.len() == 1 && enter[0].value == 1, "field: Enter submits", $"{enter.len()}");
 }
 
+void test_single_line_unicode_controls(Tally t, Ui ui) {
+    string nel = char_str(0xC2) + char_str(0x85);
+    string ls = char_str(0xE2) + char_str(0x80) + char_str(0xA8);
+    string ps = char_str(0xE2) + char_str(0x80) + char_str(0xA9);
+    Tainted pasted = taint("A" + nel + "B" + ls + "C" + ps + "D");
+    Tainted filtered = single_line(pasted);
+    expect_int(t, filtered.len(), 4, "single-line: C1 NEL and Unicode LS/PS are removed");
+    if (filtered.len() == 4) {
+        expect_int(t, filtered.at(0), 0x41, "single-line: retained byte A");
+        expect_int(t, filtered.at(1), 0x42, "single-line: retained byte B");
+        expect_int(t, filtered.at(2), 0x43, "single-line: retained byte C");
+        expect_int(t, filtered.at(3), 0x44, "single-line: retained byte D");
+    }
+
+    ui.render(column().add(text_field("f", taint(""), "Name").key("f")), 0);
+    click_at(ui, "f", 10);
+    List<Msg> messages = ui.handle(text_event(pasted, 20));
+    expect(t, messages.len() == 1 && messages[0].text.len() == 4,
+        "single-line: Msg.text contains no Unicode line separators", $"{messages.len()} messages");
+    if (messages.len() == 1 && messages[0].text.len() == 4) {
+        expect_int(t, messages[0].text.at(0), 0x41, "single-line message starts with retained byte A");
+        expect_int(t, messages[0].text.at(3), 0x44, "single-line message ends with retained byte D");
+    }
+}
+
 void test_untrusted_display(Tally t) {
     // "invoice", RIGHT-TO-LEFT OVERRIDE, "fdp.exe": shown as "invoice?fdp.exe" with a mark.
     Tainted name = taint("invoice" + char_str(0xE2) + char_str(0x80) + char_str(0xAE) + "fdp.exe");
@@ -507,6 +532,7 @@ int main() {
             test_disabled_hit_blocking(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_keyboard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_text_field(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_single_line_unicode_controls(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_utf8_byte_ends(t);
             test_caret_byte_positions(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
