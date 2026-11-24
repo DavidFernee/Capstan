@@ -45,7 +45,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 | #86 | Open, draft, targets main | `334ebe44c51d9187f2cb82e3533598b7bf094ebf` | Run 45341730284 success | Strong candidate, but still requires independent review and integration. |
 | #97 | Open, draft, targets main | `20fa6374ac9bb0e283484c90a759a702d04c606f` | Run 45342232492 success on this head | Compound-assignment correction submitted; PR #102 extends evidence. |
 | #102 | Open, draft, stacked on #97 | `5b07e45041ff2be9a535ddd671b000a6ebb553bb` | Run 45345049380 in progress | Additional evaluation-order tests; latest exact-head CI not yet complete. |
-| #92 | Open, draft, targets main | `d8f4c681d983bb54c0d34a7d57db70f5f7adc595` | Run 45346456981 in progress (macOS passed; Ubuntu GCC/Clang running; supply-chain passed) | Real 560×520 `png_write()` and independent decode/pixel test added; peak allocation accounting remains. |
+| #92 | Open, draft, targets main | `d8f4c681d983bb54c0d34a7d57db70f5f7adc595` | Run 45346456981 in progress (macOS/Clang and Ubuntu/Clang passed; Ubuntu/GCC running; supply-chain passed) | 128×128 and 560×520 exports independently decoded and pixel-checked; observed 40.3/40.6 MiB GC peak is diagnostic only, not a process bound. |
 | #103 | Open, draft, targets main | `e64b379ac304c0ae2154eb91e4f3facc21591b30` | No PR-triggered run returned for latest head yet; prior run 45343277971 predates verifier integration | `check_frame_budget.py` is now wired into normal and ASan+UBSan paths in `tests/run.sh`; exact-head CI still required. |
 | #79 | Open, draft, targets main | `80676e0c014eec1be0eba196acad0dddc088f267` | Current-base matrix status requires refresh | Nested composite glyph cumulative-budget regression remains. |
 | #93 | Open, draft, targets main | `278a578068a56780c6aaf08139ebfce4daeecef3` | Run 45345218607 in progress | Semantic contract; not a compiler implementation fix. |
@@ -80,7 +80,7 @@ No finding in this initial register is marked `ACCEPTED`.
 **Branch:** `remediation/password-record-parser`  
 **Head:** `b74404546488e93ba6e5a8bea7fbe83c60396f6f`  
 **Base:** Worker 4's `runtime/string-allocation-bounds-v06` (PR #105), intentionally stacked to avoid competing edits to the runtime header and unit-test file.  
-**CI:** run `45346177016` failed because tests attempted to initialise `CapStr.data` (a flexible array member) and runtime code tested it as a nullable pointer. The code and tests were corrected on the new head. Run `45346991634` is queued on the corrected exact head.
+**CI:** run `45346177016` failed because tests attempted to initialise `CapStr.data` (a flexible array member) and runtime code tested it as a nullable pointer. The code and tests were corrected on the new head. Run `45346991634` is now in progress on the corrected exact head; supply-chain has passed and all three platform jobs are running.
 
 The patch replaces C-string parsing with a strict parser bounded by `CapStr.len`. It rejects embedded NULs, suffix bytes, malformed separators, signs, whitespace, leading zeroes, non-ASCII/non-decimal costs, uppercase/non-hex fields, and any record whose cost is not exactly the current 600,000-iteration generation profile. This is a current-format-only decision pending confirmation that no supported lower-cost legacy records exist; lower-cost records are not silently accepted. `cap_needs_rehash()` now uses the same parser, so a valid-looking prefix cannot be classified as current without validating the entire record. Parsed salt, expected digest and computed digest scratch are wiped.
 
