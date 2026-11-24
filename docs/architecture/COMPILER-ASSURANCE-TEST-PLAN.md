@@ -2,7 +2,7 @@
 
 **Status:** test strategy for the C-free compiler workstream  
 **Branch:** `compiler/direct-native-prototype-v02`
-**Branch:** `compiler/direct-native-prototype`  
+**Branch:** `compiler/direct-native-prototype-v02`  
 **Semantic authority:** CCAM specification and Capstan-native executable implementation; no parallel semantics are introduced here.
 
 ## 1. Current evidence and scope boundary
