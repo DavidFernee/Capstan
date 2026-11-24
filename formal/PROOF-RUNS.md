@@ -74,3 +74,27 @@ they did not produce a proof result.
 4. Add the C-facing ACSL/Frama-C pilot and a concrete refinement argument.
 5. Revisit collector reachability only after root-scanning and physical-object-layout
    assumptions are explicit.
+
+
+## Current PR-head confirmation
+
+The same model has been rebuilt on the current PR head after the specification and
+workflow updates:
+
+- **PR head:** `612eb7d33292be98ccc63f0df9d1254ee09c25fc`
+- **Formal workflow:** [45360817831](https://github.com/DavidFernee/Capstan/actions/runs/45360817831) — passed
+- **Full repository CI:** [45360817794](https://github.com/DavidFernee/Capstan/actions/runs/45360817794) — passed (Ubuntu/GCC, Ubuntu/Clang, macOS/Clang and supply-chain)
+
+These checks validate the exact PR head above, not a later synchronisation commit.
+The result remains model-only.
+
+### Axiom-policy qualification
+
+The Lean axiom audit for the model reports dependencies within
+`propext`, `Classical.choice`, and `Quot.sound`. The independent Nanoda
+configuration additionally lists `Lean.trustCompiler` as permitted and sets
+`unpermitted_axiom_hard_error` to `false`. Consequently this workflow is an
+independent consistency check under an explicit allowlist, not a strict
+no-classical, no-quotient, or no-trustCompiler proof policy. Do not describe the
+result as axiom-free. A stricter policy requires a separate decision and a
+workflow change that fails on every dependency outside the approved set.
