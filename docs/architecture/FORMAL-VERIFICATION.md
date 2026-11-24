@@ -52,19 +52,25 @@ Current theorem statements:
 
 These are small foundational lemmas. The exact stacked PR head `cad14aa3d4201ecdbe2a84dbff67aec5f7eec8ea` passed the dedicated Lean 4.19.0 CI build (`lake build --wfail`) on PR merge commit `1f4b35c0200ad0590f3628c7b2676104e4ac6519`. These theorem declarations are therefore machine-checked for that build. This does not validate the whole repository CI matrix or prove the model refines the Capstan executable. They do **not** establish type preservation for a CCAM program, progress, memory safety, function-call correctness, compiler correctness, or native-code correctness. The arithmetic model uses mathematical integers and an explicit signed-64 predicate. `truncDiv` is defined using natural-number magnitudes and a sign correction, but its quotient/remainder laws are not yet proved. Successful division/remainder range safety is also not yet proved under the required signed-64 operand preconditions. The link to Capstan's actual int and executable arithmetic routines remains to be proved and tested. The compiler workstream has also surfaced an unresolved semantic discrepancy: CCAM v0.1 currently specifies `MIN % -1` as `integer_overflow`, while the existing Capstan source-language remainder semantics reportedly produce zero. The `checkedRem_min_neg_one_traps` theorem proves only the current CCAM text; it is not evidence of source-to-CCAM correctness. Worker 1 must resolve this at the language/specification boundary before a source refinement theorem can be stated.
 
-## 5. Typed IR proof architecture
+## 5. Canonical CCAM and compiler proof architecture
 
-The typed IR must be owned by the compiler/IR workstream and agreed with the language and compiler architects before its representation is frozen. Proposed proof interface:
+The language-semantics workstream has decided that **CCAM is the canonical typed core IR and reference abstract machine**. The initial source compiler lowers the supported typed source subset directly into validated CCAM. Do not introduce a parallel primary instruction semantics.
 
-- SourceCore: normative, desugared source subset with a typing judgement.
-- TypedIR Γ: IR indexed by a type environment, so ill-typed operands are unrepresentable where practical.
-- CCAMProgram: validated machine program with explicit register signatures and control-flow targets.
-- compile : SourceCore → Except CompileError TypedIR.
-- lower : TypedIR → CCAMProgram.
-- Evaluation relations for source, IR and CCAM.
-- Simulation obligations: source-to-IR, IR-to-CCAM, and later CCAM-to-target. Outcomes must preserve returned values, externally observable effects and trap classes; resource-limit differences must be explicitly accounted for.
+The first compiler proof boundary is therefore:
 
-Prefer compositional pass theorems. A pass that removes a check must prove the check cannot fail under its analysis invariant. Do not use test agreement as a substitute for a simulation theorem.
+- `SourceCore`: the normative, typed scalar/control-flow source subset.
+- `ValidatedCCAM`: a finite immutable function table plus entry point, accepted by a total structural validator.
+- `lowerSource : SourceCore → Except CompileError ValidatedCCAM`.
+- A source evaluation relation and the CCAM small-step relation.
+- A simulation/refinement theorem showing that lowering preserves returned values, explicit trap outcomes, evaluation order and observable effects.
+
+The evaluator proof proceeds independently once a validated CCAM program is available: validator soundness; register and frame preservation; progress-or-explicit-trap; call/return invariants; deterministic resource accounting.
+
+A later optimisation pipeline MAY introduce a typed SSA/CFG representation, but it is a derived representation rather than a second semantic authority. It must have a validator, a translation back to CCAM, a simulation/refinement argument, differential conformance tests, and pass-specific correctness theorems. Optimisations must preserve trap kind, trap-before-effect ordering, observable effects, and the approved resource-cost semantics. In particular, check elimination requires a proof that the removed trap is unreachable under the pass preconditions.
+
+Worker 3 owns compiler/IR representation. I will not freeze additional IR constructors or duplicate CCAM semantics; theorem interfaces will follow the canonical contract in `docs/architecture/TYPED-IR.md` once that contract is integrated with the CCAM dependency branch.
+
+**Integration blocker:** the language-semantics proposal resolves `MIN % -1` to zero, while the current CCAM v0.1 file on the PR #81 dependency branch still specifies an overflow trap. The proof branch remains explicitly stacked on PR #81 until its normative CCAM text and conformance vectors adopt the language-semantics decision. The existing `checkedRem_min_neg_one_traps` lemma proves only the current CCAM draft and is not source-to-CCAM evidence.
 
 ## 6. Trusted computing base and evidence labels
 
@@ -86,7 +92,7 @@ No theorem in this programme should rely on sorry, admit, custom axioms, uncheck
 ## 7. Immediate coordination requirements
 
 - Worker 1 (language architecture): confirm CCAM integer, trap, evaluation-order and control-flow semantics before the evaluator model is extended. Any ambiguity is a specification issue, not an invitation to silently choose a model.
-- Worker 3 (typed IR/compiler): agree stable type-environment, instruction and control-flow interfaces before writing IR simulation theorems.
+- Worker 3 (compiler): provide the canonical CCAM compiler boundary and any proposed derived optimisation-IR representation; simulation theorems must map derived IR back to CCAM.
 - This branch owns proof architecture and proof files. It does not change the normative CCAM or language specification without coordination.
 - Keep this work separate from v0.6 runtime stabilisation. No direct changes to main.
 
@@ -97,7 +103,7 @@ No theorem in this programme should rely on sorry, admit, custom axioms, uncheck
 | P0: environment | Complete on PR #89 Pinned Lean 4.19.0, dependency-free Lake manifest, clean CI proof build and unfinished-proof scan |
 | P1: core | Complete small-step semantics and mechanically checked preservation + progress-or-trap |
 | P2: calls/control flow | Valid target and call graph invariants; return destination/type preservation; bounded stack |
-| P3: IR | Typed IR definitions and source/IR/CCAM simulation theorems |
+| P3: compiler boundary | Source-to-validated-CCAM simulation; optional derived-IR-to-CCAM simulation |
 | P4: optimisations | Pass-by-pass semantic preservation, including range-check elimination |
 | P5: memory/security | Heap/GC invariants; taint and capability soundness; secret lifecycle/observation properties |
 | P6: concurrency | Memory model, ownership/locking invariants, race freedom and explicitly scoped non-interference |
