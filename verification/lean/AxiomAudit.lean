@@ -93,6 +93,8 @@ import CapstanVerification.Progress
 #print axioms CapstanVerification.runtimeRelation_preserves_well_typed
 #print axioms CapstanVerification.runtimeWriteRegister_preserves_relation
 #print axioms CapstanVerification.runtimeWriteRegister_type_at_preserved
+#print axioms CapstanVerification.runtimeWriteRegister_type_at_target_preserved
+#print axioms CapstanVerification.runtimeWriteRegister_type_at_other_preserved
 #print axioms CapstanVerification.runtimeWriteRegister_value_at_preserved
 #print axioms CapstanVerification.fin_eq_of_val_eq
 #print axioms CapstanVerification.write_preserves_well_typed
