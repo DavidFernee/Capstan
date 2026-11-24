@@ -35,6 +35,15 @@ def RuntimeRegister.value? (reg : RuntimeRegister) : Option Val :=
   else
     none
 
+/-- Every runtime register payload has the type declared by its record. -/
+theorem RuntimeRegister.asVal_hasType
+    (reg : RuntimeRegister) :
+    hasType reg.asVal reg.declaredType := by
+  cases reg with
+  | mk declaredType _ intValue intValue_in_range boolValue =>
+      cases htype : declaredType <;>
+        simp [RuntimeRegister.asVal, hasType, hasTypeB, htype, intValue_in_range]
+
 /-- An initialized runtime register exposes exactly its typed payload. -/
 theorem RuntimeRegister.value?_of_initialized
     (reg : RuntimeRegister) (h : reg.initialized = true) :
@@ -214,8 +223,7 @@ theorem runtimeWriteRegister_preserves_relation
       (write regs index replacement.asVal) updated := by
   have hvalueType : hasType replacement.asVal (types index) := by
     rw [← hdecl]
-    cases htype : replacement.declaredType <;>
-      simp [RuntimeRegister.asVal, hasType, hasTypeB, htype]
+    exact RuntimeRegister.asVal_hasType replacement
   refine {
     length_eq := by
       rw [runtimeWriteRegister_length runtime updated index.val replacement hwrite]
