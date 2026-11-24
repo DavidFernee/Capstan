@@ -140,6 +140,8 @@ static struct {
 } cap_gc;
 
 static int cap_gc_heap_would_exceed(size_t amount) {
+    /* Preserve the existing convention: an explicit zero limit disables the cap. */
+    if (cap_gc.max_heap == 0) return 0;
     if (cap_gc.heap > cap_gc.max_heap)
         cap_panic("garbage collector heap accounting invariant violated", "CWE-682", 0);
     return amount > cap_gc.max_heap - cap_gc.heap;
@@ -222,7 +224,7 @@ static size_t cap_gc_parse_heap_limit(const char *text) {
     if (*end != '\0' || (shift && value > (~0ULL >> shift)))
         cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
     value <<= shift;
-    if (value == 0 || value > CAP_MAX_LEN) value = CAP_MAX_LEN;
+    if (value > CAP_MAX_LEN) value = CAP_MAX_LEN;
     return (size_t)value;
 }
 
