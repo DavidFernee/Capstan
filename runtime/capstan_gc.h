@@ -585,6 +585,8 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
             cap_gc.large[keep++] = l;
         } else {
             if (l.atomic == 2) { volatile char *w = l.base; for (size_t z = 0; z < l.size; z++) w[z] = 0; }
+            if (cap_gc.heap < l.size)
+                cap_panic("large-object release would underflow heap accounting", "CWE-682", 0);
             free(l.base);
             cap_gc.heap -= l.size;
         }
@@ -644,10 +646,12 @@ static void *cap_gc_alloc(size_t n, int atomic) {
                            ? 0 : (size_t)CAP_PAGE_SIZE;
         if (cap_gc_heap_would_exceed(page_charge)) {
             cap_gc_collect();
-            page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
-                        ? 0 : (size_t)CAP_PAGE_SIZE;
-            if (cap_gc_heap_would_exceed(page_charge))
-                cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+            if (!cap_gc.freelist[atomic][cls]) {
+                page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
+                            ? 0 : (size_t)CAP_PAGE_SIZE;
+                if (cap_gc_heap_would_exceed(page_charge))
+                    cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+            }
         }
     }
     if (!cap_gc.freelist[atomic][cls]) {
