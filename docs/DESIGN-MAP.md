@@ -335,6 +335,7 @@ records: identifier and scope; threat scenario; evidence state; implementation a
 references; supported platforms; assumptions and TCB dependencies; residual impact; owner;
 independent reviewer; last verified commit; and release disposition. The scorecard is part of
 the release artefact and must be regenerated from the exact release commit.
+The required template is [V1-RELEASE-SCORECARD.md](assurance/V1-RELEASE-SCORECARD.md).
 
 **C-free and formal workstream gates**
 
