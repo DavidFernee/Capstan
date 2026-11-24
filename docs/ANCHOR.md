@@ -118,6 +118,24 @@ Anchor targets the public S0 surface in `lib/shroud/*.cap`:
 - give stable `key()` identities to dynamic controls and use `guarded()` for
   security-sensitive actions.
 
+**Clock and confirmation boundary (after Shroud PR #54):** guarded-action timing is
+anchored to the timestamp supplied to `Ui.render()`, not to an activating event's
+timestamp. The future host adapter MUST source that render timestamp from a trusted,
+monotonic platform clock; Anchor must not substitute wall-clock time, project data or
+event timestamps. This closes the specific future-event-timestamp bypass, but does not
+authenticate physical input, prove that a frame was presented or establish that a
+person saw a control. A `.danger()` style/guard is not an informed-consent confirmation
+dialog. Irreversible operations still require an explicit application confirmation
+flow that identifies the action and target.
+
+**Pending Shroud integration fixes:** duplicate explicit view keys can currently make
+hit testing and action/focus resolution refer to different nodes; the follow-up is
+tracked in PR #57. Accessibility serialization currently needs the same deceptive-
+character sanitisation as visual rendering; the follow-up is PR #58. Until those
+changes are merged and verified, Anchor must use unique keys and must not assume the
+accessibility JSON is equivalent to the rendered text for untrusted input. These are
+known S0 integration constraints, not APIs Anchor should patch locally.
+
 S0 constraints are explicit: string action names and int/Tainted payloads; no generic
 `View<M>`; no native window, clipboard, IME, multi-line editor, tabs, split panes,
 virtualized tree or image widget. Anchor must not fork or patch Shroud internals to
