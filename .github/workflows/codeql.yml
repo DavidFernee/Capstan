@@ -8,8 +8,8 @@ on:
   schedule:
     - cron: '23 4 * * 1'
 
-# Keep the workflow-wide token read-only. The analysis job receives only the
-# additional permission required to upload CodeQL results.
+# The workflow-wide token is read-only. Only the analysis job can upload
+# CodeQL results, and the supply-chain policy explicitly allowlists that job.
 permissions:
   contents: read
 
@@ -26,22 +26,22 @@ jobs:
       matrix:
         language: [cpp, python, actions]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        name: Checkout repository
         with:
           persist-credentials: false
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@74c1aea9df7c0f02e9b7bfe4a8935abf2e5e3aa6 # v3.39.5
+        name: Initialize CodeQL
         with:
           languages: ${{ matrix.language }}
           queries: security-extended
 
-      - name: Autobuild
+      - uses: github/codeql-action/autobuild@74c1aea9df7c0f02e9b7bfe4a8935abf2e5e3aa6 # v3.39.5
+        name: Autobuild
         if: matrix.language == 'cpp'
-        uses: github/codeql-action/autobuild@v3
 
-      - name: Perform CodeQL analysis
-        uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@74c1aea9df7c0f02e9b7bfe4a8935abf2e5e3aa6 # v3.39.5
+        name: Perform CodeQL analysis
         with:
           category: "/language:${{ matrix.language }}"
