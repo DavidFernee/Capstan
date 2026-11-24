@@ -729,3 +729,95 @@ If generic nominal types can declare bounds, specify whether those bounds are re
 - Verify cache results do not leak between separate compilation roots with different imported implementation sets.
 
 These are acceptance requirements for future interface checking and static dispatch, not claims that the machinery currently exists.
+
+
+## 23. Result propagation semantics and typed control-flow lowering
+
+The proposal's exact-error-type rule is a strong starting point. The language contract must additionally define expression grammar, evaluation order, propagation scope and lowering. A postfix `?` is a control-flow edge, not merely a value conversion.
+
+### 23.1 Expression grammar and precedence
+
+Define `?` as an expression-only postfix operator in the postfix-expression grammar, alongside member access, calls and indexing. It binds more tightly than every unary, binary and conditional expression operator and associates left-to-right with other postfix operators. Parentheses group the expression before propagation. It is not a general expression suffix on a type, statement or declaration.
+
+The parser must distinguish this use from the existing optional-type suffix in `parse_type`. It must reject malformed forms such as a missing operand, repeated propagation with no intervening Result expression, or use in a syntactic position that is not an expression. The design must give examples of chained calls/indexing and nested expressions so precedence is not left to parser implementation.
+
+### 23.2 Exact propagation typing
+
+For an operand of type `Result<U, E1>` inside a function whose declared return type is `Result<T, E2>`:
+
+- Require exact resolved identity equality `E1 == E2`; no assignability, optional lift, interface conversion, coercion or user code is permitted on the error path.
+- The success expression has type `U`, subject only to ordinary typing of the surrounding expression.
+- The failure edge returns the same `Err(error)` payload from the current function without wrapping, converting, logging, swallowing or retrying it.
+- Reject use in a non-Result-returning function, in a function with a different error type, or where the enclosing return type is not exactly a supported `Result<T,E>` instantiation.
+- Define whether `Result<void,E>` is supported. If supported, define the success payload representation and statement/expression rules; if not, reject it explicitly rather than relying on backend special cases.
+
+The equality check must use canonical resolved type identity, including module identity and generic substitutions, not source spelling.
+
+### 23.3 Propagation target and nested callable boundaries
+
+Propagation targets the innermost enclosing function body whose return type is being checked. A nested block, conditional, loop, match arm or ordinary expression does not create a new propagation target. When closures are added, a closure body is a new callable boundary: `?` inside it targets the closure's declared/inferred return type, never the function that created it. A nested function similarly owns its own return type.
+
+The language must not allow `?` inside a policy, test-only callback or other callable-like construct to escape to an outer function. Each construct must either define a Result return contract or reject propagation.
+
+### 23.4 Evaluation and control-flow requirements
+
+Evaluate the operand exactly once, in the ordinary left-to-right order, before inspecting its variant. On `Ok`, extract the payload and continue with the surrounding expression. On `Err`, return immediately from the current callable with the unchanged error payload. No later operand, argument, index, method call or side effect in the enclosing expression may execute after the failure edge.
+
+Represent the success and failure paths explicitly in typed control flow (or a rigorously equivalent ANF/CFG form). Do not implement `?` as an untyped textual macro or a C expression whose evaluation order depends on compiler extensions. The generated failure edge must be an ordinary typed return, visible to return-path analysis and code review. Ensure temporaries and GC roots keep pointer-bearing operand/error payloads alive across lowering.
+
+### 23.5 Required adversarial tests
+
+- Success and failure propagation from direct calls, nested calls, method calls, indexing and parenthesised expressions.
+- Multiple `?` operators in one expression; verify left-to-right order and exactly-once evaluation.
+- Verify later call arguments and side effects do not execute after an earlier operand propagates an error.
+- Exact error identity succeeds; distinct nominal error types with the same short name fail; generic substitutions preserve exact error identity.
+- Reject propagation in void/non-Result functions, mismatched error types, policies, tests and other unsupported callable contexts.
+- Verify nested blocks, loops and match arms propagate to the enclosing function; when closures arrive, verify propagation stays inside the closure.
+- Verify `Result<void,E>` follows the explicit supported/excluded decision.
+- Verify both success and failure paths satisfy definite-return and reachability analysis.
+- Verify pointer-bearing success/error payloads remain GC-reachable during and after lowering.
+- Verify parser precedence and malformed postfix cases, including interaction with optional type suffixes.
+- Verify emitted C is warning-free and behaviour is identical under supported GCC/Clang optimisation levels.
+
+These requirements define the acceptance contract; they do not claim `Result` or `?` is implemented in the current compiler.
+
+## 24. Compiler phase barriers: no partially checked generic or Result code reaches C
+
+The design states that code generation consumes only fully checked concrete instantiations. This must be an enforceable compiler invariant, not an informal ordering convention.
+
+### 24.1 Explicit phase state
+
+Use a distinct checked-program/instantiation representation or explicit phase marker. A concrete instantiation may become codegen-eligible only after all of the following have succeeded:
+
+1. Type substitution completed with no unresolved type variables.
+2. All substituted signatures, fields, enum payloads and bodies type-check.
+3. All generic bounds and concrete interface obligations resolve uniquely.
+4. Module visibility and exported API closure checks pass.
+5. Grant containment and every security qualifier/taint/secret rule pass after substitution.
+6. Exhaustiveness, definite-return, Result propagation and other control-flow checks pass.
+7. Resource budgets have not been exceeded and all generated names/layout identities are canonical and collision-checked.
+
+A failure in any instantiation invalidates the compilation's code-generation eligibility. Do not emit a subset of C files or functions and then report a later semantic failure as though the output were usable.
+
+### 24.2 Whole-program emission barrier
+
+Complete discovery and validation of the full root compilation closure and all reachable required instantiations before opening or truncating the final C output path. Build the complete checked representation first; only then begin emission. If output is streamed, write to a temporary file and atomically publish it only after successful completion, with cleanup on failure.
+
+The compiler must not let declaration order affect whether an instantiation is checked before emission. Interface lookup, generic recursion discovery and visibility analysis must be complete before code generation starts.
+
+### 24.3 Determinism and resource accounting
+
+All instantiation and obligation queues must have deterministic ordering based on canonical declaration/type identities, not hash-map iteration or import order. Enforce one aggregate resource budget across the entire compilation in addition to per-template depth/count limits: total unique instantiations, total substituted type nodes, total obligation resolutions and total checker work. Budget exhaustion is a normal diagnostic and must leave no published partial output.
+
+### 24.4 Required adversarial tests
+
+- A valid early instantiation followed by an invalid later instantiation produces no final C output.
+- A generic function body that is abstractly invalid is rejected even if no current call instantiates it.
+- A later concrete instantiation exposing a hidden error prevents all code emission.
+- An unresolved interface obligation, private-type leak, Grant escape or Result control-flow error prevents output.
+- Resource exhaustion at each aggregate budget boundary is deterministic and leaves no partial output.
+- Permuting source/import order produces identical instantiation order, diagnostics and generated C.
+- Bootstrap and self-hosted compiler agree on phase transitions and emission eligibility.
+- A failed compile preserves any previously published output rather than truncating it before validation completes.
+
+These are compiler acceptance gates, not claims about the current implementation.
