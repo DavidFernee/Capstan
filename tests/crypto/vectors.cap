@@ -94,5 +94,23 @@ int main() {
         int dklen = 1 + next(g) % 100;
         println("pbkdf2-" + int_to_str(iter) + "-" + int_to_str(dklen) + " " + to_hex(pbkdf2_sha256(pw, salt, iter, dklen)));
     }
+    // Public API parameter policy: reject multiplicative work amplification and
+    // non-byte inputs, while preserving RFC-valid empty password/salt inputs.
+    List<int> empty = new List<int>();
+    List<int> invalid_byte = new List<int>();
+    invalid_byte.push(256);
+    List<int> long_pw = new List<int>();
+    for (int q = 0; q < 257; q += 1) { long_pw.push(0); }
+    List<int> long_salt = new List<int>();
+    for (int q2 = 0; q2 < 1025; q2 += 1) { long_salt.push(0); }
+    bool bounds_ok = pbkdf2_sha256(empty, empty, 1, 32).len() == 32;
+    bounds_ok = bounds_ok && pbkdf2_sha256(empty, empty, 1, 0).len() == 0;
+    bounds_ok = bounds_ok && pbkdf2_sha256(empty, empty, 1, 1025).len() == 0;
+    bounds_ok = bounds_ok && pbkdf2_sha256(empty, empty, 300001, 64).len() == 0;
+    bounds_ok = bounds_ok && pbkdf2_sha256(long_pw, empty, 1, 32).len() == 0;
+    bounds_ok = bounds_ok && pbkdf2_sha256(empty, long_salt, 1, 32).len() == 0;
+    bounds_ok = bounds_ok && pbkdf2_sha256(invalid_byte, empty, 1, 32).len() == 0;
+    println(bounds_ok ? "pbkdf2-bounds ok" : "pbkdf2-bounds FAIL");
+    println("pbkdf2-empty " + to_hex(pbkdf2_sha256(empty, empty, 1, 32)));
     return 0;
 }
