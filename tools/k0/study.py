@@ -496,10 +496,12 @@ def main():
     json.dump({"year": year, "source_repository": "https://github.com/CVEProject/cvelistV5",
                "source_commit": snapshot, "study_commit": study_commit, "total": n, "label_overrides": n_label_overrides,
                "independent_review_status": "NOT PERFORMED", "assurance_use": "RESEARCH ONLY",
+               "heldout_label_source": "same AI assistant as classifier; not independent",
+               "heldout_is_validation": False,
                "buckets": {b: by_bucket[b] for b in BUCKETS}, "memory_safety": mem,
                "with_k1": {b: proj[b] for b in BUCKETS},
                "k1_10_proof_eligibility_projection": {b: fin[b] for b in BUCKETS + [PROOF_ELIGIBLE]},
-               "heldout": heldout[:3] if heldout else None},
+               "heldout_internal_agreement_diagnostic": heldout[:3] if heldout else None},
               open(os.path.join(HERE, "data", f"summary-{year}.json"), "w"), indent=1)
 
     out = []
@@ -620,25 +622,26 @@ def main():
       "verdict, then the kernel adjustments above are applied.")
     if heldout:
         t, c, o, _, pv = heldout
-        p(f"5. **Check.** {t} CVEs drawn at random were labelled by reading each fix, before looking at the "
-          f"classifier's answer (`tests/k0/labels-heldout.csv`). The automatic classifier gives the same class for "
-          f"{c} ({pct(c, t)}) and the same outcome for {o} ({pct(o, t)}). It counts {pv['classifier']} of the "
-          f"{t} as prevented; the hand labels count {pv['labels']}"
-          + (", so its errors do not inflate the headline." if pv["classifier"] <= pv["labels"]
-             else ": treat the headline as an upper estimate."))
+        p(f"5. **Internal agreement diagnostic only (not validation).** The {t}-record sample "
+          "(`tests/k0/labels-heldout.csv`) was labelled by the same AI assistant that developed the "
+          "classifier. The reported class agreement ({pct(c, t)}) and outcome agreement ({pct(o, t)}) "
+          "are therefore not independent accuracy measurements, do not establish classifier performance, "
+          "and must not be used to validate or adjust the headline. The classifier/label prevented-count "
+          f"comparison ({pv['classifier']} vs {pv['labels']}) is likewise non-independent.")
         if tuning:
             t2, c2, o2, _, _ = tuning
-            p(f"   On the {t2}-CVE sample used while writing the rules (`tests/k0/labels.csv`) the figures are "
-              f"{pct(c2, t2)} and {pct(o2, t2)}.")
+            p(f"   The {t2}-record tuning sample (`tests/k0/labels.csv`) was also labelled by the same "
+              "assistant; its class/outcome agreement ({pct(c2, t2)} / {pct(o2, t2)}) is a development "
+              "diagnostic, not independent validation.")
     p("")
     p("## Limits\n")
     p("- The label overrides and both check samples were produced by Claude, the AI assistant that wrote "
       "the classifier. They are not independent human review and must not be treated as ground truth.")
-    p("- The automatic classification is right about 60% of the time on class and 70% on outcome (held-out "
-      "sample); it does not overstate prevention there, but individual rows can be wrong. Every row is in "
-      "`tools/k0/data/` with how it was classified.")
-    p("- Review read the fix descriptions, not the code changes. Reading the diffs would settle the four "
-      "undeterminable CVEs and some borderline logic errors.")
+    p("- The held-out and tuning agreement figures are not accuracy estimates: the labels were produced "
+      "by the same AI assistant that developed the classifier. No independent human relabelling has been "
+      "completed, so classifier accuracy and headline sensitivity remain UNKNOWN.")
+    p("- No independent reviewer has assessed the underlying kernel fixes or their code changes. Reading "
+      "the diffs may settle some undeterminable CVEs and borderline logic classifications.")
     p("- A CVE is not an exploit: the kernel CNA assigns one to almost every fix that might matter. The study "
       "measures weakness classes, not attacks.")
     p("- \"Prevented\" means the weakness could not be written, not that the driver would have been bug-free: "
