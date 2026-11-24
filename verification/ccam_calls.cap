@@ -1081,6 +1081,63 @@ test "CCAM multi-function validator bounds call-site side tables" {
     assert(!rejected.ok && rejected.error == "call_site_count_limit_exceeded");
 }
 
+test "CCAM multi-function return preflight preserves caller and stack on failure" {
+    List<int> caller_types = new List<int>();
+    caller_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    caller_code.push(ccam_instruction(CCAM_OP_CALL));
+    CCAMInstruction i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    caller_code.push(i);
+
+    List<int> callee_types = new List<int>();
+    callee_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 42;
+    callee_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    callee_code.push(i);
+
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0, has_destination: true
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: caller_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: caller_code, call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "callee", register_types: callee_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: callee_code, call_sites: new List<CCAMCallSite>()
+    });
+
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 8, 4);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    ccam_call_machine_step(machine);
+    assert(machine.frame_depth == 2 && machine.steps == 1);
+
+    // Simulate corrupted internal frame state to exercise the defensive
+    // return preflight; a failed preflight must neither write nor pop.
+    CCAMFrame callee = machine.frames[1];
+    callee.caller_destination = 1;
+    machine.frames[1] = callee;
+    ccam_call_machine_step(machine);
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "invalid_call_destination");
+    assert(machine.frame_depth == 2 && machine.steps == 3);
+    assert(!machine.frames[0].registers[0].initialized);
+}
+
 test "CCAM multi-function evaluator returns boolean values to typed destinations" {
     List<int> main_types = new List<int>();
     main_types.push(CCAM_TYPE_BOOL);
