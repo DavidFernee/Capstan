@@ -358,8 +358,9 @@ test "CCAM register-file constructor rejects unknown type tags" {
 // CCAM single-frame executable evaluator, implemented in Capstan.
 // This is a deliberately restricted execution slice over the existing typed
 // register substrate in ccam_core.cap. It assumes the program has already
-// passed the complete structural validator; it is not a JSON decoder or
-// validator, and it does not yet implement calls, frames, or source lowering.
+// passed the typed structural validator for this in-memory subset. It is not
+// a JSON decoder or closed-schema validator, and it does not yet implement
+// calls, frames, or source lowering.
 //
 // Semantic authority: docs/architecture/CCAM.md.
 // The step counter is consumed before dispatch. A dynamic trap therefore
