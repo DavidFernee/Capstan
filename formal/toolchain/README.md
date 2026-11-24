@@ -1,6 +1,6 @@
 # Proof-toolchain selection record
 
-**Decision:** not yet selected.  
+**Decision:** provisional layered pilot in progress; final selection gated on the C-helper pilot.  
 **Reason:** the programme needs both a faithful abstract transition model and a credible
 bridge to the existing GNU C runtime. Selecting a prover before testing that bridge risks
 producing attractive but disconnected proofs.
@@ -117,5 +117,10 @@ reviewable PR:
 - CI records tool versions, commands, prover identities, logs and exit status.
 - The relationship between the Lean theorem and the verified C helper is written down.
 
-Until that pilot succeeds, this remains a reasoned candidate architecture, not a selected
-or operational proof toolchain.
+The Lean project and first model theorems are now committed in `formal/CapstanFormal.lean`,
+with a pinned Lean 4.36.0 toolchain. `.github/workflows/formal.yml` is configured to run
+`lake build`, Lean's environment checker, Nanoda with `sorryAx` disallowed, an axiom audit,
+and an invalid-theorem negative control. These checks are not yet reported as passing.
+
+The Frama-C implementation bridge remains a pilot gate. Until that pilot succeeds, this
+remains a provisional architecture, not a fully operational end-to-end proof toolchain.
