@@ -60,6 +60,12 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.budgetedMachineStep_consumes_one
 #print axioms CapstanVerification.budgetedMachineStep_exhausted_before_instruction
 
+
+#print axioms CapstanVerification.HasExplicitControlEffect
+#print axioms CapstanVerification.machineInstrIsTerminal_iff_control_effect
+#print axioms CapstanVerification.finiteProgram_final_instruction_has_control_effect
+#print axioms CapstanVerification.sequentialPC_increments_before_last
+#print axioms CapstanVerification.sequentialPC_at_last
 #print axioms CapstanVerification.machineStep
 #print axioms CapstanVerification.machineStep_preserves_well_typed
 #print axioms CapstanVerification.machineState_pc_is_in_range
