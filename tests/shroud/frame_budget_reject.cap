@@ -1,0 +1,21 @@
+// Integration regression: aggregate-valid individual text values must be
+// rejected by layout preflight before per-view decoding and line allocation.
+string repeat_ascii(int n) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < n; i += 1) { parts.push("x"); }
+    return join(parts, "");
+}
+
+int main() {
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
+        if (let font = font_load(data)) {
+            Ui ui = new_ui(font, font, light_theme(), 64, 64, 256);
+            string half = repeat_ascii(MAX_TEXT_BYTES);
+            View root = column().add(text(half)).add(text(half)).add(text("x"));
+            layout_root(ui, root, fx(64), fx(64));
+            println("unexpectedly accepted aggregate text");
+            return 1;
+        }
+    }
+    return 2;
+}
