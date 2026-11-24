@@ -166,6 +166,13 @@ Capture and display its version and executable identity.
 Use a process API with an argument vector, never a shell command string. A future
 Capstan `run()` capability API is not a substitute for host-side process isolation.
 
+**A1 runtime prerequisite:** inspection of the current `runtime/capstan_rt.h` found no
+child-process creation, wait, cancellation or process-group API. Therefore the LSP and
+command supervisors cannot yet be implemented against the current public runtime
+surface. They require an agreed Capstan-native, capability-scoped process API or a
+Shroud/platform host contract. Anchor MUST NOT fill this gap with `system()`,
+`popen()`, shell interpolation or a private C shim.
+
 ### Navigation and editing
 
 The current LSP does not advertise go-to-definition, references, rename, completion,
