@@ -96,8 +96,6 @@ static void test_passwords(void) {
     CHECK(!cap_verify_password(pw, CAP_LIT("cap1$pbkdf2-sha256$999999999999$00$00", 37)));
     CHECK(!cap_verify_password(pw, NULL));
     CHECK(!cap_verify_password(NULL, h1));
-    CapStr empty_without_data = {.len = 0, .data = NULL};
-    CHECK(!cap_verify_password(&empty_without_data, h1));
 
     /* Exact current grammar: fixed cost, canonical decimal, lowercase hex,
        and complete consumption of the length-bearing CapStr. */
@@ -151,12 +149,10 @@ static void test_passwords(void) {
     CHECK(!cap_verify_password(pw, excessive_record));
     CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
 
-    CapStr negative_record = {.len = -1, .data = current_record};
-    CHECK(cap_needs_rehash(&negative_record));
-    CHECK(!cap_verify_password(pw, &negative_record));
-    CapStr missing_record_data = {.len = 123, .data = NULL};
-    CHECK(cap_needs_rehash(&missing_record_data));
-    CHECK(!cap_verify_password(pw, &missing_record_data));
+    CapStr *negative_record = cap_str_new(current_record, 123);
+    negative_record->len = -1;          /* forged metadata; flexible data stays inline */
+    CHECK(cap_needs_rehash(negative_record));
+    CHECK(!cap_verify_password(pw, negative_record));
 
     char just_over_limit[124];
     memcpy(just_over_limit, current_record, sizeof just_over_limit);
