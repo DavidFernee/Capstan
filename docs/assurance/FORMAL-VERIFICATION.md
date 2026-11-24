@@ -1,7 +1,7 @@
 # Machine-checked runtime verification
 
 **Status:** initial abstract-model theorems are machine-checked; no C implementation theorem has been machine-checked.  
-**Implementation baseline inspected:** `e54edb6bbccab24acab9f2d002a98a09e56c443f`.
+**Implementation baseline inspected:** `bc0a283df5a964e7340cd48ec8ce4a1e8fb3acde`.
 
 ## Purpose
 
@@ -14,7 +14,7 @@ The initial Lean model revision passed checked-add soundness, completeness and e
 plus target page-release failure preservation, exact successful accounting decrement and
 idempotence. The current revision also models checked-add overflow as an explicit fatal outcome and
 proves it in exact-head CI run 45360322725.
-These are abstract-model theorems only; they do not yet verify the C code. Exact toolchain
+These are abstract-model theorems only; they do not yet verify the C code. The independent Nanoda run uses an allowlist that includes `Lean.trustCompiler` and has `unpermitted_axiom_hard_error=false`; this is not a strict no-trustCompiler or axiom-free proof policy. Exact toolchain
 inputs and run evidence are in the [proof-run ledger](../../formal/PROOF-RUNS.md).
 
 The normative starting points are:
