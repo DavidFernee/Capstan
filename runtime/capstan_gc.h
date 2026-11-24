@@ -34,6 +34,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <string.h>
 #include <stdio.h>
 #include <setjmp.h>
@@ -203,6 +204,26 @@ static void cap_install_stack_guard(char *low) {
     sigaction(SIGBUS, &sa, NULL);
 }
 
+static size_t cap_gc_parse_heap_limit(const char *text) {
+    if (!text || !*text || *text == '-')
+        cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
+    errno = 0;
+    char *end = NULL;
+    unsigned long long value = strtoull(text, &end, 10);
+    if (errno == ERANGE || end == text)
+        cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
+    unsigned shift = 0;
+    if (*end == 'K' || *end == 'k') shift = 10;
+    else if (*end == 'M' || *end == 'm') shift = 20;
+    else if (*end == 'G' || *end == 'g') shift = 30;
+    if (shift) end++;
+    if (*end != '\\0' || (shift && value > (~0ULL >> shift)))
+        cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
+    value <<= shift;
+    if (value == 0 || value > CAP_MAX_LEN) value = CAP_MAX_LEN;
+    return (size_t)value;
+}
+
 static void cap_gc_init(void) {
     if (cap_gc.inited) return;
     cap_gc.inited = 1;
@@ -213,12 +234,7 @@ static void cap_gc_init(void) {
     if (getenv("CAPSTAN_GC_STATS")) { cap_gc.stats = 1; atexit(cap_gc_report); }
     const char *mh = getenv("CAPSTAN_MAX_HEAP");
     if (mh) {
-        char *end;
-        unsigned long long v = strtoull(mh, &end, 10);
-        if (*end == 'K' || *end == 'k') v <<= 10;
-        else if (*end == 'M' || *end == 'm') v <<= 20;
-        else if (*end == 'G' || *end == 'g') v <<= 30;
-        cap_gc.max_heap = (size_t)v;
+        cap_gc.max_heap = cap_gc_parse_heap_limit(mh);
     } else {
         long pages = sysconf(_SC_PHYS_PAGES), psize = sysconf(_SC_PAGESIZE);
         cap_gc.max_heap = pages > 0 && psize > 0 ? (size_t)pages / 4 * 3 * (size_t)psize : (size_t)1 << 34;
