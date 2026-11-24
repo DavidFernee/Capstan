@@ -29,7 +29,7 @@ The source-level core subset consists of:
 - integer and boolean literals;
 - local variable reads and initialising declarations;
 - assignment to local variables;
-- unary and binary scalar operations;
+- unary boolean negation (`!`) and checked integer negation (`-`), plus binary scalar operations;
 - conditional and unconditional control flow;
 - direct function calls and returns;
 - explicit traps in the machine-level representation.
@@ -69,7 +69,7 @@ A trap in steps 1–4 prevents the write. If the RHS invalidates the location—
 
 Integers are signed 64-bit two's-complement values. Let `MIN = -2^63` and `MAX = 2^63 - 1`.
 
-For checked addition, subtraction and multiplication, calculate the mathematical integer result first. If it is outside [MIN, MAX], execution traps with `integer_overflow`; otherwise the exact result is returned.
+For checked addition, subtraction and multiplication, calculate the mathematical integer result first. If it is outside [MIN, MAX], execution traps with `integer_overflow`; otherwise the exact result is returned. Unary integer negation is defined as checked subtraction from zero: `-a` returns the mathematical `0 - a` when representable and traps with `integer_overflow` for `a == MIN`.
 
 Division and remainder use truncation toward zero. For nonzero divisor `b`, define the mathematical quotient `q = trunc(a / b)` and remainder `r = a - q*b`. Therefore `|r| < |b|`, and a nonzero remainder has the sign of `a`.
 
