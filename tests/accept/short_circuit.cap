@@ -1,9 +1,12 @@
 // spec: types.bool expr.order expr.short_circuit
-// A suppressed boolean RHS must not execute, even when it would trap.
+// A suppressed boolean RHS must not execute, even when it would trap at runtime.
 // Do not lower these operators to eager helper calls.
+int divide_by_argument(int x) {
+    return 1 / x;
+}
 int main() {
-    bool a = false && (1 / 0 == 0);
-    bool b = true || (1 / 0 == 0);
+    bool a = false && (divide_by_argument(0) == 0);
+    bool b = true || (divide_by_argument(0) == 0);
     if (a) {
         println("bad");
     } else {
