@@ -252,6 +252,9 @@ static size_t cap_gc_slot(uintptr_t pageno, size_t cap) {
 }
 
 static void cap_gc_ptab_insert(CapPage *pg) {
+    if (cap_gc.ptab_cap &&
+        (cap_gc.ptab_cap & (cap_gc.ptab_cap - 1)) != 0)
+        cap_panic("page-table capacity is not a power of two", "CWE-682", 0);
     if (!cap_gc.ptab_cap || cap_gc.npages >= cap_gc.ptab_cap / 2) {
         size_t nc = cap_gc_next_capacity(cap_gc.ptab_cap,
                                          cap_gc_checked_add(cap_gc.npages, 1),
@@ -261,7 +264,13 @@ static void cap_gc_ptab_insert(CapPage *pg) {
             CapPage *p = cap_gc.ptab[i];
             if (!p) continue;
             size_t s = cap_gc_slot((uintptr_t)p->base >> CAP_PAGE_SHIFT, nc);
-            while (nt[s]) s = (s + 1) & (nc - 1);
+            size_t probes = 0;
+            while (nt[s] && probes < nc) {
+                s = (s + 1) & (nc - 1);
+                probes++;
+            }
+            if (probes == nc)
+                cap_panic("page-table rehash found no empty slot", "CWE-400", 0);
             nt[s] = p;
         }
         free(cap_gc.ptab);
@@ -269,8 +278,14 @@ static void cap_gc_ptab_insert(CapPage *pg) {
         cap_gc.ptab_cap = nc;
     }
     size_t s = cap_gc_slot((uintptr_t)pg->base >> CAP_PAGE_SHIFT, cap_gc.ptab_cap);
-    while (cap_gc.ptab[s]) s = (s + 1) & (cap_gc.ptab_cap - 1);
-    cap_gc.ptab[s] = pg;
+    for (size_t probes = 0; probes < cap_gc.ptab_cap; probes++) {
+        if (!cap_gc.ptab[s]) {
+            cap_gc.ptab[s] = pg;
+            return;
+        }
+        s = (s + 1) & (cap_gc.ptab_cap - 1);
+    }
+    cap_panic("page table has no insertion slot", "CWE-400", 0);
 }
 
 static CapPage *cap_gc_page_of(uintptr_t addr) {
