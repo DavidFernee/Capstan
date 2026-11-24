@@ -8,6 +8,7 @@
  */
 #define CAP_GC_TESTING 1
 #include "capstan_rt.h"
+#include <sys/wait.h>
 
 static int failures = 0, checks = 0;
 static const char *unit_files[] = {"unit"};
@@ -854,6 +855,94 @@ static void test_gc_secret_free_slots(void) {
     CHECK(checked > 0 && clean);
 }
 
+enum {
+    GC_META_ROOT,
+    GC_META_MARK_STACK,
+    GC_META_PAGE,
+    GC_META_SECRET_PAGE,
+    GC_META_SPARE,
+    GC_META_LARGE
+};
+
+static void reset_gc_page_metadata_for_child(void) {
+    cap_gc.spare = NULL;
+    cap_gc.nspare = cap_gc.capspare = 0;
+    cap_gc.pages = NULL;
+    cap_gc.npages = cap_gc.cappages = 0;
+    cap_gc.ptab = NULL;
+    cap_gc.ptab_cap = 0;
+}
+
+static void trigger_gc_metadata_site(int site) {
+    void *value = NULL;
+    switch (site) {
+    case GC_META_ROOT:
+        cap_gc.roots = NULL;
+        cap_gc.nroots = cap_gc.caproots = 0;
+        cap_gc_root(&value);
+        break;
+    case GC_META_MARK_STACK:
+        cap_gc.mstack = NULL;
+        cap_gc.msp = cap_gc.mcap = 0;
+        cap_gc_push(&value, sizeof value);
+        break;
+    case GC_META_PAGE:
+        reset_gc_page_metadata_for_child();
+        cap_gc_new_page(0, 0);
+        break;
+    case GC_META_SECRET_PAGE:
+        reset_gc_page_metadata_for_child();
+        cap_gc_new_page(2, 0);
+        break;
+    case GC_META_SPARE: {
+        CapPage page;
+        memset(&page, 0, sizeof page);
+        cap_gc.spare = NULL;
+        cap_gc.nspare = cap_gc.capspare = 0;
+        cap_gc_spare_page(&page, 0);
+        break;
+    }
+    case GC_META_LARGE:
+        cap_gc.large = NULL;
+        cap_gc.nlarge = cap_gc.caplarge = 0;
+        cap_gc.since = 0;
+        cap_gc.threshold = SIZE_MAX;
+        cap_gc.stress = 0;
+        cap_gc.max_heap = 0;
+        (void)cap_gc_alloc(8192, 2);
+        break;
+    default:
+        _exit(90);
+    }
+}
+
+static void expect_gc_metadata_oom(int site, long successful_allocations) {
+    pid_t pid = fork();
+    CHECK(pid >= 0);
+    if (pid < 0) return;
+    if (pid == 0) {
+        (void)freopen("/dev/null", "w", stdout);
+        (void)freopen("/dev/null", "w", stderr);
+        cap_gc_test_meta_fail_after = successful_allocations;
+        trigger_gc_metadata_site(site);
+        _exit(0);
+    }
+    int status = 0;
+    pid_t waited;
+    do { waited = waitpid(pid, &status, 0); } while (waited < 0 && errno == EINTR);
+    CHECK(waited == pid);
+    CHECK(waited == pid && WIFEXITED(status) && WEXITSTATUS(status) == 102);
+}
+
+static void test_gc_metadata_oom(void) {
+    expect_gc_metadata_oom(GC_META_ROOT, 0);
+    expect_gc_metadata_oom(GC_META_MARK_STACK, 0);
+    expect_gc_metadata_oom(GC_META_SPARE, 0);
+    expect_gc_metadata_oom(GC_META_LARGE, 0);
+    for (long i = 0; i < 5; i++) expect_gc_metadata_oom(GC_META_PAGE, i);
+    for (long i = 0; i < 6; i++) expect_gc_metadata_oom(GC_META_SECRET_PAGE, i);
+}
+
 static void test_gc_release(void) {
     cap_gc_collect();
     size_t released_before = cap_gc.released_total, heap_before = cap_gc.heap;
@@ -1007,6 +1096,7 @@ int main(void) {
     test_arithmetic();
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
+    test_gc_metadata_oom();
     test_gc_release_accounting();
     test_gc_stack_bounds();
     test_secret_page_free_stack();
