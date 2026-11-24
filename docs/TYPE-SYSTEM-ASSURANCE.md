@@ -958,3 +958,46 @@ Also define whether generic bodies may use equality, inequality, formatting, cop
 - Fuzzed generic bodies cannot bypass abstract checking by remaining uninstantiated or unreachable.
 
 These are acceptance requirements for generic template validation, not claims that the current compiler implements generic templates or either validation pass.
+
+
+## 28. Grant-freedom is a sealed type property, not an ordinary interface
+
+The abstract validation rule that a type variable is not presumed Grant-free needs a usable and enforceable contract. Generic containers and wrappers may store a type parameter whose concrete argument contains a Grant several nominal fields deep. A surface-level check that only rejects a parameter syntactically equal to `Grant<P>` is insufficient.
+
+### 28.1 Define a compiler-owned GrantFree predicate
+
+Define a compiler-owned, sealed property such as `GrantFree<T>` (the spelling is illustrative). It is not an ordinary user-implementable interface and cannot be satisfied by a user-written `impl`. Its proof is the same bounded, cycle-safe structural analysis defined in section 18:
+
+- Primitive and explicitly approved runtime types have compiler-defined results.
+- A nominal struct/enum is Grant-free only if every relevant field/payload is recursively Grant-free after substituting its concrete arguments.
+- A collection/wrapper is Grant-free only if every stored type argument is Grant-free.
+- A direct Grant, a nested Grant, an unresolved type variable, an unsupported opaque layout or exhausted analysis budget is not proven Grant-free.
+- The result is tied to canonical nominal/type identity and the concrete substitution; it cannot be reused for a different instantiation or compilation context.
+
+This property must not be forgeable by declaring an interface with the same name, adding an impl, or importing a purported trusted implementation.
+
+### 28.2 Require proof at generic storage boundaries
+
+Any generic declaration that stores a type parameter in a field, enum payload, collection, constant, returned aggregate or closure environment must establish Grant-freedom for that parameter. The compiler may express this as an explicit sealed bound on a generic function parameter, or as a synthesized obligation attached to the storage-bearing nominal declaration. The design must choose one consistent representation and explain how callers discharge it.
+
+For example, if `Box<T>` stores a `T` field, then constructing or accepting `Box<T>` in a generic body requires proof that `T` is Grant-free. A concrete `Box<Grant<P>>` or `Box<PublicRecordWithGrant>` must be rejected. A generic helper that constructs `Box<T>` must carry the sealed obligation; it cannot rely on whichever concrete caller eventually instantiates it.
+
+Do not impose this property on a purely transient, non-stored type variable unless a separate boundary requires it. In particular, keep the rule aligned with actual Grant lifetime/escape boundaries rather than rejecting all generic computation involving an abstract type.
+
+### 28.3 Do not confuse Grant-freedom with other qualifiers
+
+Grant-freedom says nothing about whether a type is printable, trusted, safe for HTML, safe for logs, copyable, droppable or secret. Keep those properties independent. A `Secret` type may be Grant-free while still forbidden at ordinary text sinks. A `Tainted` type may be Grant-free while still requiring validation. No single broad marker trait should collapse these independent security dimensions.
+
+### 28.4 Required adversarial tests
+
+- A generic wrapper storing `T` requires the sealed Grant-free obligation.
+- Reject direct `Box<Grant<P>>` and nested `Box<Record<Grant<P>>>`.
+- Reject a generic helper that constructs/stores `Box<T>` without the required obligation, even if current call sites happen to pass safe types.
+- Accept the same helper with a valid sealed obligation and safe concrete instantiations.
+- Reject attempts to declare, shadow, implement or import a user-defined substitute for the compiler-owned property.
+- Verify the proof traverses recursive and mutually recursive nominal layouts without nontermination.
+- Verify Unknown layouts and analysis-budget exhaustion fail closed.
+- Verify Grant-free proof does not make Secret printable, Tainted trusted, or Html/LogText interchangeable.
+- Verify the property is recomputed or keyed by full canonical instantiated type identity and cannot leak across unrelated compilation roots.
+
+This is a proposed compiler-owned type property and acceptance contract; it is not an implemented language feature.
