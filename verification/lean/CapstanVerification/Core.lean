@@ -63,7 +63,7 @@ inductive Trap where
   | instructionLimit
   deriving DecidableEq, Repr
 
-def checkedI64 (x : Int) : Except Trap Int :=
+noncomputable def checkedI64 (x : Int) : Except Trap Int :=
   if inI64 x then .ok x else .error .integerOverflow
 
 def checkedAdd (a b : Int) : Except Trap Int := checkedI64 (a + b)
@@ -89,14 +89,14 @@ def checkedRem (a b : Int) : Except Trap Int :=
 /-- A successful range check returns a signed-64 value. -/
 theorem checkedI64_sound (x result : Int)
     (h : checkedI64 x = .ok result) : inI64 result := by
-  have hx : inI64 x := by
-    by_contra hnot
-    have : False := by simpa [checkedI64, hnot] using h
+  classical
+  by_cases hx : inI64 x
+  · have heq : x = result := by
+      simpa [checkedI64, hx] using h
+    simpa [heq] using hx
+  · have : False := by
+      simpa [checkedI64, hx] using h
     exact this.elim
-  have heq : x = result := by
-    simpa [checkedI64, hx] using h
-  subst result
-  exact hx
 
 theorem checkedAdd_sound (a b result : Int)
     (h : checkedAdd a b = .ok result) : inI64 result := by
