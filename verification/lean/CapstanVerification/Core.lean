@@ -30,10 +30,12 @@ inductive Val where
   | bool (value : Bool)
   deriving Repr
 
-def hasType : Val → Ty → Prop
-  | .int n, .int => inI64 n
-  | .bool _, .bool => True
-  | _, _ => False
+def hasTypeB : Val → Ty → Bool
+  | .int n, .int => inI64B n
+  | .bool _, .bool => true
+  | _, _ => false
+
+def hasType (value : Val) (ty : Ty) : Prop := hasTypeB value ty = true
 
 abbrev RegTypes (n : Nat) := Fin n → Ty
 abbrev Registers (n : Nat) := Fin n → Option Val
@@ -213,7 +215,7 @@ theorem readInt_success_in_range
       simp [hreg] at hread
       cases hread
       have htyped := hregs index (.int value) hreg
-      simpa [hasType, hindex] using htyped
+      simpa [hasType, hasTypeB, hindex] using htyped
     | bool b =>
       simp [hreg] at hread
 
@@ -270,7 +272,7 @@ theorem executeAdd_preserves_well_typed
         cases hstep
         have hresult : inI64 result := checkedAdd_sound a b result hadd
         have hvalue : hasType (.int result) (types instr.dst) := by
-          simp [hasType, instr.dst_is_int, hresult]
+          simp [hasType, hasTypeB, instr.dst_is_int, hresult]
         exact write_preserves_well_typed hregs instr.dst (.int result) hvalue
 
 
