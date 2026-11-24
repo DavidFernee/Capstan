@@ -82,10 +82,26 @@ with tempfile.TemporaryDirectory() as temporary:
     subprocess.run(["git", "-C", str(root), "config", "user.email", "k0-test@example.invalid"], check=True)
     subprocess.run(["git", "-C", str(root), "config", "user.name", "K0 test"], check=True)
     (root / "snapshot.txt").write_text("pinned source", encoding="utf-8")
-    subprocess.run(["git", "-C", str(root), "add", "snapshot.txt"], check=True)
+    tracked_record = root / "cves" / "1999" / "0xxx" / "CVE-1999-0001.json"
+    tracked_record.parent.mkdir(parents=True)
+    tracked_record.write_text("{}", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "snapshot.txt", "cves"], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
     commit = study.source_snapshot(str(root))
     assert len(commit) == 40 and all(ch in "0123456789abcdef" for ch in commit)
+    # A sparse checkout can hide tracked files from status while leaving the tree clean.
+    subprocess.run(["git", "-C", str(root), "update-index", "--skip-worktree",
+                    "cves/1999/0xxx/CVE-1999-0001.json"], check=True)
+    tracked_record.unlink()
+    try:
+        study.source_snapshot(str(root))
+    except RuntimeError as error:
+        assert "incomplete" in str(error)
+    else:
+        raise AssertionError("sparse CVE source snapshot was accepted")
+    tracked_record.write_text("{}", encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "update-index", "--no-skip-worktree",
+                    "cves/1999/0xxx/CVE-1999-0001.json"], check=True)
     (root / "untracked.json").write_text("{}", encoding="utf-8")
     try:
         study.source_snapshot(str(root))
