@@ -6,6 +6,7 @@
  *   HMAC-SHA256   RFC 4231 test cases 1, 2 and 6
  *   PBKDF2-SHA256 RFC 7914 section 11
  */
+#define CAP_PBKDF2_TEST_HOOK 1
 #include "capstan_rt.h"
 
 static int failures = 0, checks = 0;
@@ -93,6 +94,79 @@ static void test_passwords(void) {
     CHECK(!cap_verify_password(pw, CAP_LIT("cap1$pbkdf2-sha256$", 19)));
     CHECK(!cap_verify_password(pw, CAP_LIT("cap1$pbkdf2-sha256$0$x$y", 24)));
     CHECK(!cap_verify_password(pw, CAP_LIT("cap1$pbkdf2-sha256$999999999999$00$00", 37)));
+    CHECK(!cap_verify_password(pw, NULL));
+    CHECK(!cap_verify_password(NULL, h1));
+
+    char current_record[124];
+    const char current_prefix[] = "cap1$pbkdf2-sha256$600000$";
+    memcpy(current_record, current_prefix, sizeof current_prefix - 1);
+    memset(current_record + 26, '0', 32);
+    current_record[58] = '$';
+    memset(current_record + 59, '0', 64);
+    current_record[123] = '\0';
+    CapStr *canonical = cap_str_new(current_record, 123);
+    CHECK(!cap_needs_rehash(canonical));
+    unsigned calls_before_rejected_records = cap_pbkdf2_test_calls;
+
+    char noncanonical[124];
+    memcpy(noncanonical, current_record, sizeof noncanonical);
+    noncanonical[19] = '0';
+    CHECK(cap_needs_rehash(cap_str_new(noncanonical, 123)));
+    CHECK(!cap_verify_password(pw, cap_str_new(noncanonical, 123)));
+    memcpy(noncanonical, current_record, sizeof noncanonical);
+    noncanonical[26] = 'A';
+    CHECK(cap_needs_rehash(cap_str_new(noncanonical, 123)));
+    CHECK(!cap_verify_password(pw, cap_str_new(noncanonical, 123)));
+
+    char embedded_nul[126];
+    memcpy(embedded_nul, current_record, 123);
+    embedded_nul[123] = '\0';
+    embedded_nul[124] = 'x';
+    embedded_nul[125] = '\0';
+    CapStr *nul_suffix = cap_str_new(embedded_nul, 125);
+    CHECK(cap_needs_rehash(nul_suffix));
+    CHECK(!cap_verify_password(pw, nul_suffix));
+
+    char trailing[125];
+    memcpy(trailing, current_record, 123);
+    trailing[123] = 'x';
+    trailing[124] = '\0';
+    CapStr *trailing_suffix = cap_str_new(trailing, 124);
+    CHECK(cap_needs_rehash(trailing_suffix));
+    CHECK(!cap_verify_password(pw, trailing_suffix));
+
+    char excessive[127];
+    const char excessive_prefix[] = "cap1$pbkdf2-sha256$100000000$";
+    memcpy(excessive, excessive_prefix, sizeof excessive_prefix - 1);
+    memset(excessive + 29, '0', 32);
+    excessive[61] = '$';
+    memset(excessive + 62, '0', 64);
+    excessive[126] = '\0';
+    CapStr *excessive_record = cap_str_new(excessive, 126);
+    CHECK(cap_needs_rehash(excessive_record));
+    CHECK(!cap_verify_password(pw, excessive_record));
+    CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
+
+    CapStr *negative_record = cap_str_new(current_record, 123);
+    negative_record->len = -1;
+    CHECK(cap_needs_rehash(negative_record));
+    CHECK(!cap_verify_password(pw, negative_record));
+
+    char just_over_limit[124];
+    memcpy(just_over_limit, current_record, sizeof just_over_limit);
+    just_over_limit[24] = '1';
+    CapStr *over_limit_record = cap_str_new(just_over_limit, 123);
+    CHECK(cap_needs_rehash(over_limit_record));
+    CHECK(!cap_verify_password(pw, over_limit_record));
+    CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
+
+    char non_ascii_cost[124];
+    memcpy(non_ascii_cost, current_record, sizeof non_ascii_cost);
+    non_ascii_cost[19] = (char)0xD9;
+    CapStr *non_ascii_record = cap_str_new(non_ascii_cost, 123);
+    CHECK(cap_needs_rehash(non_ascii_record));
+    CHECK(!cap_verify_password(pw, non_ascii_record));
+    CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
     CHECK(!cap_hash_verify(CAP_LIT("abc", 3), CAP_LIT("md5$900150983cd24fb0d6963f7d28e17f72", 36)));
 }
 
