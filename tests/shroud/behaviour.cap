@@ -244,6 +244,28 @@ int count_of(string hay, string needle) {
     return n;
 }
 
+void test_a11y_untrusted(Tally t, Ui ui) {
+    string rlo = char_str(0xE2) + char_str(0x80) + char_str(0xAE);
+    string zwsp = char_str(0xE2) + char_str(0x80) + char_str(0x8B);
+    string replacement = char_str(0xEF) + char_str(0xBF) + char_str(0xBD);
+    Tainted deceptive = taint("pay" + rlo + "pal" + zwsp + "x");
+    string visible = "pay" + replacement + "pal" + replacement + "x";
+    ui.render(column()
+        .add(user_text(deceptive).key("untrusted-label"))
+        .add(text_field("field", deceptive, "Name").key("untrusted-field")), 0);
+    if (let tree = a11y_tree(ui)) {
+        expect(t, tree.kids.len() == 2, "a11y: untrusted text nodes exist", $"{tree.kids.len()}");
+        if (tree.kids.len() == 2) {
+            expect(t, tree.kids[0].name == escape_json(visible),
+                "a11y: user_text name matches visible sanitised text", tree.kids[0].name);
+            expect(t, tree.kids[1].value == escape_json(visible),
+                "a11y: textbox value matches visible sanitised text", tree.kids[1].value);
+        }
+    } else {
+        expect(t, false, "a11y: untrusted text tree exists", "none");
+    }
+}
+
 void test_themes(Tally t) {
     List<string> light = theme_problems(light_theme());
     List<string> dark = theme_problems(dark_theme());
@@ -326,6 +348,7 @@ int main() {
             test_keyboard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_text_field(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scale(t, f, fb);
         }
