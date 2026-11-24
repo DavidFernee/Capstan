@@ -15,11 +15,13 @@
 static int failures = 0, checks = 0;
 
 static size_t secret_scratch_wipe_calls;
+static size_t secret_scratch_wipe_last_len;
 static int secret_scratch_wipe_clean;
 
 static void observe_secret_scratch_wipe(const void *memory, size_t n) {
     const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
     for (size_t i = 0; i < n; i++) if (bytes[i] != 0) secret_scratch_wipe_clean = 0;
+    secret_scratch_wipe_last_len = n;
     secret_scratch_wipe_calls++;
 }
 
@@ -44,6 +46,17 @@ static void test_secret_scratch_lifecycle(void) {
     CHECK(scratch.active && scratch.data == NULL && scratch.len == 0);
     cap_secret_scratch_destroy(&scratch);
     CHECK(!scratch.active && secret_scratch_wipe_calls == 1);
+
+    /* Native PBKDF2 now keeps all intermediate state in one explicitly
+       destroyed scratch allocation, observed zeroed immediately before free. */
+    unsigned char salt[16] = {0}, derived[32];
+    secret_scratch_wipe_calls = 0;
+    secret_scratch_wipe_last_len = 0;
+    secret_scratch_wipe_clean = 1;
+    cap_pbkdf2("pw", 2, salt, sizeof salt, 1, derived);
+    CHECK(secret_scratch_wipe_calls == 1 && secret_scratch_wipe_clean);
+    CHECK(secret_scratch_wipe_last_len == sizeof(CapPbkdf2Scratch));
+    cap_wipe(derived, sizeof derived);
 
     CHECK(!cap_secret_scratch_init(NULL, 8));
     CHECK(!cap_secret_scratch_init(&scratch, CAP_MAX_LEN + (size_t)1));
