@@ -73,7 +73,7 @@ CCAMIntResult ccam_rem(int a, int b) {
         return new CCAMIntResult{ok: false, value: 0, trap: "division_by_zero"};
     }
     if (a == CCAM_I64_MIN && b == -1) {
-        return new CCAMIntResult{ok: false, value: 0, trap: "integer_overflow"};
+        return new CCAMIntResult{ok: true, value: 0, trap: ""};
     }
     return new CCAMIntResult{ok: true, value: a % b, trap: ""};
 }
@@ -109,8 +109,12 @@ int main() {
     assert(r.ok && r.value == -1);
     r = ccam_rem(7, -3);
     assert(r.ok && r.value == 1);
+    r = ccam_rem(-7, -3);
+    assert(r.ok && r.value == -1);
+    r = ccam_rem(7, 3);
+    assert(r.ok && r.value == 1);
     r = ccam_rem(CCAM_I64_MIN, -1);
-    assert(!r.ok && r.trap == "integer_overflow");
+    assert(r.ok && r.value == 0);
     println("CCAM Capstan arithmetic: ok");
     return 0;
 }
@@ -148,9 +152,20 @@ test "CCAM division rejects minimum divided by negative one" {
     assert(!r.ok && r.trap == "integer_overflow");
 }
 
-test "CCAM remainder has dividend sign" {
-    CCAMIntResult r = ccam_rem(-7, 3);
-    assert(r.ok && r.value == -1);
+test "CCAM remainder has dividend sign for every sign combination" {
+    CCAMIntResult a = ccam_rem(-7, 3);
+    CCAMIntResult b = ccam_rem(7, -3);
+    CCAMIntResult c = ccam_rem(-7, -3);
+    CCAMIntResult d = ccam_rem(7, 3);
+    assert(a.ok && a.value == -1);
+    assert(b.ok && b.value == 1);
+    assert(c.ok && c.value == -1);
+    assert(d.ok && d.value == 1);
+}
+
+test "CCAM remainder of minimum by negative one is zero" {
+    CCAMIntResult r = ccam_rem(CCAM_I64_MIN, -1);
+    assert(r.ok && r.value == 0);
 }
 
 
