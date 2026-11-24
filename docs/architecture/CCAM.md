@@ -79,7 +79,7 @@ Each instruction is a JSON object with an `op` field. Register and instruction i
 
 ### 3.1 Closed instruction schemas
 
-Every instruction object MUST contain exactly the fields listed below: the `op` field and the required operands. Unknown fields, missing fields, duplicate JSON object keys, and fields of the wrong JSON type are validation errors. Optionality is represented explicitly as JSON `null`; omitted fields are never treated as null.
+Every instruction object MUST contain exactly the fields listed below: the `op` field and the required operands. Source spans and debug metadata are carried in an out-of-band side table keyed by function and instruction index; they are not instruction-object fields and cannot affect execution. Unknown fields, missing fields, duplicate JSON object keys, and fields of the wrong JSON type are validation errors. Optionality is represented explicitly as JSON `null`; omitted fields are never treated as null.
 
 | Opcode | Exact fields and JSON types | Static constraints |
 |---|---|---|
