@@ -429,7 +429,7 @@ These rules distinguish snapshot semantics from deep-copy semantics and avoid ac
 
 ### 17.3 Grant rejection is a recursive property of the resolved capture type
 
-At closure creation, reject a capture if its fully resolved type contains `Grant<P>) anywhere. The predicate must recurse through:
+At closure creation, reject a capture if its fully resolved type contains `Grant<P>` anywhere. The predicate must recurse through:
 - optional and collection constructors;
 - every field of a nominal struct;
 - every payload field of every nominal enum variant;
@@ -454,7 +454,7 @@ A closure may capture a Secret directly or through an aggregate only under the s
 - Capture a scalar, then reassign the original local; closure sees the creation-time scalar value.
 - Capture a reference to a mutable object, mutate through a second alias, and verify the closure observes the mutation.
 - Reassign the original reference variable to a different object; closure continues to refer to the originally captured object.
-- Reject direct `Grant<P>), optional Grant, collection-wrapped Grant, and any generic wrapper whose concrete substitution contains Grant.
+- Reject direct `Grant<P>`, optional `Grant<P>?`, collection-wrapped `Grant<P>`, and any generic wrapper whose concrete substitution contains Grant.
 - Reject a nested closure that captures a Grant even if the enclosing closure does not otherwise expose it; reject an outer closure that must transitively retain a grant to construct the inner closure.
 - Accept a closure in a protected function that does not capture the Grant and does not use it after the protected call.
 - Capture a Secret through a struct/list/enum path; force collections and verify all intermediate objects remain reachable and the secret is wiped only after the complete graph becomes unreachable and a collection occurs.
