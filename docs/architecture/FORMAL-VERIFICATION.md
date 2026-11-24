@@ -79,7 +79,7 @@ The proof assistant's kernel checks theorem terms, but the overall assurance cla
 | Component | Current status | Trust/evidence treatment |
 |---|---|---|
 | Lean kernel and pinned Lean distribution | External dependency | Trusted to check proof terms; pin and record version |
-| Lean standard library / kernel axioms | Theorem dependencies printed in run 45340737737 | `write_preserves_well_typed` and explicit trap lemmas: `propext`; checked add/sub/mul soundness: `propext`, `Classical.choice`, `Quot.sound`. No local axioms or unfinished proofs. The range check is now a computational Bool predicate over Lean's `Int` constructors; the audit reports no `Classical.choice` or `Quot.sound` dependency. |
+| Theorem axiom dependencies | Printed by `AxiomAudit.lean` in run 45340981405 | All eight theorem declarations depend on `propext` only. No `Classical.choice`, `Quot.sound`, local axioms or unfinished proofs are reported. |
 | CCAM normative specification | Human-authored specification | Review authority; model-to-spec correspondence is not yet proved |
 | Lean CCAM model | Partial definitions | Inspect definitions; not a complete machine |
 | Theorems in Core.lean | Machine-checked on Lean 4.19.0, run 45340981405, proof-source commit c2a584b | Explicit target build passed with `--wfail`; source scan passed; axiom dependencies printed by `AxiomAudit.lean` |
