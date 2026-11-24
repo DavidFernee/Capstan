@@ -1,6 +1,6 @@
 // This executable must fail closed before attempting a 16,781,312-pixel allocation.
 int main() {
     Pixmap oversized = new_pixmap(4096, 4097);
-    println("unexpected pixmap allocation: " + int_to_str(oversized.px.len()));
+    println("unexpected pixmap allocation");
     return 1;
 }
