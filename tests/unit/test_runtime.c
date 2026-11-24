@@ -404,6 +404,7 @@ static void test_files(void) {
     rmdir(dir);
 }
 
+static int expect_runtime_panic(void (*fn)(void));
 static void trigger_negative_string_length(void) {
     (void)cap_str_new(NULL, -1);
 }
