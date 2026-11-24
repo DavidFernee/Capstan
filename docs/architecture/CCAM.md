@@ -1,8 +1,8 @@
 # Capstan Core Abstract Machine (CCAM) v0.1
 
-**Status:** executable prototype specification; deliberately a small subset, not yet the complete Capstan semantics.
+**Status:** initial machine design; Capstan-native implementation is the required next step. This is deliberately a small subset, not yet the complete Capstan semantics.
 
-This document is normative for the prototype in `verification/reference_machine.py`. If the implementation and this document disagree, the discrepancy is a defect to resolve; the implementation is not allowed to redefine the semantics silently.
+This document defines the intended semantics for the first machine slice. Its executable implementation and conformance tests must be written in Capstan. No Python or C implementation is to serve as the normative reference.
 
 ## 1. Design boundary
 
@@ -85,7 +85,7 @@ Execution returns either:
 - `Halt(value)` for a successful entry-function return; or
 - `Trap(code, pc, function)` for a defined machine trap.
 
-The prototype API raises `MachineTrap` carrying the same information. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected as `InvalidProgram` before execution.
+The Capstan implementation must represent machine traps as explicit values or controlled results. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected before execution.
 
 ## 7. Determinism and evaluation order
 
@@ -104,11 +104,11 @@ The reference implementation must preserve these invariants:
 6. Integer values always remain in the signed-64 range.
 7. No invalid register, target, function, arity, type, or return is silently accepted.
 
-The first mechanised proof target is preservation of the register typing invariant and progress-or-trap for well-formed CCAM programs. The executable Python implementation is a reference artifact, not a proof of these theorems.
+The first mechanised proof target is preservation of the register typing invariant and progress-or-trap for well-formed CCAM programs. The Capstan implementation is an executable semantic artifact, not a proof of these theorems.
 
 ## 9. Conformance vectors
 
-The unit tests in `verification/test_reference_machine.py` are executable conformance vectors for arithmetic boundaries, control flow, calls, register typing, traps, and resource limits. Future implementations (including a Capstan implementation and native backend) must pass the same vectors and a generated differential corpus.
+Conformance vectors and the machine implementation must be written in Capstan under `verification/`. The same vectors must be used by later native backends and any independent proof-assistant model.
 
 ## 10. Versioning
 
