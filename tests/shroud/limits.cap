@@ -14,6 +14,23 @@ int main() {
     if (pixmap_size_valid(16385, 1) != false) { return 10; }
     Pixmap small = new_pixmap(2, 3);
     if (small.px.len() != 6) { return 11; }
-    println("pixmap limits: 10 assertions");
+    if (glyph_mask_size_valid(512, 512) != true) { return 12; }
+    if (glyph_mask_size_valid(513, 512) != false) { return 13; }
+    if (glyph_mask_size_valid(0, 1) != false) { return 14; }
+    if (glyph_cache_fits(786432, 262144) != true) { return 15; }
+    if (glyph_cache_fits(786433, 262144) != false) { return 16; }
+    if (glyph_cache_fits(-1, 1) != false) { return 17; }
+    if (glyph_cache_fits(MAX_CACHED_GLYPH_PIXELS, 1) != false) { return 18; }
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
+        if (let font = font_load(data)) {
+            for (int cp = 33; cp < 127; cp += 1) {
+                GlyphMask cached = glyph_mask(font, glyph_index(font, cp), fx(256), 0);
+            }
+            if (font.cached_pixels > MAX_CACHED_GLYPH_PIXELS) { return 19; }
+            GlyphMask huge = glyph_mask(font, glyph_index(font, 65), fx(10000), 0);
+            if (huge.w != 0 || huge.h != 0) { return 20; }
+        } else { return 21; }
+    } else { return 22; }
+    println("resource limits: 17 assertions and glyph cache exercised");
     return 0;
 }
