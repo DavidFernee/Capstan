@@ -272,8 +272,11 @@ static void cap_gc_ptab_insert(CapPage *pg) {
         (cap_gc.ptab_cap & (cap_gc.ptab_cap - 1)) != 0)
         cap_panic("page-table capacity is not a power of two", "CWE-682", 0);
     if (!cap_gc.ptab_cap || cap_gc.npages >= cap_gc.ptab_cap / 2) {
-        size_t nc = cap_gc_next_capacity(cap_gc.ptab_cap,
-                                         cap_gc_checked_add(cap_gc.npages, 1),
+        size_t required = cap_gc.ptab_cap
+                        ? cap_gc_checked_mul(cap_gc.ptab_cap, 2) : 64;
+        size_t minimum = cap_gc_checked_add(cap_gc.npages, 1);
+        if (required < minimum) required = minimum;
+        size_t nc = cap_gc_next_capacity(cap_gc.ptab_cap, required,
                                          64, sizeof(CapPage *));
         CapPage **nt = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
         for (size_t i = 0; i < cap_gc.ptab_cap; i++) {
