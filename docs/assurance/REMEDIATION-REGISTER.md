@@ -40,18 +40,20 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 
 | PR | Current inspected status | Head | CI evidence at inspection | Remediation interpretation |
 |---|---|---|---|---|
-| #87 | Open, draft, targets main | `308a3d47f94e2ab1e06e330d52242add41f98ba0` | Run 45343625923 in progress | Assessment and executable probes; findings are not fixed. |
+| #87 | Open, draft, targets main | `2df07414f52b782e4df0ea3926ec050fa02d9cc5` | Run 45344964290 in progress | Assessment and executable probes; findings are not fixed. Latest head is documentation/assessment revision; cite the earlier run for the reproduced CWE-916 probes. |
 | #51 | Open, draft, targets main; stale base | `d6f97beb05962b7f8ef43f5e0ea8434be06450fa` | Run 45335656200 success on this head | GC hardening submitted; stale-slot and exact accounting evidence remain blockers. |
-| #86 | Open, draft, targets main | `334ebe44c51d9187f2cb82e3533598b7bf094ebf` | Run 45341730284 success | Strong candidate, but still requires current-base and independent verification. |
-| #97 | Open, draft, targets main | `20fa6374ac9bb0e283484c90a759a702d04c606f` | Run 45342232492 success | Compound-assignment correction submitted; PR #102 extends evidence. |
-| #102 | Open, draft, stacked on #97 | `997e3343fe314e78cb7b1ae622605500c8184199` | Run 45343260375 in progress | Additional evaluation-order tests; not independently accepted. |
-| #92 | Open, draft, targets main | `1ef4b56f2d90c8791919836e55762463e6d85980` | Run 45343648429 in progress | Known gallery-budget regression must be addressed. |
-| #103 | Open, draft, targets main | `0e16fc2163e0eda28e8e42a3079bb15178c9dd18` | Run 45343277971 in progress | Aggregate text budget submitted; standard-runner integration and independent review remain. |
-| #79 | Open, draft, targets main | `80676e0c014eec1be0eba196acad0dddc088f267` | Current-base matrix reported in progress in coordination comments | Nested composite glyph cumulative-budget regression remains. |
-| #93 | Open, draft, targets main | `270919dc33a3568e20849ab69d9bbb2c22708d8d` | Run 45343540645 in progress | Semantic contract; not a compiler implementation fix. |
-| #100 | Open, draft, stacked on #81 | `7dadb14dd08ff05c61ec0cbcfb56871d1fb136ab` | Run 45343768406 queued | Dependent CCAM correction. |
+| #86 | Open, draft, targets main | `334ebe44c51d9187f2cb82e3533598b7bf094ebf` | Run 45341730284 success | Strong candidate, but still requires independent review and integration. |
+| #97 | Open, draft, targets main | `20fa6374ac9bb0e283484c90a759a702d04c606f` | Run 45342232492 success on this head | Compound-assignment correction submitted; PR #102 extends evidence. |
+| #102 | Open, draft, stacked on #97 | `5b07e45041ff2be9a535ddd671b000a6ebb553bb` | Run 45345049380 in progress | Additional evaluation-order tests; latest exact-head CI not yet complete. |
+| #92 | Open, draft, targets main | `adaa6dfc76ef80d903a78662170ee0511856b8d0` | Run 45345444885 queued | Raw budget raised to 2 MiB and byte conversion batched; real 560×520 export/decode regression still missing. |
+| #103 | Open, draft, targets main | `0e16fc2163e0eda28e8e42a3079bb15178c9dd18` | Run 45343277971 success (four jobs) | Workflow green, but the verifier was not invoked by `tests/run.sh`; regression execution remains unverified. |
+| #79 | Open, draft, targets main | `80676e0c014eec1be0eba196acad0dddc088f267` | Current-base matrix status requires refresh | Nested composite glyph cumulative-budget regression remains. |
+| #93 | Open, draft, targets main | `278a578068a56780c6aaf08139ebfce4daeecef3` | Run 45345218607 in progress | Semantic contract; not a compiler implementation fix. |
+| #100 | Open, draft, stacked on #81 | `6bcac27c397513ec161d240db4e59a30def88ab6` | Run 45345490469 in progress | Dependent CCAM correction; previous head passed, latest head is not yet verified. |
 | #89 | Open, draft, stacked on #81 | `37674157b5e515c915125cd2bb72ee3b6b1b62a3` | CI and formal-verification runs queued | Partial proof evidence only. |
-| #98 | Open, draft, targets main | `f4ab5da31dab6df5d44e90f3a03bc87a71e540f1` | Exact latest-head run pending per coordination note | Collector metadata/accounting owner; overlaps #51. |
+| #98 | Open, draft, targets main | `1e9623e188cca2bc1d811acbb37355d80f66b4d4` | No PR-triggered run associated with latest head at inspection | Collector metadata/accounting owner; overlaps #51. Latest CI status needs confirmation. |
+| #105 | Open, draft, targets main | `e02af781049e432cfaf444221bfad9eb0eb636b4` | Run 45344590867 success | Runtime string-allocation/expansion bounds; Worker 8 password parser is stacked on this branch. |
+| #108 | Open, draft, stacked on #105 | `8cfb6d09b64b57e1742ae2dceaa750d477ca7c0b` | Run 45345215167 in progress | Strict bounded password-record parser submitted; runtime-owner, policy-owner and Worker 7 retests pending. |
 
 Previously merged changes reconciled as already addressed for their specific scope: #27 (taint/run/HTML attack findings), #29 (bounded read_file/FIFO behaviour), #56 (review documentation only), #67 (taint fixpoint fails closed), #73 (NUL environment names and bounded read_line), and #78 (grant-role capacity). These do not close the distinct findings above.
 
