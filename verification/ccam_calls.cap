@@ -292,6 +292,12 @@ CCAMValidationResult ccam_validate_multi_function(
             return ccam_validation_error("instruction_limit_exceeded");
         }
         total_instructions += fn.instructions.len();
+        // Every call-site record must correspond to a distinct instruction.
+        // Bound the side table before iterating or copying attacker-controlled
+        // call-site records.
+        if (fn.call_sites.len() > fn.instructions.len()) {
+            return ccam_validation_error("call_site_count_limit_exceeded");
+        }
     }
 
     for (int i = 0; i < functions.len(); i += 1) {
@@ -1042,4 +1048,35 @@ test "CCAM call machine enforces configuration ceilings before construction" {
     assert(!too_deep.ok &&
            too_deep.error == "configured_call_depth_too_large");
     assert(too_deep.machine.halted && too_deep.machine.frames.len() == 0);
+}
+
+test "CCAM multi-function validator bounds call-site side tables" {
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    caller_code.push(ccam_instruction(CCAM_OP_CALL));
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0, has_destination: false
+    });
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0, has_destination: false
+    });
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    callee_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: caller_code, call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "noop", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: callee_code, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "call_site_count_limit_exceeded");
 }
