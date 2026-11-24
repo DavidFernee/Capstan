@@ -1,0 +1,469 @@
+// First native CCAM backend: Linux x86-64 System V, GNU assembler syntax.
+// Emits a freestanding ELF entry point and functions. No C source, libc, or
+// Capstan C runtime is emitted or linked. This is deliberately a narrow
+// validated scalar backend; unsupported operations fail closed.
+
+import "ccam_lowering.cap";
+
+const int CCAM_X64_MAX_ARGUMENTS = 6;
+
+struct CCAMNativeResult {
+    bool ok;
+    string assembly;
+    string error;
+}
+
+string ccam_x64_slot(int register_index) {
+    return "-" + int_to_str((register_index + 1) * 8) + "(%rbp)";
+}
+
+string ccam_x64_init_slot(int register_index, int register_count) {
+    return "-" + int_to_str((register_count + register_index + 1) * 8) + "(%rbp)";
+}
+
+void ccam_x64_check_initialized(
+    List<string> output,
+    int register_index,
+    int register_count
+) {
+    ccam_x64_line(output, "    cmpq $0, " + ccam_x64_init_slot(register_index, register_count));
+    ccam_x64_line(output, "    je .Lcap_trap_uninitialised");
+}
+
+void ccam_x64_mark_initialized(
+    List<string> output,
+    int register_index,
+    int register_count
+) {
+    ccam_x64_line(output, "    movq $1, " + ccam_x64_init_slot(register_index, register_count));
+}
+
+string ccam_x64_function_label(int function_index) {
+    return "cap_fn_" + int_to_str(function_index);
+}
+
+string ccam_x64_instruction_label(int function_index, int instruction_index) {
+    return ".Lcap_f" + int_to_str(function_index) + "_i" + int_to_str(instruction_index);
+}
+
+void ccam_x64_line(List<string> output, string line) {
+    output.push(line + "\n");
+}
+
+CCAMCallSite ccam_x64_find_call_site(CCAMFunction fn, int instruction_index) {
+    for (int i = 0; i < fn.call_sites.len(); i += 1) {
+        if (fn.call_sites[i].instruction_index == instruction_index) {
+            return fn.call_sites[i];
+        }
+    }
+    return new CCAMCallSite{
+        instruction_index: -1,
+        callee_index: -1,
+        argument_registers: new List<int>(),
+        destination_register: -1,
+        has_destination: false
+    };
+}
+
+bool ccam_x64_emit_instruction(
+    List<string> output,
+    List<CCAMFunction> functions,
+    CCAMFunction fn,
+    int function_index,
+    int instruction_index
+) {
+    CCAMInstruction instruction = fn.instructions[instruction_index];
+    string here = ccam_x64_instruction_label(function_index, instruction_index);
+    ccam_x64_line(output, here + ":");
+    // The counter is checked before dispatch, matching CCAM's maxSteps rule:
+    // the instruction that exceeds the budget is not executed or counted.
+    ccam_x64_line(output, "    movq cap_steps(%rip), %rax");
+    ccam_x64_line(output, "    cmpq cap_max_steps(%rip), %rax");
+    ccam_x64_line(output, "    jae .Lcap_trap_step_limit");
+    ccam_x64_line(output, "    addq $1, %rax");
+    ccam_x64_line(output, "    movq %rax, cap_steps(%rip)");
+
+    if (instruction.op == CCAM_OP_CONST_I) {
+        ccam_x64_line(output, "    movabsq $" + int_to_str(instruction.int_value) + ", %rax");
+        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+        ccam_x64_mark_initialized(output, instruction.dst, fn.register_types.len());
+        return true;
+    }
+    if (instruction.op == CCAM_OP_CONST_B) {
+        int value = 0;
+        if (instruction.bool_value) { value = 1; }
+        ccam_x64_line(output, "    movq $" + int_to_str(value) + ", %rax");
+        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+        ccam_x64_mark_initialized(output, instruction.dst, fn.register_types.len());
+        return true;
+    }
+    if (instruction.op == CCAM_OP_MOVE) {
+        ccam_x64_check_initialized(output, instruction.src, fn.register_types.len());
+        ccam_x64_line(output, "    movq " + ccam_x64_slot(instruction.src) + ", %rax");
+        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+        ccam_x64_mark_initialized(output, instruction.dst, fn.register_types.len());
+        return true;
+    }
+    if (instruction.op == CCAM_OP_ADD_I ||
+        instruction.op == CCAM_OP_SUB_I ||
+        instruction.op == CCAM_OP_MUL_I) {
+        ccam_x64_check_initialized(output, instruction.lhs, fn.register_types.len());
+        ccam_x64_check_initialized(output, instruction.rhs, fn.register_types.len());
+        ccam_x64_line(output, "    movq " + ccam_x64_slot(instruction.lhs) + ", %rax");
+        string operation = "addq";
+        if (instruction.op == CCAM_OP_SUB_I) { operation = "subq"; }
+        if (instruction.op == CCAM_OP_MUL_I) { operation = "imulq"; }
+        ccam_x64_line(output, "    " + operation + " " + ccam_x64_slot(instruction.rhs) + ", %rax");
+        ccam_x64_line(output, "    jo .Lcap_trap_overflow");
+        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+        ccam_x64_mark_initialized(output, instruction.dst, fn.register_types.len());
+        return true;
+    }
+    if (instruction.op == CCAM_OP_DIV_I || instruction.op == CCAM_OP_REM_I) {
+        string safe = ".Lcap_f" + int_to_str(function_index) + "_divsafe" + int_to_str(instruction_index);
+        ccam_x64_check_initialized(output, instruction.lhs, fn.register_types.len());
+        ccam_x64_check_initialized(output, instruction.rhs, fn.register_types.len());
+        ccam_x64_line(output, "    movq " + ccam_x64_slot(instruction.lhs) + ", %rax");
+        ccam_x64_line(output, "    movq " + ccam_x64_slot(instruction.rhs) + ", %rcx");
+        ccam_x64_line(output, "    testq %rcx, %rcx");
+        ccam_x64_line(output, "    je .Lcap_trap_divzero");
+        ccam_x64_line(output, "    cmpq $-1, %rcx");
+        ccam_x64_line(output, "    jne " + safe);
+        ccam_x64_line(output, "    movabsq $-9223372036854775808, %rdx");
+        ccam_x64_line(output, "    cmpq %rdx, %rax");
+        ccam_x64_line(output, "    je .Lcap_trap_overflow");
+        ccam_x64_line(output, safe + ":");
+        ccam_x64_line(output, "    cqo");
+        ccam_x64_line(output, "    idivq %rcx");
+        if (instruction.op == CCAM_OP_REM_I) {
+            ccam_x64_line(output, "    movq %rdx, %rax");
+        }
+        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+        ccam_x64_mark_initialized(output, instruction.dst, fn.register_types.len());
+        return true;
+    }
+    if (instruction.op == CCAM_OP_EQ_I || instruction.op == CCAM_OP_LT_I) {
+        ccam_x64_check_initialized(output, instruction.lhs, fn.register_types.len());
+        ccam_x64_check_initialized(output, instruction.rhs, fn.register_types.len());
+        ccam_x64_line(output, "    movq " + ccam_x64_slot(instruction.lhs) + ", %rax");
+        ccam_x64_line(output, "    cmpq " + ccam_x64_slot(instruction.rhs) + ", %rax");
+        string condition = "sete";
+        if (instruction.op == CCAM_OP_LT_I) { condition = "setl"; }
+        ccam_x64_line(output, "    " + condition + " %al");
+        ccam_x64_line(output, "    movzbq %al, %rax");
+        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+        ccam_x64_mark_initialized(output, instruction.dst, fn.register_types.len());
+        return true;
+    }
+    if (instruction.op == CCAM_OP_NOT_B) {
+        ccam_x64_check_initialized(output, instruction.lhs, fn.register_types.len());
+        ccam_x64_line(output, "    cmpq $0, " + ccam_x64_slot(instruction.lhs));
+        ccam_x64_line(output, "    sete %al");
+        ccam_x64_line(output, "    movzbq %al, %rax");
+        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+        ccam_x64_mark_initialized(output, instruction.dst, fn.register_types.len());
+        return true;
+    }
+    if (instruction.op == CCAM_OP_JUMP) {
+        ccam_x64_line(output, "    jmp " + ccam_x64_instruction_label(function_index, instruction.target));
+        return true;
+    }
+    if (instruction.op == CCAM_OP_BRANCH) {
+        ccam_x64_check_initialized(output, instruction.lhs, fn.register_types.len());
+        ccam_x64_line(output, "    cmpq $0, " + ccam_x64_slot(instruction.lhs));
+        ccam_x64_line(output, "    jne " + ccam_x64_instruction_label(function_index, instruction.if_true));
+        ccam_x64_line(output, "    jmp " + ccam_x64_instruction_label(function_index, instruction.if_false));
+        return true;
+    }
+    if (instruction.op == CCAM_OP_CALL) {
+        CCAMCallSite site = ccam_x64_find_call_site(fn, instruction_index);
+        if (site.instruction_index < 0 || site.callee_index < 0 ||
+            site.callee_index >= functions.len() ||
+            site.argument_registers.len() > CCAM_X64_MAX_ARGUMENTS) {
+            return false;
+        }
+        List<string> argument_registers = new List<string>();
+        argument_registers.push("%rdi");
+        argument_registers.push("%rsi");
+        argument_registers.push("%rdx");
+        argument_registers.push("%rcx");
+        argument_registers.push("%r8");
+        argument_registers.push("%r9");
+        for (int a = 0; a < site.argument_registers.len(); a += 1) {
+            ccam_x64_check_initialized(output, site.argument_registers[a], fn.register_types.len());
+            ccam_x64_line(output, "    movq " + ccam_x64_slot(site.argument_registers[a]) + ", " + argument_registers[a]);
+        }
+        ccam_x64_line(output, "    movq cap_depth(%rip), %rax");
+        ccam_x64_line(output, "    cmpq cap_max_depth(%rip), %rax");
+        ccam_x64_line(output, "    jae .Lcap_trap_call_depth");
+        ccam_x64_line(output, "    addq $1, %rax");
+        ccam_x64_line(output, "    movq %rax, cap_depth(%rip)");
+        ccam_x64_line(output, "    call " + ccam_x64_function_label(site.callee_index));
+        if (site.has_destination) {
+            ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(site.destination_register));
+            ccam_x64_mark_initialized(output, site.destination_register, fn.register_types.len());
+        }
+        return true;
+    }
+    if (instruction.op == CCAM_OP_RET) {
+        ccam_x64_check_initialized(output, instruction.lhs, fn.register_types.len());
+        ccam_x64_line(output, "    movq " + ccam_x64_slot(instruction.lhs) + ", %rax");
+        ccam_x64_line(output, "    subq $1, cap_depth(%rip)");
+        ccam_x64_line(output, "    leave");
+        ccam_x64_line(output, "    ret");
+        return true;
+    }
+    if (instruction.op == CCAM_OP_RET_VOID) {
+        ccam_x64_line(output, "    xorq %rax, %rax");
+        ccam_x64_line(output, "    subq $1, cap_depth(%rip)");
+        ccam_x64_line(output, "    leave");
+        ccam_x64_line(output, "    ret");
+        return true;
+    }
+    if (instruction.op == CCAM_OP_TRAP) {
+        ccam_x64_line(output, "    jmp .Lcap_trap_explicit");
+        return true;
+    }
+    return false;
+}
+
+bool ccam_x64_emit_function(
+    List<string> output,
+    List<CCAMFunction> functions,
+    int function_index
+) {
+    CCAMFunction fn = functions[function_index];
+    if (fn.parameter_count > CCAM_X64_MAX_ARGUMENTS) { return false; }
+    int frame_bytes = ((fn.register_types.len() * 16 + 15) / 16) * 16;
+    ccam_x64_line(output, ".type " + ccam_x64_function_label(function_index) + ", @function");
+    ccam_x64_line(output, ccam_x64_function_label(function_index) + ":");
+    ccam_x64_line(output, "    pushq %rbp");
+    ccam_x64_line(output, "    movq %rsp, %rbp");
+    if (frame_bytes > 0) {
+        ccam_x64_line(output, "    subq $" + int_to_str(frame_bytes) + ", %rsp");
+    }
+    List<string> argument_registers = new List<string>();
+    argument_registers.push("%rdi");
+    argument_registers.push("%rsi");
+    argument_registers.push("%rdx");
+    argument_registers.push("%rcx");
+    argument_registers.push("%r8");
+    argument_registers.push("%r9");
+    for (int r = 0; r < fn.register_types.len(); r += 1) {
+        ccam_x64_line(output, "    movq $0, " + ccam_x64_init_slot(r, fn.register_types.len()));
+    }
+    for (int p = 0; p < fn.parameter_count; p += 1) {
+        ccam_x64_line(output, "    movq " + argument_registers[p] + ", %rax");
+        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(p));
+        ccam_x64_mark_initialized(output, p, fn.register_types.len());
+    }
+    for (int i = 0; i < fn.instructions.len(); i += 1) {
+        if (!ccam_x64_emit_instruction(output, functions, fn, function_index, i)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+CCAMNativeResult ccam_x64_emit_linux_elf(
+    List<CCAMFunction> functions,
+    int entry_function,
+    int max_steps,
+    int max_depth
+) {
+    CCAMValidationResult valid = ccam_validate_multi_function(functions, entry_function);
+    if (!valid.ok) {
+        return new CCAMNativeResult{ok: false, assembly: "", error: "invalid_ccam:" + valid.error};
+    }
+    if (max_steps < 0 || max_steps > CCAM_MAX_STEPS ||
+        max_depth < 1 || max_depth > CCAM_MAX_CALL_DEPTH) {
+        return new CCAMNativeResult{ok: false, assembly: "", error: "invalid_machine_limits"};
+    }
+    CCAMFunction entry = functions[entry_function];
+    if (entry.parameter_count != 0 ||
+        (entry.return_type != CCAM_RETURN_INT && entry.return_type != CCAM_RETURN_VOID)) {
+        return new CCAMNativeResult{ok: false, assembly: "", error: "invalid_entry_signature"};
+    }
+
+    List<string> output = new List<string>();
+    ccam_x64_line(output, ".text");
+    ccam_x64_line(output, ".globl _start");
+    ccam_x64_line(output, ".type _start, @function");
+    ccam_x64_line(output, "_start:");
+    ccam_x64_line(output, "    xorq %rbp, %rbp");
+    ccam_x64_line(output, "    movq $1, cap_depth(%rip)");
+    ccam_x64_line(output, "    call " + ccam_x64_function_label(entry_function));
+    ccam_x64_line(output, "    movq %rax, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    for (int f = 0; f < functions.len(); f += 1) {
+        if (!ccam_x64_emit_function(output, functions, f)) {
+            return new CCAMNativeResult{ok: false, assembly: "", error: "unsupported_native_instruction_or_abi"};
+        }
+    }
+    ccam_x64_line(output, ".Lcap_trap_overflow:");
+    ccam_x64_line(output, "    movq $70, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_trap_divzero:");
+    ccam_x64_line(output, "    movq $71, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_trap_explicit:");
+    ccam_x64_line(output, "    movq $72, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_trap_uninitialised:");
+    ccam_x64_line(output, "    movq $75, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_trap_step_limit:");
+    ccam_x64_line(output, "    movq $73, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_trap_call_depth:");
+    ccam_x64_line(output, "    movq $74, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_exit:");
+    ccam_x64_line(output, "    movq $60, %rax");
+    ccam_x64_line(output, "    syscall");
+    ccam_x64_line(output, ".bss");
+    ccam_x64_line(output, ".align 8");
+    ccam_x64_line(output, "cap_steps: .zero 8");
+    ccam_x64_line(output, "cap_depth: .zero 8");
+    ccam_x64_line(output, ".data");
+    ccam_x64_line(output, ".align 8");
+    ccam_x64_line(output, "cap_max_steps: .quad " + int_to_str(max_steps));
+    ccam_x64_line(output, "cap_max_depth: .quad " + int_to_str(max_depth));
+    ccam_x64_line(output, ".section .note.GNU-stack, \"\", @progbits");
+    return new CCAMNativeResult{ok: true, assembly: join(output, ""), error: ""};
+}
+
+bool ccam_x64_contains(string value, string needle) {
+    if (needle.len() == 0) { return true; }
+    if (needle.len() > value.len()) { return false; }
+    for (int i = 0; i <= value.len() - needle.len(); i += 1) {
+        if (value.slice(i, i + needle.len()) == needle) { return true; }
+    }
+    return false;
+}
+
+
+bool ccam_x64_write_test_program(
+    string source_text,
+    string output_path,
+    int max_steps,
+    int max_depth
+) {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("native-backend-test.cap");
+    Tainted source = taint(source_text);
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    if (error_count(context) != 0) { return false; }
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    if (!lowered.ok) { return false; }
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(
+        lowered.functions, lowered.entry_function, max_steps, max_depth);
+    if (!native.ok) { return false; }
+    return write_file(output_path, native.assembly);
+}
+
+test "CCAM x86-64 backend emits freestanding checked native assembly" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("native-x64.cap");
+    Tainted source = taint("int add(int left, int right) { return left + right; } int main() { return add(19, 23); }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(native.ok && native.error == "");
+    assert(ccam_x64_contains(native.assembly, ".globl _start"));
+    assert(ccam_x64_contains(native.assembly, "call " + ccam_x64_function_label(lowered.entry_function)));\n    assert(ccam_x64_contains(native.assembly, "call cap_fn_0"));
+    assert(ccam_x64_contains(native.assembly, "syscall"));
+    assert(ccam_x64_contains(native.assembly, "cap_max_steps: .quad 100"));
+    assert(ccam_x64_contains(native.assembly, "cap_max_depth: .quad 16"));
+    assert(!ccam_x64_contains(native.assembly, "#include"));
+    assert(!ccam_x64_contains(native.assembly, "capstan_rt"));
+    assert(write_file("build/ccam-native-x64.s", native.assembly));
+}
+
+
+test "CCAM x86-64 backend emits loop and conditional control flow" {
+    assert(ccam_x64_write_test_program(
+        "int main() { int value = 0; while (value < 42) { value += 6; } if (value == 42) { return value; } return 0; }",
+        "build/ccam-native-x64-loop.s", 1000, 16));
+}
+
+test "CCAM x86-64 backend emits checked overflow and division traps" {
+    assert(ccam_x64_write_test_program(
+        "int main() { return 9223372036854775807 + 1; }",
+        "build/ccam-native-x64-overflow.s", 100, 16));
+    assert(ccam_x64_write_test_program(
+        "int main() { int numerator = 1; int denominator = 0; return numerator / denominator; }",
+        "build/ccam-native-x64-divzero.s", 100, 16));
+}
+
+test "CCAM x86-64 backend emits step and call-depth guards" {
+    assert(ccam_x64_write_test_program(
+        "int main() { return 42; }",
+        "build/ccam-native-x64-step-limit.s", 0, 16));
+    assert(ccam_x64_write_test_program(
+        "int recurse(int value) { return recurse(value); } int main() { return recurse(1); }",
+        "build/ccam-native-x64-depth-limit.s", 100, 1));
+}
+
+
+test "CCAM x86-64 backend preserves uninitialised register traps" {
+    List<int> register_types = new List<int>();
+    register_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> instructions = new List<CCAMInstruction>();
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+    ret.lhs = 0;
+    instructions.push(ret);
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main",
+        register_types: register_types,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_INT,
+        instructions: instructions,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(functions, 0, 100, 16);
+    assert(native.ok);
+    assert(write_file("build/ccam-native-x64-uninitialised.s", native.assembly));
+}
+
+test "CCAM x86-64 backend rejects unsupported argument counts" {
+    List<int> types = new List<int>();
+    for (int i = 0; i < 7; i += 1) { types.push(CCAM_TYPE_INT); }
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET_VOID);
+    code.push(ret);
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: types, parameter_count: 7,
+        return_type: CCAM_RETURN_VOID, instructions: code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(functions, 0, 100, 16);
+    assert(!native.ok && native.assembly == "");
+}
