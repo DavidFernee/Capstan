@@ -88,8 +88,17 @@ if not binary.search(c):
 
 query = re.search(r'CAP_LIT\("select \?",\s*8\)', c)
 query_arg = re.search(r'__auto_type\s+\w+\s*=\s*fn_make\(\)', c[query.end():]) if query else None
-if not query or not query_arg:
-    print("sql_query literal or later argument is missing from generated C")
+if not query:
+    print("sql_query literal is missing from generated C")
+    pos = c.find("cap_sql_query(")
+    if pos >= 0:
+        print(c[max(0, pos - 900):pos + 300])
+    raise SystemExit(1)
+if not query_arg:
+    print("sql_query later argument is not materialised in a temporary after the query literal")
+    pos = c.find("cap_sql_query(")
+    if pos >= 0:
+        print(c[max(0, pos - 1200):pos + 300])
     raise SystemExit(1)
 query_arg_end = query.end() + query_arg.end()
 check_special_order("sql_query", [query.end(), query_arg_end], "cap_sql_query(", 1)
