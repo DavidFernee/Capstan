@@ -210,16 +210,22 @@ CCAMRegisterResult ccam_register_bool(bool value) {
 }
 
 CCAMRegisterFileResult ccam_registers_create(List<int> types) {
-    List<CCAMRegister> registers = new List<CCAMRegister>();
+    // Validate the complete type vector before constructing any register.
     for (int i = 0; i < types.len(); i += 1) {
         int declared_type = types[i];
         if (declared_type != CCAM_TYPE_INT && declared_type != CCAM_TYPE_BOOL) {
+            List<CCAMRegister> empty = new List<CCAMRegister>();
             return new CCAMRegisterFileResult{
                 ok: false,
-                registers: registers,
+                registers: empty,
                 error: "invalid_register_type"
             };
         }
+    }
+
+    List<CCAMRegister> registers = new List<CCAMRegister>();
+    for (int i = 0; i < types.len(); i += 1) {
+        int declared_type = types[i];
         CCAMRegister reg = new CCAMRegister{
             declared_type: declared_type,
             initialized: false,
@@ -338,4 +344,12 @@ test "CCAM register-file constructor rejects unknown type tags" {
     future.push(3);
     CCAMRegisterFileResult future_result = ccam_registers_create(future);
     assert(!future_result.ok && future_result.error == "invalid_register_type");
+
+    List<int> mixed = new List<int>();
+    mixed.push(CCAM_TYPE_INT);
+    mixed.push(CCAM_TYPE_BOOL);
+    mixed.push(0);
+    CCAMRegisterFileResult mixed_result = ccam_registers_create(mixed);
+    assert(!mixed_result.ok && mixed_result.error == "invalid_register_type");
+    assert(mixed_result.registers.len() == 0);
 }
