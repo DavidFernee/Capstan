@@ -46,72 +46,72 @@ def validateMachineInstr {n m : Nat} {types : RegTypes n}
   | .constInt dst value =>
       let d ← typedRegister? types dst .int
       if hv : inI64B value = true then
-        pure .constInt d.1 value d.2 hv
+        pure (.constInt d.1 value d.2 hv)
       else none
   | .constBool dst value =>
       let d ← typedRegister? types dst .bool
-      pure .constBool d.1 value d.2
+      pure (.constBool d.1 value d.2)
   | .move dst src =>
       let d ← finOfNat? n dst
       let s ← finOfNat? n src
       if hs : types d = types s then
-        pure .move ⟨d, s, hs⟩
+        pure (.move ⟨d, s, hs⟩)
       else none
   | .add dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      pure .add ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure (.add ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩)
   | .sub dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      pure .sub ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure (.sub ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩)
   | .mul dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      pure .mul ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure (.mul ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩)
   | .div dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      pure .div ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure (.div ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩)
   | .rem dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      pure .rem ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure (.rem ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩)
   | .lessThan dst lhs rhs =>
       let d ← typedRegister? types dst .bool
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      pure .lessThan ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure (.lessThan ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩)
   | .equal dst lhs rhs =>
       let d ← typedRegister? types dst .bool
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      pure .equal ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
+      pure (.equal ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩)
   | .booleanNot dst src =>
       let d ← typedRegister? types dst .bool
       let s ← typedRegister? types src .bool
-      pure .booleanNot ⟨d.1, s.1, d.2, s.2⟩
+      pure (.booleanNot ⟨d.1, s.1, d.2, s.2⟩)
   | .jump target =>
       let t ← finOfNat? m target
-      pure .jump t
+      pure (.jump t)
   | .branch cond ifTrue ifFalse =>
       let c ← typedRegister? types cond .bool
       let t ← finOfNat? m ifTrue
       let f ← finOfNat? m ifFalse
-      pure .branch ⟨c.1, c.2, t, f⟩
+      pure (.branch ⟨c.1, c.2, t, f⟩)
   | .retInt src =>
       let s ← typedRegister? types src .int
-      pure .retInt s.1 s.2
+      pure (.retInt s.1 s.2)
   | .retBool src =>
       let s ← typedRegister? types src .bool
-      pure .retBool s.1 s.2
-  | .retVoid => pure .retVoid
-  | .explicitTrap reason => pure .explicitTrap reason
+      pure (.retBool s.1 s.2)
+  | .retVoid => pure (.retVoid)
+  | .explicitTrap reason => pure (.explicitTrap reason)
 
 /-- Function-level return contract for a single CCAM function. -/
 inductive RawReturnType where
@@ -192,11 +192,13 @@ theorem validateSingleFrameProgram_entry_sound
   | none => simp [hentry] at h
   | some entry =>
       simp [hentry] at h
-      split at h
-      · split at h
-        · simp_all
-        · simp_all
-      · simp_all
+      rcases h with ⟨_, _, hp⟩
+      have he : entry = program.entry := congrArg FiniteProgram.entry hp
+      have hval : entry.val = raw.entry := by
+        have hm := congrArg (Option.map Fin.val) hentry
+        simpa [finOfNat?] using hm
+      rw [← he]
+      exact hval
 
 /-- Every accepted program has an explicit control effect at its final slot. -/
 theorem validateSingleFrameProgram_final_terminal
