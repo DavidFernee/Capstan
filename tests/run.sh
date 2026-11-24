@@ -290,7 +290,21 @@ done
 # and recovery tests (their columns and lexical errors are what they test), formatter inputs and
 # files marked `// fmt: off` (a lexical test that needs tabs and CRLF).
 STYLED=$(cd "$ROOT" && grep -L '^// fmt: off' compiler/*.cap tools/*.cap lib/*.cap lib/shroud/*.cap examples/*.cap examples/shroud/*.cap bench/*.cap tests/{accept,reject,runtime,gc,io,crypto,shroud}/*.cap 2>/dev/null)
-if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then ok "$(wc -w <<<"$STYLED") repository sources are formatted"; else bad "house style" "run bin/capstan fmt on: $out"; fi
+if out="$(cd "$ROOT" && "$F" --check $STYLED)"; then
+  ok "$(wc -w <<<"$STYLED") repository sources are formatted"
+else
+  # Show the formatter rewrite so house-style failures are actionable in CI.
+  while IFS= read -r f; do
+    [[ -f "$f" ]] || continue
+    cp "$f" "$tmp/house-style.before"
+    if "$F" "$tmp/house-style.before" >/dev/null 2>&1; then
+      if ! cmp -s "$f" "$tmp/house-style.before"; then
+        diff -u --label "$f" --label "$f (formatter output)" "$f" "$tmp/house-style.before" || true
+      fi
+    fi
+  done <<< "$out"
+  bad "house style" "run bin/capstan fmt on: $out"
+fi
 cp "$ROOT/tests/fmt/layout.cap" "$tmp/bad.cap"; printf 'int main() { return 0 @ 1; }\n' > "$tmp/lexerr.cap"; cp "$tmp/lexerr.cap" "$tmp/lexerr.keep"
 "$F" --check "$tmp/bad.cap" >/dev/null; c1=$?; "$F" "$tmp/lexerr.cap" >/dev/null; c2=$?
 if [[ $c1 -eq 1 && $c2 -eq 2 ]] && cmp -s "$tmp/lexerr.cap" "$tmp/lexerr.keep" && cmp -s "$tmp/bad.cap" "$ROOT/tests/fmt/layout.cap"; then ok "--check changes nothing and exits 1; unscannable files are refused and left alone"

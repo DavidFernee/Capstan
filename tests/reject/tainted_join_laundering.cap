@@ -1,0 +1,7 @@
+// expect: untrusted input (Tainted) used as a trusted string
+int main() {
+    List<Tainted> pieces = new List<Tainted>();
+    pieces.push(taint("untrusted"));
+    string leaked = join(pieces, "");
+    return 0;
+}
