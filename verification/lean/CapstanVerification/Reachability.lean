@@ -70,7 +70,7 @@ theorem reachable_final_instruction_terminal
   · exact hterminal
   · cases hedge with
     | jump hcode =>
-        simpa [hcode, machineInstrIsTerminal]
+        simp [hcode, machineInstrIsTerminal]
     | branchTrue hcode =>
         simpa [hcode, machineInstrIsTerminal]
     | branchFalse hcode =>
@@ -85,7 +85,7 @@ theorem reachable_ordinary_has_fallthrough
     {n m : Nat} {types : RegTypes n}
     (program : ReachableValidatedProgram n m types)
     (pc : Fin (m + 1))
-    (hreached : ReachablePC program.code pc)
+    (_hreached : ReachablePC program.code pc)
     (hnonterminal : machineInstrIsTerminal (program.code pc) = false)
     (hbeforeLast : pc.val < m) :
     HasControlSuccessor program.code pc ⟨pc.val + 1, by omega⟩ :=
