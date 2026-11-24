@@ -1509,12 +1509,15 @@ test "CCAM validator rejects invalid branch targets and reachable fallthrough" {
         types, bad_target, CCAM_RETURN_VOID);
     assert(!result.ok && result.error == "invalid_branch_target");
 
-    List<int> no_registers = new List<int>();
+    List<int> fallthrough_types = new List<int>();
+    fallthrough_types.push(CCAM_TYPE_INT);
     List<CCAMInstruction> falls_through = new List<CCAMInstruction>();
-    falls_through.push(ccam_instruction(CCAM_OP_CONST_I));
+    CCAMInstruction final_write = ccam_instruction(CCAM_OP_CONST_I);
+    final_write.dst = 0;
+    falls_through.push(final_write);
     result = ccam_validate_single_frame(
-        no_registers, falls_through, CCAM_RETURN_INT);
-    assert(!result.ok && result.error == "invalid_or_mistyped_destination");
+        fallthrough_types, falls_through, CCAM_RETURN_INT);
+    assert(!result.ok && result.error == "reachable_fallthrough");
 }
 
 test "CCAM validator permits unreachable fallthrough but validates unreachable instructions" {
