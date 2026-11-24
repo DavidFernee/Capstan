@@ -263,6 +263,26 @@ def load(cvelist, year):
     rows.sort(key=lambda row: row["id"])
     return rows
 
+def study_snapshot(root):
+    """Return the exact clean Capstan source revision used to generate this study."""
+    try:
+        commit = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--verify", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "-C", root, "status", "--porcelain", "--untracked-files=all"],
+            check=True, capture_output=True, text=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError("Capstan study source must be a verifiable Git checkout") from error
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise RuntimeError(f"invalid Capstan study Git commit: {commit!r}")
+    if status:
+        raise RuntimeError("Capstan study checkout is dirty; commit the study code before generating results")
+    return commit
+
+
 def load_reviewed(rows, path):
     """Load manual labels and reject duplicates, stale IDs and unknown classes."""
     if not os.path.exists(path):
@@ -427,6 +447,7 @@ def main():
     year = 2025
     if "--year" in args:
         year = int(args[args.index("--year") + 1])
+    study_commit = study_snapshot(ROOT)
     rows = load(args[0], year)
     snapshot = source_snapshot(args[0])
     atlas = atlas_verdicts()
@@ -470,7 +491,7 @@ def main():
     tuning = check_labels(rows, atlas, "labels.csv")
     heldout = check_labels(rows, atlas, "labels-heldout.csv")
     json.dump({"year": year, "source_repository": "https://github.com/CVEProject/cvelistV5",
-               "source_commit": snapshot, "total": n, "reviewed": n_reviewed,
+               "source_commit": snapshot, "study_commit": study_commit, "total": n, "reviewed": n_reviewed,\n               "independent_review_status": "NOT PERFORMED", "assurance_use": "RESEARCH ONLY",
                "buckets": {b: by_bucket[b] for b in BUCKETS}, "memory_safety": mem,
                "with_k1": {b: proj[b] for b in BUCKETS},
                "k1_10_proof_eligibility_projection": {b: fin[b] for b in BUCKETS + [PROOF_ELIGIBLE]},
@@ -484,6 +505,8 @@ def main():
       "every rule are below, so the result can be checked and re-run each year "
       "([DESIGN-MAP.md](DESIGN-MAP.md), section 7, K0).\n")
     p("## Result\n")
+    p(f"Study implementation commit: `{study_commit}`. CVE List source commit: `{snapshot}`.")
+    p("**Validation status: NOT INDEPENDENTLY VALIDATED.** The checked-in label overrides were produced by the same AI assistant that developed the classifier; independent human relabelling has not been completed. This is a research estimate, not release assurance. Do not interpret K1 projections or proof-eligibility ceilings as implemented Capstan capability.\n")
     p(f"**{n:,} CVEs** published in {year} by the Linux kernel's CVE Numbering Authority. "
       f"{n - n_reviewed:,} were classified automatically from their fix descriptions and {n_reviewed:,} were "
       f"read and classified by a reviewer, because the rules could not decide them or decided them wrongly. "
