@@ -218,7 +218,7 @@ def load(cvelist, year):
                 identifier_year, sequence = cve_id.split("-")[1:]
                 relative = os.path.relpath(path, root).split(os.sep)
                 if (identifier_year != sub or len(relative) != 3
-                        or relative[1] != sequence[:2] + "xxx"):
+                        or relative[1] != sequence[:-3] + "xxx"):
                     raise RuntimeError(f"CVE identifier does not match its source directory: {path}")
                 if published_date.year != year:
                     continue

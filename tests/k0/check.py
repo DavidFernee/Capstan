@@ -30,7 +30,7 @@ def record(cve_id, published, assigner="Linux", state="PUBLISHED"):
 
 
 def put(root, identifier_year, cve_id, value):
-    directory = root / "cves" / str(identifier_year) / (cve_id.split("-")[2][:2] + "xxx")
+    directory = root / "cves" / str(identifier_year) / (cve_id.split("-")[2][:-3] + "xxx")
     directory.mkdir(parents=True, exist_ok=True)
     (directory / (cve_id + ".json")).write_text(json.dumps(value), encoding="utf-8")
 
@@ -41,10 +41,11 @@ with tempfile.TemporaryDirectory() as temporary:
         (root / "cves" / str(y)).mkdir(parents=True)
     put(root, 2023, "CVE-2023-54098", record("CVE-2023-54098", "2025-12-24"))
     put(root, 2025, "CVE-2025-10001", record("CVE-2025-10001", "2025-03-01"))
+    put(root, 2025, "CVE-2025-0001", record("CVE-2025-0001", "2025-03-02"))
     put(root, 2025, "CVE-2025-10002", record("CVE-2025-10002", "2025-03-01", "Other"))
     rows = study.load(str(root), 2025)
     ids = {row["id"] for row in rows}
-    assert ids == {"CVE-2023-54098", "CVE-2025-10001"}, ids
+    assert ids == {"CVE-2023-54098", "CVE-2025-10001", "CVE-2025-0001"}, ids
     delayed = next(row for row in rows if row["id"] == "CVE-2023-54098")
     assert delayed["date"] == "2025-12-24"
 
