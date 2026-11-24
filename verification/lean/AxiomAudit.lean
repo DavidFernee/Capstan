@@ -12,6 +12,7 @@ import CapstanVerification.RuntimeBridge
 #print axioms CapstanVerification.executeAdd_left_read_error_precedence
 #print axioms CapstanVerification.executeAdd_preserves_well_typed
 #print axioms CapstanVerification.write_preserves_well_typed
+#print axioms CapstanVerification.checkedI64_sound
 #print axioms CapstanVerification.checkedAdd_sound
 #print axioms CapstanVerification.checkedSub_sound
 #print axioms CapstanVerification.checkedMul_sound
@@ -49,11 +50,7 @@ import CapstanVerification.RuntimeBridge
 #print axioms CapstanVerification.popNestedCallFrame_decreases_depth
 #print axioms CapstanVerification.popNestedCallFrame_entry_refused
 
-#print axioms CapstanVerification.popNestedCallFrame
-#print axioms CapstanVerification.popNestedCallFrame_restores_caller
-#print axioms CapstanVerification.popNestedCallFrame_decreases_depth
 #print axioms CapstanVerification.popNestedCallFrame_within_limit
-#print axioms CapstanVerification.popNestedCallFrame_entry_refused
 
 #print axioms CapstanVerification.consumeStep
 #print axioms CapstanVerification.consumeStep_increments
