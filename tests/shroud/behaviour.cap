@@ -380,6 +380,7 @@ void test_single_line_oversized_paste(Tally t, Ui ui) {
     Tainted initial = taint("A");
     ui.render(column().add(text_field("f", initial, "Name").key("f")), 0);
     click_at(ui, "f", 10);
+    ui.handle(key_event(KEY_END, 0, 15));
 
     // The oversized event is rejected before decoding or changing the field/caret.
     Tainted oversized = taint(repeated_ascii(MAX_FIELD_BYTES + 1));
