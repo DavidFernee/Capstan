@@ -129,6 +129,62 @@ theorem checkedAdd_sound (a b result : Int)
     (h : checkedAdd a b = .ok result) : inI64 result := by
   exact checkedI64_sound (a + b) result h
 
+
+/-- Dynamic integer-register read: uninitialised and wrong-kind reads trap. -/
+def readInt {n : Nat} (regs : Registers n) (index : Fin n) : Except Trap Int :=
+  match regs index with
+  | none => .error .uninitialisedRegister
+  | some (.int value) => .ok value
+  | some (.bool _) => .error .typeMismatch
+
+/-- An addition instruction carries its static register-type obligations. -/
+structure AddInstr (n : Nat) (types : RegTypes n) where
+  dst : Fin n
+  lhs : Fin n
+  rhs : Fin n
+  dst_is_int : types dst = .int
+  lhs_is_int : types lhs = .int
+  rhs_is_int : types rhs = .int
+
+/-- One atomic CCAM integer-add transition, with left-to-right operand reads. -/
+def executeAdd {n : Nat} {types : RegTypes n}
+    (regs : Registers n) (instr : AddInstr n types) : Except Trap (Registers n) :=
+  match readInt regs instr.lhs, readInt regs instr.rhs with
+  | .error e, _ => .error e
+  | _, .error e => .error e
+  | .ok a, .ok b =>
+    match checkedAdd a b with
+    | .error e => .error e
+    | .ok result => .ok (write regs instr.dst (.int result))
+
+/-- A successful typed add instruction preserves the register-file invariant. -/
+theorem executeAdd_preserves_well_typed
+    {n : Nat} {types : RegTypes n} {regs next : Registers n}
+    (hregs : WellTyped types regs)
+    (instr : AddInstr n types)
+    (hstep : executeAdd regs instr = .ok next) :
+    WellTyped types next := by
+  unfold executeAdd at hstep
+  cases hleft : readInt regs instr.lhs with
+  | error e =>
+    simp [hleft] at hstep
+  | ok a =>
+    cases hright : readInt regs instr.rhs with
+    | error e =>
+      simp [hleft, hright] at hstep
+    | ok b =>
+      cases hadd : checkedAdd a b with
+      | error e =>
+        simp [hleft, hright, hadd] at hstep
+      | ok result =>
+        simp [hleft, hright, hadd] at hstep
+        cases hstep
+        have hresult : inI64 result := checkedAdd_sound a b result hadd
+        have hvalue : hasType (.int result) (types instr.dst) := by
+          simp [hasType, instr.dst_is_int, hresult]
+        exact write_preserves_well_typed hregs instr.dst (.int result) hvalue
+
+
 theorem checkedSub_sound (a b result : Int)
     (h : checkedSub a b = .ok result) : inI64 result := by
   exact checkedI64_sound (a - b) result h
