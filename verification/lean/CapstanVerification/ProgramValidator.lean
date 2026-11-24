@@ -113,16 +113,51 @@ def validateMachineInstr {n m : Nat} {types : RegTypes n}
   | .retVoid => exact .retVoid
   | .explicitTrap reason => exact .explicitTrap reason
 
+/-- Function-level return contract for a single CCAM function. -/
+inductive RawReturnType where
+  | int
+  | bool
+  | void
+  deriving DecidableEq, Repr
+
+/-- Add the function's return contract to instruction validation. -/
+def validateFunctionInstr {n m : Nat} {types : RegTypes n}
+    (returnType : RawReturnType) (raw : RawMachineInstr) :
+    Option (MachineInstr n m types) :=
+  match raw with
+  | .retInt _ =>
+      if returnType = .int then validateMachineInstr raw else none
+  | .retBool _ =>
+      if returnType = .bool then validateMachineInstr raw else none
+  | .retVoid =>
+      if returnType = .void then validateMachineInstr raw else none
+  | _ => validateMachineInstr raw
+
+/-- A return instruction cannot validate against a different function return type. -/
+theorem validateFunctionInstr_rejects_return_mismatch
+    {n m : Nat} {types : RegTypes n}
+    (returnType : RawReturnType) (raw : RawMachineInstr)
+    (hmismatch :
+      (match raw with
+       | .retInt _ => returnType ≠ .int
+       | .retBool _ => returnType ≠ .bool
+       | .retVoid => returnType ≠ .void
+       | _ => False) ) :
+    validateFunctionInstr (n := n) (m := m) (types := types)
+      returnType raw = none := by
+  cases raw <;> simp_all [validateFunctionInstr]
+
 /-- Raw single-frame program: untrusted entry and instruction operands. -/
 structure RawSingleFrameProgram (n m : Nat) (types : RegTypes n) where
   code : Fin (m + 1) → RawMachineInstr
   entry : Nat
+  returnType : RawReturnType
 
 /-- A successful whole-program validation produces the formal finite machine program. -/
 def validateSingleFrameProgram {n m : Nat} {types : RegTypes n}
     (raw : RawSingleFrameProgram n m types) : Option (FiniteProgram n m types) := do
   let entry ← finOfNat? (m + 1) raw.entry
-  let decoded := fun pc => validateMachineInstr (m := m + 1) (raw.code pc)
+  let decoded := fun pc => validateFunctionInstr (m := n) (m := m + 1) raw.returnType (raw.code pc)
   if hall : ∀ pc, (decoded pc).isSome then
     let typed : Fin (m + 1) → MachineInstr n (m + 1) types :=
       fun pc => (decoded pc).get (hall pc)
