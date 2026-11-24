@@ -153,7 +153,7 @@ S1 must make native failures explicit and recoverable where the OS permits:
 
 The current `new_pixmap()` rejects invalid dimensions by stopping the process. Before native embedding, the public host construction/resize boundary must validate dimensions and return a typed failure before calling that path. Platform errors and OS-provided strings are untrusted; they must not become trusted labels or format strings.
 
-All buffers must have checked size/stride arithmetic and explicit maximum dimensions. The current software pixmap limit is 16,384 pixels per side; practical host limits should be lower and configurable to avoid allocating near the theoretical maximum. Native buffers, staging copies and accessibility objects must be released on every failure path.
+All buffers must have checked size/stride arithmetic and explicit maximum dimensions and total-byte/pixel budgets. The S0 software pixmap currently enforces a 16,384-pixel per-side limit; PR #79 proposes an additional 16,777,216-pixel per-pixmap cap, but it is not yet merged. S1 host limits should be lower and configurable. Budget the Shroud pixmap, any copied/staging frame, native surface buffers and accessibility objects separately; a per-pixmap cap is not an aggregate process-memory limit. Release every allocation on every failure path.
 
 ## 11. Platform rollout
 
