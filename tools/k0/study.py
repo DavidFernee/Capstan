@@ -3,8 +3,8 @@
 Usage:
     python3 tools/k0/study.py CVELIST_DIR [--year 2025]
 
-CVELIST_DIR is a checkout of https://github.com/CVEProject/cvelistV5 (a sparse checkout of the
-cves/<year> and cves/<year-1> folders is enough). The study takes every CVE published in the
+CVELIST_DIR is a complete checkout of https://github.com/CVEProject/cvelistV5. The study scans
+all identifier-year directories (not just the publication year) and takes every CVE published in the
 given calendar year by the Linux kernel's CNA, classifies it from its fix description
 (classify.py), runs each class through the CWE atlas (docs/CWE-ATLAS.md), and writes:
 
@@ -61,6 +61,11 @@ WEAKEST_FIRST = [OUTSIDE, LOGIC, RUNTIME, COMPILE]
 KERNEL_OVERRIDES = {
     "CWE-401": "Leaks are collected by Capstan's garbage collector, but kernel code cannot use a "
                "collector that pauses at arbitrary moments. Needs deterministic memory management (K1).",
+    "CWE-415": "Kernel allocators and explicit release paths are not governed by Capstan's application "
+               "memory model. Double/invalid-free prevention in kernel code depends on K1.1 ownership.",
+    "CWE-416": "The application memory model does not establish safe lifetime rules for kernel allocators, "
+               "DMA, callbacks or externally owned objects. Use-after-free prevention in kernel code "
+               "depends on K1.1 ownership.",
     "CWE-772": "Capstan has no handles to leak today; kernel code holds reference counts, locks and "
                "device resources. Needs ownership of resources (K1).",
     "CWE-362": "Capstan has no threads yet, so races are inexpressible only because concurrency is. "
@@ -80,6 +85,8 @@ OVERRIDE_BUCKET = {cwe: (UNKNOWN if cwe == "CWE-617" else OUTSIDE) for cwe in KE
 # and K2 will test it on real kernel code.
 PROJECTION = {
     "memory leak": (COMPILE, "K1.1 ownership"),
+    "use-after-free": (COMPILE, "K1.1 ownership and lifetime-checked references"),
+    "double or invalid free": (COMPILE, "K1.1 ownership and linear release"),
     "resource leak": (COMPILE, "K1.1 linear resources"),
     "improper locking": (COMPILE, "K1.2 guarded data, RCU type; K1.3 contexts"),
     "deadlock": (COMPILE, "K1.4 lock levels (dynamic orders: safe stop)"),
@@ -95,9 +102,9 @@ PROVABLE = {"logic error", "insufficient validation", "race condition", "hang or
 SPECTRE_V1 = re.compile(r"nospec|array_index|\bindex\b|opcode|speculat\w* (load|read|access)", re.I)
 # Races split: a race on shared data is a data race, which K1.2 rejects; a race between a device's
 # teardown and its callbacks is what K1.5 rules out. Races in ordering logic beyond these stay logic.
-DATA_RACE = re.compile(r"data-race|kcsan|read_once|write_once|without (holding |taking )?(the )?\\w* ?lock|"
-                       r"(missing|no|under|outside( of)?) (the )?\\w* ?(lock|rcu)|concurrent(ly)? (access|modif|updat|writ)|"
-                       r"\\b(unregist\\w*|remov(e|al|ing)|teardown|unbind|unload\\w*|detach\\w*)\\b", re.I)
+DATA_RACE = re.compile(r"data-race|kcsan|read_once|write_once|without (holding |taking )?(the )?\w* ?lock|"
+                       r"(missing|no|under|outside( of)?) (the )?\w* ?(lock|rcu)|concurrent(ly)? (access|modif|updat|writ)|"
+                       r"\b(unregist\w*|remov(e|al|ing)|teardown|unbind|unload\w*|detach\w*)\b", re.I)
 # Hangs: only loops driven by data (corrupt images, packets, devices) are what K1.9's bounded loops
 # turn into errors. A hang waiting on hardware or firmware stays a logic or platform fault.
 DATA_LOOP = re.compile(r"infinite loop|endless loop|loops? forever|never (terminates|ends|exits)|"
@@ -138,33 +145,95 @@ def atlas_verdicts():
 
 
 def load(cvelist, year):
+    """Load the complete publication-year population from every CVE identifier year.
+
+    CVE identifier years are allocation dates, not publication dates. A delayed disclosure
+    can therefore live in any identifier-year directory. Missing directories and malformed
+    records are fatal: a partial population must never produce a plausible-looking study.
+    """
+    root = os.path.join(cvelist, "cves")
+    if not os.path.isdir(root):
+        raise RuntimeError(f"missing CVE List directory: {root}")
+
+    year_dirs = sorted(
+        (name for name in os.listdir(root)
+         if name.isdigit() and os.path.isdir(os.path.join(root, name))),
+        key=int,
+    )
+    if not year_dirs:
+        raise RuntimeError(f"no CVE identifier-year directories found under {root}")
+    years = [int(name) for name in year_dirs]
+    expected = list(range(1999, years[-1] + 1))
+    if years != expected:
+        missing = sorted(set(expected) - set(years))
+        raise RuntimeError(f"incomplete CVE List checkout; missing identifier-year directories: {missing}")
+
     rows = []
-    for sub in (str(year - 1), str(year)):
-        base = os.path.join(cvelist, "cves", sub)
-        for d, _, files in os.walk(base):
-            for f in files:
-                if not f.endswith(".json"):
+    seen = set()
+
+    def walk_error(error):
+        raise error
+
+    for sub in year_dirs:
+        base = os.path.join(root, sub)
+        for directory, _, files in os.walk(base, onerror=walk_error):
+            for filename in files:
+                if not filename.endswith(".json"):
                     continue
+                path = os.path.join(directory, filename)
                 try:
-                    j = json.load(open(os.path.join(d, f)))
-                except (OSError, ValueError):
-                    continue
-                if not isinstance(j, dict):
-                    continue
-                meta = j.get("cveMetadata", {})
+                    with open(path, encoding="utf-8") as source:
+                        record = json.load(source)
+                except (OSError, ValueError) as error:
+                    raise RuntimeError(f"cannot read CVE record {path}: {error}") from error
+                if not isinstance(record, dict):
+                    raise RuntimeError(f"CVE record is not a JSON object: {path}")
+                meta = record.get("cveMetadata")
+                if not isinstance(meta, dict):
+                    raise RuntimeError(f"CVE record has no cveMetadata object: {path}")
                 if meta.get("assignerShortName") != "Linux" or meta.get("state") != "PUBLISHED":
                     continue
-                if not meta.get("datePublished", "").startswith(str(year)):
-                    continue
-                cna = j["containers"]["cna"]
-                desc = next((x["value"] for x in cna.get("descriptions", [])
-                             if x.get("lang", "").startswith("en")), "")
-                files_ = sorted({p for a in cna.get("affected", []) for p in a.get("programFiles", [])})
-                rows.append({"id": meta["cveId"], "date": meta["datePublished"][:10],
-                             "title": cna.get("title", ""), "desc": desc, "files": files_})
-    rows.sort(key=lambda r: r["id"])
-    return rows
 
+                published = meta.get("datePublished")
+                cve_id = meta.get("cveId")
+                if not isinstance(published, str) or len(published) < 10:
+                    raise RuntimeError(f"Linux published CVE has no valid datePublished: {path}")
+                try:
+                    from datetime import date
+                    published_date = date.fromisoformat(published[:10])
+                except ValueError as error:
+                    raise RuntimeError(f"invalid datePublished in {path}: {published!r}") from error
+                if published_date.year != year:
+                    continue
+                if not isinstance(cve_id, str) or not cve_id.startswith("CVE-"):
+                    raise RuntimeError(f"Linux published CVE has no valid cveId: {path}")
+                if filename != cve_id + ".json":
+                    raise RuntimeError(f"CVE filename/id mismatch in {path}: {cve_id}")
+                if cve_id in seen:
+                    raise RuntimeError(f"duplicate CVE identifier in source tree: {cve_id}")
+                seen.add(cve_id)
+
+                containers = record.get("containers")
+                cna = containers.get("cna") if isinstance(containers, dict) else None
+                if not isinstance(cna, dict):
+                    raise RuntimeError(f"Linux published CVE has no containers.cna object: {path}")
+                descriptions = cna.get("descriptions", [])
+                if not isinstance(descriptions, list):
+                    raise RuntimeError(f"invalid CNA descriptions in {path}")
+                desc = next((item.get("value", "") for item in descriptions
+                             if isinstance(item, dict) and item.get("lang", "").startswith("en")), "")
+                if not isinstance(desc, str):
+                    raise RuntimeError(f"invalid English CNA description in {path}")
+                affected = cna.get("affected", [])
+                if not isinstance(affected, list):
+                    raise RuntimeError(f"invalid CNA affected list in {path}")
+                files_ = sorted({p for item in affected if isinstance(item, dict)
+                                 for p in item.get("programFiles", []) if isinstance(p, str)})
+                rows.append({"id": cve_id, "date": published_date.isoformat(),
+                             "title": cna.get("title", ""), "desc": desc, "files": files_})
+
+    rows.sort(key=lambda row: row["id"])
+    return rows
 
 def subsystem(files):
     if not files:
@@ -213,10 +282,15 @@ def check_labels(classified, atlas, name):
     total = same_class = same_outcome = 0
     prevented = {"classifier": 0, "labels": 0}
     misses = []
-    for lab in csv.DictReader(open(path)):
-        r = by_id.get(lab["id"])
-        if not r:
-            continue
+    labels = list(csv.DictReader(open(path)))
+    label_ids = [lab["id"] for lab in labels]
+    if len(label_ids) != len(set(label_ids)):
+        raise ValueError(f"duplicate CVE identifiers in label file {path}")
+    missing = sorted(set(label_ids) - set(by_id))
+    if missing:
+        raise ValueError(f"label file {path} contains CVEs absent from the source population: {missing}")
+    for lab in labels:
+        r = by_id[lab["id"]]
         total += 1
         auto_bucket = bucket_for_class(r["auto_class"], atlas)[0]
         same_class += r["auto_class"] == lab["class"]
@@ -316,7 +390,8 @@ def main():
       "Capstan as it stands; the other two are projections of designs in [DESIGN-MAP.md](DESIGN-MAP.md) "
       "section 7, which hold only if those designs are built as specified, and which K2 tests on real kernel code.\n")
     p(f"- **{pct(mem, n)} of all CVEs** ({mem:,}) are memory-safety bugs: use-after-free, double free, "
-      "out-of-bounds access, NULL dereference and uninitialised memory. Capstan prevents every one of them today.")
+      "out-of-bounds access, NULL dereference and uninitialised memory. This is a weakness count, not "
+      "a claim that kernel-mode Capstan currently prevents them; UAF and double-free coverage depends on K1.1.")
     p(f"- **{pct(prevented, known)} are prevented today**: {pct(by_bucket[COMPILE], known)} refused by the compiler, "
       f"{pct(by_bucket[RUNTIME], known)} stopped safely at run time.")
     p("- A safe stop in the kernel is still a crash (a denial of service), but not a corruption an attacker "
@@ -371,9 +446,9 @@ def main():
     p("Classes found only in review are judged the same way: use after device removal (CWE-672), misaligned "
       "access and aliased mutation of a shared buffer have no counterpart in Capstan today, so they count as "
       "outside its reach until K1.5, K1.6 and K1.1. Hardware faults and build errors are beyond any language.\n")
-    p("Use-after-free and double free are counted as prevented: Capstan has no `free()`, and the "
-      "deterministic memory management planned for kernel code (K1.1) must keep that guarantee, as Rust's "
-      "ownership does.\n")
+    p("Use-after-free and double free are **not** counted as prevented today in kernel code. The application "
+      "memory model does not establish lifetimes for kernel allocators, DMA, callbacks or externally owned "
+      "objects. Their K1 projection is conditional on K1.1 ownership and lifetime enforcement.\n")
     subs = collections.Counter(r["subsystem"] for r in rows if r["bucket"] in (COMPILE, RUNTIME))
     p("## Where the preventable CVEs are\n")
     p("Subsystems with the most CVEs Capstan would have prevented today: candidates for K2.\n")
@@ -383,8 +458,10 @@ def main():
         p(f"| `{sname}` | {c} |")
     p("")
     p("## Method\n")
-    p("1. **Data.** Every record in the [CVE List](https://github.com/CVEProject/cvelistV5) whose assigner is the "
-      f"Linux kernel CNA and whose publication date falls in {year}. Rejected records are excluded. "
+    p("1. **Data.** Every record in the complete [CVE List](https://github.com/CVEProject/cvelistV5) checkout, "
+      "across all identifier-year directories, whose assigner is the Linux kernel CNA and whose publication "
+      f"date falls in {year}. Rejected records are excluded. Missing year directories, unreadable JSON, "
+      "malformed Linux-published records and labels absent from the population are fatal errors. "
       f"Snapshot: commit `{snapshot[:12]}`.")
     p("2. **Automatic classification.** The kernel CNA almost never assigns a CWE, so each CVE is classified from "
       "its description, which is the fix commit's message: its subject line, its text, and the sanitiser "
