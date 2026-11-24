@@ -15,7 +15,7 @@ Python or C.
 
 Implement in Capstan:
 - signed-64 checked arithmetic and booleans;
-- typed registers and explicit uninitialised state;
+- typed registers and explicit uninitialised state, rejecting unknown register type tags before register-file construction;
 - branch and jump control flow;
 - function calls and returns;
 - explicit machine traps;
@@ -24,7 +24,10 @@ Implement in Capstan:
 
 The tests must themselves be Capstan programs. Use the existing compiler's
 `test` mode and repository test harness rather than introducing a second
-implementation language.
+implementation language. The normative JSON program/function/opcode schemas,
+including closed field sets, `call.dst` nullability and explicit-trap reason
+grammar, are defined in `docs/architecture/CCAM.md` and must be tested before
+an evaluator accepts a program.
 
 ## Non-goals
 
