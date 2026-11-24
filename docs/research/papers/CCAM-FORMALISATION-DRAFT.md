@@ -191,6 +191,10 @@ Formal semantics and compiler verification have a substantial history. The appro
 
 CompCert formalises the semantics of source and intermediate languages and proves semantic preservation across compilation. Its verification architecture uses simulation arguments to connect executions at successive levels [2]. CakeML demonstrates a much broader verified compiler and runtime architecture, including multiple intermediate languages, code generation, and verified runtime components [3]. Vellvm formalises LLVM IR and its type system, and relates different operational semantics to support verified transformations [8]. These projects provide a standard against which the scope of a compiler-verification claim should be measured.
 
+Two particularly close bytecode-verification precedents make the novelty boundary sharper. Freund and Mitchell develop a sound type system for a substantial Java bytecode subset, a type-checking algorithm and a prototype verifier [11]. Klein and Nipkow's Jinja development unifies a Java-like source language, JVM semantics, a bytecode verifier with a correctness proof, and a compiler with semantic-preservation and well-typedness results [12]. These works already establish far more than a finite typed instruction model: they connect validation, execution and compilation in machine-checked developments. Consequently, finite indices, typed instruction constructors, local preservation lemmas and a validator model are not novel methods in themselves.
+
+Recent Lean-specific work also narrows any possible methodological claim. LeanMachines presents a Lean 4 framework for state-based modelling and stepwise refinement with proof obligations inspired by Event-B [13]. Lean4Lean develops an external Lean typechecker and formalises parts of Lean's metatheory [14]. Capstan's use of Lean and a separately replayed proof checker is therefore an engineering choice, not a standalone research novelty. A defensible future contribution would need to lie in the exact CCAM semantics, its security/resource contract, and—most importantly—a proved relation from the actual Capstan parser, validator and evaluator to that semantics.
+
 Mechanised WebAssembly work is particularly relevant to CCAM's validator boundary. Watt's mechanisation includes a formal specification, executable interpreter and type checker, together with a machine-checked type-soundness result [4]. Later work provides two mechanisations of WebAssembly 1.0 and discusses the relationship between the normative standard, type soundness and executable checking [5]. These efforts show that validator and semantics alignment is not merely an implementation detail: it is part of the assurance argument.
 
 Capstan's present work is substantially narrower. It formalises a small machine fragment and uses Lean's dependent type system to make selected invariants intrinsic to the representation. It has not yet formalised the complete input language or proved a soundness theorem connecting the normative JSON validator to the machine. Nor has it established source-to-CCAM semantic preservation or a verified native backend.
@@ -353,6 +357,14 @@ The principal research task is therefore not simply to enlarge the Lean model. I
 [9] David Fernee. “Add bounded typed structural validator.” Capstan pull request #163, merged 25 November 2026. [Pull request](https://github.com/DavidFernee/Capstan/pull/163).
 
 [10] Capstan CI. Formal verification run 45508852082 and platform/supply-chain run 45508852150, executed against PR #163 head `0e9800397c45359e216ec08c656bb9bed86cd8ef`. [Formal run](https://github.com/DavidFernee/Capstan/actions/runs/45508852082); [platform run](https://github.com/DavidFernee/Capstan/actions/runs/45508852150).
+
+[11] Stephen N. Freund and John C. Mitchell. “A Type System for the Java Bytecode Language and Verifier.” *Journal of Automated Reasoning* 30(3–4), pp. 271–321, 2003. DOI: [10.1023/A:1025011624925](https://doi.org/10.1023/A:1025011624925).
+
+[12] Gerwin Klein and Tobias Nipkow. “A machine-checked model for a Java-like language, virtual machine, and compiler.” *ACM Transactions on Programming Languages and Systems* 28(4), pp. 619–695, 2006. DOI: [10.1145/1146809.1146811](https://doi.org/10.1145/1146809.1146811).
+
+[13] Danaël Carbonneau and Frederic Peschanski. “LeanMachines: State-based Modeling with Refinement (a Lean4 Framework).” *Formal Aspects of Computing* 38(2), Article 18, pp. 1–36, 2026. DOI: [10.1145/3796230](https://doi.org/10.1145/3796230).
+
+[14] Mario Carneiro. “Lean4Lean: Verifying a Typechecker for Lean, in Lean.” In *31st International Conference on Types for Proofs and Programs (TYPES 2025)*, LIPIcs 384, Article 2, 2026. DOI: [10.4230/LIPIcs.TYPES.2025.2](https://doi.org/10.4230/LIPIcs.TYPES.2025.2).
 
 ---
 
