@@ -1,0 +1,27 @@
+// spec: stmt.assign expr.order types.struct
+// Compound assignment evaluates a side-effectful field receiver exactly once.
+struct Counter {
+    int value;
+}
+
+Counter get_counter(List<int> calls, Counter c) {
+    calls[0] = calls[0] + 1;
+    return c;
+}
+
+int mutate_counter(Counter c) {
+    c.value = 100;
+    return 1;
+}
+
+int main() {
+    List<int> calls = new List<int>();
+    calls.push(0);
+
+    Counter c = new Counter{value: 10};
+    get_counter(calls, c).value += mutate_counter(c);
+    println(int_to_str(c.value));
+    println(int_to_str(calls[0]));
+
+    return 0;
+}
