@@ -910,14 +910,7 @@ bool literal_has_nul(Node e) {
         i += 1;
     }
     return false;
-}        i += 1;
-        if (i + 2 < e.s.len() && e.s.at(i) == '0' &&
-            e.s.at(i + 1) == '0' && e.s.at(i + 2) == '0') { return true; }
-        i += 1;
-    }
-    return false;
 }
-
 
 // Arguments for print-like and storage sinks: anything stringish, but never secrets.
 void sink_string(Checker c, Node arg, string what, bool allow_tainted) {
