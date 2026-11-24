@@ -179,8 +179,8 @@ source from the first implementation. The existing bootstrap may temporarily
 execute Capstan source through the current compiler/C path; that is solely a
 bootstrap mechanism and must not be mistaken for the target architecture.
 
-No Python or C interpreter/runtime for CCAM is to be introduced. The next
-implementation increment is a Capstan-native, typed CCAM representation and
-small evaluator, with Capstan-written positive and negative tests. Only after
-that vertical slice is running should the machine be extended to heap,
-collections, taint, secrets, grants, and IO.
+No Python or C interpreter/runtime for CCAM is to be introduced. The repository now has a Capstan-native single-frame typed evaluator (PR #142), a bounded typed in-memory validator merged to `main` (PR #163), a bounded multi-function call-frame evaluator under review (PR #187), and checked source-to-CCAM lowering for a scalar subset under review (PR #194).
+
+The lowering tests parse and check actual Capstan source, lower it to the validated multi-function CCAM representation, and execute it in the Capstan evaluator. The subset includes integer/boolean locals, checked arithmetic and comparisons, direct calls, short-circuit booleans, if/else, while/for, break/continue and returns. Unsupported constructs fail closed.
+
+The next implementation milestone is a native backend consuming the same validated CCAM program, followed by a minimum runtime/IO boundary. This does not yet make the compiler toolchain C-free: the production compiler still emits C, the bootstrap and evaluator still use the existing C-dependent path, and there is no native target executable. The Lean validator-soundness, source-simulation and evaluator-refinement obligations also remain open. Heap, collections, taint, secrets and grants remain later runtime milestones.
