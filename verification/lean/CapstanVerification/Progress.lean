@@ -91,8 +91,7 @@ theorem runFuel_fuel_exhausted_state_well_typed
   induction fuel generalizing state with
   | zero =>
       simp [runFuel] at h
-      have hstate : state = final := by simpa [runFuel] using h
-      subst final
+      cases h
       exact state.registers_well_typed
   | succ fuel ih =>
       simp only [runFuel] at h
