@@ -357,7 +357,7 @@ static void trigger_escape_length_overflow(void) {
 }
 static void trigger_concat_invalid_operand(void) {
     CapStr bad = {.len = -1};
-    CapStr good = {.len = 1, .data = {'x'}};
+    CapStr good = {.len = 1};
     (void)cap_str_concat(&bad, &good, 0);
 }
 static void test_string_allocation_bounds(void) {
@@ -372,7 +372,8 @@ static void test_string_allocation_bounds(void) {
     size_t max_html = (CAP_MAX_LEN - sizeof(CapStr) - 1) / 6;
     CHECK(cap_rt_checked_string_bytes((int64_t)max_html, 6, 1, 0) ==
           sizeof(CapStr) + max_html * 6 + 1);
-    CHECK(str_is(cap_str_new("abc", 3), "abc", 3));
+    CapStr *plain = cap_str_new("abc", 3);
+    CHECK(plain->len == 3 && memcmp(plain->data, "abc", 3) == 0);
 }
 
 static void test_bitwise(void) {
