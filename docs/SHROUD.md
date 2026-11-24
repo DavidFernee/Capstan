@@ -69,7 +69,8 @@ do. Shroud takes the second approach, for three reasons:
    (exploited in the wild through Chrome), Windows ATMFD CVE-2015-2426, Apple's font parser
    CVE-2015-1155, and the ImageIO and Skia image-decoder chains behind several zero-click
    attacks. In Shroud all of this is Capstan code, where those bugs become safe stops, or, as the
-   font parser is built, are refused before they happen.
+   font parser is built, are refused before they happen. Whole-file bounds checks do not yet
+   enforce every table's declared span; see the font-parser residual risk below.
 3. **Small platform layers.** Each operating system needs only an *embedder* that opens a window,
    presents a pixmap, delivers input events and publishes the accessibility tree. That is a few
    hundred lines per platform rather than a toolkit's worth of wrappers.
@@ -106,7 +107,7 @@ do. Shroud takes the second approach, for three reasons:
 | `lib/shroud/path.cap` | Vector paths (lines, quadratic and cubic Béziers), rounded rectangles, ellipses, rings, and flattening with a bounded number of segments |
 | `lib/shroud/raster.cap` | Anti-aliased scanline rasteriser (16 sub-scanlines, exact horizontal coverage), nonzero and even-odd rules, solid and linear-gradient paints, rectangular clip stack, and a fast exact path for axis-aligned rectangles |
 | `lib/shroud/png.cap` | PNG encoder (CRC-32, Adler-32, stored DEFLATE) for screenshots and golden tests |
-| `lib/shroud/ttf.cap` | TrueType parser: `cmap` formats 4 and 12, `hmtx`, simple and composite `glyf` outlines with transforms, and a glyph cache. Every read is bounds-checked by a reader that fails softly, so damaged fonts are refused, never trusted |
+| `lib/shroud/ttf.cap` | TrueType parser: `cmap` formats 4 and 12, `hmtx`, simple and composite `glyf` outlines with transforms, and a glyph cache. Reads are checked against the whole font byte array; table-local span enforcement for `cmap`, `loca` and `hmtx` remains an open parser-integrity issue, so malformed subtables may consume adjacent-table bytes |
 | `lib/shroud/text.cap` | Strict UTF-8 decoding (maximal-subpart replacement, as Unicode specifies), safe display of untrusted text, measuring, glyph drawing at quarter-pixel positions, and line wrapping |
 | `lib/shroud/view.cap` | Views and modifiers: text, user text, button (standard, accent, subtle, danger), row, column, stack, spacer, checkbox, radio, switch, text field, password field, slider, progress bar, divider, box, scroll view |
 | `lib/shroud/theme.cap` | Light and dark themes in current desktop style, each checked against WCAG 2.2 contrast |
