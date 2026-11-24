@@ -4,6 +4,7 @@ import CapstanVerification.Core
 #print axioms CapstanVerification.maxI64_in_range
 #print axioms CapstanVerification.below_minI64_out_of_range
 #print axioms CapstanVerification.above_maxI64_out_of_range
+#print axioms CapstanVerification.executeAdd_preserves_well_typed
 #print axioms CapstanVerification.write_preserves_well_typed
 #print axioms CapstanVerification.checkedAdd_sound
 #print axioms CapstanVerification.checkedSub_sound
