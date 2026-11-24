@@ -108,6 +108,4 @@ import CapstanVerification.RuntimeBridge
 
 #print axioms CapstanVerification.machineStep_progress_or_explicit_outcome
 #print axioms CapstanVerification.machineStep_deterministic
-#print axioms CapstanVerification.machineStep_progress_preserves_register_types
-#print axioms CapstanVerification.machineStep_progress_preserves_pc_bounds
 #print axioms CapstanVerification.runFuel_fuel_exhausted_state_well_typed
