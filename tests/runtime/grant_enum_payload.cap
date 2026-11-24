@@ -12,7 +12,7 @@ policy CanDebit(Debit request, Account account) {
 protected(CanDebit) void debit(Grant<CanDebit> g, Debit request, Account account) {
     match (request) {
         case Amount(value) { account.balance -= value; }
-        else { }
+        else { return; }
     }
 }
 int main() {
