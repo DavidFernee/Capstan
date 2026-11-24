@@ -591,8 +591,8 @@ static void test_gc_large_secret_mapping(void) {
     size_t heap_after = cap_gc.heap;
     if (retained || heap_after > heap_before) {
         fprintf(stderr,
-                "large-secret reclamation diagnostic: retained=%d heap_before=%zu heap_after=%zu address=%" PRIxPTR "\\n",
-                retained, heap_before, heap_after, address);
+                "large-secret reclamation diagnostic: retained=%d heap_before=%zu heap_after=%zu address=0x%llx\\n",
+                retained, heap_before, heap_after, (unsigned long long)address);
         for (size_t i = 0; i < cap_gc.nlarge; i++) {
             CapLarge *large = &cap_gc.large[i];
             if ((uintptr_t)large->base == address)
