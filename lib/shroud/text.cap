@@ -204,8 +204,16 @@ int draw_glyphs(Canvas cv, Font f, int size, List<int> cps, int from, int to, in
 // out[0], 2, 4...; ends (exclusive, trailing spaces dropped) in out[1], 3, 5...
 // Lines break after spaces, at newlines, and inside a word only if it alone is too
 // wide. With max_w at UNBOUNDED only newlines break.
-List<int> wrap_lines(Font f, int size, List<int> cps, int max_w) {
+bool line_slot_available(int used, int max_lines, bool allow_truncate) {
+    if (used < max_lines) { return true; }
+    if (allow_truncate) { return false; }
+    println("shroud: frame text line budget exceeded");
+    exit(101);
+}
+
+List<int> wrap_lines_limited(Font f, int size, List<int> cps, int max_w, int max_lines, bool allow_truncate) {
     List<int> out = new List<int>();
+    int limit = int_min(max_lines, MAX_FRAME_LINES);
     int start = 0;
     int w = 0;
     int last_space = -1;
@@ -213,6 +221,7 @@ List<int> wrap_lines(Font f, int size, List<int> cps, int max_w) {
     while (i < cps.len()) {
         int cp = cps[i];
         if (cp == 0x0A) {
+            if (!line_slot_available(out.len() / 2, limit, allow_truncate)) { return out; }
             out.push(start);
             out.push(trim_end(cps, start, i));
             start = i + 1;
@@ -225,6 +234,7 @@ List<int> wrap_lines(Font f, int size, List<int> cps, int max_w) {
         if (w + adv > max_w && i > start && cp != 0x20) {
             int brk = i;
             if (last_space >= start) { brk = last_space + 1; }
+            if (!line_slot_available(out.len() / 2, limit, allow_truncate)) { return out; }
             out.push(start);
             out.push(trim_end(cps, start, brk));
             start = brk;
@@ -236,9 +246,16 @@ List<int> wrap_lines(Font f, int size, List<int> cps, int max_w) {
         w += adv;
         i += 1;
     }
+    if (!line_slot_available(out.len() / 2, limit, allow_truncate)) { return out; }
     out.push(start);
     out.push(trim_end(cps, start, cps.len()));
     return out;
+}
+
+// Backwards-compatible single-value wrapper. The layout pass uses the
+// limited form with its shared remaining-frame budget.
+List<int> wrap_lines(Font f, int size, List<int> cps, int max_w) {
+    return wrap_lines_limited(f, size, cps, max_w, MAX_FRAME_LINES, false);
 }
 
 int trim_end(List<int> cps, int from, int to) {
