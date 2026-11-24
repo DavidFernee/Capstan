@@ -1028,3 +1028,42 @@ Do not allow the compiler to implement generic nominal identity using global sho
 - Later visibility enforcement rejects private cross-module references and public API leaks without changing established nominal identities.
 
 This is a dependency-order correction, not a requirement to implement the complete public/private module feature before generic parsing.
+
+
+## 30. Bound-method lookup and static dispatch must be unambiguous
+
+The interface example declares a method with an explicit `self` parameter, while the proposal says interface calls are statically dispatched. Define how a generic body selects and invokes that method. A type variable's bound is a lexical capability set; it is not permission to search arbitrary methods on the eventual concrete type.
+
+### 30.1 Define the receiver and dispatch contract
+
+For v0.5, choose one canonical call model and specify its lowering:
+
+- Either interface methods are ordinary functions whose first parameter is the receiver, with a qualified call form such as `Comparable<T>.less(a, b)`; or
+- Member syntax such as `a.less(b)` is supported and resolves only through a uniquely identified interface bound in the lexical environment.
+
+If member syntax is supported, define exactly how the receiver contributes to inference, how the interface declaration is selected when multiple bounds expose the same method name, and whether inherent methods may shadow interface methods. The conservative rule is that a call in a generic body resolves to one interface method selected by its bound identity; same-name methods from unrelated interfaces require explicit qualification. No fallback to a concrete type's unrelated inherent method is allowed.
+
+### 30.2 Check implementation method correspondence exactly
+
+For each concrete `impl Interface<Args> for Target`, compare the complete resolved method contract after substituting interface arguments and the implementing target:
+
+- Method identity is the interface declaration plus method declaration identity, not the short method name alone.
+- Receiver position and receiver type must match the interface contract.
+- Parameter count/order/types and return type must match exactly under the language's declared equality rule.
+- Protected policy identity, Grant parameter position and any other security effect must match exactly.
+- Visibility must make the method usable wherever the implementation is considered visible.
+- Every required method is supplied exactly once; no extra method may satisfy a different interface obligation by name coincidence.
+
+Static dispatch resolves one concrete implementation for the exact (InterfaceDeclId, ConcreteTypeId) obligation and emits a direct call to that implementation's resolved method symbol. The call must not become runtime lookup or silently select a method from another bound.
+
+### 30.3 Required adversarial tests
+
+- A generic function calls a method justified by one declared interface bound and succeeds.
+- The same call without the bound fails even if every current concrete argument happens to have a same-named method.
+- Two bounds with same-named methods require explicit disambiguation or are rejected as ambiguous.
+- A concrete inherent method cannot shadow a bound-selected interface method in the generic body.
+- Receiver inference follows the explicitly documented rule and does not introduce expected-result inference.
+- Reject wrong receiver position/type, parameter order/type, return type, policy identity, Grant position or visibility in an impl.
+- Verify generated dispatch is a direct call to the exact implementation method and is stable under import/declaration-order permutations.
+
+These requirements specify static interface method dispatch; they do not claim interface or generic method dispatch exists in the current compiler.
