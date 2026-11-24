@@ -7,12 +7,12 @@
 
 ## 1. Current evidence and scope boundary
 
-The current main-branch baseline contains the C-generating compiler, C runtime and Python/C bootstrap described in `COMPILER-PIPELINE-AUDIT.md`, including the compound-assignment and lazy-string-literal sequencing corrections merged in PRs #97 and #109. The CCAM proposal and Capstan-native arithmetic/register substrate remain on the separate PR #81 branch `architecture/c-free-formal-foundation`; dependent PR #100 carries the remainder, register-validation and machine-schema corrections. Neither branch is part of main as of this update.
+The current main-branch baseline contains the C-generating compiler, C runtime and Python/C bootstrap described in `COMPILER-PIPELINE-AUDIT.md`, including the compound-assignment and lazy-string-literal sequencing corrections merged in PRs #97 and #109. The CCAM proposal and Capstan-native arithmetic/register substrate remain on the separate PR #81 branch `architecture/c-free-formal-foundation`; dependent PR #132 carries the remainder, register-validation and machine-schema corrections. Neither branch is part of main as of this update.
 
 Observed PR #81 state:
 - `docs/architecture/CCAM.md` defines CCAM v0.1 for signed-64 integers, booleans, typed local registers, arithmetic, branches, calls/returns, traps and deterministic step/call-depth limits.
 - `verification/ccam_core.cap` currently implements checked arithmetic and a typed register-file substrate. It is not yet a complete evaluator.
-- PR #81's exact head `8591cc152ca40330e419b48282afce2f4dd32903` passed all four required CI jobs in run `45352697607`. Its dependent semantic-correction PR #100 exact head `de299dc22ada1e92c00184de95acd9bfc29c8a6f` also passed all four jobs in run `45352775903`. These are CI results for those exact revisions, not evidence of a completed evaluator, native backend or end-to-end formal proof. PR #124's source-language core/typed-IR contract and PR #89's formal refinement work remain separate review items.
+- PR #81's exact head `8591cc152ca40330e419b48282afce2f4dd32903` passed all four required CI jobs in run `45352697607`. Its the earlier semantic-correction PR #100 passed its exact-head matrix, then was superseded because the foundation branch advanced. Replacement PR #132 is now based on the current PR #81 head and its exact-head CI run `45356519255` is in progress. These CI results are not evidence of a completed evaluator, native backend or end-to-end formal proof. PR #124's source-language core/typed-IR contract and PR #89's formal refinement work remain separate review items.
 
 The first native backend must wait for the CCAM instruction/evaluator interfaces and the formal/runtime owners' agreement. This plan can be adopted now without creating a competing machine.
 
