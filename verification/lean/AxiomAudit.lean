@@ -35,6 +35,11 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.executeEq_preserves_well_typed
 #print axioms CapstanVerification.executeNot_preserves_well_typed
 #print axioms CapstanVerification.initialMachineState
+
+#print axioms CapstanVerification.consumeStep
+#print axioms CapstanVerification.consumeStep_increments
+#print axioms CapstanVerification.consumeStep_within_limit
+#print axioms CapstanVerification.consumeStep_exhausted_traps
 #print axioms CapstanVerification.machineStep
 #print axioms CapstanVerification.machineStep_preserves_well_typed
 #print axioms CapstanVerification.machineState_pc_is_in_range
