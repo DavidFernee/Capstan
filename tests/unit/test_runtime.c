@@ -390,6 +390,17 @@ static void trigger_out_of_range_map_index_entry(void) {
     m.index = index; m.index_cap = 2;
     (void)cap_map_find(&m, key);
 }
+static void trigger_full_map_index(void) {
+    CapMap m = {0};
+    CapStr *stored = cap_str_new("stored", 6);
+    CapStr *missing = cap_str_new("missing", 7);
+    CapStr *keys[1] = {stored};
+    CapVal vals[1] = {{.i = 1}};
+    int64_t index[2] = {1, 1};
+    m.len = 1; m.cap = 1; m.keys = keys; m.vals = vals;
+    m.index = index; m.index_cap = 2;
+    (void)cap_map_find(&m, missing);
+}
 static void trigger_missing_list_storage(void) {
     CapList l = {.len = 0, .cap = 1, .items = NULL};
     cap_list_push(&l, cap_vi(1));
@@ -413,6 +424,7 @@ static void test_runtime_growth_arithmetic(void) {
     CHECK(expect_runtime_panic(trigger_negative_initial_buffer));
     CHECK(expect_runtime_panic(trigger_non_power_of_two_map_index));
     CHECK(expect_runtime_panic(trigger_out_of_range_map_index_entry));
+    CHECK(expect_runtime_panic(trigger_full_map_index));
     CHECK(expect_runtime_panic(trigger_missing_list_storage));
     CHECK(expect_runtime_panic(trigger_missing_boolean_list_storage));
 }
