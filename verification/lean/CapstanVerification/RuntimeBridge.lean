@@ -116,7 +116,7 @@ theorem runtimeRelation_preserves_well_typed
   have hvalue : runtimeValueAt runtime index.val = some value := by
     rw [hrel.value_at index, hread]
   unfold runtimeValueAt runtimeRegisterAt at hvalue
-  cases hreg : registers[index.val]? with
+  cases hreg : runtime[index.val]? with
   | none =>
       simp [hreg] at hvalue
   | some reg =>
@@ -136,7 +136,7 @@ theorem runtimeRelation_preserves_well_typed
           | true =>
               simp [RuntimeRegister.value?, hdecl, hinit] at hvalue
               cases hvalue
-              simpa [hasType, hasTypeB] using reg.intValue_in_range
+              simpa [hasType, hasTypeB, htarget] using reg.intValue_in_range
       | bool =>
           have htarget : types index = .bool := by
             rw [hdecl] at htype
@@ -147,6 +147,6 @@ theorem runtimeRelation_preserves_well_typed
           | true =>
               simp [RuntimeRegister.value?, hdecl, hinit] at hvalue
               cases hvalue
-              simp [hasType, hasTypeB]
+              simp [hasType, hasTypeB, htarget]
 
 end CapstanVerification
