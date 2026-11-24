@@ -194,7 +194,7 @@ struct CCAMRegisterResult {
 struct CCAMRegisterFileResult {
     bool ok;
     List<CCAMRegister> registers;
-    string error = "";
+    string error;
 }
 
 CCAMRegisterResult ccam_register_error(string trap) {
