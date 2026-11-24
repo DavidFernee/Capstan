@@ -188,9 +188,10 @@ The entry frame has depth 1. A call at the depth limit is an executed instructio
 For `ret(src)`:
 1. read and type-check `src` before modifying the frame stack;
 2. if the active frame is the entry frame, produce `Halt(value)`;
-3. otherwise pop the callee frame and write the returned value to the caller's validated `retDst`, leaving the caller PC at the continuation set by the call.
+3. otherwise validate the caller frame and its `retDst` index/type before modifying either frame;
+4. pop the callee frame and write the returned value to the caller destination as one atomic transition, leaving the caller PC at the continuation set by the call.
 
-For `ret_void`, the same frame transition occurs without a value write; returning from the entry frame produces `HaltVoid`.
+For `ret_void`, validate the caller frame and the absence of a return destination before popping; then perform the frame transition without a value write. Returning from the entry frame produces `HaltVoid`.
 
 A return whose value is uninitialised traps before the frame is popped. Structural validation rejects a return instruction that does not match its function's declared return convention.
 
