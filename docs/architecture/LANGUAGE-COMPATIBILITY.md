@@ -39,7 +39,7 @@ A feature being accepted by the existing compiler does not mean it is supported 
 
 ### 3.1 Remainder exceptional pair
 
-The existing runtime defines `INT64_MIN % -1` as zero, while the CCAM v0.1 draft says remainder traps with `integer_overflow`. The normative core proposal preserves the existing source behaviour: `MIN / -1` traps, `MIN % -1` returns zero. The current range analysis has an explicit exclusion for the exceptional pair before selecting the proven C remainder helper; retain and test that precondition. PR #93 adds a dedicated optimizer-path fixture expecting one proven operation (the unary negation in `-1`) and requiring the remainder itself to remain checked. The CCAM arithmetic implementation and tests must be updated before it is used as a reference oracle.
+The existing runtime defines `INT64_MIN % -1` as zero, while the CCAM v0.1 draft says remainder traps with `integer_overflow`. The normative core proposal preserves the existing source behaviour: `MIN / -1` traps, `MIN % -1` returns zero. The current range analysis has an explicit exclusion for the exceptional pair before selecting the proven C remainder helper; retain and test that precondition. PR #93 adds a dedicated optimizer-path fixture expecting one proven operation (the unary negation in `-1`) and requiring the remainder itself to remain checked. Dependent draft PR #100 updates `CCAM.md`, the Capstan-native `ccam_rem` substrate and sign/boundary tests; it also closes the CCAM JSON schemas and validates register type tags. Its exact-head CI is pending, and the correction is not adopted into the foundation branch until its owner reviews and merges it.
 
 ### 3.2 Compound assignment order
 
