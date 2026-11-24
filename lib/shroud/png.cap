@@ -92,7 +92,7 @@ List<int> png_encode(Pixmap pm) {
     put_u32(out, idat_len);
     int idat_start = out.len();
     out.push(73); out.push(68); out.push(65); out.push(84); // IDAT
-    out.push(0x78); out.push(0x01); // zlib header
+    out.push(0x78); out.push(0x01);                         // zlib header
 
     int s1 = 1;
     int s2 = 0;
