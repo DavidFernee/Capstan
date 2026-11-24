@@ -411,8 +411,8 @@ def main():
     os.makedirs(os.path.join(HERE, "data"), exist_ok=True)
     with open(os.path.join(HERE, "data", f"kernel-cves-{year}.csv"), "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["id", "published", "subsystem", "class", "cwe", "method", "outcome", "with_k1",
-                    "with_k1_10", "evidence", "title"])
+        w.writerow(["id", "published", "subsystem", "class", "cwe", "method", "outcome", "k1_projection",
+                    "k1_10_proof_eligibility_projection", "evidence", "title"])
         for r in rows:
             w.writerow([r["id"], r["date"], r["subsystem"], r["class"], r["cwe"], r["method"], r["bucket"],
                         r["projected"], r["final"], r["evidence"], r["title"]])
