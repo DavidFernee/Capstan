@@ -1,6 +1,7 @@
 """K0: how much of the Linux kernel's CVE stream would Capstan have prevented?
 
 Usage:
+    git clone https://github.com/CVEProject/cvelistV5.git CVELIST_DIR
     python3 tools/k0/study.py CVELIST_DIR [--year 2025]
 
 CVELIST_DIR is a complete checkout of https://github.com/CVEProject/cvelistV5. The study scans
