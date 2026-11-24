@@ -24,13 +24,13 @@ theorem machineStep_progress_or_explicit_outcome
     (∃ reason, machineStep program state = .trap reason) := by
   cases hstep : machineStep program state with
   | nextState next =>
-      exact Or.inl ⟨next, hstep⟩
+      exact Or.inl ⟨next, rfl⟩
   | halt value =>
-      exact Or.inr (Or.inl ⟨value, hstep⟩)
+      exact Or.inr (Or.inl ⟨value, rfl⟩)
   | haltVoid =>
-      exact Or.inr (Or.inr (Or.inl hstep))
+      exact Or.inr (Or.inr (Or.inl rfl))
   | trap reason =>
-      exact Or.inr (Or.inr (Or.inr ⟨reason, hstep⟩))
+      exact Or.inr (Or.inr (Or.inr ⟨reason, rfl⟩))
 
 /-- The functional one-step semantics is deterministic. -/
 theorem machineStep_deterministic
@@ -91,7 +91,8 @@ theorem runFuel_fuel_exhausted_state_well_typed
   induction fuel generalizing state with
   | zero =>
       simp [runFuel] at h
-      cases h
+      have hstate : state = final := by simpa [runFuel] using h
+      subst final
       exact state.registers_well_typed
   | succ fuel ih =>
       simp only [runFuel] at h
