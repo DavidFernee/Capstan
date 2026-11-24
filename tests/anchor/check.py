@@ -44,11 +44,13 @@ def main():
         rendered = run([exe, tmp])
         if "accessibility:" in rendered.stdout:
             raise AssertionError("Shroud reported accessibility problems: " + rendered.stdout)
-        png = pathlib.Path(tmp, "anchor.png").read_bytes()
-        if not png.startswith(b"\x89PNG\r\n\x1a\n"):
-            raise AssertionError("Anchor did not produce a PNG")
-        if png[16:24] != (1100).to_bytes(4, "big") + (720).to_bytes(4, "big"):
-            raise AssertionError("unexpected Anchor frame dimensions")
+        expected_dimensions = (1100).to_bytes(4, "big") + (720).to_bytes(4, "big")
+        for filename in ("anchor.png", "anchor-dark.png"):
+            png = pathlib.Path(tmp, filename).read_bytes()
+            if not png.startswith(b"\x89PNG\r\n\x1a\n"):
+                raise AssertionError(f"Anchor did not produce a valid PNG: {filename}")
+            if png[16:24] != expected_dimensions:
+                raise AssertionError(f"unexpected Anchor frame dimensions: {filename}")
         tree = json.loads(pathlib.Path(tmp, "anchor-a11y.json").read_text())
         if not isinstance(tree, dict):
             raise AssertionError("accessibility tree is not a JSON object")
@@ -70,7 +72,7 @@ def main():
         expected_labels = {"Explorer", "Security", "Build & test", "Documentation"}
         if not expected_labels.issubset(names):
             raise AssertionError("static navigation labels are missing from the accessibility tree")
-        print("Anchor A0: build, render and accessibility smoke test passed")
+        print("Anchor A0: build, light/dark render and accessibility smoke test passed")
 
 
 if __name__ == "__main__":
