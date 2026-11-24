@@ -255,7 +255,9 @@ CCAMValidationResult ccam_validate_multi_function(
     for (int i = 0; i < functions.len(); i += 1) {
         CCAMFunction fn = functions[i];
         int name_bytes = fn.name.len();
-        if (name_bytes == 0) return ccam_validation_error("invalid_function_name");
+        if (name_bytes == 0) {
+            return ccam_validation_error("invalid_function_name");
+        }
         if (name_bytes > CCAM_MAX_FUNCTION_NAME_BYTES) {
             return ccam_validation_error("function_name_limit_exceeded");
         }
