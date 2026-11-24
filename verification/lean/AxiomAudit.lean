@@ -5,6 +5,7 @@ import CapstanVerification.Core
 #print axioms CapstanVerification.below_minI64_out_of_range
 #print axioms CapstanVerification.above_maxI64_out_of_range
 #print axioms CapstanVerification.readInt_success_in_range
+#print axioms CapstanVerification.executeAdd_left_read_error_precedence
 #print axioms CapstanVerification.executeAdd_preserves_well_typed
 #print axioms CapstanVerification.write_preserves_well_typed
 #print axioms CapstanVerification.checkedAdd_sound
