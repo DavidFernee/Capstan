@@ -463,3 +463,54 @@ The current runtime provides a useful starting point for container tracing: `Cap
 - Verify capture ordering and generated output are deterministic across bootstrap, GCC/Clang and `-O0`, `-O2`, `-O3`.
 
 These tests should be added when closure syntax and runtime support land; they are acceptance requirements, not claims about current closure implementation.
+
+
+## 18. Bounded, cycle-safe Grant-containment analysis
+
+The recursive Grant rule in sections 6 and 17 must be implemented as one compiler-owned semantic predicate, not as several ad hoc recursive checks over surface syntax. A conceptual interface is:
+
+`grant_status(Type, SubstitutionEnvironment) -> ContainsGrant | ProvenGrantFree | Unknown`
+
+The three outcomes are intentionally distinct. Unknown is never silently treated as Grant-free.
+
+### 18.1 Resolve complete storage graphs
+
+- Resolve nominal types by canonical declaration identity (`DeclId`), not short name.
+- Inspect every field of a struct and every payload field of every enum variant.
+- For generic declarations, apply the complete substitution before inspecting the instantiated storage graph.
+- Traverse optional and collection constructors, generic arguments and nested function/closure environment types wherever those can contain stored values.
+- For opaque, foreign or otherwise uninspectable layouts, return Unknown unless a trusted, explicit compiler contract proves the relevant property. Do not infer safety from the absence of visible Grant arguments.
+
+### 18.2 Generic abstract and concrete obligations
+
+A type variable is not implicitly Grant-free. If a generic body stores, returns, captures or otherwise lets a type parameter cross an escape boundary, its abstract check must establish a Grant-free obligation from declared bounds or a compiler-defined structural property. Otherwise reject the template at the declaration or defer only the concrete-dependent operation under a clearly specified rule that cannot permit an unchecked escape.
+
+Concrete substitution must re-run the predicate over the complete resolved storage graph. This must reject a Grant hidden several nominal and generic layers below the apparent outer type. Generic helpers that only borrow or pass a Grant locally may remain valid where their signatures and protected-effect rules prove non-escape.
+
+### 18.3 Recursive types, memoisation and bounded work
+
+The analysis must terminate on legal recursive nominal types. Use memoisation keyed by canonical instantiated type identity, with explicit in-progress and completed states:
+- Encountering an in-progress node identifies a recursive edge; it is not by itself evidence of Grant or proof of Grant-freedom.
+- A completed node may reuse its established result.
+- A Grant discovered anywhere in a reachable storage path makes the containing type ContainsGrant.
+- A recursive strongly connected component is ProvenGrantFree only after every reachable field edge has been analysed and no unresolved/opaque edge remains.
+
+The traversal must consume the same deterministic global type-node/work budget as substitution and instantiation analysis. Exhaustion produces a normal bounded diagnostic; it must not cause unbounded recursion, stack overflow or an optimistic Grant-free result.
+
+### 18.4 One predicate at every escape boundary
+
+Use the same semantic predicate for function returns, struct and enum storage, constants, collection insertion/storage, closure captures and environments, nested closures, and any future task/async capture or heap allocation. Do not maintain a weaker closure-only or collection-only approximation.
+
+### 18.5 Required adversarial tests
+
+- Mutually recursive nominal types with no Grant are accepted and terminate.
+- Stable recursive generic structures such as `Node<T> { List<Node<T>> children; }` are accepted when the complete instantiated storage graph is Grant-free.
+- A Grant hidden several nominal and generic layers down is rejected at every escape boundary.
+- A recursive nominal cycle with a Grant on one reachable branch is rejected regardless of declaration or traversal order.
+- An unresolved type variable is not accepted as Grant-free at return, storage, collection or closure-capture boundaries.
+- A generic helper that uses a Grant locally without storing, returning or capturing it remains accepted when its effect contract proves non-escape.
+- Opaque/foreign layouts without a trusted Grant-free contract produce Unknown and are rejected at escape boundaries.
+- Memoisation distinguishes in-progress recursion from completed safe results and remains deterministic across declaration/import order.
+- Deep and mutually recursive graphs exhaust the configured work budget with a stable diagnostic, without stack overflow or unbounded compiler work.
+
+These are acceptance requirements for the future checker, not claims that the predicate or generic/closure features currently exist.
