@@ -28,7 +28,7 @@ def run(argv, expected=0, env=None):
 def build(capstanc, cc, cflags, source, output):
     c_source = output + ".c"
     run([capstanc, "build", "--strict", "-o", c_source] + LIB + [source])
-    run([cc] + cflags + [c_source, "-o", output])
+    run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), c_source, "-o", output])
 
 
 def main():
