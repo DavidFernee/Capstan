@@ -24,6 +24,8 @@ int main() {
     Counter c = new Counter{value: 10, text: "old"};
     c.value += mutate_counter(c);
     println(int_to_str(c.value));
+    c.value -= mutate_counter(c);
+    println(int_to_str(c.value));
 
     c.text += mutate_text(c);
     println(c.text);
@@ -31,6 +33,8 @@ int main() {
     List<int> xs = new List<int>();
     xs.push(10);
     xs[0] += mutate_first(xs);
+    println(int_to_str(xs[0]));
+    xs[0] -= mutate_first(xs);
     println(int_to_str(xs[0]));
 
     return 0;
