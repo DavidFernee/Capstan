@@ -125,7 +125,7 @@ static int cap_gc_size_mul(size_t a, size_t b, size_t *out) {
 }
 /* Convert an OS-provided stack base/size pair without pointer arithmetic. */
 static int cap_gc_stack_bounds(uintptr_t base, size_t size, uintptr_t *low, uintptr_t *high) {
-    if (size > UINTPTR_MAX - base) return 0;
+    if (!size || size > UINTPTR_MAX - base) return 0;
     uintptr_t end = base + size;
     *low = base;
     *high = end;
