@@ -54,7 +54,7 @@ Each function object has exactly these fields:
 
 Missing or extra fields, a non-object function, a non-array register or instruction field, invalid scalar types, or an out-of-range parameter count are validation errors. The entry function MUST have zero parameters and return either `"int"` or `"void"`. Internal functions may have any supported parameter count and return `"int"`, `"bool"` or `"void"`.
 
-The execution limits `maxSteps` and `maxDepth` are evaluator configuration, not program fields. Both are non-negative integers; `maxDepth` MUST be at least one. Implementations MUST reject malformed configuration before creating the entry frame.
+The execution limits `maxSteps` and `maxDepth` are evaluator configuration, not program fields. `maxSteps` is in `0..2^63-1`; `maxDepth` is in `1..2^63-1`. Both are exact integers in the CCAM index domain. Implementations MUST reject booleans, fractional values, negative values and values above `2^63-1` before creating the entry frame.
 
 ## 3. Instruction set
 
