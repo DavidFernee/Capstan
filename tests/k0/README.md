@@ -1,18 +1,19 @@
 # K0 classifier checks
 
-Labelled samples for the K0 kernel CVE study (`tools/k0/study.py`, `docs/K0-KERNEL-CVES.md`). Each row
-is a CVE from the study year and the class a reader assigned from its fix description, using the
-class names in `tools/k0/classify.py`. The study loader scans every CVE identifier-year directory,
+Labelled samples for the 2025 publication-year K0 kernel CVE study (`tools/k0/study.py`, `docs/K0-KERNEL-CVES.md`). Each row
+is a CVE published in 2025 (some identifiers were allocated in earlier years) and the class assigned
+from its CNA description, using the class names in `tools/k0/classify.py`. The study loader scans every CVE identifier-year directory,
 because identifier year and publication year are not equivalent. Run the study only against a complete
 CVE List V5 checkout with a clean Git working tree and a complete materialised JSON inventory; sparse checkouts are rejected by comparing tracked and on-disk records. Run from a clean Capstan Git checkout as well. The exact 40-character CVE List and Capstan source commits are recorded in the report and summary JSON. Generated reports explicitly state NOT INDEPENDENTLY VALIDATED / RESEARCH ONLY until blind human relabelling is complete. Incomplete checkouts and malformed Linux-published records are rejected.
 
-- `labels.csv`: 60 CVEs drawn at random. The classifier's rules were refined after this sample was
-  read, so its agreement here is optimistic.
-- `labels-heldout.csv`: 40 further CVEs drawn at random and labelled before the classifier's answer
-  was looked at; no rule was changed afterwards. This is the agreement the report quotes.
+- `labels.csv`: 60 CVEs drawn at random for development diagnostics.
+- `labels-heldout.csv`: 40 further CVEs drawn at random for a nominal held-out diagnostic.
 
-Both sets were labelled by Claude (the AI assistant that wrote the classifier). An independent
-reviewer relabelling them is the next step for the study's credibility.
+Both sets were labelled by the same AI assistant that developed the classifier. The labels are not
+independent ground truth; their agreement figures are not classifier accuracy or validation evidence.
+The study reports them only as internal diagnostics and runs these fixed samples only for the 2025
+publication-year population. At least two independent human reviewers must relabel a frozen sample
+before the classifier's accuracy or any replacement K0 headline can be asserted.
 
 ## Independent relabelling protocol
 

@@ -159,6 +159,9 @@ with tempfile.TemporaryDirectory() as temporary:
     else:
         raise AssertionError("unknown review class was accepted")
 
+# The checked-in tuning and held-out samples cover the 2025 publication population only.
+assert study.sample_agreements([], {}, 2024) == (None, None)
+
 # The tuning and held-out label checker must reject duplicate and stale IDs.
 original_root = study.ROOT
 with tempfile.TemporaryDirectory() as temporary:

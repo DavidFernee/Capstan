@@ -392,6 +392,14 @@ def check_labels(classified, atlas, name):
     return total, same_class, same_outcome, misses, prevented
 
 
+def sample_agreements(classified, atlas, year):
+    """Run the checked-in tuning/held-out samples only for their 2025 population."""
+    if year != 2025:
+        return None, None
+    return (check_labels(classified, atlas, "labels.csv"),
+            check_labels(classified, atlas, "labels-heldout.csv"))
+
+
 def source_snapshot(cvelist):
     """Return the exact, clean Git commit for the source population or fail closed."""
     try:
@@ -491,8 +499,7 @@ def main():
             w.writerow([r["id"], r["date"], r["subsystem"], r["class"], r["cwe"], r["method"], r["bucket"],
                         r["projected"], r["final"], r["evidence"], r["title"]])
 
-    tuning = check_labels(rows, atlas, "labels.csv")
-    heldout = check_labels(rows, atlas, "labels-heldout.csv")
+    tuning, heldout = sample_agreements(rows, atlas, year)
     json.dump({"year": year, "source_repository": "https://github.com/CVEProject/cvelistV5",
                "source_commit": snapshot, "study_commit": study_commit, "total": n, "label_overrides": n_label_overrides,
                "independent_review_status": "NOT PERFORMED", "assurance_use": "RESEARCH ONLY",
