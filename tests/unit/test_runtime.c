@@ -386,6 +386,7 @@ static void test_gc_allocator_arithmetic(void) {
     CHECK(expect_gc_panic(trigger_signed_heap_limit));
     CHECK(expect_gc_panic(trigger_plus_heap_limit));
     CHECK(cap_gc_parse_heap_limit("128K") == ((size_t)128 << 10));
+    CHECK(cap_gc_parse_heap_limit("0") == 0);
     CHECK(cap_gc_parse_heap_limit("1G") == ((size_t)1 << 30));
     CHECK(cap_gc_physical_heap_limit(1024, 4096) == ((size_t)3 << 20));
     CHECK(cap_gc_physical_heap_limit(SIZE_MAX, 4096) == CAP_MAX_LEN);
@@ -397,6 +398,9 @@ static void test_gc_allocator_arithmetic(void) {
     CHECK(cap_gc_heap_would_exceed(2));
     cap_gc.heap = 1;
     cap_gc.max_heap = 0;
+    CHECK(!cap_gc_heap_would_exceed(SIZE_MAX));
+    cap_gc.heap = 100;
+    cap_gc.max_heap = 99;
     CHECK(expect_gc_panic(trigger_gc_heap_invariant));
     cap_gc.heap = saved_heap;
     cap_gc.max_heap = saved_limit;
