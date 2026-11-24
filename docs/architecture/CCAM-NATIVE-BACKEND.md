@@ -39,7 +39,7 @@ Each CCAM virtual register is assigned an eight-byte value slot and an eight-byt
 
 ## 3. Dynamic limits and traps
 
-The emitted program maintains process-global step and call-depth counters. It checks the step budget before dispatching each CCAM instruction and checks call depth before entering a callee. The initial frame counts as depth one, matching the reference evaluator.
+The emitted program maintains process-global step and call-depth counters and switches to a dedicated, 16-byte-aligned BSS stack sized conservatively from the largest function frame and configured maximum depth. This prevents the host process's default stack limit from silently changing CCAM call-depth behaviour. The backend caps this stack allocation at 32 MiB. It checks the step budget before dispatching each CCAM instruction and checks call depth before entering a callee. The initial frame counts as depth one, matching the reference evaluator.
 
 The prototype maps dynamic trap classes to distinct process exit statuses: integer overflow (70), division by zero (71), explicit trap (72), step limit (73), call-depth limit (74), and uninitialised register (75). It does not yet preserve structured trap locations/details or expose a stable public trap ABI. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned. The native backend also applies stricter expansion ceilings of 8,192 total instructions and 65,536 aggregate registers before validation or assembly allocation; these are backend resource limits, not changes to the CCAM language limits.
 
@@ -47,7 +47,7 @@ The prototype maps dynamic trap classes to distinct process exit statuses: integ
 
 The emitter first calls the multi-function CCAM validator. Tests generate assembly from checked Capstan source for a direct `add(19, 23)` call and verify that the output contains a freestanding `_start`, direct function calls, syscall exit, and configured resource limits, with no C include or Capstan runtime reference.
 
-On Linux x86-64, the integration test assembles with `as --64`, links directly with `ld`, and executes the resulting ELF. The expected process exit status is 42. Additional freestanding execution vectors cover a loop/conditional, addition and signed-division overflow, division by zero, step limit, call-depth limit, and an uninitialised-register read. Each ELF is checked to have no `PT_INTERP` program header and no undefined external symbols before execution. The tests do not use a C compiler or C runtime to build or run the target programs. Other CI platforms currently check code generation only; the Linux ELF artifact is not portable to macOS or Windows.
+On Linux x86-64, the integration test assembles with `as --64`, links directly with `ld`, and executes the resulting ELF. The expected process exit status is 42. Additional freestanding execution vectors cover a loop/conditional, bounded recursion on the dedicated stack, addition and signed-division overflow, division by zero, step limit, call-depth limit, and an uninitialised-register read. Each ELF is checked to have no `PT_INTERP` program header and no undefined external symbols before execution. The tests do not use a C compiler or C runtime to build or run the target programs. Other CI platforms currently check code generation only; the Linux ELF artifact is not portable to macOS or Windows.
 
 ## 5. Explicit gaps
 
