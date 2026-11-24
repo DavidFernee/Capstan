@@ -43,6 +43,7 @@ struct CCAMFrame {
 struct CCAMCallMachine {
     List<CCAMFunction> functions;
     List<CCAMFrame> frames;
+    List<List<int>> call_site_lookup;
     int frame_depth;
     int steps;
     int max_steps;
@@ -323,6 +324,7 @@ CCAMCallMachine ccam_empty_call_machine() {
     return new CCAMCallMachine{
         functions: functions,
         frames: frames,
+        call_site_lookup: new List<List<int>>(),
         frame_depth: 0,
         steps: 0,
         max_steps: 0,
@@ -372,6 +374,20 @@ CCAMCallMachineCreateResult ccam_call_machine_create(
     CCAMFunction entry = program[entry_function];
     CCAMRegisterFileResult registers = ccam_registers_create(entry.register_types);
     assert(registers.ok);
+    List<List<int>> call_site_lookup = new List<List<int>>();
+    for (int function_index = 0; function_index < program.len(); function_index += 1) {
+        CCAMFunction fn = program[function_index];
+        List<int> indices = new List<int>();
+        for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
+            indices.push(-1);
+        }
+        for (int site_index = 0; site_index < fn.call_sites.len(); site_index += 1) {
+            int pc = fn.call_sites[site_index].instruction_index;
+            indices[pc] = site_index;
+        }
+        call_site_lookup.push(indices);
+    }
+
     List<CCAMFrame> frames = new List<CCAMFrame>();
     frames.push(new CCAMFrame{
         function_index: entry_function,
@@ -383,6 +399,7 @@ CCAMCallMachineCreateResult ccam_call_machine_create(
     CCAMCallMachine machine = new CCAMCallMachine{
         functions: program,
         frames: frames,
+        call_site_lookup: call_site_lookup,
         frame_depth: 1,
         steps: 0,
         max_steps: max_steps,
@@ -414,15 +431,6 @@ void ccam_call_machine_trap(
     machine.trap_detail = detail;
 }
 
-int ccam_find_call_site(CCAMFunction fn, int pc) {
-    for (int i = 0; i < fn.call_sites.len(); i += 1) {
-        if (fn.call_sites[i].instruction_index == pc) {
-            return i;
-        }
-    }
-    return -1;
-}
-
 void ccam_call_machine_step(CCAMCallMachine machine) {
     if (machine.halted) {
         return;
@@ -451,7 +459,8 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
 
     if (instruction.op == CCAM_OP_CALL) {
         machine.steps += 1;
-        int call_site_index = ccam_find_call_site(fn, executing_pc);
+        int call_site_index = machine.call_site_lookup[
+            active.function_index][executing_pc];
         if (call_site_index < 0) {
             ccam_call_machine_trap(
                 machine, "invalid_call_site", fn.name, executing_pc, "");
