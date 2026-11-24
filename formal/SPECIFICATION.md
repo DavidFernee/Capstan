@@ -1,7 +1,7 @@
 # Allocator and collector abstract specification
 
-**Status:** initial contract for review; not yet mechanised or proved.  
-**Implementation baseline:** `bbe4fe2227a48ac266ba9d3e4dd6093a60ce4f10`.  
+**Status:** initial normative target contract; selected arithmetic and page-release fragments are represented in the separate Lean model, but this specification is not yet fully mechanised and no C refinement is proved.  
+**Implementation baseline:** `bc0a283df5a964e7340cd48ec8ce4a1e8fb3acde`.  
 **Primary implementation:** `runtime/capstan_gc.h`.
 
 This specification records the state that a formal model must represent. It is not a
