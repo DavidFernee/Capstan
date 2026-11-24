@@ -179,7 +179,7 @@ entry function is a halt, handled by the enclosing machine semantics.
 -/
 def popNestedCallFrame {Frame : Type}
     (stack : CallStack Frame) : Except Trap (Frame × CallStack Frame) :=
-  match stack.frames with
+  match hframes : stack.frames with
   | [] => .error .invalidControlFlow
   | [_] => .error .invalidControlFlow
   | callee :: caller :: rest =>
@@ -190,10 +190,8 @@ def popNestedCallFrame {Frame : Type}
         within_limit := by
           have hlen : (caller :: rest).length ≤ (callee :: caller :: rest).length := by
             simp
-          have hstack : stack.frames = callee :: caller :: rest := by
-            rfl
           have hbound : (callee :: caller :: rest).length ≤ stack.maxDepth := by
-            simpa [hstack] using stack.within_limit
+            simpa [hframes] using stack.within_limit
           exact Nat.le_trans hlen hbound
       })
 
@@ -204,8 +202,7 @@ theorem popNestedCallFrame_restores_caller
     (hframes : stack.frames = callee :: caller :: rest)
     (h : popNestedCallFrame stack = .ok (callee, next)) :
     next.frames.head? = some caller := by
-  rw [hframes] at h
-  simp [popNestedCallFrame] at h
+  simp [popNestedCallFrame, hframes] at h
   cases h
   rfl
 
