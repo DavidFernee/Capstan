@@ -1170,7 +1170,7 @@ test "CCAM evaluator dispatches subtraction multiplication and remainder" {
     i = ccam_instruction(CCAM_OP_MUL_I);
     i.dst = 3;
     i.lhs = 2;
-    i.rhs = 1;
+    i.rhs = 2;
     code.push(i);
     i = ccam_instruction(CCAM_OP_REM_I);
     i.dst = 4;
@@ -1185,7 +1185,7 @@ test "CCAM evaluator dispatches subtraction multiplication and remainder" {
     for (int n = 0; n < 6; n += 1) {
         ccam_machine_step(state);
     }
-    assert(state.halted && state.halt_has_value && state.halt_value == 2);
+    assert(state.halted && state.halt_has_value && state.halt_value == 4);
     assert(state.steps == 6 && state.trap_code == "");
 }
 
