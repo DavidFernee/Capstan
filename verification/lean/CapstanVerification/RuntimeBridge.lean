@@ -20,6 +20,12 @@ structure RuntimeRegister where
   intValue_in_range : inI64 intValue
   boolValue : Bool
 
+/-- The payload value selected by a register's declared type. -/
+def RuntimeRegister.asVal (reg : RuntimeRegister) : Val :=
+  match reg.declaredType with
+  | .int => .int reg.intValue
+  | .bool => .bool reg.boolValue
+
 /-- Interpret the initialized payload according to the register's declared type. -/
 def RuntimeRegister.value? (reg : RuntimeRegister) : Option Val :=
   if reg.initialized then
