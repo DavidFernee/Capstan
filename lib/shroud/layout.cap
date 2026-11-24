@@ -78,6 +78,7 @@ void uniquify_layout_ids(Laid root, Ui ui) {
     Map<int> reserved = new Map<int>();
     Map<int> seen = new Map<int>();
     Map<int> assigned = new Map<int>();
+    Map<int> next_suffix = new Map<int>();
     for (int i = 0; i < all.len(); i += 1) { reserved.set(all[i].id, 1); }
     for (int j = 0; j < all.len(); j += 1) {
         string original = all[j].id;
@@ -90,6 +91,7 @@ void uniquify_layout_ids(Laid root, Ui ui) {
         }
         if (duplicate) {
             int suffix = j;
+            if (let next = next_suffix.get(original)) { suffix = int_max(suffix, next); }
             string candidate = $"{original}#shroud-duplicate-{suffix}";
             bool collision = true;
             while (collision) {
@@ -103,6 +105,7 @@ void uniquify_layout_ids(Laid root, Ui ui) {
             }
             all[j].id = candidate;
             assigned.set(candidate, 1);
+            next_suffix.set(original, suffix + 1);
             ui.problems.push("duplicate view identity detected; assign unique View.key() values");
         } else {
             assigned.set(original, 1);
