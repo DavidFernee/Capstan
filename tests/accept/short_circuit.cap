@@ -1,8 +1,9 @@
 // spec: types.bool expr.order expr.short_circuit
 // A suppressed boolean RHS must not execute, even when it would trap.
 int main() {
-    bool a = false && (1 / 0 == 0);
-    bool b = true || (1 / 0 == 0);
+    int zero = 0;
+    bool a = false && (1 / zero == 0);
+    bool b = true || (1 / zero == 0);
     if (a) {
         println("bad");
     } else {
