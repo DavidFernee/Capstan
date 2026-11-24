@@ -312,7 +312,8 @@ fi
 # Dedicated integration regression for aggregate view-tree text preflight.
 section "shroud frame text budget"
 if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
-if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
+printf 'int main(void) { return 0; }\n' > "$tmp/frame-san.c"
+if "$CC" $SAN "$tmp/frame-san.c" -o "$tmp/frame-san" 2>/dev/null; then
   if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame text budget under ASan+UBSan: $out"; else bad "shroud frame text budget (sanitizers)" "$out"; fi
 else
   echo "  skip  sanitizers not available for $CC"
