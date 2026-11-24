@@ -36,6 +36,6 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
-    println("resource limits: 23 assertions and glyph cache exercised");
+    println("resource limits: 27 assertions and glyph cache exercised");
     return 0;
 }

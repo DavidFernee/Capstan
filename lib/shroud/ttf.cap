@@ -6,8 +6,10 @@
 // carries offsets and counts that point elsewhere in the file. In Capstan an
 // out-of-range offset cannot corrupt memory, and this parser goes further: it never
 // reads outside the file at all. Every read goes through a FontReader, which returns
-// 0 and records the failure for any read out of bounds, so a damaged or hostile font
-// is refused (font_load gives none) or a damaged glyph is drawn empty, never a stop.
+// 0 and records the failure for any read out of bounds. This is a whole-file bound,
+// not yet a guarantee that every cmap/loca/hmtx read stays within its owning table;
+// those table-local spans are tracked separately in issue #121. A damaged font is
+// refused (font_load gives none) or a damaged glyph is drawn empty, never a stop.
 //
 // Supported: TrueType outlines ('glyf'), simple and composite glyphs, 'cmap' formats 4
 // and 12, horizontal metrics. Not yet: CFF outlines (.otf), hinting, variable fonts,
