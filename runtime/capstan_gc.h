@@ -258,7 +258,16 @@ static void cap_gc_init(void) {
     cap_gc.threshold = CAP_MIN_THRESHOLD;
     cap_gc.lo = UINTPTR_MAX;
     const char *s = getenv("CAPSTAN_GC_STRESS");
-    if (s) cap_gc.stress = atol(s);
+    if (s) {
+        if (s[0] < '0' || s[0] > '9')
+            cap_panic("invalid CAPSTAN_GC_STRESS value", "CWE-20", 0);
+        char *end = NULL;
+        errno = 0;
+        long value = strtol(s, &end, 10);
+        if (end == s || *end != '\0' || errno == ERANGE || value < 0)
+            cap_panic("invalid CAPSTAN_GC_STRESS value", "CWE-20", 0);
+        cap_gc.stress = value;
+    }
     if (getenv("CAPSTAN_GC_STATS")) { cap_gc.stats = 1; atexit(cap_gc_report); }
     const char *mh = getenv("CAPSTAN_MAX_HEAP");
     if (mh) {
