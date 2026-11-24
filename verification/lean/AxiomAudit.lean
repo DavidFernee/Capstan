@@ -1,0 +1,120 @@
+import CapstanVerification.Machine
+import CapstanVerification.RuntimeBridge
+import CapstanVerification.Progress
+
+#print axioms CapstanVerification.minI64_in_range
+#print axioms CapstanVerification.maxI64_in_range
+#print axioms CapstanVerification.below_minI64_out_of_range
+#print axioms CapstanVerification.above_maxI64_out_of_range
+#print axioms CapstanVerification.executeBranch_target_is_declared
+#print axioms CapstanVerification.executeMove_preserves_well_typed
+#print axioms CapstanVerification.readValue_success_well_typed
+#print axioms CapstanVerification.readInt_success_in_range
+#print axioms CapstanVerification.executeAdd_left_read_error_precedence
+#print axioms CapstanVerification.executeAdd_preserves_well_typed
+#print axioms CapstanVerification.write_preserves_well_typed
+#print axioms CapstanVerification.checkedI64_sound
+#print axioms CapstanVerification.checkedAdd_sound
+#print axioms CapstanVerification.checkedSub_sound
+#print axioms CapstanVerification.checkedMul_sound
+#print axioms CapstanVerification.executeCheckedIntOp_left_read_error_precedence
+#print axioms CapstanVerification.executeCheckedIntOp_preserves_well_typed
+#print axioms CapstanVerification.subIntOp
+#print axioms CapstanVerification.mulIntOp
+#print axioms CapstanVerification.executeCheckedIntOp
+
+#print axioms CapstanVerification.checkedDiv_zero_traps
+#print axioms CapstanVerification.checkedRem_zero_traps
+#print axioms CapstanVerification.checkedDiv_min_neg_one_traps
+#print axioms CapstanVerification.checkedRem_min_neg_one_zero
+#print axioms CapstanVerification.checkedDiv_sound
+#print axioms CapstanVerification.checkedRem_sound
+#print axioms CapstanVerification.divIntOp
+#print axioms CapstanVerification.remIntOp
+
+#print axioms CapstanVerification.executeLt_left_read_error_precedence
+#print axioms CapstanVerification.executeLt_preserves_well_typed
+#print axioms CapstanVerification.executeEq_left_read_error_precedence
+#print axioms CapstanVerification.executeEq_preserves_well_typed
+#print axioms CapstanVerification.executeNot_preserves_well_typed
+#print axioms CapstanVerification.initialMachineState
+
+
+#print axioms CapstanVerification.initialCallStack
+#print axioms CapstanVerification.pushCallFrame
+#print axioms CapstanVerification.pushCallFrame_top
+#print axioms CapstanVerification.pushCallFrame_increments_depth
+#print axioms CapstanVerification.pushCallFrame_within_limit
+#print axioms CapstanVerification.pushCallFrame_exhausted_traps
+#print axioms CapstanVerification.popNestedCallFrame
+#print axioms CapstanVerification.popNestedCallFrame_restores_caller
+#print axioms CapstanVerification.popNestedCallFrame_decreases_depth
+#print axioms CapstanVerification.popNestedCallFrame_entry_refused
+
+#print axioms CapstanVerification.popNestedCallFrame_within_limit
+
+#print axioms CapstanVerification.consumeStep
+#print axioms CapstanVerification.consumeStep_increments
+#print axioms CapstanVerification.consumeStep_within_limit
+#print axioms CapstanVerification.consumeStep_exhausted_traps
+#print axioms CapstanVerification.BudgetedMachineOutcome.budget
+#print axioms CapstanVerification.budgetedMachineStep
+#print axioms CapstanVerification.budgetedMachineStep_preserves_well_typed
+#print axioms CapstanVerification.budgetedMachineStep_budget_within_limit
+#print axioms CapstanVerification.budgetedMachineStep_consumes_one
+#print axioms CapstanVerification.budgetedMachineStep_exhausted_before_instruction
+
+
+#print axioms CapstanVerification.HasExplicitControlEffect
+#print axioms CapstanVerification.machineInstrIsTerminal_iff_control_effect
+#print axioms CapstanVerification.finiteProgram_final_instruction_has_control_effect
+#print axioms CapstanVerification.sequentialPC_increments_before_last
+#print axioms CapstanVerification.sequentialPC_at_last
+#print axioms CapstanVerification.machineStep
+#print axioms CapstanVerification.machineStep_preserves_well_typed
+#print axioms CapstanVerification.machineState_pc_is_in_range
+
+#print axioms CapstanVerification.sequentialPC
+#print axioms CapstanVerification.write
+#print axioms CapstanVerification.executeMove
+#print axioms CapstanVerification.executeAdd
+#print axioms CapstanVerification.executeLt
+#print axioms CapstanVerification.executeEq
+#print axioms CapstanVerification.executeNot
+
+#print axioms CapstanVerification.RuntimeRegister.value?
+#print axioms CapstanVerification.runtimeRegisterAt
+#print axioms CapstanVerification.runtimeTypeAt
+#print axioms CapstanVerification.runtimeValueAt
+#print axioms CapstanVerification.runtimeReadInt
+#print axioms CapstanVerification.runtimeReadBool
+#print axioms CapstanVerification.runtimeReadInt_corresponds
+#print axioms CapstanVerification.runtimeReadBool_corresponds
+#print axioms CapstanVerification.runtimeRelation_preserves_well_typed
+#print axioms CapstanVerification.runtimeWriteRegister_preserves_relation
+#print axioms CapstanVerification.runtimeWriteRegister_type_at_preserved
+#print axioms CapstanVerification.runtimeWriteRegister_type_at_target_preserved
+#print axioms CapstanVerification.runtimeWriteRegister_type_at_other_preserved
+#print axioms CapstanVerification.runtimeWriteRegister_value_at_preserved
+#print axioms CapstanVerification.fin_eq_of_val_eq
+#print axioms CapstanVerification.write_preserves_well_typed
+#print axioms Fin.ext
+#print axioms Fin.val_ne_of_ne
+
+#print axioms CapstanVerification.runtimeSetAt
+#print axioms CapstanVerification.runtimeSetAt_get_same_of_exists
+#print axioms CapstanVerification.runtimeSetAt_get_other_of_exists
+#print axioms CapstanVerification.runtimeWriteRegister
+#print axioms CapstanVerification.runtimeWriteRegister_target
+#print axioms CapstanVerification.runtimeWriteRegister_other_unchanged
+
+#print axioms CapstanVerification.RuntimeRegister.asVal
+#print axioms CapstanVerification.RuntimeRegister.asVal_hasType
+#print axioms CapstanVerification.RuntimeRegister.asVal_hasType
+#print axioms CapstanVerification.RuntimeRegister.value?_of_initialized
+#print axioms CapstanVerification.runtimeSetAt_length
+#print axioms CapstanVerification.runtimeWriteRegister_length
+
+#print axioms CapstanVerification.machineStep_progress_or_explicit_outcome
+#print axioms CapstanVerification.machineStep_deterministic
+#print axioms CapstanVerification.runFuel_fuel_exhausted_state_well_typed

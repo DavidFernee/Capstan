@@ -1,0 +1,51 @@
+name: formal-verification
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'verification/**'
+      - 'architecture/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lean:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Reject unfinished proofs and local axioms
+        shell: bash
+        run: |
+          if grep -R -nE '(^|[^[:alnum:]_])(sorry|admit)([^[:alnum:]_]|$)|^[[:space:]]*axiom[[:space:]]' --include='*.lean' verification/lean; then
+            echo "Unfinished proof or local axiom declaration found."
+            exit 1
+          fi
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
+        with:
+          lake-package-directory: verification/lean
+          build: true
+          build-args: --wfail
+          test: false
+          lint: false
+          leanchecker: false
+          # Upstream nanoda's exporter is incompatible with this package's v4.19 toolchain.
+          # A pinned v4.19 lean4checker replay is run explicitly below.
+          nanoda: false
+      - name: Build proof library root explicitly
+        working-directory: verification/lean
+        run: lake build CapstanVerification --wfail
+      - name: Replay proof library with pinned Lean 4.19 checker
+        working-directory: verification/lean
+        shell: bash
+        run: |
+          git clone --depth 1 --branch v4.19.0 https://github.com/leanprover/lean4checker.git lean4checker
+          test "$(git -C lean4checker rev-parse HEAD)" = "e11f65c651edd58d68ba260015d2bfde5102cd7f"
+          cmp -s lean-toolchain lean4checker/lean-toolchain
+          (cd lean4checker && lake build)
+          lake env lean4checker/.lake/build/bin/lean4checker CapstanVerification
+      - name: Report theorem axiom dependencies
+        working-directory: verification/lean
+        run: lake env lean AxiomAudit.lean
