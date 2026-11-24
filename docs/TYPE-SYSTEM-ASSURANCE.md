@@ -821,3 +821,36 @@ All instantiation and obligation queues must have deterministic ordering based o
 - A failed compile preserves any previously published output rather than truncating it before validation completes.
 
 These are compiler acceptance gates, not claims about the current implementation.
+
+
+## 25. Generic Result storage must preserve Grant non-escape and payload security
+
+`Result<T,E>` is proposed as a generic enum, so its `Ok(T)` and `Err(E)` payloads are ordinary enum storage. The existing language forbids grants in enum values, struct fields, collections, constants and function returns. Generic substitution must not create a loophole around those existing lifetime rules.
+
+### 25.1 Apply storage policy after substitution
+
+For every concrete `Result<T,E>` instantiation, recursively evaluate both substituted payload types using the same bounded, cycle-safe Grant-containment predicate required elsewhere:
+
+- Reject `Result<Grant<P>,E>` and `Result<T,Grant<P>>`.
+- Reject nested forms such as `Result<List<Grant<P>>,E>`, `Result<T,PublicBox<Grant<P>>>` and any nominal field path that reaches a Grant.
+- Reject `Result<..., ...>` when either payload's Grant status is Unknown; unknown is not proof of grant-freedom.
+- Apply the same rule to user-defined generic enums and structs, not just the standard `Result` declaration.
+- Do not special-case `Result` as safe because propagation returns its Err branch unchanged.
+
+This is a storage/lifetime rule, not merely a restriction on using `?`. A value may be constructed, returned, passed or nested without ever applying postfix propagation, so all construction and storage boundaries must enforce it.
+
+### 25.2 Preserve non-Grant payload qualifiers and reachability
+
+Substitution must preserve the exact payload type and existing security semantics. In particular, it must not widen `Tainted` to `string`, reinterpret `Secret` as printable data, or merge `Html`/`LogText` with ordinary strings. If Secret is permitted as a Result payload, its allocation and wipe-on-reclamation rules remain in force through enum construction, matching, return and propagation. Any pointer-bearing enum payload must remain visible to the GC.
+
+### 25.3 Required adversarial tests
+
+- Reject direct Grant in either Result payload position.
+- Reject Grant nested under collection, optional, struct, enum and multiple generic layers.
+- Reject unresolved/opaque payload layouts whose Grant status is Unknown.
+- Verify the same recursive predicate is used for user-defined generic enum/struct storage, constants, collection elements, returns and closure captures.
+- Verify `Result<Secret,E>` and `Result<T,Secret>` preserve Secret restrictions and GC reachability if those instantiations are supported.
+- Verify Tainted/Html/LogText payloads retain exact qualifiers through Ok, Err, match and `?`.
+- Verify error propagation does not create a Grant escape or bypass the normal return/storage checks.
+
+These are acceptance requirements for generic enum substitution and Result; they do not claim either feature is implemented.
