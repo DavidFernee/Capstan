@@ -430,10 +430,10 @@ static void test_gc_allocator_arithmetic(void) {
     }
     {
         CapPage existing = {.base = (char *)(uintptr_t)0x10000};
-        CapPage *table[2] = {&existing, NULL};
+        CapPage *table[4] = {&existing, NULL, NULL, NULL};
         CapPage **saved_table = cap_gc.ptab;
         size_t saved_cap = cap_gc.ptab_cap, saved_pages = cap_gc.npages;
-        cap_gc.ptab = table; cap_gc.ptab_cap = 2; cap_gc.npages = 1;
+        cap_gc.ptab = table; cap_gc.ptab_cap = 4; cap_gc.npages = 1;
         CHECK(expect_gc_panic(trigger_duplicate_page_table_insert));
         cap_gc.ptab = saved_table; cap_gc.ptab_cap = saved_cap; cap_gc.npages = saved_pages;
     }
