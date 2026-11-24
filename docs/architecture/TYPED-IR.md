@@ -49,7 +49,7 @@ A call reads/checks its argument registers in list order, then pushes a callee f
 
 ## 4. Validation boundary
 
-Program validation occurs before execution and returns either a validated program or a deterministic validation error. It MUST check the entire function table and every instruction's structural shape, indices, static types, call signature, return convention, branch target and termination/fall-through properties.
+Program validation occurs before execution and returns either a validated program or a deterministic validation error. The external JSON encoding and closed instruction schemas are normative in `docs/architecture/CCAM.md`. The parser/validator MUST reject duplicate object keys, unknown or missing fields, wrong JSON types, unknown type tags, malformed names and invalid cross-field constraints. Numeric tokens MUST be parsed exactly; do not round through IEEE-754 binary64. Accept only mathematically integral values within the declared signed-64 or index range, and check every index against its finite vector/sequence length before indexing. Boolean fields accept only JSON `true` or `false`. It MUST then check the entire function table and every instruction's structural shape, indices, static types, call signature, return convention, branch target and termination/fall-through properties.
 
 The runtime evaluator consumes only validated programs. It still performs dynamic state checks (notably register initialisation and resource limits). It MUST NOT rely on validation to prove that a register has been initialised along every path in v0.1; the dynamic uninitialised-register trap remains part of the semantics.
 
@@ -98,7 +98,7 @@ The initial Lean project currently provides a partial register/arithmetic founda
 
 ## 8. Source location and diagnostics
 
-Every emitted instruction SHOULD carry source-span metadata (file identity, start/end byte offsets, line/column mapping). Metadata must survive lowering and optimisation sufficiently to attribute a runtime trap to the source operation responsible for it. It does not affect semantic equality of machine states except as diagnostic metadata.
+Every emitted instruction SHOULD have a source-span entry in an out-of-band side table keyed by function and instruction index (file identity, start/end byte offsets, line/column mapping). Source spans and debug metadata MUST NOT be added as extra instruction-object fields. Metadata must survive lowering and optimisation sufficiently to attribute a runtime trap to the source operation responsible for it. It does not affect semantic equality of machine states except as diagnostic metadata.
 
 ## 9. Extension and optimisation gates
 
