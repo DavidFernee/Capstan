@@ -278,6 +278,8 @@ static size_t cap_gc_slot(uintptr_t pageno, size_t cap) {
 }
 
 static void cap_gc_ptab_insert(CapPage *pg) {
+    if (cap_gc.ptab_cap && !cap_gc.ptab)
+        cap_panic("page-table storage is missing", "CWE-476", 0);
     if (cap_gc.ptab_cap &&
         (cap_gc.ptab_cap & (cap_gc.ptab_cap - 1)) != 0)
         cap_panic("page-table capacity is not a power of two", "CWE-682", 0);
@@ -319,6 +321,8 @@ static void cap_gc_ptab_insert(CapPage *pg) {
 
 static CapPage *cap_gc_page_of(uintptr_t addr) {
     if (!cap_gc.ptab_cap) return NULL;
+    if (!cap_gc.ptab)
+        cap_panic("page-table storage is missing", "CWE-476", 0);
     uintptr_t pageno = addr >> CAP_PAGE_SHIFT;
     if ((cap_gc.ptab_cap & (cap_gc.ptab_cap - 1)) != 0)
         cap_panic("page-table capacity is not a power of two", "CWE-682", 0);
@@ -401,6 +405,9 @@ static void cap_gc_format_page(CapPage *pg, int atomic, int cls) {
 }
 
 static void cap_gc_new_page(int atomic, int cls) {
+    if (cap_gc.nspare > cap_gc.capspare ||
+        (cap_gc.nspare > 0 && !cap_gc.spare))
+        cap_panic("spare-page storage invariant violated", "CWE-682", 0);
     if (cap_gc.nspare) {
         CapPage *pg = cap_gc.spare[--cap_gc.nspare];
         if (pg->released) {
@@ -641,6 +648,9 @@ static void *cap_gc_alloc(size_t n, int atomic) {
     }
     int cls = 0;
     while (cap_class_size[cls] < n) cls++;
+    if (cap_gc.nspare > cap_gc.capspare ||
+        (cap_gc.nspare > 0 && !cap_gc.spare))
+        cap_panic("spare-page storage invariant violated", "CWE-682", 0);
     if (!cap_gc.freelist[atomic][cls]) {
         size_t page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
                            ? 0 : (size_t)CAP_PAGE_SIZE;
@@ -668,6 +678,11 @@ static void *cap_gc_alloc(size_t n, int atomic) {
 
 /* Register the address of a global that may hold a pointer into the heap. */
 static void cap_gc_root(void **addr) {
+    if (!addr)
+        cap_panic("null registered root slot", "CWE-476", 0);
+    if (cap_gc.nroots > cap_gc.caproots ||
+        (cap_gc.caproots > 0 && !cap_gc.roots))
+        cap_panic("root metadata invariant violated", "CWE-682", 0);
     if (cap_gc.nroots == cap_gc.caproots) {
         size_t nc = cap_gc_next_capacity(cap_gc.caproots,
                                          cap_gc_checked_add(cap_gc.nroots, 1),
