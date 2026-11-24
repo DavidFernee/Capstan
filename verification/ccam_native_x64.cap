@@ -273,21 +273,23 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     int max_steps,
     int max_depth
 ) {
-    int total_native_instructions = 0;
-    int total_native_registers = 0;
-    for (int i = 0; i < functions.len(); i += 1) {
-        total_native_instructions += functions[i].instructions.len();
-        total_native_registers += functions[i].register_types.len();
-    }
-    if (total_native_instructions > CCAM_X64_MAX_NATIVE_INSTRUCTIONS ||
-        total_native_registers > CCAM_X64_MAX_NATIVE_REGISTERS) {
-        return new CCAMNativeResult{
-            ok: false, assembly: "", error: "native_resource_limit"
-        };
-    }
     CCAMValidationResult valid = ccam_validate_multi_function(functions, entry_function);
     if (!valid.ok) {
         return new CCAMNativeResult{ok: false, assembly: "", error: "invalid_ccam:" + valid.error};
+    }
+    int total_native_instructions = 0;
+    int total_native_registers = 0;
+    for (int i = 0; i < functions.len(); i += 1) {
+        int function_instructions = functions[i].instructions.len();
+        int function_registers = functions[i].register_types.len();
+        if (function_instructions > CCAM_X64_MAX_NATIVE_INSTRUCTIONS - total_native_instructions ||
+            function_registers > CCAM_X64_MAX_NATIVE_REGISTERS - total_native_registers) {
+            return new CCAMNativeResult{
+                ok: false, assembly: "", error: "native_resource_limit"
+            };
+        }
+        total_native_instructions += function_instructions;
+        total_native_registers += function_registers;
     }
     if (max_steps < 0 || max_steps > CCAM_MAX_STEPS ||
         max_depth < 1 || max_depth > CCAM_MAX_CALL_DEPTH) {
