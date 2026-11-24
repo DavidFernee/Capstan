@@ -145,13 +145,14 @@ const int PNG_STRING_CHUNK_BYTES = 4096;
 string bytes_text(List<int> bytes) {
     List<string> byte_strings = new List<string>();
     for (int i = 0; i < 256; i += 1) { byte_strings.push(char_str(i)); }
+    int part_count = int_min(PNG_STRING_CHUNK_BYTES, bytes.len());
     List<string> parts = new List<string>();
-    for (int j = 0; j < PNG_STRING_CHUNK_BYTES; j += 1) { parts.push(""); }
+    for (int j = 0; j < part_count; j += 1) { parts.push(""); }
     List<string> chunks = new List<string>();
     int from = 0;
     while (from < bytes.len()) {
-        int count = int_min(PNG_STRING_CHUNK_BYTES, bytes.len() - from);
-        for (int j = 0; j < PNG_STRING_CHUNK_BYTES; j += 1) {
+        int count = int_min(part_count, bytes.len() - from);
+        for (int j = 0; j < part_count; j += 1) {
             if (j < count) { parts[j] = byte_strings[bytes[from + j]]; }
             else { parts[j] = ""; }
         }
