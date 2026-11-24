@@ -104,6 +104,15 @@ def main():
             if not inside_repo(path):
                 print("  %s: unsafe covered path %r" % (cid, path))
                 failed = True
+                continue
+            full = os.path.realpath(os.path.join(ROOT, path))
+            root_real = os.path.realpath(ROOT)
+            if os.path.commonpath((root_real, full)) != root_real:
+                print("  %s: covered path resolves outside repository: %s" % (cid, path))
+                failed = True
+            elif not os.path.exists(full):
+                print("  %s: covered path does not exist: %s" % (cid, path))
+                failed = True
         review_revision = claim.get("review", {}).get("reviewed_commit", "")
         if re.fullmatch(r"[0-9a-f]{40}", review_revision) and coverage:
             try:
