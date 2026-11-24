@@ -422,6 +422,12 @@ static void test_gc_checked_arithmetic(void) {
     CHECK(cap_gc_reserve_pages(CAP_PAGE_SIZE / 2) == 1);
     CHECK(cap_gc_reserve_pages(CAP_PAGE_SIZE) == 2);
     CHECK(cap_gc_reserve_pages(SIZE_MAX) == SIZE_MAX / (CAP_PAGE_SIZE / 2));
+    uintptr_t stack_low = 0, stack_high = 0;
+    CHECK(cap_gc_stack_bounds(0x1000, 0x2000, &stack_low, &stack_high));
+    CHECK(stack_low == 0x1000 && stack_high == 0x3000);
+    CHECK(cap_gc_stack_bounds(UINTPTR_MAX - 8, 8, &stack_low, &stack_high));
+    CHECK(stack_low == UINTPTR_MAX - 8 && stack_high == UINTPTR_MAX);
+    CHECK(!cap_gc_stack_bounds(UINTPTR_MAX - 7, 8, &stack_low, &stack_high));
 }
 
 /* The collector must keep objects reachable only through interior pointers,
