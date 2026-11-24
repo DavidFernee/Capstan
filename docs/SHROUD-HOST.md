@@ -74,7 +74,7 @@ The host receives a completed Shroud pixmap after `render`.
 - Because S0 reuses the same backing list, the host must either copy pixels into a host-owned presentation buffer before the next render, or synchronously complete consumption before allowing another render to mutate the pixmap.
 - An asynchronous compositor/GPU upload must own its copied/staged data until the platform signals completion. Never enqueue a borrowed pointer to `ui.pixmap.px` and then render again.
 - Preserve premultiplied alpha. The canonical logical pixel is `0xAARRGGBB`; a backend whose native byte order or surface format differs must convert explicitly and test channel order and alpha.
-- The current row stride is exactly `width * 4` bytes. A future external-buffer API must make stride, format, ownership and lifetime explicit rather than infer them.
+- The current `Pixmap.px` is a Capstan `List<int>`, not a documented packed byte buffer; no raw byte stride or host ABI is promised. The embedder must read each logical pixel and serialize its canonical low 32 bits into the chosen native 32-bit surface format. A future external-buffer API must make stride, format, ownership and lifetime explicit rather than infer them.
 - Presentation failure is a host error. Do not report a frame as displayed merely because Shroud rendered it. The host should retain enough state to repaint after exposure, occlusion or surface loss.
 - Initial S1 may present a full frame on every render. Damage tracking and vsync pacing are later optimisations; they must not change the reference software-rendering result.
 
