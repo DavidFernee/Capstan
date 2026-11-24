@@ -8,6 +8,7 @@ Builds the Capstan regression program, asks it to write a near-limit PNG, and
 independently validates the complete PNG/zlib structure and decoded pixels.
 """
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -26,8 +27,8 @@ def fail(message):
     raise SystemExit("png budget: " + message)
 
 
-def run(argv, *, check=True):
-    result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True)
+def run(argv, *, check=True, env=None):
+    result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, env=env)
     if check and result.returncode != 0:
         fail(f"command {argv[0]!r} exited {result.returncode}:\n{result.stdout}{result.stderr}")
     return result
@@ -131,7 +132,9 @@ def main():
         run([capstanc, "build", "--strict", "-o", c_source] + LIB +
             ["tests/shroud/png_budget.cap"])
         run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), c_source, "-o", exe])
-        result = run([exe, accepted, rejected, binary, gallery])
+        env = os.environ.copy()
+        env["CAPSTAN_GC_STATS"] = "1"
+        result = run([exe, accepted, rejected, binary, gallery], env=env)
         if "png budget: 21 assertions" not in result.stdout:
             fail(f"regression program did not report its assertions: {result.stdout!r}")
         if not os.path.isfile(accepted):
@@ -169,10 +172,14 @@ def main():
             row = gallery_raw[y * len(gallery_row):(y + 1) * len(gallery_row)]
             if row != gallery_row:
                 fail(f"560x520 gallery-size decoded pixels differ on row {y}")
+        peak = re.search(r"peak_heap=(\\d+)", result.stderr + result.stdout)
+        heap_note = (f"; peak Capstan heap {int(peak.group(1)) / (1024 * 1024):.1f} MiB"
+                     if peak else "; peak Capstan heap metric unavailable")
         print(f"png budget: 21 Capstan assertions; {width}x{height} RGBA / "
               f"{gallery_width}x{gallery_height} gallery-size RGBA; "
               f"{blocks} / {gallery_blocks} stored DEFLATE blocks; CRC, zlib, Adler "
-              "and every pixel verified; over-budget write produced no file")
+              "and every pixel verified; all 256 byte values preserved; "
+              "over-budget write produced no file" + heap_note)
 
 
 if __name__ == "__main__":
