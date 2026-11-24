@@ -620,11 +620,11 @@ add(532, "Insertion of sensitive information into output (hash of a secret)", "r
     'int main() { if (let s = secret_env("PIN")) { println(hash(s)); } return 0; }', "CWE-532",
     "A fast hash of a short secret is reversed by trying every value.")
 add(367, "Time-of-check time-of-use (grant used after the checked data changed)", "runtime",
-    "struct User { int id; }\nsensitive struct Doc { int owner; string body; }\npolicy CanRead(User u, Doc d) { return u.id == d.owner; }\n"
+    "struct User { int id; }\nsensitive struct Doc { int owner; string body; }\npolicy CanRead(User u, Doc d, int to) { return u.id == d.owner && to >= 0; }\n"
     "protected(CanRead) string read_doc(Grant<CanRead> g, Doc d) { return d.body; }\n"
     "protected(CanRead) void transfer(Grant<CanRead> g, Doc d, int to) { d.owner = to; }\n"
-    "test \"deny\" { assert_denied CanRead(new User{id: 1}, new Doc{owner: 2, body: \"x\"}); }\n"
-    "int main() { User me = new User{id: 1}; Doc d = new Doc{owner: 1, body: \"p\"}; if (let g = authorize CanRead(me, d)) { transfer(g, d, 2); println(read_doc(g, d)); } return 0; }",
+    "test \"deny\" { assert_denied CanRead(new User{id: 1}, new Doc{owner: 2, body: \"x\"}, 2); }\n"
+    "int main() { User me = new User{id: 1}; Doc d = new Doc{owner: 1, body: \"p\"}; if (let g = authorize CanRead(me, d, 2)) { transfer(g, d, 2); println(read_doc(g, d)); } return 0; }",
     "CWE-367", "Each protected call evaluates the policy again on the grant's arguments.")
 
 

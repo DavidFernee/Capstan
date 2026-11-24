@@ -147,8 +147,12 @@ In v0.1, `sql_query` and `run` are demonstration sinks: they print what they wou
   protected functions may take grants, and calling one without a grant is CWE-862.
 - Each call to a protected function evaluates the policy again on the arguments it was
   authorised with; if it no longer holds (an owner changed, say), the program stops with CWE-367.
-- A grant is bound to the struct objects it was issued for. If a protected function
-  is passed a different object of a type the policy checked, the program stops with CWE-639.
+- A grant is bound to the values it was issued for, by policy-argument position (the role).
+  Structs and collections are bound by identity; strings by content; scalar values by value,
+  and enums by tag plus the values of the active variant's fields. Passing a different argument in a policy role stops with CWE-639. A protected
+  function parameters must be represented in the policy; extra unbound parameters are rejected.
+  For repeated types, it must accept all policy parameters of that type or none, keeping roles
+  unambiguous.
 - Policy analysis:
   - `return true;` without `public` is an error (CWE-862).
   - `Tainted` parameters are an error (CWE-807).

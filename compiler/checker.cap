@@ -1565,6 +1565,14 @@ void bind_params(Checker c, Node f) {
     }
 }
 
+int count_params_of_type(Node f, Type t, int start) {
+    int count = 0;
+    for (int i = start; i < f.n; i += 1) {
+        if (type_eq(ty_of(f.kids[i]), t)) { count += 1; }
+    }
+    return count;
+}
+
 void check_fn(Checker c, Node f) {
     Type rt = ty_of(f);
     check_type(c, f, rt, true);
@@ -1573,10 +1581,41 @@ void check_fn(Checker c, Node f) {
     }
     check_params(c, f);
     if (f.s2 != "") {
-        if (let _pol = c.policies.get(f.s2)) {
+        if (let pol = c.policies.get(f.s2)) {
             bool ok = f.n >= 1 && ty_of(f.kids[0]).k == TY_GRANT && ty_of(f.kids[0]).name == f.s2;
             if (!ok) {
                 error_at(c.ctx, f, "CWE-862", "protected(" + f.s2 + ") function '" + f.s + "' must take Grant<" + f.s2 + "> as its first parameter");
+            }
+            // Every protected-function argument must be represented in the policy.
+            // Otherwise a caller could vary an unexamined value (for example, a debit amount)
+            // while presenting a grant for a different, authorised request.
+            for (int i = 1; i < f.n; i += 1) {
+                Type ft = ty_of(f.kids[i]);
+                bool found = false;
+                for (int j = 0; j < pol.n; j += 1) {
+                    if (type_eq(ty_of(pol.kids[j]), ft)) { found = true; }
+                }
+                if (!found) {
+                    error_at(c.ctx, f.kids[i], "CWE-639", "protected(" + f.s2 + ") parameter '" + f.kids[i].s + "' is not bound by policy '" + f.s2 + "'; include this argument in the policy or remove it from the protected function");
+                }
+            }
+            // Parameters of a repeated type are matched by occurrence, so a protected
+            // function must accept all policy arguments of that type or none.
+            for (int i = 0; i < pol.n; i += 1) {
+                Type pt = ty_of(pol.kids[i]);
+                if (pt.k != TY_VOID && pt.k != TY_ERR && pt.k != TY_NONE) {
+                    bool seen = false;
+                    for (int j = 0; j < i; j += 1) {
+                        if (type_eq(ty_of(pol.kids[j]), pt)) { seen = true; }
+                    }
+                    if (!seen) {
+                        int policy_count = count_params_of_type(pol, pt, 0);
+                        int function_count = count_params_of_type(f, pt, 1);
+                        if (function_count != 0 && function_count != policy_count) {
+                            error_at(c.ctx, f, "CWE-639", "protected(" + f.s2 + ") function '" + f.s + "' must take all " + int_to_str(policy_count) + " policy parameters of type " + type_str(pt) + " or none, so argument roles remain unambiguous");
+                        }
+                    }
+                }
             }
         } else {
             error_at(c.ctx, f, "", "protected() names unknown policy '" + f.s2 + "'");
