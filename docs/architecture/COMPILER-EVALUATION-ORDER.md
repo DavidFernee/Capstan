@@ -29,7 +29,7 @@ The mainline now contains the explicit compound-assignment sequencing implementa
 | Field/index assignment | Explicit receiver/index/value temporaries where required | The lvalue address components are evaluated before the assigned value when their evaluation can be observable |
 | Struct/enum construction | Sequential statement-expression assignments | Initialisers are emitted in source order |
 | Authorisation arguments | Sequential typed temporaries | Policy arguments are evaluated in source order before policy evaluation |
-| Compound assignment | Explicit old-value read, RHS evaluation, computation and write | The old value and target address are retained before a mutating RHS; a potentially invalidated index is rechecked at write time, while a proved setter is permitted only when the range analysis establishes that the RHS region cannot shrink the list; see PR #97 |
+| Compound assignment | Explicit old-value read, RHS evaluation, computation and write | The old value and target address are retained before a mutating RHS. In the current implementation, range analysis does not generate list-length facts (`seq_ok` remains false), so indexed-list reads and writes use checked helpers; the merged PR #97 regression verifies that an RHS which removes the indexed element traps at the final write. Any future list-bounds check elision requires a complete alias/effect proof, not merely the presence of the currently unused `may_shrink` helpers. |
 | `sql_query` / `run` | Special lowering builds a runtime argument list | Argument zero is statically required by the checker to be a string literal, so its later textual placement cannot reorder a source side effect; remaining arguments are appended sequentially |
 
 ## 3. The `hoist()` classification invariant
