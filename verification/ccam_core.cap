@@ -194,7 +194,7 @@ struct CCAMRegisterResult {
 struct CCAMRegisterFileResult {
     bool ok;
     List<CCAMRegister> registers;
-    string trap;
+    string error;
 }
 
 CCAMRegisterResult ccam_register_error(string trap) {
@@ -217,7 +217,7 @@ CCAMRegisterFileResult ccam_registers_create(List<int> types) {
             return new CCAMRegisterFileResult{
                 ok: false,
                 registers: registers,
-                trap: "invalid_register_type"
+                error: "invalid_register_type"
             };
         }
         CCAMRegister reg = new CCAMRegister{
@@ -228,7 +228,7 @@ CCAMRegisterFileResult ccam_registers_create(List<int> types) {
         };
         registers.push(reg);
     }
-    return new CCAMRegisterFileResult{ok: true, registers: registers, trap: ""};
+    return new CCAMRegisterFileResult{ok: true, registers: registers, error: ""};
 }
 
 CCAMRegisterResult ccam_register_read_int(List<CCAMRegister> registers, int index) {
@@ -327,15 +327,15 @@ test "CCAM register-file constructor rejects unknown type tags" {
     List<int> unknown = new List<int>();
     unknown.push(0);
     CCAMRegisterFileResult zero = ccam_registers_create(unknown);
-    assert(!zero.ok && zero.trap == "invalid_register_type");
+    assert(!zero.ok && zero.error == "invalid_register_type");
 
     List<int> negative = new List<int>();
     negative.push(-1);
     CCAMRegisterFileResult negative_result = ccam_registers_create(negative);
-    assert(!negative_result.ok && negative_result.trap == "invalid_register_type");
+    assert(!negative_result.ok && negative_result.error == "invalid_register_type");
 
     List<int> future = new List<int>();
     future.push(3);
     CCAMRegisterFileResult future_result = ccam_registers_create(future);
-    assert(!future_result.ok && future_result.trap == "invalid_register_type");
+    assert(!future_result.ok && future_result.error == "invalid_register_type");
 }
