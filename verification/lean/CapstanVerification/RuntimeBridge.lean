@@ -57,7 +57,7 @@ theorem runtimeSetAt_get_same_of_exists
       | succ index =>
           simp only [runtimeRegisterAt] at hreg
           simp only [runtimeSetAt, runtimeRegisterAt]
-          exact ih hreg
+          exact ih index hreg
 
 /-- Reading a different index is unaffected by a list-slot replacement. -/
 theorem runtimeSetAt_get_other_of_exists
@@ -82,7 +82,7 @@ theorem runtimeSetAt_get_other_of_exists
           | succ other =>
               simp only [runtimeRegisterAt] at hreg
               simp only [runtimeSetAt, runtimeRegisterAt]
-              apply ih hreg
+              apply ih index other hreg
               intro heq
               exact hother (congrArg Nat.succ heq)
 
