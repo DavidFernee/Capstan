@@ -164,3 +164,10 @@ The next baseline pass should enumerate:
 5. the minimum supported target matrix and ABI assumptions.
 
 This inventory is required before selecting the first native target or estimating the size of the replacement runtime.
+
+
+## Appendix B. First executable vertical slice
+
+CCAM v0.1 is now specified in `docs/architecture/CCAM.md` and has an executable Python reference prototype in `verification/reference_machine.py`. The prototype covers typed integer/boolean registers, checked signed-64 arithmetic, branches, calls/returns, traps and deterministic resource limits. Its conformance tests run independently of the C toolchain and are included in the repository CI workflow.
+
+This is deliberately not presented as the final implementation language or as a formally verified runtime. Python is a temporary executable notation for the abstract machine while the machine definition and proof-assistant choice are reviewed. It must not become a production dependency or part of the eventual trusted computing base. The next formalisation step is to encode the same machine state and transition relation in the selected proof assistant, then prove register typing preservation and progress-or-trap before extending the machine with heap or security features.
