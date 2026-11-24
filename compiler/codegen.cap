@@ -693,20 +693,55 @@ string pol_sig(Node p) {
     return "static bool pol_" + p.s + "(" + params_c(p) + ")";
 }
 
-// Protected functions verify that the grant was issued for these very objects.
+// Compare a protected argument with the corresponding value saved at authorization.
+string grant_value_equal(Type t, string x, string y) {
+    if (t.k == TY_OPT) {
+        Type inner = t.args[0];
+        string ix = x;
+        string iy = y;
+        if (is_scalar(inner)) { ix = "(*" + x + ")"; iy = "(*" + y + ")"; }
+        return "((" + x + " == NULL && " + y + " == NULL) || (" + x + " != NULL && " + y + " != NULL && " + grant_value_equal(inner, ix, iy) + "))";
+    }
+    if (t.k == TY_STR || t.k == TY_TAINT || t.k == TY_HTML || t.k == TY_LOG) {
+        return "cap_str_eq(" + x + ", " + y + ")";
+    }
+    // Secret values are opaque capabilities; compare their identity, never their contents.
+    if (t.k == TY_SECRET) { return "(" + x + " == " + y + ")"; }
+    if (t.k == TY_ENUM) { return "((" + x + ")->tag == (" + y + ")->tag)"; }
+    return "(" + x + " == " + y + ")";
+}
+
+// Protected functions verify each argument against its exact policy-argument role.
 void gen_grant_checks(Gen g, Node f) {
     if (let pol = g.c.policies.get(f.s2)) {
         int id = 0;
         if (let pid = g.c.policy_ids.get(f.s2)) { id = pid; }
+        emit(g, "cap_grant_policy_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", " + loc(f) + ");");
         for (int i = 1; i < f.n; i += 1) {
             Type pt = ty_of(f.kids[i]);
-            if (pt.k == TY_STRUCT) {
-                bool bound = false;
-                for (int j = 0; j < pol.n; j += 1) {
-                    if (type_eq(ty_of(pol.kids[j]), pt)) { bound = true; }
+            int ordinal = 0;
+            for (int k = 1; k < i; k += 1) {
+                if (type_eq(ty_of(f.kids[k]), pt)) { ordinal += 1; }
+            }
+            int policy_index = -1;
+            int occurrence = 0;
+            for (int j = 0; j < pol.n; j += 1) {
+                if (type_eq(ty_of(pol.kids[j]), pt)) {
+                    if (occurrence == ordinal) { policy_index = j; }
+                    occurrence += 1;
                 }
-                if (bound) {
-                    emit(g, "cap_grant_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", (void *)u_" + f.kids[i].s + ", " + loc(f) + ");");
+            }
+            if (policy_index >= 0) {
+                if (pt.k == TY_STRUCT) {
+                    int slot = 0;
+                    for (int j = 0; j < policy_index; j += 1) {
+                        if (ty_of(pol.kids[j]).k == TY_STRUCT) { slot += 1; }
+                    }
+                    emit(g, "cap_grant_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", " + int_to_str(slot) + ", (void *)u_" + f.kids[i].s + ", " + loc(f) + ");");
+                } else {
+                    string saved = "((CapPolArgs_" + f.s2 + " *)u_" + f.kids[0].s + "->args)->a" + int_to_str(policy_index);
+                    string equal = grant_value_equal(pt, "u_" + f.kids[i].s, saved);
+                    emit(g, "if (!" + equal + ") cap_panic(\"grant used with a different policy argument value\", \"CWE-639\", " + loc(f) + ");");
                 }
             }
         }
