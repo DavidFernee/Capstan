@@ -278,14 +278,25 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, "    movq $9, %rax");
     ccam_x64_line(output, "    xorq %rdi, %rdi");
     ccam_x64_line(output, "    movq cap_stack_bytes(%rip), %rsi");
-    ccam_x64_line(output, "    movq $3, %rdx");
+    ccam_x64_line(output, "    addq $4096, %rsi");
+    ccam_x64_line(output, "    xorq %rdx, %rdx");
     ccam_x64_line(output, "    movq $34, %r10");
     ccam_x64_line(output, "    movq $-1, %r8");
     ccam_x64_line(output, "    xorq %r9, %r9");
     ccam_x64_line(output, "    syscall");
     ccam_x64_line(output, "    testq %rax, %rax");
     ccam_x64_line(output, "    js .Lcap_trap_stack_allocation");
-    ccam_x64_line(output, "    movq %rax, %rsp");
+    ccam_x64_line(output, "    movq %rax, cap_stack_base(%rip)");
+    // Keep the lowest page inaccessible as a guard against stack-budget bugs.
+    ccam_x64_line(output, "    movq $10, %rax");
+    ccam_x64_line(output, "    leaq 4096(%rax), %rdi");
+    ccam_x64_line(output, "    movq cap_stack_bytes(%rip), %rsi");
+    ccam_x64_line(output, "    movq $3, %rdx");
+    ccam_x64_line(output, "    syscall");
+    ccam_x64_line(output, "    testq %rax, %rax");
+    ccam_x64_line(output, "    js .Lcap_trap_stack_allocation");
+    ccam_x64_line(output, "    movq cap_stack_base(%rip), %rsp");
+    ccam_x64_line(output, "    addq $4096, %rsp");
     ccam_x64_line(output, "    addq cap_stack_bytes(%rip), %rsp");
     ccam_x64_line(output, "    andq $-16, %rsp");
     ccam_x64_line(output, "    xorq %rbp, %rbp");
@@ -323,6 +334,7 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, ".align 8");
     ccam_x64_line(output, "cap_steps: .zero 8");
     ccam_x64_line(output, "cap_depth: .zero 8");
+    ccam_x64_line(output, "cap_stack_base: .zero 8");
     ccam_x64_line(output, ".data");
     ccam_x64_line(output, ".align 8");
     ccam_x64_line(output, "cap_max_steps: .quad " + int_to_str(max_steps));
@@ -370,6 +382,8 @@ test "CCAM x86-64 backend emits freestanding checked native assembly" {
     assert(ccam_x64_contains(native.assembly, "cap_max_steps: .quad 100"));
     assert(ccam_x64_contains(native.assembly, "cap_max_depth: .quad 16"));
     assert(ccam_x64_contains(native.assembly, "movq $9, %rax"));
+    assert(ccam_x64_contains(native.assembly, "movq $10, %rax"));
+    assert(ccam_x64_contains(native.assembly, "cap_stack_base: .zero 8"));
     assert(ccam_x64_contains(native.assembly, "cap_stack_bytes: .quad "));
     assert(ccam_x64_contains(native.assembly, ".Lcap_trap_stack_allocation"));
     assert(!ccam_x64_contains(native.assembly, "#include"));
