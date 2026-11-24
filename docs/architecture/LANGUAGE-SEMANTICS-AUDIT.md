@@ -58,6 +58,11 @@ PR #93 adds `tests/runtime/compound_assignment_invalidated_index.cap`: after `i 
 
 The runtime `CAP_LIT` macro lazily initialises a static pointer by calling `cap_str_perm`, which uses `malloc` and can terminate through the OOM path. Therefore the first evaluation of a string literal is not a pure C constant in the current backend. Treating `N_STR` as a simple operand allowed C argument evaluation order to move that allocation after a later effectful call, contrary to source left-to-right evaluation. Draft PR #109 removes `N_STR` from the simple-operand class and adds generated-C regressions for call arguments and concatenation operands. Its exact head `a3b56e997e1e867fb5320db84ad754856adb16ac` passes all four required CI jobs, but it remains unmerged; the correction is therefore not yet integrated into `main`. The C-free architecture should decide whether literals are immutable static data (with an explicit resource-compatibility decision) or effectful initialisation operations; it must not silently inherit the current C macro.
 
+
+### 2.7 Stage-0 `read_line()` parity gap
+
+The native runtime rejects a line whose payload exceeds 1,048,576 bytes, but the temporary `bootstrap/capstan0.py::b_read_line()` currently delegates to unbounded `sys.stdin.buffer.readline()`. This makes Stage 0 disagree with the native runtime at the over-limit boundary and means it cannot be treated as a differential oracle for this behaviour until aligned. PR #93 adds a native public-API regression for exactly 1 MiB followed immediately by EOF; the C runtime unit suite already covers exactly 1 MiB followed by newline and max-plus-one rejection. The bootstrap implementation is non-normative and must not redefine the language contract.
+
 ## 3. Normative semantic requirements for the C-free core
 
 1. **Deterministic sequencing:** all observable subexpressions have a specified order. The IR must make effectful ordering explicit.
