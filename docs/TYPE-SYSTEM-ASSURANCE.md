@@ -1067,3 +1067,60 @@ Static dispatch resolves one concrete implementation for the exact (InterfaceDec
 - Verify generated dispatch is a direct call to the exact implementation method and is stable under import/declaration-order permutations.
 
 These requirements specify static interface method dispatch; they do not claim interface or generic method dispatch exists in the current compiler.
+
+
+## 31. Separate type-variable identity, nominal identity and display names
+
+The current compiler's `Type` representation contains a kind, a string `name` and recursively nested `args`. Current `type_eq` compares kind, name and arguments. This is adequate for the present non-generic, flattened declaration model, but it is not a safe identity model for v0.5 generics or modules.
+
+In particular, a type parameter cannot be identified by its spelling: two declarations may both bind `T`, and nested scopes or declarations may reuse that spelling. A nominal type cannot be identified by its short name: two modules may declare distinct `Record` types. A display string is not a canonical key. These are three different identity domains and must not share one string field.
+
+### 31.1 Required resolved type representation
+
+Before generic substitution or interface coherence is implemented, define distinct compiler-owned identities:
+
+- **Nominal declaration identity (`DeclId`):** a resolved struct, enum, interface, policy or other nominal declaration. It is derived from the canonical module identity plus a deterministic declaration identity within that module. Source spelling and display path are metadata, not equality.
+- **Type-variable identity (`TypeVarId`):** the identity of one binder, represented by its owning generic declaration identity plus its parameter ordinal (or an equivalent globally unique compiler identity). The parameter's spelling is retained only for diagnostics.
+- **Type-constructor identity:** built-ins such as `List`, `Map`, `Grant` and optional have compiler-defined constructor identities and fixed arity/semantics. Do not represent them as arbitrary user nominal names.
+- **Resolved type node:** a tagged node for primitive, nominal, type-variable, and built-in constructor forms. Nominal nodes refer to `DeclId`; type-variable nodes refer to `TypeVarId`; constructor nodes carry recursively resolved arguments.
+
+The exact in-memory layout is an implementation choice, but equality and all semantic lookup must operate on these identities. Preserve a separate source/display name for diagnostics and generated readable names.
+
+### 31.2 Substitution must be explicit and capture-avoiding
+
+Define a substitution environment as a mapping from `TypeVarId` to fully resolved `Type`, not from parameter-name strings to types. Substitution must:
+
+- Replace only the exact variable identity, never every occurrence with the same spelling.
+- Recurse through every type constructor and nominal argument.
+- Be total for a valid concrete instantiation; reject missing, duplicate or extraneous bindings and any free type variable left in a concrete type.
+- Never mutate the generic template's shared AST/type nodes. Produce an independent resolved result or use an immutable representation.
+- Preserve nominal declaration identity, security qualifiers, policy identity and constructor identity exactly.
+- Avoid capture when nested generic declarations or future higher-ranked binders are introduced. If higher-ranked types remain out of scope, state that explicitly rather than leaving name-based substitution in place.
+
+A template's abstract type variables must remain distinct from variables in a caller or nested template, even when all are spelled `T`.
+
+### 31.3 Keep semantic equality, unification and display separate
+
+Specify and implement separate operations for:
+
+1. **Resolved type equality:** exact equality of primitive kinds, constructor identities/arguments, nominal `DeclId`/arguments and `TypeVarId`.
+2. **Inference unification:** a bounded operation that binds only the permitted type variables under the exact invariant rules in section 21. It is not assignment compatibility.
+3. **Assignability:** the existing narrowly defined relation (exact equality plus the specified optional lift), applied only after inference/substitution.
+4. **Instantiation identity:** a canonical key containing the generic declaration identity and the complete ordered vector of resolved type arguments, with the relevant compilation/coherence context where required.
+5. **Display formatting:** a human-readable string for diagnostics and C symbol construction. It must never be parsed back or used as a semantic cache/coherence key.
+
+Do not use recursive diagnostic strings as cache keys. For recursive nominal layouts, the type node references the nominal declaration identity and its finite argument vector; field traversal follows declarations with a cycle-safe visited set. It must not recursively inline an unbounded nominal definition into the type key.
+
+### 31.4 Required adversarial tests
+
+- Two generic declarations each bind a parameter spelled `T`; their variables never compare equal or substitute for one another.
+- A nested generic declaration reuses an outer parameter spelling; only the intended binder is substituted.
+- Two modules declare same-spelled nominal types; equality, inference, cache keys and impl lookup keep them distinct.
+- Two policies with the same short name retain distinct `Grant<P>` identities.
+- A concrete instantiation with a missing or unresolved variable is rejected before code generation.
+- Substitution is total, deterministic, non-mutating and independent of declaration/import order.
+- Recursive nominal types produce finite canonical instantiation keys and bounded, cycle-safe field traversal.
+- Diagnostic/display-name collisions do not merge types or cache entries.
+- Fuzz and mutation tests exercise nested constructors, repeated variables, shadowed binders, wrong arity and deep substitutions under global work limits.
+
+This section is an acceptance requirement for the proposed generic type system. The current compiler's name-based `Type` representation and structural `type_eq` do not yet provide these guarantees.
