@@ -1,0 +1,1280 @@
+// Deterministic lowering of the checked scalar source subset to CCAM.
+//
+// This first increment intentionally rejects unsupported source
+// constructs. It supports int/bool locals, checked scalar expressions,
+// direct calls, if/else, while/for loops and short-circuit boolean operators.
+// The source checker must have accepted the tree before this module is called.
+//
+// The source AST and checker definitions are supplied by compiler/ast.cap and
+// compiler/checker.cap in the verification test command. CCAM definitions are
+// imported from ccam_calls.cap.
+
+import "ccam_calls.cap";
+
+struct CCAMLoweringLoop {
+    List<int> break_sites;
+    List<int> continue_sites;
+}
+
+struct CCAMLoweringContext {
+    Node source_function;
+    List<Node> source_functions;
+    Map<int> function_indices;
+    Map<int> locals;
+    List<int> register_types;
+    List<CCAMInstruction> instructions;
+    List<CCAMCallSite> call_sites;
+    List<CCAMLoweringLoop> loops;
+    int loop_depth;
+    string error;
+}
+
+struct CCAMLoweringResult {
+    bool ok;
+    List<CCAMFunction> functions;
+    int entry_function;
+    string error;
+}
+
+int ccam_source_register_type(Type source_type) {
+    if (source_type.k == TY_INT) { return CCAM_TYPE_INT; }
+    if (source_type.k == TY_BOOL) { return CCAM_TYPE_BOOL; }
+    return 0;
+}
+
+int ccam_source_return_type(Type source_type) {
+    if (source_type.k == TY_INT) { return CCAM_RETURN_INT; }
+    if (source_type.k == TY_BOOL) { return CCAM_RETURN_BOOL; }
+    if (source_type.k == TY_VOID) { return CCAM_RETURN_VOID; }
+    return 0;
+}
+
+void ccam_lower_fail(CCAMLoweringContext context, string reason) {
+    if (context.error == "") {
+        context.error = reason;
+    }
+}
+
+int ccam_lower_new_register(CCAMLoweringContext context, int register_type) {
+    if (context.error != "") { return -1; }
+    if (register_type != CCAM_TYPE_INT && register_type != CCAM_TYPE_BOOL) {
+        ccam_lower_fail(context, "unsupported_source_type");
+        return -1;
+    }
+    if (context.register_types.len() >= CCAM_MAX_REGISTERS) {
+        ccam_lower_fail(context, "register_limit_exceeded");
+        return -1;
+    }
+    int index = context.register_types.len();
+    context.register_types.push(register_type);
+    return index;
+}
+
+int ccam_lower_emit(CCAMLoweringContext context, CCAMInstruction instruction) {
+    if (context.error != "") { return -1; }
+    if (context.instructions.len() >= CCAM_MAX_INSTRUCTIONS) {
+        ccam_lower_fail(context, "instruction_limit_exceeded");
+        return -1;
+    }
+    int pc = context.instructions.len();
+    context.instructions.push(instruction);
+    return pc;
+}
+
+void ccam_lower_patch_jump(CCAMLoweringContext context, int pc, int target) {
+    if (pc < 0 || pc >= context.instructions.len()) {
+        ccam_lower_fail(context, "invalid_jump_fixup");
+        return;
+    }
+    CCAMInstruction instruction = context.instructions[pc];
+    instruction.target = target;
+    context.instructions[pc] = instruction;
+}
+
+void ccam_lower_patch_branch(
+    CCAMLoweringContext context,
+    int pc,
+    int if_true,
+    int if_false
+) {
+    if (pc < 0 || pc >= context.instructions.len()) {
+        ccam_lower_fail(context, "invalid_branch_fixup");
+        return;
+    }
+    CCAMInstruction instruction = context.instructions[pc];
+    instruction.if_true = if_true;
+    instruction.if_false = if_false;
+    context.instructions[pc] = instruction;
+}
+
+int ccam_lower_int_constant(CCAMLoweringContext context, int value) {
+    int destination = ccam_lower_new_register(context, CCAM_TYPE_INT);
+    if (destination < 0) { return -1; }
+    CCAMInstruction instruction = ccam_instruction(CCAM_OP_CONST_I);
+    instruction.dst = destination;
+    instruction.int_value = value;
+    ccam_lower_emit(context, instruction);
+    return destination;
+}
+
+int ccam_lower_bool_constant(CCAMLoweringContext context, bool value) {
+    int destination = ccam_lower_new_register(context, CCAM_TYPE_BOOL);
+    if (destination < 0) { return -1; }
+    CCAMInstruction instruction = ccam_instruction(CCAM_OP_CONST_B);
+    instruction.dst = destination;
+    instruction.bool_value = value;
+    ccam_lower_emit(context, instruction);
+    return destination;
+}
+
+int ccam_lower_move(CCAMLoweringContext context, int destination, int source) {
+    CCAMInstruction instruction = ccam_instruction(CCAM_OP_MOVE);
+    instruction.dst = destination;
+    instruction.src = source;
+    ccam_lower_emit(context, instruction);
+    return destination;
+}
+
+void ccam_lower_push_loop(CCAMLoweringContext context) {
+    CCAMLoweringLoop loop = new CCAMLoweringLoop{
+        break_sites: new List<int>(),
+        continue_sites: new List<int>()
+    };
+    if (context.loop_depth < context.loops.len()) {
+        context.loops[context.loop_depth] = loop;
+    } else {
+        context.loops.push(loop);
+    }
+    context.loop_depth += 1;
+}
+
+void ccam_lower_finish_loop(
+    CCAMLoweringContext context,
+    int break_target,
+    int continue_target
+) {
+    if (context.loop_depth <= 0) {
+        ccam_lower_fail(context, "invalid_loop_fixup");
+        return;
+    }
+    CCAMLoweringLoop loop = context.loops[context.loop_depth - 1];
+    for (int i = 0; i < loop.break_sites.len(); i += 1) {
+        ccam_lower_patch_jump(context, loop.break_sites[i], break_target);
+    }
+    for (int i = 0; i < loop.continue_sites.len(); i += 1) {
+        ccam_lower_patch_jump(context, loop.continue_sites[i], continue_target);
+    }
+    context.loop_depth -= 1;
+}
+
+void ccam_lower_loop_jump(CCAMLoweringContext context, bool is_continue) {
+    if (context.loop_depth <= 0) {
+        ccam_lower_fail(context, "loop_control_outside_loop");
+        return;
+    }
+    CCAMInstruction jump = ccam_instruction(CCAM_OP_JUMP);
+    int pc = ccam_lower_emit(context, jump);
+    CCAMLoweringLoop loop = context.loops[context.loop_depth - 1];
+    if (is_continue) {
+        loop.continue_sites.push(pc);
+    } else {
+        loop.break_sites.push(pc);
+    }
+    context.loops[context.loop_depth - 1] = loop;
+}
+
+int ccam_lower_call_expression(CCAMLoweringContext context, Node expression) {
+    if (!context.function_indices.has(expression.s)) {
+        ccam_lower_fail(context, "unsupported_or_unknown_function_call");
+        return -1;
+    }
+    int callee_index = -1;
+    if (let found_index = context.function_indices.get(expression.s)) {
+        callee_index = found_index;
+    }
+    if (callee_index < 0 || callee_index >= context.source_functions.len()) {
+        ccam_lower_fail(context, "unknown_function_call");
+        return -1;
+    }
+    Node callee = context.source_functions[callee_index];
+    if (callee.n < 0 || callee.n >= callee.kids.len()) {
+        ccam_lower_fail(context, "invalid_callee_ast_shape");
+        return -1;
+    }
+    if (expression.kids.len() != callee.n) {
+        ccam_lower_fail(context, "call_arity_mismatch");
+        return -1;
+    }
+
+    List<int> arguments = new List<int>();
+    for (int i = 0; i < expression.kids.len(); i += 1) {
+        int argument = ccam_lower_expression(context, expression.kids[i]);
+        if (argument < 0) { return -1; }
+        int expected_type = ccam_source_register_type(ty_of(callee.kids[i]));
+        if (expected_type == 0 ||
+            context.register_types[argument] != expected_type) {
+            ccam_lower_fail(context, "call_argument_type_mismatch");
+            return -1;
+        }
+        arguments.push(argument);
+    }
+
+    int return_type = ccam_source_return_type(ty_of(callee));
+    if (return_type == 0) {
+        ccam_lower_fail(context, "unsupported_function_return_type");
+        return -1;
+    }
+    bool has_destination = return_type != CCAM_RETURN_VOID;
+    int destination = 0;
+    if (has_destination) {
+        int register_type = CCAM_TYPE_INT;
+        if (return_type == CCAM_RETURN_BOOL) {
+            register_type = CCAM_TYPE_BOOL;
+        }
+        if (ccam_source_register_type(ty_of(expression)) != register_type) {
+            ccam_lower_fail(context, "call_result_type_mismatch");
+            return -1;
+        }
+        destination = ccam_lower_new_register(context, register_type);
+        if (destination < 0) { return -1; }
+    } else if (ty_of(expression).k != TY_VOID) {
+        ccam_lower_fail(context, "call_result_type_mismatch");
+        return -1;
+    }
+
+    int pc = context.instructions.len();
+    CCAMInstruction call = ccam_instruction(CCAM_OP_CALL);
+    ccam_lower_emit(context, call);
+    context.call_sites.push(new CCAMCallSite{
+        instruction_index: pc,
+        callee_index: callee_index,
+        argument_registers: arguments,
+        destination_register: destination,
+        has_destination: has_destination
+    });
+    return destination;
+}
+
+int ccam_lower_short_circuit(CCAMLoweringContext context, Node expression) {
+    int left = ccam_lower_expression(context, expression.kids[0]);
+    if (left < 0) { return -1; }
+    int result = ccam_lower_new_register(context, CCAM_TYPE_BOOL);
+    if (result < 0) { return -1; }
+
+    CCAMInstruction branch = ccam_instruction(CCAM_OP_BRANCH);
+    branch.lhs = left;
+    int branch_pc = ccam_lower_emit(context, branch);
+
+    int short_pc = context.instructions.len();
+    bool short_value = expression.s == "||";
+    int constant = ccam_lower_bool_constant(context, short_value);
+    ccam_lower_move(context, result, constant);
+    CCAMInstruction jump = ccam_instruction(CCAM_OP_JUMP);
+    int join_jump_pc = ccam_lower_emit(context, jump);
+
+    int right_pc = context.instructions.len();
+    int right = ccam_lower_expression(context, expression.kids[1]);
+    if (right < 0) { return -1; }
+    ccam_lower_move(context, result, right);
+    int join_pc = context.instructions.len();
+
+    if (expression.s == "&&") {
+        ccam_lower_patch_branch(context, branch_pc, right_pc, short_pc);
+    } else {
+        ccam_lower_patch_branch(context, branch_pc, short_pc, right_pc);
+    }
+    ccam_lower_patch_jump(context, join_jump_pc, join_pc);
+    return result;
+}
+
+int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
+    if (context.error != "") { return -1; }
+    int source_type = ccam_source_register_type(ty_of(expression));
+
+    if (expression.k == N_INT) {
+        if (expression.n < CCAM_I64_MIN || expression.n > CCAM_I64_MAX) {
+            ccam_lower_fail(context, "integer_literal_out_of_range");
+            return -1;
+        }
+        return ccam_lower_int_constant(context, expression.n);
+    }
+    if (expression.k == N_BOOL) {
+        return ccam_lower_bool_constant(context, expression.n != 0);
+    }
+    if (expression.k == N_VAR) {
+        if (!context.locals.has(expression.s)) {
+            ccam_lower_fail(context, "unknown_or_unsupported_local");
+            return -1;
+        }
+        int index = -1;
+        if (let found_index = context.locals.get(expression.s)) {
+            index = found_index;
+        }
+        if (index < 0 || index >= context.register_types.len() ||
+            context.register_types[index] != source_type) {
+            ccam_lower_fail(context, "local_type_mismatch");
+            return -1;
+        }
+        // A variable expression is a value read, not a live register alias.
+        // Snapshot it now so later operands/arguments cannot change the value
+        // observed by an earlier expression.
+        int snapshot = ccam_lower_new_register(context, source_type);
+        if (snapshot < 0) { return -1; }
+        ccam_lower_move(context, snapshot, index);
+        return snapshot;
+    }
+    if (expression.k == N_NEG) {
+        int operand = ccam_lower_expression(context, expression.kids[0]);
+        if (operand < 0) { return -1; }
+        int zero = ccam_lower_int_constant(context, 0);
+        int result = ccam_lower_new_register(context, CCAM_TYPE_INT);
+        CCAMInstruction subtract = ccam_instruction(CCAM_OP_SUB_I);
+        subtract.dst = result;
+        subtract.lhs = zero;
+        subtract.rhs = operand;
+        ccam_lower_emit(context, subtract);
+        return result;
+    }
+    if (expression.k == N_NOT) {
+        int operand = ccam_lower_expression(context, expression.kids[0]);
+        if (operand < 0) { return -1; }
+        int result = ccam_lower_new_register(context, CCAM_TYPE_BOOL);
+        CCAMInstruction negate = ccam_instruction(CCAM_OP_NOT_B);
+        negate.dst = result;
+        negate.lhs = operand;
+        ccam_lower_emit(context, negate);
+        return result;
+    }
+    if (expression.k == N_CALL) {
+        return ccam_lower_call_expression(context, expression);
+    }
+    if (expression.k == N_BIN) {
+        if (expression.s == "&&" || expression.s == "||") {
+            return ccam_lower_short_circuit(context, expression);
+        }
+        int left = ccam_lower_expression(context, expression.kids[0]);
+        int right = ccam_lower_expression(context, expression.kids[1]);
+        if (left < 0 || right < 0) { return -1; }
+
+        int opcode = 0;
+        bool derived_comparison = false;
+        bool negate_comparison = false;
+        int lhs = left;
+        int rhs = right;
+        if (expression.s == "+") { opcode = CCAM_OP_ADD_I; }
+        else if (expression.s == "-") { opcode = CCAM_OP_SUB_I; }
+        else if (expression.s == "*") { opcode = CCAM_OP_MUL_I; }
+        else if (expression.s == "/") { opcode = CCAM_OP_DIV_I; }
+        else if (expression.s == "%") { opcode = CCAM_OP_REM_I; }
+        else if (expression.s == "==") { opcode = CCAM_OP_EQ_I; }
+        else if (expression.s == "<") { opcode = CCAM_OP_LT_I; }
+        else if (expression.s == "!=") {
+            opcode = CCAM_OP_EQ_I;
+            derived_comparison = true;
+            negate_comparison = true;
+        } else if (expression.s == ">") {
+            opcode = CCAM_OP_LT_I;
+            derived_comparison = true;
+            lhs = right;
+            rhs = left;
+        } else if (expression.s == "<=") {
+            opcode = CCAM_OP_LT_I;
+            derived_comparison = true;
+            negate_comparison = true;
+            lhs = right;
+            rhs = left;
+        } else if (expression.s == ">=") {
+            opcode = CCAM_OP_LT_I;
+            derived_comparison = true;
+            negate_comparison = true;
+        } else {
+            ccam_lower_fail(context, "unsupported_binary_operator");
+            return -1;
+        }
+
+        if ((expression.s == "==" || expression.s == "!=") &&
+            (context.register_types[left] != CCAM_TYPE_INT ||
+             context.register_types[right] != CCAM_TYPE_INT)) {
+            ccam_lower_fail(context, "unsupported_boolean_equality");
+            return -1;
+        }
+        int result_type = CCAM_TYPE_INT;
+        if (opcode == CCAM_OP_EQ_I || opcode == CCAM_OP_LT_I) {
+            result_type = CCAM_TYPE_BOOL;
+        }
+        int operation_result = ccam_lower_new_register(context, result_type);
+        CCAMInstruction operation = ccam_instruction(opcode);
+        operation.dst = operation_result;
+        operation.lhs = lhs;
+        operation.rhs = rhs;
+        ccam_lower_emit(context, operation);
+        if (derived_comparison && negate_comparison) {
+            int negated = ccam_lower_new_register(context, CCAM_TYPE_BOOL);
+            CCAMInstruction not_instruction = ccam_instruction(CCAM_OP_NOT_B);
+            not_instruction.dst = negated;
+            not_instruction.lhs = operation_result;
+            ccam_lower_emit(context, not_instruction);
+            return negated;
+        }
+        return operation_result;
+    }
+
+    ccam_lower_fail(context, "unsupported_expression");
+    return -1;
+}
+
+void ccam_lower_statement(CCAMLoweringContext context, Node statement) {
+    if (context.error != "") { return; }
+
+    if (statement.k == N_BLOCK) {
+        for (int i = 0; i < statement.kids.len(); i += 1) {
+            ccam_lower_statement(context, statement.kids[i]);
+            if (context.error != "") { return; }
+        }
+        return;
+    }
+
+    if (statement.k == N_DECL) {
+        int type = ccam_source_register_type(ty_of(statement));
+        if (type == 0) {
+            ccam_lower_fail(context, "unsupported_local_type");
+            return;
+        }
+        if (context.locals.has(statement.s)) {
+            ccam_lower_fail(context, "local_shadowing_not_supported");
+            return;
+        }
+        int initializer = ccam_lower_expression(context, statement.kids[0]);
+        if (initializer < 0) { return; }
+        int destination = ccam_lower_new_register(context, type);
+        if (destination < 0) { return; }
+        if (context.register_types[initializer] != type) {
+            ccam_lower_fail(context, "local_initializer_type_mismatch");
+            return;
+        }
+        context.locals.set(statement.s, destination);
+        ccam_lower_move(context, destination, initializer);
+        return;
+    }
+
+    if (statement.k == N_ASSIGN) {
+        Node target = statement.kids[0];
+        if (target.k != N_VAR || !context.locals.has(target.s)) {
+            ccam_lower_fail(context, "unsupported_assignment_target");
+            return;
+        }
+        int destination = -1;
+        if (let found_index = context.locals.get(target.s)) {
+            destination = found_index;
+        }
+        if (destination < 0 || destination >= context.register_types.len()) {
+            ccam_lower_fail(context, "invalid_local_register");
+            return;
+        }
+        if (statement.s == "=") {
+            int value = ccam_lower_expression(context, statement.kids[1]);
+            if (value < 0) { return; }
+            if (context.register_types[destination] != context.register_types[value]) {
+                ccam_lower_fail(context, "assignment_type_mismatch");
+                return;
+            }
+            ccam_lower_move(context, destination, value);
+            return;
+        }
+        if (statement.s == "+=" || statement.s == "-=") {
+            if (context.register_types[destination] != CCAM_TYPE_INT) {
+                ccam_lower_fail(context, "unsupported_compound_assignment");
+                return;
+            }
+            // Snapshot the old value before evaluating the RHS, preserving
+            // the source assignment sequencing contract.
+            int old_value = ccam_lower_new_register(context, CCAM_TYPE_INT);
+            ccam_lower_move(context, old_value, destination);
+            int value = ccam_lower_expression(context, statement.kids[1]);
+            if (value < 0) { return; }
+            if (context.register_types[value] != CCAM_TYPE_INT) {
+                ccam_lower_fail(context, "assignment_type_mismatch");
+                return;
+            }
+            int result = ccam_lower_new_register(context, CCAM_TYPE_INT);
+            int opcode = CCAM_OP_ADD_I;
+            if (statement.s == "-=") { opcode = CCAM_OP_SUB_I; }
+            CCAMInstruction operation = ccam_instruction(opcode);
+            operation.dst = result;
+            operation.lhs = old_value;
+            operation.rhs = value;
+            ccam_lower_emit(context, operation);
+            ccam_lower_move(context, destination, result);
+            return;
+        }
+        ccam_lower_fail(context, "unsupported_compound_assignment");
+        return;
+    }
+
+    if (statement.k == N_EXPR) {
+        Node expression = statement.kids[0];
+        if (expression.k != N_CALL) {
+            ccam_lower_fail(context, "unsupported_expression_statement");
+            return;
+        }
+        ccam_lower_expression(context, expression);
+        return;
+    }
+
+    if (statement.k == N_RETURN) {
+        if (statement.kids.len() == 0) {
+            ccam_lower_emit(context, ccam_instruction(CCAM_OP_RET_VOID));
+        } else {
+            int value = ccam_lower_expression(context, statement.kids[0]);
+            if (value < 0) { return; }
+            CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+            ret.lhs = value;
+            ccam_lower_emit(context, ret);
+        }
+        return;
+    }
+
+    if (statement.k == N_WHILE) {
+        int condition_pc = context.instructions.len();
+        int condition = ccam_lower_expression(context, statement.kids[0]);
+        if (condition < 0) { return; }
+        CCAMInstruction branch = ccam_instruction(CCAM_OP_BRANCH);
+        branch.lhs = condition;
+        int branch_pc = ccam_lower_emit(context, branch);
+        int body_pc = context.instructions.len();
+        ccam_lower_push_loop(context);
+        ccam_lower_statement(context, statement.kids[1]);
+        CCAMInstruction back_edge = ccam_instruction(CCAM_OP_JUMP);
+        back_edge.target = condition_pc;
+        ccam_lower_emit(context, back_edge);
+        int exit_pc = context.instructions.len();
+        ccam_lower_patch_branch(context, branch_pc, body_pc, exit_pc);
+        ccam_lower_finish_loop(context, exit_pc, condition_pc);
+        return;
+    }
+
+    if (statement.k == N_FOR) {
+        ccam_lower_statement(context, statement.kids[0]);
+        if (context.error != "") { return; }
+        int condition_pc = context.instructions.len();
+        int condition = ccam_lower_expression(context, statement.kids[1]);
+        if (condition < 0) { return; }
+        CCAMInstruction branch = ccam_instruction(CCAM_OP_BRANCH);
+        branch.lhs = condition;
+        int branch_pc = ccam_lower_emit(context, branch);
+        int body_pc = context.instructions.len();
+        ccam_lower_push_loop(context);
+        ccam_lower_statement(context, statement.kids[3]);
+        if (context.error != "") { return; }
+        int step_pc = context.instructions.len();
+        ccam_lower_statement(context, statement.kids[2]);
+        if (context.error != "") { return; }
+        CCAMInstruction back_edge = ccam_instruction(CCAM_OP_JUMP);
+        back_edge.target = condition_pc;
+        ccam_lower_emit(context, back_edge);
+        int exit_pc = context.instructions.len();
+        ccam_lower_patch_branch(context, branch_pc, body_pc, exit_pc);
+        ccam_lower_finish_loop(context, exit_pc, step_pc);
+        return;
+    }
+
+    if (statement.k == N_BREAK) {
+        ccam_lower_loop_jump(context, false);
+        return;
+    }
+
+    if (statement.k == N_CONTINUE) {
+        ccam_lower_loop_jump(context, true);
+        return;
+    }
+
+    if (statement.k == N_IF) {
+        if (statement.n != 0) {
+            ccam_lower_fail(context, "if_let_not_supported");
+            return;
+        }
+        int condition = ccam_lower_expression(context, statement.kids[0]);
+        if (condition < 0) { return; }
+        CCAMInstruction branch = ccam_instruction(CCAM_OP_BRANCH);
+        branch.lhs = condition;
+        int branch_pc = ccam_lower_emit(context, branch);
+
+        int then_pc = context.instructions.len();
+        ccam_lower_statement(context, statement.kids[1]);
+        CCAMInstruction jump = ccam_instruction(CCAM_OP_JUMP);
+        int join_jump_pc = ccam_lower_emit(context, jump);
+        int else_pc = context.instructions.len();
+        if (statement.kids.len() == 3) {
+            ccam_lower_statement(context, statement.kids[2]);
+        }
+        int join_pc = context.instructions.len();
+        ccam_lower_patch_branch(context, branch_pc, then_pc, else_pc);
+        ccam_lower_patch_jump(context, join_jump_pc, join_pc);
+        return;
+    }
+
+    ccam_lower_fail(context, "unsupported_statement");
+}
+
+CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
+    if (declarations.len() > CCAM_MAX_FUNCTIONS) {
+        return new CCAMLoweringResult{
+            ok: false, functions: new List<CCAMFunction>(),
+            entry_function: -1, error: "function_count_limit"
+        };
+    }
+    List<Node> source_functions = new List<Node>();
+    Map<int> function_indices = new Map<int>();
+    int total_function_name_bytes = 0;
+    for (int i = 0; i < declarations.len(); i += 1) {
+        Node declaration = declarations[i];
+        if (declaration.k != N_FN) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "unsupported_top_level_declaration"
+            };
+        }
+        if (declaration.s2 != "") {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "protected_function_not_supported"
+            };
+        }
+        int name_bytes = declaration.s.len();
+        if (name_bytes == 0 || name_bytes > CCAM_MAX_FUNCTION_NAME_BYTES) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "function_name_limit_exceeded"
+            };
+        }
+        if (name_bytes > CCAM_MAX_TOTAL_FUNCTION_NAME_BYTES - total_function_name_bytes) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "total_function_name_limit_exceeded"
+            };
+        }
+        total_function_name_bytes += name_bytes;
+        if (function_indices.has(declaration.s)) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "duplicate_function"
+            };
+        }
+        function_indices.set(declaration.s, source_functions.len());
+        source_functions.push(declaration);
+    }
+
+    if (!function_indices.has("main")) {
+        return new CCAMLoweringResult{
+            ok: false, functions: new List<CCAMFunction>(),
+            entry_function: -1, error: "missing_main"
+        };
+    }
+    int entry_function = -1;
+    if (let found_entry = function_indices.get("main")) {
+        entry_function = found_entry;
+    }
+    if (entry_function < 0) {
+        return new CCAMLoweringResult{
+            ok: false, functions: new List<CCAMFunction>(),
+            entry_function: -1, error: "missing_main"
+        };
+    }
+    Node entry_source = source_functions[entry_function];
+    Type entry_type = ty_of(entry_source);
+    if (entry_source.n != 0 ||
+        (entry_type.k != TY_INT && entry_type.k != TY_VOID)) {
+        return new CCAMLoweringResult{
+            ok: false, functions: new List<CCAMFunction>(),
+            entry_function: -1, error: "invalid_entry_signature"
+        };
+    }
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    int total_registers = 0;
+    int total_instructions = 0;
+    int total_call_arguments = 0;
+
+    for (int function_index = 0; function_index < source_functions.len(); function_index += 1) {
+        Node source_function = source_functions[function_index];
+        if (source_function.n < 0 ||
+            source_function.n >= source_function.kids.len() ||
+            source_function.kids[source_function.n].k != N_BLOCK) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "invalid_function_ast_shape"
+            };
+        }
+        int return_type = ccam_source_return_type(ty_of(source_function));
+        if (return_type == 0) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "unsupported_function_return_type"
+            };
+        }
+
+        CCAMLoweringContext context = new CCAMLoweringContext{
+            source_function: source_function,
+            source_functions: source_functions,
+            function_indices: function_indices,
+            locals: new Map<int>(),
+            register_types: new List<int>(),
+            instructions: new List<CCAMInstruction>(),
+            call_sites: new List<CCAMCallSite>(),
+            loops: new List<CCAMLoweringLoop>(),
+            loop_depth: 0,
+            error: ""
+        };
+
+        for (int parameter = 0; parameter < source_function.n; parameter += 1) {
+            int type = ccam_source_register_type(ty_of(source_function.kids[parameter]));
+            if (type == 0) {
+                ccam_lower_fail(context, "unsupported_parameter_type");
+                break;
+            }
+            int register_index = ccam_lower_new_register(context, type);
+            context.locals.set(source_function.kids[parameter].s, register_index);
+        }
+
+        if (context.error == "") {
+            Node body = source_function.kids[source_function.n];
+            ccam_lower_statement(context, body);
+        }
+
+        // Every function has an explicit terminal instruction. For a non-void
+        // function this trap is an unreachable fail-closed sink when the source
+        // checker has proved all paths return. It also gives pending join
+        // fixups a valid in-function target.
+        if (context.error == "") {
+            if (return_type == CCAM_RETURN_VOID) {
+                ccam_lower_emit(context, ccam_instruction(CCAM_OP_RET_VOID));
+            } else {
+                CCAMInstruction terminal = ccam_instruction(CCAM_OP_TRAP);
+                terminal.reason = "lowering_fallthrough";
+                ccam_lower_emit(context, terminal);
+            }
+        }
+
+        if (context.error != "") {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: context.error
+            };
+        }
+        if (context.register_types.len() > CCAM_MAX_TOTAL_REGISTERS - total_registers) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "total_register_limit_exceeded"
+            };
+        }
+        total_registers += context.register_types.len();
+        total_instructions += context.instructions.len();
+        if (total_instructions > CCAM_MAX_INSTRUCTIONS) {
+            return new CCAMLoweringResult{
+                ok: false, functions: new List<CCAMFunction>(),
+                entry_function: -1, error: "instruction_limit_exceeded"
+            };
+        }
+        for (int site = 0; site < context.call_sites.len(); site += 1) {
+            total_call_arguments += context.call_sites[site].argument_registers.len();
+            if (total_call_arguments > CCAM_MAX_CALL_ARGUMENTS) {
+                return new CCAMLoweringResult{
+                    ok: false, functions: new List<CCAMFunction>(),
+                    entry_function: -1, error: "call_argument_limit_exceeded"
+                };
+            }
+        }
+
+        functions.push(new CCAMFunction{
+            name: source_function.s,
+            register_types: context.register_types,
+            parameter_count: source_function.n,
+            return_type: return_type,
+            instructions: context.instructions,
+            call_sites: context.call_sites
+        });
+    }
+
+    CCAMValidationResult validation = ccam_validate_multi_function(
+        functions, entry_function);
+    if (!validation.ok) {
+        return new CCAMLoweringResult{
+            ok: false, functions: new List<CCAMFunction>(),
+            entry_function: -1, error: validation.error
+        };
+    }
+    return new CCAMLoweringResult{
+        ok: true, functions: functions,
+        entry_function: entry_function, error: ""
+    };
+}
+
+
+test "CCAM source lowering executes while loops" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("while-lowering.cap");
+    Tainted source = taint("int main() { int i = 0; int sum = 0; while (i < 5) { sum += i; i += 1; } return sum; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 200, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 200) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 10);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM source lowering executes for loops and increment" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("for-lowering.cap");
+    Tainted source = taint("int main() { int sum = 0; for (int i = 0; i < 5; i++) { sum += i; } return sum; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 200, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 200) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 10);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM source lowering compiles scalar locals and executes 42" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("scalar-lowering.cap");
+    Tainted source = taint("int main() { int a = 19; int b = 23; return a + b; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
+
+
+
+
+test "CCAM source checker rejects entry functions with parameters" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("invalid-entry-lowering.cap");
+    Tainted source = taint("int main(int value) { return value; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) > 0);
+}
+
+test "CCAM source lowering preserves checked integer overflow traps" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("overflow-lowering.cap");
+    Tainted source = taint("int main() { return 9223372036854775807 + 1; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.trap_code == "integer_overflow");
+    assert(!machine.halt_has_value);
+}
+
+test "CCAM source lowering rejects constructs outside its declared subset" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("unsupported-lowering.cap");
+    Tainted source = taint("int main() { int value = 1; while (value < 3) { value += 1; } return value; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(!lowered.ok && lowered.error == "unsupported_statement");
+    assert(lowered.functions.len() == 0 && lowered.entry_function == -1);
+}
+
+test "CCAM source lowering rejects lexical shadowing rather than aliasing registers" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("shadowing-lowering.cap");
+    Tainted source = taint("int main() { int value = 1; if (true) { int value = 2; } return value; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(!lowered.ok && lowered.error == "local_shadowing_not_supported");
+    assert(lowered.functions.len() == 0 && lowered.entry_function == -1);
+}
+
+test "CCAM source lowering preserves local compound assignment" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("compound-lowering.cap");
+    Tainted source = taint("int main() { int value = 19; value += 4; value -= 1; return value; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 22);
+    assert(machine.trap_code == "");
+}
+
+
+test "CCAM source lowering patches nested break and continue targets" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("loop-control-lowering.cap");
+    Tainted source = taint("int main() { int i = 0; int sum = 0; while (i < 10) { i += 1; if (i == 3) { continue; } if (i == 7) { break; } sum += i; } return sum; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 300, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 300) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 18);
+    assert(machine.trap_code == "");
+}
+
+
+test "CCAM source lowering supports recursive direct calls" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("recursive-lowering.cap");
+    Tainted source = taint("int countdown(int value) { if (value < 1) { return 42; } return countdown(value - 1); } int main() { return countdown(3); }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok && lowered.functions.len() == 2);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM source lowering emits direct calls and returns" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("call-lowering.cap");
+    Tainted source = taint("int add(int x, int y) { return x + y; } int main() { return add(19, 23); }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok && lowered.functions.len() == 2);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
+
+
+test "CCAM source lowering emits void direct calls" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("void-call-lowering.cap");
+    Tainted source = taint("void noop() { return; } int main() { noop(); return 42; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
+
+test "CCAM source lowering handles void direct calls" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("void-call-lowering.cap");
+    Tainted source = taint("void noop() { return; } int main() { noop(); return 42; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok && lowered.functions.len() == 2);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM source lowering transfers boolean call results" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("boolean-call-lowering.cap");
+    Tainted source = taint("bool positive(int value) { return value > 0; } int main() { if (positive(1)) { return 42; } return 0; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM source lowering preserves short-circuit call suppression" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("short-circuit-lowering.cap");
+    Tainted source = taint("int explode(int divisor) { return 1 / divisor; } int main() { if (false && (explode(0) == 1)) { return 0; } return 42; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
