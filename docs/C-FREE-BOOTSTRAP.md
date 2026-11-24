@@ -166,6 +166,6 @@ This sequence permits early progress without confusing a working scalar evaluato
 
 ## 10. Current status
 
-At the time this contract is introduced, the repository's integrated compiler still uses a Python-seeded bootstrap and generates C for GCC/Clang. The CCAM/C-free programme is under development. Typed validation, multi-frame execution, and checked scalar source lowering are separate increments with explicit limitations; none alone establishes a complete native backend, a C-free runtime, or a C-free bootstrap.
+At the time this contract is introduced, the repository's integrated compiler still uses a Python-seeded bootstrap and generates C for GCC/Clang. The CCAM/C-free programme is under development. Typed validation, multi-frame execution, and checked scalar source lowering are separate increments with explicit limitations. A first Linux x86-64 freestanding native-backend prototype is under review in PR #173, stacked on the source-lowering/evaluator work; correctness and bounded-stack follow-ups are in PRs #182 and #185. These are open, unmerged prototypes and are not evidence of an integrated native backend, a C-free runtime, or a C-free compiler bootstrap.
 
 Update this section only against exact merged commits and current-head test evidence. Open pull requests, stale workflow runs, and design documents are not evidence of completed implementation.
