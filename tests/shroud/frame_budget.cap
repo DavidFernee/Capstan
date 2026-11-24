@@ -22,18 +22,33 @@ int main() {
         .add(button("Continue", "continue").label("Continue"));
     if (!frame_text_budget_valid(ordinary)) { return 4; }
 
-    // Each string is below the per-value MAX_TEXT_BYTES limit, but together
-    // they exceed the aggregate per-frame budget.
-    string large = repeat_ascii(150000);
-    View aggregate = column().add(text(large)).add(text(large));
-    if (frame_text_budget_valid(aggregate)) { return 5; }
+    // The real tree accepts exactly the declared byte limit.
+    string exact = repeat_ascii(MAX_FRAME_TEXT_BYTES);
+    if (!frame_text_budget_valid(text(exact))) { return 5; }
+
+    // Two individually valid strings exceed the frame budget by exactly one byte.
+    string half = repeat_ascii(MAX_FRAME_TEXT_BYTES / 2);
+    string half_plus = repeat_ascii(MAX_FRAME_TEXT_BYTES / 2 + 1);
+    View aggregate = column().add(text(half)).add(text(half_plus));
+    if (frame_text_budget_valid(aggregate)) { return 6; }
 
     // Metadata is included, not just painted text.
+    string large = repeat_ascii(150000);
     View metadata = box().key(large).hint(large);
-    if (frame_text_budget_valid(metadata)) { return 6; }
+    if (frame_text_budget_valid(metadata)) { return 7; }
 
-    if (frame_text_budget_valid(nested_view(MAX_DEPTH + 1))) { return 7; }
+    if (frame_text_budget_valid(nested_view(MAX_DEPTH + 1))) { return 8; }
 
-    println("frame text budget: 7 assertions");
+    List<int> view_count = new List<int>();
+    view_count.push(0);
+    view_count.push(MAX_VIEWS - 1);
+    if (!preflight_frame_view(text(""), view_count, 0)) { return 9; }
+
+    List<int> too_many_views = new List<int>();
+    too_many_views.push(0);
+    too_many_views.push(MAX_VIEWS);
+    if (preflight_frame_view(text(""), too_many_views, 0)) { return 10; }
+
+    println("frame text budget: 10 assertions");
     return 0;
 }
