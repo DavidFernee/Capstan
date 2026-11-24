@@ -56,11 +56,16 @@ structure FiniteProgram (n m : Nat) (types : RegTypes n) where
 structure StepBudget where
   limit : Nat
   used : Nat
+  within_limit : used ≤ limit
 
 /-- Consume one instruction slot, trapping before execution when the budget is exhausted. -/
 def consumeStep (budget : StepBudget) : Except Trap StepBudget :=
-  if budget.used < budget.limit then
-    .ok { budget with used := budget.used + 1 }
+  if hlimit : budget.used < budget.limit then
+    .ok {
+      limit := budget.limit
+      used := budget.used + 1
+      within_limit := Nat.succ_le_of_lt hlimit
+    }
   else
     .error .instructionLimit
 
@@ -81,12 +86,7 @@ theorem consumeStep_within_limit
     (budget : StepBudget) (next : StepBudget)
     (h : consumeStep budget = .ok next) :
     next.used ≤ budget.limit := by
-  unfold consumeStep at h
-  by_cases hlimit : budget.used < budget.limit
-  · simp [hlimit] at h
-    cases h
-    exact Nat.succ_le_of_lt hlimit
-  · simp [hlimit] at h
+  exact next.within_limit
 
 /-- An exhausted budget traps before another instruction can be consumed. -/
 theorem consumeStep_exhausted_traps
