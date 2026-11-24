@@ -1,6 +1,6 @@
 # Compiler Contract: Lowering the Checked Source Core to CCAM
 
-**Status:** target compiler contract; dependent on review of the language-semantics and CCAM contracts. PR #159 implements an initial, deliberately narrower scalar lowering stage; it is not yet conformant to the complete subset specified here.  
+**Status:** target compiler contract; dependent on review of the language-semantics and CCAM contracts. PR #162 implements an initial, deliberately narrower scalar lowering stage; it is not yet conformant to the complete subset specified here.  
 **Owner:** Compiler Architecture workstream  
 **Related:** `LANGUAGE-CORE.md`, `TYPED-IR.md`, `CCAM.md`, `COMPILER-PIPELINE-AUDIT.md`
 
@@ -45,11 +45,11 @@ The exact accepted subset must be checked against the final normative core and t
 
 The first implementation must reject unsupported constructs with a structured compiler diagnostic. It must never emit a placeholder instruction, silently coerce a value, or fall back to generated C.
 
-### 2.1 Current staged implementation (PR #159)
+### 2.1 Current staged implementation (PR #162)
 
-PR #159 implements an initial vertical slice that is narrower than the target list above. It currently supports integer/boolean literals and locals, local initialization and assignment, checked integer arithmetic, integer comparisons and their derived forms, boolean negation, short-circuit `&&` / `||`, direct function calls, returns, and `if` / `else`. It parses and checks actual source before lowering, validates the resulting in-memory CCAM function table, and executes it with the Capstan-native evaluator. The current tests invoke this API directly; it is not yet wired into `compiler/main.cap`, the compiler CLI, or the production build/run path, which still uses generated C.
+PR #162 implements an initial vertical slice that is narrower than the target list above. It currently supports integer/boolean literals and locals, local initialization and assignment, checked integer arithmetic, integer comparisons and their derived forms, boolean negation, short-circuit `&&` / `||`, direct function calls, returns, and `if` / `else`. It parses and checks actual source before lowering, validates the resulting in-memory CCAM function table, and executes it with the Capstan-native evaluator. The current tests invoke this API directly; it is not yet wired into `compiler/main.cap`, the compiler CLI, or the production build/run path, which still uses generated C.
 
-The current implementation supports `while`, `for`, `break`, and `continue` with explicit loop-target fixups; it also rejects local shadowing rather than risking a name-to-register aliasing error. The remaining supported-subset list above is the intended target contract, not a claim that PR #159 implements every listed construct.
+The current implementation supports `while`, `for`, `break`, and `continue` with explicit loop-target fixups; it also rejects local shadowing rather than risking a name-to-register aliasing error. The remaining supported-subset list above is the intended target contract, not a claim that PR #162 implements every listed construct.
 
 Explicitly excluded until separately specified and implemented: strings, structs, enums, optionals, lists, maps, heap references, methods, closures, taint, secrets, grants, IO, policies, cryptographic operations, FFI and concurrency. Bitwise operations, shifts, wrapping arithmetic, boolean equality and indirect calls are also excluded from this initial slice.
 
@@ -176,7 +176,7 @@ Use instruction indices as basic-block positions. Emit explicit `jump` and `bran
 - **Return:** lower the return expression completely, then emit `ret`; emit `ret_void` for a void return. The enclosing function signature must agree.
 - **Function call:** lower arguments completely from left to right, then emit one `call` with their resulting registers in source order. Allocate a result register for `int` or `bool` return; use null destination only for a void return. The callee's signature is checked against the call before emission.
 
-Every completed function must have valid branch targets and no reachable path that falls off the instruction sequence. A final validator checks this independently of the lowering algorithm. PR #159 currently implements the if/else and short-circuit branch forms; loop-target stacks and break/continue fixups remain outstanding.
+Every completed function must have valid branch targets and no reachable path that falls off the instruction sequence. A final validator checks this independently of the lowering algorithm. PR #162 currently implements the if/else and short-circuit branch forms; loop-target stacks and break/continue fixups remain outstanding.
 
 ## 6. Locations and source diagnostics
 
