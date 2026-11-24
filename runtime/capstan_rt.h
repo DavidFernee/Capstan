@@ -334,12 +334,18 @@ static inline void cap_list_set_proved(CapList *l, int64_t i, CapVal v, int64_t 
 
 static void *cap_list_pop_p(CapList *l) {
     if (l->len == 0) return NULL;
-    return l->items[--l->len].p;
+    int64_t last = --l->len;
+    void *value = l->items[last].p;
+    l->items[last] = cap_vp(NULL);
+    return value;
 }
 
 static int64_t *cap_list_pop_i(CapList *l) {
     if (l->len == 0) return NULL;
-    return cap_box_int(l->items[--l->len].i);
+    int64_t last = --l->len;
+    int64_t value = l->items[last].i;
+    l->items[last] = cap_vi(0);
+    return cap_box_int(value);
 }
 
 /* Unboxed form for `if (let v = xs.pop())`, read immediately (see cap_map_peek_i). */
@@ -348,13 +354,17 @@ static int64_t *cap_list_pop_peek_i(CapList *l) {
     return &l->items[--l->len].i;
 }
 
-static void cap_list_clear(CapList *l) { l->len = 0; }
+static void cap_list_clear(CapList *l) {
+    if (l->len > 0) memset(l->items, 0, (size_t)l->len * sizeof(CapVal));
+    l->len = 0;
+}
 
 static CapVal cap_list_remove(CapList *l, int64_t i, int64_t loc) {
     if (CAP_UNLIKELY((uint64_t)i >= (uint64_t)l->len)) cap_panic("list index out of bounds", "CWE-125", loc);
     CapVal v = l->items[i];
     memmove(l->items + i, l->items + i + 1, sizeof(CapVal) * (size_t)(l->len - i - 1));
     l->len--;
+    l->items[l->len] = cap_vp(NULL);
     return v;
 }
 
@@ -669,6 +679,9 @@ static bool cap_map_remove(CapMap *m, CapStr *k) {
     memmove(m->keys + pos, m->keys + pos + 1, sizeof(CapStr *) * (size_t)(m->len - pos - 1));
     memmove(m->vals + pos, m->vals + pos + 1, sizeof(CapVal) * (size_t)(m->len - pos - 1));
     m->len--;
+    /* Clear vacated traced slots before reindexing can allocate and collect. */
+    m->keys[m->len] = NULL;
+    m->vals[m->len] = cap_vp(NULL);
     cap_map_reindex(m, m->index_cap);
     return true;
 }
@@ -1170,6 +1183,12 @@ static void cap_sha256_block(CapSha256 *s, const unsigned char *p) {
         h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
     }
     s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d; s->h[4] += e; s->h[5] += f; s->h[6] += g; s->h[7] += h;
+    /* The message schedule and working state contain password-derived material. */
+    cap_wipe(w, sizeof w);
+    cap_wipe(&a, sizeof a); cap_wipe(&b, sizeof b);
+    cap_wipe(&c, sizeof c); cap_wipe(&d, sizeof d);
+    cap_wipe(&e, sizeof e); cap_wipe(&f, sizeof f);
+    cap_wipe(&g, sizeof g); cap_wipe(&h, sizeof h);
 }
 
 static void cap_sha256_init(CapSha256 *s) {
@@ -1178,6 +1197,8 @@ static void cap_sha256_init(CapSha256 *s) {
 }
 
 static void cap_sha256_update(CapSha256 *s, const unsigned char *p, size_t n) {
+    if (n > (UINT64_MAX - s->bits) / 8)
+        cap_panic("SHA-256 message length overflow", "CWE-190", 0);
     for (size_t i = 0; i < n; i++) {
         s->buf[s->n++] = p[i];
         if (s->n == 64) { cap_sha256_block(s, s->buf); s->n = 0; }
@@ -1193,6 +1214,11 @@ static void cap_sha256_final(CapSha256 *s, unsigned char out[32]) {
     for (int i = 0; i < 8; i++) len[i] = (unsigned char)(bits >> (56 - 8 * i));
     cap_sha256_update(s, len, 8);
     for (int i = 0; i < 8; i++) { out[4*i] = s->h[i] >> 24; out[4*i+1] = s->h[i] >> 16; out[4*i+2] = s->h[i] >> 8; out[4*i+3] = s->h[i]; }
+    cap_wipe(len, sizeof len);
+    cap_wipe(s, sizeof *s);
+    cap_wipe(&bits, sizeof bits);
+    cap_wipe(&pad, sizeof pad);
+    cap_wipe(&zero, sizeof zero);
 }
 
 static void cap_hmac_sha256(const unsigned char *key, size_t kn, const unsigned char *msg, size_t mn, unsigned char out[32]) {
@@ -1219,6 +1245,8 @@ static CapStr *cap_hash(CapStr *data) {
     cap_sha256_init(&s); cap_sha256_update(&s, (const unsigned char *)data->data, (size_t)data->len); cap_sha256_final(&s, dg);
     memcpy(out, "cap1$sha256$", 12);
     cap_hex(dg, 32, out + 12);
+    cap_wipe(dg, sizeof dg);
+    cap_wipe(&s, sizeof s);
     return cap_str_new(out, (int64_t)strlen(out));
 }
 
@@ -1231,8 +1259,20 @@ static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
 }
 
 #define CAP_PBKDF2_ITER 600000
+#define CAP_PASSWORD_MAX_BYTES 256
+#define CAP_PASSWORD_RECORD_LEN 123
+
+#ifdef CAP_PBKDF2_TEST_HOOK
+static unsigned cap_pbkdf2_test_calls;
+#endif
 
 static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
+    if (!pw || !salt || pn > CAP_PASSWORD_MAX_BYTES || sn > 64 ||
+        iter < 1 || iter > CAP_PBKDF2_ITER)
+        cap_panic("invalid PBKDF2 parameters", "CWE-789", 0);
+#ifdef CAP_PBKDF2_TEST_HOOK
+    cap_pbkdf2_test_calls++;
+#endif
     unsigned char msg[64 + 4], u[32], t[32];
     memcpy(msg, salt, sn);
     msg[sn] = 0; msg[sn+1] = 0; msg[sn+2] = 0; msg[sn+3] = 1;
@@ -1247,6 +1287,10 @@ static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, siz
 }
 
 static CapStr *cap_hash_password(CapStr *pw) {
+    if (!pw || pw->len < 0)
+        cap_panic("invalid password input", "CWE-476", 0);
+    if (pw->len > CAP_PASSWORD_MAX_BYTES)
+        cap_panic("password exceeds the 256-byte limit", "CWE-789", 0);
     unsigned char salt[16], dk[32];
     char shex[33], dhex[65], out[128];
     FILE *r = fopen("/dev/urandom", "rb");
@@ -1256,6 +1300,8 @@ static CapStr *cap_hash_password(CapStr *pw) {
     cap_hex(salt, 16, shex); cap_hex(dk, 32, dhex);
     cap_wipe(dk, sizeof dk);
     int n = snprintf(out, sizeof out, "cap1$pbkdf2-sha256$%d$%s$%s", CAP_PBKDF2_ITER, shex, dhex);
+    /* dhex is a second stack copy of the password-derived verifier key. */
+    cap_wipe(dhex, sizeof dhex);
     return cap_str_new(out, n);
 }
 
@@ -1274,30 +1320,57 @@ static int cap_unhex(const char *h, size_t n, unsigned char *out) {
     return 1;
 }
 
+/* Parse the complete, canonical current password-record format. Stored records
+   are untrusted input: no C-string operation may read beyond CapStr.len, and
+   the cost is fixed to the current generation profile until a legacy migration
+   policy is explicitly approved. */
+static bool cap_parse_password_record(CapStr *tagged,
+                                      unsigned char salt[16],
+                                      unsigned char want[32]) {
+    static const char prefix[] = "cap1$pbkdf2-sha256$";
+    const size_t prefix_len = sizeof prefix - 1;
+    if (!tagged || tagged->len != CAP_PASSWORD_RECORD_LEN) return false;
+    size_t n = CAP_PASSWORD_RECORD_LEN;
+    if (memcmp(tagged->data, prefix, prefix_len) != 0) return false;
+    size_t i = prefix_len;
+    if (tagged->data[i] < '1' || tagged->data[i] > '9') return false;
+    unsigned iter = 0;
+    while (i < n && tagged->data[i] >= '0' && tagged->data[i] <= '9') {
+        unsigned digit = (unsigned)(tagged->data[i] - '0');
+        if (iter > ((unsigned)CAP_PBKDF2_ITER - digit) / 10u) return false;
+        iter = iter * 10u + digit;
+        i++;
+    }
+    if (iter != (unsigned)CAP_PBKDF2_ITER) return false;
+    if (i >= n || tagged->data[i++] != '$') return false;
+    if (n - i != 32 + 1 + 64 || tagged->data[i + 32] != '$') return false;
+    if (!cap_unhex(tagged->data + i, 16, salt)) return false;
+    if (!cap_unhex(tagged->data + i + 33, 32, want)) return false;
+    return true;
+}
+
 static bool cap_verify_password(CapStr *pw, CapStr *tagged) {
-    const char *pre = "cap1$pbkdf2-sha256$";
-    size_t pl = strlen(pre);
-    if ((size_t)tagged->len < pl || memcmp(tagged->data, pre, pl) != 0) return false;
-    const char *p = tagged->data + pl;
-    char *end;
-    long iter = strtol(p, &end, 10);
-    if (*end != '$' || iter < 1 || iter > 100000000) return false;
-    p = end + 1;
-    if (strlen(p) != 32 + 1 + 64 || p[32] != '$') return false;
-    unsigned char salt[16], want[32], got[32];
-    if (!cap_unhex(p, 16, salt) || !cap_unhex(p + 33, 32, want)) return false;
-    cap_pbkdf2(pw->data, (size_t)pw->len, salt, 16, (int)iter, got);
+    if (!pw || pw->len < 0 || pw->len > CAP_PASSWORD_MAX_BYTES) return false;
+    unsigned char salt[16] = {0}, want[32] = {0}, got[32] = {0};
+    if (!cap_parse_password_record(tagged, salt, want)) {
+        cap_wipe(salt, sizeof salt);
+        cap_wipe(want, sizeof want);
+        return false;
+    }
+    cap_pbkdf2(pw->data, (size_t)pw->len, salt, 16, CAP_PBKDF2_ITER, got);
     bool ok = cap_ct_eq((const char *)got, 32, (const char *)want, 32);
+    cap_wipe(salt, sizeof salt);
+    cap_wipe(want, sizeof want);
     cap_wipe(got, sizeof got);
     return ok;
 }
 
-/* True when a stored value uses an algorithm or cost the current version has superseded. */
 static bool cap_needs_rehash(CapStr *tagged) {
-    char cur[40];
-    snprintf(cur, sizeof cur, "cap1$pbkdf2-sha256$%d$", CAP_PBKDF2_ITER);
-    size_t n = strlen(cur);
-    return !((size_t)tagged->len > n && memcmp(tagged->data, cur, n) == 0);
+    unsigned char salt[16] = {0}, want[32] = {0};
+    bool current = cap_parse_password_record(tagged, salt, want);
+    cap_wipe(salt, sizeof salt);
+    cap_wipe(want, sizeof want);
+    return !current;
 }
 
 /* ------------------------------------------------------------------ */

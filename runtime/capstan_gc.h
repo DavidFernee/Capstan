@@ -42,6 +42,9 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#define MAP_ANONYMOUS MAP_ANON
+#endif
 
 /* Upper bound on any length (see the heap limit below). */
 #define CAP_MAX_LEN ((size_t)1 << 48)
@@ -118,9 +121,11 @@ typedef struct CapPage {
     int released;            /* spare, and its memory has been returned to the OS */
     uint8_t *alloc;
     uint8_t *mark;
+    uint32_t *free_slots;       /* out-of-line indices for secret pages */
+    uint32_t free_count, free_cap;
 } CapPage;
 
-typedef struct { char *base; size_t size; int atomic, mark; } CapLarge;
+typedef struct { char *base; size_t size, alloc_size; int atomic, mark; } CapLarge;
 
 static struct {
     int inited, stats;
@@ -153,7 +158,15 @@ static void cap_gc_oom(void) {
     exit(102);
 }
 
+#ifdef CAP_GC_TESTING
+static long cap_gc_test_meta_fail_after = -1;
+#endif
+
 static void *cap_gc_meta(size_t n) {
+#ifdef CAP_GC_TESTING
+    if (cap_gc_test_meta_fail_after == 0) cap_gc_oom();
+    if (cap_gc_test_meta_fail_after > 0) cap_gc_test_meta_fail_after--;
+#endif
     void *p = calloc(1, n ? n : 1);
     if (!p) cap_gc_oom();
     return p;
@@ -162,6 +175,17 @@ static void *cap_gc_meta(size_t n) {
 static void *cap_gc_meta_array(size_t count, size_t element_size) {
     return cap_gc_meta(cap_gc_checked_mul(count, element_size));
 }
+
+/* Volatile clearing for secret page payloads; allocator metadata must not
+   be written into a secret slot after it has been wiped. */
+static void cap_gc_wipe(void *memory, size_t n) {
+    volatile unsigned char *p = (volatile unsigned char *)memory;
+    while (n--) *p++ = 0;
+}
+
+#ifdef CAP_GC_TESTING
+static void (*cap_gc_test_secret_wipe_hook)(const void *, size_t) = NULL;
+#endif
 
 static void cap_gc_report(void) {
     fprintf(stderr, "gc: collections=%zu total_allocated=%zu live=%zu heap=%zu peak_heap=%zu pages_released=%zu pages_reused=%zu\n",
@@ -175,19 +199,35 @@ static void cap_gc_report(void) {
 static char *cap_stack_low = NULL;
 static char cap_altstack[65536];
 
+static int cap_gc_stack_bounds(uintptr_t base, size_t size,
+                                   uintptr_t *low, uintptr_t *high) {
+    if (!size || size > UINTPTR_MAX - base) return 0;
+    uintptr_t end = base + size;
+    *low = base;
+    *high = end;
+    return 1;
+}
+
 static void cap_segv_handler(int sig, siginfo_t *si, void *uc) {
     (void)sig; (void)uc;
-    char *a = (char *)si->si_addr;
-    const char *msg;
-    int code = 101;
-    if (cap_stack_low && a < cap_stack_low + 65536 && a + (1 << 24) > cap_stack_low) {
-        msg = "runtime check failed: stack overflow, recursion too deep [CWE-674 prevented]\n";
-    } else {
-        msg = "capstan: internal error: invalid memory access; please report this as a bug\n";
-        code = 105;
+    uintptr_t address = (uintptr_t)si->si_addr;
+    uintptr_t low = (uintptr_t)cap_stack_low;
+    uintptr_t lower = low > ((uintptr_t)1 << 24) ? low - ((uintptr_t)1 << 24) : 0;
+    uintptr_t upper = low > UINTPTR_MAX - 65536 ? UINTPTR_MAX : low + 65536;
+    static const char overflow_msg[] =
+        "runtime check failed: stack overflow, recursion too deep [CWE-674 prevented]\n";
+    static const char fault_msg[] =
+        "capstan: internal error: invalid memory access; please report this as a bug\n";
+    const char *msg = fault_msg;
+    size_t msg_len = sizeof fault_msg - 1;
+    int code = 105;
+    if (cap_stack_low && address >= lower && address < upper) {
+        msg = overflow_msg;
+        msg_len = sizeof overflow_msg - 1;
+        code = 101;
     }
-    ssize_t w = write(2, msg, strlen(msg));
-    (void)w;
+    ssize_t written = write(2, msg, msg_len);
+    (void)written;
     _exit(code);
 }
 
@@ -197,14 +237,15 @@ static void cap_install_stack_guard(char *low) {
     ss.ss_sp = cap_altstack;
     ss.ss_size = sizeof cap_altstack;
     ss.ss_flags = 0;
-    if (sigaltstack(&ss, NULL) != 0) return;
+    if (sigaltstack(&ss, NULL) != 0)
+        cap_panic("unable to install stack overflow signal stack", "CWE-674", 0);
     struct sigaction sa;
     memset(&sa, 0, sizeof sa);
     sa.sa_sigaction = cap_segv_handler;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGBUS, &sa, NULL);
+    if (sigaction(SIGSEGV, &sa, NULL) != 0 || sigaction(SIGBUS, &sa, NULL) != 0)
+        cap_panic("unable to install stack overflow signal handler", "CWE-674", 0);
 }
 
 static size_t cap_gc_parse_heap_limit(const char *text) {
@@ -249,7 +290,16 @@ static void cap_gc_init(void) {
     cap_gc.threshold = CAP_MIN_THRESHOLD;
     cap_gc.lo = UINTPTR_MAX;
     const char *s = getenv("CAPSTAN_GC_STRESS");
-    if (s) cap_gc.stress = atol(s);
+    if (s) {
+        if (s[0] < '0' || s[0] > '9')
+            cap_panic("invalid CAPSTAN_GC_STRESS value", "CWE-20", 0);
+        char *end = NULL;
+        errno = 0;
+        long value = strtol(s, &end, 10);
+        if (end == s || *end != '\0' || errno == ERANGE || value < 0)
+            cap_panic("invalid CAPSTAN_GC_STRESS value", "CWE-20", 0);
+        cap_gc.stress = value;
+    }
     if (getenv("CAPSTAN_GC_STATS")) { cap_gc.stats = 1; atexit(cap_gc_report); }
     const char *mh = getenv("CAPSTAN_MAX_HEAP");
     if (mh) {
@@ -265,21 +315,36 @@ static void cap_gc_init(void) {
     cap_gc.max_heap = cap_gc_effective_heap_limit(cap_gc.max_heap);
     char *low = NULL;
 #if defined(__APPLE__)
-    cap_gc.stack_top = (char *)pthread_get_stackaddr_np(pthread_self());
-    low = cap_gc.stack_top - pthread_get_stacksize_np(pthread_self());
+    uintptr_t stack_top = (uintptr_t)pthread_get_stackaddr_np(pthread_self());
+    size_t stack_size = pthread_get_stacksize_np(pthread_self());
+    if (stack_size > stack_top)
+        cap_panic("invalid thread stack bounds", "CWE-682", 0);
+    uintptr_t stack_low, checked_top;
+    if (!cap_gc_stack_bounds(stack_top - stack_size, stack_size, &stack_low, &checked_top))
+        cap_panic("invalid thread stack bounds", "CWE-682", 0);
+    cap_gc.stack_top = (char *)checked_top;
+    low = (char *)stack_low;
 #elif defined(__linux__)
     pthread_attr_t attr;
-    void *addr; size_t size;
-    if (pthread_getattr_np(pthread_self(), &attr) == 0 && pthread_attr_getstack(&attr, &addr, &size) == 0) {
-        cap_gc.stack_top = (char *)addr + size;
-        low = (char *)addr;
+    void *addr = NULL;
+    size_t size = 0;
+    if (pthread_getattr_np(pthread_self(), &attr) == 0) {
+        int stack_result = pthread_attr_getstack(&attr, &addr, &size);
         pthread_attr_destroy(&attr);
+        if (stack_result == 0) {
+            uintptr_t stack_low, stack_high;
+            if (!cap_gc_stack_bounds((uintptr_t)addr, size, &stack_low, &stack_high))
+                cap_panic("invalid thread stack bounds", "CWE-682", 0);
+            cap_gc.stack_top = (char *)stack_high;
+            low = (char *)stack_low;
+        }
     }
 #endif
+    if (!low || !cap_gc.stack_top)
+        cap_panic("unable to determine reliable thread stack bounds", "CWE-674", 0);
 #ifndef CAP_ASAN
-    if (low) cap_install_stack_guard(low);   /* AddressSanitizer installs its own */
+    cap_install_stack_guard(low);   /* AddressSanitizer installs its own */
 #endif
-    if (!cap_gc.stack_top) cap_gc.stack_top = (char *)__builtin_frame_address(0) + 4096;
 }
 
 /* ---- page table ------------------------------------------------------ */
@@ -374,18 +439,27 @@ static void cap_gc_range(uintptr_t a, uintptr_t b) {
    With `release`, its memory also goes back to the operating system. Either
    way the address range stays reserved and the page stays in the page table
    with nothing allocated, so a stale pointer into it still maps to nothing. */
-static void cap_gc_release(CapPage *pg) {
-    if (pg->released) return;
+/* Update accounting only after the OS confirms the page-release advice.
+   Keeping this separate makes failed advice and repeated release deterministic to test. */
+static void cap_gc_account_release(CapPage *pg, int advice_succeeded) {
+    if (pg->released || !advice_succeeded) return;
     if (cap_gc.heap < CAP_PAGE_SIZE)
         cap_panic("page release would underflow heap accounting", "CWE-682", 0);
-#if defined(__APPLE__)
-    madvise(pg->base, CAP_PAGE_SIZE, MADV_FREE);
-#elif defined(MADV_DONTNEED)
-    madvise(pg->base, CAP_PAGE_SIZE, MADV_DONTNEED);
-#endif
     pg->released = 1;
     cap_gc.heap -= CAP_PAGE_SIZE;
     cap_gc.released_total = cap_gc_saturating_add(cap_gc.released_total, 1);
+}
+
+static void cap_gc_release(CapPage *pg) {
+    if (pg->released) return;
+    int advised = 0;
+#if defined(__APPLE__)
+    advised = madvise(pg->base, CAP_PAGE_SIZE, MADV_FREE) == 0;
+#elif defined(MADV_DONTNEED)
+    advised = madvise(pg->base, CAP_PAGE_SIZE, MADV_DONTNEED) == 0;
+#endif
+    /* Unsupported advice and OS errors leave the mapping counted and retryable. */
+    cap_gc_account_release(pg, advised);
 }
 
 static void cap_gc_spare_page(CapPage *pg, int release) {
@@ -422,15 +496,30 @@ static void cap_gc_format_page(CapPage *pg, int atomic, int cls) {
         memset(pg->alloc, 0, nobj);
         memset(pg->mark, 0, nobj);
     }
+    if (pg->free_slots && (atomic != 2 || pg->free_cap != nobj)) {
+        free(pg->free_slots);
+        pg->free_slots = NULL;
+        pg->free_cap = pg->free_count = 0;
+    }
+    if (atomic == 2 && !pg->free_slots) {
+        pg->free_slots = (uint32_t *)cap_gc_meta_array(nobj, sizeof(uint32_t));
+        pg->free_cap = nobj;
+    }
     pg->objsize = cap_class_size[cls];
     pg->nobj = nobj;
     pg->atomic = atomic;
+    if (atomic == 2) cap_gc_wipe(pg->base, CAP_PAGE_SIZE);
     pg->spare = 0;
     pg->released = 0;
+    pg->free_count = 0;
     for (uint32_t i = pg->nobj; i-- > 0;) {
-        void **slot = (void **)(pg->base + (size_t)i * pg->objsize);
-        *slot = cap_gc.freelist[atomic][cls];
-        cap_gc.freelist[atomic][cls] = slot;
+        if (atomic == 2) {
+            pg->free_slots[pg->free_count++] = i;
+        } else {
+            void **slot = (void **)(pg->base + (size_t)i * pg->objsize);
+            *slot = cap_gc.freelist[atomic][cls];
+            cap_gc.freelist[atomic][cls] = slot;
+        }
     }
 }
 
@@ -473,6 +562,25 @@ static void cap_gc_new_page(int atomic, int cls) {
         cap_panic("memory limit exceeded while allocating a page", "CWE-400", 0);
     cap_gc.heap = cap_gc_checked_add(cap_gc.heap, CAP_PAGE_SIZE);
     cap_gc_range((uintptr_t)pg->base, (uintptr_t)pg->base + CAP_PAGE_SIZE);
+}
+
+static CapPage *cap_gc_find_secret_page(int cls) {
+    for (size_t i = 0; i < cap_gc.npages; i++) {
+        CapPage *pg = cap_gc.pages[i];
+        if (!pg->spare && pg->atomic == 2 &&
+            pg->objsize == cap_class_size[cls]) {
+            if (!pg->free_slots || pg->free_cap != pg->nobj ||
+                pg->free_count > pg->free_cap)
+                cap_panic("secret-page free-slot metadata invariant failed", "CWE-682", 0);
+            if (pg->free_count) return pg;
+        }
+    }
+    return NULL;
+}
+
+static int cap_gc_has_free(int atomic, int cls) {
+    return atomic == 2 ? cap_gc_find_secret_page(cls) != NULL
+                       : cap_gc.freelist[atomic][cls] != NULL;
 }
 
 /* ---- marking ------------------------------------------------------------ */
@@ -574,13 +682,20 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         while (cap_class_size[cls] != pg->objsize) cls++;
         int any = 0;
         void *head = cap_gc.freelist[pg->atomic][cls];
+        if (pg->atomic == 2) pg->free_count = 0;
         for (uint32_t j = pg->nobj; j-- > 0;) {
             if (pg->mark[j]) {
                 pg->mark[j] = 0;
                 live = cap_gc_checked_add(live, pg->objsize);
                 any = 1;
+            } else if (pg->atomic == 2) {
+                if (pg->alloc[j])
+                    cap_gc_wipe(pg->base + (size_t)j * pg->objsize, pg->objsize);
+                pg->alloc[j] = 0;
+                if (pg->free_count >= pg->free_cap)
+                    cap_panic("secret-page free-slot metadata overflow", "CWE-682", 0);
+                pg->free_slots[pg->free_count++] = j;
             } else {
-                if (pg->atomic == 2 && pg->alloc[j]) memset(pg->base + (size_t)j * pg->objsize, 0, pg->objsize);
                 pg->alloc[j] = 0;
                 void **slot = (void **)(pg->base + (size_t)j * pg->objsize);
                 *slot = cap_gc.freelist[pg->atomic][cls];
@@ -590,7 +705,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         if (!any) {
             /* Unthread this page's slots again: they were pushed last, so the free
                list resumes at the head it had before this page. */
-            cap_gc.freelist[pg->atomic][cls] = head;
+            if (pg->atomic != 2) cap_gc.freelist[pg->atomic][cls] = head;
             /* Gather empty pages at the front by swapping (page order does not matter). */
             cap_gc.pages[i] = cap_gc.pages[nempty];
             cap_gc.pages[nempty] = pg;
@@ -622,14 +737,23 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         CapLarge l = cap_gc.large[i];
         if (l.mark) {
             l.mark = 0;
-            live = cap_gc_checked_add(live, l.size);
+            live = cap_gc_checked_add(live, l.alloc_size);
             cap_gc.large[keep++] = l;
         } else {
-            if (l.atomic == 2) { volatile char *w = l.base; for (size_t z = 0; z < l.size; z++) w[z] = 0; }
-            if (cap_gc.heap < l.size)
+            if (cap_gc.heap < l.alloc_size)
                 cap_panic("large-object release would underflow heap accounting", "CWE-682", 0);
-            free(l.base);
-            cap_gc.heap -= l.size;
+            if (l.atomic == 2) {
+                cap_gc_wipe(l.base, l.alloc_size);
+#ifdef CAP_GC_TESTING
+                if (cap_gc_test_secret_wipe_hook)
+                    cap_gc_test_secret_wipe_hook(l.base, l.alloc_size);
+#endif
+                if (munmap(l.base, l.alloc_size) != 0)
+                    cap_panic("unable to release wiped secret mapping", "CWE-244", 0);
+            } else {
+                free(l.base);
+            }
+            cap_gc.heap -= l.alloc_size;
         }
     }
     cap_gc.nlarge = keep;
@@ -655,12 +779,25 @@ static void *cap_gc_alloc(size_t n, int atomic) {
         cap_gc_collect();
     }
     if (n > cap_class_size[CAP_NCLASS - 1]) {
-        if (cap_gc_heap_would_exceed(n)) {
-            cap_gc_collect();
-            if (cap_gc_heap_would_exceed(n)) cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+        size_t alloc_size = n;
+        if (atomic == 2) {
+            size_t rounded = cap_gc_checked_add(n, (size_t)CAP_PAGE_SIZE - 1);
+            alloc_size = rounded & ~((size_t)CAP_PAGE_SIZE - 1);
         }
-        void *p = calloc(1, n);
-        if (!p) cap_gc_oom();
+        if (cap_gc_heap_would_exceed(alloc_size)) {
+            cap_gc_collect();
+            if (cap_gc_heap_would_exceed(alloc_size))
+                cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+        }
+        void *p;
+        if (atomic == 2) {
+            p = mmap(NULL, alloc_size, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if (p == MAP_FAILED) cap_gc_oom();
+        } else {
+            p = calloc(1, n);
+            if (!p) cap_gc_oom();
+        }
         if (cap_gc.nlarge > cap_gc.caplarge ||
             (cap_gc.caplarge > 0 && !cap_gc.large))
             cap_panic("large-object metadata invariant violated", "CWE-682", 0);
@@ -674,11 +811,11 @@ static void *cap_gc_alloc(size_t n, int atomic) {
             cap_gc.large = nl;
             cap_gc.caplarge = nc;
         }
-        CapLarge l = {(char *)p, n, atomic, 0};
+        CapLarge l = {(char *)p, n, alloc_size, atomic, 0};
         size_t at = cap_gc.nlarge++;
         while (at > 0 && (uintptr_t)cap_gc.large[at - 1].base > (uintptr_t)p) { cap_gc.large[at] = cap_gc.large[at - 1]; at--; }
         cap_gc.large[at] = l;
-        cap_gc.heap = cap_gc_checked_add(cap_gc.heap, n);
+        cap_gc.heap = cap_gc_checked_add(cap_gc.heap, alloc_size);
         if (cap_gc.heap > cap_gc.peak_heap) cap_gc.peak_heap = cap_gc.heap;
         cap_gc_range((uintptr_t)p, (uintptr_t)p + n);
         return p;
@@ -688,12 +825,12 @@ static void *cap_gc_alloc(size_t n, int atomic) {
     if (cap_gc.nspare > cap_gc.capspare ||
         (cap_gc.nspare > 0 && !cap_gc.spare))
         cap_panic("spare-page storage invariant violated", "CWE-682", 0);
-    if (!cap_gc.freelist[atomic][cls]) {
+    if (!cap_gc_has_free(atomic, cls)) {
         size_t page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
                            ? 0 : (size_t)CAP_PAGE_SIZE;
         if (cap_gc_heap_would_exceed(page_charge)) {
             cap_gc_collect();
-            if (!cap_gc.freelist[atomic][cls]) {
+            if (!cap_gc_has_free(atomic, cls)) {
                 page_charge = cap_gc.nspare && !cap_gc.spare[cap_gc.nspare - 1]->released
                             ? 0 : (size_t)CAP_PAGE_SIZE;
                 if (cap_gc_heap_would_exceed(page_charge))
@@ -701,9 +838,22 @@ static void *cap_gc_alloc(size_t n, int atomic) {
             }
         }
     }
-    if (!cap_gc.freelist[atomic][cls]) {
+    if (!cap_gc_has_free(atomic, cls)) {
         cap_gc_new_page(atomic, cls);
         if (cap_gc.heap > cap_gc.peak_heap) cap_gc.peak_heap = cap_gc.heap;
+    }
+    if (atomic == 2) {
+        CapPage *pg = cap_gc_find_secret_page(cls);
+        if (!pg || !pg->free_slots || !pg->free_count ||
+            pg->free_count > pg->free_cap || pg->free_cap != pg->nobj)
+            cap_panic("secret-page free-slot invariant failed", "CWE-682", 0);
+        uint32_t idx = pg->free_slots[--pg->free_count];
+        if (idx >= pg->nobj || pg->alloc[idx])
+            cap_panic("secret-page allocation bitmap invariant failed", "CWE-682", 0);
+        pg->alloc[idx] = 1;
+        void *secret_slot = pg->base + (size_t)idx * pg->objsize;
+        memset(secret_slot, 0, pg->objsize);
+        return secret_slot;
     }
     void **slot = (void **)cap_gc.freelist[atomic][cls];
     cap_gc.freelist[atomic][cls] = *slot;
