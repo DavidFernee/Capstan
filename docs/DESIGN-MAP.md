@@ -90,6 +90,8 @@ listed as incomplete. The current compiler still emits C.
 
 The C-free programme is tracked separately from the versioned feature roadmap:
 
+The normative bootstrap and release contract is in [C-FREE-BOOTSTRAP.md](C-FREE-BOOTSTRAP.md). It defines the distinction between self-hosting and genuinely C-free native self-hosting, the S0→S1→S2→S3 bootstrap, platform gates, and the formal/executable evidence required. It is a target contract, not a statement that the implementation is complete.
+
 - **Architecture foundation:** define the target execution architecture and trust
   boundaries; this is an active PR-level workstream, not yet the default build.
 - **Normative core semantics:** settle values, evaluation order, checked arithmetic,
