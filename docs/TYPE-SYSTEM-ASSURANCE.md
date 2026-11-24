@@ -514,3 +514,52 @@ Use the same semantic predicate for function returns, struct and enum storage, c
 - Deep and mutually recursive graphs exhaust the configured work budget with a stable diagnostic, without stack overflow or unbounded compiler work.
 
 These are acceptance requirements for the future checker, not claims that the predicate or generic/closure features currently exist.
+
+
+## 19. Concrete implementation scope, orphan ownership and protected interface effects
+
+The v0.5 interface proposal must settle implementation scope and method effects before the checker or static-dispatch lowering is implemented. These are security and determinism requirements, not syntax preferences.
+
+### 19.1 Recommended v0.5 scope: concrete impl heads only
+
+For the initial milestone, require every implementation head to be fully concrete after ordinary type-name resolution. Explicitly exclude generic/blanket implementations, impl-head type variables, and wildcard patterns. Generic functions and generic types may still use interface constraints: after substitution, the concrete type must have one matching concrete implementation.
+
+This restriction means a generic nominal type such as `Box<T>` cannot provide one blanket interface implementation for all `T`. That limitation must be documented, and concrete instantiations may only satisfy a bound where a matching concrete impl exists. Do not silently expand one generic impl into an open-ended family of instances.
+
+Generic impls can be considered in a later milestone after declaration identity, ownership and overlap checking are implemented and tested.
+
+### 19.2 Orphan ownership and coherence boundary
+
+- An impl is permitted only when its declaring module owns either the interface declaration or the target nominal type declaration.
+- Built-in primitive types and prelude interfaces require an explicit, fixed ownership/extension rule. Do not let arbitrary user modules implement a foreign prelude interface for a foreign primitive by accident.
+- Resolve interface and target identities to canonical declaration identities before checking ownership or duplicates.
+- Check all concrete impls in the root module's complete canonical transitive import closure as one coherence set. Import aliases, duplicate paths and source order must not change the result.
+- Two impl declarations for the same resolved interface/target pair in that closure are a deterministic error. Do not choose by declaration order.
+- An unrelated module not in the compilation closure must not affect the current compilation's impl set. If a future package/link model combines independently compiled units, it must define and repeat coherence checks at that boundary.
+
+### 19.3 Protected interface methods carry explicit effects
+
+An interface method contract must represent protection as part of the callable method identity/contract, not merely as an implementation detail discovered after method lookup. For a protected method, specify the policy identity and corresponding `Grant<P>` parameter position in the interface declaration. The implementation must match the policy and grant position exactly.
+
+At a generic call site:
+- the caller must provide the exact `Grant<P>` required by the interface contract;
+- `Grant<Q>` is not interchangeable with `Grant<P>`, even if policies have structurally identical parameters or bodies;
+- interface satisfaction does not create ambient privileged context;
+- the selected concrete implementation is revalidated against the interface effect contract after substitution and before code generation;
+- the implementation body is checked under the same protected-function rules as an ordinary protected function, including policy-role binding and revalidation of policy arguments.
+
+An implementation must not weaken a protected requirement, strengthen an unprotected interface method into a protected implementation, substitute another policy, or move the grant to a different argument position. The language may choose a more concise surface syntax, but the typed interface contract must retain these facts explicitly.
+
+### 19.4 Required adversarial tests
+
+- Reject generic/blanket impl declarations in v0.5 with a direct diagnostic; accept concrete impls for concrete instantiations of generic nominal types.
+- Reject a foreign-interface/foreign-type impl; accept an impl when the module owns either side.
+- Reject duplicate concrete impls reached through different paths or aliases in one import closure, independent of source order.
+- Confirm an impl in an unrelated, unimported module does not affect the compilation.
+- Confirm prelude/primitive extension follows one explicit rule and cannot be claimed by arbitrary modules.
+- Reject a protected interface call without a grant and reject `Grant<Q>` where `Grant<P>` is required.
+- Reject implementation/interface protection mismatches in both directions, wrong policy identity, and wrong grant parameter position.
+- Verify a generic caller cannot gain privileged context from an interface bound; the correct grant is required at the call site and the concrete method body is checked as protected.
+- Verify concrete target selection and effect revalidation are deterministic across import/declaration order and happen before any C is emitted.
+
+These requirements complement the generic abstract/concrete checking gates and the bounded Grant-containment analysis in sections 15 and 18.
