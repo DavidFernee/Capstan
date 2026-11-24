@@ -153,6 +153,11 @@ static int cap_gc_would_exceed_heap(size_t amount) {
     return cap_gc.max_heap &&
            (cap_gc.heap > cap_gc.max_heap || amount > cap_gc.max_heap - cap_gc.heap);
 }
+/* floor(2 * live / page-size), expressed without overflowing 2 * live. */
+static size_t cap_gc_reserve_pages(size_t live) {
+    size_t threshold = live > CAP_MIN_THRESHOLD ? live : CAP_MIN_THRESHOLD;
+    return threshold / (CAP_PAGE_SIZE / 2);
+}
 
 /* Volatile stores prevent the compiler from deleting a wipe whose only purpose
    is to erase data before the storage is reused or released. */
@@ -592,10 +597,9 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         }
     }
     {
-        size_t next_threshold = live > CAP_MIN_THRESHOLD ? live : CAP_MIN_THRESHOLD;
         /* Twice the threshold: rounding up to size classes can use up to twice the
-           bytes requested. */
-        size_t reserve = 2 * next_threshold / CAP_PAGE_SIZE;
+           bytes requested. Divide by half a page to avoid overflowing 2 * live. */
+        size_t reserve = cap_gc_reserve_pages(live);
         /* Unreleased spares from earlier collections count towards the reserve;
            any beyond it (the program's live size has fallen) are released now. */
         size_t kept = 0;
