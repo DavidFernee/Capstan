@@ -1,0 +1,6 @@
+// expect: protected(CanDebit) parameter 'amount' is not bound by policy 'CanDebit'; include this argument in the policy or remove it from the protected function
+// spec: auth.policy auth.grant
+sensitive struct Account { int balance; }
+policy CanDebit(Account account) { return account.balance > 0; }
+protected(CanDebit) void debit(Grant<CanDebit> g, int amount, Account account) { account.balance -= amount; }
+int main() { return 0; }
