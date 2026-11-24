@@ -42,6 +42,9 @@
 #include <signal.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#define MAP_ANONYMOUS MAP_ANON
+#endif
 
 /* Upper bound on any length (see the heap limit below). */
 #define CAP_MAX_LEN ((size_t)1 << 48)
@@ -85,7 +88,7 @@ typedef struct CapPage {
     uint32_t free_count, free_cap;
 } CapPage;
 
-typedef struct { char *base; size_t size; int atomic, mark; } CapLarge;
+typedef struct { char *base; size_t size, alloc_size; int atomic, mark; } CapLarge;
 
 static struct {
     int inited, stats;
@@ -603,13 +606,18 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         CapLarge l = cap_gc.large[i];
         if (l.mark) {
             l.mark = 0;
-            live += l.size;
+            live += l.alloc_size;
             cap_gc.large[keep++] = l;
         } else {
-            if (l.atomic == 2) cap_gc_wipe(l.base, l.size);
-            free(l.base);
-            if (cap_gc.heap < l.size) cap_panic("collector heap accounting underflow", "CWE-682", 0);
-            cap_gc.heap -= l.size;
+            if (l.atomic == 2) {
+                cap_gc_wipe(l.base, l.alloc_size);
+                if (munmap(l.base, l.alloc_size) != 0)
+                    cap_panic("unable to release wiped secret mapping", "CWE-244", 0);
+            } else {
+                free(l.base);
+            }
+            if (cap_gc.heap < l.alloc_size) cap_panic("collector heap accounting underflow", "CWE-682", 0);
+            cap_gc.heap -= l.alloc_size;
         }
     }
     cap_gc.nlarge = keep;
@@ -635,12 +643,27 @@ static void *cap_gc_alloc(size_t n, int atomic) {
         cap_gc_collect();
     }
     if (n > cap_class_size[CAP_NCLASS - 1]) {
-        if (cap_gc.max_heap && cap_gc_would_exceed_heap(n)) {
-            cap_gc_collect();
-            if (cap_gc_would_exceed_heap(n)) cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+        size_t alloc_size = n;
+        if (atomic == 2) {
+            size_t rounded;
+            if (!cap_gc_size_add(n, (size_t)CAP_PAGE_SIZE - 1, &rounded))
+                cap_panic("secret mapping size overflow", "CWE-190", 0);
+            alloc_size = rounded & ~((size_t)CAP_PAGE_SIZE - 1);
         }
-        void *p = calloc(1, n);
-        if (!p) cap_gc_oom();
+        if (cap_gc.max_heap && cap_gc_would_exceed_heap(alloc_size)) {
+            cap_gc_collect();
+            if (cap_gc_would_exceed_heap(alloc_size))
+                cap_panic("memory limit exceeded (raise it with CAPSTAN_MAX_HEAP)", "CWE-400", 0);
+        }
+        void *p;
+        if (atomic == 2) {
+            p = mmap(NULL, alloc_size, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            if (p == MAP_FAILED) cap_gc_oom();
+        } else {
+            p = calloc(1, n);
+            if (!p) cap_gc_oom();
+        }
         if (cap_gc.nlarge == cap_gc.caplarge) {
             size_t needed;
             if (!cap_gc_size_add(cap_gc.nlarge, 1, &needed)) cap_gc_oom();
@@ -651,11 +674,11 @@ static void *cap_gc_alloc(size_t n, int atomic) {
             cap_gc.large = nl;
             cap_gc.caplarge = nc;
         }
-        CapLarge l = {(char *)p, n, atomic, 0};
+        CapLarge l = {(char *)p, n, alloc_size, atomic, 0};
         size_t at = cap_gc.nlarge++;
         while (at > 0 && (uintptr_t)cap_gc.large[at - 1].base > (uintptr_t)p) { cap_gc.large[at] = cap_gc.large[at - 1]; at--; }
         cap_gc.large[at] = l;
-        cap_gc.heap = cap_gc_account_add(cap_gc.heap, n);
+        cap_gc.heap = cap_gc_account_add(cap_gc.heap, alloc_size);
         if (cap_gc.heap > cap_gc.peak_heap) cap_gc.peak_heap = cap_gc.heap;
         cap_gc_range((uintptr_t)p, (uintptr_t)p + n);
         return p;
