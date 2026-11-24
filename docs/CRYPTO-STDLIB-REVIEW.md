@@ -1,6 +1,6 @@
 # Cryptographic standard-library review
 
-**Status:** independent API/security review, 24 November 2026. Review-only: no cryptographic implementation or test files changed. This document assesses the current `lib/crypto.cap` public helper surface and its tests; it does not certify the implementation or replace a cryptographic audit.
+**Status:** independent API/security review, 24 November 2026. Review-only: no cryptographic implementation or test files changed. This document assesses the current `lib/crypto.cap` public helper surface and its tests, and additionally inspects the runtime password-verifier boundary; it does not certify the implementation or replace a cryptographic audit.
 
 ## Scope and evidence
 
@@ -8,6 +8,8 @@ Reviewed:
 
 - `lib/crypto.cap`: `sha256`, `hmac_sha256`, `pbkdf2_sha256`, byte conversion and hex formatting helpers.
 - `tests/crypto/vectors.cap` and `tests/crypto/check.py`: published vectors, deterministic generated inputs, Python `hashlib` differential checks, stage-0 agreement, and comparison with runtime `hash()` / `hash_password()`.
+- `runtime/capstan_rt.h`: `cap_verify_password()`, `cap_pbkdf2()`, and `cap_needs_rehash()`.
+- `tests/unit/test_runtime.c`: malformed password-record checks and PBKDF2/password-hash vectors.
 - `docs/SPEC.md`: built-in password hashing uses PBKDF2-SHA256 with 600,000 iterations; the low-level library API is separate from those builtins.
 
 The test suite is valuable evidence of functional agreement over its exercised domain. It is not evidence of resistance to hostile parameter choices, secret erasure, constant-time execution, or cryptographic-module validation.
@@ -50,6 +52,14 @@ For `iterations < 1`, `dklen < 1` or `dklen > 1,048,576`, `pbkdf2_sha256` return
 
 **Recommendation:** use the agreed `Result<List<int>, CryptoError>` contract when the v0.5 type-system work is ready. Distinguish invalid parameters, resource-budget exceeded and provider/implementation failures where applicable. Do not introduce a second optional/empty-list error convention.
 
+### C6 — Runtime password verification accepts non-canonical records and a very high attacker-selected work factor (medium)
+
+The runtime verifier parses the iteration count with `strtol` and accepts values up to 100,000,000, although newly generated records use the fixed 600,000-iteration policy. This is a 166.7-fold work-factor increase over the current policy for a single verification attempt. If an attacker can influence stored password records (for example through a writable credential store or imported account database), a syntactically valid record can force substantial synchronous CPU work. The existing test rejects an overflowing decimal count, but does not pin a policy-level maximum close to the current cost.
+
+There is also a length/canonicalisation issue: `cap_verify_password()` uses `strlen(p)` to validate the salt/digest suffix rather than comparing the parsed fields against the enclosing `CapStr.len`. A record containing a valid textual record followed by an embedded NUL and additional bytes can therefore be accepted while the bytes after the NUL are ignored. This does not bypass the password check, but it means verification is not a validation of the complete stored value and can create inconsistencies between components that compare or preserve the full length-bearing string.
+
+**Recommendation:** define an explicit accepted verification-cost policy (including any intentional legacy range) and reject costs above it before PBKDF2 work. Parse the complete `CapStr` by length, reject embedded NUL and trailing bytes, and require a canonical decimal cost representation. Add tests for costs just above the policy limit, leading signs/whitespace/zero padding if non-canonical forms are to be rejected, and valid-record-plus-NUL-plus-suffix inputs. Keep any compatibility range deliberate and documented rather than using a very large defensive ceiling.
+
 ## Test coverage assessment
 
 Current positive evidence:
@@ -60,6 +70,7 @@ Current positive evidence:
 - PBKDF2 differential cases with 1–20 iterations, password lengths 0–79, salt lengths 0–39 and derived lengths 1–100.
 - One runtime `hash_password()` interoperability check at 600,000 iterations.
 - Native and stage-0 comparison with Python's `hashlib`.
+- Runtime password verifier tests for wrong passwords, tampering, empty/malformed tags, zero cost and an overflowing cost field.
 
 Material missing cases for a security-oriented API:
 
@@ -67,6 +78,7 @@ Material missing cases for a security-oriented API:
 - very large password and salt inputs and aggregate work limits;
 - invalid byte values (<0 and >255);
 - failure-path assertions (including that callers cannot mistake failure for valid output);
+- runtime verifier policy-boundary and complete-length/canonical-record tests;
 - secret-flow tests for accidental formatting/logging/serialization, once a secret-aware facade exists;
 - resource/time budget tests on the slowest supported target.
 
@@ -82,4 +94,4 @@ The current deterministic generator in `tests/crypto/vectors.cap` is appropriate
 
 ## Overall assessment
 
-The current tests establish useful algorithmic agreement for SHA-256, HMAC-SHA256 and PBKDF2-HMAC-SHA256. The principal gap is at the API boundary: a correct primitive can still be unsafe when callers can request excessive work, supply unbounded inputs, pass invalid byte values silently, or mistake ordinary byte lists for secret-protected storage. Those boundaries should be fixed before these helpers are promoted as general-purpose security APIs.
+The current tests establish useful algorithmic agreement for SHA-256, HMAC-SHA256 and PBKDF2-HMAC-SHA256. The principal gap is at the API boundary: a correct primitive can still be unsafe when callers can request excessive work, supply unbounded inputs, pass invalid byte values silently, mistake ordinary byte lists for secret-protected storage, or provide non-canonical password records. Those boundaries should be fixed before these helpers are promoted as general-purpose security APIs.
