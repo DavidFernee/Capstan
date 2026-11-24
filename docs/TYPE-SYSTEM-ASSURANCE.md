@@ -856,3 +856,42 @@ Substitution must preserve the exact payload type and existing security semantic
 - Verify error propagation does not create a Grant escape or bypass the normal return/storage checks.
 
 These are acceptance requirements for generic enum substitution and Result; they do not claim either feature is implemented.
+
+
+## 26. Generic enum constructors must agree with the inference contract
+
+The proposed `Result<T,E>` exposes a concrete inference edge case. A constructor for `Ok(T)` observes only `T`; a constructor for `Err(E)` observes only `E`. Neither payload uniquely determines the other type parameter. If generic inference is based only on value arguments and does not use expected return types, both constructors are underdetermined unless the caller supplies the missing type argument.
+
+### 26.1 Choose one explicit rule
+
+For v0.5, prefer requiring explicit type arguments whenever variant payloads do not determine every generic enum parameter. Using the proposed turbofish direction from section 21, the syntax could be:
+
+```capstan
+Result::<int, ReadError>.Ok(42)
+Result::<int, ReadError>.Err(err)
+```
+
+The exact surface grammar may differ, but it must resolve the enum declaration and its full type-argument vector before variant lookup. Do not infer the missing parameter from an enclosing variable declaration, function return type, later match, or other expected-type context unless the language separately specifies and tests that as a distinct inference feature.
+
+If the design chooses contextual inference for enum constructors instead, document it as an explicit, bounded exception to the general inference rule: define the source of the expected type, ambiguity/conflict handling, visibility checks and exact qualifier preservation. Do not leave this as implementation discretion.
+
+### 26.2 Constructor and pattern identity
+
+- Resolve a variant constructor against the exact generic enum declaration identity and concrete argument vector.
+- Check each payload against the corresponding fully substituted variant field type.
+- Reject wrong arity, missing generic arguments, excess arguments and any unresolved type parameter.
+- Pattern matching derives the concrete enum arguments from the scrutinee type; it must not independently infer or widen them from pattern bindings.
+- Variant names with the same spelling in different enum declarations must remain distinct.
+- The generic enum constructor path must apply the same Grant-containment and visibility checks as any other enum construction.
+
+### 26.3 Required adversarial tests
+
+- Construct both `Ok` and `Err` with explicit full generic arguments.
+- Reject `Ok(value)` and `Err(error)` when a generic argument remains underdetermined under the chosen rule.
+- Verify no expected-return-type or later-assignment inference occurs accidentally.
+- Verify explicit constructor arguments preserve `Tainted`, `Secret`, `Html`, `LogText` and nominal error identities exactly.
+- Reject wrong enum identity, arity and payload type after substitution.
+- Verify pattern bindings inherit the exact concrete payload types from the scrutinee.
+- Verify generic enum constructors cannot store Grant directly or through nested payload types.
+
+This is a design and acceptance requirement; it does not claim generic enum construction exists in the current compiler.
