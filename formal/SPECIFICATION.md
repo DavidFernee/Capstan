@@ -1,7 +1,7 @@
 # Allocator and collector abstract specification
 
 **Status:** initial contract for review; not yet mechanised or proved.  
-**Implementation baseline:** `e54edb6bbccab24acab9f2d002a98a09e56c443f`.  
+**Implementation baseline:** `bbe4fe2227a48ac266ba9d3e4dd6093a60ce4f10`.  
 **Primary implementation:** `runtime/capstan_gc.h`.
 
 This specification records the state that a formal model must represent. It is not a
