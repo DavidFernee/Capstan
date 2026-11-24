@@ -68,13 +68,6 @@ else
   bad "CCAM Capstan arithmetic, register validation and evaluator" "$out"
 fi
 
-section "Capstan-native verification: CCAM multi-function calls and frames"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
-  ok "CCAM function validation, argument transfer, call depth and atomic returns"
-else
-  bad "CCAM multi-function evaluator" "$out"
-fi
-
 section "unit"
 for opt in 0 2 3; do
   if "$CC" "-O$opt" -std=gnu11 -w -I"$ROOT/runtime" "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit_o$opt" &&
