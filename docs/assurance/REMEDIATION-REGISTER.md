@@ -41,7 +41,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 
 | PR | Current inspected status | Head | CI evidence at inspection | Remediation interpretation |
 |---|---|---|---|---|
-| #87 | Open, draft, targets main | `80f7a0db3c20cf25c76ff817b5f5a33ce90aba09` | Run 45357034522 queued on latest current-main-synchronised head | Assessment and executable probes; findings are not fixed. Latest assessment head passed CI; the earlier run remains the evidence for reproducing the CWE-916 probes. |
+| #87 | Open, draft, targets main | `8d1f91dd56189a6381131ad53bfdcc9fb46a5f98` | Run 45358639037 pending on latest current-main-synchronised head | Assessment and executable probes; findings are not fixed. Latest assessment head passed CI; the earlier run remains the evidence for reproducing the CWE-916 probes. |
 | #51 | Open, draft, targets main; stale base | `d6f97beb05962b7f8ef43f5e0ea8434be06450fa` | Run 45335656200 success on this head | GC hardening submitted; stale-slot and exact accounting evidence remain blockers. |
 | #86 | Open, draft, targets main | `334ebe44c51d9187f2cb82e3533598b7bf094ebf` | Run 45341730284 success | Strong candidate, but still requires independent review and integration. |
 | #97 | Open, draft, targets main | `20fa6374ac9bb0e283484c90a759a702d04c606f` | Run 45342232492 success on this head | Compound-assignment correction submitted; PR #102 extends evidence. |
