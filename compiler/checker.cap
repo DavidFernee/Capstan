@@ -1278,7 +1278,11 @@ void check_stmt(Checker c, Node s) {
             return;
         }
         if (s.s != "=") {
-            if (!pure_path(target)) {
+            // Compound field assignment lowers its receiver to one temporary
+            // before reading the old value and evaluating the RHS. It is safe
+            // for that receiver to be effectful because the backend evaluates it
+            // exactly once; indexed targets retain the stricter pure-path rule.
+            if (!pure_path(target) && target.k != N_GETF) {
                 error_at(c.ctx, s, "", "'" + s.s + "' needs a variable, field or simply-indexed element on the left; write x = x + v");
             }
             bool ctx_ok = s.s == "+=" && (tt.k == TY_HTML || tt.k == TY_LOG) && (rv.k == tt.k || rv.k == TY_STR);
