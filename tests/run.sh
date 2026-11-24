@@ -319,6 +319,16 @@ else
   echo "  skip  sanitizers not available for $CC"
 fi
 
+# Dedicated integration regression for aggregate rendered-line allocation.
+section "shroud frame line budget"
+if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
+printf 'int main(void) { return 0; }\n' > "$tmp/frame-line-san.c"
+if "$CC" $SAN "$tmp/frame-line-san.c" -o "$tmp/frame-line-san" 2>/dev/null; then
+  if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame line budget under ASan+UBSan: $out"; else bad "shroud frame line budget (sanitizers)" "$out"; fi
+else
+  echo "  skip  sanitizers not available for $CC"
+fi
+
 if (( FULL )); then
   section "coverage"
   if [[ "$(uname)" != Linux ]] || ! command -v gcov >/dev/null || ! command -v gcc >/dev/null; then echo "  skip  coverage and compiler mutation run on Linux with gcc and gcov"
