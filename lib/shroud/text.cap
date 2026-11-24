@@ -212,7 +212,7 @@ bool line_slot_available(int used, int max_lines, bool allow_truncate) {
     return false;
 }
 
-List<int> wrap_lines(Font f, int size, List<int> cps, int max_w, int max_lines, bool allow_truncate) {
+List<int> wrap_lines_limited(Font f, int size, List<int> cps, int max_w, int max_lines, bool allow_truncate) {
     List<int> out = new List<int>();
     int start = 0;
     int w = 0;
@@ -250,6 +250,12 @@ List<int> wrap_lines(Font f, int size, List<int> cps, int max_w, int max_lines, 
     out.push(start);
     out.push(trim_end(cps, start, cps.len()));
     return out;
+}
+
+// Backwards-compatible single-value wrapper. The layout pass uses the
+// limited form with its shared remaining-frame budget.
+List<int> wrap_lines(Font f, int size, List<int> cps, int max_w) {
+    return wrap_lines_limited(f, size, cps, max_w, MAX_FRAME_LINES, false);
 }
 
 int trim_end(List<int> cps, int from, int to) {
