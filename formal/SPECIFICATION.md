@@ -65,7 +65,7 @@ implementation design that keeps free-slot metadata out of the payload.
 Every operation is a transition with explicit preconditions, postconditions and failure
 outcomes. At minimum model:
 
-- checked addition, multiplication, and capacity growth;
+- checked addition, multiplication, and capacity growth; checked arithmetic overflow has a terminal fatal outcome and never returns a wrapped value;
 - page acquisition, metadata construction and page-table insertion;
 - slot allocation and free-list removal;
 - root registration;
