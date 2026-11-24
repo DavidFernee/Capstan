@@ -1321,3 +1321,26 @@ The type-system/backend requirement remains unchanged: monomorphised layouts mus
 The current `compiler/codegen.cap` confirms that `N_NEW` struct construction and `N_ENUMVAL` enum construction both call `cap_alloc`, i.e. kind 0. This is conservative and safe for mixed layouts because every word is scanned; it may retain objects when scalar words happen to resemble heap addresses, but it does not omit managed references. The runtime's list/map helpers similarly distinguish pointer-bearing storage from pointer-free buffers: ordinary list backing and map keys/values use kind 0, while string/boxed-integer/index buffers and packed bool storage use pointer-free allocation where appropriate.
 
 For the first generic implementation, retaining kind 0 for all user-defined struct/enum specialisations is a defensible correctness-first default. Any later optimisation to kind 1 must be driven by a complete, substituted layout proof and tested against nested pointers, optionals, enum payloads and recursive nominal types. Kind 2 is not a general-purpose "contains Secret" marker: a struct/enum/closure that stores a Secret reference is still pointer-bearing kind 0; only the separate secret payload allocation is kind 2. This is particularly important because the current collector has no per-field pointer bitmap or type descriptor.
+
+
+## 36. Type-erased collection storage and generic GC safety
+
+The current collection ABI is not a per-element typed layout. `CapList` stores a `CapVal` union (`int64_t` or `void *`) in a backing array; both the list header and backing array are allocated with kind 0. `CapMap` stores `CapStr *` keys and `CapVal` values in kind-0 arrays; its integer index table is kind 1. These traced arrays are deliberately conservative: integer words may resemble heap addresses and cause false retention, but pointer-bearing values are not missed. Do not change these arrays to kind 1 merely because one observed instantiation contains integers.
+
+There are two existing specialised representations worth preserving explicitly:
+
+- `List<bool>` uses `CapBList`: the header is kind 0 and the packed `bool` backing buffer is kind 1.
+- Optional `int`/`bool` values are boxed by `cap_box_int` in kind-1 storage; `none` is `NULL`. When such values are placed in a normal `CapList`/map, the containing `CapVal` array remains kind 0 and traces the box pointer (the box itself contains no pointers).
+
+Other non-scalar values are stored as pointers in `CapVal`, including strings, structs, enums, collections, optional non-scalars and Secret payloads. The container arrays must therefore remain kind 0. A Secret stored in a list/map is a pointer to its separate kind-2 payload; the list/map header and backing arrays are not secret allocations. Map keys are always `CapStr *`; the map index array is pointer-free kind 1. `cap_list_sort_i` uses a kind-1 temporary because it sorts integer values; `cap_list_sort_s` uses kind 0 because its temporary contains string pointers.
+
+Required generic implementation invariants:
+
+- Monomorphisation must preserve the existing erased ABI unless an explicit new representation is designed. For each specialised collection, the runtime representation, element boxing/unboxing and allocation kinds must agree.
+- Never allocate a `CapVal` array, map key/value array, or any pointer-bearing sort/copy temporary as kind 1. A pointer-free temporary may use kind 1 only when its operation is proven not to hold managed references.
+- The `List<bool>` fast path is selected only for exactly `bool`, not `Optional<bool>` or an unconstrained type variable before substitution. Optional scalar boxing must remain a traced pointer when stored in an erased collection.
+- Keep Grant non-escape checks independent of GC reachability: tracing a Grant safely does not make storing it legal.
+- Add GC-stress tests for list/map growth, replacement, removal, sorting and nested values for `int`, `bool`, `string`, struct, enum, optional scalar, optional pointer and Secret specialisations. Include a Secret payload retained through a live collection, then reclaimed after all collection roots disappear.
+- If a future typed backing store uses kind 1 for scalar specialisations, test that the selected layout is derived from the fully substituted type and cannot be confused by qualifiers, optionals, aliases, enums or module-local nominal types.
+
+Current evidence: `compiler/codegen.cap` uses `cap_vi`/`cap_vp` and `from_val` to encode/decode list and map elements; `runtime/capstan_rt.h` implements the allocation choices above. Existing unit tests cover ordinary collection operations and map growth, but do not constitute the generic-specialisation/GC-stress matrix required here. This section specifies future acceptance criteria; it does not claim generic collection specialisation exists.
