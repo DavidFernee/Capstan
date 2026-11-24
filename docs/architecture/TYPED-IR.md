@@ -133,7 +133,7 @@ Let:
 - `S = (frames, steps)` be a running machine state, with the active frame at the top of a non-empty stack;
 - `Outcome = Running(S) | Halt(v) | HaltVoid | Trap(code, fn, pc, detail)`.
 
-The program and configured limits are parameters to the transition relation, not mutable state. A frame's register vector has the exact length and type vector declared by its function. Register writes preserve the declared type and set the cell to initialised.
+The program and configured limits are parameters to the transition relation, not mutable state. The configuration validator requires `maxDepth` in `1..2^63-1` and `maxSteps` in `0..2^63-1`, parsed as exact JSON integers before entry-frame construction. A frame's register vector has the exact length and type vector declared by its function. Register writes preserve the declared type and set the cell to initialised.
 
 ### 10.2 Instruction dispatch and step budget
 
