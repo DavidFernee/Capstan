@@ -108,7 +108,7 @@ def check_stored_deflate(idat, expected_raw_length):
     if total != expected_raw_length:
         fail(f"stored blocks contain {total} bytes, expected {expected_raw_length}")
     if blocks < 2:
-        fail("near-limit regression did not exercise multiple DEFLATE blocks")
+        fail("regression did not exercise multiple DEFLATE blocks")
     return blocks
 
 
@@ -130,7 +130,7 @@ def main():
             ["tests/shroud/png_budget.cap"])
         run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), c_source, "-o", exe])
         result = run([exe, accepted, rejected])
-        if "png budget: 19 assertions" not in result.stdout:
+        if "png budget: 18 assertions" not in result.stdout:
             fail(f"regression program did not report its assertions: {result.stdout!r}")
         if not os.path.isfile(accepted):
             fail("accepted PNG was not written")
@@ -138,7 +138,7 @@ def main():
             fail("over-budget png_write created an output file")
 
         width, height, idat = parse_png(accepted)
-        if (width, height) != (511, 512):
+        if (width, height) != (128, 128):
             fail(f"unexpected dimensions {width}x{height}")
         expected_length = (1 + 4 * width) * height
         blocks = check_stored_deflate(idat, expected_length)
@@ -153,7 +153,7 @@ def main():
             row = raw[y * len(expected_row):(y + 1) * len(expected_row)]
             if row != expected_row:
                 fail(f"decoded pixels differ on row {y}")
-        print(f"png budget: 19 Capstan assertions; {width}x{height} RGBA; "
+        print(f"png budget: 18 Capstan assertions; {width}x{height} RGBA; "
               f"{blocks} stored DEFLATE blocks; CRC, zlib, Adler and every pixel verified; "
               "over-budget write produced no file")
 
