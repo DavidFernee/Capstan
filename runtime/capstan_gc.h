@@ -252,9 +252,11 @@ static size_t cap_gc_slot(uintptr_t pageno, size_t cap) {
 }
 
 static void cap_gc_ptab_insert(CapPage *pg) {
-    if ((cap_gc.npages + 1) * 2 > cap_gc.ptab_cap) {
-        size_t nc = cap_gc.ptab_cap ? cap_gc.ptab_cap * 2 : 64;
-        CapPage **nt = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
+    if (!cap_gc.ptab_cap || cap_gc.npages >= cap_gc.ptab_cap / 2) {
+        size_t nc = cap_gc_next_capacity(cap_gc.ptab_cap,
+                                         cap_gc_checked_add(cap_gc.npages, 1),
+                                         64, sizeof(CapPage *));
+        CapPage **nt = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
         for (size_t i = 0; i < cap_gc.ptab_cap; i++) {
             CapPage *p = cap_gc.ptab[i];
             if (!p) continue;
@@ -307,8 +309,10 @@ static void cap_gc_spare_page(CapPage *pg, int release) {
     pg->spare = 1;
     if (release) cap_gc_release(pg);
     if (cap_gc.nspare == cap_gc.capspare) {
-        size_t nc = cap_gc.capspare ? cap_gc.capspare * 2 : 16;
-        CapPage **ns = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
+        size_t nc = cap_gc_next_capacity(cap_gc.capspare,
+                                         cap_gc_checked_add(cap_gc.nspare, 1),
+                                         16, sizeof(CapPage *));
+        CapPage **ns = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
         if (cap_gc.nspare) memcpy(ns, cap_gc.spare, sizeof(CapPage *) * cap_gc.nspare);
         free(cap_gc.spare);
         cap_gc.spare = ns;
@@ -360,8 +364,10 @@ static void cap_gc_new_page(int atomic, int cls) {
     pg->base = (char *)mem;
     cap_gc_format_page(pg, atomic, cls);
     if (cap_gc.npages == cap_gc.cappages) {
-        size_t nc = cap_gc.cappages ? cap_gc.cappages * 2 : 16;
-        CapPage **np = (CapPage **)cap_gc_meta(sizeof(CapPage *) * nc);
+        size_t nc = cap_gc_next_capacity(cap_gc.cappages,
+                                         cap_gc_checked_add(cap_gc.npages, 1),
+                                         16, sizeof(CapPage *));
+        CapPage **np = (CapPage **)cap_gc_meta_array(nc, sizeof(CapPage *));
         if (cap_gc.npages) memcpy(np, cap_gc.pages, sizeof(CapPage *) * cap_gc.npages);
         free(cap_gc.pages);
         cap_gc.pages = np;
@@ -377,8 +383,10 @@ static void cap_gc_new_page(int atomic, int cls) {
 
 static void cap_gc_push(void *p, size_t n) {
     if (cap_gc.msp + 2 > cap_gc.mcap) {
-        size_t nc = cap_gc.mcap ? cap_gc.mcap * 2 : 1024;
-        void **ns = (void **)cap_gc_meta(sizeof(void *) * nc);
+        size_t nc = cap_gc_next_capacity(cap_gc.mcap,
+                                         cap_gc_checked_add(cap_gc.msp, 2),
+                                         1024, sizeof(void *));
+        void **ns = (void **)cap_gc_meta_array(nc, sizeof(void *));
         if (cap_gc.msp) memcpy(ns, cap_gc.mstack, sizeof(void *) * cap_gc.msp);
         free(cap_gc.mstack);
         cap_gc.mstack = ns;
@@ -549,8 +557,10 @@ static void *cap_gc_alloc(size_t n, int atomic) {
         void *p = calloc(1, n);
         if (!p) cap_gc_oom();
         if (cap_gc.nlarge == cap_gc.caplarge) {
-            size_t nc = cap_gc.caplarge ? cap_gc.caplarge * 2 : 64;
-            CapLarge *nl = (CapLarge *)cap_gc_meta(sizeof(CapLarge) * nc);
+            size_t nc = cap_gc_next_capacity(cap_gc.caplarge,
+                                             cap_gc_checked_add(cap_gc.nlarge, 1),
+                                             64, sizeof(CapLarge));
+            CapLarge *nl = (CapLarge *)cap_gc_meta_array(nc, sizeof(CapLarge));
             if (cap_gc.nlarge) memcpy(nl, cap_gc.large, sizeof(CapLarge) * cap_gc.nlarge);
             free(cap_gc.large);
             cap_gc.large = nl;
@@ -587,8 +597,10 @@ static void *cap_gc_alloc(size_t n, int atomic) {
 /* Register the address of a global that may hold a pointer into the heap. */
 static void cap_gc_root(void **addr) {
     if (cap_gc.nroots == cap_gc.caproots) {
-        size_t nc = cap_gc.caproots ? cap_gc.caproots * 2 : 64;
-        void ***nr = (void ***)cap_gc_meta(sizeof(void **) * nc);
+        size_t nc = cap_gc_next_capacity(cap_gc.caproots,
+                                         cap_gc_checked_add(cap_gc.nroots, 1),
+                                         64, sizeof(void **));
+        void ***nr = (void ***)cap_gc_meta_array(nc, sizeof(void **));
         if (cap_gc.nroots) memcpy(nr, cap_gc.roots, sizeof(void **) * cap_gc.nroots);
         free(cap_gc.roots);
         cap_gc.roots = nr;
