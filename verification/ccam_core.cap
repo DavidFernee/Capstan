@@ -413,7 +413,7 @@ struct CCAMMachineState {
 struct CCAMMachineCreateResult {
     bool ok;
     CCAMMachineState state;
-    string error = "";
+    string error;
 }
 
 CCAMInstruction ccam_copy_instruction(CCAMInstruction source) {
@@ -597,7 +597,7 @@ void ccam_machine_step(CCAMMachineState state) {
             return;
         }
 
-        CCAMIntResult result;
+        CCAMIntResult result = ccam_add(0, 0);
         if (instruction.op == CCAM_OP_ADD_I) {
             result = ccam_add(lhs.int_value, rhs.int_value);
         } else if (instruction.op == CCAM_OP_SUB_I) {
@@ -1044,7 +1044,9 @@ test "CCAM machine follows the false branch arm" {
     i.lhs = 1;
     code.push(i);
     CCAMMachineState state = ccam_machine_create_valid(types, code, 4);
-    for (int n = 0; n < 4; n += 1) ccam_machine_step(state);
+    for (int n = 0; n < 4; n += 1) {
+        ccam_machine_step(state);
+    }
     assert(state.halted && state.halt_has_value && state.halt_value == 42);
     assert(state.steps == 4 && state.trap_code == "");
 }
