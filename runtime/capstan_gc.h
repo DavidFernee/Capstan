@@ -188,7 +188,8 @@ static void cap_segv_handler(int sig, siginfo_t *si, void *uc) {
         msg_len = sizeof overflow_msg - 1;
         code = 101;
     }
-    (void)write(2, msg, msg_len);
+    ssize_t written = write(2, msg, msg_len);
+    (void)written;
     _exit(code);
 }
 
