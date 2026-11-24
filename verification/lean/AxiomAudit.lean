@@ -118,3 +118,9 @@ import CapstanVerification.Progress
 #print axioms CapstanVerification.machineStep_progress_or_explicit_outcome
 #print axioms CapstanVerification.machineStep_deterministic
 #print axioms CapstanVerification.runFuel_fuel_exhausted_state_well_typed
+
+#print axioms CapstanVerification.validateRawInstruction_returns_typed
+#print axioms CapstanVerification.machineInstr_targets_in_range
+#print axioms CapstanVerification.validateRawInstruction_target_sound
+#print axioms CapstanVerification.validateRawInstruction_constInt_type_sound
+#print axioms CapstanVerification.validateRawInstruction_constBool_type_sound
