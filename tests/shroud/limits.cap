@@ -20,7 +20,9 @@ Font composite_budget_fixture() {
     limits_append_u16(bytes, 0xFFFF);
     for (int h = 0; h < 4; h += 1) { limits_append_u16(bytes, 0); }
     for (int i = 0; i < 64; i += 1) {
-        limits_append_u16(bytes, i < 63? 0x0022: 0x0002);
+        int flags = 0x0002;
+        if (i < 63) { flags = 0x0022; }
+        limits_append_u16(bytes, flags);
         limits_append_u16(bytes, 0);
         bytes.push(0); bytes.push(0);
     }
@@ -28,7 +30,9 @@ Font composite_budget_fixture() {
     limits_append_u16(bytes, 0xFFFF);
     for (int h2 = 0; h2 < 4; h2 += 1) { limits_append_u16(bytes, 0); }
     for (int j = 0; j < 5; j += 1) {
-        limits_append_u16(bytes, j < 4? 0x0022: 0x0002);
+        int flags = 0x0002;
+        if (j < 4) { flags = 0x0022; }
+        limits_append_u16(bytes, flags);
         limits_append_u16(bytes, 1);
         bytes.push(0); bytes.push(0);
     }
