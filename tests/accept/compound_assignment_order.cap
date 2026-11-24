@@ -1,12 +1,23 @@
 // spec: stmt.assign
-// Compound assignment must read the old indexed value before evaluating an RHS
-// that mutates the same list. MIN % -1 preserves the existing result of zero.
+// Compound assignment must read the old target value before evaluating an RHS
+// that mutates the same object/list. MIN % -1 preserves the existing result 0.
+struct Counter { int value; }
+
+int mutate_counter(Counter c) {
+    c.value = 100;
+    return 1;
+}
+
 int mutate_first(List<int> xs) {
     xs[0] = 100;
     return 1;
 }
 
 int main() {
+    Counter c = new Counter{value: 10};
+    c.value += mutate_counter(c);
+    println(int_to_str(c.value));
+
     List<int> xs = new List<int>();
     xs.push(10);
     xs[0] += mutate_first(xs);
