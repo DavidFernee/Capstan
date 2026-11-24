@@ -163,8 +163,26 @@ static int64_t *cap_box_int(int64_t v) {
 
 typedef struct CapStr { int64_t len; char data[]; } CapStr;
 
+/* All string allocation sizes are checked before converting a signed length
+   to size_t or multiplying for an escaping expansion. */
+static size_t cap_rt_checked_string_bytes(int64_t len, size_t expansion,
+                                          size_t extra, int64_t loc) {
+    if (len < 0 || !expansion || extra > CAP_MAX_LEN ||
+        sizeof(CapStr) > CAP_MAX_LEN - extra ||
+        sizeof(CapStr) > SIZE_MAX - extra)
+        cap_panic("invalid string allocation length", "CWE-682", loc);
+    size_t available = CAP_MAX_LEN - sizeof(CapStr) - extra;
+    size_t size_available = SIZE_MAX - sizeof(CapStr) - extra;
+    if ((uint64_t)len > available / expansion ||
+        (uint64_t)len > size_available / expansion)
+        cap_panic("string allocation exceeds runtime limit", "CWE-789", loc);
+    return sizeof(CapStr) + (size_t)len * expansion + extra;
+}
+
 static CapStr *cap_str_new(const char *s, int64_t n) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
+    if (n > 0 && !s)
+        cap_panic("null source for non-empty string", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(n, 1, 1, 0));
     r->len = n;
     if (n > 0) memcpy(r->data, s, (size_t)n);
     r->data[n] = 0;
@@ -173,7 +191,9 @@ static CapStr *cap_str_new(const char *s, int64_t n) {
 
 /* String literals are allocated once per site, outside the collected heap. */
 static CapStr *cap_str_perm(const char *s, int64_t n) {
-    CapStr *r = (CapStr *)malloc(sizeof(CapStr) + (size_t)n + 1);
+    if (n > 0 && !s)
+        cap_panic("null source for non-empty permanent string", "CWE-476", 0);
+    CapStr *r = (CapStr *)malloc(cap_rt_checked_string_bytes(n, 1, 1, 0));
     if (!r) cap_gc_oom();
     r->len = n;
     if (n > 0) memcpy(r->data, s, (size_t)n);
@@ -184,8 +204,10 @@ static CapStr *cap_str_perm(const char *s, int64_t n) {
     if (!_cap_lit) { _cap_lit = cap_str_perm((s), (n)); } _cap_lit; })
 
 static CapStr *cap_str_concat(CapStr *a, CapStr *b, int64_t loc) {
+    if (!a || !b || a->len < 0 || b->len < 0)
+        cap_panic("invalid string operand", "CWE-682", loc);
     int64_t n = cap_add(a->len, b->len, loc);
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(n, 1, 1, loc));
     r->len = n;
     memcpy(r->data, a->data, (size_t)a->len);
     memcpy(r->data + a->len, b->data, (size_t)b->len);
@@ -435,12 +457,19 @@ static void cap_blist_insert(CapBList *l, int64_t i, bool v, int64_t loc) {
 }
 
 static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {
+    if (!parts || !sep || parts->len < 0 || parts->cap < 0 ||
+        parts->len > parts->cap || sep->len < 0 ||
+        (parts->cap > 0 && !parts->items))
+        cap_panic("invalid string join operands", "CWE-682", loc);
     int64_t total = 0;
     for (int64_t i = 0; i < parts->len; i++) {
-        total = cap_add(total, ((CapStr *)parts->items[i].p)->len, loc);
+        CapStr *part = (CapStr *)parts->items[i].p;
+        if (!part || part->len < 0)
+            cap_panic("invalid string in join parts", "CWE-682", loc);
+        total = cap_add(total, part->len, loc);
         if (i > 0) total = cap_add(total, sep->len, loc);
     }
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)total + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(total, 1, 1, loc));
     r->len = total;
     char *w = r->data;
     for (int64_t i = 0; i < parts->len; i++) {
@@ -869,7 +898,8 @@ static int64_t *cap_validate_int(CapStr *t) {
 
 /* Escape arbitrary bytes into the body of a C string literal. */
 static CapStr *cap_escape_c(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 4 + 1);
+    if (!t) cap_panic("null string passed to cap_escape_c", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 4, 1, 0));
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
         unsigned char c = (unsigned char)t->data[i];
@@ -885,7 +915,8 @@ static CapStr *cap_escape_c(CapStr *t) {
 }
 
 static CapStr *cap_escape_html(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 6 + 1);
+    if (!t) cap_panic("null string passed to cap_escape_html", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 6, 1, 0));
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
         char c = t->data[i];
@@ -934,7 +965,8 @@ static int64_t *cap_validate_range(CapStr *t, int64_t lo, int64_t hi) {
 /* One CSV field: always quoted, quotes doubled, and a leading = + - @ tab or CR
    neutralised with an apostrophe so spreadsheets do not run it (CWE-1236). */
 static CapStr *cap_escape_csv(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 2 + 4);
+    if (!t) cap_panic("null string passed to cap_escape_csv", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 2, 4, 0));
     char *w = r->data;
     *w++ = '"';
     if (t->len > 0 && t->data[0] != 0 && strchr("=+-@\t\r", t->data[0])) *w++ = '\'';
@@ -982,7 +1014,8 @@ static bool cap_log_hostile(uint32_t cp) {
    ASCII controls, invalid UTF-8, and the hostile code points above become \xNN
    escapes, one per byte. Printable ASCII and other valid UTF-8 text are kept. */
 static CapStr *cap_escape_log(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 4 + 1);
+    if (!t) cap_panic("null string passed to cap_escape_log", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 4, 1, 0));
     char *w = r->data;
     const unsigned char *s = (const unsigned char *)t->data;
     int64_t i = 0;
@@ -1012,7 +1045,8 @@ static CapStr *cap_escape_log(CapStr *t) {
    valid UTF-8 is kept; each invalid byte becomes U+FFFD, so the output is always
    valid JSON. */
 static CapStr *cap_escape_json(CapStr *t) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)t->len * 6 + 1);
+    if (!t) cap_panic("null string passed to cap_escape_json", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 6, 1, 0));
     char *w = r->data;
     const unsigned char *s = (const unsigned char *)t->data;
     int64_t i = 0;
@@ -1079,8 +1113,11 @@ static CapStr *cap_secret_env(CapStr *name) {
         memchr(name->data, '\0', (size_t)name->len) != NULL) return NULL;
     const char *v = getenv(name->data);
     if (!v) return NULL;
-    int64_t n = (int64_t)strlen(v);
-    CapStr *r = (CapStr *)cap_alloc_secret(sizeof(CapStr) + (size_t)n + 1);
+    size_t value_len = strlen(v);
+    if (value_len > INT64_MAX)
+        cap_panic("secret environment value exceeds string length range", "CWE-789", 0);
+    int64_t n = (int64_t)value_len;
+    CapStr *r = (CapStr *)cap_alloc_secret(cap_rt_checked_string_bytes(n, 1, 1, 0));
     r->len = n;
     memcpy(r->data, v, (size_t)n);
     r->data[n] = 0;
