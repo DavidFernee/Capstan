@@ -102,6 +102,79 @@ theorem consumeStep_exhausted_traps
   have hnot : ¬ budget.used < budget.limit := Nat.not_lt.mpr h
   simp [hnot]
 
+/-- A non-empty call stack with an intrinsic maximum-depth invariant. -/
+structure CallStack (Frame : Type) where
+  frames : List Frame
+  maxDepth : Nat
+  nonempty : frames ≠ []
+  within_limit : frames.length ≤ maxDepth
+
+/-- Start execution with the entry frame at depth one. -/
+def initialCallStack {Frame : Type}
+    (entry : Frame) (maxDepth : Nat) (hmax : 1 ≤ maxDepth) : CallStack Frame :=
+  { frames := [entry]
+    maxDepth := maxDepth
+    nonempty := by simp
+    within_limit := by simpa using hmax }
+
+/-- Push a callee frame, trapping before the push if it would exceed maxDepth. -/
+def pushCallFrame {Frame : Type}
+    (stack : CallStack Frame) (callee : Frame) : Except Trap (CallStack Frame) :=
+  if hdepth : stack.frames.length < stack.maxDepth then
+    .ok {
+      frames := callee :: stack.frames
+      maxDepth := stack.maxDepth
+      nonempty := by simp
+      within_limit := by
+        simp
+        exact Nat.succ_le_of_lt hdepth
+    }
+  else
+    .error .callDepthLimit
+
+/-- A successful call-frame push places the callee at the top of the stack. -/
+theorem pushCallFrame_top
+    {Frame : Type} (stack : CallStack Frame) (callee : Frame)
+    (next : CallStack Frame)
+    (h : pushCallFrame stack callee = .ok next) :
+    next.frames.head? = some callee := by
+  unfold pushCallFrame at h
+  by_cases hdepth : stack.frames.length < stack.maxDepth
+  · simp [hdepth] at h
+    cases h
+    simp
+  · simp [hdepth] at h
+
+/-- A successful call-frame push increases the stack depth by exactly one. -/
+theorem pushCallFrame_increments_depth
+    {Frame : Type} (stack : CallStack Frame) (callee : Frame)
+    (next : CallStack Frame)
+    (h : pushCallFrame stack callee = .ok next) :
+    next.frames.length = stack.frames.length + 1 := by
+  unfold pushCallFrame at h
+  by_cases hdepth : stack.frames.length < stack.maxDepth
+  · simp [hdepth] at h
+    cases h
+    simp
+  · simp [hdepth] at h
+
+/-- Every successful push remains within the configured call-depth limit. -/
+theorem pushCallFrame_within_limit
+    {Frame : Type} (stack : CallStack Frame) (callee : Frame)
+    (next : CallStack Frame)
+    (h : pushCallFrame stack callee = .ok next) :
+    next.frames.length ≤ next.maxDepth :=
+  next.within_limit
+
+/-- A full call stack traps before another frame is pushed. -/
+theorem pushCallFrame_exhausted_traps
+    {Frame : Type} (stack : CallStack Frame) (callee : Frame)
+    (hfull : stack.maxDepth ≤ stack.frames.length) :
+    pushCallFrame stack callee = .error .callDepthLimit := by
+  unfold pushCallFrame
+  have hnot : ¬ stack.frames.length < stack.maxDepth := Nat.not_lt.mpr hfull
+  simp [hnot]
+
 /-- A running state for the single-frame machine. -/
 structure MachineState (n m : Nat) (types : RegTypes n) where
   pc : Fin (m + 1)
