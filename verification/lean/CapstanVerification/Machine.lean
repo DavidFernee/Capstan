@@ -200,7 +200,8 @@ theorem popNestedCallFrame_restores_caller
     (hframes : stack.frames = callee :: caller :: rest)
     (h : popNestedCallFrame stack = .ok (callee, next)) :
     next.frames.head? = some caller := by
-  simp [popNestedCallFrame, hframes] at h
+  rw [hframes] at h
+  simp [popNestedCallFrame] at h
   cases h
   rfl
 
