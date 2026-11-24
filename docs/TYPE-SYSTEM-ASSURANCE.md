@@ -149,3 +149,67 @@ Suggested feature test directories are `tests/generics/parser/`, `tests/generics
 | G8 — bootstrap, differential, fuzz and release evidence | G1–G7 | v0.5/v0.6 release claim |
 
 The sequence is intentionally conservative. No later feature should force a weakening of an earlier security invariant to make its API convenient.
+
+
+## 10. Type identity and substitution contract
+
+The current implementation makes Type a recursive value containing a kind, a string name and nested arguments. type_eq compares those fields structurally. This is sufficient for the current closed set of types, but it is not a safe identity model for generic parameters or imported declarations.
+
+The following contract is recommended for the first generic implementation. It is an implementation constraint, not a commitment to a particular in-memory layout.
+
+### 10.1 Parameter identity
+
+A type parameter must have a stable identity independent of its spelling. Use a declaration identity plus a parameter ordinal (or an equivalent unforgeable compiler-local ID). The source name is retained for diagnostics only.
+
+For example, the two parameters named T in left<T> and right<T> are distinct. Likewise, a nested declaration or imported declaration must not capture a parameter merely because its name matches. Reject duplicate parameter names within one binder, but do not use names as substitution keys.
+
+The type representation therefore needs an explicit type-variable form whose identity is not overloaded onto the nominal type-name field. Nominal struct, enum and interface identity should likewise resolve to a declaration/module identity before equality or coherence checks; bare source spelling is not a robust cross-module key.
+
+### 10.2 Substitution operation
+
+Define substitution as a pure structural operation: substitute(type, environment) -> Result<Type, Diagnostic>, where the environment maps parameter identities to fully resolved concrete types.
+
+Required behaviour:
+
+1. A type variable is replaced only by the exact matching parameter identity.
+2. A nominal type retains its resolved declaration identity and recursively substitutes each argument.
+3. Built-in constructors (List, Map, optional and Grant<P>) retain their constructor and recursively substitute their arguments/policy identity.
+4. Security-relevant atomic types (Tainted, Secret, Html, LogText) are never normalised to ordinary string; they remain distinct leaves.
+5. A missing binding is an unresolved-variable error. An unused environment entry is not silently applied to another binder.
+6. The result is validated after substitution, including arity, kind, optional restrictions, field/variant restrictions and recursive grant containment.
+7. Substitution does not mutate the template AST or a shared type node. A failed substitution cannot leave a partially rewritten template for a later instantiation.
+8. The operation is bounded by the same compilation-wide type-node/work budget used by instantiation; recursive traversal must not consume unbounded stack.
+
+The substitution environment must be complete for every generic declaration being instantiated. Do not treat an unresolved variable as a wildcard or as an error type that remains assignable.
+
+### 10.3 Equality, assignability and canonical instantiation keys
+
+Keep three concepts separate:
+
+- Type identity/equality: resolved nominal identity plus recursively equal arguments; type variables compare by binder identity and ordinal.
+- Assignability: the language's explicit rules applied to already resolved types. Invariance means generic arguments must be equal; substitution must not introduce a variance shortcut.
+- Instantiation identity: the generic declaration identity plus its ordered, canonical concrete argument vector. This key drives memoisation and cycle detection; it must not depend on source formatting or import order.
+
+Do not use rendered type_str output as an equality or cache key. It is a diagnostic representation and can be ambiguous when declarations share names across modules.
+
+### 10.4 Instantiation stack and growth detection
+
+Maintain an active stack of canonical instantiation keys. Re-entering the same key is stable recursion and should reuse the in-progress checked representation where the recursive type model permits it. A new key with structurally growing arguments is a distinct instantiation and must consume the global budget.
+
+The checker must not reject ordinary recursive calls to the same concrete function or stable recursive data such as Node<T> { List<Node<T>> children; }. Conversely, F<T> -> F<List<T>> and mutually expanding equivalents must not evade limits by alternating templates.
+
+An early growth diagnostic is useful, but the hard global budget remains the safety backstop. Growth detection is not a substitute for bounded accounting.
+
+### 10.5 Required focused tests
+
+- Same parameter spelling in two generic declarations does not cross-substitute.
+- Nested binders and imported declarations cannot capture one another's parameters.
+- Every occurrence of a parameter is substituted in fields, enum payloads, function parameters, returns and nested arguments.
+- Missing and extra bindings fail deterministically without mutating the template.
+- Substitution preserves Tainted, Secret, Html, LogText and nested Grant<P> exactly.
+- Nominal types with the same short name in different modules do not compare equal or collide in the instantiation cache.
+- Equivalent instantiations reached through different import/declaration orders share one canonical cache entry.
+- Stable recursion is accepted; direct and mutual expanding instantiation hit a deterministic diagnostic/budget.
+- A deliberately deep type tree fails within the node/work budget rather than exhausting the host stack.
+
+These tests should precede generic code generation. Until the type-variable identity, nominal identity and substitution contracts are settled, adding parser syntax alone would create an unstable foundation for constraints, coherence, diagnostics and monomorphisation.
