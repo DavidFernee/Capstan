@@ -1301,6 +1301,10 @@ test "CCAM multi-function validator enforces aggregate call-argument boundary" {
         argument_registers: extra_args,
         destination_register: 0, has_destination: false
     });
+    CCAMFunction updated_caller = functions[0];
+    updated_caller.instructions = caller_code;
+    updated_caller.call_sites = sites;
+    functions[0] = updated_caller;
     CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
     assert(!rejected.ok && rejected.error == "call_argument_limit_exceeded");
 }
