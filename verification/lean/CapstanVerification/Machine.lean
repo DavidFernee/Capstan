@@ -86,7 +86,12 @@ theorem consumeStep_within_limit
     (budget : StepBudget) (next : StepBudget)
     (h : consumeStep budget = .ok next) :
     next.used ≤ budget.limit := by
-  exact next.within_limit
+  unfold consumeStep at h
+  by_cases hlimit : budget.used < budget.limit
+  · simp [hlimit] at h
+    cases h
+    exact Nat.succ_le_of_lt hlimit
+  · simp [hlimit] at h
 
 /-- An exhausted budget traps before another instruction can be consumed. -/
 theorem consumeStep_exhausted_traps
@@ -330,7 +335,9 @@ theorem budgetedMachineStep_budget_within_limit
     {n m : Nat} {types : RegTypes n}
     (program : FiniteProgram n m types)
     (state : BudgetedMachineState n m types) :
-    (budgetedMachineStep program state).budget.within_limit := by
+    (budgetedMachineStep program state).budget.used ≤
+      (budgetedMachineStep program state).budget.limit := by
+  exact (budgetedMachineStep program state).budget.within_limit
   unfold budgetedMachineStep BudgetedMachineOutcome.budget
   cases hbudget : consumeStep state.budget with
   | error reason =>
@@ -345,8 +352,10 @@ theorem budgetedMachineStep_consumes_one
     (state : BudgetedMachineState n m types)
     (havailable : state.budget.used < state.budget.limit) :
     (budgetedMachineStep program state).budget.used = state.budget.used + 1 := by
-  unfold budgetedMachineStep BudgetedMachineOutcome.budget consumeStep
-  simp [havailable]
+  unfold budgetedMachineStep
+  simp only [consumeStep, if_pos havailable]
+  cases hstep : machineStep program state.machine <;>
+    simp [hstep, BudgetedMachineOutcome.budget]
 
 /-- An exhausted budget traps before the next machine instruction is executed. -/
 theorem budgetedMachineStep_exhausted_before_instruction
