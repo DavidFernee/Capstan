@@ -19,6 +19,8 @@ const int MAX_GLYPH_POINTS = 4096;
 const int MAX_COMPOSITE_DEPTH = 8;
 const int MAX_COMPOSITE_PARTS = 64;
 const int MAX_CACHED_GLYPHS = 4096;         // rasterised glyphs kept per font
+const int MAX_GLYPH_MASK_PIXELS = 262144;   // at most 256K alpha pixels in one glyph
+const int MAX_CACHED_GLYPH_PIXELS = 1048576; // aggregate alpha pixels per font
 
 struct FontReader {
     List<int> b;
@@ -60,6 +62,7 @@ struct Font {
     int cmap_format;
     Map<GlyphMask> cache;
     int cached;
+    int cached_pixels;
 }
 
 // One rasterised glyph: an alpha mask whose top-left pixel is at (left, top)
@@ -70,6 +73,16 @@ struct GlyphMask {
     int w;
     int h;
     List<int> alpha;
+}
+
+bool glyph_mask_size_valid(int w, int h) {
+    if (w < 1 || h < 1) { return false; }
+    return w <= MAX_GLYPH_MASK_PIXELS / h;
+}
+
+bool glyph_cache_fits(int current, int added) {
+    if (current < 0 || added < 0 || current > MAX_CACHED_GLYPH_PIXELS) { return false; }
+    return added <= MAX_CACHED_GLYPH_PIXELS - current;
 }
 
 int tag_of(string t) { return (t.at(0) << 24) | (t.at(1) << 16) | (t.at(2) << 8) | t.at(3); }
@@ -112,7 +125,7 @@ Font? font_load(Tainted data) {
     if (head < 0 || hhea < 0 || maxp < 0 || cmap < 0 || loca < 0 || hmtx < 0 || glyf < 0) { return none; }
     int upem = r.u16(head + 18);
     if (upem < 16 || upem > 16384) { return none; }
-    Font f = new Font{r: r, units_per_em: upem, ascent: r.i16(hhea + 4), descent: r.i16(hhea + 6), line_gap: r.i16(hhea + 8), num_glyphs: r.u16(maxp + 4), num_hmetrics: r.u16(hhea + 34), loca_long: r.i16(head + 50), t_loca: loca, t_glyf: glyf, glyf_len: glyf_len, t_hmtx: hmtx, cmap_at: -1, cmap_format: 0, cache: new Map<GlyphMask>(), cached: 0};
+    Font f = new Font{r: r, units_per_em: upem, ascent: r.i16(hhea + 4), descent: r.i16(hhea + 6), line_gap: r.i16(hhea + 8), num_glyphs: r.u16(maxp + 4), num_hmetrics: r.u16(hhea + 34), loca_long: r.i16(head + 50), t_loca: loca, t_glyf: glyf, glyf_len: glyf_len, t_hmtx: hmtx, cmap_at: -1, cmap_format: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
     if (f.num_hmetrics < 1 || f.num_hmetrics > f.num_glyphs) { return none; }
     // Prefer a full-Unicode subtable (format 12), then the BMP one (format 4).
     int nsub = r.u16(cmap + 2);
@@ -427,7 +440,7 @@ GlyphMask glyph_mask(Font f, int g, int size, int phase) {
             // A glyph more than four ems across is damaged or hostile: drawing it
             // would cost time out of all proportion to the text (CWE-400).
             int limit = int_max(64, 4 * fx_ceil(size));
-            if (w > 0 && h > 0 && w <= limit && h <= limit) {
+            if (w > 0 && h > 0 && w <= limit && h <= limit && glyph_mask_size_valid(w, h)) {
                 // Rasterise into a scratch pixmap, shifted so the mask starts at (0, 0).
                 Pixmap pm = new_pixmap(w, h);
                 Canvas cv = new_canvas(pm);
@@ -445,11 +458,14 @@ GlyphMask glyph_mask(Font f, int g, int size, int phase) {
             }
         }
     }
-    if (f.cached >= MAX_CACHED_GLYPHS) {
+    int mask_pixels = mask.w * mask.h;
+    if (f.cached >= MAX_CACHED_GLYPHS || !glyph_cache_fits(f.cached_pixels, mask_pixels)) {
         f.cache = new Map<GlyphMask>();
         f.cached = 0;
+        f.cached_pixels = 0;
     }
     f.cache.set(key, mask);
     f.cached += 1;
+    f.cached_pixels += mask_pixels;
     return mask;
 }
