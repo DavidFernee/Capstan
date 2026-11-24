@@ -250,11 +250,13 @@ firmware, specification, platform or unknown-vulnerability risk.
 
 - language and standard library stability guarantee, with a complete normative language and
   execution specification
-- a supported production C-free execution path on every platform claimed as supported; no
-  generated-C fallback may be silently selected for a release build. Platform system interfaces
-  remain explicit, typed, bounded and documented trust boundaries
-- C-free compiler/runtime path with documented bootstrap, code-generation and platform TCB;
-  every remaining non-Capstan component is enumerated and justified
+- a supported production C-free execution path on the major platforms: at minimum Linux,
+  macOS and Windows. No generated-C intermediate, C compiler or Capstan-owned C runtime may be
+  required to compile or execute a supported release program; platform system libraries and
+  kernels remain explicit, typed, bounded and documented trust boundaries
+- direct native code generation or a verified non-C portable target, with a documented bootstrap,
+  compiler/runtime and platform TCB. Any host-language or platform dependency is enumerated and
+  justified; a generated-C fallback is not a C-free path and may not be silently selected
 - machine-checked specifications and proof obligations for the core safety checker and
   security-critical transformations. Proofs must identify assumptions, axioms, trusted checker,
   model scope and unproved dependencies; fragment proofs must not be presented as whole-compiler
@@ -339,13 +341,15 @@ The required template is [V1-RELEASE-SCORECARD.md](assurance/V1-RELEASE-SCORECAR
 
 **C-free and formal workstream gates**
 
-The C-free path is a v1.0 release requirement, not merely a long-term aspiration. Each platform
-must demonstrate source validation and lowering, typed core representation, code generation,
-runtime/memory management, system-interface integration, bootstrap and conformance tests
-without routing Capstan execution through generated C. Platform vendor libraries and kernels
-may remain below the boundary, but are explicit TCB dependencies and all returned data is
-treated as untrusted. A platform that has not passed this gate must be labelled experimental or
-unsupported for the v1.0 assurance claim.
+The C-free path is a v1.0 release requirement, not merely a long-term aspiration. Linux,
+macOS and Windows are the minimum major-platform targets. Each must demonstrate source
+validation and lowering, typed core representation, direct native code generation or a verified
+non-C portable target, runtime/memory management, system-interface integration, bootstrap and
+conformance tests without generating C or requiring a C compiler/Capstan-owned C runtime to
+compile or execute a supported program. Platform vendor libraries and kernels may remain below
+the boundary, but are explicit TCB dependencies and all returned data is treated as untrusted.
+A platform that has not passed this gate must be labelled experimental or unsupported for the
+v1.0 assurance claim.
 
 Formal verification is evidence-scoped: prioritise the checker’s safety rules, semantics-
 preserving compiler transformations, runtime primitives and independent proof checker. Each
