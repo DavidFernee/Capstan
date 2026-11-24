@@ -680,6 +680,15 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
             entry_function: -1, error: "missing_main"
         };
     }
+    Node entry_source = source_functions[entry_function];
+    Type entry_type = ty_of(entry_source);
+    if (entry_source.n != 0 ||
+        (entry_type.k != TY_INT && entry_type.k != TY_VOID)) {
+        return new CCAMLoweringResult{
+            ok: false, functions: new List<CCAMFunction>(),
+            entry_function: -1, error: "invalid_entry_signature"
+        };
+    }
     List<CCAMFunction> functions = new List<CCAMFunction>();
     int total_registers = 0;
     int total_instructions = 0;
@@ -901,6 +910,30 @@ test "CCAM source lowering compiles scalar locals and executes 42" {
 
 
 
+
+
+test "CCAM source lowering rejects entry functions with parameters" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("invalid-entry-lowering.cap");
+    Tainted source = taint("int main(int value) { return value; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(!lowered.ok && lowered.error == "invalid_entry_signature");
+    assert(lowered.functions.len() == 0 && lowered.entry_function == -1);
+}
 
 test "CCAM source lowering preserves checked integer overflow traps" {
     Ctx context = new Ctx{
