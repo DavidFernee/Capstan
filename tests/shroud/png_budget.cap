@@ -1,0 +1,65 @@
+// Direct regression for PNG export's preflight budget and actual encoder path.
+// When given paths, write an accepted multi-block PNG and verify oversize writes
+// fail without creating output. The Python harness independently decodes the file.
+
+int main() {
+    if (!png_raw_size_valid(1, 1)) { return 1; }
+    if (!png_raw_size_valid(1023, 512)) { return 2; }
+    if (png_raw_size_valid(1024, 512)) { return 3; }
+    // The existing reference gallery uses 560x520 frames.
+    if (!png_raw_size_valid(560, 520)) { return 4; }
+    if (png_raw_size_valid(0, 1)) { return 5; }
+    if (png_raw_size_valid(1, 0)) { return 6; }
+    if (png_raw_size_valid(-1, 1)) { return 7; }
+    if (png_raw_size_valid(1, -1)) { return 8; }
+    if (png_raw_size_valid(16385, 1)) { return 9; }
+    if (png_raw_size_valid(2147483647, 2147483647)) { return 10; }
+
+    Pixmap small = new_pixmap(2, 2);
+    small.clear(0xFF336699);
+    List<int> encoded = png_encode(small);
+    if (encoded.len() < 57) { return 11; }
+    if (encoded[0] != 137 || encoded[1] != 80 || encoded[2] != 78 || encoded[3] != 71) { return 12; }
+    if (encoded[encoded.len() - 8] != 73 || encoded[encoded.len() - 7] != 69 ||
+        encoded[encoded.len() - 6] != 78 || encoded[encoded.len() - 5] != 68) { return 13; }
+
+    Pixmap malformed = new Pixmap{w: 2, h: 2, px: new List<int>()};
+    if (png_encode(malformed).len() != 0) { return 14; }
+
+    // This image crosses the 65,535-byte stored-block boundary and exercises
+    // a real multi-block export without making the test itself memory-heavy.
+    Pixmap multi = new_pixmap(128, 128);
+    multi.clear(0xFF336699);
+
+    // Exercise the exact dimensions used by the reference gallery.
+    Pixmap gallery = new_pixmap(560, 520);
+    gallery.clear(0xFF336699);
+
+    // Exercise a real export immediately below the full 2 MiB raw-byte cap.
+    Pixmap near_limit = new_pixmap(1023, 512);
+    near_limit.clear(0xFF336699);
+
+    // The Pixmap is valid under the raster budget but exceeds the stricter PNG
+    // budget. Rejection must happen before any PNG output allocation.
+    Pixmap over = new_pixmap(1024, 512);
+    List<int> rejected = png_encode(over);
+    if (rejected.len() != 0) { return 15; }
+
+    // Repeated accepted exports must remain deterministic.
+    List<int> again = png_encode(small);
+    if (again.len() != encoded.len()) { return 16; }
+    for (int i = 0; i < encoded.len(); i += 1) {
+        if (again[i] != encoded[i]) { return 17; }
+    }
+
+    List<string> a = args();
+    if (a.len() > 0 && !png_write(a[0], multi)) { return 18; }
+    if (a.len() > 1 && png_write(a[1], over)) { return 19; }
+    List<int> all_bytes = new List<int>();
+    for (int i = 0; i < 256; i += 1) { all_bytes.push(i); }
+    if (a.len() > 2 && !write_file(a[2], bytes_text(all_bytes))) { return 20; }
+    if (a.len() > 3 && !png_write(a[3], gallery)) { return 21; }
+    if (a.len() > 4 && !png_write(a[4], near_limit)) { return 22; }
+    println("png budget: 22 assertions");
+    return 0;
+}
