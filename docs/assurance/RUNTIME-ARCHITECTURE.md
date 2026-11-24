@@ -172,7 +172,7 @@ The design map currently labels generational collection as a v0.4 remaining item
 The first implementation pass addresses concrete arithmetic and erasure weaknesses in the collector without changing the collection algorithm:
 
 - Added checked size addition and multiplication helpers, plus checked geometric capacity growth. The page table, page array, spare-page array, mark stack, large-object array and global-root array now size their metadata allocations through checked helpers.
-- Replaced potentially wrapping heap-limit comparisons with subtraction-based checks and guarded heap-accounting additions/subtractions. Allocation counters now fail closed on overflow.
+- Replaced potentially wrapping heap-limit comparisons with subtraction-based checks and guarded heap-accounting additions/subtractions. Allocation counters now fail closed on overflow. The spare-page reserve calculation now divides by half a page rather than multiplying the live-byte count by two, preserving the existing floor semantics without overflow.
 - Validated allocation-kind indices and rejected allocation requests above the runtime's documented maximum length.
 - Validated GC stress and heap-limit environment values. Heap suffix scaling and the physical-memory-derived default are bounded before conversion or multiplication.
 - Reworked conservative scan alignment and end checks to avoid overflowing the scan pointer while rounding/alignment and checking whether a complete word remains.
