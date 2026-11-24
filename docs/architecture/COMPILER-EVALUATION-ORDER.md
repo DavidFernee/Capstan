@@ -16,7 +16,7 @@ is therefore not a valid implementation of Capstan's left-to-right rule. The com
 
 The backend uses GNU C statement expressions and temporaries for this purpose. That is a compatibility mechanism for v0.6, not part of the C-free architecture.
 
-The mainline now contains the explicit compound-assignment sequencing implementation, its field/string/list regressions, the post-RHS stale-index runtime regression, and the lazy-string-literal sequencing correction (merged PRs #97 and #109). PR #93 carries the proposed normative source-level core and typed-IR contract; this document records the current v0.6 backend evidence without depending on that proposal being merged.
+The mainline now contains the explicit compound-assignment sequencing implementation and field/string/list regressions (#97), the lazy-string-literal correction (#109), and support for side-effectful compound-field receivers with exactly-once evaluation (#123). PR #124 carries the proposed normative source-level core and typed-IR contract; this document records the current v0.6 backend evidence without depending on that proposal being merged.
 
 ## 2. Current lowering strategy
 
@@ -29,7 +29,7 @@ The mainline now contains the explicit compound-assignment sequencing implementa
 | Field/index assignment | Explicit receiver/index/value temporaries where required | The lvalue address components are evaluated before the assigned value when their evaluation can be observable |
 | Struct/enum construction | Sequential statement-expression assignments | Initialisers are emitted in source order |
 | Authorisation arguments | Sequential typed temporaries | Policy arguments are evaluated in source order before policy evaluation |
-| Compound assignment | Explicit old-value read, RHS evaluation, computation and write | The old value and target address are retained before a mutating RHS. In the current implementation, range analysis does not generate list-length facts (`seq_ok` remains false), so indexed-list reads and writes use checked helpers; the merged PR #97 regression verifies that an RHS which removes the indexed element traps at the final write. Any future list-bounds check elision requires a complete alias/effect proof, not merely the presence of the currently unused `may_shrink` helpers. |
+| Compound assignment | Explicit old-value read, RHS evaluation, computation and write | The old value and target address are retained before a mutating RHS. Compound field receivers may be effectful but are evaluated exactly once before the old-value read and RHS; `tests/accept/compound_assignment_lvalue_once.cap` verifies this. In the current implementation, range analysis does not generate list-length facts (`seq_ok` remains false), so indexed-list reads and writes use checked helpers; the merged PR #97 regression verifies that an RHS which removes the indexed element traps at the final write. Any future list-bounds check elision requires a complete alias/effect proof, not merely the presence of the currently unused `may_shrink` helpers. |
 | `sql_query` / `run` | Special lowering builds a runtime argument list | **Known exception in current main:** this path evaluates later arguments and allocates the argument list before materialising the literal first argument. `CAP_LIT` is lazy and effectful, so this violates the ordering contract; fix and generated-C regression are in PR #133. Do not claim this path is fully sequenced until that fix is merged |
 
 ## 3. The `hoist()` classification invariant
@@ -55,7 +55,7 @@ This is an explicit compiler proof obligation, not an intrinsic property of C.
 
 The expected output is `11` and `1001`. These values distinguish left-to-right evaluation from a lowering that executes the mutating call before reading the field.
 
-`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. The current checker restricts indexed compound-assignment targets to simple-indexed elements, so effectful index/base expressions are not currently source-representable; the indexed-list old-value and post-RHS validity paths are covered by the implementation and regression tests merged in PR #97. PR #93 separately specifies the normative source-level contract; it does not own this runtime fixture.
+`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. `tests/accept/compound_assignment_lvalue_once.cap` checks that an effectful field receiver is evaluated exactly once. The current checker still restricts indexed compound-assignment targets to simple-indexed elements, so effectful index/base expressions are not currently source-representable; the indexed-list old-value and post-RHS validity paths are covered by the implementation and regression tests merged in PR #97. PR #124 separately specifies the normative source-level contract.
 
 The fixtures are conformance tests. They do not prove all generated expressions correct, establish that the C compiler behaves identically on every target, or replace a formal source-to-CCAM/native correctness argument. In particular, the current `sql_query` / `run` exception is tracked separately in PR #133; the fixture in this PR does not exercise those special builtins.
 
