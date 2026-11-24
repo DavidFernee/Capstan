@@ -54,7 +54,8 @@ operator signatures:
 
 | Expression form | Required operand types | Result type |
 |---|---|---|
-| integer literal | signed-64 representable literal | `int` |
+| decimal integer literal | non-negative value in `0..2^63-1` | `int` |
+| hexadecimal integer literal | at most 16 significant hex digits; interpret the 64-bit pattern as signed two's-complement (`0x8000000000000000` is `MIN`) | `int` |
 | `true`, `false` | none | `bool` |
 | local `x` | `x:T ∈ Γ` | `T` |
 | `+ - * / %` | `int, int` | `int` |
