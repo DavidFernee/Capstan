@@ -64,7 +64,7 @@ The abstract machine state is:
 - executed instruction count;
 - configured maximum instruction count and call depth.
 
-The entry frame begins at depth 1, with its PC at the first instruction and all parameter registers initialised from entry arguments (the source-program entry has no arguments). Every executed instruction increments the step count exactly once. A call pushes one frame; a return pops one frame. A successful return from the entry frame yields `Halt(value)` or `Halt(void)`. Reaching a limit yields the specified terminal trap before the prohibited operation takes effect.
+The entry frame begins at depth 1, with its PC at the first instruction and all parameter registers initialised from entry arguments (the source-program entry has no arguments). Every executed instruction increments the step count exactly once. A call pushes one frame; a return pops one frame. A successful return from the entry frame yields `Halt(value)` or `HaltVoid`. Reaching a limit yields the specified terminal trap before the prohibited operation takes effect.
 
 No implementation-language stack, integer or exception semantics may be observable in the machine model.
 
