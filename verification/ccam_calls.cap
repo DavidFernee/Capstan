@@ -768,14 +768,14 @@ test "CCAM multi-function evaluator handles void calls" {
         call_sites: new List<CCAMCallSite>()
     });
     CCAMCallMachineCreateResult created = ccam_call_machine_create(
-        functions, 0, 3, 2);
+        functions, 0, 4, 2);
     assert(created.ok);
     CCAMCallMachine machine = created.machine;
-    for (int step = 0; step < 3; step += 1) {
+    for (int step = 0; step < 4; step += 1) {
         ccam_call_machine_step(machine);
     }
     assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
-    assert(machine.steps == 3 && machine.trap_code == "");
+    assert(machine.steps == 4 && machine.trap_code == "");
 }
 
 test "CCAM multi-function evaluator enforces depth after argument reads" {
