@@ -34,6 +34,106 @@ def runtimeRegisterAt (registers : List RuntimeRegister) (index : Nat) :
     Option RuntimeRegister :=
   registers[index]?
 
+/-- Replace one list slot without changing the list's shape. -/
+def runtimeSetAt : List RuntimeRegister → Nat → RuntimeRegister → List RuntimeRegister
+  | [], _, _ => []
+  | _ :: rest, 0, replacement => replacement :: rest
+  | head :: rest, index + 1, replacement =>
+      head :: runtimeSetAt rest index replacement
+
+/-- The replacement is found at the index that was updated. -/
+theorem runtimeSetAt_get_same_of_exists
+    (registers : List RuntimeRegister) (index : Nat)
+    (old replacement : RuntimeRegister)
+    (hreg : runtimeRegisterAt registers index = some old) :
+    runtimeRegisterAt (runtimeSetAt registers index replacement) index =
+      some replacement := by
+  induction registers generalizing index with
+  | nil =>
+      simp [runtimeRegisterAt] at hreg
+  | cons head rest ih =>
+      cases index with
+      | zero => rfl
+      | succ index =>
+          simp only [runtimeRegisterAt] at hreg
+          simp only [runtimeSetAt, runtimeRegisterAt]
+          exact ih hreg
+
+/-- Reading a different index is unaffected by a list-slot replacement. -/
+theorem runtimeSetAt_get_other_of_exists
+    (registers : List RuntimeRegister) (index other : Nat)
+    (old replacement : RuntimeRegister)
+    (hreg : runtimeRegisterAt registers index = some old)
+    (hother : other ≠ index) :
+    runtimeRegisterAt (runtimeSetAt registers index replacement) other =
+      runtimeRegisterAt registers other := by
+  induction registers generalizing index other with
+  | nil =>
+      simp [runtimeRegisterAt] at hreg
+  | cons head rest ih =>
+      cases index with
+      | zero =>
+          cases other with
+          | zero => exact False.elim (hother rfl)
+          | succ other => rfl
+      | succ index =>
+          cases other with
+          | zero => rfl
+          | succ other =>
+              simp only [runtimeRegisterAt] at hreg
+              simp only [runtimeSetAt, runtimeRegisterAt]
+              apply ih hreg
+              intro heq
+              exact hother (congrArg Nat.succ heq)
+
+/-- A dynamic register replacement checks bounds and preserves the declared type. -/
+def runtimeWriteRegister (registers : List RuntimeRegister)
+    (index : Nat) (replacement : RuntimeRegister) :
+    Except Trap (List RuntimeRegister) :=
+  match runtimeRegisterAt registers index with
+  | none => .error .invalidRegister
+  | some old =>
+      if old.declaredType = replacement.declaredType then
+        .ok (runtimeSetAt registers index replacement)
+      else
+        .error .typeMismatch
+
+/-- A successful dynamic replacement installs the requested register at its index. -/
+theorem runtimeWriteRegister_target
+    (registers updated : List RuntimeRegister)
+    (index : Nat) (replacement : RuntimeRegister)
+    (hwrite : runtimeWriteRegister registers index replacement = .ok updated) :
+    runtimeRegisterAt updated index = some replacement := by
+  unfold runtimeWriteRegister at hwrite
+  cases hreg : runtimeRegisterAt registers index with
+  | none =>
+      simp [hreg] at hwrite
+  | some old =>
+      by_cases htype : old.declaredType = replacement.declaredType
+      · simp [hreg, htype] at hwrite
+        cases hwrite
+        exact runtimeSetAt_get_same_of_exists registers index old replacement hreg
+      · simp [hreg, htype] at hwrite
+
+/-- A successful dynamic replacement leaves every other register unchanged. -/
+theorem runtimeWriteRegister_other_unchanged
+    (registers updated : List RuntimeRegister)
+    (index other : Nat) (replacement : RuntimeRegister)
+    (hwrite : runtimeWriteRegister registers index replacement = .ok updated)
+    (hother : other ≠ index) :
+    runtimeRegisterAt updated other = runtimeRegisterAt registers other := by
+  unfold runtimeWriteRegister at hwrite
+  cases hreg : runtimeRegisterAt registers index with
+  | none =>
+      simp [hreg] at hwrite
+  | some old =>
+      by_cases htype : old.declaredType = replacement.declaredType
+      · simp [hreg, htype] at hwrite
+        cases hwrite
+        exact runtimeSetAt_get_other_of_exists
+          registers index other old replacement hreg hother
+      · simp [hreg, htype] at hwrite
+
 /-- The runtime register's declared type at a dynamic index. -/
 def runtimeTypeAt (registers : List RuntimeRegister) (index : Nat) : Option Ty :=
   (runtimeRegisterAt registers index).map RuntimeRegister.declaredType
