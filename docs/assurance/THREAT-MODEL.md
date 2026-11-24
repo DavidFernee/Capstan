@@ -77,9 +77,12 @@ Capstan's guarantees hold only if all of these are true:
 5. Data that should be protected is declared `sensitive`, and critical operations are declared
    `protected` (atlas gaps CWE-862 and CWE-306).
 6. The program runs as an ordinary process on a supported operating system that provides a stack
-   guard page and delivers `SIGSEGV` (the stack-overflow stop depends on this; if the alternate
-   signal stack cannot be installed, runaway recursion ends in an ordinary crash instead of a named
-   stop: `runtime/capstan_gc.h`).
+   guard page and delivers `SIGSEGV`/`SIGBUS`. Runtime initialisation must successfully install
+   the alternate signal stack and the required signal handlers; failure is fail-closed through
+   `cap_panic` rather than continuing with an unprotected stack-overflow path
+   (`runtime/capstan_gc.h`). The named stack-overflow stop still depends on the operating
+   system delivering the expected signal and on the handler being able to execute on the
+   alternate stack.
 7. The build machine and the C compiler installed on it have not been tampered with, beyond what
    diverse double-compiling detects.
 
