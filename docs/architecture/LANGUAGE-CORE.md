@@ -58,13 +58,13 @@ The left operand is always evaluated first. The right operand is evaluated only 
 For simple local assignment `x = e`, evaluate `e` completely, then replace the value of `x`.
 
 Compound assignment is defined by sequencing, not by textual substitution into an implementation-language expression. For an assignable location `L` and operation `op`, `L op= e` means:
-1. evaluate and retain the location designator exactly once;
+1. evaluate and retain the location designator exactly once; an indexed location retains the container identity and evaluated index, not an identity for the element currently stored there;
 2. read and retain the old value at that location;
 3. evaluate `e`;
 4. apply `op` to the retained old value and the new RHS value;
 5. establish that the retained location remains valid in the post-RHS state (including object liveness and current logical bounds), by a dynamic recheck or a sound proof that the RHS cannot invalidate it; then write the result.
 
-A trap in steps 1–4 prevents the write. If the RHS invalidates the location—for example, by shrinking the list so the retained index is no longer valid—the write traps and performs no store. A bounds proof established before the RHS alone does not justify an unchecked post-RHS store. No step may be reordered across another observable step. The aggregate transition is reserved until aggregate locations are added to the machine, but every future aggregate extension MUST preserve this sequencing and revalidation rule.
+A trap in steps 1–4 prevents the write. After the RHS, the write targets the current slot at the retained index if that index remains within the container's current logical length; an insertion/removal before that index may therefore change which element occupies the slot. If the RHS invalidates the location—for example, by shrinking the list so the retained index is no longer valid—the write traps and performs no store. A bounds proof established before the RHS alone does not justify an unchecked post-RHS store. No step may be reordered across another observable step. The aggregate transition is reserved until aggregate locations are added to the machine, but every future aggregate extension MUST preserve this sequencing and revalidation rule.
 
 ## 4. Integer semantics
 
