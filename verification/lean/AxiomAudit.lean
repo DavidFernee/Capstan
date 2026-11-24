@@ -126,3 +126,5 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.validateSingleFrameProgram_entry_sound
 #print axioms CapstanVerification.validateSingleFrameProgram_final_terminal
 #print axioms CapstanVerification.validateSingleFrameProgram_targets_bounded
+
+#print axioms CapstanVerification.validateFunctionInstr_rejects_return_mismatch
