@@ -88,6 +88,12 @@ static void test_pbkdf2(void) {
     CHECK(cap_pbkdf2_prepare_calls == prepared + 2);
     hexof(dk, 32, h);
     CHECK(strcmp(h, "4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56") == 0);
+    char long_password[100];
+    memset(long_password, 'p', sizeof long_password);
+    cap_pbkdf2(long_password, sizeof long_password, (const unsigned char *)"salt", 4, 20, dk);
+    CHECK(cap_pbkdf2_prepare_calls == prepared + 3);
+    hexof(dk, 32, h);
+    CHECK(strcmp(h, "2eb89ef29f89f8343421877ca538a4bc793824f7b375aaafbb53b46a352d75c8") == 0);
 }
 
 static void test_passwords(void) {
