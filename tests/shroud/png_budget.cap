@@ -1,0 +1,37 @@
+// Direct regression for PNG export's preflight budget and actual encoder path.
+// The Python Shroud harness independently decodes the emitted PNG in a follow-up
+// integration step; this program exercises both accepted and rejected dimensions.
+
+int main() {
+    if (!png_raw_size_valid(1, 1)) { return 1; }
+    if (!png_raw_size_valid(511, 512)) { return 2; }
+    if (png_raw_size_valid(512, 512)) { return 3; }
+    if (png_raw_size_valid(0, 1)) { return 4; }
+    if (png_raw_size_valid(1, 0)) { return 5; }
+    if (png_raw_size_valid(-1, 1)) { return 6; }
+    if (png_raw_size_valid(1, -1)) { return 7; }
+    if (png_raw_size_valid(16385, 1)) { return 8; }
+    if (png_raw_size_valid(2147483647, 2147483647)) { return 9; }
+
+    Pixmap small = new_pixmap(2, 2);
+    small.clear(0xFF336699);
+    List<int> encoded = png_encode(small);
+    if (encoded.len() < 57) { return 10; }
+    if (encoded[0] != 137 || encoded[1] != 80 || encoded[2] != 78 || encoded[3] != 71) { return 11; }
+    if (encoded[encoded.len() - 8] != 73 || encoded[encoded.len() - 7] != 69 ||
+        encoded[encoded.len() - 6] != 78 || encoded[encoded.len() - 5] != 68) { return 12; }
+
+    // The Pixmap is valid under the raster budget but must be rejected by the
+    // stricter PNG export budget before allocating any PNG output buffer.
+    Pixmap over = new_pixmap(512, 512);
+    if (png_encode(over).len() != 0) { return 13; }
+
+    // Repeated accepted exports must remain deterministic.
+    List<int> again = png_encode(small);
+    if (again.len() != encoded.len()) { return 14; }
+    for (int i = 0; i < encoded.len(); i += 1) {
+        if (again[i] != encoded[i]) { return 15; }
+    }
+    println("png budget: 15 assertions");
+    return 0;
+}
