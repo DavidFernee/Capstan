@@ -92,9 +92,10 @@ import CapstanVerification.Progress
 #print axioms CapstanVerification.runtimeReadBool_corresponds
 #print axioms CapstanVerification.runtimeRelation_preserves_well_typed
 #print axioms CapstanVerification.runtimeWriteRegister_preserves_relation
+#print axioms CapstanVerification.runtimeWriteRegister_type_at_preserved
+#print axioms CapstanVerification.runtimeWriteRegister_value_at_preserved
 #print axioms CapstanVerification.fin_eq_of_val_eq
 #print axioms CapstanVerification.write_preserves_well_typed
-#print axioms Fin.instDecidableEq
 #print axioms Fin.ext
 #print axioms Fin.val_ne_of_ne
 
