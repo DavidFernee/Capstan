@@ -61,9 +61,9 @@ Compound assignment is defined by sequencing, not by textual substitution into a
 2. read and retain the old value at that location;
 3. evaluate `e`;
 4. apply `op` to the retained old value and the new RHS value;
-5. write the result to the retained location.
+5. revalidate the retained location against the post-RHS state (including object liveness and current logical bounds), then write the result.
 
-A trap in steps 1–4 prevents the write. No step may be reordered across another observable step. The aggregate form of this rule is reserved until aggregate locations are added to the machine, but every future aggregate extension MUST preserve this sequencing.
+A trap in steps 1–4 prevents the write. If the RHS invalidates the location—for example, by shrinking the list so the retained index is no longer valid—the write traps and performs no store. A bounds proof established before the RHS does not justify an unchecked post-RHS store. No step may be reordered across another observable step. The aggregate transition is reserved until aggregate locations are added to the machine, but every future aggregate extension MUST preserve this sequencing and revalidation rule.
 
 ## 4. Integer semantics
 
