@@ -35,19 +35,19 @@ The prototype emits:
 - direct calls and typed integer/boolean/void returns;
 - explicit trap exits.
 
-Each CCAM virtual register is assigned a fixed eight-byte stack slot in its function frame. Parameters and up to six call arguments use the System V integer argument registers. Caller values remain in stack slots across calls. The frame size is rounded to a 16-byte multiple to preserve call-site stack alignment.
+Each CCAM virtual register is assigned an eight-byte value slot and an eight-byte initialized flag in its function frame. Flags are cleared on frame entry, set on parameter transfer and every write, and checked before every read so the evaluator's uninitialised-register trap is preserved. Parameters and up to six call arguments use the System V integer argument registers. Caller values remain in stack slots across calls. The frame size is rounded to a 16-byte multiple to preserve call-site stack alignment.
 
 ## 3. Dynamic limits and traps
 
 The emitted program maintains process-global step and call-depth counters. It checks the step budget before dispatching each CCAM instruction and checks call depth before entering a callee. The initial frame counts as depth one, matching the reference evaluator.
 
-The prototype maps dynamic trap classes to distinct process exit statuses: integer overflow (70), division by zero (71), explicit trap (72), step limit (73), and call-depth limit (74). It does not yet preserve structured trap locations/details or expose a stable public trap ABI. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned.
+The prototype maps dynamic trap classes to distinct process exit statuses: integer overflow (70), division by zero (71), explicit trap (72), step limit (73), call-depth limit (74), and uninitialised register (75). It does not yet preserve structured trap locations/details or expose a stable public trap ABI. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned.
 
 ## 4. Validation and testing
 
 The emitter first calls the multi-function CCAM validator. Tests generate assembly from checked Capstan source for a direct `add(19, 23)` call and verify that the output contains a freestanding `_start`, direct function calls, syscall exit, and configured resource limits, with no C include or Capstan runtime reference.
 
-On Linux x86-64, the integration test assembles with `as --64`, links directly with `ld`, and executes the resulting ELF. The expected process exit status is 42. The test does not use a C compiler or C runtime to build or run the target program. Other CI platforms currently check code generation only; the Linux ELF artifact is not portable to macOS or Windows.
+On Linux x86-64, the integration test assembles with `as --64`, links directly with `ld`, and executes the resulting ELF. The expected process exit status is 42. Additional freestanding execution vectors cover a loop/conditional, overflow, division by zero, step limit, call-depth limit, and an uninitialised-register read. The tests do not use a C compiler or C runtime to build or run the target programs. Other CI platforms currently check code generation only; the Linux ELF artifact is not portable to macOS or Windows.
 
 ## 5. Explicit gaps
 
