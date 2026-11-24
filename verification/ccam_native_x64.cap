@@ -8,6 +8,7 @@ import "ccam_lowering.cap";
 const int CCAM_X64_MAX_ARGUMENTS = 6;
 const int CCAM_X64_MAX_NATIVE_INSTRUCTIONS = 8192;
 const int CCAM_X64_MAX_NATIVE_REGISTERS = 65536;
+const int CCAM_X64_MAX_NATIVE_STACK_BYTES = 33554432;
 
 struct CCAMNativeResult {
     bool ok;
@@ -300,12 +301,25 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
         (entry.return_type != CCAM_RETURN_INT && entry.return_type != CCAM_RETURN_VOID)) {
         return new CCAMNativeResult{ok: false, assembly: "", error: "invalid_entry_signature"};
     }
+    int max_frame_bytes = 0;
+    for (int f = 0; f < functions.len(); f += 1) {
+        int frame_bytes = ((functions[f].register_types.len() * 16 + 15) / 16) * 16;
+        if (frame_bytes > max_frame_bytes) { max_frame_bytes = frame_bytes; }
+    }
+    // Give every live frame its maximum frame plus saved frame pointer and
+    // return address. Switch to this bounded BSS stack so host ulimit defaults
+    // cannot silently turn a valid CCAM call-depth into an OS stack fault.
+    int native_stack_bytes = (max_frame_bytes + 16) * max_depth;
+    if (native_stack_bytes > CCAM_X64_MAX_NATIVE_STACK_BYTES) {
+        return new CCAMNativeResult{ok: false, assembly: "", error: "native_stack_limit"};
+    }
 
     List<string> output = new List<string>();
     ccam_x64_line(output, ".text");
     ccam_x64_line(output, ".globl _start");
     ccam_x64_line(output, ".type _start, @function");
     ccam_x64_line(output, "_start:");
+    ccam_x64_line(output, "    leaq cap_native_stack+" + int_to_str(native_stack_bytes) + "(%rip), %rsp");
     ccam_x64_line(output, "    xorq %rbp, %rbp");
     ccam_x64_line(output, "    movq $1, cap_depth(%rip)");
     ccam_x64_line(output, "    call " + ccam_x64_function_label(entry_function));
@@ -338,9 +352,10 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, "    movq $60, %rax");
     ccam_x64_line(output, "    syscall");
     ccam_x64_line(output, ".bss");
-    ccam_x64_line(output, ".align 8");
+    ccam_x64_line(output, ".align 16");
     ccam_x64_line(output, "cap_steps: .zero 8");
     ccam_x64_line(output, "cap_depth: .zero 8");
+    ccam_x64_line(output, "cap_native_stack: .zero " + int_to_str(native_stack_bytes));
     ccam_x64_line(output, ".data");
     ccam_x64_line(output, ".align 8");
     ccam_x64_line(output, "cap_max_steps: .quad " + int_to_str(max_steps));
@@ -426,6 +441,13 @@ test "CCAM x86-64 backend emits loop and conditional control flow" {
     assert(ccam_x64_write_test_program(
         "int main() { int value = 0; while (value < 42) { value += 6; } if (value == 42) { return value; } return 0; }",
         "build/ccam-native-x64-loop.s", 1000, 16));
+}
+
+
+test "CCAM x86-64 backend executes bounded recursive calls on its own stack" {
+    assert(ccam_x64_write_test_program(
+        "int countdown(int value) { if (value < 1) { return 42; } return countdown(value - 1); } int main() { return countdown(8); }",
+        "build/ccam-native-x64-recursion.s", 1000, 16));
 }
 
 test "CCAM x86-64 backend emits checked overflow and division traps" {
