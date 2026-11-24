@@ -8,8 +8,10 @@ This maps Capstan's toolchain, process and tests to:
   ([NIST](https://csrc.nist.gov/pubs/sp/800/218/final)). SSDF Version 1.2 (SP 800-218 Rev. 1) was
   released as an initial public draft on 17 December 2025 and is not yet final; this mapping uses 1.1.
 
-It describes Capstan 0.4.0 (unreleased) as it is in this repository. Control wording below is
-summarised; the ISM and the SSDF hold the exact text.
+It describes the integrated repository state reviewed on 2026-11-24. Control wording below is
+summarised; the ISM and the SSDF hold the exact text. The C-free/CCAM architecture is not yet the
+integrated execution path, and selected Lean model proofs do not establish implementation or
+compiler correctness. Workflow configuration is distinguished from a successful published release.
 
 **Statuses.** **Met**: the repository demonstrates it, and the evidence is named. **Partial**: part
 of the control is demonstrated; the rest is stated. **Not yet**: not demonstrated in the repository,
@@ -67,21 +69,21 @@ applications, the "Capstan programs" note says what the language enforces for so
 
 | Control | Summary | Status | Evidence or plan |
 |---|---|---|---|
-| ISM-1796 | Executables are digitally signed | Not yet | Releases ship source only; no executables are distributed. Signed releases planned (DESIGN-MAP section 8) |
-| ISM-1797 | Installers, patches and updates are signed or provided with cryptographic checksums | Met | Each release publishes `SHA256SUMS` for the source archive and test reports (`release.yml`). Signatures are not yet provided |
+| ISM-1796 | Executables are digitally signed | N/A at present | The repository's release workflow publishes source artefacts; it does not establish distribution of executable binaries. If executable artefacts are added, their signing must be verified as a separate release gate |
+| ISM-1797 | Installers, patches and updates are signed or provided with cryptographic checksums | Partial | `release.yml` defines SHA-256 checksums and keyless Sigstore signing/verification for release files. This is workflow-source evidence; a successful published release and end-user verification record must still be checked for each release |
 | ISM-2026 | Artefacts are scanned for malicious content before import into the authoritative source | Not yet | No scanning is shown. Capstan imports no third-party code into the repository |
 | ISM-2027 | Artefacts are verified by signature or secure hash before import | Not yet | GitHub Actions and the C compilers are taken from the platform without verification in the repository |
 | ISM-2028, ISM-2102 | Artefacts are tested for known weaknesses (SAST, DAST or SCA) before import and periodically | Partial | All in-repository code is checked on every change and nightly: the compiler checks its own source (`--strict --release`), the runtime runs under sanitisers, and fuzzing runs nightly. No software composition analysis of the toolchain (GCC, Clang, Python, libc) |
 | ISM-2029 | Third-party components come only from trustworthy sources | Partial | There are no third-party libraries. External tools are the platform's C compiler, Python 3 and libc, and GitHub's own `actions/*` workflows |
-| ISM-2154 | Dependencies are pinned to approved versions | Partial | No library dependencies. Workflows reference `actions/checkout@v4` and similar by major-version tag, not by commit hash; compiler versions are not pinned |
+| ISM-2154 | Dependencies are pinned to approved versions | Partial | GitHub Actions are pinned to full commit SHAs in the current workflows. Toolchain versions (including C compiler/Python) and external build inputs still require a separate approved-version and update policy |
 | ISM-2030 | Commit scanning blocks credentials, keys and secrets | Not yet | No commit scanning is configured in the repository. Capstan source: the compiler rejects credential literals in known formats (`tests/unit/lint_table.py`) but this does not scan other files |
 | ISM-2031 | Compilers and build tools with security features are used, with those features enabled | Partial | The Capstan compiler's checks are always on. The C compilation of generated code (`bin/capstan`: `-O2 -std=gnu11 -w`) does not enable stack protectors, control-flow integrity, PIE or `_FORTIFY_SOURCE`. Planned: DESIGN-MAP section 6, Defence in depth |
 | ISM-2155 | Reproducible build practices, so releases can be verified independently | Partial | The compiler reproduces its own C byte for byte, with both GCC and Clang and from stage 0 (`Makefile`, `tests/run.sh`, bootstrap). Byte-identical native binaries and release archives are not yet demonstrated |
 | ISM-2032 | All automated tests pass without warnings or errors before artefacts are built | Met | `release.yml`: the publish job depends on `tests/run.sh --full` passing on every platform; the compiler's generated C must build with `-Werror` (bootstrap section) |
 | ISM-2054, ISM-2055 | SBOMs and build provenance of imported components are used | Not yet | No third-party components are imported; the toolchain's own SBOMs are not checked |
-| ISM-1730 | An SBOM is produced and made available | Not yet | Planned (DESIGN-MAP sections 8 and 9: CycloneDX or SPDX) |
+| ISM-1730 | An SBOM is produced and made available | Partial | `release.yml` defines CycloneDX 1.6 and SPDX 2.3 SBOM generation and validation for release artefacts. This establishes workflow configuration, not that a particular release has successfully published and retained those SBOMs |
 | ISM-2082, ISM-2083 | Cryptographic bills of materials are used and produced | Not yet | The algorithms are SHA-256, HMAC-SHA256 and PBKDF2-SHA256 (`runtime/capstan_rt.h`), but no CBOM is published. Alignment with ASD-approved algorithms is planned (DESIGN-MAP section 9) |
-| ISM-2056 | Build provenance is produced and made available | Not yet | SLSA provenance planned (DESIGN-MAP sections 8 and 9) |
+| ISM-2056 | Build provenance is produced and made available | Partial | `release.yml` defines GitHub artifact attestations/SLSA provenance and verification. This is not an independent rebuild and does not establish SLSA Build Level 3; verify the published attestation for each release |
 
 ### APIs, input handling and databases
 
@@ -139,7 +141,7 @@ controls will apply to it.
 | PO.2.1, PO.2.2 | Roles and responsibilities; role-based training | Not yet | No roadmap item |
 | PO.2.3 | Management commitment to secure development | Partial | Standing commitments in DESIGN-MAP section 8 |
 | PO.3.1 | Specify the toolchain | Met | [README.md](../../README.md) (requirements), `Makefile`, CI matrix in `.github/workflows/ci.yml` |
-| PO.3.2 | Operate the toolchain securely | Partial | Hosted runners per job; Actions referenced by tag, not commit hash |
+| PO.3.2 | Operate the toolchain securely | Partial | Hosted runners per job and Actions pinned by commit SHA (`.github/workflows/`). Toolchain versions, runner trust and external rebuild remain residual dependencies |
 | PO.3.3 | Tools produce evidence of secure practices | Met | Test reports from every platform attached to each release (`release.yml`); coverage report ([COVERAGE.md](../COVERAGE.md)) |
 | PO.4.1 | Define and track criteria for security checks | Met | No release unless `tests/run.sh --full` passes on every platform; coverage floors (`tests/coverage_floors.txt`); quality bar (DESIGN-MAP section 10) |
 | PO.4.2 | Gather and protect the supporting information | Partial | Reports and fuzz failures kept as CI artefacts and release assets; not signed |
@@ -150,9 +152,9 @@ controls will apply to it.
 | Task | Summary | Status | Evidence or plan |
 |---|---|---|---|
 | PS.1.1 | Store code with least-privilege access and tamper protection | Not yet | Not demonstrated in the repository |
-| PS.2.1 | Make release integrity information available | Partial | `SHA256SUMS` with each release; no signatures yet (DESIGN-MAP section 8) |
+| PS.2.1 | Make release integrity information available | Partial | `release.yml` defines SHA-256 checksums, keyless Sigstore signatures and verification for release files; confirm the successful release run and published assets for each tag |
 | PS.3.1 | Archive and protect each release | Partial | Source archive, test reports and checksums on each GitHub release; tags in Git |
-| PS.3.2 | Collect and share provenance data, such as an SBOM | Not yet | SBOM and SLSA provenance planned (DESIGN-MAP sections 8 and 9) |
+| PS.3.2 | Collect and share provenance data, such as an SBOM | Partial | `release.yml` defines CycloneDX and SPDX SBOMs plus GitHub artifact attestations. It does not establish a complete SBOM of every external toolchain dependency or an independent reproducible build |
 
 ### Produce Well-Secured Software (PW)
 
@@ -185,7 +187,9 @@ controls will apply to it.
 
 ## Summary of what is not yet done
 
-The largest gaps are supply-chain evidence (signed releases, SBOM, cryptographic BOM, build
-provenance, pinned workflow actions), C exploit mitigations for generated programs, enforced peer
-review and an independent audit, and documented roles and skills. The first two are on the roadmap
-(DESIGN-MAP sections 6, 8 and 9); the others have no roadmap item yet.
+The largest gaps are evidence of successful published release assets/attestations for each tag,
+complete external-toolchain dependency and cryptographic BOM coverage, independent rebuilds,
+C exploit mitigations for generated programs, enforced peer review, independent audit, and
+documented roles and skills. The workflows now define checksums, keyless signatures, CycloneDX/SPDX
+SBOMs and GitHub provenance; those controls must not be described as absent, but workflow source
+alone is not proof that a particular release completed or that an external reproducible build exists.
