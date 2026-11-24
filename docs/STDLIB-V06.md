@@ -62,6 +62,8 @@ A second foundational gap is text semantics: the language reference defines `str
 14. **`read_line()` has no per-line size limit.** The runtime appends one byte at a time to a growable `CapBuf` until newline or EOF; unlike `read_file` and `read_bytes`, the API accepts no maximum. A peer controlling standard input can therefore send a very long line and drive allocations until the process-wide heap limit is reached, at which point the program may fail rather than return a bounded-input error. The global heap cap is an outer process limit, not a per-input contract. **Recommendation:** add `read_line(max)` (or a separate bounded line API) with a documented maximum and a distinct over-limit result; test a line exactly at the limit and one byte over, including input without a terminating newline.
 
 
+**Remediation status (24 November 2026):** Findings 13 and 14 now have a focused implementation and regression-test proposal in draft PR [#73](https://github.com/DavidFernee/Capstan/pull/73). It rejects embedded-NUL `secret_env()` names in both the checker and runtime, and caps `read_line()` at 1 MiB with a CWE-789 failure for oversized lines. Cross-platform CI is pending; treat both findings as *under remediation*, not closed, until the PR passes and is integrated.
+
 ### Existing strengths to preserve
 
 - Taint survives string concatenation/interpolation and is not implicitly erased by a decoder.
