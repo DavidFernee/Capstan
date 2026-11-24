@@ -213,6 +213,7 @@ bool line_slot_available(int used, int max_lines, bool allow_truncate) {
 
 List<int> wrap_lines_limited(Font f, int size, List<int> cps, int max_w, int max_lines, bool allow_truncate) {
     List<int> out = new List<int>();
+    int limit = int_min(max_lines, MAX_FRAME_LINES);
     int start = 0;
     int w = 0;
     int last_space = -1;
@@ -220,7 +221,7 @@ List<int> wrap_lines_limited(Font f, int size, List<int> cps, int max_w, int max
     while (i < cps.len()) {
         int cp = cps[i];
         if (cp == 0x0A) {
-            if (!line_slot_available(out.len() / 2, max_lines, allow_truncate)) { return out; }
+            if (!line_slot_available(out.len() / 2, limit, allow_truncate)) { return out; }
             out.push(start);
             out.push(trim_end(cps, start, i));
             start = i + 1;
@@ -233,7 +234,7 @@ List<int> wrap_lines_limited(Font f, int size, List<int> cps, int max_w, int max
         if (w + adv > max_w && i > start && cp != 0x20) {
             int brk = i;
             if (last_space >= start) { brk = last_space + 1; }
-            if (!line_slot_available(out.len() / 2, max_lines, allow_truncate)) { return out; }
+            if (!line_slot_available(out.len() / 2, limit, allow_truncate)) { return out; }
             out.push(start);
             out.push(trim_end(cps, start, brk));
             start = brk;
@@ -245,7 +246,7 @@ List<int> wrap_lines_limited(Font f, int size, List<int> cps, int max_w, int max
         w += adv;
         i += 1;
     }
-    if (!line_slot_available(out.len() / 2, max_lines, allow_truncate)) { return out; }
+    if (!line_slot_available(out.len() / 2, limit, allow_truncate)) { return out; }
     out.push(start);
     out.push(trim_end(cps, start, cps.len()));
     return out;
