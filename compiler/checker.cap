@@ -1984,6 +1984,7 @@ void check_laundering(Checker c, List<Node> decls) {
             Node d = decls[i];
             if (d.k == N_FN) {
                 FlowSummary s = summarise(sums, c.ctx, d);
+                if (error_count(c.ctx) > 0) { return; }
                 if (let prev = sums.get(d.s)) {
                     if (!same_summary(prev, s)) { changed = true; }
                 } else {
@@ -2002,9 +2003,11 @@ void check_laundering(Checker c, List<Node> decls) {
             "taint analysis did not reach a fixpoint within 50 rounds; refusing to compile");
         return;
     }
+    if (error_count(c.ctx) > 0) { return; }
     for (int j = 0; j < decls.len(); j += 1) {
         Node d2 = decls[j];
         if (d2.k == N_FN || d2.k == N_POLICY) { flow_body(sums, c.ctx, d2.kids[d2.n], "", true); }
         if (d2.k == N_TEST) { flow_body(sums, c.ctx, d2.kids[0], "", true); }
+        if (error_count(c.ctx) > 0) { return; }
     }
 }
