@@ -8,9 +8,15 @@ Normative authority: docs/architecture/CCAM.md on the stacked CCAM branch.
 This is not an evaluator and no implementation-refinement theorem is claimed.
 -/
 
-def minI64 : Int := -(2 ^ 63 : Int)
-def maxI64 : Int := (2 ^ 63 : Int) - 1
-def inI64 (x : Int) : Prop := minI64 ≤ x ∧ x ≤ maxI64
+def two63 : Nat := 2 ^ 63
+def maxI64Nat : Nat := two63 - 1
+def minI64 : Int := Int.negSucc maxI64Nat
+def maxI64 : Int := Int.ofNat maxI64Nat
+
+/-- Signed-64 range expressed by the two constructors of Lean's Int. -/
+def inI64 : Int → Prop
+  | .ofNat n => n ≤ maxI64Nat
+  | .negSucc n => n < two63
 
 inductive Ty where
   | int
@@ -63,13 +69,12 @@ inductive Trap where
   | instructionLimit
   deriving DecidableEq, Repr
 
-noncomputable def checkedI64 (x : Int) : Except Trap Int := by
-  classical
-  exact if inI64 x then .ok x else .error .integerOverflow
+def checkedI64 (x : Int) : Except Trap Int :=
+  if inI64 x then .ok x else .error .integerOverflow
 
-noncomputable def checkedAdd (a b : Int) : Except Trap Int := checkedI64 (a + b)
-noncomputable def checkedSub (a b : Int) : Except Trap Int := checkedI64 (a - b)
-noncomputable def checkedMul (a b : Int) : Except Trap Int := checkedI64 (a * b)
+def checkedAdd (a b : Int) : Except Trap Int := checkedI64 (a + b)
+def checkedSub (a b : Int) : Except Trap Int := checkedI64 (a - b)
+def checkedMul (a b : Int) : Except Trap Int := checkedI64 (a * b)
 
 /-- Quotient required by CCAM: integer division truncated toward zero. -/
 def truncDiv (a b : Int) : Int :=
@@ -90,7 +95,6 @@ def checkedRem (a b : Int) : Except Trap Int :=
 /-- A successful range check returns a signed-64 value. -/
 theorem checkedI64_sound (x result : Int)
     (h : checkedI64 x = .ok result) : inI64 result := by
-  classical
   by_cases hx : inI64 x
   · have heq : x = result := by
       simpa [checkedI64, hx] using h
