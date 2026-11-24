@@ -41,7 +41,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 
 | PR | Current inspected status | Head | CI evidence at inspection | Remediation interpretation |
 |---|---|---|---|---|
-| #87 | Open, draft, targets main | `b828563188b4774d71ef948beee828d3227b9b17` | Run 45359099309 queued on latest current-main-synchronised head | Assessment and executable probes; findings are not fixed. Prior assessment head passed CI; latest current-main-synchronised head is awaiting exact-head run 45359099309. |
+| #87 | Open, draft, targets main | `b828563188b4774d71ef948beee828d3227b9b17` | Run 45359099309 in progress; supply-chain passed, Ubuntu/GCC and Ubuntu/Clang running, macOS queued | Assessment and executable probes; findings are not fixed. Prior assessment head passed CI; latest current-main-synchronised head is awaiting exact-head run 45359099309. |
 | #51 | Open, draft, targets main; stale base | `d6f97beb05962b7f8ef43f5e0ea8434be06450fa` | Run 45335656200 success on this head | GC hardening submitted; stale-slot and exact accounting evidence remain blockers. |
 | #86 | Open, draft, targets main | `334ebe44c51d9187f2cb82e3533598b7bf094ebf` | Run 45341730284 success | Strong candidate, but still requires independent review and integration. |
 | #97 | Open, draft, targets main | `20fa6374ac9bb0e283484c90a759a702d04c606f` | Run 45342232492 success on this head | Compound-assignment correction submitted; PR #102 extends evidence. |
@@ -65,7 +65,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 | #122 | Closed, superseded (not merged) | `8294cd700b35adc312475b017f739bd5f8223246` | No usable CI; test-file update malformed and draft closed | Do not merge. Corrected clean rebase is PR #134. |
 | #127 | Closed, superseded (not merged) | `70cbcdd240c469ab7d58b8532f79e84fe386e47b` | No exact-head CI; obsolete v07 base after #118 merged | Do not merge. Corrected current-main rebase is PR #134. |
 | #134 | Open, draft, targets main | `293200fac44195eb535ebd459bc26f68e7dfed6c` | Run 45355459313 success (all four jobs) | Current-main password parser; 368604 runtime checks passed on both Linux compilers; Worker 7 independent re-review positive; Worker 4/5 and architect acceptance pending. |
-| #140 | Open, draft, stacked on #117 | `bf10e50de1afec5ad4b26f6fcf5d97afd8c71470` | Fresh exact-head run 45359630600 queued after fixing prior formatter/idempotence failure (missing final newline) | Test-only follow-up adds full 1 MiB Tainted fail-closed rejection without `.max_lines()` and fixes the seven-assertion summary; exact CI/owner review pending. |
+| #140 | Open, draft, stacked on #117 | `bf10e50de1afec5ad4b26f6fcf5d97afd8c71470` | Fresh exact-head run 45359630600 in progress after fixing prior formatter/idempotence failure (missing final newline); supply-chain passed, Linux jobs running, macOS queued | Test-only follow-up adds full 1 MiB Tainted fail-closed rejection without `.max_lines()` and fixes the seven-assertion summary; exact CI/owner review pending. |
 
 Previously merged changes reconciled as already addressed for their specific scope: #27 (taint/run/HTML attack findings), #29 (bounded read_file/FIFO behaviour), #56 (review documentation only), #67 (taint fixpoint fails closed), #73 (NUL environment names and bounded read_line), and #78 (grant-role capacity). These do not close the distinct findings above.
 
