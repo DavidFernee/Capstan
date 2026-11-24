@@ -25,6 +25,13 @@ jobs:
           build-args: --wfail
           test: false
           lint: false
+          mk_all-check: true
+          leanchecker: true
+          nanoda: true
+          nanoda-allow-sorry: false
+          axiom-audit: true
+          axiom-audit-allow: propext
+          axiom-audit-root: CapstanVerification
           nanoda: true
           nanoda-allow-sorry: false
           axiom-audit: true
