@@ -356,3 +356,44 @@ Specify and test:
 - Nested propagation preserves the exact error type and does not change protected-call privilege or allow a grant to escape.
 
 Required tests cover every operand form above, nested `?`, exact error-type mismatch, use outside a Result-returning function, side-effecting operand evaluated once, both CFG edges, return analysis, and cleanup/resource behaviour. Parser tests must distinguish `T?` in a type from `expr?` in an expression, including adjacent tokens in nested generic types and expressions.
+
+
+## 16. Closure environments must preserve GC tracing and secret erasure independently
+
+The closure proposal currently says that a closure environment containing captured bindings must be allocated and reclaimed through a "secret-aware runtime path" when it captures `Secret`. That wording is not compatible with the current collector's allocation model and should be corrected before implementation.
+
+### 16.1 The environment and secret payload have different GC requirements
+
+The current collector has three allocation kinds:
+- kind 0: pointer-containing allocations, traced by the collector;
+- kind 1: pointer-free atomic allocations;
+- kind 2: pointer-free secret allocations, zeroed when reclaimed.
+
+The runtime's `secret_env` creates a `Secret` as a `CapStr*` allocated with kind 2. A closure environment contains captured pointers and must therefore be pointer-scanned. Allocating the whole environment as kind 2 would suppress tracing of those captured pointers and could allow the referenced objects to be reclaimed while the closure still contains dangling references.
+
+For the current opaque-pointer representation, the minimum safe model is:
+1. Allocate the closure environment as an ordinary pointer-scanned GC object (kind 0).
+2. Capture a `Secret` binding by copying its opaque pointer, not by copying its bytes into an ordinary allocation.
+3. The environment's traced pointer keeps the original kind-2 secret payload reachable while the closure is reachable.
+4. Once the secret allocation is unreachable, the existing collector wipes its bytes during sweep before reuse/free.
+5. Captured ordinary references are traced by the same environment. Grant capture remains forbidden recursively through every nested type and capture path.
+
+Do not mark a pointer-containing environment as atomic/secret merely to obtain wiping. If a future closure representation embeds secret bytes inline in an environment, it will need a separately specified representation that simultaneously supports pointer tracing and secret wiping; the current three allocation kinds do not provide that combination.
+
+### 16.2 Erasure is collection-time, not lexical or deterministic
+
+The collector conservatively scans stack and register roots. A stale pointer-shaped value can therefore keep an otherwise unreachable closure environment, and the secret it references, alive beyond the source-level scope or last apparent use. The language must describe this as wipe-on-collection, not immediate erasure at closure drop, lexical scope exit, or loss of the last source-level reference.
+
+The guarantee is limited to the managed secret allocation. It does not establish that every transient copy in registers, stack slots, compiler temporaries, foreign libraries or OS/environment storage is synchronously erased. APIs and documentation must not overstate this guarantee.
+
+### 16.3 Required runtime tests
+
+- A closure retains a captured Secret across repeated forced collections; the secret remains readable only through permitted secret operations.
+- Once the closure and all other references are genuinely unreachable, a subsequent collection wipes the secret allocation before reuse/free.
+- Test both small-object page allocations and large-object allocations; the collector has separate sweep paths for each.
+- A closure retaining ordinary reference-type captures keeps their objects alive and usable after the creating frame returns.
+- Capturing a Grant directly or nested in optional/aggregate/generic wrappers is rejected.
+- Test GC stress mode, GCC and Clang, and `-O0`, `-O2`, `-O3`; conservative register/stack roots can make collection timing optimisation-sensitive.
+- Include a test-only observation mechanism for verifying wipe-before-reuse without exposing raw secret bytes or a production introspection API.
+
+These are separate properties: environment reachability must be correct, grant non-escape must be enforced statically, and secret payload erasure must be verified at the collector boundary.
