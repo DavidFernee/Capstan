@@ -290,9 +290,38 @@ static void test_files(void) {
     CHECK(str_is(cap_read_line(), "x\r", 2));
     CapStr *longl = cap_read_line();
     CHECK(longl && longl->len == 10000 && longl->data[0] == 'L' && longl->data[9999] == 'L');
-    CHECK(str_is(cap_read_line(), "last", 4));
+    CHECK(str_is(cap_read_line(), "last", 4)); /* EOF without a trailing newline */
     CHECK(cap_read_line() == NULL);
     CHECK(cap_read_line() == NULL);
+
+    /* Exactly the configured maximum is accepted, and the next line remains intact. */
+    f = fopen(in, "wb");
+    char line_chunk[4096];
+    memset(line_chunk, 'Q', sizeof line_chunk);
+    for (int i = 0; i < CAP_READ_LINE_MAX / (int64_t)sizeof line_chunk; i++)
+        CHECK(fwrite(line_chunk, 1, sizeof line_chunk, f) == sizeof line_chunk);
+    fwrite("\nnext\n", 1, 6, f);
+    fclose(f);
+    CHECK(freopen(in, "rb", stdin) != NULL);
+    CapStr *at_limit = cap_read_line();
+    CHECK(at_limit && at_limit->len == CAP_READ_LINE_MAX &&
+          at_limit->data[0] == 'Q' && at_limit->data[CAP_READ_LINE_MAX - 1] == 'Q');
+    CHECK(str_is(cap_read_line(), "next", 4));
+    CHECK(cap_read_line() == NULL);
+
+    /* One byte over the limit fails closed without growing the buffer further. */
+    f = fopen(in, "wb");
+    for (int i = 0; i < CAP_READ_LINE_MAX / (int64_t)sizeof line_chunk; i++)
+        CHECK(fwrite(line_chunk, 1, sizeof line_chunk, f) == sizeof line_chunk);
+    fputc('X', f);
+    fclose(f);
+    CHECK(freopen(in, "rb", stdin) != NULL);
+    int old_test_mode = cap_test_mode;
+    cap_test_mode = 1;
+    int rejected = setjmp(cap_test_jmp) != 0;
+    if (!rejected) (void)cap_read_line();
+    cap_test_mode = old_test_mode;
+    CHECK(rejected);
     remove(in);
     remove(path);
     rmdir(dir);
@@ -479,6 +508,13 @@ __attribute__((noinline)) static void make_secrets(void) {
     }
     unsetenv("CAPSTAN_UNIT_SECRET");
 }
+static void test_secret_env_name(void) {
+    setenv("CAPSTAN_UNIT_SECRET_PREFIX", "prefix-value", 1);
+    static const char truncated_name[] = "CAPSTAN_UNIT_SECRET_PREFIX\0SUFFIX";
+    CHECK(cap_secret_env(cap_str_new(truncated_name, (int64_t)sizeof truncated_name - 1)) == NULL);
+    unsetenv("CAPSTAN_UNIT_SECRET_PREFIX");
+}
+
 static void test_secret_wipe(void) {
     make_secrets();
     scrub_stack(16);
@@ -514,6 +550,7 @@ int main(void) {
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
     test_gc();
     test_gc_release();
+    test_secret_env_name();
     test_secret_wipe();
     printf("runtime unit tests: %d checks, %d failed\n", checks, failures);
     return failures ? 1 : 0;
