@@ -91,7 +91,8 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   no `trust()`. Tested for agreement with the compiler on every test program, protocol behaviour,
   sanitizers and fuzzing (`tests/lsp/`). Pure Capstan, using `read_bytes()` and `flush()`
 - K0, the initial Linux kernel CVE study (`tools/k0/`, docs/K0-KERNEL-CVES.md); its original
-  population and projections are now under correction, and its headline figures are withdrawn
+  population, cross-field classifier precedence and kernel projections are under correction, and
+  its headline figures are withdrawn
   pending a complete pinned source snapshot and independent review
 - K1 kernel-mode design (DESIGN-MAP section 7) aimed at what K0 found Capstan does not yet prevent:
   ownership and linear resources, data guarded by its lock, RCU as a type, execution contexts, lock
