@@ -107,6 +107,7 @@ percentage without a nearby scope qualification and supporting evidence.
 - [ ] Complete validator/evaluator implementation against that contract.
 - [ ] Prove validator soundness and completeness relative to the normative accepted-program
       predicate, or state a narrower theorem precisely.
+- [ ] Prove the concrete `CCAMRegister.declared_type` integer-tag decoding (`1` = int, `2` = bool) and field-level write mutations preserve the Lean runtime-register relation.
 - [ ] Prove evaluator step correspondence to the Lean machine model, including calls/frames.
 - [ ] Establish source-checker/lowering simulation for the declared source subset.
 - [ ] Audit all axioms, assumptions, trusted libraries and exact-head proof replay.
