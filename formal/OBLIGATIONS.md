@@ -1,11 +1,11 @@
 # Allocator and collector proof-obligation matrix
 
 **Baseline:** `e54edb6bbccab24acab9f2d002a98a09e56c443f`  
-**Status:** all obligations are open; this is an inventory, not proof evidence.
+**Status:** implementation obligations remain open; selected abstract-model obligations are proved at model-only level as recorded below.
 
 | ID | Property | Required evidence | Current status / blocker |
 |---|---|---|---|
-| ARITH-01 | Checked addition returns the exact sum iff it fits; otherwise it takes the specified fatal path. | Machine proof of helper plus C refinement. | In progress: Lean model theorem drafted; no CI proof result yet. C refinement not started. |
+| ARITH-01 | Checked addition returns the exact sum iff it fits; otherwise it takes the specified fatal path. | Machine proof of helper plus C refinement. | Proved model-only: `checkedAdd_sound`, `checkedAdd_complete`, `checkedAdd_exact`; Lean 4.36.0 + leanchecker + Nanoda + axiom audit passed (run 45359603435). C refinement not started. |
 | ARITH-02 | Checked multiplication returns the exact product iff it fits; otherwise fatal. | Machine proof plus C refinement. | Not started. |
 | ARITH-03 | Capacity growth terminates, is at least required, and its byte size fits. | Machine proof over all machine-sized inputs plus C refinement. | Not started. |
 | PAGE-01 | Page records and page-table entries are unique and consistent. | Model invariant and implementation correspondence. | Not started. |
@@ -19,7 +19,7 @@
 | GC-02 | Sweep never reclaims an object marked reachable. | Theorem from GC-01 plus sweep invariant. | Not started. |
 | GC-03 | Abstract scanning matches physical bytes scanned by C, including stale pointer words in vacated container capacity. | Representation contract plus container mutation correspondence. | Not started; logical removal does not itself clear conservative scan words. |
 | ACCOUNT-01 | Heap accounting equals retained page backing plus registered large-object bytes. | Transition proof with explicit OS outcomes. | Blocked by unchecked `madvise` result in baseline C. |
-| ACCOUNT-02 | Each successful acquire/release changes accounting exactly once; failed release does not. | Transition proof, exact-delta implementation test, C refinement. | Model semantics drafted; baseline C release implementation blocks implementation proof. |
+| ACCOUNT-02 | Each successful acquire/release changes accounting exactly once; failed release does not. | Transition proof, exact-delta implementation test, C refinement. | Proved model-only: release failure preservation, exact success decrement and idempotence (run 45359603435). Baseline C release implementation blocks implementation proof. |
 | SECRET-01 | Secret payload is wiped before reuse or release. | Wipe primitive review, state proof, direct byte-observation tests. | Not satisfied by baseline small-slot in-band free-list link. |
 | SECRET-02 | Secret free-slot metadata is out of line and does not repopulate payload bytes. | Implementation change and representation proof. | Awaiting runtime hardening work. |
 | FAIL-01 | Every allocation failure follows the documented terminal/failure-atomic transition. | Enumerated failure sites, injected tests, state proof. | Not started; OOM is currently fail-stop. |
