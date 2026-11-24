@@ -152,3 +152,131 @@ test "CCAM remainder has dividend sign" {
     CCAMIntResult r = ccam_rem(-7, 3);
     assert(r.ok && r.value == -1);
 }
+
+
+// Typed register-file substrate for the CCAM evaluator. Register contents are
+// represented as Capstan values; the declared type and initialisation bit are
+// independent, so an uninitialised read is never confused with integer zero.
+const int CCAM_TYPE_INT = 1;
+const int CCAM_TYPE_BOOL = 2;
+
+struct CCAMRegister {
+    int declared_type;
+    bool initialized;
+    int int_value;
+    bool bool_value;
+}
+
+struct CCAMRegisterResult {
+    bool ok;
+    int int_value;
+    bool bool_value;
+    string trap;
+}
+
+CCAMRegisterResult ccam_register_error(string trap) {
+    return new CCAMRegisterResult{ok: false, int_value: 0, bool_value: false, trap: trap};
+}
+
+CCAMRegisterResult ccam_register_int(int value) {
+    return new CCAMRegisterResult{ok: true, int_value: value, bool_value: false, trap: ""};
+}
+
+CCAMRegisterResult ccam_register_bool(bool value) {
+    return new CCAMRegisterResult{ok: true, int_value: 0, bool_value: value, trap: ""};
+}
+
+List<CCAMRegister> ccam_registers_create(List<int> types) {
+    List<CCAMRegister> registers = new List<CCAMRegister>();
+    for (int i = 0; i < types.len(); i += 1) {
+        CCAMRegister reg = new CCAMRegister{
+            declared_type: types[i],
+            initialized: false,
+            int_value: 0,
+            bool_value: false
+        };
+        registers.push(reg);
+    }
+    return registers;
+}
+
+CCAMRegisterResult ccam_register_read_int(List<CCAMRegister> registers, int index) {
+    if (index < 0 || index >= registers.len()) {
+        return ccam_register_error("invalid_register");
+    }
+    CCAMRegister reg = registers[index];
+    if (!reg.initialized) {
+        return ccam_register_error("uninitialised_register");
+    }
+    if (reg.declared_type != CCAM_TYPE_INT) {
+        return ccam_register_error("register_type_mismatch");
+    }
+    return ccam_register_int(reg.int_value);
+}
+
+CCAMRegisterResult ccam_register_read_bool(List<CCAMRegister> registers, int index) {
+    if (index < 0 || index >= registers.len()) {
+        return ccam_register_error("invalid_register");
+    }
+    CCAMRegister reg = registers[index];
+    if (!reg.initialized) {
+        return ccam_register_error("uninitialised_register");
+    }
+    if (reg.declared_type != CCAM_TYPE_BOOL) {
+        return ccam_register_error("register_type_mismatch");
+    }
+    return ccam_register_bool(reg.bool_value);
+}
+
+string ccam_register_write_int(List<CCAMRegister> registers, int index, int value) {
+    if (index < 0 || index >= registers.len()) {
+        return "invalid_register";
+    }
+    CCAMRegister reg = registers[index];
+    if (reg.declared_type != CCAM_TYPE_INT) {
+        return "register_type_mismatch";
+    }
+    reg.int_value = value;
+    reg.initialized = true;
+    return "";
+}
+
+string ccam_register_write_bool(List<CCAMRegister> registers, int index, bool value) {
+    if (index < 0 || index >= registers.len()) {
+        return "invalid_register";
+    }
+    CCAMRegister reg = registers[index];
+    if (reg.declared_type != CCAM_TYPE_BOOL) {
+        return "register_type_mismatch";
+    }
+    reg.bool_value = value;
+    reg.initialized = true;
+    return "";
+}
+
+test "CCAM register files preserve declared types and uninitialised state" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL);
+    List<CCAMRegister> registers = ccam_registers_create(types);
+    CCAMRegisterResult read_int = ccam_register_read_int(registers, 0);
+    assert(!read_int.ok && read_int.trap == "uninitialised_register");
+    assert(ccam_register_write_int(registers, 0, 42) == "");
+    assert(ccam_register_write_bool(registers, 1, true) == "");
+    read_int = ccam_register_read_int(registers, 0);
+    CCAMRegisterResult read_bool = ccam_register_read_bool(registers, 1);
+    assert(read_int.ok && read_int.int_value == 42);
+    assert(read_bool.ok && read_bool.bool_value);
+}
+
+test "CCAM register files reject invalid indices and type confusion" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMRegister> registers = ccam_registers_create(types);
+    assert(ccam_register_write_bool(registers, 0, true) == "register_type_mismatch");
+    assert(ccam_register_write_int(registers, 1, 9) == "invalid_register");
+    CCAMRegisterResult wrong_type = ccam_register_read_bool(registers, 0);
+    CCAMRegisterResult bad_index = ccam_register_read_int(registers, -1);
+    assert(!wrong_type.ok && wrong_type.trap == "uninitialised_register");
+    assert(!bad_index.ok && bad_index.trap == "invalid_register");
+}
