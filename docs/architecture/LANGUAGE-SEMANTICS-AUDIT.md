@@ -63,6 +63,11 @@ The runtime `CAP_LIT` macro lazily initialises a static pointer by calling `cap_
 
 The native runtime rejects a line whose payload exceeds 1,048,576 bytes, but the temporary `bootstrap/capstan0.py::b_read_line()` currently delegates to unbounded `sys.stdin.buffer.readline()`. This makes Stage 0 disagree with the native runtime at the over-limit boundary and means it cannot be treated as a differential oracle for this behaviour until aligned. PR #93 adds a native public-API regression for exactly 1 MiB followed immediately by EOF; the C runtime unit suite already covers exactly 1 MiB followed by newline and max-plus-one rejection. The bootstrap implementation is non-normative and must not redefine the language contract.
 
+
+### 2.8 Literal-first `sql_query` / `run` call sequencing
+
+The current `compiler/codegen.cap::gen_call` special path for `sql_query` and `run` bypasses the ordinary `operands()` / `hoist()` sequencing. It builds the internal parameter/argv list and evaluates later arguments before evaluating argument zero in the final helper call. The checker requires argument zero to be a string literal, but `CAP_LIT` lazily allocates through `cap_str_perm()` and can fail; the compiler-generated `cap_list_new()` is also an allocation effect. Therefore the special path can reorder observable allocation/failure relative to later source arguments and violates the general left-to-right contract. Draft PR #133 materialises the literal first, then each later source argument, and only then allocates/populates the internal list; it extends `tests/unit/codegen_literal_order.py` for both builtins. The fix is not part of `main` until PR #133 is merged with exact-head CI green.
+
 ## 3. Normative semantic requirements for the C-free core
 
 1. **Deterministic sequencing:** all observable subexpressions have a specified order. The IR must make effectful ordering explicit.
