@@ -264,7 +264,8 @@ static int64_t cap_rt_growth_capacity(int64_t current, int64_t required,
 
 static size_t cap_rt_checked_bytes(size_t count, size_t element_size,
                                    size_t overhead, int64_t loc) {
-    if (overhead > CAP_MAX_LEN || count > (CAP_MAX_LEN - overhead) / element_size ||
+    if (!element_size || overhead > CAP_MAX_LEN ||
+        count > (CAP_MAX_LEN - overhead) / element_size ||
         count > (SIZE_MAX - overhead) / element_size)
         cap_panic("allocation size exceeds runtime limit", "CWE-789", loc);
     return overhead + count * element_size;
@@ -548,7 +549,8 @@ static void cap_map_set(CapMap *m, CapStr *k, CapVal v) {
     int64_t pos = cap_map_find(m, k);
     if (pos >= 0) { m->vals[pos] = v; return; }
     if (CAP_UNLIKELY(m->len < 0 || m->cap < 0 || m->len > m->cap ||
-                     m->index_cap < 0))
+                     m->index_cap < 0 ||
+                     (m->index_cap != 0 && (m->index_cap & (m->index_cap - 1)) != 0)))
         cap_panic("invalid map length/capacity", "CWE-682", 0);
     if (m->len == m->cap) {
         if (m->len == INT64_MAX)
@@ -575,7 +577,8 @@ static void cap_map_set(CapMap *m, CapStr *k, CapVal v) {
         int64_t required = new_len * 2;
         int64_t newcap = cap_rt_growth_capacity(m->index_cap, required, 16,
                                                 sizeof(int64_t), 0, 0);
-        /* Publish the new entry only after index allocation succeeds. */
+        /* Publish the entry before allocation: a collection during index
+           growth must see the new key/value through the map's traced arrays. */
         m->keys[m->len] = k;
         m->vals[m->len] = v;
         m->len = new_len;
