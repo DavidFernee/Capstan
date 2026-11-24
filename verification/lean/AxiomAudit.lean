@@ -18,3 +18,8 @@ import CapstanVerification.Core
 #print axioms CapstanVerification.checkedRem_zero_traps
 #print axioms CapstanVerification.checkedDiv_min_neg_one_traps
 #print axioms CapstanVerification.checkedRem_min_neg_one_traps
+#print axioms CapstanVerification.executeLt_left_read_error_precedence
+#print axioms CapstanVerification.executeLt_preserves_well_typed
+#print axioms CapstanVerification.executeEq_left_read_error_precedence
+#print axioms CapstanVerification.executeEq_preserves_well_typed
+#print axioms CapstanVerification.executeNot_preserves_well_typed
