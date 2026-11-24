@@ -34,7 +34,9 @@ def changed_paths(revision, paths):
     ancestor = git("merge-base", "--is-ancestor", revision, "HEAD")
     if ancestor.returncode != 0:
         raise ValueError("revision is not an ancestor of HEAD: " + revision)
-    result = git("diff", "--name-only", "--no-renames", revision, "HEAD", "--", *paths)
+    # Treat manifest entries as literal repository paths, not Git pathspec syntax.
+    pathspecs = [":(literal)" + path for path in paths]
+    result = git("diff", "--name-only", "--no-renames", revision, "HEAD", "--", *pathspecs)
     if result.returncode != 0:
         raise ValueError(result.stderr.strip() or "git diff failed")
     return [p for p in result.stdout.splitlines() if p]
