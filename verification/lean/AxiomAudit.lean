@@ -1,6 +1,8 @@
 import CapstanVerification.Machine
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.Progress
+import CapstanVerification.Validator
+import CapstanVerification.ProgramValidator
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -118,3 +120,9 @@ import CapstanVerification.Progress
 #print axioms CapstanVerification.machineStep_progress_or_explicit_outcome
 #print axioms CapstanVerification.machineStep_deterministic
 #print axioms CapstanVerification.runFuel_fuel_exhausted_state_well_typed
+
+#print axioms CapstanVerification.validateMachineInstr
+#print axioms CapstanVerification.validateSingleFrameProgram_rejects_bad_entry
+#print axioms CapstanVerification.validateSingleFrameProgram_entry_sound
+#print axioms CapstanVerification.validateSingleFrameProgram_final_terminal
+#print axioms CapstanVerification.validateSingleFrameProgram_targets_bounded
