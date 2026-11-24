@@ -372,6 +372,9 @@ static void trigger_negative_buffer_append(void) {
 static void trigger_oversized_initial_buffer(void) {
     (void)cap_buf_new(INT64_MAX);
 }
+static void trigger_negative_initial_buffer(void) {
+    (void)cap_buf_new(-1);
+}
 static void trigger_non_power_of_two_map_index(void) {
     CapMap m = {0};
     m.index_cap = 3;
@@ -399,6 +402,7 @@ static void test_runtime_growth_arithmetic(void) {
     CHECK(expect_runtime_panic(trigger_bad_buffer_length));
     CHECK(expect_runtime_panic(trigger_negative_buffer_append));
     CHECK(expect_runtime_panic(trigger_oversized_initial_buffer));
+    CHECK(expect_runtime_panic(trigger_negative_initial_buffer));
     CHECK(expect_runtime_panic(trigger_non_power_of_two_map_index));
     CHECK(expect_runtime_panic(trigger_out_of_range_map_index_entry));
 }
