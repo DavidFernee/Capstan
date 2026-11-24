@@ -71,4 +71,4 @@ jobs:
           "${RUNNER_TEMP}/sbom-venv/bin/python" -I scripts/sbom-validate.py \
             --cyclonedx "${out}/capstan.cdx.json" --spdx "${out}/capstan.spdx.json"
       - name: Validate machine-readable assurance claims
-        run: "${RUNNER_TEMP}/sbom-venv/bin/python" -I scripts/assurance-validate.py
+        run: ${RUNNER_TEMP}/sbom-venv/bin/python -I scripts/assurance-validate.py
