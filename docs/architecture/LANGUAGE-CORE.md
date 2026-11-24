@@ -90,7 +90,7 @@ A call transfers control to the callee's first instruction only after the call i
 
 The Capstan source entry point remains `int main()` or `void main()`; a CCAM program used as a complete source-program image MUST have a zero-argument entry function returning `int` or `void`. Internal CCAM functions MAY return `bool` as well as `int` or `void`.
 
-All branches select a validated instruction index within the current function. A function MUST NOT fall through beyond its instruction sequence.
+All branches select a validated instruction index within the current function. Starting at instruction 0, every reachable nonterminal instruction MUST have an in-function successor; a reachable infinite loop is permitted. A function MUST NOT have a reachable path that falls through beyond its instruction sequence. Unreachable instructions are still structurally validated.
 
 ## 6. Structural validation and dynamic traps
 
@@ -103,7 +103,7 @@ The machine MUST validate a complete program before executing its first instruct
 - statically mismatched operand, destination, parameter or return types;
 - calls to unknown functions, wrong arity, or incompatible return destinations;
 - a return instruction incompatible with its enclosing function;
-- any control-flow path that can fall off the end of a function;
+- any control-flow path reachable from instruction 0 that can fall off the end of a function; unreachable instructions still receive schema/index/type validation but do not independently cause a fall-through error;
 - malformed explicit trap reason strings (the reason is 1–64 ASCII characters matching `[a-z][a-z0-9_]{0,63}`).
 
 Structural validation MUST be deterministic and MUST NOT execute program instructions.
