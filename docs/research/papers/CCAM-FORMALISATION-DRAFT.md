@@ -309,29 +309,14 @@ The current formalisation demonstrates a useful design direction for CCAM: make 
 
 However, the results are not yet a formally verified execution architecture. The strongest local invariants apply to the Lean model, not to the Capstan-native evaluator. The validator is a model over already-decoded finite structures, not the complete normative JSON validator. The call stack is a separate abstraction rather than an integrated machine feature. The mismatch in final-instruction validation is evidence that specification alignment still needs work.
 
-These limitations do not make the work unimportant. They identify the exact transition from a formal model to a formal assurance argument. The next research contribution should be the connected chain:
+These limitations do not make the work unimportant. They identify the exact transition from a formal model to a formal assurance argument. The next research contribution should connect the following stages with explicit relations and theorems:
 
-[
-  	ext{JSON input}
-  ;longrightarrow;
-  	ext{validated CCAM}
-  ;longrightarrow;
-  	ext{Capstan evaluator}
-  ;longrightarrow;
-  	ext{observable execution}.
-]
+```text
+JSON input → validated CCAM → Capstan evaluator → observable execution
+Capstan source → checked core → CCAM → native execution
+```
 
-Each arrow requires a precise relation and a theorem or independently justified trust assumption. The longer-term compiler chain adds:
 
-[
-  	ext{Capstan source}
-  ;longrightarrow;
-  	ext{checked core}
-  ;longrightarrow;
-  	ext{CCAM}
-  ;longrightarrow;
-  	ext{native execution}.
-]
 
 This is the architecture required to reduce the current C-backed trusted computing base. It is a programme goal, not a result established by the present paper.
 
