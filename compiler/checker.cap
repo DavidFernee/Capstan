@@ -1495,6 +1495,15 @@ bool trivially_permits(Node body) {
 void check_policy(Checker c, Node p) {
     Node body = p.kids[p.n];
     bool is_public = p.s2 == "public";
+    // Keep this bound in sync with CAP_GRANT_MAX in runtime/capstan_rt.h.
+    // The runtime stores struct-identity roles in a fixed-size grant array.
+    int object_roles = 0;
+    for (int i = 0; i < p.n; i += 1) {
+        if (ty_of(p.kids[i]).k == TY_STRUCT) { object_roles += 1; }
+    }
+    if (object_roles > 8) {
+        error_at(c.ctx, p, "", "policy '" + p.s + "' has more than 8 struct parameters; grants support at most 8 object roles");
+    }
     for (int i = 0; i < p.n; i += 1) {
         Node prm = p.kids[i];
         Type pt = ty_of(prm);
