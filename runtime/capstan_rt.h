@@ -1168,6 +1168,14 @@ static const uint32_t cap_k256[64] = {
 
 #define CAP_ROR(x, n) (((x) >> (n)) | ((x) << (32 - (n))))
 
+#ifdef CAP_SHA256_TEST_HOOK
+/* Test-only observer: called after each compression scratch region is wiped. */
+void cap_sha256_test_wipe_observer(const volatile void *p, size_t n);
+#define CAP_SHA256_WIPE_OBSERVED(p) cap_sha256_test_wipe_observer((p), sizeof *(p))
+#else
+#define CAP_SHA256_WIPE_OBSERVED(p) ((void)0)
+#endif
+
 static void cap_sha256_block(CapSha256 *s, const unsigned char *p) {
     uint32_t w[64], a, b, c, d, e, f, g, h;
     for (int i = 0; i < 16; i++) w[i] = (uint32_t)p[4*i] << 24 | (uint32_t)p[4*i+1] << 16 | (uint32_t)p[4*i+2] << 8 | p[4*i+3];
@@ -1184,11 +1192,15 @@ static void cap_sha256_block(CapSha256 *s, const unsigned char *p) {
     }
     s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d; s->h[4] += e; s->h[5] += f; s->h[6] += g; s->h[7] += h;
     /* The message schedule and working state contain password-derived material. */
-    cap_wipe(w, sizeof w);
-    cap_wipe(&a, sizeof a); cap_wipe(&b, sizeof b);
-    cap_wipe(&c, sizeof c); cap_wipe(&d, sizeof d);
-    cap_wipe(&e, sizeof e); cap_wipe(&f, sizeof f);
-    cap_wipe(&g, sizeof g); cap_wipe(&h, sizeof h);
+    cap_wipe(w, sizeof w); CAP_SHA256_WIPE_OBSERVED(w);
+    cap_wipe(&a, sizeof a); CAP_SHA256_WIPE_OBSERVED(a);
+    cap_wipe(&b, sizeof b); CAP_SHA256_WIPE_OBSERVED(b);
+    cap_wipe(&c, sizeof c); CAP_SHA256_WIPE_OBSERVED(c);
+    cap_wipe(&d, sizeof d); CAP_SHA256_WIPE_OBSERVED(d);
+    cap_wipe(&e, sizeof e); CAP_SHA256_WIPE_OBSERVED(e);
+    cap_wipe(&f, sizeof f); CAP_SHA256_WIPE_OBSERVED(f);
+    cap_wipe(&g, sizeof g); CAP_SHA256_WIPE_OBSERVED(g);
+    cap_wipe(&h, sizeof h); CAP_SHA256_WIPE_OBSERVED(h);
 }
 
 static void cap_sha256_init(CapSha256 *s) {
