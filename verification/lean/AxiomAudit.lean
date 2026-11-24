@@ -1,0 +1,10 @@
+import CapstanVerification.Core
+
+#print axioms CapstanVerification.write_preserves_well_typed
+#print axioms CapstanVerification.checkedAdd_sound
+#print axioms CapstanVerification.checkedSub_sound
+#print axioms CapstanVerification.checkedMul_sound
+#print axioms CapstanVerification.checkedDiv_zero_traps
+#print axioms CapstanVerification.checkedRem_zero_traps
+#print axioms CapstanVerification.checkedDiv_min_neg_one_traps
+#print axioms CapstanVerification.checkedRem_min_neg_one_traps
