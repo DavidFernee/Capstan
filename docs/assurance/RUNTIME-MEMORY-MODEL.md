@@ -90,7 +90,7 @@ Accordingly, the runtime must not claim that garbage collection guarantees promp
 
 ## 6. Resource limits and failure behaviour
 
-The collector exposes `CAPSTAN_MAX_HEAP`; absent an override, the current implementation derives a limit from physical memory. The value is capped by the runtime's declared maximum-length constant. The configured limit is a limit on collector-accounted managed heap, not a process-wide memory budget.
+The collector exposes `CAPSTAN_MAX_HEAP`; absent an override, the current implementation derives a limit from physical memory. The configured value is capped by the runtime's declared maximum-length constant. An explicit value of `0` disables this collector heap cap for compatibility with the existing configuration semantics. The configured limit is a limit on collector-accounted managed heap, not a process-wide memory budget.
 
 The following are outside that counter or are only partially represented by it:
 
