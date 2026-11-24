@@ -6,6 +6,6 @@ policy CanDebit(int amount, Account account) { return amount > 0 && amount <= ac
 protected(CanDebit) void debit(Grant<CanDebit> g, int amount, Account account) { account.balance -= amount; }
 int main() {
     Account account = new Account{balance: 100};
-    if (let g = authorize CanDebit(10, account)) { debit(g, 500, account); }
+    if (let g = authorize CanDebit(10, account)) { debit(g, 10, account); debit(g, 500, account); }
     return 0;
 }
