@@ -249,6 +249,47 @@ theorem executeAdd_left_read_error_precedence
     executeAdd regs instr = .error e := by
   simp [executeAdd, hleft]
 
+
+/-- Dynamic boolean-register read. -/
+def readBool {n : Nat} (regs : Registers n) (index : Fin n) : Except Trap Bool :=
+  match regs index with
+  | none => .error .uninitialisedRegister
+  | some (.bool value) => .ok value
+  | some (.int _) => .error .typeMismatch
+
+/-- A branch instruction has a statically boolean condition and in-range targets. -/
+structure BranchInstr (n m : Nat) (types : RegTypes n) where
+  cond : Fin n
+  cond_is_bool : types cond = .bool
+  if_true : Fin m
+  if_false : Fin m
+
+/-- Branch selection returns one of two Fin-indexed, hence in-range, targets. -/
+def executeBranch {n m : Nat} {types : RegTypes n}
+    (regs : Registers n) (instr : BranchInstr n m types) : Except Trap (Fin m) :=
+  match readBool regs instr.cond with
+  | .error e => .error e
+  | .ok true => .ok instr.if_true
+  | .ok false => .ok instr.if_false
+
+theorem executeBranch_target_is_declared
+    {n m : Nat} {types : RegTypes n} {regs : Registers n}
+    (instr : BranchInstr n m types) (target : Fin m)
+    (hstep : executeBranch regs instr = .ok target) :
+    target = instr.if_true ∨ target = instr.if_false := by
+  unfold executeBranch at hstep
+  cases hread : readBool regs instr.cond with
+  | error e =>
+    simp [hread] at hstep
+  | ok value =>
+    cases value with
+    | true =>
+      simp [hread] at hstep
+      exact Or.inl hstep.symm
+    | false =>
+      simp [hread] at hstep
+      exact Or.inr hstep.symm
+
 /-- A successful typed add instruction preserves the register-file invariant. -/
 theorem executeAdd_preserves_well_typed
     {n : Nat} {types : RegTypes n} {regs next : Registers n}
