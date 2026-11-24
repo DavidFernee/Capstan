@@ -1254,6 +1254,11 @@ const int CCAM_RETURN_INT = 1;
 const int CCAM_RETURN_BOOL = 2;
 const int CCAM_RETURN_VOID = 3;
 
+// Explicit limits for this in-memory executable subset. These are admission
+// limits, not a substitute for bounding raw JSON bytes in a future decoder.
+const int CCAM_MAX_REGISTERS = 4096;
+const int CCAM_MAX_INSTRUCTIONS = 65536;
+
 struct CCAMValidationResult {
     bool ok;
     string error;
@@ -1321,6 +1326,14 @@ CCAMValidationResult ccam_validate_single_frame(
     List<CCAMInstruction> instructions,
     int return_type
 ) {
+    // Reject oversized structures before allocating register or reachability
+    // storage. The future raw-program decoder must impose a byte limit too.
+    if (register_types.len() > CCAM_MAX_REGISTERS) {
+        return ccam_validation_error("register_limit_exceeded");
+    }
+    if (instructions.len() > CCAM_MAX_INSTRUCTIONS) {
+        return ccam_validation_error("instruction_limit_exceeded");
+    }
     CCAMRegisterFileResult register_check = ccam_registers_create(register_types);
     if (!register_check.ok) {
         return ccam_validation_error(register_check.error);
@@ -1468,7 +1481,24 @@ CCAMMachineCreateResult ccam_machine_create_validated(
     int return_type
 ) {
     if (max_steps < 0) {
-        return ccam_machine_create(register_types, instructions, max_steps);
+        List<CCAMRegister> empty_registers = new List<CCAMRegister>();
+        List<CCAMInstruction> empty_instructions = new List<CCAMInstruction>();
+        CCAMMachineState empty_state = new CCAMMachineState{
+            registers: empty_registers,
+            instructions: empty_instructions,
+            pc: 0,
+            steps: 0,
+            max_steps: 0,
+            halted: true,
+            halt_has_value: false,
+            halt_value: 0,
+            halt_bool_value: false,
+            trap_code: "",
+            trap_detail: ""
+        };
+        return new CCAMMachineCreateResult{
+            ok: false, state: empty_state, error: "invalid_step_limit"
+        };
     }
     CCAMValidationResult validation = ccam_validate_single_frame(
         register_types, instructions, return_type);
@@ -1493,6 +1523,50 @@ CCAMMachineCreateResult ccam_machine_create_validated(
         };
     }
     return ccam_machine_create(register_types, instructions, max_steps);
+}
+
+test "CCAM validator enforces register and instruction admission limits" {
+    List<int> at_register_limit = new List<int>();
+    for (int i = 0; i < CCAM_MAX_REGISTERS; i += 1) {
+        at_register_limit.push(CCAM_TYPE_INT);
+    }
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMValidationResult accepted = ccam_validate_single_frame(
+        at_register_limit, terminal, CCAM_RETURN_VOID);
+    assert(accepted.ok);
+
+    at_register_limit.push(CCAM_TYPE_INT);
+    CCAMValidationResult too_many_registers = ccam_validate_single_frame(
+        at_register_limit, terminal, CCAM_RETURN_VOID);
+    assert(!too_many_registers.ok &&
+           too_many_registers.error == "register_limit_exceeded");
+
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> at_instruction_limit = new List<CCAMInstruction>();
+    for (int i = 0; i < CCAM_MAX_INSTRUCTIONS; i += 1) {
+        at_instruction_limit.push(ccam_instruction(CCAM_OP_RET_VOID));
+    }
+    CCAMValidationResult instruction_boundary = ccam_validate_single_frame(
+        no_registers, at_instruction_limit, CCAM_RETURN_VOID);
+    assert(instruction_boundary.ok);
+
+    at_instruction_limit.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMValidationResult too_many_instructions = ccam_validate_single_frame(
+        no_registers, at_instruction_limit, CCAM_RETURN_VOID);
+    assert(!too_many_instructions.ok &&
+           too_many_instructions.error == "instruction_limit_exceeded");
+}
+
+test "CCAM validated constructor rejects a negative step limit directly" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMMachineCreateResult rejected = ccam_machine_create_validated(
+        no_registers, code, -1, CCAM_RETURN_VOID);
+    assert(!rejected.ok && rejected.error == "invalid_step_limit");
+    assert(rejected.state.halted);
+    assert(rejected.state.instructions.len() == 0);
 }
 
 test "CCAM validator accepts and rejects canonical trap reasons" {
