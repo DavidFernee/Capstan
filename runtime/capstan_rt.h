@@ -163,8 +163,26 @@ static int64_t *cap_box_int(int64_t v) {
 
 typedef struct CapStr { int64_t len; char data[]; } CapStr;
 
+/* All string allocation sizes are checked before converting a signed length
+   to size_t or multiplying for an escaping expansion. */
+static size_t cap_rt_checked_string_bytes(int64_t len, size_t expansion,
+                                          size_t extra, int64_t loc) {
+    if (len < 0 || !expansion || extra > CAP_MAX_LEN ||
+        sizeof(CapStr) > CAP_MAX_LEN - extra ||
+        extra > SIZE_MAX || sizeof(CapStr) > SIZE_MAX - extra)
+        cap_panic("invalid string allocation length", "CWE-682", loc);
+    size_t available = CAP_MAX_LEN - sizeof(CapStr) - extra;
+    size_t size_available = SIZE_MAX - sizeof(CapStr) - extra;
+    if ((uint64_t)len > available / expansion ||
+        (uint64_t)len > size_available / expansion)
+        cap_panic("string allocation exceeds runtime limit", "CWE-789", loc);
+    return sizeof(CapStr) + (size_t)len * expansion + extra;
+}
+
 static CapStr *cap_str_new(const char *s, int64_t n) {
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
+    if (n > 0 && !s)
+        cap_panic("null source for non-empty string", "CWE-476", 0);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(n, 1, 1, 0));
     r->len = n;
     if (n > 0) memcpy(r->data, s, (size_t)n);
     r->data[n] = 0;
@@ -173,7 +191,9 @@ static CapStr *cap_str_new(const char *s, int64_t n) {
 
 /* String literals are allocated once per site, outside the collected heap. */
 static CapStr *cap_str_perm(const char *s, int64_t n) {
-    CapStr *r = (CapStr *)malloc(sizeof(CapStr) + (size_t)n + 1);
+    if (n > 0 && !s)
+        cap_panic("null source for non-empty permanent string", "CWE-476", 0);
+    CapStr *r = (CapStr *)malloc(cap_rt_checked_string_bytes(n, 1, 1, 0));
     if (!r) cap_gc_oom();
     r->len = n;
     if (n > 0) memcpy(r->data, s, (size_t)n);
@@ -184,8 +204,10 @@ static CapStr *cap_str_perm(const char *s, int64_t n) {
     if (!_cap_lit) { _cap_lit = cap_str_perm((s), (n)); } _cap_lit; })
 
 static CapStr *cap_str_concat(CapStr *a, CapStr *b, int64_t loc) {
+    if (!a || !b || a->len < 0 || b->len < 0)
+        cap_panic("invalid string operand", "CWE-682", loc);
     int64_t n = cap_add(a->len, b->len, loc);
-    CapStr *r = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)n + 1);
+    CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(n, 1, 1, loc));
     r->len = n;
     memcpy(r->data, a->data, (size_t)a->len);
     memcpy(r->data + a->len, b->data, (size_t)b->len);
