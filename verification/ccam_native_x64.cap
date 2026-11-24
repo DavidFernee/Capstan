@@ -289,7 +289,8 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, "    movq %rax, cap_stack_base(%rip)");
     // Keep the lowest page inaccessible as a guard against stack-budget bugs.
     ccam_x64_line(output, "    movq $10, %rax");
-    ccam_x64_line(output, "    leaq 4096(%rax), %rdi");
+    ccam_x64_line(output, "    movq cap_stack_base(%rip), %rdi");
+    ccam_x64_line(output, "    addq $4096, %rdi");
     ccam_x64_line(output, "    movq cap_stack_bytes(%rip), %rsi");
     ccam_x64_line(output, "    movq $3, %rdx");
     ccam_x64_line(output, "    syscall");
