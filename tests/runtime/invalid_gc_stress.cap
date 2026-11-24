@@ -1,0 +1,7 @@
+// spec: memory.gc
+// expect-runtime: CWE-20
+// env: CAPSTAN_GC_STRESS=not-a-number
+int main() {
+    println("initialise runtime");
+    return 0;
+}
