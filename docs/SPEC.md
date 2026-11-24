@@ -131,7 +131,7 @@ explicitly. Their meaning therefore never depends on precedence.
 | `wrapping_shl(a, n)` → `int` | `a << n` modulo 2^64; `n` must be 0..63 (CWE-1335) |
 | `sql_query("literal", params...)` | query text must be a literal; values are bound parameters |
 | `run("program", args...)` | program must be a literal; no shell; arguments are passed separately; every computed (non-literal) argument must follow a literal `"--"` (CWE-88). If the program is a shell, interpreter or launcher (`sh`, `bash`, `env`, `xargs`, `sudo`, `ssh`, `python…`, `perl…`, `node` and others, matched without directory or `.exe`), every argument must be a literal (CWE-78) |
-| `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | constant-time comparison |
+| `secret_env("NAME")` → `Secret?`, `secret_eq(secret, other)` | environment variable names must be string literals without embedded NUL (CWE-158); `secret_env` copies the value into a managed Secret but does not remove the host process-environment copy; `secret_eq` comparison behaviour is documented separately |
 | `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…`; not for passwords (CWE-916); `hash()` of a `Secret` is an error (CWE-532), `hash_verify()` of one is allowed |
 | `hash_password(p)`, `verify_password(p, h)`, `needs_rehash(h)` | PBKDF2-SHA256 with 600,000 iterations; output carries its algorithm and cost |
 
