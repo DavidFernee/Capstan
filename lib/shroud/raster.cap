@@ -1,0 +1,267 @@
+// Shroud: the rasteriser.
+//
+// Shroud draws every pixel itself, like Flutter, instead of asking each operating
+// system's toolkit to draw native controls. That is what makes an interface look and
+// behave the same on Windows, macOS and Linux, and it keeps the drawing code, the
+// part of a GUI that handles the most untrusted data (fonts, images, text), inside
+// Capstan's guarantees. Operating systems only receive finished pixels.
+//
+// Paths are filled with anti-aliasing: each pixel row is sampled on 16 sub-scanlines,
+// and along each sub-scanline coverage is exact to 1/256 of a pixel. Both the nonzero
+// and even-odd fill rules are supported. Everything is integer arithmetic, so a scene
+// renders to the same pixels on every machine.
+
+const int FILL_NONZERO = 0;
+const int FILL_EVENODD = 1;
+
+const int SUBSAMPLES = 16;              // sub-scanlines per pixel row
+const int SUB_STEP = 16;                // FX / SUBSAMPLES
+const int FULL_COVER = 4096;            // FX * SUBSAMPLES
+
+// The largest pixmap Shroud will allocate: 16384 x 16384 (CWE-789).
+const int MAX_PIXMAP_SIDE = 16384;
+
+// Premultiplied 0xAARRGGBB pixels, row by row.
+struct Pixmap {
+    int w;
+    int h;
+    List<int> px;
+
+    int get(int x, int y) { return self.px[y * self.w + x]; }
+
+    void clear(int color) {
+        int p = premultiply(color);
+        for (int i = 0; i < self.px.len(); i += 1) { self.px[i] = p; }
+    }
+}
+
+Pixmap new_pixmap(int w, int h) {
+    if (w < 1 || h < 1 || w > MAX_PIXMAP_SIDE || h > MAX_PIXMAP_SIDE) {
+        println("shroud: pixmap size out of range");
+        exit(101);
+    }
+    List<int> px = new List<int>();
+    for (int i = 0; i < w * h; i += 1) { px.push(0); }
+    return new Pixmap{w: w, h: h, px: px};
+}
+
+// ---- paint -------------------------------------------------------------------------
+
+const int PAINT_SOLID = 0;
+const int PAINT_LINEAR = 1;
+
+// What a fill puts down: one colour, or a linear gradient from (x0, y0) in colour c0
+// to (x1, y1) in colour c1 (coordinates in FX, colours straight).
+struct Paint {
+    int kind;
+    int color;
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+    int c1;
+}
+
+Paint solid(int color) { return new Paint{kind: PAINT_SOLID, color: color, x0: 0, y0: 0, x1: 0, y1: 0, c1: 0}; }
+
+Paint linear_gradient(int x0, int y0, int c0, int x1, int y1, int c1) {
+    return new Paint{kind: PAINT_LINEAR, color: c0, x0: x0, y0: y0, x1: x1, y1: y1, c1: c1};
+}
+
+// ---- canvas ------------------------------------------------------------------------
+
+// A pixmap with a stack of rectangular clips (whole pixels) and a global opacity.
+struct Canvas {
+    Pixmap pm;
+    List<Rect> clips;
+    int opacity;
+
+    Rect clip() { return self.clips[self.clips.len() - 1]; }
+
+    // Clips to r (in FX), rounded outward to whole pixels, within the current clip.
+    void push_clip(Rect r) {
+        int x0 = fx_floor(r.x);
+        int y0 = fx_floor(r.y);
+        int x1 = fx_ceil(r.right());
+        int y1 = fx_ceil(r.bottom());
+        self.clips.push(self.clip().intersect(rect(x0, y0, x1 - x0, y1 - y0)));
+    }
+
+    void pop_clip() {
+        if (self.clips.len() > 1) {
+            if (let _dropped = self.clips.pop()) {}
+        }
+    }
+
+    void fill_path(Path p, Paint paint, int rule) {
+        fill_segments(self, flatten(p), paint, rule);
+    }
+
+    // Axis-aligned rectangles are most of an interface, so they have their own path:
+    // exact fractional coverage at the edges, no scanline sampling.
+    void fill_rect(Rect r, Paint paint) {
+        Rect c = self.clip();
+        int px0 = int_max(fx_floor(r.x), c.x);
+        int py0 = int_max(fx_floor(r.y), c.y);
+        int px1 = int_min(fx_ceil(r.right()), c.right());
+        int py1 = int_min(fx_ceil(r.bottom()), c.bottom());
+        for (int y = py0; y < py1; y += 1) {
+            int cov_y = overlap(r.y, r.bottom(), y * FX);
+            for (int x = px0; x < px1; x += 1) {
+                int cov = cov_y * overlap(r.x, r.right(), x * FX);   // up to 65536
+                self.blend(x, y, paint, (cov * 255 + 32768) >> 16);
+            }
+        }
+    }
+
+    void fill_round_rect(Rect r, int radius, Paint paint) {
+        if (radius <= 0) {
+            self.fill_rect(r, paint);
+        } else {
+            self.fill_path(path_round_rect(r, radius), paint, FILL_NONZERO);
+        }
+    }
+
+    void stroke_round_rect(Rect r, int radius, int width, Paint paint) {
+        self.fill_path(path_round_rect_ring(r, radius, width), paint, FILL_NONZERO);
+    }
+
+    // Puts paint at (x, y) with coverage 0..255.
+    void blend(int x, int y, Paint paint, int coverage) {
+        int cv = div255(coverage * self.opacity);
+        if (cv <= 0) { return; }
+        int src = scale_px(premultiply(paint_at(paint, x, y)), cv);
+        int i = y * self.pm.w + x;
+        self.pm.px[i] = over(src, self.pm.px[i]);
+    }
+}
+
+Canvas new_canvas(Pixmap pm) {
+    List<Rect> clips = new List<Rect>();
+    clips.push(rect(0, 0, pm.w, pm.h));
+    return new Canvas{pm: pm, clips: clips, opacity: 255};
+}
+
+// How much of the pixel [p, p + FX) lies in [a, b), in FX.
+int overlap(int a, int b, int p) {
+    return int_max(0, int_min(b, p + FX) - int_max(a, p));
+}
+
+// The paint's straight colour at the centre of pixel (x, y).
+int paint_at(Paint paint, int x, int y) {
+    if (paint.kind == PAINT_SOLID) { return paint.color; }
+    int dx = paint.x1 - paint.x0;
+    int dy = paint.y1 - paint.y0;
+    int len2 = fx_mul(dx, dx) + fx_mul(dy, dy);
+    if (len2 <= 0) { return paint.color; }
+    int qx = x * FX + FX_HALF - paint.x0;
+    int qy = y * FX + FX_HALF - paint.y0;
+    int dot = fx_mul(qx, dx) + fx_mul(qy, dy);
+    return mix(paint.color, paint.c1, mul_div(clamp(dot, 0, len2), 255, len2));
+}
+
+// ---- scanline fill -----------------------------------------------------------------
+
+void fill_segments(Canvas cv, Segments s, Paint paint, int rule) {
+    int n = s.x0.len();
+    if (n == 0) { return; }
+    // Orient every segment downwards, remembering its winding direction.
+    List<int> ex0 = new List<int>();
+    List<int> ey0 = new List<int>();
+    List<int> ex1 = new List<int>();
+    List<int> ey1 = new List<int>();
+    List<int> dir = new List<int>();
+    int minx = UNBOUNDED;
+    int miny = UNBOUNDED;
+    int maxx = -UNBOUNDED;
+    int maxy = -UNBOUNDED;
+    for (int i = 0; i < n; i += 1) {
+        if (s.y0[i] < s.y1[i]) {
+            ex0.push(s.x0[i]); ey0.push(s.y0[i]); ex1.push(s.x1[i]); ey1.push(s.y1[i]); dir.push(1);
+        } else {
+            ex0.push(s.x1[i]); ey0.push(s.y1[i]); ex1.push(s.x0[i]); ey1.push(s.y0[i]); dir.push(-1);
+        }
+        minx = int_min(minx, int_min(s.x0[i], s.x1[i]));
+        maxx = int_max(maxx, int_max(s.x0[i], s.x1[i]));
+        miny = int_min(miny, int_min(s.y0[i], s.y1[i]));
+        maxy = int_max(maxy, int_max(s.y0[i], s.y1[i]));
+    }
+    Rect c = cv.clip();
+    int px0 = int_max(fx_floor(minx), c.x);
+    int px1 = int_min(fx_ceil(maxx), c.right());
+    int py0 = int_max(fx_floor(miny), c.y);
+    int py1 = int_min(fx_ceil(maxy), c.bottom());
+    if (px0 >= px1 || py0 >= py1) { return; }
+    int width = px1 - px0;
+    List<int> cov = new List<int>();
+    List<int> diff = new List<int>();
+    for (int k = 0; k <= width; k += 1) {
+        cov.push(0);
+        diff.push(0);
+    }
+    List<int> row = new List<int>();         // segments that touch the current row
+    List<int> keys = new List<int>();        // crossings of one sub-scanline
+    int lo_x = px0 * FX;
+    int hi_x = px1 * FX;
+    for (int y = py0; y < py1; y += 1) {
+        int top = y * FX;
+        int bot = top + FX;
+        row = new List<int>();
+        for (int e = 0; e < n; e += 1) {
+            if (ey0[e] < bot && ey1[e] > top) { row.push(e); }
+        }
+        if (row.len() == 0) { continue; }
+        for (int sub = 0; sub < SUBSAMPLES; sub += 1) {
+            int sy = top + sub * SUB_STEP + SUB_STEP / 2;
+            keys = new List<int>();
+            for (int r = 0; r < row.len(); r += 1) {
+                int ei = row[r];
+                if (ey0[ei] <= sy && sy < ey1[ei]) {
+                    int x = ex0[ei] + mul_div(sy - ey0[ei], ex1[ei] - ex0[ei], ey1[ei] - ey0[ei]);
+                    // Sort key: x in the high bits, direction (0 down-left, 2 up) in the low two.
+                    keys.push(x * 4 + dir[ei] + 1);
+                }
+            }
+            keys.sort();
+            int wind = 0;
+            for (int q = 0; q + 1 < keys.len(); q += 1) {
+                wind += (keys[q] & 3) - 1;
+                bool inside = wind != 0;
+                if (rule == FILL_EVENODD) { inside = (wind & 1) != 0; }
+                if (inside) {
+                    int xa = clamp(keys[q] >> 2, lo_x, hi_x);
+                    int xb = clamp(keys[q + 1] >> 2, lo_x, hi_x);
+                    add_span(cov, diff, xa - lo_x, xb - lo_x);
+                }
+            }
+        }
+        int run = 0;
+        for (int x2 = 0; x2 < width; x2 += 1) {
+            run += diff[x2];
+            int total = cov[x2] + run;
+            if (total > 0) { cv.blend(px0 + x2, y, paint, (int_min(total, FULL_COVER) * 255 + FULL_COVER / 2) / FULL_COVER); }
+            cov[x2] = 0;
+            diff[x2] = 0;
+        }
+        diff[width] = 0;
+        cov[width] = 0;
+    }
+}
+
+// Adds the span [a, b) (in FX, relative to the row's first pixel) to one sub-scanline.
+void add_span(List<int> cov, List<int> diff, int a, int b) {
+    if (b <= a) { return; }
+    int ia = a >> 8;
+    int ib = b >> 8;
+    if (ia == ib) {
+        cov[ia] += b - a;
+        return;
+    }
+    cov[ia] += FX - (a & 255);
+    int next = ia + 1;
+    if (next < ib) {
+        diff[next] += FX;
+        diff[ib] -= FX;
+    }
+    cov[ib] += b & 255;
+}

@@ -1,0 +1,278 @@
+// Shroud: painting.
+//
+// Draws a laid-out tree into the window's pixmap. Widgets take their colours from the
+// theme and their state (hovered, pressed, focused, disabled) from the Ui. The
+// keyboard focus ring is drawn only after keyboard use, as on every desktop platform.
+
+void paint_tree(Ui ui, Canvas cv, Laid l) {
+    paint_node(ui, cv, l, ui.theme.window);
+}
+
+// `under` is the colour this view is drawn on, so text contrast can be checked.
+void paint_node(Ui ui, Canvas cv, Laid l, int under) {
+    View v = l.v;
+    Theme t = ui.theme;
+    Rect f = l.frame;
+    int bg_here = under;
+    int radius = dp_or(ui, v.radius, 0);
+    if (v.bg != NO_COLOR) {
+        cv.fill_round_rect(f, radius, solid(v.bg));
+        if (ch_a(v.bg) == 255) { bg_here = v.bg; }
+    }
+    if (v.border != AUTO && v.border > 0) {
+        int bc = v.border_color;
+        if (bc == NO_COLOR) { bc = t.border; }
+        cv.stroke_round_rect(f, radius, dp(ui, v.border), solid(bc));
+    }
+    int k = v.kind;
+    if (k == K_TEXT) {
+        int fg = v.fg;
+        if (fg == NO_COLOR) { fg = t.text; }
+        paint_lines(ui, cv, l, f.inset(scaled_pad(ui, v)), fg);
+        note_contrast(ui, l, fg, bg_here);
+    } else if (k == K_BUTTON) {
+        paint_button(ui, cv, l, bg_here);
+    } else if (k == K_CHECKBOX || k == K_RADIO || k == K_SWITCH) {
+        paint_toggle(ui, cv, l, bg_here);
+    } else if (k == K_TEXT_FIELD) {
+        paint_field(ui, cv, l);
+    } else if (k == K_SLIDER) {
+        paint_slider(ui, cv, l);
+    } else if (k == K_PROGRESS) {
+        Rect tr = f.inset(scaled_pad(ui, v));
+        int span = int_max(1, v.hi - v.lo);
+        cv.fill_round_rect(tr, tr.h / 2, solid(with_alpha(t.track, 96)));
+        int fw = mul_div(tr.w, v.num - v.lo, span);
+        if (fw > 0) { cv.fill_round_rect(rect(tr.x, tr.y, fw, tr.h), tr.h / 2, solid(t.accent)); }
+    } else if (k == K_DIVIDER) {
+        cv.fill_rect(f, solid(t.divider));
+    }
+    if (k == K_SCROLL) {
+        cv.push_clip(f);
+        for (int i = 0; i < l.kids.len(); i += 1) { paint_node(ui, cv, l.kids[i], bg_here); }
+        cv.pop_clip();
+        if (l.content_h > f.h && f.h > 0) {
+            // The scroll bar: a thin thumb on the right showing where the view is.
+            int bar_w = dp(ui, 3);
+            int th = int_max(dp(ui, 24), mul_div(f.h, f.h, l.content_h));
+            int ty = f.y + mul_div(f.h - th, l.scroll_y, int_max(1, l.content_h - f.h));
+            cv.fill_round_rect(rect(f.right() - bar_w - dp(ui, 2), ty, bar_w, th), bar_w / 2, solid(with_alpha(t.text_secondary, 160)));
+        }
+    } else {
+        for (int j = 0; j < l.kids.len(); j += 1) { paint_node(ui, cv, l.kids[j], bg_here); }
+    }
+    if (l.id == ui.focus && ui.focus_visible && v.focusable()) {
+        int gap = dp(ui, 2);
+        cv.stroke_round_rect(f.grow(gap + dp(ui, t.focus_width)), int_max(radius, dp(ui, t.radius)) + gap, dp(ui, t.focus_width), solid(t.focus));
+    }
+}
+
+Insets scaled_pad(Ui ui, View v) {
+    return new Insets{left: dp(ui, v.pad.left), top: dp(ui, v.pad.top), right: dp(ui, v.pad.right), bottom: dp(ui, v.pad.bottom)};
+}
+
+// Records text that fails WCAG 2.2's 4.5:1 contrast for the accessibility report.
+void note_contrast(Ui ui, Laid l, int fg, int bg) {
+    if (l.cps.len() == 0 || l.v.disabled || ch_a(fg) < 255) { return; }
+    int c = contrast_x100(fg, bg);
+    if (c < 450) { ui.problems.push($"text \"{l.v.text}\" ({l.id}) has contrast {c / 100}.{pad2(c % 100)}:1; WCAG 2.2 needs 4.5:1"); }
+}
+
+// Draws l's wrapped lines inside box, aligned as the view asks, vertically centred.
+void paint_lines(Ui ui, Canvas cv, Laid l, Rect box, int color) {
+    Font font = font_of(ui, l.v);
+    int size = text_size_of(ui, l.v);
+    int lh = font_line_height(font, size);
+    int n = l.lines.len() / 2;
+    int top = box.y + int_max(0, (box.h - n * lh) / 2);
+    int asc = font_ascent(font, size) + (lh - font_ascent(font, size) - font_descent(font, size)) / 2;
+    for (int i = 0; i < n; i += 1) {
+        int a = l.lines[2 * i];
+        int b = l.lines[2 * i + 1];
+        int w = text_width(font, size, l.cps, a, b);
+        int x = box.x + align_off(l.v.text_align, box.w - w);
+        int _end = draw_glyphs(cv, font, size, l.cps, a, b, x, top + i * lh + asc, color);
+    }
+}
+
+void paint_button(Ui ui, Canvas cv, Laid l, int under) {
+    View v = l.v;
+    Theme t = ui.theme;
+    Rect f = l.frame;
+    int r = dp_or(ui, v.radius, t.radius);
+    bool hot = ui.hover == l.id && !v.disabled;
+    bool down = ui.pressed == l.id && hot;
+    int bg = t.surface;
+    int fg = t.text;
+    bool outline = true;
+    if (v.style == STYLE_ACCENT || v.style == STYLE_DANGER) {
+        bg = t.accent;
+        fg = t.on_accent;
+        if (hot) { bg = t.accent_hover; }
+        if (down) { bg = t.accent_pressed; }
+        if (v.style == STYLE_DANGER) {
+            bg = t.danger;
+            fg = t.on_danger;
+            if (hot) { bg = t.danger_hover; }
+        }
+        outline = false;
+    } else if (v.style == STYLE_SUBTLE) {
+        bg = NO_COLOR;
+        if (hot) { bg = t.surface_hover; }
+        if (down) { bg = t.surface_pressed; }
+        outline = false;
+    } else {
+        if (hot) { bg = t.surface_hover; }
+        if (down) { bg = t.surface_pressed; }
+    }
+    if (v.disabled) {
+        bg = t.surface_disabled;
+        fg = t.text_disabled;
+    }
+    if (v.bg != NO_COLOR) { bg = v.bg; }
+    if (v.fg != NO_COLOR) { fg = v.fg; }
+    if (bg != NO_COLOR) { cv.fill_round_rect(f, r, solid(bg)); }
+    if (outline) { cv.stroke_round_rect(f, r, dp(ui, 1), solid(t.border)); }
+    paint_lines(ui, cv, l, f.inset(scaled_pad(ui, v)), fg);
+    int behind = under;
+    if (bg != NO_COLOR) { behind = bg; }
+    note_contrast(ui, l, fg, behind);
+}
+
+void paint_toggle(Ui ui, Canvas cv, Laid l, int under) {
+    View v = l.v;
+    Theme t = ui.theme;
+    Rect f = l.frame.inset(scaled_pad(ui, v));
+    bool on = v.num != 0;
+    bool hot = ui.hover == l.id && !v.disabled;
+    int s = dp(ui, 20);
+    int y = f.y + (f.h - s) / 2;
+    int accent = t.accent;
+    if (hot) { accent = t.accent_hover; }
+    int edge = t.border;
+    if (v.disabled) {
+        accent = t.text_disabled;
+        edge = t.text_disabled;
+    }
+    int mark_w = s;
+    int gap = dp(ui, 8);
+    if (v.kind == K_CHECKBOX) {
+        Rect b = rect(f.x, y, s, s);
+        if (on) {
+            cv.fill_round_rect(b, dp(ui, t.radius), solid(accent));
+            paint_check_mark(ui, cv, b, t.on_accent);
+        } else {
+            int fill = t.surface;
+            if (hot) { fill = t.surface_hover; }
+            cv.fill_round_rect(b, dp(ui, t.radius), solid(fill));
+            cv.stroke_round_rect(b, dp(ui, t.radius), dp(ui, 1), solid(edge));
+        }
+    } else if (v.kind == K_RADIO) {
+        Rect c = rect(f.x, y, s, s);
+        if (on) {
+            cv.fill_path(path_ellipse(c), solid(accent), FILL_NONZERO);
+            cv.fill_path(path_ellipse(c.inset(insets_all(dp(ui, 5)))), solid(t.on_accent), FILL_NONZERO);
+        } else {
+            cv.fill_path(path_ellipse(c), solid(t.surface), FILL_NONZERO);
+            cv.fill_path(path_round_rect_ring(c, s / 2, dp(ui, 1)), solid(edge), FILL_NONZERO);
+        }
+    } else {
+        mark_w = dp(ui, 40);
+        gap = dp(ui, 12);
+        Rect track = rect(f.x, y, mark_w, s);
+        int knob = dp(ui, 12);
+        int ky = y + (s - knob) / 2;
+        if (on) {
+            cv.fill_round_rect(track, s / 2, solid(accent));
+            cv.fill_path(path_ellipse(rect(track.right() - dp(ui, 4) - knob, ky, knob, knob)), solid(t.on_accent), FILL_NONZERO);
+        } else {
+            cv.stroke_round_rect(track, s / 2, dp(ui, 1), solid(edge));
+            cv.fill_path(path_ellipse(rect(track.x + dp(ui, 4), ky, knob, knob)), solid(edge), FILL_NONZERO);
+        }
+    }
+    if (l.cps.len() > 0) {
+        int fg = t.text;
+        if (v.disabled) { fg = t.text_disabled; }
+        if (v.fg != NO_COLOR) { fg = v.fg; }
+        paint_lines(ui, cv, l, rect(f.x + mark_w + gap, f.y, int_max(0, f.w - mark_w - gap), f.h), fg);
+        note_contrast(ui, l, fg, under);
+    }
+}
+
+void paint_check_mark(Ui ui, Canvas cv, Rect b, int color) {
+    // A tick drawn as a thick polyline: two quadrilaterals.
+    int u = b.w / 20;
+    Path p = new_path();
+    p.move_to(b.x + 4 * u, b.y + 10 * u).line_to(b.x + 8 * u, b.y + 14 * u).line_to(b.x + 16 * u, b.y + 5 * u);
+    p.line_to(b.x + 17 * u + u / 2, b.y + 6 * u + u / 2).line_to(b.x + 8 * u, b.y + 17 * u).line_to(b.x + 2 * u + u / 2, b.y + 11 * u + u / 2).close();
+    cv.fill_path(p, solid(color), FILL_NONZERO);
+}
+
+void paint_field(Ui ui, Canvas cv, Laid l) {
+    View v = l.v;
+    Theme t = ui.theme;
+    Rect f = l.frame;
+    bool focused = ui.focus == l.id;
+    int r = dp(ui, t.radius);
+    int fill = t.surface;
+    if (ui.hover == l.id && !focused) { fill = t.surface_hover; }
+    if (v.disabled) { fill = t.surface_disabled; }
+    cv.fill_round_rect(f, r, solid(fill));
+    cv.stroke_round_rect(f, r, dp(ui, 1), solid(t.border));
+    if (focused) { cv.fill_rect(rect(f.x + r, f.bottom() - dp(ui, 2), f.w - 2 * r, dp(ui, 2)), solid(t.accent)); }
+    Rect box = f.inset(scaled_pad(ui, v));
+    Font font = font_of(ui, v);
+    int size = text_size_of(ui, v);
+    int lh = font_line_height(font, size);
+    int base = box.y + (box.h - lh) / 2 + font_ascent(font, size) + (lh - font_ascent(font, size) - font_descent(font, size)) / 2;
+    cv.push_clip(box);
+    if (l.cps.len() == 0) {
+        if (v.hint != "") {
+            List<int> ph = text_codepoints(v.hint);
+            int _e = draw_glyphs(cv, font, size, ph, 0, ph.len(), box.x, base, t.text_secondary);
+        }
+    } else {
+        // Keep the caret in view: scroll the text left when it would pass the right edge.
+        int caret_cp = caret_codepoint(ui, l);
+        int caret_x = text_width(font, size, l.cps, 0, caret_cp);
+        int shift = int_max(0, caret_x - box.w + dp(ui, 2));
+        int fg = t.text;
+        if (v.disabled) { fg = t.text_disabled; }
+        int _e2 = draw_glyphs(cv, font, size, l.cps, 0, l.cps.len(), box.x - shift, base, fg);
+    }
+    if (focused && !v.disabled) {
+        int cx = box.x + text_width(font, size, l.cps, 0, caret_codepoint(ui, l));
+        if (l.cps.len() > 0) { cx -= int_max(0, text_width(font, size, l.cps, 0, caret_codepoint(ui, l)) - box.w + dp(ui, 2)); }
+        cv.fill_rect(rect(cx, base - font_ascent(font, size), dp(ui, 1), font_ascent(font, size) + font_descent(font, size)), solid(t.text));
+    }
+    cv.pop_clip();
+}
+
+// The caret's position counted in code points, for drawing.
+int caret_codepoint(Ui ui, Laid l) {
+    int byte = field_caret(ui, l.id, l.v.value);
+    return untrusted_codepoints(l.v.value.slice(0, byte)).len();
+}
+
+void paint_slider(Ui ui, Canvas cv, Laid l) {
+    View v = l.v;
+    Theme t = ui.theme;
+    Rect f = l.frame.inset(scaled_pad(ui, v));
+    int thumb = dp(ui, 20);
+    int th = dp(ui, 4);
+    int x0 = f.x + thumb / 2;
+    int x1 = f.right() - thumb / 2;
+    int cy = f.y + f.h / 2;
+    int span = int_max(1, v.hi - v.lo);
+    int pos = x0 + mul_div(x1 - x0, v.num - v.lo, span);
+    int accent = t.accent;
+    if (v.disabled) { accent = t.text_disabled; }
+    cv.fill_round_rect(rect(x0, cy - th / 2, x1 - x0, th), th / 2, solid(t.track));
+    cv.fill_round_rect(rect(x0, cy - th / 2, pos - x0, th), th / 2, solid(accent));
+    Rect knob = rect(pos - thumb / 2, cy - thumb / 2, thumb, thumb);
+    cv.fill_path(path_ellipse(knob), solid(t.surface), FILL_NONZERO);
+    cv.fill_path(path_round_rect_ring(knob, thumb / 2, dp(ui, 1)), solid(t.border), FILL_NONZERO);
+    int inner = dp(ui, 12);
+    if (ui.hover == l.id || ui.pressed == l.id) { inner = dp(ui, 14); }
+    cv.fill_path(path_ellipse(rect(pos - inner / 2, cy - inner / 2, inner, inner)), solid(accent), FILL_NONZERO);
+}

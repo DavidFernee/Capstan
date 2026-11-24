@@ -1,0 +1,140 @@
+// A Shroud example: a small form showing every built-in control.
+//
+// Build together with the library and run it from the repository root:
+//
+//     capstanc build -o gallery.c lib/shroud/*.cap examples/shroud/gallery.cap
+//     cc -O2 -Iruntime gallery.c -o gallery && ./gallery out-dir
+//
+// Until the platform embedders land, the example drives the interface with a script
+// of input events (as a test would) and writes each frame as a PNG, in a light and a
+// dark theme, plus the accessibility tree of the last frame.
+
+struct Model {
+    Tainted name;
+    Tainted password;
+    bool subscribe;
+    bool notifications;
+    int plan;
+    int volume;
+    int saved;
+    string status;
+}
+
+View view_of(Model m) {
+    View form = column().spacing(12).padding(24).align(ALIGN_START, ALIGN_STRETCH);
+    form.add(text("Create an account").font_size(24).bold());
+    form.add(text("Every field below hands the program untrusted text, which it must validate before use.").foreground(NO_COLOR));
+    form.add(text_field("name", m.name, "Display name").key("name").label("Display name"));
+    form.add(password_field("password", m.password, "Password").key("password").label("Password"));
+    form.add(row().spacing(24)
+        .add(checkbox("Subscribe to updates", m.subscribe, "subscribe").key("subscribe"))
+        .add(toggle_switch("Notifications", m.notifications, "notify").key("notify")));
+    form.add(row().spacing(24)
+        .add(radio("Free", m.plan == 0, "plan", 0).key("plan-free"))
+        .add(radio("Team", m.plan == 1, "plan", 1).key("plan-team"))
+        .add(radio("Enterprise", m.plan == 2, "plan", 2).key("plan-ent")));
+    form.add(row().spacing(12)
+        .add(text("Volume"))
+        .add(slider(m.volume, 0, 100, "volume").key("volume").label("Volume").grow(1))
+        .add(text($"{m.volume}%").min_width(40)));
+    form.add(progress_bar(m.volume, 0, 100).label("Profile completeness"));
+    form.add(divider());
+    if (m.status != "") { form.add(text(m.status)); }
+    form.add(row().spacing(8)
+        .add(spacer())
+        .add(button("Delete account", "delete").danger().key("delete"))
+        .add(button("Cancel", "cancel").key("cancel"))
+        .add(button("Create", "create").accent().key("create")));
+    return form;
+}
+
+void update(Model m, Msg msg) {
+    string a = msg.action;
+    if (a == "name") { m.name = msg.text; }
+    if (a == "password") { m.password = msg.text; }
+    if (a == "subscribe") { m.subscribe = msg.value != 0; }
+    if (a == "notify") { m.notifications = msg.value != 0; }
+    if (a == "plan") { m.plan = msg.value; }
+    if (a == "volume") { m.volume = msg.value; }
+    if (a == "create") {
+        // The name is untrusted: only a validated identifier may become trusted text.
+        if (let ok = validate_ident(m.name)) {
+            m.status = $"Created an account for {ok}.";
+        } else {
+            m.status = "A display name may use letters, digits and underscores only.";
+        }
+        m.saved += 1;
+    }
+    if (a == "delete") { m.status = "Delete pressed."; }
+}
+
+void apply(Model m, Ui ui, Event e) {
+    List<Msg> msgs = ui.handle(e);
+    for (int i = 0; i < msgs.len(); i += 1) { update(m, msgs[i]); }
+}
+
+void shot(Ui ui, Model m, string dir, string name, int t) {
+    ui.render(view_of(m), t);
+    if (!png_write(dir + "/" + name + ".png", ui.pixmap)) { println("could not write " + name); }
+}
+
+// The centre of the view with this key in the last frame, in FX.
+Point centre(Ui ui, string id) {
+    if (let l = ui.root) {
+        if (let n = find_laid(l, id)) { return pt(n.frame.x + n.frame.w / 2, n.frame.y + n.frame.h / 2); }
+    }
+    return pt(0, 0);
+}
+
+void click(Model m, Ui ui, string id, int t) {
+    Point p = centre(ui, id);
+    apply(m, ui, pointer_event(EV_POINTER_MOVE, p.x, p.y, t));
+    apply(m, ui, pointer_event(EV_POINTER_DOWN, p.x, p.y, t));
+    apply(m, ui, pointer_event(EV_POINTER_UP, p.x, p.y, t + 80));
+    ui.render(view_of(m), t + 100);
+}
+
+void run(Ui ui, string dir, string tag) {
+    Model m = new Model{name: taint(""), password: taint(""), subscribe: false, notifications: true, plan: 1, volume: 40, saved: 0, status: ""};
+    shot(ui, m, dir, tag + "-1-empty", 1000);
+    click(m, ui, "name", 2000);
+    apply(m, ui, text_event(taint("Ada Lovelace"), 2100));
+    ui.render(view_of(m), 2200);
+    apply(m, ui, key_event(KEY_TAB, 0, 2300));
+    apply(m, ui, text_event(taint("hunter2"), 2400));
+    click(m, ui, "subscribe", 3000);
+    click(m, ui, "plan-ent", 3200);
+    apply(m, ui, key_event(KEY_TAB, 0, 3300));
+    ui.render(view_of(m), 3400);
+    shot(ui, m, dir, tag + "-2-filled", 3500);
+    click(m, ui, "create", 4000);
+    // Tab to the Create button so the focus ring shows.
+    apply(m, ui, key_event(KEY_TAB, MOD_SHIFT, 4100));
+    apply(m, ui, key_event(KEY_TAB, 0, 4200));
+    shot(ui, m, dir, tag + "-3-created", 4300);
+    if (let tree = a11y_tree(ui)) {
+        if (!write_file(dir + "/" + tag + "-a11y.json", a11y_json(tree) + "\n")) { println("could not write the accessibility tree"); }
+    }
+    List<string> problems = a11y_problems(ui);
+    for (int i = 0; i < problems.len(); i += 1) { println("accessibility: " + problems[i]); }
+    println(tag + ": " + m.status);
+}
+
+int main() {
+    List<string> a = args();
+    string dir = ".";
+    if (a.len() > 0) { dir = a[0]; }
+    Font? regular = none;
+    Font? bold = none;
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
+    if (let f = regular) {
+        if (let fb = bold) {
+            run(new_ui(f, fb, light_theme(), 560, 520, 256), dir, "light");
+            run(new_ui(f, fb, dark_theme(), 560, 520, 256), dir, "dark");
+            return 0;
+        }
+    }
+    println("could not load the fonts; run from the repository root");
+    return 1;
+}

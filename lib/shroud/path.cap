@@ -1,0 +1,272 @@
+// Shroud: vector paths.
+//
+// A path is a list of verbs and fixed-point points (geom.cap). Curves are flattened to
+// line segments before rasterising, with enough segments that no point of the
+// flattened curve is more than about 1/20 of a pixel from the true one.
+
+const int VERB_MOVE = 0;
+const int VERB_LINE = 1;
+const int VERB_QUAD = 2;
+const int VERB_CUBIC = 3;
+const int VERB_CLOSE = 4;
+
+// The most segments one curve is split into, which also bounds the work an
+// untrusted font outline can cause (CWE-400).
+const int MAX_CURVE_SEGMENTS = 64;
+
+// Cubic Bezier approximation of a quarter circle: 4/3 * (sqrt(2) - 1), times 65536.
+const int KAPPA_16 = 36195;
+
+struct Path {
+    List<int> verbs;
+    List<int> pts;
+
+    Path move_to(int x, int y) {
+        self.verbs.push(VERB_MOVE);
+        self.pts.push(x); self.pts.push(y);
+        return self;
+    }
+
+    Path line_to(int x, int y) {
+        self.verbs.push(VERB_LINE);
+        self.pts.push(x); self.pts.push(y);
+        return self;
+    }
+
+    Path quad_to(int cx, int cy, int x, int y) {
+        self.verbs.push(VERB_QUAD);
+        self.pts.push(cx); self.pts.push(cy);
+        self.pts.push(x); self.pts.push(y);
+        return self;
+    }
+
+    Path cubic_to(int c1x, int c1y, int c2x, int c2y, int x, int y) {
+        self.verbs.push(VERB_CUBIC);
+        self.pts.push(c1x); self.pts.push(c1y);
+        self.pts.push(c2x); self.pts.push(c2y);
+        self.pts.push(x); self.pts.push(y);
+        return self;
+    }
+
+    Path close() {
+        self.verbs.push(VERB_CLOSE);
+        return self;
+    }
+}
+
+Path new_path() { return new Path{verbs: new List<int>(), pts: new List<int>()}; }
+
+Path path_rect(Rect r) {
+    return new_path().move_to(r.x, r.y).line_to(r.right(), r.y).line_to(r.right(), r.bottom()).line_to(r.x, r.bottom()).close();
+}
+
+// A rectangle with circular corners of radius `radius` (clamped to half the shorter side).
+Path path_round_rect(Rect r, int radius) {
+    int rad = clamp(radius, 0, int_min(r.w, r.h) / 2);
+    if (rad == 0) { return path_rect(r); }
+    int k = mul_div(rad, KAPPA_16, 65536);
+    int x0 = r.x;
+    int y0 = r.y;
+    int x1 = r.right();
+    int y1 = r.bottom();
+    Path p = new_path().move_to(x0 + rad, y0).line_to(x1 - rad, y0);
+    p.cubic_to(x1 - rad + k, y0, x1, y0 + rad - k, x1, y0 + rad).line_to(x1, y1 - rad);
+    p.cubic_to(x1, y1 - rad + k, x1 - rad + k, y1, x1 - rad, y1).line_to(x0 + rad, y1);
+    p.cubic_to(x0 + rad - k, y1, x0, y1 - rad + k, x0, y1 - rad).line_to(x0, y0 + rad);
+    p.cubic_to(x0, y0 + rad - k, x0 + rad - k, y0, x0 + rad, y0).close();
+    return p;
+}
+
+Path path_ellipse(Rect r) {
+    int rx = r.w / 2;
+    int ry = r.h / 2;
+    int cx = r.x + rx;
+    int cy = r.y + ry;
+    int kx = mul_div(rx, KAPPA_16, 65536);
+    int ky = mul_div(ry, KAPPA_16, 65536);
+    Path p = new_path().move_to(cx + rx, cy);
+    p.cubic_to(cx + rx, cy + ky, cx + kx, cy + ry, cx, cy + ry);
+    p.cubic_to(cx - kx, cy + ry, cx - rx, cy + ky, cx - rx, cy);
+    p.cubic_to(cx - rx, cy - ky, cx - kx, cy - ry, cx, cy - ry);
+    p.cubic_to(cx + kx, cy - ry, cx + rx, cy - ky, cx + rx, cy);
+    return p.close();
+}
+
+// The outline of the band between rectangle r and r shrunk by `width`, both with
+// rounded corners: a border. Filled with the even-odd rule, or nonzero (the inner
+// contour runs the other way).
+Path path_round_rect_ring(Rect r, int radius, int width) {
+    Path p = path_round_rect(r, radius);
+    Rect inner = r.inset(insets_all(width));
+    if (inner.empty()) { return p; }
+    Path q = path_round_rect(inner, int_max(0, radius - width));
+    append_reversed(p, q);
+    return p;
+}
+
+// Appends q's single closed contour to p, running in the opposite direction.
+void append_reversed(Path p, Path q) {
+    // Collect q's points with the verb that ends at each, then walk them backwards.
+    List<int> xs = new List<int>();
+    List<int> ys = new List<int>();
+    List<int> vs = new List<int>();
+    int j = 0;
+    for (int i = 0; i < q.verbs.len(); i += 1) {
+        int v = q.verbs[i];
+        int n = verb_points(v);
+        for (int k = 0; k < n; k += 1) {
+            xs.push(q.pts[j]);
+            ys.push(q.pts[j + 1]);
+            vs.push(v);
+            j += 2;
+        }
+    }
+    if (xs.len() == 0) { return; }
+    int last = xs.len() - 1;
+    p.move_to(xs[last], ys[last]);
+    int at = last;
+    while (at > 0) {
+        int v2 = vs[at];
+        if (v2 == VERB_LINE) {
+            p.line_to(xs[at - 1], ys[at - 1]);
+            at -= 1;
+        } else if (v2 == VERB_QUAD) {
+            p.quad_to(xs[at - 1], ys[at - 1], xs[at - 2], ys[at - 2]);
+            at -= 2;
+        } else if (v2 == VERB_CUBIC) {
+            p.cubic_to(xs[at - 1], ys[at - 1], xs[at - 2], ys[at - 2], xs[at - 3], ys[at - 3]);
+            at -= 3;
+        } else {
+            at -= 1;
+        }
+    }
+    p.close();
+}
+
+int verb_points(int v) {
+    if (v == VERB_MOVE || v == VERB_LINE) { return 1; }
+    if (v == VERB_QUAD) { return 2; }
+    if (v == VERB_CUBIC) { return 3; }
+    return 0;
+}
+
+// ---- flattening --------------------------------------------------------------------
+
+// Line segments, as parallel lists: segment i runs from (x0[i], y0[i]) to (x1[i], y1[i]).
+struct Segments {
+    List<int> x0;
+    List<int> y0;
+    List<int> x1;
+    List<int> y1;
+
+    void add(int ax, int ay, int bx, int by) {
+        if (ay == by) { return; }   // horizontal lines never cross a scanline
+        self.x0.push(ax); self.y0.push(ay);
+        self.x1.push(bx); self.y1.push(by);
+    }
+}
+
+Segments new_segments() {
+    return new Segments{x0: new List<int>(), y0: new List<int>(), x1: new List<int>(), y1: new List<int>()};
+}
+
+int curve_steps(int dd) {
+    // A quadratic's flattening error with n segments is |p0 - 2p1 + p2| / (8 n^2).
+    // With a tolerance of 13/256 px that gives n = sqrt(dd / 104).
+    return clamp(isqrt(dd / 104) + 1, 1, MAX_CURVE_SEGMENTS);
+}
+
+// Every contour is closed implicitly, as fills require.
+Segments flatten(Path p) {
+    Segments s = new_segments();
+    int j = 0;
+    int sx = 0;
+    int sy = 0;
+    int cx = 0;
+    int cy = 0;
+    bool open = false;
+    for (int i = 0; i < p.verbs.len(); i += 1) {
+        int v = p.verbs[i];
+        if (v == VERB_MOVE) {
+            if (open) { s.add(cx, cy, sx, sy); }
+            sx = p.pts[j];
+            sy = p.pts[j + 1];
+            cx = sx;
+            cy = sy;
+            open = true;
+            j += 2;
+        } else if (v == VERB_LINE) {
+            s.add(cx, cy, p.pts[j], p.pts[j + 1]);
+            cx = p.pts[j];
+            cy = p.pts[j + 1];
+            open = true;
+            j += 2;
+        } else if (v == VERB_QUAD) {
+            int qx1 = p.pts[j];
+            int qy1 = p.pts[j + 1];
+            int qx2 = p.pts[j + 2];
+            int qy2 = p.pts[j + 3];
+            int n = curve_steps(int_abs(cx - 2 * qx1 + qx2) + int_abs(cy - 2 * qy1 + qy2));
+            int px = cx;
+            int py = cy;
+            for (int k = 1; k <= n; k += 1) {
+                int u = n - k;
+                int d = n * n;
+                int nx = (u * u * cx + 2 * u * k * qx1 + k * k * qx2 + d / 2) / d;
+                int ny = (u * u * cy + 2 * u * k * qy1 + k * k * qy2 + d / 2) / d;
+                if (k == n) {
+                    nx = qx2;
+                    ny = qy2;
+                }
+                s.add(px, py, nx, ny);
+                px = nx;
+                py = ny;
+            }
+            cx = qx2;
+            cy = qy2;
+            open = true;
+            j += 4;
+        } else if (v == VERB_CUBIC) {
+            int c1x = p.pts[j];
+            int c1y = p.pts[j + 1];
+            int c2x = p.pts[j + 2];
+            int c2y = p.pts[j + 3];
+            int ex = p.pts[j + 4];
+            int ey = p.pts[j + 5];
+            int dd1 = int_abs(cx - 2 * c1x + c2x) + int_abs(cy - 2 * c1y + c2y);
+            int dd2 = int_abs(c1x - 2 * c2x + ex) + int_abs(c1y - 2 * c2y + ey);
+            // A cubic's second difference is up to three times a quadratic's.
+            int n2 = curve_steps(3 * int_max(dd1, dd2));
+            int qx = cx;
+            int qy = cy;
+            for (int k2 = 1; k2 <= n2; k2 += 1) {
+                int u2 = n2 - k2;
+                int d3 = n2 * n2 * n2;
+                int a0 = u2 * u2 * u2;
+                int a1 = 3 * u2 * u2 * k2;
+                int a2 = 3 * u2 * k2 * k2;
+                int a3 = k2 * k2 * k2;
+                int mx = (a0 * cx + a1 * c1x + a2 * c2x + a3 * ex + d3 / 2) / d3;
+                int my = (a0 * cy + a1 * c1y + a2 * c2y + a3 * ey + d3 / 2) / d3;
+                if (k2 == n2) {
+                    mx = ex;
+                    my = ey;
+                }
+                s.add(qx, qy, mx, my);
+                qx = mx;
+                qy = my;
+            }
+            cx = ex;
+            cy = ey;
+            open = true;
+            j += 6;
+        } else if (v == VERB_CLOSE) {
+            if (open) { s.add(cx, cy, sx, sy); }
+            cx = sx;
+            cy = sy;
+            open = false;
+        }
+    }
+    if (open) { s.add(cx, cy, sx, sy); }
+    return s;
+}

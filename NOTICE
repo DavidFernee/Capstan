@@ -2,3 +2,8 @@ Capstan
 Copyright 2026 David Fernée
 
 This product is licensed under the Apache License, Version 2.0.
+
+This product includes subsets of the DejaVu Sans fonts (lib/shroud/fonts/), used by the
+Shroud GUI library. Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved. Bitstream Vera
+is a trademark of Bitstream, Inc. DejaVu changes are in the public domain. The fonts are
+distributed under the Bitstream Vera licence, reproduced in lib/shroud/fonts/LICENSE-DejaVu.txt.

@@ -1,0 +1,162 @@
+// Shroud: geometry in fixed point.
+//
+// Capstan has no floating point, and Shroud does not need it: every coordinate is an
+// int in 1/256 of a device-independent pixel (FX). Integer arithmetic is exact and
+// identical on every processor and operating system, so a Shroud interface lays out
+// and renders to the same pixels everywhere, which makes golden-image tests exact.
+// All arithmetic is overflow-checked as usual; 2^63 / 256 leaves room for any screen.
+
+const int FX = 256;             // one pixel
+const int FX_HALF = 128;
+
+int fx(int px) { return px * FX; }
+
+// Whole pixels, rounding down (toward minus infinity) or up.
+int fx_floor(int v) { return v >> 8; }
+int fx_ceil(int v) { return (v + 255) >> 8; }
+int fx_round(int v) { return (v + FX_HALF) >> 8; }
+
+// a * b and a / b for fixed-point values, rounding to nearest.
+int fx_mul(int a, int b) {
+    int p = a * b;
+    if (p >= 0) { return (p + FX_HALF) / FX; }
+    return -((FX_HALF - p) / FX);
+}
+
+int fx_div(int a, int b) {
+    int n = a * FX;
+    if ((n >= 0) == (b > 0)) { return (n + int_abs(b) / 2) / b; }
+    return (n - int_abs(b) / 2) / b;
+}
+
+// v * num / den, rounded to nearest; den must be positive.
+int mul_div(int v, int num, int den) {
+    int p = v * num;
+    if (p >= 0) { return (p + den / 2) / den; }
+    return -((den / 2 - p) / den);
+}
+
+int int_abs(int v) {
+    if (v < 0) { return -v; }
+    return v;
+}
+
+int int_min(int a, int b) {
+    if (a < b) { return a; }
+    return b;
+}
+
+int int_max(int a, int b) {
+    if (a > b) { return a; }
+    return b;
+}
+
+int clamp(int v, int lo, int hi) {
+    if (v < lo) { return lo; }
+    if (v > hi) { return hi; }
+    return v;
+}
+
+// Integer square root: the largest r with r * r <= n (n >= 0).
+int isqrt(int n) {
+    if (n < 2) { return int_max(n, 0); }
+    int x = n;
+    int y = (x + 1) / 2;
+    while (y < x) {
+        x = y;
+        y = (x + n / x) / 2;
+    }
+    return x;
+}
+
+struct Point {
+    int x;
+    int y;
+}
+
+Point pt(int x, int y) { return new Point{x: x, y: y}; }
+
+struct Size {
+    int w;
+    int h;
+}
+
+Size size_of(int w, int h) { return new Size{w: w, h: h}; }
+
+struct Insets {
+    int left;
+    int top;
+    int right;
+    int bottom;
+}
+
+Insets insets_all(int v) { return new Insets{left: v, top: v, right: v, bottom: v}; }
+Insets insets_xy(int x, int y) { return new Insets{left: x, top: y, right: x, bottom: y}; }
+
+struct Rect {
+    int x;
+    int y;
+    int w;
+    int h;
+
+    int right() { return self.x + self.w; }
+    int bottom() { return self.y + self.h; }
+    bool empty() { return self.w <= 0 || self.h <= 0; }
+
+    bool contains(int px, int py) {
+        return px >= self.x && py >= self.y && px < self.x + self.w && py < self.y + self.h;
+    }
+
+    Rect inset(Insets i) {
+        return new Rect{x: self.x + i.left, y: self.y + i.top, w: int_max(0, self.w - i.left - i.right), h: int_max(0, self.h - i.top - i.bottom)};
+    }
+
+    Rect grow(int d) {
+        return new Rect{x: self.x - d, y: self.y - d, w: self.w + 2 * d, h: self.h + 2 * d};
+    }
+
+    Rect intersect(Rect o) {
+        int x0 = int_max(self.x, o.x);
+        int y0 = int_max(self.y, o.y);
+        int x1 = int_min(self.right(), o.right());
+        int y1 = int_min(self.bottom(), o.bottom());
+        return new Rect{x: x0, y: y0, w: int_max(0, x1 - x0), h: int_max(0, y1 - y0)};
+    }
+
+    Rect offset(int dx, int dy) { return new Rect{x: self.x + dx, y: self.y + dy, w: self.w, h: self.h}; }
+}
+
+Rect rect(int x, int y, int w, int h) { return new Rect{x: x, y: y, w: w, h: h}; }
+
+// Rect in whole pixels, for convenience in application code and tests.
+Rect rect_px(int x, int y, int w, int h) { return new Rect{x: x * FX, y: y * FX, w: w * FX, h: h * FX}; }
+
+// Layout constraints, as in Flutter: a parent tells a child the smallest and largest
+// size it may take; the child chooses a size within them. UNBOUNDED marks no limit.
+const int UNBOUNDED = 0x3FFFFFFFFFFFFFFF;
+
+struct Constraints {
+    int min_w;
+    int min_h;
+    int max_w;
+    int max_h;
+
+    int fit_w(int w) { return clamp(w, self.min_w, self.max_w); }
+    int fit_h(int h) { return clamp(h, self.min_h, self.max_h); }
+
+    Constraints loosen() { return new Constraints{min_w: 0, min_h: 0, max_w: self.max_w, max_h: self.max_h}; }
+
+    Constraints deflate(Insets i) {
+        int dw = i.left + i.right;
+        int dh = i.top + i.bottom;
+        return new Constraints{min_w: int_max(0, self.min_w - dw), min_h: int_max(0, self.min_h - dh), max_w: sub_bound(self.max_w, dw), max_h: sub_bound(self.max_h, dh)};
+    }
+}
+
+int sub_bound(int bound, int d) {
+    if (bound >= UNBOUNDED) { return UNBOUNDED; }
+    return int_max(0, bound - d);
+}
+
+Constraints tight(int w, int h) { return new Constraints{min_w: w, min_h: h, max_w: w, max_h: h}; }
+Constraints loose(int w, int h) { return new Constraints{min_w: 0, min_h: 0, max_w: w, max_h: h}; }

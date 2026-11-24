@@ -1,0 +1,438 @@
+// Shroud: the window, input and focus.
+//
+// A Ui owns one window's state: its fonts and theme, the last layout, and which
+// widget is hovered, pressed and focused. The application drives it:
+//
+//     Ui ui = new_ui(font, bold, light_theme(), 800, 600, 256);
+//     while (...) {
+//         ui.render(view_of(model), now_ms);          // lay out and draw
+//         ... the platform shows ui.pixmap ...
+//         List<Msg> msgs = ui.handle(event);           // what the user asked for
+//         ... update the model from msgs ...
+//     }
+//
+// Input is matched against the last layout drawn, that is, against what the user
+// actually saw. Every control can be reached and used from the keyboard: Tab and
+// Shift+Tab move focus in reading order, Enter and Space activate, arrows adjust.
+
+const int EV_POINTER_MOVE = 1;
+const int EV_POINTER_DOWN = 2;
+const int EV_POINTER_UP = 3;
+const int EV_WHEEL = 4;
+const int EV_KEY = 5;
+const int EV_TEXT = 6;
+const int EV_POINTER_LEAVE = 7;
+
+const int KEY_TAB = 1;
+const int KEY_ENTER = 2;
+const int KEY_SPACE = 3;
+const int KEY_ESCAPE = 4;
+const int KEY_BACKSPACE = 5;
+const int KEY_DELETE = 6;
+const int KEY_LEFT = 7;
+const int KEY_RIGHT = 8;
+const int KEY_UP = 9;
+const int KEY_DOWN = 10;
+const int KEY_HOME = 11;
+const int KEY_END = 12;
+const int KEY_PAGE_UP = 13;
+const int KEY_PAGE_DOWN = 14;
+
+const int MOD_SHIFT = 1;
+const int MOD_CTRL = 2;
+const int MOD_ALT = 4;
+const int MOD_META = 8;
+
+// How long a guarded control ignores activation after it appears or moves. Chrome
+// uses a similar delay for its permission prompts.
+const int GUARD_MS = 500;
+
+// The longest text a field accepts, in bytes (CWE-400).
+const int MAX_FIELD_BYTES = 65536;
+
+// One input event. Positions are in FX device pixels; text is what the platform's
+// input method produced, untrusted like any input.
+struct Event {
+    int kind;
+    int x;
+    int y;
+    int key;
+    int mods;
+    int delta;
+    Tainted text;
+    int time_ms; // monotonic time from the trusted platform adapter
+}
+
+Event new_event(int kind, int time_ms) {
+    return new Event{kind: kind, x: 0, y: 0, key: 0, mods: 0, delta: 0, text: taint(""), time_ms: time_ms};
+}
+
+Event pointer_event(int kind, int x, int y, int time_ms) {
+    Event e = new_event(kind, time_ms);
+    e.x = x;
+    e.y = y;
+    return e;
+}
+
+Event key_event(int key, int mods, int time_ms) {
+    Event e = new_event(EV_KEY, time_ms);
+    e.key = key;
+    e.mods = mods;
+    return e;
+}
+
+Event text_event(Tainted s, int time_ms) {
+    Event e = new_event(EV_TEXT, time_ms);
+    e.text = s;
+    return e;
+}
+
+Event wheel_event(int x, int y, int delta, int time_ms) {
+    Event e = pointer_event(EV_WHEEL, x, y, time_ms);
+    e.delta = delta;
+    return e;
+}
+
+struct Ui {
+    Font font;
+    Font bold_font;
+    Theme theme;
+    int scale;              // FX per dp: 256 at 100%, 384 at 150%
+    Pixmap pixmap;
+    Laid? root;
+    string hover;
+    string pressed;
+    string focus;
+    bool focus_visible;
+    Map<int> scroll;        // scroll offsets by id
+    Map<int> caret;         // text field carets (byte offsets) by id
+    Map<int> shown_at;      // guarded controls: when each appeared or changed
+    Map<string> shown_where;
+    Map<int> guard_generation; // last render in which each guarded control appeared
+    int render_generation;
+    List<string> problems;  // accessibility problems found while drawing
+    int view_count;
+    int now_ms;
+
+    // Lays out and draws `root`, the whole interface, at time `time_ms`.
+    void render(View root, int time_ms) {
+        self.render_generation += 1;
+        self.now_ms = time_ms;
+        self.problems = new List<string>();
+        Laid l = layout_root(self, root, self.pixmap.w * FX, self.pixmap.h * FX);
+        self.root = l;
+        List<Laid> all = new List<Laid>();
+        collect(l, all);
+        bool focus_alive = false;
+        for (int i = 0; i < all.len(); i += 1) {
+            Laid n = all[i];
+            if (n.id == self.focus && n.v.focusable()) { focus_alive = true; }
+            if (n.v.guard) {
+                string where = $"{n.frame.x},{n.frame.y},{n.frame.w},{n.frame.h}|{n.v.kind}|{n.v.style}|{n.v.action}|{n.v.text}|{n.v.label}|{n.v.hint}|{n.v.disabled}";
+                int last_generation = 0;
+                if (let g = self.guard_generation.get(n.id)) { last_generation = g; }
+                bool same = false;
+                if (let w = self.shown_where.get(n.id)) {
+                    same = w == where && last_generation == self.render_generation - 1;
+                }
+                if (!same) {
+                    self.shown_where.set(n.id, where);
+                    self.shown_at.set(n.id, time_ms);
+                }
+                self.guard_generation.set(n.id, self.render_generation);
+            }
+        }
+        // Forget guards that are no longer present. This both restarts the delay if
+        // a control later reappears and bounds retained state for dynamic interfaces.
+        List<string> known_guards = self.shown_where.keys();
+        for (int i = 0; i < known_guards.len(); i += 1) {
+            string id = known_guards[i];
+            int seen = 0;
+            if (let g = self.guard_generation.get(id)) { seen = g; }
+            if (seen != self.render_generation) {
+                self.shown_where.remove(id);
+                self.shown_at.remove(id);
+                self.guard_generation.remove(id);
+            }
+        }
+        if (!focus_alive) { self.focus = ""; }
+        self.pixmap.clear(self.theme.window);
+        Canvas cv = new_canvas(self.pixmap);
+        paint_tree(self, cv, l);
+    }
+
+    // Handles one input event and returns the messages it produces.
+    List<Msg> handle(Event e) {
+        List<Msg> out = new List<Msg>();
+        if (let l = self.root) {
+            if (e.kind == EV_POINTER_MOVE) {
+                self.hover = hit_id(l, e.x, e.y);
+                if (self.pressed != "") {
+                    if (let n = find_laid(l, self.pressed)) {
+                        if (n.v.kind == K_SLIDER) { slide_to(n, e.x, self.scale, out); }
+                    }
+                }
+            } else if (e.kind == EV_POINTER_LEAVE) {
+                self.hover = "";
+            } else if (e.kind == EV_POINTER_DOWN) {
+                self.focus_visible = false;
+                string id = hit_id(l, e.x, e.y);
+                self.hover = id;
+                self.pressed = id;
+                if (let n2 = find_laid(l, id)) {
+                    if (n2.v.focusable()) { self.focus = id; } else { self.focus = ""; }
+                    if (n2.v.kind == K_SLIDER && !n2.v.disabled) { slide_to(n2, e.x, self.scale, out); }
+                    if (n2.v.kind == K_TEXT_FIELD) { self.place_caret(n2, e.x); }
+                } else {
+                    self.focus = "";
+                }
+            } else if (e.kind == EV_POINTER_UP) {
+                string id2 = hit_id(l, e.x, e.y);
+                if (id2 != "" && id2 == self.pressed) {
+                    if (let n3 = find_laid(l, id2)) { self.activate(n3, e.time_ms, out); }
+                }
+                self.pressed = "";
+            } else if (e.kind == EV_WHEEL) {
+                if (let n4 = scroll_target(l, e.x, e.y)) {
+                    int top = 0;
+                    if (let s = self.scroll.get(n4.id)) { top = s; }
+                    self.scroll.set(n4.id, clamp(top + e.delta, 0, int_max(0, n4.content_h - n4.frame.h)));
+                }
+            } else if (e.kind == EV_KEY) {
+                self.key(l, e, out);
+            } else if (e.kind == EV_TEXT) {
+                if (let n5 = find_laid(l, self.focus)) {
+                    if (n5.v.kind == K_TEXT_FIELD && !n5.v.disabled) { self.insert(n5, single_line(e.text), out); }
+                }
+            }
+        }
+        return out;
+    }
+
+    void activate(Laid n, int time_ms, List<Msg> out) {
+        View v = n.v;
+        if (v.disabled || v.action == "") { return; }
+        if (v.guard) {
+            int since = 0;
+            if (let t = self.shown_at.get(n.id)) { since = t; }
+            if (time_ms - since < GUARD_MS) { return; }
+        }
+        int k = v.kind;
+        if (k == K_BUTTON) { out.push(msg(v.action, 0)); }
+        if (k == K_CHECKBOX || k == K_SWITCH) { out.push(msg(v.action, 1 - v.num)); }
+        if (k == K_RADIO) { out.push(msg(v.action, v.lo)); }
+    }
+
+    void key(Laid l, Event e, List<Msg> out) {
+        if (e.key == KEY_TAB) {
+            self.focus_visible = true;
+            self.focus = next_focus(l, self.focus, (e.mods & MOD_SHIFT) != 0);
+            return;
+        }
+        if (let n = find_laid(l, self.focus)) {
+            View v = n.v;
+            int k = v.kind;
+            if (k == K_TEXT_FIELD) {
+                self.edit(n, e, out);
+                return;
+            }
+            if ((e.key == KEY_ENTER || e.key == KEY_SPACE) && (k == K_BUTTON || k == K_CHECKBOX || k == K_SWITCH || k == K_RADIO)) {
+                self.focus_visible = true;
+                self.activate(n, e.time_ms, out);
+                return;
+            }
+            if (k == K_SLIDER && !v.disabled) {
+                int step = int_max(1, v.step);
+                int nv = v.num;
+                if (e.key == KEY_LEFT || e.key == KEY_DOWN) { nv -= step; }
+                if (e.key == KEY_RIGHT || e.key == KEY_UP) { nv += step; }
+                if (e.key == KEY_PAGE_DOWN) { nv -= step * 10; }
+                if (e.key == KEY_PAGE_UP) { nv += step * 10; }
+                if (e.key == KEY_HOME) { nv = v.lo; }
+                if (e.key == KEY_END) { nv = v.hi; }
+                nv = clamp(nv, v.lo, v.hi);
+                if (nv != v.num) { out.push(msg(v.action, nv)); }
+                self.focus_visible = true;
+            }
+        }
+    }
+
+    // ---- text editing ----
+
+    void place_caret(Laid n, int x) {
+        Font f = font_of(self, n.v);
+        int size = text_size_of(self, n.v);
+        int left = n.frame.x + dp(self, n.v.pad.left);
+        // The boundary nearest to x.
+        Tainted val = n.v.value;
+        int best = 0;
+        int best_d = UNBOUNDED;
+        int b = 0;
+        while (true) {
+            int w = text_width(f, size, codepoints_of_slice(n.v, b), 0, codepoints_of_slice(n.v, b).len());
+            int d = int_abs(left + w - x);
+            if (d < best_d) {
+                best_d = d;
+                best = b;
+            }
+            if (b >= val.len()) { break; }
+            b = next_boundary(val, b);
+        }
+        self.caret.set(n.id, best);
+    }
+
+    void edit(Laid n, Event e, List<Msg> out) {
+        View v = n.v;
+        Tainted val = v.value;
+        int c = field_caret(self, n.id, val);
+        if (e.key == KEY_LEFT) { self.caret.set(n.id, prev_boundary(val, c)); }
+        if (e.key == KEY_RIGHT) { self.caret.set(n.id, next_boundary(val, c)); }
+        if (e.key == KEY_HOME) { self.caret.set(n.id, 0); }
+        if (e.key == KEY_END) { self.caret.set(n.id, val.len()); }
+        if (v.disabled) { return; }
+        if (e.key == KEY_BACKSPACE && c > 0) {
+            int p = prev_boundary(val, c);
+            self.caret.set(n.id, p);
+            out.push(msg_text(v.action, 0, val.slice(0, p) + val.slice(c, val.len())));
+        }
+        if (e.key == KEY_DELETE && c < val.len()) {
+            out.push(msg_text(v.action, 0, val.slice(0, c) + val.slice(next_boundary(val, c), val.len())));
+        }
+        if (e.key == KEY_ENTER) { out.push(msg_text(v.action, 1, val)); }
+    }
+
+    void insert(Laid n, Tainted s, List<Msg> out) {
+        Tainted val = n.v.value;
+        if (s.len() == 0 || val.len() + s.len() > MAX_FIELD_BYTES) { return; }
+        int c = field_caret(self, n.id, val);
+        self.caret.set(n.id, c + s.len());
+        out.push(msg_text(n.v.action, 0, val.slice(0, c) + s + val.slice(c, val.len())));
+    }
+}
+
+Ui new_ui(Font font, Font bold, Theme theme, int width_px, int height_px, int scale) {
+    return new Ui{font: font, bold_font: bold, theme: theme, scale: clamp(scale, 64, 1024), pixmap: new_pixmap(width_px, height_px), root: none, hover: "", pressed: "", focus: "", focus_visible: false, scroll: new Map<int>(), caret: new Map<int>(), shown_at: new Map<int>(), shown_where: new Map<string>(), guard_generation: new Map<int>(), render_generation: 0, problems: new List<string>(), view_count: 0, now_ms: 0};
+}
+
+Msg msg(string action, int value) { return new Msg{action: action, value: value, text: taint("")}; }
+
+Msg msg_text(string action, int value, Tainted t) { return new Msg{action: action, value: value, text: t}; }
+
+// ---- finding views ------------------------------------------------------------------------
+
+void collect(Laid l, List<Laid> out) {
+    out.push(l);
+    for (int i = 0; i < l.kids.len(); i += 1) { collect(l.kids[i], out); }
+}
+
+Laid? find_laid(Laid l, string id) {
+    if (id == "") { return none; }
+    if (l.id == id) { return l; }
+    for (int i = 0; i < l.kids.len(); i += 1) {
+        if (let f = find_laid(l.kids[i], id)) { return f; }
+    }
+    return none;
+}
+
+// The innermost interactive view under (x, y), or "". Children of a scroll view
+// count only inside its visible frame; later siblings are on top of earlier ones.
+string hit_id(Laid l, int x, int y) {
+    if (!l.frame.contains(x, y)) {
+        if (l.v.kind == K_SCROLL || l.v.kind == K_TEXT_FIELD) { return ""; }
+        // Children may still extend outside a container that is smaller than them.
+    }
+    for (int i = l.kids.len() - 1; i >= 0; i -= 1) {
+        string h = hit_id(l.kids[i], x, y);
+        if (h != "") { return h; }
+    }
+    if (l.frame.contains(x, y) && (l.v.focusable() || (l.v.kind == K_BUTTON && l.v.disabled))) { return l.id; }
+    return "";
+}
+
+Laid? scroll_target(Laid l, int x, int y) {
+    if (!l.frame.contains(x, y)) { return none; }
+    for (int i = l.kids.len() - 1; i >= 0; i -= 1) {
+        if (let s = scroll_target(l.kids[i], x, y)) { return s; }
+    }
+    if (l.v.kind == K_SCROLL && l.content_h > l.frame.h) { return l; }
+    return none;
+}
+
+// The focusable view after (or before) `current` in reading order, wrapping around.
+string next_focus(Laid root, string current, bool backwards) {
+    List<Laid> all = new List<Laid>();
+    collect(root, all);
+    List<string> order = new List<string>();
+    for (int i = 0; i < all.len(); i += 1) {
+        if (all[i].v.focusable()) { order.push(all[i].id); }
+    }
+    if (order.len() == 0) { return ""; }
+    int at = -1;
+    for (int j = 0; j < order.len(); j += 1) {
+        if (order[j] == current) { at = j; }
+    }
+    if (at < 0) {
+        if (backwards) { return order[order.len() - 1]; }
+        return order[0];
+    }
+    if (backwards) { return order[(at + order.len() - 1) % order.len()]; }
+    return order[(at + 1) % order.len()];
+}
+
+void slide_to(Laid n, int x, int scale, List<Msg> out) {
+    View v = n.v;
+    if (v.disabled) { return; }
+    int thumb = 20 * scale;
+    int x0 = n.frame.x + v.pad.left * scale + thumb / 2;
+    int x1 = n.frame.right() - v.pad.right * scale - thumb / 2;
+    if (x1 <= x0) { return; }
+    int raw = v.lo + mul_div(clamp(x, x0, x1) - x0, v.hi - v.lo, x1 - x0);
+    int step = int_max(1, v.step);
+    int snapped = clamp(v.lo + mul_div(raw - v.lo, 1, step) * step, v.lo, v.hi);
+    if (snapped != v.num) { out.push(msg(v.action, snapped)); }
+}
+
+// ---- carets in untrusted UTF-8 -------------------------------------------------------------
+
+int field_caret(Ui ui, string id, Tainted val) {
+    int c = val.len();
+    if (let s = ui.caret.get(id)) { c = clamp(s, 0, val.len()); }
+    // Never inside a character.
+    while (c > 0 && c < val.len() && is_cont(val.at(c))) { c -= 1; }
+    return c;
+}
+
+int next_boundary(Tainted s, int at) {
+    int i = at + 1;
+    while (i < s.len() && is_cont(s.at(i))) { i += 1; }
+    return int_min(i, s.len());
+}
+
+int prev_boundary(Tainted s, int at) {
+    int i = at - 1;
+    while (i > 0 && is_cont(s.at(i))) { i -= 1; }
+    return int_max(i, 0);
+}
+
+List<int> codepoints_of_slice(View v, int bytes) {
+    List<int> cps = untrusted_codepoints(v.value.slice(0, bytes));
+    if (v.secure) {
+        for (int i = 0; i < cps.len(); i += 1) { cps[i] = 0x2022; }
+    }
+    return cps;
+}
+
+// Typed text for a single-line field: line breaks and other control characters are
+// dropped (a paste cannot smuggle a newline into a one-line value).
+Tainted single_line(Tainted s) {
+    Tainted out = taint("");
+    int start = 0;
+    for (int i = 0; i < s.len(); i += 1) {
+        int b = s.at(i);
+        if (b < 0x20 || b == 0x7F) {
+            out = out + s.slice(start, i);
+            start = i + 1;
+        }
+    }
+    return out + s.slice(start, s.len());
+}

@@ -10,7 +10,9 @@
 the archive's own hashes, every file in it with its hashes, the tools needed to build and test it
 (a C compiler, make, Python 3 for the stage-0 bootstrap and the tests, bash), and its run-time
 dependencies: only the platform C library. There are no third-party libraries, vendored or
-fetched, and the SBOM says so (CycloneDX composition "complete").
+fetched, and the SBOM says so (CycloneDX composition "complete"). The one piece of third-party
+material in the archive is data, not code: subsets of the DejaVu fonts used by the Shroud GUI
+library (lib/shroud/fonts/), which the SBOM lists with their own licence (see VENDORED).
 
 The output is deterministic: the same archive, commit and timestamp give the same bytes.
 The timestamp is --timestamp, else SOURCE_DATE_EPOCH, else the archive's commit time.
@@ -34,6 +36,96 @@ REPO_URL = "https://github.com/" + REPO
 TOOL = "capstan-sbom"
 TOOL_VERSION = "1"
 LICENSE = "Apache-2.0"
+# Third-party material included in the source archive: (path prefix, name, version, SPDX licence,
+# origin). Each file under the prefix carries the licence in both SBOMs.
+VENDORED = [
+    ("lib/shroud/fonts/", "DejaVu Sans and DejaVu Sans Bold, Latin subsets (fonts, data only)", "2.37",
+     "Bitstream-Vera", "https://dejavu-fonts.github.io/"),
+]
+
+# A fixed namespace so the CycloneDX serial number depends only on the archive's digest.
+SERIAL_NS = uuid.UUID("6f1c3c2e-5a7e-4d1b-9a43-2b1d0c0a5e11")
+
+
+class Fail(Exception):
+    pass
+
+
+def digests(data):
+    return {
+        "SHA-1": hashlib.sha1(data).hexdigest(),
+        "SHA-256": hashlib.sha256(data).hexdigest(),
+        "SHA-512": hashlib.sha512(data).hexdigest(),
+    }
+
+
+def read_archive(path):
+    """Return (archive digests, version, commit, commit time, [(relative path, digests)])."""
+    with open(path, "rb") as f:
+        blob = f.read()
+    files = []
+    prefix = None
+    with tarfile.open(path, "r:*") as tar:
+        commit = tar.pax_headers.get("comment")  # git archive records the commit here
+        for m in tar.getmembers():
+            top, _, rel = m.name.partition("/")
+            if prefix is None:
+                prefix = top
+            if top != prefix or not re.fullmatch(r"capstan-\d+\.\d+\.\d+", top):
+                raise Fail(f"archive member '{m.name}' is not under a single capstan-X.Y.Z/ directory")
+            if m.isdir():
+                continue
+            if not m.isfile():
+                raise Fail(f"archive member '{m.name}' is not a regular file or directory")
+            parts = rel.split("/")
+            if not rel or rel.startswith("/") or ".." in parts or "\\" in rel:
+                raise Fail(f"archive member '{m.name}' has an unsafe path")
+            files.append((rel, digests(tar.extractfile(m).read()), m.mtime))
+    if not files:
+        raise Fail("archive contains no files")
+    files.sort()
+    version = prefix[len("capstan-"):]
+    if "compiler/main.cap" not in {r for r, _, _ in files}:
+        raise Fail("archive has no compiler/main.cap")
+    with tarfile.open(path, "r:*") as tar:
+        src = tar.extractfile(prefix + "/compiler/main.cap").read().decode("utf-8")
+    m = re.search(r'^const string VERSION = "([^"]*)";', src, re.M)
+    if not m or m.group(1) != version:
+        raise Fail(f"archive directory says {version}, compiler/main.cap says {m.group(1) if m else 'nothing'}")
+    mtime = max(t for _, _, t in files)
+    return digests(blob), version, commit, mtime, [(r, d) for r, d, _ in files]
+
+
+def iso(epoch):
+    return datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# Build, test and run-time requirements, from the Makefile, bin/capstan, tests/run.sh and the
+# runtime headers' #includes. No versions are claimed: the builder supplies these tools, and the
+# reproducibility reports attached to each release name the exact ones used to test it.
+REQUIREMENTS = [
+    # (key, name, kind, CycloneDX type, description)
+    ("c-compiler", "C compiler", "build", "application",
+     "Any C11 compiler with GNU extensions (-std=gnu11); every release is tested with GCC and Clang. "
+     "Compiles the generated C of the compiler and of every Capstan program. Supplied by the builder, not distributed."),
+    ("make", "make", "build", "application",
+     "Runs the bootstrap in the Makefile. Supplied by the builder, not distributed."),
+    ("python3", "Python 3", "build", "application",
+     "Runs bootstrap/capstan0.py (stage 0) once to start the bootstrap, and the test suite. "
+     "Standard library only. Not needed to run the compiler or the programs it builds."),
+    ("bash", "bash", "build", "application",
+     "Runs the bin/capstan front end and the test suite. Not needed by compiled programs."),
+    ("libc", "C standard library (with POSIX threads)", "runtime", "library",
+     "Provided by the platform. The only run-time dependency of the compiler and of the programs it "
+     "builds; the Capstan runtime (runtime/*.h) is included in source form in this archive."),
+]
+
+
+def vendored(rel):
+    for prefix, name, version, lic, origin in VENDORED:
+        if rel.startswith(prefix):
+            return (name, version, lic, origin)
+    return None
 # A fixed namespace so the CycloneDX serial number depends only on the archive's digest.
 SERIAL_NS = uuid.UUID("6f1c3c2e-5a7e-4d1b-9a43-2b1d0c0a5e11")
 
@@ -135,8 +227,13 @@ def cyclonedx(arch, version, commit, ts, files):
     }
     comps = []
     for rel, d in files:
-        comps.append({"type": "file", "bom-ref": "file:" + rel, "name": rel,
-                      "hashes": [{"alg": a, "content": d[a]} for a in ("SHA-1", "SHA-256")]})
+        comp = {"type": "file", "bom-ref": "file:" + rel, "name": rel,
+                "hashes": [{"alg": a, "content": d[a]} for a in ("SHA-1", "SHA-256")]}
+        v = vendored(rel)
+        if v:
+            comp["licenses"] = [{"license": {"id": v[2]}}]
+            comp["properties"] = [{"name": "capstan:vendored-from", "value": "%s %s (%s)" % (v[0], v[1], v[3])}]
+        comps.append(comp)
     deps = []
     for key, name, kind, ctype, desc in REQUIREMENTS:
         comps.append({
@@ -164,6 +261,8 @@ def cyclonedx(arch, version, commit, ts, files):
             "properties": [
                 {"name": "capstan:third-party-runtime-dependencies", "value": "none"},
                 {"name": "capstan:vendored-third-party-code", "value": "none"},
+                {"name": "capstan:vendored-third-party-data",
+                 "value": "; ".join("%s %s in %s (%s)" % (n, v, p, l) for p, n, v, l, _ in VENDORED)},
             ],
         },
         "components": comps,
@@ -184,10 +283,16 @@ def spdx(arch, version, commit, ts, files):
     for i, (rel, d) in enumerate(files, 1):
         fid = "SPDXRef-File-%04d" % i
         sha1s.append(d["SHA-1"])
-        out_files.append({"fileName": "./" + rel, "SPDXID": fid,
-                          "checksums": [{"algorithm": "SHA1", "checksumValue": d["SHA-1"]},
-                                        {"algorithm": "SHA256", "checksumValue": d["SHA-256"]}],
-                          "licenseConcluded": "NOASSERTION", "copyrightText": "NOASSERTION"})
+        entry = {"fileName": "./" + rel, "SPDXID": fid,
+                 "checksums": [{"algorithm": "SHA1", "checksumValue": d["SHA-1"]},
+                               {"algorithm": "SHA256", "checksumValue": d["SHA-256"]}],
+                 "licenseConcluded": "NOASSERTION", "copyrightText": "NOASSERTION"}
+        v = vendored(rel)
+        if v:
+            entry["licenseConcluded"] = v[2]
+            entry["licenseInfoInFiles"] = [v[2]]
+            entry["comment"] = "Third-party: %s %s, from %s" % (v[0], v[1], v[3])
+        out_files.append(entry)
         rels.append({"spdxElementId": pkg, "relationshipType": "CONTAINS", "relatedSpdxElement": fid})
     # SPDX 2.3 section 7.9: SHA-1 of the sorted, concatenated SHA-1s of every file.
     verification = hashlib.sha1("".join(sorted(sha1s)).encode("ascii")).hexdigest()
@@ -204,10 +309,11 @@ def spdx(arch, version, commit, ts, files):
         "homepage": REPO_URL,
         "sourceInfo": "git archive of commit %s (tag %s)" % (commit, tag),
         "licenseConcluded": "NOASSERTION",
-        "licenseDeclared": LICENSE,
+        "licenseDeclared": " AND ".join([LICENSE] + sorted({v[3] for v in VENDORED})),
         "copyrightText": "NOASSERTION",
         "summary": "Capstan source release: the self-hosting compiler, its runtime, the stage-0 bootstrap, tools and tests",
-        "comment": "No third-party libraries are vendored or fetched. The only run-time dependency is the platform C library.",
+        "comment": "No third-party libraries are vendored or fetched. The only run-time dependency is the platform C library. " 
+                   "Third-party data: " + "; ".join("%s %s in %s (%s)" % (n, v, p, l) for p, n, v, l, _ in VENDORED) + ".",
         "externalRefs": [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl",
                           "referenceLocator": "pkg:github/%s@%s" % (REPO, tag)}],
         "primaryPackagePurpose": "SOURCE",
