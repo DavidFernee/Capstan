@@ -407,7 +407,8 @@ static void cap_blist_insert(CapBList *l, int64_t i, bool v, int64_t loc) {
 }
 
 static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {
-    if (!parts || !sep || parts->len < 0 || sep->len < 0)
+    if (!parts || !sep || parts->len < 0 || sep->len < 0 ||
+        (parts->len > 0 && !parts->items))
         cap_panic("invalid string join operands", "CWE-682", loc);
     int64_t total = 0;
     for (int64_t i = 0; i < parts->len; i++) {
@@ -787,6 +788,7 @@ static int64_t *cap_validate_int(CapStr *t) {
 
 /* Escape arbitrary bytes into the body of a C string literal. */
 static CapStr *cap_escape_c(CapStr *t) {
+    if (!t) cap_panic("null string passed to cap_escape_c", "CWE-476", 0);
     CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 4, 1, 0));
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
@@ -803,6 +805,7 @@ static CapStr *cap_escape_c(CapStr *t) {
 }
 
 static CapStr *cap_escape_html(CapStr *t) {
+    if (!t) cap_panic("null string passed to cap_escape_html", "CWE-476", 0);
     CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 6, 1, 0));
     char *w = r->data;
     for (int64_t i = 0; i < t->len; i++) {
@@ -852,6 +855,7 @@ static int64_t *cap_validate_range(CapStr *t, int64_t lo, int64_t hi) {
 /* One CSV field: always quoted, quotes doubled, and a leading = + - @ tab or CR
    neutralised with an apostrophe so spreadsheets do not run it (CWE-1236). */
 static CapStr *cap_escape_csv(CapStr *t) {
+    if (!t) cap_panic("null string passed to cap_escape_csv", "CWE-476", 0);
     CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 2, 4, 0));
     char *w = r->data;
     *w++ = '"';
@@ -900,6 +904,7 @@ static bool cap_log_hostile(uint32_t cp) {
    ASCII controls, invalid UTF-8, and the hostile code points above become \xNN
    escapes, one per byte. Printable ASCII and other valid UTF-8 text are kept. */
 static CapStr *cap_escape_log(CapStr *t) {
+    if (!t) cap_panic("null string passed to cap_escape_log", "CWE-476", 0);
     CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 4, 1, 0));
     char *w = r->data;
     const unsigned char *s = (const unsigned char *)t->data;
@@ -930,6 +935,7 @@ static CapStr *cap_escape_log(CapStr *t) {
    valid UTF-8 is kept; each invalid byte becomes U+FFFD, so the output is always
    valid JSON. */
 static CapStr *cap_escape_json(CapStr *t) {
+    if (!t) cap_panic("null string passed to cap_escape_json", "CWE-476", 0);
     CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 6, 1, 0));
     char *w = r->data;
     const unsigned char *s = (const unsigned char *)t->data;
