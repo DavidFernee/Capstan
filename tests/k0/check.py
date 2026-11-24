@@ -174,6 +174,13 @@ with tempfile.TemporaryDirectory() as temporary:
         assert "absent from the source population" in str(error)
     else:
         raise AssertionError("stale tuning label was accepted")
+    label_path.write_text("id,class\\nCVE-2025-10001,not-a-real-class\\n", encoding="utf-8")
+    try:
+        study.check_labels([{"id": "CVE-2025-10001"}], {}, "labels.csv")
+    except ValueError as error:
+        assert "unknown classes" in str(error)
+    else:
+        raise AssertionError("unknown tuning class was accepted")
 study.ROOT = original_root
 
 # Memory-safety consequences must outrank non-memory causes across title/body fields.

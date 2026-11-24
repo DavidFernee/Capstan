@@ -341,8 +341,17 @@ def check_labels(classified, atlas, name):
     prevented = {"classifier": 0, "labels": 0}
     misses = []
     with open(path, newline="", encoding="utf-8") as source:
-        labels = list(csv.DictReader(source))
-    label_ids = [lab["id"] for lab in labels]
+        reader = csv.DictReader(source)
+        fields = set(reader.fieldnames or [])
+        if not {"id", "class"}.issubset(fields):
+            raise ValueError(f"label file lacks required id/class columns: {path}")
+        labels = list(reader)
+    label_ids = [lab.get("id", "") for lab in labels]
+    if any(not identifier for identifier in label_ids):
+        raise ValueError(f"label file contains an empty CVE identifier: {path}")
+    unknown_classes = sorted({lab.get("class", "").strip() for lab in labels} - set(CLASS_CWE))
+    if unknown_classes:
+        raise ValueError(f"label file contains unknown classes {unknown_classes}: {path}")
     if len(label_ids) != len(set(label_ids)):
         raise ValueError(f"duplicate CVE identifiers in label file {path}")
     missing = sorted(set(label_ids) - set(by_id))
