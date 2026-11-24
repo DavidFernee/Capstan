@@ -135,6 +135,36 @@ theorem validateRawInstruction_jump_target_sound
       cases h
       exact ⟨bounded, rfl, finOfNat?_value htarget⟩
 
+/-- Successful raw branch validation preserves both raw targets and the boolean condition. -/
+theorem validateRawInstruction_branch_targets_sound
+    {n m : Nat} {types : RegTypes n}
+    (cond ifTrue ifFalse : Nat) (instr : MachineInstr n m types)
+    (h : validateRawInstruction (RawInstr.branch cond ifTrue ifFalse) = some instr) :
+    ∃ c : Fin n, ∃ t : Fin m, ∃ f : Fin m,
+      ∃ htype : types c = .bool,
+        instr = .branch {
+          cond := c
+          cond_is_bool := htype
+          if_true := t
+          if_false := f
+        } ∧ c.val = cond ∧ t.val = ifTrue ∧ f.val = ifFalse := by
+  unfold validateRawInstruction at h
+  cases hc : finOfNat? n cond with
+  | none => simp [hc] at h
+  | some c =>
+    cases ht : finOfNat? m ifTrue with
+    | none => simp [hc, ht] at h
+    | some t =>
+      cases hf : finOfNat? m ifFalse with
+      | none => simp [hc, ht, hf] at h
+      | some f =>
+        by_cases htype : types c = .bool
+        · simp [hc, ht, hf, htype] at h
+          cases h
+          exact ⟨c, t, f, htype, rfl,
+            finOfNat?_value hc, finOfNat?_value ht, finOfNat?_value hf⟩
+        · simp [hc, ht, hf, htype] at h
+
 /-- A successful integer constant validation carries the declared integer type. -/
 theorem validateRawInstruction_constInt_type_sound
     {n m : Nat} {types : RegTypes n}
