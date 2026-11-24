@@ -217,7 +217,7 @@ static size_t cap_gc_parse_heap_limit(const char *text) {
     else if (*end == 'M' || *end == 'm') shift = 20;
     else if (*end == 'G' || *end == 'g') shift = 30;
     if (shift) end++;
-    if (*end != '\\0' || (shift && value > (~0ULL >> shift)))
+    if (*end != '\0' || (shift && value > (~0ULL >> shift)))
         cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-1284", 0);
     value <<= shift;
     if (value == 0 || value > CAP_MAX_LEN) value = CAP_MAX_LEN;
