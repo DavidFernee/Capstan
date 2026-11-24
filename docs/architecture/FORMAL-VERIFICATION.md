@@ -81,7 +81,7 @@ The proof assistant's kernel checks theorem terms, but the overall assurance cla
 | Component | Current status | Trust/evidence treatment |
 |---|---|---|
 | Lean kernel and pinned Lean distribution | External dependency | Trusted to check proof terms; pin and record version |
-| Theorem axiom dependencies | Printed by `AxiomAudit.lean` in run 45340981405 | Four signed-64 boundary theorems have no axiom dependencies. The other eight theorem declarations depend on `propext` only. No `Classical.choice`, `Quot.sound`, local axioms or unfinished proofs are reported. |
+| Theorem axiom dependencies | Printed by `AxiomAudit.lean` in run 45341231542 | Four signed-64 boundary theorems have no axiom dependencies. The other eight theorem declarations depend on `propext` only. No `Classical.choice`, `Quot.sound`, local axioms or unfinished proofs are reported. |
 | CCAM normative specification | Human-authored specification | Review authority; model-to-spec correspondence is not yet proved |
 | Lean CCAM model | Partial definitions | Inspect definitions; not a complete machine |
 | Theorems in Core.lean | Machine-checked on Lean 4.19.0, run 45341231542, proof-source commit 6f51a67 | Explicit target build passed with `--wfail`; source scan passed; axiom dependencies printed by `AxiomAudit.lean` |
