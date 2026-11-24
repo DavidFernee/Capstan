@@ -233,6 +233,43 @@ static CapStr *cap_char_str(int64_t c, int64_t loc) {
 /* Lists: growable, bounds-checked                                     */
 /* ------------------------------------------------------------------ */
 
+/* Checked container/buffer sizing. The collector caps individual managed
+   allocations at CAP_MAX_LEN; include the object header when sizing payloads. */
+static size_t cap_rt_max_count(size_t element_size, size_t overhead, int64_t loc) {
+    if (!element_size || overhead > CAP_MAX_LEN)
+        cap_panic("invalid allocation element size", "CWE-190", loc);
+    size_t max_bytes = CAP_MAX_LEN - overhead;
+    size_t count = max_bytes / element_size;
+    return count > (size_t)INT64_MAX ? (size_t)INT64_MAX : count;
+}
+
+static int64_t cap_rt_growth_capacity(int64_t current, int64_t required,
+                                      int64_t initial, size_t element_size,
+                                      size_t overhead, int64_t loc) {
+    size_t max_count = cap_rt_max_count(element_size, overhead, loc);
+    if (current < 0 || required < 0 || initial <= 0 ||
+        (uint64_t)current > max_count || (uint64_t)required > max_count)
+        cap_panic("container capacity exceeds allocation limit", "CWE-789", loc);
+    size_t cap = current ? (size_t)current : (size_t)initial;
+    if (cap > max_count)
+        cap_panic("initial container capacity exceeds allocation limit", "CWE-789", loc);
+    while (cap < (size_t)required) {
+        if (cap > max_count / 2) cap = max_count;
+        else cap *= 2;
+        if (cap == 0)
+            cap_panic("container capacity growth overflow", "CWE-190", loc);
+    }
+    return (int64_t)cap;
+}
+
+static size_t cap_rt_checked_bytes(size_t count, size_t element_size,
+                                   size_t overhead, int64_t loc) {
+    if (overhead > CAP_MAX_LEN || count > (CAP_MAX_LEN - overhead) / element_size ||
+        count > (SIZE_MAX - overhead) / element_size)
+        cap_panic("allocation size exceeds runtime limit", "CWE-789", loc);
+    return overhead + count * element_size;
+}
+
 typedef union CapVal { int64_t i; void *p; } CapVal;
 static inline CapVal cap_vi(int64_t i) { CapVal v; v.i = i; return v; }
 static inline CapVal cap_vp(void *p) { CapVal v; v.p = p; return v; }
@@ -244,10 +281,15 @@ static CapList *cap_list_new(void) {
 }
 
 static inline void cap_list_push(CapList *l, CapVal v) {
+    if (CAP_UNLIKELY(l->len < 0 || l->cap < 0 || l->len > l->cap))
+        cap_panic("invalid list length/capacity", "CWE-682", 0);
     if (CAP_UNLIKELY(l->len == l->cap)) {
-        int64_t nc = l->cap ? l->cap * 2 : 8;
-        CapVal *ni = (CapVal *)cap_alloc(sizeof(CapVal) * (size_t)nc);
-        if (l->len) memcpy(ni, l->items, sizeof(CapVal) * (size_t)l->len);
+        if (l->len == INT64_MAX)
+            cap_panic("list length exceeds allocation limit", "CWE-789", 0);
+        int64_t nc = cap_rt_growth_capacity(l->cap, l->len + 1, 8, sizeof(CapVal), 0, 0);
+        size_t bytes = cap_rt_checked_bytes((size_t)nc, sizeof(CapVal), 0, 0);
+        CapVal *ni = (CapVal *)cap_alloc(bytes);
+        if (l->len) memcpy(ni, l->items, cap_rt_checked_bytes((size_t)l->len, sizeof(CapVal), 0, 0));
         l->items = ni;
         l->cap = nc;
     }
@@ -340,10 +382,15 @@ typedef struct CapBList { int64_t len, cap; bool *items; } CapBList;
 static CapBList *cap_blist_new(void) { return (CapBList *)cap_alloc(sizeof(CapBList)); }
 
 static inline void cap_blist_push(CapBList *l, bool v) {
+    if (CAP_UNLIKELY(l->len < 0 || l->cap < 0 || l->len > l->cap))
+        cap_panic("invalid boolean-list length/capacity", "CWE-682", 0);
     if (CAP_UNLIKELY(l->len == l->cap)) {
-        int64_t nc = l->cap ? l->cap * 2 : 16;
-        bool *ni = (bool *)cap_alloc_atomic((size_t)nc * sizeof(bool));
-        if (l->len) memcpy(ni, l->items, (size_t)l->len * sizeof(bool));
+        if (l->len == INT64_MAX)
+            cap_panic("boolean-list length exceeds allocation limit", "CWE-789", 0);
+        int64_t nc = cap_rt_growth_capacity(l->cap, l->len + 1, 16, sizeof(bool), 0, 0);
+        size_t bytes = cap_rt_checked_bytes((size_t)nc, sizeof(bool), 0, 0);
+        bool *ni = (bool *)cap_alloc_atomic(bytes);
+        if (l->len) memcpy(ni, l->items, cap_rt_checked_bytes((size_t)l->len, sizeof(bool), 0, 0));
         l->items = ni;
         l->cap = nc;
     }
@@ -483,7 +530,11 @@ static int64_t cap_map_find(CapMap *m, CapStr *k) {
 }
 
 static void cap_map_reindex(CapMap *m, int64_t newcap) {
-    m->index = (int64_t *)cap_alloc_atomic(sizeof(int64_t) * (size_t)newcap);
+    if (newcap <= 0 || (newcap & (newcap - 1)) != 0)
+        cap_panic("invalid map index capacity", "CWE-682", 0);
+    size_t bytes = cap_rt_checked_bytes((size_t)newcap, sizeof(int64_t), 0, 0);
+    int64_t *new_index = (int64_t *)cap_alloc_atomic(bytes);
+    m->index = new_index;
     m->index_cap = newcap;
     uint64_t mask = (uint64_t)newcap - 1;
     for (int64_t pos = 0; pos < m->len; pos++) {
@@ -496,21 +547,43 @@ static void cap_map_reindex(CapMap *m, int64_t newcap) {
 static void cap_map_set(CapMap *m, CapStr *k, CapVal v) {
     int64_t pos = cap_map_find(m, k);
     if (pos >= 0) { m->vals[pos] = v; return; }
+    if (CAP_UNLIKELY(m->len < 0 || m->cap < 0 || m->len > m->cap ||
+                     m->index_cap < 0))
+        cap_panic("invalid map length/capacity", "CWE-682", 0);
     if (m->len == m->cap) {
-        int64_t nc = m->cap ? m->cap * 2 : 8;
-        CapStr **nk = (CapStr **)cap_alloc(sizeof(CapStr *) * (size_t)nc);
-        CapVal *nv = (CapVal *)cap_alloc(sizeof(CapVal) * (size_t)nc);
+        if (m->len == INT64_MAX)
+            cap_panic("map length exceeds allocation limit", "CWE-789", 0);
+        int64_t nc = cap_rt_growth_capacity(m->cap, m->len + 1, 8,
+                                            sizeof(CapVal) > sizeof(CapStr *) ? sizeof(CapVal) : sizeof(CapStr *),
+                                            0, 0);
+        CapStr **nk = (CapStr **)cap_alloc(cap_rt_checked_bytes((size_t)nc, sizeof(CapStr *), 0, 0));
+        CapVal *nv = (CapVal *)cap_alloc(cap_rt_checked_bytes((size_t)nc, sizeof(CapVal), 0, 0));
         if (m->len) {
-            memcpy(nk, m->keys, sizeof(CapStr *) * (size_t)m->len);
-            memcpy(nv, m->vals, sizeof(CapVal) * (size_t)m->len);
+            size_t key_bytes = cap_rt_checked_bytes((size_t)m->len, sizeof(CapStr *), 0, 0);
+            size_t val_bytes = cap_rt_checked_bytes((size_t)m->len, sizeof(CapVal), 0, 0);
+            memcpy(nk, m->keys, key_bytes);
+            memcpy(nv, m->vals, val_bytes);
         }
         m->keys = nk; m->vals = nv; m->cap = nc;
     }
-    m->keys[m->len] = k;
-    m->vals[m->len] = v;
-    m->len++;
-    if (m->len * 2 > m->index_cap) cap_map_reindex(m, m->index_cap ? m->index_cap * 2 : 16);
-    else {
+    if (m->len == INT64_MAX)
+        cap_panic("map length exceeds allocation limit", "CWE-789", 0);
+    int64_t new_len = m->len + 1;
+    if (m->index_cap == 0 || new_len > m->index_cap / 2) {
+        if (new_len > INT64_MAX / 2)
+            cap_panic("map index capacity overflow", "CWE-190", 0);
+        int64_t required = new_len * 2;
+        int64_t newcap = cap_rt_growth_capacity(m->index_cap, required, 16,
+                                                sizeof(int64_t), 0, 0);
+        /* Publish the new entry only after index allocation succeeds. */
+        m->keys[m->len] = k;
+        m->vals[m->len] = v;
+        m->len = new_len;
+        cap_map_reindex(m, newcap);
+    } else {
+        m->keys[m->len] = k;
+        m->vals[m->len] = v;
+        m->len = new_len;
         uint64_t mask = (uint64_t)m->index_cap - 1;
         uint64_t s = cap_hash_str(k) & mask;
         while (m->index[s]) s = (s + 1) & mask;
@@ -620,17 +693,26 @@ static bool cap_path_ok(CapStr *path) {
 typedef struct CapBuf { CapStr *s; int64_t cap; } CapBuf;
 
 static void cap_buf_put(CapBuf *b, const char *p, int64_t n) {
-    if (b->s->len + n + 1 > b->cap) {
-        int64_t nc = b->cap * 2;
-        while (b->s->len + n + 1 > nc) nc *= 2;
-        CapStr *ns = (CapStr *)cap_alloc_atomic(sizeof(CapStr) + (size_t)nc);
+    if (!b || !b->s || n < 0 || b->s->len < 0 || b->cap < 1 ||
+        b->s->len >= b->cap || (n > 0 && !p))
+        cap_panic("invalid byte-buffer state or append length", "CWE-682", 0);
+    if (n > INT64_MAX - b->s->len - 1)
+        cap_panic("byte-buffer length overflow", "CWE-190", 0);
+    int64_t required = b->s->len + n + 1;
+    if (required > (int64_t)(CAP_MAX_LEN - sizeof(CapStr)))
+        cap_panic("byte-buffer exceeds allocation limit", "CWE-789", 0);
+    if (required > b->cap) {
+        int64_t nc = cap_rt_growth_capacity(b->cap, required, 64, 1,
+                                            sizeof(CapStr), 0);
+        size_t bytes = cap_rt_checked_bytes((size_t)nc, 1, sizeof(CapStr), 0);
+        CapStr *ns = (CapStr *)cap_alloc_atomic(bytes);
         ns->len = b->s->len;
         memcpy(ns->data, b->s->data, (size_t)b->s->len);
         b->s = ns;
         b->cap = nc;
     }
-    memcpy(b->s->data + b->s->len, p, (size_t)n);
-    b->s->len += n;
+    if (n) memcpy(b->s->data + b->s->len, p, (size_t)n);
+    b->s->len = required - 1;
     b->s->data[b->s->len] = 0;
 }
 
