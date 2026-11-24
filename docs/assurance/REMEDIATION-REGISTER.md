@@ -41,7 +41,7 @@ The inspected `main` SHA was `e1b9a023d275516ebc352a24293d532011961988`.
 
 | PR | Current inspected status | Head | CI evidence at inspection | Remediation interpretation |
 |---|---|---|---|---|
-| #87 | Open, draft, targets main | `b828563188b4774d71ef948beee828d3227b9b17` | Run 45359099309 in progress; supply-chain passed, Ubuntu/GCC and Ubuntu/Clang running, macOS queued | Assessment and executable probes; findings are not fixed. Prior assessment head passed CI; latest current-main-synchronised head is awaiting exact-head run 45359099309. |
+| #87 | Open, draft, targets main | `1651ef23d35c8daafa704f934322f6fd87126841` | Run 45360310370 queued on latest current-main-synchronised head | Assessment and executable probes; findings are not fixed. Prior assessment head passed CI; latest current-main-synchronised head is awaiting exact-head run 45359099309. |
 | #51 | Open, draft, targets main; stale base | `d6f97beb05962b7f8ef43f5e0ea8434be06450fa` | Run 45335656200 success on this head | GC hardening submitted; stale-slot and exact accounting evidence remain blockers. |
 | #86 | Open, draft, targets main | `334ebe44c51d9187f2cb82e3533598b7bf094ebf` | Run 45341730284 success | Strong candidate, but still requires independent review and integration. |
 | #97 | Open, draft, targets main | `20fa6374ac9bb0e283484c90a759a702d04c606f` | Run 45342232492 success on this head | Compound-assignment correction submitted; PR #102 extends evidence. |
