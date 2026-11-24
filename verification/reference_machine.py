@@ -210,8 +210,8 @@ def execute(program: dict[str, Any], args: list[Any] | None = None, *,
     if any(not _matches(v, t) for v, t in zip(args, entry.register_types)):
         raise ValueError("entry argument type mismatch")
 
-    def trap(code: str, frame: Frame, detail: str = "") -> None:
-        raise MachineTrap(code, frame.function.name, frame.pc, detail)
+    def trap(code: str, frame: Frame, detail: str = "", *, at_pc: int | None = None) -> None:
+        raise MachineTrap(code, frame.function.name, frame.pc if at_pc is None else at_pc, detail)
 
     frames = [Frame(entry, 0, list(args) + [None] * (len(entry.register_types) - len(args)), None)]
     steps = 0
@@ -230,14 +230,14 @@ def execute(program: dict[str, Any], args: list[Any] | None = None, *,
         def read(reg: int) -> Any:
             value = frame.registers[reg]
             if value is None:
-                trap("uninitialised_register", frame, str(reg))
+                trap("uninitialised_register", frame, str(reg), at_pc=pc)
             if not _matches(value, fn.register_types[reg]):
-                trap("register_type_violation", frame, str(reg))
+                trap("register_type_violation", frame, str(reg), at_pc=pc)
             return value
 
         def write(reg: int, value: Any) -> None:
             if not _matches(value, fn.register_types[reg]):
-                trap("register_type_violation", frame, str(reg))
+                trap("register_type_violation", frame, str(reg), at_pc=pc)
             frame.registers[reg] = value
 
         if op == "const_i" or op == "const_b":
@@ -250,8 +250,8 @@ def execute(program: dict[str, Any], args: list[Any] | None = None, *,
             elif op == "sub_i": result = a - b
             elif op == "mul_i": result = a * b
             elif op in {"div_i", "rem_i"}:
-                if b == 0: trap("division_by_zero", frame)
-                if a == MIN_I64 and b == -1: trap("integer_overflow", frame)
+                if b == 0: trap("division_by_zero", frame, at_pc=pc)
+                if a == MIN_I64 and b == -1: trap("integer_overflow", frame, at_pc=pc)
                 q = abs(a) // abs(b) * (-1 if (a < 0) != (b < 0) else 1)
                 result = q if op == "div_i" else a - q * b
             elif op == "eq_i": result = a == b
@@ -269,7 +269,7 @@ def execute(program: dict[str, Any], args: list[Any] | None = None, *,
             callee = functions[ins["function"]]
             call_args = [read(r) for r in ins["args"]]
             if len(frames) >= max_call_depth:
-                trap("call_depth_limit", frame)
+                trap("call_depth_limit", frame, at_pc=pc)
             new_regs = call_args + [None] * (len(callee.register_types) - len(call_args))
             frames.append(Frame(callee, 0, new_regs, ins["dst"]))
         elif op == "ret" or op == "ret_void":
@@ -283,7 +283,7 @@ def execute(program: dict[str, Any], args: list[Any] | None = None, *,
                     trap("invalid_return", caller, "missing call result")
                 caller.registers[frame.caller_dst] = result
         elif op == "trap":
-            trap(ins["reason"], frame)
+            trap(ins["reason"], frame, at_pc=pc)
         else:  # validate() makes this unreachable; retain defensive failure.
             trap("unknown_opcode", frame, op)
     raise AssertionError("machine halted without returning")
