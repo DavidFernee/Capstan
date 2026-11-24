@@ -1080,3 +1080,155 @@ test "CCAM multi-function validator bounds call-site side tables" {
     CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
     assert(!rejected.ok && rejected.error == "call_site_count_limit_exceeded");
 }
+
+test "CCAM multi-function evaluator returns boolean values to typed destinations" {
+    List<int> main_types = new List<int>();
+    main_types.push(CCAM_TYPE_BOOL);
+    main_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> main_code = new List<CCAMInstruction>();
+    main_code.push(ccam_instruction(CCAM_OP_CALL));
+    CCAMInstruction i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 0;
+    i.if_true = 2;
+    i.if_false = 4;
+    main_code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 7;
+    main_code.push(i);
+    i = ccam_instruction(CCAM_OP_JUMP);
+    i.target = 5;
+    main_code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 9;
+    main_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 1;
+    main_code.push(i);
+
+    List<int> predicate_types = new List<int>();
+    predicate_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> predicate_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_B);
+    i.dst = 0;
+    i.bool_value = true;
+    predicate_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    predicate_code.push(i);
+
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0, has_destination: true
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: main_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: main_code, call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "predicate", register_types: predicate_types,
+        parameter_count: 0, return_type: CCAM_RETURN_BOOL,
+        instructions: predicate_code, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 7, 4);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    for (int step = 0; step < 7; step += 1) ccam_call_machine_step(machine);
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 7);
+    assert(machine.steps == 7 && machine.trap_code == "");
+}
+
+test "CCAM multi-function evaluator executes nested recursive calls" {
+    List<int> main_types = new List<int>();
+    main_types.push(CCAM_TYPE_INT);
+    main_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> main_code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 3;
+    main_code.push(i);
+    main_code.push(ccam_instruction(CCAM_OP_CALL));
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 1;
+    main_code.push(i);
+
+    List<int> countdown_types = new List<int>();
+    countdown_types.push(CCAM_TYPE_INT);
+    countdown_types.push(CCAM_TYPE_INT);
+    countdown_types.push(CCAM_TYPE_BOOL);
+    countdown_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> countdown_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 3;
+    i.int_value = 1;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_LT_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 3;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 2;
+    i.if_true = 6;
+    i.if_false = 3;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_SUB_I);
+    i.dst = 1;
+    i.lhs = 0;
+    i.rhs = 3;
+    countdown_code.push(i);
+    countdown_code.push(ccam_instruction(CCAM_OP_CALL));
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 3;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 3;
+    i.int_value = 0;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 3;
+    countdown_code.push(i);
+
+    List<int> main_args = new List<int>();
+    main_args.push(0);
+    List<CCAMCallSite> main_sites = new List<CCAMCallSite>();
+    main_sites.push(new CCAMCallSite{
+        instruction_index: 1, callee_index: 1,
+        argument_registers: main_args,
+        destination_register: 1, has_destination: true
+    });
+    List<int> recursive_args = new List<int>();
+    recursive_args.push(1);
+    List<CCAMCallSite> countdown_sites = new List<CCAMCallSite>();
+    countdown_sites.push(new CCAMCallSite{
+        instruction_index: 4, callee_index: 1,
+        argument_registers: recursive_args,
+        destination_register: 3, has_destination: true
+    });
+
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: main_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: main_code, call_sites: main_sites
+    });
+    functions.push(new CCAMFunction{
+        name: "countdown", register_types: countdown_types,
+        parameter_count: 1, return_type: CCAM_RETURN_INT,
+        instructions: countdown_code, call_sites: countdown_sites
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 26, 5);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    for (int step = 0; step < 26; step += 1) ccam_call_machine_step(machine);
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 0);
+    assert(machine.steps == 26 && machine.frame_depth == 1);
+    assert(machine.trap_code == "");
+}
