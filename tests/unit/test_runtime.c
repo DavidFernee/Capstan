@@ -391,6 +391,14 @@ __attribute__((noinline)) static void scrub_stack(int depth) {
 #define CAP_DISGUISE_GC ((uintptr_t)0x3c3c3c3c3c3c3c3cULL)
 __attribute__((noinline)) static void scrub_stack(int depth);
 static CapStr *global_root;
+static void test_gc_wipe_primitive(void) {
+    unsigned char bytes[17];
+    memset(bytes, 0xa5, sizeof bytes);
+    cap_gc_wipe(bytes, sizeof bytes);
+    const volatile unsigned char *observed = bytes;
+    for (size_t i = 0; i < sizeof bytes; i++) CHECK(observed[i] == 0);
+}
+
 static void test_gc_checked_arithmetic(void) {
     size_t out = 99;
     CHECK(cap_gc_size_add(0, 0, &out) && out == 0);
@@ -529,6 +537,7 @@ int main(void) {
     test_collections();
     test_arithmetic();
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
+    test_gc_wipe_primitive();
     test_gc_checked_arithmetic();
     test_gc();
     test_gc_release();
