@@ -12,7 +12,7 @@ given calendar year by the Linux kernel's CNA, classifies it from its fix descri
     docs/K0-KERNEL-CVES.md                  the report
     tools/k0/data/kernel-cves-<year>.csv    one row per CVE: id, date, class, CWE, outcome, evidence
 
-It checks the classifier against the hand-labelled sample in tests/k0/labels.csv and prints the
+It checks the classifier against the labelled sample in tests/k0/labels.csv and prints the
 agreement. Re-run it each year (DESIGN-MAP.md section 7, K0).
 """
 import collections
@@ -290,7 +290,7 @@ def pct(n, d):
 
 
 def check_labels(classified, atlas, name):
-    """Agreement with a hand-labelled sample: (total, same class, same outcome, mismatches)."""
+    """Agreement with a labelled sample: (total, same class, same outcome, mismatches)."""
     path = os.path.join(ROOT, "tests", "k0", name)
     if not os.path.exists(path):
         return None
