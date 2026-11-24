@@ -13,7 +13,7 @@ const int MAX_VIEWS = 100000;
 const int MAX_DEPTH = 200;
 
 // Aggregate rendered text lines per frame, including explicit and soft wraps.
-const int MAX_FRAME_LINES = 131072;
+const int MAX_FRAME_LINES = MAX_TEXT_LINES;
 
 // A view after layout: its frame, in absolute FX device pixels, and its children.
 struct Laid {
