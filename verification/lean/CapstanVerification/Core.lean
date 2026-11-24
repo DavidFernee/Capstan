@@ -2,6 +2,12 @@ import Std
 
 namespace CapstanVerification
 
+/-!
+A deliberately small proof model of the integer/register fragment of CCAM v0.1.
+Normative authority: docs/architecture/CCAM.md on the stacked CCAM branch.
+This is not an evaluator and no implementation-refinement theorem is claimed.
+-/
+
 inductive Ty where
   | int
   | bool
@@ -13,9 +19,11 @@ inductive Val where
   deriving Repr
 
 def hasType : Val → Ty → Prop
-  | .int _, .int => True
+  | .int n, .int => inI64 n
   | .bool _, .bool => True
   | _, _ => False
+where
+  inI64 (x : Int) : Prop := minI64 ≤ x ∧ x ≤ maxI64
 
 abbrev RegTypes (n : Nat) := Fin n → Ty
 abbrev Registers (n : Nat) := Fin n → Option Val
@@ -36,8 +44,7 @@ theorem write_preserves_well_typed
   by_cases hji : j = index
   · subst j
     simp [write] at hread
-    injection hread with hv
-    subst v
+    cases hread
     exact hvalue
   · have hold : regs j = some v := by
       simpa [write, hji] using hread
@@ -59,28 +66,71 @@ def maxI64 : Int := (2 ^ 63 : Int) - 1
 
 def inI64 (x : Int) : Prop := minI64 ≤ x ∧ x ≤ maxI64
 
-def checkedAdd (a b : Int) : Except Trap Int :=
-  let result := a + b
-  if inI64 result then .ok result else .error .integerOverflow
+def checkedI64 (x : Int) : Except Trap Int :=
+  if inI64 x then .ok x else .error .integerOverflow
 
-theorem checkedAdd_sound (a b result : Int)
-    (h : checkedAdd a b = .ok result) : inI64 result := by
-  simp only [checkedAdd] at h
-  split at h
-  · simp_all
-  · simp_all
+def checkedAdd (a b : Int) : Except Trap Int := checkedI64 (a + b)
+def checkedSub (a b : Int) : Except Trap Int := checkedI64 (a - b)
+def checkedMul (a b : Int) : Except Trap Int := checkedI64 (a * b)
+
+/-- Quotient required by CCAM: integer division truncated toward zero. -/
+def truncDiv (a b : Int) : Int :=
+  let magnitude : Nat := a.natAbs / b.natAbs
+  let q := Int.ofNat magnitude
+  if (a < 0 ∧ 0 < b) ∨ (0 < a ∧ b < 0) then -q else q
 
 def checkedDiv (a b : Int) : Except Trap Int :=
   if b = 0 then .error .divisionByZero
   else if a = minI64 ∧ b = -1 then .error .integerOverflow
-  else .ok (a / b)
+  else .ok (truncDiv a b)
+
+def checkedRem (a b : Int) : Except Trap Int :=
+  if b = 0 then .error .divisionByZero
+  else if a = minI64 ∧ b = -1 then .error .integerOverflow
+  else .ok (a - truncDiv a b * b)
+
+/-- A successful range check returns a signed-64 value. -/
+theorem checkedI64_sound (x result : Int)
+    (h : checkedI64 x = .ok result) : inI64 result := by
+  unfold checkedI64 at h
+  by_cases hx : inI64 x
+  · simp [hx] at h
+    cases h
+    exact hx
+  · simp [hx] at h
+
+theorem checkedAdd_sound (a b result : Int)
+    (h : checkedAdd a b = .ok result) : inI64 result := by
+  exact checkedI64_sound (a + b) result h
+
+theorem checkedSub_sound (a b result : Int)
+    (h : checkedSub a b = .ok result) : inI64 result := by
+  exact checkedI64_sound (a - b) result h
+
+theorem checkedMul_sound (a b result : Int)
+    (h : checkedMul a b = .ok result) : inI64 result := by
+  exact checkedI64_sound (a * b) result h
 
 theorem checkedDiv_zero_traps (a : Int) :
     checkedDiv a 0 = .error .divisionByZero := by
   simp [checkedDiv]
 
+theorem checkedRem_zero_traps (a : Int) :
+    checkedRem a 0 = .error .divisionByZero := by
+  simp [checkedRem]
+
 theorem checkedDiv_min_neg_one_traps :
     checkedDiv minI64 (-1) = .error .integerOverflow := by
   simp [checkedDiv]
+
+theorem checkedRem_min_neg_one_traps :
+    checkedRem minI64 (-1) = .error .integerOverflow := by
+  simp [checkedRem]
+
+/-!
+Explicit omissions: there is no instruction syntax, machine state, small-step
+relation, function stack, structural validator, evaluator, or compiler relation.
+The next semantics increment must follow CCAM.md and its conformance vectors.
+-/
 
 end CapstanVerification
