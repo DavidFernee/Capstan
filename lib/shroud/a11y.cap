@@ -20,7 +20,6 @@ struct A11yNode {
     List<A11yNode> kids;
 }
 
-
 // Convert already-sanitised code points back to UTF-8. The accessibility tree must
 // expose the same visible characters as the renderer, not the original Tainted bytes.
 string utf8_from_codepoints(List<int> cps) {
