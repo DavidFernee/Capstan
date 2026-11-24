@@ -182,7 +182,7 @@ struct Ui {
                 if (let n2 = find_laid(l, id)) {
                     if (n2.v.focusable()) { self.focus = id; } else { self.focus = ""; }
                     if (n2.v.kind == K_SLIDER && !n2.v.disabled) { slide_to(n2, e.x, self.scale, out); }
-                    if (n2.v.kind == K_TEXT_FIELD) { self.place_caret(n2, e.x); }
+                    if (n2.v.kind == K_TEXT_FIELD && !n2.v.disabled) { self.place_caret(n2, e.x); }
                 } else {
                     self.focus = "";
                 }
@@ -340,6 +340,13 @@ Laid? find_laid(Laid l, string id) {
     return none;
 }
 
+bool hit_target(View v) {
+    if (v.focusable()) { return true; }
+    if (!v.disabled) { return false; }
+    int k = v.kind;
+    return k == K_BUTTON || k == K_CHECKBOX || k == K_RADIO || k == K_SWITCH || k == K_TEXT_FIELD || k == K_SLIDER;
+}
+
 // The innermost interactive view under (x, y), or "". Children of a scroll view
 // count only inside its visible frame; later siblings are on top of earlier ones.
 string hit_id(Laid l, int x, int y) {
@@ -351,7 +358,7 @@ string hit_id(Laid l, int x, int y) {
         string h = hit_id(l.kids[i], x, y);
         if (h != "") { return h; }
     }
-    if (l.frame.contains(x, y) && (l.v.focusable() || (l.v.kind == K_BUTTON && l.v.disabled))) { return l.id; }
+    if (l.frame.contains(x, y) && hit_target(l.v)) { return l.id; }
     return "";
 }
 
