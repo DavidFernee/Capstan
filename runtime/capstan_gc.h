@@ -276,12 +276,16 @@ static void cap_gc_ptab_insert(CapPage *pg) {
 static CapPage *cap_gc_page_of(uintptr_t addr) {
     if (!cap_gc.ptab_cap) return NULL;
     uintptr_t pageno = addr >> CAP_PAGE_SHIFT;
+    if ((cap_gc.ptab_cap & (cap_gc.ptab_cap - 1)) != 0)
+        cap_panic("page-table capacity is not a power of two", "CWE-682", 0);
     size_t s = cap_gc_slot(pageno, cap_gc.ptab_cap);
-    while (cap_gc.ptab[s]) {
-        if (((uintptr_t)cap_gc.ptab[s]->base >> CAP_PAGE_SHIFT) == pageno) return cap_gc.ptab[s];
+    for (size_t probes = 0; probes < cap_gc.ptab_cap; probes++) {
+        CapPage *pg = cap_gc.ptab[s];
+        if (!pg) return NULL;
+        if (((uintptr_t)pg->base >> CAP_PAGE_SHIFT) == pageno) return pg;
         s = (s + 1) & (cap_gc.ptab_cap - 1);
     }
-    return NULL;
+    cap_panic("page table has no empty slot", "CWE-400", 0);
 }
 
 static void cap_gc_range(uintptr_t a, uintptr_t b) {
