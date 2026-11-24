@@ -45,7 +45,7 @@ struct Pixmap {
 }
 
 Pixmap new_pixmap(int w, int h) {
-    if (w < 1 || h < 1 || w > MAX_PIXMAP_SIDE || h > MAX_PIXMAP_SIDE) {
+    if (!pixmap_size_valid(w, h)) {
         println("shroud: pixmap size out of range");
         exit(101);
     }
