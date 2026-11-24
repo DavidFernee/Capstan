@@ -5,6 +5,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Anchor A0: IDE architecture and threat model, Shroud S0 workbench prototype, and documented integration milestones; no project commands or assurance verdicts are executed by the prototype
 - Assurance: claim reviews and evidence now report stale status when covered implementation or evidence artifacts change after their recorded Git revision
 - Shroud, the cross-platform GUI library, begins (`lib/shroud/`, design in `docs/SHROUD.md`), written
   entirely in Capstan: an anti-aliased integer rasteriser, a hardened TrueType parser, strict UTF-8
