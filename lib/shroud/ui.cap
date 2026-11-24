@@ -60,7 +60,7 @@ struct Event {
     int mods;
     int delta;
     Tainted text;
-    int time_ms;
+    int time_ms; // monotonic time from the trusted platform adapter
 }
 
 Event new_event(int kind, int time_ms) {
@@ -140,6 +140,19 @@ struct Ui {
                     self.shown_at.set(n.id, time_ms);
                 }
                 self.guard_generation.set(n.id, self.render_generation);
+            }
+        }
+        // Forget guards that are no longer present. This both restarts the delay if
+        // a control later reappears and bounds retained state for dynamic interfaces.
+        List<string> known_guards = self.shown_where.keys();
+        for (int i = 0; i < known_guards.len(); i += 1) {
+            string id = known_guards[i];
+            int seen = 0;
+            if (let g = self.guard_generation.get(id)) { seen = g; }
+            if (seen != self.render_generation) {
+                self.shown_where.remove(id);
+                self.shown_at.remove(id);
+                self.guard_generation.remove(id);
             }
         }
         if (!focus_alive) { self.focus = ""; }
