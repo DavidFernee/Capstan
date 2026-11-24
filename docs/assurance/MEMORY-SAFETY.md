@@ -2,7 +2,7 @@
 
 This statement maps Capstan's guarantees to the memory-safety guidance published by the Five Eyes
 cyber security agencies, including the Australian Signals Directorate's Australian Cyber Security
-Centre (ASD's ACSC). It describes Capstan 0.4.0 (unreleased) as it is in this repository. Each claim
+Centre (ASD's ACSC). It describes the integrated repository state reviewed on 2026-11-24. The current compiler still emits C and uses the C runtime; the C-free/CCAM work is in progress. Each claim
 names the test or document that demonstrates it; where something is not yet done, it says so.
 
 ## The guidance
@@ -61,8 +61,9 @@ code is to run isolated, in a separate process or a WebAssembly sandbox, with it
 
 Capstan's guarantees hold for code written in Capstan. They rest on components that are not:
 
-- **The runtime is C.** About 1,400 lines (`runtime/capstan_rt.h`, `runtime/capstan_gc.h`) provide the
-  checks, collections, cryptography and the garbage collector. A bug there can corrupt memory.
+- **The runtime is C.** `runtime/capstan_rt.h` and `runtime/capstan_gc.h` provide checks, collections,
+  cryptography and the garbage collector. A bug there can corrupt memory. The C-free runtime is a
+  target architecture, not an integrated replacement.
 - **The C standard library is trusted.** The runtime calls libc for I/O, memory and number formatting.
 - **The C compiler is trusted.** Capstan compiles to C, and GCC or Clang compiles that C.
 - **The garbage collector scans conservatively.** It is non-moving and scans the stack and object
@@ -84,6 +85,19 @@ Not yet done:
 - Hardware memory protection (CHERI, Arm Memory Tagging Extension), which the 2023 guidance mentions,
   is not used.
 
+## C-free programme and formal-assurance boundary
+
+The C-free programme proposes a typed CCAM core, a native backend and a Capstan-native
+runtime. Until those components are implemented, integrated and independently tested, the
+current C runtime, libc, GCC/Clang, generated C, Python stage-0 bootstrap, shell/build
+scripts and host platform remain relevant parts of the trusted base.
+
+Lean 4 proofs currently address selected properties of a finite model. They do not prove
+the source compiler, source-to-CCAM lowering, validator soundness, full runtime, garbage
+collector or native code. The proof assistant's kernel and the adequacy of the formal model
+are additional assumptions for those theorem results. No end-to-end refinement theorem is
+claimed.
+
 ## Capstan's memory-safe roadmap
 
 The Case for Memory Safe Roadmaps asks manufacturers to publish a roadmap with dated phases, a plan
@@ -91,10 +105,10 @@ for external dependencies, transparency and CWE reporting. Capstan's equivalents
 
 | Roadmap element in the guidance | Capstan |
 |---|---|
-| Phases with outcomes | Trusted base reduction, stages T1 to T12 ([DESIGN-MAP.md](../DESIGN-MAP.md), section 6), each tied to a version. Calendar dates are not set |
-| Date after which new code is in a memory-safe language | Already true for the compiler and formatter, which are written in Capstan and pass the compiler's own `--strict --release` checks (`tests/run.sh`, bootstrap section). The runtime moves to verified Capstan at T7 and T8 (v0.8, v0.9) |
+| Phases with outcomes | The C-free programme's architecture, semantic, CCAM, lowering, formal-model and native-execution gates ([DESIGN-MAP.md](../DESIGN-MAP.md), section 4). Calendar dates are not set; no completed runtime migration is claimed |
+| Date after which new code is in a memory-safe language | The compiler and formatter are written in Capstan and pass the compiler's own `--strict --release` checks. The runtime remains C. A date for completing the C-free compiler/runtime is not committed; the current programme has semantic, lowering, proof and native-backend gates, and no end-to-end verified replacement is integrated |
 | Prioritise security-critical code (parsing, networking, cryptography) | Cryptography (T3), number formatting and parsing (T4) and network parsing (T5) are the first runtime components planned to move into Capstan |
-| External dependency plan | libc leaves the trusted base at T6 (a thin system-call layer); the C compiler becomes optional with CompCert (T9), then unnecessary with the WebAssembly (T10) and native (T11) backends |
+| External dependency plan | The intended destination removes generated C, the C compiler and libc from the execution path, but this is not yet implemented. Python stage 0 and shell/build tooling also remain in the bootstrap/build trust boundary |
 | Run old and new side by side | Each replaced component is tested against the one it replaces (section 6); stage 0 is already used this way for code generation |
 | Interim mitigations for unsafe code | Fuzzing, sanitisers and coverage of the runtime: done. Compiler exploit mitigations and a hardened allocator: not yet |
 | Transparency | This document, [CWE-COVERAGE.md](../CWE-COVERAGE.md), [CWE-ATLAS.md](../CWE-ATLAS.md) and the changelog are updated each release |
