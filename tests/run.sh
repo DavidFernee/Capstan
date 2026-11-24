@@ -318,6 +318,17 @@ section "supply chain: SBOM, reproducibility report, release verifier, workflow 
 if out="$("$ROOT/tests/supply/test_supply.sh" 2>&1)"; then ok "$(tail -1 <<<"$out")"; grep '^  pass' <<<"$out" | sed 's/^  pass  /      /'
 else bad "supply chain" "$(grep -A3 'FAIL' <<<"$out" | head -8)"; fi
 
+section "CWE red-team atlas"
+if out="$(CAPSTANC="$C" CC="$CC" $PY "$ROOT/tests/cwe/atlas.py" --write-doc 2>&1)"; then
+  if git -C "$ROOT" diff --quiet -- docs/CWE-ATLAS.md; then
+    ok "$out; generated atlas is current"
+  else
+    bad "CWE atlas documentation drift" "$(git -C "$ROOT" diff -- docs/CWE-ATLAS.md | head -40)"
+  fi
+else
+  bad "CWE red-team atlas" "$out"
+fi
+
 section "lsp"
 L="$ROOT/build/capstan-lsp"
 LSP_SRC="$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen}.cap) $ROOT/tools/lsp.cap"
