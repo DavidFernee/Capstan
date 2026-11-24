@@ -389,6 +389,7 @@ static void trigger_out_of_range_map_index_entry(void) {
 }
 
 static void test_runtime_growth_arithmetic(void) {
+    if (!cap_map_keyed) cap_map_key_init();
     CHECK(cap_rt_growth_capacity(0, 1, 8, sizeof(CapVal), 0, 0) == 8);
     CHECK(cap_rt_growth_capacity(8, 9, 8, sizeof(CapVal), 0, 0) == 16);
     size_t max_items = cap_rt_max_count(sizeof(CapVal), 0, 0);
