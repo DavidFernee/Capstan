@@ -40,7 +40,7 @@ jobs:
           test "$(git -C lean4checker rev-parse HEAD)" = "e11f65c651edd58d68ba260015d2bfde5102cd7f"
           cmp -s lean-toolchain lean4checker/lean-toolchain
           (cd lean4checker && lake build)
-          lake env lean4checker/.lake/build/bin/lean4checker --fresh CapstanVerification
+          lake env lean4checker/.lake/build/bin/lean4checker CapstanVerification
       - name: Report theorem axiom dependencies
         working-directory: verification/lean
         run: lake env lean AxiomAudit.lean
