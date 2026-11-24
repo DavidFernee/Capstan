@@ -168,7 +168,7 @@ theorem pushCallFrame_within_limit
   by_cases hdepth : stack.frames.length < stack.maxDepth
   · simp [hdepth] at h
     cases h
-    exact next.within_limit
+    simpa using Nat.succ_le_of_lt hdepth
   · simp [hdepth] at h
 
 /-- A full call stack traps before another frame is pushed. -/
