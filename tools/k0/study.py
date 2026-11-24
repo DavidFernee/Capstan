@@ -462,8 +462,8 @@ def main():
     rest = [r for r in rows if r["final"] in (LOGIC, OUTSIDE, PROOF_ELIGIBLE)]
     rc = collections.Counter(r["class"] for r in rest)
     p("### What remains unresolved or requires proof evidence\n")
-    p(f"{len(rest)} CVEs ({pct(len(rest), known)}) remain unresolved in this projection; K1.10 candidates are not counted as proven, and ")
-      f"{by_bucket[UNKNOWN]} cannot be judged:\n")
+    p(f"{len(rest)} CVEs ({pct(len(rest), known)}) remain unresolved in this projection; "
+      f"K1.10 candidates are not counted as proven, and {by_bucket[UNKNOWN]} cannot be judged:\\n")
     p("| Class | CVEs | Why |")
     p("|---|---|---|")
     why = {"hardware or firmware fault": "The device, firmware or processor misbehaves; the driver's workaround "
