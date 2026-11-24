@@ -1305,3 +1305,12 @@ Current evidence and remaining gap:
 - Add a large-secret regression that verifies the wipe occurs before the large block is released (for example, through a test-only reclamation observer or allocator hook). Do not make the test read memory after `free`, which would itself be undefined behaviour. Retain the small-object payload test and include boundary sizes around the 2 KiB small/large threshold.
 - Test closure/environment reachability separately from payload erasure: a live traced environment must retain its secret payload, and after the environment and all other roots disappear the payload must be wiped on reclamation. Account for conservative false retention; do not promise deterministic lexical-scope erasure.
 - These are acceptance criteria and a description of the current collector, not a claim that generic specialisation or closure support is implemented.
+
+
+### 35.1 Coordination with the active runtime hardening branch
+
+The runtime workstream's PR [#51](https://github.com/DavidFernee/Capstan/pull/51) now addresses the allocator-level concern directly: secret pages keep free-slot indices out of line (so reclaimed secret slots remain wholly zero), and large secret allocations use page-rounded anonymous mappings that are wiped before unmapping. Its branch adds tests for secret-page free-slot uniqueness/zeroing and large-secret mapping reclamation.
+
+This changes the status of the earlier evidence gap: large-secret reclamation is now under active test, but the latest reported Ubuntu/Clang ASan+UBSan run still fails `test_gc_large_secret_mapping()` because the dropped mapping remains marked/reachable in the conservative collector. The runtime workstream has correctly retained the strict assertion and added diagnostics rather than relaxing it. The test currently demonstrates mapping reclamation and fresh-zero allocation; a test-only pre-unmap wipe observer would still be needed to prove the wipe itself independently of successful unmapping.
+
+The type-system/backend requirement remains unchanged: monomorphised layouts must select kind 0/1/2 correctly after substitution, and a closure environment that holds a Secret pointer remains kind 0. This section is assurance guidance only; PR #51 owns the runtime implementation and its tests.
