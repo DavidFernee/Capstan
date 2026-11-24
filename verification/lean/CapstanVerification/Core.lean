@@ -95,9 +95,7 @@ theorem checkedI64_sound (x result : Int)
   · have heq : x = result := by
       simpa [checkedI64, hx] using h
     simpa [heq] using hx
-  · have : False := by
-      simpa [checkedI64, hx] using h
-    exact this.elim
+  · simp [checkedI64, hx] at h
 
 theorem checkedAdd_sound (a b result : Int)
     (h : checkedAdd a b = .ok result) : inI64 result := by
