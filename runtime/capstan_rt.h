@@ -582,6 +582,11 @@ static void cap_grant_recheck(CapGrant *g, int64_t loc) {
         cap_panic("the policy no longer allows this: what it checked has changed since the grant was issued", "CWE-367", loc);
 }
 
+/* Check the policy identity even when a policy has no struct arguments. */
+static void cap_grant_policy_check(CapGrant *g, int64_t policy, int64_t loc) {
+    if (g->policy != policy) cap_panic("grant issued by a different policy", "CWE-863", loc);
+}
+
 /* A grant is only valid for the exact objects and values in their policy-argument roles. */
 static void cap_grant_check(CapGrant *g, int64_t policy, int64_t slot, void *obj, int64_t loc) {
     if (g->policy != policy) cap_panic("grant issued by a different policy", "CWE-863", loc);
