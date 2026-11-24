@@ -694,20 +694,36 @@ string pol_sig(Node p) {
 }
 
 // Compare a protected argument with the corresponding value saved at authorization.
-string grant_value_equal(Type t, string x, string y) {
+string grant_value_equal(Gen g, Type t, string x, string y) {
     if (t.k == TY_OPT) {
         Type inner = t.args[0];
         string ix = x;
         string iy = y;
         if (is_scalar(inner)) { ix = "(*" + x + ")"; iy = "(*" + y + ")"; }
-        return "((" + x + " == NULL && " + y + " == NULL) || (" + x + " != NULL && " + y + " != NULL && " + grant_value_equal(inner, ix, iy) + "))";
+        return "((" + x + " == NULL && " + y + " == NULL) || (" + x + " != NULL && " + y + " != NULL && " + grant_value_equal(g, inner, ix, iy) + "))";
     }
     if (t.k == TY_STR || t.k == TY_TAINT || t.k == TY_HTML || t.k == TY_LOG) {
         return "cap_str_eq(" + x + ", " + y + ")";
     }
     // Secret values are opaque capabilities; compare their identity, never their contents.
     if (t.k == TY_SECRET) { return "(" + x + " == " + y + ")"; }
-    if (t.k == TY_ENUM) { return "((" + x + ")->tag == (" + y + ")->tag)"; }
+    if (t.k == TY_ENUM) {
+        if (let en = g.c.enums.get(t.name)) {
+            string equal = "((" + x + ")->tag == (" + y + ")->tag && (" + x + ")->tag >= 0 && (" + x + ")->tag < " + int_to_str(en.n);
+            for (int i = 0; i < en.n; i += 1) {
+                Node variant = en.kids[i];
+                string payload = "true";
+                for (int j = 0; j < variant.n; j += 1) {
+                    Type ft = ty_of(variant.kids[j]);
+                    string xv = "(" + x + ")->v_" + variant.s + "_" + int_to_str(j);
+                    string yv = "(" + y + ")->v_" + variant.s + "_" + int_to_str(j);
+                    payload = "(" + payload + " && " + grant_value_equal(g, ft, xv, yv) + ")";
+                }
+                equal += " && ((" + x + ")->tag != " + int_to_str(i) + " || " + payload + ")";
+            }
+            return equal + ")";
+        }
+    }
     return "(" + x + " == " + y + ")";
 }
 
@@ -740,7 +756,7 @@ void gen_grant_checks(Gen g, Node f) {
                     emit(g, "cap_grant_check(u_" + f.kids[0].s + ", " + int_to_str(id) + ", " + int_to_str(slot) + ", (void *)u_" + f.kids[i].s + ", " + loc(f) + ");");
                 } else {
                     string saved = "((CapPolArgs_" + f.s2 + " *)u_" + f.kids[0].s + "->args)->a" + int_to_str(policy_index);
-                    string equal = grant_value_equal(pt, "u_" + f.kids[i].s, saved);
+                    string equal = grant_value_equal(g, pt, "u_" + f.kids[i].s, saved);
                     emit(g, "if (!" + equal + ") cap_panic(\"grant used with a different policy argument value\", \"CWE-639\", " + loc(f) + ");");
                 }
             }
