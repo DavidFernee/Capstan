@@ -8,10 +8,47 @@
  */
 #define CAP_GC_TESTING 1
 #define CAP_PBKDF2_TEST_HOOK 1
+#define CAP_SECRET_SCRATCH_TEST_HOOK 1
 #include "capstan_rt.h"
 #include <sys/wait.h>
 
 static int failures = 0, checks = 0;
+
+static size_t secret_scratch_wipe_calls;
+static int secret_scratch_wipe_clean;
+
+static void observe_secret_scratch_wipe(const void *memory, size_t n) {
+    const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
+    for (size_t i = 0; i < n; i++) if (bytes[i] != 0) secret_scratch_wipe_clean = 0;
+    secret_scratch_wipe_calls++;
+}
+
+static void test_secret_scratch_lifecycle(void) {
+    CapSecretScratch scratch = {0};
+    unsigned char pattern[97];
+    memset(pattern, 0xa5, sizeof pattern);
+    secret_scratch_wipe_calls = 0;
+    secret_scratch_wipe_clean = 1;
+    cap_secret_scratch_test_wipe_hook = observe_secret_scratch_wipe;
+
+    CHECK(cap_secret_scratch_init(&scratch, sizeof pattern));
+    CHECK(scratch.active && scratch.data != NULL && scratch.len == sizeof pattern);
+    memset(scratch.data, 0xa5, scratch.len);
+    CHECK(!cap_secret_scratch_init(&scratch, 8)); /* no implicit replacement/leak */
+    cap_secret_scratch_destroy(&scratch);
+    CHECK(!scratch.active && scratch.data == NULL && scratch.len == 0);
+    CHECK(secret_scratch_wipe_calls == 1 && secret_scratch_wipe_clean);
+
+    /* A destroyed descriptor is safely reusable after it has been zeroed. */
+    CHECK(cap_secret_scratch_init(&scratch, 0));
+    CHECK(scratch.active && scratch.data == NULL && scratch.len == 0);
+    cap_secret_scratch_destroy(&scratch);
+    CHECK(!scratch.active && secret_scratch_wipe_calls == 1);
+
+    CHECK(!cap_secret_scratch_init(NULL, 8));
+    CHECK(!cap_secret_scratch_init(&scratch, CAP_MAX_LEN + (size_t)1));
+    cap_secret_scratch_test_wipe_hook = NULL;
+}
 static const char *unit_files[] = {"unit"};
 
 #define CHECK(cond) do { checks++; if (!(cond)) { failures++; \
@@ -1226,6 +1263,7 @@ static void test_secret_page_free_stack(void) {
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
+    test_secret_scratch_lifecycle();
     test_sha256();
     test_hmac();
     test_pbkdf2();
