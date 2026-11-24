@@ -407,8 +407,9 @@ static void cap_blist_insert(CapBList *l, int64_t i, bool v, int64_t loc) {
 }
 
 static CapStr *cap_join(CapList *parts, CapStr *sep, int64_t loc) {
-    if (!parts || !sep || parts->len < 0 || sep->len < 0 ||
-        (parts->len > 0 && !parts->items))
+    if (!parts || !sep || parts->len < 0 || parts->cap < 0 ||
+        parts->len > parts->cap || sep->len < 0 ||
+        (parts->cap > 0 && !parts->items))
         cap_panic("invalid string join operands", "CWE-682", loc);
     int64_t total = 0;
     for (int64_t i = 0; i < parts->len; i++) {
