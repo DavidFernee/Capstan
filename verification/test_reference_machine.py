@@ -67,7 +67,7 @@ class ReferenceMachineTests(unittest.TestCase):
             {"op": "const_i", "dst": 0, "value": 0},
             {"op": "const_i", "dst": 1, "value": 3},
             {"op": "lt_i", "dst": 2, "lhs": 0, "rhs": 1},
-            {"op": "branch", "cond": 2, "if_true": 4, "if_false": 6},
+            {"op": "branch", "cond": 2, "if_true": 4, "if_false": 7},
             {"op": "const_i", "dst": 3, "value": 1},
             {"op": "add_i", "dst": 0, "lhs": 0, "rhs": 3},
             {"op": "jump", "target": 2},
