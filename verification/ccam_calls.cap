@@ -1,0 +1,1393 @@
+// CCAM multi-function execution layer.
+//
+// This file depends on the single-frame typed evaluator and validator in
+// ccam_core.cap. Calls are represented as a side-table attached to each
+// function's instruction sequence. This keeps the existing instruction
+// representation stable while the multi-function validator is introduced.
+// The side table is part of the in-memory representation, not the final JSON
+// decoder/schema implementation.
+//
+// Semantic authority: docs/architecture/CCAM.md.
+
+import "ccam_core.cap";
+
+const int CCAM_OP_CALL = 17;
+const int CCAM_MAX_FUNCTIONS = 4096;
+const int CCAM_MAX_CALL_ARGUMENTS = 262144;
+const int CCAM_MAX_TOTAL_REGISTERS = 262144;
+const int CCAM_MAX_FUNCTION_NAME_BYTES = 1024;
+const int CCAM_MAX_TOTAL_FUNCTION_NAME_BYTES = 262144;
+const int CCAM_MAX_CALL_DEPTH = 256;
+const int CCAM_MAX_STEPS = 10000000;
+
+struct CCAMCallSite {
+    int instruction_index;
+    int callee_index;
+    List<int> argument_registers;
+    int destination_register;
+    bool has_destination;
+}
+
+struct CCAMFunction {
+    string name;
+    List<int> register_types;
+    int parameter_count;
+    int return_type;
+    List<CCAMInstruction> instructions;
+    List<CCAMCallSite> call_sites;
+}
+
+struct CCAMFrame {
+    int function_index;
+    int pc;
+    List<CCAMRegister> registers;
+    int caller_destination;
+    bool caller_has_destination;
+}
+
+struct CCAMCallMachine {
+    List<CCAMFunction> functions;
+    List<CCAMFrame> frames;
+    List<List<int>> call_site_lookup;
+    int frame_depth;
+    int steps;
+    int max_steps;
+    int max_depth;
+    bool halted;
+    bool halt_has_value;
+    int halt_value;
+    bool halt_bool_value;
+    string trap_code;
+    string trap_function;
+    int trap_pc;
+    string trap_detail;
+}
+
+struct CCAMCallMachineCreateResult {
+    bool ok;
+    CCAMCallMachine machine;
+    string error;
+}
+
+CCAMCallSite ccam_copy_call_site(CCAMCallSite source) {
+    List<int> args = new List<int>();
+    for (int i = 0; i < source.argument_registers.len(); i += 1) {
+        args.push(source.argument_registers[i]);
+    }
+    return new CCAMCallSite{
+        instruction_index: source.instruction_index,
+        callee_index: source.callee_index,
+        argument_registers: args,
+        destination_register: source.destination_register,
+        has_destination: source.has_destination
+    };
+}
+
+CCAMFunction ccam_copy_function(CCAMFunction source) {
+    List<int> types = new List<int>();
+    for (int i = 0; i < source.register_types.len(); i += 1) {
+        types.push(source.register_types[i]);
+    }
+    List<CCAMInstruction> instructions = new List<CCAMInstruction>();
+    for (int i = 0; i < source.instructions.len(); i += 1) {
+        instructions.push(ccam_copy_instruction(source.instructions[i]));
+    }
+    List<CCAMCallSite> call_sites = new List<CCAMCallSite>();
+    for (int i = 0; i < source.call_sites.len(); i += 1) {
+        call_sites.push(ccam_copy_call_site(source.call_sites[i]));
+    }
+    return new CCAMFunction{
+        name: source.name,
+        register_types: types,
+        parameter_count: source.parameter_count,
+        return_type: source.return_type,
+        instructions: instructions,
+        call_sites: call_sites
+    };
+}
+
+CCAMValidationResult ccam_validate_function_control_flow(
+    List<CCAMInstruction> instructions
+) {
+    if (instructions.len() == 0) {
+        return ccam_validation_error("empty_instruction_sequence");
+    }
+    List<bool> reachable = new List<bool>();
+    for (int i = 0; i < instructions.len(); i += 1) {
+        reachable.push(false);
+    }
+    List<int> worklist = new List<int>();
+    reachable[0] = true;
+    worklist.push(0);
+    int cursor = 0;
+    while (cursor < worklist.len()) {
+        int pc = worklist[cursor];
+        cursor += 1;
+        CCAMInstruction instruction = instructions[pc];
+        if (instruction.op == CCAM_OP_JUMP) {
+            if (!reachable[instruction.target]) {
+                reachable[instruction.target] = true;
+                worklist.push(instruction.target);
+            }
+        } else if (instruction.op == CCAM_OP_BRANCH) {
+            if (!reachable[instruction.if_true]) {
+                reachable[instruction.if_true] = true;
+                worklist.push(instruction.if_true);
+            }
+            if (!reachable[instruction.if_false]) {
+                reachable[instruction.if_false] = true;
+                worklist.push(instruction.if_false);
+            }
+        } else if (instruction.op == CCAM_OP_RET ||
+                   instruction.op == CCAM_OP_RET_VOID ||
+                   instruction.op == CCAM_OP_TRAP) {
+            // Terminal instruction.
+        } else {
+            if (pc + 1 >= instructions.len()) {
+                return ccam_validation_error("reachable_fallthrough");
+            }
+            if (!reachable[pc + 1]) {
+                reachable[pc + 1] = true;
+                worklist.push(pc + 1);
+            }
+        }
+    }
+    return ccam_validation_ok();
+}
+
+CCAMValidationResult ccam_validate_call_sites(
+    List<CCAMFunction> functions,
+    int function_index
+) {
+    CCAMFunction fn = functions[function_index];
+    List<bool> seen = new List<bool>();
+    for (int i = 0; i < fn.instructions.len(); i += 1) {
+        seen.push(false);
+    }
+
+    for (int i = 0; i < fn.call_sites.len(); i += 1) {
+        CCAMCallSite site = fn.call_sites[i];
+        if (site.instruction_index < 0 ||
+            site.instruction_index >= fn.instructions.len()) {
+            return ccam_validation_error("invalid_call_site_pc");
+        }
+        if (seen[site.instruction_index]) {
+            return ccam_validation_error("duplicate_call_site");
+        }
+        seen[site.instruction_index] = true;
+        if (fn.instructions[site.instruction_index].op != CCAM_OP_CALL) {
+            return ccam_validation_error("call_site_without_call");
+        }
+        if (site.callee_index < 0 || site.callee_index >= functions.len()) {
+            return ccam_validation_error("unknown_function");
+        }
+
+        CCAMFunction callee = functions[site.callee_index];
+        if (site.argument_registers.len() != callee.parameter_count) {
+            return ccam_validation_error("call_arity_mismatch");
+        }
+        for (int arg = 0; arg < site.argument_registers.len(); arg += 1) {
+            int source_index = site.argument_registers[arg];
+            if (source_index < 0 || source_index >= fn.register_types.len()) {
+                return ccam_validation_error("invalid_call_argument_register");
+            }
+            if (fn.register_types[source_index] != callee.register_types[arg]) {
+                return ccam_validation_error("call_argument_type_mismatch");
+            }
+        }
+
+        if (callee.return_type == CCAM_RETURN_VOID) {
+            if (site.has_destination) {
+                return ccam_validation_error("void_call_has_destination");
+            }
+        } else {
+            if (!site.has_destination) {
+                return ccam_validation_error("nonvoid_call_missing_destination");
+            }
+            if (site.destination_register < 0 ||
+                site.destination_register >= fn.register_types.len()) {
+                return ccam_validation_error("invalid_call_destination");
+            }
+            int expected_type = CCAM_TYPE_INT;
+            if (callee.return_type == CCAM_RETURN_BOOL) {
+                expected_type = CCAM_TYPE_BOOL;
+            }
+            if (fn.register_types[site.destination_register] != expected_type) {
+                return ccam_validation_error("call_destination_type_mismatch");
+            }
+        }
+    }
+
+    for (int i = 0; i < fn.instructions.len(); i += 1) {
+        if (fn.instructions[i].op == CCAM_OP_CALL && !seen[i]) {
+            return ccam_validation_error("missing_call_site");
+        }
+        if (fn.instructions[i].op != CCAM_OP_CALL && seen[i]) {
+            return ccam_validation_error("call_site_without_call");
+        }
+    }
+    return ccam_validation_ok();
+}
+
+// The single-frame validator remains the authority for ordinary opcode
+// operands, return contracts and branch targets. For that static pass, CALL is
+// replaced with a valid terminal TRAP placeholder; the separate worklist pass
+// below models CALL's sequential continuation edge and rejects reachable
+// fall-through after a call. Call signatures and destinations are checked above.
+CCAMValidationResult ccam_validate_multi_function(
+    List<CCAMFunction> functions,
+    int entry_function
+) {
+    if (functions.len() == 0 || functions.len() > CCAM_MAX_FUNCTIONS) {
+        return ccam_validation_error("function_limit_exceeded");
+    }
+    if (entry_function < 0 || entry_function >= functions.len()) {
+        return ccam_validation_error("invalid_entry_function");
+    }
+
+    int total_instructions = 0;
+    int total_registers = 0;
+    int total_name_bytes = 0;
+    int total_call_arguments = 0;
+    Map<int> function_names = new Map<int>();
+    // Bound aggregate metadata before allocating per-function validation or
+    // machine-copy storage. A call may target a later function in the table.
+    for (int i = 0; i < functions.len(); i += 1) {
+        CCAMFunction fn = functions[i];
+        int name_bytes = fn.name.len();
+        if (name_bytes == 0) {
+            return ccam_validation_error("invalid_function_name");
+        }
+        if (name_bytes > CCAM_MAX_FUNCTION_NAME_BYTES) {
+            return ccam_validation_error("function_name_limit_exceeded");
+        }
+        for (int byte_index = 0; byte_index < name_bytes; byte_index += 1) {
+            if (fn.name.at(byte_index) == 0) {
+                return ccam_validation_error("invalid_function_name");
+            }
+        }
+        if (name_bytes > CCAM_MAX_TOTAL_FUNCTION_NAME_BYTES - total_name_bytes) {
+            return ccam_validation_error("total_function_name_limit_exceeded");
+        }
+        total_name_bytes += name_bytes;
+        if (function_names.has(fn.name)) {
+            return ccam_validation_error("duplicate_function_name");
+        }
+        function_names.set(fn.name, 1);
+        if (fn.parameter_count < 0 ||
+            fn.parameter_count > fn.register_types.len()) {
+            return ccam_validation_error("invalid_parameter_count");
+        }
+        if (fn.return_type != CCAM_RETURN_INT &&
+            fn.return_type != CCAM_RETURN_BOOL &&
+            fn.return_type != CCAM_RETURN_VOID) {
+            return ccam_validation_error("invalid_return_type");
+        }
+        if (fn.register_types.len() > CCAM_MAX_REGISTERS) {
+            return ccam_validation_error("register_limit_exceeded");
+        }
+        if (fn.register_types.len() > CCAM_MAX_TOTAL_REGISTERS - total_registers) {
+            return ccam_validation_error("total_register_limit_exceeded");
+        }
+        total_registers += fn.register_types.len();
+        if (fn.instructions.len() > CCAM_MAX_INSTRUCTIONS - total_instructions) {
+            return ccam_validation_error("instruction_limit_exceeded");
+        }
+        total_instructions += fn.instructions.len();
+        // Every call-site record must correspond to a distinct instruction.
+        // Bound the side table before iterating or copying attacker-controlled
+        // call-site records.
+        if (fn.call_sites.len() > fn.instructions.len()) {
+            return ccam_validation_error("call_site_count_limit_exceeded");
+        }
+    }
+
+    for (int i = 0; i < functions.len(); i += 1) {
+        CCAMFunction fn = functions[i];
+        for (int site_index = 0; site_index < fn.call_sites.len(); site_index += 1) {
+            int argument_count = fn.call_sites[site_index].argument_registers.len();
+            if (argument_count > CCAM_MAX_CALL_ARGUMENTS - total_call_arguments) {
+                return ccam_validation_error("call_argument_limit_exceeded");
+            }
+            total_call_arguments += argument_count;
+        }
+        CCAMValidationResult calls = ccam_validate_call_sites(functions, i);
+        if (!calls.ok) {
+            return calls;
+        }
+
+        List<CCAMInstruction> static_code = new List<CCAMInstruction>();
+        for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
+            CCAMInstruction instruction = ccam_copy_instruction(fn.instructions[pc]);
+            if (instruction.op == CCAM_OP_CALL) {
+                // The ordinary single-frame validator treats this as a
+                // terminal placeholder; the real call's sequential edge is
+                // checked by the whole-function worklist below.
+                instruction.op = CCAM_OP_TRAP;
+                instruction.reason = "call";
+            }
+            static_code.push(instruction);
+        }
+        CCAMValidationResult ordinary = ccam_validate_single_frame(
+            fn.register_types, static_code, fn.return_type);
+        if (!ordinary.ok) {
+            return ordinary;
+        }
+        CCAMValidationResult flow = ccam_validate_function_control_flow(
+            fn.instructions);
+        if (!flow.ok) {
+            return flow;
+        }
+    }
+
+    CCAMFunction entry = functions[entry_function];
+    if (entry.parameter_count != 0 ||
+        (entry.return_type != CCAM_RETURN_INT &&
+         entry.return_type != CCAM_RETURN_VOID)) {
+        return ccam_validation_error("invalid_entry_signature");
+    }
+    return ccam_validation_ok();
+}
+
+CCAMCallMachine ccam_empty_call_machine() {
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    List<CCAMFrame> frames = new List<CCAMFrame>();
+    return new CCAMCallMachine{
+        functions: functions,
+        frames: frames,
+        call_site_lookup: new List<List<int>>(),
+        frame_depth: 0,
+        steps: 0,
+        max_steps: 0,
+        max_depth: 0,
+        halted: true,
+        halt_has_value: false,
+        halt_value: 0,
+        halt_bool_value: false,
+        trap_code: "",
+        trap_function: "",
+        trap_pc: 0,
+        trap_detail: ""
+    };
+}
+
+CCAMCallMachineCreateResult ccam_call_machine_create(
+    List<CCAMFunction> functions,
+    int entry_function,
+    int max_steps,
+    int max_depth
+) {
+    if (max_steps < 0) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(),
+            error: "invalid_step_limit"
+        };
+    }
+    if (max_steps > CCAM_MAX_STEPS) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(),
+            error: "configured_step_limit_too_large"
+        };
+    }
+    if (max_depth < 1) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(),
+            error: "invalid_call_depth_limit"
+        };
+    }
+    if (max_depth > CCAM_MAX_CALL_DEPTH) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(),
+            error: "configured_call_depth_too_large"
+        };
+    }
+    CCAMValidationResult validation = ccam_validate_multi_function(
+        functions, entry_function);
+    if (!validation.ok) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(),
+            error: validation.error
+        };
+    }
+
+    List<CCAMFunction> program = new List<CCAMFunction>();
+    for (int i = 0; i < functions.len(); i += 1) {
+        program.push(ccam_copy_function(functions[i]));
+    }
+    CCAMFunction entry = program[entry_function];
+    CCAMRegisterFileResult registers = ccam_registers_create(entry.register_types);
+    assert(registers.ok);
+    List<List<int>> call_site_lookup = new List<List<int>>();
+    for (int function_index = 0; function_index < program.len(); function_index += 1) {
+        CCAMFunction fn = program[function_index];
+        List<int> indices = new List<int>();
+        for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
+            indices.push(-1);
+        }
+        for (int site_index = 0; site_index < fn.call_sites.len(); site_index += 1) {
+            int pc = fn.call_sites[site_index].instruction_index;
+            indices[pc] = site_index;
+        }
+        call_site_lookup.push(indices);
+    }
+
+    List<CCAMFrame> frames = new List<CCAMFrame>();
+    frames.push(new CCAMFrame{
+        function_index: entry_function,
+        pc: 0,
+        registers: registers.registers,
+        caller_destination: 0,
+        caller_has_destination: false
+    });
+    CCAMCallMachine machine = new CCAMCallMachine{
+        functions: program,
+        frames: frames,
+        call_site_lookup: call_site_lookup,
+        frame_depth: 1,
+        steps: 0,
+        max_steps: max_steps,
+        max_depth: max_depth,
+        halted: false,
+        halt_has_value: false,
+        halt_value: 0,
+        halt_bool_value: false,
+        trap_code: "",
+        trap_function: "",
+        trap_pc: 0,
+        trap_detail: ""
+    };
+    return new CCAMCallMachineCreateResult{ok: true, machine: machine, error: ""};
+}
+
+void ccam_call_machine_trap(
+    CCAMCallMachine machine,
+    string code,
+    string function_name,
+    int pc,
+    string detail
+) {
+    machine.halted = true;
+    machine.halt_has_value = false;
+    machine.trap_code = code;
+    machine.trap_function = function_name;
+    machine.trap_pc = pc;
+    machine.trap_detail = detail;
+}
+
+void ccam_call_machine_step(CCAMCallMachine machine) {
+    if (machine.halted) {
+        return;
+    }
+    if (machine.frame_depth <= 0 ||
+        machine.frame_depth > machine.frames.len()) {
+        ccam_call_machine_trap(
+            machine, "invalid_call_stack", "", 0, "");
+        return;
+    }
+    CCAMFrame active = machine.frames[machine.frame_depth - 1];
+    CCAMFunction fn = machine.functions[active.function_index];
+    if (machine.steps >= machine.max_steps) {
+        ccam_call_machine_trap(
+            machine, "step_limit_exceeded", fn.name, active.pc, "");
+        return;
+    }
+    if (active.pc < 0 || active.pc >= fn.instructions.len()) {
+        ccam_call_machine_trap(
+            machine, "invalid_program_counter", fn.name, active.pc, "");
+        return;
+    }
+
+    CCAMInstruction instruction = fn.instructions[active.pc];
+    int executing_pc = active.pc;
+
+    if (instruction.op == CCAM_OP_CALL) {
+        machine.steps += 1;
+        int call_site_index = machine.call_site_lookup[
+            active.function_index][executing_pc];
+        if (call_site_index < 0) {
+            ccam_call_machine_trap(
+                machine, "invalid_call_site", fn.name, executing_pc, "");
+            return;
+        }
+        CCAMCallSite site = fn.call_sites[call_site_index];
+        CCAMFunction callee = machine.functions[site.callee_index];
+
+        // Snapshot every argument in source order before checking the depth
+        // limit or constructing/pushing the callee frame.
+        List<CCAMRegister> argument_values = new List<CCAMRegister>();
+        for (int i = 0; i < site.argument_registers.len(); i += 1) {
+            int source_index = site.argument_registers[i];
+            int expected_type = callee.register_types[i];
+            CCAMRegisterResult value = ccam_register_error("register_type_mismatch");
+            if (expected_type == CCAM_TYPE_INT) {
+                value = ccam_register_read_int(active.registers, source_index);
+            } else if (expected_type == CCAM_TYPE_BOOL) {
+                value = ccam_register_read_bool(active.registers, source_index);
+            }
+            if (!value.ok) {
+                ccam_call_machine_trap(
+                    machine, value.trap, fn.name, executing_pc, "");
+                return;
+            }
+            argument_values.push(new CCAMRegister{
+                declared_type: expected_type,
+                initialized: true,
+                int_value: value.int_value,
+                bool_value: value.bool_value
+            });
+        }
+
+        if (machine.frame_depth >= machine.max_depth) {
+            ccam_call_machine_trap(
+                machine, "call_depth_exceeded", fn.name, executing_pc, "");
+            return;
+        }
+
+        CCAMRegisterFileResult callee_registers = ccam_registers_create(
+            callee.register_types);
+        if (!callee_registers.ok) {
+            ccam_call_machine_trap(
+                machine, callee_registers.error, fn.name, executing_pc, "");
+            return;
+        }
+        List<CCAMRegister> new_registers = callee_registers.registers;
+        for (int i = 0; i < argument_values.len(); i += 1) {
+            CCAMRegister value = argument_values[i];
+            string write_error = "";
+            if (value.declared_type == CCAM_TYPE_INT) {
+                write_error = ccam_register_write_int(
+                    new_registers, i, value.int_value);
+            } else {
+                write_error = ccam_register_write_bool(
+                    new_registers, i, value.bool_value);
+            }
+            if (write_error != "") {
+                ccam_call_machine_trap(
+                    machine, write_error, fn.name, executing_pc, "");
+                return;
+            }
+        }
+
+        active.pc += 1;
+        machine.frames[machine.frame_depth - 1] = active;
+        CCAMFrame next = new CCAMFrame{
+            function_index: site.callee_index,
+            pc: 0,
+            registers: new_registers,
+            caller_destination: site.destination_register,
+            caller_has_destination: site.has_destination
+        };
+        if (machine.frame_depth < machine.frames.len()) {
+            machine.frames[machine.frame_depth] = next;
+        } else {
+            machine.frames.push(next);
+        }
+        machine.frame_depth += 1;
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_RET ||
+        instruction.op == CCAM_OP_RET_VOID) {
+        machine.steps += 1;
+        bool has_value = instruction.op == CCAM_OP_RET;
+        int int_value = 0;
+        bool bool_value = false;
+        int value_type = CCAM_TYPE_INT;
+        if (has_value) {
+            if (fn.return_type == CCAM_RETURN_INT) {
+                CCAMRegisterResult value = ccam_register_read_int(
+                    active.registers, instruction.lhs);
+                if (!value.ok) {
+                    ccam_call_machine_trap(
+                        machine, value.trap, fn.name, executing_pc, "");
+                    return;
+                }
+                int_value = value.int_value;
+            } else if (fn.return_type == CCAM_RETURN_BOOL) {
+                value_type = CCAM_TYPE_BOOL;
+                CCAMRegisterResult value = ccam_register_read_bool(
+                    active.registers, instruction.lhs);
+                if (!value.ok) {
+                    ccam_call_machine_trap(
+                        machine, value.trap, fn.name, executing_pc, "");
+                    return;
+                }
+                bool_value = value.bool_value;
+            } else {
+                ccam_call_machine_trap(
+                    machine, "return_type_mismatch", fn.name, executing_pc, "");
+                return;
+            }
+        } else if (fn.return_type != CCAM_RETURN_VOID) {
+            ccam_call_machine_trap(
+                machine, "return_type_mismatch", fn.name, executing_pc, "");
+            return;
+        }
+
+        if (machine.frame_depth == 1) {
+            machine.halted = true;
+            machine.halt_has_value = has_value;
+            machine.halt_value = int_value;
+            machine.halt_bool_value = bool_value;
+            return;
+        }
+
+        CCAMFrame caller = machine.frames[machine.frame_depth - 2];
+        if (has_value) {
+            if (!active.caller_has_destination ||
+                active.caller_destination < 0 ||
+                active.caller_destination >= caller.registers.len()) {
+                ccam_call_machine_trap(
+                    machine, "invalid_call_destination", fn.name, executing_pc, "");
+                return;
+            }
+            int expected_type = caller.registers[active.caller_destination].declared_type;
+            if (expected_type != value_type) {
+                ccam_call_machine_trap(
+                    machine, "call_destination_type_mismatch", fn.name, executing_pc, "");
+                return;
+            }
+        } else if (active.caller_has_destination) {
+            ccam_call_machine_trap(
+                machine, "void_call_has_destination", fn.name, executing_pc, "");
+            return;
+        }
+
+        // Preflight is complete. The write helper cannot fail after the
+        // index/type checks above; perform it before reducing stack depth so
+        // even a defensive failure leaves the caller/callee stack unchanged.
+        if (has_value) {
+            string write_error = "";
+            if (value_type == CCAM_TYPE_INT) {
+                write_error = ccam_register_write_int(
+                    caller.registers, active.caller_destination, int_value);
+            } else {
+                write_error = ccam_register_write_bool(
+                    caller.registers, active.caller_destination, bool_value);
+            }
+            if (write_error != "") {
+                ccam_call_machine_trap(
+                    machine, write_error, fn.name, executing_pc, "");
+                return;
+            }
+            machine.frames[machine.frame_depth - 2] = caller;
+        }
+        machine.frame_depth -= 1;
+        return;
+    }
+
+    // Reuse the audited single-frame transition for all non-call, non-return
+    // instructions. The shared global budget is passed into the temporary
+    // frame view, so this still consumes exactly one global instruction step.
+    CCAMMachineState frame_state = new CCAMMachineState{
+        registers: active.registers,
+        instructions: fn.instructions,
+        pc: active.pc,
+        steps: machine.steps,
+        max_steps: machine.max_steps,
+        halted: false,
+        halt_has_value: false,
+        halt_value: 0,
+        halt_bool_value: false,
+        trap_code: "",
+        trap_detail: ""
+    };
+    ccam_machine_step(frame_state);
+    machine.steps = frame_state.steps;
+    active.pc = frame_state.pc;
+    machine.frames[machine.frame_depth - 1] = active;
+    if (frame_state.halted) {
+        if (frame_state.trap_code == "") {
+            ccam_call_machine_trap(
+                machine, "invalid_instruction", fn.name, executing_pc, "");
+        } else {
+            ccam_call_machine_trap(
+                machine, frame_state.trap_code, fn.name, executing_pc,
+                frame_state.trap_detail);
+        }
+    }
+}
+
+test "CCAM multi-function evaluator passes arguments and returns atomically" {
+    List<int> caller_types = new List<int>();
+    caller_types.push(CCAM_TYPE_INT);
+    caller_types.push(CCAM_TYPE_INT);
+    caller_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 19;
+    caller_code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 23;
+    caller_code.push(i);
+    i = ccam_instruction(CCAM_OP_CALL);
+    caller_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 2;
+    caller_code.push(i);
+
+    List<int> callee_types = new List<int>();
+    callee_types.push(CCAM_TYPE_INT);
+    callee_types.push(CCAM_TYPE_INT);
+    callee_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_ADD_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    callee_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 2;
+    callee_code.push(i);
+
+    List<int> args = new List<int>();
+    args.push(0);
+    args.push(1);
+    List<CCAMCallSite> caller_sites = new List<CCAMCallSite>();
+    caller_sites.push(new CCAMCallSite{
+        instruction_index: 2,
+        callee_index: 1,
+        argument_registers: args,
+        destination_register: 2,
+        has_destination: true
+    });
+
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main",
+        register_types: caller_types,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_INT,
+        instructions: caller_code,
+        call_sites: caller_sites
+    });
+    functions.push(new CCAMFunction{
+        name: "sum",
+        register_types: callee_types,
+        parameter_count: 2,
+        return_type: CCAM_RETURN_INT,
+        instructions: callee_code,
+        call_sites: new List<CCAMCallSite>()
+    });
+
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 6, 4);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    for (int step = 0; step < 6; step += 1) {
+        ccam_call_machine_step(machine);
+    }
+    assert(machine.halted && machine.halt_has_value);
+    assert(machine.halt_value == 42);
+    assert(machine.steps == 6 && machine.trap_code == "");
+}
+
+test "CCAM multi-function evaluator handles void calls" {
+    List<int> entry_types = new List<int>();
+    entry_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> entry_code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CALL);
+    entry_code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 42;
+    entry_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    entry_code.push(i);
+
+    List<CCAMInstruction> void_code = new List<CCAMInstruction>();
+    void_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0,
+        callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0,
+        has_destination: false
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: entry_types, parameter_count: 0,
+        return_type: CCAM_RETURN_INT, instructions: entry_code,
+        call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "noop", register_types: new List<int>(), parameter_count: 0,
+        return_type: CCAM_RETURN_VOID, instructions: void_code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 4, 2);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    for (int step = 0; step < 4; step += 1) {
+        ccam_call_machine_step(machine);
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.steps == 4 && machine.trap_code == "");
+}
+
+test "CCAM multi-function evaluator enforces depth after argument reads" {
+    List<int> entry_types = new List<int>();
+    entry_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> entry_code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CALL);
+    entry_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    entry_code.push(i);
+    List<int> callee_types = new List<int>();
+    callee_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    callee_code.push(i);
+    List<int> args = new List<int>();
+    args.push(0);
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: args, destination_register: 0,
+        has_destination: true
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: entry_types, parameter_count: 0,
+        return_type: CCAM_RETURN_INT, instructions: entry_code,
+        call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "id", register_types: callee_types, parameter_count: 1,
+        return_type: CCAM_RETURN_INT, instructions: callee_code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 2, 1);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "uninitialised_register");
+    assert(machine.steps == 1 && machine.trap_function == "main");
+}
+
+
+test "CCAM multi-function evaluator traps at the call-depth limit" {
+    List<int> caller_types = new List<int>();
+    caller_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 7;
+    caller_code.push(i);
+    caller_code.push(ccam_instruction(CCAM_OP_CALL));
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    caller_code.push(i);
+
+    List<int> callee_types = new List<int>();
+    callee_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    callee_code.push(i);
+    List<int> args = new List<int>();
+    args.push(0);
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 1, callee_index: 1,
+        argument_registers: args, destination_register: 0,
+        has_destination: true
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: caller_types, parameter_count: 0,
+        return_type: CCAM_RETURN_INT, instructions: caller_code,
+        call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "id", register_types: callee_types, parameter_count: 1,
+        return_type: CCAM_RETURN_INT, instructions: callee_code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 8, 1);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    ccam_call_machine_step(machine);
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "call_depth_exceeded");
+    assert(machine.steps == 2 && machine.trap_function == "main");
+    assert(machine.trap_pc == 1 && machine.frame_depth == 1);
+}
+
+test "CCAM multi-function validator rejects mismatched call signatures" {
+    List<int> entry_types = new List<int>();
+    entry_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> entry_code = new List<CCAMInstruction>();
+    entry_code.push(ccam_instruction(CCAM_OP_CALL));
+    entry_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<int> callee_types = new List<int>();
+    callee_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    callee_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<int> args = new List<int>();
+    args.push(0);
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: args, destination_register: 0,
+        has_destination: false
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: entry_types, parameter_count: 0,
+        return_type: CCAM_RETURN_VOID, instructions: entry_code,
+        call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "f", register_types: callee_types, parameter_count: 1,
+        return_type: CCAM_RETURN_VOID, instructions: callee_code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult result = ccam_validate_multi_function(functions, 0);
+    assert(!result.ok && result.error == "call_argument_type_mismatch");
+}
+
+test "CCAM multi-function validator enforces aggregate register limits" {
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    for (int f = 0; f < 64; f += 1) {
+        List<int> types = new List<int>();
+        for (int r = 0; r < CCAM_MAX_REGISTERS; r += 1) types.push(CCAM_TYPE_INT);
+        functions.push(new CCAMFunction{
+            name: "f" + int_to_str(f), register_types: types,
+            parameter_count: 0, return_type: CCAM_RETURN_VOID,
+            instructions: terminal, call_sites: new List<CCAMCallSite>()
+        });
+    }
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    List<int> extra = new List<int>();
+    extra.push(CCAM_TYPE_INT);
+    functions.push(new CCAMFunction{
+        name: "over", register_types: extra,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: terminal, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "total_register_limit_exceeded");
+}
+
+test "CCAM multi-function validator bounds names and rejects embedded NUL" {
+    string name = "n";
+    for (int i = 1; i < CCAM_MAX_FUNCTION_NAME_BYTES; i += 1) name = name + "a";
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: name, register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: terminal, call_sites: new List<CCAMCallSite>()
+    });
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    functions[0].name = name + "a";
+    CCAMValidationResult too_long = ccam_validate_multi_function(functions, 0);
+    assert(!too_long.ok && too_long.error == "function_name_limit_exceeded");
+    functions[0].name = "bad" + char_str(0) + "name";
+    CCAMValidationResult nul_name = ccam_validate_multi_function(functions, 0);
+    assert(!nul_name.ok && nul_name.error == "invalid_function_name");
+}
+
+test "CCAM multi-function validator bounds aggregate function-name bytes" {
+    string padding = "";
+    for (int i = 0; i < CCAM_MAX_FUNCTION_NAME_BYTES; i += 1) padding = padding + "x";
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    for (int i = 0; i < 256; i += 1) {
+        string prefix = int_to_str(i);
+        string name = prefix + padding.slice(0, CCAM_MAX_FUNCTION_NAME_BYTES - prefix.len());
+        functions.push(new CCAMFunction{
+            name: name, register_types: new List<int>(),
+            parameter_count: 0, return_type: CCAM_RETURN_VOID,
+            instructions: terminal, call_sites: new List<CCAMCallSite>()
+        });
+    }
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    string prefix = "256";
+    string over_name = prefix + padding.slice(0, CCAM_MAX_FUNCTION_NAME_BYTES - prefix.len());
+    functions.push(new CCAMFunction{
+        name: over_name, register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: terminal, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "total_function_name_limit_exceeded");
+}
+
+test "CCAM call machine enforces configuration ceilings before construction" {
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: terminal, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult exact = ccam_call_machine_create(
+        functions, 0, CCAM_MAX_STEPS, CCAM_MAX_CALL_DEPTH);
+    assert(exact.ok);
+    CCAMCallMachineCreateResult too_many_steps = ccam_call_machine_create(
+        functions, 0, CCAM_MAX_STEPS + 1, CCAM_MAX_CALL_DEPTH);
+    assert(!too_many_steps.ok &&
+           too_many_steps.error == "configured_step_limit_too_large");
+    assert(too_many_steps.machine.halted && too_many_steps.machine.functions.len() == 0);
+    CCAMCallMachineCreateResult too_deep = ccam_call_machine_create(
+        functions, 0, CCAM_MAX_STEPS, CCAM_MAX_CALL_DEPTH + 1);
+    assert(!too_deep.ok &&
+           too_deep.error == "configured_call_depth_too_large");
+    assert(too_deep.machine.halted && too_deep.machine.frames.len() == 0);
+}
+
+test "CCAM multi-function validator bounds call-site side tables" {
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    caller_code.push(ccam_instruction(CCAM_OP_CALL));
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0, has_destination: false
+    });
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0, has_destination: false
+    });
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    callee_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: caller_code, call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "noop", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: callee_code, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "call_site_count_limit_exceeded");
+}
+
+test "CCAM multi-function return preflight preserves caller and stack on failure" {
+    List<int> caller_types = new List<int>();
+    caller_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    caller_code.push(ccam_instruction(CCAM_OP_CALL));
+    CCAMInstruction i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    caller_code.push(i);
+
+    List<int> callee_types = new List<int>();
+    callee_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 42;
+    callee_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    callee_code.push(i);
+
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0, has_destination: true
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: caller_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: caller_code, call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "callee", register_types: callee_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: callee_code, call_sites: new List<CCAMCallSite>()
+    });
+
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 8, 4);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    ccam_call_machine_step(machine);
+    assert(machine.frame_depth == 2 && machine.steps == 1);
+
+    // Simulate corrupted internal frame state to exercise the defensive
+    // return preflight; a failed preflight must neither write nor pop.
+    CCAMFrame callee = machine.frames[1];
+    callee.caller_destination = 1;
+    machine.frames[1] = callee;
+    ccam_call_machine_step(machine);
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "invalid_call_destination");
+    assert(machine.frame_depth == 2 && machine.steps == 3);
+    assert(!machine.frames[0].registers[0].initialized);
+}
+
+test "CCAM multi-function evaluator returns boolean values to typed destinations" {
+    List<int> main_types = new List<int>();
+    main_types.push(CCAM_TYPE_BOOL);
+    main_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> main_code = new List<CCAMInstruction>();
+    main_code.push(ccam_instruction(CCAM_OP_CALL));
+    CCAMInstruction i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 0;
+    i.if_true = 2;
+    i.if_false = 4;
+    main_code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 7;
+    main_code.push(i);
+    i = ccam_instruction(CCAM_OP_JUMP);
+    i.target = 5;
+    main_code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 9;
+    main_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 1;
+    main_code.push(i);
+
+    List<int> predicate_types = new List<int>();
+    predicate_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> predicate_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_B);
+    i.dst = 0;
+    i.bool_value = true;
+    predicate_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    predicate_code.push(i);
+
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(),
+        destination_register: 0, has_destination: true
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: main_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: main_code, call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "predicate", register_types: predicate_types,
+        parameter_count: 0, return_type: CCAM_RETURN_BOOL,
+        instructions: predicate_code, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 7, 4);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    for (int step = 0; step < 7; step += 1) ccam_call_machine_step(machine);
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 7);
+    assert(machine.steps == 7 && machine.trap_code == "");
+}
+
+test "CCAM multi-function evaluator executes nested recursive calls" {
+    List<int> main_types = new List<int>();
+    main_types.push(CCAM_TYPE_INT);
+    main_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> main_code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 3;
+    main_code.push(i);
+    main_code.push(ccam_instruction(CCAM_OP_CALL));
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 1;
+    main_code.push(i);
+
+    List<int> countdown_types = new List<int>();
+    countdown_types.push(CCAM_TYPE_INT);
+    countdown_types.push(CCAM_TYPE_INT);
+    countdown_types.push(CCAM_TYPE_BOOL);
+    countdown_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> countdown_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 3;
+    i.int_value = 1;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_LT_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 3;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 2;
+    i.if_true = 6;
+    i.if_false = 3;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_SUB_I);
+    i.dst = 1;
+    i.lhs = 0;
+    i.rhs = 3;
+    countdown_code.push(i);
+    countdown_code.push(ccam_instruction(CCAM_OP_CALL));
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 3;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 3;
+    i.int_value = 0;
+    countdown_code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 3;
+    countdown_code.push(i);
+
+    List<int> main_args = new List<int>();
+    main_args.push(0);
+    List<CCAMCallSite> main_sites = new List<CCAMCallSite>();
+    main_sites.push(new CCAMCallSite{
+        instruction_index: 1, callee_index: 1,
+        argument_registers: main_args,
+        destination_register: 1, has_destination: true
+    });
+    List<int> recursive_args = new List<int>();
+    recursive_args.push(1);
+    List<CCAMCallSite> countdown_sites = new List<CCAMCallSite>();
+    countdown_sites.push(new CCAMCallSite{
+        instruction_index: 4, callee_index: 1,
+        argument_registers: recursive_args,
+        destination_register: 3, has_destination: true
+    });
+
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: main_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT,
+        instructions: main_code, call_sites: main_sites
+    });
+    functions.push(new CCAMFunction{
+        name: "countdown", register_types: countdown_types,
+        parameter_count: 1, return_type: CCAM_RETURN_INT,
+        instructions: countdown_code, call_sites: countdown_sites
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 26, 5);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    for (int step = 0; step < 26; step += 1) ccam_call_machine_step(machine);
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 0);
+    assert(machine.steps == 26 && machine.frame_depth == 1);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM multi-function validator enforces the function-count boundary" {
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    for (int i = 0; i < CCAM_MAX_FUNCTIONS; i += 1) {
+        functions.push(new CCAMFunction{
+            name: "f" + int_to_str(i),
+            register_types: new List<int>(),
+            parameter_count: 0,
+            return_type: CCAM_RETURN_VOID,
+            instructions: terminal,
+            call_sites: new List<CCAMCallSite>()
+        });
+    }
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    functions.push(new CCAMFunction{
+        name: "too_many",
+        register_types: new List<int>(),
+        parameter_count: 0,
+        return_type: CCAM_RETURN_VOID,
+        instructions: terminal,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "function_limit_exceeded");
+}
+
+test "CCAM multi-function validator enforces aggregate instruction boundary" {
+    List<CCAMInstruction> maximum = new List<CCAMInstruction>();
+    for (int i = 0; i < CCAM_MAX_INSTRUCTIONS; i += 1) {
+        maximum.push(ccam_instruction(CCAM_OP_RET_VOID));
+    }
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: maximum, call_sites: new List<CCAMCallSite>()
+    });
+    assert(ccam_validate_multi_function(functions, 0).ok);
+
+    List<CCAMInstruction> extra_code = new List<CCAMInstruction>();
+    extra_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    functions.push(new CCAMFunction{
+        name: "extra", register_types: new List<int>(),
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: extra_code, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "instruction_limit_exceeded");
+}
+
+test "CCAM multi-function validator enforces aggregate call-argument boundary" {
+    List<int> register_types = new List<int>();
+    for (int i = 0; i < CCAM_MAX_REGISTERS; i += 1) {
+        register_types.push(CCAM_TYPE_INT);
+    }
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    for (int site = 0; site < 64; site += 1) {
+        caller_code.push(ccam_instruction(CCAM_OP_CALL));
+        List<int> args = new List<int>();
+        for (int arg = 0; arg < CCAM_MAX_REGISTERS; arg += 1) args.push(arg);
+        sites.push(new CCAMCallSite{
+            instruction_index: site, callee_index: 1,
+            argument_registers: args,
+            destination_register: 0, has_destination: false
+        });
+    }
+    caller_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    callee_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: register_types,
+        parameter_count: 0, return_type: CCAM_RETURN_VOID,
+        instructions: caller_code, call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "callee", register_types: register_types,
+        parameter_count: CCAM_MAX_REGISTERS, return_type: CCAM_RETURN_VOID,
+        instructions: callee_code, call_sites: new List<CCAMCallSite>()
+    });
+    assert(ccam_validate_multi_function(functions, 0).ok);
+
+    caller_code.push(ccam_instruction(CCAM_OP_CALL));
+    List<int> extra_args = new List<int>();
+    extra_args.push(0);
+    sites.push(new CCAMCallSite{
+        instruction_index: 65, callee_index: 1,
+        argument_registers: extra_args,
+        destination_register: 0, has_destination: false
+    });
+    CCAMFunction updated_caller = functions[0];
+    updated_caller.instructions = caller_code;
+    updated_caller.call_sites = sites;
+    functions[0] = updated_caller;
+    CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
+    assert(!rejected.ok && rejected.error == "call_argument_limit_exceeded");
+}
