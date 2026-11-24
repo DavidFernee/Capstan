@@ -330,6 +330,7 @@ When the language gains a feature, add its area here and its tests together.
 | `stmt.match` | `match`, exhaustiveness, bindings |
 | `expr.operators` | operators and precedence |
 | `expr.order` | strict left-to-right evaluation |
+| `expr.short_circuit` | `&&`/`||` suppress a trapping RHS when the result is already determined |
 | `expr.interpolation` | `$"..."` interpolated strings |
 | `expr.bitwise` | `& \| ^ ~ << >> >>>`, required parentheses, shift counts, hexadecimal literals, wrapping arithmetic |
 | `builtins.io` | printing, files, arguments |
