@@ -309,8 +309,7 @@ else
   echo "  skip  sanitizers not available for $CC"
 fi
 
-# Keep this independent regression section away from the core Shroud runner's
-# insertion point so other Shroud test additions can merge without hunk conflicts.
+# Dedicated integration regression for aggregate view-tree text preflight.
 section "shroud frame text budget"
 if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
 if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
