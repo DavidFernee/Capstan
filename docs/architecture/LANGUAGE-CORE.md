@@ -134,6 +134,7 @@ The initial stable trap codes are:
 - `integer_overflow`
 - `division_by_zero`
 - `uninitialised_register`
+- `invalid_register` (defence-in-depth; structurally invalid indices should be rejected before execution)
 - `register_type_mismatch` (defence-in-depth; structurally invalid typed programs should be rejected before execution)
 - `step_limit_exceeded`
 - `call_depth_exceeded`
