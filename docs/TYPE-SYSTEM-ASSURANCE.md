@@ -319,3 +319,40 @@ The current checker already uses recursive `contains_grant` for function returns
 Define a single recursive, bounded predicate over the fully substituted type and apply it consistently to every position that can extend a grant's lifetime or hide it from a caller: aggregate storage, return values, closure environments/captures, constants, and any future generic container or interface-associated value. Keep the intentional request-scoped local/parameter use distinct from heap storage and escape. Test nested wrappers (including optional and multiple aggregate layers), aliases, substituted type variables, and closure capture. The rule must be evaluated after substitution as well as on declaration templates.
 
 These requirements close a gap between the existing concrete protected-call model and the proposed generic/static-dispatch model. They do not require runtime dispatch or a general-purpose effect system; they require the existing policy/grant semantics to remain explicit and invariant under abstraction.
+
+
+## 15. Generic templates require abstract checking; Result propagation needs a defined expression form
+
+### 15.1 Check generic declarations independently of observed instantiations
+
+The proposal states that generic bodies may use only operations supplied by declared constraints, and that each concrete instantiation is type-checked after substitution. It does not define the abstract checking phase that enforces the first rule before concrete call sites are considered.
+
+Require two distinct phases:
+
+1. **Template validation.** Check each generic declaration once in an abstract environment containing its binder-identified type variables and declared interface constraints. Every operation on a type variable must be justified by a declared bound or a language-defined operation valid for every type. Calls to other generic declarations must discharge their constraints symbolically from the caller's declared bounds. Missing or ambiguous obligations are errors at the template declaration, even if it is never instantiated. Check control flow, return completeness, protected-call/grant rules and all safety rules that do not depend on concrete layout or implementation selection.
+2. **Concrete instance validation.** After substitution, resolve concrete interface implementations and recheck every property dependent on concrete types, declaration identity, layout or selected implementation. Recheck the security invariants that depend on the substituted type, including recursive grant containment and qualifier preservation. Only then may code generation consume the instance.
+
+Neither phase emits C. A generic template must never be emitted as partially checked C. Acceptance of a template must not depend on which instantiation call sites happen to be present in the compilation unit.
+
+Required tests:
+- An invalid generic body is rejected even when the generic declaration is never instantiated.
+- An operation supported by one concrete type but not justified by the generic bounds is rejected at the template.
+- A generic function calling another generic function without proving its bound is rejected.
+- Adding/removing unrelated instantiation sites does not change template acceptance.
+- A valid abstract template whose concrete implementation is missing or ambiguous fails at concrete instance validation before code generation.
+- No generated C is produced after either phase reports an error.
+
+### 15.2 Result propagation is typed control flow, not merely a postfix operator
+
+The proposal defines the value-level behaviour of postfix `?`, but the current expression parser's postfix loop handles member access and indexing only; it does not currently parse postfix expression operators. The existing postfix `?` in the parser is used for optional *types*. The Result operator therefore needs an explicit expression grammar and AST/control-flow representation, distinct from optional-type syntax.
+
+Specify and test:
+- Exact precedence and associativity when `?` follows a call, index, field access, parenthesised expression, or another postfix expression.
+- The operand must be exactly `Result<U, E>`; the enclosing function must return `Result<V, E>` with exactly the same resolved error type. No optional lifting, error conversion, or implicit coercion.
+- The success edge yields the `Ok` payload with its substituted type; the error edge constructs/returns the corresponding `Err` payload.
+- The propagation edge is explicit in typed control flow and participates in definite-return/reachability analysis. It must not be modelled as an exception, hidden unwind or ordinary expression fallthrough.
+- Evaluation order is left-to-right and the operand is evaluated exactly once, including when it is a call with side effects.
+- Local values and temporary resources are handled consistently on both success and propagation edges. If destructors/finalizers or explicit cleanup are added, define their edge semantics before enabling `?` with them; do not silently introduce unwind behaviour.
+- Nested propagation preserves the exact error type and does not change protected-call privilege or allow a grant to escape.
+
+Required tests cover every operand form above, nested `?`, exact error-type mismatch, use outside a Result-returning function, side-effecting operand evaluated once, both CFG edges, return analysis, and cleanup/resource behaviour. Parser tests must distinguish `T?` in a type from `expr?` in an expression, including adjacent tokens in nested generic types and expressions.
