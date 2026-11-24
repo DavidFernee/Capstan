@@ -1,0 +1,63 @@
+// Unit regressions for cumulative frame text/metadata preflight.
+string repeat_ascii(int n) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < n; i += 1) { parts.push("x"); }
+    return join(parts, "");
+}
+
+View nested_view(int depth) {
+    if (depth == 0) { return text(""); }
+    return column().add(nested_view(depth - 1));
+}
+
+int main() {
+    List<int> budget = new List<int>();
+    budget.push(0);
+    if (!frame_text_budget_add(budget, MAX_FRAME_TEXT_BYTES)) { return 1; }
+    if (frame_text_budget_add(budget, 1)) { return 2; }
+    if (!frame_text_budget_add(budget, 0)) { return 3; }
+
+    View ordinary = column()
+        .add(text("Capstan"))
+        .add(button("Continue", "continue").label("Continue"));
+    if (!frame_text_budget_valid(ordinary)) { return 4; }
+
+    // A single widget may use the full existing per-value text allowance.
+    string max_widget = repeat_ascii(MAX_TEXT_BYTES);
+    if (!frame_text_budget_valid(text(max_widget))) { return 5; }
+
+    // Two individually valid maximum-size values exactly fill the frame budget.
+    string half = repeat_ascii(MAX_TEXT_BYTES);
+    View exact = column().add(text(half)).add(text(half));
+    if (!frame_text_budget_valid(exact)) { return 6; }
+
+    // One additional byte exceeds the aggregate limit.
+    View aggregate = column().add(text(half)).add(text(half)).add(text("x"));
+    if (frame_text_budget_valid(aggregate)) { return 7; }
+
+    // Metadata is included, not just painted text.
+    string large = repeat_ascii(MAX_TEXT_BYTES);
+    View metadata = box().key(large).hint(large).label("x");
+    if (frame_text_budget_valid(metadata)) { return 8; }
+
+    if (frame_text_budget_valid(nested_view(MAX_DEPTH + 1))) { return 9; }
+
+    List<int> view_count = new List<int>();
+    view_count.push(0);
+    view_count.push(MAX_VIEWS - 1);
+    if (!preflight_frame_view(text(""), view_count, 0)) { return 10; }
+
+    List<int> too_many_views = new List<int>();
+    too_many_views.push(0);
+    too_many_views.push(MAX_VIEWS);
+    if (preflight_frame_view(text(""), too_many_views, 0)) { return 11; }
+
+    // View values can share mutable child lists; a cycle must stop at MAX_DEPTH.
+    View cycle_a = column();
+    View cycle_b = column().add(cycle_a);
+    cycle_a.add(cycle_b);
+    if (frame_text_budget_valid(cycle_a)) { return 12; }
+
+    println("frame text budget: 12 assertions");
+    return 0;
+}
