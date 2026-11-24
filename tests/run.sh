@@ -110,6 +110,7 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     }
     native_run ccam-native-x64 42
     native_run ccam-native-x64-loop 42
+    native_run ccam-native-x64-recursion 42
     native_run ccam-native-x64-overflow 70
     native_run ccam-native-x64-divzero 71
     native_run ccam-native-x64-div-overflow 70
