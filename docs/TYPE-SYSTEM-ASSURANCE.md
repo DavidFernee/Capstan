@@ -1188,3 +1188,70 @@ Use structured save/restore or immutable context values. If mutable checker stat
 - Bootstrap and self-hosted compilers agree on phase ordering, rejection and deterministic diagnostics.
 
 This is a required architecture contract for generic checking; the current checker has no generic template or instantiation context.
+
+
+## 33. Monomorphised C ABI, symbol identity and specialized layouts
+
+The v0.5 proposal chooses monomorphisation, but the current backend is not yet parameterised by canonical declaration or instantiation identity. In `compiler/codegen.cap`, `ctype(Type)` emits `S_<name>*` and `E_<name>*` for nominal types; `fn_sig(Node)` emits `fn_<source-name>`; struct and enum declarations use the source name directly; and `gen_call` looks up a function by its short source name and emits that same symbol. Generic arguments and module identity are absent from these C names.
+
+This is not a cosmetic issue. Distinct specializations and same-spelled declarations from different modules would collide or share an incorrect C layout unless the backend receives resolved specialization identities.
+
+### 33.1 Canonical specialization identity and C name mangling
+
+Every emitted generic specialization must have a canonical identity containing:
+
+- The resolved generic declaration `DeclId`.
+- The complete, ordered vector of fully resolved concrete type arguments.
+- The specialization kind (function, struct, enum, or other emitted entity).
+- Any additional ABI-relevant configuration that can change emitted representation. Do not include irrelevant call-site or source-order data.
+
+Derive C identifiers from that identity using a deterministic, collision-resistant encoding. Do not concatenate unescaped source names or use diagnostic `type_str` output as a symbol key. The encoding must distinguish module-qualified declarations and every distinct argument vector, be independent of import/declaration order, and remain within compiler/backend identifier and generated-file resource limits. If names are shortened or hashed, maintain collision detection against the full canonical identity and fail closed on collision; do not silently alias symbols.
+
+Non-generic declarations must also use resolved declaration identity once modules permit same-spelled declarations. Generated helper symbols, policy IDs, enum tags/constructors and lifted methods must follow the same identity discipline.
+
+### 33.2 Specialize every layout and operation consistently
+
+A concrete `Box<int>` and `Box<string>` are distinct nominal instantiations with independently substituted field layouts. The specialization pass must produce one canonical concrete representation consumed consistently by:
+
+- C forward declarations and struct/enum definitions;
+- `ctype` and all parameter, return, local, field and payload declarations;
+- `new` allocation and field initialisation;
+- field lookup and assignment;
+- enum constructors, payload access and pattern matching;
+- list/map storage conversions and typed retrieval;
+- equality and protected-grant value comparisons;
+- function signatures, direct calls, method calls and lifted struct methods;
+- constants, global roots and generated initialisation;
+- range-analysis facts and any type-keyed checker/codegen cache.
+
+No backend path may fall back to the unspecialized template's source name or original field type after a concrete instantiation has been selected. In particular, enum payload code must use the specialized variant payload types, not read the generic template's unsubstituted field nodes.
+
+### 33.3 GC layout and pointer tracing contract
+
+For each specialized aggregate, establish the runtime allocation/scanning contract. If the collector uses conservative scanning, document and test the assumptions for every concrete field representation. If it uses descriptors or pointer maps, generate a descriptor for each specialization. Pointer-bearing fields must remain traceable; pointer-free specializations must not be accidentally classified as pointer-bearing or secret-wiping solely because of their source generic declaration.
+
+A generic aggregate that is pointer-free for one instantiation and pointer-bearing for another must be represented safely in both cases. A `Box<int>` layout must not be reused as the layout for `Box<Secret>`, `Box<CapStr*>` or another pointer-bearing instantiation. Generic enum payload unions/structs must preserve reachability for every active variant, including nested collections and closure environments. The same specialized layout metadata must be used by allocation, tracing and any secret-aware reclamation path.
+
+Do not infer that conservative scanning or precise descriptors are safe without checking the actual runtime implementation and its tests. The design must name the chosen strategy and its limitations.
+
+### 33.4 Specialization must not mutate templates
+
+The backend should consume immutable or independently owned specialized declarations. Rewriting shared AST nodes in place for one instantiation can corrupt later instantiations, diagnostics, range facts or bootstrap behaviour. Cache specialized representations by canonical specialization identity; keep source provenance mapped to the original template and instantiation trace.
+
+Enforce global limits on generated specializations, aggregate layout nodes, emitted C bytes and mangled identifier length. Resource exhaustion must diagnose before publishing generated output.
+
+### 33.5 Required adversarial tests
+
+- `Box<int>` and `Box<string>` produce distinct C types with the correct substituted fields.
+- Two modules' same-spelled `Box<int>` declarations produce distinct C types and function symbols.
+- Two instantiations with structurally identical arguments share exactly one specialization; distinct arguments never alias.
+- Nested generic structs/enums and mutually recursive nominal layouts produce valid forward declarations and definitions without infinite expansion.
+- Generic enum constructors, match payload bindings and payload equality use the selected concrete payload types.
+- A generic function called at multiple type arguments has distinct correct signatures and bodies; direct calls resolve to the matching symbol.
+- Lifted methods on generic structs receive the correct specialized receiver and method symbol.
+- Pointer-free and pointer-bearing instantiations both remain GC-safe; nested references survive collection; secret payload reclamation follows the existing secret-aware policy.
+- Mangling is deterministic across import/declaration order and rejects forced hash/name collisions.
+- Generated identifiers and output sizes respect explicit limits; exhaustion leaves no partial C output.
+- GCC and Clang compile all specialization fixtures at `-O0`, `-O2` and `-O3`; bootstrap and self-hosted output agree.
+
+This section defines required backend work; it does not assert that the current code generator supports generics or that the runtime's generic-layout behaviour has been verified.
