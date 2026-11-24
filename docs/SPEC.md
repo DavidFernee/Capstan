@@ -75,6 +75,20 @@ Braces are required around every body.
 Precedence from low to high: `||`, `&&`, `== !=`, `< <= > >=`, `+ -`, `* / %`, unary `! - ~`,
 then postfix `.field`, `.method(args)`, `[index]`.
 
+Integer arithmetic uses signed 64-bit two's-complement values. Addition,
+subtraction, multiplication and unary negation are checked; an unrepresentable
+result stops the program with CWE-190. Division truncates toward zero.
+Remainder is defined by `a = q*b + r`, where `q` is that truncating quotient;
+a nonzero remainder has the sign of the dividend and `|r| < |b|`.
+Division or remainder by zero stops the program with CWE-369.
+`-9223372036854775808 / -1` stops with CWE-190, while
+`0x8000000000000000 % -1` returns `0`: the remainder is representable even
+though the corresponding quotient is not. Implementations must special-case
+this remainder pair before any host operation that could overflow or be
+undefined. The sign is a unary operator, not part of a decimal token; use the
+hexadecimal literal `0x8000000000000000` or an in-range arithmetic expression
+to denote the minimum signed integer.
+
 Bitwise operators `&`, `|`, `^` and shifts `<<`, `>>`, `>>>` **may not be combined with any other
 operator without parentheses** (CWE-783): `(x & 1) == 0`, never `x & 1 == 0`, which C reads as
 `x & (1 == 0)`. A chain of one of `&`, `|`, `^` needs none (`a | b | c`); shifts are always grouped
