@@ -10,7 +10,7 @@
 // export budget, not a process-wide heap limit; a future bounded byte-sink API
 // is required for large screenshots without string-conversion amplification.
 
-const int MAX_PNG_RAW_BYTES = 1048576; // includes one filter byte per row
+const int MAX_PNG_RAW_BYTES = 2097152; // includes one filter byte per row
 
 List<int> crc32_table() {
     List<int> t = new List<int>();
@@ -137,12 +137,21 @@ List<int> png_encode(Pixmap pm) {
     return out;
 }
 
-// The runtime's current file API accepts strings, not byte slices. Keep this
-// conversion bounded by MAX_PNG_RAW_BYTES until a streaming byte sink exists.
+// The runtime's current file API accepts strings, not byte slices. Convert in
+// bounded chunks so per-byte CapStr fragments do not all remain live together.
+const int PNG_STRING_CHUNK_BYTES = 4096;
+
 string bytes_text(List<int> bytes) {
-    List<string> parts = new List<string>();
-    for (int i = 0; i < bytes.len(); i += 1) { parts.push(char_str(bytes[i])); }
-    return join(parts, "");
+    List<string> chunks = new List<string>();
+    int from = 0;
+    while (from < bytes.len()) {
+        int to = int_min(from + PNG_STRING_CHUNK_BYTES, bytes.len());
+        List<string> parts = new List<string>();
+        for (int i = from; i < to; i += 1) { parts.push(char_str(bytes[i])); }
+        chunks.push(join(parts, ""));
+        from = to;
+    }
+    return join(chunks, "");
 }
 
 bool png_write(string path, Pixmap pm) {
