@@ -161,6 +161,22 @@ root. The concrete refinement obligation must separately account for:
 
 Any unproved premise remains an explicit assumption in the assurance report.
 
+### Physical scanning and stale container slots
+
+The concrete scanner reads every machine word in the allocated byte range of a
+pointer-bearing object; it does not know a list/map's logical length or which backing
+slots the language-level container considers vacant. A pointer left in a vacated backing
+slot can therefore remain a conservative edge and retain its referent. The abstract
+model must distinguish logical container membership from physical payload words scanned
+by the collector. A removal operation eliminates a graph edge for collection purposes
+only when the corresponding physical word is cleared or overwritten (subject to the
+actual representation and aliasing rules). This is a retention/lifetime precision issue,
+not permission to reclaim an object that remains physically discoverable.
+
+The concrete implementation workstream has identified stale-slot hygiene in list/map
+mutation paths as a separate remediation target. The formal model must not assume that
+logical deletion automatically clears scanned bytes.
+
 ## 7. Secret-erasure boundary
 
 The collector's secret allocation kind is pointer-free and is wiped only when an
