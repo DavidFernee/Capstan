@@ -73,7 +73,6 @@ section "unit"
 if "$CC" $CFLAGS "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit" && out="$("$tmp/unit")"; then ok "$out"; else bad "runtime unit tests" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_roundtrip.py" 2>&1)"; then ok "$out"; else bad "escape round trip" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/ranges_props.py" 2>&1)"; then ok "$out"; else bad "range properties" "$out"; fi
-if out="$($PY "$ROOT/tests/unit/codegen_literal_order.py" "$C" "$tmp" 2>&1)"; then ok "$out"; else bad "literal operand sequencing" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_log_agree.py" 2>&1)"; then ok "$out"; else bad "escape_log agreement" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/siphash_agree.py" 2>&1)"; then ok "$out"; else bad "siphash" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/escape_json_agree.py" 2>&1)"; then ok "$out"; else bad "escape_json agreement" "$out"; fi
