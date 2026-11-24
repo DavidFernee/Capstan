@@ -50,7 +50,6 @@ theorem machineStep_progress_preserves_register_types
     (state next : MachineState n m types)
     (hstep : machineStep program state = .nextState next) :
     WellTyped types next.registers := by
-  rw [hstep]
   exact next.registers_well_typed
 
 /-- Any continuing one-step result has an in-range program counter. -/
@@ -60,7 +59,6 @@ theorem machineStep_progress_preserves_pc_bounds
     (state next : MachineState n m types)
     (hstep : machineStep program state = .nextState next) :
     next.pc.val < m + 1 := by
-  rw [hstep]
   exact next.pc.isLt
 
 /-- Result of executing at most a fixed number of single-frame instructions. -/
