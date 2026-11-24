@@ -67,8 +67,20 @@ RULES = [
     ("assertion or warning reached", "CWE-617", [r"kernel bug at", r"assertion", r"\bbug_on\b", r"\bwarn(_on|ing:)", r"\bbug:", r"\bpanic", r"\boops\b", r"crash", r"page fault", r"general protection fault"]),
 ]
 
-_COMPILED = [(c, w, [re.compile(p, re.I) for p in ps]) for c, w, ps in RULES]
-_SPLIT = [c for c, _, _ in RULES].index("deadlock")
+# Consequences in this set outrank causes and non-memory weakness descriptions, even
+# when the consequence appears only in the CNA body and a cause appears in the title.
+_MEMORY_SAFETY_CLASSES = {
+    "double or invalid free", "use-after-free", "out-of-bounds write",
+    "out-of-bounds read", "NULL dereference", "uninitialised memory",
+}
+_MEMORY_COMPILED = [
+    (c, w, [re.compile(p, re.I) for p in ps])
+    for c, w, ps in RULES if c in _MEMORY_SAFETY_CLASSES
+]
+_OTHER_COMPILED = [
+    (c, w, [re.compile(p, re.I) for p in ps])
+    for c, w, ps in RULES if c not in _MEMORY_SAFETY_CLASSES
+]
 _BOILER = re.compile(r"^In the Linux kernel, the following vulnerability has been resolved:\s*", re.I)
 
 
@@ -81,11 +93,10 @@ def classify(title, desc):
     """Return (class, CWE, evidence) for one CVE, or ("unclassified", "", "")."""
     subject = title or ""
     body = clean(desc)
-    # Within a group the commit subject (the author's one-line statement of the bug) is tried
-    # before the whole message and the sanitiser reports quoted in it.
-    # Memory-safety classes are tried on both texts before any other class, so a consequence named
-    # anywhere outranks a cause named in the subject.
-    for group in (_COMPILED[:_SPLIT], _COMPILED[_SPLIT:]):
+    # Memory-safety consequences are searched across both fields before any non-memory class.
+    # This prevents a cause in the title (e.g. integer overflow) from hiding a memory-safety
+    # consequence described in the body (e.g. use-after-free).
+    for group in (_MEMORY_COMPILED, _OTHER_COMPILED):
         for text in (subject, body):
             for cls, cwe, pats in group:
                 for p in pats:

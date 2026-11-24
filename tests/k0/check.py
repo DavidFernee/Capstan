@@ -110,6 +110,18 @@ with tempfile.TemporaryDirectory() as temporary:
     else:
         raise AssertionError("dirty CVE source snapshot was accepted")
 
+# Memory-safety consequences must outrank non-memory causes across title/body fields.
+cls, cwe, evidence = study.classify(
+    "integer overflow in packet length",
+    "The bug permits a use-after-free when the device is removed.",
+)
+assert cls == "use-after-free", (cls, cwe, evidence)
+cls, cwe, evidence = study.classify(
+    "integer overflow in packet length",
+    "The invalid pointer causes a NULL pointer dereference.",
+)
+assert cls == "NULL dereference", (cls, cwe, evidence)
+
 for phrase in (
     "device unregistration races with ethtool",
     "race during device removal",
