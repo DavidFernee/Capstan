@@ -118,3 +118,94 @@ An optimisation is accepted only if it preserves:
 - source-location attribution to a semantically equivalent operation.
 
 Range-check elimination is therefore justified only by a sound proof that the eliminated trap is unreachable under the IR preconditions. `--keep-checks` should remain an assurance mode for differential testing; it is not a substitute for proving range analysis sound.
+
+
+## 10. Small-step operational model
+
+This section fixes the state-transition shape used by the evaluator and proof model. It is normative for the proposed initial machine.
+
+### 10.1 Domains
+
+Let:
+- `P` be an immutable, structurally validated program;
+- `R` be a finite register vector whose cells are `Uninit`, `Int64(n)` or `Bool(b)`;
+- `F = (fn, pc, R, retDst)` be a frame, where `pc` is the next instruction and `retDst` is the destination in the caller, or `None` for the entry frame / void return;
+- `S = (frames, steps)` be a running machine state, with the active frame at the top of a non-empty stack;
+- `Outcome = Running(S) | Halt(v) | HaltVoid | Trap(code, fn, pc)`.
+
+The program and configured limits are parameters to the transition relation, not mutable state. A frame's register vector has the exact length and type vector declared by its function. Register writes preserve the declared type and set the cell to initialised.
+
+### 10.2 Instruction dispatch and step budget
+
+For a running state with `steps = n):
+- if `n >= maxSteps`, the next transition is `Trap(step_limit_exceeded, active.fn, active.pc)`; no instruction is executed and the counter remains `n);
+- otherwise, the active instruction is dispatched and the execution counter becomes `n + 1), whether that instruction completes or produces a dynamic trap.
+
+Thus a limit of N permits exactly N executed instructions. A dynamic failure during the Nth instruction is that instruction's trap; the step-limit trap occurs only if an (N+1)th instruction would be required. Structural validation is not counted as an executed instruction.
+
+### 10.3 Register reads and writes
+
+A read of register `i) succeeds only if:
+1. `i` is within the active frame's register vector;
+2. the cell is initialised;
+3. the value constructor agrees with the register's declared type.
+
+A failed read produces its defined trap and does not read any later operand. A write is permitted only to an in-range destination whose declared type agrees with the value. Since the program is validated, an invalid destination or type mismatch is unreachable for a well-formed evaluator state; implementations retain defensive checks.
+
+An instruction computes all required source values and its result before writing its destination. If any source read or operation traps, the destination is unchanged.
+
+### 10.4 Scalar instructions
+
+Write `F[pc]` for the active instruction and `R[i]` for a register cell.
+
+- `const_i(dst, n)`: write `Int64(n)` to `dst`; advance `pc) by one.
+- `const_b(dst, b)`: write `Bool(b)` to `dst`; advance `pc) by one.
+- `move(dst, src)`: read `src`, write the same typed value to `dst), advance `pc).
+- `add_i/sub_i/mul_i/div_i/rem_i(dst, lhs, rhs)`: read `lhs), then `rhs); apply the exact mathematical operation from `LANGUAGE-CORE.md`; if successful, write `dst) and advance `pc); otherwise produce the operation's trap with no destination write.
+- `eq_i/lt_i(dst, lhs, rhs)`: read `lhs), then `rhs); write the corresponding boolean comparison and advance `pc).
+- `not_b(dst, src)`: read `src); write its boolean negation and advance `pc).
+
+The register type validator requires each operand and destination to have the exact type expected by the instruction. Operand reads are left-to-right, not simultaneous or unordered.
+
+### 10.5 Control flow
+
+- `jump(target)`: set `pc := target).
+- `branch(cond, yes, no)`: read `cond); if true set `pc := yes), otherwise `pc := no).
+- Both targets are validated instruction indices in the current function. No implicit fall-through target exists beyond the function's final instruction.
+
+### 10.6 Calls
+
+For `call(dst, callee, args)`:
+1. read each argument register in list order, checking initialisation and type;
+2. if the current frame depth is already `maxDepth`, produce `call_depth_exceeded` without pushing a frame;
+3. advance the caller frame's `pc) to its continuation instruction;
+4. push a fresh callee frame with the argument values in its parameter registers, all other registers `Uninit`, `pc = 0), and `retDst = dst).
+
+The entry frame has depth 1. A call at the depth limit is an executed instruction and therefore consumes one step; if the step budget is already exhausted, `step_limit_exceeded` takes precedence before call operands are read.
+
+### 10.7 Returns
+
+For `ret(src)`:
+1. read and type-check `src) before modifying the frame stack;
+2. if the active frame is the entry frame, produce `Halt(value)`;
+3. otherwise pop the callee frame and write the returned value to the caller's validated `retDst), leaving the caller PC at the continuation set by the call.
+
+For `ret_void`, the same frame transition occurs without a value write; returning from the entry frame produces `HaltVoid`.
+
+A return whose value is uninitialised traps before the frame is popped. Structural validation rejects a return instruction that does not match its function's declared return convention.
+
+### 10.8 Explicit trap
+
+`trap(reason)` produces terminal `Trap(explicit_trap, fn, pc)` with the validated reason attached as diagnostic detail. No caller frame is resumed and no destination is written.
+
+### 10.9 Determinism
+
+For a validated program and fixed limits, every running state has exactly one next transition. This follows from:
+- one active frame and one next PC;
+- deterministic register-read checks;
+- fixed left-to-right operand order;
+- total, explicitly checked scalar operations;
+- validated branch/call/return structure;
+- deterministic limit checks.
+
+The proof must establish this property for the evaluator implementation, not infer it from the fact that the host implementation appears sequential.
