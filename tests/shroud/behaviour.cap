@@ -97,16 +97,16 @@ void test_buttons_and_guard(Tally t, Ui ui) {
     // Changing the action without changing the geometry must restart the guard.
     View changed = column().spacing(8).add(button("Save", "save").key("save")).add(button("Erase", "erase-all").danger().key("erase")).add(button("Off", "off").disabled(true).key("off"));
     ui.render(changed, 3500);
-    List<Msg> m6 = click_at(ui, "erase", 3600);
-    expect_int(t, m6.len(), 0, "guard: changing a destructive action restarts the delay");
-    List<Msg> m7 = click_at(ui, "erase", 4100);
-    expect(t, m7.len() == 1 && m7[0].action == "erase-all", "guard: changed action activates after delay", $"{m7.len()} messages");
+    List<Msg> changed_early = click_at(ui, "erase", 3600);
+    expect_int(t, changed_early.len(), 0, "guard: changing a destructive action restarts the delay");
+    List<Msg> changed_late = click_at(ui, "erase", 4100);
+    expect(t, changed_late.len() == 1 && changed_late[0].action == "erase-all", "guard: changed action activates after delay", $"{changed_late.len()} messages");
     // Removing a guarded control for one frame and reintroducing it must restart the delay.
     View hidden = column().spacing(8).add(button("Save", "save").key("save")).add(button("Off", "off").disabled(true).key("off"));
     ui.render(hidden, 5000);
     ui.render(v, 5100);
-    List<Msg> m8 = click_at(ui, "erase", 5200);
-    expect_int(t, m8.len(), 0, "guard: reappearing control restarts the delay");
+    List<Msg> reappeared = click_at(ui, "erase", 5200);
+    expect_int(t, reappeared.len(), 0, "guard: reappearing control restarts the delay");
     // Press on one button and release on another: nothing.
     ui.render(v, 4000);
     Laid a = laid_of(ui, "save");
