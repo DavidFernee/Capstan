@@ -47,6 +47,23 @@ The first implementation must reject unsupported constructs with a structured co
 
 Explicitly excluded until separately specified and implemented: strings, structs, enums, optionals, lists, maps, heap references, methods, closures, taint, secrets, grants, IO, policies, cryptographic operations, FFI and concurrency. Bitwise operations, shifts, wrapping arithmetic, boolean equality and indirect calls are also excluded from this initial slice.
 
+## 2.1 Aggregate assignment is a later semantic extension
+
+The scalar v0.1 lowering subset does not include structs, lists, maps or heap locations, so it does not lower aggregate compound assignment.
+
+When aggregate locations are admitted, the compiler MUST preserve the complete sequencing contract:
+
+1. evaluate and retain the location designator exactly once;
+2. read and retain the old value;
+3. evaluate the RHS completely;
+4. compute the new value;
+5. establish that the retained location is still live and valid in the post-RHS state (including current logical collection bounds);
+6. write only after that validation succeeds.
+
+For an indexed collection target, a bounds check performed before the RHS is not sufficient if the RHS may shrink the collection through an alias. The compiler may omit a post-RHS check only when a sound effect/range analysis proves that no operation in the RHS can invalidate the retained location. The proof must include direct calls, methods, aliases and all future effect forms. A stale location must produce the specified controlled trap and must never reach an unchecked store.
+
+This is a semantic requirement, not a code-generation optimisation detail. The current v0.6 C-backend regression is tracked in PR #102 and the language contract in PR #93; neither makes aggregate assignment part of the initial CCAM scalar subset.
+
 ## 3. Lowering state and deterministic allocation
 
 For each function, the lowering context contains:
