@@ -13,10 +13,12 @@ def maxI64Nat : Nat := two63 - 1
 def minI64 : Int := Int.negSucc maxI64Nat
 def maxI64 : Int := Int.ofNat maxI64Nat
 
-/-- Signed-64 range expressed by the two constructors of Lean's Int. -/
-def inI64 : Int → Prop
-  | .ofNat n => n ≤ maxI64Nat
-  | .negSucc n => n < two63
+/-- Executable signed-64 range check over Lean's two Int constructors. -/
+def inI64B : Int → Bool
+  | .ofNat n => decide (n ≤ maxI64Nat)
+  | .negSucc n => decide (n < two63)
+
+def inI64 (x : Int) : Prop := inI64B x = true
 
 inductive Ty where
   | int
@@ -70,7 +72,7 @@ inductive Trap where
   deriving DecidableEq, Repr
 
 def checkedI64 (x : Int) : Except Trap Int :=
-  if inI64 x then .ok x else .error .integerOverflow
+  if inI64B x then .ok x else .error .integerOverflow
 
 def checkedAdd (a b : Int) : Except Trap Int := checkedI64 (a + b)
 def checkedSub (a b : Int) : Except Trap Int := checkedI64 (a - b)
@@ -95,11 +97,14 @@ def checkedRem (a b : Int) : Except Trap Int :=
 /-- A successful range check returns a signed-64 value. -/
 theorem checkedI64_sound (x result : Int)
     (h : checkedI64 x = .ok result) : inI64 result := by
-  by_cases hx : inI64 x
-  · have heq : x = result := by
+  cases hx : inI64B x with
+  | false =>
+    simp [checkedI64, hx] at h
+  | true =>
+    have heq : x = result := by
       simpa [checkedI64, hx] using h
-    simpa [heq] using hx
-  · simp [checkedI64, hx] at h
+    subst result
+    simpa [inI64] using hx
 
 theorem checkedAdd_sound (a b result : Int)
     (h : checkedAdd a b = .ok result) : inI64 result := by
