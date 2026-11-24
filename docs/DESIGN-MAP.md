@@ -709,8 +709,20 @@ threat model, Shroud integration contract and milestones are in [ANCHOR.md](ANCH
 | A1 | Native host/embedder decision, supervised LSP and compiler process adapters, bounded output and cancellation | Shroud S1 coordination; host process adapter |
 | A2 | Confined workspace model, multi-line editor, compiler-backed token/highlighting contract, save/reload | Shroud S2; compiler token API agreement |
 | A3 | Diagnostics, explicit check/build/test/format commands, reproducible build identity and local navigation | Existing compiler CLI/LSP; future LSP navigation requests |
-| A4 | Assurance evidence inspector, static/runtime property catalogue, evidence freshness and dependency provenance | Assurance records and verifiers; v0.6 capability interfaces |
-| Later | Debugger, semantic refactoring, package manager, plugin isolation, documentation browser, hot reload and visual designer | Stable underlying compiler/runtime/package/debug APIs |
+| A4 | WYSIWYG Shroud designer, live preview, component tree/properties inspector, source-aware bidirectional editing | Shroud visual designer APIs; compiler parse/source-map/transformation contract |
+| A5 | Assurance evidence inspector and curated security-reviewed component catalogue (authentication, authorisation, crypto, secrets, validation, secure networking) | Package manager, signatures, SBOM/provenance, assurance records and verifiers; v0.6 capability interfaces |
+| Later | Debugger, semantic refactoring, isolated extensions, documentation browser, advanced code navigation | Stable underlying compiler/runtime/package/debug APIs |
+
+The visual designer is built in Capstan using Shroud. Capstan source remains authoritative;
+visual edits must use source-aware transformations and preserve unrelated comments,
+formatting and code. No current compiler API is assumed to provide this yet.
+
+The component catalogue is curated, not an arbitrary plugin marketplace. Every entry is
+version-pinned and accompanied by scoped, current evidence: source and dependency identity,
+review scope, tests/fuzzing, provenance/signatures, known vulnerabilities, configuration
+assumptions and capability requirements. Authentication components should use established
+protocols and safe defaults, not bespoke cryptography. “Verified secure” is never an
+unqualified or permanent claim.
 
 Anchor's security UI must distinguish compiler rejections, runtime checks, assurance
 claims, evidence and dependency trust. A clean compile is not a project security proof;
