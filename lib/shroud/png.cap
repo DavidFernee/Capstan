@@ -1,0 +1,102 @@
+// Shroud: PNG output, for screenshots and golden-image tests.
+//
+// Writes 8-bit RGBA PNG files (ISO/IEC 15948). The image data is zlib-wrapped
+// DEFLATE in stored blocks: no compression, but every decoder reads it, and the
+// encoder is short enough to check by eye. CRC-32 and Adler-32 are computed here.
+
+List<int> crc32_table() {
+    List<int> t = new List<int>();
+    for (int n = 0; n < 256; n += 1) {
+        int c = n;
+        for (int k = 0; k < 8; k += 1) {
+            if ((c & 1) != 0) {
+                c = 0xEDB88320 ^ (c >>> 1);
+            } else {
+                c = c >>> 1;
+            }
+        }
+        t.push(c);
+    }
+    return t;
+}
+
+int crc32_update(List<int> table, int crc, List<int> bytes, int from, int to) {
+    int c = crc;
+    for (int i = from; i < to; i += 1) {
+        c = table[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    }
+    return c;
+}
+
+void put_u32(List<int> out, int v) {
+    out.push((v >>> 24) & 0xFF);
+    out.push((v >>> 16) & 0xFF);
+    out.push((v >>> 8) & 0xFF);
+    out.push(v & 0xFF);
+}
+
+void put_chunk(List<int> out, List<int> table, string kind, List<int> data) {
+    put_u32(out, data.len());
+    int start = out.len();
+    for (int i = 0; i < 4; i += 1) { out.push(kind.at(i)); }
+    for (int j = 0; j < data.len(); j += 1) { out.push(data[j]); }
+    int crc = crc32_update(table, 0xFFFFFFFF, out, start, out.len()) ^ 0xFFFFFFFF;
+    put_u32(out, crc);
+}
+
+// The PNG file's bytes for pm, unpremultiplied to straight RGBA.
+List<int> png_encode(Pixmap pm) {
+    List<int> table = crc32_table();
+    List<int> out = new List<int>();
+    out.push(137); out.push(80); out.push(78); out.push(71);
+    out.push(13); out.push(10); out.push(26); out.push(10);
+    List<int> ihdr = new List<int>();
+    put_u32(ihdr, pm.w);
+    put_u32(ihdr, pm.h);
+    ihdr.push(8);   // bit depth
+    ihdr.push(6);   // colour type: RGBA
+    ihdr.push(0); ihdr.push(0); ihdr.push(0);
+    put_chunk(out, table, "IHDR", ihdr);
+    // Raw scanlines: filter type 0, then RGBA bytes.
+    List<int> raw = new List<int>();
+    for (int y = 0; y < pm.h; y += 1) {
+        raw.push(0);
+        for (int x = 0; x < pm.w; x += 1) {
+            int c = unpremultiply(pm.get(x, y));
+            raw.push(ch_r(c)); raw.push(ch_g(c)); raw.push(ch_b(c)); raw.push(ch_a(c));
+        }
+    }
+    List<int> z = new List<int>();
+    z.push(0x78); z.push(0x01);
+    int pos = 0;
+    while (pos < raw.len() || pos == 0) {
+        int n = int_min(65535, raw.len() - pos);
+        bool last = pos + n >= raw.len();
+        if (last) { z.push(1); } else { z.push(0); }
+        z.push(n & 0xFF); z.push((n >> 8) & 0xFF);
+        z.push((~n) & 0xFF); z.push(((~n) >> 8) & 0xFF);
+        for (int i = pos; i < pos + n; i += 1) { z.push(raw[i]); }
+        pos += n;
+        if (n == 0) { break; }
+    }
+    int s1 = 1;
+    int s2 = 0;
+    for (int k = 0; k < raw.len(); k += 1) {
+        s1 = (s1 + raw[k]) % 65521;
+        s2 = (s2 + s1) % 65521;
+    }
+    put_u32(z, (s2 << 16) | s1);
+    put_chunk(out, table, "IDAT", z);
+    put_chunk(out, table, "IEND", new List<int>());
+    return out;
+}
+
+string bytes_text(List<int> bytes) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < bytes.len(); i += 1) { parts.push(char_str(bytes[i])); }
+    return join(parts, "");
+}
+
+bool png_write(string path, Pixmap pm) {
+    return write_file(path, bytes_text(png_encode(pm)));
+}

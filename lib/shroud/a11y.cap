@@ -1,0 +1,123 @@
+// Shroud: accessibility.
+//
+// Shroud draws its own widgets, so it must describe them to assistive technology
+// itself, as Flutter does. Every frame has an accessibility tree: each node has a role,
+// a name, a value, its states and its bounds. A platform embedder translates the tree
+// into the operating system's interface: UI Automation on Windows, NSAccessibility on
+// macOS, AT-SPI on Linux, and later the iOS and Android equivalents (docs/SHROUD.md).
+//
+// Accessibility is checked, not just offered. a11y_problems() reports every control a
+// screen reader could not name and every text that fails WCAG 2.2 contrast (found while
+// painting), and tests can require an empty report.
+
+struct A11yNode {
+    string id;
+    string role;
+    string name;            // JSON-escaped
+    string value;           // JSON-escaped
+    List<string> states;
+    Rect bounds;            // whole device pixels
+    List<A11yNode> kids;
+}
+
+string role_of(View v) {
+    int k = v.kind;
+    if (k == K_TEXT) { return "text"; }
+    if (k == K_BUTTON) { return "button"; }
+    if (k == K_CHECKBOX) { return "checkbox"; }
+    if (k == K_RADIO) { return "radio"; }
+    if (k == K_SWITCH) { return "switch"; }
+    if (k == K_TEXT_FIELD) {
+        if (v.secure) { return "password"; }
+        return "textbox";
+    }
+    if (k == K_SLIDER) { return "slider"; }
+    if (k == K_PROGRESS) { return "progressbar"; }
+    if (k == K_DIVIDER) { return "separator"; }
+    if (k == K_SCROLL) { return "scrollarea"; }
+    return "group";
+}
+
+// The accessible name, escaped for JSON: the label if set, otherwise the visible text.
+string name_of(View v) {
+    if (v.label != "") { return escape_json(v.label); }
+    if (v.kind == K_TEXT && v.has_value) { return escape_json(v.value); }
+    if (v.kind == K_TEXT_FIELD) { return escape_json(v.hint); }
+    return escape_json(v.text);
+}
+
+string value_of(View v) {
+    int k = v.kind;
+    if (k == K_TEXT_FIELD) {
+        // A password's value is never exposed; screen readers announce its length.
+        if (v.secure) { return $"{untrusted_codepoints(v.value).len()} characters"; }
+        return escape_json(v.value);
+    }
+    if (k == K_SLIDER || k == K_PROGRESS) { return $"{v.num}"; }
+    return "";
+}
+
+A11yNode? a11y_node(Ui ui, Laid l) {
+    View v = l.v;
+    List<A11yNode> kids = new List<A11yNode>();
+    for (int i = 0; i < l.kids.len(); i += 1) {
+        if (let k = a11y_node(ui, l.kids[i])) { kids.push(k); }
+    }
+    string role = role_of(v);
+    // Plain containers without a name are flattened into their children.
+    bool meaningful = role != "group" || v.label != "";
+    if (v.kind == K_SPACER || (v.kind == K_BOX && v.label == "")) { meaningful = false; }
+    if (!meaningful && kids.len() == 1) { return kids[0]; }
+    if (!meaningful && kids.len() == 0) { return none; }
+    List<string> states = new List<string>();
+    if (v.focusable()) { states.push("focusable"); }
+    if (l.id == ui.focus) { states.push("focused"); }
+    if (v.disabled) { states.push("disabled"); }
+    if (v.kind == K_CHECKBOX || v.kind == K_SWITCH || v.kind == K_RADIO) {
+        if (v.num != 0) { states.push("checked"); } else { states.push("unchecked"); }
+    }
+    if (v.secure) { states.push("protected"); }
+    Rect b = rect(fx_floor(l.frame.x), fx_floor(l.frame.y), fx_ceil(l.frame.right()) - fx_floor(l.frame.x), fx_ceil(l.frame.bottom()) - fx_floor(l.frame.y));
+    return new A11yNode{id: l.id, role: role, name: name_of(v), value: value_of(v), states: states, bounds: b, kids: kids};
+}
+
+// The current frame's accessibility tree, or none before the first render.
+A11yNode? a11y_tree(Ui ui) {
+    if (let l = ui.root) { return a11y_node(ui, l); }
+    return none;
+}
+
+string a11y_json(A11yNode n) {
+    List<string> parts = new List<string>();
+    parts.push($"{{\"id\":\"{escape_json(n.id)}\",\"role\":\"{n.role}\",\"name\":\"{n.name}\"");
+    if (n.value != "") { parts.push($",\"value\":\"{n.value}\""); }
+    if (n.states.len() > 0) { parts.push($",\"states\":[\"{join(n.states, "\",\"")}\"]"); }
+    parts.push($",\"bounds\":[{n.bounds.x},{n.bounds.y},{n.bounds.w},{n.bounds.h}]");
+    if (n.kids.len() > 0) {
+        List<string> ks = new List<string>();
+        for (int i = 0; i < n.kids.len(); i += 1) { ks.push(a11y_json(n.kids[i])); }
+        parts.push($",\"children\":[{join(ks, ",")}]");
+    }
+    parts.push("}");
+    return join(parts, "");
+}
+
+// Problems an assistive-technology user would meet in the current frame.
+List<string> a11y_problems(Ui ui) {
+    List<string> out = new List<string>();
+    if (let l = ui.root) {
+        List<Laid> all = new List<Laid>();
+        collect(l, all);
+        for (int i = 0; i < all.len(); i += 1) {
+            View v = all[i].v;
+            bool interactive = v.kind == K_BUTTON || v.kind == K_CHECKBOX || v.kind == K_SWITCH || v.kind == K_RADIO || v.kind == K_TEXT_FIELD || v.kind == K_SLIDER;
+            if (interactive && name_of(v) == "") { out.push($"{role_of(v)} {all[i].id} has no accessible name: give it a label()"); }
+            // WCAG 2.5.8: targets at least 24 by 24 CSS pixels.
+            if (interactive && (all[i].frame.w < dp(ui, 24) || all[i].frame.h < dp(ui, 24))) {
+                out.push($"{role_of(v)} {all[i].id} is smaller than the 24 dp minimum target size");
+            }
+        }
+    }
+    for (int j = 0; j < ui.problems.len(); j += 1) { out.push(ui.problems[j]); }
+    return out;
+}

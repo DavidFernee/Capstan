@@ -1,0 +1,184 @@
+// Differential checks for Shroud, driven by tests/shroud/check.py:
+//
+//   vectors raster FILE     fill each polygon in FILE, print every pixel's coverage
+//   vectors font FONT       print each mapped character's glyph, advance and outline box
+//   vectors utf8 FILE       decode each line of hex bytes, print the code points
+//   vectors png OUT DUMP    draw a scene, write it as a PNG and its pixels as text
+//   vectors fuzz FILES...   load and draw each (damaged) font; must never stop
+//
+// Inputs are written by check.py, which compares every answer with an independent
+// computation in Python (exact polygon areas, fontTools, Python's UTF-8 decoder, zlib).
+
+// Whitespace-separated integers from untrusted text; anything else is skipped.
+List<int> ints_of(Tainted t) {
+    List<int> out = new List<int>();
+    int start = -1;
+    for (int i = 0; i <= t.len(); i += 1) {
+        bool sep = i == t.len();
+        if (!sep) {
+            int c = t.at(i);
+            sep = c == 32 || c == 10 || c == 13 || c == 9;
+        }
+        if (sep) {
+            if (start >= 0) {
+                if (let v = validate_int(t.slice(start, i))) { out.push(v); }
+            }
+            start = -1;
+        } else if (start < 0) {
+            start = i;
+        }
+    }
+    return out;
+}
+
+// Each polygon: "n x0 y0 x1 y1 ..." in FX on a 32 x 32 pixmap.
+void raster(Tainted data) {
+    List<int> v = ints_of(data);
+    int i = 0;
+    while (i < v.len()) {
+        int n = v[i];
+        i += 1;
+        Path p = new_path();
+        for (int k = 0; k < n; k += 1) {
+            if (k == 0) { p.move_to(v[i], v[i + 1]); } else { p.line_to(v[i], v[i + 1]); }
+            i += 2;
+        }
+        p.close();
+        Pixmap pm = new_pixmap(32, 32);
+        Canvas cv = new_canvas(pm);
+        cv.fill_path(p, solid(0xFF000000), FILL_NONZERO);
+        List<string> row = new List<string>();
+        for (int q = 0; q < pm.px.len(); q += 1) { row.push(int_to_str(ch_a(pm.px[q]))); }
+        println(join(row, " "));
+    }
+}
+
+void font_report(Tainted data) {
+    if (let f = font_load(data)) {
+        println($"font {f.units_per_em} {f.ascent} {f.descent} {f.num_glyphs}");
+        for (int cp = 0; cp < 0x10000; cp += 1) {
+            int g = glyph_index(f, cp);
+            if (g != 0) {
+                Path p = new_path();
+                bool ok = glyph_outline(f, g, p, 1, 1, 0, 0, identity_transform(), 0);
+                string box = "empty";
+                if (p.pts.len() > 0) {
+                    int x0 = UNBOUNDED;
+                    int y0 = UNBOUNDED;
+                    int x1 = -UNBOUNDED;
+                    int y1 = -UNBOUNDED;
+                    for (int j = 0; j + 1 < p.pts.len(); j += 2) {
+                        x0 = int_min(x0, p.pts[j]);
+                        x1 = int_max(x1, p.pts[j]);
+                        y0 = int_min(y0, -p.pts[j + 1]);
+                        y1 = int_max(y1, -p.pts[j + 1]);
+                    }
+                    box = $"{x0} {y0} {x1} {y1}";
+                }
+                println($"{cp} {g} {advance_units(f, g)} {ok} {box}");
+            }
+        }
+    } else {
+        println("refused");
+    }
+}
+
+void utf8(Tainted data) {
+    // One line per case: hex digits.
+    List<int> bytes = new List<int>();
+    int hi = -1;
+    for (int i = 0; i < data.len(); i += 1) {
+        int c = data.at(i);
+        if (c == 10) {
+            List<int> cps = utf8_decode(bytes);
+            List<string> out = new List<string>();
+            for (int k = 0; k < cps.len(); k += 1) { out.push(int_to_str(cps[k])); }
+            println(join(out, " "));
+            bytes = new List<int>();
+            hi = -1;
+        } else {
+            int d = c - 48;
+            if (c >= 97) { d = c - 87; }
+            if (hi < 0) {
+                hi = d;
+            } else {
+                bytes.push(hi * 16 + d);
+                hi = -1;
+            }
+        }
+    }
+}
+
+void png(string out, string dump, Font f) {
+    Pixmap pm = new_pixmap(64, 40);
+    pm.clear(0x00000000);
+    Canvas cv = new_canvas(pm);
+    cv.fill_round_rect(rect_px(2, 2, 40, 20), fx(6), solid(0xC0336699));
+    cv.fill_path(path_ellipse(rect_px(30, 10, 30, 28)), linear_gradient(fx(30), 0, 0xFFFF8000, fx(60), 0, 0x400080FF), FILL_NONZERO);
+    List<int> cps = text_codepoints("Ag");
+    int _x = draw_glyphs(cv, f, fx(14), cps, 0, cps.len(), fx(4), fx(36), 0xFF000000);
+    if (!png_write(out, pm)) { println("could not write the PNG"); }
+    List<string> vals = new List<string>();
+    for (int i = 0; i < pm.px.len(); i += 1) { vals.push(int_to_str(unpremultiply(pm.px[i]))); }
+    if (!write_file(dump, join(vals, " ") + "\n")) { println("could not write the dump"); }
+}
+
+// Loads each font and draws every printable ASCII character and some Latin-1 at three
+// sizes. A damaged font must be refused or drawn partly; the program must never stop.
+void fuzz(List<string> paths) {
+    int loaded = 0;
+    int refused = 0;
+    for (int i = 1; i < paths.len(); i += 1) {
+        if (let data = read_file(paths[i])) {
+            if (let f = font_load(data)) {
+                loaded += 1;
+                Pixmap pm = new_pixmap(64, 64);
+                Canvas cv = new_canvas(pm);
+                for (int cp = 32; cp < 256; cp += 1) {
+                    List<int> one = new List<int>();
+                    one.push(cp);
+                    int _a = draw_glyphs(cv, f, fx(9), one, 0, 1, fx(4), fx(40), 0xFF000000);
+                    int _b = draw_glyphs(cv, f, fx(23), one, 0, 1, fx(4), fx(40), 0xFF000000);
+                    int _c = draw_glyphs(cv, f, fx(60), one, 0, 1, fx(1), fx(60), 0xFF000000);
+                }
+                List<int> words = text_codepoints("The quick brown fox");
+                List<int> lines = wrap_lines(f, fx(12), words, fx(50));
+                if (lines.len() < 2) { println("odd wrapping"); }
+            } else {
+                refused += 1;
+            }
+        }
+    }
+    println($"fuzz {loaded} loaded {refused} refused");
+}
+
+int main() {
+    List<string> a = args();
+    if (a.len() < 1) {
+        println("usage: vectors raster|font|utf8|png|fuzz ...");
+        return 2;
+    }
+    string mode = a[0];
+    if (mode == "fuzz") {
+        fuzz(a);
+        return 0;
+    }
+    if (a.len() < 2) { return 2; }
+    if (mode == "png") {
+        if (let fd = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
+            if (let f = font_load(fd)) {
+                if (a.len() > 2) { png(a[1], a[2], f); }
+                return 0;
+            }
+        }
+        return 1;
+    }
+    if (let data = read_file(a[1])) {
+        if (mode == "raster") { raster(data); }
+        if (mode == "font") { font_report(data); }
+        if (mode == "utf8") { utf8(data); }
+        return 0;
+    }
+    println("cannot read " + a[1]);
+    return 1;
+}

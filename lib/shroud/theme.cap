@@ -1,0 +1,78 @@
+// Shroud: themes.
+//
+// A theme is a set of design tokens: colours, corner radii, type sizes and control
+// metrics. The built-in light and dark themes follow current desktop conventions
+// (neutral surfaces, one accent colour, 4 dp corners, 14 dp body text, 32 dp
+// controls), and every theme is checked for contrast when it is made: theme_problems()
+// lists every text colour that fails WCAG 2.2's 4.5:1 against the surfaces it is drawn
+// on, and the test suite requires the built-in themes to have none.
+
+struct Theme {
+    bool dark;
+    int window;             // window background
+    int surface;            // controls and cards
+    int surface_hover;
+    int surface_pressed;
+    int surface_disabled;
+    int text;
+    int text_secondary;
+    int text_disabled;
+    int accent;
+    int accent_hover;
+    int accent_pressed;
+    int on_accent;          // text on the accent colour
+    int danger;
+    int danger_hover;
+    int on_danger;
+    int border;             // control outlines (3:1 against the window, WCAG 1.4.11)
+    int divider;
+    int focus;              // keyboard focus ring
+    int track;              // slider and progress tracks, unchecked switches
+    int radius;             // dp
+    int font_size;          // dp
+    int control_height;     // dp
+    int focus_width;        // dp
+}
+
+Theme light_theme() {
+    return new Theme{dark: false, window: hex_rgb(0xF3F3F3), surface: hex_rgb(0xFBFBFB), surface_hover: hex_rgb(0xF0F0F0), surface_pressed: hex_rgb(0xE5E5E5), surface_disabled: hex_rgb(0xF5F5F5), text: hex_rgb(0x1B1B1B), text_secondary: hex_rgb(0x5C5C5C), text_disabled: hex_rgb(0x8A8A8A), accent: hex_rgb(0x005FB8), accent_hover: hex_rgb(0x1A6FC0), accent_pressed: hex_rgb(0x004C93), on_accent: hex_rgb(0xFFFFFF), danger: hex_rgb(0xC42B1C), danger_hover: hex_rgb(0xB12719), on_danger: hex_rgb(0xFFFFFF), border: hex_rgb(0x8A8A8A), divider: hex_rgb(0xE0E0E0), focus: hex_rgb(0x1B1B1B), track: hex_rgb(0x8A8A8A), radius: 4, font_size: 14, control_height: 32, focus_width: 2};
+}
+
+Theme dark_theme() {
+    return new Theme{dark: true, window: hex_rgb(0x202020), surface: hex_rgb(0x2D2D2D), surface_hover: hex_rgb(0x323232), surface_pressed: hex_rgb(0x272727), surface_disabled: hex_rgb(0x2A2A2A), text: hex_rgb(0xFFFFFF), text_secondary: hex_rgb(0xC5C5C5), text_disabled: hex_rgb(0x8F8F8F), accent: hex_rgb(0x60CDFF), accent_hover: hex_rgb(0x5BBDEA), accent_pressed: hex_rgb(0x56A9D3), on_accent: hex_rgb(0x000000), danger: hex_rgb(0xFF99A4), danger_hover: hex_rgb(0xF08A96), on_danger: hex_rgb(0x000000), border: hex_rgb(0x9A9A9A), divider: hex_rgb(0x3D3D3D), focus: hex_rgb(0xFFFFFF), track: hex_rgb(0x9A9A9A), radius: 4, font_size: 14, control_height: 32, focus_width: 2};
+}
+
+void check_pair(List<string> out, string what, int fg, int bg, int need) {
+    int c = contrast_x100(fg, bg);
+    if (c < need) { out.push($"{what}: contrast {c / 100}.{pad2(c % 100)}:1, needs {need / 100}.{pad2(need % 100)}:1"); }
+}
+
+string pad2(int v) {
+    if (v < 10) { return "0" + int_to_str(v); }
+    return int_to_str(v);
+}
+
+// Every pairing the widgets draw, checked against WCAG 2.2 (text 4.5:1, 1.4.3;
+// control boundaries and focus indicators 3:1, 1.4.11). Disabled controls are
+// exempt from contrast requirements, as WCAG allows.
+List<string> theme_problems(Theme t) {
+    List<string> out = new List<string>();
+    check_pair(out, "text on window", t.text, t.window, 450);
+    check_pair(out, "text on surface", t.text, t.surface, 450);
+    check_pair(out, "text on hovered surface", t.text, t.surface_hover, 450);
+    check_pair(out, "text on pressed surface", t.text, t.surface_pressed, 450);
+    check_pair(out, "secondary text on window", t.text_secondary, t.window, 450);
+    check_pair(out, "secondary text on surface", t.text_secondary, t.surface, 450);
+    check_pair(out, "text on accent", t.on_accent, t.accent, 450);
+    check_pair(out, "text on hovered accent", t.on_accent, t.accent_hover, 450);
+    check_pair(out, "text on pressed accent", t.on_accent, t.accent_pressed, 450);
+    check_pair(out, "text on danger", t.on_danger, t.danger, 450);
+    check_pair(out, "text on hovered danger", t.on_danger, t.danger_hover, 450);
+    check_pair(out, "accent on window", t.accent, t.window, 300);
+    check_pair(out, "control border on window", t.border, t.window, 300);
+    check_pair(out, "control border on surface", t.border, t.surface, 300);
+    check_pair(out, "track on window", t.track, t.window, 300);
+    check_pair(out, "focus ring on window", t.focus, t.window, 300);
+    check_pair(out, "focus ring on surface", t.focus, t.surface, 300);
+    return out;
+}

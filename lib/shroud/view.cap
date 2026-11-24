@@ -1,0 +1,409 @@
+// Shroud: views.
+//
+// An interface is described as a value, rebuilt from the application's state each
+// time it changes, as in SwiftUI, Flutter and Elm. Views are built with functions and
+// refined with modifiers, which can be chained:
+//
+//     column().spacing(12)
+//         .add(text("Patients").font_size(20).bold())
+//         .add(text_field("search", model.query, "Search").grow(1))
+//         .add(button("Admit", "admit").accent())
+//
+// Widgets never call back into the application. Instead an interaction produces a
+// message (Msg) naming an action, and the application's update code decides what it
+// means. Until Capstan has generics (v0.5), an action is a string and the payload an
+// int or untrusted text; with generics, View<M> will carry the application's own
+// message type, checked by the compiler.
+//
+// Every text a user types arrives as Tainted, so the compiler makes the application
+// validate it before it can be used as trusted data. No other toolkit does this.
+
+const int K_TEXT = 1;
+const int K_BUTTON = 2;
+const int K_ROW = 3;
+const int K_COLUMN = 4;
+const int K_STACK = 5;
+const int K_SPACER = 6;
+const int K_CHECKBOX = 7;
+const int K_SWITCH = 8;
+const int K_TEXT_FIELD = 9;
+const int K_SLIDER = 10;
+const int K_PROGRESS = 11;
+const int K_DIVIDER = 12;
+const int K_BOX = 13;
+const int K_SCROLL = 14;
+const int K_RADIO = 15;
+
+// Alignment along an axis.
+const int ALIGN_START = 0;
+const int ALIGN_CENTER = 1;
+const int ALIGN_END = 2;
+const int ALIGN_STRETCH = 3;          // cross axis only
+const int ALIGN_BETWEEN = 4;          // main axis only: space between children
+
+// Button styles.
+const int STYLE_STANDARD = 0;
+const int STYLE_ACCENT = 1;
+const int STYLE_SUBTLE = 2;
+const int STYLE_DANGER = 3;
+
+const int NO_COLOR = -1;
+const int AUTO = -1;
+
+struct View {
+    int kind;
+    string text;            // trusted text: labels, captions
+    Tainted value;          // untrusted text: what a user typed
+    bool has_value;         // text shows `value`, not `text`
+    List<View> kids;
+    string action;          // the message this view sends
+    int num;                // checkbox/switch/radio state (0/1), slider and progress value
+    int lo;
+    int hi;
+    int step;
+    string key;             // identity across rebuilds; "" means its position
+    string label;           // accessible name, if different from `text`
+    string hint;            // placeholder in a text field; accessible description
+    bool secure;            // a password field: shown as dots, never copied, never read aloud
+    bool disabled;
+    bool guard;             // ignore activation just after appearing or moving (CWE-1021)
+    int style;
+    // Layout. Lengths are in device-independent pixels (dp); AUTO means none.
+    Insets pad;
+    int spacing;
+    int main_align;
+    int cross_align;
+    int self_align;         // AUTO, or how the parent should align this child across
+    int width;
+    int height;
+    int min_w;
+    int max_w;
+    int min_h;
+    int max_h;
+    int grow;               // share of a row's or column's spare space
+    // Appearance; NO_COLOR and AUTO mean "from the theme".
+    int bg;
+    int fg;
+    int radius;
+    int border;
+    int border_color;
+    int font_size;
+    bool bold;
+    int text_align;
+    int lines;              // most lines a text shows; AUTO for no limit
+
+    // ---- composition ----
+    View add(View child) {
+        self.kids.push(child);
+        return self;
+    }
+
+    View add_all(List<View> children) {
+        for (int i = 0; i < children.len(); i += 1) { self.kids.push(children[i]); }
+        return self;
+    }
+
+    // ---- identity and accessibility ----
+    View key(string k) {
+        self.key = k;
+        return self;
+    }
+
+    View label(string name) {
+        self.label = name;
+        return self;
+    }
+
+    View hint(string h) {
+        self.hint = h;
+        return self;
+    }
+
+    View disabled(bool d) {
+        self.disabled = d;
+        return self;
+    }
+
+    // Ignores clicks and key presses for a moment after the control appears or moves,
+    // so a user cannot be tricked into activating it (clickjacking, CWE-1021).
+    View guarded() {
+        self.guard = true;
+        return self;
+    }
+
+    // ---- layout ----
+    View padding(int all) {
+        self.pad = insets_all(all);
+        return self;
+    }
+
+    View padding_xy(int x, int y) {
+        self.pad = insets_xy(x, y);
+        return self;
+    }
+
+    View padding_each(int left, int top, int right, int bottom) {
+        self.pad = new Insets{left: left, top: top, right: right, bottom: bottom};
+        return self;
+    }
+
+    View spacing(int s) {
+        self.spacing = s;
+        return self;
+    }
+
+    View align(int main, int cross) {
+        self.main_align = main;
+        self.cross_align = cross;
+        return self;
+    }
+
+    View align_self(int a) {
+        self.self_align = a;
+        return self;
+    }
+
+    View frame(int w, int h) {
+        self.width = w;
+        self.height = h;
+        return self;
+    }
+
+    View width(int w) {
+        self.width = w;
+        return self;
+    }
+
+    View height(int h) {
+        self.height = h;
+        return self;
+    }
+
+    View min_width(int w) {
+        self.min_w = w;
+        return self;
+    }
+
+    View max_width(int w) {
+        self.max_w = w;
+        return self;
+    }
+
+    View min_height(int h) {
+        self.min_h = h;
+        return self;
+    }
+
+    View max_height(int h) {
+        self.max_h = h;
+        return self;
+    }
+
+    View grow(int g) {
+        self.grow = g;
+        return self;
+    }
+
+    // ---- appearance ----
+    View background(int color) {
+        self.bg = color;
+        return self;
+    }
+
+    View foreground(int color) {
+        self.fg = color;
+        return self;
+    }
+
+    View corner_radius(int r) {
+        self.radius = r;
+        return self;
+    }
+
+    View border(int w, int color) {
+        self.border = w;
+        self.border_color = color;
+        return self;
+    }
+
+    View font_size(int s) {
+        self.font_size = s;
+        return self;
+    }
+
+    View bold() {
+        self.bold = true;
+        return self;
+    }
+
+    View text_align(int a) {
+        self.text_align = a;
+        return self;
+    }
+
+    View max_lines(int n) {
+        self.lines = n;
+        return self;
+    }
+
+    View accent() {
+        self.style = STYLE_ACCENT;
+        return self;
+    }
+
+    View subtle() {
+        self.style = STYLE_SUBTLE;
+        return self;
+    }
+
+    // A destructive action: drawn in the danger colour, and guarded against clickjacking.
+    View danger() {
+        self.style = STYLE_DANGER;
+        self.guard = true;
+        return self;
+    }
+
+    View range(int lo, int hi, int step) {
+        self.lo = lo;
+        self.hi = hi;
+        self.step = step;
+        return self;
+    }
+
+    bool shows_value() { return self.has_value; }
+
+    bool focusable() {
+        if (self.disabled) { return false; }
+        int k = self.kind;
+        return k == K_BUTTON || k == K_CHECKBOX || k == K_SWITCH || k == K_TEXT_FIELD || k == K_SLIDER || k == K_RADIO;
+    }
+}
+
+View make_view(int kind) {
+    return new View{kind: kind, text: "", value: taint(""), has_value: false, kids: new List<View>(), action: "", num: 0, lo: 0, hi: 100, step: 1, key: "", label: "", hint: "", secure: false, disabled: false, guard: false, style: STYLE_STANDARD, pad: insets_all(0), spacing: 0, main_align: ALIGN_START, cross_align: ALIGN_START, self_align: AUTO, width: AUTO, height: AUTO, min_w: AUTO, max_w: AUTO, min_h: AUTO, max_h: AUTO, grow: 0, bg: NO_COLOR, fg: NO_COLOR, radius: AUTO, border: AUTO, border_color: NO_COLOR, font_size: AUTO, bold: false, text_align: ALIGN_START, lines: AUTO};
+}
+
+// ---- views -----------------------------------------------------------------------------
+
+View text(string s) {
+    View v = make_view(K_TEXT);
+    v.text = s;
+    return v;
+}
+
+// Text that came from outside the program. Characters that would disguise it are
+// shown as a visible mark (see text.cap).
+View user_text(Tainted s) {
+    View v = make_view(K_TEXT);
+    v.value = s;
+    v.has_value = true;
+    return v;
+}
+
+View button(string title, string action) {
+    View v = make_view(K_BUTTON);
+    v.text = title;
+    v.action = action;
+    v.pad = insets_xy(12, 5);
+    v.text_align = ALIGN_CENTER;
+    return v;
+}
+
+View row() {
+    View v = make_view(K_ROW);
+    v.cross_align = ALIGN_CENTER;
+    return v;
+}
+
+View column() { return make_view(K_COLUMN); }
+
+// Children drawn on top of one another, the last on top.
+View stack() { return make_view(K_STACK); }
+
+View spacer() {
+    View v = make_view(K_SPACER);
+    v.grow = 1;
+    return v;
+}
+
+View checkbox(string title, bool checked, string action) {
+    View v = make_view(K_CHECKBOX);
+    v.text = title;
+    v.action = action;
+    if (checked) { v.num = 1; }
+    return v;
+}
+
+View radio(string title, bool selected, string action, int value) {
+    View v = make_view(K_RADIO);
+    v.text = title;
+    v.action = action;
+    v.lo = value;
+    if (selected) { v.num = 1; }
+    return v;
+}
+
+View toggle_switch(string title, bool on, string action) {
+    View v = make_view(K_SWITCH);
+    v.text = title;
+    v.action = action;
+    if (on) { v.num = 1; }
+    return v;
+}
+
+// A single-line text field. `action` is sent with the new text whenever it changes,
+// and with value 1 when the user presses Enter.
+View text_field(string action, Tainted current, string placeholder) {
+    View v = make_view(K_TEXT_FIELD);
+    v.action = action;
+    v.value = current;
+    v.has_value = true;
+    v.hint = placeholder;
+    v.pad = insets_xy(10, 0);
+    return v;
+}
+
+// A password field: dots on screen, no copying, and screen readers announce only its length.
+View password_field(string action, Tainted current, string placeholder) {
+    View v = text_field(action, current, placeholder);
+    v.secure = true;
+    return v;
+}
+
+View slider(int value, int lo, int hi, string action) {
+    View v = make_view(K_SLIDER);
+    v.num = clamp(value, lo, hi);
+    v.lo = lo;
+    v.hi = hi;
+    v.action = action;
+    return v;
+}
+
+View progress_bar(int value, int lo, int hi) {
+    View v = make_view(K_PROGRESS);
+    v.num = clamp(value, lo, hi);
+    v.lo = lo;
+    v.hi = hi;
+    return v;
+}
+
+View divider() { return make_view(K_DIVIDER); }
+
+// A plain rectangle: a colour swatch, a card, a background.
+View box() { return make_view(K_BOX); }
+
+// Shows its child at full height and scrolls it vertically.
+View scroll(View child) {
+    View v = make_view(K_SCROLL);
+    v.kids.push(child);
+    return v;
+}
+
+// ---- messages ------------------------------------------------------------------------
+
+// What an interaction asks the application to do.
+struct Msg {
+    string action;
+    int value;
+    Tainted text;
+}

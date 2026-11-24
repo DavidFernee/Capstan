@@ -677,3 +677,29 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 | AI review non-determinism | advisory by default; cached and recorded verdicts in gate mode |
 | Scope | ship each version usable on its own; never break self-hosting |
 | Kernel work outgrows the project | measure first (K0); port only a few high-CVE subsystems (K2); a microkernel rather than a Linux rewrite (K3) |
+
+## 12. Shroud: cross-platform GUI
+
+Shroud is the GUI library: one Capstan codebase for Windows, macOS and Linux, and later iOS,
+Android and the web. Its aim is to equal or better WinUI 3, SwiftUI, Qt and Flutter. Like Flutter,
+it draws every pixel itself and asks each operating system only for a window, input and an
+accessibility bridge. Fonts, text, layout, drawing and input are therefore Capstan code with
+Capstan's guarantees, and rendering is integer-only, so a frame is identical on every platform.
+Text typed by a user arrives as `Tainted`, deceptive characters in untrusted text are shown
+rather than obeyed (CWE-451), dangerous buttons are guarded against clickjacking (CWE-1021), and
+accessibility and WCAG contrast are checked by the library and its tests.
+
+The full design, the comparison with WinUI 3, SwiftUI, Qt and Flutter, and the roadmap are in
+[SHROUD.md](SHROUD.md). Stages, with the language versions they need:
+
+| Stage | Work | Needs |
+|---|---|---|
+| S0 *(done)* | rasteriser, TrueType parser, text, layout, 16 widgets, input and focus, accessibility tree and checks, themes, headless driver, golden-frame tests (`lib/shroud/`) | v0.4 |
+| S1 | platform embedders: Wayland first (a wire protocol, so pure Capstan), then Windows and macOS through one audited module each; damage tracking, multiple windows, clipboard | v0.6 capability I/O, T6 |
+| S2 | OpenType shaping, bidi, line breaking, CFF and variable fonts, colour emoji, input methods, multi-line and rich-text editing | T1 |
+| S3 | GPU backend checked against the software rasteriser, image decoders in Capstan, effects, animation | v0.6 |
+| S4 | widget breadth: virtualised lists, tables, trees, menus, dialogs, pickers, navigation | |
+| S5 | typed messages (`View<M>`), closures, async effects | v0.5, v0.7 |
+| S6 | live preview in the IDE, inspector, hot reload, visual designer | IDE Phase B |
+| S7 | WCAG 2.2 AA, EN 301 549 and Section 508 conformance; localisation; protective markings, capture-proof secret windows, `SecureField` yielding `Secret` | v0.8 |
+| S8 | iOS, Android, and the web through the WebAssembly backend | T10 |
