@@ -536,8 +536,9 @@ static int64_t cap_map_find(CapMap *m, CapStr *k) {
     if (m->index_cap == 0) return -1;
     uint64_t mask = (uint64_t)m->index_cap - 1;
     uint64_t s = cap_hash_str(k) & mask;
-    while (m->index[s]) {
+    for (int64_t probes = 0; probes < m->index_cap; probes++) {
         int64_t entry = m->index[s];
+        if (entry == 0) return -1;
         if (entry < 1 || entry > m->len)
             cap_panic("map index entry outside live range", "CWE-125", 0);
         int64_t pos = entry - 1;
@@ -546,7 +547,7 @@ static int64_t cap_map_find(CapMap *m, CapStr *k) {
         if (cap_str_eq(m->keys[pos], k)) return pos;
         s = (s + 1) & mask;
     }
-    return -1;
+    cap_panic("map index has no empty slot", "CWE-400", 0);
 }
 
 static void cap_map_reindex(CapMap *m, int64_t newcap) {
