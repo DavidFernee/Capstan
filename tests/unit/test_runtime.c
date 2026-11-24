@@ -330,6 +330,44 @@ static void test_files(void) {
 
 /* Shifts and wrapping arithmetic at the edges of the 64-bit range (no panics here;
    the stops are covered by tests/runtime/shift_*.cap). */
+/* The panic target must have its own frame: cap_panic uses longjmp in tests. */
+__attribute__((noinline)) static int expect_gc_panic(void (*fn)(void)) {
+    int old_test_mode = cap_test_mode;
+    cap_test_mode = 1;
+    int rejected = setjmp(cap_test_jmp) != 0;
+    if (!rejected) fn();
+    cap_test_mode = old_test_mode;
+    return rejected;
+}
+static void trigger_gc_add_overflow(void) {
+    (void)cap_gc_checked_add(SIZE_MAX, 1);
+}
+static void trigger_gc_mul_overflow(void) {
+    (void)cap_gc_checked_mul(SIZE_MAX, 2);
+}
+static void trigger_gc_capacity_overflow(void) {
+    (void)cap_gc_next_capacity(0, SIZE_MAX, 8, sizeof(CapLarge));
+}
+static void trigger_gc_heap_invariant(void) {
+    (void)cap_gc_heap_would_exceed(0);
+}
+static void test_gc_allocator_arithmetic(void) {
+    CHECK(expect_gc_panic(trigger_gc_add_overflow));
+    CHECK(expect_gc_panic(trigger_gc_mul_overflow));
+    CHECK(expect_gc_panic(trigger_gc_capacity_overflow));
+    size_t saved_heap = cap_gc.heap, saved_limit = cap_gc.max_heap;
+    cap_gc.heap = 100;
+    cap_gc.max_heap = 101;
+    CHECK(!cap_gc_heap_would_exceed(1));
+    CHECK(cap_gc_heap_would_exceed(2));
+    cap_gc.heap = 1;
+    cap_gc.max_heap = 0;
+    CHECK(expect_gc_panic(trigger_gc_heap_invariant));
+    cap_gc.heap = saved_heap;
+    cap_gc.max_heap = saved_limit;
+    CHECK(cap_gc_saturating_add(SIZE_MAX - 1, 2) == SIZE_MAX);
+}
+
 static void test_bitwise(void) {
     CHECK(cap_as_signed(0) == 0 && cap_as_signed(UINT64_MAX) == -1);
     CHECK(cap_as_signed((uint64_t)INT64_MAX) == INT64_MAX && cap_as_signed((uint64_t)INT64_MAX + 1) == INT64_MIN);
@@ -546,6 +584,7 @@ int main(void) {
     test_secret_eq();
     test_files();
     test_bitwise();
+    test_gc_allocator_arithmetic();
     test_collections();
     test_arithmetic();
     scrub_stack(16);    /* the 100,000-key map from test_collections must not look live */
