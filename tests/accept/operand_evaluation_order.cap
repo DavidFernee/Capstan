@@ -1,0 +1,25 @@
+// spec: expr.order
+// Field reads must be materialised before a later operand mutates the same object.
+struct Counter {
+    int value;
+}
+
+int mutate_counter(Counter c) {
+    c.value = 100;
+    return 1;
+}
+
+int combine(int first, int second) {
+    return first * 100 + second;
+}
+
+int main() {
+    Counter c = new Counter{value: 10};
+
+    println(int_to_str(c.value + mutate_counter(c)));
+
+    c.value = 10;
+    println(int_to_str(combine(c.value, mutate_counter(c))));
+
+    return 0;
+}
