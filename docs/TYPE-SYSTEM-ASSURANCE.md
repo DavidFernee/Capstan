@@ -1124,3 +1124,67 @@ Do not use recursive diagnostic strings as cache keys. For recursive nominal lay
 - Fuzz and mutation tests exercise nested constructors, repeated variables, shadowed binders, wrong arity and deep substitutions under global work limits.
 
 This section is an acceptance requirement for the proposed generic type system. The current compiler's name-based `Type` representation and structural `type_eq` do not yet provide these guarantees.
+
+
+## 32. Generic declaration collection and checker-context isolation
+
+The current checker begins `check_program` by registering top-level declarations, normalising parsed types, validating nominal fields, checking constants and then checking function bodies. Its registries are keyed by short strings, and its mutable checker state includes the current return type, scope depth, loop count, policy/test flags and a privileged-context flag.
+
+Generic templates, interfaces and impls introduce dependencies that cannot be handled safely by simply adding a substitution call inside the existing per-function loop. The design should specify a deterministic declaration and validation pipeline, and make checker context explicit so an instantiation cannot inherit authority or state from the call site that triggered it.
+
+### 32.1 Required whole-closure phase order
+
+For one root compilation closure, use an explicit pipeline along these lines:
+
+1. Canonicalise and register source modules; retain the import graph and root-closure membership.
+2. Collect all top-level declarations and assign stable-in-closure declaration identities before resolving references. Detect duplicate declarations by resolved identity/scope, not accidental short-name map overwrite.
+3. Register generic binders and assign each a unique `TypeVarId`; validate duplicate parameters, arity, binder scope and supported declaration forms.
+4. Resolve all declaration signatures, field and enum payload types, interface bounds, protected policy references and impl heads to canonical identities. Forward references must not depend on source/import order.
+5. Validate nominal layouts and declaration-level constraints, including recursive layout and sealed Grant-freedom obligations.
+6. Run abstract validation on every generic template in the root closure, including unused templates.
+7. Validate concrete impl signatures and whole-closure coherence; determine the visible, unique implementation relation.
+8. Check non-generic declarations and discover concrete generic instantiations. Process the instantiation worklist under shared global budgets and deterministic ordering; validate every concrete instantiation and obligation.
+9. Complete all diagnostics and acceptance gates before code generation or output publication.
+
+The precise ordering of independent checks can vary, but no phase may consume unresolved short-name references, and no concrete instantiation may be emitted before all root-closure declaration, template, coherence and security checks have completed.
+
+### 32.2 Isolate checker state and authority
+
+Abstract and concrete generic checking must run in a fresh, explicit function-checking context derived from the declaration and substitution, not by recursively reusing whichever mutable checker state happened to be active at the call site.
+
+At minimum, establish and restore independently:
+
+- lexical value scopes and declaration/binder environments;
+- current return type and callable boundary;
+- loop/control-flow depth and definite-return state;
+- test and policy contexts;
+- protected-function privilege and exact policy identity;
+- current module identity and visibility context;
+- current substitution environment and interface-bound environment;
+- recursion/work-budget accounting and diagnostic instantiation trace.
+
+A generic body must not gain `privileged` access because a privileged caller triggered its instantiation. A closure body is a separate callable boundary. A nested generic call uses only the callee's declared bounds and the concrete types resolved for that call; it does not inherit the caller's unrelated interface bounds or protected authority.
+
+Use structured save/restore or immutable context values. If mutable checker state is retained for performance, every entry/exit path—including diagnostics and budget exhaustion—must restore it. Prefer a bounded instantiation trace over recursive unbounded diagnostic expansion.
+
+### 32.3 Determinism and failure atomicity
+
+- Declaration identity, duplicate detection, overload/lookup results, impl selection, instantiation queue order and diagnostic order must not depend on import or declaration traversal order.
+- A failed abstract template check invalidates the root closure even if no call instantiates it.
+- A failed concrete instantiation invalidates the root closure even if earlier instantiations succeeded.
+- A budget failure is a normal diagnostic, not a partially accepted program or stack/memory exhaustion.
+- No generated C or final output file is published until all phases succeed; retain the current whole-program check-before-generate barrier.
+
+### 32.4 Required adversarial tests
+
+- Forward references among generic functions, nominal types and interfaces resolve identically under reversed declaration/import order.
+- Duplicate same-scope declarations are diagnosed rather than silently replacing registry entries.
+- An unused invalid generic template is rejected.
+- A generic function called from a protected function cannot read sensitive fields unless its own declared contract legitimately grants that access; caller privilege never leaks into the template.
+- A generic function called from a policy/test context does not inherit policy/test-only operations.
+- Nested generic calls receive only their own declared interface bounds; unrelated caller bounds cannot satisfy a callee obligation.
+- Errors and budget exhaustion restore checker context; subsequent diagnostics and checks are not contaminated.
+- The same invalid closure produces equivalent diagnostics and no C output under import/declaration-order permutations.
+- Bootstrap and self-hosted compilers agree on phase ordering, rejection and deterministic diagnostics.
+
+This is a required architecture contract for generic checking; the current checker has no generic template or instantiation context.
