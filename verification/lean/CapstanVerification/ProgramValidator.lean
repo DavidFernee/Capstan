@@ -39,6 +39,16 @@ def typedRegister? {n : Nat} (types : RegTypes n)
   let i ← finOfNat? n index
   if h : types i = expected then some ⟨i, h⟩ else none
 
+/-- A successful natural-to-finite conversion preserves the index value. -/
+theorem finOfNat?_value {bound index : Nat} {i : Fin bound}
+    (h : finOfNat? bound index = some i) : i.val = index := by
+  unfold finOfNat? at h
+  split at h
+  · injection h with hi
+    subst i
+    rfl
+  · contradiction
+
 /-- Validate a raw instruction into the existing intrinsically typed machine syntax. -/
 def validateMachineInstr {n m : Nat} {types : RegTypes n}
     (raw : RawMachineInstr) : Option (MachineInstr n m types) := do
@@ -194,11 +204,7 @@ theorem validateSingleFrameProgram_entry_sound
       simp [hentry] at h
       rcases h with ⟨_, _, hp⟩
       have he : entry = program.entry := congrArg FiniteProgram.entry hp
-      have hval : entry.val = raw.entry := by
-        have hm := congrArg (Option.map Fin.val) hentry
-        have hraw : raw.entry = entry.val := by
-          simpa [finOfNat?] using hm
-        exact hraw.symm
+      have hval : entry.val = raw.entry := finOfNat?_value hentry
       rw [← he]
       exact hval
 
