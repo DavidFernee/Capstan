@@ -176,7 +176,7 @@ The first implementation pass addresses concrete arithmetic and erasure weakness
 - Validated allocation-kind indices and rejected allocation requests above the runtime's documented maximum length.
 - Validated GC stress and heap-limit environment values. Heap suffix scaling and the physical-memory-derived default are bounded before conversion or multiplication.
 - Reworked conservative scan alignment and end checks to avoid overflowing the scan pointer while rounding/alignment and checking whether a complete word remains.
-- Replaced small-object secret wiping with a volatile-store wipe primitive; large-object secret reclamation uses the same primitive.
+- Replaced small-object secret wiping with a volatile-store wipe primitive; large-object secret reclamation uses the same primitive. Secret pages now keep free-slot indices in collector metadata rather than writing free-list pointers into the secret payload. Newly formatted secret pages are zeroed, and a regression test checks every reclaimed secret free slot remains all-zero.
 - Hardened stack-fault classification against pointer-arithmetic overflow and made signal-handler output use fixed lengths. Failure to install the alternate signal stack or handlers now fails closed when stack-guard setup is requested.
 - Added unit coverage for checked addition, multiplication, capacity growth and the wipe primitive, in addition to the existing collector stress and secret-reclamation tests.
 
