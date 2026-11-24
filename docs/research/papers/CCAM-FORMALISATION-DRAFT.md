@@ -6,7 +6,8 @@
 **Manuscript status:** Research draft — not submission-ready  
 **Repository snapshot:** Capstan `main` at `294d34361c31dc768e60a017a3fd0718f7a00313` (25 November 2026)  
 **Formalisation:** Lean 4.19.0  
-**Primary implementation reference:** commit `360043c8704546857caa4c82f2978c7709399016` (merged PR #151)
+**Formal-model introduction:** commit `360043c8704546857caa4c82f2978c7709399016` (PR #151)  
+**Current implementation snapshot:** commit `294d34361c31dc768e60a017a3fd0718f7a00313` (PR #163 merged)
 
 ---
 
@@ -16,7 +17,7 @@ Capstan is a security-oriented programming language whose longer-term architectu
 
 The formalisation represents register types and program counters with finite types, embeds scalar type obligations in instruction constructors, and models checked signed 64-bit arithmetic, register initialisation, control flow, explicit traps and instruction accounting. A validator model converts decoded instructions with natural-number operands into intrinsically typed machine instructions. A whole-program construction produces a finite program only when its entry index is valid, every instruction in the fixed finite table validates, and the final instruction has an explicit control effect. The resulting representation carries bounded program counters and typed register operands by construction.
 
-The work establishes useful local invariants, including preservation of register typing for successful operations, bounded control-flow targets, signed-64 result constraints, and instruction-budget accounting for the restricted machine. It does not establish a verified CCAM implementation. In particular, the formal validator does not parse JSON, does not represent the complete normative multi-function schema, and is not proved equivalent to the Capstan-native evaluator. Calls, integrated call frames, source lowering, and native code generation are outside the present machine model. We identify a further semantic mismatch: the model's unconditional requirement that the final instruction be terminal is stronger than the normative CCAM reachability-based fall-through rule.
+The work establishes useful local invariants, including preservation of register typing for successful operations, bounded control-flow targets, signed-64 result constraints, instruction-budget accounting, and a conditional representation bridge for runtime-style register lists. A Capstan-native in-memory structural validator for the supported single-frame subset has also been merged and passed exact-head platform and formal CI, but it is not connected to the Lean validator by a refinement theorem. The formal validator does not parse JSON or represent the complete normative multi-function schema. Calls, integrated call frames, source lowering, and native code generation remain outside the present machine model. We identify a further semantic mismatch: the model's unconditional requirement that the final instruction be terminal is stronger than the normative CCAM reachability-based fall-through rule.
 
 The contribution is therefore a documented formalisation and proof-boundary study, not an end-to-end verified compiler. We use it to identify the next proof obligations required to connect a typed abstract machine to an executable language implementation without overstating what a model-level proof establishes.
 
@@ -48,8 +49,8 @@ The paper makes the following limited contributions:
 
 - It presents the repository's Lean representation of a finite, single-frame, typed register machine.
 - It explains the raw-to-intrinsically-typed validation boundary, where untrusted natural-number indices are converted to `Fin` indices and register-type evidence is carried in dependent data.
-- It inventories the machine-checked local invariants for register typing, checked arithmetic, control-flow bounds and instruction budgets.
-- It identifies concrete gaps between the formal model, the normative CCAM v0.1 specification and the current Capstan-native evaluator.
+- It inventories the machine-checked local invariants for register typing, checked arithmetic, control-flow bounds and instruction budgets, together with the conditional runtime-register representation bridge.
+- It records the merged in-memory validator's test and CI evidence while identifying concrete gaps between the formal model, normative CCAM v0.1 and the executable evaluator.
 - It proposes a staged proof plan based on specification alignment, validator soundness, evaluator refinement and source-to-machine semantic preservation.
 
 We do not claim that these techniques are novel in isolation. Finite indices, intrinsically typed syntax and mechanised operational semantics are established methods. The research value at this stage lies in the concrete formalisation, its application to Capstan's evolving machine contract, and the explicit analysis of the proof obligations that remain.
@@ -84,15 +85,7 @@ These exclusions are part of the result, not implementation details to be inferr
 
 ### 3.1 Scalar domain and register files
 
-The model defines a disjoint scalar type:
-[
-  mathit{Ty} ::= mathit{int} mid mathit{bool}.
-]
-
-Values are integers or booleans. Integer values are admitted only when they lie in the signed 64-bit interval:
-[
-  -2^{63} leq n leq 2^{63}-1.
-]
+The model defines a disjoint scalar type `Ty = int | bool`. Values are integers or booleans. Integer values are admitted only when they lie in the signed 64-bit interval `−2^63 ≤ n ≤ 2^63 − 1`.
 
 The register type vector for a machine with `n` registers is a function `RegTypes(n) = Fin(n) → Ty`. The register file maps each finite register index to an optional value: `Registers(n) = Fin(n) → Option(Val)`. 
 
@@ -184,7 +177,7 @@ These are useful component properties, but the call stack is not part of `Machin
 
 ### 4.5 Properties not counted as substantive results
 
-The repository includes a theorem that classifies the result of a machine step into one of the constructors of the machine-outcome datatype. It is proved by case analysis over that datatype. This is an exhaustive classification, not a substantive progress theorem showing that a valid configuration can always take a semantically appropriate step.
+The theorem `machineStep_progress_or_explicit_outcome` classifies the result of a machine step into one of the constructors of the machine-outcome datatype by case analysis. This is an exhaustive classification, not a substantive progress theorem showing that a valid configuration can always take a semantically appropriate step.
 
 Likewise, determinism of the current functional `machineStep` definition follows from the fact that it is a function: two evaluations of the same input are equal. This is a useful interface property, but it is not a comparison between two independently defined semantics or implementations.
 
@@ -346,7 +339,7 @@ This is the architecture required to reduce the current C-backed trusted computi
 
 ## 9. Conclusion
 
-We have presented a scoped account of Capstan's Lean formalisation of a finite, single-frame typed machine. The model uses finite indices and intrinsically typed instructions to encode register and control-flow constraints. Its proofs establish local register-typing preservation, checked arithmetic properties, bounded control-flow representation and instruction-budget accounting. Separate call-stack lemmas provide a basis for later integration, but do not prove call semantics.
+We have presented a scoped account of Capstan's Lean formalisation of a finite, single-frame typed machine, including a conditional representation relation for runtime-style register lists. The model uses finite indices and intrinsically typed instructions to encode register and control-flow constraints. Its proofs establish local register-typing preservation, checked arithmetic properties, bounded control-flow representation and instruction-budget accounting. Separate call-stack lemmas provide a basis for later integration, but do not prove call semantics. The merged Capstan-native validator and its passing exact-head CI are additional implementation evidence, not a formal connection to the Lean model.
 
 The formalisation is a meaningful foundation for further work, but its assurance boundary is narrow. It does not parse normative CCAM documents, model the complete multi-function machine, prove validator completeness, or establish refinement to the Capstan-native evaluator. It also imposes a final-instruction condition stronger than the normative reachability-based rule. These differences must be resolved before the work can support an end-to-end verification claim.
 
@@ -371,6 +364,10 @@ The principal research task is therefore not simply to enlarge the Lean model. I
 [7] David Fernee. *Formal Verification Obligation Matrix*. Capstan repository, `docs/assurance/FORMAL-VERIFICATION-MATRIX.md`, reviewed 25 November 2026. [Repository](https://github.com/DavidFernee/Capstan/blob/main/docs/assurance/FORMAL-VERIFICATION-MATRIX.md).
 
 [8] Jianzhou Zhao, Santosh Nagarakatte, Milo M. K. Martin, and Steve Zdancewic. “Formalizing the LLVM Intermediate Representation for Verified Program Transformations.” In *Proceedings of the 39th ACM SIGPLAN-SIGACT Symposium on Principles of Programming Languages (POPL 2012)*, pp. 427–439. DOI: [10.1145/2103621.2103709](https://doi.org/10.1145/2103621.2103709).
+
+[9] David Fernee. “Add bounded typed structural validator.” Capstan pull request #163, merged 25 November 2026. [Pull request](https://github.com/DavidFernee/Capstan/pull/163).
+
+[10] Capstan CI. Formal verification run 45508852082 and platform/supply-chain run 45508852150, executed against PR #163 head `0e9800397c45359e216ec08c656bb9bed86cd8ef`. [Formal run](https://github.com/DavidFernee/Capstan/actions/runs/45508852082); [platform run](https://github.com/DavidFernee/Capstan/actions/runs/45508852150).
 
 ---
 
