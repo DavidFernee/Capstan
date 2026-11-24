@@ -1344,3 +1344,18 @@ Required generic implementation invariants:
 - If a future typed backing store uses kind 1 for scalar specialisations, test that the selected layout is derived from the fully substituted type and cannot be confused by qualifiers, optionals, aliases, enums or module-local nominal types.
 
 Current evidence: `compiler/codegen.cap` uses `cap_vi`/`cap_vp` and `from_val` to encode/decode list and map elements; `runtime/capstan_rt.h` implements the allocation choices above. Existing unit tests cover ordinary collection operations and map growth, but do not constitute the generic-specialisation/GC-stress matrix required here. This section specifies future acceptance criteria; it does not claim generic collection specialisation exists.
+
+
+## 37. Specialised global roots and GC-visible storage
+
+The current code generator emits a global root registration for each non-scalar constant before assigning its value in `cap_init_globals`. The runtime stores the address of that global in its explicit root table and visits each registered slot during collection. Scalar `int`/`bool` constants are omitted; optional scalar values are represented by pointers to atomic boxes and therefore are non-scalar for root registration. The collector separately scans the active stack and saved register state conservatively.
+
+Generic support must preserve this distinction after full type substitution:
+
+- A specialised global whose C representation can hold a managed pointer must be registered as a root before its initialiser can allocate or trigger collection. This includes structs, enums (including generic `Result`), strings and qualifiers, collections, closures, optional non-scalar values, and boxed optional scalars.
+- Only representations proven to contain no managed pointer may omit root registration. Do not use source-level generic syntax or a pre-substitution type-variable classification to decide.
+- Root registration must use the address of the actual global pointer slot, not the pointed-to object or a temporary. Initialise/register ordering must ensure no allocation can occur while a heap pointer is stored only in an unregistered global.
+- If generic constants or generated static caches are added, include them in the same root audit. A monomorphised function's local pointer values rely on the collector's conservative stack/register scan; closure environments and other heap aggregates rely on kind-0 tracing.
+- Test global roots under forced collection during initialisation, including generic struct/enum/Result values, nested collections, optional scalar boxes, and Secret references. Verify that a rooted aggregate retains all transitively reachable objects and that removing the global root permits eventual reclamation (allowing conservative false retention).
+
+Current evidence: `compiler/codegen.cap` calls `cap_gc_root((void **)&g_<name>)` for non-scalar constants before emitting the initialiser assignment; `runtime/capstan_gc.h` traverses the registered root slots on every collection. The new generic root cases are acceptance criteria, not existing generic functionality.
