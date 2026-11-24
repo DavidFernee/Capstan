@@ -1256,3 +1256,29 @@ Enforce global limits on generated specializations, aggregate layout nodes, emit
 
 This section defines required backend work; it does not assert that the current code generator supports generics or that the runtime's generic-layout behaviour has been verified.
 true
+
+
+## 34. Explicit generic syntax-tree representation
+
+The current `Node` AST uses a small set of declaration kinds and generic `s`, `s2`, `n`, `kids` fields; `Type` stores a kind, string name and nested arguments. The parser has no explicit generic-parameter, interface or impl nodes. v0.5 must not encode new semantic constructs through overloaded flags or conventions that require reparsing source text.
+
+Require explicit AST forms for:
+- Generic parameter binders, ordered bounds and source spans.
+- Generic type/function declarations and type references.
+- Interface declarations and required method signatures.
+- Impl heads, target types and implementation methods.
+- Explicit generic call arguments, kept separate from value arguments.
+- Result propagation as a dedicated expression node.
+- Function types and closure/capture metadata when implemented.
+
+Parsing requirements:
+- Separate grammar productions for binder lists, type arguments, interface/impl declarations and explicit generic call arguments.
+- Prefer unambiguous turbofish call syntax (e.g. `identity::<int>(7)`) unless another form is fully specified against comparisons and shifts.
+- Define nested `>>` handling without globally splitting shift tokens in expression context.
+- Define trailing commas, empty lists, duplicate binders, malformed bounds and wrong arity.
+- Error recovery after malformed generic syntax must preserve the following top-level declaration.
+- Preserve file/line/column provenance for every binder, bound and type argument, including imported files and lifted methods.
+
+Before semantic analysis, AST invariants must guarantee unique binders per scope, ordered argument lists, distinct unresolved type-variable references (not nominal names), explicit interface/impl node kinds, and no semantic consumption of malformed partial nodes.
+
+Tests must cover documented syntax and expected AST shape; nested generic closers versus shifts/comparisons; malformed syntax and recovery; source locations; parser depth/work limits; fuzzing; and bootstrap/self-hosted parser agreement. This is a prerequisite, not a claim that current Capstan supports these constructs.
