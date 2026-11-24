@@ -1416,3 +1416,29 @@ Generic/backend acceptance criteria:
 - Treat conservative false retention as possible: tests must not assume immediate reclamation merely because a source-level variable or collection entry is dead. Direct vacated-slot assertions should separately prove that the runtime has removed its own stale references.
 
 This section records a source-level audit and future acceptance criteria; it does not claim a formal proof of C compiler register behaviour or add precise root tracking.
+
+
+## 40. Generated expression temporaries and global-root initialisation
+
+The current C backend documents Capstan's left-to-right evaluation guarantee and uses statement-expression temporaries to sequence multiple non-simple operands. This is important for allocation safepoints: a managed value evaluated before a later operand allocates must remain live while that allocation may collect.
+
+Current code-generation observations:
+
+- `operands` generates child expressions in AST order; `hoist` materialises non-simple operands in that order when more than one operand is non-simple.
+- List/map operations, indexing and ordinary calls use this operand machinery. Generated receiver/value temporaries therefore need to remain ordinary C locals visible to the current conservative stack/register scanner.
+- Struct and enum construction allocate the aggregate before evaluating and assigning payload/field initialisers. The construction pointer remains in a generated C local while later initialisers execute; already assigned pointer-bearing fields are visible through the traced aggregate.
+- `cap_init_globals` registers each non-scalar global address with `cap_gc_root` before evaluating and assigning that global's initializer. Optional scalar values are pointer-bearing and must be included. Later globals remain zero-initialised until their own registration/initialisation.
+- The current backend does not emit precise per-local root maps. Its correctness relies on the runtime's conservative stack/register scan and traced aggregate layouts.
+
+Acceptance criteria for generic code generation:
+
+1. Preserve the evaluation order of all source operands, including interactions between a simple variable read and a later side-effecting expression. Do not assume that C's argument evaluation order is left-to-right.
+2. Any managed value held across an allocation-capable expression must remain visible to the collector under the documented root strategy. If generated C changes to heap frames, coroutine state, tail-call elimination, or precise roots, revisit this contract explicitly.
+3. Register each pointer-bearing global slot before evaluating an initializer that may allocate. Specialised constants, optional scalar boxes, generic enums/Result values, closures and nested collections must use their resolved pointer-bearing representation when deciding root registration.
+4. Keep partially constructed aggregates reachable across allocating field/payload initialisers. Do not publish an aggregate as complete until all required initialisation and validation has succeeded.
+5. Add stress tests for nested allocating expressions in call arguments, list/map insertion, struct fields, enum payloads and global initialisers. Check source-order side effects and that earlier managed values survive later allocations.
+6. Test global initialisers that allocate repeatedly with collection-on-every-allocation, including optional scalar and pointer-bearing aggregate constants.
+
+One sequencing limitation deserves separate attention: the current `hoist` helper only materialises operands when more than one is classified non-simple. That is sufficient to order multiple effectful expressions, but it is not a general proof of left-to-right observation when a simple variable read is paired with a later expression that can mutate the variable through an alias. The language's aliasing/mutation rules and the compiler's definition of a simple operand must jointly justify that optimisation; otherwise hoist all operands from the first potentially effectful operand onward. This is a sequencing audit item, not an established GC-root defect.
+
+This section records source inspection and acceptance criteria; no compiler change or test run is claimed.
