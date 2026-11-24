@@ -1,15 +1,32 @@
 # CWE coverage
 
-How Capstan v0.1 handles each entry in the 2024 CWE Top 25, plus other weaknesses
-it addresses. Statuses:
+This document maps the current integrated Capstan implementation against the 2024 CWE
+Top 25 and additional weaknesses. It is a scoped engineering record, not a blanket
+security certification. The current `main` execution path is C-backed; the C-free/CCAM
+programme and Lean proof fragments do not change a row's status until their implementation
+is integrated and the relevant evidence is rerun.
 
-- **Prevented**: cannot be written, or is always stopped safely at run time.
-- **Partial**: substantially harder to get wrong, with the gap stated.
-- **Not yet**: outside v0.1's reach; the roadmap item is named.
+### Status vocabulary
 
-Every claim here is backed by a test in `tests/`. For an attempt-by-attempt
-red-team of about 250 code-level CWEs, including the gaps that remain, see
-[CWE-ATLAS.md](CWE-ATLAS.md).
+- **Compile-time rejection**: the compiler rejects a prohibited source construct.
+- **Runtime stop**: a checked operation terminates safely on the specified invalid input.
+- **Inexpressible by absence**: the language exposes no construct or capability for the weakness.
+- **Partial**: the mitigation has an explicit gap or depends on developer declarations.
+- **Not yet**: no implemented mitigation is claimed.
+- **Design limitation**: the weakness is outside the language's ability to determine, such as incorrect business policy intent.
+
+Historical table entries using **Prevented** are shorthand for one of the first three
+mechanisms; read each row's explanation to determine which. Compile-time rejection,
+runtime stopping and inexpressibility are not interchangeable. Runtime safety also
+remains conditional on the compiler, generated C, C runtime, libc, C compiler and host.
+
+Evidence must be assessed in separate dimensions: (1) implementation path on the current
+revision, (2) regression/conformance tests actually invoked by the standard test runner,
+(3) exact-head CI results, (4) independent adversarial/reference-model verification, and
+(5) formal proof of a precisely stated property and its assumptions. A fixture's presence
+is not a passing test; a CI workflow definition is not a completed run; a Lean theorem about
+a model is not proof that the Capstan implementation refines that model. The CWE atlas
+([CWE-ATLAS.md](CWE-ATLAS.md)) records the attempt-by-attempt analysis and residual gaps.
 
 ## The 2024 CWE Top 25
 
