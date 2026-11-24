@@ -49,7 +49,7 @@ void test_layout(Tally t, Ui ui) {
     expect_int(t, laid_of(ui, "a").frame.w, fx(40), "row: fixed child keeps its width");
     // 400 - 40 - 60 - 3 * 10 = 270 to share: 67.5 and 202.5, snapped to pixels.
     expect_int(t, laid_of(ui, "b").frame.w + laid_of(ui, "c").frame.w, fx(270), "row: flexible children share the rest");
-    expect(t, int_abs(laid_of(ui, "b").frame.w - fx(68)) <= FX, "row: shares are proportional", $"{laid_of(ui, " b ").frame.w}");
+    expect(t, int_abs(laid_of(ui, "b").frame.w - fx(68)) <= FX, "row: shares are proportional", $"{laid_of(ui, "b").frame.w}");
     expect_int(t, laid_of(ui, "d").frame.x, fx(340), "row: last child ends at the row's end");
     expect_int(t, laid_of(ui, "a").frame.y, fx(15), "row: children centred across by default");
     // Column alignment and padding.
@@ -67,7 +67,7 @@ void test_layout(Tally t, Ui ui) {
     expect_int(t, laid_of(ui, "s3").frame.x, fx(280), "row: space between reaches the end");
     // Text wraps to the space it is given.
     ui.render(column().add(column().width(120).add(text("one two three four five six seven").key("w"))), 0);
-    expect(t, laid_of(ui, "w").lines.len() / 2 >= 3, "text: wraps in a narrow column", $"{laid_of(ui, " w ").lines.len() / 2} lines");
+    expect(t, laid_of(ui, "w").lines.len() / 2 >= 3, "text: wraps in a narrow column", $"{laid_of(ui, "w").lines.len() / 2} lines");
     expect(t, laid_of(ui, "w").frame.w <= fx(120), "text: stays within its width", "too wide");
     ui.render(column().add(column().width(120).add(text("one two three four five six seven").max_lines(2).key("w2"))), 0);
     expect_int(t, laid_of(ui, "w2").lines.len() / 2, 2, "text: max_lines");
