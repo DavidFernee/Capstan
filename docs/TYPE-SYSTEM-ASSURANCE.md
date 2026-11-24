@@ -1382,3 +1382,12 @@ Required runtime correction and regression coverage:
 - Apply the same rule to future generic collection representations and any pointer-bearing buffer whose logical length can shrink.
 
 This is a current runtime finding, not merely a generic-feature acceptance criterion. PR #51's current branch has the same operations and should address it there; this type-system assurance branch records the dependency and does not modify runtime code.
+
+
+### 38.1. Scalar pop paths and immediate unboxed reads
+
+The vacated-slot audit also includes scalar values stored in the pointer-bearing `CapVal` array. `cap_list_pop_i` copies the integer into a newly allocated optional box, but leaves the original integer bits in the old slot. Because the backing allocation is kind 0 and fully scanned, an integer bit pattern that resembles a heap address can cause conservative false retention. The runtime contributor has acknowledged this path and should clear the slot after copying the scalar, before any allocation that can collect (or otherwise prove the copied value is safely rooted across that allocation).
+
+`cap_list_pop_peek_i` is different: it returns a pointer into the vacated slot for immediate unboxed inspection by generated `if (let ...)` code. Clearing the slot inside that helper would invalidate the returned pointer. Preserve its immediate-read contract; if the implementation later wants to clear the slot, change the compiler/runtime protocol together so the scalar is copied before clearing. Do not apply this rule to `CapBList`'s atomic bool buffer as though it contained managed pointers; its stale bytes cannot retain managed objects.
+
+Add direct tests for `cap_list_pop_i` slot clearing and generated immediate-peek correctness, alongside the pointer-slot tests above.
