@@ -1,4 +1,5 @@
 import CapstanVerification.Machine
+import CapstanVerification.RuntimeBridge
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -77,3 +78,13 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.executeLt
 #print axioms CapstanVerification.executeEq
 #print axioms CapstanVerification.executeNot
+
+#print axioms CapstanVerification.RuntimeRegister.value?
+#print axioms CapstanVerification.runtimeRegisterAt
+#print axioms CapstanVerification.runtimeTypeAt
+#print axioms CapstanVerification.runtimeValueAt
+#print axioms CapstanVerification.runtimeReadInt
+#print axioms CapstanVerification.runtimeReadBool
+#print axioms CapstanVerification.runtimeReadInt_corresponds
+#print axioms CapstanVerification.runtimeReadBool_corresponds
+#print axioms CapstanVerification.runtimeRelation_preserves_well_typed
