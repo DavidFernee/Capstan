@@ -27,7 +27,7 @@ The backend uses GNU C statement expressions and temporaries for this purpose. T
 | Field/index assignment | Explicit receiver/index/value temporaries where required | The lvalue address components are evaluated before the assigned value when their evaluation can be observable |
 | Struct/enum construction | Sequential statement-expression assignments | Initialisers are emitted in source order |
 | Authorisation arguments | Sequential typed temporaries | Policy arguments are evaluated in source order before policy evaluation |
-| Compound assignment | Explicit old-value read, RHS evaluation, computation and write | The old value and target address are retained before a mutating RHS; see PR #97 |
+| Compound assignment | Explicit old-value read, RHS evaluation, computation and write | The old value and target address are retained before a mutating RHS; a potentially invalidated index is rechecked at write time, while a proved setter is permitted only when the range analysis establishes that the RHS region cannot shrink the list; see PR #97 |
 | `sql_query` / `run` | Special lowering builds a runtime argument list | Argument zero is statically required by the checker to be a string literal, so its later textual placement cannot reorder a source side effect; remaining arguments are appended sequentially |
 
 ## 3. The `hoist()` classification invariant
@@ -54,7 +54,7 @@ This is an explicit compiler proof obligation, not an intrinsic property of C.
 
 The expected output is `11` and `1001`. These values distinguish left-to-right evaluation from a lowering that executes the mutating call before reading the field.
 
-`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. `tests/accept/compound_assignment_lvalue_once.cap` checks that a side-effectful field receiver, indexed-list base and index expression are each evaluated exactly once before the RHS.
+`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. `tests/accept/compound_assignment_lvalue_once.cap` checks that a side-effectful field receiver, indexed-list base and index expression are each evaluated exactly once before the RHS. `tests/runtime/compound_assignment_invalidated_index.cap` checks that an RHS which shrinks the list causes a controlled bounds trap at the final write rather than an unchecked stale-index store.
 
 The fixtures are conformance tests. They do not prove all generated expressions correct, establish that the C compiler behaves identically on every target, or replace a formal source-to-CCAM/native correctness argument.
 
