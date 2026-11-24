@@ -1,0 +1,64 @@
+// expect: CWE-20
+// spec: types.tainted decl.function
+// A long reverse-declared helper chain requires more than the checker's
+// 50-round interprocedural summary bound to propagate taint to the outer sink.
+// Every helper is a transparent integer identity function.
+int layer00(int value) { return layer01(value); }
+int layer01(int value) { return layer02(value); }
+int layer02(int value) { return layer03(value); }
+int layer03(int value) { return layer04(value); }
+int layer04(int value) { return layer05(value); }
+int layer05(int value) { return layer06(value); }
+int layer06(int value) { return layer07(value); }
+int layer07(int value) { return layer08(value); }
+int layer08(int value) { return layer09(value); }
+int layer09(int value) { return layer10(value); }
+int layer10(int value) { return layer11(value); }
+int layer11(int value) { return layer12(value); }
+int layer12(int value) { return layer13(value); }
+int layer13(int value) { return layer14(value); }
+int layer14(int value) { return layer15(value); }
+int layer15(int value) { return layer16(value); }
+int layer16(int value) { return layer17(value); }
+int layer17(int value) { return layer18(value); }
+int layer18(int value) { return layer19(value); }
+int layer19(int value) { return layer20(value); }
+int layer20(int value) { return layer21(value); }
+int layer21(int value) { return layer22(value); }
+int layer22(int value) { return layer23(value); }
+int layer23(int value) { return layer24(value); }
+int layer24(int value) { return layer25(value); }
+int layer25(int value) { return layer26(value); }
+int layer26(int value) { return layer27(value); }
+int layer27(int value) { return layer28(value); }
+int layer28(int value) { return layer29(value); }
+int layer29(int value) { return layer30(value); }
+int layer30(int value) { return layer31(value); }
+int layer31(int value) { return layer32(value); }
+int layer32(int value) { return layer33(value); }
+int layer33(int value) { return layer34(value); }
+int layer34(int value) { return layer35(value); }
+int layer35(int value) { return layer36(value); }
+int layer36(int value) { return layer37(value); }
+int layer37(int value) { return layer38(value); }
+int layer38(int value) { return layer39(value); }
+int layer39(int value) { return layer40(value); }
+int layer40(int value) { return layer41(value); }
+int layer41(int value) { return layer42(value); }
+int layer42(int value) { return layer43(value); }
+int layer43(int value) { return layer44(value); }
+int layer44(int value) { return layer45(value); }
+int layer45(int value) { return layer46(value); }
+int layer46(int value) { return layer47(value); }
+int layer47(int value) { return layer48(value); }
+int layer48(int value) { return layer49(value); }
+int layer49(int value) { return layer50(value); }
+int layer50(int value) { return layer51(value); }
+int layer51(int value) { return layer52(value); }
+int layer52(int value) { return layer53(value); }
+int layer53(int value) { return layer54(value); }
+int layer54(int value) { return value; }
+int main() {
+    if (let input = read_line()) { println(char_str(layer00(input.at(0)))); }
+    return 0;
+}
