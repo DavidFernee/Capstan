@@ -108,6 +108,7 @@ static void test_passwords(void) {
     current_record[123] = '\0';
     CapStr *canonical = cap_str_new(current_record, 123);
     CHECK(!cap_needs_rehash(canonical));
+    unsigned calls_before_rejected_records = cap_pbkdf2_test_calls;
 
     char noncanonical[124];
     memcpy(noncanonical, current_record, sizeof noncanonical);
@@ -145,7 +146,6 @@ static void test_passwords(void) {
     excessive[126] = '\0';
     CapStr *excessive_record = cap_str_new(excessive, 126);
     CHECK(cap_needs_rehash(excessive_record));
-    unsigned calls_before_rejected_records = cap_pbkdf2_test_calls;
     CHECK(!cap_verify_password(pw, excessive_record));
     CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
 
@@ -168,7 +168,7 @@ static void test_passwords(void) {
     CapStr *non_ascii_record = cap_str_new(non_ascii_cost, 123);
     CHECK(cap_needs_rehash(non_ascii_record));
     CHECK(!cap_verify_password(pw, non_ascii_record));
-    CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records);
+    CHECK(cap_pbkdf2_test_calls == calls_before_rejected_records); /* every malformed record skipped PBKDF2 */
     CHECK(!cap_hash_verify(CAP_LIT("abc", 3), CAP_LIT("md5$900150983cd24fb0d6963f7d28e17f72", 36)));
 }
 
