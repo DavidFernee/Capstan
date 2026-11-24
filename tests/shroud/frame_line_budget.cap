@@ -38,7 +38,14 @@ int main() {
             Laid d = layout_root(ui, text(soft), fx(1), fx(64));
             if (d.lines.len() / 2 != MAX_FRAME_LINES) { return 5; }
 
-            println("frame line budget: 5 assertions");
+            // A full-size untrusted file is decoded, but max_lines stops wrapping
+            // after the first visual line instead of building a million line pairs.
+            if (let payload = read_file("tests/shroud/.frame_line_payload.tmp")) {
+                Laid e = layout_root(ui, user_text(payload).max_lines(1), fx(1), fx(64));
+                if (e.lines.len() / 2 != 1) { return 6; }
+            } else { return 7; }
+
+            println("frame line budget: 6 assertions");
             return 0;
         }
     }
