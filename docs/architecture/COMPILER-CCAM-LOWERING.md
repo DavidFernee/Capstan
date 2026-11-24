@@ -62,7 +62,7 @@ When aggregate locations are admitted, the compiler MUST preserve the complete s
 
 For an indexed collection target, a bounds check performed before the RHS is not sufficient if the RHS may shrink the collection through an alias. The compiler may omit a post-RHS check only when a sound effect/range analysis proves that no operation in the RHS can invalidate the retained location. The proof must include direct calls, methods, aliases and all future effect forms. A stale location must produce the specified controlled trap and must never reach an unchecked store.
 
-This is a semantic requirement, not a code-generation optimisation detail. The v0.6 C-backend implementation and its field/string/list sequencing plus post-RHS invalidated-index regressions are merged in PR #97. The independent operand-order assurance fixture and audit are in PR #120; the normative source-language contract remains under review in PR #93. None of these makes aggregate assignment part of the initial CCAM scalar subset.
+This is a semantic requirement, not a code-generation optimisation detail. The v0.6 C-backend implementation and its field/string/list sequencing plus post-RHS invalidated-index regressions are merged in PR #97. The independent operand-order assurance fixture and audit are in PR #128; the normative source-language contract remains under review in PR #124. None of these makes aggregate assignment part of the initial CCAM scalar subset.
 
 ## 3. Lowering state and deterministic allocation
 
