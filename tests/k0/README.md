@@ -14,6 +14,28 @@ CVE List V5 checkout with a clean Git working tree and a complete materialised J
 Both sets were labelled by Claude (the AI assistant that wrote the classifier). An independent
 reviewer relabelling them is the next step for the study's credibility.
 
+## Independent relabelling protocol
+
+Before publishing replacement K0 figures:
+
+1. Freeze the classifier source revision and the pinned CVE List commit. Give reviewers only CVE
+   identifiers, publication dates, CNA titles and descriptions; hide automatic classes, existing
+   review labels and projected outcomes.
+2. Have at least two independent human reviewers label the existing held-out sample and a
+   reproducibly selected, stratified sample of the previously reviewed population. Include every
+   major class where practical and oversample rare classes; record the sampling seed and frame.
+3. Record each reviewer's class, CWE, present-day outcome, rationale and uncertainty separately.
+   Do not tune classifier rules against this blind sample.
+4. Adjudicate disagreements after independent labels are frozen. Report raw agreement, per-class
+   confusion matrices, outcome agreement and an appropriate inter-rater statistic for nominal
+   labels (for example Cohen's kappa for two reviewers), with sample sizes and confidence intervals.
+5. Re-run the study only after adjudication. Publish sensitivity ranges showing how disputed
+   labels affect present-day prevention and K1 projections. Keep classifier agreement separate
+   from human inter-rater agreement.
+
+If two independent human reviewers or the source evidence are unavailable, mark the study's
+validation status UNKNOWN; do not describe the AI-labelled samples as independent ground truth.
+
 
 ## Study implementation regressions
 
