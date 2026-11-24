@@ -343,7 +343,7 @@ static void cap_gc_account_release(CapPage *pg, int advice_succeeded) {
         cap_panic("collector heap accounting underflow", "CWE-682", 0);
     pg->released = 1;
     cap_gc.heap -= CAP_PAGE_SIZE;
-    cap_gc.released_total++;
+    cap_gc.released_total = cap_gc_account_add(cap_gc.released_total, 1);
 }
 
 static void cap_gc_release(CapPage *pg) {
@@ -422,7 +422,7 @@ static void cap_gc_new_page(int atomic, int cls) {
         CapPage *pg = cap_gc.spare[--cap_gc.nspare];
         if (pg->released) {
             cap_gc.heap = cap_gc_account_add(cap_gc.heap, CAP_PAGE_SIZE);
-            cap_gc.reused_total++;
+            cap_gc.reused_total = cap_gc_account_add(cap_gc.reused_total, 1);
         }
         cap_gc_format_page(pg, atomic, cls);
         return;
@@ -539,7 +539,7 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
     jmp_buf regs;                       /* spill callee-saved registers onto the stack */
     __builtin_unwind_init();
     setjmp(regs);
-    cap_gc.collections++;
+    cap_gc.collections = cap_gc_account_add(cap_gc.collections, 1);
     if (cap_gc.nlarge) qsort(cap_gc.large, cap_gc.nlarge, sizeof(CapLarge), cap_gc_large_cmp);
     for (size_t i = 0; i < cap_gc.nroots; i++) {
         cap_gc_consider((uintptr_t)*cap_gc.roots[i]);
