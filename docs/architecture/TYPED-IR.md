@@ -138,7 +138,7 @@ The program and configured limits are parameters to the transition relation, not
 ### 10.2 Instruction dispatch and step budget
 
 For a running state with `steps = n`:
-- if `n >= maxSteps`, the next transition is `Trap(step_limit_exceeded, active.fn, active.pc)`; no instruction is executed and the counter remains `n`;
+- if `n >= maxSteps`, the next transition is `Trap(step_limit_exceeded, active.fn, active.pc, None)`; no instruction is executed and the counter remains `n`;
 - otherwise, the active instruction is dispatched and the execution counter becomes `n + 1`, whether that instruction completes or produces a dynamic trap.
 
 Thus a limit of N permits exactly N executed instructions. A dynamic failure during the Nth instruction is that instruction's trap; the step-limit trap occurs only if an (N+1)th instruction would be required. Structural validation is not counted as an executed instruction.
