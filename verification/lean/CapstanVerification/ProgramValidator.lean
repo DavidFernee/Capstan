@@ -217,12 +217,10 @@ theorem validateSingleFrameProgram_final_terminal
     HasExplicitControlEffect (program.code (Fin.last m)) :=
   finiteProgram_final_instruction_has_control_effect program
 
-/-- Every accepted jump/branch target is bounded by the program's finite code size. -/
-theorem validateSingleFrameProgram_targets_bounded
+/-- Every instruction in a finite program has bounded control-flow targets. -/
+theorem finiteProgram_targets_bounded
     {n m : Nat} {types : RegTypes n}
-    (raw : RawSingleFrameProgram n m types)
     (program : FiniteProgram n m types)
-    (h : validateSingleFrameProgram raw = some program)
     (pc : Fin (m + 1)) :
     MachineInstrTargetsInRange (program.code pc) :=
   machineInstr_targets_in_range (program.code pc)
