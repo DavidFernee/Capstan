@@ -338,6 +338,33 @@ def source_snapshot(cvelist):
         raise RuntimeError(f"invalid CVE List Git commit: {commit!r}")
     if status:
         raise RuntimeError("CVE List checkout is dirty; use a clean, pinned source snapshot")
+
+    # A clean Git worktree can still be sparse: Git may mark omitted tracked files
+    # skip-worktree, leaving status clean while os.walk silently sees only a subset.
+    # Compare the complete tracked CVE JSON inventory with files actually materialised.
+    try:
+        tracked = subprocess.run(
+            ["git", "-C", cvelist, "ls-files", "-z", "--", "cves"],
+            check=True, capture_output=True,
+        ).stdout.decode("utf-8").split("\\0")
+    except (OSError, subprocess.CalledProcessError, UnicodeDecodeError) as error:
+        raise RuntimeError("cannot enumerate tracked CVE List source files") from error
+    tracked_json = {path for path in tracked if path.endswith(".json")}
+    root = os.path.join(cvelist, "cves")
+    materialised_json = set()
+    for directory, _, files in os.walk(root):
+        for filename in files:
+            if filename.endswith(".json"):
+                materialised_json.add(os.path.relpath(os.path.join(directory, filename), cvelist))
+    if tracked_json != materialised_json:
+        missing = sorted(tracked_json - materialised_json)
+        unexpected = sorted(materialised_json - tracked_json)
+        raise RuntimeError(
+            "CVE List checkout is incomplete or contains untracked JSON records; "
+            f"missing tracked files: {missing[:10]}; unexpected files: {unexpected[:10]}"
+        )
+    if not tracked_json:
+        raise RuntimeError("CVE List checkout contains no tracked CVE JSON records")
     return commit
 
 
