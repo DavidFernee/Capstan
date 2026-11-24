@@ -2,3 +2,4 @@ import CapstanVerification.Core
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.Machine
 import CapstanVerification.Progress
+import CapstanVerification.Validator
