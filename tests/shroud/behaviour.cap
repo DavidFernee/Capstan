@@ -84,6 +84,11 @@ void test_buttons_and_guard(Tally t, Ui ui) {
     // A danger button is guarded: a click right after it appeared is ignored.
     List<Msg> m2 = click_at(ui, "erase", 1100);
     expect_int(t, m2.len(), 0, "guard: click within 500 ms of appearing is ignored (CWE-1021)");
+    // A forged future event timestamp must not advance the guard clock.
+    List<Msg> future = click_at(ui, "erase", 1000000);
+    expect_int(t, future.len(), 0, "guard: a future event timestamp cannot bypass the delay");
+    // The render clock, not an event timestamp, records that the user had time to see it.
+    ui.render(v, 1600);
     List<Msg> m3 = click_at(ui, "erase", 1600);
     expect(t, m3.len() == 1 && m3[0].action == "erase", "guard: click after 500 ms is accepted", $"{m3.len()} messages");
     // When the button moves, the guard starts again.
@@ -99,6 +104,7 @@ void test_buttons_and_guard(Tally t, Ui ui) {
     ui.render(changed, 3500);
     List<Msg> changed_early = click_at(ui, "erase", 3600);
     expect_int(t, changed_early.len(), 0, "guard: changing a destructive action restarts the delay");
+    ui.render(changed, 4100);
     List<Msg> changed_late = click_at(ui, "erase", 4100);
     expect(t, changed_late.len() == 1 && changed_late[0].action == "erase-all", "guard: changed action activates after delay", $"{changed_late.len()} messages");
     // Removing a guarded control for one frame and reintroducing it must restart the delay.

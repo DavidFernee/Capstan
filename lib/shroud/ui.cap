@@ -189,7 +189,7 @@ struct Ui {
             } else if (e.kind == EV_POINTER_UP) {
                 string id2 = hit_id(l, e.x, e.y);
                 if (id2 != "" && id2 == self.pressed) {
-                    if (let n3 = find_laid(l, id2)) { self.activate(n3, e.time_ms, out); }
+                    if (let n3 = find_laid(l, id2)) { self.activate(n3, out); }
                 }
                 self.pressed = "";
             } else if (e.kind == EV_WHEEL) {
@@ -209,13 +209,15 @@ struct Ui {
         return out;
     }
 
-    void activate(Laid n, int time_ms, List<Msg> out) {
+    void activate(Laid n, List<Msg> out) {
         View v = n.v;
         if (v.disabled || v.action == "") { return; }
         if (v.guard) {
             int since = 0;
             if (let t = self.shown_at.get(n.id)) { since = t; }
-            if (time_ms - since < GUARD_MS) { return; }
+            // Only the clock advanced by render() can satisfy the delay. An input
+            // event's timestamp is adapter-supplied and must never authorise itself.
+            if (self.now_ms - since < GUARD_MS) { return; }
         }
         int k = v.kind;
         if (k == K_BUTTON) { out.push(msg(v.action, 0)); }
@@ -238,7 +240,7 @@ struct Ui {
             }
             if ((e.key == KEY_ENTER || e.key == KEY_SPACE) && (k == K_BUTTON || k == K_CHECKBOX || k == K_SWITCH || k == K_RADIO)) {
                 self.focus_visible = true;
-                self.activate(n, e.time_ms, out);
+                self.activate(n, out);
                 return;
             }
             if (k == K_SLIDER && !v.disabled) {
