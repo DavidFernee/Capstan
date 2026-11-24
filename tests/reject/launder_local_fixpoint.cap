@@ -1,5 +1,5 @@
 // expect: CWE-20
-// spec: types.tainted expr.char_str
+// spec: types.tainted decl.function
 // A reverse dependency chain exceeds the intraprocedural 100-round budget.
 // The analysis must reject an incomplete local taint fixpoint before sink checks.
 int main() {
