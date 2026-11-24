@@ -96,14 +96,22 @@ def checkedRem (a b : Int) : Except Trap Int :=
 
 
 /-- The signed-64 endpoints are accepted by the executable range predicate. -/
-theorem minI64_in_range : inI64 minI64 := by decide
+theorem minI64_in_range : inI64 minI64 := by
+  change inI64B minI64 = true
+  decide
 
-theorem maxI64_in_range : inI64 maxI64 := by decide
+theorem maxI64_in_range : inI64 maxI64 := by
+  change inI64B maxI64 = true
+  decide
 
 /-- The immediately adjacent values outside the signed-64 interval are rejected. -/
-theorem below_minI64_out_of_range : ¬ inI64 (Int.negSucc two63) := by decide
+theorem below_minI64_out_of_range : ¬ inI64 (Int.negSucc two63) := by
+  change ¬ (inI64B (Int.negSucc two63) = true)
+  decide
 
-theorem above_maxI64_out_of_range : ¬ inI64 (Int.ofNat two63) := by decide
+theorem above_maxI64_out_of_range : ¬ inI64 (Int.ofNat two63) := by
+  change ¬ (inI64B (Int.ofNat two63) = true)
+  decide
 
 /-- A successful range check returns a signed-64 value. -/
 theorem checkedI64_sound (x result : Int)
