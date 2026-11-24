@@ -120,6 +120,6 @@ int main() {
         if (q3 < 64) { key64.push(112); }
     }
     println("pbkdf2-key64 " + to_hex(pbkdf2_sha256(key64, bytes_of("salt"), 2, 32)));
-    println("pbkdf2-key65 " + to_hex(pbkdf2_sha256(key65, bytes("salt"), 2, 32)));
+    println("pbkdf2-key65 " + to_hex(pbkdf2_sha256(key65, bytes_of("salt"), 2, 32)));
     return 0;
 }
