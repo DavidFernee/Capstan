@@ -44,6 +44,15 @@ The runtime's ordinary `cap_mod` handles `INT64_MIN % -1` explicitly. The corres
 
 **Status:** the helper body is unsafe if called outside its precondition, but source inspection of `compiler/ranges.cap::bin_safe` shows an explicit `no_min_by_minus_one` guard. The dedicated fixture expects one proven operation (the unary negation forming `-1`) and therefore fails if the remainder itself is lowered to `cap_mod_proved`. The first CI run exposed that the initial expected count of zero was wrong because the unary negation is legitimately proven; the fixture was corrected to one. The corrected assertion still requires a rerun. This is not a formal proof of range-analysis soundness. Retain the guard and helper precondition; a proof-based fast path must never license undefined behaviour in the implementation language.
 
+
+### 2.5 Compound indexed assignment and post-RHS validity
+
+The compound-assignment correction in draft PR #97 retains the list and index, reads the old element, evaluates the RHS, then writes. It selects the same `_proved` suffix for the old-value read and final write when `index_safe` is true.
+
+A bounds fact established before the RHS is not by itself sufficient for the final write: the RHS may shrink the list. Source inspection of `compiler/ranges.cap` shows a `seq_ok` / `may_shrink` mechanism intended to prevent list-length facts in regions containing `pop`, `remove_at`, `clear`, or calls to user code. That mechanism is the proof obligation that makes reusing the suffix safe; it must be kept complete as new mutating operations are introduced.
+
+PR #93 adds `tests/runtime/compound_assignment_invalidated_index.cap`: after `i < xs.len()` establishes an index fact, the compound-assignment RHS removes the element. The final store must trap with CWE-787 because the retained index is no longer within the current logical length. This test checks the effect-analysis guard and the post-RHS store semantics. It is not evidence that every future mutating operation is already classified by `may_shrink`.
+
 ## 3. Normative semantic requirements for the C-free core
 
 1. **Deterministic sequencing:** all observable subexpressions have a specified order. The IR must make effectful ordering explicit.
