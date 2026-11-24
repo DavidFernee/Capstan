@@ -1415,6 +1415,9 @@ CCAMMachineCreateResult ccam_machine_create_validated(
     int max_steps,
     int return_type
 ) {
+    if (max_steps < 0) {
+        return ccam_machine_create(register_types, instructions, max_steps);
+    }
     CCAMValidationResult validation = ccam_validate_single_frame(
         register_types, instructions, return_type);
     if (!validation.ok) {
