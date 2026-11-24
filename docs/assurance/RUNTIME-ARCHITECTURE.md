@@ -178,6 +178,7 @@ The first implementation pass addresses concrete arithmetic and erasure weakness
 - Reworked conservative scan alignment and end checks to avoid overflowing the scan pointer while rounding/alignment and checking whether a complete word remains.
 - Replaced small-object secret wiping with a volatile-store wipe primitive; large-object secret reclamation uses the same primitive. Secret pages now keep free-slot indices in collector metadata rather than writing free-list pointers into the secret payload. Newly formatted secret pages are zeroed, and a regression test checks every reclaimed secret free slot remains all-zero.
 - Hardened stack-fault classification against pointer-arithmetic overflow and made signal-handler output use fixed lengths. Failure to install the alternate signal stack or handlers now fails closed when stack-guard setup is requested.
+- Page-release accounting changes only after the platform confirms successful `madvise`; unsupported advice and OS errors leave the mapping counted. A unit-testable accounting helper covers both failed and successful release outcomes.
 - Added unit coverage for checked addition, multiplication, capacity growth and the wipe primitive, in addition to the existing collector stress and secret-reclamation tests.
 
 These changes do **not** make garbage-collection-time erasure prompt or deterministic: they only ensure the wipe is not elided when reclamation actually occurs. They do not add explicit secret destruction, allocation-failure injection, a generational collector, or concurrency support.
