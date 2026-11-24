@@ -900,6 +900,53 @@ test "CCAM source lowering compiles scalar locals and executes 42" {
 }
 
 
+
+test "CCAM source lowering rejects constructs outside its declared subset" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("unsupported-lowering.cap");
+    Tainted source = taint("int main() { int value = 1; while (value < 3) { value += 1; } return value; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(!lowered.ok && lowered.error == "unsupported_statement");
+    assert(lowered.functions.len() == 0 && lowered.entry_function == -1);
+}
+
+test "CCAM source lowering rejects lexical shadowing rather than aliasing registers" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("shadowing-lowering.cap");
+    Tainted source = taint("int main() { int value = 1; if (true) { int value = 2; } return value; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(!lowered.ok && lowered.error == "local_shadowing_not_supported");
+    assert(lowered.functions.len() == 0 && lowered.entry_function == -1);
+}
+
 test "CCAM source lowering preserves local compound assignment" {
     Ctx context = new Ctx{
         files: new List<string>(),
