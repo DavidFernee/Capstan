@@ -56,7 +56,7 @@ A compiler pass may reorder operations only where it proves the reordering obser
 
 These properties are required before the C-free machine can claim memory safety for structs, strings, lists, maps, optionals or closures:
 
-- **Bounds:** every indexed access is within the live logical length, not merely allocated capacity.
+- **Bounds:** every indexed access is within the live logical length, not merely allocated capacity. For compound assignment, the old-value read and final write are separate accesses; bounds/liveness must be revalidated after the RHS because it may mutate the aggregate. A pre-RHS range proof cannot justify an unchecked post-RHS store.
 - **Lifetime:** every dereferenced object is live for the duration of the access.
 - **Representation:** each object layout and field offset agrees with its declared type.
 - **Aliasing:** object identity and shared mutation are explicit; no optimisation may assume uniqueness without proof.
