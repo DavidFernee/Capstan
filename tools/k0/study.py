@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -318,6 +319,28 @@ def check_labels(classified, atlas, name):
     return total, same_class, same_outcome, misses, prevented
 
 
+def source_snapshot(cvelist):
+    """Return the exact, clean Git commit for the source population or fail closed."""
+    try:
+        commit = subprocess.run(
+            ["git", "-C", cvelist, "rev-parse", "--verify", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        status = subprocess.run(
+            ["git", "-C", cvelist, "status", "--porcelain", "--untracked-files=all"],
+            check=True, capture_output=True, text=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as error:
+        raise RuntimeError(
+            "CVE List source must be a Git checkout with a verifiable commit"
+        ) from error
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise RuntimeError(f"invalid CVE List Git commit: {commit!r}")
+    if status:
+        raise RuntimeError("CVE List checkout is dirty; use a clean, pinned source snapshot")
+    return commit
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -326,12 +349,7 @@ def main():
     if "--year" in args:
         year = int(args[args.index("--year") + 1])
     rows = load(args[0], year)
-    try:
-        snapshot = open(os.path.join(args[0], ".git", "HEAD")).read().strip()
-        if snapshot.startswith("ref:"):
-            snapshot = open(os.path.join(args[0], ".git", snapshot[5:])).read().strip()
-    except OSError:
-        snapshot = "unknown"
+    snapshot = source_snapshot(args[0])
     atlas = atlas_verdicts()
     reviewed = {}
     rpath = os.path.join(HERE, "data", f"reviewed-{year}.csv")
@@ -374,7 +392,8 @@ def main():
 
     tuning = check_labels(rows, atlas, "labels.csv")
     heldout = check_labels(rows, atlas, "labels-heldout.csv")
-    json.dump({"year": year, "total": n, "reviewed": n_reviewed,
+    json.dump({"year": year, "source_repository": "https://github.com/CVEProject/cvelistV5",
+               "source_commit": snapshot, "total": n, "reviewed": n_reviewed,
                "buckets": {b: by_bucket[b] for b in BUCKETS}, "memory_safety": mem,
                "with_k1": {b: proj[b] for b in BUCKETS},
                "with_k1_10": {b: fin[b] for b in BUCKETS + [PROVED]},
@@ -477,7 +496,7 @@ def main():
       "across all identifier-year directories, whose assigner is the Linux kernel CNA and whose publication "
       f"date falls in {year}. Rejected records are excluded. Missing year directories, unreadable JSON, "
       "malformed Linux-published records and labels absent from the population are fatal errors. "
-      f"Snapshot: commit `{snapshot[:12]}`.")
+      f"Snapshot: commit `{snapshot}`.")
     p("2. **Automatic classification.** The kernel CNA almost never assigns a CWE, so each CVE is classified from "
       "its description, which is the fix commit's message: its subject line, its text, and the sanitiser "
       "reports quoted in it (KASAN, UBSAN, KMSAN, KCSAN, lockdep, kmemleak). The rules are regular expressions "
