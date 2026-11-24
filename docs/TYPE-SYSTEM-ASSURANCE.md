@@ -1,7 +1,7 @@
 # Type-system assurance and acceptance matrix
 
 **Status:** contributor test plan; not a language specification or proof  
-**Baseline inspected:** `main` at `7f057a5b1cda749e44baaab7d6cc8f30d9adff0c` (2026-11-24)  
+**Baseline inspected:** `main` at `bc0a283df5a964e7340cd48ec8ce4a1e8fb3acde` (2026-11-24)  
 **Related design:** [v0.5 generics, interfaces and closures proposal](V0.5-DESIGN.md), PR #49  
 **Purpose:** make the type-system claims testable, distinguish existing guarantees from proposed ones, and prevent generic implementation from weakening established security checks.
 
