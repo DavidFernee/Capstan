@@ -124,3 +124,35 @@ and an invalid-theorem negative control. These checks are not yet reported as pa
 
 The Frama-C implementation bridge remains a pilot gate. Until that pilot succeeds, this
 remains a provisional architecture, not a fully operational end-to-end proof toolchain.
+
+### Independent-checker reproducibility
+
+The first Nanoda integration used the upstream `lean-action` convenience input. Its
+pinned action revision nevertheless clones the Nanoda `debug` branch and the
+`lean4export` default branch at runtime. That is not sufficiently reproducible for
+Capstan's assurance standard, so the project workflow does **not** use that convenience
+input.
+
+The project now builds the independent checker from explicit source revisions:
+
+- Lean 4: `leanprover/lean4:v4.36.0`.
+- lean4export: `leanprover/lean4export` commit
+  `df81913eee5519d5a88ae5b0fd701b5298cc29ab`.
+- nanoda_lib: `ammkrn/nanoda_lib` commit
+  `e5438ac0a85a036b6dfe093aa457bc3448498014`.
+- Rust/Cargo: `1.100.0`.
+- Nanoda Rust dependencies: the `Cargo.lock` committed at the pinned nanoda_lib
+  revision, enforced with `cargo build --locked`.
+- lean-action: `ba3fdfe5c4476c925da13bf11a005ddb47e47aee`; its bundled
+  `leanchecker` and pinned axiom-audit integration are used, but its Nanoda helper
+  is disabled.
+
+The workflow verifies both Git commit IDs after fetch. The Nanoda configuration
+permits only the three standard logical axioms plus Lean's `Lean.trustCompiler`
+declaration required by the exported environment; the separate axiom audit is
+configured to reject dependencies outside its standard allowlist. `sorryAx` is not
+permitted. The exact checker run and outcome must be recorded in the proof-run ledger.
+
+This pins source inputs and Rust toolchain, but does not make Nanoda's implementation
+or Lean4export infallible. They remain part of the independent-checker trust base and
+must be listed as such.
