@@ -68,16 +68,16 @@ release commit. A gate with UNKNOWN evidence is not satisfied.
 ## Platform execution matrix
 
 Linux, macOS and Windows are the minimum major-platform targets for the v1.0 C-free gate.
-Record each supported architecture separately; one passing architecture does not establish
-another. A valid C-free path must not generate C, require a C compiler, or depend on a
+Use one row per OS/architecture pair; duplicate the placeholders below as needed. One passing
+architecture does not establish another. A valid C-free path must not generate C, require a C compiler, or depend on a
 Capstan-owned C runtime to compile or execute a supported program.
 
 | Platform / architecture | Release backend | No generated C / C compiler / Capstan C runtime | System boundary / TCB | Conformance evidence | Status |
 |---|---|---|---|---|---|
-| Linux (list each supported architecture) | | UNKNOWN | | | BLOCKED |
-| macOS (list each supported architecture) | | UNKNOWN | | | BLOCKED |
-| Windows (list each supported architecture) | | UNKNOWN | | | BLOCKED |
-| Other target | | UNKNOWN | | | BLOCKED |
+| Linux — [architecture] | | UNKNOWN | | | BLOCKED |
+| macOS — [architecture] | | UNKNOWN | | | BLOCKED |
+| Windows — [architecture] | | UNKNOWN | | | BLOCKED |
+| Other target — [architecture] | | UNKNOWN | | | BLOCKED |
 
 Do not list a platform/architecture as supported for the v1.0 assurance claim until its row is
 complete. Vendor system libraries and the operating-system kernel may remain below the Capstan
