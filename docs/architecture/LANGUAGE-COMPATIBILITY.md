@@ -39,11 +39,11 @@ A feature being accepted by the existing compiler does not mean it is supported 
 
 ### 3.1 Remainder exceptional pair
 
-The existing runtime defines `INT64_MIN % -1` as zero, while the CCAM v0.1 draft says remainder traps with `integer_overflow`. The normative core proposal preserves the existing source behaviour: `MIN / -1` traps, `MIN % -1` returns zero. The current range analysis has an explicit exclusion for the exceptional pair before selecting the proven C remainder helper; retain and test that precondition. PR #93 adds a dedicated `// expect-proved: 0` conformance fixture for this path. The CCAM arithmetic implementation and tests must be updated before it is used as a reference oracle.
+The existing runtime defines `INT64_MIN % -1` as zero, while the CCAM v0.1 draft says remainder traps with `integer_overflow`. The normative core proposal preserves the existing source behaviour: `MIN / -1` traps, `MIN % -1` returns zero. The current range analysis has an explicit exclusion for the exceptional pair before selecting the proven C remainder helper; retain and test that precondition. PR #93 adds a dedicated optimizer-path fixture expecting one proven operation (the unary negation in `-1`) and requiring the remainder itself to remain checked. The CCAM arithmetic implementation and tests must be updated before it is used as a reference oracle.
 
 ### 3.2 Compound assignment order
 
-The source reference promises left-to-right evaluation. The code generator's indexed compound-assignment path nests the old-value read and RHS inside a generated C call expression, where argument evaluation order is unspecified. This requires an executable reproducer and a lowering fix. The C backend is not allowed to redefine the source rule.
+The source reference promises left-to-right evaluation. The code generator's field and indexed compound-assignment paths nest the old-value read and RHS inside a generated C call expression, where argument evaluation order is unspecified. PR #93's fixture confirmed a GCC-vs-reference mismatch at `-O0`, `-O2` and `-O3` in CI. A lowering fix must explicitly sequence location evaluation, old-value read, RHS, computation and write. The C backend is not allowed to redefine the source rule.
 
 ### 3.3 `read_line()` bound
 
