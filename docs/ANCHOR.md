@@ -129,23 +129,28 @@ person saw a control. A `.danger()` style/guard is not an informed-consent confi
 dialog. Irreversible operations still require an explicit application confirmation
 flow that identifies the action and target.
 
-**Pending Shroud integration fixes (24 November 2026):**
-- PR #57 fixes duplicate explicit view-key identity confusion. Anchor still supplies
-  unique keys and must not rely on duplicate-key state retention.
-- PR #58 applies the visual deceptive-character sanitiser to accessibility names and
-  non-password text-field values. Until merged, Anchor must not treat accessibility
-  JSON as equivalent to the rendered text for untrusted input.
-- PR #63 makes disabled interactive widgets block pointer-through without receiving
-  focus or messages. Until merged, Anchor must not rely on disabled overlays to block
-  underlying controls.
-- PR #65 changes text-field caret placement from quadratic to linear work while
-  preserving malformed UTF-8 and secure-field semantics. This is relevant to a future
-  editor/input surface, not a substitute for the still-missing multiline editor.
+**Merged Shroud integration fixes (24 November 2026):**
 
-PRs #57, #58 and #63 have passed their reported cross-platform and supply-chain checks
-but remain unmerged; #65 is still draft with CI in progress. Anchor consumes the
-current `main` Shroud API and must not locally patch these behaviours or assume a
-proposed PR is present before it lands.
+The following changes have landed in `main` and are part of the current S0 baseline:
+- PR #57: duplicate explicit view-key identity is rejected safely; Anchor must still
+  provide unique stable keys and must not rely on duplicate-key state retention.
+- PR #58: visual deceptive-character sanitisation is applied to accessibility names
+  and non-password text-field values. Anchor must preserve the distinction between
+  sanitised presentation and original untrusted source text.
+- PR #63: disabled interactive widgets block pointer-through without receiving focus
+  or messages. This is a UI interaction invariant, not an application authorization
+  boundary.
+- PR #65: text-field caret hit testing is linear while preserving malformed UTF-8 and
+  secure-field semantics. It does not provide the missing multiline editor.
+
+These PRs are merged. Do not describe them as pending or condition Anchor integration
+on their future availability.
+
+The separate S1 native-host contract remains a proposal, not a shipped API:
+`docs/SHROUD-HOST.md` describes responsibilities and security properties but its
+`HostWindow`, `FrameLease` and `HostEvent` names are conceptual. Anchor must not
+implement against those names or introduce a private host API. The prerequisites and
+missing S0 transitions are recorded in that contract.
 
 S0 constraints are explicit: string action names and int/Tainted payloads; no generic
 `View<M>`; no native window, clipboard, IME, multi-line editor, tabs, split panes,
