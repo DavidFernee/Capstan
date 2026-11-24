@@ -103,6 +103,8 @@ int main() {
     assert(r.ok && r.value == -2);
     r = ccam_div(1, 0);
     assert(!r.ok && r.trap == "division_by_zero");
+    r = ccam_rem(1, 0);
+    assert(!r.ok && r.trap == "division_by_zero");
     r = ccam_div(CCAM_I64_MIN, -1);
     assert(!r.ok && r.trap == "integer_overflow");
     r = ccam_rem(-7, 3);
@@ -294,4 +296,9 @@ test "CCAM register files reject invalid indices and type confusion" {
     CCAMRegisterResult bad_index = ccam_register_read_int(registers, -1);
     assert(!wrong_type.ok && wrong_type.trap == "uninitialised_register");
     assert(!bad_index.ok && bad_index.trap == "invalid_register");
+}
+
+test "CCAM remainder by zero traps" {
+    CCAMIntResult r = ccam_rem(7, 0);
+    assert(!r.ok && r.trap == "division_by_zero");
 }
