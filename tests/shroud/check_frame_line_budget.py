@@ -47,9 +47,9 @@ def main():
         build(capstanc, cc, cflags, unit, unit_exe)
         env = os.environ.copy()
         env["CAPSTAN_GC_STATS"] = "1"
-        result = run([unit_exe], env=env)
-        if "frame line budget: 5 assertions" not in result.stdout:
-            raise SystemExit(f"frame line budget unit assertions missing:\n{result.stdout}")
+        unit_result = run([unit_exe], env=env)
+        if "frame line budget: 5 assertions" not in unit_result.stdout:
+            raise SystemExit(f"frame line budget unit assertions missing:\n{unit_result.stdout}")
 
         reject_exe = os.path.join(tmp, "frame_line_budget_reject")
         build(capstanc, cc, cflags, reject, reject_exe)
@@ -57,7 +57,7 @@ def main():
         if "shroud: frame text line budget exceeded" not in result.stdout:
             raise SystemExit(f"aggregate line-budget diagnostic missing:\n{result.stdout}")
 
-    peak = re.search(r"peak_heap=(\\d+)", result.stderr + result.stdout)
+    peak = re.search(r"peak_heap=(\d+)", unit_result.stderr + unit_result.stdout)
     heap_note = (f"; peak Capstan GC heap {int(peak.group(1)) / (1024 * 1024):.1f} MiB"
                  if peak else "; peak Capstan GC heap metric unavailable")
     print("frame line budget: 5 unit assertions; explicit/soft wrap and multi-view "
