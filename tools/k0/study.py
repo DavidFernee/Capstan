@@ -221,17 +221,28 @@ def load(cvelist, year):
                 descriptions = cna.get("descriptions", [])
                 if not isinstance(descriptions, list):
                     raise RuntimeError(f"invalid CNA descriptions in {path}")
-                desc = next((item.get("value", "") for item in descriptions
-                             if isinstance(item, dict) and item.get("lang", "").startswith("en")), "")
-                if not isinstance(desc, str):
-                    raise RuntimeError(f"invalid English CNA description in {path}")
+                desc = next((item.get("value") for item in descriptions
+                             if isinstance(item, dict) and item.get("lang", "").startswith("en")), None)
+                if not isinstance(desc, str) or not desc.strip():
+                    raise RuntimeError(f"Linux published CVE has no non-empty English CNA description: {path}")
+                title = cna.get("title", "")
+                if not isinstance(title, str):
+                    raise RuntimeError(f"invalid CNA title in {path}")
                 affected = cna.get("affected", [])
                 if not isinstance(affected, list):
                     raise RuntimeError(f"invalid CNA affected list in {path}")
-                files_ = sorted({p for item in affected if isinstance(item, dict)
-                                 for p in item.get("programFiles", []) if isinstance(p, str)})
+                files_ = []
+                for item in affected:
+                    if not isinstance(item, dict):
+                        raise RuntimeError(f"invalid CNA affected entry in {path}")
+                    program_files = item.get("programFiles", [])
+                    if not isinstance(program_files, list) or any(not isinstance(value, str)
+                                                                  for value in program_files):
+                        raise RuntimeError(f"invalid CNA programFiles list in {path}")
+                    files_.extend(program_files)
+                files_ = sorted(set(files_))
                 rows.append({"id": cve_id, "date": published_date.isoformat(),
-                             "title": cna.get("title", ""), "desc": desc, "files": files_})
+                             "title": title, "desc": desc, "files": files_})
 
     rows.sort(key=lambda row: row["id"])
     return rows
