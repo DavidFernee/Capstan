@@ -79,10 +79,13 @@ static void test_hmac(void) {
 static void test_pbkdf2(void) {
     unsigned char dk[32];
     char h[65];
+    unsigned prepared = cap_pbkdf2_prepare_calls;
     cap_pbkdf2("passwd", 6, (const unsigned char *)"salt", 4, 1, dk);
+    CHECK(cap_pbkdf2_prepare_calls == prepared + 1);
     hexof(dk, 32, h);
     CHECK(strcmp(h, "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc") == 0);
     cap_pbkdf2("Password", 8, (const unsigned char *)"NaCl", 4, 80000, dk);
+    CHECK(cap_pbkdf2_prepare_calls == prepared + 2);
     hexof(dk, 32, h);
     CHECK(strcmp(h, "4ddcd8f60b98be21830cee5ef22701f9641a4418d04c0414aeff08876b34ab56") == 0);
 }
