@@ -133,3 +133,34 @@ No stage authorises removing the old backend until its replacement passes the ag
 ## 10. Acceptance criteria for the programme
 
 The programme is successful when ordinary Capstan programs can be built and executed without a C compiler, generated C or a C runtime; the compiler, standard library and runtime are implemented in Capstan to the extent set by the agreed bootstrap design; the language and execution semantics have machine-checked safety results; compiler transformations have explicit correctness evidence; and every remaining trusted component and assumption is documented.
+
+
+## Appendix A. Initial repository baseline (2026-11-24)
+
+This is a first-pass inventory from the current `main` tree, not yet a line-by-line audit.
+
+### Observed build and bootstrap chain
+
+- `compiler/codegen.cap` is explicitly a C code generator. It lowers Capstan types to C representations (for example, `int64_t`, `CapStr*`, `CapList*`, `CapMap*`, `CapGrant*`) and emits calls into the runtime.
+- `runtime/capstan_rt.h` is the generated program's runtime interface. Its opening contract states that every compiled program is C calling this header; it includes C and POSIX headers and delegates allocation to `capstan_gc.h`.
+- `Makefile` uses `CC` (default `cc`) and builds generated C with the host compiler. The self-hosted compiler is built through generated C.
+- The bootstrap chain is not yet a verified chain: `bootstrap/capstan0.py` is a small unchecked Python translator; it produces a Python-hosted stage 1 compiler, which emits C; the C compiler creates stage 2; stage 2 emits stage 3 C, and the fixpoint checks byte-for-byte equality of stage 2 and stage 3 output.
+- The README documents the same chain and explicitly lists a C compiler and Python 3 as build requirements.
+
+### Assurance implications
+
+- The byte-for-byte self-hosting fixpoint establishes a useful reproducibility/self-consistency property for the generated C, but does not establish that stage 0 is correct, that the generated C implements Capstan semantics, or that the C compiler/runtime/host ABI are correct.
+- The new programme must therefore treat the Python stage-0 translator, generated-C compiler, C runtime, C compiler, linker and relevant platform interfaces as distinct baseline trust components. Their roles should be retired or narrowed deliberately, not hidden by the self-hosting label.
+- The current runtime header includes process termination, stdio, allocation and POSIX interfaces. These need to be classified as language semantics, runtime policy, or OS boundary services in the new design.
+- The existing C backend is useful as a differential oracle, but agreement with it is not a formal oracle: shared bugs and backend-specific behaviour remain possible. The written specification and independent reference machine must become the semantic authority.
+
+### Immediate inventory follow-up
+
+The next baseline pass should enumerate:
+1. every emitted C construct and runtime symbol used by `compiler/codegen.cap`;
+2. all runtime headers and implementation files, including GC, secrets, crypto, file/process/SQL and platform-specific code;
+3. all build, test, fuzz, sanitizer, benchmark and release workflows that assume C/Python;
+4. each security claim and its current enforcement location (front end, generated checks, runtime, OS/library);
+5. the minimum supported target matrix and ABI assumptions.
+
+This inventory is required before selecting the first native target or estimating the size of the replacement runtime.
