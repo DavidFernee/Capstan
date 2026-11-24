@@ -130,6 +130,63 @@ theorem checkedAdd_sound (a b result : Int)
   exact checkedI64_sound (a + b) result h
 
 
+
+/-- General register read: uninitialised registers produce an explicit trap. -/
+def readValue {n : Nat} (regs : Registers n) (index : Fin n) : Except Trap Val :=
+  match regs index with
+  | none => .error .uninitialisedRegister
+  | some value => .ok value
+
+theorem readValue_success_well_typed
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    (hregs : WellTyped types regs)
+    (index : Fin n) (value : Val)
+    (hread : readValue regs index = .ok value) :
+    hasType value (types index) := by
+  unfold readValue at hread
+  cases hreg : regs index with
+  | none =>
+    simp [hreg] at hread
+  | some stored =>
+    simp [hreg] at hread
+    cases hread
+    exact hregs index value hreg
+
+structure MoveInstr (n : Nat) (types : RegTypes n) where
+  dst : Fin n
+  src : Fin n
+  same_type : types dst = types src
+
+/-- Atomic move with an explicit destination-type check. -/
+def executeMove {n : Nat} {types : RegTypes n}
+    (regs : Registers n) (instr : MoveInstr n types) : Except Trap (Registers n) :=
+  match readValue regs instr.src with
+  | .error e => .error e
+  | .ok value =>
+    if hasType value (types instr.dst) then
+      .ok (write regs instr.dst value)
+    else
+      .error .typeMismatch
+
+theorem executeMove_preserves_well_typed
+    {n : Nat} {types : RegTypes n} {regs next : Registers n}
+    (hregs : WellTyped types regs)
+    (instr : MoveInstr n types)
+    (hstep : executeMove regs instr = .ok next) :
+    WellTyped types next := by
+  unfold executeMove at hstep
+  cases hread : readValue regs instr.src with
+  | error e =>
+    simp [hread] at hstep
+  | ok value =>
+    have hsrc : hasType value (types instr.src) :=
+      readValue_success_well_typed hregs instr.src value hread
+    have hdst : hasType value (types instr.dst) := by
+      simpa [instr.same_type] using hsrc
+    simp [hread, hdst] at hstep
+    cases hstep
+    exact write_preserves_well_typed hregs instr.dst value hdst
+
 /-- Dynamic integer-register read: uninitialised and wrong-kind reads trap. -/
 def readInt {n : Nat} (regs : Registers n) (index : Fin n) : Except Trap Int :=
   match regs index with
