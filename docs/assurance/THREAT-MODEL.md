@@ -104,8 +104,10 @@ of them can break a guarantee.
   beyond any language.
 - **Deployment and configuration**: storage permissions, TLS settings, the environment a program
   runs in.
-- **Hardware and processor side channels.** Constant-time comparison of secrets (`secret_eq()`) is
-  provided; other timing and speculation attacks are not addressed.
+- **Hardware and processor side channels.** `secret_eq()` avoids content-dependent early exit only
+  for equal-length operands; it does not hide operand lengths. Lengths must be public, and the API
+  must not be used where a secret's length is confidential. A length-hiding comparison is not
+  currently provided. Other timing and speculation attacks are not addressed.
 - **Concurrency.** There are no threads yet, so concurrency weaknesses are neither possible nor
   addressed (v0.7).
 - **Networking.** There is no network access yet; SSRF and network parsing are future work (v0.6).
