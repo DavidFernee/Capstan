@@ -110,6 +110,21 @@ theorem validateRawInstruction_target_sound
     MachineInstrTargetsInRange instr :=
   machineInstr_targets_in_range instr
 
+/-- Successful validation of a raw jump preserves its target and bounds it. -/
+theorem validateRawInstruction_jump_target_sound
+    {n m : Nat} {types : RegTypes n}
+    (target : Nat) (instr : MachineInstr n m types)
+    (h : validateRawInstruction (RawInstr.jump target) = some instr) :
+    ∃ bounded : Fin m, instr = .jump bounded ∧ bounded.val = target := by
+  unfold validateRawInstruction at h
+  cases htarget : finOfNat? m target with
+  | none =>
+      simp [htarget] at h
+  | some bounded =>
+      simp [htarget] at h
+      cases h
+      exact ⟨bounded, rfl, finOfNat?_value htarget⟩
+
 /-- A successful integer constant validation carries the declared integer type. -/
 theorem validateRawInstruction_constInt_type_sound
     {n m : Nat} {types : RegTypes n}
