@@ -1391,3 +1391,28 @@ The vacated-slot audit also includes scalar values stored in the pointer-bearing
 `cap_list_pop_peek_i` is different: it returns a pointer into the vacated slot for immediate unboxed inspection by generated `if (let ...)` code. Clearing the slot inside that helper would invalidate the returned pointer. Preserve its immediate-read contract; if the implementation later wants to clear the slot, change the compiler/runtime protocol together so the scalar is copied before clearing. Do not apply this rule to `CapBList`'s atomic bool buffer as though it contained managed pointers; its stale bytes cannot retain managed objects.
 
 Add direct tests for `cap_list_pop_i` slot clearing and generated immediate-peek correctness, alongside the pointer-slot tests above.
+
+## 39. Allocation safepoints, temporary buffers and root preservation
+
+The current runtime's allocation path may collect before satisfying an allocation request. The collector scans the active stack, a `setjmp` register spill, registered global roots, and transitively scanned kind-0 objects. This is the current conservative-root contract; it is not a precise per-local root map.
+
+The collection helpers inspected for this review retain their live inputs across their allocation calls under the current C calling convention and conservative stack/register scan:
+
+- `cap_list_push`: the list and incoming `CapVal` remain live while a replacement backing array is allocated; the old list remains reachable until the replacement is installed.
+- `cap_map_set`: the map, incoming key/value and newly allocated key/value buffers remain live while the second buffer is allocated; after installation, the map traces the new buffers.
+- `cap_map_reindex`: keys remain reachable through the map's kind-0 key array while the pointer-free index table is allocated and rebuilt.
+- `cap_list_sort_s`: the temporary merge-sort buffer is kind 0 because it contains string pointers; `cap_list_sort_i` uses kind 1 because it contains only integers.
+- `cap_join`: its input list and separator remain live while the pointer-free result string is allocated; the result itself contains bytes, not managed references.
+
+No missing-root defect was established in these paths by source inspection. This conclusion depends on the existing conservative stack/register scanning contract and must be revisited if generated code moves to precise roots, if the runtime gains moving collection, or if allocation helpers become asynchronous/re-entrant.
+
+Generic/backend acceptance criteria:
+
+- Every allocation-capable helper must document which managed references remain live across its safepoints and how they are rooted.
+- New specialised buffers must select allocation kind from the fully resolved layout; pointer-bearing temporaries are kind 0, and kind 1 requires proof that no managed pointer can be stored.
+- During grow/copy/swap, at least one traced owner must retain each live managed value until the replacement is installed; incoming values must remain roots until copied into traced storage.
+- Temporary buffers containing managed pointers must themselves be traced while live. Temporary scalar/index/byte buffers may be atomic only when no managed pointer can enter them.
+- Add GC-stress tests that force collection at each allocation in list growth, map growth/reindex, pointer-bearing sorting and nested aggregate insertion. Assert value integrity and reachability, then test eventual reclamation after all roots and stale slots are cleared.
+- Treat conservative false retention as possible: tests must not assume immediate reclamation merely because a source-level variable or collection entry is dead. Direct vacated-slot assertions should separately prove that the runtime has removed its own stale references.
+
+This section records a source-level audit and future acceptance criteria; it does not claim a formal proof of C compiler register behaviour or add precise root tracking.
