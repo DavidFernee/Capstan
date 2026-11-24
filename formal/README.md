@@ -1,6 +1,6 @@
 # Capstan formal verification
 
-**Status: programme foundation; no runtime theorem is yet machine-checked.**
+**Status: initial abstract-model theorems are machine-checked; no C implementation theorem is yet proved.**
 
 This directory is the authoritative home for machine-checked specifications, proof
 sources, pinned proof-tool dependencies, and reproducible proof commands. A document
@@ -34,13 +34,15 @@ traversal.
 
 - `SPECIFICATION.md`: concrete abstract state and transition-system contract.
 - `OBLIGATIONS.md`: proof-obligation inventory and acceptance criteria.
+- `PROOF-RUNS.md`: immutable record of proof runs, toolchain inputs, outcomes and corrections.
 - `toolchain/README.md`: proof-tool selection record and reproducibility requirements.
 - `CapstanFormal.lean`: initial Lean model and arithmetic/page-release theorems.
 - `implementation/`: implementation-facing contracts and refinement evidence.
 - `proofs/`: additional discharged theorem sources and generated proof reports.
 
-The first Lean model is now present. Its theorems remain unverified until the pinned CI
-job completes; do not promote their status without a reproducible checker run.
+The initial Lean model has passed its pinned Lean, axiom-audit and independent Nanoda
+checks. These are model-only results; the C implementation refinement remains open.
+See [the proof-run ledger](PROOF-RUNS.md) for exact revisions, CI evidence and failed attempts.
 
 ## Evidence rules
 
