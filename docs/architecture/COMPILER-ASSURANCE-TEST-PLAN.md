@@ -7,7 +7,7 @@
 
 ## 1. Current evidence and scope boundary
 
-The current main-branch baseline contains the C-generating compiler, C runtime and Python/C bootstrap described in `COMPILER-PIPELINE-AUDIT.md`, including the compound-assignment and lazy-string-literal sequencing corrections merged in PRs #97 and #109. The CCAM proposal and Capstan-native arithmetic/register substrate remain on the separate PR #81 branch `architecture/c-free-formal-foundation`; dependent PR #132 carries the remainder, register-validation and machine-schema corrections. Neither branch is part of main as of this update.
+The current main-branch baseline contains the C-generating compiler, C runtime and Python/C bootstrap described in `COMPILER-PIPELINE-AUDIT.md`, including the compound-assignment sequencing fix (#97), lazy-string-literal sequencing fix (#109), and exactly-once effectful compound-field receiver fix (#123). The CCAM proposal and Capstan-native arithmetic/register substrate remain on the separate PR #81 branch `architecture/c-free-formal-foundation`; dependent PR #132 carries the remainder, register-validation and machine-schema corrections. Neither branch is part of main as of this update.
 
 Observed PR #81 state:
 - `docs/architecture/CCAM.md` defines CCAM v0.1 for signed-64 integers, booleans, typed local registers, arithmetic, branches, calls/returns, traps and deterministic step/call-depth limits.
