@@ -1001,3 +1001,30 @@ Grant-freedom says nothing about whether a type is printable, trusted, safe for 
 - Verify the property is recomputed or keyed by full canonical instantiated type identity and cannot leak across unrelated compilation roots.
 
 This is a proposed compiler-owned type property and acceptance contract; it is not an implemented language feature.
+
+
+## 29. Separate module identity prerequisites from later visibility enforcement
+
+The v0.5 design's implementation order places module visibility at step 6, after generic type representation, generic instantiation and interface coherence. That order is safe only if "module visibility" means access-control enforcement alone. Stable module and declaration identity are earlier prerequisites for correct generic type identity, substitution, interface obligations, orphan checks, coherence and instantiation caching.
+
+Split the work explicitly:
+
+1. **Before generic type identity or interface coherence:** establish canonical source/module identity, deterministic declaration identity, import-closure membership and unambiguous name resolution. Type equality and canonical instantiation keys must use resolved declaration identity, not short names or source paths as ad hoc strings.
+2. **Before cross-module API use is accepted:** implement private/public access checks, recursive public-signature closure, exported implementation visibility and private-type leak rejection.
+3. **Before separately compiled modules or package linking:** repeat identity/coherence/API checks at the package/link boundary; do not assume per-invocation coherence remains globally sufficient.
+
+The first stage is not the full visibility feature and need not require a package manager or re-export system. A minimal per-file module identity contract is enough, provided canonical path/symlink aliases, duplicate imports, qualified lookup and ambiguous unqualified names have deterministic semantics.
+
+Do not allow the compiler to implement generic nominal identity using global short-name maps and plan to retrofit module identity later. Once substitutions, interface obligation caches, generated names or diagnostics have been keyed by those names, a later identity migration risks semantic collisions and invalid cache reuse.
+
+### Required acceptance tests
+
+- Two modules declaring same-spelled structs/interfaces/enums produce distinct nominal identities.
+- The same canonical source imported through aliases/symlinks is loaded once under the chosen path policy.
+- Distinct source files with same short declaration names resolve only through explicit qualification or deterministic ambiguity diagnostics.
+- Generic substitution and instantiation keys distinguish same-spelled nominal types from different modules.
+- Interface obligations, orphan checks and duplicate-impl detection use resolved declaration identity.
+- Import-order permutations produce identical declaration identities, lookup results and diagnostics.
+- Later visibility enforcement rejects private cross-module references and public API leaks without changing established nominal identities.
+
+This is a dependency-order correction, not a requirement to implement the complete public/private module feature before generic parsing.
