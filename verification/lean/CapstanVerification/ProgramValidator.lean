@@ -33,29 +33,11 @@ inductive RawMachineInstr where
   | explicitTrap (reason : Trap)
   deriving Repr
 
-/-- Validate a register index and its declared type. -/
+/-- A successful register lookup carries its declared type as data. -/
 def typedRegister? {n : Nat} (types : RegTypes n)
-    (index : Nat) (expected : Ty) : Option (Fin n) :=
-  match finOfNat? n index with
-  | none => none
-  | some i => if h : types i = expected then some i else none
-
-/-- Validate three integer registers and construct their typed instruction. -/
-def checkedIntRegisters? {n : Nat} (types : RegTypes n)
-    (dst lhs rhs : Nat) : Option (CheckedIntInstr n types) := do
-  let d ← typedRegister? types dst .int
-  let l ← typedRegister? types lhs .int
-  let r ← typedRegister? types rhs .int
-  have hd : types d = .int := by
-    unfold typedRegister? at *
-    split at ‹Option (Fin n)› <;> simp_all
-  have hl : types l = .int := by
-    unfold typedRegister? at *
-    split at ‹Option (Fin n)› <;> simp_all
-  have hr : types r = .int := by
-    unfold typedRegister? at *
-    split at ‹Option (Fin n)› <;> simp_all
-  exact ⟨d, l, r, hd, hl, hr⟩
+    (index : Nat) (expected : Ty) : Option {i : Fin n // types i = expected} := do
+  let i ← finOfNat? n index
+  if h : types i = expected then some ⟨i, h⟩ else none
 
 /-- Validate a raw instruction into the existing intrinsically typed machine syntax. -/
 def validateMachineInstr {n m : Nat} {types : RegTypes n}
@@ -64,17 +46,11 @@ def validateMachineInstr {n m : Nat} {types : RegTypes n}
   | .constInt dst value =>
       let d ← typedRegister? types dst .int
       if hv : inI64B value = true then
-        have hd : types d = .int := by
-          unfold typedRegister? at *
-          split at ‹Option (Fin n)› <;> simp_all
-        exact .constInt d value hd hv
+        exact .constInt d.1 value d.2 hv
       else none
   | .constBool dst value =>
       let d ← typedRegister? types dst .bool
-      have hd : types d = .bool := by
-        unfold typedRegister? at *
-        split at ‹Option (Fin n)› <;> simp_all
-      exact .constBool d value hd
+      exact .constBool d.1 value d.2
   | .move dst src =>
       let d ← finOfNat? n dst
       let s ← finOfNat? n src
@@ -85,87 +61,41 @@ def validateMachineInstr {n m : Nat} {types : RegTypes n}
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      have hd : types d = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hl : types l = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hr : types r = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .add ⟨d, l, r, hd, hl, hr⟩
+      exact .add ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .sub dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      have hd : types d = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hl : types l = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hr : types r = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .sub ⟨d, l, r, hd, hl, hr⟩
+      exact .sub ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .mul dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      have hd : types d = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hl : types l = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hr : types r = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .mul ⟨d, l, r, hd, hl, hr⟩
+      exact .mul ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .div dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      have hd : types d = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hl : types l = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hr : types r = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .div ⟨d, l, r, hd, hl, hr⟩
+      exact .div ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .rem dst lhs rhs =>
       let d ← typedRegister? types dst .int
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      have hd : types d = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hl : types l = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hr : types r = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .rem ⟨d, l, r, hd, hl, hr⟩
+      exact .rem ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .lessThan dst lhs rhs =>
       let d ← typedRegister? types dst .bool
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      have hd : types d = .bool := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hl : types l = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hr : types r = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .lessThan ⟨d, l, r, hd, hl, hr⟩
+      exact .lessThan ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .equal dst lhs rhs =>
       let d ← typedRegister? types dst .bool
       let l ← typedRegister? types lhs .int
       let r ← typedRegister? types rhs .int
-      have hd : types d = .bool := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hl : types l = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hr : types r = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .equal ⟨d, l, r, hd, hl, hr⟩
+      exact .equal ⟨d.1, l.1, r.1, d.2, l.2, r.2⟩
   | .booleanNot dst src =>
       let d ← typedRegister? types dst .bool
       let s ← typedRegister? types src .bool
-      have hd : types d = .bool := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      have hs : types s = .bool := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .booleanNot ⟨d, s, hd, hs⟩
+      exact .booleanNot ⟨d.1, s.1, d.2, s.2⟩
   | .jump target =>
       let t ← finOfNat? m target
       exact .jump t
@@ -173,19 +103,13 @@ def validateMachineInstr {n m : Nat} {types : RegTypes n}
       let c ← typedRegister? types cond .bool
       let t ← finOfNat? m ifTrue
       let f ← finOfNat? m ifFalse
-      have hc : types c = .bool := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .branch ⟨c, hc, t, f⟩
+      exact .branch ⟨c.1, c.2, t, f⟩
   | .retInt src =>
       let s ← typedRegister? types src .int
-      have hs : types s = .int := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .retInt s hs
+      exact .retInt s.1 s.2
   | .retBool src =>
       let s ← typedRegister? types src .bool
-      have hs : types s = .bool := by
-        unfold typedRegister? at *; split at ‹Option (Fin n)› <;> simp_all
-      exact .retBool s hs
+      exact .retBool s.1 s.2
   | .retVoid => exact .retVoid
   | .explicitTrap reason => exact .explicitTrap reason
 
@@ -247,16 +171,6 @@ theorem validateSingleFrameProgram_final_terminal
     (h : validateSingleFrameProgram raw = some program) :
     HasExplicitControlEffect (program.code (Fin.last m)) :=
   finiteProgram_final_instruction_has_control_effect program
-
-/-- The accepted code is total and intrinsically typed at every finite PC. -/
-theorem validateSingleFrameProgram_code_typed
-    {n m : Nat} {types : RegTypes n}
-    (raw : RawSingleFrameProgram n m types)
-    (program : FiniteProgram n m types)
-    (h : validateSingleFrameProgram raw = some program)
-    (pc : Fin (m + 1)) :
-    MachineInstr n (m + 1) types (program.code pc) := by
-  exact program.code pc
 
 /-- Every accepted jump/branch target is bounded by the program's finite code size. -/
 theorem validateSingleFrameProgram_targets_bounded
