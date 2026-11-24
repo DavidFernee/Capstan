@@ -100,6 +100,7 @@ import CapstanVerification.RuntimeBridge
 #print axioms CapstanVerification.runtimeWriteRegister_other_unchanged
 
 #print axioms CapstanVerification.RuntimeRegister.asVal
+#print axioms CapstanVerification.RuntimeRegister.asVal_hasType
 #print axioms CapstanVerification.RuntimeRegister.value?_of_initialized
 #print axioms CapstanVerification.runtimeSetAt_length
 #print axioms CapstanVerification.runtimeWriteRegister_length
