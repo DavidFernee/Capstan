@@ -57,6 +57,8 @@ C++ libraries. Capstan programs cannot call foreign code today. When interop arr
 code is to run isolated, in a separate process or a WebAssembly sandbox, with its results typed as
 `Tainted` ([DESIGN-MAP.md](../DESIGN-MAP.md), section 4, v0.10).
 
+The current allocator and collector contract is documented separately in [RUNTIME-MEMORY-MODEL.md](RUNTIME-MEMORY-MODEL.md), including conservative roots, non-moving reachability, secret allocation kinds, and the fact that heap accounting is not process RSS. That specification distinguishes intended behaviour from implementation gaps and does not constitute a formal proof.
+
 ## What is not yet memory-safe
 
 Capstan's guarantees hold for code written in Capstan. They rest on components that are not:
