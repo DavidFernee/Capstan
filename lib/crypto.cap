@@ -168,15 +168,48 @@ List<int> zeros(int n) {
     return out;
 }
 
-// PBKDF2-HMAC-SHA256: dklen bytes derived from password and salt with the
-// given number of iterations (at least 1). dklen is 1..2^20 here. Each
-// iteration after the first is HMAC of a 32-byte value, so it costs two
-// compressions from the precomputed keyed states and allocates nothing.
+// PBKDF2 resource policy. The work budget is expressed in PBKDF2 output-block
+// iterations: one block at 600,000 iterations is the password-verifier profile.
+// The public API deliberately uses the same upper budget rather than allowing
+// output length and iteration count to multiply without a bound.
+const int PBKDF2_MAX_PASSWORD_BYTES = 256;
+const int PBKDF2_MAX_SALT_BYTES = 1024;
+const int PBKDF2_MAX_DK_BYTES = 1024;
+const int PBKDF2_MAX_WORK = 600000;
+
+bool pbkdf2_bytes_valid(List<int> bytes) {
+    for (int i = 0; i < bytes.len(); i += 1) {
+        if (bytes[i] < 0 || bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+// PBKDF2-HMAC-SHA256. Returns an empty list for invalid parameters; otherwise
+// returns exactly dklen bytes. Empty password and salt are valid RFC 8018 inputs.
+// Bounds: password <=256 bytes, salt <=1024 bytes, dklen <=1024 bytes, and
+// iterations * ceil(dklen/32) <=600,000. Callers must check the returned length.
 List<int> pbkdf2_sha256(List<int> password, List<int> salt, int iterations, int dklen) {
     List<int> out = new List<int>();
-    if (iterations < 1 || dklen < 1 || dklen > 1048576) { return out; }
+    if (password.len() > PBKDF2_MAX_PASSWORD_BYTES ||
+        salt.len() > PBKDF2_MAX_SALT_BYTES ||
+        dklen < 1 || dklen > PBKDF2_MAX_DK_BYTES || iterations < 1) { return out; }
+    int blocks = (dklen + 31) / 32;
+    if (iterations > PBKDF2_MAX_WORK / blocks) { return out; }
+    if (!pbkdf2_bytes_valid(password) || !pbkdf2_bytes_valid(salt)) { return out; }
+
+    // Normalise a long password once. Reuse it for every output block rather
+    // than re-hashing the original long password for each U1 computation.
     List<int> key = password;
     if (key.len() > 64) { key = sha256(password); }
+
+    // The salt || INT(block) message is invariant in length and salt content.
+    // Allocate/copy it once and update only the four-byte block counter.
+    List<int> first = concat_bytes(salt, zeros(4));
+    int counter = salt.len();
+    List<int> k = sha256_constants();
+    List<int> w = zeros(64);
+    List<int> inner = new List<int>();
+    List<int> outer = new List<int>();
     List<int> ipad = zeros(64);
     List<int> opad = zeros(64);
     for (int i = 0; i < 64; i += 1) {
@@ -185,21 +218,20 @@ List<int> pbkdf2_sha256(List<int> password, List<int> salt, int iterations, int 
         ipad[i] = b ^ 0x36;
         opad[i] = b ^ 0x5c;
     }
-    List<int> k = sha256_constants();
-    List<int> w = zeros(64);
-    List<int> inner = sha256_after_block(k, w, ipad);
-    List<int> outer = sha256_after_block(k, w, opad);
+    inner = sha256_after_block(k, w, ipad);
+    outer = sha256_after_block(k, w, opad);
     List<int> blk = zeros(64);
     List<int> h = zeros(8);
     List<int> mid = zeros(32);
     int block = 1;
     while (out.len() < dklen) {
-        List<int> first = concat_bytes(salt, new List<int>());
-        first.push((block >>> 24) & 0xFF);
-        first.push((block >>> 16) & 0xFF);
-        first.push((block >>> 8) & 0xFF);
-        first.push(block & 0xFF);
-        List<int> u = hmac_sha256(password, first);
+        first[counter] = (block >>> 24) & 0xFF;
+        first[counter + 1] = (block >>> 16) & 0xFF;
+        first[counter + 2] = (block >>> 8) & 0xFF;
+        first[counter + 3] = block & 0xFF;
+        // U1 uses the pre-normalised key; subsequent U values reuse the
+        // already-computed keyed SHA-256 states.
+        List<int> u = hmac_sha256(key, first);
         List<int> t = concat_bytes(u, new List<int>());
         for (int it = 1; it < iterations; it += 1) {
             sha256_finish_96(k, w, inner, u, blk, h, mid);
