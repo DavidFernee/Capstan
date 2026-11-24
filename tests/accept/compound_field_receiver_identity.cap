@@ -1,0 +1,20 @@
+// spec: stmt.assign expr.order types.struct types.list
+// A field target retains the receiver object, not the list slot used to find it.
+// The RHS replaces xs[0]; the final field write must still update the old object.
+struct Counter { int value; }
+
+int replace_first(List<Counter> xs) {
+    xs.remove_at(0);
+    xs.push(new Counter{value: 100});
+    return 2;
+}
+
+int main() {
+    List<Counter> xs = new List<Counter>();
+    xs.push(new Counter{value: 1});
+    Counter alias = xs[0];
+    xs[0].value += replace_first(xs);
+    println(int_to_str(alias.value));
+    println(int_to_str(xs[0].value));
+    return 0;
+}
