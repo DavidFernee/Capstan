@@ -1197,6 +1197,15 @@ static bool cap_secret_eq(CapStr *a, CapStr *b) { return cap_ct_eq(a->data, a->l
 
 typedef struct { uint32_t h[8]; uint64_t bits; unsigned char buf[64]; size_t n; } CapSha256;
 
+/* One contiguous, explicitly destroyed region for native PBKDF2 intermediates. */
+typedef struct CapPbkdf2Scratch {
+    unsigned char msg[64 + 4];
+    unsigned char u[32];
+    unsigned char t[32];
+    CapSha256 inner;
+    CapSha256 outer;
+} CapPbkdf2Scratch;
+
 static const uint32_t cap_k256[64] = {
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
     0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
@@ -1355,26 +1364,27 @@ static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
 #define CAP_PASSWORD_RECORD_LEN 123
 
 static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
-    if (!pw || !salt || pn > CAP_PASSWORD_MAX_BYTES || sn > 64 ||
+    if (!pw || !salt || !out || pn > CAP_PASSWORD_MAX_BYTES || sn > 64 ||
         iter < 1 || iter > CAP_PBKDF2_ITER)
         cap_panic("invalid PBKDF2 parameters", "CWE-789", 0);
 #ifdef CAP_PBKDF2_TEST_HOOK
     cap_pbkdf2_test_calls++;
 #endif
-    unsigned char msg[64 + 4], u[32], t[32];
-    CapSha256 inner, outer;
-    cap_hmac_sha256_prepare((const unsigned char *)pw, pn, &inner, &outer);
-    memcpy(msg, salt, sn);
-    msg[sn] = 0; msg[sn+1] = 0; msg[sn+2] = 0; msg[sn+3] = 1;
-    cap_hmac_sha256_prepared(&inner, &outer, msg, sn + 4, u);
-    memcpy(t, u, 32);
+    CapSecretScratch allocation = {0};
+    if (!cap_secret_scratch_init(&allocation, sizeof(CapPbkdf2Scratch)))
+        cap_panic("unable to allocate PBKDF2 secret scratch", "CWE-400", 0);
+    CapPbkdf2Scratch *work = (CapPbkdf2Scratch *)allocation.data;
+    cap_hmac_sha256_prepare((const unsigned char *)pw, pn, &work->inner, &work->outer);
+    memcpy(work->msg, salt, sn);
+    work->msg[sn] = 0; work->msg[sn+1] = 0; work->msg[sn+2] = 0; work->msg[sn+3] = 1;
+    cap_hmac_sha256_prepared(&work->inner, &work->outer, work->msg, sn + 4, work->u);
+    memcpy(work->t, work->u, 32);
     for (int i = 1; i < iter; i++) {
-        cap_hmac_sha256_prepared(&inner, &outer, u, 32, u);
-        for (int j = 0; j < 32; j++) t[j] ^= u[j];
+        cap_hmac_sha256_prepared(&work->inner, &work->outer, work->u, 32, work->u);
+        for (int j = 0; j < 32; j++) work->t[j] ^= work->u[j];
     }
-    memcpy(out, t, 32);
-    cap_wipe(u, sizeof u); cap_wipe(t, sizeof t); cap_wipe(msg, sizeof msg);
-    cap_wipe(&inner, sizeof inner); cap_wipe(&outer, sizeof outer);
+    memcpy(out, work->t, 32);
+    cap_secret_scratch_destroy(&allocation);
 }
 
 static CapStr *cap_hash_password(CapStr *pw) {
