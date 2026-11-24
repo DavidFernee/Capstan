@@ -101,8 +101,9 @@ MVP interaction sequence:
 7. Present security information with provenance and a clear distinction between
    compiler-enforced facts, runtime checks, recorded evidence and unknowns.
 
-The S0 prototype is only a static workbench composition. It is not yet an editor,
-workspace browser or process controller.
+The S0 prototype is only a static workbench composition. Navigation entries are
+plain labels, not inert buttons; no input host or message loop is connected. It is not
+yet an editor, workspace browser or process controller.
 
 ## 4. Shroud integration contract
 
