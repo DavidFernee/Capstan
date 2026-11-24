@@ -1278,6 +1278,44 @@ bool ccam_valid_target(List<CCAMInstruction> instructions, int target) {
     return target >= 0 && target < instructions.len();
 }
 
+bool ccam_valid_trap_reason(string reason) {
+    int n = reason.len();
+    if (n == 0 || n > 64) {
+        return false;
+    }
+    bool first_ok = false;
+    string first = reason.slice(0, 1);
+    for (int code = 97; code <= 122; code += 1) {
+        if (first == char_str(code)) {
+            first_ok = true;
+        }
+    }
+    if (!first_ok) {
+        return false;
+    }
+    for (int i = 1; i < n; i += 1) {
+        string ch = reason.slice(i, i + 1);
+        bool allowed = false;
+        for (int code = 97; code <= 122; code += 1) {
+            if (ch == char_str(code)) {
+                allowed = true;
+            }
+        }
+        for (int code = 48; code <= 57; code += 1) {
+            if (ch == char_str(code)) {
+                allowed = true;
+            }
+        }
+        if (ch == "_") {
+            allowed = true;
+        }
+        if (!allowed) {
+            return false;
+        }
+    }
+    return true;
+}
+
 CCAMValidationResult ccam_validate_single_frame(
     List<int> register_types,
     List<CCAMInstruction> instructions,
@@ -1369,7 +1407,7 @@ CCAMValidationResult ccam_validate_single_frame(
                 return ccam_validation_error("return_type_mismatch");
             }
         } else if (instruction.op == CCAM_OP_TRAP) {
-            if (instruction.reason.len() == 0 || instruction.reason.len() > 64) {
+            if (!ccam_valid_trap_reason(instruction.reason)) {
                 return ccam_validation_error("invalid_trap_reason");
             }
         } else {
@@ -1441,6 +1479,35 @@ CCAMMachineCreateResult ccam_machine_create_validated(
         };
     }
     return ccam_machine_create(register_types, instructions, max_steps);
+}
+
+test "CCAM validator accepts and rejects canonical trap reasons" {
+    assert(ccam_valid_trap_reason("deliberate_stop"));
+    assert(ccam_valid_trap_reason("a"));
+    assert(ccam_valid_trap_reason("a9_b"));
+
+    assert(!ccam_valid_trap_reason(""));
+    assert(!ccam_valid_trap_reason("Upper"));
+    assert(!ccam_valid_trap_reason("_leading"));
+    assert(!ccam_valid_trap_reason("bad-name"));
+    assert(!ccam_valid_trap_reason("has space"));
+    assert(!ccam_valid_trap_reason("nonascii_é"));
+
+    string sixty_four = "";
+    for (int i = 0; i < 64; i += 1) {
+        sixty_four = sixty_four + "a";
+    }
+    assert(ccam_valid_trap_reason(sixty_four));
+    assert(!ccam_valid_trap_reason(sixty_four + "a"));
+
+    List<int> types = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction trap = ccam_instruction(CCAM_OP_TRAP);
+    trap.reason = "Bad";
+    code.push(trap);
+    CCAMValidationResult invalid = ccam_validate_single_frame(
+        types, code, CCAM_RETURN_VOID);
+    assert(!invalid.ok && invalid.error == "invalid_trap_reason");
 }
 
 test "CCAM validator accepts a typed arithmetic return program" {
