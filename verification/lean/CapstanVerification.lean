@@ -1,2 +1,3 @@
 import CapstanVerification.Core
+import CapstanVerification.RuntimeBridge
 import CapstanVerification.Machine
