@@ -5,6 +5,8 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- CI: pushes are tested only on `main` (branches through their pull requests), and a newer commit on
+  a pull request cancels the older run, so bursts of commits no longer queue dozens of runs
 - `AGENTS.md` for OpenAI Codex, identical to `CLAUDE.md` (a test checks): every change through a
   pull request, claims on the coordination issue, and every commit and comment names its agent
 - IDE supply-chain design (DESIGN-MAP section 5): a live SBOM including the toolchain, continuous

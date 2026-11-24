@@ -1,12 +1,21 @@
 name: ci
 on:
+  # Pushes are tested only on main; a branch is tested through its pull request, so one push
+  # starts one run, not two. Other branches can be tested on demand (workflow_dispatch).
   push:
+    branches: [main]
   pull_request:
   schedule:
     - cron: "17 15 * * *"      # nightly full run (01:17 Melbourne time)
   workflow_dispatch:
 permissions:
   contents: read
+# A newer commit on a pull request cancels the run for the older one, so a burst of small
+# commits does not queue a run per commit ahead of the one that matters. Runs on main are
+# never cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     strategy:
