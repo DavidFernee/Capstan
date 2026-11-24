@@ -19,7 +19,7 @@ Every claim refers to a document, implementation path or test in the repository.
 
 | Adversary | Capability assumed | Capstan's defence |
 |---|---|---|
-| **A1. Remote or local user of a Capstan program** (the main adversary) | Controls any input the program reads: standard input, files, environment variables | Input arrives as `Tainted`; it reaches queries, commands, logs, HTML, files and policies only through validators and escapers, or an audited `trust()`. Memory errors and overflow cannot be written or stop safely (sections 3.1 and 3.2) |
+| **A1. Remote or local user of a Capstan program** (the main adversary) | Controls any input the program reads: standard input, files, environment variables | Input arrives as `Tainted`; it reaches queries, commands, logs, HTML, files and policies only through validators and escapers, or an audited `trust()`. Source-level checked operations reject invalid bounds and stop on specified overflow; this does not make the C runtime, compiler, libc or host platform memory-safe (section 5) |
 | **A2. A well-meaning developer who makes mistakes** | Writes ordinary code under time pressure | The compiler refuses vulnerable code with a CWE-numbered error; `--strict` and `--release` add stricter checks, including mandatory denial tests for policies |
 | **A3. A supplier of hostile source to the compiler** | Gives the compiler arbitrary bytes as source | The compiler reads source as `Tainted` and emits text into C only through `validate_ident()`, `validate_int()` and `escape_c()`; mutation fuzzing checks that corrupted programs never crash or hang it and that accepted programs give valid C ([TESTING.md](../TESTING.md), fuzz); 100,000-deep nesting gets a diagnostic, not a crash (limits) |
 | **A4. Someone who tampers with a compiler binary or build** | Replaces a compiler binary, C compiler or build input with one that inserts flaws | The compiler's self-hosting fixpoint and diverse bootstrap checks provide evidence about compiler reproduction, not a proof against a malicious toolchain. The release workflow defines SHA-256 checksums, keyless Sigstore signatures, CycloneDX/SPDX SBOMs and GitHub artifact attestations; each published release still requires verification of its actual assets and attestations |
@@ -45,11 +45,12 @@ table in [README.md](../../README.md); [CWE-COVERAGE.md](../CWE-COVERAGE.md).
 
 ### 3.2 Stopped safely at run time
 
-Out-of-bounds reads and writes, integer overflow and underflow, division by zero, runaway recursion,
-a grant replayed on a different object, and heap exhaustion stop the program with exit code 101 and
-the named CWE. Evidence: `tests/runtime/`. The range analysis removes a check only where it proves
-the check cannot fail; `--keep-checks` keeps all of them, and differential fuzzing compares against
-stage 0, which has no range analysis.
+Invalid source-level indexed operations, checked integer overflow and underflow, division by zero,
+runaway recursion, a grant replayed on a different object, and heap exhaustion are rejected or stop
+the program with the specified diagnostic/exit code and named CWE. Evidence: `tests/runtime/`.
+The range analysis removes a check only where it proves the check cannot fail; `--keep-checks` keeps
+all of them, and differential fuzzing compares against stage 0, which has no range analysis. These
+checks do not cover memory-safety defects inside the C runtime or other trusted-base components.
 
 ### 3.3 Prevented by absence
 
