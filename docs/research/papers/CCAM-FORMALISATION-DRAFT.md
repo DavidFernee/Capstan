@@ -4,7 +4,7 @@
 
 **Author:** David Fernee  
 **Manuscript status:** Research draft — not submission-ready  
-**Repository snapshot:** Capstan `main` at `294d34361c31dc768e60a017a3fd0718f7a00313` (25 November 2026)  
+**Repository snapshot:** Capstan `main` at `2bbd51fe3a38e4da174900469016ab74dfb67ce1` (25 November 2026); the CCAM files discussed here are unchanged since PR #163's merge commit `294d34361c31dc768e60a017a3fd0718f7a00313`  
 **Formalisation:** Lean 4.19.0  
 **Formal-model introduction:** commit `360043c8704546857caa4c82f2978c7709399016` (PR #151)  
 **Current implementation snapshot:** commit `294d34361c31dc768e60a017a3fd0718f7a00313` (PR #163 merged)
