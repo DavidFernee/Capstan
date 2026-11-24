@@ -1,6 +1,6 @@
 # Capstan Core Abstract Machine (CCAM) v0.1
 
-**Status:** normative v0.1 design with a restricted Capstan-native single-frame evaluator merged to `main` (PR #142), and a typed structural validator for that in-memory subset under development. The implementation is not yet a conforming v0.1 machine, is not connected to the Lean model, and is not the complete Capstan semantics.
+**Status:** normative v0.1 design with a restricted Capstan-native single-frame evaluator merged to `main` (PR #142) and a typed in-memory structural validator merged in PR #163. The implementation is not yet a conforming v0.1 machine, is not connected to the Lean model by a refinement theorem, and is not the complete Capstan semantics.
 
 This document defines the intended semantics for the first machine slice. Its executable implementation and conformance tests must be written in Capstan. No Python or C implementation is to serve as the normative reference.
 
