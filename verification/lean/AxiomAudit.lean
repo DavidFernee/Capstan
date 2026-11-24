@@ -23,6 +23,7 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.executeEq_left_read_error_precedence
 #print axioms CapstanVerification.executeEq_preserves_well_typed
 #print axioms CapstanVerification.executeNot_preserves_well_typed
+#print axioms CapstanVerification.initialMachineState
 #print axioms CapstanVerification.machineStep
 #print axioms CapstanVerification.machineStep_preserves_well_typed
 #print axioms CapstanVerification.machineState_pc_is_in_range
