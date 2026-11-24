@@ -52,6 +52,24 @@ def main():
         tree = json.loads(pathlib.Path(tmp, "anchor-a11y.json").read_text())
         if not isinstance(tree, dict):
             raise AssertionError("accessibility tree is not a JSON object")
+
+        def nodes(node):
+            yield node
+            for child in node.get("children", []):
+                yield from nodes(child)
+
+        rendered_nodes = list(nodes(tree))
+        interactive_roles = {"button", "checkbox", "radio", "switch", "textbox", "password", "slider"}
+        actual_roles = {node.get("role") for node in rendered_nodes}
+        if actual_roles & interactive_roles:
+            raise AssertionError(
+                "A0 contains controls without a live input host: "
+                + ", ".join(sorted(actual_roles & interactive_roles))
+            )
+        names = {node.get("name", "") for node in rendered_nodes}
+        expected_labels = {"Explorer", "Security", "Build & test", "Documentation"}
+        if not expected_labels.issubset(names):
+            raise AssertionError("static navigation labels are missing from the accessibility tree")
         print("Anchor A0: build, render and accessibility smoke test passed")
 
 
