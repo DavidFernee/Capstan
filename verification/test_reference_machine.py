@@ -173,6 +173,28 @@ class ReferenceMachineTests(unittest.TestCase):
             execute(p)
         self.assertEqual(caught.exception.pc, 2)
 
+    def test_invalid_control_flow_target_is_rejected(self):
+        p = program([{"op": "jump", "target": 1}], [], ret="void")
+        with self.assertRaises(InvalidProgram):
+            execute(p)
+
+    def test_call_argument_type_mismatch_is_rejected(self):
+        callee = {
+            "name": "take_bool", "register_types": ["bool"],
+            "parameter_count": 1, "return_type": "void",
+            "code": [{"op": "ret_void"}],
+        }
+        main = {
+            "name": "main", "register_types": ["int"], "parameter_count": 0,
+            "return_type": "void", "code": [
+                {"op": "const_i", "dst": 0, "value": 1},
+                {"op": "call", "dst": None, "function": "take_bool", "args": [0]},
+                {"op": "ret_void"},
+            ],
+        }
+        with self.assertRaises(InvalidProgram):
+            execute({"entry": "main", "functions": [callee, main]})
+
     def test_explicit_trap(self):
         p = program([{"op": "trap", "reason": "user_trap"}], [], ret="void")
         with self.assertRaisesRegex(MachineTrap, "user_trap"):
