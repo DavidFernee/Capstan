@@ -16,7 +16,7 @@ is therefore not a valid implementation of Capstan's left-to-right rule. The com
 
 The backend uses GNU C statement expressions and temporaries for this purpose. That is a compatibility mechanism for v0.6, not part of the C-free architecture.
 
-This assurance branch is stacked on PR #97. Its base contains the explicit compound-assignment sequencing implementation and the post-RHS stale-index regression; PR #93 supplies the normative source-level rule and additional conformance cases.
+The mainline now contains the explicit compound-assignment sequencing implementation, its field/string/list regressions, the post-RHS stale-index runtime regression, and the lazy-string-literal sequencing correction (merged PRs #97 and #109). PR #93 carries the proposed normative source-level core and typed-IR contract; this document records the current v0.6 backend evidence without depending on that proposal being merged.
 
 ## 2. Current lowering strategy
 
@@ -34,7 +34,7 @@ This assurance branch is stacked on PR #97. Its base contains the explicit compo
 
 ## 3. The `hoist()` classification invariant
 
-The optimisation does not materialise every operand unconditionally. It classifies integer/boolean/none literals and variable references as simple; string literals, field, index, call and method expressions are complex. String literals are complex because `CAP_LIT` performs lazy allocation in the current runtime; PR #109 fixes their sequencing.
+The optimisation does not materialise every operand unconditionally. It classifies integer/boolean/none literals and variable references as simple; string literals, field, index, call and method expressions are complex. String literals are complex because `CAP_LIT` performs lazy allocation in the current runtime; the sequencing correction is now in main via merged PR #109.
 
 This is sound only under the following current-language assumptions:
 
@@ -43,7 +43,7 @@ This is sound only under the following current-language assumptions:
 3. Global names resolved as variables are constants registered in the checker; there are no mutable global variable bindings.
 4. Field, index, call, method and string-literal expressions are classified complex and materialised in source order when paired with another complex operand. String literals require this treatment because `CAP_LIT` lazily allocates via `malloc` and can fail.
 
-If any future language feature invalidates one of these assumptions—mutable globals, by-reference scalar parameters, captured mutable locals, overloaded variable reads, or effectful getters—the simple/complex classification must be revisited before that feature is enabled. String-literal sequencing is fixed by PR #109; the safe fallback for any future effectful expression is to materialise every operand in source order or eliminate runtime effects from its construction.
+If any future language feature invalidates one of these assumptions—mutable globals, by-reference scalar parameters, captured mutable locals, overloaded variable reads, or effectful getters—the simple/complex classification must be revisited before that feature is enabled. String-literal sequencing is fixed in main; the safe fallback for any future effectful expression is to materialise every operand in source order or eliminate runtime effects from its construction.
 
 This is an explicit compiler proof obligation, not an intrinsic property of C.
 
@@ -55,7 +55,7 @@ This is an explicit compiler proof obligation, not an intrinsic property of C.
 
 The expected output is `11` and `1001`. These values distinguish left-to-right evaluation from a lowering that executes the mutating call before reading the field.
 
-`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. The current checker restricts indexed compound-assignment targets to simple-indexed elements, so effectful index/base expressions are not currently source-representable; the indexed-list old-value path is covered by PR #97. The post-RHS validity regression is owned by the semantics contract in PR #93 (`tests/runtime/compound_assignment_invalidated_index.cap`) to avoid duplicate ownership of the same fixture.
+`tests/accept/compound_assignment_sequence.cap` separately checks field, string-field and indexed-list compound assignments with mutating RHS functions. The current checker restricts indexed compound-assignment targets to simple-indexed elements, so effectful index/base expressions are not currently source-representable; the indexed-list old-value and post-RHS validity paths are covered by the implementation and regression tests merged in PR #97. PR #93 separately specifies the normative source-level contract; it does not own this runtime fixture.
 
 The fixtures are conformance tests. They do not prove all generated expressions correct, establish that the C compiler behaves identically on every target, or replace a formal source-to-CCAM/native correctness argument.
 
