@@ -1,0 +1,7 @@
+// spec: memory.gc
+// expect-runtime: CWE-20
+// env: CAPSTAN_MAX_HEAP=1T
+int main() {
+    println("initialise runtime");
+    return 0;
+}
