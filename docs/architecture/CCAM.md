@@ -131,7 +131,7 @@ Execution returns exactly one of:
 
 A complete source-program entry has zero arguments and returns `int` or `void`. Internal functions may return `int`, `bool` or `void`. Structural program errors are reported as validation failures before execution, not as dynamic traps.
 
-The initial dynamic trap codes are `integer_overflow`, `division_by_zero`, `uninitialised_register`, `invalid_register` and `register_type_mismatch` (the last two are defensive checks for conditions that validation should make unreachable), `step_limit_exceeded`, `call_depth_exceeded`, and `explicit_trap` with a validated reason detail. The Capstan implementation must represent machine traps as explicit values or controlled results. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected before execution.
+The initial dynamic trap codes are `integer_overflow`, `division_by_zero`, `uninitialised_register`, `invalid_register` and `register_type_mismatch` (the last two are defensive checks for conditions that validation should make unreachable), `step_limit_exceeded`, `call_depth_exceeded`, and `explicit_trap` with a validated reason detail matching `[a-z][a-z0-9_]{0,63}` (ASCII). The Capstan implementation must represent machine traps as explicit values or controlled results. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected before execution.
 
 ## 7. Determinism and evaluation order
 
