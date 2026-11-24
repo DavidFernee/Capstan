@@ -25,6 +25,11 @@ jobs:
           build-args: --wfail
           test: false
           lint: false
+          nanoda: true
+          nanoda-allow-sorry: false
+          axiom-audit: true
+          axiom-audit-allow: propext
+          axiom-audit-root: CapstanVerification
       - name: Build proof library root explicitly
         working-directory: verification/lean
         run: lake build CapstanVerification --wfail
