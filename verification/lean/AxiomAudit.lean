@@ -14,6 +14,7 @@ import CapstanVerification.Machine
 #print axioms CapstanVerification.checkedAdd_sound
 #print axioms CapstanVerification.checkedSub_sound
 #print axioms CapstanVerification.checkedMul_sound
+#print axioms CapstanVerification.executeCheckedIntOp_left_read_error_precedence
 #print axioms CapstanVerification.executeCheckedIntOp_preserves_well_typed
 #print axioms CapstanVerification.subIntOp
 #print axioms CapstanVerification.mulIntOp
