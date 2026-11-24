@@ -1232,6 +1232,57 @@ static void cap_hmac_sha256(const unsigned char *key, size_t kn, const unsigned 
     cap_wipe(k, sizeof k); cap_wipe(ipad, sizeof ipad); cap_wipe(opad, sizeof opad); cap_wipe(inner, sizeof inner); cap_wipe(&s, sizeof s);
 }
 
+#ifdef CAP_PBKDF2_TEST_HOOK
+static unsigned cap_pbkdf2_test_calls;
+static unsigned cap_pbkdf2_prepare_calls;
+#endif
+
+/* Prepare the keyed SHA-256 states once for a PBKDF2 derivation. Each state
+   includes exactly one 64-byte HMAC pad block (512 bits). Per-message calls
+   copy these states, finish the inner/outer hashes, and wipe the copies. */
+static void cap_hmac_sha256_prepare(const unsigned char *key, size_t kn,
+                                    CapSha256 *inner, CapSha256 *outer) {
+#ifdef CAP_PBKDF2_TEST_HOOK
+    cap_pbkdf2_prepare_calls++;
+#endif
+    unsigned char k[64] = {0}, ipad[64], opad[64];
+    CapSha256 s;
+    if (kn > 64) {
+        cap_sha256_init(&s);
+        cap_sha256_update(&s, key, kn);
+        cap_sha256_final(&s, k);
+    } else {
+        memcpy(k, key, kn);
+    }
+    for (int i = 0; i < 64; i++) {
+        ipad[i] = k[i] ^ 0x36;
+        opad[i] = k[i] ^ 0x5c;
+    }
+    cap_sha256_init(inner);
+    cap_sha256_update(inner, ipad, sizeof ipad);
+    cap_sha256_init(outer);
+    cap_sha256_update(outer, opad, sizeof opad);
+    cap_wipe(k, sizeof k);
+    cap_wipe(ipad, sizeof ipad);
+    cap_wipe(opad, sizeof opad);
+    cap_wipe(&s, sizeof s);
+}
+
+static void cap_hmac_sha256_prepared(const CapSha256 *inner_state,
+                                     const CapSha256 *outer_state,
+                                     const unsigned char *msg, size_t mn,
+                                     unsigned char out[32]) {
+    CapSha256 inner = *inner_state, outer = *outer_state;
+    unsigned char digest[32];
+    cap_sha256_update(&inner, msg, mn);
+    cap_sha256_final(&inner, digest);
+    cap_sha256_update(&outer, digest, sizeof digest);
+    cap_sha256_final(&outer, out);
+    cap_wipe(digest, sizeof digest);
+    cap_wipe(&inner, sizeof inner);
+    cap_wipe(&outer, sizeof outer);
+}
+
 static void cap_hex(const unsigned char *p, size_t n, char *out) {
     static const char *d = "0123456789abcdef";
     for (size_t i = 0; i < n; i++) { out[2*i] = d[p[i] >> 4]; out[2*i+1] = d[p[i] & 15]; }
@@ -1262,10 +1313,6 @@ static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
 #define CAP_PASSWORD_MAX_BYTES 256
 #define CAP_PASSWORD_RECORD_LEN 123
 
-#ifdef CAP_PBKDF2_TEST_HOOK
-static unsigned cap_pbkdf2_test_calls;
-#endif
-
 static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
     if (!pw || !salt || pn > CAP_PASSWORD_MAX_BYTES || sn > 64 ||
         iter < 1 || iter > CAP_PBKDF2_ITER)
@@ -1274,16 +1321,19 @@ static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, siz
     cap_pbkdf2_test_calls++;
 #endif
     unsigned char msg[64 + 4], u[32], t[32];
+    CapSha256 inner, outer;
+    cap_hmac_sha256_prepare((const unsigned char *)pw, pn, &inner, &outer);
     memcpy(msg, salt, sn);
     msg[sn] = 0; msg[sn+1] = 0; msg[sn+2] = 0; msg[sn+3] = 1;
-    cap_hmac_sha256((const unsigned char *)pw, pn, msg, sn + 4, u);
+    cap_hmac_sha256_prepared(&inner, &outer, msg, sn + 4, u);
     memcpy(t, u, 32);
     for (int i = 1; i < iter; i++) {
-        cap_hmac_sha256((const unsigned char *)pw, pn, u, 32, u);
+        cap_hmac_sha256_prepared(&inner, &outer, u, 32, u);
         for (int j = 0; j < 32; j++) t[j] ^= u[j];
     }
     memcpy(out, t, 32);
     cap_wipe(u, sizeof u); cap_wipe(t, sizeof t); cap_wipe(msg, sizeof msg);
+    cap_wipe(&inner, sizeof inner); cap_wipe(&outer, sizeof outer);
 }
 
 static CapStr *cap_hash_password(CapStr *pw) {
