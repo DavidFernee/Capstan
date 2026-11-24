@@ -257,6 +257,9 @@ through the WebAssembly backend (T10) drawing to a canvas, with a DOM accessibil
 
 `tests/shroud/check.py` runs in every suite run (`tests/run.sh`, section "shroud"), with warnings
 as errors and again under AddressSanitizer and UndefinedBehaviorSanitizer:
+`tests/shroud/check_frame_budget.py` also runs in the normal and sanitizer paths to verify
+the exact 2 MiB aggregate view-tree text boundary, fail-closed one-byte overflow, cycles,
+nesting depth and view-count limits.
 
 - **behaviour**: 78 assertions on layout, buttons, guards, keyboard and focus, text editing,
   untrusted text, accessibility, themes, scrolling, compositing and high-DPI scaling
