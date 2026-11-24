@@ -81,7 +81,7 @@ result stops the program with CWE-190. Division truncates toward zero.
 Remainder is defined by `a = q*b + r`, where `q` is that truncating quotient;
 a nonzero remainder has the sign of the dividend and `|r| < |b|`.
 Division or remainder by zero stops the program with CWE-369.
-`-9223372036854775808 / -1` stops with CWE-190, while
+Let `MIN = -2^63`. `MIN / -1` stops with CWE-190, while
 `0x8000000000000000 % -1` returns `0`: the remainder is representable even
 though the corresponding quotient is not. Implementations must special-case
 this remainder pair before any host operation that could overflow or be
