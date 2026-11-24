@@ -125,6 +125,8 @@ Remaining:
   `int_to_str` stopped using `snprintf`, which was 38% of its time)
 
 ### v0.5 — Abstraction
+
+Implementation design proposal: [V0.5-DESIGN.md](V0.5-DESIGN.md).
 - user generics with interfaces (`interface Comparable<T>`)
 - `public`/`private` visibility for module members
 - closures that capture by value (no dangling references)
