@@ -1198,7 +1198,7 @@ static bool cap_parse_password_record(CapStr *tagged,
 }
 
 static bool cap_verify_password(CapStr *pw, CapStr *tagged) {
-    if (!pw || pw->len < 0 || (pw->len > 0 && !pw->data)) return false;
+    if (!pw || pw->len < 0 || !pw->data) return false;
     unsigned char salt[16] = {0}, want[32] = {0}, got[32] = {0};
     if (!cap_parse_password_record(tagged, salt, want)) {
         cap_wipe(salt, sizeof salt);
