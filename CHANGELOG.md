@@ -99,9 +99,11 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   levels, structured concurrency, typed views, checked shifts, entry-point policies, speculation
   hardening, bounded loops and declared formats; K0 projects the effect on the same CVEs
 - K0 review: the checked-in 2025 labels were produced by the same AI assistant that wrote the
-  classifier; independent human relabelling remains outstanding. The prior population scan omitted
-  delayed publications and the kernel UAF/double-free projection was unsupported by application
-  memory-safety guarantees. The old counts and percentages are superseded, not current assurance.
+  classifier; independent human relabelling remains outstanding. Held-out/tuning agreement is an
+  internal diagnostic, not accuracy or validation evidence, and the fixed sample files apply only to
+  the 2025 publication population. The prior population scan omitted delayed publications and the
+  kernel UAF/double-free projection was unsupported by application memory-safety guarantees. The old
+  counts and percentages are superseded, not current assurance.
 - K1.8 extended (speculatively constant-time secrets, automatic per-processor mitigations, CFI) and
   K1.10, proof against a specification: contracts, lock invariants, protocols, termination,
   non-interference between security domains, refinement for the core, an independent proof checker,
