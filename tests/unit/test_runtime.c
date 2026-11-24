@@ -419,8 +419,10 @@ static void test_gc_checked_arithmetic(void) {
     CHECK(cap_gc_next_capacity(64, 65, 64) == 128);
     CHECK(cap_gc_next_capacity(128, 128, 64) == 128);
     CHECK(cap_gc_reserve_pages(0) == CAP_MIN_THRESHOLD / (CAP_PAGE_SIZE / 2));
-    CHECK(cap_gc_reserve_pages(CAP_PAGE_SIZE / 2) == 1);
-    CHECK(cap_gc_reserve_pages(CAP_PAGE_SIZE) == 2);
+    CHECK(cap_gc_reserve_pages(CAP_PAGE_SIZE / 2) == CAP_MIN_THRESHOLD / (CAP_PAGE_SIZE / 2));
+    CHECK(cap_gc_reserve_pages(CAP_PAGE_SIZE) == CAP_MIN_THRESHOLD / (CAP_PAGE_SIZE / 2));
+    CHECK(cap_gc_reserve_pages(CAP_MIN_THRESHOLD) == CAP_MIN_THRESHOLD / (CAP_PAGE_SIZE / 2));
+    CHECK(cap_gc_reserve_pages(((size_t)16) << 20) == (((size_t)16) << 20) / (CAP_PAGE_SIZE / 2));
     CHECK(cap_gc_reserve_pages(SIZE_MAX) == SIZE_MAX / (CAP_PAGE_SIZE / 2));
     uintptr_t stack_low = 0, stack_high = 0;
     CHECK(cap_gc_stack_bounds(0x1000, 0x2000, &stack_low, &stack_high));
