@@ -36,8 +36,8 @@ int main() {
     if (frame_text_budget_valid(aggregate)) { return 7; }
 
     // Metadata is included, not just painted text.
-    string large = repeat_ascii(150000);
-    View metadata = box().key(large).hint(large);
+    string large = repeat_ascii(MAX_TEXT_BYTES);
+    View metadata = box().key(large).hint(large).label("x");
     if (frame_text_budget_valid(metadata)) { return 8; }
 
     if (frame_text_budget_valid(nested_view(MAX_DEPTH + 1))) { return 9; }
