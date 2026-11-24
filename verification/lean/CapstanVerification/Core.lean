@@ -63,12 +63,13 @@ inductive Trap where
   | instructionLimit
   deriving DecidableEq, Repr
 
-noncomputable def checkedI64 (x : Int) : Except Trap Int :=
-  if inI64 x then .ok x else .error .integerOverflow
+noncomputable def checkedI64 (x : Int) : Except Trap Int := by
+  classical
+  exact if inI64 x then .ok x else .error .integerOverflow
 
-def checkedAdd (a b : Int) : Except Trap Int := checkedI64 (a + b)
-def checkedSub (a b : Int) : Except Trap Int := checkedI64 (a - b)
-def checkedMul (a b : Int) : Except Trap Int := checkedI64 (a * b)
+noncomputable def checkedAdd (a b : Int) : Except Trap Int := checkedI64 (a + b)
+noncomputable def checkedSub (a b : Int) : Except Trap Int := checkedI64 (a - b)
+noncomputable def checkedMul (a b : Int) : Except Trap Int := checkedI64 (a * b)
 
 /-- Quotient required by CCAM: integer division truncated toward zero. -/
 def truncDiv (a b : Int) : Int :=
