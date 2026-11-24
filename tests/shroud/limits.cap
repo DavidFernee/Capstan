@@ -14,7 +14,12 @@ int main() {
     if (pixmap_size_valid(16385, 1) != false) { return 10; }
     Pixmap small = new_pixmap(2, 3);
     if (small.px.len() != 6) { return 11; }
-    if (glyph_mask_size_valid(512, 512) != true) { return 12; }
+    if (glyph_points_fit(16384, 4096) != true) { return 12; }
+    if (glyph_points_fit(4095, 4096) != false) { return 23; }
+    if (glyph_points_fit(-1, 1) != false) { return 24; }
+    if (glyph_component_available(1) != true) { return 25; }
+    if (glyph_component_available(0) != false) { return 26; }
+    if (glyph_mask_size_valid(512, 512) != true) { return 27; }
     if (glyph_mask_size_valid(513, 512) != false) { return 13; }
     if (glyph_mask_size_valid(0, 1) != false) { return 14; }
     if (glyph_cache_fits(786432, 262144) != true) { return 15; }
@@ -31,6 +36,6 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 20; }
         } else { return 21; }
     } else { return 22; }
-    println("resource limits: 17 assertions and glyph cache exercised");
+    println("resource limits: 22 assertions and glyph cache exercised");
     return 0;
 }
