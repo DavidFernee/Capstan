@@ -40,7 +40,7 @@ theorem RuntimeRegister.value?_of_initialized
     (reg : RuntimeRegister) (h : reg.initialized = true) :
     reg.value? = some reg.asVal := by
   cases reg with
-  | mk declaredType initialized intValue intValue_in_range boolValue =>
+  | mk declaredType initialized intValue _ boolValue =>
       cases htype : declaredType <;>
         simp [RuntimeRegister.value?, RuntimeRegister.asVal, h, htype]
 
