@@ -54,7 +54,7 @@ A compiler pass may reorder operations only where it proves the reordering obser
 
 ## 5. Memory and aggregate invariants — deferred machine extension
 
-These properties are required before the C-free machine can claim memory safety for structs, strings, lists, maps, optionals or closures:
+These properties are required before the C-free machine can claim memory safety for structs, strings, lists, maps, optionals or closures. The existing v0.6 runtime baseline is documented in [`docs/assurance/RUNTIME-MEMORY-MODEL.md`](../assurance/RUNTIME-MEMORY-MODEL.md): it uses a non-moving conservative mark-and-sweep collector, so false retention is possible and logical unreachability does not imply prompt reclamation. The C-free extension must specify its own abstract heap/lifetime semantics and prove or test its implementation refinement; it must not infer exact reachability or deterministic destruction from the presence of GC.
 
 - **Bounds:** every indexed access is within the live logical length, not merely allocated capacity. For compound assignment, the old-value read and final write are separate accesses; bounds/liveness must be revalidated or soundly proved preserved after the RHS because it may mutate the aggregate. A pre-RHS range proof alone cannot justify an unchecked post-RHS store.
 - **Lifetime:** every dereferenced object is live for the duration of the access.
@@ -73,6 +73,8 @@ The initial scalar CCAM does not establish these properties. Heap/GC and aggrega
 The current source language has distinct `Tainted`, `Html`, `LogText`, `Secret` and `Grant<P>` types. Their safety properties must be carried into typed IR and machine semantics, not erased during lowering.
 
 Required properties include:
+
+The current runtime memory-model document explicitly limits its secret wipe to best-effort reclamation-time behaviour; it does not guarantee prompt or complete erasure of all copies. The language-level `Secret` contract must remain no stronger than its allocator, register/stack, OS and external-storage assumptions.
 
 - **Taint preservation:** untrusted bytes remain tainted through concatenation, interpolation, slicing, decoding and aggregate storage unless a specified validator or context-appropriate escaper changes the type.
 - **Contextual output safety:** HTML, log, CSV, JSON, SQL and process-argument safety are distinct contexts; an escape for one context is not a universal sanitiser.
@@ -105,7 +107,7 @@ Every operation influenced by untrusted input must have an explicit resource con
 - Algorithmic complexity claims require adversarial tests, not only typical-case benchmarks.
 - Limit failure occurs before the prohibited allocation, state mutation or external effect.
 
-CCAM v0.1 initially accounts instruction steps and call depth only. It does not establish heap, IO or wall-clock bounds.
+CCAM v0.1 initially accounts instruction steps and call depth only. It does not establish heap, IO or wall-clock bounds. The current runtime's `cap_gc.heap` accounting is not process RSS and excludes collector metadata, native stacks and other external allocations; see the runtime memory-model document. A C-free heap quota must define its accounting domain and failure point explicitly.
 
 ## 9. Compiler and backend preservation obligations
 
