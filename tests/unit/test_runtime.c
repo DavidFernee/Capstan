@@ -407,7 +407,8 @@ static void test_runtime_growth_arithmetic(void) {
     CHECK(expect_runtime_panic(trigger_out_of_range_map_index_entry));
 }
 
-static void test_collections(void) {
+/* noinline: keep its 100,000-key map out of main's conservative root frame. */
+__attribute__((noinline)) static void test_collections(void) {
     CapMap *m = cap_map_new();
     for (int i = 0; i < 100000; i++) cap_map_set(m, cap_int_to_str(i), cap_vi(i));
     for (int i = 0; i < 100000; i += 997) cap_map_set(m, cap_int_to_str(i), cap_vi(-i));
