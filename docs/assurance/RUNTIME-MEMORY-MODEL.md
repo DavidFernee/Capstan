@@ -33,7 +33,7 @@ The collector uses 64 KiB pages for small allocations (up to 2 KiB), with one si
 
 Strings and hash-index storage are atomic: their bytes are not interpreted as references. Pointer-bearing structures, lists and maps use traced allocations. Secret allocations are pointer-free.
 
-The collector's allocation kind must not be confused with a source-level confidentiality label. Copying secret bytes into an ordinary string, stack buffer, file, environment, register, or foreign API does not cause those copies to inherit the secret allocation kind.
+The collector's allocation kind must not be confused with a source-level confidentiality label. Copying secret bytes into an ordinary string, stack buffer, file, environment, register, or foreign API does not cause those copies to inherit the secret allocation kind. The declared `CAP_MAX_LEN` is not yet enforced at the central allocator entry point on current main; PR #98 adds that central check together with checked accounting.
 
 ## 3. Roots and reachability
 
@@ -123,7 +123,7 @@ cap_gc.heap =
 
 The exact definition of “retained” must track successful OS release/recommit operations. Collector metadata is excluded. The current mainline's page-release path does not check the return value of `madvise` before marking a page released and decrementing `cap_gc.heap`; this is an outstanding correctness issue addressed separately in the GC safety workstream. Consequently, the counter is not yet a fully reliable measurement of resident managed backing on every OS path.
 
-The current mainline also contains unchecked arithmetic in allocator accounting and metadata capacity growth. The separate allocator-hardening workstream (PR #98) adds checked arithmetic, strict heap-limit parsing and bounded metadata growth; until that change is integrated and validated, the corresponding stronger invariants are proposed requirements, not current guarantees.
+The current mainline also contains unchecked arithmetic in allocator accounting and metadata capacity growth, and its default physical-memory limit calculation can overflow on extreme platform values. The central allocator does not yet enforce `CAP_MAX_LEN` for every direct allocation. The separate allocator-hardening workstream (PR #98) adds checked arithmetic, strict heap-limit parsing, a bounded physical-memory calculation and bounded metadata growth; until that change is integrated and validated, the corresponding stronger invariants are proposed requirements, not current guarantees. Large-object sweep also decrements `cap_gc.heap` without an explicit underflow check on current main.
 
 ## 7. Synchronisation and threads
 
