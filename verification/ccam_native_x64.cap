@@ -324,6 +324,7 @@ test "CCAM x86-64 backend emits freestanding checked native assembly" {
     assert(ccam_x64_contains(native.assembly, "cap_max_depth: .quad 16"));
     assert(!ccam_x64_contains(native.assembly, "#include"));
     assert(!ccam_x64_contains(native.assembly, "capstan_rt"));
+    assert(write_file("build/ccam-native-x64.s", native.assembly));
 }
 
 test "CCAM x86-64 backend rejects unsupported argument counts" {
