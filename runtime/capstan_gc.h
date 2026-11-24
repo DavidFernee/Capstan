@@ -167,6 +167,12 @@ static size_t cap_gc_reserve_pages(size_t live) {
     return threshold / (CAP_PAGE_SIZE / 2);
 }
 
+/* Test-only observation point: production builds have no callback or injection
+   control. The callback runs after the volatile wipe and before munmap. */
+#ifdef CAP_GC_TESTING
+static void (*cap_gc_test_secret_wipe_hook)(const void *, size_t) = NULL;
+#endif
+
 /* Volatile stores prevent the compiler from deleting a wipe whose only purpose
    is to erase data before the storage is reused or released. */
 static void cap_gc_wipe(void *memory, size_t n) {
@@ -648,6 +654,10 @@ CAP_NO_SANITIZE static void cap_gc_collect(void) {
         } else {
             if (l.atomic == 2) {
                 cap_gc_wipe(l.base, l.alloc_size);
+#ifdef CAP_GC_TESTING
+                if (cap_gc_test_secret_wipe_hook)
+                    cap_gc_test_secret_wipe_hook(l.base, l.alloc_size);
+#endif
                 if (munmap(l.base, l.alloc_size) != 0)
                     cap_panic("unable to release wiped secret mapping", "CWE-244", 0);
             } else {
