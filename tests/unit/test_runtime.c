@@ -328,6 +328,49 @@ static void test_files(void) {
     rmdir(dir);
 }
 
+static int expect_runtime_panic(void (*fn)(void));
+static void trigger_negative_string_length(void) {
+    (void)cap_str_new(NULL, -1);
+}
+static void trigger_null_string_source(void) {
+    (void)cap_str_new(NULL, 1);
+}
+static void trigger_negative_permanent_string_length(void) {
+    (void)cap_str_perm(NULL, -1);
+}
+static void trigger_string_expansion_overflow(void) {
+    (void)cap_rt_checked_string_bytes(INT64_MAX, 6, 1, 0);
+}
+static void trigger_escape_length_overflow(void) {
+    CapStr forged = {.len = INT64_MAX};
+    (void)cap_escape_html(&forged);
+}
+static void trigger_concat_invalid_operand(void) {
+    CapStr bad = {.len = -1};
+    CapStr good = {.len = 1};
+    (void)cap_str_concat(&bad, &good, 0);
+}
+static void trigger_join_invalid_collection(void) {
+    CapList parts = {.len = 2, .cap = 1, .items = NULL};
+    (void)cap_join(&parts, CAP_LIT("", 0), 0);
+}
+static void test_string_allocation_bounds(void) {
+    CHECK(expect_runtime_panic(trigger_negative_string_length));
+    CHECK(expect_runtime_panic(trigger_null_string_source));
+    CHECK(expect_runtime_panic(trigger_negative_permanent_string_length));
+    CHECK(expect_runtime_panic(trigger_string_expansion_overflow));
+    CHECK(expect_runtime_panic(trigger_escape_length_overflow));
+    CHECK(expect_runtime_panic(trigger_concat_invalid_operand));
+    CHECK(expect_runtime_panic(trigger_join_invalid_collection));
+    size_t max_plain = CAP_MAX_LEN - sizeof(CapStr) - 1;
+    CHECK(cap_rt_checked_string_bytes((int64_t)max_plain, 1, 1, 0) == CAP_MAX_LEN);
+    size_t max_html = (CAP_MAX_LEN - sizeof(CapStr) - 1) / 6;
+    CHECK(cap_rt_checked_string_bytes((int64_t)max_html, 6, 1, 0) ==
+          sizeof(CapStr) + max_html * 6 + 1);
+    CapStr *plain = cap_str_new("abc", 3);
+    CHECK(plain->len == 3 && memcmp(plain->data, "abc", 3) == 0);
+}
+
 /* Shifts and wrapping arithmetic at the edges of the 64-bit range (no panics here;
    the stops are covered by tests/runtime/shift_*.cap). */
 static int expect_runtime_panic(void (*fn)(void));
@@ -746,6 +789,7 @@ int main(void) {
     test_secret_eq();
     test_files();
     test_bitwise();
+    test_string_allocation_bounds();
     test_gc_allocator_arithmetic();
     test_runtime_growth_arithmetic();
     test_collections();
