@@ -38,7 +38,7 @@ def runtimeRegisterAt (registers : List RuntimeRegister) (index : Nat) :
 def runtimeSetAt : List RuntimeRegister → Nat → RuntimeRegister → List RuntimeRegister
   | [], _, _ => []
   | _ :: rest, 0, replacement => replacement :: rest
-  | head :: rest, index + 1, replacement =>
+  | head :: rest, Nat.succ index, replacement =>
       head :: runtimeSetAt rest index replacement
 
 /-- The replacement is found at the index that was updated. -/
