@@ -127,11 +127,12 @@ def main():
         accepted = os.path.join(tmp, "accepted.png")
         rejected = os.path.join(tmp, "must_not_exist.png")
         binary = os.path.join(tmp, "all_bytes.bin")
+        gallery = os.path.join(tmp, "gallery_560x520.png")
         run([capstanc, "build", "--strict", "-o", c_source] + LIB +
             ["tests/shroud/png_budget.cap"])
         run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), c_source, "-o", exe])
-        result = run([exe, accepted, rejected, binary])
-        if "png budget: 20 assertions" not in result.stdout:
+        result = run([exe, accepted, rejected, binary, gallery])
+        if "png budget: 21 assertions" not in result.stdout:
             fail(f"regression program did not report its assertions: {result.stdout!r}")
         if not os.path.isfile(accepted):
             fail("accepted PNG was not written")
@@ -156,9 +157,22 @@ def main():
             row = raw[y * len(expected_row):(y + 1) * len(expected_row)]
             if row != expected_row:
                 fail(f"decoded pixels differ on row {y}")
-        print(f"png budget: 20 Capstan assertions; {width}x{height} RGBA; "
-              f"{blocks} stored DEFLATE blocks; CRC, zlib, Adler and every pixel verified; "
-              "over-budget write produced no file")
+
+        gallery_width, gallery_height, gallery_idat = parse_png(gallery)
+        if (gallery_width, gallery_height) != (560, 520):
+            fail(f"reference-gallery export has dimensions {gallery_width}x{gallery_height}")
+        gallery_raw_length = (1 + 4 * gallery_width) * gallery_height
+        gallery_blocks = check_stored_deflate(gallery_idat, gallery_raw_length)
+        gallery_raw = zlib.decompress(gallery_idat)
+        gallery_row = b"\\x00" + bytes((0x33, 0x66, 0x99, 0xFF)) * gallery_width
+        for y in range(gallery_height):
+            row = gallery_raw[y * len(gallery_row):(y + 1) * len(gallery_row)]
+            if row != gallery_row:
+                fail(f"560x520 gallery-size decoded pixels differ on row {y}")
+        print(f"png budget: 21 Capstan assertions; {width}x{height} RGBA / "
+              f"{gallery_width}x{gallery_height} gallery-size RGBA; "
+              f"{blocks} / {gallery_blocks} stored DEFLATE blocks; CRC, zlib, Adler "
+              "and every pixel verified; over-budget write produced no file")
 
 
 if __name__ == "__main__":
