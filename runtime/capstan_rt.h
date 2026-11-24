@@ -1139,6 +1139,47 @@ static CapStr *cap_secret_env(CapStr *name) {
 
 static void cap_wipe(void *p, size_t n) { volatile unsigned char *w = (volatile unsigned char *)p; while (n--) *w++ = 0; }
 
+/* Explicit-lifetime scratch for native cryptographic code. Unlike cap_alloc_secret,
+   this storage is not GC-managed: the owner must destroy it on every exit path.
+   Do not copy this descriptor or retain aliases to data after destruction. */
+typedef struct CapSecretScratch {
+    unsigned char *data;
+    size_t len;
+    bool active;
+} CapSecretScratch;
+
+#ifdef CAP_SECRET_SCRATCH_TEST_HOOK
+static void (*cap_secret_scratch_test_wipe_hook)(const void *, size_t);
+#endif
+
+static bool cap_secret_scratch_init(CapSecretScratch *scratch, size_t n) {
+    if (!scratch || scratch->active || scratch->data || scratch->len != 0 || n > CAP_MAX_LEN)
+        return false;
+    unsigned char *memory = NULL;
+    if (n != 0) {
+        memory = (unsigned char *)malloc(n);
+        if (!memory) return false;
+        memset(memory, 0, n);
+    }
+    scratch->data = memory;
+    scratch->len = n;
+    scratch->active = true;
+    return true;
+}
+
+static void cap_secret_scratch_destroy(CapSecretScratch *scratch) {
+    if (!scratch || !scratch->active) return;
+    if (scratch->data) {
+        cap_wipe(scratch->data, scratch->len);
+#ifdef CAP_SECRET_SCRATCH_TEST_HOOK
+        if (cap_secret_scratch_test_wipe_hook)
+            cap_secret_scratch_test_wipe_hook(scratch->data, scratch->len);
+#endif
+        free(scratch->data);
+    }
+    cap_wipe(scratch, sizeof *scratch);
+}
+
 static bool cap_ct_eq(const char *a, int64_t an, const char *b, int64_t bn) {
     unsigned char d = (unsigned char)(an != bn);
     int64_t n = an < bn ? an : bn;
