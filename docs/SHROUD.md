@@ -132,6 +132,7 @@ events. It writes each frame as a PNG, in both themes, plus the accessibility tr
 | Resource exhaustion (CWE-400, CWE-674, CWE-789) | Limits on font size (32 MiB), points per glyph, composite depth and parts, curve segments, glyph size (four ems), cached glyphs, pixmap size, views per interface, nesting depth, and text-field length. |
 | Smuggled line breaks | Text typed or pasted into a one-line field loses its control characters, so a paste cannot add a newline to a value written to a log or header. |
 | Inconsistent rendering hiding content | Deterministic integer rendering: what a test sees is exactly what a user sees, on every platform. |
+| Duplicate widget identities (hit-test confusion) | Duplicate explicit `View.key()` values are assigned distinct per-frame laid-out IDs, and the duplicate is reported by `a11y_problems()`. This prevents `hit_id()` and `find_laid()` from resolving the same hit to different widgets. Applications should still provide unique stable keys; the diagnostic does not make duplicate-key state retention meaningful. |
 
 Planned (section 8): `SecureField` producing `Secret` values, screen-capture protection for
 windows that show secrets, taint-aware clipboard (pasted text is `Tainted`, copying from password
