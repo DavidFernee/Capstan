@@ -128,10 +128,12 @@ remains a provisional architecture, not a fully operational end-to-end proof too
 ### Independent-checker reproducibility
 
 The first Nanoda integration used the upstream `lean-action` convenience input. Its
-pinned action revision nevertheless clones the Nanoda `debug` branch and the
-`lean4export` default branch at runtime. That is not sufficiently reproducible for
-Capstan's assurance standard, so the project workflow does **not** use that convenience
-input.
+pinned action revision clones mutable branches at runtime, which is not sufficiently
+reproducible for Capstan's assurance standard. The project workflow therefore builds
+Nanoda from pinned source revisions rather than using that convenience input. The first
+pinned Nanoda revision (the older `debug` branch) proved incompatible with the current
+JSON export format; the project has moved to the signed upstream master commit listed
+above, whose README documents the JSON export interface.
 
 The project now builds the independent checker from explicit source revisions:
 
@@ -139,7 +141,7 @@ The project now builds the independent checker from explicit source revisions:
 - lean4export: `leanprover/lean4export` commit
   `df81913eee5519d5a88ae5b0fd701b5298cc29ab`.
 - nanoda_lib: `ammkrn/nanoda_lib` commit
-  `e5438ac0a85a036b6dfe093aa457bc3448498014`.
+  `0da9f98feadd3a0a2ef4b3dbcf52a298a6fef929` (signed upstream master commit, Nanoda 0.4.32).
 - Rust/Cargo: `1.100.0`.
 - Nanoda Rust dependencies: the `Cargo.lock` committed at the pinned nanoda_lib
   revision, enforced with `cargo build --locked`.
