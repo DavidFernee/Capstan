@@ -170,17 +170,23 @@ static char cap_altstack[65536];
 
 static void cap_segv_handler(int sig, siginfo_t *si, void *uc) {
     (void)sig; (void)uc;
-    char *a = (char *)si->si_addr;
-    const char *msg;
-    int code = 101;
-    if (cap_stack_low && a < cap_stack_low + 65536 && a + (1 << 24) > cap_stack_low) {
-        msg = "runtime check failed: stack overflow, recursion too deep [CWE-674 prevented]\n";
-    } else {
-        msg = "capstan: internal error: invalid memory access; please report this as a bug\n";
-        code = 105;
+    uintptr_t address = (uintptr_t)si->si_addr;
+    uintptr_t low = (uintptr_t)cap_stack_low;
+    uintptr_t lower = low > ((uintptr_t)1 << 24) ? low - ((uintptr_t)1 << 24) : 0;
+    uintptr_t upper = low > UINTPTR_MAX - 65536 ? UINTPTR_MAX : low + 65536;
+    static const char overflow_msg[] =
+        "runtime check failed: stack overflow, recursion too deep [CWE-674 prevented]\n";
+    static const char fault_msg[] =
+        "capstan: internal error: invalid memory access; please report this as a bug\n";
+    const char *msg = fault_msg;
+    size_t msg_len = sizeof fault_msg - 1;
+    int code = 105;
+    if (cap_stack_low && address >= lower && address < upper) {
+        msg = overflow_msg;
+        msg_len = sizeof overflow_msg - 1;
+        code = 101;
     }
-    ssize_t w = write(2, msg, strlen(msg));
-    (void)w;
+    (void)write(2, msg, msg_len);
     _exit(code);
 }
 
@@ -190,14 +196,15 @@ static void cap_install_stack_guard(char *low) {
     ss.ss_sp = cap_altstack;
     ss.ss_size = sizeof cap_altstack;
     ss.ss_flags = 0;
-    if (sigaltstack(&ss, NULL) != 0) return;
+    if (sigaltstack(&ss, NULL) != 0)
+        cap_panic("unable to install stack overflow signal stack", "CWE-674", 0);
     struct sigaction sa;
     memset(&sa, 0, sizeof sa);
     sa.sa_sigaction = cap_segv_handler;
     sa.sa_flags = SA_SIGINFO | SA_ONSTACK;
     sigemptyset(&sa.sa_mask);
-    sigaction(SIGSEGV, &sa, NULL);
-    sigaction(SIGBUS, &sa, NULL);
+    if (sigaction(SIGSEGV, &sa, NULL) != 0 || sigaction(SIGBUS, &sa, NULL) != 0)
+        cap_panic("unable to install stack overflow signal handler", "CWE-674", 0);
 }
 
 static void cap_gc_init(void) {
@@ -206,14 +213,21 @@ static void cap_gc_init(void) {
     cap_gc.threshold = CAP_MIN_THRESHOLD;
     cap_gc.lo = UINTPTR_MAX;
     const char *s = getenv("CAPSTAN_GC_STRESS");
-    if (s) cap_gc.stress = atol(s);
+    if (s) {
+        char *end;
+        errno = 0;
+        long value = strtol(s, &end, 10);
+        if (s == end || *end != '\0' || errno == ERANGE || value < 0)
+            cap_panic("invalid CAPSTAN_GC_STRESS value", "CWE-20", 0);
+        cap_gc.stress = value;
+    }
     if (getenv("CAPSTAN_GC_STATS")) { cap_gc.stats = 1; atexit(cap_gc_report); }
     const char *mh = getenv("CAPSTAN_MAX_HEAP");
     if (mh) {
         char *end;
         errno = 0;
         unsigned long long v = strtoull(mh, &end, 10);
-        if (mh == end || errno == ERANGE)
+        if (mh == end || errno == ERANGE || mh[0] == '-')
             cap_panic("invalid CAPSTAN_MAX_HEAP value", "CWE-20", 0);
         unsigned shift = 0;
         if (*end == 'K' || *end == 'k') shift = 10;
