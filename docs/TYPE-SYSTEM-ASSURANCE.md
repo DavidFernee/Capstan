@@ -61,6 +61,8 @@ PR #49 currently says a type/interface pair has at most one implementation in a 
 
 Recommended initial rule:
 
+**Compilation-unit boundary:** for the current source-import model, one compilation unit is the root source plus the transitive closure of its imports after canonical source deduplication. Every implementation in that closure participates in one coherence check, even when the defining source is not directly imported by the root. Separate compiler invocations are separate units unless a future package/link model explicitly combines them; that future boundary must repeat the uniqueness check before executable output is produced.
+
 1. An `impl Interface for Type` must be declared in the module defining either `Interface` or `Type` (an orphan restriction).
 2. The compiler collects implementation identities across all transitively imported modules before resolving constrained generic calls.
 3. Two implementations for the same resolved pair are an error, including when they originate in separate files or are imported through different paths.
@@ -69,6 +71,8 @@ Recommended initial rule:
 6. A public implementation cannot expose a private interface or implementing type through a public signature.
 
 Required fixtures should include a three-module diamond import, two modules independently implementing the same pair, and an import-order permutation. If Capstan later supports separately compiled modules, the same uniqueness rule must be enforced at the link/package boundary; per-file checks alone are insufficient.
+
+The orphan rule must be evaluated using resolved `DeclId` ownership, not matching short names. Two modules that each declare a type named `Widget` define different nominal types; an implementation of an interface for one must not satisfy a constraint on the other. Conversely, duplicate implementations for the same resolved pair must be rejected even if the source files are reached through different import paths that canonicalize to the same module.
 
 ## 4. Recursive types versus expanding instantiation
 
