@@ -17,7 +17,8 @@ The current compiler wrapper emits C and therefore still requires the existing C
 ## Run against tracked files
 
 ```sh
-git ls-files -z | xargs -0 build/capstan-inventory --output build/inventory.csv --
+mapfile -d '' -t tracked < <(git ls-files -z)
+build/capstan-inventory --output build/inventory.csv -- "${tracked[@]}"
 ```
 
 For a small explicit selection:
