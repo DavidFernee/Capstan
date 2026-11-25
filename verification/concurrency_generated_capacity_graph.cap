@@ -376,9 +376,9 @@ test "CSG duplicate cancellation and stale wake are rejected without mutation" {
     CSGState blocked = csg_step(csg_initial(), CSG_SEND_SECOND).next;
     CSGState cancelled = csg_step(blocked, CSG_CANCEL_PRODUCER).next;
     CSGStep duplicate = csg_step(cancelled, CSG_CANCEL_PRODUCER);
-    CSGStep stale_receive = csg_step(cancelled, CSG_RECEIVE_FIRST);
+    CSGStep stale_send = csg_step(cancelled, CSG_SEND_SECOND);
     assert(!duplicate.enabled && csg_key(duplicate.next) == csg_key(cancelled));
-    assert(!stale_receive.enabled && csg_key(stale_receive.next) == csg_key(cancelled));
+    assert(!stale_send.enabled && csg_key(stale_send.next) == csg_key(cancelled));
 }
 
 test "CSG second queued message is received only after first slot is freed" {
