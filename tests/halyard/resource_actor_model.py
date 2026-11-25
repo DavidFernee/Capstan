@@ -209,8 +209,31 @@ def explore():
     return len(seen), transitions, max_queue
 
 
+def demonstrate_shared_check_commit_race():
+    # Two unsynchronised callers both observe one free unit before either commits.
+    observed_free_by_a = 1
+    observed_free_by_b = 1
+    assert observed_free_by_a >= 1 and observed_free_by_b >= 1
+    committed_usage = 0
+    committed_usage += 1
+    committed_usage += 1
+    assert committed_usage == 2  # counterexample: limit was one
+
+    # A linearized shared-ledger operation (or the actor) serializes admission.
+    atomic_usage = 0
+    admitted = []
+    for _ in range(2):
+        if atomic_usage + 1 <= 1:
+            atomic_usage += 1
+            admitted.append(True)
+        else:
+            admitted.append(False)
+    assert admitted == [True, False] and atomic_usage == 1
+
+
 def main():
     direct_regressions()
+    demonstrate_shared_check_commit_race()
     states, transitions, max_queue = explore()
     assert max_queue == QUEUE_CAPACITY
     print("Halyard actor model: PASS")
@@ -219,6 +242,8 @@ def main():
     print(f"maximum inbox occupancy: {max_queue}/{QUEUE_CAPACITY}")
     print("invariants: bounded queue, FIFO processing, unique request ownership,")
     print("            budget soundness, atomic failed admission, one-shot release")
+    print("comparison: split check/commit admits an over-budget interleaving;")
+    print("            linearized admission rejects the second reservation")
 
 
 if __name__ == "__main__":
