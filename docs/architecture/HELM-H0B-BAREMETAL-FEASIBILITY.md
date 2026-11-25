@@ -21,12 +21,12 @@ Repository evidence was inspected on the default branch at the source snapshot e
 |---|---|---|
 | `verification/ccam_native_x64.cap` | Capstan-written scalar x86-64 assembly emitter; validates multi-function CCAM before emission; explicit instruction/register/stack ceilings; checked arithmetic, branches, direct calls, return/trap handling | Linux process entry/exit and scalar-only CCAM; no arbitrary memory, device I/O or privileged instruction contract |
 | `docs/architecture/CCAM-NATIVE-BACKEND.md` | Documents GNU `as` and `ld`, freestanding ELF, System V AMD64, no C target output/runtime | Header still says “under review in PR #212”, which is stale: PR #212 is closed and merged |
-| `docs/architecture/CCAM.md` | Defines CCAM v0.1 as typed scalar machine and explicitly excludes IO, concurrency, heap objects and other effects | Header's “proposed in PR #212” native-backend status is stale |
+| `docs/architecture/CCAM.md` | Defines CCAM v0.1 as typed scalar machine and explicitly excludes IO, concurrency, heap objects and other effects | Its initial “proposed in PR #212” native-backend status was stale; corrected in this PR |
 | `tests/run.sh` | Invokes the Capstan-native backend tests; on Linux x86-64 runs GNU `as --64`, GNU `ld`, `readelf`, `nm`, then executes ten generated ELF cases | No QEMU invocation or kernel image test in this test section |
 | `Makefile` | Default compiler bootstrap remains Python-seeded and C-generating, then compiled with the host C compiler and Capstan C runtime | This is still part of the compiler/build trusted path; it is not a C-free end-to-end bootstrap |
 | `docs/C-FREE-BOOTSTRAP.md` | Defines the intended C-free bootstrap and platform boundary | Normative target is incomplete; do not claim the compiler itself is C-free |
 
-The inspected native backend PR #212 is merged. PR #213, the native CLI work, is closed without merge. The current kernel work must not assume a production target-selecting native compiler command exists.
+The inspected native backend PR #212 is merged. PR #213, the native CLI work, is closed without merge. The two stale status headers are corrected in this branch. The current kernel work must not assume a production target-selecting native compiler command exists.
 
 This is a source review only. The test script was inspected, not executed in this environment. The presence of a test is not a passing test result.
 
