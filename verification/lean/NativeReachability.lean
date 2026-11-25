@@ -130,10 +130,11 @@ theorem sweep_does_not_create_objects
 the exact table/domain snapshot from which the frame was constructed. -/
 theorem root_frame_entries_are_resolved
     {slotCount : Nat} {table : SlotTable slotCount Nat} {domain : Nat}
-    (frame : RootFrame table domain) (root : ResolvedRoot table domain)
-    (member : root ∈ frame) :
-    resolveHandle table domain root.handle = some root.objectId :=
-  root.resolves
+    (frame : RootFrame table domain) :
+    ∀ root, root ∈ frame →
+      resolveHandle table domain root.handle = some root.objectId := by
+  intro root _member
+  exact root.resolves
 
 #print axioms CapstanNativeReachability.reachable_is_marked
 #print axioms CapstanNativeReachability.sweep_preserves_reachable
