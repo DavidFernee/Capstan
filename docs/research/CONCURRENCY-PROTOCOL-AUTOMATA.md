@@ -15,6 +15,24 @@ ends; and interprets one enabled transition without mutating state on
 rejection. The first conformance fixture is a linear-message protocol.
 
 This implementation is deliberately narrower than the full design above.
+
+The descriptor now carries a per-transition contract containing a message-type
+tag, owner-before and owner-after identities, a bounded resource delta, and an
+effect class (allocation, transfer, or release). Validation requires these
+fields to agree with the acting role and transition shape. The resource-aware
+interpreter checks the message type and current owner, uses subtraction-based
+budget admission, and returns the original state/owner/resource values on
+rejection.
+
+A separate executable bridge,
+`verification/concurrency_protocol_refinement.cap`, maps the concrete
+one-byte task/channel model's normal `produce → send → receive → release`
+transitions to the abstract automaton. It checks both state correspondence
+and ownership/resource correspondence at each step, plus a negative
+inconsistent-queue case. Cancellation/abort, failure paths, multiple messages,
+variable-size resources, native scheduling and compiler/runtime refinement
+remain outside this bridge. This is a bounded refinement check for one
+protocol slice, not a general refinement theorem.
 It does not yet encode endpoint ownership, message types, effects,
 capabilities, resource deltas, cancellation cleanup, duality between
 endpoints, or compiler refinement. The validator/interpreter is a research
