@@ -20,12 +20,14 @@ const int F1_CTX_ALL = 15;
 const int F1_AUTH_FS_READ = 1;
 const int F1_AUTH_FS_WRITE = 2;
 const int F1_AUTH_NET = 4;
-const int F1_AUTH_SECRET = 8;\nconst int F1_AUTH_ALL = 15;
+const int F1_AUTH_SECRET = 8;
+const int F1_AUTH_ALL = 15;
 
 const int F1_EFFECT_IO = 1;
 const int F1_EFFECT_ALLOC = 2;
 const int F1_EFFECT_CRYPTO = 4;
-const int F1_EFFECT_SPAWN = 8;\nconst int F1_EFFECT_ALL = 15;
+const int F1_EFFECT_SPAWN = 8;
+const int F1_EFFECT_ALL = 15;
 
 const int F1_I64_MAX = 0x7FFFFFFFFFFFFFFF;
 
