@@ -464,3 +464,28 @@ A 1.0 release is not a prototype with a SQL prompt. It requires:
 - external review and a published residual risk register.
 
 The first deliverable is BL-001 through BL-004: transaction semantics, independent history checker, transaction state machine and storage fault model. These make every subsequent algorithm decision testable.
+
+
+## BL1.2 — independent storage oracle
+
+The first conformance oracle is deliberately represented differently from the
+implementation. The implementation stores a list of region objects, each with
+its own backing byte list, and maintains aggregate counters. The oracle stores
+one flat byte vector plus disjoint region start/capacity/used/generation vectors;
+aggregate capacity and reservation totals are recomputed from those vectors.
+
+The oracle independently models region admission, bump reservation, reference
+validity, exact byte writes and region reset. Conformance vectors compare:
+- each admission and reservation decision;
+- aggregate capacity and used-byte totals;
+- region capacities, offsets, generations and every logical payload byte;
+- rejection of malformed writes without state mutation; and
+- invalidation of old references after reset.
+
+This is bounded executable differential testing, not a formal proof. It does
+not yet cover allocation failure, hostile mutation, concurrency, persistent
+storage, crash recovery, or all possible operation sequences. It also shares
+the language/runtime and test harness with the implementation, so it is not an
+independent implementation in a second toolchain. The next increment should
+add deterministic exhaustive short-sequence generation and mutation testing,
+then a separately reviewed refinement argument.
