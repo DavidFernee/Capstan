@@ -123,6 +123,12 @@ def check_outcome(record, where: str) -> None:
         require(set(outcome) == {"kind"}, f"{where}: {kind} outcome has unexpected payload")
 
 
+def check_step_budget(value, where: str) -> None:
+    require(isinstance(value, int) and not isinstance(value, bool)
+            and 0 <= value <= MAX_VECTOR_STEPS,
+            f"{where}: max_steps must be in [0, {MAX_VECTOR_STEPS}]")
+
+
 def check_instruction(instruction, registers, instruction_count: int,
                       return_type: str, where: str, allow_trap: bool = False,
                       validate_semantics: bool = True) -> None:
@@ -261,10 +267,7 @@ def main() -> int:
                         f"{where}: unsupported register type")
                 require(vector["return_type"] in ("int", "bool", "void"),
                         f"{where}: unsupported return type")
-                require(isinstance(vector["max_steps"], int) and
-                        not isinstance(vector["max_steps"], bool) and
-                        0 <= vector["max_steps"] <= MAX_VECTOR_STEPS,
-                        f"{where}: max_steps must be in [0, {MAX_VECTOR_STEPS}]")
+                check_step_budget(vector["max_steps"], where)
                 require(isinstance(vector["instructions"], list) and vector["instructions"],
                         f"{where}: instructions must be a non-empty array")
                 require(len(vector["instructions"]) <= MAX_INSTRUCTIONS,
