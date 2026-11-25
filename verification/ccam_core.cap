@@ -1773,3 +1773,54 @@ test "CCAM validator enforces return contracts and terminal paths" {
     result = ccam_validate_single_frame(ints, loop, CCAM_RETURN_INT);
     assert(result.ok);
 }
+
+test "CCAM evaluator returns zero for minimum remainder negative one" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = CCAM_I64_MIN;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = -1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_REM_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 2;
+    code.push(i);
+
+    CCAMMachineCreateResult created = ccam_machine_create_validated(
+        types, code, 4, CCAM_RETURN_INT);
+    assert(created.ok);
+    CCAMMachineState state = created.state;
+    for (int step = 0; step < 4; step += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.halt_has_value && state.halt_value == 0);
+    assert(state.steps == 4 && state.trap_code == "");
+}
+
+test "CCAM validator accepts unreachable nonterminal final instruction" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction loop = ccam_instruction(CCAM_OP_JUMP);
+    loop.target = 0;
+    code.push(loop);
+    CCAMInstruction unreachable_write = ccam_instruction(CCAM_OP_CONST_I);
+    unreachable_write.dst = 0;
+    unreachable_write.int_value = 1;
+    code.push(unreachable_write);
+
+    CCAMValidationResult result = ccam_validate_single_frame(
+        types, code, CCAM_RETURN_INT);
+    assert(result.ok);
+}
