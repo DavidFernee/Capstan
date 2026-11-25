@@ -6,6 +6,78 @@ import "mp4.cap";
 import "mp4_tables.cap";
 import "mp4_sample_entries.cap";
 
+List<int> deadeye_mp4_track_list_4(int v0, int v1, int v2, int v3) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    return out;
+}
+
+List<int> deadeye_mp4_track_list_12(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    return out;
+}
+
+List<int> deadeye_mp4_track_list_16(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11, int v12, int v13, int v14, int v15) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    out.push(v12);
+    out.push(v13);
+    out.push(v14);
+    out.push(v15);
+    return out;
+}
+
+List<int> deadeye_mp4_track_list_20(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11, int v12, int v13, int v14, int v15, int v16, int v17, int v18, int v19) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    out.push(v12);
+    out.push(v13);
+    out.push(v14);
+    out.push(v15);
+    out.push(v16);
+    out.push(v17);
+    out.push(v18);
+    out.push(v19);
+    return out;
+}
+
 const int DEADEYE_MP4_MAX_TRACK_BOXES = 512;
 
 struct DeadeyeMp4Track {
@@ -687,17 +759,13 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
     List<int> stbl = new List<int>();
     deadeye_mp4_test_push_box(stbl,'s','t','s','d',
         deadeye_mp4_se_test_stsd(deadeye_mp4_se_test_sowt()));
-    deadeye_mp4_test_push_box(stbl,'s','t','t','s',
-        [0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,40]);
-    deadeye_mp4_test_push_box(stbl,'s','t','s','c',
-        [0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1]);
-    deadeye_mp4_test_push_box(stbl,'s','t','s','z',
-        [0,0,0,0,0,0,0,4,0,0,0,1]);
-    deadeye_mp4_test_push_box(stbl,'s','t','c','o',
-        [0,0,0,0,0,0,0,1,0,0,1,128]); // absolute mdat payload offset 384
+    deadeye_mp4_test_push_box(stbl,'s','t','t','s',deadeye_mp4_track_list_16(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 40));
+    deadeye_mp4_test_push_box(stbl,'s','t','s','c',deadeye_mp4_track_list_20(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1));
+    deadeye_mp4_test_push_box(stbl,'s','t','s','z',deadeye_mp4_track_list_12(0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1));
+    deadeye_mp4_test_push_box(stbl,'s','t','c','o',deadeye_mp4_track_list_12(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 128)); // absolute mdat payload offset 384
 
     List<int> url = new List<int>();
-    deadeye_mp4_test_push_box(url,'u','r','l',' ',[0,0,0,1]);
+    deadeye_mp4_test_push_box(url,'u','r','l',' ',deadeye_mp4_track_list_4(0, 0, 0, 1));
     List<int> dref_payload = new List<int>();
     dref_payload.push(0);
     dref_payload.push(0);
@@ -834,7 +902,7 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
     List<int> moov = new List<int>();
     deadeye_mp4_test_push_box(moov,'m','o','o','v',moov_payload);
     deadeye_mp4_test_push_box(file,'m','o','o','v',moov_payload);
-    deadeye_mp4_test_push_box(file,'m','d','a','t',[1,2,3,4]);
+    deadeye_mp4_test_push_box(file,'m','d','a','t',deadeye_mp4_track_list_4(1, 2, 3, 4));
 
     DeadeyeMp4BoxResult moov_box = deadeye_mp4_box_read(
         file, file.len() - moov.len() - 12, file.len()
