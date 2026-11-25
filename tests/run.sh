@@ -287,6 +287,18 @@ else
   echo "  skip  sanitizers not available for $CC"
 fi
 
+
+section "halyard: Capstan-native Media Core, Shanty and Deadeye"
+for media_file in "$ROOT/lib/halyard/core.cap" "$ROOT/lib/halyard/shanty.cap" "$ROOT/lib/halyard/deadeye.cap"; do
+  media_name="${media_file#$ROOT/}"
+  if out="$( "$ROOT/bin/capstan" test "$media_file" 2>&1)"; then
+    ok "$media_name ($out)"
+  else
+    bad "$media_name" "$out"
+  fi
+done
+
+
 section "gc"
 "$C" build -o "$tmp/churn.c" "$ROOT/tests/gc/churn.cap" >/dev/null && "$CC" $CFLAGS "$tmp/churn.c" -o "$tmp/churn"
 stats="$(CAPSTAN_GC_STATS=1 "$tmp/churn" 2>&1 >/dev/null)"
