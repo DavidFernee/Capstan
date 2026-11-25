@@ -1,10 +1,12 @@
 # Compiler Contract: Lowering the Checked Source Core to CCAM
 
-**Status:** compiler architecture proposal; dependent on review of the language-semantics and CCAM contracts  
+**Status:** initial checked scalar lowering implementation under review in PR #208; complete typed-core contract and formal simulation remain open  
 **Owner:** Compiler Architecture workstream  
 **Related:** `LANGUAGE-CORE.md`, `TYPED-IR.md`, `CCAM.md`, `COMPILER-PIPELINE-AUDIT.md`
 
 This document specifies the compiler-owned lowering boundary for the first C-free vertical slice. It does not define a second IR or restate the abstract machine's instruction semantics. CCAM remains the canonical typed core IR and execution semantics.
+
+The current executable increment consumes checked ASTs and lowers a restricted scalar subset to the multi-function CCAM representation. It supports locals, checked scalar arithmetic/comparisons, direct calls, short-circuit booleans, `if`/`else`, `while`/`for`, `break`/`continue` and returns. Unsupported constructs fail closed. This implementation is not yet wired into the production compiler CLI and has no source-to-CCAM simulation proof.
 
 ## 1. Pipeline boundary
 
