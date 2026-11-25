@@ -215,6 +215,17 @@ F1Summary f1_unknown_summary() {
     };
 }
 
+F1Summary f1_selection_summary() {
+    return new F1Summary{
+        complete: true,
+        data_depends: false,
+        selection_depends: true,
+        control_depends: false,
+        preserves_context: false,
+        constant_result: f1_empty_constant()
+    };
+}
+
 F1Summary f1_branch_summary() {
     return new F1Summary{
         complete: true,
@@ -399,6 +410,12 @@ test "secret-derived predicates remain confidential" {
     F1Value secret = f1_source(2, true);
     F1Value predicate = f1_derive(secret, f1_empty_constant());
     assert(!f1_public_sink_allowed(predicate));
+}
+
+test "interprocedural selection summaries preserve selector provenance" {
+    F1Value selector = f1_source(8, false);
+    F1Value result = f1_apply_summary(f1_selection_summary(), selector);
+    assert(result.selection_sources == 8);
 }
 
 test "secret-dependent branches preserve control dependence" {
