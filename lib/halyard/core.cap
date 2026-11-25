@@ -200,6 +200,9 @@ HalyardManagedByteSinkResult halyard_managed_sink_create(
             };
         }
     }
+    if (let lease = acquired.reservation) {
+        halyard_reservation_release(ledger, lease);
+    }
     return new HalyardManagedByteSinkResult{
         ok: false, managed: none, error: "sink_unavailable"
     };
