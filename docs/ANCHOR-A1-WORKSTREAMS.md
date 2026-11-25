@@ -88,7 +88,14 @@ Any temporary C/assembly bootstrap boundary must be explicit in the trusted-base
 - No IME, clipboard, full text editor or native accessibility claim until their separate Shroud contracts and conformance suites exist.
 - No general sandbox claim for a child process merely because it is launched without a shell.
 
-## 7. Work packages ready for assignment
+## 7. Existing issue alignment and work packages
+
+This plan extends existing work rather than creating duplicate tickets:
+- [#224](https://github.com/DavidFernee/Capstan/issues/224) owns the Shroud/T6 Linux Wayland capability and syscall vertical slice; the shared contract in `ANCHOR-CAPABILITY-IO-REQUIREMENTS.md` is a requirements synthesis/input to that work.
+- [#279](https://github.com/DavidFernee/Capstan/issues/279) owns the Anchor process-adapter decision and mock conformance harness; `ANCHOR-PROCESS-SUPERVISION.md` supplies the lifecycle/security contract, but does not complete the harness or API-owner decision.
+- [#222](https://github.com/DavidFernee/Capstan/issues/222) remains the research authority for the broader capability/effect model. This A1 design must consume its reviewed result rather than pre-empt it.
+
+## 7.1 Work packages ready for assignment
 
 | ID | Work package | Deliverable | Blocker / exit gate |
 |---|---|---|---|
