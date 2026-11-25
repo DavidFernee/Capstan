@@ -1,4 +1,4 @@
-name: Native memory lifecycle model
+name: Native memory lifecycle and reachability models
 
 on:
   push:
@@ -11,6 +11,7 @@ on:
   pull_request:
     paths:
       - "verification/lean/NativeMemoryLifecycle.lean"
+      - "verification/lean/NativeReachability.lean"
       - ".github/workflows/native-memory-lifecycle.yml"
   workflow_dispatch:
 
@@ -23,7 +24,7 @@ concurrency:
 
 jobs:
   lifecycle-model:
-    name: Build bounded handle lifecycle model
+    name: Verify handle lifecycle and explicit-root reachability
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
