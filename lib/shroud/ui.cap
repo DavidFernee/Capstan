@@ -22,6 +22,9 @@ const int EV_WHEEL = 4;
 const int EV_KEY = 5;
 const int EV_TEXT = 6;
 const int EV_POINTER_LEAVE = 7;
+const int EV_POINTER_CANCEL = 8;
+const int EV_FOCUS_LOST = 9;
+const int EV_FOCUS_GAINED = 10;
 
 const int KEY_TAB = 1;
 const int KEY_ENTER = 2;
@@ -104,6 +107,7 @@ struct Ui {
     string pressed;
     string focus;
     bool focus_visible;
+    bool host_focused;
     Map<int> scroll;        // scroll offsets by id
     Map<int> caret;         // text field carets (byte offsets) by id
     Map<int> shown_at;      // guarded controls: when each appeared or changed
@@ -164,6 +168,27 @@ struct Ui {
     // Handles one input event and returns the messages it produces.
     List<Msg> handle(Event e) {
         List<Msg> out = new List<Msg>();
+        // Native window focus is separate from widget focus. Preserve the logical
+        // widget focus across deactivation, but reject all input until reactivation.
+        if (e.kind == EV_FOCUS_LOST) {
+            self.host_focused = false;
+            self.pressed = "";
+            self.hover = "";
+            return out;
+        }
+        if (e.kind == EV_FOCUS_GAINED) {
+            self.host_focused = true;
+            self.pressed = "";
+            self.hover = "";
+            return out;
+        }
+        if (!self.host_focused) { return out; }
+        // Capture loss is not a pointer-up: it cancels the gesture and cannot activate.
+        if (e.kind == EV_POINTER_CANCEL) {
+            self.pressed = "";
+            self.hover = "";
+            return out;
+        }
         if (let l = self.root) {
             if (e.kind == EV_POINTER_MOVE) {
                 self.hover = hit_id(l, e.x, e.y);
@@ -317,7 +342,7 @@ struct Ui {
 }
 
 Ui new_ui(Font font, Font bold, Theme theme, int width_px, int height_px, int scale) {
-    return new Ui{font: font, bold_font: bold, theme: theme, scale: clamp(scale, 64, 1024), pixmap: new_pixmap(width_px, height_px), root: none, hover: "", pressed: "", focus: "", focus_visible: false, scroll: new Map<int>(), caret: new Map<int>(), shown_at: new Map<int>(), shown_where: new Map<string>(), guard_generation: new Map<int>(), render_generation: 0, problems: new List<string>(), view_count: 0, now_ms: 0};
+    return new Ui{font: font, bold_font: bold, theme: theme, scale: clamp(scale, 64, 1024), pixmap: new_pixmap(width_px, height_px), root: none, hover: "", pressed: "", focus: "", focus_visible: false, host_focused: true, scroll: new Map<int>(), caret: new Map<int>(), shown_at: new Map<int>(), shown_where: new Map<string>(), guard_generation: new Map<int>(), render_generation: 0, problems: new List<string>(), view_count: 0, now_ms: 0};
 }
 
 Msg msg(string action, int value) { return new Msg{action: action, value: value, text: taint("")}; }
