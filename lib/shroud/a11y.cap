@@ -105,7 +105,7 @@ A11yNode? a11y_node(Ui ui, Laid l, Rect clip) {
         if (v.num != 0) { states.push("checked"); } else { states.push("unchecked"); }
     }
     if (v.secure) { states.push("protected"); }
-    Rect b;
+    Rect b = rect(0, 0, 0, 0);
     if (visible.empty()) {
         // A non-clipping container may itself be outside the window while an
         // overflowing child remains visible. Bound that container by its children.
