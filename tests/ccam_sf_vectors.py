@@ -115,7 +115,7 @@ def check_instruction(ins: object, pc: int, registers: list[str], count: int,
         check_index(ins["if_true"], count, f"{where}.if_true")
         check_index(ins["if_false"], count, f"{where}.if_false")
     elif op == "ret":
-        reg("src", "int")  # refined against return_type by vector check below
+        reg("src")  # refined against return_type by vector check below
 
 
 def check_vector(v: object, seen: set[str], index: int) -> None:
