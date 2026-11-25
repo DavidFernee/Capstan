@@ -151,31 +151,41 @@ bool halyard_sink_close(HalyardByteSink sink) {
 HalyardManagedByteSinkResult halyard_managed_sink_create(
     HalyardLedger ledger, int max_bytes
 ) {
-    HalyardByteSinkResult made = halyard_sink_create(max_bytes);
-    if (!made.ok) {
+    if (max_bytes < 0) {
         return new HalyardManagedByteSinkResult{
-            ok: false, managed: none, error: made.error
+            ok: false, managed: none, error: "negative_limit"
         };
     }
-    HalyardBudgetCharge zero = new HalyardBudgetCharge{
+    HalyardBudgetCharge initial_charge = new HalyardBudgetCharge{
         input_bytes: 0, retained_bytes: 0, output_bytes: 0,
         decoded_units: 0, work_units: 0,
-            allocation_units: 0,
-            metadata_entries: 0,
-            queue_slots: 0,
-            worker_slots: 0,
-            nesting_slots: 0,
-            track_slots: 0,
-            chunk_slots: 0
-        };
-    HalyardReservationResult acquired = halyard_ledger_acquire(ledger, zero);
+        allocation_units: 1, metadata_entries: 0, queue_slots: 0,
+        worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+    };
+    HalyardReservationResult acquired =
+        halyard_ledger_acquire(ledger, initial_charge);
     if (!acquired.ok) {
         return new HalyardManagedByteSinkResult{
             ok: false, managed: none, error: acquired.error
         };
     }
+    HalyardByteSinkResult made = halyard_sink_create(max_bytes);
+    if (!made.ok) {
+        if (let lease = acquired.reservation) {
+            halyard_reservation_release(ledger, lease);
+        }
+        return new HalyardManagedByteSinkResult{
+            ok: false, managed: none, error: made.error
+        };
+    }
     if (let sink = made.sink) {
         if (let lease = acquired.reservation) {
+            HalyardBudgetCharge zero = new HalyardBudgetCharge{
+                input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+                decoded_units: 0, work_units: 0,
+                allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+                worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+            };
             HalyardReservation empty_retired = new HalyardReservation{
                 charge: zero, active: false
             };
@@ -241,7 +251,7 @@ HalyardSinkWriteResult halyard_managed_sink_write_exact(
     HalyardBudgetCharge replacement_charge = new HalyardBudgetCharge{
         input_bytes: 0, retained_bytes: replacement_length,
         output_bytes: replacement_length, decoded_units: 0, work_units: 0,
-            allocation_units: 0,
+        allocation_units: 1,
             metadata_entries: 0,
             queue_slots: 0,
             worker_slots: 0,
@@ -1003,7 +1013,7 @@ HalyardManagedByteSourceResult halyard_managed_source_create(
     HalyardBudgetCharge charge = new HalyardBudgetCharge{
         input_bytes: 0, retained_bytes: input.len(), output_bytes: 0,
         decoded_units: 0, work_units: 0,
-            allocation_units: 0,
+        allocation_units: 1,
             metadata_entries: 0,
             queue_slots: 0,
             worker_slots: 0,
@@ -1674,7 +1684,7 @@ test "Halyard bounded sink rejects corrupted public state" {
 
 
 test "Halyard managed sink charges both old and replacement payload during commit" {
-    HalyardLedgerResult made = halyard_ledger_create(0, 8, 8, 0, 0);
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 8, 8, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
         HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 4);
@@ -1698,7 +1708,7 @@ test "Halyard managed sink charges both old and replacement payload during commi
 }
 
 test "Halyard managed sink rejects capacity before acquiring replacement lease" {
-    HalyardLedgerResult made = halyard_ledger_create(0, 2, 2, 0, 0);
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 2, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
         HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 2);
@@ -1720,7 +1730,7 @@ test "Halyard managed sink rejects capacity before acquiring replacement lease" 
 }
 
 test "Halyard managed sink close retries after ledger repair without double release" {
-    HalyardLedgerResult made = halyard_ledger_create(0, 4, 4, 0, 0);
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 4, 4, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
         HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 2);
@@ -1743,7 +1753,7 @@ test "Halyard managed sink close retries after ledger repair without double rele
 }
 
 test "Halyard managed sink preserves prior payload after invalid write" {
-    HalyardLedgerResult made = halyard_ledger_create(0, 8, 8, 0, 0);
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 8, 8, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
         HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 4);
@@ -1969,7 +1979,7 @@ test "Halyard reservation aliases share one release state" {
 
 
 test "Halyard managed source holds retained-byte lease until close" {
-    HalyardLedgerResult made = halyard_ledger_create(0, 4, 0, 0, 0);
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 4, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
         List<int> input = new List<int>();
@@ -1993,7 +2003,7 @@ test "Halyard managed source holds retained-byte lease until close" {
 }
 
 test "Halyard managed source rejects admission before snapshot" {
-    HalyardLedgerResult made = halyard_ledger_create(0, 2, 0, 0, 0);
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
         List<int> input = new List<int>();
@@ -2006,7 +2016,7 @@ test "Halyard managed source rejects admission before snapshot" {
 }
 
 test "Halyard managed source rolls back lease on invalid input" {
-    HalyardLedgerResult made = halyard_ledger_create(0, 4, 0, 0, 0);
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 4, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
         List<int> input = new List<int>();
@@ -2181,7 +2191,7 @@ test "Halyard live-resource vector rejects release underflow in every dimension"
 }
 
 test "Halyard managed source close can retry lease release after ledger repair" {
-    HalyardLedgerResult made = halyard_ledger_create(0, 2, 0, 0, 0);
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
         List<int> input = new List<int>();
