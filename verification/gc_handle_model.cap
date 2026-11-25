@@ -93,6 +93,12 @@ bool gch_heap_valid(GCHHeap heap) {
     for (int i = 0; i < heap.slots.len(); i += 1) {
         GCHSlot slot = heap.slots[i];
         if (slot.slot_id != i || slot.generation <= 0) { return false; }
+        if (slot.retired && (slot.allocated ||
+            slot.generation != GCH_MAX_GENERATION || slot.descriptor_id != 0)) {
+            return false;
+        }
+        if (!slot.allocated && slot.generation == GCH_MAX_GENERATION &&
+            !slot.retired) { return false; }
         if (slot.allocated &&
             gch_find_layout(heap.layouts, slot.descriptor_id) < 0) {
             return false;
