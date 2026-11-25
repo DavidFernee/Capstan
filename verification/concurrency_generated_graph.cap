@@ -80,8 +80,12 @@ bool cbr_invariant(CBRState s) {
 // consumer_status * 4 + wait bit * 2 + eof bit.
 // The bounded field domains make each valid state key unique.
 int cbr_key(CBRState s) {
+    int wait_bit = 0;
+    int eof_bit = 0;
+    if (s.wait_registered) { wait_bit = 2; }
+    if (s.eof_observed) { eof_bit = 1; }
     return s.channel_state * 32 + s.consumer_status * 4 +
-        (s.wait_registered ? 2 : 0) + (s.eof_observed ? 1 : 0);
+        wait_bit + eof_bit;
 }
 
 bool cbr_same(CBRState a, CBRState b) {
@@ -215,9 +219,11 @@ CBRResult cbr_explore(int state_limit) {
     for (int i = 0; i < states.len(); i += 1) {
         if (!cbr_terminal(states[i])) { all_terminal = false; }
     }
+    int classification = CBR_PROGRESS;
+    if (all_terminal) { classification = CBR_TERMINAL; }
     return new CBRResult{
         valid: true, complete: true,
-        classification: all_terminal ? CBR_TERMINAL : CBR_PROGRESS,
+        classification: classification,
         explored: states.len(), witness_key: -1
     };
 }
