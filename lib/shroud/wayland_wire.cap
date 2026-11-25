@@ -10,6 +10,14 @@
 const int WAYLAND_HEADER_BYTES = 8;
 const int WAYLAND_MAX_FRAME_BYTES = 65532;
 
+struct WaylandFrameHeader {
+    int status;
+    int object_id;
+    int size;
+    int opcode;
+    int end_offset;
+}
+
 bool wayland_frame_size_valid(int size) {
     return size >= WAYLAND_HEADER_BYTES && size <= WAYLAND_MAX_FRAME_BYTES && size % 4 == 0;
 }
@@ -18,22 +26,16 @@ int wayland_u32_le(List<int> bytes, int at) {
     return (bytes[at] & 0xFF) | ((bytes[at + 1] & 0xFF) << 8)
         | ((bytes[at + 2] & 0xFF) << 16) | ((bytes[at + 3] & 0xFF) << 24);
 }
-List<int> wayland_bad_frame() {
-    List<int> out = new List<int>();
-    out.push(-1); out.push(0); out.push(0); out.push(0); out.push(0);
-    return out;
+WaylandFrameHeader wayland_bad_frame() {
+    return new WaylandFrameHeader{status: -1, object_id: 0, size: 0, opcode: 0, end_offset: 0};
 }
-List<int> wayland_incomplete_frame(int object_id, int size, int opcode) {
-    List<int> out = new List<int>();
-    out.push(0); out.push(object_id); out.push(size); out.push(opcode); out.push(0);
-    return out;
+WaylandFrameHeader wayland_incomplete_frame(int object_id, int size, int opcode) {
+    return new WaylandFrameHeader{status: 0, object_id: object_id, size: size, opcode: opcode, end_offset: 0};
 }
-List<int> wayland_complete_frame(int object_id, int size, int opcode, int end_offset) {
-    List<int> out = new List<int>();
-    out.push(1); out.push(object_id); out.push(size); out.push(opcode); out.push(end_offset);
-    return out;
+WaylandFrameHeader wayland_complete_frame(int object_id, int size, int opcode, int end_offset) {
+    return new WaylandFrameHeader{status: 1, object_id: object_id, size: size, opcode: opcode, end_offset: end_offset};
 }
-List<int> wayland_frame_header(List<int> bytes, int offset) {
+WaylandFrameHeader wayland_frame_header(List<int> bytes, int offset) {
     if (offset < 0 || offset > bytes.len()) { return wayland_bad_frame(); }
     int remaining = bytes.len() - offset;
     if (remaining < WAYLAND_HEADER_BYTES) { return wayland_incomplete_frame(0, 0, 0); }
