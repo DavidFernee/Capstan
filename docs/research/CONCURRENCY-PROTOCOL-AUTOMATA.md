@@ -38,9 +38,10 @@ protocol slice, not a general refinement theorem.
 It does not yet encode endpoint ownership, message types, effects,
 capabilities, resource deltas, cancellation cleanup, duality between
 endpoints, or compiler refinement. The validator/interpreter is a research
-reference artefact, not a safe-profile language feature. Its current tests
-are submitted to CI; no passing result is claimed until exact-head runs
-complete.
+reference artefact, not a safe-profile language feature. The exact-head CI
+and CodeQL checks pass for this bounded reference implementation. Those
+checks do not establish a formal refinement theorem or prove that a future
+native scheduler/runtime implements this model.
 
 ## 1. Problem
 
