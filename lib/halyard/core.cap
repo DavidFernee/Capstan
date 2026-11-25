@@ -147,6 +147,88 @@ struct HalyardLedgerResult {
     string error;
 }
 
+struct HalyardConsumptionBudget {
+    int limit_input_bytes;
+    int limit_output_bytes;
+    int limit_decoded_units;
+    int limit_work_units;
+    int used_input_bytes;
+    int used_output_bytes;
+    int used_decoded_units;
+    int used_work_units;
+}
+
+struct HalyardConsumptionCharge {
+    int input_bytes;
+    int output_bytes;
+    int decoded_units;
+    int work_units;
+}
+
+struct HalyardConsumptionBudgetResult {
+    bool ok;
+    HalyardConsumptionBudget? budget;
+    string error;
+}
+
+HalyardConsumptionBudgetResult halyard_consumption_budget_create(
+    int input_limit, int output_limit, int decoded_limit, int work_limit
+) {
+    if (input_limit < 0 || output_limit < 0 ||
+        decoded_limit < 0 || work_limit < 0) {
+        return new HalyardConsumptionBudgetResult{
+            ok: false, budget: none, error: "negative_limit"
+        };
+    }
+    HalyardConsumptionBudget budget = new HalyardConsumptionBudget{
+        limit_input_bytes: input_limit,
+        limit_output_bytes: output_limit,
+        limit_decoded_units: decoded_limit,
+        limit_work_units: work_limit,
+        used_input_bytes: 0,
+        used_output_bytes: 0,
+        used_decoded_units: 0,
+        used_work_units: 0
+    };
+    return new HalyardConsumptionBudgetResult{ok: true, budget: budget, error: ""};
+}
+
+bool halyard_consumption_budget_valid(HalyardConsumptionBudget budget) {
+    return budget.limit_input_bytes >= 0 &&
+        budget.limit_output_bytes >= 0 &&
+        budget.limit_decoded_units >= 0 &&
+        budget.limit_work_units >= 0 &&
+        budget.used_input_bytes >= 0 &&
+        budget.used_output_bytes >= 0 &&
+        budget.used_decoded_units >= 0 &&
+        budget.used_work_units >= 0 &&
+        budget.used_input_bytes <= budget.limit_input_bytes &&
+        budget.used_output_bytes <= budget.limit_output_bytes &&
+        budget.used_decoded_units <= budget.limit_decoded_units &&
+        budget.used_work_units <= budget.limit_work_units;
+}
+
+// Monotonic consumption: successful work is never refunded. All dimensions are
+// preflighted before any counter changes; there is deliberately no release API.
+bool halyard_consumption_budget_consume(
+    HalyardConsumptionBudget budget, HalyardConsumptionCharge charge
+) {
+    if (!halyard_consumption_budget_valid(budget)) { return false; }
+    if (charge.input_bytes < 0 || charge.output_bytes < 0 ||
+        charge.decoded_units < 0 || charge.work_units < 0) { return false; }
+    if (charge.input_bytes > budget.limit_input_bytes - budget.used_input_bytes ||
+        charge.output_bytes > budget.limit_output_bytes - budget.used_output_bytes ||
+        charge.decoded_units > budget.limit_decoded_units - budget.used_decoded_units ||
+        charge.work_units > budget.limit_work_units - budget.used_work_units) {
+        return false;
+    }
+    budget.used_input_bytes += charge.input_bytes;
+    budget.used_output_bytes += charge.output_bytes;
+    budget.used_decoded_units += charge.decoded_units;
+    budget.used_work_units += charge.work_units;
+    return true;
+}
+
 struct HalyardBudgetCharge {
     int input_bytes;
     int retained_bytes;
@@ -1117,6 +1199,82 @@ test "Halyard source shape preflight is separate from byte-domain validation" {
         source.position = 3;
         assert(!halyard_source_shape_valid(source));
         assert(halyard_source_length(source) == -1);
+    } else {
+        assert(false);
+    }
+}
+
+
+test "Halyard cumulative budget consumes all dimensions atomically" {
+    HalyardConsumptionBudgetResult made = halyard_consumption_budget_create(10, 20, 30, 40);
+    assert(made.ok);
+    if (let budget = made.budget) {
+        HalyardConsumptionCharge charge = new HalyardConsumptionCharge{
+            input_bytes: 10, output_bytes: 20, decoded_units: 30, work_units: 40
+        };
+        assert(halyard_consumption_budget_consume(budget, charge));
+        assert(budget.used_input_bytes == 10);
+        assert(budget.used_output_bytes == 20);
+        assert(budget.used_decoded_units == 30);
+        assert(budget.used_work_units == 40);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard cumulative budget rejects over-limit requests without partial charge" {
+    HalyardConsumptionBudgetResult made = halyard_consumption_budget_create(10, 20, 30, 40);
+    assert(made.ok);
+    if (let budget = made.budget) {
+        HalyardConsumptionCharge charge = new HalyardConsumptionCharge{
+            input_bytes: 1, output_bytes: 2, decoded_units: 3, work_units: 41
+        };
+        assert(!halyard_consumption_budget_consume(budget, charge));
+        assert(budget.used_input_bytes == 0);
+        assert(budget.used_output_bytes == 0);
+        assert(budget.used_decoded_units == 0);
+        assert(budget.used_work_units == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard cumulative work and decode budgets cannot be refunded after release" {
+    HalyardConsumptionBudgetResult made = halyard_consumption_budget_create(100, 100, 1, 1);
+    assert(made.ok);
+    if (let budget = made.budget) {
+        HalyardConsumptionCharge first = new HalyardConsumptionCharge{
+            input_bytes: 10, output_bytes: 10, decoded_units: 1, work_units: 1
+        };
+        assert(halyard_consumption_budget_consume(budget, first));
+        // There is intentionally no release/refund operation for cumulative usage.
+        HalyardConsumptionCharge second = new HalyardConsumptionCharge{
+            input_bytes: 10, output_bytes: 10, decoded_units: 1, work_units: 1
+        };
+        assert(!halyard_consumption_budget_consume(budget, second));
+        assert(budget.used_decoded_units == 1);
+        assert(budget.used_work_units == 1);
+        assert(budget.used_input_bytes == 10);
+        assert(budget.used_output_bytes == 10);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard cumulative budget rejects negative charges and corrupted state" {
+    assert(!halyard_consumption_budget_create(-1, 0, 0, 0).ok);
+    HalyardConsumptionBudgetResult made = halyard_consumption_budget_create(10, 10, 10, 10);
+    assert(made.ok);
+    if (let budget = made.budget) {
+        HalyardConsumptionCharge negative = new HalyardConsumptionCharge{
+            input_bytes: -1, output_bytes: 0, decoded_units: 0, work_units: 0
+        };
+        assert(!halyard_consumption_budget_consume(budget, negative));
+        budget.used_work_units = -1;
+        HalyardConsumptionCharge zero = new HalyardConsumptionCharge{
+            input_bytes: 0, output_bytes: 0, decoded_units: 0, work_units: 0
+        };
+        assert(!halyard_consumption_budget_consume(budget, zero));
     } else {
         assert(false);
     }
