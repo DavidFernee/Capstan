@@ -347,6 +347,115 @@ CCMState ccm_apply(CCMState state, int actor, int action) {
     return result.state;
 }
 
+
+bool ccm_valid_interleaving(List<int> schedule) {
+    if (schedule.len() != 4) { return false; }
+    int producer_cursor = 0;
+    int consumer_cursor = 0;
+    for (int i = 0; i < schedule.len(); i += 1) {
+        int action = schedule[i];
+        if (action == CCM_ACT_PRODUCE) {
+            if (producer_cursor != 0) { return false; }
+            producer_cursor = 1;
+        } else if (action == CCM_ACT_SEND) {
+            if (producer_cursor != 1) { return false; }
+            producer_cursor = 2;
+        } else if (action == CCM_ACT_RECEIVE) {
+            if (consumer_cursor != 0) { return false; }
+            // A receive may only be scheduled after the send has linearised.
+            if (producer_cursor != 2) { return false; }
+            consumer_cursor = 1;
+        } else if (action == CCM_ACT_RELEASE) {
+            if (consumer_cursor != 1) { return false; }
+            consumer_cursor = 2;
+        } else {
+            return false;
+        }
+    }
+    return producer_cursor == 2 && consumer_cursor == 2;
+}
+
+bool ccm_run_interleaving(List<int> schedule) {
+    if (!ccm_valid_interleaving(schedule)) { return false; }
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    if (!ccm_invariant(state)) { return false; }
+    for (int i = 0; i < schedule.len(); i += 1) {
+        int action = schedule[i];
+        int actor = 1;
+        if (action == CCM_ACT_RECEIVE || action == CCM_ACT_RELEASE) {
+            actor = 2;
+        }
+        CCMTransition result = ccm_step(state, actor, action);
+        if (!result.ok) { return false; }
+        state = result.state;
+        if (!ccm_invariant(state)) { return false; }
+    }
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    return ccm_invariant(state) && state.scope_closed;
+}
+
+// The two per-task program orders are fixed (produce < send and
+// receive < release). The six shuffles are the complete set of linear
+// extensions of those two length-two orders. A receive-before-send trace is
+// deliberately excluded as a protocol violation and tested separately.
+test "CCM explores interleaving 1: produce send receive release" {
+    List<int> schedule = new List<int>();
+    schedule.push(CCM_ACT_PRODUCE);
+    schedule.push(CCM_ACT_SEND);
+    schedule.push(CCM_ACT_RECEIVE);
+    schedule.push(CCM_ACT_RELEASE);
+    assert(ccm_run_interleaving(schedule));
+}
+
+test "CCM explores interleaving 2: produce receive send release is rejected" {
+    List<int> schedule = new List<int>();
+    schedule.push(CCM_ACT_PRODUCE);
+    schedule.push(CCM_ACT_RECEIVE);
+    schedule.push(CCM_ACT_SEND);
+    schedule.push(CCM_ACT_RELEASE);
+    assert(!ccm_valid_interleaving(schedule));
+}
+
+test "CCM explores interleaving 3: produce receive release send is rejected" {
+    List<int> schedule = new List<int>();
+    schedule.push(CCM_ACT_PRODUCE);
+    schedule.push(CCM_ACT_RECEIVE);
+    schedule.push(CCM_ACT_RELEASE);
+    schedule.push(CCM_ACT_SEND);
+    assert(!ccm_valid_interleaving(schedule));
+}
+
+test "CCM explores interleaving 4: receive first is rejected" {
+    List<int> schedule = new List<int>();
+    schedule.push(CCM_ACT_RECEIVE);
+    schedule.push(CCM_ACT_PRODUCE);
+    schedule.push(CCM_ACT_SEND);
+    schedule.push(CCM_ACT_RELEASE);
+    assert(!ccm_valid_interleaving(schedule));
+}
+
+test "CCM explores interleaving 5: producer completes before consumer" {
+    List<int> schedule = new List<int>();
+    schedule.push(CCM_ACT_PRODUCE);
+    schedule.push(CCM_ACT_SEND);
+    schedule.push(CCM_ACT_RECEIVE);
+    schedule.push(CCM_ACT_RELEASE);
+    assert(ccm_run_interleaving(schedule));
+}
+
+test "CCM explores interleaving 6: consumer receive immediately after send" {
+    List<int> schedule = new List<int>();
+    schedule.push(CCM_ACT_PRODUCE);
+    schedule.push(CCM_ACT_SEND);
+    schedule.push(CCM_ACT_RECEIVE);
+    schedule.push(CCM_ACT_RELEASE);
+    assert(ccm_run_interleaving(schedule));
+}
+
 test "CCM rejects receive before a committed send without mutating state" {
     CCMState state = ccm_initial_state();
     CCMTransition result = ccm_step(state, 2, CCM_ACT_RECEIVE);
