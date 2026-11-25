@@ -78,7 +78,14 @@ else
   bad "CCAM JSON integer parser" "$out"
 fi
 
-section "Capstan-native verification: bounded CCAM JSON string decoding"\nif out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_string.cap" 2>&1)"; then\n  ok "CCAM JSON strings decode escapes and reject malformed UTF-8 and surrogates"\nelse\n  bad "CCAM JSON string decoder" "$out"\nfi\n\nsection "Capstan-native verification: CCAM multi-function calls and frames"
+section "Capstan-native verification: bounded CCAM JSON string decoding"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_string.cap" 2>&1)"; then
+  ok "CCAM JSON strings decode escapes and reject malformed UTF-8 and surrogates"
+else
+  bad "CCAM JSON string decoder" "$out"
+fi
+
+section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
 else
