@@ -28,6 +28,8 @@ is a hard constraint on all abstracts, diagrams and claims.
 
 ## F1 language-contract execution status
 
+The selective related-work review is [F1-RELATED-WORK.md](../F1-RELATED-WORK.md). It sharpens the F1 hypothesis toward one shared derivation with distinct, mutually checked typing, ownership, authority/effect, information-flow and resource components. The review is not systematic and makes no novelty claim; the next step is a discriminating formal prototype.
+
 The active language-contract research draft is [F1-LANGUAGE-CONTRACT.md](../F1-LANGUAGE-CONTRACT.md),
 coordinated by the [programming-language research agenda](PROGRAMMING-LANGUAGE-RESEARCH-AGENDA.md).
 It records the current v0.1 source-language semantics, the gap between built-in generic
