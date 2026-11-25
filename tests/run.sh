@@ -292,6 +292,8 @@ printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
 if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
   if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud under ASan+UBSan, damaged fonts included: no reports"; else bad "shroud (sanitizers)" "$out"; fi
   if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame text budget under ASan+UBSan: $out"; else bad "shroud frame text budget (sanitizers)" "$out"; fi
+  if out="$($PY "$ROOT/tests/shroud/check_text_byte_limit.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud text byte limit under ASan+UBSan: $out"; else bad "shroud text byte limit (sanitizers)" "$out"; fi
+  if out="$($PY "$ROOT/tests/shroud/check_a11y_utf8_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud accessibility UTF-8/JSON budget under ASan+UBSan: $out"; else bad "shroud accessibility UTF-8/JSON budget (sanitizers)" "$out"; fi
   if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame line budget under ASan+UBSan: $out"; else bad "shroud frame line budget (sanitizers)" "$out"; fi
   if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud PNG export budget under ASan+UBSan: $out"; else bad "shroud PNG export budget (sanitizers)" "$out"; fi
 else
