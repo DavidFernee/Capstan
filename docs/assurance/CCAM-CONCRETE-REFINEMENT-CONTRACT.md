@@ -236,3 +236,18 @@ For states reachable by repeated calls to `ccam_machine_step` from that construc
 - An already-halted state is inert. Step-limit exhaustion occurs before PC validation, fetch and increment; invalid-PC trapping also occurs before increment. All post-fetch instruction outcomes increment `steps` exactly once, including dynamic traps and terminal instructions.
 
 This exposes a useful proof boundary: prove the constructor/reachability invariant first, then prove the transition simulation only for states satisfying it. Do not state payload clearing as an unconditional property of `ccam_machine_trap`. External mutation of the returned concrete state is outside this transition-system theorem and must be excluded from the theorem's execution model or handled by a stronger encapsulation argument.
+
+
+## Trap-domain partition and defensive states
+
+The current Lean `Trap` type is finite: `integerOverflow`, `divisionByZero`, `uninitialisedRegister`, `invalidRegister`, `typeMismatch`, `invalidControlFlow`, `callDepthLimit`, and `instructionLimit`. The concrete evaluator uses string trap codes and also has defensive codes that are not represented by this Lean type, including `invalid_program_counter`, `invalid_instruction`, `invalid_register_type`, and `invalid_step_limit` (constructor failures), alongside the ordinary dynamic codes.
+
+The theorem must partition these cases rather than silently treating the finite Lean sum as the complete concrete trap domain:
+
+1. **In-profile dynamic traps:** establish a total mapping for the dynamic codes reachable from a program admitted by the single-frame profile. At minimum, check exact correspondence for integer overflow, division by zero, uninitialised register, invalid register and type mismatch. Preserve the concrete code and any detail projection in the relation.
+2. **Precondition/constructor rejection:** invalid register type and invalid step limit are constructor rejection results, not instruction outcomes. Model these in a separate construction theorem or explicitly exclude them by the validated-constructor hypothesis.
+3. **Defensive impossible-state traps:** invalid program counter and invalid instruction protect internal callers that violate the validated-program/reachability assumptions. They should be covered by a separate fail-closed safety theorem if the public API can expose such states; they are not ordinary outcomes of the profile simulation theorem.
+4. **Explicit trap:** concrete `explicit_trap` plus arbitrary validated reason text is not represented by the current finite Lean `Trap` constructors. Keep it outside the main theorem until the abstract domain carries a reason payload or the admitted reason language is mapped precisely.
+5. **Step exhaustion:** concrete `step_limit_exceeded` must map to Lean `.instructionLimit`, but it occurs before dispatch and consumes no step. This is distinct from every post-fetch dynamic trap.
+
+A theorem advertised as full concrete trap equivalence is premature until these partitions are either mapped or explicitly excluded in its hypotheses. In particular, a one-way theorem for the validated SF-P profile is acceptable as a first milestone; it must not be described as equivalence of the entire concrete API.
