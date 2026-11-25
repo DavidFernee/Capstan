@@ -204,6 +204,7 @@ int main() {
     for (int p = 0; p < paths.len(); p += 1) {
         string path = paths[p];
         string language = language_for_path(path);
+        string classification = classification_for_path(path);
         if (let source = read_file(path, MAX_INVENTORY_FILE_BYTES)) {
             int nbytes = source.len();
             if (contains_nul(source)) {
