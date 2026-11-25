@@ -2050,19 +2050,61 @@ test "Halyard live-resource vector admits and releases every added dimension ato
     } else { assert(false); }
 }
 
-test "Halyard live-resource vector rejects one over-limit dimension without partial admission" {
+test "Halyard live-resource vector rejects every over-limit dimension without partial admission" {
     HalyardLedgerResult made = halyard_ledger_create_bounded(
         0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1
     );
     assert(made.ok);
     if (let ledger = made.ledger) {
-        HalyardBudgetCharge too_large = new HalyardBudgetCharge{
+        HalyardBudgetCharge a = new HalyardBudgetCharge{
             input_bytes: 0, retained_bytes: 0, output_bytes: 0,
             decoded_units: 0, work_units: 0,
-            allocation_units: 1, metadata_entries: 1, queue_slots: 1,
-            worker_slots: 1, nesting_slots: 1, track_slots: 1, chunk_slots: 2
+            allocation_units: 2, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
         };
-        assert(!halyard_ledger_reserve(ledger, too_large));
+        HalyardBudgetCharge m = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 2, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge q = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 2,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge w = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 2, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge n = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 2, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge t = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 2, chunk_slots: 0
+        };
+        HalyardBudgetCharge c = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 2
+        };
+        assert(!halyard_ledger_reserve(ledger, a));
+        assert(!halyard_ledger_reserve(ledger, m));
+        assert(!halyard_ledger_reserve(ledger, q));
+        assert(!halyard_ledger_reserve(ledger, w));
+        assert(!halyard_ledger_reserve(ledger, n));
+        assert(!halyard_ledger_reserve(ledger, t));
+        assert(!halyard_ledger_reserve(ledger, c));
         assert(ledger.used_allocation_units == 0);
         assert(ledger.used_metadata_entries == 0);
         assert(ledger.used_queue_slots == 0);
@@ -2073,19 +2115,67 @@ test "Halyard live-resource vector rejects one over-limit dimension without part
     } else { assert(false); }
 }
 
-test "Halyard live-resource vector rejects release underflow without mutation" {
+test "Halyard live-resource vector rejects release underflow in every dimension" {
     HalyardLedgerResult made = halyard_ledger_create_bounded(
         0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1
     );
     assert(made.ok);
     if (let ledger = made.ledger) {
-        HalyardBudgetCharge underflow = new HalyardBudgetCharge{
+        HalyardBudgetCharge a = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 1, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge m = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 1, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge q = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 1,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge w = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 1, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge n = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 1, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge t = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 1, chunk_slots: 0
+        };
+        HalyardBudgetCharge c = new HalyardBudgetCharge{
             input_bytes: 0, retained_bytes: 0, output_bytes: 0,
             decoded_units: 0, work_units: 0,
             allocation_units: 0, metadata_entries: 0, queue_slots: 0,
             worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 1
         };
-        assert(!halyard_ledger_release(ledger, underflow));
+        assert(!halyard_ledger_release(ledger, a));
+        assert(!halyard_ledger_release(ledger, m));
+        assert(!halyard_ledger_release(ledger, q));
+        assert(!halyard_ledger_release(ledger, w));
+        assert(!halyard_ledger_release(ledger, n));
+        assert(!halyard_ledger_release(ledger, t));
+        assert(!halyard_ledger_release(ledger, c));
+        assert(ledger.used_allocation_units == 0);
+        assert(ledger.used_metadata_entries == 0);
+        assert(ledger.used_queue_slots == 0);
+        assert(ledger.used_worker_slots == 0);
+        assert(ledger.used_nesting_slots == 0);
+        assert(ledger.used_track_slots == 0);
         assert(ledger.used_chunk_slots == 0);
     } else { assert(false); }
 }
