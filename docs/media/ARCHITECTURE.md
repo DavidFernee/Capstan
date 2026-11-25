@@ -31,7 +31,7 @@ must not duplicate codec semantics.
 
 The first MC1 prototype is on the Halyard working branch:
 
-- `lib/halyard/core.cap`: in-memory bounded byte source and sequential aggregate ledger;
+- `lib/halyard/core.cap`: in-memory bounded byte source and sink, sequential aggregate ledger, and rational timestamp rescaling;
 - Capstan `test` declarations in `lib/halyard/core.cap`: initial boundary and failure-atomicity regressions.
 
 The Halyard implementation and its test logic are authored in Capstan. No Halyard-specific
