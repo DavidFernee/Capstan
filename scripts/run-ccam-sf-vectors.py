@@ -114,21 +114,28 @@ def vector_test(vector: dict) -> str:
         lines.append(f"    assert(state.pc == {expected['trace_pcs'][-1]});")
         lines.append('    assert(state.halted && state.trap_code == "");')
         lines.append("    assert(state.halt_has_value);")
+        lines.append('    assert(state.trap_detail == "");')
         if value["type"] == "int":
             lines.append(f"    assert(state.halt_value == {value['value']});")
+            lines.append("    assert(!state.halt_bool_value);")
         else:
+            lines.append("    assert(state.halt_value == 0);")
             lines.append(f"    assert(state.halt_bool_value == {literal(value['value'])});")
     elif outcome["kind"] == "halt_void":
         lines.extend([
             f"    assert(state.pc == {expected['trace_pcs'][-1]});",
             "    assert(state.halted && state.trap_code == \"\");",
             "    assert(!state.halt_has_value);",
+            "    assert(state.halt_value == 0 && !state.halt_bool_value);",
+            '    assert(state.trap_detail == "");',
         ])
     elif outcome["kind"] == "trap":
         lines.extend([
             f"    assert(state.halted && state.trap_code == {literal(outcome['code'])});",
             f"    assert(state.pc == {outcome['pc']});",
             "    assert(!state.halt_has_value);",
+            "    assert(state.halt_value == 0 && !state.halt_bool_value);",
+            '    assert(state.trap_detail == "");',
         ])
     else:
         raise ValueError(f"{ident}: unsupported admitted outcome {outcome['kind']}")
