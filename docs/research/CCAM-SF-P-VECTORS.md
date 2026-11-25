@@ -1,6 +1,6 @@
 # CCAM-SF-P canonical vector corpus
 
-**Status:** independently specified oracle corpus, now executed by a concrete Capstan evaluator harness; no Lean executable cross-check or implementation-refinement theorem is claimed.  
+**Status:** shared JSON oracle corpus executed by the concrete Capstan evaluator and by the Lean profile/machine model; no concrete-to-Lean implementation-refinement theorem is claimed.  
 **Format:** `capstan-ccam-sf-vectors/1`  
 **Machine contract:** `docs/architecture/CCAM.md` (normative CCAM v0.1)  
 **Proof profile:** `docs/research/CCAM-SINGLE-FRAME-PROOF-PROFILE.md`  
@@ -70,7 +70,7 @@ The following names were checked against `verification/ccam_core.cap` on main af
 | SF-020 | Lean theorems `validateSingleFrameProfile_rejects_nonzero_entry` and `validateSingleFrameProfile_entry_zero` in the PR #241 branch | Exercise the profile admission predicate in a Lean test/example; this is not a normative CCAM input field. |
 | SF-X01 | `CCAM machine returns void and preserves explicit trap detail`; `CCAM validator accepts and rejects canonical trap reasons` | Keep concrete-only until issue #265 establishes exact Lean reason/detail semantics. |
 
-PR #253 has merged. Its two regression tests are mainline evidence. The new driver consumes the shared JSON corpus for 17 admitted executions, 4 normative-invalid pre-execution rejections, and the SF-019 normative-validator-only assertion. The Lean-generated SF-019 theorem separately checks proof-profile rejection. The table remains a test-discovery crosswalk, not an additional independent oracle.
+PR #253 has merged. Its two regression tests are mainline evidence. The concrete driver consumes the shared JSON corpus for 17 admitted executions, 4 normative-invalid pre-execution rejections, and the SF-019 normative-validator-only assertion. The generated Lean module checks profile admission and model execution/non-execution for all 23 vectors, including SF-019 and SF-020. The table remains a test-discovery crosswalk, not an additional independent oracle.
 
 ## Important semantic boundary: explicit traps
 
@@ -80,13 +80,13 @@ The initial proof-profile corpus includes the finite built-in traps represented 
 
 ## Execution and proof status
 
-This file is the canonical oracle data. `scripts/validate-ccam-sf-vectors.py` validates its structure and signed-64 integers; `scripts/run-ccam-sf-vectors.py` constructs and executes the in-profile vectors against the concrete Capstan evaluator. The next work must:
+This file is the canonical oracle data. `scripts/validate-ccam-sf-vectors.py` validates its structure and signed-64 integers; `scripts/run-ccam-sf-vectors.py` constructs and executes the concrete in-profile vectors; `scripts/generate_ccam_sf_lean_vectors.py` generates Lean profile and machine checks from the same source. The next work must:
 
 1. Strict corpus-integrity validation is now implemented in `scripts/validate-ccam-sf-vectors.py` and wired into the CI workflow (duplicate JSON keys, unique IDs, exact instruction fields, signed-64 literal bounds, typed/indexed operands, profile exclusions, and trace/step consistency). This is a corpus linter, not an execution adapter.
 2. The Capstan-native runner is implemented and registered in `tests/run.sh`; it checks the concrete validator, exact PC trace, terminal state, trap/return payload and step count for the 17 admitted and 4 normative-invalid vectors, plus the separate SF-019 normative-acceptance/no-dispatch case.
-3. Add a Lean corpus reader/adapter or generated Lean fixture from this same source file. Generation must be deterministic and must not generate expected outcomes from either executor.
-4. Define the complete machine-state relation, reusing `RuntimeBridge.lean` and `NativeRegisterBridge.lean`; do not recreate the register relation.
-5. Prove the initial-state correspondence and instruction-level simulation, then exact budget correspondence.
+3. The deterministic Lean adapter is implemented: 23 profile-admission theorems and 23 execution/non-execution theorems are imported into the default Lean library build; `tests/run.sh` checks generated-file freshness.
+4. Define the complete concrete/abstract machine-state relation, reusing `RuntimeBridge.lean` and `NativeRegisterBridge.lean`; do not recreate the register relation.
+5. Prove initial-state correspondence and instruction-level simulation, then exact budget correspondence.
 6. Keep the concrete corpus driver, Lean build/checker and pinned formal toolchain on the same exact CI commit.
 
-Until the Lean adapter and simulation theorem exist, this is concrete evaluator conformance-to-oracle evidence only; it is not evidence of cross-model conformance or formal implementation refinement.
+Until the concrete/abstract state relation and simulation theorem exist, this is shared-corpus conformance evidence only; it is not formal implementation refinement.
