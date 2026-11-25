@@ -1,15 +1,16 @@
-# Capstan Media architecture
+# Halyard — detailed media architecture
 
 > **Status: Specified / initial implementation programme — 2026-11-25**
 >
-> This document establishes the target architecture for Capstan Media Core, Shanty and
-> Deadeye. It is not a claim that codecs, playback, recording, platform backends or
+> This document is the detailed architectural specification for Halyard: Capstan Media Core,
+> Shanty and Deadeye. The governing architecture identity and integration map are in
+> [HALYARD.md](HALYARD.md). It is not a claim that codecs, playback, recording, platform backends or
 > security properties are already implemented. Every capability must carry an explicit
 > implementation and assurance status.
 
-## 1. Product definition
+## 1. Halyard component definition
 
-Capstan Media is the media subsystem family of the Capstan ecosystem:
+Halyard is the media architecture of the Capstan ecosystem. Its implementation comprises:
 
 - **Capstan Media Core** owns shared media primitives, format/container infrastructure,
   resource accounting, clocks, scheduling contracts and codec registration.
