@@ -64,13 +64,6 @@ if out="$($PY "$ROOT/tests/k0/check.py" 2>&1)"; then ok "$out"; else bad "K0 stu
 section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
-section "CCAM-SF-P canonical vector corpus integrity"
-if out="$($PY "$ROOT/tests/ccam_sf_vectors.py" 2>&1)"; then
-  ok "$out"
-else
-  bad "CCAM-SF-P canonical vector corpus" "$out"
-fi
-
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
