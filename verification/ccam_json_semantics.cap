@@ -239,7 +239,6 @@ CCAMJsonSchemaResult ccam_json_validate_program_semantics(Tainted source) {
             } else if (ccam_json_schema_string_eq(source, tokens, op_at, "ret_void")) {
                 if (return_types[f] != 3) { return ccam_json_schema_error(74, tokens[at].start); }
             }
-        }
             instruction_cursor = ccam_json_schema_array_next(tokens, instruction_cursor);
         }
         function_cursor = ccam_json_schema_array_next(tokens, function_cursor);
