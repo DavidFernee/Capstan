@@ -10,6 +10,9 @@ Every invariant must identify (1) the state predicate, (2) enforcement point, (3
 |---|---|---|---|---|
 | HINV-BOOT-01 | No boot-provided address, length or offset is dereferenced before checked range validation | Boot parser | Truncated, overlapping, wrapping, misaligned and out-of-range tags | OPEN |
 | HINV-BOOT-02 | Boot parsing has finite byte, record, string and work limits | Boot parser | Exact-boundary and one-over-limit corpus | OPEN |
+| HINV-BOOT-03 | Boot protocol U64 addresses are represented and compared as unsigned bit patterns; signed comparisons never classify high-half addresses | Boot ABI and address-range validator | Values on both sides of bit 63, carry/borrow, U64 overflow and non-canonical addresses | OPEN |
+| HINV-BOOT-04 | Every boot metadata read is within an opaque, bounded, read-only view; raw integer addresses are never dereferenced directly by general Capstan code | Boot-memory adapter and Capstan memory-view contract | Negative/one-past offsets, truncated fields, alias mutation, invalid pointers and fault injection | OPEN |
+| HINV-BOOT-05 | Bootloader-reclaimable memory is not reused until every response, table, stack and descriptor in it is no longer referenced | Boot memory reclamation | Delayed references, nested response arrays and premature-reuse tests | OPEN |
 | HINV-MEM-01 | Every physical frame has exactly one authoritative owner or is explicitly unowned | Physical memory manager | Duplicate ownership, stale owner, double-release and exhaustion | OPEN |
 | HINV-MEM-02 | A mapping cannot grant rights exceeding the caller's live frame/address-space capability | Page-table syscall | W^X, privilege escalation, wrong-object and stale-capability attempts | OPEN |
 | HINV-MEM-03 | Kernel-private memory is inaccessible from user mode | MMU configuration and page-table validation | Read/write/execute probes from every user address space | OPEN |
