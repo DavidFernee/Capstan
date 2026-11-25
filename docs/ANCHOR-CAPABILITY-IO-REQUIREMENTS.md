@@ -10,7 +10,7 @@ Approve one shared, Capstan-native capability-I/O contract for Anchor A1-P and A
 
 The contract must be designed once and reused. Anchor must not grow a private process/filesystem API while Shroud grows a separate socket/clock API. Conversely, a generic descriptor API must not expose raw OS descriptors or grant ambient authority.
 
-**Core rule:** an effect describes what an operation may do; a capability describes which authority the caller must possess. Neither implies the other. A function's effect annotation must never manufacture authority.
+**Semantic constraint:** an effect describes what an operation may do; a capability describes which authority the caller must possess. These are distinct semantic questions even if the eventual language syntax integrates them. An effect annotation must never manufacture authority. The precise type/effect integration remains subject to the capability/effect research in issue [#222](https://github.com/DavidFernee/Capstan/issues/222).
 
 ## 2. Baseline audit and verified gaps
 
@@ -28,7 +28,7 @@ The repository's runtime-boundary inventory and v0.6 standard-library review est
 | Errors | Several existing I/O builtins collapse failures to `none` / `bool`; `Result<T,E>` remains a compiler/type-system dependency | Stable typed errors and cancellation/timeout distinctions are prerequisites |
 | Capabilities/effects | Stage 6 of the language-extension roadmap specifies explicit capabilities and effect signatures | No approved, versioned external-I/O capability API is established by the inspected documents |
 
-The T6 system-call roadmap's current list (`open`, `read`, `write`, `exit`, memory mapping and signals) is insufficient for the initial Wayland client. The Shroud Wayland prerequisites explicitly require Unix-domain sockets, `SCM_RIGHTS`, readiness waits, anonymous shared-memory backing and monotonic time. The initial shm path uses `memfd` + `ftruncate` + `pwrite`, so client-side `mmap` is not an A1-H prerequisite.
+The T6 system-call roadmap's current list (`open`, `read`, `write`, `exit`, memory mapping and signals) is insufficient for the initial Wayland client. The existing [#224 acceptance scope](https://github.com/DavidFernee/Capstan/issues/224) also calls for checked `mmap`/`munmap` semantics as part of the broader host substrate. The Shroud Wayland prerequisites additionally require Unix-domain sockets, `SCM_RIGHTS`, readiness waits, anonymous shared-memory backing and monotonic time. The initial shm vertical slice should use `memfd` + `ftruncate` + `pwrite`, so client-side `mmap` need not block that first path; generic mapping remains a separately gated T6 deliverable.
 
 These findings are a documentation/source audit, not proof that no experimental implementation exists anywhere in an uninspected branch. Before freezing API signatures, the runtime/T6 owner must reconcile this gap list against the active implementation branch and syscall inventory.
 
