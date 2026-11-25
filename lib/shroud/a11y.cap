@@ -23,20 +23,22 @@ struct A11yNode {
 // Convert already-sanitised code points back to UTF-8. The accessibility tree must
 // expose the same visible characters as the renderer, not the original Tainted bytes.
 string utf8_from_codepoints(List<int> cps) {
-    string out = "";
+    // Build bounded-size fragments and join once. Repeatedly appending to
+    // the growing prefix copied O(n^2) bytes for large accessibility values.
+    List<string> parts = new List<string>();
     for (int i = 0; i < cps.len(); i += 1) {
         int cp = cps[i];
         if (cp < 0x80) {
-            out = out + char_str(cp);
+            parts.push(char_str(cp));
         } else if (cp < 0x800) {
-            out = out + char_str(0xC0 | (cp >> 6)) + char_str(0x80 | (cp & 0x3F));
+            parts.push(char_str(0xC0 | (cp >> 6)) + char_str(0x80 | (cp & 0x3F)));
         } else if (cp < 0x10000) {
-            out = out + char_str(0xE0 | (cp >> 12)) + char_str(0x80 | ((cp >> 6) & 0x3F)) + char_str(0x80 | (cp & 0x3F));
+            parts.push(char_str(0xE0 | (cp >> 12)) + char_str(0x80 | ((cp >> 6) & 0x3F)) + char_str(0x80 | (cp & 0x3F)));
         } else {
-            out = out + char_str(0xF0 | (cp >> 18)) + char_str(0x80 | ((cp >> 12) & 0x3F)) + char_str(0x80 | ((cp >> 6) & 0x3F)) + char_str(0x80 | (cp & 0x3F));
+            parts.push(char_str(0xF0 | (cp >> 18)) + char_str(0x80 | ((cp >> 12) & 0x3F)) + char_str(0x80 | ((cp >> 6) & 0x3F)) + char_str(0x80 | (cp & 0x3F)));
         }
     }
-    return out;
+    return join(parts, "");
 }
 
 string visible_untrusted_text(Tainted value) {
