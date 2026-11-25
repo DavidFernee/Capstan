@@ -99,6 +99,20 @@ else
   bad "concurrency protocol refinement" "$out"
 fi
 
+section "Capstan-native verification: blocking receive and wakeup semantics"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_blocking.cap" 2>&1)"; then
+  ok "blocked receive, atomic waiter registration/wakeup, close, cancellation and stale-wakeup semantics"
+else
+  bad "blocking receive and wakeup semantics" "$out"
+fi
+
+section "Capstan-native verification: capacity-blocked send and wakeup semantics"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_blocking_send.cap" 2>&1)"; then
+  ok "capacity backpressure, producer wait registration, dequeue wakeup and cancellation semantics"
+else
+  bad "capacity-blocked send and wakeup semantics" "$out"
+fi
+
 section "Capstan-native verification: checked source to CCAM lowering"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
   ok "checked scalar source lowers to validated CCAM and executes in the Capstan evaluator"
