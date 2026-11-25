@@ -194,3 +194,31 @@ engineering evidence. It does not yet have, on the evidence recorded here, a dem
 end-to-end formally verified C-free compiler/runtime, a final independently replicated K0
 study, or four completed journal papers. The immediate research task is to turn promising
 implementation and proof fragments into tightly scoped, reproducible claims.
+
+
+## R7 — Compositional assurance for resource-bounded 3D systems (Keel)
+
+**Question:** Can scene, geometry, asset, simulation and rendering guarantees compose
+across CPU and GPU boundaries without hiding transient resource amplification or
+lifetime hazards?
+
+**Current contribution:** proposed K0 architecture in
+[`docs/KEEL-ARCHITECTURE.md`](../KEEL-ARCHITECTURE.md), including candidate resource
+accounting points, asset-ingestion trust boundaries, generational resource handles,
+deterministic CPU reference semantics and GPU-driver assumptions.
+
+**Maturity:** proposed research stream only. No Keel implementation, formal model,
+conformance corpus, benchmark results or implementation-refinement evidence is claimed
+by this entry.
+
+**Next evidence required:**
+1. related-work review covering resource-aware type systems, real-time rendering,
+   robust predicates, GPU lifetime models and bounded parsers;
+2. falsifiable hypotheses and baselines for aggregate budgets and deterministic
+   simulation;
+3. a versioned spatial/scene semantics and executable conformance vectors;
+4. adversarial asset corpus, fuzzing and failure-atomicity tests;
+5. explicit CPU/GPU refinement boundary and device-loss/lifetime state-machine tests;
+6. independent reproduction with raw data, toolchain and hardware details.
+
+Publication readiness is not reached by the architecture document alone.
