@@ -127,7 +127,14 @@ DeadeyeMp4BoxResult deadeye_mp4_box_read(
         box_size = deadeye_mp4_u32_be(bytes, offset + 12);
         header_size = 16;
     } else if (size32 == 0) {
-        box_size = parent_end - offset;
+        // ISO BMFF size zero extends to EOF, not merely to the enclosing box.
+        // A child whose parent ends before EOF would otherwise consume siblings.
+        if (parent_end != bytes.len()) {
+            return new DeadeyeMp4BoxResult{
+                ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "zero_size_not_eof"
+            };
+        }
+        box_size = bytes.len() - offset;
     }
     if (box_size < header_size || box_size > parent_end - offset) {
         return new DeadeyeMp4BoxResult{
@@ -173,7 +180,8 @@ bool deadeye_mp4_is_encryption_marker(DeadeyeMp4Box box) {
 // Walk only explicitly recognised child-box containers. Depth and total boxes
 // are global limits, so nesting and sibling-count attacks fail closed.
 bool deadeye_mp4_scan_children(
-    List<int> bytes, int start, int end, int depth, DeadeyeMp4ScanState state
+    List<int> bytes, int start, int end, int depth,
+    bool direct_moov_child, DeadeyeMp4ScanState state
 ) {
     if (depth > DEADEYE_MP4_MAX_DEPTH || start < 0 ||
         end < start || end > bytes.len()) { return false; }
@@ -189,11 +197,12 @@ bool deadeye_mp4_scan_children(
             return false;
         }
         if (deadeye_mp4_box_type(box, 't', 'r', 'a', 'k')) {
+            if (!direct_moov_child) { return false; }
             state.track_count += 1;
             if (state.track_count > DEADEYE_MP4_MAX_TRACKS) { return false; }
         }
         if (deadeye_mp4_box_type(box, 'm', 'v', 'h', 'd')) {
-            if (state.has_mvhd) { return false; }
+            if (!direct_moov_child || state.has_mvhd) { return false; }
             int payload_bytes = box.end - box.payload_start;
             if (payload_bytes < 20) { return false; }
             int version = bytes[box.payload_start];
@@ -215,7 +224,7 @@ bool deadeye_mp4_scan_children(
                 child_start += 4;
             }
             if (!deadeye_mp4_scan_children(
-                bytes, child_start, box.end, depth + 1, state
+                bytes, child_start, box.end, depth + 1, false, state
             )) { return false; }
         }
         at = box.end;
@@ -235,10 +244,11 @@ DeadeyeMp4SummaryResult deadeye_mp4_error(string error) {
     return new DeadeyeMp4SummaryResult{ok: false, summary: none, error: error};
 }
 
-// Bounded structural preflight for a non-fragmented, unencrypted ISO BMFF file.
-// It validates top-level boxes, ftyp brands, moov child structure, track count,
-// movie-header presence and mdat extents. It deliberately does not claim packet
-// demultiplexing until sample tables and codec configuration are parsed.
+// Bounded structural preflight for a non-fragmented ISO BMFF file.
+// It validates top-level boxes, ftyp brands, direct moov children, track count,
+// movie-header presence and mdat extents. It rejects encryption markers visible
+// in scanned containers, but is not a complete sample-entry encryption check;
+// callers must also run the sample-entry validator before accepting media.
 DeadeyeMp4SummaryResult deadeye_mp4_inspect_internal(
     HalyardByteSource source, HalyardConsumptionBudget? budget
 ) {
@@ -317,7 +327,7 @@ DeadeyeMp4SummaryResult deadeye_mp4_inspect_internal(
             if (has_moov) { return deadeye_mp4_error("duplicate_moov"); }
             has_moov = true;
             if (!deadeye_mp4_scan_children(
-                bytes, box.payload_start, box.end, 1, state
+                bytes, box.payload_start, box.end, 1, true, state
             )) {
                 if (state.has_encryption_marker) {
                     return deadeye_mp4_error("encrypted_content_unsupported");
@@ -420,7 +430,7 @@ test "Deadeye MP4 accepts a minimal bounded unencrypted ISO BMFF layout" {
         has_encryption_marker: false
     };
     assert(deadeye_mp4_scan_children(
-        bytes, movie_box.box.payload_start, movie_box.box.end, 1, scan
+        bytes, movie_box.box.payload_start, movie_box.box.end, 1, true, scan
     ));
     assert(scan.has_mvhd && scan.track_count == 1);
     if (let source = source_result.source) {
