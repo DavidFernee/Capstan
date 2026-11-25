@@ -448,3 +448,373 @@ test "Deadeye budget rejects pixel materialisation before allocation" {
         } else { assert(false); }
     } else { assert(false); }
 }
+
+
+// Bounded presentation queue for decoded Deadeye frames.
+//
+// This is a deterministic, single-owner scheduling primitive, not a device
+// presenter or a thread-safe queue. Timestamps and durations use one explicit
+// rational timebase. Frames are admitted in presentation order; gaps are valid
+// (variable frame rate), overlap and timestamp overflow are rejected. Enqueue
+// snapshots pixel bytes so a caller cannot mutate a queued frame through its
+// original input value. Queue byte limits are logical payload limits; they do
+// not account for allocator metadata or runtime list capacity.
+
+const int DEADEYE_PRESENTATION_MAX_FRAMES = 4096;
+const int DEADEYE_PRESENTATION_MAX_RETAINED_BYTES = 134217728;
+
+struct DeadeyePresentationEntry {
+    DeadeyeRgbaFrame frame;
+    int pts;
+    int duration;
+}
+
+struct DeadeyePresentationQueue {
+    HalyardTimebase timebase;
+    List<DeadeyePresentationEntry> entries;
+    int max_frames;
+    int max_retained_bytes;
+    int retained_bytes;
+    bool closed;
+}
+
+struct DeadeyePresentationQueueResult {
+    bool ok;
+    DeadeyePresentationQueue? queue;
+    string error;
+}
+
+struct DeadeyePresentationTakeResult {
+    bool ok;
+    bool available;
+    DeadeyePresentationEntry? entry;
+    string error;
+}
+
+bool deadeye_presentation_frame_valid(DeadeyeRgbaFrame frame) {
+    if (frame.width < 1 || frame.width > DEADEYE_BMP_MAX_SIDE ||
+        frame.height < 1 || frame.height > DEADEYE_BMP_MAX_SIDE ||
+        frame.width > DEADEYE_BMP_MAX_PIXELS / frame.height) {
+        return false;
+    }
+    int pixels = frame.width * frame.height;
+    if (frame.rgba.len() != pixels * 4) { return false; }
+    // The queue is a presentation boundary: reject forged channel values
+    // rather than allowing invalid integers to reach a renderer or device.
+    for (int i = 0; i < frame.rgba.len(); i += 1) {
+        if (frame.rgba[i] < 0 || frame.rgba[i] > 255) { return false; }
+    }
+    return true;
+}
+
+int deadeye_presentation_frame_bytes(DeadeyeRgbaFrame frame) {
+    return frame.width * frame.height * 4;
+}
+
+DeadeyeRgbaFrame deadeye_presentation_frame_snapshot(DeadeyeRgbaFrame frame) {
+    List<int> rgba = new List<int>();
+    for (int i = 0; i < frame.rgba.len(); i += 1) {
+        rgba.push(frame.rgba[i]);
+    }
+    return new DeadeyeRgbaFrame{
+        width: frame.width, height: frame.height, rgba: rgba
+    };
+}
+
+DeadeyePresentationQueueResult deadeye_presentation_queue_create(
+    HalyardTimebase timebase, int max_frames, int max_retained_bytes
+) {
+    if (!halyard_timebase_valid(timebase)) {
+        return new DeadeyePresentationQueueResult{
+            ok: false, queue: none, error: "invalid_timebase"
+        };
+    }
+    if (max_frames < 1 || max_frames > DEADEYE_PRESENTATION_MAX_FRAMES) {
+        return new DeadeyePresentationQueueResult{
+            ok: false, queue: none, error: "frame_limit"
+        };
+    }
+    if (max_retained_bytes < 0 ||
+        max_retained_bytes > DEADEYE_PRESENTATION_MAX_RETAINED_BYTES) {
+        return new DeadeyePresentationQueueResult{
+            ok: false, queue: none, error: "retained_byte_limit"
+        };
+    }
+    DeadeyePresentationQueue queue = new DeadeyePresentationQueue{
+        timebase: timebase, entries: new List<DeadeyePresentationEntry>(),
+        max_frames: max_frames, max_retained_bytes: max_retained_bytes,
+        retained_bytes: 0, closed: false
+    };
+    return new DeadeyePresentationQueueResult{
+        ok: true, queue: queue, error: ""
+    };
+}
+
+bool deadeye_presentation_queue_valid(DeadeyePresentationQueue queue) {
+    if (queue.closed || !halyard_timebase_valid(queue.timebase) ||
+        queue.max_frames < 1 ||
+        queue.max_frames > DEADEYE_PRESENTATION_MAX_FRAMES ||
+        queue.entries.len() > queue.max_frames ||
+        queue.max_retained_bytes < 0 ||
+        queue.max_retained_bytes > DEADEYE_PRESENTATION_MAX_RETAINED_BYTES ||
+        queue.retained_bytes < 0 ||
+        queue.retained_bytes > queue.max_retained_bytes) {
+        return false;
+    }
+    int total_bytes = 0;
+    int previous_end = 0;
+    bool has_previous = false;
+    for (int i = 0; i < queue.entries.len(); i += 1) {
+        DeadeyePresentationEntry entry = queue.entries[i];
+        if (!deadeye_presentation_frame_valid(entry.frame) ||
+            entry.duration <= 0 ||
+            entry.pts > HALYARD_I64_MAX - entry.duration) {
+            return false;
+        }
+        if (has_previous && entry.pts < previous_end) { return false; }
+        previous_end = entry.pts + entry.duration;
+        has_previous = true;
+        int frame_bytes = deadeye_presentation_frame_bytes(entry.frame);
+        if (frame_bytes > queue.max_retained_bytes - total_bytes) {
+            return false;
+        }
+        total_bytes += frame_bytes;
+    }
+    return total_bytes == queue.retained_bytes;
+}
+
+// Append in presentation order. A failed admission leaves the queue unchanged.
+// The payload is snapshotted only after every shape, timestamp and capacity
+// check has succeeded.
+bool deadeye_presentation_queue_push(
+    DeadeyePresentationQueue queue, DeadeyeRgbaFrame frame, int pts, int duration
+) {
+    if (!deadeye_presentation_queue_valid(queue) ||
+        !deadeye_presentation_frame_valid(frame) || duration <= 0 ||
+        pts > HALYARD_I64_MAX - duration) {
+        return false;
+    }
+    if (queue.entries.len() >= queue.max_frames) { return false; }
+    if (queue.entries.len() > 0) {
+        DeadeyePresentationEntry previous =
+            queue.entries[queue.entries.len() - 1];
+        if (previous.pts > HALYARD_I64_MAX - previous.duration ||
+            pts < previous.pts + previous.duration) {
+            return false;
+        }
+    }
+    int frame_bytes = deadeye_presentation_frame_bytes(frame);
+    if (frame_bytes > queue.max_retained_bytes - queue.retained_bytes) {
+        return false;
+    }
+
+    DeadeyeRgbaFrame snapshot = deadeye_presentation_frame_snapshot(frame);
+    DeadeyePresentationEntry appended = new DeadeyePresentationEntry{
+        frame: snapshot, pts: pts, duration: duration
+    };
+    List<DeadeyePresentationEntry> replacement =
+        new List<DeadeyePresentationEntry>();
+    for (int i = 0; i < queue.entries.len(); i += 1) {
+        replacement.push(queue.entries[i]);
+    }
+    replacement.push(appended);
+    queue.entries = replacement;
+    queue.retained_bytes += frame_bytes;
+    return true;
+}
+
+// Return at most one frame whose presentation timestamp is no later than the
+// supplied master-clock tick. Call repeatedly to drain all frames due at that
+// clock value. Late-frame dropping is deliberately a caller policy.
+DeadeyePresentationTakeResult deadeye_presentation_queue_take_due(
+    DeadeyePresentationQueue queue, int master_clock_ticks
+) {
+    if (!deadeye_presentation_queue_valid(queue)) {
+        return new DeadeyePresentationTakeResult{
+            ok: false, available: false, entry: none, error: "invalid_queue"
+        };
+    }
+    if (queue.entries.len() == 0 ||
+        queue.entries[0].pts > master_clock_ticks) {
+        return new DeadeyePresentationTakeResult{
+            ok: true, available: false, entry: none, error: ""
+        };
+    }
+
+    DeadeyePresentationEntry first = queue.entries[0];
+    List<DeadeyePresentationEntry> replacement =
+        new List<DeadeyePresentationEntry>();
+    for (int i = 1; i < queue.entries.len(); i += 1) {
+        replacement.push(queue.entries[i]);
+    }
+    queue.entries = replacement;
+    queue.retained_bytes -= deadeye_presentation_frame_bytes(first.frame);
+    return new DeadeyePresentationTakeResult{
+        ok: true, available: true, entry: first, error: ""
+    };
+}
+
+bool deadeye_presentation_queue_close(DeadeyePresentationQueue queue) {
+    if (queue.closed || !deadeye_presentation_queue_valid(queue)) {
+        return false;
+    }
+    queue.entries = new List<DeadeyePresentationEntry>();
+    queue.retained_bytes = 0;
+    queue.closed = true;
+    return true;
+}
+
+DeadeyeRgbaFrame deadeye_test_presentation_frame(int red) {
+    List<int> rgba = new List<int>();
+    rgba.push(red); rgba.push(2); rgba.push(3); rgba.push(255);
+    return new DeadeyeRgbaFrame{width: 1, height: 1, rgba: rgba};
+}
+
+test "Deadeye presentation queue schedules variable-rate frames against a rational clock" {
+    HalyardTimebaseResult tb = halyard_timebase_create(1, 1000);
+    assert(tb.ok);
+    if (let timebase = tb.timebase) {
+        DeadeyePresentationQueueResult made =
+            deadeye_presentation_queue_create(timebase, 3, 12);
+        assert(made.ok);
+        if (let queue = made.queue) {
+            assert(deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(10), 0, 40
+            ));
+            assert(deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(20), 40, 17
+            ));
+            assert(deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(30), 57, 33
+            ));
+            assert(queue.retained_bytes == 12);
+            DeadeyePresentationTakeResult early =
+                deadeye_presentation_queue_take_due(queue, -1);
+            assert(early.ok && !early.available && queue.retained_bytes == 12);
+            DeadeyePresentationTakeResult due =
+                deadeye_presentation_queue_take_due(queue, 0);
+            assert(due.ok && due.available && queue.retained_bytes == 8);
+            if (let entry = due.entry) {
+                assert(entry.pts == 0 && entry.duration == 40);
+                assert(entry.frame.rgba[0] == 10);
+            } else { assert(false); }
+            DeadeyePresentationTakeResult second =
+                deadeye_presentation_queue_take_due(queue, 40);
+            assert(second.ok && second.available && queue.retained_bytes == 4);
+            if (let entry = second.entry) {
+                assert(entry.pts == 40 && entry.duration == 17);
+                assert(entry.frame.rgba[0] == 20);
+            } else { assert(false); }
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye presentation queue rejects overlap, reordering and invalid durations atomically" {
+    HalyardTimebaseResult tb = halyard_timebase_create(1, 90000);
+    assert(tb.ok);
+    if (let timebase = tb.timebase) {
+        DeadeyePresentationQueueResult made =
+            deadeye_presentation_queue_create(timebase, 4, 16);
+        assert(made.ok);
+        if (let queue = made.queue) {
+            assert(deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(1), 100, 10
+            ));
+            assert(!deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(2), 105, 10
+            ));
+            assert(!deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(2), 99, 10
+            ));
+            assert(!deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(2), 110, 0
+            ));
+            assert(queue.entries.len() == 1 && queue.retained_bytes == 4);
+            assert(queue.entries[0].pts == 100);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye presentation queue enforces frame and retained-payload limits" {
+    HalyardTimebaseResult tb = halyard_timebase_create(1, 25);
+    assert(tb.ok);
+    if (let timebase = tb.timebase) {
+        DeadeyePresentationQueueResult made =
+            deadeye_presentation_queue_create(timebase, 1, 4);
+        assert(made.ok);
+        if (let queue = made.queue) {
+            assert(deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(1), 0, 1
+            ));
+            assert(!deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(2), 1, 1
+            ));
+            assert(queue.entries.len() == 1 && queue.retained_bytes == 4);
+            DeadeyePresentationTakeResult taken =
+                deadeye_presentation_queue_take_due(queue, 0);
+            assert(taken.ok && taken.available && queue.retained_bytes == 0);
+            assert(deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(3), 1, 1
+            ));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye presentation queue snapshots pixels and flushes on close" {
+    HalyardTimebaseResult tb = halyard_timebase_create(1, 24);
+    assert(tb.ok);
+    if (let timebase = tb.timebase) {
+        DeadeyePresentationQueueResult made =
+            deadeye_presentation_queue_create(timebase, 2, 8);
+        assert(made.ok);
+        if (let queue = made.queue) {
+            DeadeyeRgbaFrame original = deadeye_test_presentation_frame(77);
+            assert(deadeye_presentation_queue_push(queue, original, 0, 1));
+            original.rgba[0] = 200;
+            assert(queue.entries[0].frame.rgba[0] == 77);
+            assert(deadeye_presentation_queue_close(queue));
+            assert(queue.closed && queue.entries.len() == 0);
+            assert(queue.retained_bytes == 0);
+            assert(!deadeye_presentation_queue_close(queue));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye presentation queue rejects out-of-domain RGBA channel values" {
+    HalyardTimebaseResult tb = halyard_timebase_create(1, 1);
+    assert(tb.ok);
+    if (let timebase = tb.timebase) {
+        DeadeyePresentationQueueResult made =
+            deadeye_presentation_queue_create(timebase, 2, 8);
+        assert(made.ok);
+        if (let queue = made.queue) {
+            DeadeyeRgbaFrame negative = deadeye_test_presentation_frame(1);
+            negative.rgba[0] = -1;
+            assert(!deadeye_presentation_queue_push(queue, negative, 0, 1));
+            DeadeyeRgbaFrame oversized = deadeye_test_presentation_frame(1);
+            oversized.rgba[2] = 256;
+            assert(!deadeye_presentation_queue_push(queue, oversized, 0, 1));
+            assert(queue.entries.len() == 0 && queue.retained_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye presentation queue rejects invalid frame shapes and timestamp overflow" {
+    HalyardTimebaseResult tb = halyard_timebase_create(1, 1);
+    assert(tb.ok);
+    if (let timebase = tb.timebase) {
+        DeadeyePresentationQueueResult made =
+            deadeye_presentation_queue_create(timebase, 2, 8);
+        assert(made.ok);
+        if (let queue = made.queue) {
+            DeadeyeRgbaFrame malformed = deadeye_test_presentation_frame(1);
+            malformed.rgba.push(9);
+            assert(!deadeye_presentation_queue_push(queue, malformed, 0, 1));
+            assert(!deadeye_presentation_queue_push(
+                queue, deadeye_test_presentation_frame(2),
+                HALYARD_I64_MAX, 1
+            ));
+            assert(queue.entries.len() == 0 && queue.retained_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
