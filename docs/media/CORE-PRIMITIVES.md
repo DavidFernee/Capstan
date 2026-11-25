@@ -340,7 +340,7 @@ Still required before MC1 can pass:
 | Managed byte source | `lib/halyard/core.cap` | Retained-byte lease follows source close; sequential prototype; allocator failure atomicity and opaque ownership remain outstanding |
 | Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native cases; exact-head execution pending |
 | Rational timebase | `lib/halyard/core.cap` | Initial checked integer rescaling with explicit rounding; no full clock/discontinuity model |
-| Format registry | Not implemented | MC0 / issue #287 |
+| Machine-readable format registry | Schema, prototype inventory and deterministic validator implemented (PR #373); runtime registration/discovery API not implemented | MC0 metadata registry delivered; runtime API remains future work |
 | Bounded sink | `lib/halyard/core.cap` | Managed copy-on-commit sink charges old and replacement payload leases during transition; allocator metadata/OOM and opaque ownership remain outstanding |
 
 No third-party media implementation code is used by this slice. The existing Capstan
