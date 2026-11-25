@@ -144,7 +144,9 @@ struct Canvas {
             // Reject malformed or over-budget geometry before flatten() allocates
             // the parallel segment arrays.
             int upper_bound = path_flatten_segment_bound(p);
-            if (upper_bound < 0 || upper_bound > MAX_DISPLAY_SEGMENTS_PER_PATH ||
+            if (self.budget.len() != 1 || self.budget[0] < 0 ||
+                self.budget[0] > MAX_DISPLAY_SEGMENTS || upper_bound < 0 ||
+                upper_bound > MAX_DISPLAY_SEGMENTS_PER_PATH ||
                 self.commands.len() >= MAX_DISPLAY_COMMANDS ||
                 upper_bound > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
                 println("shroud: display list path rejected by resource preflight");
@@ -221,7 +223,9 @@ struct Canvas {
         if (self.recording) {
             // Reserve before copying; append-time admission is too late to bound
             // the temporary allocation for a rejected mask command.
-            if (self.commands.len() >= MAX_DISPLAY_COMMANDS ||
+            if (self.budget.len() != 1 || self.budget[0] < 0 ||
+                self.budget[0] > MAX_DISPLAY_SEGMENTS ||
+                self.commands.len() >= MAX_DISPLAY_COMMANDS ||
                 alpha.len() > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
                 println("shroud: display list mask rejected by resource preflight");
                 exit(101);
