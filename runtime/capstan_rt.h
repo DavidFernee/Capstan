@@ -22,6 +22,8 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +31,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/syscall.h>
+#include <linux/openat2.h>
+#endif
 #include "capstan_gc.h"
 
 /* ------------------------------------------------------------------ */
@@ -509,6 +515,12 @@ typedef struct CapMap {
    collide and turn every lookup into a scan of the table (hash flooding, CWE-407).
    cap_siphash is the generic SipHash-c-d; tests check it against the published
    SipHash-2-4 vectors and an independent implementation. */
+/* Defined below with the runtime's volatile byte-store implementation. */
+static void cap_wipe(void *p, size_t n);
+
+#ifdef CAP_SIPHASH_TEST_HOOK
+static void (*cap_siphash_test_wipe_hook)(const void *, size_t) = NULL;
+#endif
 #define CAP_ROTL64(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
 #define CAP_SIPROUND do { \
     v0 += v1; v1 = CAP_ROTL64(v1, 13); v1 ^= v0; v0 = CAP_ROTL64(v0, 32); \
@@ -534,7 +546,33 @@ static uint64_t cap_siphash(const unsigned char *in, size_t len, uint64_t k0, ui
     v0 ^= b;
     v2 ^= 0xff;
     for (int r = 0; r < d; r++) CAP_SIPROUND;
-    return v0 ^ v1 ^ v2 ^ v3;
+    uint64_t result = v0 ^ v1 ^ v2 ^ v3;
+    /* These words are key-derived even though the final hash is public. */
+    cap_wipe(&v0, sizeof v0);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&v0, sizeof v0);
+#endif
+    cap_wipe(&v1, sizeof v1);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&v1, sizeof v1);
+#endif
+    cap_wipe(&v2, sizeof v2);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&v2, sizeof v2);
+#endif
+    cap_wipe(&v3, sizeof v3);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&v3, sizeof v3);
+#endif
+    cap_wipe(&k0, sizeof k0);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&k0, sizeof k0);
+#endif
+    cap_wipe(&k1, sizeof k1);
+#ifdef CAP_SIPHASH_TEST_HOOK
+    if (cap_siphash_test_wipe_hook) cap_siphash_test_wipe_hook(&k1, sizeof k1);
+#endif
+    return result;
 }
 
 static uint64_t cap_map_k0, cap_map_k1;
@@ -841,6 +879,126 @@ static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
     return failed || too_long ? NULL : b.s;
 }
 static CapStr *cap_read_file(CapStr *path) { return cap_read_file_max(path, CAP_READ_FILE_DEFAULT, 0); }
+
+/*
+ * Workspace-scoped source loading for the experimental native compiler.
+ * The root is opened once; all child files are resolved relative to that
+ * descriptor. Kernels without openat2 fail closed rather than using a
+ * check-then-open fallback.
+ */
+static bool cap_workspace_components_ok(CapStr *path, bool absolute) {
+    if (!cap_path_ok(path)) return false;
+    if (absolute) {
+        if (path->data[0] != '/') return false;
+        if (path->len == 1) return true;
+    } else if (path->data[0] == '/') {
+        return false;
+    }
+    int64_t start = absolute ? 1 : 0;
+    for (int64_t i = start; i <= path->len; i++) {
+        if (i == path->len || path->data[i] == '/') {
+            int64_t n = i - start;
+            if (n == 0 || (n == 1 && path->data[start] == '.') ||
+                (n == 2 && path->data[start] == '.' && path->data[start + 1] == '.')) {
+                return false;
+            }
+            start = i + 1;
+        }
+    }
+    return true;
+}
+
+static int cap_openat2_checked(int dirfd, const char *path, uint64_t flags, uint64_t resolve) {
+#if defined(__linux__) && defined(SYS_openat2)
+    struct open_how how = {0};
+    how.flags = flags;
+    how.resolve = resolve;
+    return (int)syscall(SYS_openat2, dirfd, path, &how, sizeof how);
+#else
+    (void)dirfd; (void)path; (void)flags; (void)resolve;
+    errno = ENOSYS;
+    return -1;
+#endif
+}
+
+/* Returns an O_PATH directory descriptor, or -1. The root path itself must
+   be absolute and contain no symlink, magic-link or dot component. */
+static int64_t cap_workspace_open(CapStr *root, int64_t loc) {
+    (void)loc;
+#if defined(__linux__) && defined(O_PATH) && defined(RESOLVE_BENEATH) && defined(RESOLVE_NO_SYMLINKS)
+    if (!cap_workspace_components_ok(root, true)) return -1;
+    int slash = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC);
+    if (slash < 0) return -1;
+    if (root->len == 1) return slash;
+    int fd = cap_openat2_checked(slash, root->data + 1,
+        O_PATH | O_DIRECTORY | O_CLOEXEC,
+        RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS);
+    close(slash);
+    return fd < 0 ? -1 : (int64_t)fd;
+#else
+    (void)root;
+    return -1;
+#endif
+}
+
+/* Reads only regular files beneath a previously opened workspace root.
+   Relative components are validated lexically and resolved atomically by the
+   kernel; symlinks, magic links, mount crossings and path replacement races
+   are rejected. The opened descriptor pins the selected inode for the read. */
+static CapStr *cap_workspace_read_file(int64_t root_fd, CapStr *relative, int64_t max, int64_t loc) {
+    if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_DEFAULT))
+        cap_panic("workspace_read_file() limit outside 0..2^30", "CWE-789", loc);
+#if defined(__linux__) && defined(RESOLVE_BENEATH) && defined(RESOLVE_NO_SYMLINKS) && defined(RESOLVE_NO_XDEV)
+    if (root_fd < 0 || root_fd > INT_MAX || !cap_workspace_components_ok(relative, false)) return NULL;
+    struct stat root_st;
+    if (fstat((int)root_fd, &root_st) != 0 || !S_ISDIR(root_st.st_mode)) return NULL;
+    int fd = cap_openat2_checked((int)root_fd, relative->data,
+        O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC | O_NOFOLLOW,
+        RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV);
+    if (fd < 0) return NULL;
+    struct stat before;
+    if (fstat(fd, &before) != 0 || !S_ISREG(before.st_mode) ||
+        before.st_size < 0 || before.st_size > max) {
+        close(fd);
+        return NULL;
+    }
+    int64_t hint = before.st_size > 0 ? (int64_t)before.st_size + 1 : 4096;
+    CapBuf b = cap_buf_new(hint);
+    char chunk[65536];
+    int64_t total = 0;
+    bool failed = false;
+    bool too_long = false;
+    for (;;) {
+        ssize_t got = read(fd, chunk, sizeof chunk);
+        if (got < 0 && errno == EINTR) continue;
+        if (got < 0) { failed = true; break; }
+        if (got == 0) break;
+        if ((int64_t)got > max - total) { too_long = true; break; }
+        cap_buf_put(&b, chunk, (int64_t)got);
+        total += (int64_t)got;
+    }
+    struct stat after;
+    if (fstat(fd, &after) != 0) {
+        failed = true;
+    } else if (before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
+        before.st_size != after.st_size ||
+        before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
+        before.st_mtim.tv_nsec != after.st_mtim.tv_nsec ||
+        before.st_ctim.tv_sec != after.st_ctim.tv_sec ||
+        before.st_ctim.tv_nsec != after.st_ctim.tv_nsec) {
+        failed = true;
+    }
+    close(fd);
+    return failed || too_long ? NULL : b.s;
+#else
+    (void)root_fd; (void)relative;
+    return NULL;
+#endif
+}
+
+static void cap_workspace_close(int64_t root_fd) {
+    if (root_fd >= 0 && root_fd <= INT_MAX) (void)close((int)root_fd);
+}
 
 /* One line of standard input without its newline, or none at end of input. Every
    byte is kept, including NUL bytes. Lines are capped at 1 MiB (CWE-789). */
