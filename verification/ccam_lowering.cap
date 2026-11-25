@@ -63,14 +63,14 @@ CCAMLiteralBytesResult ccam_decode_escaped_literal(string escaped, int expected_
     int i = 0;
     while (i < escaped.len()) {
         int value = escaped.at(i);
-        if (value == '\\\\') {
+        if (value == 92) {
             if (i + 1 >= escaped.len()) {
                 return new CCAMLiteralBytesResult{
                     ok: false, bytes: "", error: "truncated_literal_escape"
                 };
             }
             int next = escaped.at(i + 1);
-            if (next == '\\\\' || next == '"' || next == '?') {
+            if (next == 92 || next == '"' || next == '?') {
                 value = next;
                 i += 2;
             } else {
