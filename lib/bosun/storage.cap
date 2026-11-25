@@ -414,6 +414,12 @@ test "Bosun typed i64 little-endian round trips signed values" {
             assert(bosun_storage_store_i64_le(storage, reference, -123456789));
             BosunI64Result negative = bosun_storage_load_i64_le(storage, reference);
             assert(negative.ok && negative.value == -123456789);
+            assert(bosun_storage_store_i64_le(storage, reference, 9223372036854775807));
+            BosunI64Result maximum = bosun_storage_load_i64_le(storage, reference);
+            assert(maximum.ok && maximum.value == 9223372036854775807);
+            assert(bosun_storage_store_i64_le(storage, reference, -9223372036854775807 - 1));
+            BosunI64Result minimum = bosun_storage_load_i64_le(storage, reference);
+            assert(minimum.ok && minimum.value == -9223372036854775807 - 1);
         } else { assert(false); }
     } else { assert(false); }
 }
