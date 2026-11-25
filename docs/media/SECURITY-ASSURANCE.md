@@ -4,7 +4,31 @@
 > This document specifies required controls and evidence. It does not assert that the
 > current prototype or architecture is vulnerability-free.
 
-## 1. Security objective
+## 1. Implementation-origin and language constraint
+
+All Media Core, Shanty and Deadeye implementation code must be authored from scratch in
+Capstan. No external multimedia framework, third-party codec/parser implementation,
+vendored source, copied implementation, generated-C path, C codec shim or C/C++ media
+runtime may be linked or shipped as part of Capstan Media. This is a product-level
+constraint, not a preference that can be waived for convenience.
+
+External specifications, standards, security advisories, published research, test vectors
+and independently generated test corpora are permitted research inputs subject to their
+terms. Independent implementations may serve as isolated differential-test oracles;
+their implementation code must not become a Capstan build or runtime dependency.
+Record source provenance and authorship for all first-party implementation code.
+
+The C-free compiler/runtime and self-hosting programme is a prerequisite for the final
+end-to-end native assurance claim. Until that work is complete, enumerate any C-backed
+compiler, runtime, operating-system or toolchain boundary in the trusted-computing-base
+register. Do not claim that Capstan-authored source alone proves the safety of those
+boundaries.
+
+This constraint does not reduce the security bar: first-party code must still undergo
+the full threat analysis, review, fuzzing, resource-bound testing and proof/refinement
+work applicable to its role.
+
+## 2. Security objective
 
 For every released Shanty, Deadeye and Media Core configuration:
 
@@ -25,7 +49,7 @@ This is an operational assurance target, not a mathematical assertion that no un
 vulnerability exists. "Not reproducible" is not equivalent to "not vulnerable"; an
 environment-specific failed exploit attempt is not a sufficient disposition.
 
-## 2. Vulnerability accounting system
+## 3. Vulnerability accounting system
 
 Maintain a machine-readable vulnerability ledger for all shipped and build-time
 components. Each record must contain:
@@ -51,7 +75,7 @@ Advisories, OSV, CISA KEV, vendor/project advisories, distro security trackers, 
 notes, security mailing lists and fuzzing issue trackers. Record feed timestamps and
 query coverage. Reconcile the SBOM against each feed on every build and release.
 
-## 3. Required vulnerability classes
+## 4. Required vulnerability classes
 
 The threat catalogue is intentionally broader than known CVEs. Each class needs
 preventive design rules, static/dynamic detection, targeted fuzzing and regression tests.
@@ -110,7 +134,7 @@ preventive design rules, static/dynamic detection, targeted fuzzing and regressi
 - device hotplug, malformed device responses, callback races and privilege escalation;
 - sandbox escape, IPC confusion, confused deputy and worker protocol flaws.
 
-## 4. Mandatory architecture controls
+## 5. Mandatory architecture controls
 
 1. Memory-safe implementation for new parsers and security-critical glue wherever possible.
 2. Checked arithmetic at every trust boundary; no implicit integer narrowing.
@@ -131,7 +155,7 @@ preventive design rules, static/dynamic detection, targeted fuzzing and regressi
 12. Fail closed on malformed data, budget exhaustion, unknown mandatory features and
     worker faults; no partially trusted output is published.
 
-## 5. Reproduction and regression protocol
+## 6. Reproduction and regression protocol
 
 For every applicable public or internal vulnerability:
 
@@ -153,7 +177,7 @@ For every applicable public or internal vulnerability:
 Exploit reproducer artifacts must be handled as hazardous inputs. Never run them on a
 developer workstation or privileged CI runner.
 
-## 6. Testing and analysis requirements
+## 7. Testing and analysis requirements
 
 - Continuous coverage-guided fuzzing for every parser, demuxer, bitstream parser, decoder,
   encoder, metadata reader, manifest parser, subtitle parser and worker IPC boundary.
@@ -169,7 +193,7 @@ developer workstation or privileged CI runner.
 - Independent penetration review before broad release; red-team media corpus for each
   supported format family.
 
-## 7. Release gates
+## 8. Release gates
 
 A release is blocked if any of these hold:
 
@@ -186,7 +210,7 @@ A release is blocked if any of these hold:
 Severity is not the sole criterion: a low-scored issue that crosses a trust boundary or
 breaks a declared invariant can still block release.
 
-## 8. Operational vulnerability response
+## 9. Operational vulnerability response
 
 - Continuous advisory and dependency monitoring; urgent triage for actively exploited
   vulnerabilities and CISA KEV entries.
@@ -197,9 +221,12 @@ breaks a declared invariant can still block release.
 - Reassess historical releases and provide upgrade/mitigation guidance.
 - Re-open prior dispositions when reachability, configuration or threat intelligence changes.
 
-## 9. Initial audit workstreams
+## 10. Initial audit workstreams
 
-- Inventory every current Capstan media-related dependency, tool and transitive component.
+- Inventory every current Capstan media-related dependency, tool and transitive component;
+  verify that no third-party multimedia implementation is linked, vendored or shipped.
+- Maintain a native-implementation register mapping every media capability to its
+  first-party Capstan source, tests, authoring provenance and assurance evidence.
 - Build a format-to-parser/decoder attack-surface map for each proposed supported format.
 - Import and deduplicate advisories from GStreamer, FFmpeg, image/audio codec projects,
   protocol implementations, operating-system vendors and vulnerability databases.
@@ -208,7 +235,7 @@ breaks a declared invariant can still block release.
 - Define worker isolation per supported OS; identify where no robust sandbox exists.
 - Establish CI jobs for SBOM/advisory reconciliation, fuzzing, sanitizers and reproducibility.
 
-## 10. Evidence and claim discipline
+## 11. Evidence and claim discipline
 
 Use precise statuses: inventoried, applicability-assessed, reproducer-retained, fixed,
 mitigated, regression-passing, fuzzed (with campaign duration/corpus/coverage), reviewed,
