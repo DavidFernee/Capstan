@@ -389,6 +389,7 @@ struct CCMExploreResult {
     int explored_states;
     bool invariant_violation;
     bool truncated;
+    bool invalid_budget;
     List<int> counterexample;
 }
 
@@ -443,6 +444,15 @@ bool ccm_seen_state(List<CCMState> states, CCMState candidate) {
 // all resource/configuration fields. A hard state cap fails closed as
 // "truncated"; callers must never interpret truncation as a proof.
 CCMExploreResult ccm_explore(int max_states) {
+    if (max_states < 1 || max_states > CCM_MAX_EXPLORED_STATES) {
+        return new CCMExploreResult{
+            explored_states: 0,
+            invariant_violation: false,
+            truncated: true,
+            invalid_budget: true,
+            counterexample: new List<int>()
+        };
+    }
     List<CCMState> states = new List<CCMState>();
     List<List<int>> traces = new List<List<int>>();
     List<int> empty_trace = new List<int>();
@@ -469,6 +479,7 @@ CCMExploreResult ccm_explore(int max_states) {
                         explored_states: states.len(),
                         invariant_violation: true,
                         truncated: false,
+                        invalid_budget: false,
                         counterexample: next_trace
                     };
                 }
@@ -479,6 +490,7 @@ CCMExploreResult ccm_explore(int max_states) {
                             explored_states: states.len(),
                             invariant_violation: false,
                             truncated: true,
+                            invalid_budget: false,
                             counterexample: new List<int>()
                         };
                     }
@@ -493,6 +505,7 @@ CCMExploreResult ccm_explore(int max_states) {
         explored_states: states.len(),
         invariant_violation: false,
         truncated: false,
+        invalid_budget: false,
         counterexample: new List<int>()
     };
 }
@@ -510,6 +523,13 @@ test "CCM bounded explorer fails closed when its state budget is too small" {
     assert(!result.invariant_violation);
     assert(result.truncated);
     assert(result.explored_states == 1);
+    assert(!result.invalid_budget);
+}
+
+test "CCM explorer rejects a state budget above its hard maximum" {
+    CCMExploreResult result = ccm_explore(CCM_MAX_EXPLORED_STATES + 1);
+    assert(result.truncated && result.invalid_budget);
+    assert(result.explored_states == 0);
 }
 
 bool ccm_valid_interleaving(List<int> schedule) {
@@ -787,5 +807,24 @@ test "CCM consumer cancellation releases consumer-owned message" {
     assert(state.consumer_status == CCM_TASK_CANCELLED);
     assert(!state.message_live && state.message_owner == CCM_OWNER_NONE);
     assert(state.live_bytes == 0 && state.channel_count == 0);
+}
+
+
+
+test "CCM producer cancellation after channel close releases producer-owned message" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    assert(ccm_invariant(state));
+    assert(state.producer_status == CCM_TASK_CANCELLED);
+    assert(!state.message_live && state.live_bytes == 0);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state) && state.scope_closed);
 }
 
