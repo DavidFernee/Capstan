@@ -118,7 +118,7 @@ int main() {
     WaylandFrameHeader first = wayland_frame_header(wayland_test_bytes(joined), 0);
     if (first.status != 1 || first.end_offset != 8) { return 27; }
     span = wayland_frame_array(wayland_test_bytes(joined), first, 8);
-    if (span.status != 0) { return 28; }
+    if (span.status != -1) { return 28; }
     span = wayland_frame_array(wayland_test_bytes(joined), first, 4);
     if (span.status != -1) { return 29; }
 
