@@ -21,6 +21,8 @@ The parser rejects a malformed RIFF/WAVE signature, inconsistent RIFF length, tr
 
 Eight-bit WAVE PCM is unsigned and is centred by subtracting 128. Sixteen-, twenty-four- and thirty-two-bit PCM are decoded as signed little-endian two's-complement values. Samples remain in their original integer bit-depth domain and are interleaved by frame/channel. No floating-point conversion, normalisation, resampling, mixing, clipping or dithering is performed.
 
+The parser consumes its source. On failure it returns no partial wave/frame value, but the source cursor remains at the point where the error was detected; callers should discard that source rather than retry from an assumed initial position.
+
 ## Explicit non-goals
 
 This slice does not implement:
