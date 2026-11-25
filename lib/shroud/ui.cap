@@ -144,7 +144,7 @@ struct Ui {
         List<Laid> all = new List<Laid>();
         collect(l, all);
         // Retained per-node state is valid only while the keyed node is present.
-        // Build one live-ID set so pruning remains O(nodes + retained entries),
+        // Build per-kind live-ID sets so pruning remains O(nodes + retained entries),
         // rather than repeatedly searching the layout for each stale map key.
         Map<int> live_scroll_ids = new Map<int>();
         Map<int> live_caret_ids = new Map<int>();
