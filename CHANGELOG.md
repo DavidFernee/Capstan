@@ -5,6 +5,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Security assurance: make v1.0 a C-free, evidence-gated release on Linux, macOS and Windows; add mandatory CWE/security acceptance criteria, explicit unknown/residual evidence states and a per-release assurance scorecard. Current C-backend status remains explicit; this is a release requirement, not a claim of implementation.
 - Security: password verifier accepts only the canonical 123-byte, 600,000-iteration PBKDF2-SHA256 record profile and caps password inputs at 256 bytes; malformed, noncanonical, oversized and legacy-cost records are rejected before KDF work. The format is unreleased in 0.4.0, so no legacy-record compatibility is promised; development credentials using older profiles must be recreated before upgrade.
 - Anchor A0: headless IDE workbench prototype using Shroud S0; static navigation and read-only preview only, with no live compiler connection or project commands executed
 - Anchor direction: WYSIWYG Shroud designer with Capstan source as the authoritative representation, plus a curated, version-pinned catalogue of security-reviewed components
