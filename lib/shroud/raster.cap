@@ -380,24 +380,35 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                 if (n > MAX_DISPLAY_SEGMENTS_PER_PATH || seg.y0.len() != n ||
                     seg.x1.len() != n || seg.y1.len() != n || n > MAX_DISPLAY_SEGMENTS - payload) { return false; }
                 payload += n;
+                int min_x = 0;
+                int max_x = 0;
                 int min_y = 0;
                 int max_y = 0;
                 for (int j = 0; j < n; j += 1) {
                     if (!display_coord_valid(seg.x0[j]) || !display_coord_valid(seg.y0[j]) ||
                         !display_coord_valid(seg.x1[j]) || !display_coord_valid(seg.y1[j])) { return false; }
                     if (j == 0) {
+                        min_x = int_min(seg.x0[j], seg.x1[j]);
+                        max_x = int_max(seg.x0[j], seg.x1[j]);
                         min_y = int_min(seg.y0[j], seg.y1[j]);
                         max_y = int_max(seg.y0[j], seg.y1[j]);
                     } else {
+                        min_x = int_min(min_x, int_min(seg.x0[j], seg.x1[j]));
+                        max_x = int_max(max_x, int_max(seg.x0[j], seg.x1[j]));
                         min_y = int_min(min_y, int_min(seg.y0[j], seg.y1[j]));
                         max_y = int_max(max_y, int_max(seg.y0[j], seg.y1[j]));
                     }
                 }
                 if (n > 0) {
+                    int x0 = int_max(fx_floor(min_x), cmd.clip.x);
+                    int x1 = int_min(fx_ceil(max_x), cmd.clip.right());
+                    int width = int_max(0, x1 - x0);
                     int y0 = int_max(fx_floor(min_y), cmd.clip.y);
                     int y1 = int_min(fx_ceil(max_y), cmd.clip.bottom());
                     int rows = int_max(0, y1 - y0);
-                    int per_row = n * (1 + SUBSAMPLES * display_sort_levels(n));
+                    // fill_segments scans n edges per row, sorts up to n crossings
+                    // for each sub-scanline, then visits every clipped output pixel.
+                    int per_row = width + n * (1 + SUBSAMPLES * display_sort_levels(n));
                     if (rows > 0 && per_row > (MAX_DISPLAY_WORK - work) / rows) { return false; }
                     work += rows * per_row;
                 }
