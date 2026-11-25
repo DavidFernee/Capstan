@@ -1,0 +1,459 @@
+// Deadeye ISO Base Media File Format (MP4) container preflight.
+// This first increment validates bounded box structure and track/container
+// presence. It does NOT yet map stsc/stsz/stco/co64 sample tables into packets,
+// parse AVC configuration, or decode media. Encrypted and fragmented profiles
+// are rejected rather than guessed. All parser and test logic is Capstan.
+import "core.cap";
+
+const int DEADEYE_MP4_MAX_INPUT_BYTES = 67108864;
+const int DEADEYE_MP4_MAX_BOXES = 4096;
+const int DEADEYE_MP4_MAX_DEPTH = 8;
+const int DEADEYE_MP4_MAX_TRACKS = 16;
+
+struct DeadeyeMp4Box {
+    int start;
+    int size;
+    int header_size;
+    int payload_start;
+    int end;
+    int type_a;
+    int type_b;
+    int type_c;
+    int type_d;
+}
+
+struct DeadeyeMp4BoxResult {
+    bool ok;
+    DeadeyeMp4Box box;
+    string error;
+}
+
+struct DeadeyeMp4ScanState {
+    int box_count;
+    int track_count;
+    bool has_mvhd;
+    bool has_encryption_marker;
+}
+
+struct DeadeyeMp4Summary {
+    bool ok;
+    int major_brand_a;
+    int major_brand_b;
+    int major_brand_c;
+    int major_brand_d;
+    int track_count;
+    int box_count;
+    int mdat_count;
+    int mdat_payload_bytes;
+    string error;
+}
+
+struct DeadeyeMp4SummaryResult {
+    bool ok;
+    DeadeyeMp4Summary? summary;
+    string error;
+}
+
+int deadeye_mp4_u32_be(List<int> bytes, int at) {
+    return (bytes[at] << 24) | (bytes[at + 1] << 16) |
+        (bytes[at + 2] << 8) | bytes[at + 3];
+}
+
+bool deadeye_mp4_fourcc(
+    List<int> bytes, int at, int a, int b, int c, int d
+) {
+    return bytes[at] == a && bytes[at + 1] == b &&
+        bytes[at + 2] == c && bytes[at + 3] == d;
+}
+
+bool deadeye_mp4_box_type(
+    DeadeyeMp4Box box, int a, int b, int c, int d
+) {
+    return box.type_a == a && box.type_b == b &&
+        box.type_c == c && box.type_d == d;
+}
+
+DeadeyeMp4BoxResult deadeye_mp4_box_read(
+    List<int> bytes, int offset, int parent_end
+) {
+    if (offset < 0 || parent_end < offset || parent_end > bytes.len()) {
+        return new DeadeyeMp4BoxResult{
+            ok: false, box: new DeadeyeMp4Box{}, error: "invalid_box_range"
+        };
+    }
+    if (parent_end - offset < 8) {
+        return new DeadeyeMp4BoxResult{
+            ok: false, box: new DeadeyeMp4Box{}, error: "truncated_box_header"
+        };
+    }
+    int size32 = deadeye_mp4_u32_be(bytes, offset);
+    int header_size = 8;
+    int box_size = size32;
+    if (size32 == 1) {
+        if (parent_end - offset < 16) {
+            return new DeadeyeMp4BoxResult{
+                ok: false, box: new DeadeyeMp4Box{}, error: "truncated_extended_size"
+            };
+        }
+        // The input ceiling is 64 MiB, so any non-zero high word is too large.
+        if (deadeye_mp4_u32_be(bytes, offset + 8) != 0) {
+            return new DeadeyeMp4BoxResult{
+                ok: false, box: new DeadeyeMp4Box{}, error: "box_size_limit"
+            };
+        }
+        box_size = deadeye_mp4_u32_be(bytes, offset + 12);
+        header_size = 16;
+    } else if (size32 == 0) {
+        box_size = parent_end - offset;
+    }
+    if (box_size < header_size || box_size > parent_end - offset) {
+        return new DeadeyeMp4BoxResult{
+            ok: false, box: new DeadeyeMp4Box{}, error: "invalid_box_size"
+        };
+    }
+    DeadeyeMp4Box box = new DeadeyeMp4Box{
+        start: offset, size: box_size, header_size: header_size,
+        payload_start: offset + header_size, end: offset + box_size,
+        type_a: bytes[offset + 4], type_b: bytes[offset + 5],
+        type_c: bytes[offset + 6], type_d: bytes[offset + 7]
+    };
+    return new DeadeyeMp4BoxResult{ok: true, box: box, error: ""};
+}
+
+bool deadeye_mp4_is_container(DeadeyeMp4Box box) {
+    return deadeye_mp4_box_type(box, 'm', 'o', 'o', 'v') ||
+        deadeye_mp4_box_type(box, 't', 'r', 'a', 'k') ||
+        deadeye_mp4_box_type(box, 'm', 'd', 'i', 'a') ||
+        deadeye_mp4_box_type(box, 'm', 'i', 'n', 'f') ||
+        deadeye_mp4_box_type(box, 's', 't', 'b', 'l') ||
+        deadeye_mp4_box_type(box, 'e', 'd', 't', 's') ||
+        deadeye_mp4_box_type(box, 'd', 'i', 'n', 'f') ||
+        deadeye_mp4_box_type(box, 'u', 'd', 't', 'a') ||
+        deadeye_mp4_box_type(box, 's', 'i', 'n', 'f') ||
+        deadeye_mp4_box_type(box, 's', 'c', 'h', 'i') ||
+        deadeye_mp4_box_type(box, 'i', 'p', 'r', 'o');
+}
+
+bool deadeye_mp4_is_encryption_marker(DeadeyeMp4Box box) {
+    return deadeye_mp4_box_type(box, 's', 'i', 'n', 'f') ||
+        deadeye_mp4_box_type(box, 's', 'c', 'h', 'm') ||
+        deadeye_mp4_box_type(box, 't', 'e', 'n', 'c') ||
+        deadeye_mp4_box_type(box, 'p', 's', 's', 'h') ||
+        deadeye_mp4_box_type(box, 's', 'e', 'n', 'c') ||
+        deadeye_mp4_box_type(box, 's', 'a', 'i', 'z') ||
+        deadeye_mp4_box_type(box, 's', 'a', 'i', 'o') ||
+        deadeye_mp4_box_type(box, 'e', 'n', 'c', 'v') ||
+        deadeye_mp4_box_type(box, 'e', 'n', 'c', 'a');
+}
+
+// Walk only explicitly recognised child-box containers. Depth and total boxes
+// are global limits, so nesting and sibling-count attacks fail closed.
+bool deadeye_mp4_scan_children(
+    List<int> bytes, int start, int end, int depth, DeadeyeMp4ScanState state
+) {
+    if (depth > DEADEYE_MP4_MAX_DEPTH || start < 0 ||
+        end < start || end > bytes.len()) { return false; }
+    int at = start;
+    while (at < end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes, at, end);
+        if (!parsed.ok) { return false; }
+        DeadeyeMp4Box box = parsed.box;
+        state.box_count += 1;
+        if (state.box_count > DEADEYE_MP4_MAX_BOXES) { return false; }
+        if (deadeye_mp4_is_encryption_marker(box)) {
+            state.has_encryption_marker = true;
+            return false;
+        }
+        if (deadeye_mp4_box_type(box, 't', 'r', 'a', 'k')) {
+            state.track_count += 1;
+            if (state.track_count > DEADEYE_MP4_MAX_TRACKS) { return false; }
+        }
+        if (deadeye_mp4_box_type(box, 'm', 'v', 'h', 'd')) {
+            state.has_mvhd = true;
+        }
+        if (deadeye_mp4_is_container(box)) {
+            int child_start = box.payload_start;
+            // ISO BMFF meta boxes begin with version/flags before children.
+            if (deadeye_mp4_box_type(box, 'm', 'e', 't', 'a')) {
+                if (box.end - child_start < 4) { return false; }
+                child_start += 4;
+            }
+            if (!deadeye_mp4_scan_children(
+                bytes, child_start, box.end, depth + 1, state
+            )) { return false; }
+        }
+        at = box.end;
+    }
+    return at == end;
+}
+
+bool deadeye_mp4_brand_supported(List<int> bytes, int at) {
+    return deadeye_mp4_fourcc(bytes, at, 'i', 's', 'o', 'm') ||
+        deadeye_mp4_fourcc(bytes, at, 'i', 's', 'o', '2') ||
+        deadeye_mp4_fourcc(bytes, at, 'm', 'p', '4', '1') ||
+        deadeye_mp4_fourcc(bytes, at, 'm', 'p', '4', '2') ||
+        deadeye_mp4_fourcc(bytes, at, 'a', 'v', 'c', '1');
+}
+
+DeadeyeMp4SummaryResult deadeye_mp4_error(string error) {
+    return new DeadeyeMp4SummaryResult{ok: false, summary: none, error: error};
+}
+
+// Bounded structural preflight for a non-fragmented, unencrypted ISO BMFF file.
+// It validates top-level boxes, ftyp brands, moov child structure, track count,
+// movie-header presence and mdat extents. It deliberately does not claim packet
+// demultiplexing until sample tables and codec configuration are parsed.
+DeadeyeMp4SummaryResult deadeye_mp4_inspect_internal(
+    HalyardByteSource source, HalyardConsumptionBudget? budget
+) {
+    if (!halyard_source_shape_valid(source)) { return deadeye_mp4_error("invalid_source"); }
+    int source_length = halyard_source_length(source);
+    if (source_length < 24) { return deadeye_mp4_error("input_too_short"); }
+    if (source_length > DEADEYE_MP4_MAX_INPUT_BYTES) {
+        return deadeye_mp4_error("input_limit");
+    }
+    if (source.position != 0) { return deadeye_mp4_error("source_not_at_start"); }
+    if (!halyard_source_validate(source)) { return deadeye_mp4_error("invalid_source"); }
+
+    if (let budget_value = budget) {
+        HalyardConsumptionCharge input_charge = new HalyardConsumptionCharge{
+            input_bytes: source_length, output_bytes: 0,
+            decoded_units: 0, work_units: source_length
+        };
+        if (!halyard_consumption_budget_consume(budget_value, input_charge)) {
+            return deadeye_mp4_error("budget_exceeded");
+        }
+        // The defensive parse snapshot is a second live byte vector.
+        HalyardConsumptionCharge snapshot_charge = new HalyardConsumptionCharge{
+            input_bytes: 0, output_bytes: source_length,
+            decoded_units: 0, work_units: 0
+        };
+        if (!halyard_consumption_budget_consume(budget_value, snapshot_charge)) {
+            return deadeye_mp4_error("budget_exceeded");
+        }
+    }
+
+    HalyardBytesResult copied = halyard_read_exact(source, source_length);
+    if (!copied.ok) { return deadeye_mp4_error("truncated_input"); }
+    List<int> bytes = copied.bytes;
+    int at = 0;
+    bool has_ftyp = false;
+    bool has_moov = false;
+    int mdat_count = 0;
+    int mdat_bytes = 0;
+    int brand_a = 0; int brand_b = 0; int brand_c = 0; int brand_d = 0;
+    DeadeyeMp4ScanState state = new DeadeyeMp4ScanState{
+        box_count: 0, track_count: 0, has_mvhd: false,
+        has_encryption_marker: false
+    };
+
+    while (at < bytes.len()) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes, at, bytes.len());
+        if (!parsed.ok) { return deadeye_mp4_error(parsed.error); }
+        DeadeyeMp4Box box = parsed.box;
+        state.box_count += 1;
+        if (state.box_count > DEADEYE_MP4_MAX_BOXES) {
+            return deadeye_mp4_error("box_count_limit");
+        }
+        if (deadeye_mp4_box_type(box, 'f', 't', 'y', 'p')) {
+            if (has_ftyp || box.end - box.payload_start < 8 ||
+                (box.end - box.payload_start - 8) % 4 != 0) {
+                return deadeye_mp4_error("invalid_ftyp");
+            }
+            brand_a = bytes[box.payload_start];
+            brand_b = bytes[box.payload_start + 1];
+            brand_c = bytes[box.payload_start + 2];
+            brand_d = bytes[box.payload_start + 3];
+            bool supported = deadeye_mp4_brand_supported(bytes, box.payload_start);
+            int compatible = box.payload_start + 8;
+            while (compatible < box.end) {
+                if (deadeye_mp4_brand_supported(bytes, compatible)) {
+                    supported = true;
+                }
+                compatible += 4;
+            }
+            if (!supported) { return deadeye_mp4_error("unsupported_brand"); }
+            has_ftyp = true;
+        } else if (deadeye_mp4_box_type(box, 'm', 'o', 'o', 'v')) {
+            if (has_moov) { return deadeye_mp4_error("duplicate_moov"); }
+            has_moov = true;
+            if (!deadeye_mp4_scan_children(
+                bytes, box.payload_start, box.end, 1, state
+            )) {
+                if (state.has_encryption_marker) {
+                    return deadeye_mp4_error("encrypted_content_unsupported");
+                }
+                return deadeye_mp4_error("invalid_moov_children");
+            }
+        } else if (deadeye_mp4_box_type(box, 'm', 'd', 'a', 't')) {
+            mdat_count += 1;
+            if (mdat_count > 256) { return deadeye_mp4_error("mdat_count_limit"); }
+            int payload_bytes = box.end - box.payload_start;
+            if (payload_bytes > DEADEYE_MP4_MAX_INPUT_BYTES - mdat_bytes) {
+                return deadeye_mp4_error("mdat_size_limit");
+            }
+            mdat_bytes += payload_bytes;
+        } else if (deadeye_mp4_box_type(box, 'm', 'o', 'o', 'f')) {
+            return deadeye_mp4_error("fragmented_mp4_unsupported");
+        } else if (deadeye_mp4_box_type(box, 'u', 'u', 'i', 'd')) {
+            return deadeye_mp4_error("uuid_box_unsupported");
+        }
+        at = box.end;
+    }
+
+    if (!has_ftyp) { return deadeye_mp4_error("missing_ftyp"); }
+    if (!has_moov || !state.has_mvhd || state.track_count < 1) {
+        return deadeye_mp4_error("incomplete_movie_metadata");
+    }
+    if (mdat_count < 1) { return deadeye_mp4_error("missing_mdat"); }
+
+    DeadeyeMp4Summary summary = new DeadeyeMp4Summary{
+        ok: true, major_brand_a: brand_a, major_brand_b: brand_b,
+        major_brand_c: brand_c, major_brand_d: brand_d,
+        track_count: state.track_count, box_count: state.box_count,
+        mdat_count: mdat_count, mdat_payload_bytes: mdat_bytes, error: ""
+    };
+    return new DeadeyeMp4SummaryResult{ok: true, summary: summary, error: ""};
+}
+
+DeadeyeMp4SummaryResult deadeye_mp4_inspect(HalyardByteSource source) {
+    return deadeye_mp4_inspect_internal(source, none);
+}
+
+DeadeyeMp4SummaryResult deadeye_mp4_inspect_budgeted(
+    HalyardByteSource source, HalyardConsumptionBudget budget
+) {
+    return deadeye_mp4_inspect_internal(source, budget);
+}
+
+void deadeye_mp4_test_push_u32(List<int> bytes, int value) {
+    bytes.push((value >>> 24) & 255); bytes.push((value >>> 16) & 255);
+    bytes.push((value >>> 8) & 255); bytes.push(value & 255);
+}
+
+void deadeye_mp4_test_push_box(
+    List<int> bytes, int a, int b, int c, int d, List<int> payload
+) {
+    deadeye_mp4_test_push_u32(bytes, payload.len() + 8);
+    bytes.push(a); bytes.push(b); bytes.push(c); bytes.push(d);
+    for (int i = 0; i < payload.len(); i += 1) { bytes.push(payload[i]); }
+}
+
+List<int> deadeye_mp4_test_minimal_file() {
+    List<int> file = new List<int>();
+    List<int> ftyp = new List<int>();
+    ftyp.push('i'); ftyp.push('s'); ftyp.push('o'); ftyp.push('m');
+    deadeye_mp4_test_push_u32(ftyp, 0);
+    ftyp.push('i'); ftyp.push('s'); ftyp.push('o'); ftyp.push('m');
+    deadeye_mp4_test_push_box(file, 'f', 't', 'y', 'p', ftyp);
+
+    List<int> mvhd_payload = new List<int>();
+    for (int i = 0; i < 20; i += 1) { mvhd_payload.push(0); }
+    List<int> mvhd = new List<int>();
+    deadeye_mp4_test_push_box(mvhd, 'm', 'v', 'h', 'd', mvhd_payload);
+    List<int> trak = new List<int>();
+    deadeye_mp4_test_push_box(trak, 't', 'k', 'h', 'd', new List<int>());
+    List<int> moov_payload = new List<int>();
+    for (int i = 0; i < mvhd.len(); i += 1) { moov_payload.push(mvhd[i]); }
+    for (int i = 0; i < trak.len(); i += 1) { moov_payload.push(trak[i]); }
+    deadeye_mp4_test_push_box(file, 'm', 'o', 'o', 'v', moov_payload);
+    deadeye_mp4_test_push_box(file, 'm', 'd', 'a', 't', new List<int>());
+    return file;
+}
+
+test "Deadeye MP4 accepts a minimal bounded unencrypted ISO BMFF layout" {
+    List<int> bytes = deadeye_mp4_test_minimal_file();
+    HalyardByteSourceResult source_result = halyard_source_from_list(
+        bytes, DEADEYE_MP4_MAX_INPUT_BYTES
+    );
+    assert(source_result.ok);
+    if (let source = source_result.source) {
+        DeadeyeMp4SummaryResult result = deadeye_mp4_inspect(source);
+        assert(result.ok);
+        if (let summary = result.summary) {
+            assert(summary.track_count == 1);
+            assert(summary.mdat_count == 1);
+            assert(summary.mdat_payload_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye MP4 rejects truncated, undersized and out-of-parent boxes" {
+    List<int> bytes = deadeye_mp4_test_minimal_file();
+    bytes[0] = 0; bytes[1] = 0; bytes[2] = 0; bytes[3] = 7;
+    HalyardByteSourceResult source_result = halyard_source_from_list(bytes, 1024);
+    assert(source_result.ok);
+    if (let source = source_result.source) {
+        DeadeyeMp4SummaryResult result = deadeye_mp4_inspect(source);
+        assert(!result.ok && result.error == "invalid_box_size");
+    } else { assert(false); }
+}
+
+test "Deadeye MP4 rejects unsupported and encrypted profiles" {
+    List<int> unsupported = deadeye_mp4_test_minimal_file();
+    unsupported[8] = 'q';
+    unsupported[9] = 't';
+    unsupported[10] = ' ';
+    unsupported[11] = ' ';
+    HalyardByteSourceResult first = halyard_source_from_list(unsupported, 1024);
+    assert(first.ok);
+    if (let source = first.source) {
+        DeadeyeMp4SummaryResult result = deadeye_mp4_inspect(source);
+        assert(!result.ok && result.error == "unsupported_brand");
+    } else { assert(false); }
+
+    List<int> encrypted = deadeye_mp4_test_minimal_file();
+    // Replace the trak's tkhd type with sinf; the walker must fail closed.
+    int at = 8 + 16 + 8 + 28 + 8;
+    encrypted[at + 4] = 's'; encrypted[at + 5] = 'i';
+    encrypted[at + 6] = 'n'; encrypted[at + 7] = 'f';
+    HalyardByteSourceResult second = halyard_source_from_list(encrypted, 1024);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        DeadeyeMp4SummaryResult result2 = deadeye_mp4_inspect(source2);
+        assert(!result2.ok);
+    } else { assert(false); }
+}
+
+test "Deadeye MP4 rejects missing metadata and fragmented layouts" {
+    List<int> missing = deadeye_mp4_test_minimal_file();
+    // The moov box type becomes a free box, leaving no movie metadata.
+    int moov_at = 8 + 16;
+    missing[moov_at + 4] = 'f'; missing[moov_at + 5] = 'r';
+    missing[moov_at + 6] = 'e'; missing[moov_at + 7] = 'e';
+    HalyardByteSourceResult first = halyard_source_from_list(missing, 1024);
+    assert(first.ok);
+    if (let source = first.source) {
+        DeadeyeMp4SummaryResult result = deadeye_mp4_inspect(source);
+        assert(!result.ok && result.error == "incomplete_movie_metadata");
+    } else { assert(false); }
+
+    List<int> fragmented = deadeye_mp4_test_minimal_file();
+    // Replace mdat with moof.
+    int mdat_at = fragmented.len() - 8;
+    fragmented[mdat_at + 4] = 'm'; fragmented[mdat_at + 5] = 'o';
+    fragmented[mdat_at + 6] = 'o'; fragmented[mdat_at + 7] = 'f';
+    HalyardByteSourceResult second = halyard_source_from_list(fragmented, 1024);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        DeadeyeMp4SummaryResult result2 = deadeye_mp4_inspect(source2);
+        assert(!result2.ok && result2.error == "fragmented_mp4_unsupported");
+    } else { assert(false); }
+}
+
+test "Deadeye MP4 charges input and defensive snapshot before parsing" {
+    List<int> bytes = deadeye_mp4_test_minimal_file();
+    HalyardByteSourceResult source_result = halyard_source_from_list(bytes, 1024);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(1024, bytes.len() - 1, 0, 1024);
+    assert(source_result.ok && budget_result.ok);
+    if (let source = source_result.source) {
+        if (let budget = budget_result.budget) {
+            DeadeyeMp4SummaryResult result =
+                deadeye_mp4_inspect_budgeted(source, budget);
+            assert(!result.ok && result.error == "budget_exceeded");
+            assert(budget.used_input_bytes == bytes.len());
+            assert(budget.used_output_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
