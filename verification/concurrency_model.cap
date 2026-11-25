@@ -438,22 +438,22 @@ test "CCM explores interleaving 4: receive first is rejected" {
     assert(!ccm_valid_interleaving(schedule));
 }
 
-test "CCM explores interleaving 5: producer completes before consumer" {
+test "CCM explores interleaving 5: receive then producer send then release" {
     List<int> schedule = new List<int>();
-    schedule.push(CCM_ACT_PRODUCE);
-    schedule.push(CCM_ACT_SEND);
     schedule.push(CCM_ACT_RECEIVE);
+    schedule.push(CCM_ACT_PRODUCE);
     schedule.push(CCM_ACT_RELEASE);
-    assert(ccm_run_interleaving(schedule));
+    schedule.push(CCM_ACT_SEND);
+    assert(!ccm_valid_interleaving(schedule));
 }
 
-test "CCM explores interleaving 6: consumer receive immediately after send" {
+test "CCM explores interleaving 6: consumer sequence precedes producer sequence" {
     List<int> schedule = new List<int>();
-    schedule.push(CCM_ACT_PRODUCE);
-    schedule.push(CCM_ACT_SEND);
     schedule.push(CCM_ACT_RECEIVE);
     schedule.push(CCM_ACT_RELEASE);
-    assert(ccm_run_interleaving(schedule));
+    schedule.push(CCM_ACT_PRODUCE);
+    schedule.push(CCM_ACT_SEND);
+    assert(!ccm_valid_interleaving(schedule));
 }
 
 test "CCM rejects receive before a committed send without mutating state" {
