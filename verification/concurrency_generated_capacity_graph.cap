@@ -126,13 +126,17 @@ bool csg_invariant(CSGState s) {
 // queue count(2), each owner(4), and closed(2). All legal values are bounded.
 int csg_key(CSGState s) {
     int key = s.producer_status - 1;
+    int wait_registered_bit = 0;
+    int channel_closed_bit = 0;
+    if (s.producer_wait_registered) { wait_registered_bit = 1; }
+    if (s.channel_closed) { channel_closed_bit = 1; }
     key = key * 2 + s.producer_wait;
-    key = key * 2 + (s.producer_wait_registered ? 1 : 0);
+    key = key * 2 + wait_registered_bit;
     key = key * 3 + (s.consumer_status - 1);
     key = key * 2 + s.channel_count;
     key = key * 4 + s.first_message_owner;
     key = key * 4 + s.second_message_owner;
-    key = key * 2 + (s.channel_closed ? 1 : 0);
+    key = key * 2 + channel_closed_bit;
     return key;
 }
 
@@ -302,9 +306,11 @@ CSGResult csg_explore(int state_limit) {
     for (int i = 0; i < states.len(); i += 1) {
         if (!csg_terminal(states[i])) { all_terminal = false; }
     }
+    int classification = CSG_PROGRESS;
+    if (all_terminal) { classification = CSG_TERMINAL; }
     return new CSGResult{
         valid: true, complete: true,
-        classification: all_terminal ? CSG_TERMINAL : CSG_PROGRESS,
+        classification: classification,
         explored: states.len(), witness_key: -1
     };
 }
