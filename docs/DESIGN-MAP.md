@@ -1060,3 +1060,25 @@ missing, stale or unverifiable evidence is unknown, never green. Workspace openi
 not execute project code. Build commands use explicit executables and argument vectors,
 never shell interpolation. Project hooks and in-process plugins are out of scope until
 a separately reviewed capability and isolation design exists.
+
+
+## Keel architecture addendum (2026-11-25)
+
+Keel is the proposed 3D engine for scene graphs, spatial mathematics, geometry,
+simulation, bounded asset ingestion and rendering. Its K0 architecture and acceptance
+criteria are specified in [KEEL-ARCHITECTURE.md](KEEL-ARCHITECTURE.md).
+
+Dependency rules:
+
+- Keel may consume Shroud's stable public host, lifecycle, input and presentation
+  interfaces; it must remain usable headlessly.
+- Shroud must not depend on Keel or import scene, mesh, simulation or renderer semantics.
+- Capstan remains the authority for language semantics and compiler security enforcement.
+- Anchor may consume Keel tooling as an application, but is not a dependency of either
+  library.
+- Shared abstractions are extracted only after stable contracts and concrete consumers
+  justify them.
+
+K0 is specification-only at this revision. The spatial core, scene graph, CPU reference
+renderer and bounded asset pipeline are targets, not integrated capabilities. GPU
+drivers, OS graphics services and hardware remain explicit external trust boundaries.
