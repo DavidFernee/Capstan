@@ -1,0 +1,8 @@
+struct Vault {
+    private int secret;
+    int label;
+}
+
+Vault make_vault() {
+    return new Vault{secret: 41, label: 7};
+}
