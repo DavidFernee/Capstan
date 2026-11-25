@@ -11,10 +11,37 @@ spec = importlib.util.spec_from_file_location("registry", ROOT/"scripts/media-re
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 BASE = json.loads((ROOT/"docs/media/FORMAT-REGISTRY.json").read_text(encoding="utf-8"))
+SCHEMA = json.loads((ROOT/"docs/media/FORMAT-REGISTRY-SCHEMA.json").read_text(encoding="utf-8"))
 
 class RegistryTests(unittest.TestCase):
     def test_current_registry_valid(self):
         self.assertEqual(module.validate_registry(BASE), [])
+
+    def test_schema_and_validator_field_sets_match(self):
+        self.assertEqual(set(SCHEMA["required"]), module.TOP)
+        self.assertEqual(set(SCHEMA["properties"]), module.TOP)
+        record = SCHEMA["$defs"]["record"]
+        self.assertEqual(set(record["required"]), module.FIELDS)
+        self.assertEqual(set(record["properties"]), module.FIELDS)
+
+    def test_schema_and_validator_enums_match(self):
+        props = SCHEMA["$defs"]["record"]["properties"]
+        for name, allowed in module.ENUMS.items():
+            schema_enum = (SCHEMA["$defs"]["review"]["enum"]
+                           if name in ("licence_review", "patent_review")
+                           else props[name]["enum"])
+            self.assertEqual(set(schema_enum), allowed, name)
+
+    def test_schema_contains_assurance_evidence_constraints(self):
+        constraints = SCHEMA["allOf"]
+        self.assertEqual(len(constraints), 2)
+        reviewed = constraints[0]["then"]["properties"]
+        self.assertEqual(reviewed["licence_review"]["const"], "reviewed-clear")
+        self.assertEqual(reviewed["patent_review"]["const"], "reviewed-clear")
+        self.assertEqual(reviewed["test_status"]["const"], "passed")
+        self.assertEqual(reviewed["fuzz_status"]["const"], "passed")
+        release = constraints[1]["then"]["properties"]["corpus_revision"]["not"]
+        self.assertEqual(release["const"], "none")
     def test_unknown_top_level_key(self):
         x=copy.deepcopy(BASE); x["unexpected"]=1
         self.assertTrue(any("unknown property 'unexpected'" in e for e in module.validate_registry(x)))
