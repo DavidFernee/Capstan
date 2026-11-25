@@ -629,7 +629,9 @@ void test_resize(Tally t, Font f, Font b) {
     if (let scroll_value = ui.scroll.get("scroll")) { scroll_preserved = scroll_value == fx(12); }
     expect(t, caret_preserved && scroll_preserved,
         "resize: caret and scroll state are preserved", "retained state differs");
-    expect(t, ui.shown_at.get(guard_id) == old_guard_time,
+    bool guard_preserved = false;
+    if (let guard_time = ui.shown_at.get(guard_id)) { guard_preserved = guard_time == old_guard_time; }
+    expect(t, guard_preserved,
         "resize: guard history is retained until the next rendered frame", "guard history changed early");
     expect_int(t, ui.handle(pointer_event(EV_POINTER_UP, 10, 10, 1100)).len(), 0,
         "resize: pointer input is ignored until a fresh frame is rendered");
