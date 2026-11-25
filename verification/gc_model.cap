@@ -1,0 +1,451 @@
+// Capstan-native precise-GC executable reference model.
+//
+// This is an abstract graph/transition model, not a heap allocator, native
+// object representation, compiler root-map implementation, or proof of the
+// production collector. It deliberately uses object IDs and explicit roots;
+// no host addresses, stack scanning, or conservative pointer recognition.
+//
+// The collection operation is transactional: it computes the complete mark
+// closure in private model state, and only constructs the swept heap after the
+// worklist is fully drained. Invalid input or worklist exhaustion returns the
+// original object set unchanged.
+
+const int GC_KIND_TRACED = 1;
+const int GC_KIND_ATOMIC = 2;
+const int GC_KIND_SECRET = 3;
+
+const int GC_OK = 1;
+const int GC_INVALID = 2;
+const int GC_WORKLIST_FULL = 3;
+
+struct GCObject {
+    int id;
+    int generation;
+    int kind;
+    bool allocated;
+    bool marked;
+    bool secret_wiped;
+}
+
+struct GCEdge {
+    int from_id;
+    int to_id;
+}
+
+struct GCSpec {
+    List<GCObject> objects;
+    List<int> roots;
+    List<GCEdge> edges;
+    int worklist_capacity;
+}
+
+struct GCResult {
+    int status;
+    string reason;
+    List<GCObject> objects;
+    List<int> marked_ids;
+    List<int> reclaimed_ids;
+    int work_items;
+}
+
+struct GCOracleResult {
+    bool valid;
+    List<int> reachable_ids;
+    string reason;
+}
+
+bool gc_id_in(List<int> values, int id) {
+    for (int i = 0; i < values.len(); i += 1) {
+        if (values[i] == id) { return true; }
+    }
+    return false;
+}
+
+int gc_find_object(List<GCObject> objects, int id) {
+    for (int i = 0; i < objects.len(); i += 1) {
+        if (objects[i].id == id) { return i; }
+    }
+    return -1;
+}
+
+bool gc_valid_kind(int kind) {
+    return kind == GC_KIND_TRACED ||
+        kind == GC_KIND_ATOMIC || kind == GC_KIND_SECRET;
+}
+
+// Validate the complete graph before the collector changes any state.
+// Object IDs are dense slot identities [0, objects.len()); generations are
+// positive. Edges may originate only in traced objects. Atomic and secret
+// objects are pointer-free by contract.
+bool gc_validate(GCSpec spec) {
+    if (spec.worklist_capacity < 0 ||
+        spec.worklist_capacity > spec.objects.len()) { return false; }
+
+    for (int i = 0; i < spec.objects.len(); i += 1) {
+        GCObject object = spec.objects[i];
+        if (object.id != i || object.generation < 1 ||
+            !gc_valid_kind(object.kind)) { return false; }
+        if (!object.allocated && object.marked) { return false; }
+        if (object.kind == GC_KIND_SECRET && object.allocated &&
+            object.secret_wiped) { return false; }
+    }
+
+    for (int i = 0; i < spec.roots.len(); i += 1) {
+        int root_id = spec.roots[i];
+        int index = gc_find_object(spec.objects, root_id);
+        if (index < 0 || !spec.objects[index].allocated) { return false; }
+    }
+
+    for (int i = 0; i < spec.edges.len(); i += 1) {
+        GCEdge edge = spec.edges[i];
+        int from_index = gc_find_object(spec.objects, edge.from_id);
+        int to_index = gc_find_object(spec.objects, edge.to_id);
+        if (from_index < 0 || to_index < 0) { return false; }
+        if (!spec.objects[from_index].allocated ||
+            !spec.objects[to_index].allocated) { return false; }
+        if (spec.objects[from_index].kind != GC_KIND_TRACED) {
+            return false;
+        }
+    }
+    return true;
+}
+
+GCResult gc_failure(GCSpec spec, int status, string reason, int work_items) {
+    List<int> empty_marked = new List<int>();
+    List<int> empty_reclaimed = new List<int>();
+    return new GCResult{
+        status: status, reason: reason, objects: spec.objects,
+        marked_ids: empty_marked, reclaimed_ids: empty_reclaimed,
+        work_items: work_items
+    };
+}
+
+GCResult gc_collect(GCSpec spec) {
+    if (!gc_validate(spec)) {
+        return gc_failure(spec, GC_INVALID, "invalid_heap_graph", 0);
+    }
+
+    // Marks and worklist are private scratch state. The source heap remains
+    // untouched until closure is complete and sweep output is constructed.
+    List<bool> marks = new List<bool>();
+    for (int i = 0; i < spec.objects.len(); i += 1) {
+        marks.push(false);
+    }
+
+    List<int> worklist = new List<int>();
+    for (int i = 0; i < spec.roots.len(); i += 1) {
+        int root_id = spec.roots[i];
+        int root_index = gc_find_object(spec.objects, root_id);
+        if (!marks[root_index]) {
+            if (worklist.len() >= spec.worklist_capacity) {
+                return gc_failure(
+                    spec, GC_WORKLIST_FULL, "root_worklist_capacity_exhausted",
+                    worklist.len()
+                );
+            }
+            marks[root_index] = true;
+            worklist.push(root_id);
+        }
+    }
+
+    int cursor = 0;
+    while (cursor < worklist.len()) {
+        int current_id = worklist[cursor];
+        cursor += 1;
+        int current_index = gc_find_object(spec.objects, current_id);
+        GCObject current = spec.objects[current_index];
+
+        // Atomic and secret objects are leaves, even if a malformed edge were
+        // somehow introduced after validation.
+        if (current.kind != GC_KIND_TRACED) { continue; }
+
+        for (int edge_index = 0; edge_index < spec.edges.len(); edge_index += 1) {
+            GCEdge edge = spec.edges[edge_index];
+            if (edge.from_id != current_id) { continue; }
+            int target_index = gc_find_object(spec.objects, edge.to_id);
+            if (!marks[target_index]) {
+                if (worklist.len() >= spec.worklist_capacity) {
+                    return gc_failure(
+                        spec, GC_WORKLIST_FULL,
+                        "reachable_worklist_capacity_exhausted", worklist.len()
+                    );
+                }
+                marks[target_index] = true;
+                worklist.push(edge.to_id);
+            }
+        }
+    }
+
+    // Only after all reachable work has been processed do we construct sweep.
+    List<GCObject> swept = new List<GCObject>();
+    List<int> marked_ids = new List<int>();
+    List<int> reclaimed_ids = new List<int>();
+    for (int i = 0; i < spec.objects.len(); i += 1) {
+        GCObject object = spec.objects[i];
+        if (!object.allocated) {
+            swept.push(object);
+        } else if (marks[i]) {
+            object.marked = true;
+            marked_ids.push(object.id);
+            swept.push(object);
+        } else {
+            object.allocated = false;
+            object.marked = false;
+            if (object.kind == GC_KIND_SECRET) {
+                // Abstract wipe event. Concrete byte erasure and non-elision
+                // require separate implementation-level evidence.
+                object.secret_wiped = true;
+            }
+            reclaimed_ids.push(object.id);
+            swept.push(object);
+        }
+    }
+
+    return new GCResult{
+        status: GC_OK, reason: "", objects: swept,
+        marked_ids: marked_ids, reclaimed_ids: reclaimed_ids,
+        work_items: worklist.len()
+    };
+}
+
+// Independent oracle: repeatedly relax the explicit adjacency relation until
+// a fixed point. It does not use the collector's worklist or mark traversal.
+GCOracleResult gc_oracle(GCSpec spec) {
+    List<int> reachable = new List<int>();
+    if (!gc_validate(spec)) {
+        return new GCOracleResult{
+            valid: false, reachable_ids: reachable, reason: "invalid_heap_graph"
+        };
+    }
+
+    for (int i = 0; i < spec.roots.len(); i += 1) {
+        if (!gc_id_in(reachable, spec.roots[i])) {
+            reachable.push(spec.roots[i]);
+        }
+    }
+
+    bool changed = true;
+    int rounds = 0;
+    while (changed && rounds <= spec.objects.len()) {
+        changed = false;
+        rounds += 1;
+        for (int edge_index = 0; edge_index < spec.edges.len(); edge_index += 1) {
+            GCEdge edge = spec.edges[edge_index];
+            if (gc_id_in(reachable, edge.from_id) &&
+                !gc_id_in(reachable, edge.to_id)) {
+                reachable.push(edge.to_id);
+                changed = true;
+            }
+        }
+    }
+
+    if (changed) {
+        return new GCOracleResult{
+            valid: false, reachable_ids: reachable,
+            reason: "oracle_fixed_point_bound_exceeded"
+        };
+    }
+    return new GCOracleResult{
+        valid: true, reachable_ids: reachable, reason: ""
+    };
+}
+
+bool gc_same_id_set(List<int> left, List<int> right) {
+    if (left.len() != right.len()) { return false; }
+    for (int i = 0; i < left.len(); i += 1) {
+        if (!gc_id_in(right, left[i])) { return false; }
+    }
+    return true;
+}
+
+GCObject gc_object(int id, int kind) {
+    return new GCObject{
+        id: id, generation: 1, kind: kind, allocated: true,
+        marked: false, secret_wiped: false
+    };
+}
+
+GCSpec gc_empty_spec(int capacity) {
+    List<GCObject> objects = new List<GCObject>();
+    List<int> roots = new List<int>();
+    List<GCEdge> edges = new List<GCEdge>();
+    return new GCSpec{
+        objects: objects, roots: roots, edges: edges,
+        worklist_capacity: capacity
+    };
+}
+
+GCSpec gc_graph_basic() {
+    GCSpec spec = gc_empty_spec(6);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.objects.push(gc_object(1, GC_KIND_TRACED));
+    spec.objects.push(gc_object(2, GC_KIND_ATOMIC));
+    spec.objects.push(gc_object(3, GC_KIND_TRACED));
+    spec.objects.push(gc_object(4, GC_KIND_SECRET));
+    spec.objects.push(gc_object(5, GC_KIND_TRACED));
+    spec.roots.push(0);
+    spec.roots.push(4);
+    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    spec.edges.push(new GCEdge{from_id: 1, to_id: 2});
+    spec.edges.push(new GCEdge{from_id: 1, to_id: 3});
+    spec.edges.push(new GCEdge{from_id: 3, to_id: 1});
+    return spec;
+}
+
+test "GC traces transitive reachability and preserves cycles" {
+    GCSpec spec = gc_graph_basic();
+    GCOracleResult oracle = gc_oracle(spec);
+    GCResult result = gc_collect(spec);
+    assert(oracle.valid && result.status == GC_OK);
+    assert(gc_same_id_set(result.marked_ids, oracle.reachable_ids));
+    assert(gc_same_id_set(result.reclaimed_ids, [5]));
+    assert(result.objects[0].allocated && result.objects[1].allocated);
+    assert(result.objects[2].allocated && result.objects[3].allocated);
+    assert(result.objects[4].allocated && result.objects[4].secret_wiped == false);
+    assert(!result.objects[5].allocated);
+}
+
+test "GC preserves every root including pointer-free roots" {
+    GCSpec spec = gc_graph_basic();
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_OK);
+    assert(gc_id_in(result.marked_ids, 0));
+    assert(gc_id_in(result.marked_ids, 4));
+    assert(!gc_id_in(result.reclaimed_ids, 4));
+}
+
+test "GC atomic objects are leaves" {
+    GCSpec spec = gc_empty_spec(3);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
+    spec.objects.push(gc_object(2, GC_KIND_TRACED));
+    spec.roots.push(0);
+    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_OK);
+    assert(gc_id_in(result.marked_ids, 1));
+    assert(!gc_id_in(result.marked_ids, 2));
+    assert(gc_id_in(result.reclaimed_ids, 2));
+}
+
+test "GC duplicate roots do not duplicate work" {
+    GCSpec spec = gc_empty_spec(2);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.roots.push(0);
+    spec.roots.push(0);
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_OK && result.work_items == 1);
+    assert(gc_same_id_set(result.marked_ids, [0]));
+}
+
+test "GC duplicate graph edges do not duplicate work" {
+    GCSpec spec = gc_empty_spec(2);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
+    spec.roots.push(0);
+    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_OK && result.work_items == 2);
+    assert(gc_same_id_set(result.marked_ids, [0, 1]));
+}
+
+test "GC empty root set reclaims all unreachable objects" {
+    GCSpec spec = gc_empty_spec(2);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.objects.push(gc_object(1, GC_KIND_SECRET));
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_OK);
+    assert(gc_same_id_set(result.reclaimed_ids, [0, 1]));
+    assert(result.objects[1].secret_wiped);
+}
+
+test "GC rejects stale or unallocated root before sweeping" {
+    GCSpec spec = gc_empty_spec(2);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
+    spec.objects[1].allocated = false;
+    spec.roots.push(1);
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(result.objects[0].allocated && !result.objects[1].allocated);
+    assert(result.reclaimed_ids.len() == 0);
+}
+
+test "GC rejects edges from pointer-free objects" {
+    GCSpec spec = gc_empty_spec(2);
+    spec.objects.push(gc_object(0, GC_KIND_ATOMIC));
+    spec.objects.push(gc_object(1, GC_KIND_TRACED));
+    spec.roots.push(0);
+    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(result.objects[1].allocated);
+}
+
+test "GC rejects an edge to a missing object" {
+    GCSpec spec = gc_empty_spec(2);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.roots.push(0);
+    spec.edges.push(new GCEdge{from_id: 0, to_id: 9});
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(result.objects[0].allocated);
+}
+
+test "GC worklist exhaustion fails closed without sweeping" {
+    GCSpec spec = gc_empty_spec(1);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
+    spec.roots.push(0);
+    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_WORKLIST_FULL);
+    assert(result.reclaimed_ids.len() == 0);
+    assert(result.objects[0].allocated && result.objects[1].allocated);
+}
+
+test "GC zero worklist capacity rejects nonempty roots transactionally" {
+    GCSpec spec = gc_empty_spec(0);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.roots.push(0);
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_WORKLIST_FULL);
+    assert(result.objects[0].allocated);
+    assert(result.reclaimed_ids.len() == 0);
+}
+
+test "GC secret reclamation records wipe before free publication" {
+    GCSpec spec = gc_empty_spec(1);
+    spec.objects.push(gc_object(0, GC_KIND_SECRET));
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_OK);
+    assert(!result.objects[0].allocated && result.objects[0].secret_wiped);
+}
+
+test "GC invalid descriptor kind is rejected before mutation" {
+    GCSpec spec = gc_empty_spec(1);
+    GCObject invalid = gc_object(0, 99);
+    spec.objects.push(invalid);
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(result.objects[0].allocated);
+}
+
+test "GC oracle and collector agree on a cyclic graph" {
+    GCSpec spec = gc_graph_basic();
+    GCOracleResult oracle = gc_oracle(spec);
+    GCResult result = gc_collect(spec);
+    assert(oracle.valid && result.status == GC_OK);
+    assert(gc_same_id_set(oracle.reachable_ids, result.marked_ids));
+}
+
+test "GC rejects secret objects that claim already-erased while allocated" {
+    GCSpec spec = gc_empty_spec(1);
+    GCObject secret = gc_object(0, GC_KIND_SECRET);
+    secret.secret_wiped = true;
+    spec.objects.push(secret);
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(result.objects[0].allocated && result.objects[0].secret_wiped);
+}
