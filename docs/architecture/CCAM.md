@@ -1,6 +1,6 @@
 # Capstan Core Abstract Machine (CCAM) v0.1
 
-**Status:** normative v0.1 design with a restricted Capstan-native single-frame evaluator in progress (PR #142). The implementation is not yet a conforming v0.1 machine, is not connected to the Lean model, and is not the complete Capstan semantics.
+**Status:** normative v0.1 design with a restricted Capstan-native single-frame evaluator merged to `main` (PR #142) and a typed in-memory structural validator merged in PR #163. The implementation is not yet a conforming v0.1 machine, is not connected to the Lean model by a refinement theorem, and is not the complete Capstan semantics.
 
 This document defines the intended semantics for the first machine slice. Its executable implementation and conformance tests must be written in Capstan. No Python or C implementation is to serve as the normative reference.
 
@@ -14,7 +14,7 @@ CCAM is a typed, register-based abstract machine. A compiler lowers a checked Ca
 
 `verification/ccam_core.cap` contains the first executable evaluator slice. It implements typed integer/boolean constants and moves, checked integer arithmetic, integer equality/less-than, boolean negation, jumps, conditional branches, typed integer/boolean returns, void returns, explicit traps, and deterministic instruction-step accounting. The evaluator snapshots the supplied instruction sequence before execution. Its input is an already-validated in-memory instruction sequence; this implementation does not decode JSON or perform the closed structural validation required below.
 
-The current slice is single-frame only. It does not yet implement function tables, direct calls, argument transfer, caller destinations, atomic call returns, call-depth limits, or the complete `maxSteps` / `maxDepth` configuration contract. It is not connected to source lowering or a native backend, and no Lean refinement theorem currently relates it to the formal machine. These are explicit gaps, not implied capabilities. PR #142 is the implementation work item; it must remain non-mergeable until its exact-head tests pass and the semantic boundary has been independently reviewed.
+The current slice is single-frame only. It does not yet implement function tables, direct calls, argument transfer, caller destinations, atomic call returns, call-depth limits, or the complete `maxSteps` / `maxDepth` configuration contract. It is not connected to source lowering or a native backend, and no Lean refinement theorem currently relates it to the formal machine. These are explicit gaps, not implied capabilities. The merged evaluator increment passed its exact-head platform, supply-chain and existing formal-verification workflows. The typed validator currently checks the in-memory instruction subset only; JSON decoding, closed-schema validation, duplicate-key rejection and the full v0.1 program/function rules remain unimplemented.
 
 This initial version deliberately includes only:
 - signed 64-bit integers and booleans;
@@ -138,6 +138,8 @@ Execution returns exactly one of:
 - `Trap(code, function, pc, detail)` for a defined dynamic machine trap; `detail` is absent except for `explicit_trap`, which carries its validated reason.
 
 A complete source-program entry has zero arguments and returns `int` or `void`. Internal functions may return `int`, `bool` or `void`. Structural program errors are reported as validation failures before execution, not as dynamic traps.
+
+For the current in-memory single-frame subset, `ccam_validate_single_frame` checks register tags, opcode-specific register indices and types, branch targets, return contracts, and reachable fall-through. Its result is a validation error, separate from machine traps. This subset validator does not establish the full JSON or whole-program validation contract above; in particular it cannot inspect raw object keys or validate function tables and calls. It rejects more than 4,096 registers or 65,536 instructions before allocating its register-file or reachability storage; these are explicit admission limits for this implementation slice, not yet a complete whole-program or raw-input byte budget. Control-flow reachability uses a worklist and is linear in the validated instruction graph. The validated constructor rejects negative `max_steps` directly rather than delegating to the unvalidated constructor. The future decoder must separately cap raw input bytes before constructing these in-memory lists.
 
 The initial dynamic trap codes are `integer_overflow`, `division_by_zero`, `uninitialised_register`, `invalid_register` and `register_type_mismatch` (the last two are defensive checks for conditions that validation should make unreachable), `step_limit_exceeded`, `call_depth_exceeded`, and `explicit_trap` with a validated reason detail matching `[a-z][a-z0-9_]{0,63}` (ASCII). The Capstan implementation must represent machine traps as explicit values or controlled results. Host exceptions must not leak as language-level outcomes; malformed program descriptions are rejected before execution.
 
