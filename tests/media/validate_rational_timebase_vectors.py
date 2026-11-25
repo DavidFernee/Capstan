@@ -211,10 +211,13 @@ def validate_clock(v):
             fail("media delta subtraction overflow")
         anchor = bounded_i64(v["clock_anchor"], v["id"] + ".clock_anchor")
         projected = Fraction(anchor) + Fraction(delta) * mtb / ctb
-        if projected.denominator != 1 or projected.numerator < I64_MIN or projected.numerator > I64_MAX:
+        rounded = round_fraction(projected, v["rounding"])
+        if rounded is None:
+            actual = {"ok": False, "error": "inexact"}
+        elif rounded < I64_MIN or rounded > I64_MAX:
             actual = {"ok": False, "error": "overflow"}
         else:
-            actual = {"ok": True, "clock_ticks": str(projected.numerator)}
+            actual = {"ok": True, "clock_ticks": str(rounded)}
     elif op == "resync":
         actual = {"ok": True, "generation": v["new_generation"], "prior_mapping_invalidated": True}
     elif op == "external_observation":
