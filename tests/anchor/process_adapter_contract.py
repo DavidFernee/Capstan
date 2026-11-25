@@ -296,6 +296,7 @@ class ProcessState(Enum):
 class FakeChild:
     pid: int
     request: StartRequest
+    parent_pid: int | None = None
     exit_code: int | None = None
     state: ProcessState = ProcessState.RUNNING
     events: list[str] = field(default_factory=list)
@@ -318,15 +319,36 @@ class FakeBackend:
         self.events.append(("spawn", child.pid, request.executable_identity, request.argv))
         return child
 
+    def spawn_descendant(self, parent):
+        child = FakeChild(self.next_pid, parent.request, parent_pid=parent.pid)
+        self.next_pid += 1
+        self.children[child.pid] = child
+        self.events.append(("spawn_descendant", child.pid, parent.pid))
+        return child
+
+    def _owned_tree(self, root):
+        members = [root]
+        parent_ids = {root.pid}
+        changed = True
+        while changed:
+            changed = False
+            for candidate in self.children.values():
+                if candidate.parent_pid in parent_ids and candidate not in members:
+                    members.append(candidate)
+                    parent_ids.add(candidate.pid)
+                    changed = True
+        return members
+
     def terminate(self, child, force=False):
-        if child.state in (ProcessState.EXITED, ProcessState.REAPED):
-            return
-        child.state = ProcessState.KILL_REQUESTED if force else ProcessState.TERMINATION_REQUESTED
         event = "kill" if force else "terminate"
-        child.events.append(event)
-        self.events.append((event, child.pid))
-        if force:
-            child.exit_code = -9
+        for member in self._owned_tree(child):
+            if member.state in (ProcessState.EXITED, ProcessState.REAPED):
+                continue
+            member.state = ProcessState.KILL_REQUESTED if force else ProcessState.TERMINATION_REQUESTED
+            member.events.append(event)
+            self.events.append((event, member.pid))
+            if force:
+                member.exit_code = -9
 
     def observe_exit(self, child, exit_code):
         if child.state is ProcessState.REAPED:
@@ -335,12 +357,14 @@ class FakeBackend:
         child.state = ProcessState.EXITED
 
     def reap(self, child):
-        if child.exit_code is None:
-            raise ContractError("cannot reap before exit is observed")
-        if child.state is ProcessState.REAPED:
-            raise ContractError("process reaped more than once")
-        child.state = ProcessState.REAPED
-        self.events.append(("reap", child.pid, child.exit_code))
+        members = self._owned_tree(child)
+        if any(member.exit_code is None for member in members):
+            raise ContractError("cannot reap process tree before every member exits")
+        if any(member.state is ProcessState.REAPED for member in members):
+            raise ContractError("process tree reaped more than once")
+        for member in members:
+            member.state = ProcessState.REAPED
+            self.events.append(("reap", member.pid, member.exit_code))
         return child.exit_code
 
 
@@ -507,6 +531,19 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(process.exit_code, -9)
         self.assertEqual([e[0] for e in self.backend.events if e[0] in ("terminate", "kill", "reap")],
                          ["terminate", "kill", "reap"])
+
+    def test_cancellation_terminates_and_reaps_owned_descendants(self):
+        process = self.supervisor.start(self.request())
+        child = self.backend.spawn_descendant(process.child)
+        grandchild = self.backend.spawn_descendant(child)
+        self.supervisor.cancel(process)
+        self.clock.advance(250)
+        self.supervisor.tick(process)
+        self.assertEqual(process.child.state, ProcessState.REAPED)
+        self.assertEqual(child.state, ProcessState.REAPED)
+        self.assertEqual(grandchild.state, ProcessState.REAPED)
+        killed = {event[1] for event in self.backend.events if event[0] == "kill"}
+        self.assertEqual(killed, {process.child.pid, child.pid, grandchild.pid})
 
     def test_deadline_uses_monotonic_clock_and_reaps(self):
         process = self.supervisor.start(self.request(deadline_ms=20))
