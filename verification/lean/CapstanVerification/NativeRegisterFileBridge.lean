@@ -247,11 +247,8 @@ theorem nativeRegisterReadBoolAtSigned_nonnegative
   have hnotnegative : ¬ index < 0 := by omega
   simp [nativeRegisterReadBoolAtSigned, hnotnegative]
 
-end CapstanVerification
-
-
 /-- A checked native slot replacement rejects missing indices and preserves
-the declared type of an existing slot. -/
+the declared type tag of an existing slot. -/
 def nativeWriteRegister (registers : List NativeCCAMRegister)
     (index : Nat) (replacement : NativeCCAMRegister) :
     Except Trap (List NativeCCAMRegister) :=
@@ -263,7 +260,24 @@ def nativeWriteRegister (registers : List NativeCCAMRegister)
       else
         .error .typeMismatch
 
-/-- Successful native indexed replacement preserves the register-file length. -/
+/-- A successful native indexed write installs its replacement at the target. -/
+theorem nativeWriteRegister_target
+    (registers updated : List NativeCCAMRegister)
+    (index : Nat) (replacement : NativeCCAMRegister)
+    (hwrite : nativeWriteRegister registers index replacement = .ok updated) :
+    updated[index]? = some replacement := by
+  unfold nativeWriteRegister at hwrite
+  cases hreg : registers[index]? with
+  | none => simp [hreg] at hwrite
+  | some old =>
+      by_cases htype : old.declaredTypeTag = replacement.declaredTypeTag
+      · simp [hreg, htype] at hwrite
+        cases hwrite
+        have hbound : index < registers.length := List.isSome_get?_1 hreg
+        exact nativeRegisterSetAt_get_same registers index replacement hbound
+      · simp [hreg, htype] at hwrite
+
+/-- Successful native indexed replacement preserves register-file length. -/
 theorem nativeWriteRegister_length
     (registers updated : List NativeCCAMRegister)
     (index : Nat) (replacement : NativeCCAMRegister)
@@ -279,28 +293,14 @@ theorem nativeWriteRegister_length
         exact nativeRegisterSetAt_length registers index replacement
       · simp [hreg, htype] at hwrite
 
-/-- Successful native indexed replacement installs the requested target slot. -/
-theorem nativeWriteRegister_target
-    (registers updated : List NativeCCAMRegister)
-    (index : Nat) (replacement : NativeCCAMRegister)
-    (hwrite : nativeWriteRegister registers index replacement = .ok updated) :
-    registers[index]? = some (registers[index]!.getD replacement) := by
-  unfold nativeWriteRegister at hwrite
-  cases hreg : registers[index]? with
-  | none => simp [hreg] at hwrite
-  | some old =>
-      by_cases htype : old.declaredTypeTag = replacement.declaredTypeTag
-      · simp [hreg, htype] at hwrite
-        cases hwrite
-        simp [nativeRegisterSetAt_get_same, hreg]
-      · simp [hreg, htype] at hwrite
-
-/-- A successful native indexed replacement leaves every distinct slot intact. -/
+/-- A successful native indexed replacement leaves any distinct in-bounds slot intact. -/
 theorem nativeWriteRegister_other_unchanged
     (registers updated : List NativeCCAMRegister)
     (index other : Nat) (replacement : NativeCCAMRegister)
     (hwrite : nativeWriteRegister registers index replacement = .ok updated)
-    (hother : other ≠ index) :
+    (hindex : index < registers.length)
+    (hother : other < registers.length)
+    (hdistinct : other ≠ index) :
     updated[other]? = registers[other]? := by
   unfold nativeWriteRegister at hwrite
   cases hreg : registers[index]? with
@@ -310,13 +310,29 @@ theorem nativeWriteRegister_other_unchanged
       · simp [hreg, htype] at hwrite
         cases hwrite
         exact nativeRegisterSetAt_get_other registers index other replacement
-          (by
-            have : index < registers.length := List.isSome_get?_1 hreg
-            exact this)
-          (by
-            by_contra hnot
-            have : registers[other]? = none := List.get?_eq_none_iff.mpr (by omega)
-            rw [this] at hother
-            simp at hother)
-          hother
+          hindex hother hdistinct
       · simp [hreg, htype] at hwrite
+
+/-- Signed-index native writes reject negative indices before conversion. -/
+def nativeWriteRegisterSigned (registers : List NativeCCAMRegister)
+    (index : Int) (replacement : NativeCCAMRegister) :
+    Except Trap (List NativeCCAMRegister) :=
+  if index < 0 then .error .invalidRegister
+  else nativeWriteRegister registers index.toNat replacement
+
+theorem nativeWriteRegisterSigned_negative
+    (registers : List NativeCCAMRegister) (index : Int)
+    (replacement : NativeCCAMRegister) (hnegative : index < 0) :
+    nativeWriteRegisterSigned registers index replacement = .error .invalidRegister := by
+  simp [nativeWriteRegisterSigned, hnegative]
+
+/-- A successful signed native write is exactly its nonnegative Nat-index write. -/
+theorem nativeWriteRegisterSigned_nonnegative
+    (registers : List NativeCCAMRegister) (index : Int)
+    (replacement : NativeCCAMRegister) (hnonnegative : 0 ≤ index) :
+    nativeWriteRegisterSigned registers index replacement =
+      nativeWriteRegister registers index.toNat replacement := by
+  have hnotnegative : ¬ index < 0 := by omega
+  simp [nativeWriteRegisterSigned, hnotnegative]
+
+end CapstanVerification
