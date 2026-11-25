@@ -17,6 +17,7 @@
 
 // Limits on what a font may make us do (CWE-400).
 const int MAX_FONT_BYTES = 33554432;                 // 32 MiB
+const int MAX_FONT_TABLES = 1024;                    // bound directory validation work
 const int MAX_GLYPH_POINTS = 4096;
 const int MAX_COMPOSITE_DEPTH = 8;
 const int MAX_COMPOSITE_PARTS = 64;
@@ -126,6 +127,34 @@ int find_table(FontReader r, string tag, int min_len, List<int> lens) {
     return -1;
 }
 
+// Validate the complete sfnt directory before trusting any individual table.
+// Duplicate tags and overlapping/out-of-directory table ranges are ambiguous and
+// rejected. The table-count cap bounds the pairwise overlap check.
+bool font_directory_valid(FontReader r) {
+    if (r.b.len() < 12) { return false; }
+    int count = r.u16(4);
+    if (count > MAX_FONT_TABLES || count > (r.b.len() - 12) / 16) { return false; }
+    int directory_end = 12 + 16 * count;
+    for (int i = 0; i < count; i += 1) {
+        int rec = 12 + 16 * i;
+        int tag = r.u32(rec);
+        int off = r.u32(rec + 8);
+        int len = r.u32(rec + 12);
+        if (!r.ok || off < directory_end || off > r.b.len() ||
+            len > r.b.len() - off || off % 4 != 0) { return false; }
+        for (int j = 0; j < i; j += 1) {
+            int prior = 12 + 16 * j;
+            int prior_tag = r.u32(prior);
+            int prior_off = r.u32(prior + 8);
+            int prior_len = r.u32(prior + 12);
+            if (!r.ok || tag == prior_tag) { return false; }
+            if (len > 0 && prior_len > 0 &&
+                off < prior_off + prior_len && prior_off < off + len) { return false; }
+        }
+    }
+    return r.ok;
+}
+
 // A nested range must belong to its declared parent table, not merely to the
 // complete font file. Subtraction-based checks avoid overflowing offset + length.
 bool font_span_fits(int start, int length, int at, int needed) {
@@ -167,7 +196,8 @@ Font? font_load(Tainted data) {
     int version = r.u32(0);
     if (version != 0x00010000 && version != tag_of("true")) { return none; }
     int table_count = r.u16(4);
-    if (table_count > (r.b.len() - 12) / 16) { return none; }
+    if (table_count > MAX_FONT_TABLES || table_count > (r.b.len() - 12) / 16) { return none; }
+    if (!font_directory_valid(r)) { return none; }
     List<int> head_size = new List<int>(); head_size.push(0);
     List<int> hhea_size = new List<int>(); hhea_size.push(0);
     List<int> maxp_size = new List<int>(); maxp_size.push(0);

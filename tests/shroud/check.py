@@ -325,6 +325,30 @@ def check_table_span_rejection(exe, tmp):
     struct.pack_into(">I", b, cmap_record + 4, target_off - cmap_off)
     cases = [("cmap offset into adjacent table", b)]
 
+    # A table may not alias the sfnt header/directory or overlap another table.
+    b = bytearray(original)
+    struct.pack_into(">I", b, records[b"cmap"] + 8, 0)
+    cases.append(("cmap overlaps sfnt directory", b))
+
+    nonempty = [(tag, off, length, records[tag]) for tag, (off, length) in tables.items() if length > 0]
+    if len(nonempty) < 2:
+        sys.exit("font table-span tests: not enough nonempty tables for overlap mutation")
+    first, second = nonempty[0], nonempty[1]
+    b = bytearray(original)
+    struct.pack_into(">I", b, second[3] + 8, first[1])
+    cases.append(("overlapping table spans", b))
+
+    duplicate_tag = next((tag for tag in tables if tag not in required_tables), None)
+    if duplicate_tag is None:
+        sys.exit("font table-span tests: no optional table for duplicate-tag mutation")
+    b = bytearray(original)
+    struct.pack_into(">I", b, records[duplicate_tag], struct.unpack(">I", b"cmap")[0])
+    cases.append(("duplicate table tag", b))
+
+    b = bytearray(original)
+    struct.pack_into(">H", b, 4, 1025)
+    cases.append(("excessive table count", b))
+
     # A truncated sfnt table directory must be rejected even when all required
     # records happen to occur before the truncated boundary.
     b = bytearray(original)
