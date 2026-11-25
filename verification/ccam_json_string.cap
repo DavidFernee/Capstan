@@ -219,3 +219,26 @@ test "CCAM JSON string decoder rejects invalid UTF-8 and raw controls" {
     assert(!ccam_json_decode_string_body(taint_char(0xC0) + taint_char(0x80)).ok);
     assert(!ccam_json_decode_string_body(taint_char(0xED) + taint_char(0xA0) + taint_char(0x80)).ok);
 }
+
+test "CCAM JSON string decoder accepts valid UTF-8 scalar boundaries" {
+    CCAMJsonStringResult cent = ccam_json_decode_string_body(taint_char(0xC2) + taint_char(0xA2));
+    assert(cent.ok && cent.value.len() == 2);
+    CCAMJsonStringResult euro = ccam_json_decode_string_body(taint_char(0xE2) + taint_char(0x82) + taint_char(0xAC));
+    assert(euro.ok && euro.value.len() == 3);
+    CCAMJsonStringResult emoji = ccam_json_decode_string_body(taint_char(0xF0) + taint_char(0x9F) + taint_char(0x98) + taint_char(0x80));
+    assert(emoji.ok && emoji.value.len() == 4);
+    CCAMJsonStringResult maximum = ccam_json_decode_string_body(taint_char(0xF4) + taint_char(0x8F) + taint_char(0xBF) + taint_char(0xBF));
+    assert(maximum.ok && maximum.value.len() == 4);
+    CCAMJsonStringResult escaped_nul = ccam_json_decode_string_body(taint("\\u0000"));
+    assert(escaped_nul.ok && escaped_nul.value.len() == 1 && escaped_nul.value.at(0) == 0);
+}
+
+test "CCAM JSON string decoder rejects invalid UTF-8 boundary sequences" {
+    assert(!ccam_json_decode_string_body(taint_char(0x80)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xC2)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xE0) + taint_char(0x80) + taint_char(0x80)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xF0) + taint_char(0x80) + taint_char(0x80) + taint_char(0x80)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xF5) + taint_char(0x80) + taint_char(0x80) + taint_char(0x80)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xF4) + taint_char(0x90) + taint_char(0x80) + taint_char(0x80)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xF0) + taint_char(0x9F) + taint_char(0x98)).ok);
+}
