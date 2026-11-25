@@ -181,6 +181,23 @@ HalyardByteSourceResult halyard_source_from_list(List<int> input, int max_bytes)
     return new HalyardByteSourceResult{ok: true, source: source, error: ""};
 }
 
+bool halyard_source_validate(HalyardByteSource source) {
+    if (source.closed || source.max_bytes < 0 ||
+        source.bytes.len() > source.max_bytes ||
+        source.position < 0 || source.position > source.bytes.len()) {
+        return false;
+    }
+    for (int i = 0; i < source.bytes.len(); i += 1) {
+        if (source.bytes[i] < 0 || source.bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+int halyard_source_length(HalyardByteSource source) {
+    if (!halyard_source_validate(source)) { return -1; }
+    return source.bytes.len();
+}
+
 int halyard_source_remaining(HalyardByteSource source) {
     if (source.closed || source.position < 0 || source.position > source.bytes.len()) {
         return 0;
@@ -1052,6 +1069,31 @@ test "Halyard bounded sink rejects corrupted public state" {
         assert(!wrote.ok && wrote.error == "invalid_state");
         HalyardSinkSnapshotResult snapshot = halyard_sink_snapshot(sink);
         assert(!snapshot.ok && snapshot.error == "invalid_state");
+    } else {
+        assert(false);
+    }
+}
+
+
+test "Halyard source validation rejects forged bounds and bytes" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    HalyardByteSourceResult made = halyard_source_from_list(input, 2);
+    assert(made.ok);
+    if (let source = made.source) {
+        assert(halyard_source_validate(source));
+        assert(halyard_source_length(source) == 2);
+        source.max_bytes = 1;
+        assert(!halyard_source_validate(source));
+        assert(halyard_source_length(source) == -1);
+    } else {
+        assert(false);
+    }
+    HalyardByteSourceResult second = halyard_source_from_list(input, 2);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        source2.bytes[0] = 999;
+        assert(!halyard_source_validate(source2));
     } else {
         assert(false);
     }
