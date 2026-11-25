@@ -1,6 +1,6 @@
 # Shroud GPU backend: architecture and acceptance contract
 
-**Status:** implementation RFC and executable reference model; not a claim that a hardware backend exists.
+**Status:** G0 contract and G1 display-list recording/reference executor implemented on the GPU development branch; no hardware backend exists yet.
 **Scope:** optional rendering acceleration for Shroud. The software rasteriser remains normative.
 
 ## 1. Current architectural constraint
@@ -58,8 +58,8 @@ Frame submission is single-owner initially. Do not introduce background GPU thre
 
 ## 6. Delivery stages
 
-1. **G0 — contract (this change):** document semantics, capability negotiation, resource accounting, loss/fallback; executable test-only reference model.
-2. **G1 — display list:** immutable bounded command buffer, software executor switched to consume it, unchanged golden output.
+1. **G0 — contract:** backend semantics, capability negotiation, resource accounting, loss/fallback and executable reference model. Implemented on this branch.
+2. **G1 — display list:** bounded command recording and software replay are implemented on this branch. The UI render path records rectangle, flattened path, glyph-mask and individual blend commands, then replays them through the existing integer rasteriser. Each command snapshots its effective clip and opacity. Frame limits cap command count, aggregate geometry/mask payload and per-path geometry. A differential behaviour test compares immediate and replayed pixels and includes glyphs with empty masks. Exact golden/CI validation is still required before G1 is considered complete.
 3. **G2 — host capability:** reviewed native host interface for device creation, submission, completion, presentation and readback; no ambient OS lookup.
 4. **G3 — first GPU executor:** offscreen integer-target rendering of a restricted command subset; software fallback for unsupported commands.
 5. **G4 — parity and resilience:** differential goldens, device-loss injection, resize generations, allocation failures, long-run resource accounting.
@@ -78,4 +78,4 @@ Frame submission is single-owner initially. Do not introduce background GPU thre
 
 ## 8. Explicit non-goals of G0
 
-This contract does not add a GPU driver, shader, native window, Vulkan dependency, C shim, hardware detection, asynchronous execution or performance claim. Those depend on the display-list and reviewed host boundary. The reference model tests policy and lifecycle only; it is not evidence of pixel parity or hardware execution.
+This branch adds no GPU driver, shader, native window, Vulkan dependency, C shim, hardware detection, asynchronous execution or performance claim. The display list is a prerequisite, not evidence of hardware acceleration. The software executor remains the only production executor until G2–G5 are implemented and validated.
