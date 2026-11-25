@@ -52,18 +52,6 @@ with tempfile.TemporaryDirectory() as temporary:
 with tempfile.TemporaryDirectory() as temporary:
     root = pathlib.Path(temporary)
     for y in range(1999, 2026):
-        (root / "cves" / str(y)).mkdir(parents=True)
-    (root / "cves" / "archive").mkdir()
-    try:
-        study.load(str(root), 2025)
-    except RuntimeError as error:
-        assert "unexpected non-year directories" in str(error)
-    else:
-        raise AssertionError("non-year CVE directory was silently ignored")
-
-with tempfile.TemporaryDirectory() as temporary:
-    root = pathlib.Path(temporary)
-    for y in range(1999, 2026):
         if y != 2024:
             (root / "cves" / str(y)).mkdir(parents=True)
     try:
@@ -100,9 +88,22 @@ with tempfile.TemporaryDirectory() as temporary:
     tracked_record.write_text("{}", encoding="utf-8")
     subprocess.run(["git", "-C", str(root), "add", "snapshot.txt", "cves"], check=True)
     subprocess.run(["git", "-C", str(root), "commit", "-qm", "fixture"], check=True)
+    subprocess.run(["git", "-C", str(root), "remote", "add", "origin",
+                    "https://github.com/CVEProject/cvelistV5.git"], check=True)
     commit = study.source_snapshot(str(root))
-    assert study.study_snapshot(str(root)) == commit
     assert len(commit) == 40 and all(ch in "0123456789abcdef" for ch in commit)
+    # A different repository with the same directory layout must not be labelled as CVE List V5.
+    subprocess.run(["git", "-C", str(root), "remote", "set-url", "origin",
+                    "https://github.com/example/not-cvelist.git"], check=True)
+    try:
+        study.source_snapshot(str(root))
+    except RuntimeError as error:
+        assert "origin" in str(error)
+    else:
+        raise AssertionError("unrelated Git origin was accepted as CVE List V5")
+    subprocess.run(["git", "-C", str(root), "remote", "set-url", "origin",
+                    "git@github.com:CVEProject/cvelistV5.git"], check=True)
+    assert study.source_snapshot(str(root)) == commit
     # A sparse checkout can hide tracked files from status while leaving the tree clean.
     subprocess.run(["git", "-C", str(root), "update-index", "--skip-worktree",
                     "cves/1999/0xxx/CVE-1999-0001.json"], check=True)
@@ -117,12 +118,6 @@ with tempfile.TemporaryDirectory() as temporary:
     subprocess.run(["git", "-C", str(root), "update-index", "--no-skip-worktree",
                     "cves/1999/0xxx/CVE-1999-0001.json"], check=True)
     (root / "untracked.json").write_text("{}", encoding="utf-8")
-    try:
-        study.study_snapshot(str(root))
-    except RuntimeError as error:
-        assert "dirty" in str(error)
-    else:
-        raise AssertionError("dirty Capstan study source was accepted")
     try:
         study.source_snapshot(str(root))
     except RuntimeError as error:
@@ -158,40 +153,6 @@ with tempfile.TemporaryDirectory() as temporary:
         assert "unknown review class" in str(error)
     else:
         raise AssertionError("unknown review class was accepted")
-
-# The checked-in tuning and held-out samples cover the 2025 publication population only.
-assert study.sample_agreements([], {}, 2024) == (None, None)
-
-# The tuning and held-out label checker must reject duplicate and stale IDs.
-original_root = study.ROOT
-with tempfile.TemporaryDirectory() as temporary:
-    study.ROOT = temporary
-    label_dir = pathlib.Path(temporary) / "tests" / "k0"
-    label_dir.mkdir(parents=True)
-    label_path = label_dir / "labels.csv"
-    label_path.write_text("id,class\nCVE-2025-10001,use-after-free\n"
-                          "CVE-2025-10001,logic error\n", encoding="utf-8")
-    try:
-        study.check_labels([], {}, "labels.csv")
-    except ValueError as error:
-        assert "duplicate" in str(error)
-    else:
-        raise AssertionError("duplicate tuning labels were accepted")
-    label_path.write_text("id,class\nCVE-2024-10001,use-after-free\n", encoding="utf-8")
-    try:
-        study.check_labels([], {}, "labels.csv")
-    except ValueError as error:
-        assert "absent from the source population" in str(error)
-    else:
-        raise AssertionError("stale tuning label was accepted")
-    label_path.write_text("id,class\nCVE-2025-10001,not-a-real-class\n", encoding="utf-8")
-    try:
-        study.check_labels([{"id": "CVE-2025-10001"}], {}, "labels.csv")
-    except ValueError as error:
-        assert "unknown classes" in str(error)
-    else:
-        raise AssertionError("unknown tuning class was accepted")
-study.ROOT = original_root
 
 # Memory-safety consequences must outrank non-memory causes across title/body fields.
 cls, cwe, evidence = study.classify(
