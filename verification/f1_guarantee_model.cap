@@ -20,12 +20,12 @@ const int F1_CTX_ALL = 15;
 const int F1_AUTH_FS_READ = 1;
 const int F1_AUTH_FS_WRITE = 2;
 const int F1_AUTH_NET = 4;
-const int F1_AUTH_SECRET = 8;
+const int F1_AUTH_SECRET = 8;\nconst int F1_AUTH_ALL = 15;
 
 const int F1_EFFECT_IO = 1;
 const int F1_EFFECT_ALLOC = 2;
 const int F1_EFFECT_CRYPTO = 4;
-const int F1_EFFECT_SPAWN = 8;
+const int F1_EFFECT_SPAWN = 8;\nconst int F1_EFFECT_ALL = 15;
 
 const int F1_I64_MAX = 0x7FFFFFFFFFFFFFFF;
 
@@ -54,6 +54,7 @@ struct F1Contract {
     int effects;
     int fuel;
     int memory;
+    bool valid;
     bool bounded;
 }
 
@@ -269,11 +270,22 @@ F1Value f1_apply_summary(F1Summary summary, F1Value argument) {
     return result;
 }
 
+bool f1_authority_valid(int authority) {
+    return authority >= 0 && (authority & F1_AUTH_ALL) == authority;
+}
+
+bool f1_effects_valid(int effects) {
+    return effects >= 0 && (effects & F1_EFFECT_ALL) == effects;
+}
+
 bool f1_has_all(int available, int required) {
+    if (!f1_authority_valid(available) || !f1_authority_valid(required)) { return false; }
     return (available & required) == required;
 }
 
 int f1_attenuate(int parent_authority, int requested_authority) {
+    if (!f1_authority_valid(parent_authority)
+        || !f1_authority_valid(requested_authority)) { return -1; }
     return parent_authority & requested_authority;
 }
 
@@ -283,12 +295,14 @@ F1Contract f1_contract(int authority, int effects, int fuel, int memory) {
         effects: effects,
         fuel: fuel,
         memory: memory,
+        valid: f1_authority_valid(authority) && f1_effects_valid(effects),
         bounded: fuel >= 0 && memory >= 0
     };
 }
 
 F1ContractResult f1_contract_error(string error) {
     F1Contract empty = f1_contract(0, 0, 0, 0);
+    empty.valid = false;
     empty.bounded = false;
     return new F1ContractResult{ok: false, contract: empty, error: error};
 }
@@ -297,6 +311,9 @@ F1ContractResult f1_contract_error(string error) {
 // memory because no lifetime/disjointness proof is assumed. Unknown bounds and
 // overflow are errors, never silently wrapped or interpreted as small budgets.
 F1ContractResult f1_compose_contract(F1Contract first, F1Contract second) {
+    if (!first.valid || !second.valid) {
+        return f1_contract_error("invalid_effect_or_authority_set");
+    }
     if (!first.bounded || !second.bounded) {
         return f1_contract_error("unknown_resource_bound");
     }
@@ -316,7 +333,7 @@ F1ContractResult f1_compose_contract(F1Contract first, F1Contract second) {
 }
 
 bool f1_budget_admits(F1Contract declared, int fuel_budget, int memory_budget) {
-    if (!declared.bounded || fuel_budget < 0 || memory_budget < 0) { return false; }
+    if (!declared.valid || !declared.bounded || fuel_budget < 0 || memory_budget < 0) { return false; }
     return declared.fuel <= fuel_budget && declared.memory <= memory_budget;
 }
 
@@ -343,6 +360,7 @@ int main() {
     if (f1_context_sink_allowed(html, F1_CTX_CSV)) { return 1; }
     if (f1_context_sink_allowed(csv, F1_CTX_HTML)) { return 1; }
     if (f1_context_sink_allowed(html, 0)) { return 1; }
+    if (f1_context_sink_allowed(html, 16)) { return 1; }
     F1Value mixed = f1_concat(html, csv);
     if (mixed.contexts != F1_CTX_NONE) { return 1; }
 
@@ -350,6 +368,7 @@ int main() {
     int child = f1_attenuate(parent, F1_AUTH_FS_READ | F1_AUTH_SECRET);
     if (child != F1_AUTH_FS_READ) { return 1; }
     if (f1_has_all(child, F1_AUTH_FS_WRITE)) { return 1; }
+    if (f1_attenuate(parent, 16) != -1) { return 1; }
 
     F1Contract a = f1_contract(F1_AUTH_FS_READ, F1_EFFECT_IO, 10, 20);
     F1Contract b = f1_contract(F1_AUTH_NET, F1_EFFECT_ALLOC, 15, 30);
@@ -436,6 +455,7 @@ test "encoding guarantees are context-specific and non-substitutable" {
     assert(!f1_context_sink_allowed(html, F1_CTX_CSV));
     assert(!f1_context_sink_allowed(csv, F1_CTX_HTML));
     assert(!f1_context_sink_allowed(html, 0));
+    assert(!f1_context_sink_allowed(html, 16));
     assert(f1_concat(html, csv).contexts == F1_CTX_NONE);
 }
 
@@ -444,6 +464,7 @@ test "capability attenuation cannot amplify authority" {
     int child = f1_attenuate(parent, F1_AUTH_FS_READ | F1_AUTH_NET);
     assert(child == F1_AUTH_FS_READ);
     assert(!f1_has_all(child, F1_AUTH_FS_WRITE));
+    assert(f1_attenuate(parent, 16) == -1);
 }
 
 test "effect and authority summaries compose independently" {
