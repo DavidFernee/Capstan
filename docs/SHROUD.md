@@ -156,8 +156,9 @@ Flutter showed that this can be done well, and that it is easy to leave out. In 
   smaller than 24 dp (WCAG 2.5.8), and any text drawn below 4.5:1 contrast (WCAG 1.4.3, measured
   against the actual background while painting). A text field's placeholder (`hint`) is not its
   accessible name: give every field a persistent `.label(...)`, because placeholders disappear as
-  soon as the user types and are not a substitute for a programmatic label. `theme_problems()` checks every colour pair a
-  theme uses, including control boundaries and focus indicators at 3:1 (WCAG 1.4.11). The tests
+  soon as the user types and are not a substitute for a programmatic label.
+  `theme_problems()` checks every colour pair a theme uses, including control boundaries and
+  focus indicators at 3:1 (WCAG 1.4.11). The tests
   require both built-in themes to pass, and a project can make an empty report a release
   condition.
 
