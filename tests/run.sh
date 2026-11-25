@@ -297,7 +297,7 @@ else
 fi
 
 section "halyard: Capstan-native Media Core, Shanty and Deadeye"
-for media_file in "$ROOT/lib/halyard/core.cap" "$ROOT/lib/halyard/shanty.cap" "$ROOT/lib/halyard/deadeye.cap" "$ROOT/lib/halyard/mp4.cap"; do
+for media_file in "$ROOT/lib/halyard/core.cap" "$ROOT/lib/halyard/shanty.cap" "$ROOT/lib/halyard/deadeye.cap" "$ROOT/lib/halyard/mp4.cap" "$ROOT/lib/halyard/mp4_sample_entries.cap"; do
   media_name="${media_file#$ROOT/}"
   if out="$( "$ROOT/bin/capstan" test "$media_file" 2>&1)"; then
     ok "$media_name ($out)"
