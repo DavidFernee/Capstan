@@ -306,10 +306,79 @@ DisplayList finish_display_list(Canvas cv) {
     return new DisplayList{width: cv.pm.w, height: cv.pm.h, commands: commands};
 }
 
+// Validate the complete frame before touching the destination. DisplayList is a
+// public value type, so the executor must not assume every instance came from
+// new_recording_canvas(). This also makes rejection failure-atomic.
+const int MAX_DISPLAY_COORD = MAX_PIXMAP_SIDE * FX * 2;
+
+bool display_coord_valid(int v) { return v >= -MAX_DISPLAY_COORD && v <= MAX_DISPLAY_COORD; }
+
+bool display_rect_valid(Rect r) {
+    if (!display_coord_valid(r.x) || !display_coord_valid(r.y) || r.w < 0 || r.h < 0 ||
+        r.w > MAX_DISPLAY_COORD * 2 || r.h > MAX_DISPLAY_COORD * 2) { return false; }
+    return display_coord_valid(r.x + r.w) && display_coord_valid(r.y + r.h);
+}
+
+bool display_clip_valid(Rect r, int width, int height) {
+    if (r.x < 0 || r.y < 0 || r.w < 0 || r.h < 0 || r.x > width || r.y > height) { return false; }
+    return r.w <= width - r.x && r.h <= height - r.y;
+}
+
+bool display_paint_valid(Paint p) {
+    if (p.color < 0 || p.color > 4294967295) { return false; }
+    if (p.kind == PAINT_SOLID) { return true; }
+    if (p.kind != PAINT_LINEAR || p.c1 < 0 || p.c1 > 4294967295) { return false; }
+    return display_coord_valid(p.x0) && display_coord_valid(p.y0) &&
+        display_coord_valid(p.x1) && display_coord_valid(p.y1);
+}
+
+bool display_list_valid(DisplayList dl, Pixmap pm) {
+    if (!pixmap_size_valid(pm.w, pm.h) || pm.px.len() != pm.w * pm.h ||
+        dl.width != pm.w || dl.height != pm.h || dl.commands.len() > MAX_DISPLAY_COMMANDS) { return false; }
+    int payload = 0;
+    for (int i = 0; i < dl.commands.len(); i += 1) {
+        DisplayCommand cmd = dl.commands[i];
+        if (!display_clip_valid(cmd.clip, dl.width, dl.height) || cmd.opacity < 0 || cmd.opacity > 255 ||
+            !display_paint_valid(cmd.paint)) { return false; }
+        if (cmd.kind == DISPLAY_RECT) {
+            if (!display_rect_valid(cmd.bounds)) { return false; }
+        } else if (cmd.kind == DISPLAY_PATH) {
+            if (cmd.rule != FILL_NONZERO && cmd.rule != FILL_EVENODD) { return false; }
+            if (let seg = cmd.segments) {
+                int n = seg.x0.len();
+                if (n > MAX_DISPLAY_SEGMENTS_PER_PATH || seg.y0.len() != n ||
+                    seg.x1.len() != n || seg.y1.len() != n || n > MAX_DISPLAY_SEGMENTS - payload) { return false; }
+                payload += n;
+                for (int j = 0; j < n; j += 1) {
+                    if (!display_coord_valid(seg.x0[j]) || !display_coord_valid(seg.y0[j]) ||
+                        !display_coord_valid(seg.x1[j]) || !display_coord_valid(seg.y1[j])) { return false; }
+                }
+            } else { return false; }
+        } else if (cmd.kind == DISPLAY_BLEND) {
+            if (cmd.x < 0 || cmd.y < 0 || cmd.x >= dl.width || cmd.y >= dl.height ||
+                cmd.coverage < 0 || cmd.coverage > 255) { return false; }
+        } else if (cmd.kind == DISPLAY_MASK) {
+            if (let alpha = cmd.mask_alpha) {
+                if (alpha.len() > MAX_DISPLAY_MASK_PIXELS || cmd.mask_w < 0 || cmd.mask_h < 0) { return false; }
+                if (cmd.mask_w == 0 || cmd.mask_h == 0) {
+                    if (cmd.mask_w != 0 || cmd.mask_h != 0 || alpha.len() != 0) { return false; }
+                } else {
+                    if (cmd.mask_w > alpha.len() / cmd.mask_h || cmd.mask_w * cmd.mask_h != alpha.len()) { return false; }
+                }
+                if (cmd.x < -MAX_PIXMAP_SIDE || cmd.x > MAX_PIXMAP_SIDE ||
+                    cmd.y < -MAX_PIXMAP_SIDE || cmd.y > MAX_PIXMAP_SIDE ||
+                    cmd.mask_w > MAX_DISPLAY_SEGMENTS - payload || alpha.len() > MAX_DISPLAY_SEGMENTS - payload) { return false; }
+                payload += alpha.len();
+            } else { return false; }
+        } else { return false; }
+    }
+    return true;
+}
+
 // Execute the same immutable commands through the reference integer rasteriser.
 void execute_display_list(DisplayList dl, Pixmap pm) {
-    if (dl.width != pm.w || dl.height != pm.h) {
-        println("shroud: display list surface dimensions differ");
+    if (!display_list_valid(dl, pm)) {
+        println("shroud: invalid or over-budget display list");
         exit(101);
     }
     Canvas cv = new_canvas(pm);
