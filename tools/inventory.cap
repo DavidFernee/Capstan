@@ -35,7 +35,8 @@ string language_for_path(string path) {
         if (path.at(i) == '.') { dot = i; }
     }
     if (dot <= slash || dot == path.len() - 1) {
-        if (path == "Makefile" || path == "makefile" || path == "GNUmakefile") { return "Make"; }
+        string basename = path.slice(slash + 1, path.len());
+        if (basename == "Makefile" || basename == "makefile" || basename == "GNUmakefile") { return "Make"; }
         return "unknown";
     }
     string ext = path.slice(dot, path.len());
@@ -201,6 +202,8 @@ test "inventory language classification" {
     assert language_for_path("verification/proof.lean") == "Lean";
     assert language_for_path("docs/README.md") == "Markdown";
     assert language_for_path("unknown.blarg") == "other";
+    assert language_for_path("build/Makefile") == "Make";
+    assert language_for_path("build/GNUmakefile") == "Make";
 }
 
 
