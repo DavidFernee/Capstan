@@ -411,6 +411,7 @@ theorem nativeRuntimeRegisterFileRelation_write
     have hruntimeTarget :=
       runtimeWriteRegister_target runtime runtimeUpdated index runtimeReplacement hruntimeWrite
     rw [hnativeTarget] at hnativeAt
+    change runtimeRegisterAt runtimeUpdated index = some runtimeReg at hruntimeAt
     rw [hruntimeTarget] at hruntimeAt
     cases hnativeAt
     cases hruntimeAt
@@ -434,6 +435,7 @@ theorem nativeRuntimeRegisterFileRelation_write
       runtimeWriteRegister_other_unchanged runtime runtimeUpdated index other
         runtimeReplacement hruntimeWrite htarget
     rw [hnativeUnchanged] at hnativeAt
+    change runtimeRegisterAt runtimeUpdated other = some runtimeReg at hruntimeAt
     rw [hruntimeUnchanged] at hruntimeAt
     exact hrel.matches_at other nativeReg runtimeReg hnativeAt hruntimeAt
 
