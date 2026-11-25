@@ -469,8 +469,13 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             before.live_bytes != 0 || before.buffered_bytes != 0) {
             return ccm_reject(before, "scope_has_live_resources");
         }
-        next.root_status = before.scope_failed ? CCM_TASK_FAILED :
-            (before.scope_cancel_requested ? CCM_TASK_CANCELLED : CCM_TASK_DONE);
+        if (before.scope_failed) {
+            next.root_status = CCM_TASK_FAILED;
+        } else if (before.scope_cancel_requested) {
+            next.root_status = CCM_TASK_CANCELLED;
+        } else {
+            next.root_status = CCM_TASK_DONE;
+        }
         next.scope_closed = true;
         return ccm_accept_cleanup(next);
     }
