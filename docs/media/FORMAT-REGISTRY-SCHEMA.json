@@ -1,6 +1,6 @@
 {
   "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "$id":"https://capstan.dev/schemas/media-format-registry-1.0.0.json",
+  "$id":"urn:capstan:schemas:media-format-registry:1.0.0",
   "title":"Capstan media format registry",
   "description":"One record is one exact operation/profile tuple; no record implies adjacent profiles or directions.",
   "type":"object","additionalProperties":false,
