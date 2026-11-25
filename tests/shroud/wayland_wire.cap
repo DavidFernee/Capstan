@@ -190,8 +190,18 @@ int main() {
     span = wayland_payload_string(wayland_test_bytes(invalid_utf8), 0, 12);
     if (span.status != -1) { return 41; }
 
+
+    invalid_utf8 = new List<int>();
+    invalid_utf8.push(2); invalid_utf8.push(0); invalid_utf8.push(0); invalid_utf8.push(0);
+    invalid_utf8.push(0x80); invalid_utf8.push(0); invalid_utf8.push(0); invalid_utf8.push(0);
+    span = wayland_payload_string(wayland_test_bytes(invalid_utf8), 0, 8);
+    if (span.status != -1) { return 42; }
+    invalid_utf8[0] = 3; invalid_utf8[4] = 0xE2; invalid_utf8[5] = 0x82;
+    span = wayland_payload_string(wayland_test_bytes(invalid_utf8), 0, 8);
+    if (span.status != -1) { return 43; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing and payload spans: 41 adversarial assertions passed");
+    println("Wayland framing and payload spans: 43 adversarial assertions passed");
     return 0;
 }
