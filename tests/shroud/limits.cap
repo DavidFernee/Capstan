@@ -41,7 +41,7 @@ Font composite_budget_fixture() {
         line_gap: 0, num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
         t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
         t_cmap: 0, cmap_len: 0, cmap_at: 0, cmap_sub_len: 0, cmap_format: 0,
-        t_loca: 0, loca_len: 0, t_glyf: 8, glyf_len: 434, t_hmtx: 0, hmtx_len: 0,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 434, t_hmtx: 0, hmtx_len: 0,
         cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
 }
 
