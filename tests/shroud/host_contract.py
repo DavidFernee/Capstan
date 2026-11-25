@@ -101,6 +101,67 @@ class ObjectTable:
         del self.objects[object_id]
 
 
+MAX_FDS_PER_MESSAGE = 16
+
+
+class OwnedHandle:
+    _next_id = 1
+
+    def __init__(self, owner):
+        self.owner = owner
+        self.id = OwnedHandle._next_id
+        OwnedHandle._next_id += 1
+        self.closed = False
+
+    def duplicate_for(self, owner):
+        if self.closed:
+            raise ProtocolError("transfer of closed handle")
+        return OwnedHandle(owner)
+
+    def close(self):
+        self.closed = True
+
+
+def receive_rights(sender_handles, receiver, max_fds=MAX_FDS_PER_MESSAGE,
+                   payload_truncated=False, control_truncated=False):
+    """Model SCM_RIGHTS: receiver gets owned duplicates; sender keeps its handles."""
+    received = []
+    try:
+        if len(sender_handles) > max_fds or len(sender_handles) > MAX_FDS_PER_MESSAGE:
+            raise ProtocolError("descriptor count exceeds limit")
+        for handle in sender_handles:
+            received.append(handle.duplicate_for(receiver))
+        if payload_truncated or control_truncated:
+            raise ProtocolError("truncated ancillary message")
+        return received
+    except ProtocolError:
+        for handle in received:
+            handle.close()
+        raise
+
+
+def wait_until_ready(start_ms, deadline_ms, outcomes):
+    """Deterministic poll model; EINTR retries against one absolute deadline."""
+    now = start_ms
+    for outcome, elapsed_ms in outcomes:
+        remaining = deadline_ms - now
+        if remaining <= 0:
+            return False, now
+        if elapsed_ms < 0:
+            raise ProtocolError("negative wait duration")
+        if elapsed_ms >= remaining:
+            return False, deadline_ms
+        now += elapsed_ms
+        if outcome == "EINTR":
+            continue
+        if outcome == "READY":
+            return True, now
+        if outcome == "ERROR":
+            raise ProtocolError("readiness wait failed")
+        raise ProtocolError("unknown readiness result")
+    return False, min(now, deadline_ms)
+
+
 class State(Enum):
     DISCONNECTED = auto()
     CONNECTED = auto()
@@ -280,6 +341,48 @@ class ContractTests(unittest.TestCase):
         t.remove(1)
         with self.assertRaisesRegex(ProtocolError, "unknown"):
             t.remove(1)
+
+    def test_descriptor_transfer_duplicates_ownership(self):
+        sender = [OwnedHandle("sender"), OwnedHandle("sender")]
+        received = receive_rights(sender, "receiver")
+        self.assertEqual([h.owner for h in sender], ["sender", "sender"])
+        self.assertEqual([h.owner for h in received], ["receiver", "receiver"])
+        self.assertTrue(all(not h.closed for h in sender + received))
+        received[0].close()
+        self.assertFalse(sender[0].closed)
+
+    def test_descriptor_transfer_rejects_excess_and_closes_received(self):
+        sender = [OwnedHandle("sender") for _ in range(MAX_FDS_PER_MESSAGE + 1)]
+        with self.assertRaisesRegex(ProtocolError, "count exceeds"):
+            receive_rights(sender, "receiver")
+        with self.assertRaisesRegex(ProtocolError, "closed handle"):
+            receive_rights([OwnedHandle("sender")], "receiver",
+                           payload_truncated=True)
+
+    def test_descriptor_transfer_closes_partial_rights_on_control_truncation(self):
+        sender = [OwnedHandle("sender") for _ in range(3)]
+        # The helper closes every receiver-side duplicate before surfacing truncation.
+        with self.assertRaisesRegex(ProtocolError, "truncated ancillary"):
+            receive_rights(sender, "receiver", control_truncated=True)
+        self.assertTrue(all(not h.closed for h in sender))
+
+    def test_readiness_wait_retries_eintr_with_absolute_deadline(self):
+        ready, now = wait_until_ready(100, 110, [
+            ("EINTR", 3), ("EINTR", 3), ("READY", 2)])
+        self.assertTrue(ready)
+        self.assertEqual(now, 108)
+
+    def test_readiness_wait_does_not_extend_deadline_after_eintr(self):
+        ready, now = wait_until_ready(100, 110, [
+            ("EINTR", 6), ("EINTR", 6), ("READY", 1)])
+        self.assertFalse(ready)
+        self.assertEqual(now, 110)
+
+    def test_readiness_wait_rejects_errors_and_negative_durations(self):
+        with self.assertRaisesRegex(ProtocolError, "wait failed"):
+            wait_until_ready(0, 10, [("ERROR", 1)])
+        with self.assertRaisesRegex(ProtocolError, "negative"):
+            wait_until_ready(0, 10, [("EINTR", -1)])
 
     def test_configure_ack_gate_and_serial_wrap(self):
         h = HostModel()
