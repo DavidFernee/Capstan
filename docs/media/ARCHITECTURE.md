@@ -34,6 +34,7 @@ The first MC1 prototype is on the Halyard working branch:
 - `lib/halyard/core.cap`: in-memory bounded byte source and sink, sequential aggregate ledger, and rational timestamp rescaling;
 - Capstan `test` declarations in `lib/halyard/core.cap`: source, sink, ledger and timebase boundary regressions;
 - `lib/halyard/shanty.cap`: bounded RIFF/WAVE integer-PCM parsing and offline 8/16/24/32-bit sample decoding, with nine colocated Capstan tests.
+- `lib/halyard/deadeye.cap`: strict uncompressed 24/32-bit BMP decoding into bounded RGBA frames, with six colocated Capstan tests.
 
 The Halyard implementation and its test logic are authored in Capstan. No Halyard-specific
 shell, Python, C, C++ or other-language implementation or test source is added.
@@ -43,6 +44,12 @@ The Shanty first slice accepts RIFF/WAVE PCM format tag 1, 1–8 channels, 1–3
 unknown chunks with RIFF padding and rejects duplicate format/data chunks, malformed
 alignment and trailing-size mismatches. It does not provide device playback/capture,
 compressed codecs, WAVE extensible, floating-point PCM or ledger-coupled sample allocation.
+
+The Deadeye first slice accepts a strict 40-byte Windows BITMAPINFOHEADER/BI_RGB profile:
+24-bit BGR or 32-bit BGRx, top-down or bottom-up, canonical pixel offset, 16 MiB input,
+2,097,152-pixel and 8,192-side limits. It emits opaque RGBA8 and rejects palettes,
+bitfields, RLE, other DIB headers and trailing data. It is not a general BMP decoder or a
+colour-managed image pipeline.
 
 This is not an MC1 gate exit. Publicly mutable struct fields prevent an enforced opaque
 ownership boundary; the ledger is not concurrency-safe; reservation is not yet coupled
