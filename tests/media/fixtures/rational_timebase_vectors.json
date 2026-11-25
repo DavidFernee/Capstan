@@ -631,7 +631,8 @@
       ],
       "expected": {
         "negative_pts_valid": true,
-        "pts_order_independent_of_dts": true
+        "pts_order_independent_of_dts": true,
+        "preserve_each_pts": true
       }
     }
   ]
