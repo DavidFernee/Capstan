@@ -1,0 +1,28 @@
+name: media format registry
+on:
+  pull_request:
+    paths:
+      - "docs/media/FORMAT-REGISTRY*"
+      - "scripts/media-registry-validate.py"
+      - "tests/media/**"
+      - ".github/workflows/media-registry.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docs/media/FORMAT-REGISTRY*"
+      - "scripts/media-registry-validate.py"
+      - "tests/media/**"
+      - ".github/workflows/media-registry.yml"
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate registry and negative controls
+        run: |
+          python3 -I scripts/media-registry-validate.py docs/media/FORMAT-REGISTRY.json
+          python3 -I tests/media/test_registry.py
