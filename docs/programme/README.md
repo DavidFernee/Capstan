@@ -100,7 +100,7 @@ The arrows represent architectural dependencies, not a serial release schedule. 
 | M8 | Capstan Media Core | Bounded streams/buffers, rational timebases, aggregate resource ledger, format registry and worker contract |
 | M9 | Shanty audio engine | WAV/PCM offline slice, deterministic processing, then independently gated playback/capture and codec expansion |
 | M10 | Deadeye video/image engine | Selected bounded image/frame slice, then demux/decode/encode and presentation expansion |
-| M11 | Cross-product integration | Shroud presentation adapters, Keel media orchestration, Anchor workflows and synchronised A/V interfaces |
+| M11 | Cross-product integration | Optional Halyard–Shroud adapter, Keel media orchestration, Anchor workflows and synchronised A/V interfaces |
 | M12 | Research validation | Research claims are falsifiable, reproducible, independently reviewable and publication-scoped |
 | M13 | Product release qualification | Each product independently satisfies its release gates; ecosystem compatibility is demonstrated |
 
