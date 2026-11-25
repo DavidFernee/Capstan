@@ -16,6 +16,8 @@ import tempfile
 import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MAX_PNG_TEST_HEAP = 96 * 1024 * 1024
+MAX_PNG_GC_STRESS_HEAP = 32 * 1024 * 1024
 LIB = sorted(
     os.path.join("lib/shroud", name)
     for name in os.listdir(os.path.join(ROOT, "lib/shroud"))
@@ -113,6 +115,16 @@ def check_stored_deflate(idat, expected_raw_length):
     return blocks
 
 
+def require_peak_heap(output, label, limit):
+    match = re.search(r"peak_heap=(\\d+)", output)
+    if not match:
+        fail(f"{label}: runtime did not report CAPSTAN_GC_STATS peak_heap")
+    peak = int(match.group(1))
+    if peak > limit:
+        fail(f"{label}: peak GC heap {peak} exceeds {limit}-byte test budget")
+    return peak
+
+
 def main():
     if len(sys.argv) < 3:
         fail(__doc__)
@@ -136,6 +148,8 @@ def main():
         env = os.environ.copy()
         env["CAPSTAN_GC_STATS"] = "1"
         result = run([exe, accepted, rejected, binary, gallery, near_limit], env=env)
+        peak_bytes = require_peak_heap(result.stderr + result.stdout,
+                                       "4 MiB PNG boundary workload", MAX_PNG_TEST_HEAP)
         if "png budget: 23 assertions" not in result.stdout:
             fail(f"regression program did not report its assertions: {result.stdout!r}")
         if not os.path.isfile(accepted):
