@@ -199,7 +199,7 @@ contains no shell, Python, C, or other-language source. It covers:
 - defensive validation of source bounds and byte contents before parser use;
 - separation of cheap source-shape preflight from the bounded byte-domain scan;
 - monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics;
-- one-shot reservation-handle release and rejection of a handle for a failed reservation.
+- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation.
 
 Still required before MC1 can pass:
 
