@@ -80,20 +80,26 @@ channel layout, metadata and transformation history where required by the domain
 
 ## 6. Initial implementation status
 
-The working branch contains the first MC1 prototype: a bounded in-memory byte source and
-a sequential five-dimensional resource ledger and colocated Capstan-native `test`
-declarations in `lib/halyard/core.cap`. It is not release-ready and does not pass
-the MC1 exit gate: opaque state, concurrent-safe or single-owner accounting, lifetime-
-bound reservations, atomic reservation plus allocation, full resource dimensions,
-rational timebases and bounded sinks remain outstanding. See
-[Core primitive contract](CORE-PRIMITIVES.md) and issue #293.
+The working branch contains Capstan-native Core primitives in `lib/halyard/core.cap`:
+a bounded byte source, bounded in-memory sink, sequential five-dimensional ledger and
+rational timestamp rescaling, with 25 colocated regression tests. Shanty has its first
+offline RIFF/WAVE integer-PCM parser and decoder in `lib/halyard/shanty.cap`, with nine
+Capstan tests. The WAVE profile and explicit limitations are documented in
+[SHANTY-WAVE.md](SHANTY-WAVE.md).
+
+These are prototypes, not MC1/SH0 gate exits. Opaque state, concurrent-safe or single-owner
+accounting, lifetime-bound reservations, atomic reservation plus allocation, cumulative
+work budgets, complete resource dimensions, ledger-coupled sink/sample allocation and
+full clock/discontinuity semantics remain outstanding. See [Core primitive contract](CORE-PRIMITIVES.md),
+issues #293 and #303, and the [detailed architecture](ARCHITECTURE.md).
 
 ## 7. Normative specifications and programme
 
 | Document | Authority |
 |---|---|
 | [Architecture](ARCHITECTURE.md) | Detailed component boundaries, pipeline design, formats and staged implementation |
-| [Core primitives](CORE-PRIMITIVES.md) | MC1 byte-source and aggregate-ledger contracts, prototype status and release blockers |
+| [Core primitives](CORE-PRIMITIVES.md) | MC1 byte-source, sink, aggregate-ledger and rational-timebase contracts and release blockers |
+| [Shanty WAVE slice](SHANTY-WAVE.md) | First audio parser/decoder profile, Capstan tests, limitations and release blockers |
 | [Design Charter](DESIGN-CHARTER.md) | Co-equal objectives, trade-off rules and component review checklist |
 | [Security Assurance](SECURITY-ASSURANCE.md) | Vulnerability accounting, threat catalogue, testing and release gates |
 | [Format Catalogue](FORMAT-CATALOGUE.md) | Target formats and per-feature compatibility status |
