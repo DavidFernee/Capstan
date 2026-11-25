@@ -22,6 +22,7 @@ const int BL_CHECK_INVALID = 3;
 
 const int BL_MAX_TRANSACTIONS = 8;
 const int BL_MAX_KEYS = 16;
+const int BL_MAX_OPERATIONS = 32;
 const int BL_DEFAULT_NODE_BUDGET = 100000;
 
 struct BLOperation {
@@ -86,9 +87,9 @@ bool bl_valid_history(List<BLTransaction> txs, int key_count) {
         for (int j = 0; j < i; j += 1) {
             if (txs[j].id == tx.id) { return false; }
         }
-        if (!tx.committed && tx.operations.len() > 0) {
-            // Aborted/incomplete transaction semantics are intentionally not
-            // part of this first committed-history checker.
+        if (!tx.committed || tx.operations.len() > BL_MAX_OPERATIONS) {
+            // This first checker accepts completed committed histories only.
+            // Abort and incomplete-history completion rules are a later model.
             return false;
         }
         for (int k = 0; k < tx.operations.len(); k += 1) {
@@ -166,17 +167,6 @@ void bl_search_orders(
         search.nodes += 1;
 
         BLTransaction tx = txs[i];
-        if (!tx.committed) {
-            List<bool> next_used = bl_copy_bools(used);
-            next_used[i] = true;
-            bl_search_orders(
-                txs, next_used, selected + 1,
-                bl_copy_ints(values), bl_copy_bools(present),
-                bl_copy_order(order), search
-            );
-            continue;
-        }
-
         if (!bl_respects_realtime(txs, used, i)) { continue; }
 
         List<int> next_values = bl_copy_ints(values);
