@@ -131,6 +131,7 @@ The media implementation-origin rule is strict: Media Core, Shanty and Deadeye i
 | P1 | Format-aware differential and metamorphic fuzzing | [#296](https://github.com/DavidFernee/Capstan/issues/296) | Grammar-aware seeds/mutations, semantic properties, triage and corpus retention | Depends on #288/#289 and format decisions |
 | P1 | Multi-clock media time and bounded A/V drift control | [#297](https://github.com/DavidFernee/Capstan/issues/297) | Clock domains, discontinuity model, drift traces and sync-error metrics | Depends on #286 and audio/image vertical slices |
 | P1 | Preflighted deterministic real-time audio execution | [#298](https://github.com/DavidFernee/Capstan/issues/298) | Callback-safe plan, bounded work and deadline evidence | Depends on #293/#285/#286; SH1 preparation |
+| P2 (deferred) | Contract-aware distributed media graph execution | [#299](https://github.com/DavidFernee/Capstan/issues/299) | Portable graph partitioning with clock, latency, resource, privacy and recovery contracts | Post-MC3 only; do not distract from local Core/audio/image foundations |
 | P0 | Complete audio/video vulnerability accounting programme | [#292](https://github.com/DavidFernee/Capstan/issues/292) | SBOM, advisory reconciliation, root-cause ledger, regression corpus, fuzzing and release gates | Release-blocking; finite known-issue accounting is not proof of no unknown defects |
 
 #### Media family gates
