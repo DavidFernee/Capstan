@@ -99,6 +99,13 @@ else
   bad "CCAM JSON structural parser" "$out"
 fi
 
+section "Capstan-native verification: closed CCAM JSON program schema"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_schema.cap" 2>&1)"; then
+  ok "CCAM JSON schema rejects unknown fields, invalid variants, bad names and entry signatures"
+else
+  bad "CCAM JSON program schema" "$out"
+fi
+
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
