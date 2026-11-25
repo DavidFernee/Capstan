@@ -290,7 +290,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 8. Test obligations
 
-The regression suite is expressed as 45 Capstan `test` declarations in `lib/halyard/core.cap`; Shanty and Deadeye contain 11 and 8 declarations respectively.
+The regression suite is expressed as 47 Capstan `test` declarations in `lib/halyard/core.cap`; Shanty and Deadeye contain 11 and 8 declarations respectively.
 Run it with `bin/capstan test lib/halyard/core.cap`; the Shanty and Deadeye suites are invoked directly with `bin/capstan test lib/halyard/shanty.cap` and `bin/capstan test lib/halyard/deadeye.cap`. The module tests remain colocated Capstan declarations and are not wired through a Halyard-specific shell hook. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -314,7 +314,7 @@ contains no shell, Python, C, or other-language source. It covers:
 - separation of cheap source-shape preflight from the bounded byte-domain scan;
 - monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics;
 - all-or-nothing admission/release for allocation, metadata, queue, worker, nesting, track and chunk live-resource dimensions, including per-dimension over-limit and underflow rejection;
-- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation; managed source admission, retained-byte accounting, close/release lifecycle, invalid-input rollback and retry after ledger repair; managed sink peak replacement accounting, allocation-slot overlap admission, rejected admission, invalid-write preservation and retryable close after ledger repair.
+- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation; managed source admission, retained-byte and allocation-slot accounting through close/release, zero-allocation-slot rejection, invalid-input rollback and retry after ledger repair; managed sink peak replacement accounting, allocation-slot overlap admission, rejected admission, invalid-write preservation and retryable close after ledger repair.
 
 Still required before MC1 can pass:
 
