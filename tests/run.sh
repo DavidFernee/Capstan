@@ -85,6 +85,13 @@ else
   bad "bounded concurrency reference machine" "$out"
 fi
 
+section "Capstan-native verification: bounded concurrency transition graph"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_transition_graph.cap" 2>&1)"; then
+  ok "bounded explicit transition-graph reachability, deadlock witnesses and fail-closed state limits"
+else
+  bad "bounded concurrency transition graph" "$out"
+fi
+
 section "Capstan-native verification: finite protocol automata"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
   ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
