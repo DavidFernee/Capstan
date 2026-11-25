@@ -1169,3 +1169,8 @@ a proposed programme, not a claim that the target guarantees are already impleme
 The vulnerability-prevention research stream in PR #238, the programming-language research
 agenda and the v0.6 standard-library roadmap remain supporting workstreams and must be
 reconciled against this foundation before dependent implementation is merged.
+
+The first language-semantics work package is tracked in [F1-LANGUAGE-CONTRACT.md](F1-LANGUAGE-CONTRACT.md),
+with research status in the [research agenda](research/PROGRAMMING-LANGUAGE-RESEARCH-AGENDA.md)
+and [research register](research/RESEARCH-REGISTER.md). F1 is currently a syntax-neutral
+draft; it does not alter the normative source reference or authorise dependent API expansion.
