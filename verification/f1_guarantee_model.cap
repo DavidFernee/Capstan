@@ -33,13 +33,17 @@ struct F1Value {
     bool data_top;
     int selection_sources;
     bool selection_top;
+    int control_sources;
+    bool control_top;
     int confidentiality;
     int contexts;
 }
 
 struct F1Summary {
     bool complete;
-    bool depends_on_argument;
+    bool data_depends;
+    bool selection_depends;
+    bool control_depends;
     bool preserves_context;
     F1Value constant_result;
 }
@@ -65,19 +69,22 @@ int f1_max(int a, int b) {
 
 F1Value f1_make(int data_sources, bool data_top,
                 int selection_sources, bool selection_top,
+                int control_sources, bool control_top,
                 int confidentiality, int contexts) {
     return new F1Value{
         data_sources: data_sources,
         data_top: data_top,
         selection_sources: selection_sources,
         selection_top: selection_top,
+        control_sources: control_sources,
+        control_top: control_top,
         confidentiality: confidentiality,
         contexts: contexts
     };
 }
 
 // The empty string is context-neutral; this is not a claim about arbitrary literals.\nF1Value f1_empty_constant() {
-    return f1_make(0, false, 0, false, F1_CONF_PUBLIC,
+    return f1_make(0, false, 0, false, 0, false, F1_CONF_PUBLIC,
                    F1_CTX_HTML | F1_CTX_LOG | F1_CTX_CSV | F1_CTX_JSON);
 }
 
@@ -87,11 +94,11 @@ F1Value f1_source(int identity_bit, bool is_secret) {
     }
     int confidentiality = F1_CONF_PUBLIC;
     if (is_secret) { confidentiality = F1_CONF_SECRET; }
-    return f1_make(identity_bit, false, 0, false, confidentiality, F1_CTX_NONE);
+    return f1_make(identity_bit, false, 0, false, 0, false, confidentiality, F1_CTX_NONE);
 }
 
 F1Value f1_unknown() {
-    return f1_make(0, true, 0, true, F1_CONF_UNKNOWN, F1_CTX_NONE);
+    return f1_make(0, true, 0, true, 0, true, F1_CONF_UNKNOWN, F1_CTX_NONE);
 }
 
 F1Value f1_derive(F1Value left, F1Value right) {
@@ -100,6 +107,8 @@ F1Value f1_derive(F1Value left, F1Value right) {
         left.data_top || right.data_top,
         left.selection_sources | right.selection_sources,
         left.selection_top || right.selection_top,
+        left.control_sources | right.control_sources,
+        left.control_top || right.control_top,
         f1_max(left.confidentiality, right.confidentiality),
         left.contexts & right.contexts
     );
@@ -113,6 +122,20 @@ F1Value f1_select(F1Value container, F1Value selector, F1Value selected) {
     out.selection_top = out.selection_top || selector.data_top || container.data_top;
     out.confidentiality = f1_max(out.confidentiality, container.confidentiality);
     out.contexts = selected.contexts;
+    return out;
+}
+
+// A branch result depends on its predicate even when both arms return constants.
+// This dependency is tracked separately so sink policy can distinguish integrity
+// validation from secret-dependent observable behaviour.
+F1Value f1_branch(F1Value condition, F1Value when_true, F1Value when_false) {
+    F1Value out = f1_derive(when_true, when_false);
+    out.control_sources = out.control_sources | condition.data_sources
+                          | condition.selection_sources | condition.control_sources;
+    out.control_top = out.control_top || condition.data_top
+                      || condition.selection_top || condition.control_top;
+    out.confidentiality = f1_max(out.confidentiality, condition.confidentiality);
+    out.contexts = when_true.contexts & when_false.contexts;
     return out;
 }
 
@@ -157,7 +180,9 @@ bool f1_public_sink_allowed(F1Value value) {
 F1Summary f1_identity_summary() {
     return new F1Summary{
         complete: true,
-        depends_on_argument: true,
+        data_depends: true,
+        selection_depends: false,
+        control_depends: false,
         preserves_context: true,
         constant_result: f1_empty_constant()
     };
@@ -166,7 +191,9 @@ F1Summary f1_identity_summary() {
 F1Summary f1_byte_rebuild_summary() {
     return new F1Summary{
         complete: true,
-        depends_on_argument: true,
+        data_depends: true,
+        selection_depends: false,
+        control_depends: false,
         preserves_context: false,
         constant_result: f1_empty_constant()
     };
@@ -175,7 +202,20 @@ F1Summary f1_byte_rebuild_summary() {
 F1Summary f1_unknown_summary() {
     return new F1Summary{
         complete: false,
-        depends_on_argument: false,
+        data_depends: false,
+        selection_depends: false,
+        control_depends: false,
+        preserves_context: false,
+        constant_result: f1_empty_constant()
+    };
+}
+
+F1Summary f1_branch_summary() {
+    return new F1Summary{
+        complete: true,
+        data_depends: false,
+        selection_depends: false,
+        control_depends: true,
         preserves_context: false,
         constant_result: f1_empty_constant()
     };
@@ -186,9 +226,29 @@ F1Summary f1_unknown_summary() {
 F1Value f1_apply_summary(F1Summary summary, F1Value argument) {
     if (!summary.complete) { return f1_unknown(); }
     F1Value result = summary.constant_result;
-    if (summary.depends_on_argument) {
-        result = f1_derive(result, argument);
-        if (!summary.preserves_context) { result.contexts = F1_CTX_NONE; }
+    if (summary.data_depends) {
+        result.data_sources = result.data_sources | argument.data_sources;
+        result.data_top = result.data_top || argument.data_top;
+        if (summary.preserves_context) {
+            result.contexts = result.contexts & argument.contexts;
+        } else {
+            result.contexts = F1_CTX_NONE;
+        }
+    }
+    if (summary.selection_depends) {
+        result.selection_sources = result.selection_sources
+                                   | argument.selection_sources | argument.data_sources;
+        result.selection_top = result.selection_top
+                               || argument.selection_top || argument.data_top;
+    }
+    if (summary.control_depends) {
+        result.control_sources = result.control_sources | argument.data_sources
+                                 | argument.selection_sources | argument.control_sources;
+        result.control_top = result.control_top || argument.data_top
+                             || argument.selection_top || argument.control_top;
+    }
+    if (summary.data_depends || summary.selection_depends || summary.control_depends) {
+        result.confidentiality = f1_max(result.confidentiality, argument.confidentiality);
     }
     return result;
 }
@@ -258,6 +318,8 @@ int main() {
 
     F1Value secret_predicate = f1_derive(secret, public_value);
     if (f1_public_sink_allowed(secret_predicate)) { return 1; }
+    F1Value branch_result = f1_apply_summary(f1_branch_summary(), secret);
+    if (branch_result.control_sources != 2 || f1_public_sink_allowed(branch_result)) { return 1; }
 
     F1Value html = f1_encode_html(untrusted);
     F1Value csv = f1_encode_csv(untrusted);
@@ -331,6 +393,13 @@ test "secret-derived predicates remain confidential" {
     F1Value secret = f1_source(2, true);
     F1Value predicate = f1_derive(secret, f1_empty_constant());
     assert(!f1_public_sink_allowed(predicate));
+}
+
+test "secret-dependent branches preserve control dependence" {
+    F1Value secret_condition = f1_source(2, true);
+    F1Value result = f1_apply_summary(f1_branch_summary(), secret_condition);
+    assert(result.control_sources == 2);
+    assert(!f1_public_sink_allowed(result));
 }
 
 test "encoding guarantees are context-specific and non-substitutable" {
