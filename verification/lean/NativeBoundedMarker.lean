@@ -43,17 +43,6 @@ inductive MarkerReject where
   | certificateRejected
 deriving Repr, DecidableEq
 
-/-- A complete result carries the successful independent certificate check.
-A rejected result can never be mistaken for a partial mark set. -/
-inductive MarkerOutcome {slotCount : Nat}
-    (isLive : Handle slotCount → Bool)
-    (referenceEdges : Handle slotCount → List (Handle slotCount))
-    (roots : List (Handle slotCount)) where
-  | complete (marked : List (Handle slotCount)) (counters : MarkerCounters)
-      (accepted : certificateCheck isLive referenceEdges roots marked = true)
-  | rejected (reason : MarkerReject) (counters : MarkerCounters)
-deriving Repr
-
 /-- Independent certificate validation: every root is marked; every marked
 handle resolves; and every descriptor-projected edge from a marked handle
 terminates in the marked set. -/
@@ -65,6 +54,17 @@ def certificateCheck {slotCount : Nat}
   marked.all (fun handle =>
     isLive handle &&
     (referenceEdges handle).all (fun target => decide (target ∈ marked)))
+
+
+/-- A complete result carries the successful independent certificate check.
+A rejected result can never be mistaken for a partial mark set. -/
+inductive MarkerOutcome {slotCount : Nat}
+    (isLive : Handle slotCount → Bool)
+    (referenceEdges : Handle slotCount → List (Handle slotCount))
+    (roots : List (Handle slotCount)) where
+  | complete (marked : List (Handle slotCount)) (counters : MarkerCounters)
+      (accepted : certificateCheck isLive referenceEdges roots marked = true)
+  | rejected (reason : MarkerReject) (counters : MarkerCounters)
 
 theorem certificateCheck_sound {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
