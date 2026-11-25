@@ -37,13 +37,13 @@
 | SF-013–014 | Exact and exhausted budget boundary | Exact count and PC asserted |
 | SF-015–017 | Invalid register, type and branch operands | Rejected before execution |
 | SF-018 | Reachable fall-through | Rejected by both predicates |
-| SF-019 | Unreachable final nonterminal instruction | Normative accept; profile reject |
+| SF-019 | Unreachable final nonterminal instruction | Concrete normative validator accepts (no dispatch); Lean profile theorem rejects |
 | SF-020 | Nonzero proof-model entry | Profile reject; not a normative input case |
 | SF-X01 | Application-defined explicit trap detail | Concrete CCAM case; excluded from dual execution |
 
 ## Existing implementation-test crosswalk
 
-The following names were checked against `verification/ccam_core.cap` on main after PR #253 merged. This crosswalk records the pre-existing colocated tests that motivated the vectors; the new corpus driver now independently constructs and executes the 17 admitted plus 4 rejected in-profile vectors, asserting exact PC traces, step counts and outcomes.
+The following names were checked against `verification/ccam_core.cap` on main after PR #253 merged. This crosswalk records the pre-existing colocated tests that motivated the vectors; the new corpus driver independently constructs and executes the 17 admitted vectors plus 4 normative-invalid vectors, asserting exact PC traces, step counts and outcomes; it also constructs SF-019 and asserts concrete normative-validator acceptance without dispatch. The Lean-generated SF-019 theorem separately establishes proof-profile rejection.
 
 | Vector | Existing Capstan test evidence | Remaining vector-specific work |
 |---|---|---|
@@ -66,11 +66,11 @@ The following names were checked against `verification/ccam_core.cap` on main af
 | SF-014 | `CCAM machine checks the step limit before executing the next instruction` | Bind to shared vector and assert PC 1, one dispatched step. |
 | SF-015–016 | `CCAM validator rejects bad operand indices and static types` | Split into separately identified malformed-destination and static-type vectors. |
 | SF-017–018 | `CCAM validator rejects invalid branch targets and reachable fallthrough` | Bind target rejection and reachable-fall-through rejection separately. |
-| SF-019 | merged PR #253 adds `CCAM validator accepts unreachable nonterminal final instruction` | PR #253 must pass exact-head CI; assert normative accept and SF-P reject as separate results. |
+| SF-019 | merged PR #253 adds `CCAM validator accepts unreachable nonterminal final instruction` | The concrete runner now asserts normative acceptance and machine construction without dispatch; the generated Lean theorem separately asserts proof-profile rejection. |
 | SF-020 | Lean theorems `validateSingleFrameProfile_rejects_nonzero_entry` and `validateSingleFrameProfile_entry_zero` in the PR #241 branch | Exercise the profile admission predicate in a Lean test/example; this is not a normative CCAM input field. |
 | SF-X01 | `CCAM machine returns void and preserves explicit trap detail`; `CCAM validator accepts and rejects canonical trap reasons` | Keep concrete-only until issue #265 establishes exact Lean reason/detail semantics. |
 
-PR #253 has merged. Its two regression tests are mainline evidence. The new driver now consumes the shared JSON corpus directly for the 17 admitted and 4 rejected in-profile cases; the table remains a test-discovery crosswalk, not an additional independent oracle.
+PR #253 has merged. Its two regression tests are mainline evidence. The new driver consumes the shared JSON corpus for 17 admitted executions, 4 normative-invalid pre-execution rejections, and the SF-019 normative-validator-only assertion. The Lean-generated SF-019 theorem separately checks proof-profile rejection. The table remains a test-discovery crosswalk, not an additional independent oracle.
 
 ## Important semantic boundary: explicit traps
 
@@ -83,7 +83,7 @@ The initial proof-profile corpus includes the finite built-in traps represented 
 This file is the canonical oracle data. `scripts/validate-ccam-sf-vectors.py` validates its structure and signed-64 integers; `scripts/run-ccam-sf-vectors.py` constructs and executes the in-profile vectors against the concrete Capstan evaluator. The next work must:
 
 1. Strict corpus-integrity validation is now implemented in `scripts/validate-ccam-sf-vectors.py` and wired into the CI workflow (duplicate JSON keys, unique IDs, exact instruction fields, signed-64 literal bounds, typed/indexed operands, profile exclusions, and trace/step consistency). This is a corpus linter, not an execution adapter.
-2. The Capstan-native runner is implemented and registered in `tests/run.sh`; it checks the concrete validator, exact PC trace, terminal state, trap/return payload and step count for all in-profile vectors.
+2. The Capstan-native runner is implemented and registered in `tests/run.sh`; it checks the concrete validator, exact PC trace, terminal state, trap/return payload and step count for the 17 admitted and 4 normative-invalid vectors, plus the separate SF-019 normative-acceptance/no-dispatch case.
 3. Add a Lean corpus reader/adapter or generated Lean fixture from this same source file. Generation must be deterministic and must not generate expected outcomes from either executor.
 4. Define the complete machine-state relation, reusing `RuntimeBridge.lean` and `NativeRegisterBridge.lean`; do not recreate the register relation.
 5. Prove the initial-state correspondence and instruction-level simulation, then exact budget correspondence.
