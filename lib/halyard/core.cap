@@ -1101,3 +1101,23 @@ test "Halyard source validation rejects forged bounds and bytes" {
         assert(false);
     }
 }
+
+
+test "Halyard source shape preflight is separate from byte-domain validation" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    HalyardByteSourceResult made = halyard_source_from_list(input, 2);
+    assert(made.ok);
+    if (let source = made.source) {
+        assert(halyard_source_shape_valid(source));
+        assert(halyard_source_length(source) == 2);
+        source.bytes[0] = 999;
+        assert(halyard_source_shape_valid(source));
+        assert(!halyard_source_validate(source));
+        source.position = 3;
+        assert(!halyard_source_shape_valid(source));
+        assert(halyard_source_length(source) == -1);
+    } else {
+        assert(false);
+    }
+}
