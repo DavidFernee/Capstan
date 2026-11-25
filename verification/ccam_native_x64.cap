@@ -134,14 +134,28 @@ bool ccam_x64_emit_instruction(
         ccam_x64_line(output, "    jne " + safe);
         ccam_x64_line(output, "    movabsq $-9223372036854775808, %rdx");
         ccam_x64_line(output, "    cmpq %rdx, %rax");
-        ccam_x64_line(output, "    je .Lcap_trap_overflow");
-        ccam_x64_line(output, safe + ":");
-        ccam_x64_line(output, "    cqo");
-        ccam_x64_line(output, "    idivq %rcx");
         if (instruction.op == CCAM_OP_REM_I) {
+            string done = ".Lcap_f" + int_to_str(function_index) + "_remdone" + int_to_str(instruction_index);
+            string rem_min = ".Lcap_f" + int_to_str(function_index) + "_remmin" + int_to_str(instruction_index);
+            ccam_x64_line(output, "    je " + rem_min);
+            ccam_x64_line(output, safe + ":");
+            ccam_x64_line(output, "    cqo");
+            ccam_x64_line(output, "    idivq %rcx");
             ccam_x64_line(output, "    movq %rdx, %rax");
+            ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+            ccam_x64_line(output, "    jmp " + done);
+            ccam_x64_line(output, rem_min + ":");
+            // x86 idiv traps for MIN/-1 even though CCAM remainder is zero.
+            ccam_x64_line(output, "    xorq %rax, %rax");
+            ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
+            ccam_x64_line(output, done + ":");
+        } else {
+            ccam_x64_line(output, "    je .Lcap_trap_overflow");
+            ccam_x64_line(output, safe + ":");
+            ccam_x64_line(output, "    cqo");
+            ccam_x64_line(output, "    idivq %rcx");
+            ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
         }
-        ccam_x64_line(output, "    movq %rax, " + ccam_x64_slot(instruction.dst));
         ccam_x64_mark_initialized(output, instruction.dst, fn.register_types.len());
         return true;
     }
@@ -461,6 +475,12 @@ test "CCAM x86-64 backend emits checked overflow and division traps" {
     assert(ccam_x64_write_test_program(
         "int main() { int minimum = -9223372036854775807 - 1; return minimum / -1; }",
         "build/ccam-native-x64-div-overflow.s", 100, 16));
+}
+
+test "CCAM x86-64 remainder preserves INT64_MIN modulo negative one" {
+    assert(ccam_x64_write_test_program(
+        "int main() { int minimum = -9223372036854775807 - 1; return minimum % -1; }",
+        "build/ccam-native-x64-rem-min.s", 100, 16));
 }
 
 test "CCAM x86-64 backend emits step and call-depth guards" {
