@@ -199,7 +199,7 @@ fi
 
 section "Capstan-native repository inventory"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1)"; then
-  ok "inventory language classification and physical-line counting"
+  ok "inventory classification, physical-line counting and aggregate totals"
 else
   bad "Capstan-native repository inventory" "$out"
 fi
