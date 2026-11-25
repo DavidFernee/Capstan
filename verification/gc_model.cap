@@ -93,8 +93,12 @@ bool gc_validate(GCSpec spec) {
         if (object.id != i || object.generation < 1 ||
             !gc_valid_kind(object.kind)) { return false; }
         if (!object.allocated && object.marked) { return false; }
-        if (object.kind == GC_KIND_SECRET && object.allocated &&
-            object.secret_wiped) { return false; }
+        // Every free secret slot is already erased before it is published for reuse.
+        // Allocated secrets contain live data and must not claim to be wiped.
+        // Non-secret objects never participate in the secret-wipe state machine.
+        if (object.kind == GC_KIND_SECRET &&
+            object.secret_wiped == object.allocated) { return false; }
+        if (object.kind != GC_KIND_SECRET && object.secret_wiped) { return false; }
     }
 
     for (int i = 0; i < spec.roots.len(); i += 1) {
@@ -462,6 +466,34 @@ test "GC oracle and collector agree on a cyclic graph" {
     GCResult result = gc_collect(spec);
     assert(oracle.valid && result.status == GC_OK);
     assert(gc_same_id_set(oracle.reachable_ids, result.marked_ids));
+}
+
+test "GC rejects wiped-state claims on non-secret objects" {
+    GCSpec allocated_spec = gc_empty_spec(1);
+    GCObject allocated_atomic = gc_object(0, GC_KIND_ATOMIC);
+    allocated_atomic.secret_wiped = true;
+    allocated_spec.objects.push(allocated_atomic);
+    GCResult allocated_result = gc_collect(allocated_spec);
+    assert(allocated_result.status == GC_INVALID);
+    assert(allocated_result.objects[0].allocated);
+
+    GCSpec free_spec = gc_empty_spec(1);
+    GCObject free_atomic = gc_unallocated_object(0, GC_KIND_ATOMIC);
+    free_atomic.secret_wiped = true;
+    free_spec.objects.push(free_atomic);
+    GCResult free_result = gc_collect(free_spec);
+    assert(free_result.status == GC_INVALID);
+    assert(!free_result.objects[0].allocated);
+}
+
+test "GC rejects un-wiped free secret slots before reuse" {
+    GCSpec spec = gc_empty_spec(1);
+    GCObject free_secret = gc_unallocated_object(0, GC_KIND_SECRET);
+    free_secret.secret_wiped = false;
+    spec.objects.push(free_secret);
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(!result.objects[0].allocated && !result.objects[0].secret_wiped);
 }
 
 test "GC rejects secret objects that claim already-erased while allocated" {
