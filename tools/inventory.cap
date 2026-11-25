@@ -29,8 +29,12 @@ struct Inventory {
     int unreadable;
 }
 
+bool inventory_path_length_allowed(int length) {
+    return length > 0 && length <= MAX_INVENTORY_PATH_BYTES;
+}
+
 bool inventory_path_allowed(string path) {
-    return path.len() > 0 && path.len() <= MAX_INVENTORY_PATH_BYTES;
+    return inventory_path_length_allowed(path.len());
 }
 
 bool has_path_segment(string path, string wanted) {
@@ -251,7 +255,10 @@ int main() {
 test "inventory input bounds" {
     assert inventory_path_allowed("src/main.cap");
     assert !inventory_path_allowed("");
-    assert !inventory_path_allowed(repeat("x", MAX_INVENTORY_PATH_BYTES + 1));
+    assert inventory_path_length_allowed(1);
+    assert inventory_path_length_allowed(MAX_INVENTORY_PATH_BYTES);
+    assert !inventory_path_length_allowed(MAX_INVENTORY_PATH_BYTES + 1);
+    assert !inventory_path_length_allowed(0);
 }
 
 test "inventory path classification" {
