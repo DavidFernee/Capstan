@@ -48,15 +48,15 @@ struct WaylandProtocolResult {
     int retired_id;
 }
 
+WaylandObject wayland_empty_object() {
+    return new WaylandObject{id: 0, interface_id: 0, version: 0, state: 0};
+}
 WaylandObjectTable wayland_object_table() {
     // Preallocate the bounded slot table. Message commits then cannot allocate
     // while partially applying a set of new object IDs.
     List<WaylandObject> slots = new List<WaylandObject>();
     for (int i = 0; i < WAYLAND_OBJECT_SLOTS_MAX; i += 1) { slots.push(wayland_empty_object()); }
     return new WaylandObjectTable{slots: slots};
-}
-WaylandObject wayland_empty_object() {
-    return new WaylandObject{id: 0, interface_id: 0, version: 0, state: 0};
 }
 WaylandProtocolResult wayland_protocol_result(int status, int next_offset, int fd_count,
     List<int> created_ids, int retired_id) {
