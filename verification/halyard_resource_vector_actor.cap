@@ -91,7 +91,7 @@ bool hrv_invariant(HRVState s) {
         s.used_allocations > s.capacity_allocations ||
         s.used_metadata > s.capacity_metadata ||
         s.queue_capacity < 0 || s.queued < 0 ||
-        s.queued > s.queue_capacity || s.next_sequence < 1) {
+        s.queued > s.queue_capacity || s.next_sequence < 1 || s.next_sequence > 3) {
         return false;
     }
     if (s.a_status < HRV_EMPTY || s.a_status > HRV_RELEASED ||
@@ -319,4 +319,12 @@ test "HRV corrupted state is rejected before vector admission" {
     assert(rejected.state.used_retained == 5);
     assert(rejected.state.used_allocations == 0);
     assert(rejected.state.used_metadata == 0);
+
+    HRVState exhausted_sequence = hrv_initial(4, 2, 2, 2);
+    exhausted_sequence.next_sequence = 4;
+    HRVTransition sequence_rejected = hrv_enqueue(
+        exhausted_sequence, 1, 1, 1, 1
+    );
+    assert(!sequence_rejected.ok && sequence_rejected.error == "invalid_state");
+    assert(sequence_rejected.state.next_sequence == 4);
 }
