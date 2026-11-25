@@ -61,6 +61,8 @@ struct CCMState {
     int max_live_bytes;
     int steps;
     int max_steps;
+    int cleanup_steps;
+    int max_cleanup_steps;
     bool scope_cancel_requested;
     bool scope_failed;
     bool scope_closed;
@@ -93,6 +95,8 @@ CCMState ccm_initial_state() {
         max_live_bytes: 1,
         steps: 0,
         max_steps: 12,
+        cleanup_steps: 0,
+        max_cleanup_steps: 8,
         scope_cancel_requested: false,
         scope_failed: false,
         scope_closed: false
@@ -106,6 +110,26 @@ CCMTransition ccm_reject(CCMState state, string error) {
 CCMTransition ccm_accept(CCMState state) {
     state.steps += 1;
     return new CCMTransition{ok: true, state: state, error: ""};
+}
+
+CCMTransition ccm_accept_cleanup(CCMState state) {
+    if (state.cleanup_steps >= state.max_cleanup_steps) {
+        return ccm_reject(state, "cleanup_budget_exhausted");
+    }
+    state.cleanup_steps += 1;
+    return new CCMTransition{ok: true, state: state, error: ""};
+}
+
+bool ccm_cleanup_action(int action) {
+    return action == CCM_ACT_JOIN_PRODUCER ||
+        action == CCM_ACT_JOIN_CONSUMER ||
+        action == CCM_ACT_CANCEL_PRODUCER ||
+        action == CCM_ACT_COMPLETE_SCOPE ||
+        action == CCM_ACT_CLOSE_CHANNEL ||
+        action == CCM_ACT_CANCEL_CONSUMER ||
+        action == CCM_ACT_REQUEST_SCOPE_CANCEL ||
+        action == CCM_ACT_FAIL_PRODUCER ||
+        action == CCM_ACT_FAIL_CONSUMER;
 }
 
 bool ccm_task_terminal(int status) {
@@ -149,7 +173,10 @@ bool ccm_invariant(CCMState state) {
     if (state.task_count != expected_tasks ||
         state.task_count > state.max_tasks) { return false; }
     if (state.max_tasks < 1 || state.steps < 0 ||
-        state.steps > state.max_steps || state.max_steps < 0) { return false; }
+        state.steps > state.max_steps || state.max_steps < 0 ||
+        state.cleanup_steps < 0 ||
+        state.cleanup_steps > state.max_cleanup_steps ||
+        state.max_cleanup_steps < 0) { return false; }
 
     if (state.channel_capacity != 1 || state.channel_count < 0 ||
         state.channel_count > state.channel_capacity) { return false; }
@@ -210,7 +237,9 @@ bool ccm_invariant(CCMState state) {
 CCMTransition ccm_step(CCMState before, int actor, int action) {
     if (!ccm_invariant(before)) { return ccm_reject(before, "invalid_input_state"); }
     if (before.scope_closed) { return ccm_reject(before, "scope_already_closed"); }
-    if (before.steps >= before.max_steps) { return ccm_reject(before, "step_budget_exhausted"); }
+    if (before.steps >= before.max_steps && !ccm_cleanup_action(action)) {
+        return ccm_reject(before, "step_budget_exhausted");
+    }
 
     CCMState next = before;
 
@@ -315,7 +344,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             return ccm_reject(before, "producer_not_joinable");
         }
         next.producer_handle = CCM_HANDLE_CONSUMED;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     if (action == CCM_ACT_JOIN_CONSUMER) {
@@ -325,7 +354,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             return ccm_reject(before, "consumer_not_joinable");
         }
         next.consumer_handle = CCM_HANDLE_CONSUMED;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     if (action == CCM_ACT_CANCEL_PRODUCER) {
@@ -343,7 +372,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             next.live_bytes = 0;
         }
         next.producer_status = CCM_TASK_CANCELLED;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     if (action == CCM_ACT_CLOSE_CHANNEL) {
@@ -352,7 +381,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             return ccm_reject(before, "channel_already_closed_or_invalid_actor");
         }
         next.channel_closed = true;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     if (action == CCM_ACT_CANCEL_CONSUMER) {
@@ -372,7 +401,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             next.buffered_bytes = 0;
         }
         next.consumer_status = CCM_TASK_CANCELLED;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     if (action == CCM_ACT_REQUEST_SCOPE_CANCEL) {
@@ -381,7 +410,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             return ccm_reject(before, "scope_cancellation_already_requested_or_invalid_actor");
         }
         next.scope_cancel_requested = true;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     if (action == CCM_ACT_FAIL_PRODUCER) {
@@ -396,7 +425,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         next.producer_status = CCM_TASK_FAILED;
         next.scope_cancel_requested = true;
         next.scope_failed = true;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     if (action == CCM_ACT_FAIL_CONSUMER) {
@@ -414,7 +443,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         next.consumer_status = CCM_TASK_FAILED;
         next.scope_cancel_requested = true;
         next.scope_failed = true;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     if (action == CCM_ACT_COMPLETE_SCOPE) {
@@ -437,7 +466,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         next.root_status = before.scope_failed ? CCM_TASK_FAILED :
             (before.scope_cancel_requested ? CCM_TASK_CANCELLED : CCM_TASK_DONE);
         next.scope_closed = true;
-        return ccm_accept(next);
+        return ccm_accept_cleanup(next);
     }
 
     return ccm_reject(before, "unknown_transition");
@@ -480,6 +509,8 @@ bool ccm_same_state(CCMState a, CCMState b) {
         a.max_live_bytes == b.max_live_bytes &&
         a.steps == b.steps &&
         a.max_steps == b.max_steps &&
+        a.cleanup_steps == b.cleanup_steps &&
+        a.max_cleanup_steps == b.max_cleanup_steps &&
         a.scope_cancel_requested == b.scope_cancel_requested &&
         a.scope_failed == b.scope_failed &&
         a.scope_closed == b.scope_closed;
@@ -1013,4 +1044,18 @@ test "CCM failure cannot be hidden by normal scope completion" {
     state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
     assert(state.root_status != CCM_TASK_DONE);
     assert(state.root_status == CCM_TASK_FAILED);
+}
+
+
+test "CCM cleanup budget remains available after normal step budget exhaustion" {
+    CCMState state = ccm_initial_state();
+    state.max_steps = 1;
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    CCMTransition spawn_consumer = ccm_step(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    assert(!spawn_consumer.ok && spawn_consumer.error == "step_budget_exhausted");
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    assert(ccm_invariant(state));
+    assert(state.steps == 1 && state.cleanup_steps == 3);
 }
