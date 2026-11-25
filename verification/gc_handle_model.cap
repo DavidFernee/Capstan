@@ -330,14 +330,14 @@ GCHHeap gch_fixture_heap() {
     offsets.push(1);
     offsets.push(3);
     List<GCHLayout> layouts = new List<GCHLayout>();
+    List<int> reference_targets = new List<int>();
+    reference_targets.push(8);
+    reference_targets.push(7);
     layouts.push(new GCHLayout{
         descriptor_id: 7, field_count: 4, reference_offsets: offsets,
         reference_target_descriptors: reference_targets
     });
     List<int> empty_offsets = new List<int>();
-    List<int> reference_targets = new List<int>();
-    reference_targets.push(8);
-    reference_targets.push(7);
     List<int> no_reference_targets = new List<int>();
     layouts.push(new GCHLayout{
         descriptor_id: 8, field_count: 0, reference_offsets: empty_offsets,
