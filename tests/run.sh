@@ -219,7 +219,7 @@ section "private struct fields: module boundary and factory invariants"
 if "$C" test -o "$tmp/private_fields.c" "$ROOT/tests/unit/private_fields/tests.cap" >"$tmp/log" 2>&1 \
    && "$CC" $CFLAGS "$tmp/private_fields.c" -o "$tmp/private_fields" >>"$tmp/log" 2>&1 \
    && "$tmp/private_fields" >"$tmp/private_fields.out" 2>&1 \
-   && grep -q "4 test(s), 0 failed" "$tmp/private_fields.out"; then
+   && grep -q "5 test(s), 0 failed" "$tmp/private_fields.out"; then
   ok "private fields: defining-module construction/read/write and external public API"
 else
   bad "private field encapsulation" "$(tail -8 "$tmp/log"; tail -8 "$tmp/private_fields.out" 2>/dev/null)"
