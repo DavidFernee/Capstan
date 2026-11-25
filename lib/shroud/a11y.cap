@@ -23,6 +23,25 @@ struct A11yNode {
 // Convert already-sanitised code points back to UTF-8. The accessibility tree must
 // expose the same visible characters as the renderer, not the original Tainted bytes.
 string utf8_from_codepoints(List<int> cps) {
+    // Validate scalar values and the encoded-byte budget before allocating any
+    // output fragments. The helper can also be called with a hand-built list.
+    int byte_count = 0;
+    for (int p = 0; p < cps.len(); p += 1) {
+        int cp = cps[p];
+        if (cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) {
+            println("shroud: invalid Unicode scalar in accessibility text");
+            exit(101);
+        }
+        int width = 1;
+        if (cp >= 0x80 && cp < 0x800) { width = 2; }
+        if (cp >= 0x800 && cp < 0x10000) { width = 3; }
+        if (cp >= 0x10000) { width = 4; }
+        if (width > MAX_TEXT_BYTES - byte_count) {
+            println("shroud: accessibility UTF-8 byte limit exceeded");
+            exit(101);
+        }
+        byte_count += width;
+    }
     // Bound temporary fragment retention as well as copying: each chunk holds
     // at most 4096 code points, and cap_join allocates each joined result once.
     // Repeatedly appending to a growing prefix copied O(n^2) bytes.
