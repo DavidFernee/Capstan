@@ -19,6 +19,12 @@ MAX_HEADER_BYTES = 4096
 MAX_HEADER_FIELDS = 16
 MAX_READ_CHUNK = 64 * 1024
 MAX_RETAINED_OUTPUT = 64 * 1024
+MAX_JSON_DEPTH = 64
+MAX_PENDING_REQUESTS = 256
+MAX_OPEN_DOCUMENTS = 1000
+MAX_ACTIVE_PROCESSES = 4
+MAX_ARG_COUNT = 128
+MAX_ARG_BYTES = 64 * 1024
 ALLOWED_ENV = frozenset({"LANG", "LC_ALL", "TZ"})
 FORBIDDEN_ENV = frozenset({"PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"})
 
@@ -34,6 +40,28 @@ def _unique_object(pairs):
             raise ContractError("duplicate JSON object key")
         result[key] = value
     return result
+
+
+def _check_json_depth(raw):
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in raw:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 92:
+                escaped = True
+            elif byte == 34:
+                in_string = False
+        elif byte == 34:
+            in_string = True
+        elif byte in (123, 91):
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                raise ContractError("JSON nesting exceeds configured limit")
+        elif byte in (125, 93):
+            depth -= 1
 
 
 def _valid_rpc_message(message):
@@ -121,6 +149,7 @@ class BoundedFrameDecoder:
             raw_body = bytes(self.buffer[body_start:frame_end])
             del self.buffer[:frame_end]
             try:
+                _check_json_depth(raw_body)
                 body = raw_body.decode("utf-8")
                 message = json.loads(body, object_pairs_hook=_unique_object)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -143,7 +172,10 @@ def encode_frame(message):
 class RequestTracker:
     """Correlation and cancellation rules, independent of process transport."""
 
-    def __init__(self):
+    def __init__(self, max_pending=MAX_PENDING_REQUESTS):
+        if max_pending < 1:
+            raise ValueError("invalid pending request limit")
+        self.max_pending = max_pending
         self.pending = set()
         self.cancelled = set()
 
@@ -152,6 +184,8 @@ class RequestTracker:
             raise ContractError("invalid request id")
         if request_id in self.pending:
             raise ContractError("duplicate in-flight request id")
+        if len(self.pending) >= self.max_pending:
+            raise ContractError("pending request queue is full")
         self.cancelled.discard(request_id)
         self.pending.add(request_id)
 
@@ -172,7 +206,8 @@ class RequestTracker:
 class DiagnosticVersions:
     """Prevents older compiler publications replacing newer open-buffer state."""
 
-    def __init__(self):
+    def __init__(self, max_documents=MAX_OPEN_DOCUMENTS):
+        self.max_documents = max_documents
         self.latest = {}
 
     def accept(self, uri, version):
@@ -180,11 +215,16 @@ class DiagnosticVersions:
             raise ContractError("diagnostic URI must be non-empty")
         if isinstance(version, bool) or not isinstance(version, int) or version < 0:
             raise ContractError("diagnostic version must be a non-negative integer")
+        if uri not in self.latest and len(self.latest) >= self.max_documents:
+            raise ContractError("open-document diagnostic table is full")
         previous = self.latest.get(uri, -1)
         if version < previous:
             return False
         self.latest[uri] = version
         return True
+
+    def close(self, uri):
+        self.latest.pop(uri, None)
 
 
 @dataclass(frozen=True)
@@ -203,6 +243,13 @@ class StartRequest:
         if (not isinstance(self.argv, tuple) or not self.argv or
                 any(not isinstance(x, str) or "\x00" in x for x in self.argv) or not self.argv[0]):
             raise ContractError("argv must be a non-empty immutable vector without NUL bytes")
+        if len(self.argv) > MAX_ARG_COUNT:
+            raise ContractError("argument count exceeds configured limit")
+        try:
+            if sum(len(arg.encode("utf-8")) + 1 for arg in self.argv) > MAX_ARG_BYTES:
+                raise ContractError("aggregate argument bytes exceed configured limit")
+        except UnicodeEncodeError as exc:
+            raise ContractError("argv must contain valid Unicode") from exc
         if not self.working_directory_grant:
             raise ContractError("working directory grant is required")
         if self.profile not in {"lsp", "check", "build", "test", "fmt"}:
@@ -219,6 +266,12 @@ class StartRequest:
             raise ContractError("duplicate environment variable")
         if any(key in FORBIDDEN_ENV or key not in ALLOWED_ENV for key in names):
             raise ContractError("environment variable is not permitted")
+        try:
+            if sum(len(k.encode("utf-8")) + len(v.encode("utf-8")) + 2
+                   for k, v in self.environment) > 8192:
+                raise ContractError("environment profile exceeds configured limit")
+        except UnicodeEncodeError as exc:
+            raise ContractError("environment must contain valid Unicode") from exc
 
 
 class FakeClock:
@@ -314,6 +367,8 @@ class ProcessSupervisorModel:
 
     def start(self, request):
         request.validate()
+        if len(self.active) >= MAX_ACTIVE_PROCESSES:
+            raise ContractError("active process budget exhausted")
         child = self.backend.spawn(request)
         process = SupervisedProcess(child, self.clock.now_ms + request.deadline_ms,
                                     request.output_limit, self.grace_ms)
@@ -536,9 +591,11 @@ class ContractTests(unittest.TestCase):
                 decoder.feed(raw)
                 decoder.finish()
 
-    def test_request_correlation_duplicate_ids_and_late_cancelled_reply(self):
-        tracker = RequestTracker()
+    def test_request_correlation_duplicate_ids_late_reply_and_queue_limit(self):
+        tracker = RequestTracker(max_pending=1)
         tracker.begin(41)
+        with self.assertRaises(ContractError):
+            tracker.begin(42)
         with self.assertRaises(ContractError):
             tracker.begin(41)
         self.assertTrue(tracker.cancel(41))
@@ -553,6 +610,26 @@ class ContractTests(unittest.TestCase):
         self.assertFalse(versions.accept("file:///workspace/main.cap", 7))
         self.assertEqual(versions.latest["file:///workspace/main.cap"], 8)
         self.assertTrue(versions.accept("file:///workspace/main.cap", 9))
+        versions.close("file:///workspace/main.cap")
+        self.assertNotIn("file:///workspace/main.cap", versions.latest)
+
+    def test_document_table_and_process_count_are_bounded(self):
+        versions = DiagnosticVersions(max_documents=1)
+        self.assertTrue(versions.accept("file:///one.cap", 1))
+        with self.assertRaises(ContractError):
+            versions.accept("file:///two.cap", 1)
+        processes = [self.supervisor.start(self.request()) for _ in range(MAX_ACTIVE_PROCESSES)]
+        with self.assertRaises(ContractError):
+            self.supervisor.start(self.request())
+        for process in processes:
+            self.backend.observe_exit(process.child, 0)
+            self.supervisor.tick(process)
+
+    def test_json_nesting_is_bounded(self):
+        body = b'{"jsonrpc":"2.0","method":"x","params":' + b'[' * (MAX_JSON_DEPTH + 1) + b'0' + b']' * (MAX_JSON_DEPTH + 1) + b'}'
+        raw = b"Content-Length: " + str(len(body)).encode("ascii") + b"\\r\\n\\r\\n" + body
+        with self.assertRaises(ContractError):
+            BoundedFrameDecoder().feed(raw)
 
     def test_monotonic_clock_cannot_move_backwards(self):
         with self.assertRaises(ContractError):
