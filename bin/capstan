@@ -81,5 +81,5 @@ case "$cmd" in
       exit 1
     fi
     ;;
-  *) echo "usage: capstan (run|build|test|check|fmt|lsp) file.cap... [-o program] [--release] [--strict] [--check]" >&2; exit 2 ;;
+  *) echo "usage: capstan (run|build|test|check|native|fmt|lsp) file.cap... [-o program] [--release] [--strict] [--check]" >&2; exit 2 ;;
 esac
