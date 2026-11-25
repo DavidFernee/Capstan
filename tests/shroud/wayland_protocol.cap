@@ -72,7 +72,8 @@ int main() {
     catalog.push(request);
     result = wayland_protocol_dispatch(bytes, frame, objects, catalog, WAYLAND_DIRECTION_REQUEST, 1);
     if (result.status != -1) { return 13; }
-    catalog.pop();
+    catalog = new List<WaylandMessageSpec>();
+    catalog.push(request);
 
     // A complete frame cannot claim an argument schema introduced after object version.
     List<WaylandArgSpec> no_args = new List<WaylandArgSpec>();
@@ -123,11 +124,11 @@ int main() {
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != -1) { return 19; }
     object_args[0] = wayland_protocol_arg(WAYLAND_ARG_OBJECT, 20, 0, true);
-    wayland_protocol_push_u32(object_payload, 0);
-    Tainted nullable_object = wayland_protocol_make_frame(1, 3, object_payload);
+    List<int> null_object_payload = new List<int>(); wayland_protocol_push_u32(null_object_payload, 0);
+    Tainted nullable_object = wayland_protocol_make_frame(1, 3, null_object_payload);
     result = wayland_protocol_dispatch(nullable_object, wayland_frame_header(nullable_object, 0),
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
-    if (result.status != -1) { return 20; }
+    if (result.status != 1) { return 20; }
 
     // Canonical booleans are checked by the schema layer too.
     List<WaylandArgSpec> bool_args = new List<WaylandArgSpec>();
