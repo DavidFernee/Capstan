@@ -14,7 +14,7 @@ const int F1_CTX_NONE = 0;
 const int F1_CTX_HTML = 1;
 const int F1_CTX_LOG = 2;
 const int F1_CTX_CSV = 4;
-const int F1_CTX_JSON = 8;
+const int F1_CTX_JSON = 8;\nconst int F1_CTX_ALL = 15;
 
 const int F1_AUTH_FS_READ = 1;
 const int F1_AUTH_FS_WRITE = 2;
@@ -170,6 +170,9 @@ F1Value f1_concat(F1Value left, F1Value right) {
 }
 
 bool f1_context_sink_allowed(F1Value value, int required_context) {
+    if (required_context <= 0 || (required_context & F1_CTX_ALL) != required_context) {
+        return false;
+    }
     return (value.contexts & required_context) == required_context;
 }
 
@@ -326,6 +329,7 @@ int main() {
     if (!f1_context_sink_allowed(html, F1_CTX_HTML)) { return 1; }
     if (f1_context_sink_allowed(html, F1_CTX_CSV)) { return 1; }
     if (f1_context_sink_allowed(csv, F1_CTX_HTML)) { return 1; }
+    if (f1_context_sink_allowed(html, 0)) { return 1; }
     F1Value mixed = f1_concat(html, csv);
     if (mixed.contexts != F1_CTX_NONE) { return 1; }
 
@@ -409,6 +413,7 @@ test "encoding guarantees are context-specific and non-substitutable" {
     assert(f1_context_sink_allowed(html, F1_CTX_HTML));
     assert(!f1_context_sink_allowed(html, F1_CTX_CSV));
     assert(!f1_context_sink_allowed(csv, F1_CTX_HTML));
+    assert(!f1_context_sink_allowed(html, 0));
     assert(f1_concat(html, csv).contexts == F1_CTX_NONE);
 }
 
