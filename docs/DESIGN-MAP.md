@@ -1126,3 +1126,16 @@ missing, stale or unverifiable evidence is unknown, never green. Workspace openi
 not execute project code. Build commands use explicit executables and argument vectors,
 never shell interpolation. Project hooks and in-process plugins are out of scope until
 a separately reviewed capability and isolation design exists.
+
+
+## Bosun's Locker database programme
+
+Bosun's Locker is the Capstan-native transactional database and storage engine. Its
+architecture and research programme are specified in
+[`docs/database/BOSUNS-LOCKER-ARCHITECTURE.md`](database/BOSUNS-LOCKER-ARCHITECTURE.md),
+with the candidate transaction-history contract in
+[`docs/database/TRANSACTION-HISTORY-SEMANTICS.md`](database/TRANSACTION-HISTORY-SEMANTICS.md).
+The initial target is single-node strict serializability and durable commit. The selected
+concurrency-control algorithm and physical index/storage layout remain open pending
+formal analysis and reproducible benchmarks. These documents are proposals, not claims
+of an implemented or verified database.
