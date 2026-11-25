@@ -143,7 +143,7 @@ DeadeyeImageResult deadeye_bmp_decode_internal(
         // built, so charge both simultaneously materialised payloads.
         HalyardConsumptionCharge output_charge = new HalyardConsumptionCharge{
             input_bytes: 0, output_bytes: image_bytes + pixel_count * 4,
-            decoded_units: pixel_count, work_units: pixel_count
+            decoded_units: pixel_count, work_units: image_bytes + pixel_count
         };
         if (!halyard_consumption_budget_consume(budget_value, output_charge)) {
             return deadeye_bmp_error("budget_exceeded");
@@ -421,7 +421,7 @@ test "Deadeye budget charges temporary and final pixel buffers before allocation
             assert(budget.used_input_bytes == 70);
             assert(budget.used_output_bytes == 32);
             assert(budget.used_decoded_units == 4);
-            assert(budget.used_work_units == 74);
+            assert(budget.used_work_units == 90);
         } else { assert(false); }
     } else { assert(false); }
 }
