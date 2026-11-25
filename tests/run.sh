@@ -127,6 +127,18 @@ else
   bad "CCAM native x86-64 backend" "$out"
 fi
 
+section "Halyard: Capstan-native core and bounded reservation-actor model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/lib/halyard/core.cap" 2>&1)"; then
+  ok "Halyard byte source, aggregate ledger, bounded sink and rational timebase"
+else
+  bad "Halyard Capstan core" "$out"
+fi
+if out="$($PY "$ROOT/tests/halyard/resource_actor_model.py" 2>&1)"; then
+  ok "$out"
+else
+  bad "Halyard bounded reservation actor model" "$out"
+fi
+
 section "unit"
 for opt in 0 2 3; do
   if "$CC" "-O$opt" -std=gnu11 -w -I"$ROOT/runtime" "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit_o$opt" &&
