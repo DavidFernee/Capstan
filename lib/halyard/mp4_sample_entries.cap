@@ -277,13 +277,15 @@ DeadeyeMp4SampleEntry deadeye_mp4_parse_audio_entry(
         // extension must be explicitly parsed and bounded before allowlisting.
         return deadeye_mp4_sample_entry_error("unsupported_audio_entry_child");
     }
+    string codec = "twos-pcm";
+    if (little_endian) { codec = "sowt-pcm"; }
     return new DeadeyeMp4SampleEntry{
         ok: true, is_video: false, is_audio: true,
         width: 0, height: 0, channels: channels, sample_rate: sample_rate,
         sample_bits: bits, pcm_little_endian: little_endian,
         nal_length_bytes: 0, sps_count: 0, pps_count: 0,
         avc_profile: 0, avc_level: 0,
-        codec: little_endian ? "sowt-pcm" : "twos-pcm", error: ""
+        codec: codec, error: ""
     };
 }
 
