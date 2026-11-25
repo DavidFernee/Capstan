@@ -15,6 +15,15 @@ SPEC.loader.exec_module(VALIDATOR)
 
 
 class CorpusSchemaNegativeControls(unittest.TestCase):
+    def test_step_budget_above_harness_limit_is_rejected(self):
+        with self.assertRaises(ValueError):
+            VALIDATOR.check_step_budget(
+                VALIDATOR.MAX_VECTOR_STEPS + 1, "negative-control")
+
+    def test_boolean_is_not_accepted_as_step_budget(self):
+        with self.assertRaises(ValueError):
+            VALIDATOR.check_step_budget(True, "negative-control")
+
     def test_missing_trace_is_rejected(self):
         with self.assertRaises(ValueError):
             VALIDATOR.check_trace({"steps": 0}, "negative-control")
