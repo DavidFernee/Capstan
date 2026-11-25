@@ -164,6 +164,30 @@ there is no lifetime-bound reservation, and allocator exhaustion remains a termi
 runtime outcome rather than a recoverable sink error. It is a correctness prototype, not
 a hostile-input output boundary.
 
+## 6.2 Managed sink lifetime and peak accounting
+
+The managed sink path couples output payload ownership to the aggregate ledger.
+`halyard_managed_sink_create` creates an empty sink with a zero-sized lease.
+For each append, `halyard_managed_sink_write_exact` validates the request, then
+acquires a replacement lease charging the *entire replacement payload* in both
+`retained_bytes` and `output_bytes`. The old payload remains live while the
+copy-on-commit replacement is built, so the ledger temporarily accounts for both
+payloads. Only after the sink swaps to the replacement does the old lease get released.
+This deliberately means a write can be rejected even when the final payload fits: the
+aggregate budget must also accommodate the copy-on-commit peak.
+
+If release of the old lease fails after commit (for example, because public ledger state
+was corrupted), the old lease is retained in the managed sink and further writes are
+blocked until cleanup succeeds. Close is retryable: it tracks successful release of the
+current lease separately, so a failed cleanup can be retried after ledger repair without
+releasing that lease twice. Close only marks the managed sink fully closed after all
+leases have been released.
+
+This is a sequential accounting protocol, not a proof of allocator-exact memory bounds,
+hostile-caller safety or concurrency correctness. Public struct fields remain mutable,
+allocator metadata and list/object overhead are not charged, and allocator exhaustion
+has no recoverable result in the current language/runtime API.
+
 ## 6.1 Managed source lifetime
 
 `halyard_managed_source_create` is the first composition of source construction with
@@ -205,7 +229,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 8. Test obligations
 
-The regression suite is expressed as 37 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 41 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`; the Shanty and Deadeye suites are invoked directly with `bin/capstan test lib/halyard/shanty.cap` and `bin/capstan test lib/halyard/deadeye.cap`. The module tests remain colocated Capstan declarations and are not wired through a Halyard-specific shell hook. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -228,7 +252,7 @@ contains no shell, Python, C, or other-language source. It covers:
 - defensive validation of source bounds and byte contents before parser use;
 - separation of cheap source-shape preflight from the bounded byte-domain scan;
 - monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics;
-- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation; managed source admission, retained-byte accounting, close/release lifecycle, invalid-input rollback and retry after ledger repair.
+- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation; managed source admission, retained-byte accounting, close/release lifecycle, invalid-input rollback and retry after ledger repair; managed sink peak replacement accounting, rejected admission, invalid-write preservation and retryable close after ledger repair.
 
 Still required before MC1 can pass:
 
@@ -254,7 +278,7 @@ Still required before MC1 can pass:
 | Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native cases; exact-head execution pending |
 | Rational timebase | `lib/halyard/core.cap` | Initial checked integer rescaling with explicit rounding; no full clock/discontinuity model |
 | Format registry | Not implemented | MC0 / issue #287 |
-| Bounded sink | `lib/halyard/core.cap` | In-memory bounded copy-on-commit prototype; aggregate allocation/retention accounting and lifetime-bound output reservation remain outstanding |
+| Bounded sink | `lib/halyard/core.cap` | Managed copy-on-commit sink charges old and replacement payload leases during transition; allocator metadata/OOM and opaque ownership remain outstanding |
 
 No third-party media implementation code is used by this slice. The existing Capstan
 compiler/runtime remains C-backed in the current production build and remains in the
