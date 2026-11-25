@@ -189,7 +189,7 @@ bool ccm_invariant(CCMState state) {
         state.cleanup_steps < 0 ||
         state.cleanup_steps > state.max_cleanup_steps ||
         state.max_cleanup_steps < 0 || state.cleanup_reserved < 0 ||
-        state.cleanup_steps + state.cleanup_reserved > state.max_cleanup_steps) { return false; }
+        state.cleanup_reserved > state.max_cleanup_steps - state.cleanup_steps) { return false; }
 
     if (state.channel_capacity != 1 || state.channel_count < 0 ||
         state.channel_count > state.channel_capacity) { return false; }
@@ -378,8 +378,8 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         if (before.channel_count >= before.channel_capacity) {
             return ccm_reject(before, "channel_full");
         }
-        if (before.buffered_bytes + before.message_bytes >
-            before.max_buffered_bytes) {
+        if (before.message_bytes >
+            before.max_buffered_bytes - before.buffered_bytes) {
             return ccm_reject(before, "channel_byte_budget_exhausted");
         }
         // Linearisation point: ownership and queue accounting change together.
@@ -1289,4 +1289,21 @@ test "CCM child failure after parent cancellation does not reserve cancellation 
     state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
     state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
     assert(ccm_invariant(state) && state.root_status == CCM_TASK_FAILED);
+}
+
+test "CCM channel byte admission failure preserves producer ownership" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    state.max_buffered_bytes = 0;
+    assert(ccm_invariant(state));
+    CCMTransition rejected = ccm_step(state, 1, CCM_ACT_SEND);
+    assert(!rejected.ok && rejected.error == "channel_byte_budget_exhausted");
+    assert(rejected.state.message_live);
+    assert(rejected.state.message_owner == CCM_OWNER_PRODUCER);
+    assert(rejected.state.channel_count == 0);
+    assert(rejected.state.buffered_bytes == 0);
+    assert(rejected.state.protocol_phase == CCM_PROTO_PRODUCED);
+    assert(rejected.state.steps == state.steps);
 }
