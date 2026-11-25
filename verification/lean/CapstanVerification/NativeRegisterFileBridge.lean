@@ -421,4 +421,40 @@ theorem nativeRuntimeRegisterFileRelation_write
     rw [hruntimeUnchanged] at hruntimeAt
     exact hrel.matches_at other nativeReg runtimeReg hnativeAt hruntimeAt
 
+
+/-- End-to-end register-file preservation across the native list, abstract
+runtime list, and finite typed register model.
+
+Given paired successful native/runtime updates, the native/runtime relation is
+preserved and RuntimeBridge's finite-register preservation theorem applies to
+the same updated runtime list. This composes the concrete list update boundary
+with the existing finite-register invariant; it does not yet establish that
+the native and abstract dynamic type checks succeed together. -/
+theorem nativeWriteRegister_preserves_finite_relation
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hnr : NativeRuntimeRegisterFileRelation native runtime)
+    (hrf : RuntimeRegisterFileRelation types regs runtime)
+    (index : Fin n)
+    (nativeReplacement : NativeCCAMRegister)
+    (runtimeReplacement : RuntimeRegister)
+    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement)
+    (hdecl : runtimeReplacement.declaredType = types index)
+    (hinit : runtimeReplacement.initialized = true)
+    {nativeUpdated : List NativeCCAMRegister}
+    {runtimeUpdated : List RuntimeRegister}
+    (hnativeWrite :
+      nativeWriteRegister native index.val nativeReplacement = .ok nativeUpdated)
+    (hruntimeWrite :
+      runtimeWriteRegister runtime index.val runtimeReplacement = .ok runtimeUpdated) :
+    NativeRuntimeRegisterFileRelation nativeUpdated runtimeUpdated ∧
+    RuntimeRegisterFileRelation types
+      (write regs index runtimeReplacement.asVal) runtimeUpdated := by
+  exact ⟨
+    nativeRuntimeRegisterFileRelation_write hnr index.val
+      nativeReplacement runtimeReplacement hreplacement hnativeWrite hruntimeWrite,
+    runtimeWriteRegister_preserves_relation hrf index runtimeReplacement
+      hdecl hinit hruntimeWrite
+  ⟩
+
 end CapstanVerification
