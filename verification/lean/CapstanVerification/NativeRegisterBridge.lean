@@ -56,7 +56,7 @@ def nativeRegisterInit (tag : Int) : NativeCCAMRegister :=
   { declaredTypeTag := tag
     initialized := false
     intValue := 0
-    intValue_in_range := by decide
+    intValue_in_range := by norm_num [inI64, inI64B, two63, maxI64Nat]
     boolValue := false }
 
 /-- Relate the concrete integer tag and payload fields to the abstract record. -/
