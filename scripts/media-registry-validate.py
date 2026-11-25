@@ -22,6 +22,24 @@ ENUMS = {
  "assurance_level":{"unassessed","prototype","reviewed","release-assured"},
 }
 
+def reject_duplicate_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON object key: {key!r}")
+        result[key] = value
+    return result
+
+
+def reject_json_constant(value):
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
+def parse_registry(text):
+    return json.loads(text, object_pairs_hook=reject_duplicate_pairs,
+                      parse_constant=reject_json_constant)
+
+
 def validate_registry(value):
     errors = []
     if not isinstance(value, dict):
@@ -76,6 +94,18 @@ def validate_registry(value):
                                                "bit_depth","chroma","channel_layout")], sort_keys=True)
         if key in tuples: errors.append(f"{p}: duplicate/conflicting registration tuple")
         tuples.add(key)
+        assurance = r.get("assurance_level")
+        if assurance in ("reviewed", "release-assured"):
+            if r.get("licence_review") != "reviewed-clear":
+                errors.append(f"{p}.assurance_level: requires licence_review reviewed-clear")
+            if r.get("patent_review") != "reviewed-clear":
+                errors.append(f"{p}.assurance_level: requires patent_review reviewed-clear")
+            if r.get("test_status") != "passed":
+                errors.append(f"{p}.assurance_level: requires test_status passed")
+            if r.get("fuzz_status") != "passed":
+                errors.append(f"{p}.assurance_level: requires fuzz_status passed")
+        if assurance == "release-assured" and r.get("corpus_revision") == "none":
+            errors.append(f"{p}.assurance_level: release-assured requires a corpus revision")
     return sorted(errors)
 
 def main(argv):
@@ -83,8 +113,8 @@ def main(argv):
         print(f"usage: {Path(argv[0]).name} REGISTRY.json", file=sys.stderr)
         return 2
     try:
-        value = json.loads(Path(argv[1]).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        value = parse_registry(Path(argv[1]).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         print(f"registry input error: {exc}", file=sys.stderr)
         return 2
     errors = validate_registry(value)

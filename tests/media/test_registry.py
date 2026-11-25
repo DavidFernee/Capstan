@@ -11,10 +11,37 @@ spec = importlib.util.spec_from_file_location("registry", ROOT/"scripts/media-re
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 BASE = json.loads((ROOT/"docs/media/FORMAT-REGISTRY.json").read_text(encoding="utf-8"))
+SCHEMA = json.loads((ROOT/"docs/media/FORMAT-REGISTRY-SCHEMA.json").read_text(encoding="utf-8"))
 
 class RegistryTests(unittest.TestCase):
     def test_current_registry_valid(self):
         self.assertEqual(module.validate_registry(BASE), [])
+
+    def test_schema_and_validator_field_sets_match(self):
+        self.assertEqual(set(SCHEMA["required"]), module.TOP)
+        self.assertEqual(set(SCHEMA["properties"]), module.TOP)
+        record = SCHEMA["$defs"]["record"]
+        self.assertEqual(set(record["required"]), module.FIELDS)
+        self.assertEqual(set(record["properties"]), module.FIELDS)
+
+    def test_schema_and_validator_enums_match(self):
+        props = SCHEMA["$defs"]["record"]["properties"]
+        for name, allowed in module.ENUMS.items():
+            schema_enum = (SCHEMA["$defs"]["review"]["enum"]
+                           if name in ("licence_review", "patent_review")
+                           else props[name]["enum"])
+            self.assertEqual(set(schema_enum), allowed, name)
+
+    def test_schema_contains_assurance_evidence_constraints(self):
+        constraints = SCHEMA["allOf"]
+        self.assertEqual(len(constraints), 2)
+        reviewed = constraints[0]["then"]["properties"]
+        self.assertEqual(reviewed["licence_review"]["const"], "reviewed-clear")
+        self.assertEqual(reviewed["patent_review"]["const"], "reviewed-clear")
+        self.assertEqual(reviewed["test_status"]["const"], "passed")
+        self.assertEqual(reviewed["fuzz_status"]["const"], "passed")
+        release = constraints[1]["then"]["properties"]["corpus_revision"]["not"]
+        self.assertEqual(release["const"], "none")
     def test_unknown_top_level_key(self):
         x=copy.deepcopy(BASE); x["unexpected"]=1
         self.assertTrue(any("unknown property 'unexpected'" in e for e in module.validate_registry(x)))
@@ -38,6 +65,36 @@ class RegistryTests(unittest.TestCase):
     def test_bool_not_integer_bit_depth(self):
         x=copy.deepcopy(BASE); x["records"][0]["bit_depth"]=True
         self.assertTrue(any("bit_depth" in e for e in module.validate_registry(x)))
+
+    def test_duplicate_top_level_json_key_rejected(self):
+        with self.assertRaisesRegex(ValueError, "duplicate JSON object key"):
+            module.parse_registry('{"schema_version":"1.0.0","schema_version":"1.0.0"}')
+
+    def test_duplicate_nested_record_json_key_rejected(self):
+        with self.assertRaisesRegex(ValueError, "duplicate JSON object key"):
+            module.parse_registry('{"records":[{"id":"one","id":"two"}]}')
+
+    def test_nonstandard_json_constant_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-standard JSON constant"):
+            module.parse_registry('{"value":NaN}')
+
+    def test_reviewed_requires_passed_test_fuzz_and_rights_reviews(self):
+        x=copy.deepcopy(BASE); r=x["records"][0]
+        r.update(assurance_level="reviewed", test_status="present-not-run",
+                 fuzz_status="not-run")
+        errors=module.validate_registry(x)
+        self.assertTrue(any("licence_review reviewed-clear" in e for e in errors))
+        self.assertTrue(any("patent_review reviewed-clear" in e for e in errors))
+        self.assertTrue(any("test_status passed" in e for e in errors))
+        self.assertTrue(any("fuzz_status passed" in e for e in errors))
+
+    def test_release_assured_requires_corpus_revision(self):
+        x=copy.deepcopy(BASE); r=x["records"][0]
+        r.update(assurance_level="release-assured", licence_review="reviewed-clear",
+                 patent_review="reviewed-clear", test_status="passed",
+                 fuzz_status="passed", corpus_revision="none")
+        self.assertTrue(any("requires a corpus revision" in e
+                            for e in module.validate_registry(x)))
 
 if __name__ == "__main__":
     unittest.main()
