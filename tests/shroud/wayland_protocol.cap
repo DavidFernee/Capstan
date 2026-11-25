@@ -27,6 +27,7 @@ int main() {
     WaylandObjectTable objects = wayland_object_table();
     if (objects.slots.len() != WAYLAND_OBJECT_SLOTS_MAX) { return 1; }
     if (!wayland_object_add(objects, 1, 10, 3)) { return 2; }
+    if (wayland_object_add(objects, 2, 20, 1)) { return 41; }
     if (!wayland_object_add_client(objects, 2, 20, 1)) { return 3; }
     if (!wayland_object_add_client(objects, 3, 30, 1)) { return 4; }
     if (wayland_object_add(objects, 1, 99, 1)) { return 5; }
@@ -195,6 +196,10 @@ int main() {
     Tainted delete_bytes = wayland_protocol_make_frame(1, 1, delete_payload);
     result = wayland_display_delete_id(delete_bytes, wayland_frame_header(delete_bytes, 0), objects, 1, 10);
     if (result.status != 1) { return 29; }
+    Tainted wrong_display_delete = wayland_protocol_make_frame(2, 1, delete_payload);
+    result = wayland_display_delete_id(wrong_display_delete, wayland_frame_header(wrong_display_delete, 0),
+        objects, 1, 10);
+    if (result.status != -1) { return 42; }
     result = wayland_display_delete_id(delete_bytes, wayland_frame_header(delete_bytes, 0), objects, 1, 10);
     if (result.status != -1) { return 30; }
     List<WaylandArgSpec> reuse_args = new List<WaylandArgSpec>();
@@ -216,6 +221,11 @@ int main() {
     result = wayland_protocol_dispatch(server_new_frame, wayland_frame_header(server_new_frame, 0),
         objects, catalog, WAYLAND_DIRECTION_EVENT, 0);
     if (result.status != 1 || wayland_object_get(objects, 4278190080).owner != WAYLAND_OBJECT_OWNER_SERVER) { return 32; }
+    List<int> server_gap_payload = new List<int>(); wayland_protocol_push_u32(server_gap_payload, 4278190082);
+    Tainted server_gap_frame = wayland_protocol_make_frame(1, 11, server_gap_payload);
+    result = wayland_protocol_dispatch(server_gap_frame, wayland_frame_header(server_gap_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_EVENT, 0);
+    if (result.status != -1 || wayland_object_get(objects, 4278190082).state != 0) { return 43; }
     catalog[0] = wayland_protocol_spec(50, 12, WAYLAND_DIRECTION_EVENT, 1, no_args, 0, true);
     Tainted server_destroy_frame = wayland_protocol_make_frame(4278190080, 12, new List<int>());
     result = wayland_protocol_dispatch(server_destroy_frame, wayland_frame_header(server_destroy_frame, 0),
@@ -275,6 +285,6 @@ int main() {
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != 1 || wayland_object_get(objects, 5).state != 1) { return 39; }
 
-    println("Wayland protocol schema and object lifecycle: 44 assertions passed");
+    println("Wayland protocol schema and object lifecycle: 47 assertions passed");
     return 0;
 }
