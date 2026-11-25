@@ -205,3 +205,26 @@ implementation and proof fragments into tightly scoped, reproducible claims.
 **Maturity:** Architecture and hypotheses specified in docs/media/ARCHITECTURE.md; no implementation, benchmark, novelty claim, proof or publication result is claimed by this entry. The work must begin with literature review and baseline selection, then publish reproducible corpora, raw results, exact source revisions, negative results and explicit proof boundaries.
 
 **Next evidence:** MC0 review; MC1 bounded stream/resource/timebase conformance; Shanty WAV/PCM and Deadeye image/frame vertical slices; adversarial fuzzing; implementation-linked model refinement before any formal assurance claim.
+
+
+#### R8 implementation note — Halyard MC1 prototype (2026-11-25)
+
+The Halyard working branch now contains a first Capstan-native prototype in
+`lib/halyard/core.cap`: an in-memory bounded byte source and a five-dimensional
+sequential aggregate ledger. Regression cases are in `verification/halyard_core.cap`
+and are invoked by `tests/run.sh`. The detailed contract and limitations are recorded
+in `docs/media/CORE-PRIMITIVES.md`.
+
+This is an implementation experiment, not a research result. The current public struct
+representation permits client mutation; the ledger is not concurrency-safe; reservation
+is not yet coupled atomically to source allocation; the ledger does not yet cover the full
+resource vector; rational timebases and format registration remain unimplemented. No
+benchmark, proof, novelty claim or MC1 completion is asserted. Follow-up issue #293
+tracks opaque state, lifetime-bound reservation ownership and the concurrency model.
+
+The first testable research question is now sharpened: **does all-dimensions-preflighted
+admission, when coupled to opaque ownership and bounded parser graphs, prevent aggregate
+resource-limit bypasses that per-buffer limits permit, without unacceptable throughput,
+latency or memory overhead?** Baselines must compare identical workloads and report
+rejection correctness, peak retained bytes, allocation count, CPU work, throughput and
+tail latency. The sequential prototype alone cannot answer this question.
