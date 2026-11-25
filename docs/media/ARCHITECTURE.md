@@ -27,6 +27,21 @@ rendering/input APIs; this integration package is not a dependency of either med
 engine. Keel may consume and orchestrate media graphs and application lifecycles but
 must not duplicate codec semantics.
 
+## 1.1 Current implementation snapshot
+
+The first MC1 prototype is on the Halyard working branch:
+
+- `lib/halyard/core.cap`: in-memory bounded byte source and sequential aggregate ledger;
+- `verification/halyard_core.cap`: initial boundary and failure-atomicity regressions;
+- `tests/run.sh`: invokes the regression program.
+
+This is not an MC1 gate exit. Publicly mutable struct fields prevent an enforced opaque
+ownership boundary; the ledger is not concurrency-safe; reservation is not yet coupled
+atomically to source allocation; the resource vector is incomplete; and rational time,
+bounded sinks, cancellation and lifetime-bound reservations remain outstanding.
+See [CORE-PRIMITIVES.md](CORE-PRIMITIVES.md) and follow-up issue #293. Exact-head CI is
+pending and no test pass is asserted until its result is observed.
+
 ## 2. Dependency direction
 
 The graph below uses **provider → consumer** arrows. Halyard is the media architecture
