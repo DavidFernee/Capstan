@@ -333,6 +333,28 @@ PAContractStep pa_step_with_resources(
             error: "invalid_resource_state"
         };
     }
+    if (current_state < 0 || current_state >= spec.state_count) {
+        return new PAContractStep{
+            accepted: false, next_state: current_state,
+            next_owner: current_owner, next_live_resources: live_resources,
+            error: "current_state_out_of_range"
+        };
+    }
+    if (role < 0 || role >= spec.role_count ||
+        operation < 1 || operation > PA_MAX_OPERATION) {
+        return new PAContractStep{
+            accepted: false, next_state: current_state,
+            next_owner: current_owner, next_live_resources: live_resources,
+            error: "invalid_role_or_operation"
+        };
+    }
+    if (pa_contains(spec.terminal_states, current_state)) {
+        return new PAContractStep{
+            accepted: false, next_state: current_state,
+            next_owner: current_owner, next_live_resources: live_resources,
+            error: "protocol_already_terminal"
+        };
+    }
     for (int i = 0; i < spec.transitions.len(); i += 1) {
         PAEdge edge = spec.transitions[i];
         if (edge.from_state == current_state &&
@@ -586,4 +608,22 @@ test "PA rejects a transition-contract count mismatch" {
     spec.contracts.pop();
     PAValidation result = pa_validate(spec);
     assert(!result.valid && result.error == "transition_contract_count_mismatch");
+}
+
+test "PA resource-aware interpreter rejects terminal states without mutation" {
+    PASpec spec = pa_linear_message_protocol();
+    PAContractStep terminal = pa_step_with_resources(
+        spec, 4, 2, 4, PA_OWNER_NONE, 0, 1, 1
+    );
+    assert(!terminal.accepted);
+    assert(terminal.error == "protocol_already_terminal");
+    assert(terminal.next_state == 4);
+    assert(terminal.next_owner == PA_OWNER_NONE);
+    assert(terminal.next_live_resources == 0);
+
+    PAContractStep invalid = pa_step_with_resources(
+        spec, 99, 1, 1, PA_OWNER_NONE, 0, 1, 1
+    );
+    assert(!invalid.accepted && invalid.error == "current_state_out_of_range");
+    assert(invalid.next_state == 99);
 }
