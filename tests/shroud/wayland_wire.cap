@@ -66,8 +66,48 @@ int main() {
         bool want = size >= 8 && size <= 65532 && size % 4 == 0;
         if (wayland_frame_size_valid(size) != want) { return 14; }
     }
+
+    List<int> word_bytes = new List<int>();
+    word_bytes.push(0x78); word_bytes.push(0x56); word_bytes.push(0x34); word_bytes.push(0x12);
+    WaylandPayloadWord word = wayland_payload_word(wayland_test_bytes(word_bytes), 0, 4);
+    if (word.status != 1 || word.value != 0x12345678 || word.end_offset != 4) { return 16; }
+    word = wayland_payload_word(wayland_test_bytes(word_bytes), 1, 4);
+    if (word.status != 0) { return 17; }
+    word = wayland_payload_word(wayland_test_bytes(word_bytes), -1, 4);
+    if (word.status != -1) { return 18; }
+
+    List<int> array_bytes = new List<int>();
+    array_bytes.push(3); array_bytes.push(0); array_bytes.push(0); array_bytes.push(0);
+    array_bytes.push(0xAA); array_bytes.push(0xBB); array_bytes.push(0xCC); array_bytes.push(0);
+    WaylandPayloadSpan span = wayland_payload_array(wayland_test_bytes(array_bytes), 0, 8);
+    if (span.status != 1 || span.length != 3 || span.data_offset != 4 || span.end_offset != 8) { return 19; }
+    span = wayland_payload_array(wayland_test_bytes(array_bytes), 0, 7);
+    if (span.status != 0) { return 20; }
+
+    List<int> string_bytes = new List<int>();
+    string_bytes.push(4); string_bytes.push(0); string_bytes.push(0); string_bytes.push(0);
+    string_bytes.push(97); string_bytes.push(98); string_bytes.push(99); string_bytes.push(0);
+    span = wayland_payload_string(wayland_test_bytes(string_bytes), 0, 8);
+    if (span.status != 1 || span.length != 4 || span.end_offset != 8) { return 21; }
+    string_bytes[7] = 120;
+    span = wayland_payload_string(wayland_test_bytes(string_bytes), 0, 8);
+    if (span.status != -1) { return 22; }
+    string_bytes[7] = 0; string_bytes[5] = 0;
+    span = wayland_payload_string(wayland_test_bytes(string_bytes), 0, 8);
+    if (span.status != -1) { return 23; }
+
+    List<int> empty_bytes = new List<int>();
+    empty_bytes.push(0); empty_bytes.push(0); empty_bytes.push(0); empty_bytes.push(0);
+    span = wayland_payload_string(wayland_test_bytes(empty_bytes), 0, 4);
+    if (span.status != 1 || span.length != 0 || span.end_offset != 4) { return 24; }
+    span = wayland_payload_array(wayland_test_bytes(empty_bytes), 0, 4);
+    if (span.status != 1 || span.length != 0 || span.end_offset != 4) { return 25; }
+    empty_bytes[0] = 0xF1; empty_bytes[1] = 0xFF;
+    span = wayland_payload_array(wayland_test_bytes(empty_bytes), 0, 4);
+    if (span.status != -1) { return 26; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing: 15 adversarial assertions passed");
+    println("Wayland framing and payload spans: 26 adversarial assertions passed");
     return 0;
 }

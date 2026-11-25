@@ -54,3 +54,55 @@ WaylandFrameHeader wayland_frame_header(Tainted bytes, int offset) {
     // Since remaining >= size, offset + size cannot exceed bytes.len().
     return wayland_complete_frame(object_id, size, opcode, offset + size);
 }
+
+struct WaylandPayloadWord { int status; int value; int end_offset; }
+struct WaylandPayloadSpan { int status; int length; int data_offset; int end_offset; }
+WaylandPayloadWord wayland_bad_payload_word() { return new WaylandPayloadWord{status: -1, value: 0, end_offset: 0}; }
+WaylandPayloadWord wayland_incomplete_payload_word() { return new WaylandPayloadWord{status: 0, value: 0, end_offset: 0}; }
+WaylandPayloadWord wayland_complete_payload_word(int value, int end_offset) { return new WaylandPayloadWord{status: 1, value: value, end_offset: end_offset}; }
+
+// Bounded little-endian uint32 reader; end is the enclosing message boundary.
+WaylandPayloadWord wayland_payload_word(Tainted bytes, int offset, int end) {
+    if (offset < 0 || end < offset || end > bytes.len()) { return wayland_bad_payload_word(); }
+    if (end - offset < 4) { return wayland_incomplete_payload_word(); }
+    for (int i = 0; i < 4; i += 1) {
+        int b = bytes.at(offset + i);
+        if (b < 0 || b > 255) { return wayland_bad_payload_word(); }
+    }
+    return wayland_complete_payload_word(wayland_u32_le(bytes, offset), offset + 4);
+}
+WaylandPayloadSpan wayland_bad_payload_span() { return new WaylandPayloadSpan{status: -1, length: 0, data_offset: 0, end_offset: 0}; }
+WaylandPayloadSpan wayland_incomplete_payload_span() { return new WaylandPayloadSpan{status: 0, length: 0, data_offset: 0, end_offset: 0}; }
+WaylandPayloadSpan wayland_complete_payload_span(int length, int data_offset, int end_offset) {
+    return new WaylandPayloadSpan{status: 1, length: length, data_offset: data_offset, end_offset: end_offset};
+}
+
+// Parse a length-prefixed Wayland array/string as a span into tainted input.
+// String lengths include a trailing NUL; zero length is the nullable wire value.
+// No copy or declassification occurs. Interface metadata decides nullability.
+WaylandPayloadSpan wayland_payload_span(Tainted bytes, int offset, int end, bool nul_terminated) {
+    WaylandPayloadWord word = wayland_payload_word(bytes, offset, end);
+    if (word.status != 1) {
+        if (word.status == 0) { return wayland_incomplete_payload_span(); }
+        return wayland_bad_payload_span();
+    }
+    int length = word.value;
+    if (length > WAYLAND_MAX_FRAME_BYTES - 12) { return wayland_bad_payload_span(); }
+    int padded = ((length + 3) / 4) * 4;
+    int data_offset = word.end_offset;
+    int payload_end = data_offset + padded;
+    if (payload_end > end) { return wayland_incomplete_payload_span(); }
+    if (nul_terminated && length > 0) {
+        if (bytes.at(data_offset + length - 1) != 0) { return wayland_bad_payload_span(); }
+        for (int i = 0; i < length - 1; i += 1) {
+            if (bytes.at(data_offset + i) == 0) { return wayland_bad_payload_span(); }
+        }
+    }
+    return wayland_complete_payload_span(length, data_offset, payload_end);
+}
+WaylandPayloadSpan wayland_payload_array(Tainted bytes, int offset, int end) {
+    return wayland_payload_span(bytes, offset, end, false);
+}
+WaylandPayloadSpan wayland_payload_string(Tainted bytes, int offset, int end) {
+    return wayland_payload_span(bytes, offset, end, true);
+}
