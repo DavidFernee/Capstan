@@ -22,6 +22,9 @@
 |---|---|---|
 | SF-001 | Constant, checked addition, integer return | Accepted; halt 42 in 4 steps |
 | SF-002 | Signed addition overflow | Accepted; overflow trap in 3 steps |
+| SF-021 | Checked subtraction | Accepted; halt 42 in 4 steps |
+| SF-022 | Checked multiplication | Accepted; halt 42 in 4 steps |
+| SF-023 | Signed multiplication overflow | Accepted; overflow trap in 3 steps |
 | SF-003 | MIN / -1 | Accepted; overflow trap in 3 steps |
 | SF-004 | MIN % -1 | Accepted; halt 0 in 4 steps |
 | SF-005 | Division by zero | Accepted; dynamic trap in 3 steps |
@@ -46,6 +49,9 @@ The following names were checked against `verification/ccam_core.cap` on main an
 |---|---|---|
 | SF-001 | `CCAM machine executes checked arithmetic and returns a value` | Add the shared vector ID and assert the full PC trace. |
 | SF-002 | `CCAM evaluator traps on checked addition overflow` | Assert the shared trace and exact trap PC/step count. |
+| SF-021 | `CCAM evaluator dispatches subtraction multiplication and remainder` | Bind the subtraction case to the shared vector and assert trace. |
+| SF-022 | `CCAM evaluator dispatches subtraction multiplication and remainder` | Bind the multiplication case to the shared vector and assert trace. |
+| SF-023 | `CCAM multiplication traps on signed overflow`; helper coverage includes negative multiplication boundaries | Add evaluator-level overflow trace assertion for the shared vector. |
 | SF-003 | `CCAM evaluator traps on division overflow at minimum integer`; helper test `CCAM division rejects minimum divided by negative one` | Assert evaluator trace and budget count in the corpus runner. |
 | SF-004 | Helper test `CCAM remainder of minimum by negative one is zero`; PR #253 adds evaluator test `CCAM evaluator returns zero for minimum remainder negative one` | PR #253 must pass exact-head CI; then bind this case to SF-004. |
 | SF-005 | `CCAM machine consumes a step for a dynamic arithmetic trap`; `CCAM remainder by zero traps` covers helper semantics | Confirm the evaluator test uses the same division-by-zero vector and assert exact trace. |
