@@ -1,0 +1,30 @@
+name: Shanty WAV corpus
+on:
+  pull_request:
+    paths:
+      - "tests/media/fixtures/wav-pcm-corpus.json"
+      - "tests/media/validate_wav_corpus.py"
+      - "tests/media/test_wav_corpus.py"
+      - "docs/media/WAV-PCM-CORPUS.md"
+      - ".github/workflows/media-wav-corpus.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tests/media/fixtures/wav-pcm-corpus.json"
+      - "tests/media/validate_wav_corpus.py"
+      - "tests/media/test_wav_corpus.py"
+      - "docs/media/WAV-PCM-CORPUS.md"
+      - ".github/workflows/media-wav-corpus.yml"
+permissions:
+  contents: read
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate corpus and negative controls
+        run: |
+          python3 -I tests/media/validate_wav_corpus.py tests/media/fixtures/wav-pcm-corpus.json
+          python3 -I tests/media/test_wav_corpus.py
