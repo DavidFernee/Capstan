@@ -490,3 +490,23 @@ test "GC rejects a stale-generation graph edge" {
     assert(result.status == GC_INVALID);
     assert(result.objects[0].allocated && result.objects[1].allocated);
 }
+
+
+test "GC root-omission negative control exposes false reclamation" {
+    GCSpec complete_roots = gc_empty_spec(2);
+    complete_roots.objects.push(gc_object(0, GC_KIND_TRACED));
+    complete_roots.objects.push(gc_object(1, GC_KIND_ATOMIC));
+    complete_roots.roots.push(gc_ref(0, 1));
+    complete_roots.roots.push(gc_ref(1, 1));
+    GCOracleResult oracle = gc_oracle(complete_roots);
+
+    GCSpec omitted_root = gc_empty_spec(2);
+    omitted_root.objects.push(gc_object(0, GC_KIND_TRACED));
+    omitted_root.objects.push(gc_object(1, GC_KIND_ATOMIC));
+    omitted_root.roots.push(gc_ref(0, 1));
+    GCResult result = gc_collect(omitted_root);
+
+    assert(oracle.valid && oracle.reachable_ids.len() == 2);
+    assert(result.status == GC_OK);
+    assert(gc_id_in(result.reclaimed_ids, 1));
+}
