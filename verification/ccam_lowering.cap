@@ -40,7 +40,7 @@ const int CCAM_MAX_LITERAL_OUTPUT_BYTES = 1048576;
 
 struct CCAMLiteralBytesResult {
     bool ok;
-    string bytes;
+    List<int> bytes;
     string error;
 }
 
@@ -50,23 +50,23 @@ struct CCAMLiteralBytesResult {
 CCAMLiteralBytesResult ccam_decode_escaped_literal(string escaped, int expected_bytes) {
     if (expected_bytes < 0 || expected_bytes > CCAM_MAX_LITERAL_OUTPUT_BYTES) {
         return new CCAMLiteralBytesResult{
-            ok: false, bytes: "", error: "literal_byte_limit"
+            ok: false, bytes: new List<int>(), error: "literal_byte_limit"
         };
     }
     if (escaped.len() > expected_bytes * 4) {
         return new CCAMLiteralBytesResult{
-            ok: false, bytes: "", error: "invalid_escaped_literal_length"
+            ok: false, bytes: new List<int>(), error: "invalid_escaped_literal_length"
         };
     }
 
-    string decoded = "";
+    List<int> decoded = new List<int>();
     int i = 0;
     while (i < escaped.len()) {
         int value = escaped.at(i);
         if (value == 92) {
             if (i + 1 >= escaped.len()) {
                 return new CCAMLiteralBytesResult{
-                    ok: false, bytes: "", error: "truncated_literal_escape"
+                    ok: false, bytes: new List<int>(), error: "truncated_literal_escape"
                 };
             }
             int next = escaped.at(i + 1);
@@ -76,7 +76,7 @@ CCAMLiteralBytesResult ccam_decode_escaped_literal(string escaped, int expected_
             } else {
                 if (i + 3 >= escaped.len()) {
                     return new CCAMLiteralBytesResult{
-                        ok: false, bytes: "", error: "truncated_octal_literal_escape"
+                        ok: false, bytes: new List<int>(), error: "truncated_octal_literal_escape"
                     };
                 }
                 int a = escaped.at(i + 1);
@@ -85,13 +85,13 @@ CCAMLiteralBytesResult ccam_decode_escaped_literal(string escaped, int expected_
                 if (a < '0' || a > '7' || b < '0' || b > '7' ||
                     d < '0' || d > '7') {
                     return new CCAMLiteralBytesResult{
-                        ok: false, bytes: "", error: "invalid_literal_escape"
+                        ok: false, bytes: new List<int>(), error: "invalid_literal_escape"
                     };
                 }
                 value = (a - '0') * 64 + (b - '0') * 8 + (d - '0');
                 if (value > 255) {
                     return new CCAMLiteralBytesResult{
-                        ok: false, bytes: "", error: "octal_literal_byte_out_of_range"
+                        ok: false, bytes: new List<int>(), error: "octal_literal_byte_out_of_range"
                     };
                 }
                 i += 4;
@@ -100,21 +100,21 @@ CCAMLiteralBytesResult ccam_decode_escaped_literal(string escaped, int expected_
             // escape_c() emits only printable ASCII bytes without escaping.
             if (value < 32 || value >= 127 || value == '"' || value == '?') {
                 return new CCAMLiteralBytesResult{
-                    ok: false, bytes: "", error: "noncanonical_escaped_literal"
+                    ok: false, bytes: new List<int>(), error: "noncanonical_escaped_literal"
                 };
             }
             i += 1;
         }
         if (decoded.len() >= expected_bytes) {
             return new CCAMLiteralBytesResult{
-                ok: false, bytes: "", error: "literal_byte_count_mismatch"
+                ok: false, bytes: new List<int>(), error: "literal_byte_count_mismatch"
             };
         }
-        decoded = decoded + char_str(value);
+        decoded.push(value);
     }
     if (decoded.len() != expected_bytes) {
         return new CCAMLiteralBytesResult{
-            ok: false, bytes: "", error: "literal_byte_count_mismatch"
+            ok: false, bytes: new List<int>(), error: "literal_byte_count_mismatch"
         };
     }
     return new CCAMLiteralBytesResult{ok: true, bytes: decoded, error: ""};
@@ -125,19 +125,19 @@ test "CCAM literal decoder preserves escaped and arbitrary byte values" {
         "A\\012\\000\\377", 4);
     assert(decoded.ok);
     assert(decoded.bytes.len() == 4);
-    assert(decoded.bytes.at(0) == 'A');
-    assert(decoded.bytes.at(1) == 10);
-    assert(decoded.bytes.at(2) == 0);
-    assert(decoded.bytes.at(3) == 255);
+    assert(decoded.bytes[0] == 'A');
+    assert(decoded.bytes[1] == 10);
+    assert(decoded.bytes[2] == 0);
+    assert(decoded.bytes[3] == 255);
 
     decoded = ccam_decode_escaped_literal("\\\\", 1);
     assert(decoded.ok && decoded.bytes.len() == 1);
-    assert(decoded.bytes.at(0) == 92);
+    assert(decoded.bytes[0] == 92);
 
     decoded = ccam_decode_escaped_literal("\\\\\"", 1);
-    assert(decoded.ok && decoded.bytes.at(0) == 34);
+    assert(decoded.ok && decoded.bytes[0] == 34);
     decoded = ccam_decode_escaped_literal("\\\\?", 1);
-    assert(decoded.ok && decoded.bytes.at(0) == 63);
+    assert(decoded.ok && decoded.bytes[0] == 63);
 }
 
 test "CCAM literal decoder rejects malformed and oversized encodings" {
