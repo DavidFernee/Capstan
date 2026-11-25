@@ -60,6 +60,56 @@ input work, round trips, ambiguity detection and model/implementation correspond
 **H2.** A format description and shared verified combinators can prove useful properties
 for realistic media structures at practical verification and runtime cost.
 
+### Current instantiation: ISO BMFF / MP4 first-film profile
+
+The first concrete R8.2 experiment is a deliberately narrow, non-fragmented MP4
+profile: one sample description per track; AVC Baseline `avc1` video; integer
+PCM `sowt`/`twos` audio; self-contained media data; no protection scheme.
+
+The implementation is being developed in Capstan, not generated from or delegated
+to an external media runtime. Its current invariants are:
+
+1. Every box is contained by its immediate parent; extended sizes are checked
+   against the 64 MiB file ceiling before arithmetic or traversal.
+2. Every supported track has exactly one `tkhd`, `mdhd`, `hdlr`, `minf`,
+   `dinf`, `stbl` and `stsd` in the expected hierarchy.
+3. Data references are self-contained. External URLs, fragmented layouts and
+   known protection markers are rejected.
+4. The one sample-description index used by `stsc` must resolve to the one
+   validated sample entry and must agree with `hdlr`.
+5. Expanded `stts` coverage equals the `stsz` sample count; `stsc` maps every
+   chunk and sample exactly once; sample extents are bounded, disjoint and wholly
+   contained in top-level `mdat` payload intervals derived from the file itself.
+6. `avcC` parsing checks Baseline profile identity, reserved bits, NAL-length
+   width, bounded SPS/PPS counts and lengths, and NAL unit types. This is not yet
+   a proof of SPS/PPS syntax conformance and does not implement H.264 decoding.
+7. Every input, box, track, sample, chunk, table-run, sample-entry and NAL payload
+   has an explicit upper bound. Aggregate live allocation accounting and
+   non-forgeable ownership remain separate required gates, not inferred from
+   these local bounds.
+
+**Research questions.** Can the sample/chunk mapping and media-extent invariants be
+expressed as a small refinement model and mechanically checked against the Capstan
+implementation? Can a format description generate both parser and adversarial
+metamorphic tests without widening the accepted language beyond the normative
+specification? Can H.264 SPS/PPS parsing be validated against the normative syntax
+without importing an implementation dependency?
+
+**Conformance and differential protocol.** Pin the exact editions of ISO/IEC
+14496-12 (ISO Base Media File Format), ISO/IEC 14496-15 (AVC file format), and
+ISO/IEC 14496-10 (AVC syntax). Build a versioned corpus of valid and invalid
+files; mutate every box length, count, offset, description index, NAL length,
+reserved bit and truncation boundary. Compare accepted files with at least two
+independent, isolated reference implementations, then resolve every disagreement
+against the standards rather than majority vote. Reference implementations are
+test oracles only and are never linked into Halyard.
+
+**Current status.** Container preflight, bounded sample-table decoders, one-entry
+AVC/PCM sample-entry validation and a track-hierarchy integration are under
+review in stacked PRs. None has passed exact-head CI/formal verification yet;
+packet emission, H.264 decoding, Shanty PCM packet ingestion, A/V clocking and
+presentation remain unimplemented. No MP4 playback or conformance claim is made.
+
 ## R8.3 — Ownership-safe zero-copy and memory-lifetime control
 
 **Problem.** Zero-copy can reduce bandwidth while increasing aliasing, retention,

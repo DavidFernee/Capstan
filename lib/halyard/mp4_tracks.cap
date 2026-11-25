@@ -1,0 +1,1079 @@
+// Deadeye bounded MP4 track hierarchy integration.
+// Strictly validates trak/mdia/minf/dinf/stbl relationships and connects the
+// previously independent sample-entry and sample-table validators.
+import "core.cap";
+import "mp4.cap";
+import "mp4_tables.cap";
+import "mp4_sample_entries.cap";
+
+List<int> deadeye_mp4_track_list_4(int v0, int v1, int v2, int v3) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    return out;
+}
+
+List<int> deadeye_mp4_track_list_12(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    return out;
+}
+
+List<int> deadeye_mp4_track_list_16(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11, int v12, int v13, int v14, int v15) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    out.push(v12);
+    out.push(v13);
+    out.push(v14);
+    out.push(v15);
+    return out;
+}
+
+List<int> deadeye_mp4_track_list_20(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11, int v12, int v13, int v14, int v15, int v16, int v17, int v18, int v19) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    out.push(v12);
+    out.push(v13);
+    out.push(v14);
+    out.push(v15);
+    out.push(v16);
+    out.push(v17);
+    out.push(v18);
+    out.push(v19);
+    return out;
+}
+
+const int DEADEYE_MP4_MAX_TRACK_BOXES = 512;
+
+struct DeadeyeMp4Track {
+    bool ok;
+    int track_id;
+    int media_timescale;
+    string handler;
+    DeadeyeMp4SampleEntry sample_entry;
+    DeadeyeMp4TableValidation tables;
+    string error;
+}
+
+struct DeadeyeMp4TrackResult {
+    bool ok;
+    DeadeyeMp4Track? track;
+    string error;
+}
+
+struct DeadeyeMp4MovieTracks {
+    bool ok;
+    List<DeadeyeMp4Track> tracks;
+    int box_count;
+    string error;
+}
+
+struct DeadeyeMp4MovieTracksResult {
+    bool ok;
+    DeadeyeMp4MovieTracks? movie;
+    string error;
+}
+
+DeadeyeMp4TrackResult deadeye_mp4_track_error(string error) {
+    return new DeadeyeMp4TrackResult{ok: false, track: none, error: error};
+}
+
+DeadeyeMp4MovieTracksResult deadeye_mp4_movie_error(string error) {
+    return new DeadeyeMp4MovieTracksResult{ok: false, movie: none, error: error};
+}
+
+bool deadeye_mp4_track_box(
+    DeadeyeMp4Box box, int a, int b, int c, int d
+) {
+    return deadeye_mp4_box_type(box, a, b, c, d);
+}
+
+bool deadeye_mp4_track_children_range(
+    List<int> bytes, int start, int end
+) {
+    return start >= 0 && end >= start && end <= bytes.len();
+}
+
+bool deadeye_mp4_track_range_bytes_valid(
+    List<int> bytes, int start, int end
+) {
+    if (bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES ||
+        !deadeye_mp4_track_children_range(bytes,start,end)) { return false; }
+    for (int i = start; i < end; i += 1) {
+        if (bytes[i] < 0 || bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+struct DeadeyeMp4TrackHeader {
+    bool ok;
+    int track_id;
+    string error;
+}
+
+DeadeyeMp4TrackHeader deadeye_mp4_parse_tkhd(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_track_range_bytes_valid(bytes, start, end) ||
+        end - start < 20) {
+        return new DeadeyeMp4TrackHeader{ok:false,track_id:0,error:"truncated_tkhd"};
+    }
+    int version = bytes[start];
+    int flags = (bytes[start + 1] << 16) |
+        (bytes[start + 2] << 8) | bytes[start + 3];
+    int track_id_at = start + 12;
+    if (version == 1) {
+        if (end - start < 32) {
+            return new DeadeyeMp4TrackHeader{ok:false,track_id:0,error:"truncated_tkhd_v1"};
+        }
+        track_id_at = start + 20;
+    } else if (version != 0) {
+        return new DeadeyeMp4TrackHeader{ok:false,track_id:0,error:"unsupported_tkhd_version"};
+    }
+    if (flags == 0 || flags > 7) {
+        return new DeadeyeMp4TrackHeader{ok:false,track_id:0,error:"invalid_tkhd_flags"};
+    }
+    int track_id = deadeye_mp4_u32_be(bytes, track_id_at);
+    if (track_id <= 0) {
+        return new DeadeyeMp4TrackHeader{ok:false,track_id:0,error:"zero_track_id"};
+    }
+    return new DeadeyeMp4TrackHeader{ok:true,track_id:track_id,error:""};
+}
+
+struct DeadeyeMp4MediaHeader {
+    bool ok;
+    int timescale;
+    string error;
+}
+
+DeadeyeMp4MediaHeader deadeye_mp4_parse_mdhd(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_track_range_bytes_valid(bytes, start, end) ||
+        end - start < 24) {
+        return new DeadeyeMp4MediaHeader{ok:false,timescale:0,error:"truncated_mdhd"};
+    }
+    int version = bytes[start];
+    int timescale_at = start + 12;
+    if (version == 1) {
+        if (end - start < 36) {
+            return new DeadeyeMp4MediaHeader{ok:false,timescale:0,error:"truncated_mdhd_v1"};
+        }
+        timescale_at = start + 20;
+    } else if (version != 0) {
+        return new DeadeyeMp4MediaHeader{ok:false,timescale:0,error:"unsupported_mdhd_version"};
+    }
+    if (bytes[start + 1] != 0 || bytes[start + 2] != 0 ||
+        bytes[start + 3] != 0) {
+        return new DeadeyeMp4MediaHeader{ok:false,timescale:0,error:"invalid_mdhd_flags"};
+    }
+    int timescale = deadeye_mp4_u32_be(bytes, timescale_at);
+    if (timescale < 1 || timescale > 1000000000) {
+        return new DeadeyeMp4MediaHeader{ok:false,timescale:0,error:"invalid_media_timescale"};
+    }
+    return new DeadeyeMp4MediaHeader{ok:true,timescale:timescale,error:""};
+}
+
+struct DeadeyeMp4Handler {
+    bool ok;
+    string handler;
+    string error;
+}
+
+DeadeyeMp4Handler deadeye_mp4_parse_hdlr(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_track_range_bytes_valid(bytes, start, end) ||
+        end - start < 24 || bytes[start] != 0 ||
+        bytes[start + 1] != 0 || bytes[start + 2] != 0 ||
+        bytes[start + 3] != 0) {
+        return new DeadeyeMp4Handler{ok:false,handler:"",error:"invalid_hdlr"};
+    }
+    if (deadeye_mp4_u32_be(bytes, start + 4) != 0) {
+        return new DeadeyeMp4Handler{ok:false,handler:"",error:"invalid_hdlr_predefined"};
+    }
+    int a = bytes[start + 8];
+    int b = bytes[start + 9];
+    int c = bytes[start + 10];
+    int d = bytes[start + 11];
+    string handler = "";
+    if (a == 'v' && b == 'i' && c == 'd' && d == 'e') {
+        handler = "vide";
+    } else if (a == 's' && b == 'o' && c == 'u' && d == 'n') {
+        handler = "soun";
+    } else {
+        return new DeadeyeMp4Handler{ok:false,handler:"",error:"unsupported_handler"};
+    }
+    for (int i = 12; i < 24; i += 1) {
+        if (bytes[start + i] != 0) {
+            return new DeadeyeMp4Handler{ok:false,handler:"",error:"invalid_hdlr_reserved"};
+        }
+    }
+    return new DeadeyeMp4Handler{ok:true,handler:handler,error:""};
+}
+
+// Require a single self-contained url data reference. External data references
+// would allow sample offsets to address resources outside the validated file.
+bool deadeye_mp4_validate_dinf(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_track_range_bytes_valid(bytes,start,end)) { return false; }
+    int at = start;
+    int dref_count = 0;
+    bool valid_dref = false;
+    while (at < end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes, at, end);
+        if (!parsed.ok) { return false; }
+        DeadeyeMp4Box box = parsed.box;
+        if (!deadeye_mp4_track_box(box, 'd','r','e','f') || dref_count != 0) {
+            return false;
+        }
+        dref_count += 1;
+        int p = box.payload_start;
+        if (box.end - p != 20 || bytes[p] != 0 ||
+            bytes[p + 1] != 0 || bytes[p + 2] != 0 || bytes[p + 3] != 0 ||
+            deadeye_mp4_u32_be(bytes, p + 4) != 1) {
+            return false;
+        }
+        DeadeyeMp4BoxResult url = deadeye_mp4_box_read(bytes, p + 8, box.end);
+        if (!url.ok || url.box.end != box.end ||
+            !deadeye_mp4_track_box(url.box, 'u','r','l',' ')) {
+            return false;
+        }
+        int up = url.box.payload_start;
+        if (url.box.end - up != 4 || bytes[up] != 0 ||
+            bytes[up + 1] != 0 || bytes[up + 2] != 0 ||
+            bytes[up + 3] != 1) {
+            return false;
+        }
+        valid_dref = true;
+        at = box.end;
+    }
+    return at == end && dref_count == 1 && valid_dref;
+}
+
+struct DeadeyeMp4TrackParts {
+    bool ok;
+    int track_id;
+    int timescale;
+    string handler;
+    int stbl_start;
+    int stbl_end;
+    string error;
+}
+
+DeadeyeMp4TrackParts deadeye_mp4_find_track_parts(
+    List<int> bytes, DeadeyeMp4Box trak
+) {
+    bool has_tkhd = false;
+    bool has_mdia = false;
+    int track_id = 0;
+    int timescale = 0;
+    string handler = "";
+    int stbl_start = 0;
+    int stbl_end = 0;
+    int at = trak.payload_start;
+    int count = 0;
+    while (at < trak.end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes, at, trak.end);
+        if (!parsed.ok) {
+            return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"malformed_trak_child"};
+        }
+        DeadeyeMp4Box box = parsed.box;
+        count += 1;
+        if (count > DEADEYE_MP4_MAX_TRACK_BOXES) {
+            return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"trak_box_limit"};
+        }
+        if (deadeye_mp4_track_box(box,'t','k','h','d')) {
+            if (has_tkhd) {
+                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"duplicate_tkhd"};
+            }
+            DeadeyeMp4TrackHeader h = deadeye_mp4_parse_tkhd(
+                bytes, box.payload_start, box.end
+            );
+            if (!h.ok) {
+                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:h.error};
+            }
+            track_id = h.track_id;
+            has_tkhd = true;
+        } else if (deadeye_mp4_track_box(box,'m','d','i','a')) {
+            if (has_mdia) {
+                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"duplicate_mdia"};
+            }
+            has_mdia = true;
+            bool has_mdhd = false; bool has_hdlr = false; bool has_minf = false;
+            int m_at = box.payload_start;
+            int m_count = 0;
+            while (m_at < box.end) {
+                DeadeyeMp4BoxResult m_parsed = deadeye_mp4_box_read(bytes,m_at,box.end);
+                if (!m_parsed.ok) {
+                    return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"malformed_mdia_child"};
+                }
+                DeadeyeMp4Box mb = m_parsed.box;
+                m_count += 1;
+                if (m_count > DEADEYE_MP4_MAX_TRACK_BOXES) {
+                    return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"mdia_box_limit"};
+                }
+                if (deadeye_mp4_track_box(mb,'m','d','h','d')) {
+                    if (has_mdhd) {
+                        return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"duplicate_mdhd"};
+                    }
+                    DeadeyeMp4MediaHeader mh = deadeye_mp4_parse_mdhd(bytes,mb.payload_start,mb.end);
+                    if (!mh.ok) {
+                        return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:mh.error};
+                    }
+                    timescale = mh.timescale; has_mdhd = true;
+                } else if (deadeye_mp4_track_box(mb,'h','d','l','r')) {
+                    if (has_hdlr) {
+                        return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"duplicate_hdlr"};
+                    }
+                    DeadeyeMp4Handler hh = deadeye_mp4_parse_hdlr(bytes,mb.payload_start,mb.end);
+                    if (!hh.ok) {
+                        return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:hh.error};
+                    }
+                    handler = hh.handler; has_hdlr = true;
+                } else if (deadeye_mp4_track_box(mb,'m','i','n','f')) {
+                    if (has_minf) {
+                        return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"duplicate_minf"};
+                    }
+                    has_minf = true;
+                    bool has_dinf = false; bool has_stbl = false;
+                    bool has_vmhd = false; bool has_smhd = false;
+                    int n_at = mb.payload_start;
+                    int n_count = 0;
+                    while (n_at < mb.end) {
+                        DeadeyeMp4BoxResult n_parsed = deadeye_mp4_box_read(bytes,n_at,mb.end);
+                        if (!n_parsed.ok) {
+                            return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"malformed_minf_child"};
+                        }
+                        DeadeyeMp4Box nb = n_parsed.box;
+                        n_count += 1;
+                        if (n_count > DEADEYE_MP4_MAX_TRACK_BOXES) {
+                            return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"minf_box_limit"};
+                        }
+                        if (deadeye_mp4_track_box(nb,'d','i','n','f')) {
+                            if (has_dinf || !deadeye_mp4_validate_dinf(bytes,nb.payload_start,nb.end)) {
+                                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"invalid_dinf"};
+                            }
+                            has_dinf = true;
+                        } else if (deadeye_mp4_track_box(nb,'s','t','b','l')) {
+                            if (has_stbl) {
+                                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"duplicate_stbl"};
+                            }
+                            has_stbl = true; stbl_start = nb.payload_start; stbl_end = nb.end;
+                        } else if (deadeye_mp4_track_box(nb,'v','m','h','d')) {
+                            if (has_vmhd || nb.end - nb.payload_start != 12 ||
+                                bytes[nb.payload_start] != 0 ||
+                                bytes[nb.payload_start + 1] != 0 ||
+                                bytes[nb.payload_start + 2] != 0 ||
+                                bytes[nb.payload_start + 3] != 1) {
+                                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"invalid_vmhd"};
+                            }
+                            has_vmhd = true;
+                        } else if (deadeye_mp4_track_box(nb,'s','m','h','d')) {
+                            if (has_smhd || nb.end - nb.payload_start != 8 ||
+                                bytes[nb.payload_start] != 0 ||
+                                bytes[nb.payload_start + 1] != 0 ||
+                                bytes[nb.payload_start + 2] != 0 ||
+                                bytes[nb.payload_start + 3] != 0) {
+                                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"invalid_smhd"};
+                            }
+                            has_smhd = true;
+                        } else {
+                            return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"unsupported_minf_child"};
+                        }
+                        n_at = nb.end;
+                    }
+                    if (!has_dinf || !has_stbl ||
+                        (handler == "vide" && (!has_vmhd || has_smhd)) ||
+                        (handler == "soun" && (!has_smhd || has_vmhd))) {
+                        return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"incomplete_minf"};
+                    }
+                } else {
+                    return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"unsupported_mdia_child"};
+                }
+                m_at = mb.end;
+            }
+            if (!has_mdhd || !has_hdlr || !has_minf) {
+                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"incomplete_mdia"};
+            }
+        } else {
+            return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"unsupported_trak_child"};
+        }
+        at = box.end;
+    }
+    if (!has_tkhd || !has_mdia || stbl_end <= stbl_start) {
+        return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"incomplete_trak"};
+    }
+    return new DeadeyeMp4TrackParts{
+        ok:true,track_id:track_id,timescale:timescale,handler:handler,
+        stbl_start:stbl_start,stbl_end:stbl_end,error:""
+    };
+}
+
+DeadeyeMp4TrackResult deadeye_mp4_parse_trak_validated(
+    List<int> bytes, DeadeyeMp4Box trak, List<int> mdat_ranges
+) {
+    if (trak.start < 0 || trak.start >= bytes.len() ||
+        !deadeye_mp4_track_range_bytes_valid(bytes,trak.start,trak.end)) {
+        return deadeye_mp4_track_error("invalid_trak_input");
+    }
+    DeadeyeMp4BoxResult actual = deadeye_mp4_box_read(
+        bytes,trak.start,bytes.len()
+    );
+    if (!actual.ok || actual.box.end != trak.end ||
+        !deadeye_mp4_track_box(actual.box,'t','r','a','k')) {
+        return deadeye_mp4_track_error("invalid_trak_box");
+    }
+    trak = actual.box;
+    DeadeyeMp4TrackParts parts = deadeye_mp4_find_track_parts(bytes,trak);
+    if (!parts.ok) { return deadeye_mp4_track_error(parts.error); }
+
+    int stsd_start = 0; int stsd_end = 0; bool has_stsd = false;
+    int at = parts.stbl_start;
+    int count = 0;
+    while (at < parts.stbl_end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes,at,parts.stbl_end);
+        if (!parsed.ok) { return deadeye_mp4_track_error("malformed_stbl_child"); }
+        DeadeyeMp4Box box = parsed.box;
+        count += 1;
+        if (count > DEADEYE_MP4_MAX_TRACK_BOXES ||
+            deadeye_mp4_is_encryption_marker(box)) {
+            return deadeye_mp4_track_error("encrypted_or_oversized_stbl");
+        }
+        if (deadeye_mp4_track_box(box,'s','t','s','d')) {
+            if (has_stsd) { return deadeye_mp4_track_error("duplicate_stsd"); }
+            has_stsd = true; stsd_start = box.payload_start; stsd_end = box.end;
+        } else if (!deadeye_mp4_track_box(box,'s','t','t','s') &&
+                   !deadeye_mp4_track_box(box,'s','t','s','c') &&
+                   !deadeye_mp4_track_box(box,'s','t','s','z') &&
+                   !deadeye_mp4_track_box(box,'s','t','c','o') &&
+                   !deadeye_mp4_track_box(box,'c','o','6','4') &&
+                   !deadeye_mp4_track_box(box,'c','t','t','s') &&
+                   !deadeye_mp4_track_box(box,'s','t','s','s')) {
+            return deadeye_mp4_track_error("unsupported_stbl_child");
+        }
+        at = box.end;
+    }
+    if (!has_stsd || at != parts.stbl_end) {
+        return deadeye_mp4_track_error("missing_stsd");
+    }
+    DeadeyeMp4SampleEntry entry = deadeye_mp4_parse_stsd(
+        bytes,stsd_start,stsd_end
+    );
+    if (!entry.ok) { return deadeye_mp4_track_error(entry.error); }
+    if ((parts.handler == "vide" && !entry.is_video) ||
+        (parts.handler == "soun" && !entry.is_audio)) {
+        return deadeye_mp4_track_error("handler_sample_entry_mismatch");
+    }
+    DeadeyeMp4StblResult tables = deadeye_mp4_decode_stbl(
+        bytes,parts.stbl_start,parts.stbl_end,mdat_ranges
+    );
+    if (!tables.ok) { return deadeye_mp4_track_error(tables.error); }
+    return new DeadeyeMp4TrackResult{
+        ok:true,
+        track:new DeadeyeMp4Track{
+            ok:true,track_id:parts.track_id,media_timescale:parts.timescale,
+            handler:parts.handler,sample_entry:entry,
+            tables:tables.validation,error:""
+        },
+        error:""
+    };
+}
+
+bool deadeye_mp4_track_file_valid(List<int> bytes) {
+    if (bytes.len() < 24 || bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES) {
+        return false;
+    }
+    for (int i = 0; i < bytes.len(); i += 1) {
+        if (bytes[i] < 0 || bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+// Public movie entrypoint derives every mdat interval from the actual top-level
+// file. It does not trust caller-supplied offsets or a caller-forged moov box.
+
+DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks_internal(
+    List<int> bytes, DeadeyeMp4Box supplied_moov
+) {
+    if (!deadeye_mp4_track_file_valid(bytes)) {
+        return deadeye_mp4_movie_error("invalid_mp4_file_bytes");
+    }
+    List<int> mdat_ranges = new List<int>();
+    DeadeyeMp4Box moov = new DeadeyeMp4Box{
+        start:0,size:0,header_size:0,payload_start:0,end:0,
+        type_a:0,type_b:0,type_c:0,type_d:0
+    };
+    bool found_moov = false;
+    bool found_ftyp = false;
+    int top = 0;
+    int top_count = 0;
+    while (top < bytes.len()) {
+        DeadeyeMp4BoxResult top_result = deadeye_mp4_box_read(
+            bytes,top,bytes.len()
+        );
+        if (!top_result.ok) {
+            return deadeye_mp4_movie_error("malformed_top_level_box");
+        }
+        DeadeyeMp4Box top_box = top_result.box;
+        top_count += 1;
+        if (top_count > DEADEYE_MP4_MAX_BOXES) {
+            return deadeye_mp4_movie_error("top_level_box_limit");
+        }
+        if (top_count == 1 &&
+            !deadeye_mp4_track_box(top_box,'f','t','y','p')) {
+            return deadeye_mp4_movie_error("ftyp_must_be_first");
+        }
+        if (deadeye_mp4_track_box(top_box,'f','t','y','p')) {
+            int ftyp_size = top_box.end - top_box.payload_start;
+            if (found_ftyp || ftyp_size < 8 || (ftyp_size - 8) % 4 != 0 ||
+                !deadeye_mp4_brand_supported(bytes,top_box.payload_start)) {
+                return deadeye_mp4_movie_error("invalid_or_unsupported_ftyp");
+            }
+            bool compatible = false;
+            int brand_at = top_box.payload_start + 8;
+            while (brand_at < top_box.end) {
+                if (deadeye_mp4_brand_supported(bytes,brand_at)) { compatible = true; }
+                brand_at += 4;
+            }
+            if (!compatible) {
+                return deadeye_mp4_movie_error("unsupported_compatible_brands");
+            }
+            found_ftyp = true;
+        } else if (deadeye_mp4_track_box(top_box,'m','o','o','v')) {
+            if (found_moov || top_box.start != supplied_moov.start ||
+                top_box.end != supplied_moov.end) {
+                return deadeye_mp4_movie_error("moov_identity_mismatch");
+            }
+            found_moov = true;
+            moov = top_box;
+        } else if (deadeye_mp4_track_box(top_box,'m','d','a','t')) {
+            if (mdat_ranges.len() >= 512) {
+                return deadeye_mp4_movie_error("mdat_count_limit");
+            }
+            mdat_ranges.push(top_box.payload_start);
+            mdat_ranges.push(top_box.end);
+        } else if (deadeye_mp4_track_box(top_box,'m','o','o','f') ||
+                   deadeye_mp4_track_box(top_box,'u','u','i','d')) {
+            return deadeye_mp4_movie_error("unsupported_top_level_profile");
+        } else if (!deadeye_mp4_track_box(top_box,'f','t','y','p') &&
+                   !deadeye_mp4_track_box(top_box,'m','o','o','v') &&
+                   !deadeye_mp4_track_box(top_box,'m','d','a','t') &&
+                   !deadeye_mp4_track_box(top_box,'f','r','e','e') &&
+                   !deadeye_mp4_track_box(top_box,'s','k','i','p') &&
+                   !deadeye_mp4_track_box(top_box,'w','i','d','e')) {
+            return deadeye_mp4_movie_error("unsupported_top_level_box");
+        }
+        top = top_box.end;
+    }
+    if (top != bytes.len() || !found_ftyp || !found_moov || mdat_ranges.len() == 0) {
+        return deadeye_mp4_movie_error("missing_moov_or_mdat");
+    }
+    if (!deadeye_mp4_track_box(moov,'m','o','o','v') ||
+        !deadeye_mp4_track_children_range(bytes,moov.payload_start,moov.end)) {
+        return deadeye_mp4_movie_error("invalid_moov_box");
+    }
+    DeadeyeMp4ScanState scan = new DeadeyeMp4ScanState{
+        box_count: 0, track_count: 0, has_mvhd: false,
+        has_encryption_marker: false
+    };
+    if (!deadeye_mp4_scan_children(
+        bytes,moov.payload_start,moov.end,1,scan
+    ) || scan.has_encryption_marker || !scan.has_mvhd || scan.track_count < 1) {
+        return deadeye_mp4_movie_error("invalid_or_encrypted_moov_tree");
+    }
+    List<DeadeyeMp4Track> tracks = new List<DeadeyeMp4Track>();
+    int at = moov.payload_start;
+    int box_count = 0;
+    while (at < moov.end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes,at,moov.end);
+        if (!parsed.ok) { return deadeye_mp4_movie_error("malformed_moov_child"); }
+        DeadeyeMp4Box box = parsed.box;
+        box_count += 1;
+        if (box_count > DEADEYE_MP4_MAX_TRACK_BOXES) {
+            return deadeye_mp4_movie_error("moov_box_limit");
+        }
+        if (deadeye_mp4_track_box(box,'t','r','a','k')) {
+            if (tracks.len() >= DEADEYE_MP4_MAX_TRACKS) {
+                return deadeye_mp4_movie_error("track_count_limit");
+            }
+            DeadeyeMp4TrackResult result = deadeye_mp4_parse_trak_validated(
+                bytes,box,mdat_ranges
+            );
+            if (!result.ok) { return deadeye_mp4_movie_error(result.error); }
+            if (let track = result.track) {
+                for (int i = 0; i < tracks.len(); i += 1) {
+                    if (tracks[i].track_id == track.track_id) {
+                        return deadeye_mp4_movie_error("duplicate_track_id");
+                    }
+                }
+                tracks.push(track);
+            } else { return deadeye_mp4_movie_error("missing_track_result"); }
+        } else if (!deadeye_mp4_track_box(box,'m','v','h','d') &&
+                   !deadeye_mp4_track_box(box,'u','d','t','a') &&
+                   !deadeye_mp4_track_box(box,'i','o','d','s')) {
+            return deadeye_mp4_movie_error("unsupported_moov_child");
+        }
+        at = box.end;
+    }
+    if (at != moov.end || tracks.len() < 1) {
+        return deadeye_mp4_movie_error("no_valid_tracks");
+    }
+    return new DeadeyeMp4MovieTracksResult{
+        ok:true,
+        movie:new DeadeyeMp4MovieTracks{
+            ok:true,tracks:tracks,box_count:box_count,error:""
+        },
+        error:""
+    };
+}
+
+
+
+// Resource-accounted public parser. The consumption budget charges input,
+// bounded worst-case work and returned metadata monotonically. The ledger
+// reserves temporary sample-table expansion before any parse allocation; its
+// lease is local and released before returning, so no copyable lease escapes.
+DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
+    List<int> bytes, DeadeyeMp4Box supplied_moov,
+    HalyardLedger ledger, HalyardConsumptionBudget budget
+) {
+    if (bytes.len() < 24 || bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES ||
+        !halyard_ledger_state_valid(ledger) ||
+        !halyard_consumption_budget_valid(budget)) {
+        return deadeye_mp4_movie_error("invalid_resource_budget_or_input");
+    }
+    // The table caps bound the simultaneous decoded vectors (sample sizes,
+    // sync indices, timing/chunk runs and offsets). 32 MiB is a logical
+    // expansion envelope, not a claim about allocator capacity or metadata.
+    HalyardBudgetCharge temporary_charge = new HalyardBudgetCharge{
+        input_bytes: 0, retained_bytes: 33554432, output_bytes: 0,
+        decoded_units: 0, work_units: 0,
+        allocation_units: 64, metadata_entries: 4096,
+        queue_slots: 0, worker_slots: 0, nesting_slots: 8,
+        track_slots: 0, chunk_slots: 32768
+    };
+    HalyardReservationResult temporary =
+        halyard_ledger_acquire(ledger,temporary_charge);
+    if (!temporary.ok) {
+        return deadeye_mp4_movie_error("temporary_resource_reservation_failed");
+    }
+    HalyardReservation temporary_lease = new HalyardReservation{
+        charge: temporary_charge, active: false
+    };
+    if (let lease = temporary.reservation) {
+        temporary_lease = lease;
+    } else {
+        return deadeye_mp4_movie_error("temporary_reservation_missing");
+    }
+    int estimated_work = bytes.len() * 4 + 8500000;
+    HalyardConsumptionCharge work = new HalyardConsumptionCharge{
+        input_bytes: bytes.len(), output_bytes: 0,
+        decoded_units: 0, work_units: estimated_work
+    };
+    if (!halyard_consumption_budget_consume(budget,work)) {
+        if (!halyard_reservation_release(ledger,temporary_lease)) {
+            return deadeye_mp4_movie_error("temporary_reservation_release_failed");
+        }
+        return deadeye_mp4_movie_error("consumption_budget_exceeded");
+    }
+
+    DeadeyeMp4MovieTracksResult parsed =
+        deadeye_mp4_parse_moov_tracks_internal(bytes,supplied_moov);
+    if (!parsed.ok) {
+        if (!halyard_reservation_release(ledger,temporary_lease)) {
+            return deadeye_mp4_movie_error("temporary_reservation_release_failed");
+        }
+        return parsed;
+    }
+    HalyardConsumptionCharge output = new HalyardConsumptionCharge{
+        input_bytes: 0, output_bytes: 8192,
+        decoded_units: 0, work_units: 0
+    };
+    if (!halyard_consumption_budget_consume(budget,output)) {
+        if (!halyard_reservation_release(ledger,temporary_lease)) {
+            return deadeye_mp4_movie_error("temporary_reservation_release_failed");
+        }
+        return deadeye_mp4_movie_error("output_budget_exceeded");
+    }
+    if (!halyard_reservation_release(ledger,temporary_lease)) {
+        return deadeye_mp4_movie_error("temporary_reservation_release_failed");
+    }
+    return parsed;
+}
+
+test "Deadeye connects trak handler, sample entry, tables and self-contained data reference" {
+    // The helper fixture is deliberately assembled as real nested BMFF boxes.
+    List<int> file = new List<int>();
+    List<int> ftyp_payload = new List<int>();
+    ftyp_payload.push('i');
+    ftyp_payload.push('s');
+    ftyp_payload.push('o');
+    ftyp_payload.push('m');
+    ftyp_payload.push(0);
+    ftyp_payload.push(0);
+    ftyp_payload.push(0);
+    ftyp_payload.push(0);
+    ftyp_payload.push('i');
+    ftyp_payload.push('s');
+    ftyp_payload.push('o');
+    ftyp_payload.push('m');
+    deadeye_mp4_test_push_box(file,'f','t','y','p',ftyp_payload);
+
+    List<int> stbl = new List<int>();
+    deadeye_mp4_test_push_box(stbl,'s','t','s','d',
+        deadeye_mp4_se_test_stsd(deadeye_mp4_se_test_sowt()));
+    deadeye_mp4_test_push_box(stbl,'s','t','t','s',deadeye_mp4_track_list_16(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 40));
+    deadeye_mp4_test_push_box(stbl,'s','t','s','c',deadeye_mp4_track_list_20(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1));
+    deadeye_mp4_test_push_box(stbl,'s','t','s','z',deadeye_mp4_track_list_12(0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0, 1));
+    deadeye_mp4_test_push_box(stbl,'s','t','c','o',deadeye_mp4_track_list_12(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 128)); // absolute mdat payload offset 384
+
+    List<int> url = new List<int>();
+    deadeye_mp4_test_push_box(url,'u','r','l',' ',deadeye_mp4_track_list_4(0, 0, 0, 1));
+    List<int> dref_payload = new List<int>();
+    dref_payload.push(0);
+    dref_payload.push(0);
+    dref_payload.push(0);
+    dref_payload.push(0);
+    dref_payload.push(0);
+    dref_payload.push(0);
+    dref_payload.push(0);
+    dref_payload.push(1);
+    for (int i = 0; i < url.len(); i += 1) { dref_payload.push(url[i]); }
+    List<int> dinf = new List<int>();
+    deadeye_mp4_test_push_box(dinf,'d','r','e','f',dref_payload);
+
+    List<int> smhd = new List<int>();
+
+    smhd.push(0);
+
+    smhd.push(0);
+
+    smhd.push(0);
+
+    smhd.push(0);
+
+    smhd.push(0);
+
+    smhd.push(0);
+
+    smhd.push(0);
+
+    smhd.push(0);
+    List<int> minf_payload = new List<int>();
+    deadeye_mp4_test_push_box(minf_payload,'s','m','h','d',smhd);
+    deadeye_mp4_test_push_box(minf_payload,'d','i','n','f',dinf);
+    deadeye_mp4_test_push_box(minf_payload,'s','t','b','l',stbl);
+    List<int> minf = new List<int>();
+    deadeye_mp4_test_push_box(minf,'m','i','n','f',minf_payload);
+
+    List<int> mdhd = new List<int>();
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(3);
+
+    mdhd.push(232);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(40);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+
+    mdhd.push(0);
+    List<int> hdlr = new List<int>();
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push('s');
+    hdlr.push('o');
+    hdlr.push('u');
+    hdlr.push('n');
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    hdlr.push(0);
+    List<int> mdia_payload = new List<int>();
+    deadeye_mp4_test_push_box(mdia_payload,'m','d','h','d',mdhd);
+    deadeye_mp4_test_push_box(mdia_payload,'h','d','l','r',hdlr);
+    for (int i = 0; i < minf.len(); i += 1) { mdia_payload.push(minf[i]); }
+    List<int> mdia = new List<int>();
+    deadeye_mp4_test_push_box(mdia,'m','d','i','a',mdia_payload);
+
+    List<int> tkhd = new List<int>();
+    for (int i = 0; i < 20; i += 1) { tkhd.push(0); }
+    tkhd[3] = 3; tkhd[15] = 1;
+    List<int> trak_payload = new List<int>();
+    deadeye_mp4_test_push_box(trak_payload,'t','k','h','d',tkhd);
+    for (int i = 0; i < mdia.len(); i += 1) { trak_payload.push(mdia[i]); }
+    List<int> trak = new List<int>();
+    deadeye_mp4_test_push_box(trak,'t','r','a','k',trak_payload);
+
+    List<int> mvhd = new List<int>();
+    for (int i = 0; i < 20; i += 1) { mvhd.push(0); }
+    mvhd[14] = 3; mvhd[15] = 232;
+    List<int> moov_payload = new List<int>();
+    deadeye_mp4_test_push_box(moov_payload,'m','v','h','d',mvhd);
+    for (int i = 0; i < trak.len(); i += 1) { moov_payload.push(trak[i]); }
+    List<int> moov = new List<int>();
+    deadeye_mp4_test_push_box(moov,'m','o','o','v',moov_payload);
+    deadeye_mp4_test_push_box(file,'m','o','o','v',moov_payload);
+    deadeye_mp4_test_push_box(file,'m','d','a','t',deadeye_mp4_track_list_4(1, 2, 3, 4));
+
+    DeadeyeMp4BoxResult moov_box = deadeye_mp4_box_read(
+        file, file.len() - moov.len() - 12, file.len()
+    );
+    // mdat begins after moov; absolute payload range is the final 4 bytes.
+    HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
+        67108864, 67108864, 0, 0, 400000000,
+        128, 8192, 0, 0, 16, 32, 32768
+    );
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(67108864,8192,0,400000000);
+    assert(ledger_result.ok && budget_result.ok);
+    if (let ledger = ledger_result.ledger) {
+        if (let budget = budget_result.budget) {
+            DeadeyeMp4MovieTracksResult parsed = deadeye_mp4_parse_moov_tracks(
+                file,moov_box.box,ledger,budget
+            );
+            assert(parsed.ok);
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_chunk_slots == 0);
+            assert(ledger.used_metadata_entries == 0);
+            assert(budget.used_output_bytes == 8192);
+            if (let movie = parsed.movie) {
+                assert(movie.tracks.len() == 1);
+                assert(movie.tracks[0].handler == "soun");
+                assert(movie.tracks[0].sample_entry.codec == "sowt-pcm");
+                assert(movie.tracks[0].tables.sample_count == 1);
+                assert(movie.tracks[0].media_timescale == 1000);
+            } else { assert(false); }
+            DeadeyeMp4Box forged_moov = moov_box.box;
+            forged_moov.end -= 1;
+            DeadeyeMp4MovieTracksResult forged =
+                deadeye_mp4_parse_moov_tracks(file,forged_moov,ledger,budget);
+            assert(!forged.ok);
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_chunk_slots == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye parser reserves resources before work and releases on budget failure" {
+    List<int> file = deadeye_mp4_test_minimal_file();
+    DeadeyeMp4BoxResult first = deadeye_mp4_box_read(file,0,file.len());
+    DeadeyeMp4BoxResult movie_box = deadeye_mp4_box_read(
+        file,first.box.end,file.len()
+    );
+    HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
+        67108864, 67108864, 0, 0, 400000000,
+        128, 8192, 0, 0, 16, 32, 32768
+    );
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(file.len()-1,8192,0,400000000);
+    assert(ledger_result.ok && budget_result.ok);
+    if (let ledger = ledger_result.ledger) {
+        if (let budget = budget_result.budget) {
+            DeadeyeMp4MovieTracksResult rejected =
+                deadeye_mp4_parse_moov_tracks(file,movie_box.box,ledger,budget);
+            assert(!rejected.ok && rejected.error == "consumption_budget_exceeded");
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_allocation_units == 0);
+            assert(ledger.used_metadata_entries == 0);
+            assert(ledger.used_track_slots == 0);
+            assert(ledger.used_chunk_slots == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye refuses MP4 parsing before allocation when the live ledger is insufficient" {
+    List<int> file = deadeye_mp4_test_minimal_file();
+    DeadeyeMp4BoxResult first = deadeye_mp4_box_read(file,0,file.len());
+    DeadeyeMp4BoxResult movie_box = deadeye_mp4_box_read(
+        file,first.box.end,file.len()
+    );
+    HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
+        67108864, 33554431, 0, 0, 400000000,
+        128, 8192, 0, 0, 16, 32, 32768
+    );
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(67108864,8192,0,400000000);
+    assert(ledger_result.ok && budget_result.ok);
+    if (let ledger = ledger_result.ledger) {
+        if (let budget = budget_result.budget) {
+            DeadeyeMp4MovieTracksResult rejected =
+                deadeye_mp4_parse_moov_tracks(file,movie_box.box,ledger,budget);
+            assert(!rejected.ok &&
+                rejected.error == "temporary_resource_reservation_failed");
+            assert(ledger.used_retained_bytes == 0);
+            assert(budget.used_input_bytes == 0);
+            assert(budget.used_work_units == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye rejects track hierarchy mismatches and external data references" {
+    List<int> bad_handler = new List<int>();
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push('v');
+    bad_handler.push('i');
+    bad_handler.push('d');
+    bad_handler.push('e');
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    bad_handler.push(0);
+    DeadeyeMp4Handler wrong = deadeye_mp4_parse_hdlr(
+        bad_handler,0,bad_handler.len()
+    );
+    assert(wrong.ok && wrong.handler == "vide");
+    List<int> external_url = new List<int>();
+    external_url.push(0);
+    external_url.push(0);
+    external_url.push(0);
+    external_url.push(0);
+    assert(!deadeye_mp4_validate_dinf(external_url,0,external_url.len()));
+    List<int> invalid_ref = new List<int>();
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(2);
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(12);
+    invalid_ref.push('u');
+    invalid_ref.push('r');
+    invalid_ref.push('l');
+    invalid_ref.push(' ');
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(0);
+    invalid_ref.push(1);
+    assert(!deadeye_mp4_validate_dinf(invalid_ref,0,invalid_ref.len()));
+    List<int> external_ref = new List<int>();
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(1);
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(12);
+    external_ref.push('u');
+    external_ref.push('r');
+    external_ref.push('l');
+    external_ref.push(' ');
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(0);
+    external_ref.push(0);
+    assert(!deadeye_mp4_validate_dinf(external_ref,0,external_ref.len()));
+}
