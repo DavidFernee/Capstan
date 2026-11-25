@@ -260,6 +260,8 @@ int main() {
     if (simple_ok) { return 49; }
     Font truncated_transform = truncated_composite_transform_fixture();
     List<int> transform_budget = new List<int>();
+    transform_budget.push(MAX_GLYPH_POINTS_TOTAL);
+    transform_budget.push(MAX_COMPOSITE_COMPONENTS_TOTAL);
     Path transform_path = new_path();
     bool transform_ok = glyph_outline_budgeted(
         truncated_transform, 1, transform_path, 16384, 1, 0, 0,
