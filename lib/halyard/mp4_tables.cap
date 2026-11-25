@@ -514,7 +514,7 @@ DeadeyeMp4IntListResult deadeye_mp4_decode_ctts(
         }
         if (count < 1 || count > DEADEYE_MP4_MAX_SAMPLES ||
             offset > DEADEYE_MP4_MAX_DECODED_DURATION ||
-            offset < -DEADEYE_MP4_MAX_DECODED_DURATION) {
+            offset < -DEADEYE_MP4_MAX_DECODED_DURATION - 1) {
             return deadeye_mp4_table_decode_error("ctts_value_limit");
         }
         values.push(count);
@@ -565,9 +565,10 @@ test "Deadeye decodes ctts signed and unsigned composition offsets" {
     );
     assert(signed_offsets.ok && signed_offsets.values[1] == -10);
     List<int> invalid_version = [2,0,0,0, 0,0,0,1, 0,0,0,2, 0,0,0,10];
-    assert(!deadeye_mp4_decode_ctts(
+    DeadeyeMp4IntListResult invalid = deadeye_mp4_decode_ctts(
         invalid_version, 0, invalid_version.len()
-    ).ok);
+    );
+    assert(!invalid.ok);
 }
 
 test "Deadeye decodes strictly ordered stss sync sample indices" {
@@ -577,7 +578,8 @@ test "Deadeye decodes strictly ordered stss sync sample indices" {
     );
     assert(sync.ok && sync.values[1] == 4);
     List<int> duplicate = [0,0,0,0, 0,0,0,2, 0,0,0,2, 0,0,0,2];
-    assert(!deadeye_mp4_decode_stss(
+    DeadeyeMp4IntListResult rejected = deadeye_mp4_decode_stss(
         duplicate, 0, duplicate.len(), 4
-    ).ok);
+    );
+    assert(!rejected.ok);
 }
