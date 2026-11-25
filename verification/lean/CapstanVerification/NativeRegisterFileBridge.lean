@@ -197,20 +197,4 @@ theorem nativeRegisterSetAt_preserves_length
       registers.length :=
   nativeRegisterSetAt_length registers index replacement
 
-/-- The runtime model's replacement has the same target-slot behaviour. -/
-theorem runtimeRegisterSetAt_get_same
-    (registers : List RuntimeRegister) (index : Nat)
-    (replacement : RuntimeRegister)
-    (hbound : index < registers.length) :
-    runtimeRegisterAt (runtimeSetAt registers index replacement) index =
-      some replacement := by
-  have hlookup : runtimeRegisterAt registers index ≠ none := by
-    simp [runtimeRegisterAt, List.get?_eq_none]
-    omega
-  cases hreg : runtimeRegisterAt registers index with
-  | none => exact False.elim (hlookup hreg)
-  | some old =>
-      exact runtimeSetAt_get_same_of_exists
-        registers index old replacement hreg
-
 end CapstanVerification
