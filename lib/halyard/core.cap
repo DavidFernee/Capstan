@@ -1,0 +1,2277 @@
+// Halyard Media Core — first Capstan-native vertical slice.
+// Bounded in-memory byte source and aggregate resource ledger.
+// All implementation code in this module is first-party Capstan.
+//
+// Status: prototype for MC1 review. The public struct representation means
+// callers must treat source.bytes and ledger fields as module-owned state;
+// an opaque/private type facility is a prerequisite for a stronger API seal.
+// This module performs no filesystem, network, device or codec operations.
+
+struct HalyardByteSource {
+    List<int> bytes;
+    int position;
+    int max_bytes;
+    bool closed;
+}
+
+struct HalyardByteSourceResult {
+    bool ok;
+    HalyardByteSource? source;
+    string error;
+}
+
+struct HalyardReadResult {
+    bool ok;
+    int value;
+    string error;
+}
+
+struct HalyardBytesResult {
+    bool ok;
+    List<int> bytes;
+    string error;
+}
+
+struct HalyardByteSink {
+    List<int> bytes;
+    int max_bytes;
+    bool closed;
+}
+
+struct HalyardByteSinkResult {
+    bool ok;
+    HalyardByteSink? sink;
+    string error;
+}
+
+struct HalyardSinkWriteResult {
+    bool ok;
+    int written;
+    string error;
+}
+
+struct HalyardSinkSnapshotResult {
+    bool ok;
+    List<int> bytes;
+    string error;
+}
+ 
+struct HalyardManagedByteSink {
+    HalyardByteSink sink;
+    HalyardReservation reservation;
+    HalyardReservation retired_reservation;
+    bool has_retired_reservation;
+    bool current_lease_released;
+    bool closed;
+}
+
+struct HalyardManagedByteSinkResult {
+    bool ok;
+    HalyardManagedByteSink? managed;
+    string error;
+}
+
+
+// An in-memory bounded sink. It has no filesystem, network or device authority.
+HalyardByteSinkResult halyard_sink_create(int max_bytes) {
+    if (max_bytes < 0) {
+        return new HalyardByteSinkResult{ok: false, sink: none, error: "negative_limit"};
+    }
+    HalyardByteSink sink = new HalyardByteSink{
+        bytes: new List<int>(), max_bytes: max_bytes, closed: false
+    };
+    return new HalyardByteSinkResult{ok: true, sink: sink, error: ""};
+}
+
+bool halyard_sink_state_valid(HalyardByteSink sink) {
+    if (sink.max_bytes < 0 || sink.bytes.len() > sink.max_bytes) { return false; }
+    for (int i = 0; i < sink.bytes.len(); i += 1) {
+        if (sink.bytes[i] < 0 || sink.bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+int halyard_sink_remaining(HalyardByteSink sink) {
+    if (sink.closed || !halyard_sink_state_valid(sink)) { return 0; }
+    return sink.max_bytes - sink.bytes.len();
+}
+
+// All validation and capacity checks precede allocation and state replacement.
+// A rejected write leaves the previous sink contents unchanged.
+HalyardSinkWriteResult halyard_sink_write_exact(HalyardByteSink sink, List<int> input) {
+    if (sink.closed) {
+        return new HalyardSinkWriteResult{ok: false, written: 0, error: "closed"};
+    }
+    if (!halyard_sink_state_valid(sink)) {
+        return new HalyardSinkWriteResult{ok: false, written: 0, error: "invalid_state"};
+    }
+    if (input.len() > sink.max_bytes - sink.bytes.len()) {
+        return new HalyardSinkWriteResult{ok: false, written: 0, error: "output_limit"};
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) {
+            return new HalyardSinkWriteResult{ok: false, written: 0, error: "invalid_byte"};
+        }
+    }
+
+    List<int> replacement = new List<int>();
+    for (int j = 0; j < sink.bytes.len(); j += 1) {
+        replacement.push(sink.bytes[j]);
+    }
+    for (int k = 0; k < input.len(); k += 1) {
+        replacement.push(input[k]);
+    }
+    sink.bytes = replacement;
+    return new HalyardSinkWriteResult{ok: true, written: input.len(), error: ""};
+}
+
+HalyardSinkSnapshotResult halyard_sink_snapshot(HalyardByteSink sink) {
+    if (!halyard_sink_state_valid(sink)) {
+        return new HalyardSinkSnapshotResult{
+            ok: false, bytes: new List<int>(), error: "invalid_state"
+        };
+    }
+    List<int> snapshot = new List<int>();
+    for (int i = 0; i < sink.bytes.len(); i += 1) {
+        snapshot.push(sink.bytes[i]);
+    }
+    return new HalyardSinkSnapshotResult{ok: true, bytes: snapshot, error: ""};
+}
+
+bool halyard_sink_close(HalyardByteSink sink) {
+    if (sink.closed || !halyard_sink_state_valid(sink)) { return false; }
+    sink.closed = true;
+    return true;
+}
+
+// A managed sink keeps its current payload charged. Copy-on-commit temporarily
+// acquires a second full-payload lease before constructing the replacement.
+// After commit the previous lease is retired; if retirement fails, both leases
+// remain recorded and further writes are blocked until cleanup succeeds.
+HalyardManagedByteSinkResult halyard_managed_sink_create(
+    HalyardLedger ledger, int max_bytes
+) {
+    if (max_bytes < 0) {
+        return new HalyardManagedByteSinkResult{
+            ok: false, managed: none, error: "negative_limit"
+        };
+    }
+    HalyardBudgetCharge initial_charge = new HalyardBudgetCharge{
+        input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+        decoded_units: 0, work_units: 0,
+        allocation_units: 1, metadata_entries: 0, queue_slots: 0,
+        worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+    };
+    HalyardReservationResult acquired =
+        halyard_ledger_acquire(ledger, initial_charge);
+    if (!acquired.ok) {
+        return new HalyardManagedByteSinkResult{
+            ok: false, managed: none, error: acquired.error
+        };
+    }
+    HalyardByteSinkResult made = halyard_sink_create(max_bytes);
+    if (!made.ok) {
+        if (let lease = acquired.reservation) {
+            halyard_reservation_release(ledger, lease);
+        }
+        return new HalyardManagedByteSinkResult{
+            ok: false, managed: none, error: made.error
+        };
+    }
+    if (let sink = made.sink) {
+        if (let lease = acquired.reservation) {
+            HalyardBudgetCharge zero = new HalyardBudgetCharge{
+                input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+                decoded_units: 0, work_units: 0,
+                allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+                worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+            };
+            HalyardReservation empty_retired = new HalyardReservation{
+                charge: zero, active: false
+            };
+            HalyardManagedByteSink managed = new HalyardManagedByteSink{
+                sink: sink, reservation: lease,
+                retired_reservation: empty_retired,
+                has_retired_reservation: false,
+                current_lease_released: false, closed: false
+            };
+            return new HalyardManagedByteSinkResult{
+                ok: true, managed: managed, error: ""
+            };
+        }
+    }
+    if (let lease = acquired.reservation) {
+        halyard_reservation_release(ledger, lease);
+    }
+    return new HalyardManagedByteSinkResult{
+        ok: false, managed: none, error: "sink_unavailable"
+    };
+}
+
+bool halyard_managed_sink_cleanup_retired(
+    HalyardLedger ledger, HalyardManagedByteSink managed
+) {
+    if (!managed.has_retired_reservation) { return true; }
+    if (!halyard_reservation_release(ledger, managed.retired_reservation)) {
+        return false;
+    }
+    managed.has_retired_reservation = false;
+    return true;
+}
+
+HalyardSinkWriteResult halyard_managed_sink_write_exact(
+    HalyardLedger ledger, HalyardManagedByteSink managed, List<int> input
+) {
+    if (managed.closed || managed.sink.closed) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: "closed"
+        };
+    }
+    if (!halyard_managed_sink_cleanup_retired(ledger, managed)) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: "retired_lease_pending"
+        };
+    }
+    if (!halyard_sink_state_valid(managed.sink)) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: "invalid_state"
+        };
+    }
+    if (input.len() > managed.sink.max_bytes - managed.sink.bytes.len()) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: "output_limit"
+        };
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) {
+            return new HalyardSinkWriteResult{
+                ok: false, written: 0, error: "invalid_byte"
+            };
+        }
+    }
+
+    int replacement_length = managed.sink.bytes.len() + input.len();
+    HalyardBudgetCharge replacement_charge = new HalyardBudgetCharge{
+        input_bytes: 0, retained_bytes: replacement_length,
+        output_bytes: replacement_length, decoded_units: 0, work_units: 0,
+        allocation_units: 1,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+    HalyardReservationResult acquired =
+        halyard_ledger_acquire(ledger, replacement_charge);
+    if (!acquired.ok) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: acquired.error
+        };
+    }
+    if (let replacement_lease = acquired.reservation) {
+        HalyardSinkWriteResult wrote =
+            halyard_sink_write_exact(managed.sink, input);
+        if (!wrote.ok) {
+            halyard_reservation_release(ledger, replacement_lease);
+            return wrote;
+        }
+        HalyardReservation previous = managed.reservation;
+        managed.reservation = replacement_lease;
+        if (halyard_reservation_release(ledger, previous)) {
+            managed.has_retired_reservation = false;
+        } else {
+            managed.retired_reservation = previous;
+            managed.has_retired_reservation = true;
+        }
+        return wrote;
+    }
+    return new HalyardSinkWriteResult{
+        ok: false, written: 0, error: "lease_unavailable"
+    };
+}
+
+HalyardSinkSnapshotResult halyard_managed_sink_snapshot(
+    HalyardManagedByteSink managed
+) {
+    if (managed.closed) {
+        return new HalyardSinkSnapshotResult{
+            ok: false, bytes: new List<int>(), error: "closed"
+        };
+    }
+    return halyard_sink_snapshot(managed.sink);
+}
+
+bool halyard_managed_sink_close(
+    HalyardLedger ledger, HalyardManagedByteSink managed
+) {
+    if (managed.closed) { return false; }
+    if (!managed.sink.closed && !halyard_sink_close(managed.sink)) { return false; }
+    if (!managed.current_lease_released) {
+        if (!halyard_reservation_release(ledger, managed.reservation)) {
+            return false;
+        }
+        managed.current_lease_released = true;
+    }
+    if (!halyard_managed_sink_cleanup_retired(ledger, managed)) { return false; }
+    managed.closed = true;
+    return true;
+}
+
+
+struct HalyardLedger {
+    int limit_input_bytes;
+    int limit_retained_bytes;
+    int limit_output_bytes;
+    int limit_decoded_units;
+    int limit_work_units;
+    int limit_allocation_units;
+    int limit_metadata_entries;
+    int limit_queue_slots;
+    int limit_worker_slots;
+    int limit_nesting_slots;
+    int limit_track_slots;
+    int limit_chunk_slots;
+    int used_input_bytes;
+    int used_retained_bytes;
+    int used_output_bytes;
+    int used_decoded_units;
+    int used_work_units;
+    int used_allocation_units;
+    int used_metadata_entries;
+    int used_queue_slots;
+    int used_worker_slots;
+    int used_nesting_slots;
+    int used_track_slots;
+    int used_chunk_slots;
+}
+
+struct HalyardLedgerResult {
+    bool ok;
+    HalyardLedger? ledger;
+    string error;
+}
+
+struct HalyardConsumptionBudget {
+    int limit_input_bytes;
+    int limit_output_bytes;
+    int limit_decoded_units;
+    int limit_work_units;
+    int used_input_bytes;
+    int used_output_bytes;
+    int used_decoded_units;
+    int used_work_units;
+}
+
+struct HalyardConsumptionCharge {
+    int input_bytes;
+    int output_bytes;
+    int decoded_units;
+    int work_units;
+}
+
+struct HalyardConsumptionBudgetResult {
+    bool ok;
+    HalyardConsumptionBudget? budget;
+    string error;
+}
+
+HalyardConsumptionBudgetResult halyard_consumption_budget_create(
+    int input_limit, int output_limit, int decoded_limit, int work_limit
+) {
+    if (input_limit < 0 || output_limit < 0 ||
+        decoded_limit < 0 || work_limit < 0) {
+        return new HalyardConsumptionBudgetResult{
+            ok: false, budget: none, error: "negative_limit"
+        };
+    }
+    HalyardConsumptionBudget budget = new HalyardConsumptionBudget{
+        limit_input_bytes: input_limit,
+        limit_output_bytes: output_limit,
+        limit_decoded_units: decoded_limit,
+        limit_work_units: work_limit,
+        used_input_bytes: 0,
+        used_output_bytes: 0,
+        used_decoded_units: 0,
+        used_work_units: 0
+    };
+    return new HalyardConsumptionBudgetResult{ok: true, budget: budget, error: ""};
+}
+
+bool halyard_consumption_budget_valid(HalyardConsumptionBudget budget) {
+    return budget.limit_input_bytes >= 0 &&
+        budget.limit_output_bytes >= 0 &&
+        budget.limit_decoded_units >= 0 &&
+        budget.limit_work_units >= 0 &&
+        budget.used_input_bytes >= 0 &&
+        budget.used_output_bytes >= 0 &&
+        budget.used_decoded_units >= 0 &&
+        budget.used_work_units >= 0 &&
+        budget.used_input_bytes <= budget.limit_input_bytes &&
+        budget.used_output_bytes <= budget.limit_output_bytes &&
+        budget.used_decoded_units <= budget.limit_decoded_units &&
+        budget.used_work_units <= budget.limit_work_units;
+}
+
+// Monotonic consumption: successful work is never refunded. All dimensions are
+// preflighted before any counter changes; there is deliberately no release API.
+bool halyard_consumption_budget_consume(
+    HalyardConsumptionBudget budget, HalyardConsumptionCharge charge
+) {
+    if (!halyard_consumption_budget_valid(budget)) { return false; }
+    if (charge.input_bytes < 0 || charge.output_bytes < 0 ||
+        charge.decoded_units < 0 || charge.work_units < 0) { return false; }
+    if (charge.input_bytes > budget.limit_input_bytes - budget.used_input_bytes ||
+        charge.output_bytes > budget.limit_output_bytes - budget.used_output_bytes ||
+        charge.decoded_units > budget.limit_decoded_units - budget.used_decoded_units ||
+        charge.work_units > budget.limit_work_units - budget.used_work_units) {
+        return false;
+    }
+    budget.used_input_bytes += charge.input_bytes;
+    budget.used_output_bytes += charge.output_bytes;
+    budget.used_decoded_units += charge.decoded_units;
+    budget.used_work_units += charge.work_units;
+    return true;
+}
+
+struct HalyardBudgetCharge {
+    int input_bytes;
+    int retained_bytes;
+    int output_bytes;
+    int decoded_units;
+    int work_units;
+    int allocation_units;
+    int metadata_entries;
+    int queue_slots;
+    int worker_slots;
+    int nesting_slots;
+    int track_slots;
+    int chunk_slots;
+}
+
+// Construct a source from an already-owned in-memory list. The source takes a
+// defensive snapshot; it never exposes the caller's original list through its
+// read APIs. The caller must reserve aggregate input bytes before this copy.
+// This is deliberately not an ambient file/network source.
+HalyardByteSourceResult halyard_source_from_list(List<int> input, int max_bytes) {
+    if (max_bytes < 0) {
+        return new HalyardByteSourceResult{ok: false, source: none, error: "negative_limit"};
+    }
+    if (input.len() > max_bytes) {
+        return new HalyardByteSourceResult{ok: false, source: none, error: "input_limit"};
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) {
+            return new HalyardByteSourceResult{ok: false, source: none, error: "invalid_byte"};
+        }
+    }
+    List<int> snapshot = new List<int>();
+    for (int j = 0; j < input.len(); j += 1) {
+        snapshot.push(input[j]);
+    }
+    HalyardByteSource source = new HalyardByteSource{
+        bytes: snapshot, position: 0, max_bytes: max_bytes, closed: false
+    };
+    return new HalyardByteSourceResult{ok: true, source: source, error: ""};
+}
+
+bool halyard_source_shape_valid(HalyardByteSource source) {
+    return !source.closed && source.max_bytes >= 0 &&
+        source.bytes.len() <= source.max_bytes &&
+        source.position >= 0 && source.position <= source.bytes.len();
+}
+
+bool halyard_source_validate(HalyardByteSource source) {
+    if (!halyard_source_shape_valid(source)) { return false; }
+    for (int i = 0; i < source.bytes.len(); i += 1) {
+        if (source.bytes[i] < 0 || source.bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+// Constant-time metadata query. Byte-domain validation is a separate bounded scan.
+int halyard_source_length(HalyardByteSource source) {
+    if (!halyard_source_shape_valid(source)) { return -1; }
+    return source.bytes.len();
+}
+
+int halyard_source_remaining(HalyardByteSource source) {
+    if (source.closed || source.position < 0 || source.position > source.bytes.len()) {
+        return 0;
+    }
+    return source.bytes.len() - source.position;
+}
+
+bool halyard_source_close(HalyardByteSource source) {
+    if (source.closed) { return false; }
+    source.closed = true;
+    return true;
+}
+
+HalyardReadResult halyard_read_u8(HalyardByteSource source) {
+    if (source.closed) {
+        return new HalyardReadResult{ok: false, value: 0, error: "closed"};
+    }
+    if (source.position < 0 || source.position > source.bytes.len()) {
+        return new HalyardReadResult{ok: false, value: 0, error: "invalid_state"};
+    }
+    if (source.position == source.bytes.len()) {
+        return new HalyardReadResult{ok: false, value: 0, error: "eof"};
+    }
+    int value = source.bytes[source.position];
+    source.position += 1;
+    return new HalyardReadResult{ok: true, value: value, error: ""};
+}
+
+// Read exactly count bytes. On every failure the cursor is unchanged.
+// The subtraction-form range check avoids position+count overflow.
+HalyardBytesResult halyard_read_exact(HalyardByteSource source, int count) {
+    List<int> empty = new List<int>();
+    if (source.closed) {
+        return new HalyardBytesResult{ok: false, bytes: empty, error: "closed"};
+    }
+    if (count < 0) {
+        return new HalyardBytesResult{ok: false, bytes: empty, error: "negative_count"};
+    }
+    int length = source.bytes.len();
+    if (source.position < 0 || source.position > length) {
+        return new HalyardBytesResult{ok: false, bytes: empty, error: "invalid_state"};
+    }
+    if (count > length - source.position) {
+        return new HalyardBytesResult{ok: false, bytes: empty, error: "truncated"};
+    }
+    List<int> result = new List<int>();
+    for (int i = 0; i < count; i += 1) {
+        result.push(source.bytes[source.position + i]);
+    }
+    source.position += count;
+    return new HalyardBytesResult{ok: true, bytes: result, error: ""};
+}
+
+bool halyard_skip(HalyardByteSource source, int count) {
+    if (source.closed || count < 0) { return false; }
+    int length = source.bytes.len();
+    if (source.position < 0 || source.position > length) { return false; }
+    if (count > length - source.position) { return false; }
+    source.position += count;
+    return true;
+}
+
+HalyardReadResult halyard_read_u32_be(HalyardByteSource source) {
+    HalyardBytesResult read = halyard_read_exact(source, 4);
+    if (!read.ok) {
+        return new HalyardReadResult{ok: false, value: 0, error: read.error};
+    }
+    int value = (read.bytes[0] << 24) | (read.bytes[1] << 16) |
+                (read.bytes[2] << 8) | read.bytes[3];
+    return new HalyardReadResult{ok: true, value: value, error: ""};
+}
+
+HalyardLedgerResult halyard_ledger_create_bounded(
+    int input_limit, int retained_limit, int output_limit, int decoded_limit,
+    int work_limit, int allocation_limit, int metadata_limit, int queue_limit,
+    int worker_limit, int nesting_limit, int track_limit, int chunk_limit
+) {
+    if (input_limit < 0 || retained_limit < 0 || output_limit < 0 ||
+        decoded_limit < 0 || work_limit < 0 || allocation_limit < 0 ||
+        metadata_limit < 0 || queue_limit < 0 || worker_limit < 0 ||
+        nesting_limit < 0 || track_limit < 0 || chunk_limit < 0) {
+        return new HalyardLedgerResult{ok: false, ledger: none, error: "negative_limit"};
+    }
+    HalyardLedger ledger = new HalyardLedger{
+        limit_input_bytes: input_limit,
+        limit_retained_bytes: retained_limit,
+        limit_output_bytes: output_limit,
+        limit_decoded_units: decoded_limit,
+        limit_work_units: work_limit,
+        limit_allocation_units: allocation_limit,
+        limit_metadata_entries: metadata_limit,
+        limit_queue_slots: queue_limit,
+        limit_worker_slots: worker_limit,
+        limit_nesting_slots: nesting_limit,
+        limit_track_slots: track_limit,
+        limit_chunk_slots: chunk_limit,
+        used_input_bytes: 0, used_retained_bytes: 0, used_output_bytes: 0,
+        used_decoded_units: 0, used_work_units: 0,
+        used_allocation_units: 0, used_metadata_entries: 0,
+        used_queue_slots: 0, used_worker_slots: 0, used_nesting_slots: 0,
+        used_track_slots: 0, used_chunk_slots: 0
+    };
+    return new HalyardLedgerResult{ok: true, ledger: ledger, error: ""};
+}
+
+// Compatibility constructor: legacy callers receive zero capacity for the
+// newly modelled live-resource dimensions and must opt into explicit limits.
+HalyardLedgerResult halyard_ledger_create(int input_limit, int retained_limit,
+                                          int output_limit, int decoded_limit,
+                                          int work_limit) {
+    return halyard_ledger_create_bounded(
+        input_limit, retained_limit, output_limit, decoded_limit, work_limit,
+        0, 0, 0, 0, 0, 0, 0
+    );
+}
+
+bool halyard_ledger_state_valid(HalyardLedger ledger) {
+    return ledger.limit_input_bytes >= 0 &&
+        ledger.limit_retained_bytes >= 0 &&
+        ledger.limit_output_bytes >= 0 &&
+        ledger.limit_decoded_units >= 0 &&
+        ledger.limit_work_units >= 0 &&
+        ledger.used_input_bytes >= 0 &&
+        ledger.used_retained_bytes >= 0 &&
+        ledger.used_output_bytes >= 0 &&
+        ledger.used_decoded_units >= 0 &&
+        ledger.used_work_units >= 0 &&
+        ledger.limit_allocation_units >= 0 && ledger.used_allocation_units >= 0 &&
+        ledger.used_allocation_units <= ledger.limit_allocation_units &&
+        ledger.limit_metadata_entries >= 0 && ledger.used_metadata_entries >= 0 &&
+        ledger.used_metadata_entries <= ledger.limit_metadata_entries &&
+        ledger.limit_queue_slots >= 0 && ledger.used_queue_slots >= 0 &&
+        ledger.used_queue_slots <= ledger.limit_queue_slots &&
+        ledger.limit_worker_slots >= 0 && ledger.used_worker_slots >= 0 &&
+        ledger.used_worker_slots <= ledger.limit_worker_slots &&
+        ledger.limit_nesting_slots >= 0 && ledger.used_nesting_slots >= 0 &&
+        ledger.used_nesting_slots <= ledger.limit_nesting_slots &&
+        ledger.limit_track_slots >= 0 && ledger.used_track_slots >= 0 &&
+        ledger.used_track_slots <= ledger.limit_track_slots &&
+        ledger.limit_chunk_slots >= 0 && ledger.used_chunk_slots >= 0 &&
+        ledger.used_chunk_slots <= ledger.limit_chunk_slots &&
+        ledger.used_input_bytes <= ledger.limit_input_bytes &&
+        ledger.used_retained_bytes <= ledger.limit_retained_bytes &&
+        ledger.used_output_bytes <= ledger.limit_output_bytes &&
+        ledger.used_decoded_units <= ledger.limit_decoded_units &&
+        ledger.used_work_units <= ledger.limit_work_units;
+}
+
+// Atomic admission: validate every dimension first, then mutate all counters.
+// All arithmetic uses non-negative subtraction-form checks.
+bool halyard_ledger_reserve(HalyardLedger ledger, HalyardBudgetCharge charge) {
+    if (!halyard_ledger_state_valid(ledger)) { return false; }
+    if (charge.input_bytes < 0 || charge.retained_bytes < 0 ||
+        charge.output_bytes < 0 || charge.decoded_units < 0 ||
+        charge.work_units < 0 ||
+        charge.allocation_units < 0 ||
+        charge.metadata_entries < 0 ||
+        charge.queue_slots < 0 ||
+        charge.worker_slots < 0 ||
+        charge.nesting_slots < 0 ||
+        charge.track_slots < 0 ||
+        charge.chunk_slots < 0) { return false; }
+    if (charge.input_bytes > ledger.limit_input_bytes - ledger.used_input_bytes ||
+        charge.retained_bytes > ledger.limit_retained_bytes - ledger.used_retained_bytes ||
+        charge.output_bytes > ledger.limit_output_bytes - ledger.used_output_bytes ||
+        charge.decoded_units > ledger.limit_decoded_units - ledger.used_decoded_units ||
+        charge.work_units > ledger.limit_work_units - ledger.used_work_units ||
+        charge.allocation_units > ledger.limit_allocation_units - ledger.used_allocation_units ||
+        charge.metadata_entries > ledger.limit_metadata_entries - ledger.used_metadata_entries ||
+        charge.queue_slots > ledger.limit_queue_slots - ledger.used_queue_slots ||
+        charge.worker_slots > ledger.limit_worker_slots - ledger.used_worker_slots ||
+        charge.nesting_slots > ledger.limit_nesting_slots - ledger.used_nesting_slots ||
+        charge.track_slots > ledger.limit_track_slots - ledger.used_track_slots ||
+        charge.chunk_slots > ledger.limit_chunk_slots - ledger.used_chunk_slots) {
+        return false;
+    }
+    ledger.used_input_bytes += charge.input_bytes;
+    ledger.used_retained_bytes += charge.retained_bytes;
+    ledger.used_output_bytes += charge.output_bytes;
+    ledger.used_decoded_units += charge.decoded_units;
+    ledger.used_work_units += charge.work_units;
+    ledger.used_allocation_units += charge.allocation_units;
+    ledger.used_metadata_entries += charge.metadata_entries;
+    ledger.used_queue_slots += charge.queue_slots;
+    ledger.used_worker_slots += charge.worker_slots;
+    ledger.used_nesting_slots += charge.nesting_slots;
+    ledger.used_track_slots += charge.track_slots;
+    ledger.used_chunk_slots += charge.chunk_slots;
+    return true;
+}
+
+// Atomic release: reject underflow before changing any dimension.
+bool halyard_ledger_release(HalyardLedger ledger, HalyardBudgetCharge charge) {
+    if (!halyard_ledger_state_valid(ledger)) { return false; }
+    if (charge.input_bytes < 0 || charge.retained_bytes < 0 ||
+        charge.output_bytes < 0 || charge.decoded_units < 0 ||
+        charge.work_units < 0) { return false; }
+    if (charge.input_bytes > ledger.used_input_bytes ||
+        charge.retained_bytes > ledger.used_retained_bytes ||
+        charge.output_bytes > ledger.used_output_bytes ||
+        charge.decoded_units > ledger.used_decoded_units ||
+        charge.work_units > ledger.used_work_units ||
+        charge.allocation_units > ledger.used_allocation_units ||
+        charge.metadata_entries > ledger.used_metadata_entries ||
+        charge.queue_slots > ledger.used_queue_slots ||
+        charge.worker_slots > ledger.used_worker_slots ||
+        charge.nesting_slots > ledger.used_nesting_slots ||
+        charge.track_slots > ledger.used_track_slots ||
+        charge.chunk_slots > ledger.used_chunk_slots) {
+        return false;
+    }
+    ledger.used_input_bytes -= charge.input_bytes;
+    ledger.used_retained_bytes -= charge.retained_bytes;
+    ledger.used_output_bytes -= charge.output_bytes;
+    ledger.used_decoded_units -= charge.decoded_units;
+    ledger.used_work_units -= charge.work_units;
+    ledger.used_allocation_units -= charge.allocation_units;
+    ledger.used_metadata_entries -= charge.metadata_entries;
+    ledger.used_queue_slots -= charge.queue_slots;
+    ledger.used_worker_slots -= charge.worker_slots;
+    ledger.used_nesting_slots -= charge.nesting_slots;
+    ledger.used_track_slots -= charge.track_slots;
+    ledger.used_chunk_slots -= charge.chunk_slots;
+    return true;
+}
+
+
+struct HalyardCheckedIntResult {
+    bool ok;
+    int value;
+    string error;
+}
+
+struct HalyardTimebase {
+    int numerator;
+    int denominator;
+}
+
+struct HalyardTimebaseResult {
+    bool ok;
+    HalyardTimebase? timebase;
+    string error;
+}
+
+struct HalyardTimestampResult {
+    bool ok;
+    int ticks;
+    string error;
+}
+
+enum HalyardRounding { Exact, TowardZero, Floor, Ceil, NearestEven }
+
+const int HALYARD_I64_MAX = 0x7FFFFFFFFFFFFFFF;
+const int HALYARD_I64_MIN = 0x8000000000000000;
+
+// Greatest common divisor of abs(a) and positive b. The remainder magnitude
+// is strictly less than b, so negating it cannot overflow even when a is MIN.
+int halyard_gcd_with_positive(int a, int b) {
+    if (b <= 0) { return 0; }
+    int remainder = a % b;
+    if (remainder < 0) { remainder = -remainder; }
+    int left = b;
+    int right = remainder;
+    while (right != 0) {
+        int next = left % right;
+        left = right;
+        right = next;
+    }
+    return left;
+}
+
+HalyardCheckedIntResult halyard_checked_mul(int a, int b) {
+    if (a == 0 || b == 0) {
+        return new HalyardCheckedIntResult{ok: true, value: 0, error: ""};
+    }
+    if ((a == HALYARD_I64_MIN && b == -1) ||
+        (b == HALYARD_I64_MIN && a == -1)) {
+        return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+    }
+    if (a > 0) {
+        if (b > 0 && a > HALYARD_I64_MAX / b) {
+            return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+        }
+        if (b < 0 && b < HALYARD_I64_MIN / a) {
+            return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+        }
+    } else {
+        if (b > 0 && a < HALYARD_I64_MIN / b) {
+            return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+        }
+        if (b < 0 && a < HALYARD_I64_MAX / b) {
+            return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+        }
+    }
+    return new HalyardCheckedIntResult{ok: true, value: a * b, error: ""};
+}
+
+// A timebase is seconds per tick, represented as a positive reduced fraction.
+// For example, 1/48000 represents 48 kHz and 1/90000 represents 90 kHz.
+HalyardTimebaseResult halyard_timebase_create(int numerator, int denominator) {
+    if (numerator <= 0 || denominator <= 0) {
+        return new HalyardTimebaseResult{ok: false, timebase: none, error: "invalid_timebase"};
+    }
+    int divisor = halyard_gcd_with_positive(numerator, denominator);
+    if (divisor <= 0) {
+        return new HalyardTimebaseResult{ok: false, timebase: none, error: "invalid_timebase"};
+    }
+    HalyardTimebase value = new HalyardTimebase{
+        numerator: numerator / divisor,
+        denominator: denominator / divisor
+    };
+    return new HalyardTimebaseResult{ok: true, timebase: value, error: ""};
+}
+
+bool halyard_timebase_valid(HalyardTimebase timebase) {
+    return timebase.numerator > 0 &&
+        timebase.denominator > 0 &&
+        halyard_gcd_with_positive(timebase.numerator, timebase.denominator) == 1;
+}
+
+// Rescale an integer timestamp between rational timebases without floating
+// point. The factor lists are cross-cancelled before multiplication to reduce
+// overflow risk. If a remaining exact intermediate is not representable, the
+// operation fails explicitly rather than wrapping or silently losing time.
+HalyardTimestampResult halyard_timestamp_rescale(
+    int ticks, HalyardTimebase source, HalyardTimebase target,
+    HalyardRounding rounding
+) {
+    if (!halyard_timebase_valid(source) || !halyard_timebase_valid(target)) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: "invalid_timebase"};
+    }
+    if (ticks == 0) {
+        return new HalyardTimestampResult{ok: true, ticks: 0, error: ""};
+    }
+
+    List<int> numerator_factors = new List<int>();
+    numerator_factors.push(ticks);
+    numerator_factors.push(source.numerator);
+    numerator_factors.push(target.denominator);
+
+    List<int> denominator_factors = new List<int>();
+    denominator_factors.push(source.denominator);
+    denominator_factors.push(target.numerator);
+
+    for (int i = 0; i < numerator_factors.len(); i += 1) {
+        for (int j = 0; j < denominator_factors.len(); j += 1) {
+            int divisor = halyard_gcd_with_positive(
+                numerator_factors[i], denominator_factors[j]
+            );
+            if (divisor > 1) {
+                numerator_factors[i] = numerator_factors[i] / divisor;
+                denominator_factors[j] = denominator_factors[j] / divisor;
+            }
+        }
+    }
+
+    HalyardCheckedIntResult n1 = halyard_checked_mul(
+        numerator_factors[0], numerator_factors[1]
+    );
+    if (!n1.ok) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: n1.error};
+    }
+    HalyardCheckedIntResult numerator = halyard_checked_mul(
+        n1.value, numerator_factors[2]
+    );
+    if (!numerator.ok) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: numerator.error};
+    }
+
+    HalyardCheckedIntResult denominator = halyard_checked_mul(
+        denominator_factors[0], denominator_factors[1]
+    );
+    if (!denominator.ok || denominator.value <= 0) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+    }
+
+    int quotient = numerator.value / denominator.value;
+    int remainder = numerator.value % denominator.value;
+    if (remainder == 0) {
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+    if (rounding == HalyardRounding.Exact) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: "inexact"};
+    }
+    if (rounding == HalyardRounding.TowardZero) {
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+
+    int remainder_magnitude = remainder;
+    if (remainder_magnitude < 0) { remainder_magnitude = -remainder_magnitude; }
+
+    if (rounding == HalyardRounding.Floor) {
+        if (numerator.value < 0) {
+            if (quotient == HALYARD_I64_MIN) {
+                return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+            }
+            quotient -= 1;
+        }
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+
+    if (rounding == HalyardRounding.Ceil) {
+        if (numerator.value > 0) {
+            if (quotient == HALYARD_I64_MAX) {
+                return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+            }
+            quotient += 1;
+        }
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+
+    if (rounding == HalyardRounding.NearestEven) {
+        bool above_half = remainder_magnitude > denominator.value / 2;
+        bool exactly_half = denominator.value % 2 == 0 &&
+            remainder_magnitude == denominator.value / 2;
+        bool adjust = above_half || (exactly_half && quotient % 2 != 0);
+        if (adjust) {
+            if (numerator.value > 0) {
+                if (quotient == HALYARD_I64_MAX) {
+                    return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+                }
+                quotient += 1;
+            } else {
+                if (quotient == HALYARD_I64_MIN) {
+                    return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+                }
+                quotient -= 1;
+            }
+        }
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+
+    return new HalyardTimestampResult{ok: false, ticks: 0, error: "invalid_rounding"};
+}
+
+
+// A one-shot lease wrapper prevents accidental duplicate release through the
+// supported ownership API. This remains a sequential prototype: public fields
+// are forgeable until Capstan opaque/linear types are available.
+struct HalyardReservation {
+    HalyardBudgetCharge charge;
+    bool active;
+}
+
+struct HalyardReservationResult {
+    bool ok;
+    HalyardReservation? reservation;
+    string error;
+}
+
+// Acquire a live reservation and return a one-shot handle for trusted single-owner callers.
+// The public struct/fields and raw release API mean this is not yet a non-forgeable capability.
+HalyardReservationResult halyard_ledger_acquire(
+    HalyardLedger ledger, HalyardBudgetCharge charge
+) {
+    if (!halyard_ledger_reserve(ledger, charge)) {
+        return new HalyardReservationResult{
+            ok: false, reservation: none, error: "reservation_rejected"
+        };
+    }
+    HalyardReservation reservation = new HalyardReservation{
+        charge: charge, active: true
+    };
+    return new HalyardReservationResult{
+        ok: true, reservation: reservation, error: ""
+    };
+}
+
+// A normal handle can be released once. Failed or repeated release leaves the
+// ledger unchanged. Opaque handle state and removal of raw release from untrusted
+// callers remain prerequisites tracked by the Halyard ownership work.
+bool halyard_reservation_release(
+    HalyardLedger ledger, HalyardReservation reservation
+) {
+    if (!reservation.active) { return false; }
+    if (!halyard_ledger_release(ledger, reservation.charge)) { return false; }
+    reservation.active = false;
+    return true;
+}
+
+
+struct HalyardManagedByteSource {
+    HalyardByteSource source;
+    HalyardReservation reservation;
+    bool closed;
+}
+
+struct HalyardManagedByteSourceResult {
+    bool ok;
+    HalyardManagedByteSource? managed;
+    string error;
+}
+
+// Admit retained bytes before making the defensive source snapshot. The
+// reservation follows the source lifetime and is released only on close.
+// This API is sequential and trusted-caller only until opaque types and
+// synchronised ownership are available.
+HalyardManagedByteSourceResult halyard_managed_source_create(
+    HalyardLedger ledger, List<int> input, int max_bytes
+) {
+    if (max_bytes < 0) {
+        return new HalyardManagedByteSourceResult{
+            ok: false, managed: none, error: "negative_limit"
+        };
+    }
+    if (input.len() > max_bytes) {
+        return new HalyardManagedByteSourceResult{
+            ok: false, managed: none, error: "input_limit"
+        };
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) {
+            return new HalyardManagedByteSourceResult{
+                ok: false, managed: none, error: "invalid_byte"
+            };
+        }
+    }
+
+    HalyardBudgetCharge charge = new HalyardBudgetCharge{
+        input_bytes: 0, retained_bytes: input.len(), output_bytes: 0,
+        decoded_units: 0, work_units: 0,
+        allocation_units: 1,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+    HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
+    if (!acquired.ok) {
+        return new HalyardManagedByteSourceResult{
+            ok: false, managed: none, error: acquired.error
+        };
+    }
+    if (let lease = acquired.reservation) {
+        HalyardByteSourceResult created = halyard_source_from_list(input, max_bytes);
+        if (!created.ok) {
+            // All validation is repeated by the source constructor. If a
+            // caller mutates input concurrently this can fail; thread sharing
+            // is unsupported, but release the preflight lease on this path.
+            halyard_reservation_release(ledger, lease);
+            return new HalyardManagedByteSourceResult{
+                ok: false, managed: none, error: created.error
+            };
+        }
+        if (let source = created.source) {
+            HalyardManagedByteSource managed = new HalyardManagedByteSource{
+                source: source, reservation: lease, closed: false
+            };
+            return new HalyardManagedByteSourceResult{
+                ok: true, managed: managed, error: ""
+            };
+        }
+        halyard_reservation_release(ledger, lease);
+        return new HalyardManagedByteSourceResult{
+            ok: false, managed: none, error: "source_unavailable"
+        };
+    }
+    return new HalyardManagedByteSourceResult{
+        ok: false, managed: none, error: "lease_unavailable"
+    };
+}
+
+int halyard_managed_source_remaining(HalyardManagedByteSource managed) {
+    if (managed.closed || managed.source.closed) { return 0; }
+    return halyard_source_remaining(managed.source);
+}
+
+HalyardReadResult halyard_managed_source_read_u8(HalyardManagedByteSource managed) {
+    if (managed.closed) {
+        return new HalyardReadResult{ok: false, value: 0, error: "closed"};
+    }
+    return halyard_read_u8(managed.source);
+}
+
+HalyardBytesResult halyard_managed_source_read_exact(
+    HalyardManagedByteSource managed, int count
+) {
+    if (managed.closed) {
+        return new HalyardBytesResult{
+            ok: false, bytes: new List<int>(), error: "closed"
+        };
+    }
+    return halyard_read_exact(managed.source, count);
+}
+
+// Close the source first, then release its lease. If release encounters a
+// corrupted ledger, the source remains closed and a later call can retry the
+// lease release; it never reopens or double-releases the source allocation.
+bool halyard_managed_source_close(
+    HalyardLedger ledger, HalyardManagedByteSource managed
+) {
+    if (managed.closed) { return false; }
+    if (!managed.source.closed) {
+        if (!halyard_source_close(managed.source)) { return false; }
+    }
+    if (!halyard_reservation_release(ledger, managed.reservation)) {
+        return false;
+    }
+    managed.closed = true;
+    return true;
+}
+
+// The Halyard Core regression suite lives with its implementation so that
+// the test program exercises exactly this module without a path-traversal
+// import or a second implementation in a different source file.
+
+test "Halyard source snapshots caller bytes" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    HalyardByteSourceResult created = halyard_source_from_list(input, 2);
+    assert(created.ok);
+    if (let source = created.source) {
+        input[0] = 99;
+        HalyardReadResult first = halyard_read_u8(source);
+        assert(first.ok && first.value == 1);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard exact read failure preserves cursor" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2); input.push(3); input.push(4);
+    HalyardByteSourceResult created = halyard_source_from_list(input, 4);
+    assert(created.ok);
+    if (let source = created.source) {
+        HalyardReadResult first = halyard_read_u8(source);
+        assert(first.ok && first.value == 1);
+        HalyardBytesResult short_read = halyard_read_exact(source, 4);
+        assert(!short_read.ok && short_read.error == "truncated");
+        assert(halyard_source_remaining(source) == 3);
+        HalyardBytesResult rest = halyard_read_exact(source, 3);
+        assert(rest.ok && rest.bytes.len() == 3);
+        assert(rest.bytes[0] == 2 && rest.bytes[1] == 3 && rest.bytes[2] == 4);
+        assert(halyard_source_remaining(source) == 0);
+        HalyardReadResult eof = halyard_read_u8(source);
+        assert(!eof.ok && eof.error == "eof");
+        assert(halyard_source_close(source));
+        HalyardReadResult closed = halyard_read_u8(source);
+        assert(!closed.ok && closed.error == "closed");
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard big endian word decoding is exact" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2); input.push(3); input.push(4);
+    HalyardByteSourceResult created = halyard_source_from_list(input, 4);
+    assert(created.ok);
+    if (let source = created.source) {
+        HalyardReadResult word = halyard_read_u32_be(source);
+        assert(word.ok && word.value == 16909060);
+        assert(halyard_source_remaining(source) == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard source rejects invalid byte and oversized input" {
+    List<int> invalid = new List<int>();
+    invalid.push(256);
+    assert(!halyard_source_from_list(invalid, 1).ok);
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    assert(!halyard_source_from_list(input, 1).ok);
+    assert(!halyard_source_from_list(input, -1).ok);
+}
+
+test "Halyard ledger reserves every dimension or none" {
+    HalyardLedgerResult created = halyard_ledger_create(10, 20, 30, 40, 50);
+    assert(created.ok);
+    if (let ledger = created.ledger) {
+        HalyardBudgetCharge exact = new HalyardBudgetCharge{
+            input_bytes: 10, retained_bytes: 20, output_bytes: 30,
+            decoded_units: 40, work_units: 50,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        assert(halyard_ledger_reserve(ledger, exact));
+        HalyardBudgetCharge one_more = new HalyardBudgetCharge{
+            input_bytes: 1, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        assert(!halyard_ledger_reserve(ledger, one_more));
+        assert(ledger.used_input_bytes == 10);
+        assert(ledger.used_retained_bytes == 20);
+        assert(ledger.used_output_bytes == 30);
+        assert(ledger.used_decoded_units == 40);
+        assert(ledger.used_work_units == 50);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard ledger release rejects underflow without mutation" {
+    HalyardLedgerResult created = halyard_ledger_create(10, 20, 30, 40, 50);
+    assert(created.ok);
+    if (let ledger = created.ledger) {
+        HalyardBudgetCharge exact = new HalyardBudgetCharge{
+            input_bytes: 10, retained_bytes: 20, output_bytes: 30,
+            decoded_units: 40, work_units: 50,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        assert(halyard_ledger_reserve(ledger, exact));
+        HalyardBudgetCharge release = new HalyardBudgetCharge{
+            input_bytes: 10, retained_bytes: 20, output_bytes: 30,
+            decoded_units: 40, work_units: 50,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        assert(halyard_ledger_release(ledger, release));
+        assert(!halyard_ledger_release(ledger, release));
+        assert(ledger.used_input_bytes == 0);
+        assert(ledger.used_retained_bytes == 0);
+        assert(ledger.used_output_bytes == 0);
+        assert(ledger.used_decoded_units == 0);
+        assert(ledger.used_work_units == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard ledger rejects negative limits and charges" {
+    assert(!halyard_ledger_create(-1, 0, 0, 0, 0).ok);
+    HalyardLedgerResult created = halyard_ledger_create(10, 10, 10, 10, 10);
+    assert(created.ok);
+    if (let ledger = created.ledger) {
+        HalyardBudgetCharge negative = new HalyardBudgetCharge{
+            input_bytes: -1, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        assert(!halyard_ledger_reserve(ledger, negative));
+        assert(ledger.used_input_bytes == 0);
+        assert(ledger.used_retained_bytes == 0);
+        assert(ledger.used_output_bytes == 0);
+        assert(ledger.used_decoded_units == 0);
+        assert(ledger.used_work_units == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard exact reads exhaustively preserve cursor boundaries" {
+    for (int count = 0; count <= 5; count += 1) {
+        List<int> bytes = new List<int>();
+        bytes.push(10); bytes.push(20); bytes.push(30); bytes.push(40);
+        HalyardByteSourceResult made = halyard_source_from_list(bytes, 4);
+        assert(made.ok);
+        if (let source = made.source) {
+            HalyardBytesResult got = halyard_read_exact(source, count);
+            if (count <= 4) {
+                assert(got.ok && got.bytes.len() == count);
+                assert(halyard_source_remaining(source) == 4 - count);
+            } else {
+                assert(!got.ok && got.error == "truncated");
+                assert(halyard_source_remaining(source) == 4);
+            }
+        } else {
+            assert(false);
+        }
+    }
+}
+
+test "Halyard five-dimensional reservations exhaustively match the admission predicate" {
+    for (int a = 0; a <= 2; a += 1) {
+        for (int b = 0; b <= 2; b += 1) {
+            for (int c = 0; c <= 2; c += 1) {
+                for (int d = 0; d <= 2; d += 1) {
+                    for (int e = 0; e <= 2; e += 1) {
+                        HalyardLedgerResult made = halyard_ledger_create(2, 2, 2, 2, 2);
+                        assert(made.ok);
+                        if (let ledger = made.ledger) {
+                            HalyardBudgetCharge base = new HalyardBudgetCharge{
+                                input_bytes: 1, retained_bytes: 1, output_bytes: 1,
+                                decoded_units: 1, work_units: 1,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+                            assert(halyard_ledger_reserve(ledger, base));
+                            HalyardBudgetCharge request = new HalyardBudgetCharge{
+                                input_bytes: a, retained_bytes: b, output_bytes: c,
+                                decoded_units: d, work_units: e,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+                            bool expected = a <= 1 && b <= 1 && c <= 1 && d <= 1 && e <= 1;
+                            bool actual = halyard_ledger_reserve(ledger, request);
+                            assert(actual == expected);
+                            int add_a = 0;
+                            int add_b = 0;
+                            int add_c = 0;
+                            int add_d = 0;
+                            int add_e = 0;
+                            if (expected) {
+                                add_a = a;
+                                add_b = b;
+                                add_c = c;
+                                add_d = d;
+                                add_e = e;
+                            }
+                            assert(ledger.used_input_bytes == 1 + add_a);
+                            assert(ledger.used_retained_bytes == 1 + add_b);
+                            assert(ledger.used_output_bytes == 1 + add_c);
+                            assert(ledger.used_decoded_units == 1 + add_d);
+                            assert(ledger.used_work_units == 1 + add_e);
+                            if (expected) { assert(halyard_ledger_release(ledger, request)); }
+                            assert(halyard_ledger_release(ledger, base));
+                            assert(ledger.used_input_bytes == 0);
+                            assert(ledger.used_retained_bytes == 0);
+                            assert(ledger.used_output_bytes == 0);
+                            assert(ledger.used_decoded_units == 0);
+                            assert(ledger.used_work_units == 0);
+                        } else {
+                            assert(false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "Halyard release rejects underflow independently in every dimension" {
+    for (int dimension = 0; dimension < 5; dimension += 1) {
+        HalyardLedgerResult made = halyard_ledger_create(2, 2, 2, 2, 2);
+        assert(made.ok);
+        if (let ledger = made.ledger) {
+            HalyardBudgetCharge one = new HalyardBudgetCharge{
+                input_bytes: 1, retained_bytes: 1, output_bytes: 1,
+                decoded_units: 1, work_units: 1,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+            assert(halyard_ledger_reserve(ledger, one));
+            HalyardBudgetCharge invalid_release = new HalyardBudgetCharge{
+                input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+                decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+            if (dimension == 0) { invalid_release.input_bytes = 2; }
+            if (dimension == 1) { invalid_release.retained_bytes = 2; }
+            if (dimension == 2) { invalid_release.output_bytes = 2; }
+            if (dimension == 3) { invalid_release.decoded_units = 2; }
+            if (dimension == 4) { invalid_release.work_units = 2; }
+            assert(!halyard_ledger_release(ledger, invalid_release));
+            assert(ledger.used_input_bytes == 1);
+            assert(ledger.used_retained_bytes == 1);
+            assert(ledger.used_output_bytes == 1);
+            assert(ledger.used_decoded_units == 1);
+            assert(ledger.used_work_units == 1);
+        } else {
+            assert(false);
+        }
+    }
+}
+
+test "Halyard ledger rejects corrupted public state" {
+    HalyardLedgerResult made = halyard_ledger_create(4, 4, 4, 4, 4);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        ledger.used_work_units = -1;
+        HalyardBudgetCharge zero = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        assert(!halyard_ledger_reserve(ledger, zero));
+    } else {
+        assert(false);
+    }
+}
+
+
+test "Halyard timebases are positive reduced rational values" {
+    HalyardTimebaseResult reduced = halyard_timebase_create(2, 96000);
+    assert(reduced.ok);
+    if (let value = reduced.timebase) {
+        assert(value.numerator == 1 && value.denominator == 48000);
+        assert(halyard_timebase_valid(value));
+    } else {
+        assert(false);
+    }
+    assert(!halyard_timebase_create(0, 1).ok);
+    assert(!halyard_timebase_create(1, 0).ok);
+    assert(!halyard_timebase_create(-1, 1).ok);
+    assert(!halyard_timebase_create(1, -1).ok);
+}
+
+test "Halyard timebase conversion preserves exact 48 kHz to 90 kHz time" {
+    HalyardTimebaseResult audio = halyard_timebase_create(1, 48000);
+    HalyardTimebaseResult video = halyard_timebase_create(1, 90000);
+    assert(audio.ok && video.ok);
+    if (let a = audio.timebase) {
+        if (let v = video.timebase) {
+            HalyardTimestampResult converted = halyard_timestamp_rescale(
+                48000, a, v, HalyardRounding.Exact
+            );
+            assert(converted.ok && converted.ticks == 90000);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard timestamp rounding is explicit for positive and negative values" {
+    HalyardTimebaseResult source = halyard_timebase_create(1, 3);
+    HalyardTimebaseResult target = halyard_timebase_create(1, 2);
+    assert(source.ok && target.ok);
+    if (let s = source.timebase) {
+        if (let t = target.timebase) {
+            HalyardTimestampResult exact = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.Exact
+            );
+            HalyardTimestampResult trunc = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.TowardZero
+            );
+            HalyardTimestampResult floor_value = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.Floor
+            );
+            HalyardTimestampResult ceil_value = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.Ceil
+            );
+            HalyardTimestampResult nearest = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.NearestEven
+            );
+            assert(!exact.ok && exact.error == "inexact");
+            assert(trunc.ok && trunc.ticks == 0);
+            assert(floor_value.ok && floor_value.ticks == 0);
+            assert(ceil_value.ok && ceil_value.ticks == 1);
+            assert(nearest.ok && nearest.ticks == 1);
+
+            HalyardTimestampResult negative_floor = halyard_timestamp_rescale(
+                -1, s, t, HalyardRounding.Floor
+            );
+            HalyardTimestampResult negative_ceil = halyard_timestamp_rescale(
+                -1, s, t, HalyardRounding.Ceil
+            );
+            HalyardTimestampResult negative_nearest = halyard_timestamp_rescale(
+                -1, s, t, HalyardRounding.NearestEven
+            );
+            assert(negative_floor.ok && negative_floor.ticks == -1);
+            assert(negative_ceil.ok && negative_ceil.ticks == 0);
+            assert(negative_nearest.ok && negative_nearest.ticks == -1);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard nearest-even rounding resolves exact ties to an even tick" {
+    HalyardTimebaseResult half_second = halyard_timebase_create(1, 2);
+    HalyardTimebaseResult one_second = halyard_timebase_create(1, 1);
+    assert(half_second.ok && one_second.ok);
+    if (let s = half_second.timebase) {
+        if (let t = one_second.timebase) {
+            HalyardTimestampResult even_down = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.NearestEven
+            );
+            HalyardTimestampResult even_up = halyard_timestamp_rescale(
+                3, s, t, HalyardRounding.NearestEven
+            );
+            HalyardTimestampResult negative_even = halyard_timestamp_rescale(
+                -3, s, t, HalyardRounding.NearestEven
+            );
+            assert(even_down.ok && even_down.ticks == 0);
+            assert(even_up.ok && even_up.ticks == 2);
+            assert(negative_even.ok && negative_even.ticks == -2);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard rational timestamp conversion fails closed on overflow and forged timebases" {
+    HalyardTimebaseResult one = halyard_timebase_create(1, 1);
+    HalyardTimebaseResult tiny = halyard_timebase_create(1, HALYARD_I64_MAX);
+    assert(one.ok && tiny.ok);
+    if (let s = one.timebase) {
+        if (let t = tiny.timebase) {
+            HalyardTimestampResult overflow = halyard_timestamp_rescale(
+                HALYARD_I64_MAX, s, t, HalyardRounding.TowardZero
+            );
+            assert(!overflow.ok && overflow.error == "overflow");
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+    HalyardTimebase forged = new HalyardTimebase{numerator: 2, denominator: 4};
+    HalyardTimestampResult invalid = halyard_timestamp_rescale(
+        10, forged, forged, HalyardRounding.Exact
+    );
+    assert(!invalid.ok && invalid.error == "invalid_timebase");
+}
+
+
+test "Halyard checked multiplication accepts signed boundary identities" {
+    HalyardCheckedIntResult positive_max = halyard_checked_mul(HALYARD_I64_MAX, 1);
+    HalyardCheckedIntResult negative_min = halyard_checked_mul(HALYARD_I64_MIN, 1);
+    HalyardCheckedIntResult negative_max = halyard_checked_mul(-HALYARD_I64_MAX, 1);
+    assert(positive_max.ok && positive_max.value == HALYARD_I64_MAX);
+    assert(negative_min.ok && negative_min.value == HALYARD_I64_MIN);
+    assert(negative_max.ok && negative_max.value == -HALYARD_I64_MAX);
+}
+
+test "Halyard checked multiplication rejects signed overflow in every sign quadrant" {
+    assert(!halyard_checked_mul(HALYARD_I64_MAX, 2).ok);
+    assert(!halyard_checked_mul(HALYARD_I64_MIN, -1).ok);
+    assert(!halyard_checked_mul(-2, HALYARD_I64_MIN).ok);
+    assert(!halyard_checked_mul(HALYARD_I64_MIN, 2).ok);
+    assert(!halyard_checked_mul(-HALYARD_I64_MAX, -2).ok);
+    assert(!halyard_checked_mul(2, HALYARD_I64_MAX).ok);
+}
+
+
+test "Halyard checked multiplication handles near-boundary large products" {
+    HalyardCheckedIntResult zero_times_min = halyard_checked_mul(0, HALYARD_I64_MIN);
+    HalyardCheckedIntResult near_square = halyard_checked_mul(-3037000499, -3037000499);
+    HalyardCheckedIntResult far_square = halyard_checked_mul(-3037000500, -3037000500);
+    assert(zero_times_min.ok && zero_times_min.value == 0);
+    assert(near_square.ok);
+    assert(!far_square.ok && far_square.error == "overflow");
+}
+
+
+test "Halyard bounded sink appends bytes and returns defensive snapshots" {
+    HalyardByteSinkResult made = halyard_sink_create(4);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        List<int> first = new List<int>();
+        first.push(1); first.push(2);
+        HalyardSinkWriteResult wrote = halyard_sink_write_exact(sink, first);
+        assert(wrote.ok && wrote.written == 2);
+        List<int> second = new List<int>();
+        second.push(3); second.push(4);
+        HalyardSinkWriteResult appended = halyard_sink_write_exact(sink, second);
+        assert(appended.ok && appended.written == 2);
+        assert(halyard_sink_remaining(sink) == 0);
+        HalyardSinkSnapshotResult snapshot = halyard_sink_snapshot(sink);
+        assert(snapshot.ok && snapshot.bytes.len() == 4);
+        assert(snapshot.bytes[0] == 1 && snapshot.bytes[1] == 2);
+        assert(snapshot.bytes[2] == 3 && snapshot.bytes[3] == 4);
+        snapshot.bytes[0] = 99;
+        HalyardSinkSnapshotResult fresh = halyard_sink_snapshot(sink);
+        assert(fresh.ok && fresh.bytes[0] == 1);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard bounded sink rejects invalid and oversized writes atomically" {
+    HalyardByteSinkResult made = halyard_sink_create(3);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        List<int> initial = new List<int>();
+        initial.push(10); initial.push(20);
+        assert(halyard_sink_write_exact(sink, initial).ok);
+        List<int> invalid = new List<int>();
+        invalid.push(256);
+        HalyardSinkWriteResult invalid_write = halyard_sink_write_exact(sink, invalid);
+        assert(!invalid_write.ok && invalid_write.error == "invalid_byte");
+        List<int> too_large = new List<int>();
+        too_large.push(30); too_large.push(40);
+        HalyardSinkWriteResult large_write = halyard_sink_write_exact(sink, too_large);
+        assert(!large_write.ok && large_write.error == "output_limit");
+        assert(halyard_sink_remaining(sink) == 1);
+        HalyardSinkSnapshotResult snapshot = halyard_sink_snapshot(sink);
+        assert(snapshot.ok && snapshot.bytes.len() == 2);
+        assert(snapshot.bytes[0] == 10 && snapshot.bytes[1] == 20);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard bounded sink close is one-shot and prevents writes" {
+    HalyardByteSinkResult made = halyard_sink_create(2);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        assert(halyard_sink_close(sink));
+        assert(!halyard_sink_close(sink));
+        List<int> byte = new List<int>();
+        byte.push(1);
+        HalyardSinkWriteResult wrote = halyard_sink_write_exact(sink, byte);
+        assert(!wrote.ok && wrote.error == "closed");
+        assert(halyard_sink_remaining(sink) == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard bounded sink handles zero capacity and empty writes" {
+    HalyardByteSinkResult made = halyard_sink_create(0);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        List<int> empty = new List<int>();
+        HalyardSinkWriteResult zero = halyard_sink_write_exact(sink, empty);
+        assert(zero.ok && zero.written == 0);
+        List<int> byte = new List<int>();
+        byte.push(1);
+        HalyardSinkWriteResult denied = halyard_sink_write_exact(sink, byte);
+        assert(!denied.ok && denied.error == "output_limit");
+        assert(halyard_sink_remaining(sink) == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard bounded sink rejects corrupted public state" {
+    HalyardByteSinkResult made = halyard_sink_create(2);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        sink.bytes.push(300);
+        List<int> empty = new List<int>();
+        HalyardSinkWriteResult wrote = halyard_sink_write_exact(sink, empty);
+        assert(!wrote.ok && wrote.error == "invalid_state");
+        HalyardSinkSnapshotResult snapshot = halyard_sink_snapshot(sink);
+        assert(!snapshot.ok && snapshot.error == "invalid_state");
+    } else {
+        assert(false);
+    }
+}
+
+
+
+test "Halyard managed sink charges both old and replacement payload during commit" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 8, 8, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 4);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            List<int> first = new List<int>();
+            first.push(1); first.push(2);
+            assert(halyard_managed_sink_write_exact(ledger, managed, first).ok);
+            assert(ledger.used_retained_bytes == 2);
+            assert(ledger.used_output_bytes == 2);
+            List<int> second = new List<int>();
+            second.push(3); second.push(4);
+            assert(halyard_managed_sink_write_exact(ledger, managed, second).ok);
+            assert(ledger.used_retained_bytes == 4);
+            assert(ledger.used_output_bytes == 4);
+            assert(halyard_managed_sink_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_output_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+
+test "Halyard managed sink accounts for old and replacement allocation overlap" {
+    HalyardLedgerResult made =
+        halyard_ledger_create_bounded(0, 8, 8, 0, 0, 1, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 8);
+        assert(created.ok);
+        assert(ledger.used_allocation_units == 1);
+        if (let managed = created.managed) {
+            List<int> input = new List<int>();
+            input.push(4);
+            HalyardSinkWriteResult rejected =
+                halyard_managed_sink_write_exact(ledger, managed, input);
+            assert(!rejected.ok && rejected.error == "reservation_rejected");
+            assert(ledger.used_allocation_units == 1);
+            assert(ledger.used_retained_bytes == 0);
+            HalyardSinkSnapshotResult snapshot = halyard_managed_sink_snapshot(managed);
+            assert(snapshot.ok && snapshot.bytes.len() == 0);
+            assert(halyard_managed_sink_close(ledger, managed));
+            assert(ledger.used_allocation_units == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed sink rejects capacity before acquiring replacement lease" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 2, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 3);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            List<int> first = new List<int>();
+            first.push(1); first.push(2);
+            assert(halyard_managed_sink_write_exact(ledger, managed, first).ok);
+            List<int> extra = new List<int>();
+            extra.push(3);
+            HalyardSinkWriteResult rejected =
+                halyard_managed_sink_write_exact(ledger, managed, extra);
+            assert(!rejected.ok && rejected.error == "reservation_rejected");
+            assert(ledger.used_retained_bytes == 2);
+            assert(ledger.used_output_bytes == 2);
+            assert(halyard_managed_sink_close(ledger, managed));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed sink close retries after ledger repair without double release" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 4, 4, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 2);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            List<int> data = new List<int>();
+            data.push(5); data.push(6);
+            assert(halyard_managed_sink_write_exact(ledger, managed, data).ok);
+            ledger.used_output_bytes = 0;
+            assert(!halyard_managed_sink_close(ledger, managed));
+            assert(managed.sink.closed);
+            assert(!managed.closed);
+            ledger.used_output_bytes = 2;
+            assert(halyard_managed_sink_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_output_bytes == 0);
+            assert(managed.closed);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed sink preserves prior payload after invalid write" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 8, 8, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 4);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            List<int> first = new List<int>();
+            first.push(9);
+            assert(halyard_managed_sink_write_exact(ledger, managed, first).ok);
+            List<int> invalid = new List<int>();
+            invalid.push(300);
+            HalyardSinkWriteResult rejected =
+                halyard_managed_sink_write_exact(ledger, managed, invalid);
+            assert(!rejected.ok && rejected.error == "invalid_byte");
+            HalyardSinkSnapshotResult snapshot = halyard_managed_sink_snapshot(managed);
+            assert(snapshot.ok && snapshot.bytes.len() == 1 && snapshot.bytes[0] == 9);
+            assert(ledger.used_retained_bytes == 1);
+            assert(halyard_managed_sink_close(ledger, managed));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard source validation rejects forged bounds and bytes" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    HalyardByteSourceResult made = halyard_source_from_list(input, 2);
+    assert(made.ok);
+    if (let source = made.source) {
+        assert(halyard_source_validate(source));
+        assert(halyard_source_length(source) == 2);
+        source.max_bytes = 1;
+        assert(!halyard_source_validate(source));
+        assert(halyard_source_length(source) == -1);
+    } else {
+        assert(false);
+    }
+    HalyardByteSourceResult second = halyard_source_from_list(input, 2);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        source2.bytes[0] = 999;
+        assert(!halyard_source_validate(source2));
+    } else {
+        assert(false);
+    }
+}
+
+
+test "Halyard source shape preflight is separate from byte-domain validation" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    HalyardByteSourceResult made = halyard_source_from_list(input, 2);
+    assert(made.ok);
+    if (let source = made.source) {
+        assert(halyard_source_shape_valid(source));
+        assert(halyard_source_length(source) == 2);
+        source.bytes[0] = 999;
+        assert(halyard_source_shape_valid(source));
+        assert(!halyard_source_validate(source));
+        source.position = 3;
+        assert(!halyard_source_shape_valid(source));
+        assert(halyard_source_length(source) == -1);
+    } else {
+        assert(false);
+    }
+}
+
+
+test "Halyard cumulative budget consumes all dimensions atomically" {
+    HalyardConsumptionBudgetResult made = halyard_consumption_budget_create(10, 20, 30, 40);
+    assert(made.ok);
+    if (let budget = made.budget) {
+        HalyardConsumptionCharge charge = new HalyardConsumptionCharge{
+            input_bytes: 10, output_bytes: 20, decoded_units: 30, work_units: 40
+        };
+        assert(halyard_consumption_budget_consume(budget, charge));
+        assert(budget.used_input_bytes == 10);
+        assert(budget.used_output_bytes == 20);
+        assert(budget.used_decoded_units == 30);
+        assert(budget.used_work_units == 40);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard cumulative budget rejects over-limit requests without partial charge" {
+    HalyardConsumptionBudgetResult made = halyard_consumption_budget_create(10, 20, 30, 40);
+    assert(made.ok);
+    if (let budget = made.budget) {
+        HalyardConsumptionCharge charge = new HalyardConsumptionCharge{
+            input_bytes: 1, output_bytes: 2, decoded_units: 3, work_units: 41
+        };
+        assert(!halyard_consumption_budget_consume(budget, charge));
+        assert(budget.used_input_bytes == 0);
+        assert(budget.used_output_bytes == 0);
+        assert(budget.used_decoded_units == 0);
+        assert(budget.used_work_units == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard cumulative work and decode budgets cannot be refunded after release" {
+    HalyardConsumptionBudgetResult made = halyard_consumption_budget_create(100, 100, 1, 1);
+    assert(made.ok);
+    if (let budget = made.budget) {
+        HalyardConsumptionCharge first = new HalyardConsumptionCharge{
+            input_bytes: 10, output_bytes: 10, decoded_units: 1, work_units: 1
+        };
+        assert(halyard_consumption_budget_consume(budget, first));
+        // There is intentionally no release/refund operation for cumulative usage.
+        HalyardConsumptionCharge second = new HalyardConsumptionCharge{
+            input_bytes: 10, output_bytes: 10, decoded_units: 1, work_units: 1
+        };
+        assert(!halyard_consumption_budget_consume(budget, second));
+        assert(budget.used_decoded_units == 1);
+        assert(budget.used_work_units == 1);
+        assert(budget.used_input_bytes == 10);
+        assert(budget.used_output_bytes == 10);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard cumulative budget rejects negative charges and corrupted state" {
+    assert(!halyard_consumption_budget_create(-1, 0, 0, 0).ok);
+    HalyardConsumptionBudgetResult made = halyard_consumption_budget_create(10, 10, 10, 10);
+    assert(made.ok);
+    if (let budget = made.budget) {
+        HalyardConsumptionCharge negative = new HalyardConsumptionCharge{
+            input_bytes: -1, output_bytes: 0, decoded_units: 0, work_units: 0
+        };
+        assert(!halyard_consumption_budget_consume(budget, negative));
+        budget.used_work_units = -1;
+        HalyardConsumptionCharge zero = new HalyardConsumptionCharge{
+            input_bytes: 0, output_bytes: 0, decoded_units: 0, work_units: 0
+        };
+        assert(!halyard_consumption_budget_consume(budget, zero));
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard reservation lease releases exactly once" {
+    HalyardLedgerResult made = halyard_ledger_create(4, 4, 4, 4, 4);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge charge = new HalyardBudgetCharge{
+            input_bytes: 2, retained_bytes: 1, output_bytes: 1,
+            decoded_units: 1, work_units: 2,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
+        assert(acquired.ok);
+        if (let lease = acquired.reservation) {
+            assert(ledger.used_input_bytes == 2);
+            assert(halyard_reservation_release(ledger, lease));
+            assert(!halyard_reservation_release(ledger, lease));
+            assert(ledger.used_input_bytes == 0);
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_output_bytes == 0);
+            assert(ledger.used_decoded_units == 0);
+            assert(ledger.used_work_units == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard rejected reservation returns no lease handle" {
+    HalyardLedgerResult made = halyard_ledger_create(1, 1, 1, 1, 1);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge too_large = new HalyardBudgetCharge{
+            input_bytes: 2, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        HalyardReservationResult rejected = halyard_ledger_acquire(ledger, too_large);
+        assert(!rejected.ok && rejected.error == "reservation_rejected");
+        assert(ledger.used_input_bytes == 0);
+        assert(ledger.used_retained_bytes == 0);
+        assert(ledger.used_output_bytes == 0);
+        assert(ledger.used_decoded_units == 0);
+        assert(ledger.used_work_units == 0);
+    } else { assert(false); }
+}
+
+
+test "Halyard reservation aliases share one release state" {
+    HalyardLedgerResult made = halyard_ledger_create(2, 2, 2, 2, 2);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge charge = new HalyardBudgetCharge{
+            input_bytes: 1, retained_bytes: 1, output_bytes: 1,
+            decoded_units: 1, work_units: 1,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
+        HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
+        assert(acquired.ok);
+        if (let lease = acquired.reservation) {
+            HalyardReservation alias = lease;
+            assert(halyard_reservation_release(ledger, lease));
+            assert(!halyard_reservation_release(ledger, alias));
+            assert(ledger.used_input_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+
+test "Halyard managed source holds retained-byte lease until close" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 4, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(11); input.push(22); input.push(33);
+        HalyardManagedByteSourceResult created =
+            halyard_managed_source_create(ledger, input, 3);
+        assert(created.ok);
+        assert(ledger.used_retained_bytes == 3);
+        if (let managed = created.managed) {
+            HalyardReadResult first = halyard_managed_source_read_u8(managed);
+            assert(first.ok && first.value == 11);
+            assert(halyard_managed_source_remaining(managed) == 2);
+            assert(halyard_managed_source_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+            assert(halyard_managed_source_remaining(managed) == 0);
+            assert(!halyard_managed_source_close(ledger, managed));
+            HalyardReadResult closed = halyard_managed_source_read_u8(managed);
+            assert(!closed.ok && closed.error == "closed");
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed source rejects admission before snapshot" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(1); input.push(2); input.push(3);
+        HalyardManagedByteSourceResult rejected =
+            halyard_managed_source_create(ledger, input, 3);
+        assert(!rejected.ok && rejected.error == "reservation_rejected");
+        assert(ledger.used_retained_bytes == 0);
+    } else { assert(false); }
+}
+
+test "Halyard managed source rolls back lease on invalid input" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 4, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(1); input.push(256);
+        HalyardManagedByteSourceResult rejected =
+            halyard_managed_source_create(ledger, input, 4);
+        assert(!rejected.ok && rejected.error == "invalid_byte");
+        assert(ledger.used_retained_bytes == 0);
+    } else { assert(false); }
+}
+
+
+test "Halyard live-resource vector admits and releases every added dimension atomically" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 0, 0, 0, 0, 2, 3, 4, 1, 5, 6, 7
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge all = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 2, metadata_entries: 3, queue_slots: 4,
+            worker_slots: 1, nesting_slots: 5, track_slots: 6, chunk_slots: 7
+        };
+        assert(halyard_ledger_reserve(ledger, all));
+        assert(ledger.used_allocation_units == 2);
+        assert(ledger.used_metadata_entries == 3);
+        assert(ledger.used_queue_slots == 4);
+        assert(ledger.used_worker_slots == 1);
+        assert(ledger.used_nesting_slots == 5);
+        assert(ledger.used_track_slots == 6);
+        assert(ledger.used_chunk_slots == 7);
+        assert(halyard_ledger_release(ledger, all));
+        assert(ledger.used_allocation_units == 0);
+        assert(ledger.used_metadata_entries == 0);
+        assert(ledger.used_queue_slots == 0);
+        assert(ledger.used_worker_slots == 0);
+        assert(ledger.used_nesting_slots == 0);
+        assert(ledger.used_track_slots == 0);
+        assert(ledger.used_chunk_slots == 0);
+    } else { assert(false); }
+}
+
+test "Halyard live-resource vector rejects every over-limit dimension without partial admission" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge a = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 2, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge m = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 2, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge q = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 2,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge w = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 2, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge n = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 2, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge t = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 2, chunk_slots: 0
+        };
+        HalyardBudgetCharge c = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 2
+        };
+        assert(!halyard_ledger_reserve(ledger, a));
+        assert(!halyard_ledger_reserve(ledger, m));
+        assert(!halyard_ledger_reserve(ledger, q));
+        assert(!halyard_ledger_reserve(ledger, w));
+        assert(!halyard_ledger_reserve(ledger, n));
+        assert(!halyard_ledger_reserve(ledger, t));
+        assert(!halyard_ledger_reserve(ledger, c));
+        assert(ledger.used_allocation_units == 0);
+        assert(ledger.used_metadata_entries == 0);
+        assert(ledger.used_queue_slots == 0);
+        assert(ledger.used_worker_slots == 0);
+        assert(ledger.used_nesting_slots == 0);
+        assert(ledger.used_track_slots == 0);
+        assert(ledger.used_chunk_slots == 0);
+    } else { assert(false); }
+}
+
+test "Halyard live-resource vector rejects release underflow in every dimension" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge a = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 1, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge m = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 1, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge q = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 1,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge w = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 1, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge n = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 1, track_slots: 0, chunk_slots: 0
+        };
+        HalyardBudgetCharge t = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 1, chunk_slots: 0
+        };
+        HalyardBudgetCharge c = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 1
+        };
+        assert(!halyard_ledger_release(ledger, a));
+        assert(!halyard_ledger_release(ledger, m));
+        assert(!halyard_ledger_release(ledger, q));
+        assert(!halyard_ledger_release(ledger, w));
+        assert(!halyard_ledger_release(ledger, n));
+        assert(!halyard_ledger_release(ledger, t));
+        assert(!halyard_ledger_release(ledger, c));
+        assert(ledger.used_allocation_units == 0);
+        assert(ledger.used_metadata_entries == 0);
+        assert(ledger.used_queue_slots == 0);
+        assert(ledger.used_worker_slots == 0);
+        assert(ledger.used_nesting_slots == 0);
+        assert(ledger.used_track_slots == 0);
+        assert(ledger.used_chunk_slots == 0);
+    } else { assert(false); }
+}
+
+test "Halyard managed source close can retry lease release after ledger repair" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(0, 2, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(7); input.push(8);
+        HalyardManagedByteSourceResult created =
+            halyard_managed_source_create(ledger, input, 2);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            ledger.used_retained_bytes = 0;
+            assert(!halyard_managed_source_close(ledger, managed));
+            assert(managed.source.closed);
+            ledger.used_retained_bytes = 2;
+            assert(halyard_managed_source_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed source charges allocation slot through source lifetime" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 4, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(7); input.push(8);
+        HalyardManagedByteSourceResult created =
+            halyard_managed_source_create(ledger, input, 2);
+        assert(created.ok);
+        assert(ledger.used_retained_bytes == 2);
+        assert(ledger.used_allocation_units == 1);
+        if (let managed = created.managed) {
+            assert(halyard_managed_source_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_allocation_units == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed source rejects zero allocation slots without mutation" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(7);
+        HalyardManagedByteSourceResult created =
+            halyard_managed_source_create(ledger, input, 1);
+        assert(!created.ok);
+        assert(created.error == "reservation_rejected");
+        assert(ledger.used_retained_bytes == 0);
+        assert(ledger.used_allocation_units == 0);
+    } else { assert(false); }
+}

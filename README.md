@@ -201,3 +201,17 @@ the hand-written C, which says more about optimisers than about call overhead.
 ## Licence
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+
+## Halyard: Capstan's media architecture
+
+Halyard is Capstan's media architecture, comprising two independent first-class engines and their shared foundation:
+
+- **Shanty** — audio ingest, decode/encode, playback/capture, mixing, synthesis, spatialisation and processing.
+- **Deadeye** — image/video ingest, demux/decode, encode, frame scheduling, presentation, composition and streaming.
+- **Capstan Media Core** — bounded streams, buffers, clocks, timestamps, resource accounting, format registry, graph contracts and codec-worker boundaries.
+
+The Halyard architecture is introduced in [docs/media/HALYARD.md](docs/media/HALYARD.md), with detailed component design in [docs/media/ARCHITECTURE.md](docs/media/ARCHITECTURE.md), the [design charter](docs/media/DESIGN-CHARTER.md), [format catalogue](docs/media/FORMAT-CATALOGUE.md) and [research agenda](docs/media/RESEARCH-AGENDA.md). These documents describe the target and staged work; they do not imply that codecs, playback or hardware backends are implemented. The first implementation gates are a bounded WAV/PCM offline audio slice and a separately selected bounded image/frame slice. Shroud core remains media-independent; an optional, separately versioned Halyard–Shroud adapter may consume media presentation APIs alongside Shroud rendering/input APIs. Neither Shanty nor Deadeye depends on Shroud. See the design map for dependency and assurance boundaries.
+
+
+**Media security is release-gated.** The vulnerability accounting policy, root-cause threat catalogue, reproducer workflow and release-blocking criteria are defined in [docs/media/SECURITY-ASSURANCE.md](docs/media/SECURITY-ASSURANCE.md). Every supported media configuration must have evidence-backed dispositions for known applicable findings; a clean scanner is not proof of safety. See tracking issue [#292](https://github.com/DavidFernee/Capstan/issues/292).
