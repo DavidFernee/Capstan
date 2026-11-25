@@ -95,6 +95,44 @@ theorem certificateCheck_sound {slotCount : Nat}
     have fieldsChecked := Bool.and_eq_true.mp (markedValid handle handleMember)
     exact of_decide_eq_true ((List.all_eq_true.mp fieldsChecked.2) target targetMember)
 
+/-- Proof-carrying view of an accepted marker outcome. Sweep-facing
+code can require this type instead of accepting a raw candidate list. -/
+structure CheckedCertificate {slotCount : Nat}
+    (isLive : Handle slotCount → Bool)
+    (referenceEdges : Handle slotCount → List (Handle slotCount))
+    (roots : List (Handle slotCount)) where
+  marked : List (Handle slotCount)
+  includesRoots : ∀ root, root ∈ roots → root ∈ marked
+  allLive : ∀ handle, handle ∈ marked → isLive handle = true
+  closedUnderEdges : ∀ handle, handle ∈ marked → ∀ target,
+    target ∈ referenceEdges handle → target ∈ marked
+
+/-- Only a complete outcome can be converted into a sweep-facing
+certificate. Rejection carries no candidate mark set. -/
+def certificateOfOutcome {slotCount : Nat}
+    (isLive : Handle slotCount → Bool)
+    (referenceEdges : Handle slotCount → List (Handle slotCount))
+    (roots : List (Handle slotCount)) :
+    MarkerOutcome isLive referenceEdges roots →
+      Option (CheckedCertificate isLive referenceEdges roots)
+  | .complete marked _ accepted =>
+      let sound := certificateCheck_sound isLive referenceEdges roots marked accepted
+      some {
+        marked := marked
+        includesRoots := sound.1
+        allLive := sound.2.1
+        closedUnderEdges := sound.2.2
+      }
+  | .rejected _ _ => none
+
+theorem rejected_has_no_certificate {slotCount : Nat}
+    (isLive : Handle slotCount → Bool)
+    (referenceEdges : Handle slotCount → List (Handle slotCount))
+    (roots : List (Handle slotCount))
+    (reason : MarkerReject) (counters : MarkerCounters) :
+    certificateOfOutcome isLive referenceEdges roots
+      (.rejected reason counters) = none := rfl
+
 /-- Append only targets that are neither visited nor already pending. -/
 def freshTargets {slotCount : Nat}
     (targets visited pending : List (Handle slotCount)) :
