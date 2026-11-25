@@ -52,7 +52,7 @@ def main():
         result = run([reject], expected=101)
         if "shroud: frame view or text budget exceeded" not in result.stdout:
             raise SystemExit(f"frame budget: missing preflight diagnostic: {result.stdout!r}")
-    print("frame budget: 18 unit assertions; aggregate over-budget tree rejected before layout")
+    print("frame budget: 19 unit assertions; aggregate over-budget tree rejected before layout")
 
 
 if __name__ == "__main__":
