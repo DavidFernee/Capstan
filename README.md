@@ -130,6 +130,7 @@ including what Capstan does **not** prevent.
 - [docs/SPEC.md](docs/SPEC.md): the language reference for v0.1
 - [docs/CWE-COVERAGE.md](docs/CWE-COVERAGE.md): which weaknesses are prevented, and how
 - [docs/DESIGN-MAP.md](docs/DESIGN-MAP.md): design principles and roadmap, from language features to the IDE
+- [docs/C-FREE-BOOTSTRAP.md](docs/C-FREE-BOOTSTRAP.md): the C-free native self-hosting, bootstrap and Capstan 1.0 acceptance contract
 - [docs/K0-KERNEL-CVES.md](docs/K0-KERNEL-CVES.md): the Linux kernel's 2025 CVEs measured against Capstan (roadmap K0)
 - [docs/CHALLENGE.md](docs/CHALLENGE.md): draft rules for the Capstan Challenge, a planned yearly prize for writing a vulnerability Capstan says is impossible, subject to funding for a foundation to administer the language
 - [docs/SHROUD.md](docs/SHROUD.md): Shroud, the cross-platform GUI library written in Capstan
