@@ -490,10 +490,13 @@ test "GC layout rejects duplicate reference offsets" {
     List<GCHLayout> layouts = new List<GCHLayout>();
     layouts.push(base.layouts[0]);
     layouts.push(base.layouts[1]);
+    List<int> duplicate_targets = new List<int>();
+    duplicate_targets.push(8);
+    duplicate_targets.push(7);
     layouts.push(new GCHLayout{
         descriptor_id: 9, field_count: 2,
         reference_offsets: duplicate_offsets,
-        reference_target_descriptors: new List<int>()
+        reference_target_descriptors: duplicate_targets
     });
     GCHHeap invalid = new GCHHeap{
         heap_token: base.heap_token, layouts: layouts, slots: base.slots
@@ -508,10 +511,31 @@ test "GC layout rejects out-of-range reference offsets" {
     List<GCHLayout> layouts = new List<GCHLayout>();
     layouts.push(base.layouts[0]);
     layouts.push(base.layouts[1]);
+    List<int> invalid_targets = new List<int>();
+    invalid_targets.push(8);
     layouts.push(new GCHLayout{
         descriptor_id: 9, field_count: 4,
         reference_offsets: invalid_offsets,
-        reference_target_descriptors: new List<int>()
+        reference_target_descriptors: invalid_targets
+    });
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
+}
+
+test "GC layout rejects unregistered reference target descriptors" {
+    GCHHeap base = gch_fixture_heap();
+    List<int> offsets = new List<int>();
+    offsets.push(0);
+    List<int> targets = new List<int>();
+    targets.push(99);
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    layouts.push(new GCHLayout{
+        descriptor_id: 9, field_count: 1, reference_offsets: offsets,
+        reference_target_descriptors: targets
     });
     GCHHeap invalid = new GCHHeap{
         heap_token: base.heap_token, layouts: layouts, slots: base.slots
