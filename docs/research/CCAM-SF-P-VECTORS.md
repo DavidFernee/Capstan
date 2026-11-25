@@ -82,7 +82,7 @@ The initial proof-profile corpus includes the finite built-in traps represented 
 
 This file is the canonical oracle data for the next harness increment. It is not yet consumed by either implementation. The next work must:
 
-1. Strict corpus-integrity validation is now implemented in `tests/ccam_sf_vectors.py` and wired into `tests/run.sh` (duplicate IDs, exact instruction fields, signed-64 literal bounds, typed/indexed operands, and trace/step consistency). This is a corpus linter, not an execution adapter.
+1. Strict corpus-integrity validation is now implemented in `scripts/validate-ccam-sf-vectors.py` and wired into the CI workflow (duplicate JSON keys, unique IDs, exact instruction fields, signed-64 literal bounds, typed/indexed operands, profile exclusions, and trace/step consistency). This is a corpus linter, not an execution adapter.
 2. Add a Capstan-native corpus runner that constructs `CCAMInstruction` values and checks validation, outcome, trace and step count.
 3. Add a Lean corpus reader/adapter or a generated Lean fixture from this same source file. Generation must be deterministic and must not generate expected outcomes from either executor.
 4. Define the complete machine-state relation, reusing `RuntimeBridge.lean` and `NativeRegisterBridge.lean`; do not recreate the register relation.
