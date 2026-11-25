@@ -535,3 +535,14 @@ The programme succeeds only if Capstan produces all of the following:
 The ultimate goal is not merely to make Capstan another attractive systems language. It is to discover and establish a different engineering proposition: software can carry verifiable statements about its behaviour, authority and resource consumption, and the toolchain can preserve and check those statements through execution.
 
 **The standard is not that Capstan claims to do what other languages cannot. The standard is that Capstan demonstrates, with independently checkable evidence, a coherent set of guarantees that users cannot obtain as an equally integrated and practical property from the conventional alternatives.**
+
+## F1 execution milestone: executable compositional guarantee model
+
+The first Capstan-native F1 research artefact is [F1-EXECUTABLE-MODEL.md](F1-EXECUTABLE-MODEL.md), implemented in `verification/f1_guarantee_model.cap` and invoked by `tests/run.sh`.
+
+This is a finite abstract reference model, not a production checker or proof. It tests independent transfer of data, selection and control provenance; confidentiality; context-specific output guarantees; authority; effects; and resource bounds. Unknown summaries and resource overflow fail closed. Its finite source masks, abstract context tags, simple capability sets and additive resource model are intentionally limited.
+
+The next experiments are to (1) compare factored judgements with a unified product domain, (2) derive summaries from actual Capstan function bodies, (3) replace abstract output-context tags with parser-aware context state, and (4) compare conservative resource composition with region/lifetime and amortised analyses. Unsupported syntax and analysis exhaustion must widen or reject; they must never be treated as proof of safety.
+
+The artefact must pass the exact-head standard suite and receive independent semantic review before any language guarantee is claimed. Passing it alone establishes neither soundness nor the absence of vulnerabilities in the compiler, runtime, generated code, host or ecosystem.
+
