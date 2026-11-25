@@ -50,6 +50,10 @@ Integration acceptance requires:
 - every user-triggered command displays its exact fixed operation profile and outcome;
 - no unsupported editor, IME, clipboard or accessibility capability is claimed.
 
+## 2.1 Process-service ownership decision
+
+A1-P has one proposed owner: the **Capstan runtime/process service**. The platform ABI is a narrow implementation boundary, not a second policy owner. Anchor constructs only approved invocation profiles and owns LSP/command presentation. Shroud owns the native window host and does not spawn or supervise compiler children. The decision and rejected alternatives are recorded in `ANCHOR-PROCESS-SUPERVISION.md`; runtime approval and versioned API publication remain an explicit gate.
+
 ## 3. Dependency graph
 
     Capability-I/O + typed errors + resource accounting
