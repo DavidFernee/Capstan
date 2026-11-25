@@ -84,8 +84,10 @@ Paint linear_gradient(int x0, int y0, int c0, int x1, int y1, int c1) {
 const int DISPLAY_RECT = 1;
 const int DISPLAY_PATH = 2;
 const int DISPLAY_BLEND = 3;
-const int MAX_DISPLAY_COMMANDS = 1048576;
+const int DISPLAY_MASK = 4;
+const int MAX_DISPLAY_COMMANDS = 262144;
 const int MAX_DISPLAY_SEGMENTS = 4194304;
+const int MAX_DISPLAY_MASK_PIXELS = 1048576;
 const int MAX_DISPLAY_SEGMENTS_PER_PATH = 65536;
 
 struct DisplayCommand {
@@ -95,6 +97,9 @@ struct DisplayCommand {
     Paint paint;
     int rule;
     Segments? segments;
+    List<int>? mask_alpha;
+    int mask_w;
+    int mask_h;
     int x;
     int y;
     int coverage;
@@ -143,7 +148,7 @@ struct Canvas {
             }
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0), clip: self.clip(),
-                paint: paint, rule: rule, segments: s, x: 0, y: 0,
+                paint: paint, rule: rule, segments: s, mask_alpha: none, mask_w: 0, mask_h: 0, x: 0, y: 0,
                 coverage: 0, opacity: self.opacity
             };
             display_list_append(self, cmd, s.x0.len());
@@ -158,7 +163,7 @@ struct Canvas {
         if (self.recording) {
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_RECT, bounds: r, clip: self.clip(),
-                paint: paint, rule: FILL_NONZERO, segments: none,
+                paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: none, mask_w: 0, mask_h: 0,
                 x: 0, y: 0, coverage: 0, opacity: self.opacity
             };
             display_list_append(self, cmd, 0);
@@ -190,12 +195,44 @@ struct Canvas {
         self.fill_path(path_round_rect_ring(r, radius, width), paint, FILL_NONZERO);
     }
 
+    // Draw a cached glyph/image alpha mask. A recording canvas retains the
+    // immutable frame-owned mask as one command rather than expanding it to pixels.
+    void draw_mask(List<int> alpha, int width, int height, int x, int y, Paint paint) {
+        if (width < 1 || height < 1 || width > alpha.len() / height ||
+            width * height != alpha.len() || alpha.len() > MAX_DISPLAY_MASK_PIXELS) {
+            println("shroud: invalid display mask dimensions");
+            exit(101);
+        }
+        if (self.recording) {
+            DisplayCommand cmd = new DisplayCommand{
+                kind: DISPLAY_MASK, bounds: rect(0, 0, 0, 0), clip: self.clip(),
+                paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: alpha,
+                mask_w: width, mask_h: height, x: x, y: y, coverage: 0,
+                opacity: self.opacity
+            };
+            display_list_append(self, cmd, alpha.len());
+            return;
+        }
+        Rect c = self.clip();
+        int x0 = int_max(x, c.x);
+        int x1 = int_min(x + width, c.right());
+        int y0 = int_max(y, c.y);
+        int y1 = int_min(y + height, c.bottom());
+        for (int yy = y0; yy < y1; yy += 1) {
+            int row = (yy - y) * width;
+            for (int xx = x0; xx < x1; xx += 1) {
+                int a = alpha[row + xx - x];
+                if (a > 0) { self.blend(xx, yy, paint, a); }
+            }
+        }
+    }
+
     // Puts paint at (x, y) with coverage 0..255.
     void blend(int x, int y, Paint paint, int coverage) {
         if (self.recording) {
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: self.clip(),
-                paint: paint, rule: FILL_NONZERO, segments: none,
+                paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: none, mask_w: 0, mask_h: 0,
                 x: x, y: y, coverage: coverage, opacity: self.opacity
             };
             display_list_append(self, cmd, 0);
@@ -266,6 +303,13 @@ void execute_display_list(DisplayList dl, Pixmap pm) {
             }
         } else if (cmd.kind == DISPLAY_BLEND) {
             cv.blend(cmd.x, cmd.y, cmd.paint, cmd.coverage);
+        } else if (cmd.kind == DISPLAY_MASK) {
+            if (let alpha = cmd.mask_alpha) {
+                cv.draw_mask(alpha, cmd.mask_w, cmd.mask_h, cmd.x, cmd.y, cmd.paint);
+            } else {
+                println("shroud: mask command has no pixels");
+                exit(101);
+            }
         } else {
             println("shroud: invalid display list command");
             exit(101);
