@@ -28,9 +28,6 @@ struct DeadeyeMp4MovieTracks {
     bool ok;
     List<DeadeyeMp4Track> tracks;
     int box_count;
-    HalyardLedger? ledger;
-    HalyardReservation? reservation;
-    bool closed;
     string error;
 }
 
@@ -589,8 +586,7 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks_internal(
     return new DeadeyeMp4MovieTracksResult{
         ok:true,
         movie:new DeadeyeMp4MovieTracks{
-            ok:true,tracks:tracks,box_count:box_count,
-            ledger:none,reservation:none,closed:false,error:""
+            ok:true,tracks:tracks,box_count:box_count,error:""
         },
         error:""
     };
@@ -598,10 +594,10 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks_internal(
 
 
 
-// Resource-accounted public parser. The consumption budget charges input and
-// worst-case work monotonically; the ledger reserves bounded temporary table
-// expansion before parsing and a small live lease for the returned track list.
-// The live lease must be released with deadeye_mp4_movie_close.
+// Resource-accounted public parser. The consumption budget charges input,
+// bounded worst-case work and returned metadata monotonically. The ledger
+// reserves temporary sample-table expansion before any parse allocation; its
+// lease is local and released before returning, so no copyable lease escapes.
 DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
     List<int> bytes, DeadeyeMp4Box supplied_moov,
     HalyardLedger ledger, HalyardConsumptionBudget budget
@@ -623,20 +619,8 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
     if (!temporary.ok) {
         return deadeye_mp4_movie_error("temporary_resource_reservation_failed");
     }
-    HalyardBudgetCharge output_charge = new HalyardBudgetCharge{
-        input_bytes: 0, retained_bytes: 8192, output_bytes: 0,
-        decoded_units: 0, work_units: 0,
-        allocation_units: 1, metadata_entries: 16,
-        queue_slots: 0, worker_slots: 0, nesting_slots: 0,
-        track_slots: 16, chunk_slots: 0
-    };
-    HalyardReservationResult output =
-        halyard_ledger_acquire(ledger,output_charge);
-    if (!output.ok) {
-        if (let lease = temporary.reservation) {
-            halyard_reservation_release(ledger,lease);
-        }
-        return deadeye_mp4_movie_error("output_resource_reservation_failed");
+    if (!temporary.reservation.has_value()) {
+        return deadeye_mp4_movie_error("temporary_reservation_missing");
     }
     int estimated_work = bytes.len() * 4 + 8500000;
     HalyardConsumptionCharge work = new HalyardConsumptionCharge{
@@ -644,9 +628,6 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         decoded_units: 0, work_units: estimated_work
     };
     if (!halyard_consumption_budget_consume(budget,work)) {
-        if (let lease = output.reservation) {
-            halyard_reservation_release(ledger,lease);
-        }
         if (let lease = temporary.reservation) {
             halyard_reservation_release(ledger,lease);
         }
@@ -657,46 +638,20 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         deadeye_mp4_parse_moov_tracks_internal(bytes,supplied_moov);
     if (let temporary_lease = temporary.reservation) {
         if (!halyard_reservation_release(ledger,temporary_lease)) {
-            if (let output_lease = output.reservation) {
-                halyard_reservation_release(ledger,output_lease);
-            }
             return deadeye_mp4_movie_error("temporary_reservation_release_failed");
         }
     } else {
         return deadeye_mp4_movie_error("temporary_reservation_missing");
     }
-    if (!parsed.ok) {
-        if (let output_lease = output.reservation) {
-            if (!halyard_reservation_release(ledger,output_lease)) {
-                return deadeye_mp4_movie_error("output_reservation_release_failed");
-            }
-        }
-        return parsed;
+    if (!parsed.ok) { return parsed; }
+    HalyardConsumptionCharge output = new HalyardConsumptionCharge{
+        input_bytes: 0, output_bytes: 8192,
+        decoded_units: 0, work_units: 0
+    };
+    if (!halyard_consumption_budget_consume(budget,output)) {
+        return deadeye_mp4_movie_error("output_budget_exceeded");
     }
-    if (let movie = parsed.movie) {
-        if (let output_lease = output.reservation) {
-            movie.ledger = ledger;
-            movie.reservation = output_lease;
-            movie.closed = false;
-            return parsed;
-        }
-    }
-    if (let output_lease = output.reservation) {
-        halyard_reservation_release(ledger,output_lease);
-    }
-    return deadeye_mp4_movie_error("movie_or_output_lease_missing");
-}
-
-bool deadeye_mp4_movie_close(DeadeyeMp4MovieTracks movie) {
-    if (movie.closed) { return false; }
-    if (let ledger = movie.ledger) {
-        if (let lease = movie.reservation) {
-            if (!halyard_reservation_release(ledger,lease)) { return false; }
-        } else { return false; }
-    } else { return false; }
-    movie.tracks = new List<DeadeyeMp4Track>();
-    movie.closed = true;
-    return true;
+    return parsed;
 }
 
 test "Deadeye connects trak handler, sample entry, tables and self-contained data reference" {
@@ -785,8 +740,6 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
                 assert(movie.tracks[0].sample_entry.codec == "sowt-pcm");
                 assert(movie.tracks[0].tables.sample_count == 1);
                 assert(movie.tracks[0].media_timescale == 1000);
-                assert(deadeye_mp4_movie_close(movie));
-                assert(!deadeye_mp4_movie_close(movie));
             } else { assert(false); }
             DeadeyeMp4Box forged_moov = moov_box.box;
             forged_moov.end -= 1;
@@ -808,7 +761,7 @@ test "Deadeye parser reserves resources before work and releases on budget failu
         128, 8192, 0, 0, 16, 32, 32768
     );
     HalyardConsumptionBudgetResult budget_result =
-        halyard_consumption_budget_create(file.len()-1,0,0,400000000);
+        halyard_consumption_budget_create(file.len()-1,8192,0,400000000);
     assert(ledger_result.ok && budget_result.ok);
     if (let ledger = ledger_result.ledger) {
         if (let budget = budget_result.budget) {
