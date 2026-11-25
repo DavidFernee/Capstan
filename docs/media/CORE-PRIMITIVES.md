@@ -172,8 +172,9 @@ The Capstan-native reference machine is
 `verification/halyard_resource_actor.cap`. It models two competing request
 identities, a bounded FIFO, serial processing, all-or-nothing admission and one-shot
 release. Its tests cover both enqueue orders, aggregate overcommit prevention,
-queue-full rejection, invalid/duplicate requests and repeated release. The standard
-test runner executes this model.
+queue-full rejection, invalid/duplicate requests, repeated release and rejection of
+corrupted resource/queue state before transition. The model now has seven Capstan
+test declarations; the standard test runner executes it.
 
 This is a **policy model**, not a live concurrent actor implementation. It assumes
 the owner processes transitions serially; it does not itself establish that a
