@@ -453,8 +453,12 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
     if (!pixmap_size_valid(pm.w, pm.h) || pm.px.len() != pm.w * pm.h ||
         dl.width != pm.w || dl.height != pm.h || dl.commands.len() > MAX_DISPLAY_COMMANDS) { return false; }
     int payload = 0;
-    // Bound the command traversal itself in addition to each command's work.
+    // Charge command traversal and the scratch-surface copy plus final commit.
+    // Rendering never writes the caller's surface until the entire frame succeeds.
     int work = dl.commands.len();
+    int surface_pixels = pm.w * pm.h;
+    if (surface_pixels > (MAX_DISPLAY_WORK - work) / 2) { return false; }
+    work += 2 * surface_pixels;
     for (int i = 0; i < dl.commands.len(); i += 1) {
         DisplayCommand cmd = dl.commands[i];
         if (!display_clip_valid(cmd.clip, dl.width, dl.height) || cmd.opacity < 0 || cmd.opacity > 255 ||
@@ -556,7 +560,13 @@ void execute_display_list(DisplayList dl, Pixmap pm) {
         println("shroud: invalid or over-budget display list");
         exit(101);
     }
-    Canvas cv = new_canvas(pm);
+    // Render into a private surface. Any later allocation/runtime failure can
+    // stop execution without leaving a partially rendered caller-visible frame.
+    Pixmap scratch = new_pixmap(pm.w, pm.h);
+    for (int pixel = 0; pixel < pm.px.len(); pixel += 1) {
+        scratch.px[pixel] = pm.px[pixel];
+    }
+    Canvas cv = new_canvas(scratch);
     for (int i = 0; i < dl.commands.len(); i += 1) {
         DisplayCommand cmd = dl.commands[i];
         cv.clips = new List<Rect>();
@@ -584,6 +594,10 @@ void execute_display_list(DisplayList dl, Pixmap pm) {
             println("shroud: invalid display list command");
             exit(101);
         }
+    }
+    // Commit only after every command has completed successfully.
+    for (int pixel = 0; pixel < pm.px.len(); pixel += 1) {
+        pm.px[pixel] = scratch.px[pixel];
     }
 }
 
