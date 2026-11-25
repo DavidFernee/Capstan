@@ -1,6 +1,0 @@
-import "record.cap";
-
-int main() {
-    Vault value = new Vault{label: 2};
-    return 0;
-}
