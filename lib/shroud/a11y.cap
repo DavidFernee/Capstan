@@ -120,10 +120,10 @@ bool a11y_json_budget_add(List<int> budget, int n) {
 }
 
 bool a11y_json_field_budget(List<int> budget, int n) {
-    if (n < 0 || budget[1] > MAX_A11Y_JSON_BYTES - 128) { return false; }
-    int room = MAX_A11Y_JSON_BYTES - budget[1] - 128;
+    if (n < 0 || budget[1] > MAX_A11Y_JSON_BYTES) { return false; }
+    int room = MAX_A11Y_JSON_BYTES - budget[1];
     if (n > room / 6) { return false; }
-    return a11y_json_budget_add(budget, n * 6 + 128);
+    return a11y_json_budget_add(budget, n * 6);
 }
 
 bool a11y_json_preflight(A11yNode n, List<int> budget, int depth) {
