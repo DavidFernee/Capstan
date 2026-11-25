@@ -1,0 +1,7 @@
+// expect: opaque struct EmptyCapability may be constructed only within its defining module
+import "private_fields/record.cap";
+
+int main() {
+    EmptyCapability forged = new EmptyCapability{};
+    return 0;
+}
