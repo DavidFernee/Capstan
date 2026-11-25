@@ -656,10 +656,26 @@ Node parse_decl(Parser p) {
         expect(p, "}");
         return en;
     }
-    if (at(p, "sensitive") || at(p, "struct")) {
+    if (at(p, "sensitive") || at(p, "opaque") || at(p, "struct")) {
         Node st = node_here(p, N_STRUCT);
-        if (at(p, "sensitive")) {
-            st.s2 = "sensitive";
+        bool saw_sensitive = false;
+        bool saw_opaque = false;
+        while (at(p, "sensitive") || at(p, "opaque")) {
+            if (at(p, "sensitive")) {
+                if (saw_sensitive) {
+                    parse_fail(p, "duplicate sensitive struct modifier");
+                    return st;
+                }
+                saw_sensitive = true;
+                st.s2 = "sensitive";
+            } else {
+                if (saw_opaque) {
+                    parse_fail(p, "duplicate opaque struct modifier");
+                    return st;
+                }
+                saw_opaque = true;
+                st.s3 = "opaque";
+            }
             advance(p);
         }
         expect(p, "struct");
