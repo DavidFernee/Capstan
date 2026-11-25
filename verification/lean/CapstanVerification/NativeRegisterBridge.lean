@@ -70,14 +70,12 @@ def NativeRegisterMatches
 theorem nativeRegisterInit_matches_int :
     NativeRegisterMatches (nativeRegisterInit nativeIntTypeTag)
       (runtimeRegisterInit .int) := by
-  simp [NativeRegisterMatches, nativeRegisterInit, runtimeRegisterInit,
-    decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
+  refine ⟨rfl, rfl, rfl, rfl⟩
 
 theorem nativeRegisterInit_matches_bool :
     NativeRegisterMatches (nativeRegisterInit nativeBoolTypeTag)
       (runtimeRegisterInit .bool) := by
-  simp [NativeRegisterMatches, nativeRegisterInit, runtimeRegisterInit,
-    decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
+  refine ⟨rfl, rfl, rfl, rfl⟩
 
 /-- Integer read from the concrete register fields, before list-index checking. -/
 def nativeRegisterReadInt (reg : NativeCCAMRegister) : Except Trap Int :=
@@ -131,7 +129,8 @@ theorem nativeRegisterReadInt_corresponds
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadInt, runtimeRegisterReadInt,
-          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit, htype, hint]
+          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit, htype, hint,
+          nativeIntTypeTag, nativeBoolTypeTag]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
@@ -140,7 +139,8 @@ theorem nativeRegisterReadInt_corresponds
       · have hnativeInit : native.initialized = false := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadInt, runtimeRegisterReadInt,
-          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype]
+          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype,
+          nativeIntTypeTag, nativeBoolTypeTag]
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadInt, runtimeRegisterReadInt,
@@ -160,7 +160,8 @@ theorem nativeRegisterReadBool_corresponds
       · have hnativeInit : native.initialized = false := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadBool, runtimeRegisterReadBool,
-          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit]
+          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit,
+          nativeIntTypeTag, nativeBoolTypeTag]
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadBool, runtimeRegisterReadBool,
@@ -177,7 +178,8 @@ theorem nativeRegisterReadBool_corresponds
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadBool, runtimeRegisterReadBool,
-          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype, hbool]
+          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype, hbool,
+          nativeIntTypeTag, nativeBoolTypeTag]
 
 /-- Model the native integer-field assignment and initialization-bit update. -/
 def nativeRegisterWriteInt
@@ -271,13 +273,13 @@ theorem nativeRegisterWriteIntChecked_corresponds
         (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteIntChecked, runtimeRegisterWriteIntChecked,
-        htagInt, htype, hbool, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteInt, runtimeRegisterWriteInt]
+        htagInt, htype, hbool, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteInt, runtimeRegisterWriteInt, Except.map]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteIntChecked, runtimeRegisterWriteIntChecked,
-        htagBool, htype, hbool, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteInt, runtimeRegisterWriteInt]
+        htagBool, htype, hbool, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteInt, runtimeRegisterWriteInt, Except.map]
 
 /-- The native boolean writer's local type check followed by its field update. -/
 def nativeRegisterWriteBoolChecked
@@ -315,12 +317,12 @@ theorem nativeRegisterWriteBoolChecked_corresponds
         (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteBoolChecked, runtimeRegisterWriteBoolChecked,
-        htagInt, htype, hint, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteBool, runtimeRegisterWriteBool]
+        htagInt, htype, hint, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteBool, runtimeRegisterWriteBool, Except.map]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteBoolChecked, runtimeRegisterWriteBoolChecked,
-        htagBool, htype, hint, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteBool, runtimeRegisterWriteBool]
+        htagBool, htype, hint, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteBool, runtimeRegisterWriteBool, Except.map]
 
 end CapstanVerification
