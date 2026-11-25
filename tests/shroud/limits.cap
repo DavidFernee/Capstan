@@ -9,6 +9,37 @@ void limits_append_u16(List<int> bytes, int value) {
     bytes.push(value & 255);
 }
 
+void limits_append_u32(List<int> bytes, int value) {
+    limits_append_u16(bytes, (value >> 16) & 65535);
+    limits_append_u16(bytes, value & 65535);
+}
+
+FontReader directory_fixture(int mode) {
+    List<int> bytes = new List<int>();
+    limits_append_u32(bytes, 0x00010000);
+    limits_append_u16(bytes, 2);
+    limits_append_u16(bytes, 0);
+    limits_append_u16(bytes, 0);
+    limits_append_u16(bytes, 0);
+    limits_append_u32(bytes, tag_of("head"));
+    limits_append_u32(bytes, 0);
+    int first_offset = 44;
+    if (mode == 3) { first_offset = 0; }
+    if (mode == 4) { first_offset = 45; }
+    limits_append_u32(bytes, first_offset);
+    limits_append_u32(bytes, 4);
+    int second_tag = tag_of("maxp");
+    if (mode == 2) { second_tag = tag_of("head"); }
+    limits_append_u32(bytes, second_tag);
+    limits_append_u32(bytes, 0);
+    int second_offset = 48;
+    if (mode == 1) { second_offset = 44; }
+    limits_append_u32(bytes, second_offset);
+    limits_append_u32(bytes, 4);
+    for (int i = 0; i < 8; i += 1) { bytes.push(0); }
+    return new FontReader{b: bytes, ok: true};
+}
+
 Font composite_budget_fixture() {
     List<int> bytes = new List<int>();
     // Short loca entries for glyphs 0..3: 0, 0, 394, 434 bytes.
@@ -39,8 +70,28 @@ Font composite_budget_fixture() {
     FontReader reader = new FontReader{b: bytes, ok: true};
     return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
         line_gap: 0, num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
-        t_loca: 0, t_glyf: 8, glyf_len: 434, t_hmtx: 0, cmap_at: 0,
-        cmap_format: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: 0, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 434, t_hmtx: 0, hmtx_len: 0,
+        cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
+}
+
+Font metrics_fixture(int table_len) {
+    List<int> bytes = new List<int>();
+    // Two long metrics: (1000, -2), (2000, 5); then bearings 6 and 7.
+    bytes.push(0x03); bytes.push(0xE8);
+    bytes.push(0xFF); bytes.push(0xFE);
+    bytes.push(0x07); bytes.push(0xD0);
+    bytes.push(0x00); bytes.push(0x05);
+    bytes.push(0x00); bytes.push(0x06);
+    bytes.push(0x00); bytes.push(0x07);
+    FontReader reader = new FontReader{b: bytes, ok: true};
+    return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
+        line_gap: 0, num_glyphs: 4, num_hmetrics: 2, loca_long: 0,
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: 0, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 0, t_glyf: 0, glyf_len: 0, t_hmtx: 0, hmtx_len: table_len,
+        cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
 }
 
 int main() {
@@ -68,6 +119,26 @@ int main() {
     if (glyph_cache_fits(786433, 262144) != false) { return 21; }
     if (glyph_cache_fits(-1, 1) != false) { return 22; }
     if (glyph_cache_fits(MAX_CACHED_GLYPH_PIXELS, 1) != false) { return 23; }
+    if (font_span_fits(10, 10, 10, 0) != true) { return 30; }
+    if (font_span_fits(10, 10, 19, 1) != true) { return 31; }
+    if (font_span_fits(10, 10, 20, 0) != true) { return 32; }
+    if (font_span_fits(10, 10, 20, 1) != false) { return 33; }
+    if (font_span_fits(10, 10, 9, 1) != false) { return 34; }
+    if (font_span_fits(10, 10, 10, -1) != false) { return 35; }
+    Font metrics = metrics_fixture(12);
+    if (advance_units(metrics, 2) != 2000) { return 36; }
+    if (bearing_units(metrics, 0) != -2) { return 37; }
+    if (bearing_units(metrics, 1) != 5) { return 38; }
+    if (bearing_units(metrics, 2) != 6) { return 39; }
+    if (bearing_units(metrics, 3) != 7) { return 40; }
+    Font short_metrics = metrics_fixture(11);
+    if (bearing_units(short_metrics, 3) != 0) { return 41; }
+    if (advance_units(short_metrics, 2) != 2000) { return 42; }
+    if (!font_directory_valid(directory_fixture(0))) { return 43; }
+    if (font_directory_valid(directory_fixture(1))) { return 44; }
+    if (font_directory_valid(directory_fixture(2))) { return 45; }
+    if (font_directory_valid(directory_fixture(3))) { return 46; }
+    if (font_directory_valid(directory_fixture(4))) { return 47; }
     Font composite_font = composite_budget_fixture();
     Path leaf_path = new_path();
     if (glyph_outline(composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0) != true) { return 28; }
@@ -83,6 +154,6 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
-    println("resource limits: 29 assertions and glyph cache exercised");
+    println("resource limits: 47 assertions and glyph cache exercised");
     return 0;
 }
