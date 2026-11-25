@@ -83,6 +83,26 @@ CCAMJsonStringBuilder ccam_json_string_builder() {
     };
 }
 
+Tainted ccam_json_string_builder_finish(CCAMJsonStringBuilder builder) {
+    if (builder.parts.len() > 0) {
+        builder.chunks.push(join(builder.parts, ""));
+    }
+    if (builder.chunks.len() == 0) { return taint(""); }
+    return join(builder.chunks, "");
+}
+
+int ccam_json_ch(CCAMJsonParser p, int at) {
+    if (at < 0 || at >= p.input.len()) { return -1; }
+    return p.input.at(at);
+}
+
+void ccam_json_fail(CCAMJsonParser p, string message) {
+    if (p.error == "") {
+        p.error = message + " at byte " + int_to_str(p.position);
+    }
+    p.position = p.input.len();
+}
+
 bool ccam_json_string_builder_append(
     CCAMJsonParser parser, CCAMJsonStringBuilder builder, Tainted piece
 ) {
@@ -107,25 +127,6 @@ bool ccam_json_string_builder_append(
     return true;
 }
 
-Tainted ccam_json_string_builder_finish(CCAMJsonStringBuilder builder) {
-    if (builder.parts.len() > 0) {
-        builder.chunks.push(join(builder.parts, ""));
-    }
-    if (builder.chunks.len() == 0) { return taint(""); }
-    return join(builder.chunks, "");
-}
-
-int ccam_json_ch(CCAMJsonParser p, int at) {
-    if (at < 0 || at >= p.input.len()) { return -1; }
-    return p.input.at(at);
-}
-
-void ccam_json_fail(CCAMJsonParser p, string message) {
-    if (p.error == "") {
-        p.error = message + " at byte " + int_to_str(p.position);
-    }
-    p.position = p.input.len();
-}
 
 int ccam_json_hex(int c) {
     if (c >= '0' && c <= '9') { return c - '0'; }
