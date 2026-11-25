@@ -1069,16 +1069,23 @@ test "CCM cleanup budget remains available after normal step budget exhaustion" 
     state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
     assert(ccm_invariant(state));
     assert(state.steps == 1 && state.cleanup_steps == 3);
+    assert(state.cleanup_reserved == 0);
 }
 
-test "CCM exhausted cleanup reserve rejects cancellation atomically" {
+test "CCM spawn reserves cleanup capacity before admitting a child" {
     CCMState state = ccm_initial_state();
+    state.max_cleanup_steps = 5;
     state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
-    state.max_cleanup_steps = 0;
-    CCMTransition rejected = ccm_step(state, 0, CCM_ACT_CANCEL_PRODUCER);
-    assert(!rejected.ok && rejected.error == "cleanup_budget_exhausted");
-    assert(rejected.state.producer_status == CCM_TASK_RUNNABLE);
-    assert(rejected.state.producer_handle == CCM_HANDLE_HELD);
+    assert(state.cleanup_reserved == 5);
+    CCMTransition rejected = ccm_step(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    assert(!rejected.ok);
+    assert(rejected.error == "cleanup_reservation_unavailable");
+    assert(rejected.state.consumer_status == CCM_TASK_NEW);
+    assert(rejected.state.task_count == 2);
+    assert(rejected.state.cleanup_reserved == 5);
     assert(rejected.state.steps == state.steps);
-    assert(rejected.state.cleanup_steps == 0);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    assert(state.cleanup_reserved == 4 && state.cleanup_steps == 1);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    assert(state.cleanup_reserved == 3 && state.cleanup_steps == 2);
 }
