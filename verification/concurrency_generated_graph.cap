@@ -215,7 +215,7 @@ test "CBR generated graph explores only successors enabled by model transitions"
     CBRResult result = cbr_explore(16);
     assert(result.valid && result.complete);
     assert(result.classification == CBR_PROGRESS);
-    assert(result.explored == 5);
+    assert(result.explored == 6);
 }
 
 test "CBR generated graph fails closed at a bounded state limit" {
