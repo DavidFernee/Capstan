@@ -6,8 +6,8 @@
 | ID | Property | Required evidence | Current status / blocker |
 |---|---|---|---|
 | ARITH-01 | Checked addition returns the exact sum iff it fits; otherwise it takes the specified fatal path. | Machine proof of helper plus C refinement. | Proved model-only: `checkedAdd_sound`, `checkedAdd_complete`, `checkedAdd_exact`, and `checkedAdd_overflow_fatal` (run 45360322725). C refinement not started. |
-| ARITH-02 | Checked multiplication returns the exact product iff it fits; otherwise fatal. | Machine proof plus C refinement. | Not started. |
-| ARITH-03 | Capacity growth terminates, is at least required, and its byte size fits. | Machine proof over all machine-sized inputs plus C refinement. | Not started. |
+| ARITH-02 | Checked multiplication returns the exact product iff it fits; otherwise fatal. | Machine proof plus C refinement. | Proved model-only at commit `254ccacaaf8f35fe946db9a62adf3083ef7bc2ac`: `checkedMul_sound`, `checkedMul_complete`, `checkedMul_exact`, `checkedMul_overflow_fatal` (formal run 45590742560). C helper refinement not started. |
+| ARITH-03 | Capacity growth terminates, is at least required, and its byte size fits. | Machine proof over all machine-sized inputs plus C refinement. | In progress: `capacityGrowth_sound` and `capacityGrowth_total` prove a simplified direct-growth model only (run 45590742560). The current C `cap_gc_next_capacity` geometric-doubling/saturation algorithm is not yet modelled or proved; C refinement not started. |
 | PAGE-01 | Page records and page-table entries are unique and consistent. | Model invariant and implementation correspondence. | Not started. |
 | PAGE-02 | Page-table probing terminates within capacity under occupancy and power-of-two assumptions. | Machine proof; explicit occupancy invariant. | Not started. |
 | SLOT-01 | Every slot is in exactly one allocated/free/spare state. | Inductive state invariant. | Not started. |
