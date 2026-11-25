@@ -150,6 +150,61 @@ int verb_points(int v) {
     return 0;
 }
 
+// Conservative preflight before flatten() allocates parallel segment arrays.
+// Coordinates are bounded so curve intermediates remain within signed 64-bit.
+const int MAX_PATH_VERBS = 65536;
+const int MAX_PATH_FLATTENED_SEGMENTS = 65536;
+const int MAX_PATH_COORD = 8388608;
+
+bool path_coord_valid(int v) { return v >= -MAX_PATH_COORD && v <= MAX_PATH_COORD; }
+
+int path_flatten_segment_bound(Path p) {
+    int verb_count = p.verbs.len();
+    if (verb_count > MAX_PATH_VERBS) { return -1; }
+    int point_at = 0;
+    int bound = 0;
+    bool open = false;
+    for (int i = 0; i < verb_count; i += 1) {
+        int v = p.verbs[i];
+        if (v == VERB_MOVE) {
+            if (point_at > p.pts.len() - 2 ||
+                !path_coord_valid(p.pts[point_at]) || !path_coord_valid(p.pts[point_at + 1])) { return -1; }
+            if (open) { bound += 1; }
+            open = true;
+            point_at += 2;
+        } else if (v == VERB_LINE) {
+            if (!open || point_at > p.pts.len() - 2 ||
+                !path_coord_valid(p.pts[point_at]) || !path_coord_valid(p.pts[point_at + 1])) { return -1; }
+            bound += 1;
+            point_at += 2;
+        } else if (v == VERB_QUAD) {
+            if (!open || point_at > p.pts.len() - 4 ||
+                !path_coord_valid(p.pts[point_at]) || !path_coord_valid(p.pts[point_at + 1]) ||
+                !path_coord_valid(p.pts[point_at + 2]) || !path_coord_valid(p.pts[point_at + 3])) { return -1; }
+            bound += MAX_CURVE_SEGMENTS;
+            point_at += 4;
+        } else if (v == VERB_CUBIC) {
+            if (!open || point_at > p.pts.len() - 6 ||
+                !path_coord_valid(p.pts[point_at]) || !path_coord_valid(p.pts[point_at + 1]) ||
+                !path_coord_valid(p.pts[point_at + 2]) || !path_coord_valid(p.pts[point_at + 3]) ||
+                !path_coord_valid(p.pts[point_at + 4]) || !path_coord_valid(p.pts[point_at + 5])) { return -1; }
+            bound += MAX_CURVE_SEGMENTS;
+            point_at += 6;
+        } else if (v == VERB_CLOSE) {
+            if (!open) { return -1; }
+            bound += 1;
+            open = false;
+        } else {
+            return -1;
+        }
+        if (bound > MAX_PATH_FLATTENED_SEGMENTS) { return -1; }
+    }
+    if (point_at != p.pts.len()) { return -1; }
+    if (open) { bound += 1; }
+    if (bound > MAX_PATH_FLATTENED_SEGMENTS) { return -1; }
+    return bound;
+}
+
 // ---- flattening --------------------------------------------------------------------
 
 // Line segments, as parallel lists: segment i runs from (x0[i], y0[i]) to (x1[i], y1[i]).
