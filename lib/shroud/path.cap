@@ -233,6 +233,12 @@ int curve_steps(int dd) {
 
 // Every contour is closed implicitly, as fills require.
 Segments flatten(Path p) {
+    // flatten() is public too; callers must not bypass fill_path's preflight.
+    int upper_bound = path_flatten_segment_bound(p);
+    if (upper_bound < 0 || upper_bound > MAX_PATH_FLATTENED_SEGMENTS) {
+        println("shroud: malformed or over-budget path");
+        exit(101);
+    }
     Segments s = new_segments();
     int j = 0;
     int sx = 0;
