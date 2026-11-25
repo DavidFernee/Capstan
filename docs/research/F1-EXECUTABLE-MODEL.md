@@ -93,7 +93,7 @@ Authority requirements and computational effects are represented independently. 
 child_authority = parent_authority ∩ requested_authority
 ```
 
-The prototype checks non-amplification only. It does not yet model object-bound grants, revocation, delegation, lifetime, module interfaces, host adapters or confused-deputy behaviour.
+Unknown authority/effect bits are rejected rather than silently discarded. The prototype checks non-amplification only. It does not yet model object-bound grants, revocation, delegation, lifetime, module interfaces, host adapters or confused-deputy behaviour.
 
 ### Resources
 
@@ -118,6 +118,7 @@ The Capstan test program currently checks:
 11. Invalid source identities widen rather than aliasing.
 12. Fuel and memory overflow are both rejected.
 13. Selection dependencies survive even when the selected payload itself is not returned.
+14. Invalid authority/effect sets and invalid sink-context identifiers are rejected.
 
 The standard runner invokes this artefact through `bin/capstan test`. It must remain in that runner; an uninvoked model is not conformance evidence.
 
