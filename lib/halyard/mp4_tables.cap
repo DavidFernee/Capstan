@@ -1,0 +1,843 @@
+// Deadeye bounded sample-table decoding, consistency and media-extent validation.
+// Payload decoders and one stbl-level integration are implemented; full trak/codec integration and packet emission remain open.
+// The constrained profile deliberately rejects ambiguous/non-monotonic layouts.
+import "core.cap";
+import "mp4.cap";
+
+const int DEADEYE_MP4_MAX_SAMPLES = 524288;
+const int DEADEYE_MP4_MAX_CHUNKS = 32768;
+const int DEADEYE_MP4_MAX_TABLE_RUNS = 32768;
+const int DEADEYE_MP4_MAX_SAMPLE_BYTES = 67108864;
+const int DEADEYE_MP4_MAX_DECODED_DURATION = 2147483647;
+
+struct DeadeyeMp4TableValidation {
+    bool ok;
+    int sample_count;
+    int chunk_count;
+    int total_duration;
+    int total_sample_bytes;
+    string error;
+}
+
+DeadeyeMp4TableValidation deadeye_mp4_table_error(string error) {
+    return new DeadeyeMp4TableValidation{
+        ok: false, sample_count: 0, chunk_count: 0,
+        total_duration: 0, total_sample_bytes: 0, error: error
+    };
+}
+
+// stts is flattened as (sample_count, sample_delta) pairs.
+// stsc is flattened as (first_chunk, samples_per_chunk, sample_description_index)
+// triples. sample_sizes contains the expanded stsz values; zero-sized samples
+// are rejected in this profile. chunk_offsets are absolute file offsets.
+// mdat_ranges is flattened as (payload_start, payload_end) half-open intervals.
+DeadeyeMp4TableValidation deadeye_mp4_validate_sample_tables(
+    List<int> stts, List<int> stsc, List<int> sample_sizes,
+    List<int> chunk_offsets, List<int> mdat_ranges
+) {
+    int samples = sample_sizes.len();
+    int chunks = chunk_offsets.len();
+    int time_runs = stts.len() / 2;
+    int chunk_runs = stsc.len() / 3;
+
+    if (stts.len() % 2 != 0 || stsc.len() % 3 != 0) {
+        return deadeye_mp4_table_error("malformed_table_shape");
+    }
+    if (samples < 1 || samples > DEADEYE_MP4_MAX_SAMPLES ||
+        chunks < 1 || chunks > DEADEYE_MP4_MAX_CHUNKS ||
+        time_runs < 1 || time_runs > DEADEYE_MP4_MAX_TABLE_RUNS ||
+        chunk_runs < 1 || chunk_runs > DEADEYE_MP4_MAX_TABLE_RUNS) {
+        return deadeye_mp4_table_error("table_count_limit");
+    }
+    if (mdat_ranges.len() < 2 || mdat_ranges.len() % 2 != 0 ||
+        mdat_ranges.len() > 512) {
+        return deadeye_mp4_table_error("invalid_mdat_ranges");
+    }
+
+    int mdat_count = mdat_ranges.len() / 2;
+    for (int r = 0; r < mdat_count; r += 1) {
+        int begin = mdat_ranges[r * 2];
+        int end = mdat_ranges[r * 2 + 1];
+        if (begin < 0 || end <= begin ||
+            end > DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+            return deadeye_mp4_table_error("invalid_mdat_range");
+        }
+        if (r > 0 && begin < mdat_ranges[(r - 1) * 2 + 1]) {
+            return deadeye_mp4_table_error("overlapping_mdat_ranges");
+        }
+    }
+
+    int timed_samples = 0;
+    int total_duration = 0;
+    for (int t = 0; t < time_runs; t += 1) {
+        int run_samples = stts[t * 2];
+        int delta = stts[t * 2 + 1];
+        if (run_samples < 1 || delta < 1 ||
+            run_samples > samples - timed_samples) {
+            return deadeye_mp4_table_error("invalid_stts_run");
+        }
+        if (delta > DEADEYE_MP4_MAX_DECODED_DURATION / run_samples) {
+            return deadeye_mp4_table_error("duration_limit");
+        }
+        int run_duration = run_samples * delta;
+        if (run_duration > DEADEYE_MP4_MAX_DECODED_DURATION - total_duration) {
+            return deadeye_mp4_table_error("duration_limit");
+        }
+        timed_samples += run_samples;
+        total_duration += run_duration;
+    }
+    if (timed_samples != samples) {
+        return deadeye_mp4_table_error("stts_sample_count_mismatch");
+    }
+
+    int previous_first_chunk = 0;
+    for (int c = 0; c < chunk_runs; c += 1) {
+        int first_chunk = stsc[c * 3];
+        int per_chunk = stsc[c * 3 + 1];
+        int description = stsc[c * 3 + 2];
+        if (first_chunk < 1 || first_chunk > chunks ||
+            first_chunk <= previous_first_chunk || per_chunk < 1 ||
+            description != 1) {
+            return deadeye_mp4_table_error("invalid_stsc_run");
+        }
+        if (c == 0 && first_chunk != 1) {
+            return deadeye_mp4_table_error("stsc_must_start_at_chunk_one");
+        }
+        previous_first_chunk = first_chunk;
+    }
+
+    int sample_index = 0;
+    int total_bytes = 0;
+    int run_index = 0;
+    int run_first_chunk = stsc[0];
+    int run_samples_per_chunk = stsc[1];
+    for (int chunk = 1; chunk <= chunks; chunk += 1) {
+        if (run_index + 1 < chunk_runs &&
+            chunk >= stsc[(run_index + 1) * 3]) {
+            run_index += 1;
+            run_first_chunk = stsc[run_index * 3];
+            run_samples_per_chunk = stsc[run_index * 3 + 1];
+        }
+        if (chunk < run_first_chunk) {
+            return deadeye_mp4_table_error("unmapped_chunk");
+        }
+        int offset = chunk_offsets[chunk - 1];
+        if (offset < 0 || (chunk > 1 && offset <= chunk_offsets[chunk - 2])) {
+            return deadeye_mp4_table_error("non_monotonic_chunk_offsets");
+        }
+        if (run_samples_per_chunk > samples - sample_index) {
+            return deadeye_mp4_table_error("chunk_sample_count_overflow");
+        }
+
+        int chunk_bytes = 0;
+        for (int j = 0; j < run_samples_per_chunk; j += 1) {
+            int sample_size = sample_sizes[sample_index + j];
+            if (sample_size < 1 || sample_size > DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+                return deadeye_mp4_table_error("invalid_sample_size");
+            }
+            if (sample_size > DEADEYE_MP4_MAX_SAMPLE_BYTES - chunk_bytes) {
+                return deadeye_mp4_table_error("chunk_size_limit");
+            }
+            chunk_bytes += sample_size;
+        }
+        if (chunk_bytes > DEADEYE_MP4_MAX_SAMPLE_BYTES - total_bytes) {
+            return deadeye_mp4_table_error("sample_bytes_limit");
+        }
+
+        int chunk_end = offset;
+        if (chunk_bytes > DEADEYE_MP4_MAX_SAMPLE_BYTES - chunk_end) {
+            return deadeye_mp4_table_error("chunk_extent_overflow");
+        }
+        chunk_end += chunk_bytes;
+        bool inside_mdat = false;
+        for (int r = 0; r < mdat_count; r += 1) {
+            int begin = mdat_ranges[r * 2];
+            int end = mdat_ranges[r * 2 + 1];
+            if (offset >= begin && chunk_end <= end) { inside_mdat = true; }
+        }
+        if (!inside_mdat) {
+            return deadeye_mp4_table_error("chunk_outside_mdat");
+        }
+        if (chunk < chunks && chunk_end > chunk_offsets[chunk]) {
+            return deadeye_mp4_table_error("overlapping_chunk_extents");
+        }
+        sample_index += run_samples_per_chunk;
+        total_bytes += chunk_bytes;
+    }
+
+    if (sample_index != samples) {
+        return deadeye_mp4_table_error("stsc_sample_count_mismatch");
+    }
+    return new DeadeyeMp4TableValidation{
+        ok: true, sample_count: samples, chunk_count: chunks,
+        total_duration: total_duration, total_sample_bytes: total_bytes,
+        error: ""
+    };
+}
+
+test "Deadeye sample tables validate bounded time, chunk and mdat mappings" {
+    List<int> stts = [4, 1000];
+    List<int> stsc = [1, 2, 1];
+    List<int> sizes = [4, 5, 6, 7];
+    List<int> offsets = [100, 120];
+    List<int> ranges = [100, 140];
+    DeadeyeMp4TableValidation result =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes, offsets, ranges);
+    assert(result.ok);
+    assert(result.sample_count == 4 && result.chunk_count == 2);
+    assert(result.total_duration == 4000 && result.total_sample_bytes == 22);
+}
+
+test "Deadeye sample tables reject duration and sample-count overflow" {
+    List<int> stsc = [1, 1, 1];
+    List<int> sizes = [1, 1];
+    List<int> offsets = [100, 110];
+    List<int> ranges = [100, 120];
+    DeadeyeMp4TableValidation duration =
+        deadeye_mp4_validate_sample_tables([2, 2147483647], stsc,
+            sizes, offsets, ranges);
+    assert(!duration.ok && duration.error == "duration_limit");
+    DeadeyeMp4TableValidation mismatch =
+        deadeye_mp4_validate_sample_tables([1, 1], stsc,
+            sizes, offsets, ranges);
+    assert(!mismatch.ok && mismatch.error == "stts_sample_count_mismatch");
+}
+
+test "Deadeye sample tables reject malformed stsc and unmapped samples" {
+    List<int> stts = [3, 1];
+    List<int> sizes = [1, 1, 1];
+    List<int> offsets = [100, 110];
+    List<int> ranges = [100, 120];
+    DeadeyeMp4TableValidation first_chunk =
+        deadeye_mp4_validate_sample_tables(stts, [2, 1, 1],
+            sizes, offsets, ranges);
+    assert(!first_chunk.ok && first_chunk.error == "stsc_must_start_at_chunk_one");
+    DeadeyeMp4TableValidation sample_mismatch =
+        deadeye_mp4_validate_sample_tables(stts, [1, 1, 1],
+            sizes, offsets, ranges);
+    assert(!sample_mismatch.ok && sample_mismatch.error == "stsc_sample_count_mismatch");
+}
+
+test "Deadeye sample tables reject out-of-mdat and overlapping extents" {
+    List<int> stts = [2, 1];
+    List<int> stsc = [1, 1, 1];
+    List<int> sizes = [8, 8];
+    DeadeyeMp4TableValidation outside =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
+            [100, 200], [100, 116]);
+    assert(!outside.ok && outside.error == "chunk_outside_mdat");
+    DeadeyeMp4TableValidation overlap =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
+            [100, 107], [100, 120]);
+    assert(!overlap.ok && overlap.error == "overlapping_chunk_extents");
+    DeadeyeMp4TableValidation adjacent =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
+            [100, 108], [100, 120]);
+    assert(adjacent.ok);
+}
+
+test "Deadeye sample tables reject bad ranges, zero sizes and nonmonotonic offsets" {
+    List<int> stts = [2, 1];
+    List<int> stsc = [1, 1, 1];
+    List<int> sizes = [0, 1];
+    List<int> offsets = [100, 110];
+    List<int> ranges = [100, 120];
+    DeadeyeMp4TableValidation zero =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes, offsets, ranges);
+    assert(!zero.ok && zero.error == "invalid_sample_size");
+    DeadeyeMp4TableValidation order =
+        deadeye_mp4_validate_sample_tables(stts, stsc, [1, 1],
+            [110, 100], ranges);
+    assert(!order.ok && order.error == "non_monotonic_chunk_offsets");
+    DeadeyeMp4TableValidation bad_range =
+        deadeye_mp4_validate_sample_tables(stts, stsc, [1, 1],
+            offsets, [100, 90]);
+    assert(!bad_range.ok && bad_range.error == "invalid_mdat_range");
+}
+
+// Decode normalized MP4 sample-table payloads directly from bounded file bytes.
+// Every decoder checks the FullBox header, count cap and exact payload length
+// before allocating or appending any decoded entries.
+struct DeadeyeMp4IntListResult {
+    bool ok;
+    List<int> values;
+    string error;
+}
+
+DeadeyeMp4IntListResult deadeye_mp4_table_decode_error(string error) {
+    return new DeadeyeMp4IntListResult{
+        ok: false, values: new List<int>(), error: error
+    };
+}
+
+DeadeyeMp4IntListResult deadeye_mp4_table_decode_ok(List<int> values) {
+    return new DeadeyeMp4IntListResult{ok: true, values: values, error: ""};
+}
+
+bool deadeye_mp4_table_payload_valid(List<int> bytes, int start, int end) {
+    if (bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES ||
+        start < 0 || end < start || end > bytes.len() ||
+        end - start > DEADEYE_MP4_MAX_INPUT_BYTES) { return false; }
+    for (int i = start; i < end; i += 1) {
+        if (bytes[i] < 0 || bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+int deadeye_mp4_table_u32(List<int> bytes, int at) {
+    return (bytes[at] << 24) | (bytes[at + 1] << 16) |
+        (bytes[at + 2] << 8) | bytes[at + 3];
+}
+
+bool deadeye_mp4_table_fullbox_v0(List<int> bytes, int start, int end) {
+    return deadeye_mp4_table_payload_valid(bytes, start, end) &&
+        end - start >= 8 && bytes[start] == 0 &&
+        bytes[start + 1] == 0 && bytes[start + 2] == 0 &&
+        bytes[start + 3] == 0;
+}
+
+// Decode stts FullBox payload to (sample_count, sample_delta) pairs.
+DeadeyeMp4IntListResult deadeye_mp4_decode_stts(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_stts_header");
+    }
+    int entries = deadeye_mp4_table_u32(bytes, start + 4);
+    if (entries < 1 || entries > DEADEYE_MP4_MAX_TABLE_RUNS ||
+        end - start != 8 + entries * 8) {
+        return deadeye_mp4_table_decode_error("invalid_stts_length");
+    }
+    List<int> values = new List<int>();
+    for (int i = 0; i < entries; i += 1) {
+        int count = deadeye_mp4_table_u32(bytes, start + 8 + i * 8);
+        int delta = deadeye_mp4_table_u32(bytes, start + 12 + i * 8);
+        if (count < 1 || delta < 1 ||
+            count > DEADEYE_MP4_MAX_SAMPLES ||
+            delta > DEADEYE_MP4_MAX_DECODED_DURATION) {
+            return deadeye_mp4_table_decode_error("stts_value_limit");
+        }
+        values.push(count);
+        values.push(delta);
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+// Decode stsc triples. The restricted profile uses sample description 1 only.
+DeadeyeMp4IntListResult deadeye_mp4_decode_stsc(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_stsc_header");
+    }
+    int entries = deadeye_mp4_table_u32(bytes, start + 4);
+    if (entries < 1 || entries > DEADEYE_MP4_MAX_TABLE_RUNS ||
+        end - start != 8 + entries * 12) {
+        return deadeye_mp4_table_decode_error("invalid_stsc_length");
+    }
+    List<int> values = new List<int>();
+    int previous = 0;
+    for (int i = 0; i < entries; i += 1) {
+        int at = start + 8 + i * 12;
+        int first_chunk = deadeye_mp4_table_u32(bytes, at);
+        int per_chunk = deadeye_mp4_table_u32(bytes, at + 4);
+        int description = deadeye_mp4_table_u32(bytes, at + 8);
+        if (first_chunk < 1 || first_chunk <= previous ||
+            per_chunk < 1 || per_chunk > DEADEYE_MP4_MAX_SAMPLES ||
+            description != 1) {
+            return deadeye_mp4_table_decode_error("invalid_stsc_value");
+        }
+        values.push(first_chunk);
+        values.push(per_chunk);
+        values.push(description);
+        previous = first_chunk;
+    }
+    if (values[0] != 1) {
+        return deadeye_mp4_table_decode_error("stsc_must_start_at_chunk_one");
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+// Decode stsz, expanding the constant-size representation only after the
+// sample count is validated and exact payload length has been established.
+DeadeyeMp4IntListResult deadeye_mp4_decode_stsz(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_stsz_header");
+    }
+    if (end - start < 12) {
+        return deadeye_mp4_table_decode_error("truncated_stsz_header");
+    }
+    int default_size = deadeye_mp4_table_u32(bytes, start + 4);
+    int count = deadeye_mp4_table_u32(bytes, start + 8);
+    if (count < 1 || count > DEADEYE_MP4_MAX_SAMPLES) {
+        return deadeye_mp4_table_decode_error("stsz_sample_count_limit");
+    }
+    if (default_size > DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+        return deadeye_mp4_table_decode_error("stsz_size_limit");
+    }
+    if (default_size != 0) {
+        if (end - start != 12) {
+            return deadeye_mp4_table_decode_error("invalid_stsz_length");
+        }
+        List<int> constant_values = new List<int>();
+        for (int i = 0; i < count; i += 1) { constant_values.push(default_size); }
+        return deadeye_mp4_table_decode_ok(constant_values);
+    }
+    if (end - start != 12 + count * 4) {
+        return deadeye_mp4_table_decode_error("invalid_stsz_length");
+    }
+    List<int> values = new List<int>();
+    for (int i = 0; i < count; i += 1) {
+        int sample_size = deadeye_mp4_table_u32(bytes, start + 12 + i * 4);
+        if (sample_size < 1 || sample_size > DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+            return deadeye_mp4_table_decode_error("stsz_value_limit");
+        }
+        values.push(sample_size);
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+// Decode stco/co64. The file-size ceiling makes any non-zero co64 high word
+// invalid; rejecting it prevents narrowing or signed conversion ambiguity.
+DeadeyeMp4IntListResult deadeye_mp4_decode_chunk_offsets(
+    List<int> bytes, int start, int end, bool wide
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_chunk_offset_header");
+    }
+    int count = deadeye_mp4_table_u32(bytes, start + 4);
+    if (count < 1 || count > DEADEYE_MP4_MAX_CHUNKS) {
+        return deadeye_mp4_table_decode_error("chunk_count_limit");
+    }
+    int width = wide ? 8 : 4;
+    if (end - start != 8 + count * width) {
+        return deadeye_mp4_table_decode_error("invalid_chunk_offset_length");
+    }
+    List<int> values = new List<int>();
+    for (int i = 0; i < count; i += 1) {
+        int at = start + 8 + i * width;
+        if (wide && deadeye_mp4_table_u32(bytes, at) != 0) {
+            return deadeye_mp4_table_decode_error("co64_offset_limit");
+        }
+        int offset = deadeye_mp4_table_u32(bytes, at + (wide ? 4 : 0));
+        if (offset < 0 || offset >= DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+            return deadeye_mp4_table_decode_error("chunk_offset_limit");
+        }
+        values.push(offset);
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+test "Deadeye decodes stts and rejects truncated entries" {
+    List<int> payload = [0,0,0,0, 0,0,0,1, 0,0,0,4, 0,0,3,232];
+    DeadeyeMp4IntListResult decoded = deadeye_mp4_decode_stts(payload, 0, payload.len());
+    assert(decoded.ok && decoded.values.len() == 2);
+    assert(decoded.values[0] == 4 && decoded.values[1] == 1000);
+    DeadeyeMp4IntListResult truncated = deadeye_mp4_decode_stts(payload, 0, 15);
+    assert(!truncated.ok);
+}
+
+test "Deadeye decodes stsc and rejects invalid description indices" {
+    List<int> payload = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,2, 0,0,0,1];
+    DeadeyeMp4IntListResult decoded = deadeye_mp4_decode_stsc(payload, 0, payload.len());
+    assert(decoded.ok && decoded.values.len() == 3);
+    List<int> invalid = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1, 0,0,0,2];
+    DeadeyeMp4IntListResult rejected = deadeye_mp4_decode_stsc(invalid, 0, invalid.len());
+    assert(!rejected.ok);
+}
+
+test "Deadeye decodes constant and explicit stsz with exact lengths" {
+    List<int> constant = [0,0,0,0, 0,0,0,5, 0,0,0,3];
+    DeadeyeMp4IntListResult repeated = deadeye_mp4_decode_stsz(constant, 0, constant.len());
+    assert(repeated.ok && repeated.values.len() == 3 && repeated.values[2] == 5);
+    List<int> explicit_sizes = [0,0,0,0, 0,0,0,0, 0,0,0,2,
+                                0,0,0,4, 0,0,0,7];
+    DeadeyeMp4IntListResult expanded = deadeye_mp4_decode_stsz(
+        explicit_sizes, 0, explicit_sizes.len()
+    );
+    assert(expanded.ok && expanded.values[0] == 4 && expanded.values[1] == 7);
+    List<int> trailing = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1];
+    DeadeyeMp4IntListResult rejected = deadeye_mp4_decode_stsz(
+        trailing, 0, trailing.len()
+    );
+    assert(!rejected.ok);
+    DeadeyeMp4IntListResult short_header = deadeye_mp4_decode_stsz(
+        [0,0,0,0, 0,0,0,0], 0, 8
+    );
+    assert(!short_header.ok && short_header.error == "truncated_stsz_header");
+}
+
+test "Deadeye decodes stco and co64 with strict offset limits" {
+    List<int> stco = [0,0,0,0, 0,0,0,2, 0,0,0,100, 0,0,0,120];
+    DeadeyeMp4IntListResult offsets = deadeye_mp4_decode_chunk_offsets(
+        stco, 0, stco.len(), false
+    );
+    assert(offsets.ok && offsets.values[1] == 120);
+    List<int> co64 = [0,0,0,0, 0,0,0,1, 0,0,0,0, 0,0,0,100];
+    DeadeyeMp4IntListResult wide = deadeye_mp4_decode_chunk_offsets(
+        co64, 0, co64.len(), true
+    );
+    assert(wide.ok && wide.values[0] == 100);
+    List<int> high = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,100];
+    DeadeyeMp4IntListResult too_wide = deadeye_mp4_decode_chunk_offsets(
+        high, 0, high.len(), true
+    );
+    assert(!too_wide.ok);
+}
+
+
+// Decode ctts v0 (unsigned offsets) and v1 (signed offsets) into
+// (sample_count, composition_offset) pairs. Other versions/flags fail closed.
+DeadeyeMp4IntListResult deadeye_mp4_decode_ctts(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_table_payload_valid(bytes, start, end) ||
+        end - start < 8 || (bytes[start] != 0 && bytes[start] != 1) ||
+        bytes[start + 1] != 0 || bytes[start + 2] != 0 ||
+        bytes[start + 3] != 0) {
+        return deadeye_mp4_table_decode_error("invalid_ctts_header");
+    }
+    int version = bytes[start];
+    int entries = deadeye_mp4_table_u32(bytes, start + 4);
+    if (entries < 1 || entries > DEADEYE_MP4_MAX_TABLE_RUNS ||
+        end - start != 8 + entries * 8) {
+        return deadeye_mp4_table_decode_error("invalid_ctts_length");
+    }
+    List<int> values = new List<int>();
+    for (int i = 0; i < entries; i += 1) {
+        int at = start + 8 + i * 8;
+        int count = deadeye_mp4_table_u32(bytes, at);
+        int raw_offset = deadeye_mp4_table_u32(bytes, at + 4);
+        int offset = raw_offset;
+        if (version == 1 && raw_offset >= 2147483648) {
+            offset = raw_offset - 4294967296;
+        }
+        if (count < 1 || count > DEADEYE_MP4_MAX_SAMPLES ||
+            offset > DEADEYE_MP4_MAX_DECODED_DURATION ||
+            offset < -DEADEYE_MP4_MAX_DECODED_DURATION - 1) {
+            return deadeye_mp4_table_decode_error("ctts_value_limit");
+        }
+        values.push(count);
+        values.push(offset);
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+// Decode stss one-based sync sample numbers. The sample_count argument is
+// independently bounded; indices must be strictly increasing and in range.
+DeadeyeMp4IntListResult deadeye_mp4_decode_stss(
+    List<int> bytes, int start, int end, int sample_count
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_stss_header");
+    }
+    if (sample_count < 1 || sample_count > DEADEYE_MP4_MAX_SAMPLES) {
+        return deadeye_mp4_table_decode_error("stss_sample_count_limit");
+    }
+    int entries = deadeye_mp4_table_u32(bytes, start + 4);
+    if (entries < 1 || entries > sample_count ||
+        end - start != 8 + entries * 4) {
+        return deadeye_mp4_table_decode_error("invalid_stss_length");
+    }
+    List<int> values = new List<int>();
+    int previous = 0;
+    for (int i = 0; i < entries; i += 1) {
+        int sample_number = deadeye_mp4_table_u32(bytes, start + 8 + i * 4);
+        if (sample_number < 1 || sample_number > sample_count ||
+            sample_number <= previous) {
+            return deadeye_mp4_table_decode_error("invalid_stss_index");
+        }
+        values.push(sample_number);
+        previous = sample_number;
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+test "Deadeye decodes ctts signed and unsigned composition offsets" {
+    List<int> version_zero = [0,0,0,0, 0,0,0,1, 0,0,0,2, 0,0,0,10];
+    DeadeyeMp4IntListResult unsigned_offsets = deadeye_mp4_decode_ctts(
+        version_zero, 0, version_zero.len()
+    );
+    assert(unsigned_offsets.ok && unsigned_offsets.values[1] == 10);
+    List<int> version_one = [1,0,0,0, 0,0,0,1, 0,0,0,2, 255,255,255,246];
+    DeadeyeMp4IntListResult signed_offsets = deadeye_mp4_decode_ctts(
+        version_one, 0, version_one.len()
+    );
+    assert(signed_offsets.ok && signed_offsets.values[1] == -10);
+    List<int> invalid_version = [2,0,0,0, 0,0,0,1, 0,0,0,2, 0,0,0,10];
+    DeadeyeMp4IntListResult invalid = deadeye_mp4_decode_ctts(
+        invalid_version, 0, invalid_version.len()
+    );
+    assert(!invalid.ok);
+}
+
+test "Deadeye decodes strictly ordered stss sync sample indices" {
+    List<int> valid = [0,0,0,0, 0,0,0,2, 0,0,0,1, 0,0,0,4];
+    DeadeyeMp4IntListResult sync = deadeye_mp4_decode_stss(
+        valid, 0, valid.len(), 4
+    );
+    assert(sync.ok && sync.values[1] == 4);
+    List<int> duplicate = [0,0,0,0, 0,0,0,2, 0,0,0,2, 0,0,0,2];
+    DeadeyeMp4IntListResult rejected = deadeye_mp4_decode_stss(
+        duplicate, 0, duplicate.len(), 4
+    );
+    assert(!rejected.ok);
+}
+
+
+struct DeadeyeMp4StblResult {
+    bool ok;
+    List<int> stts;
+    List<int> stsc;
+    List<int> sample_sizes;
+    List<int> chunk_offsets;
+    List<int> ctts;
+    List<int> sync_samples;
+    bool has_ctts;
+    bool has_stss;
+    DeadeyeMp4TableValidation validation;
+    string error;
+}
+
+DeadeyeMp4StblResult deadeye_mp4_stbl_error(string error) {
+    return new DeadeyeMp4StblResult{
+        ok: false, stts: new List<int>(), stsc: new List<int>(),
+        sample_sizes: new List<int>(), chunk_offsets: new List<int>(),
+        ctts: new List<int>(), sync_samples: new List<int>(),
+        has_ctts: false, has_stss: false,
+        validation: deadeye_mp4_table_error(error), error: error
+    };
+}
+
+// Decode the immediate children of one stbl box. Duplicate required tables,
+// simultaneous stco+co64, malformed child boxes, and nested encryption markers
+// fail closed. The caller supplies top-level mdat payload intervals.
+DeadeyeMp4StblResult deadeye_mp4_decode_stbl(
+    List<int> bytes, int start, int end, List<int> mdat_ranges
+) {
+    if (!deadeye_mp4_table_payload_valid(bytes, start, end)) {
+        return deadeye_mp4_stbl_error("invalid_stbl_range_or_byte");
+    }
+    if (mdat_ranges.len() < 2 || mdat_ranges.len() % 2 != 0 ||
+        mdat_ranges.len() > 512) {
+        return deadeye_mp4_stbl_error("invalid_mdat_ranges");
+    }
+    int stts_start = 0; int stts_end = 0; bool has_stts = false;
+    int stsc_start = 0; int stsc_end = 0; bool has_stsc = false;
+    int stsz_start = 0; int stsz_end = 0; bool has_stsz = false;
+    int stco_start = 0; int stco_end = 0; bool has_stco = false;
+    int co64_start = 0; int co64_end = 0; bool has_co64 = false;
+    int ctts_start = 0; int ctts_end = 0; bool has_ctts = false;
+    int stss_start = 0; int stss_end = 0; bool has_stss = false;
+    int at = start;
+    int child_count = 0;
+    while (at < end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes, at, end);
+        if (!parsed.ok) { return deadeye_mp4_stbl_error("malformed_stbl_child"); }
+        DeadeyeMp4Box box = parsed.box;
+        child_count += 1;
+        if (child_count > DEADEYE_MP4_MAX_BOXES ||
+            deadeye_mp4_is_encryption_marker(box)) {
+            return deadeye_mp4_stbl_error("unsupported_or_encrypted_stbl_child");
+        }
+        if (deadeye_mp4_box_type(box, 's','t','t','s')) {
+            if (has_stts) { return deadeye_mp4_stbl_error("duplicate_stts"); }
+            has_stts = true; stts_start = box.payload_start; stts_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 's','t','s','c')) {
+            if (has_stsc) { return deadeye_mp4_stbl_error("duplicate_stsc"); }
+            has_stsc = true; stsc_start = box.payload_start; stsc_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 's','t','s','z')) {
+            if (has_stsz) { return deadeye_mp4_stbl_error("duplicate_stsz"); }
+            has_stsz = true; stsz_start = box.payload_start; stsz_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 's','t','c','o')) {
+            if (has_stco || has_co64) {
+                return deadeye_mp4_stbl_error("duplicate_chunk_offsets");
+            }
+            has_stco = true; stco_start = box.payload_start; stco_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 'c','o','6','4')) {
+            if (has_stco || has_co64) {
+                return deadeye_mp4_stbl_error("duplicate_chunk_offsets");
+            }
+            has_co64 = true; co64_start = box.payload_start; co64_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 'c','t','t','s')) {
+            if (has_ctts) { return deadeye_mp4_stbl_error("duplicate_ctts"); }
+            has_ctts = true; ctts_start = box.payload_start; ctts_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 's','t','s','s')) {
+            if (has_stss) { return deadeye_mp4_stbl_error("duplicate_stss"); }
+            has_stss = true; stss_start = box.payload_start; stss_end = box.end;
+        }
+        at = box.end;
+    }
+    if (at != end || !has_stts || !has_stsc || !has_stsz ||
+        (!has_stco && !has_co64)) {
+        return deadeye_mp4_stbl_error("incomplete_stbl");
+    }
+
+    DeadeyeMp4IntListResult time_values =
+        deadeye_mp4_decode_stts(bytes, stts_start, stts_end);
+    DeadeyeMp4IntListResult chunk_map =
+        deadeye_mp4_decode_stsc(bytes, stsc_start, stsc_end);
+    DeadeyeMp4IntListResult sizes =
+        deadeye_mp4_decode_stsz(bytes, stsz_start, stsz_end);
+    DeadeyeMp4IntListResult offsets =
+        deadeye_mp4_table_decode_error("chunk_offsets_uninitialized");
+    if (has_stco) {
+        offsets = deadeye_mp4_decode_chunk_offsets(
+            bytes, stco_start, stco_end, false
+        );
+    } else {
+        offsets = deadeye_mp4_decode_chunk_offsets(
+            bytes, co64_start, co64_end, true
+        );
+    }
+    if (!time_values.ok || !chunk_map.ok || !sizes.ok || !offsets.ok) {
+        return deadeye_mp4_stbl_error("invalid_sample_table_payload");
+    }
+    List<int> composition = new List<int>();
+    if (has_ctts) {
+        DeadeyeMp4IntListResult parsed_ctts =
+            deadeye_mp4_decode_ctts(bytes, ctts_start, ctts_end);
+        if (!parsed_ctts.ok) {
+            return deadeye_mp4_stbl_error("invalid_ctts_payload");
+        }
+        composition = parsed_ctts.values;
+        int composition_samples = 0;
+        for (int i = 0; i < composition.len(); i += 2) {
+            if (composition[i] > sizes.values.len() - composition_samples) {
+                return deadeye_mp4_stbl_error("ctts_sample_count_overflow");
+            }
+            composition_samples += composition[i];
+        }
+        if (composition_samples != sizes.values.len()) {
+            return deadeye_mp4_stbl_error("ctts_sample_count_mismatch");
+        }
+    }
+    List<int> sync = new List<int>();
+    if (has_stss) {
+        DeadeyeMp4IntListResult parsed_stss = deadeye_mp4_decode_stss(
+            bytes, stss_start, stss_end, sizes.values.len()
+        );
+        if (!parsed_stss.ok) {
+            return deadeye_mp4_stbl_error("invalid_stss_payload");
+        }
+        sync = parsed_stss.values;
+    }
+    DeadeyeMp4TableValidation validated =
+        deadeye_mp4_validate_sample_tables(
+            time_values.values, chunk_map.values, sizes.values,
+            offsets.values, mdat_ranges
+        );
+    if (!validated.ok) {
+        return deadeye_mp4_stbl_error(validated.error);
+    }
+    return new DeadeyeMp4StblResult{
+        ok: true, stts: time_values.values, stsc: chunk_map.values,
+        sample_sizes: sizes.values, chunk_offsets: offsets.values,
+        ctts: composition, sync_samples: sync,
+        has_ctts: has_ctts, has_stss: has_stss,
+        validation: validated, error: ""
+    };
+}
+
+void deadeye_mp4_test_append_u32(List<int> bytes, int value) {
+    bytes.push((value >> 24) & 255);
+    bytes.push((value >> 16) & 255);
+    bytes.push((value >> 8) & 255);
+    bytes.push(value & 255);
+}
+
+void deadeye_mp4_test_append_box(
+    List<int> bytes, int a, int b, int c, int d, List<int> payload
+) {
+    deadeye_mp4_test_append_u32(bytes, payload.len() + 8);
+    bytes.push(a); bytes.push(b); bytes.push(c); bytes.push(d);
+    for (int i = 0; i < payload.len(); i += 1) { bytes.push(payload[i]); }
+}
+
+test "Deadeye decodes a complete stbl child set and validates media extents" {
+    List<int> stbl = new List<int>();
+    deadeye_mp4_test_append_box(stbl, 's','t','t','s',
+        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,40]);
+    deadeye_mp4_test_append_box(stbl, 's','t','s','c',
+        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
+    deadeye_mp4_test_append_box(stbl, 's','t','s','z',
+        [0,0,0,0, 0,0,0,10, 0,0,0,1]);
+    deadeye_mp4_test_append_box(stbl, 's','t','c','o',
+        [0,0,0,0, 0,0,0,1, 0,0,0,100]);
+    DeadeyeMp4StblResult decoded = deadeye_mp4_decode_stbl(
+        stbl, 0, stbl.len(), [100,110]
+    );
+    assert(decoded.ok && decoded.validation.sample_count == 1);
+    assert(decoded.sample_sizes[0] == 10 && decoded.chunk_offsets[0] == 100);
+}
+
+test "Deadeye rejects duplicate and malformed stbl child tables" {
+    List<int> duplicate = new List<int>();
+    deadeye_mp4_test_append_box(duplicate, 's','t','t','s',
+        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
+    deadeye_mp4_test_append_box(duplicate, 's','t','t','s',
+        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
+    DeadeyeMp4StblResult repeated = deadeye_mp4_decode_stbl(
+        duplicate, 0, duplicate.len(), [100,110]
+    );
+    assert(!repeated.ok && repeated.error == "duplicate_stts");
+    List<int> malformed = [0,0,0,7, 's','t','t','s'];
+    DeadeyeMp4StblResult truncated = deadeye_mp4_decode_stbl(
+        malformed, 0, malformed.len(), [100,110]
+    );
+    assert(!truncated.ok && truncated.error == "malformed_stbl_child");
+    List<int> forged_bytes = [0,0,0,7, 's','t','t','s'];
+    forged_bytes[4] = -1;
+    DeadeyeMp4StblResult forged = deadeye_mp4_decode_stbl(
+        forged_bytes, 0, forged_bytes.len(), [100,110]
+    );
+    assert(!forged.ok && forged.error == "invalid_stbl_range_or_byte");
+}
+
+
+test "Deadeye sample-table decoders reject every strict truncation boundary" {
+    List<int> stts = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,40];
+    List<int> stsc = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1, 0,0,0,1];
+    List<int> stsz = [0,0,0,0, 0,0,0,0, 0,0,0,1, 0,0,0,4];
+    List<int> stco = [0,0,0,0, 0,0,0,1, 0,0,0,100];
+    List<int> ctts = [1,0,0,0, 0,0,0,1, 0,0,0,1, 255,255,255,246];
+    List<int> stss = [0,0,0,0, 0,0,0,1, 0,0,0,1];
+    for (int n = 0; n < stts.len(); n += 1) {
+        assert(!deadeye_mp4_decode_stts(stts, 0, n).ok);
+    }
+    for (int n = 0; n < stsc.len(); n += 1) {
+        assert(!deadeye_mp4_decode_stsc(stsc, 0, n).ok);
+    }
+    for (int n = 0; n < stsz.len(); n += 1) {
+        assert(!deadeye_mp4_decode_stsz(stsz, 0, n).ok);
+    }
+    for (int n = 0; n < stco.len(); n += 1) {
+        assert(!deadeye_mp4_decode_chunk_offsets(stco, 0, n, false).ok);
+    }
+    for (int n = 0; n < ctts.len(); n += 1) {
+        assert(!deadeye_mp4_decode_ctts(ctts, 0, n).ok);
+    }
+    for (int n = 0; n < stss.len(); n += 1) {
+        assert(!deadeye_mp4_decode_stss(stss, 0, n, 1).ok);
+    }
+}
+
+test "Deadeye sample-table decoders reject declared counts above hard limits" {
+    List<int> oversized_stts = [0,0,0,0, 0,1,0,1];
+    DeadeyeMp4IntListResult too_many_runs = deadeye_mp4_decode_stts(
+        oversized_stts, 0, oversized_stts.len()
+    );
+    assert(!too_many_runs.ok);
+    List<int> oversized_stsz = [0,0,0,0, 0,0,0,1, 0,16,0,1];
+    DeadeyeMp4IntListResult too_many_samples = deadeye_mp4_decode_stsz(
+        oversized_stsz, 0, oversized_stsz.len()
+    );
+    assert(!too_many_samples.ok);
+    List<int> oversized_stco = [0,0,0,0, 0,1,0,1];
+    DeadeyeMp4IntListResult too_many_chunks = deadeye_mp4_decode_chunk_offsets(
+        oversized_stco, 0, oversized_stco.len(), false
+    );
+    assert(!too_many_chunks.ok);
+}
