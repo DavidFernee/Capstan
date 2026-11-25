@@ -718,3 +718,64 @@ test "Bosun boolean loader rejects corrupted non-byte backing values" {
         } else { assert(false); }
     } else { assert(false); }
 }
+
+
+bool bosun_oracle_sequence_step(
+    BosunStorage storage, BosunOracle oracle, int operation
+) {
+    if (operation == 0) {
+        int offset = oracle.used[0];
+        bool expected = bosun_oracle_reserve(oracle, 0, 1, offset);
+        BosunRefResult actual = bosun_storage_reserve(storage, 0, 1);
+        if (expected != actual.ok) { return false; }
+        if (actual.ok) {
+            if (let reference = actual.reference) {
+                if (reference.offset != offset ||
+                    reference.generation != oracle.generations[0]) { return false; }
+            } else { return false; }
+        }
+        return bosun_oracle_matches(storage, oracle);
+    }
+    if (operation == 1) {
+        int offset = oracle.used[0];
+        bool expected = bosun_oracle_reserve(oracle, 0, 2, offset);
+        BosunRefResult actual = bosun_storage_reserve(storage, 0, 2);
+        if (expected != actual.ok) { return false; }
+        if (actual.ok) {
+            if (let reference = actual.reference) {
+                if (reference.offset != offset ||
+                    reference.generation != oracle.generations[0]) { return false; }
+            } else { return false; }
+        }
+        return bosun_oracle_matches(storage, oracle);
+    }
+    if (operation == 2) {
+        bool expected = bosun_oracle_reset(oracle, 0);
+        bool actual = bosun_storage_reset_region(storage, 0);
+        return expected == actual && bosun_oracle_matches(storage, oracle);
+    }
+    return false;
+}
+
+test "Bosun oracle exhaustively checks all three-step reserve/reset sequences" {
+    // Three operations at each position, 3^3 = 27 deterministic histories.
+    // The tiny capacity forces successful reservations, capacity failures,
+    // repeated resets and reuse after generation changes.
+    for (int first = 0; first < 3; first += 1) {
+        for (int second = 0; second < 3; second += 1) {
+            for (int third = 0; third < 3; third += 1) {
+                BosunStorageResult made = bosun_storage_create(71, 3);
+                assert(made.ok);
+                if (let storage = made.storage) {
+                    BosunOracle oracle = bosun_oracle_create(71, 3);
+                    assert(bosun_oracle_add(oracle, 3));
+                    assert(bosun_storage_add_region(storage, 3));
+                    assert(bosun_oracle_matches(storage, oracle));
+                    assert(bosun_oracle_sequence_step(storage, oracle, first));
+                    assert(bosun_oracle_sequence_step(storage, oracle, second));
+                    assert(bosun_oracle_sequence_step(storage, oracle, third));
+                } else { assert(false); }
+            }
+        }
+    }
+}
