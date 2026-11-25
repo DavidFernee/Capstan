@@ -1,6 +1,13 @@
 // C-hosted driver for the experimental freestanding Linux x86-64 target.
 // The target program is emitted as assembly and linked directly with ld;
 // this driver itself still runs through the existing C-dependent bootstrap.
+// Import confinement is lexical only in this prototype: symlink escapes and
+// concurrent path replacement are not prevented. Do not compile untrusted
+// workspaces with access to sensitive host files until descriptor-relative,
+// no-follow loading is implemented.
+
+const int NATIVE_MAX_SOURCE_FILES = 256;
+const int NATIVE_MAX_TOTAL_SOURCE_BYTES = 67108864;
 
 bool native_import_path_ok(string spec) {
     if (spec.len() < 5 || spec.at(0) == '/') { return false; }
@@ -64,6 +71,10 @@ int main() {
             source_paths.push(arg);
         }
     }
+    if (source_paths.len() > NATIVE_MAX_SOURCE_FILES) {
+        println("capstan native: source file count exceeds prototype limit");
+        return 2;
+    }
     if (output_path == "" || source_paths.len() == 0) {
         native_usage();
         return 2;
@@ -80,6 +91,7 @@ int main() {
         from_line.push(0);
     }
     int queue_index = 0;
+    int total_source_bytes = 0;
     while (queue_index < queue.len()) {
         string path = queue[queue_index];
         int origin_file = from_file[queue_index];
@@ -90,6 +102,18 @@ int main() {
         int file_index = context.files.len();
         context.files.push(path);
         if (let source = read_file(path, MAX_SOURCE_BYTES)) {
+            if (source.len() > NATIVE_MAX_TOTAL_SOURCE_BYTES - total_source_bytes) {
+                context.sources.push(taint(""));
+                if (origin_file >= 0) {
+                    report(context, origin_file, origin_line, true, "",
+                        "native aggregate source-byte budget exceeded");
+                } else {
+                    report(context, file_index, 0, true, "",
+                        "native aggregate source-byte budget exceeded");
+                }
+                continue;
+            }
+            total_source_bytes += source.len();
             context.sources.push(source);
             List<Token> tokens = lex(context, source, file_index);
             if (error_count(context) == 0) {
@@ -99,12 +123,17 @@ int main() {
                     declarations.push(declaration);
                     if (declaration.k == N_IMPORT) {
                         if (native_import_path_ok(declaration.s)) {
-                            queue.push(native_dir_of(path) + declaration.s);
-                            from_file.push(file_index);
-                            from_line.push(declaration.line);
+                            if (queue.len() >= NATIVE_MAX_SOURCE_FILES) {
+                                error_at(context, declaration, "CWE-400",
+                                    "native import queue exceeds prototype file-count limit");
+                            } else {
+                                queue.push(native_dir_of(path) + declaration.s);
+                                from_file.push(file_index);
+                                from_line.push(declaration.line);
+                            }
                         } else {
                             error_at(context, declaration, "CWE-22",
-                                "import path must be a relative .cap path inside the project");
+                                "import path must be a relative .cap path without absolute or dot-segment traversal");
                         }
                     }
                 }
