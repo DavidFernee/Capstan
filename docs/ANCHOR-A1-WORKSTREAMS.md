@@ -96,7 +96,7 @@ Any temporary C/assembly bootstrap boundary must be explicit in the trusted-base
 
 This plan extends existing work rather than creating duplicate tickets:
 - [#224](https://github.com/DavidFernee/Capstan/issues/224) owns the Shroud/T6 Linux Wayland capability and syscall vertical slice; the shared contract in `ANCHOR-CAPABILITY-IO-REQUIREMENTS.md` is a requirements synthesis/input to that work.
-- [#279](https://github.com/DavidFernee/Capstan/issues/279) owns the Anchor process-adapter decision and mock conformance harness; `ANCHOR-PROCESS-SUPERVISION.md` supplies the lifecycle/security contract, but does not complete the harness or API-owner decision.
+- [#279](https://github.com/DavidFernee/Capstan/issues/279) owns the Anchor process-adapter decision and mock conformance harness; `ANCHOR-PROCESS-SUPERVISION.md` supplies the lifecycle/security contract and proposes the Capstan runtime/process service as the single owner. The deterministic test-only reference model is in [PR #321](https://github.com/DavidFernee/Capstan/pull/321); the final public API owner approval and production-backend conformance remain open.
 - [#222](https://github.com/DavidFernee/Capstan/issues/222) remains the research authority for the broader capability/effect model. This A1 design must consume its reviewed result rather than pre-empt it.
 
 ## 7.1 Work packages ready for assignment
