@@ -44,11 +44,15 @@ int main() {
                             bool expected = a <= 1 && b <= 1 && c <= 1 && d <= 1 && e <= 1;
                             bool actual = halyard_ledger_reserve(ledger, request);
                             if (actual != expected) { return 9; }
-                            int add_a = expected ? a : 0;
-                            int add_b = expected ? b : 0;
-                            int add_c = expected ? c : 0;
-                            int add_d = expected ? d : 0;
-                            int add_e = expected ? e : 0;
+                            int add_a = 0;
+                            int add_b = 0;
+                            int add_c = 0;
+                            int add_d = 0;
+                            int add_e = 0;
+                            if (expected) {
+                                add_a = a; add_b = b; add_c = c;
+                                add_d = d; add_e = e;
+                            }
                             if (!(ledger.used_input_bytes == 1 + add_a &&
                                   ledger.used_retained_bytes == 1 + add_b &&
                                   ledger.used_output_bytes == 1 + add_c &&
