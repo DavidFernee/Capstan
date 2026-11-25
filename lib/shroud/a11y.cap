@@ -82,7 +82,6 @@ string value_of(View v) {
 A11yNode? a11y_node(Ui ui, Laid l, Rect clip) {
     View v = l.v;
     Rect visible = l.frame.intersect(clip);
-    if (visible.empty()) { return none; }
     // A scroll viewport clips its descendants just as the software painter does.
     // Other containers may intentionally allow children to overflow their frame.
     Rect child_clip = clip;
@@ -97,6 +96,7 @@ A11yNode? a11y_node(Ui ui, Laid l, Rect clip) {
     if (v.kind == K_SPACER || (v.kind == K_BOX && v.label == "")) { meaningful = false; }
     if (!meaningful && kids.len() == 1) { return kids[0]; }
     if (!meaningful && kids.len() == 0) { return none; }
+    if (visible.empty() && kids.len() == 0) { return none; }
     List<string> states = new List<string>();
     if (v.focusable()) { states.push("focusable"); }
     if (l.id == ui.focus) { states.push("focused"); }
@@ -105,7 +105,24 @@ A11yNode? a11y_node(Ui ui, Laid l, Rect clip) {
         if (v.num != 0) { states.push("checked"); } else { states.push("unchecked"); }
     }
     if (v.secure) { states.push("protected"); }
-    Rect b = rect(fx_floor(visible.x), fx_floor(visible.y), fx_ceil(visible.right()) - fx_floor(visible.x), fx_ceil(visible.bottom()) - fx_floor(visible.y));
+    Rect b;
+    if (visible.empty()) {
+        // A non-clipping container may itself be outside the window while an
+        // overflowing child remains visible. Bound that container by its children.
+        int left = kids[0].bounds.x;
+        int top = kids[0].bounds.y;
+        int right = kids[0].bounds.right();
+        int bottom = kids[0].bounds.bottom();
+        for (int i = 1; i < kids.len(); i += 1) {
+            left = int_min(left, kids[i].bounds.x);
+            top = int_min(top, kids[i].bounds.y);
+            right = int_max(right, kids[i].bounds.right());
+            bottom = int_max(bottom, kids[i].bounds.bottom());
+        }
+        b = rect(left, top, right - left, bottom - top);
+    } else {
+        b = rect(fx_floor(visible.x), fx_floor(visible.y), fx_ceil(visible.right()) - fx_floor(visible.x), fx_ceil(visible.bottom()) - fx_floor(visible.y));
+    }
     return new A11yNode{id: l.id, role: role, name: name_of(v), value: value_of(v), states: states, bounds: b, kids: kids};
 }
 
@@ -134,12 +151,11 @@ string a11y_json(A11yNode n) {
 // with the accessibility tree and the painter's nested scroll clipping.
 void collect_a11y_problems(Ui ui, Laid l, Rect clip, List<string> out) {
     Rect visible = l.frame.intersect(clip);
-    if (visible.empty()) { return; }
     View v = l.v;
     bool interactive = v.kind == K_BUTTON || v.kind == K_CHECKBOX || v.kind == K_SWITCH || v.kind == K_RADIO || v.kind == K_TEXT_FIELD || v.kind == K_SLIDER;
-    if (interactive && name_of(v) == "") { out.push($"{role_of(v)} {l.id} has no accessible name: give it a label()"); }
+    if (!visible.empty() && interactive && name_of(v) == "") { out.push($"{role_of(v)} {l.id} has no accessible name: give it a label()"); }
     // WCAG 2.5.8: only the visible, hit-testable portion is an effective target.
-    if (interactive && (visible.w < dp(ui, 24) || visible.h < dp(ui, 24))) {
+    if (!visible.empty() && interactive && (visible.w < dp(ui, 24) || visible.h < dp(ui, 24))) {
         out.push($"{role_of(v)} {l.id} is smaller than the 24 dp minimum target size");
     }
     Rect child_clip = clip;
