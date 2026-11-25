@@ -641,6 +641,32 @@ void test_display_list(Tally t, Font font) {
 
     DisplayList frame = finish_display_list(recorder);
     int published_commands = frame.commands.len();
+    int published_path_x = 0;
+    int published_mask_alpha = 0;
+    if (let frame_segments = frame.commands[1].segments) {
+        published_path_x = frame_segments.x0[0];
+    }
+    if (let frame_alpha = frame.commands[frame.commands.len() - 1].mask_alpha) {
+        published_mask_alpha = frame_alpha[0];
+    }
+    // Mutating nested recorder payloads after publication must not mutate the
+    // published frame. A shallow command-struct copy would fail both checks.
+    if (let recorder_segments = recorder.commands[1].segments) {
+        recorder_segments.x0[0] = fx(47);
+    }
+    if (let recorder_alpha = recorder.commands[recorder.commands.len() - 1].mask_alpha) {
+        recorder_alpha[0] = 0;
+    }
+    bool nested_snapshot = false;
+    if (let frame_segments_after = frame.commands[1].segments) {
+        if (let frame_alpha_after = frame.commands[frame.commands.len() - 1].mask_alpha) {
+            nested_snapshot = frame_segments_after.x0[0] == published_path_x &&
+                frame_alpha_after[0] == published_mask_alpha && published_mask_alpha == 255;
+        }
+    }
+    expect(t, nested_snapshot,
+        "display list: path and mask payloads are deep-snapshotted",
+        "recorder mutation changed a published nested payload");
     // Appending to the recorder after publication must not mutate the frame.
     recorder.fill_rect(rect_px(45, 33, 1, 1), solid(0xFFFF0000));
     execute_display_list(frame, replayed);
