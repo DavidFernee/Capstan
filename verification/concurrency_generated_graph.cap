@@ -1,0 +1,284 @@
+// Generated bounded transition graph for an executable empty-channel model.
+//
+// Unlike concurrency_transition_graph.cap, this explorer does not accept a
+// hand-authored edge list. It enumerates model actions, applies the same pure
+// transition function used to determine enabledness, and derives successor
+// states. State identity is a collision-free mixed-radix encoding of every
+// field in this deliberately small model.
+
+const int CBR_RUNNABLE = 1;
+const int CBR_BLOCKED = 2;
+const int CBR_DONE = 3;
+const int CBR_CANCELLED = 4;
+
+const int CBR_OPEN = 0;
+const int CBR_CLOSED = 1;
+
+const int CBR_RECEIVE = 1;
+const int CBR_CLOSE = 2;
+const int CBR_CANCEL = 3;
+
+const int CBR_INVALID = 0;
+const int CBR_DEADLOCK = 1;
+const int CBR_TERMINAL = 2;
+const int CBR_PROGRESS = 3;
+const int CBR_UNKNOWN = 4;
+
+struct CBRState {
+    int channel_state;
+    int consumer_status;
+    bool wait_registered;
+    bool eof_observed;
+}
+
+struct CBRStep {
+    bool enabled;
+    CBRState next;
+}
+
+struct CBRResult {
+    bool valid;
+    bool complete;
+    int classification;
+    int explored;
+    int witness_key;
+}
+
+CBRState cbr_initial() {
+    return new CBRState{
+        channel_state: CBR_OPEN,
+        consumer_status: CBR_RUNNABLE,
+        wait_registered: false,
+        eof_observed: false
+    };
+}
+
+bool cbr_terminal(CBRState s) {
+    return s.consumer_status == CBR_DONE ||
+        s.consumer_status == CBR_CANCELLED;
+}
+
+bool cbr_invariant(CBRState s) {
+    if (s.channel_state != CBR_OPEN && s.channel_state != CBR_CLOSED) {
+        return false;
+    }
+    if (s.consumer_status != CBR_RUNNABLE &&
+        s.consumer_status != CBR_BLOCKED &&
+        s.consumer_status != CBR_DONE &&
+        s.consumer_status != CBR_CANCELLED) { return false; }
+    if ((s.consumer_status == CBR_BLOCKED) != s.wait_registered) {
+        return false;
+    }
+    if (s.channel_state == CBR_CLOSED && s.consumer_status == CBR_BLOCKED) {
+        return false;
+    }
+    if (s.eof_observed && s.consumer_status != CBR_DONE) { return false; }
+    return true;
+}
+
+// Complete collision-free encoding: channel_state * 32 +
+// consumer_status * 4 + wait bit * 2 + eof bit.
+// The bounded field domains make each valid state key unique.
+int cbr_key(CBRState s) {
+    return s.channel_state * 32 + s.consumer_status * 4 +
+        (s.wait_registered ? 2 : 0) + (s.eof_observed ? 1 : 0);
+}
+
+bool cbr_same(CBRState a, CBRState b) {
+    return cbr_key(a) == cbr_key(b);
+}
+
+// Struct values are references: successor construction must detach from
+// the queued predecessor before applying a transition.
+CBRState cbr_copy(CBRState s) {
+    return new CBRState{
+        channel_state: s.channel_state,
+        consumer_status: s.consumer_status,
+        wait_registered: s.wait_registered,
+        eof_observed: s.eof_observed
+    };
+}
+
+CBRStep cbr_reject(CBRState s) {
+    return new CBRStep{enabled: false, next: s};
+}
+
+CBRStep cbr_accept(CBRState s) {
+    return new CBRStep{enabled: true, next: s};
+}
+
+// Pure model transitions. Rejection never mutates the input state.
+CBRStep cbr_step(CBRState before, int action) {
+    if (!cbr_invariant(before)) { return cbr_reject(before); }
+    CBRState next = cbr_copy(before);
+    if (action == CBR_RECEIVE) {
+        if (before.consumer_status != CBR_RUNNABLE) {
+            return cbr_reject(before);
+        }
+        if (before.channel_state == CBR_OPEN) {
+            next.consumer_status = CBR_BLOCKED;
+            next.wait_registered = true;
+            return cbr_accept(next);
+        }
+        next.consumer_status = CBR_DONE;
+        next.eof_observed = true;
+        return cbr_accept(next);
+    }
+    if (action == CBR_CLOSE) {
+        if (before.channel_state != CBR_OPEN) {
+            return cbr_reject(before);
+        }
+        next.channel_state = CBR_CLOSED;
+        if (before.wait_registered) {
+            next.wait_registered = false;
+            next.consumer_status = CBR_RUNNABLE;
+        }
+        return cbr_accept(next);
+    }
+    if (action == CBR_CANCEL) {
+        if (before.consumer_status != CBR_BLOCKED ||
+            !before.wait_registered) { return cbr_reject(before); }
+        next.wait_registered = false;
+        next.consumer_status = CBR_CANCELLED;
+        return cbr_accept(next);
+    }
+    return cbr_reject(before);
+}
+
+bool cbr_seen(List<int> keys, int key) {
+    for (int i = 0; i < keys.len(); i += 1) {
+        if (keys[i] == key) { return true; }
+    }
+    return false;
+}
+
+// BFS derives each outgoing edge by attempting every action in the model's
+// finite action alphabet. It records reachable nonterminal states with no
+// enabled action and only certifies after exhausting the frontier.
+CBRResult cbr_explore(int state_limit) {
+    if (state_limit < 1) {
+        return new CBRResult{
+            valid: false, complete: false, classification: CBR_INVALID,
+            explored: 0, witness_key: -1
+        };
+    }
+    List<CBRState> states = new List<CBRState>();
+    List<int> keys = new List<int>();
+    states.push(cbr_initial());
+    keys.push(cbr_key(cbr_initial()));
+    int cursor = 0;
+    int first_sink = -1;
+    while (cursor < states.len()) {
+        CBRState current = states[cursor];
+        if (!cbr_invariant(current)) {
+            return new CBRResult{
+                valid: false, complete: false, classification: CBR_INVALID,
+                explored: states.len(), witness_key: -1
+            };
+        }
+        int enabled_count = 0;
+        for (int action = CBR_RECEIVE; action <= CBR_CANCEL; action += 1) {
+            CBRStep transition = cbr_step(current, action);
+            if (transition.enabled) {
+                enabled_count += 1;
+                if (!cbr_invariant(transition.next)) {
+                    return new CBRResult{
+                        valid: false, complete: false, classification: CBR_INVALID,
+                        explored: states.len(), witness_key: -1
+                    };
+                }
+                int next_key = cbr_key(transition.next);
+                if (!cbr_seen(keys, next_key)) {
+                    if (states.len() >= state_limit) {
+                        return new CBRResult{
+                            valid: true, complete: false, classification: CBR_UNKNOWN,
+                            explored: states.len(), witness_key: -1
+                        };
+                    }
+                    states.push(transition.next);
+                    keys.push(next_key);
+                }
+            }
+        }
+        if (!cbr_terminal(current) && enabled_count == 0 && first_sink == -1) {
+            first_sink = cbr_key(current);
+        }
+        cursor += 1;
+    }
+    if (first_sink != -1) {
+        return new CBRResult{
+            valid: true, complete: true, classification: CBR_DEADLOCK,
+            explored: states.len(), witness_key: first_sink
+        };
+    }
+    bool all_terminal = true;
+    for (int i = 0; i < states.len(); i += 1) {
+        if (!cbr_terminal(states[i])) { all_terminal = false; }
+    }
+    return new CBRResult{
+        valid: true, complete: true,
+        classification: all_terminal ? CBR_TERMINAL : CBR_PROGRESS,
+        explored: states.len(), witness_key: -1
+    };
+}
+
+test "CBR generated graph explores only successors enabled by model transitions" {
+    CBRResult result = cbr_explore(16);
+    assert(result.valid && result.complete);
+    assert(result.classification == CBR_PROGRESS);
+    assert(result.explored == 6);
+}
+
+test "CBR generated graph fails closed at a bounded state limit" {
+    CBRResult result = cbr_explore(2);
+    assert(result.valid && !result.complete);
+    assert(result.classification == CBR_UNKNOWN);
+}
+
+test "CBR state encoding distinguishes every reachable semantic state" {
+    CBRState initial = cbr_initial();
+    CBRState blocked = cbr_step(initial, CBR_RECEIVE).next;
+    CBRState closed = cbr_step(initial, CBR_CLOSE).next;
+    assert(cbr_key(initial) != cbr_key(blocked));
+    assert(cbr_key(initial) != cbr_key(closed));
+    assert(cbr_key(blocked) != cbr_key(closed));
+    assert(cbr_same(blocked, blocked));
+}
+
+test "CBR close wakes a blocked receiver before EOF can be observed" {
+    CBRState blocked = cbr_step(cbr_initial(), CBR_RECEIVE).next;
+    assert(blocked.consumer_status == CBR_BLOCKED && blocked.wait_registered);
+    CBRState woken = cbr_step(blocked, CBR_CLOSE).next;
+    assert(woken.consumer_status == CBR_RUNNABLE && !woken.wait_registered);
+    CBRState eof = cbr_step(woken, CBR_RECEIVE).next;
+    assert(eof.consumer_status == CBR_DONE && eof.eof_observed);
+    assert(cbr_invariant(eof));
+}
+
+test "CBR cancellation removes the blocked wait and reaches terminal state" {
+    CBRState blocked = cbr_step(cbr_initial(), CBR_RECEIVE).next;
+    CBRState cancelled = cbr_step(blocked, CBR_CANCEL).next;
+    assert(cancelled.consumer_status == CBR_CANCELLED);
+    assert(!cancelled.wait_registered);
+    assert(cbr_invariant(cancelled));
+}
+
+test "CBR rejected transition preserves canonical state identity" {
+    CBRState initial = cbr_initial();
+    CBRStep rejected = cbr_step(initial, CBR_CANCEL);
+    assert(!rejected.enabled);
+    assert(cbr_same(initial, rejected.next));
+}
+
+
+test "CBR accepted transition leaves its queued predecessor unchanged" {
+    CBRState initial = cbr_initial();
+    CBRStep received = cbr_step(initial, CBR_RECEIVE);
+    assert(received.enabled);
+    assert(initial.consumer_status == CBR_RUNNABLE);
+    assert(!initial.wait_registered);
+    assert(initial.channel_state == CBR_OPEN);
+    assert(received.next.consumer_status == CBR_BLOCKED);
+    assert(received.next.wait_registered);
+    assert(cbr_key(initial) != cbr_key(received.next));
+}
