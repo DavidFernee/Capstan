@@ -40,15 +40,18 @@ DeadeyeImageResult deadeye_bmp_error(string error) {
 // - signed height supports both bottom-up and top-down rows;
 // - input and pixel counts are bounded before pixel-buffer allocation.
 DeadeyeImageResult deadeye_bmp_decode(HalyardByteSource source) {
+    if (!halyard_source_shape_valid(source)) {
+        return deadeye_bmp_error("invalid_source");
+    }
+    int source_length = halyard_source_length(source);
+    if (source_length > DEADEYE_BMP_MAX_INPUT_BYTES) {
+        return deadeye_bmp_error("input_limit");
+    }
     if (!halyard_source_validate(source)) {
         return deadeye_bmp_error("invalid_source");
     }
     if (source.position != 0) {
         return deadeye_bmp_error("source_not_at_start");
-    }
-    int source_length = halyard_source_length(source);
-    if (source_length > DEADEYE_BMP_MAX_INPUT_BYTES) {
-        return deadeye_bmp_error("input_limit");
     }
 
     HalyardBytesResult header = halyard_read_exact(source, 54);
