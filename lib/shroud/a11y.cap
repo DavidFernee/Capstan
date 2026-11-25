@@ -151,31 +151,31 @@ void a11y_json_push(List<List<string>> batches, string part) {
 }
 
 void a11y_json_append(A11yNode n, List<List<string>> batches) {
-    a11y_json_push(batches, "{\\\"id\\\":\\\"");
+    a11y_json_push(batches, "{\\"id\\":\\"");
     a11y_json_push(batches, escape_json(taint(n.id)));
-    a11y_json_push(batches, "\\\",\\\"role\\\":\\\"");
+    a11y_json_push(batches, "\\",\\"role\\":\\"");
     a11y_json_push(batches, escape_json(taint(n.role)));
-    a11y_json_push(batches, "\\\",\\\"name\\\":\\\"");
+    a11y_json_push(batches, "\\",\\"name\\":\\"");
     a11y_json_push(batches, escape_json(n.name));
-    a11y_json_push(batches, "\\\"");
+    a11y_json_push(batches, "\\"");
     if (n.value.len() > 0) {
-        a11y_json_push(batches, ",\\\"value\\\":\\\"");
+        a11y_json_push(batches, ",\\"value\\":\\"");
         a11y_json_push(batches, escape_json(n.value));
-        a11y_json_push(batches, "\\\"");
+        a11y_json_push(batches, "\\"");
     }
     if (n.states.len() > 0) {
-        a11y_json_push(batches, ",\\\"states\\\":[");
+        a11y_json_push(batches, ",\\"states\\":[");
         for (int i = 0; i < n.states.len(); i += 1) {
             if (i > 0) { a11y_json_push(batches, ","); }
-            a11y_json_push(batches, "\\\"");
+            a11y_json_push(batches, "\\"");
             a11y_json_push(batches, escape_json(taint(n.states[i])));
-            a11y_json_push(batches, "\\\"");
+            a11y_json_push(batches, "\\"");
         }
         a11y_json_push(batches, "]");
     }
-    a11y_json_push(batches, $",\\\"bounds\\\":[{n.bounds.x},{n.bounds.y},{n.bounds.w},{n.bounds.h}]");
+    a11y_json_push(batches, $",\\"bounds\\":[{n.bounds.x},{n.bounds.y},{n.bounds.w},{n.bounds.h}]");
     if (n.kids.len() > 0) {
-        a11y_json_push(batches, ",\\\"children\\\":[");
+        a11y_json_push(batches, ",\\"children\\":[");
         for (int i = 0; i < n.kids.len(); i += 1) {
             if (i > 0) { a11y_json_push(batches, ","); }
             a11y_json_append(n.kids[i], batches);
