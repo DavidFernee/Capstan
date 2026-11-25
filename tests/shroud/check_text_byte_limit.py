@@ -55,7 +55,7 @@ int main() {
     rejected = {
         "trusted": repeat + """
 int main() {
-    string s = repeat_ascii(MAX_TEXT_BYTES + 1);
+    string s = repeat_ascii(MAX_TEXT_BYTES) + "!";
     string_bytes(s);
     println("unexpectedly accepted oversized trusted text");
     return 1;
