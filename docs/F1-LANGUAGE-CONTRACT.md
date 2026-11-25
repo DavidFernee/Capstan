@@ -6,6 +6,8 @@
 > **Programme:** [Capstan-only foundation](CAPSTAN-ONLY-FOUNDATION.md)  
 > **Research coordination:** [Programming-language research agenda](research/PROGRAMMING-LANGUAGE-RESEARCH-AGENDA.md), [research register](research/RESEARCH-REGISTER.md)
 
+Related-work synthesis: [F1-RELATED-WORK.md](F1-RELATED-WORK.md). The related-work review recommends a factored but mutually checked guarantee derivation as the primary experiment; this remains a hypothesis, not an adopted design.
+
 This document starts the F1 normative-language-contract work. It separates (A) semantics already stated by the current language reference, (B) requirements of the proposed safe execution profile, and (C) unresolved research decisions. It must not be read as silently adding syntax, changing compiler behaviour, or upgrading assurance claims.
 
 A section becomes normative only after: (1) a precise definition is reviewed; (2) it is reconciled with the source reference and CCAM; (3) executable conformance vectors exist; (4) negative and positive adversarial tests pass; and (5) the implementation correspondence and residual trust assumptions are recorded.
