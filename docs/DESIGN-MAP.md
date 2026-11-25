@@ -1126,3 +1126,26 @@ missing, stale or unverifiable evidence is unknown, never green. Workspace openi
 not execute project code. Build commands use explicit executables and argument vectors,
 never shell interpolation. Project hooks and in-process plugins are out of scope until
 a separately reviewed capability and isolation design exists.
+
+
+## Cross-project platform programme (2026-11-25)
+
+The named application and systems programmes are defined in
+[`docs/architecture/PLATFORM-PROGRAMME.md`](architecture/PLATFORM-PROGRAMME.md).
+Their names and boundaries are:
+
+- **Helm** — operating-system kernel and its narrow architecture/platform interfaces.
+- **Bosun's Locker** — transactional database and storage engine.
+- **Topsail** — secure web application and service platform.
+- **Keel** — 3D engine and deterministic simulation.
+- **Halyard** — media architecture.
+- **Shroud** — GUI toolkit; **Anchor** — IDE built on Shroud.
+
+These are target programmes, not claims of completed implementations. They consume
+shared Capstan foundations rather than defining competing ownership, effect, resource,
+concurrency or security models. The platform programme records dependencies, staged
+acceptance gates, measurable evidence and explicit non-goals. The first implementation
+sequence is CCAM end-to-end conformance, compositional resource/authority contracts,
+concurrency semantics, a minimal Helm boot path, and then the Bosun's Locker storage and
+transaction vertical slice. Topsail follows the same contracts and must not introduce a
+separate security model.
