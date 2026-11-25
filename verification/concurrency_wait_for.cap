@@ -229,6 +229,23 @@ test "CWF unknown external event availability fails closed" {
     assert(result.result == CWF_RESULT_BOUNDED_UNKNOWN);
 }
 
+test "CWF explicitly closed event source is a deadlock" {
+    CWFState state = cwf_join_cycle();
+    state.task_a_wait_kind = CWF_WAIT_EVENT;
+    state.task_a_wait_target = -1;
+    state.environment = CWF_ENV_CLOSED;
+    CWFClassification result = cwf_classify(state);
+    assert(result.result == CWF_RESULT_DEADLOCK);
+    assert(result.witness_task == 0 && result.witness_target == -1);
+}
+
+test "CWF self-join is rejected as an invalid dependency" {
+    CWFState state = cwf_join_cycle();
+    state.task_a_wait_target = 0;
+    CWFClassification result = cwf_classify(state);
+    assert(result.result == CWF_RESULT_INVALID);
+}
+
 test "CWF incomplete exploration cannot certify deadlock" {
     CWFState state = cwf_join_cycle();
     state.exploration_complete = false;
