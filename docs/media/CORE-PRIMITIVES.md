@@ -13,7 +13,7 @@
 - bounded `u8`, exact-byte, skip and big-endian `u32` reads;
 - explicit EOF, truncation, closed and invalid-state outcomes;
 - a five-dimensional aggregate ledger for input bytes, retained bytes, output bytes,
-  decoded units and work units;
+  decoded units and work units, with one-shot reservation handles;
 - all-dimensions-preflighted reserve and release operations;
 - an in-memory bounded byte sink with preflighted writes, copy-on-commit append, defensive snapshots and explicit close.
 
@@ -51,9 +51,14 @@ Parsers first reject an oversized source using the constant-time shape/length ch
 then scan the bounded byte vector once before parsing. This prevents an attacker-sized
 input from forcing a full byte scan before the parser applies its input ceiling.
 
-Construction copies bytes. Callers must reserve aggregate input/retained memory before
-calling the constructor. A later API must combine reservation and construction into one
-failure-atomic operation so the copy cannot occur before the charge is secured.
+The low-level constructor copies bytes without reserving aggregate capacity and is retained
+for internal tests and trusted composition only. Callers handling untrusted or aggregate-
+bounded data should use `halyard_managed_source_create`, which validates the byte domain
+and input ceiling, acquires a retained-byte lease, and only then makes the defensive copy.
+The managed wrapper keeps the lease for the source lifetime; `halyard_managed_source_close`
+closes the source and releases the lease exactly once. A failed recoverable validation or
+admission returns without retaining a charge. If source construction returns a recoverable
+error after admission, the wrapper attempts to roll the lease back.
 
 ## 3. Required aggregate-ledger contract
 
@@ -93,11 +98,6 @@ work; releasing a lease returns that live capacity. In particular, callers must 
 its release operation to account for total bytes parsed, output emitted, samples decoded
 or CPU/work already consumed. Those quantities require monotonic counters.
 
-`halyard_ledger_acquire` also returns a one-shot reservation handle, and
-`halyard_reservation_release` rejects a repeated release. This is a trusted-caller API
-convenience, **not yet a non-forgeable capability**: the reservation struct and fields are
-public, and the raw ledger release function remains callable. Do not treat the handle as
-an ownership/security boundary until opaque state and module-level access control land.
 
 The first implementation satisfies this all-or-nothing rule for sequential calls. It is
 **not thread-safe**: concurrent reserve/release calls can race. No claim of atomic
@@ -155,6 +155,26 @@ there is no lifetime-bound reservation, and allocator exhaustion remains a termi
 runtime outcome rather than a recoverable sink error. It is a correctness prototype, not
 a hostile-input output boundary.
 
+## 6.1 Managed source lifetime
+
+`halyard_managed_source_create` is the first composition of source construction with
+aggregate retained-memory admission. It rejects negative/oversized limits and invalid
+bytes before acquiring capacity, reserves `retained_bytes = input.len()`, then invokes the
+defensive source snapshot constructor. The returned managed source carries the lease.
+Reads go through managed-source wrappers; close first closes the source, then consumes
+the lease. If lease release fails because the ledger has been corrupted, the source stays
+closed and a later close call may retry release after the ledger is repaired. It does not
+reopen the source or refund the lease twice.
+
+The reservation is for the retained snapshot, not a second charge for the caller-owned
+input list. The caller's original list remains outside Halyard's ownership and accounting.
+This prototype does not account allocator metadata or transient implementation overhead.
+The language/runtime currently exposes no recoverable allocation-result contract here;
+therefore the API cannot yet promise rollback after allocator exhaustion. Admission occurs
+before the copy, but true failure-atomic allocation requires a fallible allocator contract
+or preallocated storage plus an ownership-transfer primitive. This remains an explicit
+MC1 blocker, not a claimed guarantee. The API is also sequential and thread-confined.
+
 ## 7. Rational timebase and timestamp rescaling
 
 `HalyardTimebase` represents seconds per tick as a positive reduced fraction
@@ -176,7 +196,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 8. Test obligations
 
-The regression suite is expressed as 33 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 37 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -199,7 +219,7 @@ contains no shell, Python, C, or other-language source. It covers:
 - defensive validation of source bounds and byte contents before parser use;
 - separation of cheap source-shape preflight from the bounded byte-domain scan;
 - monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics;
-- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation.
+- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation; managed source admission, retained-byte accounting, close/release lifecycle, invalid-input rollback and retry after ledger repair.
 
 Still required before MC1 can pass:
 
@@ -221,6 +241,7 @@ Still required before MC1 can pass:
 | Live reservation ledger | `lib/halyard/core.cap` | Sequential all-or-nothing live lease prototype; not concurrency-safe |
 | Cumulative consumption budget | `lib/halyard/core.cap` | Monotonic input/output/decode/work counters; sequential prototype; not yet integrated into parsers |
 | Reservation handle | `lib/halyard/core.cap` | One-shot trusted-caller handle; public/forgeable until opaque types land |
+| Managed byte source | `lib/halyard/core.cap` | Retained-byte lease follows source close; sequential prototype; allocator failure atomicity and opaque ownership remain outstanding |
 | Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native cases; exact-head execution pending |
 | Rational timebase | `lib/halyard/core.cap` | Initial checked integer rescaling with explicit rounding; no full clock/discontinuity model |
 | Format registry | Not implemented | MC0 / issue #287 |
