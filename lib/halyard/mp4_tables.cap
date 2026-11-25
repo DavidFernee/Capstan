@@ -615,8 +615,12 @@ DeadeyeMp4StblResult deadeye_mp4_stbl_error(string error) {
 DeadeyeMp4StblResult deadeye_mp4_decode_stbl(
     List<int> bytes, int start, int end, List<int> mdat_ranges
 ) {
-    if (start < 0 || end < start || end > bytes.len()) {
-        return deadeye_mp4_stbl_error("invalid_stbl_range");
+    if (!deadeye_mp4_table_payload_valid(bytes, start, end)) {
+        return deadeye_mp4_stbl_error("invalid_stbl_range_or_byte");
+    }
+    if (mdat_ranges.len() < 2 || mdat_ranges.len() % 2 != 0 ||
+        mdat_ranges.len() > 512) {
+        return deadeye_mp4_stbl_error("invalid_mdat_ranges");
     }
     int stts_start = 0; int stts_end = 0; bool has_stts = false;
     int stsc_start = 0; int stsc_end = 0; bool has_stsc = false;
@@ -782,4 +786,10 @@ test "Deadeye rejects duplicate and malformed stbl child tables" {
         malformed, 0, malformed.len(), [100,110]
     );
     assert(!truncated.ok && truncated.error == "malformed_stbl_child");
+    List<int> forged_bytes = [0,0,0,7, 's','t','t','s'];
+    forged_bytes[4] = -1;
+    DeadeyeMp4StblResult forged = deadeye_mp4_decode_stbl(
+        forged_bytes, 0, forged_bytes.len(), [100,110]
+    );
+    assert(!forged.ok && forged.error == "invalid_stbl_range_or_byte");
 }
