@@ -119,12 +119,21 @@ dimensions before changing any counter. It has deliberately no release/refund op
 completed parsing, decoding and work cannot be made free by releasing a live buffer.
 This prevents a decode-and-discard loop from resetting its cumulative work allowance.
 
-This is an initial sequential prototype. Its fields are publicly mutable, it is not
-concurrency-safe, and the Shanty/Deadeye parsers do not yet consume it. Parser integration
-must charge input/work before processing and decoded/output units before materialising
-results, with failure and cancellation semantics specified. The cumulative budget and
-live lease ledger must eventually share one atomic admission/ownership model without
-confusing their different lifetimes.
+This is an initial sequential prototype. Its fields are publicly mutable and it is not
+concurrency-safe. Shanty and Deadeye now expose budgeted entry points in addition to their
+legacy unbudgeted convenience APIs. Those entry points charge input and bounded parser
+work before parsing, and charge output/decoded units before materialising PCM or RGBA
+results. Shanty charges the retained PCM data-chunk copy and separately charges the byte
+validation scan and decoded sample list. Deadeye charges the temporary pixel copy plus
+final RGBA payload before reading/materialising the frame. These are logical payload
+charges, not allocator-exact process-memory measurements; list/object overhead and the
+source's own snapshot remain separate live-retention concerns.
+
+The legacy unbudgeted entry points remain callable and are suitable only for trusted,
+explicitly bounded composition. Budgeted parsing does not yet require a managed source or
+bind cumulative budget state to a non-forgeable capability. The cumulative budget and live
+lease ledger must eventually share one atomic admission/ownership model without
+confusing their different lifetimes. Cancellation and partial-work semantics remain open.
 
 ## 5. Failure and ownership rules
 
@@ -239,7 +248,7 @@ Still required before MC1 can pass:
 |---|---|---|
 | Byte source | `lib/halyard/core.cap` | Prototype; public mutable representation; Capstan-native tests colocated |
 | Live reservation ledger | `lib/halyard/core.cap` | Sequential all-or-nothing live lease prototype; not concurrency-safe |
-| Cumulative consumption budget | `lib/halyard/core.cap` | Monotonic input/output/decode/work counters; sequential prototype; not yet integrated into parsers |
+| Cumulative consumption budget | `lib/halyard/core.cap` | Monotonic input/output/decode/work counters; used by budgeted Shanty/Deadeye parse/decode entry points; sequential prototype |
 | Reservation handle | `lib/halyard/core.cap` | One-shot trusted-caller handle; public/forgeable until opaque types land |
 | Managed byte source | `lib/halyard/core.cap` | Retained-byte lease follows source close; sequential prototype; allocator failure atomicity and opaque ownership remain outstanding |
 | Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native cases; exact-head execution pending |
