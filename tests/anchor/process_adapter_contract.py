@@ -357,6 +357,26 @@ def restart_delay_ms(failures, base_ms=100, cap_ms=5000):
     return min(cap_ms, base_ms * (2 ** min(failures, 30)))
 
 
+class RestartPolicy:
+    """Bounded restart budget with reset only after a stable healthy interval."""
+
+    def __init__(self, max_restarts=3, base_ms=100, cap_ms=5000):
+        self.max_restarts = max_restarts
+        self.base_ms = base_ms
+        self.cap_ms = cap_ms
+        self.failures = 0
+
+    def record_failure(self):
+        if self.failures >= self.max_restarts:
+            return None
+        delay = restart_delay_ms(self.failures, self.base_ms, self.cap_ms)
+        self.failures += 1
+        return delay
+
+    def record_healthy(self):
+        self.failures = 0
+
+
 class ContractTests(unittest.TestCase):
     def setUp(self):
         self.clock = FakeClock()
@@ -435,6 +455,20 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(delays[:4], [100, 200, 400, 800])
         self.assertTrue(all(value <= 5000 for value in delays))
         self.assertEqual(restart_delay_ms(100), 5000)
+
+    def test_crash_is_reaped_and_restart_budget_opens_circuit(self):
+        policy = RestartPolicy(max_restarts=3)
+        first = self.supervisor.start(self.request())
+        self.backend.observe_exit(first.child, 1)
+        self.supervisor.tick(first)
+        self.assertEqual(first.child.state, ProcessState.REAPED)
+        self.assertEqual(first.exit_code, 1)
+        self.assertEqual(policy.record_failure(), 100)
+        self.assertEqual(policy.record_failure(), 200)
+        self.assertEqual(policy.record_failure(), 400)
+        self.assertIsNone(policy.record_failure())
+        policy.record_healthy()
+        self.assertEqual(policy.record_failure(), 100)
 
     def test_fragmented_and_coalesced_json_rpc_frames(self):
         first = encode_frame({"jsonrpc": "2.0", "id": 1, "method": "initialize"})
