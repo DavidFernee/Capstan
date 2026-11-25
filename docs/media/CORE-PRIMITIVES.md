@@ -164,6 +164,41 @@ there is no lifetime-bound reservation, and allocator exhaustion remains a termi
 runtime outcome rather than a recoverable sink error. It is a correctness prototype, not
 a hostile-input output boundary.
 
+## 5.1 Extended live-resource vector
+
+The bounded ledger now has an opt-in extended constructor,
+`halyard_ledger_create_bounded`, which adds seven live-resource dimensions to the
+original byte/decode/work vector:
+
+| Dimension | Meaning | Typical owner |
+|---|---|---|
+| `allocation_units` | Count of admitted allocation objects, not bytes | buffer/plane/frame allocator |
+| `metadata_entries` | Live metadata records | container/track/index tables |
+| `queue_slots` | Occupied bounded queue entries | packet/frame/command queues |
+| `worker_slots` | Admitted active worker reservations | worker scheduler |
+| `nesting_slots` | Active parser/graph nesting depth | parser or graph traversal |
+| `track_slots` | Live media tracks | demux/session |
+| `chunk_slots` | Live chunks/atoms/blocks | container parser |
+
+These dimensions are admitted and released in the same all-or-nothing vector
+operation as input bytes, retained bytes, output bytes, decoded units and work units.
+The old five-limit constructor remains source-compatible and assigns zero capacity
+to the new dimensions; callers that need them must use the bounded constructor and
+supply explicit limits. A zero limit is intentional fail-closed behaviour, not an
+implicit unlimited default.
+
+The units are logical admission quotas. In particular, `allocation_units` is not
+an allocator-exact byte count and does not charge allocator metadata, capacity
+over-allocation, GC headers or transient runtime storage. The current public structs
+also remain forgeable and the operations remain sequential/thread-confined. The
+extended vector therefore improves the model's expressiveness but does not close
+MC1's opacity, concurrency or actual-memory-accounting requirements.
+
+The cumulative `HalyardConsumptionBudget` remains a separate monotonic object:
+successful input/output/decode/work consumption is never refunded. Releasing a live
+lease cannot refund cumulative work. These are different accounting lifetimes and
+must not be conflated.
+
 ## 6.2 Managed sink lifetime and peak accounting
 
 The managed sink path couples output payload ownership to the aggregate ledger.
@@ -229,7 +264,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 8. Test obligations
 
-The regression suite is expressed as 41 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 44 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`; the Shanty and Deadeye suites are invoked directly with `bin/capstan test lib/halyard/shanty.cap` and `bin/capstan test lib/halyard/deadeye.cap`. The module tests remain colocated Capstan declarations and are not wired through a Halyard-specific shell hook. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -252,12 +287,14 @@ contains no shell, Python, C, or other-language source. It covers:
 - defensive validation of source bounds and byte contents before parser use;
 - separation of cheap source-shape preflight from the bounded byte-domain scan;
 - monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics;
+- all-or-nothing admission/release for allocation, metadata, queue, worker, nesting, track and chunk live-resource dimensions, including per-dimension over-limit and underflow rejection;
 - one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation; managed source admission, retained-byte accounting, close/release lifecycle, invalid-input rollback and retry after ledger repair; managed sink peak replacement accounting, rejected admission, invalid-write preservation and retryable close after ledger repair.
 
 Still required before MC1 can pass:
 
 1. opaque or otherwise non-forgeable source and ledger state;
 2. a single-owner or synchronised concurrency model;
+3. allocator-exact byte charging, recoverable allocation failure and ownership transfer;
 3. atomic reservation tied to source snapshot allocation;
 4. explicit thread-confinement until the language-level ownership/channel model from #229/#249 is available; no caller may share a mutable ledger across concurrent tasks;
 5. lifetime-bound reservations and cancellation/cleanup semantics;
