@@ -14,7 +14,8 @@
 - explicit EOF, truncation, closed and invalid-state outcomes;
 - a five-dimensional aggregate ledger for input bytes, retained bytes, output bytes,
   decoded units and work units;
-- all-dimensions-preflighted reserve and release operations.
+- all-dimensions-preflighted reserve and release operations;
+- an in-memory bounded byte sink with preflighted writes, copy-on-commit append, defensive snapshots and explicit close.
 
 It performs no filesystem, network, device, demuxer, decoder or encoder operations. It is
 not yet a general streaming abstraction and does not implement asynchronous IO, seeking,
@@ -91,7 +92,22 @@ retained references and derived outputs remain charged for their actual lifetime
 The prototype does not yet have cancellation, deadlines, lifetime-bound reservations,
 or an RAII/linear ownership mechanism. Those are explicit follow-up requirements.
 
-## 5. Rational timebase and timestamp rescaling
+## 5. Bounded in-memory byte sink
+
+`HalyardByteSink` is a first Capstan-native in-memory sink with a per-instance payload
+limit. `halyard_sink_write_exact` validates the sink state, capacity and every input byte
+before constructing a replacement buffer and swapping it into the sink. Rejected writes
+leave the prior contents unchanged. Snapshot returns a defensive copy; close is one-shot
+and prevents further writes.
+
+This is not yet a process-memory bound: the copy-on-commit strategy temporarily retains
+both old and replacement lists, and list/object overhead is outside the payload count.
+The sink is not yet coupled to the aggregate ledger's output/retained/allocation charges,
+there is no lifetime-bound reservation, and allocator exhaustion remains a terminal
+runtime outcome rather than a recoverable sink error. It is a correctness prototype, not
+a hostile-input output boundary.
+
+## 6. Rational timebase and timestamp rescaling
 
 `HalyardTimebase` represents seconds per tick as a positive reduced fraction
 `numerator/denominator`. `halyard_timebase_create` rejects non-positive terms and
@@ -110,7 +126,7 @@ clock drift, resampling, A/V master-clock selection or seek/pause transitions. T
 semantics remain required before media graph scheduling. The timebase structs are also
 publicly mutable; every conversion validates them, but this is not an opaque type boundary.
 
-## 6. Test obligations
+## 7. Test obligations
 
 The regression suite is expressed as 18 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
@@ -145,7 +161,7 @@ Still required before MC1 can pass:
 8. allocation, CPU and retained-memory measurements under adversarial inputs;
 9. independent review and exact-head CI on supported platforms.
 
-## 7. Implementation provenance
+## 8. Implementation provenance
 
 | Module | First-party source | Current status |
 |---|---|---|
@@ -154,7 +170,7 @@ Still required before MC1 can pass:
 | Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native regression cases; exact-head CI pending |
 | Rational timebase | `lib/halyard/core.cap` | Initial checked integer rescaling with explicit rounding; no full clock/discontinuity model |
 | Format registry | Not implemented | MC0 / issue #287 |
-| Bounded sink | Not implemented | Required before encoder/output work |
+| Bounded sink | `lib/halyard/core.cap` | In-memory bounded copy-on-commit prototype; aggregate allocation/retention accounting and lifetime-bound output reservation remain outstanding |
 
 No third-party media implementation code is used by this slice. The existing Capstan
 compiler/runtime remains C-backed in the current production build and remains in the
