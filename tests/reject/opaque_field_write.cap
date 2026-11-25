@@ -1,0 +1,8 @@
+// expect: private field 'counter' of SealedVault is accessible only within its defining module
+import "private_fields/record.cap";
+
+int main() {
+    SealedVault value = make_sealed_vault();
+    value.counter = 99;
+    return 0;
+}
