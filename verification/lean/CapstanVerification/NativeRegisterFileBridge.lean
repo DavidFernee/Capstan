@@ -551,7 +551,7 @@ theorem nativeRuntimeRegisterFileRelation_slot_exists
               have htailBound : index < nativeTail.length := by
                 simpa using hbound
               obtain ⟨nativeReg, runtimeReg, hnative, hruntime, hmatch⟩ :=
-                ih index htail htailBound
+                ih htail index htailBound
               exact ⟨nativeReg, runtimeReg,
                 by simpa using hnative,
                 by simpa using hruntime,
