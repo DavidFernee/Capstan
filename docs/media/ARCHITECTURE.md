@@ -32,8 +32,10 @@ must not duplicate codec semantics.
 The first MC1 prototype is on the Halyard working branch:
 
 - `lib/halyard/core.cap`: in-memory bounded byte source and sequential aggregate ledger;
-- `verification/halyard_core.cap`: initial boundary and failure-atomicity regressions;
-- `tests/run.sh`: invokes the regression program.
+- Capstan `test` declarations in `lib/halyard/core.cap`: initial boundary and failure-atomicity regressions.
+
+The Halyard implementation and its test logic are authored in Capstan. No Halyard-specific
+shell, Python, C, C++ or other-language implementation or test source is added.
 
 This is not an MC1 gate exit. Publicly mutable struct fields prevent an enforced opaque
 ownership boundary; the ledger is not concurrency-safe; reservation is not yet coupled
