@@ -313,14 +313,40 @@ void display_list_append(Canvas cv, DisplayCommand cmd, int payload) {
     cv.budget[0] += payload;
 }
 
-// Publishing the list ends recording. The command and geometry lists are frame-owned
-// and have no mutation API after this value is returned.
+// Copy nested variable-sized payloads as well as the outer command sequence.
+// Capstan Lists are mutable values; copying only DisplayCommand structs would leave
+// path segments and glyph alpha shared with the recorder.
+Segments display_segments_copy(Segments source) {
+    Segments copy = new_segments();
+    for (int i = 0; i < source.x0.len(); i += 1) {
+        copy.x0.push(source.x0[i]);
+        copy.y0.push(source.y0[i]);
+        copy.x1.push(source.x1[i]);
+        copy.y1.push(source.y1[i]);
+    }
+    return copy;
+}
+
+List<int> display_alpha_copy(List<int> source) {
+    List<int> copy = new List<int>();
+    for (int i = 0; i < source.len(); i += 1) { copy.push(source[i]); }
+    return copy;
+}
+
+// Publishing the list ends recording. Every mutable payload is copied into
+// frame-owned storage, so later recorder/cache mutation cannot alter the frame.
 DisplayList finish_display_list(Canvas cv) {
-    // Publish a stable command-sequence snapshot. The recorder may be reused for
-    // another frame without appending to a previously returned DisplayList.
+    // Snapshot the command sequence and all nested variable-sized payloads.
     List<DisplayCommand> commands = new List<DisplayCommand>();
     for (int i = 0; i < cv.commands.len(); i += 1) {
-        commands.push(cv.commands[i]);
+        DisplayCommand cmd = cv.commands[i];
+        if (let segments = cmd.segments) {
+            cmd.segments = display_segments_copy(segments);
+        }
+        if (let alpha = cmd.mask_alpha) {
+            cmd.mask_alpha = display_alpha_copy(alpha);
+        }
+        commands.push(cmd);
     }
     return new DisplayList{width: cv.pm.w, height: cv.pm.h, commands: commands};
 }
