@@ -148,6 +148,10 @@ Font truncated_composite_transform_fixture() {
 }
 
 int main() {
+    List<int> scaled_offset = component_offset(10, 20, 8192, 0, 0, 16384, true);
+    if (scaled_offset[0] != 5 || scaled_offset[1] != 20) { return 49; }
+    List<int> unscaled_offset = component_offset(10, 20, 8192, 0, 0, 16384, false);
+    if (unscaled_offset[0] != 10 || unscaled_offset[1] != 20) { return 50; }
     if (pixmap_size_valid(1, 1) != true) { return 1; }
     if (pixmap_size_valid(4096, 4096) != true) { return 2; }
     if (pixmap_size_valid(16384, 1024) != true) { return 3; }
