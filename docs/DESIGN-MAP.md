@@ -1162,21 +1162,31 @@ Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vu
 ## Bosun's Locker — Capstan-native database programme
 
 Bosun's Locker is the planned single-node, durable, strict-serializable database and
-storage engine. Its architecture and transaction-history contract are specified in
-[the Bosun architecture](database/BOSUNS-LOCKER-ARCHITECTURE.md) and
-[transaction-history semantics](database/TRANSACTION-HISTORY-SEMANTICS.md).
-These documents are proposals/contracts, not evidence of a complete database.
+storage engine. Its architecture, transaction-history contract and construction-safety
+requirements are specified in [the Bosun architecture](database/BOSUNS-LOCKER-ARCHITECTURE.md),
+[transaction-history semantics](database/TRANSACTION-HISTORY-SEMANTICS.md) and
+[construction-safety and corruption contract](database/BOSUN-CONSTRUCTION-SAFETY.md).
+These documents are normative acceptance targets, not evidence of a complete database.
 
 The first executable storage work is the bounded in-memory region kernel at
 `lib/bosun/storage.cap`. It is a sequential prototype with public mutable structs,
-logical payload accounting, and no recoverable allocation-failure, persistence,
-transaction, concurrency or durability guarantee. Its independent flat-vector
-oracle checks a finite set of operations but is not a proof. The standard suite
-invokes the module tests.
+forgeable integer identities and references, logical payload accounting, and no
+recoverable allocation-failure, persistence, transaction, concurrency or durability
+guarantee. Its independent flat-vector oracle checks a finite set of operations but
+is not a proof. The standard suite invokes the module tests. **This prototype is not
+a safe API and must not be used as a production security boundary.**
+
+The release-blocking requirement is that safe Capstan programs cannot construct or
+express invalid states: opaque representations, affine ownership, checked borrows
+and lifetimes, typestate, unforgeable capabilities, bounded resource effects and
+failure-atomic resource acquisition must be compiler-enforced. External and persisted
+bytes remain untrusted and must be validated before interpretation; detected
+corruption must fail closed. The contract explicitly distinguishes these guarantees
+from arbitrary hardware faults or compromise of the trusted computing base.
 
 The next gates are: deterministic exhaustive short-sequence and mutation testing;
-opaque/affine storage ownership enforced by the compiler; fallible allocation;
-implementation refinement; page format and checksums; WAL writer and crash-injection
-recovery; MVCC and strict-serializable transaction execution; and only then query
-execution and external interfaces. Each gate requires exact-head CI and evidence
-appropriate to the claim before the status advances.
+compiler implementation and negative tests for the construction-safety rules;
+fallible allocation; implementation refinement; page format and checksums; WAL writer
+and crash-injection recovery; MVCC and strict-serializable transaction execution; and
+only then query execution and external interfaces. Each gate requires exact-head CI
+and evidence appropriate to the claim before the status advances.
