@@ -5,5 +5,6 @@ import CapstanVerification.NativeRegisterFileBridge
 import CapstanVerification.Machine
 import CapstanVerification.Progress
 import CapstanVerification.ProgramValidator
+import CapstanVerification.Output
 import CapstanVerification.CallPreflight
 import CapstanVerification.MultiFunctionMachine
