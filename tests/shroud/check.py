@@ -283,6 +283,101 @@ def mutants(font, rng, count):
     return out
 
 
+def check_table_span_rejection(exe, tmp):
+    """Reject in-file reads that escape their owning sfnt table."""
+    path = os.path.join(ROOT, FONTS[0])
+    original = bytearray(open(path, "rb").read())
+    n_tables = struct.unpack_from(">H", original, 4)[0]
+    tables, records = {}, {}
+    for i in range(n_tables):
+        rec = 12 + 16 * i
+        tag = bytes(original[rec:rec + 4])
+        off, length = struct.unpack_from(">II", original, rec + 8)
+        tables[tag], records[tag] = (off, length), rec
+
+    cmap_off, cmap_len = tables[b"cmap"]
+    nsub = struct.unpack_from(">H", original, cmap_off + 2)[0]
+    chosen = None
+    for i in range(nsub):
+        rec = cmap_off + 4 + 8 * i
+        platform, encoding, relative = struct.unpack_from(">HHI", original, rec)
+        if platform == 0 or (platform == 3 and encoding in (1, 10)):
+            at = cmap_off + relative
+            fmt = struct.unpack_from(">H", original, at)[0]
+            if fmt in (4, 12):
+                chosen = (rec, at, fmt)
+                if fmt == 12:
+                    break
+    if chosen is None:
+        sys.exit("font table-span tests: bundled font has no supported Unicode cmap")
+    cmap_record, sub_at, sub_format = chosen
+
+    # Redirect a Unicode cmap record into another in-file table, whose first bytes
+    # are made a minimal format-12 subtable. The file bounds remain valid.
+    required_tables = {b"head", b"hhea", b"maxp", b"cmap", b"loca", b"hmtx", b"glyf"}
+    target = next(((tag, off) for tag, (off, length) in sorted(tables.items(), key=lambda x: x[1][0], reverse=True)
+                   if tag not in required_tables and off > cmap_off and length >= 16 and off + 16 <= len(original)), None)
+    if target is None:
+        sys.exit("font table-span tests: no later table for adjacent-table mutation")
+    _, target_off = target
+    b = bytearray(original)
+    struct.pack_into(">HHIII", b, target_off, 12, 0, 16, 0, 0)
+    struct.pack_into(">I", b, cmap_record + 4, target_off - cmap_off)
+    cases = [("cmap offset into adjacent table", b)]
+
+    # A truncated sfnt table directory must be rejected even when all required
+    # records happen to occur before the truncated boundary.
+    b = bytearray(original)
+    struct.pack_into(">H", b, 4, 0xFFFF)
+    cases.append(("truncated table directory", b))
+
+    if sub_format == 12:
+        b = bytearray(original)
+        struct.pack_into(">I", b, sub_at + 4, 16)
+        struct.pack_into(">I", b, sub_at + 12, 1)
+        cases.append(("format-12 group beyond subtable", b))
+    else:
+        b = bytearray(original)
+        struct.pack_into(">H", b, sub_at + 2, 16)
+        cases.append(("format-4 arrays beyond subtable", b))
+
+    glyphs = struct.unpack_from(">H", original, tables[b"maxp"][0] + 4)[0]
+    metrics = struct.unpack_from(">H", original, tables[b"hhea"][0] + 34)[0]
+    loca_format = struct.unpack_from(">h", original, tables[b"head"][0] + 50)[0]
+    loca_required = (glyphs + 1) * (4 if loca_format == 1 else 2)
+    hmtx_required = 4 * metrics + 2 * (glyphs - metrics)
+    # Make one loca pair descend while leaving every byte inside the loca table.
+    loca_off, loca_len = tables[b"loca"]
+    entry_size = 4 if loca_format == 1 else 2
+    loca_values = [struct.unpack_from(">I" if entry_size == 4 else ">H", original,
+                                     loca_off + entry_size * i)[0] for i in range(glyphs + 1)]
+    pair = next((i for i in range(glyphs) if loca_values[i + 1] < (0xFFFFFFFF if entry_size == 4 else 0xFFFF)), None)
+    if pair is None:
+        sys.exit("font table-span tests: no loca pair available for monotonicity mutation")
+    b = bytearray(original)
+    struct.pack_into(">I" if entry_size == 4 else ">H", b, loca_off + entry_size * pair,
+                     loca_values[pair + 1] + 1)
+    cases.append(("descending loca offsets", b))
+
+    for tag, required, label in ((b"loca", loca_required, "loca final entry beyond table"),
+                                 (b"hmtx", hmtx_required, "hmtx metrics beyond table")):
+        off, length = tables[tag]
+        if required < 1 or off + required > len(original):
+            sys.exit(f"font table-span tests: cannot construct {label}")
+        b = bytearray(original)
+        struct.pack_into(">I", b, records[tag] + 12, required - 1)
+        cases.append((label, b))
+
+    for index, (label, data) in enumerate(cases):
+        mutant = os.path.join(tmp, f"table-span-{index}.ttf")
+        with open(mutant, "wb") as f:
+            f.write(data)
+        result = run(exe, "font", mutant)
+        if result.stdout.strip() != "refused":
+            sys.exit(f"font table-span: parser accepted {label}: {result.stdout[:200]!r}")
+    return f"{len(cases)} in-file adjacent-table mutations rejected (cmap offset, subtable arrays, loca, hmtx)"
+
+
 def check_fuzz(exe, tmp):
     rng = random.Random(1337)
     paths = []
@@ -330,13 +425,13 @@ def check_single_line_budget(capstanc, cc, cflags, tmp):
 def check_pixmap_limits(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits.cap", "pixmap-limits")
     ok = run(exe)
-    if ok.stdout.strip() != "resource limits: 29 assertions and glyph cache exercised":
+    if ok.stdout.strip() != "resource limits: 42 assertions and glyph cache exercised":
         sys.exit(f"pixmap limits: unexpected output: {ok.stdout!r}")
     rejected_exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits_reject.cap", "pixmap-reject")
     rejected = run(rejected_exe, check=False)
     if rejected.returncode != 101 or "pixmap size out of range" not in rejected.stdout:
         sys.exit(f"pixmap limits: oversized constructor request was not rejected: exit {rejected.returncode}\\n{rejected.stdout}{rejected.stderr}")
-    return "29 resource-budget assertions including recursive composite budget; glyph cache exercised; oversized pixmap rejected before allocation"
+    return "42 resource-budget assertions including recursive composite budget; glyph cache exercised; oversized pixmap rejected before allocation"
 
 
 
@@ -390,6 +485,7 @@ def main():
         report.append("fonts: " + check_fonts(vec))
         report.append("utf-8: " + check_utf8(vec, tmp))
         report.append("png: " + check_png(vec, tmp))
+        report.append("font table spans: " + check_table_span_rejection(vec, tmp))
         report.append("font fuzz: " + check_fuzz(vec, tmp))
         report.append("pixmap limits: " + check_pixmap_limits(capstanc, cc, cflags, tmp))
         report.append("single-line filtering: " + check_single_line_budget(capstanc, cc, cflags, tmp))
