@@ -1,7 +1,7 @@
 # Anchor A1: host and process workstream decomposition
 
 **Status:** proposed sequencing decision; no implementation is implied
-**Parent:** docs/ANCHOR.md; docs/SHROUD-HOST.md; docs/proposals/SHROUD-LINUX-WAYLAND-PREREQUISITES.md
+**Parent:** docs/ANCHOR.md; docs/ANCHOR-CAPABILITY-IO-REQUIREMENTS.md; docs/SHROUD-HOST.md; docs/proposals/SHROUD-LINUX-WAYLAND-PREREQUISITES.md
 **Decision owner:** Anchor/Shroud/runtime maintainers jointly
 
 ## 1. Problem found in the A1 milestone
