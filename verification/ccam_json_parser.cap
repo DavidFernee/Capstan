@@ -1,0 +1,187 @@
+// Structural JSON parser for the bounded CCAM decoder.
+// Input is untrusted. The lexical scanner validates byte-level JSON tokens;
+// this component enforces the JSON value grammar and rejects duplicate keys
+// after escape decoding. It deliberately does not construct CCAM values.
+
+import "ccam_json_scanner.cap";
+
+struct CCAMJsonDocumentResult {
+    bool ok;
+    int error;
+    int error_pos;
+    int token_pos;
+}
+
+struct CCAMJsonParser {
+    List<CCAMJsonToken> tokens;
+    Tainted source;
+    int pos;
+    int error;
+    int error_pos;
+}
+
+int ccam_json_parser_kind(CCAMJsonParser p) {
+    if (p.pos < 0 || p.pos >= p.tokens.len()) { return 0; }
+    return p.tokens[p.pos].kind;
+}
+
+bool ccam_json_parser_fail(CCAMJsonParser p, int code) {
+    p.error = code;
+    if (p.pos < p.tokens.len()) {
+        p.error_pos = p.tokens[p.pos].start;
+    } else {
+        p.error_pos = p.source.len();
+    }
+    return false;
+}
+
+bool ccam_json_parse_value(CCAMJsonParser p, int depth);
+
+bool ccam_json_parse_object(CCAMJsonParser p, int depth) {
+    p.pos += 1; // opening brace
+    if (ccam_json_parser_kind(p) == CCAM_JSON_T_RBRACE) {
+        p.pos += 1;
+        return true;
+    }
+
+    List<Tainted> keys = new List<Tainted>();
+    while (true) {
+        if (ccam_json_parser_kind(p) != CCAM_JSON_T_STRING) {
+            return ccam_json_parser_fail(p, 10);
+        }
+        CCAMJsonToken key_token = p.tokens[p.pos];
+        Tainted key_body = p.source.slice(key_token.start + 1, key_token.end - 1);
+        CCAMJsonStringResult decoded = ccam_json_decode_string_body(key_body);
+        if (!decoded.ok) { return ccam_json_parser_fail(p, 11); }
+        for (int k = 0; k < keys.len(); k += 1) {
+            if (keys[k] == decoded.value) {
+                return ccam_json_parser_fail(p, 12);
+            }
+        }
+        keys.push(decoded.value);
+        p.pos += 1;
+
+        if (ccam_json_parser_kind(p) != CCAM_JSON_T_COLON) {
+            return ccam_json_parser_fail(p, 13);
+        }
+        p.pos += 1;
+        if (!ccam_json_parse_value(p, depth + 1)) { return false; }
+
+        if (ccam_json_parser_kind(p) == CCAM_JSON_T_COMMA) {
+            p.pos += 1;
+            continue;
+        }
+        if (ccam_json_parser_kind(p) == CCAM_JSON_T_RBRACE) {
+            p.pos += 1;
+            return true;
+        }
+        return ccam_json_parser_fail(p, 14);
+    }
+}
+
+bool ccam_json_parse_array(CCAMJsonParser p, int depth) {
+    p.pos += 1; // opening bracket
+    if (ccam_json_parser_kind(p) == CCAM_JSON_T_RBRACKET) {
+        p.pos += 1;
+        return true;
+    }
+    while (true) {
+        if (!ccam_json_parse_value(p, depth + 1)) { return false; }
+        if (ccam_json_parser_kind(p) == CCAM_JSON_T_COMMA) {
+            p.pos += 1;
+            continue;
+        }
+        if (ccam_json_parser_kind(p) == CCAM_JSON_T_RBRACKET) {
+            p.pos += 1;
+            return true;
+        }
+        return ccam_json_parser_fail(p, 15);
+    }
+}
+
+bool ccam_json_parse_value(CCAMJsonParser p, int depth) {
+    if (depth > CCAM_JSON_MAX_DEPTH) {
+        return ccam_json_parser_fail(p, 16);
+    }
+    int kind = ccam_json_parser_kind(p);
+    if (kind == CCAM_JSON_T_STRING || kind == CCAM_JSON_T_NUMBER ||
+        kind == CCAM_JSON_T_TRUE || kind == CCAM_JSON_T_FALSE ||
+        kind == CCAM_JSON_T_NULL) {
+        p.pos += 1;
+        return true;
+    }
+    if (kind == CCAM_JSON_T_LBRACE) {
+        return ccam_json_parse_object(p, depth);
+    }
+    if (kind == CCAM_JSON_T_LBRACKET) {
+        return ccam_json_parse_array(p, depth);
+    }
+    return ccam_json_parser_fail(p, 17);
+}
+
+CCAMJsonDocumentResult ccam_json_validate_document(Tainted source) {
+    CCAMJsonScanResult scanned = ccam_json_scan(source);
+    if (!scanned.ok) {
+        return new CCAMJsonDocumentResult{
+            ok: false, error: scanned.error, error_pos: scanned.error_pos, token_pos: 0
+        };
+    }
+    CCAMJsonParser parser = new CCAMJsonParser{
+        tokens: scanned.tokens, source: source, pos: 0, error: 0, error_pos: 0
+    };
+    if (scanned.tokens.len() == 0) {
+        return new CCAMJsonDocumentResult{
+            ok: false, error: 18, error_pos: 0, token_pos: 0
+        };
+    }
+    if (!ccam_json_parse_value(parser, 0)) {
+        return new CCAMJsonDocumentResult{
+            ok: false, error: parser.error, error_pos: parser.error_pos, token_pos: parser.pos
+        };
+    }
+    if (parser.pos != parser.tokens.len()) {
+        return new CCAMJsonDocumentResult{
+            ok: false, error: 19, error_pos: parser.tokens[parser.pos].start, token_pos: parser.pos
+        };
+    }
+    return new CCAMJsonDocumentResult{
+        ok: true, error: 0, error_pos: source.len(), token_pos: parser.pos
+    };
+}
+
+test "CCAM JSON parser accepts one complete JSON value" {
+    assert(ccam_json_validate_document(taint("null")).ok);
+    assert(ccam_json_validate_document(taint("true")).ok);
+    assert(ccam_json_validate_document(taint("0")).ok);
+    assert(ccam_json_validate_document(taint("\"text\"")).ok);
+    assert(ccam_json_validate_document(taint("{}")).ok);
+    assert(ccam_json_validate_document(taint("[]")).ok);
+    assert(ccam_json_validate_document(taint("{\"a\":[1,false,null,{\"b\":\"c\"}]}")).ok);
+    assert(ccam_json_validate_document(taint("  [ ] \n")).ok);
+}
+
+test "CCAM JSON parser rejects duplicate decoded object keys" {
+    assert(!ccam_json_validate_document(taint("{\"a\":1,\"a\":2}")).ok);
+    assert(!ccam_json_validate_document(taint("{\"a\":1,\"\\u0061\":2}")).ok);
+    assert(!ccam_json_validate_document(taint("{\"\\u0061\":1,\"a\":2}")).ok);
+    assert(ccam_json_validate_document(taint("{\"a\":1,\"b\":2}")).ok);
+    assert(ccam_json_validate_document(taint("{\"a\":{\"a\":1},\"b\":{\"a\":2}}")).ok);
+}
+
+test "CCAM JSON parser rejects malformed object and array grammar" {
+    assert(!ccam_json_validate_document(taint("")).ok);
+    assert(!ccam_json_validate_document(taint("   ")).ok);
+    assert(!ccam_json_validate_document(taint("{]")).ok);
+    assert(!ccam_json_validate_document(taint("[}")).ok);
+    assert(!ccam_json_validate_document(taint("{,\"a\":1}")).ok);
+    assert(!ccam_json_validate_document(taint("{\"a\" 1}")).ok);
+    assert(!ccam_json_validate_document(taint("{\"a\":1,}")).ok);
+    assert(!ccam_json_validate_document(taint("[1,]")).ok);
+    assert(!ccam_json_validate_document(taint("[true false]")).ok);
+}
+
+test "CCAM JSON parser rejects trailing top-level values" {
+    assert(!ccam_json_validate_document(taint("{}{}")).ok);
+    assert(!ccam_json_validate_document(taint("true false")).ok);
+    assert(!ccam_json_validate_document(taint("1,2")).ok);
+}
