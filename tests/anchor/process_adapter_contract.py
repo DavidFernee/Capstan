@@ -460,7 +460,7 @@ class ContractTests(unittest.TestCase):
     def test_bad_json_duplicate_keys_and_truncated_frames_rejected(self):
         for raw in (b"Content-Length: 1\r\n\r\n{",
                     b'Content-Length: 25\r\n\r\n{"jsonrpc":"2.0","id":1',
-                    b'Content-Length: 28\r\n\r\n{"jsonrpc":"2.0","jsonrpc":"2.0"}'):
+                    b'Content-Length: 33\r\n\r\n{"jsonrpc":"2.0","jsonrpc":"2.0"}'):
             decoder = BoundedFrameDecoder()
             with self.subTest(raw=raw), self.assertRaises(ContractError):
                 decoder.feed(raw)
