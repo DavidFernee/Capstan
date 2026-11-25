@@ -272,8 +272,12 @@ void test_resize(Tally t, Font f, Font b) {
         "resize: invalid dimensions and scales are rejected", "one invalid resize succeeded");
     expect(t, ui.pixmap.w == 240 && ui.pixmap.h == 160 && ui.scale == 256,
         "resize: rejected requests preserve surface and scale", $"{ui.pixmap.w}x{ui.pixmap.h}@{ui.scale}");
+    bool rejected_scroll_kept = false;
+    bool rejected_caret_kept = false;
+    if (let s = ui.scroll.get("retained-scroll")) { rejected_scroll_kept = s == 37; }
+    if (let c = ui.caret.get("retained-caret")) { rejected_caret_kept = c == 9; }
     expect(t, ui.focus == "resize-focus" && ui.focus_visible &&
-        ui.scroll.get("retained-scroll") == 37 && ui.caret.get("retained-caret") == 9,
+        rejected_scroll_kept && rejected_caret_kept,
         "resize: rejected requests preserve logical state", ui.focus);
     expect(t, ui.hover == "transient-hover" && ui.pressed == "transient-press",
         "resize: rejected requests preserve transient state", ui.hover + "/" + ui.pressed);
@@ -281,8 +285,12 @@ void test_resize(Tally t, Font f, Font b) {
     bool ok = ui.resize(360, 240, 384);
     expect(t, ok && ui.pixmap.w == 360 && ui.pixmap.h == 240 && ui.scale == 384,
         "resize: valid request updates surface and scale", $"{ui.pixmap.w}x{ui.pixmap.h}@{ui.scale}");
+    bool resized_scroll_kept = false;
+    bool resized_caret_kept = false;
+    if (let s = ui.scroll.get("retained-scroll")) { resized_scroll_kept = s == 37; }
+    if (let c = ui.caret.get("retained-caret")) { resized_caret_kept = c == 9; }
     expect(t, ui.focus == "resize-focus" && ui.focus_visible &&
-        ui.scroll.get("retained-scroll") == 37 && ui.caret.get("retained-caret") == 9,
+        resized_scroll_kept && resized_caret_kept,
         "resize: focus, scroll and caret survive", ui.focus);
     expect(t, ui.hover == "" && ui.pressed == "",
         "resize: transient pointer state is cleared", ui.hover + "/" + ui.pressed);
