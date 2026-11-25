@@ -16,6 +16,8 @@ import tempfile
 import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MAX_PNG_TEST_HEAP = 96 * 1024 * 1024
+MAX_PNG_GC_STRESS_HEAP = 32 * 1024 * 1024
 LIB = sorted(
     os.path.join("lib/shroud", name)
     for name in os.listdir(os.path.join(ROOT, "lib/shroud"))
@@ -113,6 +115,16 @@ def check_stored_deflate(idat, expected_raw_length):
     return blocks
 
 
+def require_peak_heap(output, label, limit):
+    match = re.search(r"peak_heap=(\d+)", output)
+    if not match:
+        fail(f"{label}: runtime did not report CAPSTAN_GC_STATS peak_heap")
+    peak = int(match.group(1))
+    if peak > limit:
+        fail(f"{label}: peak GC heap {peak} exceeds {limit}-byte test budget")
+    return peak
+
+
 def main():
     if len(sys.argv) < 3:
         fail(__doc__)
@@ -136,6 +148,8 @@ def main():
         env = os.environ.copy()
         env["CAPSTAN_GC_STATS"] = "1"
         result = run([exe, accepted, rejected, binary, gallery, near_limit], env=env)
+        peak_bytes = require_peak_heap(result.stderr + result.stdout,
+                                       "4 MiB PNG boundary workload", MAX_PNG_TEST_HEAP)
         if "png budget: 23 assertions" not in result.stdout:
             fail(f"regression program did not report its assertions: {result.stdout!r}")
         if not os.path.isfile(accepted):
@@ -185,15 +199,23 @@ def main():
             row = gallery_raw[y * len(gallery_row):(y + 1) * len(gallery_row)]
             if row != gallery_row:
                 fail(f"560x520 gallery-size decoded pixels differ on row {y}")
-        peak = re.search(r"peak_heap=(\d+)", result.stderr + result.stdout)
-        heap_note = (f"; peak Capstan heap {int(peak.group(1)) / (1024 * 1024):.1f} MiB"
-                     if peak else "; peak Capstan heap metric unavailable")
+        stress_env = os.environ.copy()
+        stress_env["CAPSTAN_GC_STATS"] = "1"
+        stress_env["CAPSTAN_GC_STRESS"] = "1"
+        stress = run([exe, "--gc-stress"], env=stress_env)
+        if "png budget GC stress: 8 deterministic 128x128 exports" not in stress.stdout:
+            fail(f"GC-stress export loop did not complete: {stress.stdout!r}")
+        stress_peak = require_peak_heap(stress.stderr + stress.stdout,
+                                        "repeated-export GC stress", MAX_PNG_GC_STRESS_HEAP)
         print(f"png budget: 23 Capstan assertions; {width}x{height} RGBA / "
               f"{gallery_width}x{gallery_height} gallery-size / "
               f"{near_width}x{near_height} near-limit RGBA; "
               f"{blocks} / {gallery_blocks} / {near_blocks} stored DEFLATE blocks; CRC, zlib, Adler "
               "and every pixel verified; all 256 byte values preserved; "
-              "over-budget write produced no file" + heap_note)
+              "over-budget write produced no file; "
+              f"peak GC heap {peak_bytes / (1024 * 1024):.1f} MiB (96 MiB ceiling); "
+              f"8 repeated exports under GC stress, peak {stress_peak / (1024 * 1024):.1f} MiB "
+              "(32 MiB ceiling)")
 
 
 if __name__ == "__main__":

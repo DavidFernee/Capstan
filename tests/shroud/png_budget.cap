@@ -3,6 +3,24 @@
 // fail without creating output. The Python harness independently decodes the file.
 
 int main() {
+    List<string> arguments = args();
+    // A separate small mode exercises repeated real encodes with collection on
+    // every allocation; keep the large boundary workload out of this stress run.
+    if (arguments.len() > 0 && arguments[0] == "--gc-stress") {
+        Pixmap stress = new_pixmap(128, 128);
+        stress.clear(0xFF336699);
+        List<int> expected = png_encode(stress);
+        if (expected.len() < 57) { return 24; }
+        for (int iteration = 0; iteration < 8; iteration += 1) {
+            List<int> actual = png_encode(stress);
+            if (actual.len() != expected.len()) { return 25; }
+            for (int byte_index = 0; byte_index < expected.len(); byte_index += 1) {
+                if (actual[byte_index] != expected[byte_index]) { return 26; }
+            }
+        }
+        println("png budget GC stress: 8 deterministic 128x128 exports");
+        return 0;
+    }
     if (!png_raw_size_valid(1, 1)) { return 1; }
     if (!png_raw_size_valid(2047, 512)) { return 2; }
     if (png_raw_size_valid(2048, 512)) { return 3; }
@@ -53,7 +71,7 @@ int main() {
         if (again[i] != encoded[i]) { return 17; }
     }
 
-    List<string> a = args();
+    List<string> a = arguments;
     if (a.len() > 0 && !png_write(a[0], multi)) { return 18; }
     if (a.len() > 1 && png_write(a[1], over)) { return 19; }
     List<int> all_bytes = new List<int>();
