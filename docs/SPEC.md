@@ -54,6 +54,8 @@ test "owners can edit" { assert_granted CanEdit(owner, doc); }
 - `opaque struct Vault { int secret; }` makes every field private to the defining
   source file. Only code in that module can read, write or initialise those fields; imported
   callers must obtain values through module-defined factories and use exported operations.
+  Imported callers cannot use a struct literal to construct an opaque value, even when the
+  opaque struct has no fields.
   `sensitive` and `opaque` may both modify a struct declaration, in either order. An opaque
   struct is still a reference type; this modifier does not provide unique ownership, borrowing
   or lifetime safety.
