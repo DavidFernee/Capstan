@@ -93,8 +93,9 @@ or an RAII/linear ownership mechanism. Those are explicit follow-up requirements
 
 ## 5. Test obligations
 
-The current regression program is `verification/halyard_core.cap`. It is
-included in `tests/run.sh`. It covers:
+The regression suite is expressed as Capstan `test` declarations in `lib/halyard/core.cap`.
+Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
+contains no shell, Python, C, or other-language source. It covers:
 
 - defensive snapshot from the original input list;
 - invalid byte, negative limit and source over-limit rejection;
@@ -120,9 +121,9 @@ Still required before MC1 can pass:
 
 | Module | First-party source | Current status |
 |---|---|---|
-| Byte source | `lib/halyard/core.cap` | Prototype; public mutable representation |
+| Byte source | `lib/halyard/core.cap` | Prototype; public mutable representation; Capstan-native tests colocated |
 | Aggregate ledger | `lib/halyard/core.cap` | Sequential all-or-nothing prototype; not concurrency-safe |
-| Regression vectors | `verification/halyard_core.cap` | Added to normal test runner; exact-head CI pending |
+| Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native regression cases; exact-head CI pending |
 | Rational timebase | Not implemented | Contract and test vectors remain under MC1 / issue #286 |
 | Format registry | Not implemented | MC0 / issue #287 |
 | Bounded sink | Not implemented | Required before encoder/output work |
