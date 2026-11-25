@@ -187,9 +187,15 @@ to the new dimensions; callers that need them must use the bounded constructor a
 supply explicit limits. A zero limit is intentional fail-closed behaviour, not an
 implicit unlimited default.
 
-The units are logical admission quotas. In particular, `allocation_units` is not
-an allocator-exact byte count and does not charge allocator metadata, capacity
-over-allocation, GC headers or transient runtime storage. The current public structs
+The units are logical admission quotas. Managed source creation now acquires one
+allocation-object slot together with its retained-byte lease before taking the defensive
+snapshot. Managed sink creation similarly acquires its slot before constructing the sink;
+each copy-on-commit append acquires a second slot while the old sink allocation remains
+live, then releases the old slot only after commit. A one-slot ledger therefore rejects
+an append without changing the existing sink.
+
+In particular, `allocation_units` is not an allocator-exact byte count and does not charge
+allocator metadata, capacity over-allocation, GC headers or transient runtime storage. The current public structs
 also remain forgeable and the operations remain sequential/thread-confined. The
 extended vector therefore improves the model's expressiveness but does not close
 MC1's opacity, concurrency or actual-memory-accounting requirements.
@@ -264,7 +270,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 8. Test obligations
 
-The regression suite is expressed as 44 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 45 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`; the Shanty and Deadeye suites are invoked directly with `bin/capstan test lib/halyard/shanty.cap` and `bin/capstan test lib/halyard/deadeye.cap`. The module tests remain colocated Capstan declarations and are not wired through a Halyard-specific shell hook. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -288,7 +294,7 @@ contains no shell, Python, C, or other-language source. It covers:
 - separation of cheap source-shape preflight from the bounded byte-domain scan;
 - monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics;
 - all-or-nothing admission/release for allocation, metadata, queue, worker, nesting, track and chunk live-resource dimensions, including per-dimension over-limit and underflow rejection;
-- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation; managed source admission, retained-byte accounting, close/release lifecycle, invalid-input rollback and retry after ledger repair; managed sink peak replacement accounting, rejected admission, invalid-write preservation and retryable close after ledger repair.
+- one-shot reservation-handle release, alias-shared release state and rejection of a handle for a failed reservation; managed source admission, retained-byte accounting, close/release lifecycle, invalid-input rollback and retry after ledger repair; managed sink peak replacement accounting, allocation-slot overlap admission, rejected admission, invalid-write preservation and retryable close after ledger repair.
 
 Still required before MC1 can pass:
 
