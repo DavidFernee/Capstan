@@ -45,7 +45,7 @@ The public construction path is \`ccam_json_machine_create\`. It does not constr
 
 ## Taint boundary
 
-The parser retains tainted text while reading. The implementation's explicit \`trust()\` boundary is confined to values that have passed strict JSON string decoding; function names additionally pass NUL and byte-length checks, and trap reasons pass the closed ASCII reason grammar. These values are then used only as machine identifiers/reason labels, not as filesystem paths, commands, format strings or executable source.
+The parser retains tainted text while reading. The implementation's explicit \`trust()\` boundary is confined to values that have passed strict JSON string decoding; all schema strings additionally reject embedded NUL and enforce byte limits; function names pass the function-name constraints, and trap reasons pass the closed ASCII reason grammar. These values are then used only as machine identifiers/reason labels, not as filesystem paths, commands, format strings or executable source.
 
 This boundary requires dedicated security review. The presence of a validation call is not itself a proof of validator soundness.
 
