@@ -217,8 +217,16 @@ struct Canvas {
             // Admit the complete payload before copying it. Otherwise repeated
             // masks can allocate far beyond the frame budget before append rejects
             // the command.
-            if (!display_list_payload_fits(self, alpha.len())) {
-                println("shroud: display list resource budget exceeded");
+            // Enforce the per-mask cap as well as the aggregate frame cap
+            // before allocating the owned copy. Validate dimensions without
+            // multiplying untrusted width and height first.
+            if (alpha.len() > MAX_DISPLAY_MASK_PIXELS || width < 0 || height < 0 ||
+                (width == 0 && (height != 0 || alpha.len() != 0)) ||
+                (height == 0 && (width != 0 || alpha.len() != 0)) ||
+                (width > 0 && height > 0 &&
+                    (width > alpha.len() / height || width * height != alpha.len())) ||
+                !display_list_payload_fits(self, alpha.len())) {
+                println("shroud: display list mask payload is invalid or over budget");
                 exit(101);
             }
             // Snapshot cached glyph pixels into frame-owned storage. A later font
