@@ -7,8 +7,9 @@ python3 -I tests/anchor/process_adapter_contract.py
 ```
 
 The harness is deliberately test-only. It defines a deterministic reference model
-and a fake OS boundary so that process lifecycle, output budgets, cancellation,
-deadlines, restart backoff, JSON-RPC framing/correlation and stale-diagnostic rules
+and a fake OS boundary so that process lifecycle and owned-descendant teardown, output
+budgets, cancellation, deadlines, restart backoff, JSON-RPC framing/correlation and
+stale-diagnostic rules
 can be exercised before the native process API exists.
 
 **What passing means:** the reference model and its contract tests are internally
