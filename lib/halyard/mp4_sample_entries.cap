@@ -1,0 +1,446 @@
+// Deadeye MP4 sample-entry profile validation.
+// Strict first-film subset: one avc1 Baseline video entry and/or one
+// uncompressed sowt/twos PCM audio entry. This parses configuration only;
+// it does not decode H.264 or emit media packets.
+import "core.cap";
+import "mp4.cap";
+
+const int DEADEYE_MP4_MAX_SAMPLE_ENTRY_BYTES = 1048576;
+const int DEADEYE_MP4_MAX_CONFIG_NAL_BYTES = 262144;
+
+struct DeadeyeMp4SampleEntry {
+    bool ok;
+    bool is_video;
+    bool is_audio;
+    int width;
+    int height;
+    int channels;
+    int sample_rate;
+    int sample_bits;
+    bool pcm_little_endian;
+    int nal_length_bytes;
+    int sps_count;
+    int pps_count;
+    int avc_profile;
+    int avc_level;
+    string codec;
+    string error;
+}
+
+DeadeyeMp4SampleEntry deadeye_mp4_sample_entry_error(string error) {
+    return new DeadeyeMp4SampleEntry{
+        ok: false, is_video: false, is_audio: false,
+        width: 0, height: 0, channels: 0, sample_rate: 0,
+        sample_bits: 0, pcm_little_endian: false,
+        nal_length_bytes: 0, sps_count: 0, pps_count: 0,
+        avc_profile: 0, avc_level: 0, codec: "", error: error
+    };
+}
+
+int deadeye_mp4_se_u16(List<int> bytes, int at) {
+    return (bytes[at] << 8) | bytes[at + 1];
+}
+
+bool deadeye_mp4_se_bytes_valid(List<int> bytes, int start, int end) {
+    if (bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES ||
+        start < 0 || end < start || end > bytes.len() ||
+        end - start > DEADEYE_MP4_MAX_SAMPLE_ENTRY_BYTES) {
+        return false;
+    }
+    for (int i = start; i < end; i += 1) {
+        if (bytes[i] < 0 || bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+struct DeadeyeMp4AvcConfig {
+    bool ok;
+    int nal_length_bytes;
+    int sps_count;
+    int pps_count;
+    int profile;
+    int level;
+    string error;
+}
+
+DeadeyeMp4AvcConfig deadeye_mp4_avcc_error(string error) {
+    return new DeadeyeMp4AvcConfig{
+        ok: false, nal_length_bytes: 0, sps_count: 0, pps_count: 0,
+        profile: 0, level: 0, error: error
+    };
+}
+
+// Parse ISO/IEC 14496-15 AVCDecoderConfigurationRecord. Only Baseline
+// profile_idc 66 is accepted. NAL lengths are 1, 2 or 4 bytes; the reserved
+// three-byte form is rejected. SPS/PPS NAL types and lengths are checked.
+DeadeyeMp4AvcConfig deadeye_mp4_parse_avcc(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_se_bytes_valid(bytes, start, end) ||
+        end - start < 7 || bytes[start] != 1) {
+        return deadeye_mp4_avcc_error("invalid_avcc_header");
+    }
+    int profile = bytes[start + 1];
+    int compatibility = bytes[start + 2];
+    int level = bytes[start + 3];
+    int length_field = bytes[start + 4];
+    if (profile != 66 || (compatibility & 3) != 0 ||
+        (length_field & 252) != 252 || (bytes[start + 5] & 224) != 224) {
+        return deadeye_mp4_avcc_error("unsupported_avc_profile_or_reserved_bits");
+    }
+    int nal_length_bytes = (length_field & 3) + 1;
+    if (nal_length_bytes == 3) {
+        return deadeye_mp4_avcc_error("unsupported_nal_length_size");
+    }
+    int sps_count = bytes[start + 5] & 31;
+    if (sps_count < 1 || sps_count > 31) {
+        return deadeye_mp4_avcc_error("invalid_sps_count");
+    }
+    int at = start + 6;
+    int total_nal_bytes = 0;
+    for (int i = 0; i < sps_count; i += 1) {
+        if (end - at < 2) { return deadeye_mp4_avcc_error("truncated_sps_length"); }
+        int n = deadeye_mp4_se_u16(bytes, at);
+        at += 2;
+        if (n < 2 || n > DEADEYE_MP4_MAX_CONFIG_NAL_BYTES ||
+            n > end - at || (bytes[at] & 128) != 0 ||
+            (bytes[at] & 31) != 7 ||
+            n > DEADEYE_MP4_MAX_CONFIG_NAL_BYTES - total_nal_bytes) {
+            return deadeye_mp4_avcc_error("invalid_sps_nal");
+        }
+        total_nal_bytes += n;
+        at += n;
+    }
+    if (at >= end) { return deadeye_mp4_avcc_error("missing_pps_count"); }
+    int pps_count = bytes[at];
+    at += 1;
+    if (pps_count < 1) {
+        return deadeye_mp4_avcc_error("invalid_pps_count");
+    }
+    for (int j = 0; j < pps_count; j += 1) {
+        if (end - at < 2) { return deadeye_mp4_avcc_error("truncated_pps_length"); }
+        int n = deadeye_mp4_se_u16(bytes, at);
+        at += 2;
+        if (n < 2 || n > DEADEYE_MP4_MAX_CONFIG_NAL_BYTES ||
+            n > end - at || (bytes[at] & 128) != 0 ||
+            (bytes[at] & 31) != 8 ||
+            n > DEADEYE_MP4_MAX_CONFIG_NAL_BYTES - total_nal_bytes) {
+            return deadeye_mp4_avcc_error("invalid_pps_nal");
+        }
+        total_nal_bytes += n;
+        at += n;
+    }
+    // Baseline configuration records have no high-profile extension syntax.
+    // Reject trailing bytes rather than silently accepting unparsed semantics.
+    if (at != end) {
+        return deadeye_mp4_avcc_error("unexpected_avcc_extension");
+    }
+    // compatibility is retained in the source record; constraint-set syntax
+    // is not interpreted here, so only the Baseline profile_idc is asserted.
+    if (level < 1) {
+        return deadeye_mp4_avcc_error("invalid_avc_constraints");
+    }
+    return new DeadeyeMp4AvcConfig{
+        ok: true, nal_length_bytes: nal_length_bytes,
+        sps_count: sps_count, pps_count: pps_count,
+        profile: profile, level: level, error: ""
+    };
+}
+
+DeadeyeMp4SampleEntry deadeye_mp4_parse_video_entry(
+    List<int> bytes, DeadeyeMp4Box entry
+) {
+    int payload_length = entry.end - entry.payload_start;
+    if (payload_length < 78) {
+        return deadeye_mp4_sample_entry_error("truncated_visual_sample_entry");
+    }
+    int p = entry.payload_start;
+    for (int r = 0; r < 24; r += 1) {
+        if (r < 6 || r >= 8) {
+            if (bytes[p + r] != 0) {
+                return deadeye_mp4_sample_entry_error("invalid_visual_reserved_fields");
+            }
+        }
+    }
+    if (deadeye_mp4_se_u16(bytes, p + 6) != 1) {
+        return deadeye_mp4_sample_entry_error("unsupported_data_reference");
+    }
+    int width = deadeye_mp4_se_u16(bytes, p + 24);
+    int height = deadeye_mp4_se_u16(bytes, p + 26);
+    if (width < 1 || width > 8192 || height < 1 || height > 8192 ||
+        width > 16777216 / height) {
+        return deadeye_mp4_sample_entry_error("invalid_video_dimensions");
+    }
+    if (deadeye_mp4_u32_be(bytes, p + 36) != 0 ||
+        deadeye_mp4_se_u16(bytes, p + 40) != 1 ||
+        deadeye_mp4_se_u16(bytes, p + 74) != 24 ||
+        deadeye_mp4_se_u16(bytes, p + 76) != 65535 ||
+        bytes[p + 42] > 31) {
+        return deadeye_mp4_sample_entry_error("invalid_visual_sample_entry_fields");
+    }
+    int child_at = p + 78;
+    bool has_avcc = false;
+    DeadeyeMp4AvcConfig config = deadeye_mp4_avcc_error("missing_avcc");
+    int child_count = 0;
+    while (child_at < entry.end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(
+            bytes, child_at, entry.end
+        );
+        if (!parsed.ok) {
+            return deadeye_mp4_sample_entry_error("malformed_video_entry_child");
+        }
+        DeadeyeMp4Box child = parsed.box;
+        child_count += 1;
+        if (child_count > 64 || deadeye_mp4_is_encryption_marker(child)) {
+            return deadeye_mp4_sample_entry_error("unsupported_or_encrypted_video_child");
+        }
+        if (deadeye_mp4_box_type(child, 'a','v','c','C')) {
+            if (has_avcc) {
+                return deadeye_mp4_sample_entry_error("duplicate_avcc");
+            }
+            has_avcc = true;
+            config = deadeye_mp4_parse_avcc(
+                bytes, child.payload_start, child.end
+            );
+            if (!config.ok) {
+                return deadeye_mp4_sample_entry_error(config.error);
+            }
+        } else {
+            // Strict allow-list: no unparsed video extensions in the first-film
+            // profile. This avoids accepting colour, auxiliary or timing
+            // semantics that the decoder/presenter do not yet implement.
+            return deadeye_mp4_sample_entry_error("unsupported_video_entry_child");
+        }
+        child_at = child.end;
+    }
+    if (!has_avcc) { return deadeye_mp4_sample_entry_error("missing_avcc"); }
+    return new DeadeyeMp4SampleEntry{
+        ok: true, is_video: true, is_audio: false,
+        width: width, height: height, channels: 0, sample_rate: 0,
+        sample_bits: 0, pcm_little_endian: false,
+        nal_length_bytes: config.nal_length_bytes,
+        sps_count: config.sps_count, pps_count: config.pps_count,
+        avc_profile: config.profile, avc_level: config.level,
+        codec: "avc1-baseline", error: ""
+    };
+}
+
+DeadeyeMp4SampleEntry deadeye_mp4_parse_audio_entry(
+    List<int> bytes, DeadeyeMp4Box entry
+) {
+    int payload_length = entry.end - entry.payload_start;
+    if (payload_length < 28) {
+        return deadeye_mp4_sample_entry_error("truncated_audio_sample_entry");
+    }
+    int p = entry.payload_start;
+    for (int r = 0; r < 6; r += 1) {
+        if (bytes[p + r] != 0) {
+            return deadeye_mp4_sample_entry_error("invalid_audio_reserved_fields");
+        }
+    }
+    if (deadeye_mp4_se_u16(bytes, p + 6) != 1 ||
+        deadeye_mp4_se_u16(bytes, p + 8) != 0 ||
+        deadeye_mp4_se_u16(bytes, p + 10) != 0 ||
+        deadeye_mp4_u32_be(bytes, p + 12) != 0 ||
+        deadeye_mp4_se_u16(bytes, p + 20) != 0 ||
+        deadeye_mp4_se_u16(bytes, p + 22) != 0) {
+        return deadeye_mp4_sample_entry_error("unsupported_audio_entry_version_or_reserved");
+    }
+    int channels = deadeye_mp4_se_u16(bytes, p + 16);
+    int bits = deadeye_mp4_se_u16(bytes, p + 18);
+    int sample_rate_fixed = deadeye_mp4_u32_be(bytes, p + 24);
+    int sample_rate = sample_rate_fixed >>> 16;
+    if (channels < 1 || channels > 8 ||
+        (bits != 8 && bits != 16 && bits != 24 && bits != 32) ||
+        sample_rate < 1 || sample_rate > 384000 ||
+        (sample_rate_fixed & 65535) != 0) {
+        return deadeye_mp4_sample_entry_error("unsupported_pcm_parameters");
+    }
+    bool little_endian = deadeye_mp4_box_type(entry, 's','o','w','t');
+    if (!little_endian && !deadeye_mp4_box_type(entry, 't','w','o','s')) {
+        return deadeye_mp4_sample_entry_error("unsupported_audio_codec");
+    }
+    int child_at = p + 28;
+    int child_count = 0;
+    while (child_at < entry.end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(
+            bytes, child_at, entry.end
+        );
+        if (!parsed.ok) {
+            return deadeye_mp4_sample_entry_error("malformed_audio_entry_child");
+        }
+        child_count += 1;
+        if (child_count > 64 || deadeye_mp4_is_encryption_marker(parsed.box)) {
+            return deadeye_mp4_sample_entry_error("unsupported_or_encrypted_audio_child");
+        }
+        // This constrained PCM profile accepts no extensions. A future
+        // extension must be explicitly parsed and bounded before allowlisting.
+        return deadeye_mp4_sample_entry_error("unsupported_audio_entry_child");
+    }
+    return new DeadeyeMp4SampleEntry{
+        ok: true, is_video: false, is_audio: true,
+        width: 0, height: 0, channels: channels, sample_rate: sample_rate,
+        sample_bits: bits, pcm_little_endian: little_endian,
+        nal_length_bytes: 0, sps_count: 0, pps_count: 0,
+        avc_profile: 0, avc_level: 0,
+        codec: little_endian ? "sowt-pcm" : "twos-pcm", error: ""
+    };
+}
+
+// Parse a single-entry stsd. The first target intentionally uses one sample
+// description per track; multiple descriptions are rejected until chunk
+// description-index transitions are supported and validated.
+DeadeyeMp4SampleEntry deadeye_mp4_parse_stsd(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_se_bytes_valid(bytes, start, end) || end - start < 8 ||
+        bytes[start] != 0 || bytes[start + 1] != 0 ||
+        bytes[start + 2] != 0 || bytes[start + 3] != 0) {
+        return deadeye_mp4_sample_entry_error("invalid_stsd_header");
+    }
+    int entry_count = deadeye_mp4_mp4_u32_be(bytes, start + 4);
+    if (entry_count != 1) {
+        return deadeye_mp4_sample_entry_error("unsupported_stsd_entry_count");
+    }
+    DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes, start + 8, end);
+    if (!parsed.ok || parsed.box.end != end ||
+        parsed.box.size > DEADEYE_MP4_MAX_SAMPLE_ENTRY_BYTES) {
+        return deadeye_mp4_sample_entry_error("invalid_stsd_sample_entry_box");
+    }
+    if (deadeye_mp4_box_type(parsed.box, 'e','n','c','v') ||
+        deadeye_mp4_box_type(parsed.box, 'e','n','c','a') ||
+        deadeye_mp4_is_encryption_marker(parsed.box)) {
+        return deadeye_mp4_sample_entry_error("encrypted_sample_entry_unsupported");
+    }
+    if (deadeye_mp4_box_type(parsed.box, 'a','v','c','1')) {
+        return deadeye_mp4_parse_video_entry(bytes, parsed.box);
+    }
+    if (deadeye_mp4_box_type(parsed.box, 's','o','w','t') ||
+        deadeye_mp4_box_type(parsed.box, 't','w','o','s')) {
+        return deadeye_mp4_parse_audio_entry(bytes, parsed.box);
+    }
+    return deadeye_mp4_sample_entry_error("unsupported_sample_entry_codec");
+}
+
+void deadeye_mp4_se_test_u16(List<int> bytes, int value) {
+    bytes.push((value >> 8) & 255); bytes.push(value & 255);
+}
+
+void deadeye_mp4_se_test_u32(List<int> bytes, int value) {
+    bytes.push((value >>> 24) & 255); bytes.push((value >>> 16) & 255);
+    bytes.push((value >>> 8) & 255); bytes.push(value & 255);
+}
+
+void deadeye_mp4_se_test_box(
+    List<int> bytes, int a, int b, int c, int d, List<int> payload
+) {
+    deadeye_mp4_se_test_u32(bytes, payload.len() + 8);
+    bytes.push(a); bytes.push(b); bytes.push(c); bytes.push(d);
+    for (int i = 0; i < payload.len(); i += 1) { bytes.push(payload[i]); }
+}
+
+List<int> deadeye_mp4_se_test_avc1() {
+    List<int> payload = new List<int>();
+    for (int i = 0; i < 78; i += 1) { payload.push(0); }
+    payload[6] = 0; payload[7] = 1;
+    payload[24] = 1; payload[25] = 128; // width 384
+    payload[26] = 0; payload[27] = 240; // height 240
+    payload[40] = 0; payload[41] = 1; // one frame per sample entry
+    payload[75] = 24; payload[76] = 255; payload[77] = 255;
+    List<int> avcc = [1,66,0,30,255,225, 0,2, 103,128, 1, 0,2, 104,0x80];
+    deadeye_mp4_se_test_box(payload, 'a','v','c','C', avcc);
+    List<int> entry = new List<int>();
+    deadeye_mp4_se_test_box(entry, 'a','v','c','1', payload);
+    return entry;
+}
+
+List<int> deadeye_mp4_se_test_stsd(List<int> entry) {
+    List<int> stsd = [0,0,0,0, 0,0,0,1];
+    for (int i = 0; i < entry.len(); i += 1) { stsd.push(entry[i]); }
+    return stsd;
+}
+
+test "Deadeye accepts a bounded single-entry AVC Baseline configuration" {
+    List<int> stsd = deadeye_mp4_se_test_stsd(deadeye_mp4_se_test_avc1());
+    DeadeyeMp4SampleEntry parsed = deadeye_mp4_parse_stsd(
+        stsd, 0, stsd.len()
+    );
+    assert(parsed.ok && parsed.is_video && parsed.codec == "avc1-baseline");
+    assert(parsed.width == 384 && parsed.height == 240);
+    assert(parsed.nal_length_bytes == 4 && parsed.sps_count == 1 && parsed.pps_count == 1);
+}
+
+test "Deadeye rejects non-Baseline, malformed and encrypted AVC sample entries" {
+    List<int> bad_profile = deadeye_mp4_se_test_stsd(deadeye_mp4_se_test_avc1());
+    // avcC profile byte: stsd(8) + entry header(8) + visual fixed(78) + child header(8) + config version.
+    bad_profile[8 + 8 + 78 + 8 + 1] = 100;
+    assert(!deadeye_mp4_parse_stsd(bad_profile, 0, bad_profile.len()).ok);
+    List<int> encrypted = [0,0,0,0, 0,0,0,1, 0,0,0,8, 'e','n','c','v'];
+    DeadeyeMp4SampleEntry rejected = deadeye_mp4_parse_stsd(
+        encrypted, 0, encrypted.len()
+    );
+    assert(!rejected.ok && rejected.error == "encrypted_sample_entry_unsupported");
+    List<int> nested_entry = deadeye_mp4_se_test_avc1();
+    // Replace the avcC child type with a protection scheme marker.
+    nested_entry[90] = 's'; nested_entry[91] = 'i';
+    nested_entry[92] = 'n'; nested_entry[93] = 'f';
+    List<int> nested_stsd = deadeye_mp4_se_test_stsd(nested_entry);
+    DeadeyeMp4SampleEntry nested_rejected = deadeye_mp4_parse_stsd(
+        nested_stsd,0,nested_stsd.len()
+    );
+    assert(!nested_rejected.ok);
+    List<int> truncated = [0,0,0,0, 0,0,0,1, 0,0,0,100, 'a','v','c','1'];
+    assert(!deadeye_mp4_parse_stsd(truncated, 0, truncated.len()).ok);
+}
+
+List<int> deadeye_mp4_se_test_sowt() {
+    List<int> payload = new List<int>();
+    for (int i = 0; i < 28; i += 1) { payload.push(0); }
+    payload[6] = 0; payload[7] = 1; // data reference
+    payload[16] = 0; payload[17] = 2; // channels
+    payload[18] = 0; payload[19] = 16; // bits per sample
+    payload[24] = 0; payload[25] = 1; // 1 Hz 16.16
+    List<int> entry = new List<int>();
+    deadeye_mp4_se_test_box(entry, 's','o','w','t', payload);
+    return entry;
+}
+
+test "Deadeye accepts bounded integer PCM audio sample entries" {
+    List<int> stsd = deadeye_mp4_se_test_stsd(deadeye_mp4_se_test_sowt());
+    DeadeyeMp4SampleEntry parsed = deadeye_mp4_parse_stsd(
+        stsd, 0, stsd.len()
+    );
+    assert(parsed.ok && parsed.is_audio && parsed.codec == "sowt-pcm");
+    assert(parsed.channels == 2 && parsed.sample_rate == 1 && parsed.sample_bits == 16);
+}
+
+test "Deadeye rejects unsupported PCM widths, versions and extra entry boxes" {
+    List<int> bad_bits = deadeye_mp4_se_test_stsd(deadeye_mp4_se_test_sowt());
+    bad_bits[8 + 8 + 19] = 12;
+    assert(!deadeye_mp4_parse_stsd(bad_bits, 0, bad_bits.len()).ok);
+    List<int> bad_version = deadeye_mp4_se_test_stsd(deadeye_mp4_se_test_sowt());
+    bad_version[8 + 8 + 9] = 1;
+    assert(!deadeye_mp4_parse_stsd(bad_version, 0, bad_version.len()).ok);
+    List<int> multi = [0,0,0,0, 0,0,0,2];
+    List<int> valid = deadeye_mp4_se_test_sowt();
+    for (int i = 0; i < valid.len(); i += 1) { multi.push(valid[i]); }
+    for (int i = 0; i < valid.len(); i += 1) { multi.push(valid[i]); }
+    assert(!deadeye_mp4_parse_stsd(multi, 0, multi.len()).ok);
+}
+
+test "Deadeye rejects avcC truncation, invalid NAL types and oversized declarations" {
+    List<int> short_config = [1,66,0,30,255,225,0];
+    assert(!deadeye_mp4_parse_avcc(short_config, 0, short_config.len()).ok);
+    List<int> wrong_nal = [1,66,0,30,255,225,0,2,0x68,0x80,1,0,2,0x68,0x80];
+    assert(!deadeye_mp4_parse_avcc(wrong_nal, 0, wrong_nal.len()).ok);
+    List<int> oversized = [1,66,0,30,255,225,255,255];
+    assert(!deadeye_mp4_parse_avcc(oversized, 0, oversized.len()).ok);
+    List<int> bad_reserved = [1,66,0,30,255,1, 0,2,103,128, 1,0,2,104,128];
+    assert(!deadeye_mp4_parse_avcc(
+        bad_reserved, 0, bad_reserved.len()
+    ).ok);
+    List<int> bad_compatibility = [1,66,3,30,255,225, 0,2,103,128, 1,0,2,104,128];
+    assert(!deadeye_mp4_parse_avcc(
+        bad_compatibility, 0, bad_compatibility.len()
+    ).ok);
+}
