@@ -14,7 +14,8 @@ const int F1_CTX_NONE = 0;
 const int F1_CTX_HTML = 1;
 const int F1_CTX_LOG = 2;
 const int F1_CTX_CSV = 4;
-const int F1_CTX_JSON = 8;\nconst int F1_CTX_ALL = 15;
+const int F1_CTX_JSON = 8;
+const int F1_CTX_ALL = 15;
 
 const int F1_AUTH_FS_READ = 1;
 const int F1_AUTH_FS_WRITE = 2;
@@ -83,7 +84,8 @@ F1Value f1_make(int data_sources, bool data_top,
     };
 }
 
-// The empty string is context-neutral; this is not a claim about arbitrary literals.\nF1Value f1_empty_constant() {
+// The empty string is context-neutral; this is not a claim about arbitrary literals.
+F1Value f1_empty_constant() {
     return f1_make(0, false, 0, false, 0, false, F1_CONF_PUBLIC,
                    F1_CTX_HTML | F1_CTX_LOG | F1_CTX_CSV | F1_CTX_JSON);
 }
