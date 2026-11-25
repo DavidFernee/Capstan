@@ -181,7 +181,7 @@ bool deadeye_mp4_validate_dinf(
         }
         dref_count += 1;
         int p = box.payload_start;
-        if (box.end - p != 12 || bytes[p] != 0 ||
+        if (box.end - p != 20 || bytes[p] != 0 ||
             bytes[p + 1] != 0 || bytes[p + 2] != 0 || bytes[p + 3] != 0 ||
             deadeye_mp4_u32_be(bytes, p + 4) != 1) {
             return false;
@@ -289,6 +289,7 @@ DeadeyeMp4TrackParts deadeye_mp4_find_track_parts(
                     }
                     has_minf = true;
                     bool has_dinf = false; bool has_stbl = false;
+                    bool has_vmhd = false; bool has_smhd = false;
                     int n_at = mb.payload_start;
                     int n_count = 0;
                     while (n_at < mb.end) {
@@ -311,13 +312,32 @@ DeadeyeMp4TrackParts deadeye_mp4_find_track_parts(
                                 return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"duplicate_stbl"};
                             }
                             has_stbl = true; stbl_start = nb.payload_start; stbl_end = nb.end;
-                        } else if (!deadeye_mp4_track_box(nb,'v','m','h','d') &&
-                                   !deadeye_mp4_track_box(nb,'s','m','h','d')) {
+                        } else if (deadeye_mp4_track_box(nb,'v','m','h','d')) {
+                            if (has_vmhd || nb.end - nb.payload_start != 12 ||
+                                bytes[nb.payload_start] != 0 ||
+                                bytes[nb.payload_start + 1] != 0 ||
+                                bytes[nb.payload_start + 2] != 0 ||
+                                bytes[nb.payload_start + 3] != 1) {
+                                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"invalid_vmhd"};
+                            }
+                            has_vmhd = true;
+                        } else if (deadeye_mp4_track_box(nb,'s','m','h','d')) {
+                            if (has_smhd || nb.end - nb.payload_start != 8 ||
+                                bytes[nb.payload_start] != 0 ||
+                                bytes[nb.payload_start + 1] != 0 ||
+                                bytes[nb.payload_start + 2] != 0 ||
+                                bytes[nb.payload_start + 3] != 0) {
+                                return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"invalid_smhd"};
+                            }
+                            has_smhd = true;
+                        } else {
                             return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"unsupported_minf_child"};
                         }
                         n_at = nb.end;
                     }
-                    if (!has_dinf || !has_stbl) {
+                    if (!has_dinf || !has_stbl ||
+                        (handler == "vide" && (!has_vmhd || has_smhd)) ||
+                        (handler == "soun" && (!has_smhd || has_vmhd))) {
                         return new DeadeyeMp4TrackParts{ok:false,track_id:0,timescale:0,handler:"",stbl_start:0,stbl_end:0,error:"incomplete_minf"};
                     }
                 } else {
@@ -404,9 +424,63 @@ DeadeyeMp4TrackResult deadeye_mp4_parse_trak(
     };
 }
 
+bool deadeye_mp4_track_file_valid(List<int> bytes) {
+    if (bytes.len() < 24 || bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES) {
+        return false;
+    }
+    for (int i = 0; i < bytes.len(); i += 1) {
+        if (bytes[i] < 0 || bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+// Public movie entrypoint derives every mdat interval from the actual top-level
+// file. It does not trust caller-supplied offsets or a caller-forged moov box.
 DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
-    List<int> bytes, DeadeyeMp4Box moov, List<int> mdat_ranges
+    List<int> bytes, DeadeyeMp4Box supplied_moov
 ) {
+    if (!deadeye_mp4_track_file_valid(bytes)) {
+        return deadeye_mp4_movie_error("invalid_mp4_file_bytes");
+    }
+    List<int> mdat_ranges = new List<int>();
+    DeadeyeMp4Box moov;
+    bool found_moov = false;
+    int top = 0;
+    int top_count = 0;
+    while (top < bytes.len()) {
+        DeadeyeMp4BoxResult top_result = deadeye_mp4_box_read(
+            bytes,top,bytes.len()
+        );
+        if (!top_result.ok) {
+            return deadeye_mp4_movie_error("malformed_top_level_box");
+        }
+        DeadeyeMp4Box top_box = top_result.box;
+        top_count += 1;
+        if (top_count > DEADEYE_MP4_MAX_BOXES) {
+            return deadeye_mp4_movie_error("top_level_box_limit");
+        }
+        if (deadeye_mp4_track_box(top_box,'m','o','o','v')) {
+            if (found_moov || top_box.start != supplied_moov.start ||
+                top_box.end != supplied_moov.end) {
+                return deadeye_mp4_movie_error("moov_identity_mismatch");
+            }
+            found_moov = true;
+            moov = top_box;
+        } else if (deadeye_mp4_track_box(top_box,'m','d','a','t')) {
+            if (mdat_ranges.len() >= 512) {
+                return deadeye_mp4_movie_error("mdat_count_limit");
+            }
+            mdat_ranges.push(top_box.payload_start);
+            mdat_ranges.push(top_box.end);
+        } else if (deadeye_mp4_track_box(top_box,'m','o','o','f') ||
+                   deadeye_mp4_track_box(top_box,'u','u','i','d')) {
+            return deadeye_mp4_movie_error("unsupported_top_level_profile");
+        }
+        top = top_box.end;
+    }
+    if (top != bytes.len() || !found_moov || mdat_ranges.len() == 0) {
+        return deadeye_mp4_movie_error("missing_moov_or_mdat");
+    }
     if (!deadeye_mp4_track_box(moov,'m','o','o','v') ||
         !deadeye_mp4_track_children_range(bytes,moov.payload_start,moov.end)) {
         return deadeye_mp4_movie_error("invalid_moov_box");
@@ -525,7 +599,7 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
     );
     // mdat begins after moov; absolute payload range is the final 4 bytes.
     DeadeyeMp4MovieTracksResult parsed = deadeye_mp4_parse_moov_tracks(
-        file,moov_box.box,[file.len()-4,file.len()]
+        file,moov_box.box
     );
     assert(parsed.ok);
     if (let movie = parsed.movie) {
