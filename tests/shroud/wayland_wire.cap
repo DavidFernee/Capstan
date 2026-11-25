@@ -151,7 +151,7 @@ int main() {
     for (int n = 0; n < 65520; n += 1) { max_payload_frame.push(0); }
     WaylandFrameHeader max_payload_header = wayland_frame_header(wayland_test_bytes(max_payload_frame), 0);
     if (max_payload_header.status != 1 || max_payload_header.end_offset != 65532) { return 50; }
-    span = wayland_frame_array(wayland_test_bytes(max_payload_frame), max_payload_header, 12);
+    span = wayland_frame_array(wayland_test_bytes(max_payload_frame), max_payload_header, 8);
     if (span.status != 1 || span.length != 65520 || span.end_offset != 65532) { return 51; }
 
     // A high-bit-set uint32 length is far outside the legal frame budget.
