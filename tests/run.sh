@@ -71,6 +71,13 @@ else
   bad "CCAM Capstan arithmetic, register validation and evaluator" "$out"
 fi
 
+section "CCAM-SF-P canonical vectors: strict corpus validation and concrete evaluator traces"
+if out="$($PY "$ROOT/scripts/run-ccam-sf-vectors.py" 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM-SF-P canonical vector conformance" "$out"
+fi
+
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
