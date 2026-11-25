@@ -344,10 +344,6 @@ int display_sort_levels(int n) {
     return levels;
 }
 
-bool display_work_add(int amount, int remaining) {
-    return amount >= 0 && amount <= remaining;
-}
-
 bool display_list_valid(DisplayList dl, Pixmap pm) {
     if (!pixmap_size_valid(pm.w, pm.h) || pm.px.len() != pm.w * pm.h ||
         dl.width != pm.w || dl.height != pm.h || dl.commands.len() > MAX_DISPLAY_COMMANDS) { return false; }
