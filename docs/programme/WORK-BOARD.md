@@ -110,7 +110,7 @@ Next candidate slices after these: GPU resource lifetime/teardown contract; refe
 
 ### Media family — Capstan Media Core, Shanty and Deadeye
 
-The media proposal is already in progress in [PR #291](https://github.com/DavidFernee/Capstan/pull/291). It defines **Capstan Media Core** as shared primitives, with **Shanty** (audio) and **Deadeye** (video/image) as independent engines. Shanty and Deadeye do not depend on one another. Shroud owns presentation adapters, while Keel may orchestrate media graphs without duplicating codec semantics.
+The media proposal is already in progress in [PR #291](https://github.com/DavidFernee/Capstan/pull/291). It defines **Halyard** as the media architecture: **Capstan Media Core** supplies shared primitives, with **Shanty** (audio) and **Deadeye** (video/image) as independent engines. Shanty and Deadeye do not depend on one another. Shroud core remains media-independent; an optional Halyard–Shroud adapter integrates presentation APIs. Keel may consume and orchestrate media graphs without duplicating codec semantics.
 
 The media implementation-origin rule is strict: Media Core, Shanty and Deadeye implementation code is written from scratch in Capstan. No external multimedia framework, third-party codec implementation, copied/vendored parser or generated-C/C++ media runtime may be linked or shipped. Independent implementations may be used only as isolated test oracles. The current C-backed Capstan compiler/runtime remains an explicit TCB dependency until the C-free path is implemented and independently qualified.
 
