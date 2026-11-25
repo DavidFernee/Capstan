@@ -67,6 +67,13 @@ string language_for_path(string path) {
     return "other";
 }
 
+bool contains_nul(Tainted source) {
+    for (int i = 0; i < source.len(); i += 1) {
+        if (source.at(i) == '\\0') { return true; }
+    }
+    return false;
+}
+
 int physical_lines(Tainted source) {
     int n = source.len();
     if (n == 0) { return 0; }
@@ -171,10 +178,15 @@ int main() {
         string path = paths[p];
         string language = language_for_path(path);
         if (let source = read_file(path, MAX_INVENTORY_FILE_BYTES)) {
-            int nlines = physical_lines(source);
             int nbytes = source.len();
-            inv = record_file(inv, language, nlines, nbytes);
-            rows.push(csv_cell(path) + "," + csv_cell(language) + "," + int_to_str(nlines) + "," + int_to_str(nbytes) + ",ok");
+            if (contains_nul(source)) {
+                inv = record_file(inv, "Binary (NUL)", 0, nbytes);
+                rows.push(csv_cell(path) + "," + csv_cell("Binary (NUL)") + ",0," + int_to_str(nbytes) + ",nul_byte_detected");
+            } else {
+                int nlines = physical_lines(source);
+                inv = record_file(inv, language, nlines, nbytes);
+                rows.push(csv_cell(path) + "," + csv_cell(language) + "," + int_to_str(nlines) + "," + int_to_str(nbytes) + ",ok");
+            }
         } else {
             inv.unreadable += 1;
             rows.push(csv_cell(path) + "," + csv_cell(language) + ",0,0,unreadable_or_over_limit");
@@ -230,6 +242,12 @@ test "inventory aggregate totals" {
     assert inv.files[1] == 1;
     assert inv.lines[1] == 2;
     assert inv.bytes[1] == 20;
+}
+
+test "inventory NUL-byte detection" {
+    assert !contains_nul(taint(""));
+    assert !contains_nul(taint("ordinary text"));
+    assert contains_nul(taint("prefix\\0suffix"));
 }
 
 test "inventory physical line counting" {
