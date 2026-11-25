@@ -190,3 +190,23 @@ int main() {
     if (inv.unreadable > 0) { return 1; }
     return 0;
 }
+
+
+test "inventory language classification" {
+    assert language_for_path("compiler/main.cap") == "Capstan";
+    assert language_for_path("bootstrap/capstan0.py") == "Python";
+    assert language_for_path("runtime/capstan_rt.h") == "C/C++";
+    assert language_for_path("tests/run.sh") == "Shell";
+    assert language_for_path("verification/proof.lean") == "Lean";
+    assert language_for_path("docs/README.md") == "Markdown";
+    assert language_for_path("unknown.blarg") == "other";
+}
+
+test "inventory physical line counting" {
+    assert physical_lines(taint("")) == 0;
+    assert physical_lines(taint("one")) == 1;
+    assert physical_lines(taint("one\n")) == 1;
+    assert physical_lines(taint("one\ntwo")) == 2;
+    assert physical_lines(taint("one\n\n")) == 2;
+    assert physical_lines(taint("one\r\ntwo\r\n")) == 2;
+}
