@@ -33,8 +33,16 @@ theorem decodeNativeTypeTag_int_iff (tag : Int) :
 
 theorem decodeNativeTypeTag_bool_iff (tag : Int) :
     decodeNativeTypeTag tag = some .bool ↔ tag = nativeBoolTypeTag := by
-  have htags_ne : nativeIntTypeTag ≠ nativeBoolTypeTag := by decide
-  simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag, htags_ne]
+  constructor
+  · intro h
+    by_cases hInt : tag = nativeIntTypeTag
+    · subst tag
+      simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag] at h
+    · simp [decodeNativeTypeTag, hInt, nativeIntTypeTag, nativeBoolTypeTag] at h
+      exact h
+  · intro h
+    subst tag
+    simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
 
 /-- Explicit model of the fields in the executable CCAMRegister structure. -/
 structure NativeCCAMRegister where
@@ -169,7 +177,7 @@ theorem nativeRegisterReadBool_corresponds
           rw [hinit, hruntimeInit]
         have htags_ne : nativeIntTypeTag ≠ nativeBoolTypeTag := by decide
         simp [nativeRegisterReadBool, runtimeRegisterReadBool,
-          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit, htags_ne]
+          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit, htags_ne, htype, hint]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
