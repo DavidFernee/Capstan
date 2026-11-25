@@ -39,13 +39,24 @@ DeadeyeImageResult deadeye_bmp_error(string error) {
 // - no palette, bitfields, colour masks, metadata gap, RLE or trailing bytes;
 // - signed height supports both bottom-up and top-down rows;
 // - input and pixel counts are bounded before pixel-buffer allocation.
-DeadeyeImageResult deadeye_bmp_decode(HalyardByteSource source) {
+DeadeyeImageResult deadeye_bmp_decode_internal(
+    HalyardByteSource source, HalyardConsumptionBudget? budget
+) {
     if (!halyard_source_shape_valid(source)) {
         return deadeye_bmp_error("invalid_source");
     }
     int source_length = halyard_source_length(source);
     if (source_length > DEADEYE_BMP_MAX_INPUT_BYTES) {
         return deadeye_bmp_error("input_limit");
+    }
+    if (let budget_value = budget) {
+        HalyardConsumptionCharge input_charge = new HalyardConsumptionCharge{
+            input_bytes: source_length, output_bytes: 0,
+            decoded_units: 0, work_units: source_length
+        };
+        if (!halyard_consumption_budget_consume(budget_value, input_charge)) {
+            return deadeye_bmp_error("budget_exceeded");
+        }
     }
     if (source.position != 0) {
         return deadeye_bmp_error("source_not_at_start");
@@ -127,6 +138,17 @@ DeadeyeImageResult deadeye_bmp_decode(HalyardByteSource source) {
     if (!pixels.ok) { return deadeye_bmp_error("truncated_pixel_data"); }
 
     int pixel_count = width * absolute_height;
+    if (let budget_value = budget) {
+        // read_exact creates a temporary pixel copy while the final RGBA list is
+        // built, so charge both simultaneously materialised payloads.
+        HalyardConsumptionCharge output_charge = new HalyardConsumptionCharge{
+            input_bytes: 0, output_bytes: image_bytes + pixel_count * 4,
+            decoded_units: pixel_count, work_units: pixel_count
+        };
+        if (!halyard_consumption_budget_consume(budget_value, output_charge)) {
+            return deadeye_bmp_error("budget_exceeded");
+        }
+    }
     List<int> rgba = new List<int>();
     for (int output_y = 0; output_y < absolute_height; output_y += 1) {
         int input_y = output_y;
@@ -153,6 +175,17 @@ DeadeyeImageResult deadeye_bmp_decode(HalyardByteSource source) {
         width: width, height: absolute_height, rgba: rgba
     };
     return new DeadeyeImageResult{ok: true, frame: frame, error: ""};
+}
+
+DeadeyeImageResult deadeye_bmp_decode(HalyardByteSource source) {
+    return deadeye_bmp_decode_internal(source, none);
+}
+
+// Charges input/work before parsing and temporary+final pixel payload before allocation.
+DeadeyeImageResult deadeye_bmp_decode_budgeted(
+    HalyardByteSource source, HalyardConsumptionBudget budget
+) {
+    return deadeye_bmp_decode_internal(source, budget);
 }
 
 void deadeye_test_push_u16_le(List<int> bytes, int value) {
@@ -372,4 +405,41 @@ test "Deadeye rejects mismatched image size and forged source bytes" {
     } else {
         assert(false);
     }
+}
+
+
+test "Deadeye budget charges temporary and final pixel buffers before allocation" {
+    List<int> bytes = deadeye_test_bmp_24_bottom_up();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 128);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(128, 32, 4, 128);
+    assert(made.ok && budget_result.ok);
+    if (let source = made.source) {
+        if (let budget = budget_result.budget) {
+            DeadeyeImageResult decoded = deadeye_bmp_decode_budgeted(source, budget);
+            assert(decoded.ok);
+            assert(budget.used_input_bytes == 70);
+            assert(budget.used_output_bytes == 32);
+            assert(budget.used_decoded_units == 4);
+            assert(budget.used_work_units == 74);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye budget rejects pixel materialisation before allocation" {
+    List<int> bytes = deadeye_test_bmp_24_bottom_up();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 128);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(128, 31, 4, 128);
+    assert(made.ok && budget_result.ok);
+    if (let source = made.source) {
+        if (let budget = budget_result.budget) {
+            DeadeyeImageResult decoded = deadeye_bmp_decode_budgeted(source, budget);
+            assert(!decoded.ok && decoded.error == "budget_exceeded");
+            assert(budget.used_input_bytes == 70);
+            assert(budget.used_output_bytes == 0);
+            assert(budget.used_decoded_units == 0);
+            assert(budget.used_work_units == 70);
+        } else { assert(false); }
+    } else { assert(false); }
 }
