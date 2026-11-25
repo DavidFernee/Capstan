@@ -201,3 +201,14 @@ the hand-written C, which says more about optimisers than about call overhead.
 ## Licence
 
 Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+
+## Media engines: Shanty and Deadeye
+
+Capstan Media is the shared media foundation for two independent first-class engines:
+
+- **Shanty** — audio ingest, decode/encode, playback/capture, mixing, synthesis, spatialisation and processing.
+- **Deadeye** — image/video ingest, demux/decode, encode, frame scheduling, presentation, composition and streaming.
+- **Capstan Media Core** — bounded streams, buffers, clocks, timestamps, resource accounting, format registry, graph contracts and codec-worker boundaries.
+
+The architecture and initial format catalogue are specified in [docs/media/ARCHITECTURE.md](docs/media/ARCHITECTURE.md) and [docs/media/FORMAT-CATALOGUE.md](docs/media/FORMAT-CATALOGUE.md). These documents describe the target and staged work; they do not imply that codecs, playback or hardware backends are implemented. The first implementation gates are a bounded WAV/PCM offline audio slice and a separately selected bounded image/frame slice. Shroud consumes presentation APIs; it does not duplicate codec implementations. See the design map for dependency and assurance boundaries.
