@@ -8,7 +8,7 @@
 
 The model represents one object and two capability slots. A handle binds object identity, object generation, slot identity, slot generation, rights and revocation epoch. Resolution checks every field against the current object and slot record. Delegation is attenuation-only. Object-wide revocation advances the epoch before invalidating both slots. Slot generations and the epoch fail closed at exhaustion rather than wrapping.
 
-Eight tests cover root issuance, subset rights, attempted rights amplification, wrong object, wrong object generation, wrong slot, wrong slot generation, stale epoch, delegated-slot revocation and generation-safe reuse, object-wide revocation, insufficient revoke authority, duplicate slot use, generation/epoch exhaustion and failure atomicity.
+Nine tests cover root issuance, subset rights, attempted rights amplification, wrong object, wrong object generation, wrong slot, wrong slot generation, stale epoch, delegated-slot revocation and generation-safe reuse, object-wide revocation, insufficient revoke authority, duplicate slot use, generation/epoch exhaustion and failure atomicity.
 
 **Critical limitation:** the model's `SCMHandle` is an ordinary Capstan struct. A caller can construct one. This is not an unforgeable capability representation, does not validate issuer isolation, and does not establish runtime/kernel enforcement. The model checks the transition semantics conditional on trusted issuance and intact state.
 
@@ -20,7 +20,7 @@ The invariant is:
 
 `root_balance + child_balance + grandchild_balance + spent = total`
 
-All account balances are non-negative, all leases have consistent live state, and all transitions preserve the invariant. Seven tests cover nested conservation, exact consumption, descendant-before-parent release, one-shot returns, stale-generation rejection, slot reissue, and failure-atomic invalid, zero and over-budget operations. This is an abstract accounting model: it does not yet cover concurrent split/consume/return races, physical resource measurement, wall-clock deadlines, DMA, or implementation refinement.
+All account balances are non-negative, all leases have consistent live state, and all transitions preserve the invariant. Eight tests cover nested conservation, exact consumption, descendant-before-parent release, one-shot returns, stale-generation rejection, slot reissue, failure-atomic invalid, zero and over-budget operations, and exhaustive nested split/consume/return sweeps for totals 1 through 8. This is an abstract accounting model: it does not yet cover concurrent split/consume/return races, physical resource measurement, wall-clock deadlines, DMA, or implementation refinement.
 
 ## Evidence ladder
 
