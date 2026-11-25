@@ -37,6 +37,7 @@ deriving Repr, DecidableEq
 
 inductive MarkerReject where
   | invalidHandle
+  | invalidDescriptor
   | rootLimit
   | objectLimit
   | edgeLimit
@@ -51,11 +52,12 @@ handle resolves; and every descriptor-projected edge from a marked handle
 terminates in the marked set. -/
 def certificateCheck {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots marked : List (Handle slotCount)) : Bool :=
   roots.all (fun root => decide (root ∈ marked)) &&
   marked.all (fun handle =>
-    isLive handle &&
+    isLive handle && descriptorValid handle &&
     (referenceEdges handle).all (fun target => decide (target ∈ marked)))
 
 
@@ -66,10 +68,11 @@ def certificateCheck {slotCount : Nat}
 A rejected result can never be mistaken for a partial mark set. -/
 inductive MarkerOutcome {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots : List (Handle slotCount)) where
   | complete (marked : List (Handle slotCount)) (counters : MarkerCounters)
-      (accepted : certificateCheck isLive referenceEdges roots marked = true)
+      (accepted : certificateCheck isLive descriptorValid referenceEdges roots marked = true)
   | rejected (reason : MarkerReject) (counters : MarkerCounters)
 
 
@@ -77,9 +80,10 @@ theorem certificateCheck_sound {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots marked : List (Handle slotCount))
-    (checked : certificateCheck isLive referenceEdges roots marked = true) :
+    (checked : certificateCheck isLive descriptorValid referenceEdges roots marked = true) :
     (∀ root, root ∈ roots → root ∈ marked) ∧
     (∀ handle, handle ∈ marked → isLive handle = true) ∧
+    (∀ handle, handle ∈ marked → descriptorValid handle = true) ∧
     (∀ handle, handle ∈ marked → ∀ target,
       target ∈ referenceEdges handle → target ∈ marked) := by
   unfold certificateCheck at checked
@@ -91,19 +95,25 @@ theorem certificateCheck_sound {slotCount : Nat}
     exact of_decide_eq_true (rootsValid root rootMember)
   · intro handle handleMember
     exact (Bool.and_eq_true.mp (markedValid handle handleMember)).1
+  · intro handle handleMember
+    have fieldsChecked := Bool.and_eq_true.mp (markedValid handle handleMember)
+    exact (Bool.and_eq_true.mp fieldsChecked.2).1
   · intro handle handleMember target targetMember
     have fieldsChecked := Bool.and_eq_true.mp (markedValid handle handleMember)
-    exact of_decide_eq_true ((List.all_eq_true.mp fieldsChecked.2) target targetMember)
+    have edgesChecked := (Bool.and_eq_true.mp fieldsChecked.2).2
+    exact of_decide_eq_true ((List.all_eq_true.mp edgesChecked) target targetMember)
 
 /-- Proof-carrying view of an accepted marker outcome. Sweep-facing
 code can require this type instead of accepting a raw candidate list. -/
 structure CheckedCertificate {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots : List (Handle slotCount)) where
   marked : List (Handle slotCount)
   includesRoots : ∀ root, root ∈ roots → root ∈ marked
   allLive : ∀ handle, handle ∈ marked → isLive handle = true
+  allDescriptorsValid : ∀ handle, handle ∈ marked → descriptorValid handle = true
   closedUnderEdges : ∀ handle, handle ∈ marked → ∀ target,
     target ∈ referenceEdges handle → target ∈ marked
 
@@ -111,26 +121,29 @@ structure CheckedCertificate {slotCount : Nat}
 certificate. Rejection carries no candidate mark set. -/
 def certificateOfOutcome {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots : List (Handle slotCount)) :
-    MarkerOutcome isLive referenceEdges roots →
-      Option (CheckedCertificate isLive referenceEdges roots)
+    MarkerOutcome isLive descriptorValid referenceEdges roots →
+      Option (CheckedCertificate isLive descriptorValid referenceEdges roots)
   | .complete marked _ accepted =>
-      let sound := certificateCheck_sound isLive referenceEdges roots marked accepted
+      let sound := certificateCheck_sound isLive descriptorValid referenceEdges roots marked accepted
       some {
         marked := marked
         includesRoots := sound.1
         allLive := sound.2.1
-        closedUnderEdges := sound.2.2
+        allDescriptorsValid := sound.2.2.1
+        closedUnderEdges := sound.2.2.2
       }
   | .rejected _ _ => none
 
 theorem rejected_has_no_certificate {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots : List (Handle slotCount))
     (reason : MarkerReject) (counters : MarkerCounters) :
-    certificateOfOutcome isLive referenceEdges roots
+    certificateOfOutcome isLive descriptorValid referenceEdges roots
       (.rejected reason counters) = none := rfl
 
 /-- Append only targets that are neither visited nor already pending. -/
@@ -149,6 +162,7 @@ def freshTargets {slotCount : Nat}
 budget is checked before the corresponding work is admitted. -/
 def markerLoop {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (descriptorCost : Handle slotCount → Nat)
     (roots : List (Handle slotCount))
@@ -156,9 +170,9 @@ def markerLoop {slotCount : Nat}
     (fuel : Nat)
     (pending visited : List (Handle slotCount))
     (counters : MarkerCounters) :
-    MarkerOutcome isLive referenceEdges roots :=
+    MarkerOutcome isLive descriptorValid referenceEdges roots :=
   if pending.isEmpty then
-    if checked : certificateCheck isLive referenceEdges roots visited = true then
+    if checked : certificateCheck isLive descriptorValid referenceEdges roots visited = true then
       .complete visited counters checked
     else
       .rejected .certificateRejected counters
@@ -177,8 +191,10 @@ def markerLoop {slotCount : Nat}
           .rejected .workLimit counters
         else if isLive handle = false then
           .rejected .invalidHandle { counters with work := counters.work + 1 }
+        else if descriptorValid handle = false then
+          .rejected .invalidDescriptor { counters with work := counters.work + 1 }
         else if decide (handle ∈ visited) then
-          markerLoop isLive referenceEdges descriptorCost roots budget fuel
+          markerLoop isLive descriptorValid referenceEdges descriptorCost roots budget fuel
             rest visited
             { counters with work := counters.work + 1 }
         else if visited.length >= budget.maxObjects then
@@ -205,18 +221,19 @@ def markerLoop {slotCount : Nat}
               if nextPending.length > budget.maxWorklist then
                 .rejected .worklistLimit nextCounters
               else
-                markerLoop isLive referenceEdges descriptorCost roots budget fuel
+                markerLoop isLive descriptorValid referenceEdges descriptorCost roots budget fuel
                   nextPending (visited ++ [handle]) nextCounters
 
 /-- Start with deduplicated roots. The fuel bound is maxWork + 1; reaching
 zero with pending work is always rejection, never successful completion. -/
 def runBoundedMarker {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (descriptorCost : Handle slotCount → Nat)
     (roots : List (Handle slotCount))
     (budget : MarkerBudget) :
-    MarkerOutcome isLive referenceEdges roots :=
+    MarkerOutcome isLive descriptorValid referenceEdges roots :=
   let initialCounters : MarkerCounters :=
     { roots := roots.length, objects := 0, edges := 0, worklistPeak := 0,
       descriptorSlots := 0, work := 0 }
@@ -236,14 +253,16 @@ traversal. This theorem exposes the root-inclusion and edge-closure facts
 needed by a future sweep gate. -/
 theorem complete_result_is_certificate {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots marked : List (Handle slotCount))
-    (accepted : certificateCheck isLive referenceEdges roots marked = true) :
+    (accepted : certificateCheck isLive descriptorValid referenceEdges roots marked = true) :
     (∀ root, root ∈ roots → root ∈ marked) ∧
     (∀ handle, handle ∈ marked → isLive handle = true) ∧
+    (∀ handle, handle ∈ marked → descriptorValid handle = true) ∧
     (∀ handle, handle ∈ marked → ∀ target,
       target ∈ referenceEdges handle → target ∈ marked) :=
-  certificateCheck_sound isLive referenceEdges roots marked accepted
+  certificateCheck_sound isLive descriptorValid referenceEdges roots marked accepted
 
 #print axioms CapstanNativeBoundedMarker.certificateCheck_sound
 #print axioms CapstanNativeBoundedMarker.complete_result_is_certificate
