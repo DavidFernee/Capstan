@@ -1,8 +1,8 @@
 # Blocking, wakeup and deadlock semantics for Capstan concurrency
 
-**Status:** research specification; the initial one-producer/one-consumer blocking-receive slice is now implemented as a bounded reference model. The general scheduler and liveness claims remain unimplemented and unproven.  
+**Status:** research specification; bounded single-waiter reference-model code is present, but its current exact-head CI status is unresolved and the blocking-receive suite has reported failing assertions. The general scheduler and liveness claims remain unimplemented and unproven.  
 **Scope:** the next extension of the bounded task/channel reference machine.  
-**Prerequisites:** `CONCURRENCY-PROTOCOL-AUTOMATA.md`, `CONCURRENCY-GUARANTEE-CALCULUS.md`, and the bounded reference machine.
+**Prerequisites:** `CONCURRENCY-PROTOCOL-AUTOMATA.md`, `CONCURRENCY-GUARANTEE-CALCULUS.md`, and the bounded reference machine. The follow-on multi-waiter design is specified separately in `CONCURRENCY-MULTI-WAITER-SEMANTICS.md`.
 
 ## 1. Why this increment is necessary
 
