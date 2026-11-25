@@ -218,6 +218,7 @@ SCMTransition scm_revoke(SCMState before, SCMHandle authority) {
     after.root_rights = 0;
     after.child_live = false;
     after.child_rights = 0;
+    if (!scm_invariant(after)) { return scm_reject(before, "transition_invariant"); }
     return scm_accept(after, scm_empty_handle());
 }
 
@@ -301,7 +302,7 @@ test "SCM rejects wrong object slot generation epoch and rights" {
         object_generation: root.handle.object_generation,
         slot: 0,
         slot_generation: root.handle.slot_generation,
-        rights: SCM_RIGHT_ALL,
+        rights: root.handle.rights,
         revocation_epoch: root.handle.revocation_epoch + 1
     };
     assert(!scm_resolves(root.state, forged, SCM_RIGHT_READ));
