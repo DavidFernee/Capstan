@@ -10,9 +10,9 @@
 | ARITH-03 | Capacity growth terminates, is at least required, and its byte size fits. | Machine proof over all machine-sized inputs plus C refinement. | In progress: `capacityGrowth_sound` and `capacityGrowth_total` prove a simplified direct-growth model only (run 45590742560). The current C `cap_gc_next_capacity` geometric-doubling/saturation algorithm is not yet modelled or proved; C refinement not started. |
 | PAGE-01 | Page records and page-table entries are unique and consistent. | Model invariant and implementation correspondence. | Not started. |
 | PAGE-02 | Page-table probing terminates within capacity under occupancy and power-of-two assumptions. | Machine proof; explicit occupancy invariant. | Not started. |
-| SLOT-01 | Every slot is in exactly one allocated/free/spare state. | Inductive state invariant. | Not started. |
-| FREE-01 | Every free-list link points to a valid slot in the matching kind/class. | Inductive invariant and concrete memory-layout relation. | Not started; links are currently in-band. |
-| FREE-02 | No reusable slot appears more than once; every reusable active slot appears exactly once. | Uniqueness and completeness proofs. | Not started. |
+| SLOT-01 | Every slot is in exactly one allocated/free/spare state. | Inductive state invariant. | Abstract `SlotPartition.Valid` plus allocation/release preservation theorems added in PR #309; exact-head CI pending. Concrete allocation bitmap and page-spare transitions remain unproved. |
+| FREE-01 | Every free-list link points to a valid slot in the matching kind/class. | Inductive invariant and concrete memory-layout relation. | Abstract generic list invariant added in PR #309; concrete mapping still open. Ordinary kinds use in-band links; secret pages use out-of-line indices. |
+| FREE-02 | No reusable slot appears more than once; every reusable active slot appears exactly once. | Uniqueness and completeness proofs. | Generic abstract list push/pop lemmas added in PR #309; exact-head Lean validation pending; concrete per-kind/page correspondence open. |
 | LARGE-01 | Large-object records are sorted, unique and non-overlapping. | Insertion/sort/search proofs and pointer-range bounds. | Not started. |
 | MARK-01 | Mark-stack depth is bounded and work items refer to allocated objects. | Push/drain transition proofs. | Not started. |
 | GC-01 | Marking reaches every object reachable from the abstract roots. | Inductive graph-reachability theorem. | Not started; root completeness is a premise. |

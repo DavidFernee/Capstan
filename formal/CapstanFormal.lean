@@ -212,4 +212,166 @@ theorem release_idempotent (ledger : PageLedger) (pageBytes : Nat) :
       releasePage ledger true pageBytes := by
   cases h : ledger.backing <;> simp [releasePage, h]
 
+/-! ## Finite allocator slot partition
+
+This model records the abstract ownership class of every slot in a bounded page.
+It deliberately separates the partition invariant from the concrete in-band
+free-list representation. The latter needs a separate refinement relation.
+-/
+
+/-- Abstract ownership classes for slots in one allocator page. -/
+structure SlotPartition where
+  capacity : Nat
+  free : Nat → Prop
+  allocated : Nat → Prop
+  spare : Nat → Prop
+
+/-- Every in-range slot belongs to exactly one of the free, allocated, or spare sets. -/
+def SlotPartition.Valid (s : SlotPartition) : Prop :=
+  ∀ i, i < s.capacity →
+    (s.free i ∨ s.allocated i ∨ s.spare i) ∧
+    ¬ (s.free i ∧ s.allocated i) ∧
+    ¬ (s.free i ∧ s.spare i) ∧
+    ¬ (s.allocated i ∧ s.spare i)
+
+/-- Allocate a designated free slot, moving it from free to allocated. -/
+def allocateSlot (s : SlotPartition) (slot : Nat) : SlotPartition :=
+  { s with
+    free := fun i => s.free i ∧ i ≠ slot
+    allocated := fun i => s.allocated i ∨ i = slot }
+
+/-- Releasing an allocated slot moves it back to the free set. -/
+def releaseSlot (s : SlotPartition) (slot : Nat) : SlotPartition :=
+  { s with
+    free := fun i => s.free i ∨ i = slot
+    allocated := fun i => s.allocated i ∧ i ≠ slot }
+
+/-- Allocation preserves the exact-one-owner partition invariant. -/
+theorem allocateSlot_preserves_partition
+    (s : SlotPartition) (slot : Nat)
+    (hValid : s.Valid)
+    (hBound : slot < s.capacity)
+    (hFree : s.free slot) :
+    (allocateSlot s slot).Valid := by
+  intro i hi
+  by_cases hEq : i = slot
+  · subst i
+    have hNotSpare : ¬ s.spare slot := by
+      intro hSpare
+      exact (hValid slot hBound).2.2.1 ⟨hFree, hSpare⟩
+    simp [allocateSlot, hFree, hNotSpare]
+  · have h := hValid i hi
+    simpa [SlotPartition.Valid, allocateSlot, hEq] using h
+
+/-- Release preserves the exact-one-owner partition invariant. -/
+theorem releaseSlot_preserves_partition
+    (s : SlotPartition) (slot : Nat)
+    (hValid : s.Valid)
+    (hBound : slot < s.capacity)
+    (hAllocated : s.allocated slot) :
+    (releaseSlot s slot).Valid := by
+  intro i hi
+  by_cases hEq : i = slot
+  · subst i
+    have hNotFree : ¬ s.free slot := by
+      intro hFree
+      exact (hValid slot hBound).2.1 ⟨hFree, hAllocated⟩
+    have hNotSpare : ¬ s.spare slot := by
+      intro hSpare
+      exact (hValid slot hBound).2.2.2 ⟨hAllocated, hSpare⟩
+    simp [releaseSlot, hNotFree, hAllocated, hNotSpare]
+  · have h := hValid i hi
+    simpa [SlotPartition.Valid, releaseSlot, hEq] using h
+
+/-- Allocation changes ownership only at the selected slot. -/
+theorem allocateSlot_other_slots_unchanged
+    (s : SlotPartition) (slot i : Nat) :
+    (allocateSlot s slot).free i = (s.free i ∧ i ≠ slot) ∧
+    (allocateSlot s slot).allocated i = (s.allocated i ∨ i = slot) := by
+  constructor <;> rfl
+
+/-- Release changes ownership only at the selected slot. -/
+theorem releaseSlot_other_slots_unchanged
+    (s : SlotPartition) (slot i : Nat) :
+    (releaseSlot s slot).free i = (s.free i ∨ i = slot) ∧
+    (releaseSlot s slot).allocated i = (s.allocated i ∧ i ≠ slot) := by
+  constructor <;> rfl
+
+
+/-! ## Free-list representation invariant
+
+The abstract list representation establishes boundedness, uniqueness and
+completeness relative to the free-slot predicate. Concrete pointer links and
+their page/class tags are a separate representation-refinement obligation.
+-/
+
+/-- A free list contains each free slot exactly once and no non-free or out-of-range slot. -/
+def FreeListInvariant (capacity : Nat) (isFree : Nat → Prop)
+    (entries : List Nat) : Prop :=
+  entries.Nodup ∧
+  (∀ slot, slot ∈ entries → slot < capacity ∧ isFree slot) ∧
+  (∀ slot, slot < capacity → (isFree slot ↔ slot ∈ entries))
+
+/-- Inserting a newly free slot preserves boundedness, uniqueness and completeness. -/
+theorem freeListPush_preserves
+    (capacity slot : Nat) (isFree : Nat → Prop) (entries : List Nat)
+    (hInvariant : FreeListInvariant capacity isFree entries)
+    (hBound : slot < capacity)
+    (hNotFree : ¬ isFree slot) :
+    FreeListInvariant capacity (fun i => isFree i ∨ i = slot) (slot :: entries) := by
+  have hNotMem : slot ∉ entries := by
+    intro hMem
+    exact hNotFree ((hInvariant.2.2 slot hBound).mpr hMem)
+  refine ⟨List.nodup_cons.mpr ⟨hNotMem, hInvariant.1⟩, ?_, ?_⟩
+  · intro i hMem
+    rcases List.mem_cons.mp hMem with hEq | hTail
+    · subst i
+      exact ⟨hBound, Or.inr rfl⟩
+    · rcases hInvariant.2.1 i hTail with ⟨hInRange, hFree⟩
+      exact ⟨hInRange, Or.inl hFree⟩
+  · intro i hInRange
+    constructor
+    · intro hFree
+      rcases hFree with hFree | hEq
+      · exact List.mem_cons.mpr (Or.inr ((hInvariant.2.2 i hInRange).mp hFree))
+      · subst i
+        exact List.mem_cons.mpr (Or.inl rfl)
+    · intro hMem
+      rcases List.mem_cons.mp hMem with hEq | hTail
+      · subst i
+        exact Or.inr rfl
+      · exact Or.inl ((hInvariant.2.2 i hInRange).mpr hTail)
+
+/-- Popping the head slot for allocation preserves the free-list representation invariant. -/
+theorem freeListPop_preserves
+    (capacity slot : Nat) (isFree : Nat → Prop) (entries : List Nat)
+    (hInvariant : FreeListInvariant capacity isFree (slot :: entries)) :
+    FreeListInvariant capacity (fun i => isFree i ∧ i ≠ slot) entries := by
+  have hNodup := List.nodup_cons.mp hInvariant.1
+  have hNotTail : slot ∉ entries := hNodup.1
+  refine ⟨hNodup.2, ?_, ?_⟩
+  · intro i hMem
+    have hWhole : i ∈ slot :: entries := List.mem_cons.mpr (Or.inr hMem)
+    rcases hInvariant.2.1 i hWhole with ⟨hBound, hFree⟩
+    have hNe : i ≠ slot := by
+      intro hEq
+      subst i
+      exact hNotTail hMem
+    exact ⟨hBound, hFree, hNe⟩
+  · intro i hBound
+    constructor
+    · intro hFree
+      have hWhole := (hInvariant.2.2 i hBound).mp hFree.1
+      rcases List.mem_cons.mp hWhole with hEq | hTail
+      · exact False.elim (hFree.2 hEq)
+      · exact hTail
+    · intro hMem
+      have hWhole : i ∈ slot :: entries := List.mem_cons.mpr (Or.inr hMem)
+      have hFree := (hInvariant.2.2 i hBound).mpr hWhole
+      have hNe : i ≠ slot := by
+        intro hEq
+        subst i
+        exact hNotTail hMem
+      exact ⟨hFree, hNe⟩
+
 end CapstanFormal
