@@ -766,19 +766,61 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
         file, file.len() - moov.len() - 12, file.len()
     );
     // mdat begins after moov; absolute payload range is the final 4 bytes.
-    DeadeyeMp4MovieTracksResult parsed = deadeye_mp4_parse_moov_tracks(
-        file,moov_box.box
+    HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
+        67108864, 67108864, 0, 0, 400000000,
+        128, 8192, 0, 0, 16, 32, 32768
     );
-    assert(parsed.ok);
-    DeadeyeMp4Box forged_moov = moov_box.box;
-    forged_moov.end -= 1;
-    assert(!deadeye_mp4_parse_moov_tracks(file,forged_moov).ok);
-    if (let movie = parsed.movie) {
-        assert(movie.tracks.len() == 1);
-        assert(movie.tracks[0].handler == "soun");
-        assert(movie.tracks[0].sample_entry.codec == "sowt-pcm");
-        assert(movie.tracks[0].tables.sample_count == 1);
-        assert(movie.tracks[0].media_timescale == 1000);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(67108864,0,0,400000000);
+    assert(ledger_result.ok && budget_result.ok);
+    if (let ledger = ledger_result.ledger) {
+        if (let budget = budget_result.budget) {
+            DeadeyeMp4MovieTracksResult parsed = deadeye_mp4_parse_moov_tracks(
+                file,moov_box.box,ledger,budget
+            );
+            assert(parsed.ok);
+            if (let movie = parsed.movie) {
+                assert(movie.tracks.len() == 1);
+                assert(movie.tracks[0].handler == "soun");
+                assert(movie.tracks[0].sample_entry.codec == "sowt-pcm");
+                assert(movie.tracks[0].tables.sample_count == 1);
+                assert(movie.tracks[0].media_timescale == 1000);
+                assert(deadeye_mp4_movie_close(movie));
+                assert(!deadeye_mp4_movie_close(movie));
+            } else { assert(false); }
+            DeadeyeMp4Box forged_moov = moov_box.box;
+            forged_moov.end -= 1;
+            DeadeyeMp4MovieTracksResult forged =
+                deadeye_mp4_parse_moov_tracks(file,forged_moov,ledger,budget);
+            assert(!forged.ok);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye parser reserves resources before work and releases on budget failure" {
+    List<int> file = deadeye_mp4_test_minimal_file();
+    DeadeyeMp4BoxResult first = deadeye_mp4_box_read(file,0,file.len());
+    DeadeyeMp4BoxResult movie_box = deadeye_mp4_box_read(
+        file,first.box.end,file.len()
+    );
+    HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
+        67108864, 67108864, 0, 0, 400000000,
+        128, 8192, 0, 0, 16, 32, 32768
+    );
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(file.len()-1,0,0,400000000);
+    assert(ledger_result.ok && budget_result.ok);
+    if (let ledger = ledger_result.ledger) {
+        if (let budget = budget_result.budget) {
+            DeadeyeMp4MovieTracksResult rejected =
+                deadeye_mp4_parse_moov_tracks(file,movie_box.box,ledger,budget);
+            assert(!rejected.ok && rejected.error == "consumption_budget_exceeded");
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_allocation_units == 0);
+            assert(ledger.used_metadata_entries == 0);
+            assert(ledger.used_track_slots == 0);
+            assert(ledger.used_chunk_slots == 0);
+        } else { assert(false); }
     } else { assert(false); }
 }
 
