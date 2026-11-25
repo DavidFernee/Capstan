@@ -112,7 +112,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 6. Test obligations
 
-The regression suite is expressed as 16 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 18 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -127,7 +127,7 @@ contains no shell, Python, C, or other-language source. It covers:
 - reduced rational timebase construction and invalid numerator/denominator rejection;
 - exact 48 kHz to 90 kHz timestamp conversion;
 - explicit positive and negative rounding modes and nearest-even ties;
-- checked overflow rejection and rejection of forged non-normalised timebases;
+- checked overflow rejection, signed multiplication boundary cases in all sign quadrants, and rejection of forged non-normalised timebases;
 - exhaustive exact-read counts around a four-byte source;
 - exhaustive (3^5) five-dimensional admission requests;
 - independent underflow rejection for every release dimension;
@@ -138,11 +138,12 @@ Still required before MC1 can pass:
 1. opaque or otherwise non-forgeable source and ledger state;
 2. a single-owner or synchronised concurrency model;
 3. atomic reservation tied to source snapshot allocation;
-4. lifetime-bound reservations and cancellation/cleanup semantics;
-5. larger model/property tests over generated operation sequences and concurrent schedules;
-6. malformed-state and mutation tests;
-7. allocation, CPU and retained-memory measurements under adversarial inputs;
-8. independent review and exact-head CI on supported platforms.
+4. explicit thread-confinement until the language-level ownership/channel model from #229/#249 is available; no caller may share a mutable ledger across concurrent tasks;
+5. lifetime-bound reservations and cancellation/cleanup semantics;
+6. larger model/property tests over generated operation sequences and concurrent schedules;
+7. malformed-state and mutation tests;
+8. allocation, CPU and retained-memory measurements under adversarial inputs;
+9. independent review and exact-head CI on supported platforms.
 
 ## 7. Implementation provenance
 
