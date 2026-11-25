@@ -1,0 +1,262 @@
+// Capstan-native GC handle and immutable-layout reference model.
+//
+// This is a semantic model only. It uses dense logical slot IDs, not native
+// addresses, and does not implement physical allocation or object storage.
+// State is passed by value; operations return observations and do not mutate
+// the supplied heap.
+
+const int GCH_OK = 1;
+const int GCH_INVALID_HEAP = 2;
+const int GCH_FOREIGN_HEAP = 3;
+const int GCH_INVALID_HANDLE = 4;
+const int GCH_STALE_HANDLE = 5;
+const int GCH_UNALLOCATED = 6;
+const int GCH_LAYOUT_MISMATCH = 7;
+
+struct GCHLayout {
+    int descriptor_id;
+    int field_count;
+    List<int> reference_offsets;
+}
+
+struct GCHSlot {
+    int slot_id;
+    int generation;
+    bool allocated;
+    int descriptor_id;
+}
+
+struct GCHHandle {
+    int heap_token;
+    int slot_id;
+    int generation;
+}
+
+struct GCHHeap {
+    int heap_token;
+    List<GCHLayout> layouts;
+    List<GCHSlot> slots;
+}
+
+struct GCHResolveResult {
+    int status;
+    int slot_index;
+    int descriptor_id;
+}
+
+GCHHandle gch_handle(int heap_token, int slot_id, int generation) {
+    return new GCHHandle{
+        heap_token: heap_token, slot_id: slot_id, generation: generation
+    };
+}
+
+bool gch_layout_valid(GCHLayout layout) {
+    if (layout.descriptor_id <= 0 || layout.field_count < 0 ||
+        layout.reference_offsets.len() > layout.field_count) {
+        return false;
+    }
+    for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
+        int offset = layout.reference_offsets[i];
+        if (offset < 0 || offset >= layout.field_count) { return false; }
+        for (int j = i + 1; j < layout.reference_offsets.len(); j += 1) {
+            if (offset == layout.reference_offsets[j]) { return false; }
+        }
+    }
+    return true;
+}
+
+int gch_find_layout(List<GCHLayout> layouts, int descriptor_id) {
+    for (int i = 0; i < layouts.len(); i += 1) {
+        if (layouts[i].descriptor_id == descriptor_id) { return i; }
+    }
+    return -1;
+}
+
+bool gch_heap_valid(GCHHeap heap) {
+    if (heap.heap_token <= 0) { return false; }
+    for (int i = 0; i < heap.layouts.len(); i += 1) {
+        if (!gch_layout_valid(heap.layouts[i])) { return false; }
+        for (int j = i + 1; j < heap.layouts.len(); j += 1) {
+            if (heap.layouts[i].descriptor_id ==
+                heap.layouts[j].descriptor_id) { return false; }
+        }
+    }
+    for (int i = 0; i < heap.slots.len(); i += 1) {
+        GCHSlot slot = heap.slots[i];
+        if (slot.slot_id != i || slot.generation <= 0) { return false; }
+        if (slot.allocated &&
+            gch_find_layout(heap.layouts, slot.descriptor_id) < 0) {
+            return false;
+        }
+        if (!slot.allocated && slot.descriptor_id != 0) { return false; }
+    }
+    return true;
+}
+
+// expected_descriptor_id == 0 means any registered layout. No address or
+// integer-to-pointer conversion exists in this interface.
+GCHResolveResult gch_resolve(
+    GCHHeap heap, GCHHandle handle, int expected_descriptor_id
+) {
+    if (!gch_heap_valid(heap)) {
+        return new GCHResolveResult{
+            status: GCH_INVALID_HEAP, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (handle.heap_token != heap.heap_token) {
+        return new GCHResolveResult{
+            status: GCH_FOREIGN_HEAP, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (handle.slot_id < 0 || handle.slot_id >= heap.slots.len() ||
+        handle.generation <= 0 || expected_descriptor_id < 0) {
+        return new GCHResolveResult{
+            status: GCH_INVALID_HANDLE, slot_index: -1, descriptor_id: 0
+        };
+    }
+    GCHSlot slot = heap.slots[handle.slot_id];
+    if (slot.slot_id != handle.slot_id) {
+        return new GCHResolveResult{
+            status: GCH_INVALID_HANDLE, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (slot.generation != handle.generation) {
+        return new GCHResolveResult{
+            status: GCH_STALE_HANDLE, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (!slot.allocated) {
+        return new GCHResolveResult{
+            status: GCH_UNALLOCATED, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (expected_descriptor_id != 0 &&
+        slot.descriptor_id != expected_descriptor_id) {
+        return new GCHResolveResult{
+            status: GCH_LAYOUT_MISMATCH, slot_index: -1, descriptor_id: 0
+        };
+    }
+    return new GCHResolveResult{
+        status: GCH_OK, slot_index: handle.slot_id,
+        descriptor_id: slot.descriptor_id
+    };
+}
+
+GCHHeap gch_fixture_heap() {
+    List<int> offsets = new List<int>();
+    offsets.push(1);
+    offsets.push(3);
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(new GCHLayout{
+        descriptor_id: 7, field_count: 4, reference_offsets: offsets
+    });
+    List<int> empty_offsets = new List<int>();
+    layouts.push(new GCHLayout{
+        descriptor_id: 8, field_count: 0, reference_offsets: empty_offsets
+    });
+    List<GCHSlot> slots = new List<GCHSlot>();
+    slots.push(new GCHSlot{
+        slot_id: 0, generation: 3, allocated: true, descriptor_id: 7
+    });
+    slots.push(new GCHSlot{
+        slot_id: 1, generation: 1, allocated: true, descriptor_id: 8
+    });
+    slots.push(new GCHSlot{
+        slot_id: 2, generation: 4, allocated: false, descriptor_id: 0
+    });
+    return new GCHHeap{heap_token: 91, layouts: layouts, slots: slots};
+}
+
+test "GC handle resolves within its originating heap" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHResolveResult result = gch_resolve(heap, gch_handle(91, 0, 3), 0);
+    assert(result.status == GCH_OK);
+    assert(result.slot_index == 0);
+    assert(result.descriptor_id == 7);
+}
+
+test "GC handle rejects a foreign heap token" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(92, 0, 3), 0
+    );
+    assert(result.status == GCH_FOREIGN_HEAP);
+}
+
+test "GC handle rejects a stale generation" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 0, 2), 0
+    );
+    assert(result.status == GCH_STALE_HANDLE);
+}
+
+test "GC handle rejects an unallocated slot" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 2, 4), 0
+    );
+    assert(result.status == GCH_UNALLOCATED);
+}
+
+test "GC handle rejects an out-of-range slot" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 3, 1), 0
+    );
+    assert(result.status == GCH_INVALID_HANDLE);
+}
+
+test "GC handle enforces nominal descriptor identity" {
+    GCHResolveResult good = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 7
+    );
+    GCHResolveResult bad = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 8
+    );
+    assert(good.status == GCH_OK);
+    assert(bad.status == GCH_LAYOUT_MISMATCH);
+}
+
+test "GC layout rejects duplicate reference offsets" {
+    GCHHeap heap = gch_fixture_heap();
+    List<int> duplicate_offsets = new List<int>();
+    duplicate_offsets.push(1);
+    duplicate_offsets.push(1);
+    heap.layouts.push(new GCHLayout{
+        descriptor_id: 9, field_count: 2,
+        reference_offsets: duplicate_offsets
+    });
+    assert(!gch_heap_valid(heap));
+}
+
+test "GC layout rejects out-of-range reference offsets" {
+    GCHHeap heap = gch_fixture_heap();
+    List<int> invalid_offsets = new List<int>();
+    invalid_offsets.push(4);
+    heap.layouts.push(new GCHLayout{
+        descriptor_id: 9, field_count: 4,
+        reference_offsets: invalid_offsets
+    });
+    assert(!gch_heap_valid(heap));
+}
+
+test "GC heap rejects allocated slots with unknown descriptors" {
+    GCHHeap heap = gch_fixture_heap();
+    heap.slots.push(new GCHSlot{
+        slot_id: 3, generation: 1, allocated: true, descriptor_id: 99
+    });
+    assert(!gch_heap_valid(heap));
+}
+
+test "GC heap rejects duplicate descriptor identities" {
+    GCHHeap heap = gch_fixture_heap();
+    List<int> offsets = new List<int>();
+    heap.layouts.push(new GCHLayout{
+        descriptor_id: 7, field_count: 0, reference_offsets: offsets
+    });
+    assert(!gch_heap_valid(heap));
+}
+
+test "GC resolution rejects negative generations" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 0, -1), 0
+    );
+    assert(result.status == GCH_INVALID_HANDLE);
+}
