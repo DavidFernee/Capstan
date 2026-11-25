@@ -88,6 +88,17 @@ bool cbr_same(CBRState a, CBRState b) {
     return cbr_key(a) == cbr_key(b);
 }
 
+// Struct values are references: successor construction must detach from
+// the queued predecessor before applying a transition.
+CBRState cbr_copy(CBRState s) {
+    return new CBRState{
+        channel_state: s.channel_state,
+        consumer_status: s.consumer_status,
+        wait_registered: s.wait_registered,
+        eof_observed: s.eof_observed
+    };
+}
+
 CBRStep cbr_reject(CBRState s) {
     return new CBRStep{enabled: false, next: s};
 }
@@ -99,7 +110,7 @@ CBRStep cbr_accept(CBRState s) {
 // Pure model transitions. Rejection never mutates the input state.
 CBRStep cbr_step(CBRState before, int action) {
     if (!cbr_invariant(before)) { return cbr_reject(before); }
-    CBRState next = before;
+    CBRState next = cbr_copy(before);
     if (action == CBR_RECEIVE) {
         if (before.consumer_status != CBR_RUNNABLE) {
             return cbr_reject(before);
@@ -257,4 +268,17 @@ test "CBR rejected transition preserves canonical state identity" {
     CBRStep rejected = cbr_step(initial, CBR_CANCEL);
     assert(!rejected.enabled);
     assert(cbr_same(initial, rejected.next));
+}
+
+
+test "CBR accepted transition leaves its queued predecessor unchanged" {
+    CBRState initial = cbr_initial();
+    CBRStep received = cbr_step(initial, CBR_RECEIVE);
+    assert(received.enabled);
+    assert(initial.consumer_status == CBR_RUNNABLE);
+    assert(!initial.wait_registered);
+    assert(initial.channel_state == CBR_OPEN);
+    assert(received.next.consumer_status == CBR_BLOCKED);
+    assert(received.next.wait_registered);
+    assert(cbr_key(initial) != cbr_key(received.next));
 }
