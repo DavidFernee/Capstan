@@ -46,7 +46,7 @@ def allocateSlot {Object : Type u}
   match slot with
   | .neverUsed => some (.occupied 0 object, 0)
   | .free generation =>
-      if generation ≤ maximumGeneration then
+      if 0 < generation ∧ generation ≤ maximumGeneration then
         some (.occupied generation object, generation)
       else
         none
@@ -145,6 +145,17 @@ theorem allocateSlot_success_resolves
       simp [allocateSlot] at h
   | retired =>
       simp [allocateSlot] at h
+
+/-- A malformed free slot at generation zero or above the configured
+maximum is rejected rather than issuing an out-of-policy handle. -/
+theorem allocateSlot_rejects_invalid_free_generation
+    {Object : Type u} (maximumGeneration generation : Nat) (object : Object)
+    (hzero : generation = 0 ∨ maximumGeneration < generation) :
+    allocateSlot maximumGeneration (.free generation) object = none := by
+  rcases hzero with hzero | habove
+  · simp [allocateSlot, hzero]
+  · have hbound : ¬ generation ≤ maximumGeneration := Nat.not_le_of_gt habove
+    simp [allocateSlot, hbound]
 
 /-- Occupied slots cannot be overwritten by allocation. -/
 theorem allocateSlot_rejects_occupied
