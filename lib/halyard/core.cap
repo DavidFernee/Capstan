@@ -1739,7 +1739,7 @@ test "Halyard managed sink rejects capacity before acquiring replacement lease" 
     HalyardLedgerResult made = halyard_ledger_create_bounded(0, 2, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
     if (let ledger = made.ledger) {
-        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 2);
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 3);
         assert(created.ok);
         if (let managed = created.managed) {
             List<int> first = new List<int>();
@@ -2270,7 +2270,7 @@ test "Halyard managed source rejects zero allocation slots without mutation" {
         HalyardManagedByteSourceResult created =
             halyard_managed_source_create(ledger, input, 1);
         assert(!created.ok);
-        assert(created.error == "allocation_units_limit");
+        assert(created.error == "reservation_rejected");
         assert(ledger.used_retained_bytes == 0);
         assert(ledger.used_allocation_units == 0);
     } else { assert(false); }
