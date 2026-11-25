@@ -374,6 +374,7 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     int contours = r.i16(at);
     if (contours < 0) { return composite_outline(f, at, end + f.t_glyf, p, num, den, ox, oy, m, depth, budget); }
     int ep = at + 10;
+    if (contours > MAX_GLYPH_POINTS || contours > (end - 10) / 2) { return false; }
     int npts = 0;
     List<int> ends = new List<int>();
     for (int c = 0; c < contours; c += 1) {
