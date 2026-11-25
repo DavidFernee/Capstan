@@ -33,7 +33,17 @@
 #include <unistd.h>
 #if defined(__linux__)
 #include <sys/syscall.h>
-#include <linux/openat2.h>
+/* openat2's stable 24-byte userspace ABI; avoid requiring recent kernel headers. */
+struct cap_open_how { uint64_t flags; uint64_t mode; uint64_t resolve; };
+#ifndef SYS_openat2
+#if defined(__x86_64__)
+#define SYS_openat2 437
+#endif
+#endif
+#define CAP_RESOLVE_NO_XDEV       0x01
+#define CAP_RESOLVE_NO_MAGICLINKS 0x02
+#define CAP_RESOLVE_NO_SYMLINKS   0x04
+#define CAP_RESOLVE_BENEATH       0x08
 #endif
 #include "capstan_gc.h"
 
@@ -910,7 +920,7 @@ static bool cap_workspace_components_ok(CapStr *path, bool absolute) {
 
 static int cap_openat2_checked(int dirfd, const char *path, uint64_t flags, uint64_t resolve) {
 #if defined(__linux__) && defined(SYS_openat2)
-    struct open_how how = {0};
+    struct cap_open_how how = {0};
     how.flags = flags;
     how.resolve = resolve;
     return (int)syscall(SYS_openat2, dirfd, path, &how, sizeof how);
@@ -924,14 +934,14 @@ static int cap_openat2_checked(int dirfd, const char *path, uint64_t flags, uint
 /* Returns an O_PATH directory descriptor, or -1. The root path itself must
    be absolute and contain no symlink, magic-link or dot component. */
 static int64_t cap_workspace_open(CapStr *root) {
-#if defined(__linux__) && defined(O_PATH) && defined(RESOLVE_BENEATH) && defined(RESOLVE_NO_SYMLINKS)
+#if defined(__linux__) && defined(O_PATH) && defined(CAP_RESOLVE_BENEATH) && defined(CAP_RESOLVE_NO_SYMLINKS)
     if (!cap_workspace_components_ok(root, true)) return -1;
     int slash = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC);
     if (slash < 0) return -1;
     if (root->len == 1) return slash;
     int fd = cap_openat2_checked(slash, root->data + 1,
         O_PATH | O_DIRECTORY | O_CLOEXEC,
-        RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS);
+        CAP_RESOLVE_BENEATH | CAP_RESOLVE_NO_SYMLINKS | CAP_RESOLVE_NO_MAGICLINKS);
     close(slash);
     return fd < 0 ? -1 : (int64_t)fd;
 #else
@@ -947,13 +957,13 @@ static int64_t cap_workspace_open(CapStr *root) {
 static CapStr *cap_workspace_read_file(int64_t root_fd, CapStr *relative, int64_t max, int64_t loc) {
     if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_DEFAULT))
         cap_panic("workspace_read_file() limit outside 0..2^30", "CWE-789", loc);
-#if defined(__linux__) && defined(RESOLVE_BENEATH) && defined(RESOLVE_NO_SYMLINKS) && defined(RESOLVE_NO_XDEV)
+#if defined(__linux__) && defined(RESOLVE_BENEATH) && defined(RESOLVE_NO_SYMLINKS) && defined(CAP_RESOLVE_NO_XDEV)
     if (root_fd < 0 || root_fd > INT_MAX || !cap_workspace_components_ok(relative, false)) return NULL;
     struct stat root_st;
     if (fstat((int)root_fd, &root_st) != 0 || !S_ISDIR(root_st.st_mode)) return NULL;
     int fd = cap_openat2_checked((int)root_fd, relative->data,
         O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC | O_NOFOLLOW,
-        RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV);
+        CAP_RESOLVE_BENEATH | CAP_RESOLVE_NO_SYMLINKS | CAP_RESOLVE_NO_MAGICLINKS | CAP_RESOLVE_NO_XDEV);
     if (fd < 0) return NULL;
     struct stat before;
     if (fstat(fd, &before) != 0 || !S_ISREG(before.st_mode) ||
