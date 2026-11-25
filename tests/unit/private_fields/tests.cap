@@ -23,3 +23,8 @@ test "opaque structs hide every field while module factories preserve invariants
     value = update_sealed_vault(value, 4);
     assert(sealed_vault_is_valid(value));
 }
+
+test "zero-field opaque capabilities cannot be forged by importers" {
+    EmptyCapability value = make_empty_capability();
+    assert(empty_capability_is_issued(value));
+}
