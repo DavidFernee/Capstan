@@ -34,7 +34,7 @@ struct GCEdge {
 
 struct GCSpec {
     List<GCObject> objects;
-    List<int> roots;
+    List<GCRef> roots;
     List<GCEdge> edges;
     int worklist_capacity;
 }
@@ -258,7 +258,7 @@ bool gc_same_id_set(List<int> left, List<int> right) {
     return true;
 }
 
-GCObject gc_object(int id, int kind) {
+GCRef gc_ref(int id, int generation) {\n    return new GCRef{id: id, generation: generation};\n}\n\nGCObject gc_object(int id, int kind) {
     return new GCObject{
         id: id, generation: 1, kind: kind, allocated: true,
         marked: false, secret_wiped: false
@@ -283,12 +283,12 @@ GCSpec gc_graph_basic() {
     spec.objects.push(gc_object(3, GC_KIND_TRACED));
     spec.objects.push(gc_object(4, GC_KIND_SECRET));
     spec.objects.push(gc_object(5, GC_KIND_TRACED));
-    spec.roots.push(0);
-    spec.roots.push(4);
-    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
-    spec.edges.push(new GCEdge{from_id: 1, to_id: 2});
-    spec.edges.push(new GCEdge{from_id: 1, to_id: 3});
-    spec.edges.push(new GCEdge{from_id: 3, to_id: 1});
+    spec.roots.push(gc_ref(0, 1));
+    spec.roots.push(gc_ref(4, 1));
+    spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 1, to_generation: 1});
+    spec.edges.push(new GCEdge{from_id: 1, from_generation: 1, to_id: 2, to_generation: 1});
+    spec.edges.push(new GCEdge{from_id: 1, from_generation: 1, to_id: 3, to_generation: 1});
+    spec.edges.push(new GCEdge{from_id: 3, from_generation: 1, to_id: 1, to_generation: 1});
     return spec;
 }
 
@@ -319,7 +319,7 @@ test "GC atomic objects are leaves" {
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
     spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
     spec.objects.push(gc_object(2, GC_KIND_TRACED));
-    spec.roots.push(0);
+    spec.roots.push(gc_ref(0, 1));
     spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
     GCResult result = gc_collect(spec);
     assert(result.status == GC_OK);
@@ -331,7 +331,7 @@ test "GC atomic objects are leaves" {
 test "GC duplicate roots do not duplicate work" {
     GCSpec spec = gc_empty_spec(2);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
-    spec.roots.push(0);
+    spec.roots.push(gc_ref(0, 1));
     spec.roots.push(0);
     GCResult result = gc_collect(spec);
     assert(result.status == GC_OK && result.work_items == 1);
@@ -365,7 +365,7 @@ test "GC rejects stale or unallocated root before sweeping" {
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
     spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
     spec.objects[1].allocated = false;
-    spec.roots.push(1);
+    spec.roots.push(gc_ref(1, 1));
     GCResult result = gc_collect(spec);
     assert(result.status == GC_INVALID);
     assert(result.objects[0].allocated && !result.objects[1].allocated);
@@ -387,7 +387,7 @@ test "GC rejects an edge to a missing object" {
     GCSpec spec = gc_empty_spec(2);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
     spec.roots.push(0);
-    spec.edges.push(new GCEdge{from_id: 0, to_id: 9});
+    spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 9, to_generation: 1});
     GCResult result = gc_collect(spec);
     assert(result.status == GC_INVALID);
     assert(result.objects[0].allocated);
@@ -448,4 +448,27 @@ test "GC rejects secret objects that claim already-erased while allocated" {
     GCResult result = gc_collect(spec);
     assert(result.status == GC_INVALID);
     assert(result.objects[0].allocated && result.objects[0].secret_wiped);
+}
+
+
+test "GC rejects a stale-generation root handle" {
+    GCSpec spec = gc_empty_spec(1);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.roots.push(gc_ref(0, 2));
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(result.objects[0].allocated && result.reclaimed_ids.len() == 0);
+}
+
+test "GC rejects a stale-generation graph edge" {
+    GCSpec spec = gc_empty_spec(2);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
+    spec.roots.push(gc_ref(0, 1));
+    spec.edges.push(new GCEdge{
+        from_id: 0, from_generation: 1, to_id: 1, to_generation: 2
+    });
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(result.objects[0].allocated && result.objects[1].allocated);
 }
