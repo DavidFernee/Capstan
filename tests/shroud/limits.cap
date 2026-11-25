@@ -144,6 +144,13 @@ int main() {
     if (glyph_outline(composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0) != true) { return 28; }
     Path aggregate_path = new_path();
     if (glyph_outline(composite_font, 2, aggregate_path, 1, 1, 0, 0, identity_transform(), 0) != false) { return 29; }
+    // Truncate glyph 1 after its component header. The component arguments
+    // remain inside the font file but are outside this glyph's declared span.
+    List<int> composite_loca = composite_font.r.b;
+    composite_loca[4] = 0;
+    composite_loca[5] = 6;  // short loca offset 12 bytes
+    Path truncated_composite = new_path();
+    if (glyph_outline(composite_font, 1, truncated_composite, 1, 1, 0, 0, identity_transform(), 0) != false) { return 48; }
     if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
         if (let font = font_load(data)) {
             for (int cp = 33; cp < 127; cp += 1) {
