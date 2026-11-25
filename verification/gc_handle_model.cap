@@ -15,6 +15,9 @@ const int GCH_LAYOUT_MISMATCH = 7;
 const int GCH_MAX_LAYOUTS = 4096;
 const int GCH_MAX_SLOTS = 65536;
 const int GCH_MAX_FIELDS = 4096;
+const int GCH_MAX_GENERATION = 0x7FFFFFFFFFFFFFFF;
+const int GCH_NO_CAPACITY = 8;
+const int GCH_INVALID_DESCRIPTOR = 9;
 
 struct GCHLayout {
     int descriptor_id;
@@ -26,6 +29,7 @@ struct GCHSlot {
     int slot_id;
     int generation;
     bool allocated;
+    bool retired;
     int descriptor_id;
 }
 
@@ -41,7 +45,7 @@ struct GCHHeap {
     List<GCHSlot> slots;
 }
 
-struct GCHResolveResult {
+struct GCHTransitionResult {\n    int status;\n    GCHHeap heap;\n    GCHHandle handle;\n}\n\nstruct GCHResolveResult {
     int status;
     int slot_index;
     int descriptor_id;
@@ -161,15 +165,75 @@ GCHHeap gch_fixture_heap() {
     });
     List<GCHSlot> slots = new List<GCHSlot>();
     slots.push(new GCHSlot{
-        slot_id: 0, generation: 3, allocated: true, descriptor_id: 7
+        slot_id: 0, generation: 3, allocated: true, retired: false, descriptor_id: 7
     });
     slots.push(new GCHSlot{
-        slot_id: 1, generation: 1, allocated: true, descriptor_id: 8
+        slot_id: 1, generation: 1, allocated: true, retired: false, descriptor_id: 8
     });
     slots.push(new GCHSlot{
-        slot_id: 2, generation: 4, allocated: false, descriptor_id: 0
+        slot_id: 2, generation: 4, allocated: false, retired: false, descriptor_id: 0
     });
     return new GCHHeap{heap_token: 91, layouts: layouts, slots: slots};
+}
+
+GCHTransitionResult gch_allocate(GCHHeap heap, int descriptor_id) {
+    if (!gch_heap_valid(heap)) {
+        return new GCHTransitionResult{status: GCH_INVALID_HEAP, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    if (descriptor_id <= 0 || gch_find_layout(heap.layouts, descriptor_id) < 0) {
+        return new GCHTransitionResult{status: GCH_INVALID_DESCRIPTOR, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    int free_index = -1;
+    for (int i = 0; i < heap.slots.len(); i += 1) {
+        if (!heap.slots[i].allocated && !heap.slots[i].retired) {
+            free_index = i;
+            break;
+        }
+    }
+    if (free_index < 0) {
+        return new GCHTransitionResult{status: GCH_NO_CAPACITY, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    GCHSlot old_slot = heap.slots[free_index];
+    if (old_slot.generation >= GCH_MAX_GENERATION) {
+        return new GCHTransitionResult{status: GCH_NO_CAPACITY, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    int next_generation = old_slot.generation + 1;
+    List<GCHSlot> slots = new List<GCHSlot>();
+    for (int i = 0; i < heap.slots.len(); i += 1) {
+        if (i == free_index) {
+            slots.push(new GCHSlot{
+                slot_id: old_slot.slot_id, generation: next_generation,
+                allocated: true, retired: false, descriptor_id: descriptor_id
+            });
+        } else { slots.push(heap.slots[i]); }
+    }
+    GCHHeap published = new GCHHeap{heap_token: heap.heap_token, layouts: heap.layouts, slots: slots};
+    return new GCHTransitionResult{
+        status: GCH_OK, heap: published,
+        handle: gch_handle(heap.heap_token, old_slot.slot_id, next_generation)
+    };
+}
+
+GCHTransitionResult gch_release(GCHHeap heap, GCHHandle handle) {
+    GCHResolveResult resolved = gch_resolve(heap, handle, 0);
+    if (resolved.status != GCH_OK) {
+        return new GCHTransitionResult{status: resolved.status, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    GCHSlot old_slot = heap.slots[resolved.slot_index];
+    bool retire = old_slot.generation == GCH_MAX_GENERATION;
+    List<GCHSlot> slots = new List<GCHSlot>();
+    for (int i = 0; i < heap.slots.len(); i += 1) {
+        if (i == resolved.slot_index) {
+            slots.push(new GCHSlot{
+                slot_id: old_slot.slot_id, generation: old_slot.generation,
+                allocated: false, retired: retire, descriptor_id: 0
+            });
+        } else { slots.push(heap.slots[i]); }
+    }
+    GCHHeap published = new GCHHeap{heap_token: heap.heap_token, layouts: heap.layouts, slots: slots};
+    return new GCHTransitionResult{
+        status: GCH_OK, heap: published, handle: gch_handle(0, 0, 0)
+    };
 }
 
 test "GC handle resolves within its originating heap" {
@@ -261,7 +325,7 @@ test "GC heap rejects allocated slots with unknown descriptors" {
     slots.push(base.slots[1]);
     slots.push(base.slots[2]);
     slots.push(new GCHSlot{
-        slot_id: 3, generation: 1, allocated: true, descriptor_id: 99
+        slot_id: 3, generation: 1, allocated: true, retired: false, descriptor_id: 99
     });
     GCHHeap invalid = new GCHHeap{
         heap_token: base.heap_token, layouts: base.layouts, slots: slots
@@ -297,6 +361,84 @@ test "GC layout rejects excessive field count" {
         heap_token: base.heap_token, layouts: layouts, slots: base.slots
     };
     assert(!gch_heap_valid(invalid));
+}
+
+test "GC allocation publishes a fresh generation with its descriptor" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult allocated = gch_allocate(heap, 7);
+    assert(allocated.status == GCH_OK);
+    assert(allocated.handle.heap_token == 91);
+    assert(allocated.handle.slot_id == 2);
+    assert(allocated.handle.generation == 5);
+    assert(allocated.heap.slots[2].allocated);
+    assert(allocated.heap.slots[2].descriptor_id == 7);
+    assert(gch_resolve(allocated.heap, allocated.handle, 7).status == GCH_OK);
+    assert(gch_resolve(heap, allocated.handle, 0).status == GCH_UNALLOCATED);
+}
+
+test "GC allocation rejects unknown descriptors atomically" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult rejected = gch_allocate(heap, 99);
+    assert(rejected.status == GCH_INVALID_DESCRIPTOR);
+    assert(rejected.heap.slots[2].generation == heap.slots[2].generation);
+    assert(!rejected.heap.slots[2].allocated);
+    assert(rejected.handle.heap_token == 0);
+}
+
+test "GC release invalidates the released handle" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult released = gch_release(heap, gch_handle(91, 0, 3));
+    assert(released.status == GCH_OK);
+    assert(!released.heap.slots[0].allocated);
+    assert(released.heap.slots[0].descriptor_id == 0);
+    assert(gch_resolve(released.heap, gch_handle(91, 0, 3), 0).status == GCH_UNALLOCATED);
+    assert(gch_resolve(heap, gch_handle(91, 0, 3), 0).status == GCH_OK);
+}
+
+test "GC slot reuse advances generation and rejects old handle" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult released = gch_release(heap, gch_handle(91, 2, 4));
+    GCHTransitionResult allocated = gch_allocate(released.heap, 8);
+    assert(allocated.status == GCH_OK);
+    assert(allocated.handle.slot_id == 2);
+    assert(allocated.handle.generation == 5);
+    assert(gch_resolve(allocated.heap, gch_handle(91, 2, 4), 0).status == GCH_STALE_HANDLE);
+}
+
+test "GC release rejects stale handles atomically" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult rejected = gch_release(heap, gch_handle(91, 0, 2));
+    assert(rejected.status == GCH_STALE_HANDLE);
+    assert(rejected.heap.slots[0].allocated);
+    assert(rejected.heap.slots[0].generation == 3);
+}
+
+test "GC maximum-generation release retires the slot" {
+    GCHHeap base = gch_fixture_heap();
+    List<GCHSlot> slots = new List<GCHSlot>();
+    slots.push(new GCHSlot{slot_id: 0, generation: GCH_MAX_GENERATION, allocated: true, retired: false, descriptor_id: 7});
+    slots.push(base.slots[1]);
+    slots.push(base.slots[2]);
+    GCHHeap heap = new GCHHeap{heap_token: base.heap_token, layouts: base.layouts, slots: slots};
+    GCHTransitionResult released = gch_release(heap, gch_handle(91, 0, GCH_MAX_GENERATION));
+    assert(released.status == GCH_OK);
+    assert(released.heap.slots[0].retired);
+    GCHTransitionResult allocated = gch_allocate(released.heap, 7);
+    assert(allocated.status == GCH_OK);
+    assert(allocated.handle.slot_id == 2);
+}
+
+test "GC allocation fails atomically when all free slots are retired" {
+    GCHHeap base = gch_fixture_heap();
+    List<GCHSlot> slots = new List<GCHSlot>();
+    slots.push(base.slots[0]);
+    slots.push(base.slots[1]);
+    slots.push(new GCHSlot{slot_id: 2, generation: GCH_MAX_GENERATION, allocated: false, retired: true, descriptor_id: 0});
+    GCHHeap full = new GCHHeap{heap_token: base.heap_token, layouts: base.layouts, slots: slots};
+    GCHTransitionResult rejected = gch_allocate(full, 7);
+    assert(rejected.status == GCH_NO_CAPACITY);
+    assert(rejected.heap.slots[2].retired);
+    assert(!rejected.heap.slots[2].allocated);
 }
 
 test "GC resolution rejects negative generations" {
