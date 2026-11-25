@@ -27,7 +27,8 @@
 | Modern video | AV1, AVC/H.264, HEVC/H.265, VVC/H.266 | General and high-efficiency video | Target |
 | Open/legacy video | VP8, VP9, Theora, MPEG-1/2, Cinepak, Indeo, RealVideo | Compatibility and archival | Target |
 | Production | ProRes, DNxHD, DNxHR, JPEG 2000 | Editing and mastering | Target |
-| Still images | PNG, JPEG, GIF, TIFF, BMP, WebP, AVIF, JPEG XL | Image ingest | Target |
+| BMP | Strict BI_RGB 24-bit BGR / 32-bit BGRx BITMAPINFOHEADER profile | Still-image ingest | Capstan prototype in `lib/halyard/deadeye.cap`; 16 MiB/2,097,152-pixel bound; 6 tests; not fuzzed or release-assured |
+| Other still images | PNG, JPEG, GIF, TIFF, WebP, AVIF, JPEG XL | Image ingest | Target |
 | High-dynamic-range | OpenEXR, Radiance HDR, DPX | VFX, cinema and scientific imagery | Target |
 | Animation | GIF, APNG, animated WebP/AVIF | Animated images | Target |
 | Streaming | HLS, MPEG-DASH, fragmented MP4, low-latency profiles | Live and on-demand | Target |
