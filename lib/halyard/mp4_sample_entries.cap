@@ -380,6 +380,21 @@ test "Deadeye rejects non-Baseline, malformed and encrypted AVC sample entries" 
         encrypted, 0, encrypted.len()
     );
     assert(!rejected.ok && rejected.error == "encrypted_sample_entry_unsupported");
+    List<int> nested_encryption_payload = new List<int>();
+    for (int i = 0; i < 78; i += 1) { nested_encryption_payload.push(0); }
+    nested_encryption_payload[6] = 0; nested_encryption_payload[7] = 1;
+    List<int> protection = new List<int>();
+    deadeye_mp4_se_test_box(protection,'s','c','h','m',[0,0,0,0]);
+    for (int i = 0; i < protection.len(); i += 1) {
+        nested_encryption_payload.push(protection[i]);
+    }
+    List<int> nested_entry = new List<int>();
+    deadeye_mp4_se_test_box(nested_entry,'a','v','c','1',nested_encryption_payload);
+    List<int> nested_stsd = deadeye_mp4_se_test_stsd(nested_entry);
+    DeadeyeMp4SampleEntry nested_rejected = deadeye_mp4_parse_stsd(
+        nested_stsd,0,nested_stsd.len()
+    );
+    assert(!nested_rejected.ok);
     List<int> truncated = [0,0,0,0, 0,0,0,1, 0,0,0,100, 'a','v','c','1'];
     assert(!deadeye_mp4_parse_stsd(truncated, 0, truncated.len()).ok);
 }
