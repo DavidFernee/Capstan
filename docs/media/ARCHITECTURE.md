@@ -52,8 +52,8 @@ bitfields, RLE, other DIB headers and trailing data. It is not a general BMP dec
 colour-managed image pipeline.
 
 This is not an MC1 gate exit. Publicly mutable struct fields prevent an enforced opaque
-ownership boundary; the ledger is not concurrency-safe; reservation is not yet coupled
-atomically to source allocation; the resource vector is incomplete; and ledger-coupled output reservations, cancellation, lifetime-bound ownership and full
+ownership boundary; the live ledger and cumulative budget are sequential-only and publicly mutable; reservation is not yet coupled
+atomically to source allocation; the resource vector is incomplete; and parser integration of cumulative budgets, ledger-coupled output reservations, cancellation, lifetime-bound ownership and full
 clock/discontinuity semantics remain outstanding. A first bounded in-memory byte sink is
 now implemented, but its copy-on-commit temporary allocation is not yet covered by the
 aggregate resource ledger. Rational timestamp rescaling now has an initial Capstan-native implementation
