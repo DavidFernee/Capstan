@@ -63,7 +63,7 @@ int main() {
 """,
         "tainted": repeat + """
 int main() {
-    Tainted s = taint(repeat_ascii(MAX_TEXT_BYTES + 1));
+    Tainted s = taint(repeat_ascii(MAX_TEXT_BYTES) + "!");
     tainted_bytes(s);
     println("unexpectedly accepted oversized untrusted text");
     return 1;
