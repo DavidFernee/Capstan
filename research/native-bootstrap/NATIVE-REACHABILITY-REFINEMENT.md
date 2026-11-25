@@ -154,3 +154,21 @@ This closes the specific authority mismatch in the earlier stable-ID abstraction
 The CI workflow now explicitly compiles this module and audits its theorem axioms, and scans it for unfinished proofs/local axioms. The GitHub connector has not yet exposed a push-triggered run for the exact new head, so compilation and theorem checks are **pending**, not passed.
 
 This is not yet an end-to-end collector proof. In particular, it does not prove descriptor/layout correspondence (R1), root completeness from compiler liveness and the safepoint ABI (R2), or that a bounded executable marker constructs the certificate (R3). The old `NativeReachability.lean` remains as a stable-ID reference model and must not be cited as stale-edge-safe.
+
+## R3a — Bounded fail-closed reference marker (implementation added; CI pending)
+
+A new module, `verification/lean/NativeBoundedMarker.lean`, adds an executable, list-based FIFO worklist reference algorithm over generation-checked `ObjectHandle` values. Its inputs are an immutable-snapshot liveness predicate, a descriptor-projected edge function, and a descriptor-slot cost function. It does not receive a heap mutation capability.
+
+The marker enforces five independent limits: distinct objects, inspected edges, pending worklist entries, cumulative descriptor slots scanned, and total work items processed. It deduplicates roots and discovered targets, scans each accepted object once, and rejects stale/unresolvable handles. Exhaustion of any limit is a rejection, never successful termination. An empty pending queue is necessary but not sufficient for success: a separate certificate checker must also accept the candidate marked set.
+
+Every `complete` outcome carries proof that this checker returned true. The soundness theorem derives (1) every supplied root is marked, (2) every marked handle resolves, and (3) every descriptor-projected outgoing edge from a marked handle targets another marked handle. A rejected outcome contains only a reason and counters; it exposes no mark certificate. Since the marker is pure and has no heap/table/accounting mutation argument, its rejection path cannot mutate collection state.
+
+Important limits of this increment:
+
+- The list-based implementation is an auditable reference model, not an efficient production data structure. Membership and deduplication are linear; no O(V+E) or worst-case resource guarantee is claimed.
+- The edge function is assumed to be the correct descriptor projection for the immutable snapshot. Descriptor/layout correspondence (R1) is not proved here.
+- The liveness predicate is assumed to resolve handles in the same snapshot/domain. Compiler-generated root completeness (R2) is not proved here.
+- The checker proves certificate soundness, not that every valid graph within the configured budgets must complete. A traversal defect can therefore cause safe rejection; a separate algorithm-completeness theorem and adversarial tests remain required.
+- The model does not yet connect a complete outcome to the production sweep implementation.
+
+The dedicated workflow now compiles this module and audits the theorem axiom dependencies and unfinished-proof scan. The first exact-head run exposed that the output directory was not created before Lean's `-o` invocation; the workflow now creates it. The current exact-head CI is pending, so no compilation or theorem-check success is claimed yet.
