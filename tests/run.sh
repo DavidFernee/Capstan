@@ -85,6 +85,13 @@ else
   bad "bounded concurrency reference machine" "$out"
 fi
 
+section "Capstan-native verification: Halyard single-owner resource admission"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/halyard_resource_actor.cap" 2>&1)"; then
+  ok "bounded FIFO admission, serial resource accounting, failure atomicity and one-shot release"
+else
+  bad "Halyard resource actor model" "$out"
+fi
+
 section "Capstan-native verification: finite protocol automata"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
   ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
