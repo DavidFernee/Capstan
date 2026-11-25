@@ -651,7 +651,6 @@ void test_a11y_utf8_encoder(Tally t) {
         "a11y UTF-8 encoder: visible untrusted text preserves UTF-8 bytes", escape_json(visible));
 }
 
-
 void test_a11y(Tally t, Ui ui) {
     View v = column().add(text_field("p", taint("hunter2"), "Password").key("pw")).add(password_field("q", taint("hunter2"), "Secret").key("pw2")).add(button("", "x").key("nameless")).add(button("", "y").label("Close").key("named"));
     ui.render(v, 0);
