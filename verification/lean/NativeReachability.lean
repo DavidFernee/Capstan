@@ -105,7 +105,7 @@ theorem reachable_is_marked
     objectId ∈ certificate.marked := by
   induction reachable with
   | root hroot _ =>
-      exact certificate.includesRoots objectId hroot
+      exact certificate.includesRoots _ hroot
   | @edge source target hsource hedge htarget ih =>
       exact certificate.closedUnderEdges source ih target hedge
 
