@@ -97,7 +97,7 @@ DeadeyeMp4TrackHeader deadeye_mp4_parse_tkhd(
         return new DeadeyeMp4TrackHeader{ok:false,track_id:0,error:"invalid_tkhd_flags"};
     }
     int track_id = deadeye_mp4_u32_be(bytes, track_id_at);
-    if (track_id == 0) {
+    if (track_id <= 0) {
         return new DeadeyeMp4TrackHeader{ok:false,track_id:0,error:"zero_track_id"};
     }
     return new DeadeyeMp4TrackHeader{ok:true,track_id:track_id,error:""};
@@ -532,6 +532,15 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
     if (!deadeye_mp4_track_box(moov,'m','o','o','v') ||
         !deadeye_mp4_track_children_range(bytes,moov.payload_start,moov.end)) {
         return deadeye_mp4_movie_error("invalid_moov_box");
+    }
+    DeadeyeMp4ScanState scan = new DeadeyeMp4ScanState{
+        box_count: 0, track_count: 0, has_mvhd: false,
+        has_encryption_marker: false
+    };
+    if (!deadeye_mp4_scan_children(
+        bytes,moov.payload_start,moov.end,1,scan
+    ) || scan.has_encryption_marker || !scan.has_mvhd || scan.track_count < 1) {
+        return deadeye_mp4_movie_error("invalid_or_encrypted_moov_tree");
     }
     List<DeadeyeMp4Track> tracks = new List<DeadeyeMp4Track>();
     int at = moov.payload_start;
