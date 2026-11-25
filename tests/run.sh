@@ -286,6 +286,7 @@ else bad "shroud" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud PNG export budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/host_contract.py" 2>&1)"; then ok "$out"; else bad "shroud native-host contract" "$out"; fi
 printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
 if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
   if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud under ASan+UBSan, damaged fonts included: no reports"; else bad "shroud (sanitizers)" "$out"; fi
