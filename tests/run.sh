@@ -86,7 +86,7 @@ else
 fi
 
 section "Capstan-native verification: bounded CCAM JSON string decoding"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_string.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_string_tests.cap" 2>&1)"; then
   ok "CCAM JSON strings decode escapes and reject malformed UTF-8 and surrogates"
 else
   bad "CCAM JSON string decoder" "$out"
