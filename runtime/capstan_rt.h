@@ -957,7 +957,7 @@ static int64_t cap_workspace_open(CapStr *root) {
 static CapStr *cap_workspace_read_file(int64_t root_fd, CapStr *relative, int64_t max, int64_t loc) {
     if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_DEFAULT))
         cap_panic("workspace_read_file() limit outside 0..2^30", "CWE-789", loc);
-#if defined(__linux__) && defined(RESOLVE_BENEATH) && defined(RESOLVE_NO_SYMLINKS) && defined(CAP_RESOLVE_NO_XDEV)
+#if defined(__linux__) && defined(CAP_RESOLVE_BENEATH) && defined(CAP_RESOLVE_NO_SYMLINKS) && defined(CAP_RESOLVE_NO_XDEV)
     if (root_fd < 0 || root_fd > INT_MAX || !cap_workspace_components_ok(relative, false)) return NULL;
     struct stat root_st;
     if (fstat((int)root_fd, &root_st) != 0 || !S_ISDIR(root_st.st_mode)) return NULL;
