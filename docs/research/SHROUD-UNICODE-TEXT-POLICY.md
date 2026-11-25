@@ -172,6 +172,12 @@ evidence for a review/display decision, not by itself proof of malicious intent.
 
 ### 4.3 Accessibility
 
+Accessibility JSON is a distinct output sink. The public `A11yNode` keeps names and values as
+`Tainted` raw text; `a11y_json()` is the sole conversion point and escapes IDs, roles, names,
+values and states there. The serializer preflights a 32 MiB conservative output budget, node
+count and recursion depth before constructing output, then emits bounded 4096-fragment chunks
+and performs a final join. It must never interpolate caller-controlled fields directly into JSON.
+
 Accessibility names and values must carry the same logical Unicode sequence as the corresponding
 control. The platform bridge may expose additional annotations/description text for suspicious
 formatting, but must not substitute a lossy sanitised string for the logical value.
