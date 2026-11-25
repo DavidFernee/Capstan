@@ -12,6 +12,9 @@ const int GCH_INVALID_HANDLE = 4;
 const int GCH_STALE_HANDLE = 5;
 const int GCH_UNALLOCATED = 6;
 const int GCH_LAYOUT_MISMATCH = 7;
+const int GCH_MAX_LAYOUTS = 4096;
+const int GCH_MAX_SLOTS = 65536;
+const int GCH_MAX_FIELDS = 4096;
 
 struct GCHLayout {
     int descriptor_id;
@@ -52,6 +55,7 @@ GCHHandle gch_handle(int heap_token, int slot_id, int generation) {
 
 bool gch_layout_valid(GCHLayout layout) {
     if (layout.descriptor_id <= 0 || layout.field_count < 0 ||
+        layout.field_count > GCH_MAX_FIELDS ||
         layout.reference_offsets.len() > layout.field_count) {
         return false;
     }
@@ -73,7 +77,8 @@ int gch_find_layout(List<GCHLayout> layouts, int descriptor_id) {
 }
 
 bool gch_heap_valid(GCHHeap heap) {
-    if (heap.heap_token <= 0) { return false; }
+    if (heap.heap_token <= 0 || heap.layouts.len() > GCH_MAX_LAYOUTS ||
+        heap.slots.len() > GCH_MAX_SLOTS) { return false; }
     for (int i = 0; i < heap.layouts.len(); i += 1) {
         if (!gch_layout_valid(heap.layouts[i])) { return false; }
         for (int j = i + 1; j < heap.layouts.len(); j += 1) {
@@ -272,6 +277,21 @@ test "GC heap rejects duplicate descriptor identities" {
     layouts.push(base.layouts[1]);
     layouts.push(new GCHLayout{
         descriptor_id: 7, field_count: 0, reference_offsets: offsets
+    });
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
+}
+
+test "GC layout rejects excessive field count" {
+    GCHHeap base = gch_fixture_heap();
+    List<int> offsets = new List<int>();
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    layouts.push(new GCHLayout{
+        descriptor_id: 10, field_count: 4097, reference_offsets: offsets
     });
     GCHHeap invalid = new GCHHeap{
         heap_token: base.heap_token, layouts: layouts, slots: base.slots
