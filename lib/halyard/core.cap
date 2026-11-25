@@ -2238,3 +2238,40 @@ test "Halyard managed source close can retry lease release after ledger repair" 
     } else { assert(false); }
 }
 
+test "Halyard managed source charges allocation slot through source lifetime" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 4, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(7); input.push(8);
+        HalyardManagedByteSourceResult created =
+            halyard_managed_source_create(ledger, input, 2);
+        assert(created.ok);
+        assert(ledger.used_retained_bytes == 2);
+        assert(ledger.used_allocation_units == 1);
+        if (let managed = created.managed) {
+            assert(halyard_managed_source_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_allocation_units == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed source rejects zero allocation slots without mutation" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(7);
+        HalyardManagedByteSourceResult created =
+            halyard_managed_source_create(ledger, input, 1);
+        assert(!created.ok);
+        assert(created.error == "allocation_units_limit");
+        assert(ledger.used_retained_bytes == 0);
+        assert(ledger.used_allocation_units == 0);
+    } else { assert(false); }
+}
