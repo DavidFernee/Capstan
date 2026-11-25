@@ -298,6 +298,7 @@ class FakeChild:
     request: StartRequest
     parent_pid: int | None = None
     exit_code: int | None = None
+    pending_exit_code: int | None = None
     state: ProcessState = ProcessState.RUNNING
     events: list[str] = field(default_factory=list)
 
@@ -348,7 +349,20 @@ class FakeBackend:
             member.events.append(event)
             self.events.append((event, member.pid))
             if force:
-                member.exit_code = -9
+                # A force-kill request is not an observed wait result. Make
+                # completion visible only through poll_pending_exits().
+                member.pending_exit_code = -9
+
+    def poll_pending_exits(self, child):
+        """Simulate a later nonblocking wait observation for the owned tree."""
+        observed = []
+        for member in self._owned_tree(child):
+            if member.pending_exit_code is not None:
+                code = member.pending_exit_code
+                member.pending_exit_code = None
+                self.observe_exit(member, code)
+                observed.append(member.pid)
+        return observed
 
     def observe_exit(self, child, exit_code):
         if child.state is ProcessState.REAPED:
@@ -427,6 +441,9 @@ class ProcessSupervisorModel:
     def tick(self, process):
         if process.child.state is ProcessState.REAPED:
             return
+        # The fake OS reports a killed process only on a later wait poll.
+        # This keeps kill request, exit observation and reap as distinct states.
+        self.backend.poll_pending_exits(process.child)
         # Observe a direct-child exit before applying its deadline. If descendants
         # remain in the owned process group, terminate and reap them as well.
         if process.child.exit_code is not None:
