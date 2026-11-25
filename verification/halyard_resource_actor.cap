@@ -278,3 +278,18 @@ test "HRA oversized request is rejected without changing admitted occupancy" {
     assert(state.used == 1 && state.max_used == 1);
     assert(hra_invariant(state));
 }
+
+test "HRA corrupted resource and queue state is rejected before transition" {
+    HRAState state = hra_initial(2, 2);
+    state.used = 3;
+    HRATransition over_capacity = hra_enqueue(state, 1, 1);
+    assert(!over_capacity.ok && over_capacity.error == "invalid_state");
+    assert(over_capacity.state.used == 3);
+    assert(over_capacity.state.queued == 0);
+    state = hra_initial(2, 2);
+    state.queued = 1;
+    HRATransition inconsistent_queue = hra_process_one(state);
+    assert(!inconsistent_queue.ok && inconsistent_queue.error == "invalid_state");
+    assert(inconsistent_queue.state.queued == 1);
+    assert(inconsistent_queue.state.used == 0);
+}
