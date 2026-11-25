@@ -1,0 +1,73 @@
+Tainted wayland_test_bytes(List<int> bytes) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < bytes.len(); i += 1) { parts.push(char_str(bytes[i])); }
+    return taint(join(parts, ""));
+}
+
+// Adversarial tests for the pure-Capstan Wayland frame-header parser.
+int main() {
+    List<int> b = new List<int>();
+    // object ID 1, size 8, opcode 3.
+    b.push(1); b.push(0); b.push(0); b.push(0);
+    b.push(3); b.push(0); b.push(8); b.push(0);
+    WaylandFrameHeader r = wayland_frame_header(wayland_test_bytes(b), 0);
+    if (r.status != 1 || r.object_id != 1 || r.size != 8 || r.opcode != 3 || r.end_offset != 8) { return 1; }
+    // Two concatenated frames: parser returns the first frame's end.
+    b.push(9); b.push(0); b.push(0); b.push(0);
+    b.push(0); b.push(0); b.push(8); b.push(0);
+    r = wayland_frame_header(wayland_test_bytes(b), 0);
+    if (r.status != 1 || r.end_offset != 8) { return 2; }
+    r = wayland_frame_header(wayland_test_bytes(b), 8);
+    if (r.status != 1 || r.object_id != 9 || r.end_offset != 16) { return 3; }
+    List<int> short_header = new List<int>();
+    for (int i = 0; i < 7; i += 1) { short_header.push(0); }
+    r = wayland_frame_header(wayland_test_bytes(short_header), 0);
+    if (r.status != 0) { return 4; }
+    // Complete header, incomplete body.
+    List<int> body = new List<int>();
+    body.push(7); body.push(0); body.push(0); body.push(0);
+    body.push(1); body.push(0); body.push(12); body.push(0);
+    r = wayland_frame_header(wayland_test_bytes(body), 0);
+    if (r.status != 0 || r.object_id != 7 || r.size != 12 || r.opcode != 1) { return 5; }
+    // Invalid object ID, undersized frame, and unaligned frame size.
+    List<int> bad = new List<int>();
+    for (int j = 0; j < 8; j += 1) { bad.push(0); }
+    r = wayland_frame_header(wayland_test_bytes(bad), 0);
+    if (r.status != -1) { return 6; }
+    bad[0] = 1; bad[6] = 4; bad[7] = 0;
+    r = wayland_frame_header(wayland_test_bytes(bad), 0);
+    if (r.status != -1) { return 7; }
+    bad[6] = 10; bad[7] = 0;
+    r = wayland_frame_header(wayland_test_bytes(bad), 0);
+    if (r.status != -1) { return 8; }
+    // Maximum aligned size: incomplete until all bytes are present.
+    List<int> max_header = new List<int>();
+    max_header.push(2); max_header.push(0); max_header.push(0); max_header.push(0);
+    max_header.push(0); max_header.push(0); max_header.push(252); max_header.push(255);
+    r = wayland_frame_header(wayland_test_bytes(max_header), 0);
+    if (r.status != 0 || r.size != 65532) { return 9; }
+    List<int> max_frame = new List<int>();
+    for (int k = 0; k < 65532; k += 1) { max_frame.push(0); }
+    max_frame[0] = 2; max_frame[6] = 252; max_frame[7] = 255;
+    r = wayland_frame_header(wayland_test_bytes(max_frame), 0);
+    if (r.status != 1 || r.size != 65532 || r.end_offset != 65532) { return 10; }
+    // 65,535 is representable in the field but is not a valid aligned frame.
+    max_header[6] = 255; max_header[7] = 255;
+    r = wayland_frame_header(wayland_test_bytes(max_header), 0);
+    if (r.status != -1) { return 15; }
+    r = wayland_frame_header(wayland_test_bytes(b), -1);
+    if (r.status != -1) { return 11; }
+    r = wayland_frame_header(wayland_test_bytes(b), b.len() + 1);
+    if (r.status != -1) { return 12; }
+    r = wayland_frame_header(wayland_test_bytes(b), b.len());
+    if (r.status != 0) { return 13; }
+    // Exhaustively validate every value representable by the 16-bit size field.
+    for (int size = 0; size <= 65535; size += 1) {
+        bool want = size >= 8 && size <= 65532 && size % 4 == 0;
+        if (wayland_frame_size_valid(size) != want) { return 14; }
+    }
+    // The parser's input type is Tainted: network bytes are never trusted here.
+    // Byte strings cannot contain an integer outside the octet range.
+    println("Wayland framing: 15 adversarial assertions passed");
+    return 0;
+}
