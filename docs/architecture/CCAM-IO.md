@@ -61,7 +61,11 @@ The first source-level bridge may lower only direct calls to the existing `print
 - `println("Hello, World!")` emits the literal bytes followed by exactly one LF byte (0x0A), matching the existing builtin contract;
 - interpolated strings, concatenation, local string variables, tainted strings, secret values, and arbitrary string expressions MUST be rejected by this initial lowerer.
 
-The lexer already decodes supported escapes such as `\\0` into byte values. Lowering MUST preserve those decoded bytes, including embedded NUL. It MUST NOT UTF-8 encode the byte string a second time. The lowerer MUST preserve source order relative to calls, traps, and other effects and independently verify the AST shape and literal bounds.
+The current lexer decodes supported escapes such as `\\0` into bytes, then stores `escape_c(decoded)` in the token and AST string field; the AST's integer length records the decoded byte count. That escaped representation is suitable for generated-C literals but is not itself the original byte sequence.
+
+Before this extension is implemented, the compiler must establish one unambiguous literal-data boundary. Either the AST retains the decoded byte sequence separately from its generated-C escaped form, or the lowerer uses a shared, bounded decoder for the canonical escaped representation. The lowerer MUST NOT treat the escaped AST field as raw bytes, UTF-8 encode it again, or use an unbounded ad-hoc escape parser. Tests MUST cover round trips for quotes, backslashes, LF, TAB, CR, NUL, and multibyte source bytes.
+
+The existing lowerer resolves direct calls through its user-function table. It must explicitly recognise the existing `print` and `println` builtins before user-function lookup, then independently verify the one-literal-argument AST shape and output byte budget. It MUST preserve source order relative to calls, traps, and other effects.
 
 ## 6. Native output adapter
 
