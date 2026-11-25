@@ -99,6 +99,13 @@ else
   bad "generated concurrency transition graph" "$out"
 fi
 
+section "Capstan-native verification: generated channel-capacity graph"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_generated_capacity_graph.cap" 2>&1)"; then
+  ok "generated capacity-blocking graph, ownership invariants, wakeup and cancellation"
+else
+  bad "generated channel-capacity graph" "$out"
+fi
+
 section "Capstan-native verification: finite protocol automata"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
   ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
