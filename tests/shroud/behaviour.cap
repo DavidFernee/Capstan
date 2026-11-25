@@ -702,7 +702,7 @@ void test_display_list(Tally t, Font font) {
     // Bound work, not just storage: many long paths on a tall viewport would
     // otherwise multiply segment scans and per-scanline sorting without limit.
     Segments expensive = new_segments();
-    for (int i = 0; i < 10000; i += 1) {
+    for (int i = 0; i < 12000; i += 1) {
         expensive.add(0, 0, fx(48), fx(36));
     }
     DisplayCommand expensive_path = frame.commands[1];
