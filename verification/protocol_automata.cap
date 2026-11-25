@@ -87,16 +87,23 @@ bool pa_has_dual_transfer(PASpec spec, int index) {
         if (i == index) { continue; }
         PAEdge peer_edge = spec.transitions[i];
         PAContract peer = spec.contracts[i];
+        bool outgoing_pair =
+            contract.owner_before == edge.role &&
+            contract.owner_after == spec.role_count &&
+            peer.owner_before == spec.role_count &&
+            peer.owner_after == peer_edge.role;
+        bool incoming_pair =
+            contract.owner_before == spec.role_count &&
+            contract.owner_after == edge.role &&
+            peer.owner_before == peer_edge.role &&
+            peer.owner_after == spec.role_count;
         if (peer_edge.role == contract.peer_role &&
             peer_edge.operation == contract.peer_operation &&
             peer.message_type == contract.message_type &&
             peer.effect == PA_EFFECT_TRANSFER &&
             peer.peer_role == edge.role &&
             peer.peer_operation == edge.operation &&
-            contract.owner_before == edge.role &&
-            contract.owner_after == spec.role_count &&
-            peer.owner_before == spec.role_count &&
-            peer.owner_after == peer_edge.role &&
+            (outgoing_pair || incoming_pair) &&
             peer.resource_delta == 0 &&
             contract.resource_delta == 0) {
             return true;
