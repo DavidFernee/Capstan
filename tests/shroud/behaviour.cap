@@ -311,6 +311,53 @@ void test_utf8_byte_ends(Tally t) {
     }
 }
 
+// U0: decoding preserves valid Unicode scalar values independently of the
+// current untrusted-display policy. This protects the logical/source layer while
+// bidi, line breaking, grapheme segmentation and shaping remain separate work.
+void test_unicode_logical_preservation(Tally t) {
+    string zwnj = char_str(0xE2) + char_str(0x80) + char_str(0x8C);
+    string zwj = char_str(0xE2) + char_str(0x80) + char_str(0x8D);
+    string zwsp = char_str(0xE2) + char_str(0x80) + char_str(0x8B);
+    string wj = char_str(0xE2) + char_str(0x81) + char_str(0xA0);
+    string shy = char_str(0xC2) + char_str(0xAD);
+    string vs16 = char_str(0xEF) + char_str(0xB8) + char_str(0x8F);
+    string tag_g = char_str(0xF3) + char_str(0xA0) + char_str(0x81) + char_str(0xA7);
+    string tag_end = char_str(0xF3) + char_str(0xA0) + char_str(0x81) + char_str(0xBF);
+    string nonchar = char_str(0xEF) + char_str(0xB7) + char_str(0x90);
+    string source = "A" + zwnj + zwj + zwsp + wj + shy + vs16 + tag_g + tag_end + nonchar + "Z";
+    Utf8Decoded decoded = utf8_decode_with_ends(string_bytes(source));
+    List<int> cps = decoded.codepoints;
+    expect_int(t, cps.len(), 11, "unicode U0: all valid scalar values survive decoding");
+    if (cps.len() == 11) {
+        expect_int(t, cps[0], 0x41, "unicode U0: leading ASCII");
+        expect_int(t, cps[1], 0x200C, "unicode U0: ZWNJ retained logically");
+        expect_int(t, cps[2], 0x200D, "unicode U0: ZWJ retained logically");
+        expect_int(t, cps[3], 0x200B, "unicode U0: zero-width space retained logically");
+        expect_int(t, cps[4], 0x2060, "unicode U0: word joiner retained logically");
+        expect_int(t, cps[5], 0x00AD, "unicode U0: soft hyphen retained logically");
+        expect_int(t, cps[6], 0xFE0F, "unicode U0: variation selector retained logically");
+        expect_int(t, cps[7], 0xE0067, "unicode U0: emoji tag letter retained logically");
+        expect_int(t, cps[8], 0xE007F, "unicode U0: emoji cancel tag retained logically");
+        expect_int(t, cps[9], 0xFDD0, "unicode U0: noncharacter remains a decoded scalar");
+        expect_int(t, cps[10], 0x5A, "unicode U0: trailing ASCII");
+    }
+    expect_int(t, decoded.byte_ends.len(), cps.len(),
+        "unicode U0: source-byte map has one end per logical scalar");
+    if (decoded.byte_ends.len() == 11) {
+        expect_int(t, decoded.byte_ends[0], 1, "unicode U0: ASCII byte end");
+        expect_int(t, decoded.byte_ends[1], 4, "unicode U0: ZWNJ byte end");
+        expect_int(t, decoded.byte_ends[2], 7, "unicode U0: ZWJ byte end");
+        expect_int(t, decoded.byte_ends[3], 10, "unicode U0: ZWSP byte end");
+        expect_int(t, decoded.byte_ends[4], 13, "unicode U0: word joiner byte end");
+        expect_int(t, decoded.byte_ends[5], 15, "unicode U0: soft hyphen byte end");
+        expect_int(t, decoded.byte_ends[6], 18, "unicode U0: variation selector byte end");
+        expect_int(t, decoded.byte_ends[7], 22, "unicode U0: tag character byte end");
+        expect_int(t, decoded.byte_ends[8], 26, "unicode U0: cancel tag byte end");
+        expect_int(t, decoded.byte_ends[9], 29, "unicode U0: noncharacter byte end");
+        expect_int(t, decoded.byte_ends[10], 30, "unicode U0: final ASCII byte end");
+    }
+}
+
 void test_caret_byte_positions(Tally t, Ui ui) {
     string rlo = char_str(0xE2) + char_str(0x80) + char_str(0xAE);
     Tainted valid = taint("A" + rlo + "B");
@@ -670,6 +717,7 @@ int main() {
             test_single_line_unicode_controls(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_single_line_oversized_paste(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_utf8_byte_ends(t);
+            test_unicode_logical_preservation(t);
             test_caret_byte_positions(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
