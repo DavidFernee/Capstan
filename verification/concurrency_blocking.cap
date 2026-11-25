@@ -108,6 +108,9 @@ bool cb_invariant(CBState s) {
         s.consumer_status != CB_TASK_FAILED) { return false; }
     if ((s.consumer_status == CB_TASK_BLOCKED) !=
         s.consumer_wait_registered) { return false; }
+    if (s.consumer_status == CB_TASK_BLOCKED && s.channel_count != 0) {
+        return false;
+    }
     if (s.consumer_wait_registered !=
         (s.consumer_wait == CB_WAIT_CHANNEL_MESSAGE)) { return false; }
     if (cb_terminal(s.consumer_status) &&
