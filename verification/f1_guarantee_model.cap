@@ -421,8 +421,11 @@ test "interprocedural selection summaries preserve selector provenance" {
 test "secret-dependent branches preserve control dependence" {
     F1Value secret_condition = f1_source(2, true);
     F1Value result = f1_apply_summary(f1_branch_summary(), secret_condition);
+    F1Value direct = f1_branch(secret_condition, f1_empty_constant(), f1_empty_constant());
     assert(result.control_sources == 2);
+    assert(direct.control_sources == 2);
     assert(!f1_public_sink_allowed(result));
+    assert(!f1_public_sink_allowed(direct));
 }
 
 test "encoding guarantees are context-specific and non-substitutable" {
