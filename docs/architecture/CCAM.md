@@ -4,6 +4,8 @@
 
 This document defines the intended semantics for the first machine slice. Its executable implementation and conformance tests must be written in Capstan. No Python or C implementation is to serve as the normative reference.
 
+A separate non-normative proposal for bounded byte output in a future CCAM v0.2 is documented in [CCAM-IO.md](CCAM-IO.md). It does not amend v0.1 or imply that output support is implemented.
+
 
 
 ## 1. Design boundary
