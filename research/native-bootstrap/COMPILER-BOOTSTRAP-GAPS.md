@@ -100,8 +100,8 @@ The production compiler does not necessarily need the entire application runtime
 | Work item | Assessment | Reason |
 |---|---|---|
 | Audit and document scalar CCAM subset | Feasible now | Integrated source and tests are available |
-| Assemble/link/inspect existing backend output | Feasible in principle; environment execution pending | Harness exists; actual Capstan-generated assembly still needs to be obtained and run |
-| Native scalar executable tests for results 0–255 and current trap codes | Feasible after harness integration | Existing emitter has test cases that write assembly; test runner is transitional |
+| Existing scalar native vertical slice | Demonstrated by baseline Ubuntu/GCC CI | Ten Capstan-generated programs were assembled, linked and executed directly; stronger ELF inspection remains pending |
+| Native scalar executable tests for small process statuses and current trap codes | Demonstrated in baseline CI | Ten native programs pass; current exit-status interface is only an 8-bit projection and does not establish arbitrary int64 results |
 | Full signed-64 result and structured trap equivalence | Blocked by backend result protocol | Exit status is only eight bits; trap detail is discarded |
 | Strict external CCAM interchange | Blocked by integration | Wait for PR #315 Linux CI and stable interface |
 | Compiler AST, lexer and parser on native runtime | Requires new runtime work | Strings, vectors, AST allocation and stable references absent |
