@@ -99,7 +99,7 @@ void record_file(Inventory inv, string language, int line_count, int byte_count)
 }
 
 string csv_cell(string value) {
-    return "\"" + escape_csv(value) + "\"";
+    return escape_csv(value);
 }
 
 string inventory_report(Inventory inv, List<string> rows) {
