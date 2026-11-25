@@ -33,6 +33,10 @@ class ContractError(Exception):
     pass
 
 
+def _reject_json_constant(value):
+    raise ContractError("non-standard JSON numeric constant")
+
+
 def _unique_object(pairs):
     result = {}
     for key, value in pairs:
@@ -84,7 +88,8 @@ def _valid_rpc_message(message):
         if isinstance(message["id"], bool) or not isinstance(message["id"], (str, int)):
             raise ContractError("response id must be a string or integer")
         if has_error and (not isinstance(message["error"], dict) or
-                          not isinstance(message["error"].get("code"), int) or
+                          (isinstance(message["error"].get("code"), bool) or
+                           not isinstance(message["error"].get("code"), int)) or
                           not isinstance(message["error"].get("message"), str)):
             raise ContractError("malformed JSON-RPC error")
     return message
@@ -151,7 +156,8 @@ class BoundedFrameDecoder:
             try:
                 _check_json_depth(raw_body)
                 body = raw_body.decode("utf-8")
-                message = json.loads(body, object_pairs_hook=_unique_object)
+                message = json.loads(body, object_pairs_hook=_unique_object,
+                                 parse_constant=_reject_json_constant)
             except (UnicodeDecodeError, json.JSONDecodeError) as exc:
                 raise ContractError("invalid UTF-8 or JSON body") from exc
             messages.append(_valid_rpc_message(message))
@@ -177,7 +183,6 @@ class RequestTracker:
             raise ValueError("invalid pending request limit")
         self.max_pending = max_pending
         self.pending = set()
-        self.cancelled = set()
 
     def begin(self, request_id):
         if isinstance(request_id, bool) or not isinstance(request_id, (int, str)):
@@ -186,14 +191,12 @@ class RequestTracker:
             raise ContractError("duplicate in-flight request id")
         if len(self.pending) >= self.max_pending:
             raise ContractError("pending request queue is full")
-        self.cancelled.discard(request_id)
         self.pending.add(request_id)
 
     def cancel(self, request_id):
         if request_id not in self.pending:
             return False
         self.pending.remove(request_id)
-        self.cancelled.add(request_id)
         return True
 
     def resolve(self, request_id):
@@ -706,7 +709,8 @@ class ContractTests(unittest.TestCase):
     def test_bad_json_duplicate_keys_and_truncated_frames_rejected(self):
         for raw in (b"Content-Length: 1\r\n\r\n{",
                     b'Content-Length: 25\r\n\r\n{"jsonrpc":"2.0","id":1',
-                    b'Content-Length: 33\r\n\r\n{"jsonrpc":"2.0","jsonrpc":"2.0"}'):
+                    b'Content-Length: 33\r\n\r\n{"jsonrpc":"2.0","jsonrpc":"2.0"}',
+                    b'Content-Length: 53\r\n\r\n{"jsonrpc":"2.0","method":"x","params":{"n":NaN}}'):
             decoder = BoundedFrameDecoder()
             with self.subTest(raw=raw), self.assertRaises(ContractError):
                 decoder.feed(raw)
@@ -724,6 +728,17 @@ class ContractTests(unittest.TestCase):
         tracker.begin(41)
         self.assertTrue(tracker.resolve(41))
         self.assertFalse(tracker.resolve(41))
+        self.assertFalse(hasattr(tracker, "cancelled"))
+        for request_id in range(1000):
+            tracker.begin(request_id)
+            tracker.cancel(request_id)
+        self.assertEqual(len(tracker.pending), 0)
+
+    def test_boolean_json_rpc_error_code_is_rejected(self):
+        frame = encode_frame({"jsonrpc": "2.0", "id": 1,
+                              "error": {"code": True, "message": "bad"}})
+        with self.assertRaises(ContractError):
+            BoundedFrameDecoder().feed(frame)
 
     def test_stale_diagnostics_do_not_replace_newer_buffer_version(self):
         versions = DiagnosticVersions()
