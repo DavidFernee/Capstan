@@ -659,6 +659,9 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
         file,moov_box.box
     );
     assert(parsed.ok);
+    DeadeyeMp4Box forged_moov = moov_box.box;
+    forged_moov.end -= 1;
+    assert(!deadeye_mp4_parse_moov_tracks(file,forged_moov).ok);
     if (let movie = parsed.movie) {
         assert(movie.tracks.len() == 1);
         assert(movie.tracks[0].handler == "soun");
@@ -679,4 +682,6 @@ test "Deadeye rejects track hierarchy mismatches and external data references" {
     assert(!deadeye_mp4_validate_dinf(external_url,0,external_url.len()));
     List<int> invalid_ref = [0,0,0,0,0,0,0,2, 0,0,0,12,'u','r','l',' ',0,0,0,1];
     assert(!deadeye_mp4_validate_dinf(invalid_ref,0,invalid_ref.len()));
+    List<int> external_ref = [0,0,0,0,0,0,0,1, 0,0,0,12,'u','r','l',' ',0,0,0,0];
+    assert(!deadeye_mp4_validate_dinf(external_ref,0,external_ref.len()));
 }
