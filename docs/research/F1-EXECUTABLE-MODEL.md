@@ -11,7 +11,7 @@ F1 investigates whether provenance, confidentiality, context safety, authority, 
 
 The first artefact is deliberately implemented in Capstan. It is a finite abstract model with explicit transfer functions and adversarial tests. It is not a source analyser, a compiler pass, a proof of soundness, or evidence that the current compiler enforces these properties.
 
-The experiment is intended to make design choices falsifiable before they become language features.
+The experiment is intended to make design choices falsifiable before they become language features. The current implementation uses a product-shaped record with factored fields and transfer operations; it is a baseline artefact, not a decision between the factored-judgement and unified-product formulations.
 
 ## 2. Abstract value
 
