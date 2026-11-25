@@ -358,3 +358,21 @@ trusted computing base until the C-free execution path is qualified.
 The cumulative consumption budget and live-resource lease ledger are independent state machines. Releasing a retained-byte/allocation lease must not refund input, output, decoded-unit or work consumption. The regression test `Halyard live lease release never refunds cumulative decode or work` in `lib/halyard/core.cap` exercises the actual lease acquisition/release API between two consumption attempts: the first attempt consumes the full decoded/work allowance, releases its retained-byte/allocation lease, and the second attempt is still rejected with all cumulative counters unchanged.
 
 This is a narrow sequential model regression. It does not establish that every parser/decoder operation charges every required work unit, that cumulative charges are coupled to every allocation/output path, or that a concurrent/cancelled worker cannot leak a lease. Those remain #303/#293 acceptance work.
+
+
+## 5.3 Current budgeted parser/decoder charge schedule
+
+The current budgeted entry points use deterministic coarse work units, not machine-instruction fuel or WCET:
+
+| Operation | Cumulative input | Cumulative output | Decoded units | Work units |
+|---|---:|---:|---:|---:|
+| Shanty WAVE parse preflight | source length | 0 | 0 | source length |
+| Shanty WAVE data-chunk materialisation | 0 | chunk payload bytes | 0 | chunk payload bytes |
+| Shanty PCM byte-domain validation scan | 0 | 0 | 0 | PCM byte length |
+| Shanty PCM sample conversion | 0 | sample count × bytes/sample | sample count | sample count |
+| Deadeye BMP preflight | source length | 0 | 0 | source length |
+| Deadeye BMP pixel-copy and RGBA conversion admission | 0 | source pixel bytes + 4 × pixel count | pixel count | source pixel bytes + pixel count |
+
+These charges are monotonic: a failed later admission does not refund an earlier successful charge. In particular, the Shanty regression `Shanty repeated decode attempts consume cumulative allowance` runs the budgeted parser and decoder once, then attempts to decode the same retained wave again. The second attempt is rejected by the cumulative decoded-unit limit; its preceding byte-validation scan remains charged. This tests the repeated-decode amplification case through the actual decoder entry point, not just the generic budget primitive.
+
+Limitations: these are coarse linear proxies. They do not count every branch, arithmetic operation or chunk-header visit independently; they do not establish worst-case execution time. The budgeted APIs coexist with legacy unbudgeted convenience entry points, and they do not yet bind consumption state to an opaque, non-forgeable capability. The live lease ledger is not yet coupled to every parser temporary, sample/pixel buffer, metadata record or decoder output lifetime. Deadline enforcement and cancellation-aware bounded cleanup are not implemented. These are still open parts of #303/#293.
