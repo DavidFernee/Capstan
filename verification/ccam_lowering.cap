@@ -137,11 +137,11 @@ test "CCAM literal decoder preserves escaped and arbitrary byte values" {
     assert(decoded.bytes[2] == 0);
     assert(decoded.bytes[3] == 255);
 
-    decoded = ccam_decode_escaped_literal("\\\", 1);
+    decoded = ccam_decode_escaped_literal("\\\\", 1);
     assert(decoded.ok && decoded.bytes.len() == 1);
     assert(decoded.bytes[0] == 92);
 
-    decoded = ccam_decode_escaped_literal("\\\\"", 1);
+    decoded = ccam_decode_escaped_literal("\\\"", 1);
     assert(decoded.ok && decoded.bytes[0] == 34);
     decoded = ccam_decode_escaped_literal("\\\\?", 1);
     assert(decoded.ok && decoded.bytes[0] == 63);
