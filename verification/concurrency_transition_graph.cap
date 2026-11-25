@@ -1,0 +1,223 @@
+// Bounded explicit transition-graph explorer for concurrency deadlock candidates.
+//
+// Nodes are canonical global states; edges are enabled scheduler transitions.
+// This model deliberately does not derive edges from wait-for cycles. It checks
+// whether a graph candidate is a reachable nonterminal state with no outgoing
+// enabled transition. A state-space cap yields UNKNOWN, never DEADLOCK.
+
+struct CTGEdge {
+    int from_state;
+    int to_state;
+    int action;
+}
+
+struct CTGSpec {
+    int state_count;
+    int initial_state;
+    int state_limit;
+    List<int> terminal_states;
+    List<CTGEdge> transitions;
+}
+
+struct CTGResult {
+    bool valid;
+    bool complete;
+    int classification;
+    int explored_states;
+    int witness_state;
+    string reason;
+}
+
+const int CTG_INVALID = 0;
+const int CTG_TERMINAL = 1;
+const int CTG_PROGRESS = 2;
+const int CTG_DEADLOCK = 3;
+const int CTG_UNKNOWN = 4;
+
+bool ctg_contains(List<int> values, int value) {
+    for (int i = 0; i < values.len(); i += 1) {
+        if (values[i] == value) { return true; }
+    }
+    return false;
+}
+
+bool ctg_terminal(CTGSpec spec, int state) {
+    return ctg_contains(spec.terminal_states, state);
+}
+
+bool ctg_valid(CTGSpec spec) {
+    if (spec.state_count < 1 || spec.state_limit < 1 ||
+        spec.initial_state < 0 || spec.initial_state >= spec.state_count) {
+        return false;
+    }
+    for (int i = 0; i < spec.terminal_states.len(); i += 1) {
+        int terminal = spec.terminal_states[i];
+        if (terminal < 0 || terminal >= spec.state_count) { return false; }
+        for (int j = i + 1; j < spec.terminal_states.len(); j += 1) {
+            if (terminal == spec.terminal_states[j]) { return false; }
+        }
+    }
+    for (int i = 0; i < spec.transitions.len(); i += 1) {
+        CTGEdge edge = spec.transitions[i];
+        if (edge.from_state < 0 || edge.from_state >= spec.state_count ||
+            edge.to_state < 0 || edge.to_state >= spec.state_count ||
+            edge.action < 1) { return false; }
+        if (ctg_terminal(spec, edge.from_state)) { return false; }
+        for (int j = i + 1; j < spec.transitions.len(); j += 1) {
+            CTGEdge other = spec.transitions[j];
+            if (edge.from_state == other.from_state &&
+                edge.action == other.action) { return false; }
+        }
+    }
+    return true;
+}
+
+bool ctg_has_outgoing(CTGSpec spec, int state) {
+    for (int i = 0; i < spec.transitions.len(); i += 1) {
+        if (spec.transitions[i].from_state == state) { return true; }
+    }
+    return false;
+}
+
+// Breadth-first reachability over the explicit enabled-transition relation.
+// A reachable nonterminal sink is a deadlock witness. A cycle with an enabled
+// exit is progress, not deadlock. Unreachable sinks do not affect the result.
+CTGResult ctg_explore(CTGSpec spec) {
+    if (!ctg_valid(spec)) {
+        return new CTGResult{
+            valid: false, complete: false, classification: CTG_INVALID,
+            explored_states: 0, witness_state: -1, reason: "invalid_graph"
+        };
+    }
+    List<int> reached = new List<int>();
+    reached.push(spec.initial_state);
+    int cursor = 0;
+    int first_deadlock = -1;
+    while (cursor < reached.len()) {
+        int current = reached[cursor];
+        if (!ctg_terminal(spec, current) && !ctg_has_outgoing(spec, current) &&
+            first_deadlock == -1) {
+            // Retain the first BFS sink, but continue exploration: a deadlock
+            // witness does not make the rest of the reachable graph complete.
+            first_deadlock = current;
+        }
+        for (int i = 0; i < spec.transitions.len(); i += 1) {
+            CTGEdge edge = spec.transitions[i];
+            if (edge.from_state == current &&
+                !ctg_contains(reached, edge.to_state)) {
+                if (reached.len() >= spec.state_limit) {
+                    return new CTGResult{
+                        valid: true, complete: false, classification: CTG_UNKNOWN,
+                        explored_states: reached.len(), witness_state: -1,
+                        reason: "state_limit_reached_before_graph_completion"
+                    };
+                }
+                reached.push(edge.to_state);
+            }
+        }
+        cursor += 1;
+    }
+    if (first_deadlock != -1) {
+        return new CTGResult{
+            valid: true, complete: true, classification: CTG_DEADLOCK,
+            explored_states: reached.len(), witness_state: first_deadlock,
+            reason: "reachable_nonterminal_state_has_no_enabled_transition"
+        };
+    }
+    bool all_terminal = true;
+    for (int i = 0; i < reached.len(); i += 1) {
+        if (!ctg_terminal(spec, reached[i])) { all_terminal = false; }
+    }
+    if (all_terminal) {
+        return new CTGResult{
+            valid: true, complete: true, classification: CTG_TERMINAL,
+            explored_states: reached.len(), witness_state: -1,
+            reason: "all_reachable_states_are_terminal"
+        };
+    }
+    return new CTGResult{
+        valid: true, complete: true, classification: CTG_PROGRESS,
+        explored_states: reached.len(), witness_state: -1,
+        reason: "complete_graph_has_no_reachable_nonterminal_sink"
+    };
+}
+
+CTGSpec ctg_cycle_with_escape() {
+    List<CTGEdge> edges = new List<CTGEdge>();
+    edges.push(new CTGEdge{from_state: 0, to_state: 1, action: 1});
+    edges.push(new CTGEdge{from_state: 1, to_state: 0, action: 1});
+    edges.push(new CTGEdge{from_state: 1, to_state: 2, action: 2});
+    List<int> terminals = new List<int>();
+    terminals.push(2);
+    return new CTGSpec{
+        state_count: 3, initial_state: 0, state_limit: 8,
+        terminal_states: terminals, transitions: edges
+    };
+}
+
+CTGSpec ctg_reachable_deadlock() {
+    List<CTGEdge> edges = new List<CTGEdge>();
+    edges.push(new CTGEdge{from_state: 0, to_state: 1, action: 1});
+    List<int> terminals = new List<int>();
+    terminals.push(2);
+    return new CTGSpec{
+        state_count: 3, initial_state: 0, state_limit: 8,
+        terminal_states: terminals, transitions: edges
+    };
+}
+
+test "CTG a cycle with an enabled escape is not a deadlock" {
+    CTGResult result = ctg_explore(ctg_cycle_with_escape());
+    assert(result.valid && result.complete);
+    assert(result.classification == CTG_PROGRESS);
+    assert(result.explored_states == 3);
+    assert(result.witness_state == -1);
+}
+
+test "CTG a reachable nonterminal sink is a deadlock witness" {
+    CTGResult result = ctg_explore(ctg_reachable_deadlock());
+    assert(result.valid && result.complete);
+    assert(result.classification == CTG_DEADLOCK);
+    assert(result.witness_state == 1);
+}
+
+test "CTG unreachable dead ends do not create false deadlocks" {
+    CTGSpec spec = ctg_cycle_with_escape();
+    spec.state_count = 4;
+    CTGResult result = ctg_explore(spec);
+    assert(result.valid && result.complete);
+    assert(result.classification == CTG_PROGRESS);
+}
+
+test "CTG state limit fails closed as unknown" {
+    CTGSpec spec = ctg_cycle_with_escape();
+    spec.state_limit = 2;
+    CTGResult result = ctg_explore(spec);
+    assert(result.valid && !result.complete);
+    assert(result.classification == CTG_UNKNOWN);
+    assert(result.reason == "state_limit_reached_before_graph_completion");
+}
+
+test "CTG rejects duplicate enabled action labels" {
+    CTGSpec spec = ctg_cycle_with_escape();
+    spec.transitions.push(new CTGEdge{from_state: 0, to_state: 2, action: 1});
+    CTGResult result = ctg_explore(spec);
+    assert(!result.valid && result.classification == CTG_INVALID);
+}
+
+test "CTG rejects outgoing transitions from terminal states" {
+    CTGSpec spec = ctg_cycle_with_escape();
+    spec.transitions.push(new CTGEdge{from_state: 2, to_state: 0, action: 3});
+    CTGResult result = ctg_explore(spec);
+    assert(!result.valid && result.classification == CTG_INVALID);
+}
+test "CTG a deadlock witness does not hide an incomplete reachable graph" {
+    CTGSpec spec = ctg_reachable_deadlock();
+    spec.state_count = 4;
+    spec.transitions.push(new CTGEdge{from_state: 0, to_state: 3, action: 2});
+    spec.state_limit = 2;
+    CTGResult result = ctg_explore(spec);
+    assert(result.valid && !result.complete);
+    assert(result.classification == CTG_UNKNOWN);
+    assert(result.witness_state == -1);
+}
