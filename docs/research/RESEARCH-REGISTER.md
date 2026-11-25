@@ -210,9 +210,9 @@ implementation and proof fragments into tightly scoped, reproducible claims.
 #### R8 implementation note — Halyard MC1 prototype (2026-11-25)
 
 The Halyard working branch now contains a first Capstan-native prototype in
-`lib/halyard/core.cap`: an in-memory bounded byte source and copy-on-commit bounded sink,
+`lib/halyard/core.cap`: an in-memory validated bounded byte source and copy-on-commit bounded sink,
 a five-dimensional sequential aggregate ledger, and rational timebase construction and
-timestamp rescaling with explicit rounding. Twenty-four Capstan `test` declarations are
+timestamp rescaling with explicit rounding. Twenty-five Capstan `test` declarations are
 colocated with the implementation, including exhaustive small-state checks for exact-read
 boundaries, the 3^5 resource-admission state space, per-dimension release underflow, sink
 failure atomicity, rational rescaling, rounding and signed multiplication boundaries.
