@@ -197,4 +197,54 @@ theorem nativeRegisterSetAt_preserves_length
       registers.length :=
   nativeRegisterSetAt_length registers index replacement
 
+/-- Signed-index native integer read: reject negative indices before conversion. -/
+def nativeRegisterReadIntAtSigned
+    (registers : List NativeCCAMRegister) (index : Int) :
+    Except Trap Int :=
+  if index < 0 then
+    .error .invalidRegister
+  else
+    nativeRegisterReadIntAt registers index.toNat
+
+/-- Signed-index native boolean read: reject negative indices before conversion. -/
+def nativeRegisterReadBoolAtSigned
+    (registers : List NativeCCAMRegister) (index : Int) :
+    Except Trap Bool :=
+  if index < 0 then
+    .error .invalidRegister
+  else
+    nativeRegisterReadBoolAt registers index.toNat
+
+/-- Negative signed integer indices trap as invalid registers. -/
+theorem nativeRegisterReadIntAtSigned_negative
+    (registers : List NativeCCAMRegister) (index : Int)
+    (hnegative : index < 0) :
+    nativeRegisterReadIntAtSigned registers index = .error .invalidRegister := by
+  simp [nativeRegisterReadIntAtSigned, hnegative]
+
+/-- Negative signed boolean indices trap as invalid registers. -/
+theorem nativeRegisterReadBoolAtSigned_negative
+    (registers : List NativeCCAMRegister) (index : Int)
+    (hnegative : index < 0) :
+    nativeRegisterReadBoolAtSigned registers index = .error .invalidRegister := by
+  simp [nativeRegisterReadBoolAtSigned, hnegative]
+
+/-- Nonnegative signed integer indices delegate exactly to the Nat-index reader. -/
+theorem nativeRegisterReadIntAtSigned_nonnegative
+    (registers : List NativeCCAMRegister) (index : Int)
+    (hnonnegative : 0 ≤ index) :
+    nativeRegisterReadIntAtSigned registers index =
+      nativeRegisterReadIntAt registers index.toNat := by
+  have hnotnegative : ¬ index < 0 := by omega
+  simp [nativeRegisterReadIntAtSigned, hnotnegative]
+
+/-- Nonnegative signed boolean indices delegate exactly to the Nat-index reader. -/
+theorem nativeRegisterReadBoolAtSigned_nonnegative
+    (registers : List NativeCCAMRegister) (index : Int)
+    (hnonnegative : 0 ≤ index) :
+    nativeRegisterReadBoolAtSigned registers index =
+      nativeRegisterReadBoolAt registers index.toNat := by
+  have hnotnegative : ¬ index < 0 := by omega
+  simp [nativeRegisterReadBoolAtSigned, hnotnegative]
+
 end CapstanVerification
