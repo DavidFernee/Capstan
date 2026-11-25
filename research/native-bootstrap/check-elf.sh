@@ -1,6 +1,7 @@
 #!/bin/sh
-# Research-only Linux x86-64 harness for Capstan-emitted GNU assembly.
+# Research-only Linux x86-64 harness for trusted Capstan-emitted GNU assembly.
 # This is not a production build integration and deliberately avoids a C compiler driver.
+# NEVER execute untrusted assembly with this harness: native code has the caller's OS authority.
 set -eu
 
 usage() {
@@ -21,7 +22,7 @@ esac
 [ "$(uname -s)" = Linux ] || { echo "requires Linux" >&2; exit 69; }
 [ "$(uname -m)" = x86_64 ] || { echo "requires x86_64" >&2; exit 69; }
 
-for tool in as ld readelf nm sha256sum; do
+for tool in as ld readelf nm sha256sum timeout; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "missing required tool: $tool" >&2
         exit 69
@@ -101,11 +102,22 @@ if readelf -r "$executable" | grep -q 'Relocation section'; then
     exit 1
 fi
 
-echo "== execute =="
-set +e
-"$executable"
-actual=$?
-set -e
+echo "== execute (resource-limited; trusted input only) =="
+# Bound CPU time, virtual address space and captured output. The hard timeout
+# also covers a process that ignores or evades the shell's CPU-time limit.
+(
+    ulimit -t 2
+    ulimit -v 65536
+    ulimit -f 128
+    exec timeout --signal=KILL 3s "$executable"
+) >"$work/run.out" 2>"$work/run.err" || actual=$?
+if [ "${actual:-0}" -eq 0 ]; then
+    actual=0
+else
+    actual=${actual:-0}
+fi
+cat "$work/run.out"
+cat "$work/run.err" >&2
 echo "exit status: $actual (expected $expected)"
 [ "$actual" -eq "$expected" ] || exit 1
 
