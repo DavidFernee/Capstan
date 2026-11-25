@@ -58,12 +58,23 @@ struct Font {
     int num_glyphs;
     int num_hmetrics;
     int loca_long;
+    int t_head;
+    int head_len;
+    int t_hhea;
+    int hhea_len;
+    int t_maxp;
+    int maxp_len;
+    int t_cmap;
+    int cmap_len;
+    int cmap_at;            // the chosen cmap subtable
+    int cmap_sub_len;
+    int cmap_format;
     int t_loca;
+    int loca_len;
     int t_glyf;
     int glyf_len;
     int t_hmtx;
-    int cmap_at;            // the chosen cmap subtable
-    int cmap_format;
+    int hmtx_len;
     Map<GlyphMask> cache;
     int cached;
     int cached_pixels;
@@ -107,12 +118,45 @@ int find_table(FontReader r, string tag, int min_len, List<int> lens) {
         if (r.u32(rec) == want) {
             int off = r.u32(rec + 8);
             int len = r.u32(rec + 12);
-            if (!r.ok || len < min_len || off + len > r.b.len()) { return -1; }
+            if (!r.ok || len < min_len || off < 0 || off > r.b.len() || len > r.b.len() - off) { return -1; }
             lens[0] = len;
             return off;
         }
     }
     return -1;
+}
+
+// A nested range must belong to its declared parent table, not merely to the
+// complete font file. Subtraction-based checks avoid overflowing offset + length.
+bool font_span_fits(int start, int length, int at, int needed) {
+    if (start < 0 || length < 0 || at < start || needed < 0) { return false; }
+    int relative = at - start;
+    return relative <= length && needed <= length - relative;
+}
+
+// Validate the declared length and fixed-size arrays of a supported cmap subtable.
+// The result is its validated length, or -1. Unsupported formats are not interpreted,
+// but their encoding-record offsets still need a two-byte format field in cmap.
+int cmap_subtable_length(FontReader r, int cmap, int cmap_len, int at, int format) {
+    if (!font_span_fits(cmap, cmap_len, at, 2)) { return -1; }
+    if (format == 12) {
+        if (!font_span_fits(cmap, cmap_len, at, 16)) { return -1; }
+        int length = r.u32(at + 4);
+        if (length < 16 || !font_span_fits(cmap, cmap_len, at, length)) { return -1; }
+        int groups = r.u32(at + 12);
+        if (groups > 1000000 || groups > (length - 16) / 12) { return -1; }
+        return length;
+    }
+    if (format == 4) {
+        if (!font_span_fits(cmap, cmap_len, at, 14)) { return -1; }
+        int length = r.u16(at + 2);
+        int segx2 = r.u16(at + 6);
+        if (length < 16 || (segx2 & 1) != 0 || segx2 < 2) { return -1; }
+        if (!font_span_fits(cmap, cmap_len, at, length)) { return -1; }
+        if (segx2 > (length - 16) / 4) { return -1; }
+        return length;
+    }
+    return 0;
 }
 
 Font? font_load(Tainted data) {
@@ -122,34 +166,57 @@ Font? font_load(Tainted data) {
     FontReader r = new FontReader{b: bytes, ok: true};
     int version = r.u32(0);
     if (version != 0x00010000 && version != tag_of("true")) { return none; }
-    List<int> len = new List<int>();
-    len.push(0);
-    int head = find_table(r, "head", 54, len);
-    int hhea = find_table(r, "hhea", 36, len);
-    int maxp = find_table(r, "maxp", 6, len);
-    int cmap = find_table(r, "cmap", 4, len);
-    int loca = find_table(r, "loca", 0, len);
-    int hmtx = find_table(r, "hmtx", 0, len);
-    int glyf = find_table(r, "glyf", 0, len);
-    int glyf_len = len[0];
+    List<int> head_size = new List<int>(); head_size.push(0);
+    List<int> hhea_size = new List<int>(); hhea_size.push(0);
+    List<int> maxp_size = new List<int>(); maxp_size.push(0);
+    List<int> cmap_size = new List<int>(); cmap_size.push(0);
+    List<int> loca_size = new List<int>(); loca_size.push(0);
+    List<int> hmtx_size = new List<int>(); hmtx_size.push(0);
+    List<int> glyf_size = new List<int>(); glyf_size.push(0);
+    int head = find_table(r, "head", 54, head_size);
+    int hhea = find_table(r, "hhea", 36, hhea_size);
+    int maxp = find_table(r, "maxp", 6, maxp_size);
+    int cmap = find_table(r, "cmap", 4, cmap_size);
+    int loca = find_table(r, "loca", 0, loca_size);
+    int hmtx = find_table(r, "hmtx", 0, hmtx_size);
+    int glyf = find_table(r, "glyf", 0, glyf_size);
     if (head < 0 || hhea < 0 || maxp < 0 || cmap < 0 || loca < 0 || hmtx < 0 || glyf < 0) { return none; }
     int upem = r.u16(head + 18);
-    if (upem < 16 || upem > 16384) { return none; }
-    Font f = new Font{r: r, units_per_em: upem, ascent: r.i16(hhea + 4), descent: r.i16(hhea + 6), line_gap: r.i16(hhea + 8), num_glyphs: r.u16(maxp + 4), num_hmetrics: r.u16(hhea + 34), loca_long: r.i16(head + 50), t_loca: loca, t_glyf: glyf, glyf_len: glyf_len, t_hmtx: hmtx, cmap_at: -1, cmap_format: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
-    if (f.num_hmetrics < 1 || f.num_hmetrics > f.num_glyphs) { return none; }
-    // Prefer a full-Unicode subtable (format 12), then the BMP one (format 4).
+    int glyphs = r.u16(maxp + 4);
+    int metrics = r.u16(hhea + 34);
+    int loca_format = r.i16(head + 50);
+    if (upem < 16 || upem > 16384 || glyphs < 1 || metrics < 1 || metrics > glyphs) { return none; }
+    if (loca_format != 0 && loca_format != 1) { return none; }
+    int loca_entry_size = 2;
+    if (loca_format == 1) { loca_entry_size = 4; }
+    if (glyphs + 1 > loca_size[0] / loca_entry_size) { return none; }
+    int hmtx_required = 4 * metrics + 2 * (glyphs - metrics);
+    if (hmtx_required > hmtx_size[0]) { return none; }
+    Font f = new Font{r: r, units_per_em: upem, ascent: r.i16(hhea + 4), descent: r.i16(hhea + 6), line_gap: r.i16(hhea + 8), num_glyphs: glyphs, num_hmetrics: metrics, loca_long: loca_format, t_head: head, head_len: head_size[0], t_hhea: hhea, hhea_len: hhea_size[0], t_maxp: maxp, maxp_len: maxp_size[0], t_cmap: cmap, cmap_len: cmap_size[0], cmap_at: -1, cmap_sub_len: 0, cmap_format: 0, t_loca: loca, loca_len: loca_size[0], t_glyf: glyf, glyf_len: glyf_size[0], t_hmtx: hmtx, hmtx_len: hmtx_size[0], cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
+    // The encoding-record array itself must be wholly owned by cmap.
+    if (!font_span_fits(cmap, f.cmap_len, cmap, 4)) { return none; }
     int nsub = r.u16(cmap + 2);
+    if (nsub > (f.cmap_len - 4) / 8) { return none; }
+    // Validate every encoding-record offset, including records we do not support.
+    // Select a validated Unicode format 12 subtable in preference to format 4.
     for (int s = 0; s < nsub; s += 1) {
-        int platform = r.u16(cmap + 4 + 8 * s);
-        int encoding = r.u16(cmap + 6 + 8 * s);
-        int at = cmap + r.u32(cmap + 8 + 8 * s);
+        int rec = cmap + 4 + 8 * s;
+        int platform = r.u16(rec);
+        int encoding = r.u16(rec + 2);
+        int relative = r.u32(rec + 4);
+        if (relative > f.cmap_len || 2 > f.cmap_len - relative) { return none; }
+        int at = cmap + relative;
         int format = r.u16(at);
         bool unicode = platform == 0 || (platform == 3 && (encoding == 1 || encoding == 10));
+        int sub_len = cmap_subtable_length(r, cmap, f.cmap_len, at, format);
+        if (sub_len < 0) { return none; }
         if (unicode && format == 12) {
             f.cmap_at = at;
+            f.cmap_sub_len = sub_len;
             f.cmap_format = 12;
         } else if (unicode && format == 4 && f.cmap_format != 12) {
             f.cmap_at = at;
+            f.cmap_sub_len = sub_len;
             f.cmap_format = 4;
         }
     }
@@ -163,8 +230,9 @@ int glyph_index(Font f, int cp) {
     int at = f.cmap_at;
     if (f.cmap_format == 12) {
         int groups = r.u32(at + 12);
+        if (groups > (f.cmap_sub_len - 16) / 12 || groups > 1000000) { f.r.ok = false; return 0; }
         int lo = 0;
-        int hi = int_min(groups, 1000000) - 1;
+        int hi = groups - 1;
         while (lo <= hi) {
             int mid = (lo + hi) / 2;
             int g = at + 16 + 12 * mid;
@@ -193,7 +261,9 @@ int glyph_index(Font f, int cp) {
             int delta = r.u16(deltas + i);
             int ro = r.u16(ranges + i);
             if (ro == 0) { return checked_glyph(f, (cp + delta) & 0xFFFF); }
-            int gi = r.u16(ranges + i + ro + 2 * (cp - start2));
+            int glyph_word = ranges + i + ro + 2 * (cp - start2);
+            if (!font_span_fits(at, f.cmap_sub_len, glyph_word, 2)) { f.r.ok = false; return 0; }
+            int gi = r.u16(glyph_word);
             if (gi == 0) { return 0; }
             return checked_glyph(f, (gi + delta) & 0xFFFF);
         }
@@ -208,14 +278,22 @@ int checked_glyph(Font f, int g) {
 
 // Advance width of glyph g, in font units.
 int advance_units(Font f, int g) {
+    if (g < 0 || g >= f.num_glyphs) { f.r.ok = false; return 0; }
     int m = int_min(g, f.num_hmetrics - 1);
-    return f.r.u16(f.t_hmtx + 4 * m);
+    int at = f.t_hmtx + 4 * m;
+    if (!font_span_fits(f.t_hmtx, f.hmtx_len, at, 2)) { f.r.ok = false; return 0; }
+    return f.r.u16(at);
 }
 
 // Start and end of glyph g's data in the 'glyf' table, relative to the table.
 int glyph_start(Font f, int g) {
-    if (f.loca_long == 0) { return f.r.u16(f.t_loca + 2 * g) * 2; }
-    return f.r.u32(f.t_loca + 4 * g);
+    if (g < 0 || g > f.num_glyphs) { f.r.ok = false; return -1; }
+    int entry_size = 2;
+    if (f.loca_long == 1) { entry_size = 4; }
+    int at = f.t_loca + entry_size * g;
+    if (!font_span_fits(f.t_loca, f.loca_len, at, entry_size)) { f.r.ok = false; return -1; }
+    if (f.loca_long == 0) { return f.r.u16(at) * 2; }
+    return f.r.u32(at);
 }
 
 // Appends glyph g's outline to p, scaled by num / den from font units to FX, with
@@ -234,7 +312,7 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     FontReader r = f.r;
     int start = glyph_start(f, g);
     int end = glyph_start(f, g + 1);
-    if (!r.ok || end < start || end > f.glyf_len) { return false; }
+    if (!r.ok || start < 0 || end < start || end > f.glyf_len) { return false; }
     if (end == start) { return true; }       // empty glyph, such as a space
     int at = f.t_glyf + start;
     int contours = r.i16(at);

@@ -39,8 +39,10 @@ Font composite_budget_fixture() {
     FontReader reader = new FontReader{b: bytes, ok: true};
     return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
         line_gap: 0, num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
-        t_loca: 0, t_glyf: 8, glyf_len: 434, t_hmtx: 0, cmap_at: 0,
-        cmap_format: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: 0, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 0, t_glyf: 8, glyf_len: 434, t_hmtx: 0, hmtx_len: 0,
+        cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
 }
 
 int main() {
@@ -68,6 +70,12 @@ int main() {
     if (glyph_cache_fits(786433, 262144) != false) { return 21; }
     if (glyph_cache_fits(-1, 1) != false) { return 22; }
     if (glyph_cache_fits(MAX_CACHED_GLYPH_PIXELS, 1) != false) { return 23; }
+    if (font_span_fits(10, 10, 10, 0) != true) { return 30; }
+    if (font_span_fits(10, 10, 19, 1) != true) { return 31; }
+    if (font_span_fits(10, 10, 20, 0) != true) { return 32; }
+    if (font_span_fits(10, 10, 20, 1) != false) { return 33; }
+    if (font_span_fits(10, 10, 9, 1) != false) { return 34; }
+    if (font_span_fits(10, 10, 10, -1) != false) { return 35; }
     Font composite_font = composite_budget_fixture();
     Path leaf_path = new_path();
     if (glyph_outline(composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0) != true) { return 28; }
@@ -83,6 +91,6 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
-    println("resource limits: 29 assertions and glyph cache exercised");
+    println("resource limits: 35 assertions and glyph cache exercised");
     return 0;
 }

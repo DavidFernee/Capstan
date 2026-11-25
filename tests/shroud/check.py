@@ -336,7 +336,7 @@ def check_pixmap_limits(capstanc, cc, cflags, tmp):
     rejected = run(rejected_exe, check=False)
     if rejected.returncode != 101 or "pixmap size out of range" not in rejected.stdout:
         sys.exit(f"pixmap limits: oversized constructor request was not rejected: exit {rejected.returncode}\\n{rejected.stdout}{rejected.stderr}")
-    return "29 resource-budget assertions including recursive composite budget; glyph cache exercised; oversized pixmap rejected before allocation"
+    return "35 resource-budget assertions including recursive composite budget; glyph cache exercised; oversized pixmap rejected before allocation"
 
 
 
