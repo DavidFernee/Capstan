@@ -404,7 +404,7 @@ test "CCM rejects duplicate join and preserves the consumed handle" {
     CCMState state = ccm_initial_state();
     state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
     state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
-    state = ccm_apply(state, 1, CCM_ACT_CANCEL_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
     state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
     CCMTransition duplicate = ccm_step(state, 0, CCM_ACT_JOIN_PRODUCER);
     assert(!duplicate.ok && duplicate.error == "producer_not_joinable");
