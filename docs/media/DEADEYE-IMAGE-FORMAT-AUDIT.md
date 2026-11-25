@@ -29,7 +29,7 @@ Primary format references:
 - Microsoft Learn, Bitmap Storage: https://learn.microsoft.com/en-us/windows/win32/gdi/bitmap-storage
 - Microsoft Open Specifications, BitmapInfoHeader Object: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-wmf/567172fa-b8a2-4d79-86a2-5e21d6659ef3
 - Library of Congress, BMP format description: https://www.loc.gov/preservation/digital/formats/fdd/fdd000189.shtml
-- MDN image type comparison and its BMP licensing note: https://developer.mozilla.org/en-US/docs/Web/Media/Formats/Image_types
+- MDN image type comparison and its BMP licensing note: https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Formats/Image_types
 - W3C PNG Third Edition (comparison): https://www.w3.org/TR/png-3/
 
 The BMP format is proprietary in origin and Microsoft supplies the most authoritative structural documentation. The Library of Congress assessment says “no concerns” in its licensing/patent field, while MDN records that Microsoft holds patents against BMP and has published a non-assertion promise subject to conditions; MDN explicitly distinguishes that promise from a licence. This discrepancy is treated conservatively: Capstan has not received legal clearance. The implementation is first-party, authored in Capstan, with no copied or linked decoder code. A formal legal review of the exact BI_RGB profile, Open Specification Promise applicability and relevant territories remains mandatory before release distribution.
