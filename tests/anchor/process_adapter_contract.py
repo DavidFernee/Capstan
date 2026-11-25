@@ -356,6 +356,10 @@ class FakeBackend:
         child.exit_code = exit_code
         child.state = ProcessState.EXITED
 
+    def has_live_descendants(self, child):
+        return any(member.exit_code is None and member.state is not ProcessState.REAPED
+                   for member in self._owned_tree(child)[1:])
+
     def reap(self, child):
         members = self._owned_tree(child)
         if any(member.exit_code is None for member in members):
@@ -423,10 +427,11 @@ class ProcessSupervisorModel:
     def tick(self, process):
         if process.child.state is ProcessState.REAPED:
             return
-        # Observe an already-exited child before applying timeout/cancellation.
-        # This makes exit-vs-deadline races deterministic and avoids relabelling
-        # an exit that happened first as a timeout.
+        # Observe a direct-child exit before applying its deadline. If descendants
+        # remain in the owned process group, terminate and reap them as well.
         if process.child.exit_code is not None:
+            if self._terminate_live_descendants(process):
+                return
             self._reap(process)
             return
         if process.terminal_reason is None and self.clock.now_ms >= process.deadline_ms:
@@ -436,7 +441,23 @@ class ProcessSupervisorModel:
                 self.clock.now_ms >= process.kill_deadline_ms):
             self.backend.terminate(process.child, force=True)
         if process.child.exit_code is not None:
+            if self._terminate_live_descendants(process):
+                return
             self._reap(process)
+
+    def _terminate_live_descendants(self, process):
+        if not self.backend.has_live_descendants(process.child):
+            return False
+        if process.terminal_reason is None:
+            process.terminal_reason = "descendant_cleanup"
+            process.kill_deadline_ms = self.clock.now_ms + process.grace_ms
+            self.backend.terminate(process.child)
+        elif (process.kill_deadline_ms is not None and
+              self.clock.now_ms >= process.kill_deadline_ms):
+            self.backend.terminate(process.child, force=True)
+        if not self.backend.has_live_descendants(process.child):
+            self._reap(process)
+        return True
 
     def _reap(self, process):
         process.exit_code = self.backend.reap(process.child)
@@ -577,6 +598,20 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(process.exit_code, 0)
         self.assertEqual(process.child.state, ProcessState.REAPED)
         self.assertFalse(any(event[0] in ("terminate", "kill") for event in self.backend.events))
+
+    def test_parent_exit_does_not_leave_owned_descendant_running(self):
+        process = self.supervisor.start(self.request())
+        descendant = self.backend.spawn_descendant(process.child)
+        self.backend.observe_exit(process.child, 0)
+        self.supervisor.tick(process)
+        self.assertEqual(process.terminal_reason, "descendant_cleanup")
+        self.assertEqual(descendant.state, ProcessState.TERMINATION_REQUESTED)
+        self.assertIsNone(process.exit_code)
+        self.clock.advance(250)
+        self.supervisor.tick(process)
+        self.assertEqual(process.child.state, ProcessState.REAPED)
+        self.assertEqual(descendant.state, ProcessState.REAPED)
+        self.assertEqual(process.exit_code, 0)
 
     def test_restart_backoff_is_bounded(self):
         delays = [restart_delay_ms(n) for n in range(8)]
