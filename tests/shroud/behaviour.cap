@@ -687,6 +687,40 @@ void test_display_list(Tally t, Font font) {
         "display list: malformed mask validation is non-mutating");
 }
 
+void test_path_flatten_preflight(Tally t) {
+    Path small = new_path().move_to(0, 0).line_to(fx(1), 0).close();
+    expect_int(t, path_flatten_segment_bound(small), 2,
+        "path preflight: line and close have a bounded cost");
+
+    Path curves = new_path().move_to(0, 0);
+    for (int i = 0; i < 1000; i += 1) {
+        curves.cubic_to(fx(i + 1), fx(1), fx(i + 2), fx(1), fx(i + 3), 0);
+    }
+    curves.close();
+    expect(t, path_flatten_segment_bound(curves) >= 0,
+        "path preflight: accepts a path whose worst-case subdivision fits");
+
+    Path excessive = new_path().move_to(0, 0);
+    for (int j = 0; j < 1024; j += 1) {
+        excessive.cubic_to(fx(j + 1), fx(1), fx(j + 2), fx(1), fx(j + 3), 0);
+    }
+    excessive.close();
+    expect_int(t, path_flatten_segment_bound(excessive), -1,
+        "path preflight: rejects excessive worst-case curve expansion");
+
+    Path malformed = new_path();
+    malformed.verbs.push(VERB_LINE);
+    malformed.pts.push(0);
+    malformed.pts.push(0);
+    expect_int(t, path_flatten_segment_bound(malformed), -1,
+        "path preflight: rejects a line without a move");
+
+    Path trailing = new_path().move_to(0, 0);
+    trailing.pts.push(7);
+    expect_int(t, path_flatten_segment_bound(trailing), -1,
+        "path preflight: rejects unconsumed point data");
+}
+
 void test_display_work_budget(Tally t) {
     Pixmap target = new_pixmap(1, MAX_PIXMAP_SIDE);
     Segments small = new_segments();
@@ -868,6 +902,7 @@ int main() {
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_display_list(t, f);
+            test_path_flatten_preflight(t);
             test_display_work_budget(t);
             test_blend_bounds(t);
             test_resize(t, f, fb);
