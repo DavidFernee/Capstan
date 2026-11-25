@@ -459,13 +459,13 @@ def check_wayland_wire(capstanc, cc, cflags, tmp):
 def check_pixmap_limits(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits.cap", "pixmap-limits")
     ok = run(exe)
-    if ok.stdout.strip() != "resource limits: 47 assertions and glyph cache exercised":
+    if ok.stdout.strip() != "resource limits: 52 assertions and glyph cache exercised":
         sys.exit(f"pixmap limits: unexpected output: {ok.stdout!r}")
     rejected_exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits_reject.cap", "pixmap-reject")
     rejected = run(rejected_exe, check=False)
     if rejected.returncode != 101 or "pixmap size out of range" not in rejected.stdout:
         sys.exit(f"pixmap limits: oversized constructor request was not rejected: exit {rejected.returncode}\\n{rejected.stdout}{rejected.stderr}")
-    return "47 resource-budget assertions including directory, metrics and composite-glyph bounds; glyph cache exercised; oversized pixmap rejected before allocation"
+    return "52 resource-budget assertions including directory, metrics and composite-glyph bounds; glyph cache exercised; oversized pixmap rejected before allocation"
 
 
 

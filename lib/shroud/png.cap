@@ -1,8 +1,16 @@
-// Shroud: PNG output, for screenshots and golden-image tests.
+// Shroud: bounded PNG output for screenshots and golden-image tests.
 //
 // Writes 8-bit RGBA PNG files (ISO/IEC 15948). The image data is zlib-wrapped
-// DEFLATE in stored blocks: no compression, but every decoder reads it, and the
-// encoder is short enough to check by eye. CRC-32 and Adler-32 are computed here.
+// DEFLATE in stored blocks: no compression, but every decoder reads it.
+//
+// The encoder writes scanline bytes directly into the final PNG list. It does
+// not retain separate raw-scanline or zlib buffers. Export is deliberately
+// bounded because the current write_file API accepts a string, requiring a
+// byte-list -> string-parts -> joined-string conversion. This is an image
+// export budget, not a process-wide heap limit; a future bounded byte-sink API
+// is required for large screenshots without string-conversion amplification.
+
+const int MAX_PNG_RAW_BYTES = 4194304; // includes one filter byte per row
 
 List<int> crc32_table() {
     List<int> t = new List<int>();
@@ -44,12 +52,33 @@ void put_chunk(List<int> out, List<int> table, string kind, List<int> data) {
     put_u32(out, crc);
 }
 
+// Validate with division before multiplying. This bounds the raw scanline list
+// equivalent, DEFLATE overhead and final output before any export allocation.
+bool png_raw_size_valid(int w, int h) {
+    if (w < 1 || h < 1 || w > 16384 || h > 16384) { return false; }
+    if (w > (MAX_PNG_RAW_BYTES - 1) / 4) { return false; }
+    int row_bytes = 1 + 4 * w;
+    return h <= MAX_PNG_RAW_BYTES / row_bytes;
+}
+
 // The PNG file's bytes for pm, unpremultiplied to straight RGBA.
+// Empty means the image exceeds the export budget and was rejected.
 List<int> png_encode(Pixmap pm) {
+    if (!png_raw_size_valid(pm.w, pm.h)) { return new List<int>(); }
+    // Pixmap is a public value type; reject malformed backing storage rather
+    // than allowing get() to index outside the supplied pixel list.
+    if (pm.px.len() != pm.w * pm.h) { return new List<int>(); }
+
+    int row_bytes = 1 + 4 * pm.w;
+    int raw_len = row_bytes * pm.h;
+    int blocks = (raw_len + 65534) / 65535;
+    int idat_len = raw_len + 6 + 5 * blocks;
+
     List<int> table = crc32_table();
     List<int> out = new List<int>();
     out.push(137); out.push(80); out.push(78); out.push(71);
     out.push(13); out.push(10); out.push(26); out.push(10);
+
     List<int> ihdr = new List<int>();
     put_u32(ihdr, pm.w);
     put_u32(ihdr, pm.h);
@@ -57,46 +86,84 @@ List<int> png_encode(Pixmap pm) {
     ihdr.push(6);   // colour type: RGBA
     ihdr.push(0); ihdr.push(0); ihdr.push(0);
     put_chunk(out, table, "IHDR", ihdr);
-    // Raw scanlines: filter type 0, then RGBA bytes.
-    List<int> raw = new List<int>();
-    for (int y = 0; y < pm.h; y += 1) {
-        raw.push(0);
-        for (int x = 0; x < pm.w; x += 1) {
-            int c = unpremultiply(pm.get(x, y));
-            raw.push(ch_r(c)); raw.push(ch_g(c)); raw.push(ch_b(c)); raw.push(ch_a(c));
-        }
-    }
-    List<int> z = new List<int>();
-    z.push(0x78); z.push(0x01);
-    int pos = 0;
-    while (pos < raw.len() || pos == 0) {
-        int n = int_min(65535, raw.len() - pos);
-        bool last = pos + n >= raw.len();
-        if (last) { z.push(1); } else { z.push(0); }
-        z.push(n & 0xFF); z.push((n >> 8) & 0xFF);
-        z.push((~n) & 0xFF); z.push(((~n) >> 8) & 0xFF);
-        for (int i = pos; i < pos + n; i += 1) { z.push(raw[i]); }
-        pos += n;
-        if (n == 0) { break; }
-    }
+
+    // IDAT length is known from the validated dimensions. Append its body
+    // directly to the final PNG output, computing Adler-32 as bytes are emitted.
+    put_u32(out, idat_len);
+    int idat_start = out.len();
+    out.push(73); out.push(68); out.push(65); out.push(84); // IDAT
+    out.push(0x78); out.push(0x01);                         // zlib header
+
     int s1 = 1;
     int s2 = 0;
-    for (int k = 0; k < raw.len(); k += 1) {
-        s1 = (s1 + raw[k]) % 65521;
-        s2 = (s2 + s1) % 65521;
+    int pos = 0;
+    int cached_pixel = -1;
+    int cached_color = 0;
+    while (pos < raw_len) {
+        int n = int_min(65535, raw_len - pos);
+        bool last = pos + n >= raw_len;
+        if (last) { out.push(1); } else { out.push(0); }
+        out.push(n & 0xFF); out.push((n >> 8) & 0xFF);
+        out.push((~n) & 0xFF); out.push(((~n) >> 8) & 0xFF);
+
+        for (int i = pos; i < pos + n; i += 1) {
+            int y = i / row_bytes;
+            int column = i % row_bytes;
+            int b = 0;
+            if (column != 0) {
+                int pixel_column = (column - 1) / 4;
+                int pixel_index = y * pm.w + pixel_column;
+                int channel = (column - 1) % 4;
+                if (pixel_index != cached_pixel) {
+                    cached_color = unpremultiply(pm.get(pixel_column, y));
+                    cached_pixel = pixel_index;
+                }
+                if (channel == 0) { b = ch_r(cached_color); }
+                if (channel == 1) { b = ch_g(cached_color); }
+                if (channel == 2) { b = ch_b(cached_color); }
+                if (channel == 3) { b = ch_a(cached_color); }
+            }
+            out.push(b);
+            s1 = (s1 + b) % 65521;
+            s2 = (s2 + s1) % 65521;
+        }
+        pos += n;
     }
-    put_u32(z, (s2 << 16) | s1);
-    put_chunk(out, table, "IDAT", z);
+    put_u32(out, (s2 << 16) | s1);
+    int crc = crc32_update(table, 0xFFFFFFFF, out, idat_start, out.len()) ^ 0xFFFFFFFF;
+    put_u32(out, crc);
+
     put_chunk(out, table, "IEND", new List<int>());
     return out;
 }
 
+// The runtime's current file API accepts strings, not byte slices. Reuse the
+// 256 one-byte strings and one parts list across bounded chunks instead of
+// allocating a CapStr or a growing list for every output byte/batch.
+const int PNG_STRING_CHUNK_BYTES = 4096;
+
 string bytes_text(List<int> bytes) {
+    List<string> byte_strings = new List<string>();
+    for (int i = 0; i < 256; i += 1) { byte_strings.push(char_str(i)); }
+    int part_count = int_min(PNG_STRING_CHUNK_BYTES, bytes.len());
     List<string> parts = new List<string>();
-    for (int i = 0; i < bytes.len(); i += 1) { parts.push(char_str(bytes[i])); }
-    return join(parts, "");
+    for (int j = 0; j < part_count; j += 1) { parts.push(""); }
+    List<string> chunks = new List<string>();
+    int from = 0;
+    while (from < bytes.len()) {
+        int count = int_min(part_count, bytes.len() - from);
+        for (int j = 0; j < part_count; j += 1) {
+            if (j < count) { parts[j] = byte_strings[bytes[from + j]]; }
+            else { parts[j] = ""; }
+        }
+        chunks.push(join(parts, ""));
+        from += count;
+    }
+    return join(chunks, "");
 }
 
 bool png_write(string path, Pixmap pm) {
-    return write_file(path, bytes_text(png_encode(pm)));
+    List<int> bytes = png_encode(pm);
+    if (bytes.len() == 0) { return false; }
+    return write_file(path, bytes_text(bytes));
 }

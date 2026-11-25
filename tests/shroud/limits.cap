@@ -14,6 +14,8 @@ void limits_append_u32(List<int> bytes, int value) {
     limits_append_u16(bytes, value & 65535);
 }
 
+Tainted limits_tainted(List<int> bytes) { return taint(bytes_text(bytes)); }
+
 FontReader directory_fixture(int mode) {
     List<int> bytes = new List<int>();
     limits_append_u32(bytes, 0x00010000);
@@ -94,6 +96,57 @@ Font metrics_fixture(int table_len) {
         cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
 }
 
+Font truncated_composite_args_fixture() {
+    List<int> bytes = new List<int>();
+    for (int i = 0; i < 24; i += 1) { bytes.push(0); }
+    // Short loca entries: glyph 0 = [0,0), glyph 1 = [0,14),
+    // glyph 2 = [14,16). The composite's XY arguments are absent from
+    // glyph 1 and exist only at the start of glyph 2.
+    bytes[5] = 7;
+    bytes[7] = 8;
+    bytes[8] = 255;
+    bytes[9] = 255;
+    bytes[19] = 2;
+    bytes[20] = 0;
+    bytes[21] = 0;
+    bytes[22] = 0;
+    bytes[23] = 0;
+    FontReader r = new FontReader{b:limits_tainted(bytes), ok:true};
+    return new Font{r:r, num_glyphs:3, loca_long:false, t_loca:0, loca_len:8, t_glyf:8, glyf_len:16};
+}
+
+Font truncated_simple_coords_fixture() {
+    List<int> bytes = new List<int>();
+    for (int i = 0; i < 28; i += 1) { bytes.push(0); }
+    // Glyph 1 is a one-point simple glyph. Its flag says that both x and y
+    // deltas follow, but the glyph ends before those coordinates; glyph 2
+    // supplies the bytes that a file-only check could accidentally consume.
+    bytes[5] = 8;
+    bytes[7] = 10;
+    bytes[9] = 1;
+    bytes[22] = 0;
+    bytes[23] = 0;
+    FontReader r = new FontReader{b:limits_tainted(bytes), ok:true};
+    return new Font{r:r, num_glyphs:3, loca_long:false, t_loca:0, loca_len:8, t_glyf:8, glyf_len:20};
+}
+
+Font truncated_composite_transform_fixture() {
+    List<int> bytes = new List<int>();
+    for (int i = 0; i < 26; i += 1) { bytes.push(0); }
+    // The component's 2-byte scale transform exists only in glyph 2.
+    bytes[5] = 8;
+    bytes[7] = 9;
+    bytes[8] = 255;
+    bytes[9] = 255;
+    bytes[19] = 10;
+    bytes[20] = 0;
+    bytes[21] = 0;
+    bytes[22] = 0;
+    bytes[23] = 0;
+    FontReader r = new FontReader{b:limits_tainted(bytes), ok:true};
+    return new Font{r:r, num_glyphs:3, loca_long:false, t_loca:0, loca_len:8, t_glyf:8, glyf_len:18};
+}
+
 int main() {
     if (pixmap_size_valid(1, 1) != true) { return 1; }
     if (pixmap_size_valid(4096, 4096) != true) { return 2; }
@@ -154,6 +207,25 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
-    println("resource limits: 47 assertions and glyph cache exercised");
+    Font truncated = truncated_composite_args_fixture();
+    List<int> truncated_budget = new List<int>();
+    Path truncated_path = new_path();
+    if (glyph_outline(truncated, 1, truncated_path, 16384, 1, 0, 0, identity_transform(), 0, truncated_budget)) { return 48; }
+    Font truncated_simple = truncated_simple_coords_fixture();
+    List<int> simple_budget = new List<int>();
+    Path simple_path = new_path();
+    if (glyph_outline(truncated_simple, 1, simple_path, 16384, 1, 0, 0, identity_transform(), 0, simple_budget)) { return 49; }
+    Font truncated_transform = truncated_composite_transform_fixture();
+    List<int> transform_budget = new List<int>();
+    Path transform_path = new_path();
+    if (glyph_outline(truncated_transform, 1, transform_path, 16384, 1, 0, 0, identity_transform(), 0, transform_budget)) { return 50; }
+    List<int> shear = compose_matrix(identity_transform(), 16384, 8192, 0, 16384);
+    if (shear[0] != 16384 || shear[1] != 8192 || shear[2] != 0 || shear[3] != 16384) { return 51; }
+    List<int> translated = identity_transform();
+    translated[4] = 7;
+    translated[5] = 9;
+    List<int> preserved = compose_matrix(translated, 16384, 0, 0, 16384);
+    if (preserved[4] != 7 || preserved[5] != 9) { return 52; }
+    println("resource limits: 52 assertions and glyph cache exercised");
     return 0;
 }

@@ -6,9 +6,9 @@
 // carries offsets and counts that point elsewhere in the file. In Capstan an
 // out-of-range offset cannot corrupt memory, and this parser goes further: it never
 // reads outside the file at all. Every read goes through a FontReader, which returns
-// 0 and records the failure for any read out of bounds. This is a whole-file bound,
-// not yet a guarantee that every cmap/loca/hmtx read stays within its owning table;
-// those table-local spans are tracked separately in issue #121. A damaged font is
+// 0 and records the failure for any read out of bounds. The SFNT directory and
+// cmap/loca/hmtx reads are constrained to their owning table spans. Composite glyph
+// component records are constrained to their loca-delimited glyph span. A damaged font is
 // refused (font_load gives none) or a damaged glyph is drawn empty, never a stop.
 //
 // Supported: TrueType outlines ('glyf'), simple and composite glyphs, 'cmap' formats 4
@@ -27,8 +27,10 @@ const int MAX_CACHED_GLYPHS = 4096;                  // rasterised glyphs kept p
 const int MAX_GLYPH_MASK_PIXELS = 262144;            // at most 256K alpha pixels in one glyph
 const int MAX_CACHED_GLYPH_PIXELS = 1048576;         // aggregate alpha pixels per font
 
+// Keep the original Tainted byte string as backing storage. Expanding a 32 MiB
+// font into List<int> would amplify its live representation by roughly 8x.
 struct FontReader {
-    List<int> b;
+    Tainted b;
     bool ok;
 
     int u8(int at) {
@@ -36,7 +38,7 @@ struct FontReader {
             self.ok = false;
             return 0;
         }
-        return self.b[at];
+        return self.b.at(at);
     }
 
     int u16(int at) { return (self.u8(at) << 8) | self.u8(at + 1); }
@@ -190,9 +192,7 @@ int cmap_subtable_length(FontReader r, int cmap, int cmap_len, int at, int forma
 
 Font? font_load(Tainted data) {
     if (data.len() < 12 || data.len() > MAX_FONT_BYTES) { return none; }
-    List<int> bytes = new List<int>();
-    for (int i = 0; i < data.len(); i += 1) { bytes.push(data.at(i)); }
-    FontReader r = new FontReader{b: bytes, ok: true};
+    FontReader r = new FontReader{b: data, ok: true};
     int version = r.u32(0);
     if (version != 0x00010000 && version != tag_of("true")) { return none; }
     int table_count = r.u16(4);
@@ -342,6 +342,10 @@ int bearing_units(Font f, int g) {
 }
 
 // Start and end of glyph g's data in the 'glyf' table, relative to the table.
+bool glyph_span_fits(int glyph_at, int glyph_end, int at, int needed) {
+    return font_span_fits(glyph_at, glyph_end - glyph_at, at, needed);
+}
+
 int glyph_start(Font f, int g) {
     if (g < 0 || g > f.num_glyphs) { f.r.ok = false; return -1; }
     int entry_size = 2;
@@ -369,32 +373,43 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     int start = glyph_start(f, g);
     int end = glyph_start(f, g + 1);
     if (!r.ok || start < 0 || end < start || end > f.glyf_len) { return false; }
-    if (end == start) { return true; }       // empty glyph, such as a space
+    if (end == start) { return true; }
     int at = f.t_glyf + start;
+    int glyph_end = f.t_glyf + end;
+    if (!glyph_span_fits(at, glyph_end, at, 10)) { return false; }
     int contours = r.i16(at);
-    if (contours < 0) { return composite_outline(f, at, end + f.t_glyf, p, num, den, ox, oy, m, depth, budget); }
+    if (contours < -1) { return false; }
+    if (contours < 0) { return composite_outline(f, at, glyph_end, p, num, den, ox, oy, m, depth, budget); }
+    if (contours > MAX_GLYPH_POINTS || contours > (end - 10) / 2) { return false; }
     int ep = at + 10;
+    if (!glyph_span_fits(at, glyph_end, ep, 2 * contours + 2)) { return false; }
     int npts = 0;
     List<int> ends = new List<int>();
     for (int c = 0; c < contours; c += 1) {
         int e = r.u16(ep + 2 * c);
-        if (e < npts) { return false; }         // end points must increase
+        if (!r.ok || e < npts) { return false; }
         ends.push(e);
         npts = e + 1;
     }
     if (npts > MAX_GLYPH_POINTS || !glyph_points_fit(budget[0], npts)) { return false; }
     budget[0] -= npts;
     int ins = ep + 2 * contours;
-    int pos = ins + 2 + r.u16(ins);
+    if (!glyph_span_fits(at, glyph_end, ins, 2)) { return false; }
+    int instruction_bytes = r.u16(ins);
+    if (!r.ok || !glyph_span_fits(at, glyph_end, ins + 2, instruction_bytes)) { return false; }
+    int pos = ins + 2 + instruction_bytes;
     List<int> flags = new List<int>();
     while (flags.len() < npts) {
+        if (!glyph_span_fits(at, glyph_end, pos, 1)) { return false; }
         int fl = r.u8(pos);
         pos += 1;
         flags.push(fl);
         if ((fl & 8) != 0) {
+            if (!glyph_span_fits(at, glyph_end, pos, 1)) { return false; }
             int rep = r.u8(pos);
             pos += 1;
-            for (int k = 0; k < rep && flags.len() < npts; k += 1) { flags.push(fl); }
+            if (!r.ok || rep > npts - flags.len()) { return false; }
+            for (int k = 0; k < rep; k += 1) { flags.push(fl); }
         }
         if (!r.ok) { return false; }
     }
@@ -403,10 +418,12 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     for (int i = 0; i < npts; i += 1) {
         int fx2 = flags[i];
         if ((fx2 & 2) != 0) {
+            if (!glyph_span_fits(at, glyph_end, pos, 1)) { return false; }
             int dx = r.u8(pos);
             pos += 1;
             if ((fx2 & 16) != 0) { x += dx; } else { x -= dx; }
         } else if ((fx2 & 16) == 0) {
+            if (!glyph_span_fits(at, glyph_end, pos, 2)) { return false; }
             x += r.i16(pos);
             pos += 2;
         }
@@ -417,17 +434,18 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     for (int j = 0; j < npts; j += 1) {
         int fy = flags[j];
         if ((fy & 4) != 0) {
+            if (!glyph_span_fits(at, glyph_end, pos, 1)) { return false; }
             int dy = r.u8(pos);
             pos += 1;
             if ((fy & 32) != 0) { y += dy; } else { y -= dy; }
         } else if ((fy & 32) == 0) {
+            if (!glyph_span_fits(at, glyph_end, pos, 2)) { return false; }
             y += r.i16(pos);
             pos += 2;
         }
         ys.push(y);
     }
-    if (!r.ok || pos > end + f.t_glyf) { return false; }
-    // Transform every point to FX, y down.
+    if (!r.ok || pos > glyph_end) { return false; }
     List<int> px = new List<int>();
     List<int> py = new List<int>();
     for (int q = 0; q < npts; q += 1) {
@@ -486,18 +504,46 @@ void emit_contour(Path p, List<int> px, List<int> py, List<int> flags, int first
     p.close();
 }
 
+// Compose the current F2Dot14 linear transform with one composite component.
+List<int> compose_matrix(List<int> m, int a, int b, int c, int d) {
+    List<int> next = new List<int>();
+    next.push((m[0] * a + m[2] * b) / 16384);
+    next.push((m[1] * a + m[3] * b) / 16384);
+    next.push((m[0] * c + m[2] * d) / 16384);
+    next.push((m[1] * c + m[3] * d) / 16384);
+    next.push(m[4]);
+    next.push(m[5]);
+    return next;
+}
+
 bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int ox, int oy, List<int> m, int depth, List<int> budget) {
     FontReader r = f.r;
+    if (at < 0 || limit < at || limit - at < 10) { return false; }
     int pos = at + 10;
     int parts = 0;
     bool more = true;
+    bool instructions = false;
     while (more) {
-        if (parts >= MAX_COMPOSITE_PARTS || !glyph_component_available(budget[1]) || pos + 4 > limit) { return false; }
-        parts += 1;
+        if (parts >= MAX_COMPOSITE_PARTS || !glyph_component_available(budget[1])) { return false; }
         budget[1] -= 1;
+        if (pos > limit || limit - pos < 4) { return false; }
         int flags = r.u16(pos);
         int g = r.u16(pos + 2);
         pos += 4;
+        if (!r.ok || (flags & 0xE000) != 0) { return false; }
+        if ((flags & 2) == 0) { return false; }
+        if ((flags & 0x0800) != 0 || (flags & 0x1000) != 0) { return false; }
+        int transform_modes = 0;
+        if ((flags & 8) != 0) { transform_modes += 1; }
+        if ((flags & 64) != 0) { transform_modes += 1; }
+        if ((flags & 128) != 0) { transform_modes += 1; }
+        if (transform_modes > 1) { return false; }
+        more = (flags & 32) != 0;
+        if (more && (flags & 256) != 0) { return false; }
+        instructions = !more && (flags & 256) != 0;
+        int arg_bytes = 2;
+        if ((flags & 1) != 0) { arg_bytes = 4; }
+        if (pos > limit || arg_bytes > limit - pos) { return false; }
         int dx = 0;
         int dy = 0;
         if ((flags & 1) != 0) {
@@ -511,16 +557,20 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
             if (dy >= 128) { dy -= 256; }
             pos += 2;
         }
-        // Only offsets are supported for placing parts, not matching points (flag 2 clear).
-        if ((flags & 2) == 0) { return false; }
+        int transform_bytes = 0;
+        if ((flags & 8) != 0) { transform_bytes = 2; }
+        else if ((flags & 64) != 0) { transform_bytes = 4; }
+        else if ((flags & 128) != 0) { transform_bytes = 8; }
+        if (pos > limit || transform_bytes > limit - pos) { return false; }
         int a = 16384;
         int b = 0;
         int c = 0;
         int d = 16384;
         if ((flags & 8) != 0) {
-            a = r.i16(pos);
-            d = a;
+            int scale = r.i16(pos);
             pos += 2;
+            a = scale;
+            d = scale;
         } else if ((flags & 64) != 0) {
             a = r.i16(pos);
             d = r.i16(pos + 2);
@@ -532,19 +582,23 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
             d = r.i16(pos + 6);
             pos += 8;
         }
-        // Compose this part's transform with the one we were given.
-        List<int> m2 = new List<int>();
-        m2.push((m[0] * a + m[2] * b) / 16384);
-        m2.push((m[1] * a + m[3] * b) / 16384);
-        m2.push((m[0] * c + m[2] * d) / 16384);
-        m2.push((m[1] * c + m[3] * d) / 16384);
-        m2.push(m[4] + (m[0] * dx + m[2] * dy) / 16384);
-        m2.push(m[5] + (m[1] * dx + m[3] * dy) / 16384);
-        if (!glyph_outline_budgeted(f, g, p, num, den, ox, oy, m2, depth + 1, budget)) { return false; }
-        more = (flags & 32) != 0;
         if (!r.ok) { return false; }
+        List<int> next = compose_matrix(m, a, b, c, d);
+        int dx2 = mul_div(dx, num, den);
+        int dy2 = mul_div(dy, num, den);
+        int x = ox + mul_div(m[0], dx2, 16384) + mul_div(m[2], dy2, 16384);
+        int y = oy + mul_div(m[1], dx2, 16384) + mul_div(m[3], dy2, 16384);
+        if (!glyph_outline_budgeted(f, g, p, num, den, x, y, next, depth + 1, budget)) { return false; }
+        parts += 1;
     }
-    return true;
+    if (instructions) {
+        if (pos > limit || limit - pos < 2) { return false; }
+        int instruction_length = r.u16(pos);
+        pos += 2;
+        if (!r.ok || instruction_length > limit - pos) { return false; }
+        pos += instruction_length;
+    }
+    return r.ok && pos <= limit;
 }
 
 List<int> identity_transform() {
