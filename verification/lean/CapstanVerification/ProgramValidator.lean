@@ -167,7 +167,7 @@ structure RawSingleFrameProgram (n m : Nat) (types : RegTypes n) where
   entry : Nat
   returnType : RawReturnType
 
-/-- Successful validation produces a program in the conservative proof profile. -/
+/-- Lower-level typed conversion; use `validateSingleFrameProfile` for admission. -/
 def validateSingleFrameProgram {n m : Nat} {types : RegTypes n}
     (raw : RawSingleFrameProgram n m types) : Option (FiniteProgram n m types) := do
   let entry ← finOfNat? (m + 1) raw.entry
