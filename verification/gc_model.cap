@@ -270,7 +270,11 @@ bool gc_same_id_set(List<int> left, List<int> right) {
     return true;
 }
 
-GCRef gc_ref(int id, int generation) {\n    return new GCRef{id: id, generation: generation};\n}\n\nGCObject gc_object(int id, int kind) {
+GCRef gc_ref(int id, int generation) {
+    return new GCRef{id: id, generation: generation};
+}
+
+GCObject gc_object(int id, int kind) {
     return new GCObject{
         id: id, generation: 1, kind: kind, allocated: true,
         marked: false, secret_wiped: false
