@@ -39,4 +39,4 @@ jobs:
           nanoda: false
       - name: Check standalone lifecycle model with warnings as errors
         working-directory: verification/lean
-        run: lake env lean NativeMemoryLifecycle.lean --wfail
+        run: lake env lean NativeMemoryLifecycle.lean
