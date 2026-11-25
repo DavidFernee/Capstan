@@ -4,8 +4,7 @@
 // Size includes the 8-byte header, is four-byte aligned, and is at most 65,532.
 // No allocation or copy is made from the untrusted declared size.
 //
-// Result: [1, object_id, size, opcode, end_offset] complete;
-// [0, object_id, size, opcode, 0] incomplete; [-1,0,0,0,0] invalid.
+// Returns a typed WaylandFrameHeader: status 1 complete, 0 incomplete, -1 invalid.
 // Opcode/interface/argument validation belongs to the next protocol layer.
 const int WAYLAND_HEADER_BYTES = 8;
 const int WAYLAND_MAX_FRAME_BYTES = 65532;
