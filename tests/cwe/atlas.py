@@ -607,6 +607,11 @@ add(20, "Improper input validation (laundering through Boolean comparison)", "ga
     "int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; string output = to_text(matched); bool ok = write_file(\"out.txt\", output); } return 0; }",
     note="The current byte-reconstruction sink is not a general information-flow sink. Boolean comparison provenance is now tracked through locals, but the compiler does not yet define a policy for every control-flow observation.")
 
+add(20, "Improper input validation (laundering through a Boolean helper)", "reject",
+    "bool identity_bool(bool value) { return value; }\n"
+    "int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; bool copied = identity_bool(matched); string key = to_text(copied); Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "CWE-20", "Boolean parameter-to-return summaries must preserve derived comparison results through helper calls.")
+
 add(20, "Improper input validation (laundering through to_text)", "reject",
     "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); string key = to_text(input.at(0)); if (let value = table.get(key)) { println(value); } } return 0; }",
     "CWE-20", "Numeric-to-text conversion must preserve provenance before a trusted map lookup.")
