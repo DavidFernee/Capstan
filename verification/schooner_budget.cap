@@ -1,0 +1,316 @@
+// Schooner S1: bounded compositional resource-budget reference model.
+//
+// A split moves budget from one account to another; it never copies it.
+// Consumption moves units from an account to the spent ledger. Return consumes
+// a live generation-tagged lease exactly once. All rejected operations return
+// the original state unchanged.
+//
+// This finite model is sequential and has one root, one child and one
+// grandchild account. It is not yet a runtime quota implementation, a proof
+// of concurrency safety, or a proof that physical resources match abstract
+// units. The bounded total keeps all conservation arithmetic in range.
+
+const int SBM_MAX_TOTAL = 1000000;
+const int SBM_ROOT = 0;
+const int SBM_CHILD = 1;
+const int SBM_GRANDCHILD = 2;
+const int SBM_MAX_GENERATION = 0x7FFFFFFFFFFFFFFF;
+
+struct SBMState {
+    int total;
+    int root_balance;
+    int child_balance;
+    int grandchild_balance;
+    int spent;
+    int child_generation;
+    int grandchild_generation;
+    bool child_live;
+    bool grandchild_live;
+}
+
+struct SBMHandle {
+    int level;
+    int generation;
+}
+
+struct SBMTransition {
+    bool ok;
+    SBMState state;
+    SBMHandle handle;
+    string error;
+}
+
+SBMHandle sbm_empty_handle() {
+    return new SBMHandle{level: -1, generation: 0};
+}
+
+SBMState sbm_initial(int total) {
+    return new SBMState{
+        total: total, root_balance: total, child_balance: 0,
+        grandchild_balance: 0, spent: 0, child_generation: 0,
+        grandchild_generation: 0, child_live: false, grandchild_live: false
+    };
+}
+
+SBMState sbm_copy(SBMState source) {
+    return new SBMState{
+        total: source.total, root_balance: source.root_balance,
+        child_balance: source.child_balance,
+        grandchild_balance: source.grandchild_balance,
+        spent: source.spent, child_generation: source.child_generation,
+        grandchild_generation: source.grandchild_generation,
+        child_live: source.child_live, grandchild_live: source.grandchild_live
+    };
+}
+
+SBMTransition sbm_reject(SBMState before, string error) {
+    return new SBMTransition{
+        ok: false, state: before, handle: sbm_empty_handle(), error: error
+    };
+}
+
+SBMTransition sbm_accept(SBMState after, SBMHandle handle) {
+    return new SBMTransition{ok: true, state: after, handle: handle, error: ""};
+}
+
+bool sbm_invariant(SBMState state) {
+    if (state.total < 0 || state.total > SBM_MAX_TOTAL ||
+        state.root_balance < 0 || state.child_balance < 0 ||
+        state.grandchild_balance < 0 || state.spent < 0) { return false; }
+    if (state.root_balance + state.child_balance +
+        state.grandchild_balance + state.spent != state.total) { return false; }
+    if (state.child_generation < 0 || state.grandchild_generation < 0) { return false; }
+    if (state.grandchild_live && !state.child_live) { return false; }
+    if (!state.child_live && state.child_balance != 0) { return false; }
+    if (!state.grandchild_live && state.grandchild_balance != 0) { return false; }
+    return true;
+}
+
+bool sbm_child_valid(SBMState state, SBMHandle handle) {
+    return state.child_live && handle.level == SBM_CHILD &&
+        handle.generation == state.child_generation;
+}
+
+bool sbm_grandchild_valid(SBMState state, SBMHandle handle) {
+    return state.grandchild_live && handle.level == SBM_GRANDCHILD &&
+        handle.generation == state.grandchild_generation;
+}
+
+// Split is a transfer: the parent is debited in the same transition that
+// creates the child's fresh lease. No independent copy of the amount exists.
+SBMTransition sbm_split_root(SBMState before, int amount) {
+    if (!sbm_invariant(before)) { return sbm_reject(before, "invalid_state"); }
+    if (amount <= 0) { return sbm_reject(before, "non_positive_split"); }
+    if (before.child_live) { return sbm_reject(before, "child_lease_live"); }
+    if (amount > before.root_balance) { return sbm_reject(before, "insufficient_root_budget"); }
+    if (before.child_generation == SBM_MAX_GENERATION) {
+        return sbm_reject(before, "generation_exhausted");
+    }
+    SBMState after = sbm_copy(before);
+    after.root_balance -= amount;
+    after.child_balance = amount;
+    after.child_generation += 1;
+    after.child_live = true;
+    SBMHandle handle = new SBMHandle{
+        level: SBM_CHILD, generation: after.child_generation
+    };
+    if (!sbm_invariant(after)) { return sbm_reject(before, "transition_invariant"); }
+    return sbm_accept(after, handle);
+}
+
+SBMTransition sbm_split_child(SBMState before, SBMHandle parent, int amount) {
+    if (!sbm_invariant(before)) { return sbm_reject(before, "invalid_state"); }
+    if (!sbm_child_valid(before, parent)) { return sbm_reject(before, "invalid_parent_lease"); }
+    if (amount <= 0) { return sbm_reject(before, "non_positive_split"); }
+    if (before.grandchild_live) { return sbm_reject(before, "grandchild_lease_live"); }
+    if (amount > before.child_balance) { return sbm_reject(before, "insufficient_child_budget"); }
+    if (before.grandchild_generation == SBM_MAX_GENERATION) {
+        return sbm_reject(before, "generation_exhausted");
+    }
+    SBMState after = sbm_copy(before);
+    after.child_balance -= amount;
+    after.grandchild_balance = amount;
+    after.grandchild_generation += 1;
+    after.grandchild_live = true;
+    SBMHandle handle = new SBMHandle{
+        level: SBM_GRANDCHILD, generation: after.grandchild_generation
+    };
+    if (!sbm_invariant(after)) { return sbm_reject(before, "transition_invariant"); }
+    return sbm_accept(after, handle);
+}
+
+SBMTransition sbm_consume_root(SBMState before, int amount) {
+    if (!sbm_invariant(before)) { return sbm_reject(before, "invalid_state"); }
+    if (amount <= 0) { return sbm_reject(before, "non_positive_consume"); }
+    if (amount > before.root_balance) { return sbm_reject(before, "insufficient_root_budget"); }
+    SBMState after = sbm_copy(before);
+    after.root_balance -= amount;
+    after.spent += amount;
+    if (!sbm_invariant(after)) { return sbm_reject(before, "transition_invariant"); }
+    return sbm_accept(after, sbm_empty_handle());
+}
+
+SBMTransition sbm_consume_child(SBMState before, SBMHandle handle, int amount) {
+    if (!sbm_invariant(before)) { return sbm_reject(before, "invalid_state"); }
+    if (!sbm_child_valid(before, handle)) { return sbm_reject(before, "invalid_child_lease"); }
+    if (amount <= 0) { return sbm_reject(before, "non_positive_consume"); }
+    if (amount > before.child_balance) { return sbm_reject(before, "insufficient_child_budget"); }
+    SBMState after = sbm_copy(before);
+    after.child_balance -= amount;
+    after.spent += amount;
+    if (!sbm_invariant(after)) { return sbm_reject(before, "transition_invariant"); }
+    return sbm_accept(after, handle);
+}
+
+SBMTransition sbm_consume_grandchild(SBMState before, SBMHandle handle, int amount) {
+    if (!sbm_invariant(before)) { return sbm_reject(before, "invalid_state"); }
+    if (!sbm_grandchild_valid(before, handle)) {
+        return sbm_reject(before, "invalid_grandchild_lease");
+    }
+    if (amount <= 0) { return sbm_reject(before, "non_positive_consume"); }
+    if (amount > before.grandchild_balance) {
+        return sbm_reject(before, "insufficient_grandchild_budget");
+    }
+    SBMState after = sbm_copy(before);
+    after.grandchild_balance -= amount;
+    after.spent += amount;
+    if (!sbm_invariant(after)) { return sbm_reject(before, "transition_invariant"); }
+    return sbm_accept(after, handle);
+}
+
+// Return requires the exact live generation and is one-shot. A child cannot
+// return while a grandchild still owns a sub-budget.
+SBMTransition sbm_return_grandchild(SBMState before, SBMHandle handle) {
+    if (!sbm_invariant(before)) { return sbm_reject(before, "invalid_state"); }
+    if (!sbm_grandchild_valid(before, handle)) {
+        return sbm_reject(before, "invalid_grandchild_lease");
+    }
+    SBMState after = sbm_copy(before);
+    after.child_balance += before.grandchild_balance;
+    after.grandchild_balance = 0;
+    after.grandchild_live = false;
+    if (!sbm_invariant(after)) { return sbm_reject(before, "transition_invariant"); }
+    return sbm_accept(after, sbm_empty_handle());
+}
+
+SBMTransition sbm_return_child(SBMState before, SBMHandle handle) {
+    if (!sbm_invariant(before)) { return sbm_reject(before, "invalid_state"); }
+    if (!sbm_child_valid(before, handle)) { return sbm_reject(before, "invalid_child_lease"); }
+    if (before.grandchild_live) { return sbm_reject(before, "descendant_lease_live"); }
+    SBMState after = sbm_copy(before);
+    after.root_balance += before.child_balance;
+    after.child_balance = 0;
+    after.child_live = false;
+    if (!sbm_invariant(after)) { return sbm_reject(before, "transition_invariant"); }
+    return sbm_accept(after, sbm_empty_handle());
+}
+
+bool sbm_same_state(SBMState a, SBMState b) {
+    return a.total == b.total && a.root_balance == b.root_balance &&
+        a.child_balance == b.child_balance &&
+        a.grandchild_balance == b.grandchild_balance && a.spent == b.spent &&
+        a.child_generation == b.child_generation &&
+        a.grandchild_generation == b.grandchild_generation &&
+        a.child_live == b.child_live && a.grandchild_live == b.grandchild_live;
+}
+
+test "SBM nested splits conserve the root budget" {
+    SBMState state = sbm_initial(100);
+    assert(sbm_invariant(state));
+    SBMTransition child = sbm_split_root(state, 60);
+    assert(child.ok);
+    state = child.state;
+    assert(state.root_balance == 40 && state.child_balance == 60);
+    SBMTransition grandchild = sbm_split_child(state, child.handle, 25);
+    assert(grandchild.ok);
+    state = grandchild.state;
+    assert(state.root_balance == 40 && state.child_balance == 35);
+    assert(state.grandchild_balance == 25 && sbm_invariant(state));
+}
+
+test "SBM consumption is charged exactly once to the global spent ledger" {
+    SBMState state = sbm_initial(100);
+    SBMTransition child = sbm_split_root(state, 60);
+    assert(child.ok);
+    state = child.state;
+    SBMTransition grandchild = sbm_split_child(state, child.handle, 25);
+    assert(grandchild.ok);
+    state = grandchild.state;
+    SBMTransition consumed = sbm_consume_grandchild(state, grandchild.handle, 9);
+    assert(consumed.ok);
+    state = consumed.state;
+    assert(state.grandchild_balance == 16 && state.spent == 9);
+    assert(sbm_invariant(state));
+}
+
+test "SBM parent cannot reclaim a child while a descendant lease is live" {
+    SBMState state = sbm_initial(100);
+    SBMTransition child = sbm_split_root(state, 60);
+    assert(child.ok);
+    state = child.state;
+    SBMTransition grandchild = sbm_split_child(state, child.handle, 25);
+    assert(grandchild.ok);
+    state = grandchild.state;
+    SBMTransition early = sbm_return_child(state, child.handle);
+    assert(!early.ok && early.error == "descendant_lease_live");
+    assert(sbm_same_state(early.state, state));
+}
+
+test "SBM returns conserve unused nested budget and reject replay" {
+    SBMState state = sbm_initial(100);
+    SBMTransition child = sbm_split_root(state, 60);
+    assert(child.ok);
+    state = child.state;
+    SBMTransition grandchild = sbm_split_child(state, child.handle, 25);
+    assert(grandchild.ok);
+    state = grandchild.state;
+    SBMTransition use = sbm_consume_grandchild(state, grandchild.handle, 5);
+    assert(use.ok);
+    state = use.state;
+    SBMTransition returned_grandchild = sbm_return_grandchild(state, grandchild.handle);
+    assert(returned_grandchild.ok);
+    state = returned_grandchild.state;
+    assert(state.child_balance == 55 && state.grandchild_balance == 0);
+    SBMTransition returned_child = sbm_return_child(state, child.handle);
+    assert(returned_child.ok);
+    state = returned_child.state;
+    assert(state.root_balance == 95 && state.child_balance == 0);
+    assert(state.spent == 5 && sbm_invariant(state));
+    SBMTransition replay = sbm_return_child(state, child.handle);
+    assert(!replay.ok && replay.error == "invalid_child_lease");
+    assert(sbm_same_state(replay.state, state));
+}
+
+test "SBM exhaustion and invalid splits are failure atomic" {
+    SBMState state = sbm_initial(10);
+    SBMTransition zero = sbm_split_root(state, 0);
+    assert(!zero.ok && zero.error == "non_positive_split");
+    assert(sbm_same_state(zero.state, state));
+    SBMTransition too_large = sbm_split_root(state, 11);
+    assert(!too_large.ok && too_large.error == "insufficient_root_budget");
+    assert(sbm_same_state(too_large.state, state));
+    SBMTransition child = sbm_split_root(state, 8);
+    assert(child.ok);
+    state = child.state;
+    SBMTransition duplicate = sbm_split_root(state, 1);
+    assert(!duplicate.ok && duplicate.error == "child_lease_live");
+    assert(sbm_same_state(duplicate.state, state));
+    SBMTransition overspend = sbm_consume_child(state, child.handle, 9);
+    assert(!overspend.ok && overspend.error == "insufficient_child_budget");
+    assert(sbm_same_state(overspend.state, state));
+    SBMTransition stale = sbm_consume_child(state,
+        new SBMHandle{level: SBM_CHILD, generation: child.handle.generation + 1}, 1);
+    assert(!stale.ok && stale.error == "invalid_child_lease");
+    assert(sbm_same_state(stale.state, state));
+}
+
+test "SBM zero and over-budget consumption never mutate accounting" {
+    SBMState state = sbm_initial(12);
+    SBMTransition zero = sbm_consume_root(state, 0);
+    assert(!zero.ok && sbm_same_state(zero.state, state));
+    SBMTransition too_much = sbm_consume_root(state, 13);
+    assert(!too_much.ok && sbm_same_state(too_much.state, state));
+    SBMTransition valid = sbm_consume_root(state, 7);
+    assert(valid.ok && valid.state.root_balance == 5 && valid.state.spent == 7);
+    assert(sbm_invariant(valid.state));
+}
