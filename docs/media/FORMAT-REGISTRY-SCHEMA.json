@@ -10,6 +10,24 @@
     "registry_version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+\\.[0-9]+$"},
     "records":{"type":"array","items":{"$ref":"#/$defs/record"}}
   },
+  "allOf":[
+    {
+      "if":{"properties":{"assurance_level":{"enum":["reviewed","release-assured"]}},"required":["assurance_level"]},
+      "then":{
+        "properties":{
+          "licence_review":{"const":"reviewed-clear"},
+          "patent_review":{"const":"reviewed-clear"},
+          "test_status":{"const":"passed"},
+          "fuzz_status":{"const":"passed"}
+        },
+        "required":["licence_review","patent_review","test_status","fuzz_status"]
+      }
+    },
+    {
+      "if":{"properties":{"assurance_level":{"const":"release-assured"}},"required":["assurance_level"]},
+      "then":{"properties":{"corpus_revision":{"not":{"const":"none"}}},"required":["corpus_revision"]}
+    }
+  ],
   "$defs":{
     "review":{"enum":["not-reviewed","reviewed-clear","restricted","unknown"]},
     "record":{
