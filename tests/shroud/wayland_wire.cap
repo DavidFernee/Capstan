@@ -120,8 +120,19 @@ int main() {
     span = wayland_frame_array(wayland_test_bytes(joined), first, 4);
     if (span.status != -1) { return 29; }
 
+
+    // Caller-supplied frame metadata is not trusted: it must match the wire header.
+    WaylandFrameHeader forged = new WaylandFrameHeader{status: 1, object_id: 99,
+        size: first.size, opcode: first.opcode, end_offset: first.end_offset};
+    span = wayland_frame_array(wayland_test_bytes(joined), forged, 8);
+    if (span.status != -1) { return 30; }
+    forged = new WaylandFrameHeader{status: 1, object_id: first.object_id,
+        size: first.size, opcode: first.opcode, end_offset: 12};
+    span = wayland_frame_array(wayland_test_bytes(joined), forged, 8);
+    if (span.status != -1) { return 31; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing and payload spans: 29 adversarial assertions passed");
+    println("Wayland framing and payload spans: 31 adversarial assertions passed");
     return 0;
 }

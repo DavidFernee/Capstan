@@ -113,6 +113,10 @@ WaylandPayloadSpan wayland_frame_payload_span(Tainted bytes, WaylandFrameHeader 
     if (frame.status != 1 || !wayland_frame_size_valid(frame.size)) { return wayland_bad_payload_span(); }
     if (frame.end_offset < frame.size || frame.end_offset > bytes.len()) { return wayland_bad_payload_span(); }
     int frame_start = frame.end_offset - frame.size;
+    WaylandFrameHeader actual = wayland_frame_header(bytes, frame_start);
+    if (actual.status != 1 || actual.object_id != frame.object_id
+        || actual.opcode != frame.opcode || actual.size != frame.size
+        || actual.end_offset != frame.end_offset) { return wayland_bad_payload_span(); }
     int payload_start = frame_start + WAYLAND_HEADER_BYTES;
     if (offset < payload_start || offset > frame.end_offset) { return wayland_bad_payload_span(); }
     return wayland_payload_span(bytes, offset, frame.end_offset, nul_terminated);
