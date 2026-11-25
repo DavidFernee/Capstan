@@ -391,3 +391,22 @@ test "SCM delegated slot revocation advances generation on reuse" {
     assert(!scm_resolves(second.state, first.handle, SCM_RIGHT_READ));
     assert(scm_resolves(second.state, second.handle, SCM_RIGHT_WRITE));
 }
+
+test "SCM exhaustively checks every non-empty rights subset in the bounded domain" {
+    for (int parent_rights = 1; parent_rights <= SCM_RIGHT_ALL; parent_rights += 1) {
+        for (int requested = 1; requested <= SCM_RIGHT_ALL; requested += 1) {
+            SCMState state = scm_initial();
+            SCMTransition root = scm_issue_root(state, parent_rights);
+            assert(root.ok);
+            SCMTransition child = scm_attenuate(root.state, root.handle, requested);
+            bool subset = (requested & parent_rights) == requested;
+            assert(child.ok == subset);
+            if (subset) {
+                assert(scm_invariant(child.state));
+                assert(scm_resolves(child.state, child.handle, requested));
+            } else {
+                assert(scm_same_state(child.state, root.state));
+            }
+        }
+    }
+}
