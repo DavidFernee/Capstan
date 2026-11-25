@@ -4,6 +4,24 @@
 **Related work:** issues #229 and #249; PRs #239, #248 and #254  
 **Design dependencies:** the concurrency safety core and concurrency guarantee calculus
 
+## Implementation status (2026-11-25)
+
+A first bounded descriptor validator and interpreter now exists in
+`verification/protocol_automata.cap`, and is included in `tests/run.sh`.
+It accepts finite acyclic labelled transition systems with bounded state,
+role and transition counts; rejects duplicate (source, role, operation)
+labels, invalid endpoints, unreachable states, cycles and nonterminal dead
+ends; and interprets one enabled transition without mutating state on
+rejection. The first conformance fixture is a linear-message protocol.
+
+This implementation is deliberately narrower than the full design above.
+It does not yet encode endpoint ownership, message types, effects,
+capabilities, resource deltas, cancellation cleanup, duality between
+endpoints, or compiler refinement. The validator/interpreter is a research
+reference artefact, not a safe-profile language feature. Its current tests
+are submitted to CI; no passing result is claimed until exact-head runs
+complete.
+
 ## 1. Problem
 
 The first executable concurrency reference machine uses a fixed producer/consumer protocol. Its explicit phases already expose a useful design boundary: task scheduling, message ownership, queue occupancy, cancellation and resource accounting cannot be specified independently. A reusable language facility needs a protocol description that makes these relations explicit and admits machine-checkable conformance tests.
