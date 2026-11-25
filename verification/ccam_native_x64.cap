@@ -68,6 +68,45 @@ CCAMCallSite ccam_x64_find_call_site(CCAMFunction fn, int instruction_index) {
     };
 }
 
+string ccam_x64_output_data_label(int function_index, int instruction_index) {
+    return ".Lcap_out_f" + int_to_str(function_index) + "_i" + int_to_str(instruction_index);
+}
+
+void ccam_x64_emit_output_literals(List<string> output, List<CCAMFunction> functions) {
+    bool has_literals = false;
+    for (int f = 0; f < functions.len(); f += 1) {
+        for (int pc = 0; pc < functions[f].instructions.len(); pc += 1) {
+            CCAMInstruction instruction = functions[f].instructions[pc];
+            if (instruction.op == CCAM_OP_EMIT_BYTES && instruction.byte_data.len() > 0) {
+                has_literals = true;
+            }
+        }
+    }
+    if (!has_literals) { return; }
+
+    ccam_x64_line(output, ".section .rodata");
+    for (int f = 0; f < functions.len(); f += 1) {
+        for (int pc = 0; pc < functions[f].instructions.len(); pc += 1) {
+            CCAMInstruction instruction = functions[f].instructions[pc];
+            if (instruction.op != CCAM_OP_EMIT_BYTES || instruction.byte_data.len() == 0) {
+                continue;
+            }
+            ccam_x64_line(output, ccam_x64_output_data_label(f, pc) + ":");
+            int offset = 0;
+            while (offset < instruction.byte_data.len()) {
+                List<string> values = new List<string>();
+                int end = offset + 16;
+                if (end > instruction.byte_data.len()) { end = instruction.byte_data.len(); }
+                for (int i = offset; i < end; i += 1) {
+                    values.push(int_to_str(instruction.byte_data[i]));
+                }
+                ccam_x64_line(output, "    .byte " + join(values, ", "));
+                offset = end;
+            }
+        }
+    }
+}
+
 bool ccam_x64_emit_instruction(
     List<string> output,
     List<CCAMFunction> functions,
@@ -85,6 +124,47 @@ bool ccam_x64_emit_instruction(
     ccam_x64_line(output, "    jae .Lcap_trap_step_limit");
     ccam_x64_line(output, "    addq $1, %rax");
     ccam_x64_line(output, "    movq %rax, cap_steps(%rip)");
+
+    if (instruction.op == CCAM_OP_EMIT_BYTES) {
+        int byte_count = instruction.byte_data.len();
+        if (byte_count == 0) { return true; }
+        string label = ccam_x64_output_data_label(function_index, instruction_index);
+        string write_loop = label + "_write";
+        string retry = label + "_retry";
+        // Check the entire instruction against the global output budget before
+        // the first syscall. Positive partial writes are then accounted as they
+        // occur; an OS failure may leave a visible prefix and is not rollbackable.
+        ccam_x64_line(output, "    movq cap_output_count(%rip), %rax");
+        ccam_x64_line(output, "    movq $" + int_to_str(CCAM_MAX_OUTPUT_BYTES - byte_count) + ", %rcx");
+        ccam_x64_line(output, "    cmpq %rcx, %rax");
+        ccam_x64_line(output, "    ja .Lcap_trap_output_limit");
+        ccam_x64_line(output, "    leaq " + label + "(%rip), %rsi");
+        ccam_x64_line(output, "    movq $" + int_to_str(byte_count) + ", %rdx");
+        ccam_x64_line(output, "    xorq %r8, %r8");
+        ccam_x64_line(output, write_loop + ":");
+        ccam_x64_line(output, retry + ":");
+        ccam_x64_line(output, "    movq $1, %rax");
+        ccam_x64_line(output, "    movq $1, %rdi");
+        ccam_x64_line(output, "    syscall");
+        ccam_x64_line(output, "    cmpq $-4, %rax");
+        ccam_x64_line(output, "    jne " + label + "_not_eintr");
+        ccam_x64_line(output, "    addq $1, %r8");
+        ccam_x64_line(output, "    cmpq $64, %r8");
+        ccam_x64_line(output, "    ja .Lcap_output_failure");
+        ccam_x64_line(output, "    jmp " + retry);
+        ccam_x64_line(output, label + "_not_eintr:");
+        ccam_x64_line(output, "    testq %rax, %rax");
+        ccam_x64_line(output, "    jle .Lcap_output_failure");
+        ccam_x64_line(output, "    cmpq %rdx, %rax");
+        ccam_x64_line(output, "    ja .Lcap_output_failure");
+        ccam_x64_line(output, "    xorq %r8, %r8");
+        ccam_x64_line(output, "    addq %rax, %rsi");
+        ccam_x64_line(output, "    subq %rax, %rdx");
+        ccam_x64_line(output, "    addq %rax, cap_output_count(%rip)");
+        ccam_x64_line(output, "    testq %rdx, %rdx");
+        ccam_x64_line(output, "    jne " + write_loop);
+        return true;
+    }
 
     if (instruction.op == CCAM_OP_CONST_I) {
         ccam_x64_line(output, "    movabsq $" + int_to_str(instruction.int_value) + ", %rax");
@@ -362,6 +442,16 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, "    andq $-16, %rsp");
     ccam_x64_line(output, "    xorq %rbp, %rbp");
     ccam_x64_line(output, "    movq $1, cap_depth(%rip)");
+    // Ignore SIGPIPE so a closed stdout pipe becomes EPIPE from write(2),
+    // which the adapter converts into the documented output-failure status.
+    ccam_x64_line(output, "    movq $13, %rax");
+    ccam_x64_line(output, "    movq $13, %rdi");
+    ccam_x64_line(output, "    leaq cap_sigpipe_action(%rip), %rsi");
+    ccam_x64_line(output, "    xorq %rdx, %rdx");
+    ccam_x64_line(output, "    movq $8, %r10");
+    ccam_x64_line(output, "    syscall");
+    ccam_x64_line(output, "    testq %rax, %rax");
+    ccam_x64_line(output, "    js .Lcap_trap_signal_setup");
     ccam_x64_line(output, "    call " + ccam_x64_function_label(entry_function));
     ccam_x64_line(output, "    movq %rax, %rdi");
     ccam_x64_line(output, "    jmp .Lcap_exit");
@@ -370,6 +460,8 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
             return new CCAMNativeResult{ok: false, assembly: "", error: "unsupported_native_instruction_or_abi"};
         }
     }
+    ccam_x64_emit_output_literals(output, functions);
+    ccam_x64_line(output, ".text");
     ccam_x64_line(output, ".Lcap_trap_overflow:");
     ccam_x64_line(output, "    movq $70, %rdi");
     ccam_x64_line(output, "    jmp .Lcap_exit");
@@ -391,6 +483,15 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, ".Lcap_trap_stack_allocation:");
     ccam_x64_line(output, "    movq $75, %rdi");
     ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_trap_output_limit:");
+    ccam_x64_line(output, "    movq $76, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_output_failure:");
+    ccam_x64_line(output, "    movq $77, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_trap_signal_setup:");
+    ccam_x64_line(output, "    movq $78, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
     ccam_x64_line(output, ".Lcap_exit:");
     ccam_x64_line(output, "    movq $60, %rax");
     ccam_x64_line(output, "    syscall");
@@ -399,11 +500,13 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, "cap_steps: .zero 8");
     ccam_x64_line(output, "cap_depth: .zero 8");
     ccam_x64_line(output, "cap_stack_base: .zero 8");
+    ccam_x64_line(output, "cap_output_count: .zero 8");
     ccam_x64_line(output, ".data");
     ccam_x64_line(output, ".align 8");
     ccam_x64_line(output, "cap_max_steps: .quad " + int_to_str(max_steps));
     ccam_x64_line(output, "cap_max_depth: .quad " + int_to_str(max_depth));
     ccam_x64_line(output, "cap_stack_bytes: .quad " + int_to_str(stack_bytes));
+    ccam_x64_line(output, "cap_sigpipe_action: .quad 1, 0, 0, 0");
     ccam_x64_line(output, ".section .note.GNU-stack, \"\", @progbits");
     return new CCAMNativeResult{ok: true, assembly: join(output, ""), error: ""};
 }
@@ -585,4 +688,24 @@ test "CCAM x86-64 backend rejects unsupported argument counts" {
     });
     CCAMNativeResult native = ccam_x64_emit_linux_elf(functions, 0, 100, 16);
     assert(!native.ok && native.assembly == "");
+}
+
+
+test "CCAM x86-64 backend emits freestanding Hello World output" {
+    assert(ccam_x64_write_test_program(
+        "int main() { print(\"Hello, \"); println(\"World!\"); return 0; }",
+        "build/ccam-native-x64-hello.s", 100, 16));
+}
+
+test "CCAM x86-64 backend preserves NUL and UTF-8 output bytes" {
+    assert(ccam_x64_write_test_program(
+        "int main() { print(\"A" + char_str(92) + "0éB\"); return 0; }",
+        "build/ccam-native-x64-output-bytes.s", 100, 16));
+}
+
+
+test "CCAM x86-64 backend enforces dynamic output budget" {
+    assert(ccam_x64_write_test_program(
+        "int main() { int i = 0; while (i < 65537) { print(\"xxxxxxxxxxxxxxxx\"); i += 1; } return 0; }",
+        "build/ccam-native-x64-output-limit.s", 10000000, 16));
 }
