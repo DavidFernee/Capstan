@@ -12,8 +12,10 @@
 - byte-domain validation (`0..255`) and a defensive snapshot;
 - bounded `u8`, exact-byte, skip and big-endian `u32` reads;
 - explicit EOF, truncation, closed and invalid-state outcomes;
-- a five-dimensional aggregate ledger for input bytes, retained bytes, output bytes,
-  decoded units and work units, with one-shot reservation handles;
+- a twelve-dimensional live aggregate ledger for input bytes, retained bytes, output bytes,
+  decoded units, work units, allocation-object slots, metadata entries, queue slots,
+  worker slots, nesting slots, track slots and chunk slots, with one-shot reservation handles;
+- a separate monotonic consumption budget for cumulative input, output, decoded-unit and work charges;
 - all-dimensions-preflighted reserve and release operations;
 - an in-memory bounded byte sink with preflighted writes, copy-on-commit append, defensive snapshots and explicit close.
 
@@ -105,11 +107,7 @@ concurrent admission is made. Before the ledger is shared by workers or concurre
 producers, it requires a specified synchronisation/ownership model and adversarial
 concurrency tests (or a single-owner message-passing design that removes shared mutation).
 
-The ledger currently covers five dimensions only. Before parser implementation, expand
-the resource model to cover allocations, metadata entries, tracks, chunks, nesting,
-decoded samples, pixels, frames, queue depth, threads, CPU/work units, deadlines and
-bounded cleanup. Avoid double-charging the same physical allocation while ensuring
-retained references and derived outputs remain charged for their actual lifetime.
+The ledger now exposes twelve dimensions through `halyard_ledger_create_bounded`: the original input/retained/output/decoded/work dimensions plus allocation-object slots, metadata entries, queue slots, worker slots, nesting slots, track slots and chunk slots. These are logical admission quotas, not allocator-exact measurements. Parser/sample/frame allocations, deadlines, bounded cleanup and all retained-reference lifetimes are not yet fully coupled to live leases. Avoid double-charging the same physical allocation while ensuring retained references and derived outputs remain charged for their actual lifetime.
 
 ## 4. Monotonic consumption budget
 
@@ -159,10 +157,7 @@ and prevents further writes.
 
 This is not yet a process-memory bound: the copy-on-commit strategy temporarily retains
 both old and replacement lists, and list/object overhead is outside the payload count.
-The sink is not yet coupled to the aggregate ledger's output/retained/allocation charges,
-there is no lifetime-bound reservation, and allocator exhaustion remains a terminal
-runtime outcome rather than a recoverable sink error. It is a correctness prototype, not
-a hostile-input output boundary.
+The managed sink path now couples retained/output payload charges and logical allocation-object slots to its lease. Copy-on-commit append charges the replacement while the old payload remains live, then releases the old lease after commit. This accounts for logical payload and object-slot peak admission, not allocator metadata, list capacity, GC headers or transient runtime storage. The unmanaged low-level sink remains available for trusted composition. Allocator exhaustion remains a terminal runtime outcome rather than a recoverable sink error. It is a correctness prototype, not a hostile-input output boundary.
 
 ## 5.0 Concurrency policy and executable reference model
 
@@ -294,7 +289,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 8. Test obligations
 
-The regression suite is expressed as 45 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 45 Capstan `test` declarations in `lib/halyard/core.cap`; Shanty and Deadeye contain 11 and 8 declarations respectively.
 Run it with `bin/capstan test lib/halyard/core.cap`; the Shanty and Deadeye suites are invoked directly with `bin/capstan test lib/halyard/shanty.cap` and `bin/capstan test lib/halyard/deadeye.cap`. The module tests remain colocated Capstan declarations and are not wired through a Halyard-specific shell hook. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
