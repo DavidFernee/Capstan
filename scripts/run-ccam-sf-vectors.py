@@ -82,14 +82,28 @@ def vector_test(vector: dict) -> str:
         f"        register_types, code, {vector['max_steps']}, {RETURN_TYPES[vector['return_type']]});",
     ])
     if not accepted:
-        lines.extend([
-            "    assert(!created.ok);",
-            "    assert(created.state.steps == 0);",
-            "    assert(created.state.instructions.len() == 0);",
-            "    ccam_machine_step(created.state);",
-            "    assert(created.state.steps == 0);",
-            "}",
-        ])
+        if expected["normative_validation"] == "accept":
+            # SF-019 is normative-valid but excluded by the stricter Lean
+            # proof profile. Assert the concrete normative validator accepts
+            # it, and construct (but deliberately do not execute) the machine.
+            lines.extend([
+                "    CCAMValidationResult normative = ccam_validate_single_frame(",
+                f"        register_types, code, {RETURN_TYPES[vector['return_type']]});",
+                "    assert(normative.ok);",
+                "    assert(created.ok);",
+                "    assert(created.state.steps == 0);",
+                "    assert(created.state.instructions.len() == code.len());",
+                "}",
+            ])
+        else:
+            lines.extend([
+                "    assert(!created.ok);",
+                "    assert(created.state.steps == 0);",
+                "    assert(created.state.instructions.len() == 0);",
+                "    ccam_machine_step(created.state);",
+                "    assert(created.state.steps == 0);",
+                "}",
+            ])
         return "\n".join(lines)
 
     outcome = expected["outcome"]
@@ -162,21 +176,28 @@ def main() -> int:
                 if v["expected"]["profile_validation"] == "reject"
                 and v["expected"]["normative_validation"] == "reject"
                 and v["profile_entry"] == 0]
+    normative_only = [v for v in corpus["vectors"]
+                      if v["expected"]["profile_validation"] == "reject"
+                      and v["expected"]["normative_validation"] == "accept"]
     expected_ids = {f"SF-{i:03d}" for i in range(1, 21)} | {
         "SF-021", "SF-022", "SF-023"}
     out_of_profile_ids = {"SF-X01"}
     actual_ids = {v["id"] for v in corpus["vectors"]}
     actual_out_of_profile_ids = {v["id"] for v in corpus["out_of_profile"]}
     if (actual_ids != expected_ids or actual_out_of_profile_ids != out_of_profile_ids
-            or len(admitted) != 17 or len(rejected) != 4):
+            or len(admitted) != 17 or len(rejected) != 4
+            or len(normative_only) != 1 or normative_only[0]["id"] != "SF-019"):
         print(f"unexpected corpus partition: vectors={sorted(actual_ids)}, "
               f"out_of_profile={sorted(actual_out_of_profile_ids)}, "
-              f"admitted={len(admitted)}, rejected={len(rejected)}",
+              f"admitted={len(admitted)}, rejected={len(rejected)}, "
+              f"normative_only={[v['id'] for v in normative_only]}",
               file=sys.stderr)
         return 2
     by_id = {v["id"]: v for v in corpus["vectors"]}
     if (by_id["SF-019"]["expected"]["profile_execution"]["kind"] != "not_run"
             or by_id["SF-019"]["expected"]["normative_validation"] != "accept"
+            or by_id["SF-019"]["expected"]["profile_validation"] != "reject"
+            or by_id["SF-019"]["profile_entry"] != 0
             or by_id["SF-020"]["expected"]["normative_validation"] != "not_applicable"
             or by_id["SF-020"]["profile_entry"] == 0):
         print("normative-only or Lean-only vector disposition changed", file=sys.stderr)
@@ -185,7 +206,7 @@ def main() -> int:
         print("admitted vector has nonzero proof-profile entry", file=sys.stderr)
         return 2
 
-    generated = "\n\n".join(vector_test(v) for v in admitted + rejected) + "\n"
+    generated = "\n\n".join(vector_test(v) for v in admitted + rejected + normative_only) + "\n"
     build_dir = ROOT / "build"
     build_dir.mkdir(exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".cap",
@@ -215,9 +236,10 @@ def main() -> int:
         generated_path.unlink(missing_ok=True)
 
     print(f"CCAM-SF-P concrete evaluator: {len(admitted)} admitted vectors executed; "
-          f"{len(rejected)} rejected vectors confirmed non-executable")
-    print("SF-019 (normative-only), SF-020 (Lean/profile-only), and SF-X01 "
-          "(out-of-profile explicit trap) intentionally excluded from this driver.")
+          f"{len(rejected)} normative-invalid vectors rejected before execution; "
+          "SF-019 normative acceptance asserted without dispatch.")
+    print("SF-020 (Lean/profile-only) and SF-X01 "
+          "(out-of-profile explicit trap) remain outside the concrete driver.")
     return 0
 
 
