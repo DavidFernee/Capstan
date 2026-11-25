@@ -347,7 +347,22 @@ List<int> deadeye_mp4_se_test_avc1() {
     payload[26] = 0; payload[27] = 240; // height 240
     payload[40] = 0; payload[41] = 1; // one frame per sample entry
     payload[75] = 24; payload[76] = 255; payload[77] = 255;
-    List<int> avcc = [1,66,0,30,255,225, 0,2, 103,128, 1, 0,2, 104,0x80];
+    List<int> avcc = new List<int>();
+    avcc.push(1);
+    avcc.push(66);
+    avcc.push(0);
+    avcc.push(30);
+    avcc.push(255);
+    avcc.push(225);
+    avcc.push(0);
+    avcc.push(2);
+    avcc.push(103);
+    avcc.push(128);
+    avcc.push(1);
+    avcc.push(0);
+    avcc.push(2);
+    avcc.push(104);
+    avcc.push(0x80);
     deadeye_mp4_se_test_box(payload, 'a','v','c','C', avcc);
     List<int> entry = new List<int>();
     deadeye_mp4_se_test_box(entry, 'a','v','c','1', payload);
@@ -355,7 +370,15 @@ List<int> deadeye_mp4_se_test_avc1() {
 }
 
 List<int> deadeye_mp4_se_test_stsd(List<int> entry) {
-    List<int> stsd = [0,0,0,0, 0,0,0,1];
+    List<int> stsd = new List<int>();
+    stsd.push(0);
+    stsd.push(0);
+    stsd.push(0);
+    stsd.push(0);
+    stsd.push(0);
+    stsd.push(0);
+    stsd.push(0);
+    stsd.push(1);
     for (int i = 0; i < entry.len(); i += 1) { stsd.push(entry[i]); }
     return stsd;
 }
@@ -375,7 +398,23 @@ test "Deadeye rejects non-Baseline, malformed and encrypted AVC sample entries" 
     // avcC profile byte: stsd(8) + entry header(8) + visual fixed(78) + child header(8) + config version.
     bad_profile[8 + 8 + 78 + 8 + 1] = 100;
     assert(!deadeye_mp4_parse_stsd(bad_profile, 0, bad_profile.len()).ok);
-    List<int> encrypted = [0,0,0,0, 0,0,0,1, 0,0,0,8, 'e','n','c','v'];
+    List<int> encrypted = new List<int>();
+    encrypted.push(0);
+    encrypted.push(0);
+    encrypted.push(0);
+    encrypted.push(0);
+    encrypted.push(0);
+    encrypted.push(0);
+    encrypted.push(0);
+    encrypted.push(1);
+    encrypted.push(0);
+    encrypted.push(0);
+    encrypted.push(0);
+    encrypted.push(8);
+    encrypted.push('e');
+    encrypted.push('n');
+    encrypted.push('c');
+    encrypted.push('v');
     DeadeyeMp4SampleEntry rejected = deadeye_mp4_parse_stsd(
         encrypted, 0, encrypted.len()
     );
@@ -389,7 +428,23 @@ test "Deadeye rejects non-Baseline, malformed and encrypted AVC sample entries" 
         nested_stsd,0,nested_stsd.len()
     );
     assert(!nested_rejected.ok);
-    List<int> truncated = [0,0,0,0, 0,0,0,1, 0,0,0,100, 'a','v','c','1'];
+    List<int> truncated = new List<int>();
+    truncated.push(0);
+    truncated.push(0);
+    truncated.push(0);
+    truncated.push(0);
+    truncated.push(0);
+    truncated.push(0);
+    truncated.push(0);
+    truncated.push(1);
+    truncated.push(0);
+    truncated.push(0);
+    truncated.push(0);
+    truncated.push(100);
+    truncated.push('a');
+    truncated.push('v');
+    truncated.push('c');
+    truncated.push('1');
     assert(!deadeye_mp4_parse_stsd(truncated, 0, truncated.len()).ok);
 }
 
@@ -421,7 +476,15 @@ test "Deadeye rejects unsupported PCM widths, versions and extra entry boxes" {
     List<int> bad_version = deadeye_mp4_se_test_stsd(deadeye_mp4_se_test_sowt());
     bad_version[8 + 8 + 9] = 1;
     assert(!deadeye_mp4_parse_stsd(bad_version, 0, bad_version.len()).ok);
-    List<int> multi = [0,0,0,0, 0,0,0,2];
+    List<int> multi = new List<int>();
+    multi.push(0);
+    multi.push(0);
+    multi.push(0);
+    multi.push(0);
+    multi.push(0);
+    multi.push(0);
+    multi.push(0);
+    multi.push(2);
     List<int> valid = deadeye_mp4_se_test_sowt();
     for (int i = 0; i < valid.len(); i += 1) { multi.push(valid[i]); }
     for (int i = 0; i < valid.len(); i += 1) { multi.push(valid[i]); }
@@ -429,17 +492,77 @@ test "Deadeye rejects unsupported PCM widths, versions and extra entry boxes" {
 }
 
 test "Deadeye rejects avcC truncation, invalid NAL types and oversized declarations" {
-    List<int> short_config = [1,66,0,30,255,225,0];
+    List<int> short_config = new List<int>();
+    short_config.push(1);
+    short_config.push(66);
+    short_config.push(0);
+    short_config.push(30);
+    short_config.push(255);
+    short_config.push(225);
+    short_config.push(0);
     assert(!deadeye_mp4_parse_avcc(short_config, 0, short_config.len()).ok);
-    List<int> wrong_nal = [1,66,0,30,255,225,0,2,0x68,0x80,1,0,2,0x68,0x80];
+    List<int> wrong_nal = new List<int>();
+    wrong_nal.push(1);
+    wrong_nal.push(66);
+    wrong_nal.push(0);
+    wrong_nal.push(30);
+    wrong_nal.push(255);
+    wrong_nal.push(225);
+    wrong_nal.push(0);
+    wrong_nal.push(2);
+    wrong_nal.push(0x68);
+    wrong_nal.push(0x80);
+    wrong_nal.push(1);
+    wrong_nal.push(0);
+    wrong_nal.push(2);
+    wrong_nal.push(0x68);
+    wrong_nal.push(0x80);
     assert(!deadeye_mp4_parse_avcc(wrong_nal, 0, wrong_nal.len()).ok);
-    List<int> oversized = [1,66,0,30,255,225,255,255];
+    List<int> oversized = new List<int>();
+    oversized.push(1);
+    oversized.push(66);
+    oversized.push(0);
+    oversized.push(30);
+    oversized.push(255);
+    oversized.push(225);
+    oversized.push(255);
+    oversized.push(255);
     assert(!deadeye_mp4_parse_avcc(oversized, 0, oversized.len()).ok);
-    List<int> bad_reserved = [1,66,0,30,255,1, 0,2,103,128, 1,0,2,104,128];
+    List<int> bad_reserved = new List<int>();
+    bad_reserved.push(1);
+    bad_reserved.push(66);
+    bad_reserved.push(0);
+    bad_reserved.push(30);
+    bad_reserved.push(255);
+    bad_reserved.push(1);
+    bad_reserved.push(0);
+    bad_reserved.push(2);
+    bad_reserved.push(103);
+    bad_reserved.push(128);
+    bad_reserved.push(1);
+    bad_reserved.push(0);
+    bad_reserved.push(2);
+    bad_reserved.push(104);
+    bad_reserved.push(128);
     assert(!deadeye_mp4_parse_avcc(
         bad_reserved, 0, bad_reserved.len()
     ).ok);
-    List<int> bad_compatibility = [1,66,3,30,255,225, 0,2,103,128, 1,0,2,104,128];
+    List<int> bad_compatibility = new List<int>();
+    bad_compatibility.push(1);
+    bad_compatibility.push(66);
+    bad_compatibility.push(3);
+    bad_compatibility.push(30);
+    bad_compatibility.push(255);
+    bad_compatibility.push(225);
+    bad_compatibility.push(0);
+    bad_compatibility.push(2);
+    bad_compatibility.push(103);
+    bad_compatibility.push(128);
+    bad_compatibility.push(1);
+    bad_compatibility.push(0);
+    bad_compatibility.push(2);
+    bad_compatibility.push(104);
+    bad_compatibility.push(128);
     assert(!deadeye_mp4_parse_avcc(
         bad_compatibility, 0, bad_compatibility.len()
     ).ok);
