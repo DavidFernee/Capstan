@@ -3,13 +3,17 @@ import CapstanVerification.Validator
 namespace CapstanVerification
 
 /-!
-Whole-program validator for the current finite, single-frame machine fragment.
+Validator for the conservative single-frame proof profile.
 
 Raw indices are naturals. Successful validation converts every register and
-control-flow index to Fin, checks every instruction (including unreachable
-instructions), checks the entry point, and requires the final instruction to
-have an explicit control effect. The latter is exactly the invariant needed
-by FiniteProgram to rule out reachable sequential fall-through at the end.
+control-flow index to Fin and checks every instruction (including unreachable
+instructions) and the entry point. This proof profile additionally requires
+the final instruction to have an explicit control effect. That condition is
+sufficient to make the finite machine's clamped sequential successor safe,
+but it is stronger than normative CCAM v0.1: the normative validator permits
+an unreachable nonterminal final instruction when no reachable path falls
+off the function. Consequently this validator is not the complete normative
+CCAM acceptance predicate; it accepts a deliberately restricted profile.
 -/
 
 /-- All instruction constructors supported by the current single-frame machine. -/
@@ -163,7 +167,7 @@ structure RawSingleFrameProgram (n m : Nat) (types : RegTypes n) where
   entry : Nat
   returnType : RawReturnType
 
-/-- A successful whole-program validation produces the formal finite machine program. -/
+/-- Successful validation produces a program in the conservative proof profile. -/
 def validateSingleFrameProgram {n m : Nat} {types : RegTypes n}
     (raw : RawSingleFrameProgram n m types) : Option (FiniteProgram n m types) := do
   let entry ← finOfNat? (m + 1) raw.entry
@@ -208,7 +212,7 @@ theorem validateSingleFrameProgram_entry_sound
       rw [← he]
       exact hval
 
-/-- Every finite program has an explicit control effect at its final slot. -/
+/-- Every program accepted by this proof profile has an explicit final control effect. -/
 theorem finiteProgram_final_terminal
     {n m : Nat} {types : RegTypes n}
     (program : FiniteProgram n m types) :
