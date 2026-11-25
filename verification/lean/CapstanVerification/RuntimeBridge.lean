@@ -3,13 +3,20 @@ import CapstanVerification.Core
 namespace CapstanVerification
 
 /-!
-A refinement boundary for the Capstan-native CCAM register representation.
+An abstract register-file refinement boundary for the Capstan-native CCAM
+representation.
 
-The executable Capstan slice stores a declared type, an initialization bit,
-and separate integer/boolean payload slots in a list. The proof core uses a
-finite index and an optional typed value. This file states the relation between
-those representations and proves the read path commutes. It does not yet prove
-the mutable list writes or validator/index checks refine the finite model.
+This file relates a list of typed runtime-register records to the finite,
+indexed Lean register model. It proves list length, per-index type/value
+correspondence, typed reads, and successful abstract list-slot writes
+(including preservation of untouched slots and well-typedness).
+
+The records and list operations here are Lean models of the Capstan fields and
+operations. These lemmas do not mechanically connect to Capstan's object
+identity or concrete List implementation, nor do they prove the evaluator's
+whole-state transition refines the finite machine. The separate
+NativeRegisterBridge module makes the concrete field/tag mapping explicit;
+that too remains a representation-level bridge.
 -/
 
 /-- Abstract record matching the fields of the Capstan-native CCAM register. -/
