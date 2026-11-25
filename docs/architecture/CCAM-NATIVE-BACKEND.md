@@ -4,6 +4,10 @@
 **Input:** validated multi-function CCAM v0.1 scalar subset  
 **Target:** freestanding Linux x86-64 ELF, System V AMD64 calling convention, GNU assembler syntax
 
+## 1. Prototype loader security boundary
+
+The experimental driver bounds the import queue to 256 paths and aggregate source bytes to 64 MiB, in addition to the per-file compiler source limit. Import strings are checked for absolute paths and dot-segment traversal. This is **lexical filtering only**: the prototype does not resolve symlinks or prevent concurrent path replacement, and the initial source paths are supplied by the caller. Do not use this command to compile untrusted workspaces with access to sensitive host files. Descriptor-relative, no-follow import loading and canonical workspace confinement are required before the command can be treated as safe for untrusted projects.
+
 ## 1. Contract
 
 The native backend is a consumer of validated CCAM, not a second source-language compiler. It must not reinterpret source AST nodes or bypass structural validation. The pipeline is:
