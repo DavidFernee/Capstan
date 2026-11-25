@@ -285,7 +285,11 @@ Canvas new_recording_canvas(Pixmap pm) {
 }
 
 void display_list_append(Canvas cv, DisplayCommand cmd, int segments) {
-    if (cv.commands.len() >= MAX_DISPLAY_COMMANDS ||
+    // This helper is also a callable library function: do not assume its caller
+    // came through new_recording_canvas or supplied a non-negative budget charge.
+    if (!cv.recording || cv.budget.len() != 1 ||
+        cv.budget[0] < 0 || cv.budget[0] > MAX_DISPLAY_SEGMENTS ||
+        segments < 0 || cv.commands.len() >= MAX_DISPLAY_COMMANDS ||
         segments > MAX_DISPLAY_SEGMENTS - cv.budget[0]) {
         println("shroud: display list resource budget exceeded");
         exit(101);
