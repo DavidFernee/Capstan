@@ -409,8 +409,11 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                     int width = int_max(0, px1 - px0);
                     int height = int_max(0, py1 - py0);
                     int area = width * height;
-                    int row_factor = 1 + SUBSAMPLES * (3 + display_sort_levels(n));
-                    charge += n * height * row_factor + area;
+                    // Merge sort performs both comparisons and element copies at
+                    // each level; charge two full n-sized passes per level.
+                    int row_factor = 1 + SUBSAMPLES * (3 + 2 * display_sort_levels(n));
+                    charge += 2 * n + 2 * width + height * (SUBSAMPLES + 1) +
+                        n * height * row_factor + area;
                 }
                 if (!display_work_fits(work, charge)) { return false; }
                 work += charge;
