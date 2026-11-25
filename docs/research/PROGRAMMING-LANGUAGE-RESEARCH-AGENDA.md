@@ -539,6 +539,8 @@ The ultimate goal is not merely to make Capstan another attractive systems langu
 
 ## 13.1 F1 execution: language contract
 
+The selective literature synthesis is [F1-RELATED-WORK.md](../F1-RELATED-WORK.md); it identifies modal effects (2026), ownership-based information flow, resource-aware borrowing (2025) and two-sided resource analysis (2026 preprint) as important baselines. Its factored-judgement proposal is an experiment, not a settled architecture.
+
 The first language-contract research draft is [F1-LANGUAGE-CONTRACT.md](../F1-LANGUAGE-CONTRACT.md).
 It is deliberately a research draft, not a new normative specification or compiler feature.
 It records the current source-language baseline, proposes a syntax-neutral compositional
