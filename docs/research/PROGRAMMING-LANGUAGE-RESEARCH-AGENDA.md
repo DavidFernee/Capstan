@@ -535,3 +535,26 @@ The programme succeeds only if Capstan produces all of the following:
 The ultimate goal is not merely to make Capstan another attractive systems language. It is to discover and establish a different engineering proposition: software can carry verifiable statements about its behaviour, authority and resource consumption, and the toolchain can preserve and check those statements through execution.
 
 **The standard is not that Capstan claims to do what other languages cannot. The standard is that Capstan demonstrates, with independently checkable evidence, a coherent set of guarantees that users cannot obtain as an equally integrated and practical property from the conventional alternatives.**
+
+
+## 13.1 F1 execution: language contract
+
+The first language-contract research draft is [F1-LANGUAGE-CONTRACT.md](../F1-LANGUAGE-CONTRACT.md).
+It is deliberately a research draft, not a new normative specification or compiler feature.
+It records the current source-language baseline, proposes a syntax-neutral compositional
+judgement over types, ownership, authority, effects and resource budgets, and identifies
+ten unresolved design decisions that must be researched before dependent APIs are added.
+
+The immediate research question is whether a small set of mutually compatible judgements
+can compose these guarantees across calls, aliases, control flow, generics, modules, lowering
+and execution without collapsing distinct properties into an opaque type system. The first
+prototype must compare at least two viable models (combined judgement and factored judgements),
+state soundness conditions, construct counterexamples, and measure checker complexity and
+diagnostic quality. No syntax or implementation strategy is selected by this draft.
+
+The current CWE atlas records six distinct open gaps (CWE-116, CWE-798, CWE-916, CWE-862,
+CWE-306 and CWE-79). F1 treats them as blockers for any Safe-profile claim and requires
+positive controls and adversarial bypass coverage; it does not presume that a type-system
+change alone closes them. The current C-backed runtime, Python bootstrap, and model-to-
+implementation proof gaps remain part of the disclosed trusted-base boundary.
+
