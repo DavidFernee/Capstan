@@ -72,7 +72,7 @@
         {
           "op": "const_i",
           "dst": 0,
-          "value": 9223372036854775807
+          "value": 9223372036854776000
         },
         {
           "op": "const_i",
@@ -121,7 +121,7 @@
         {
           "op": "const_i",
           "dst": 0,
-          "value": -9223372036854775808
+          "value": -9223372036854776000
         },
         {
           "op": "const_i",
@@ -170,7 +170,7 @@
         {
           "op": "const_i",
           "dst": 0,
-          "value": -9223372036854775808
+          "value": -9223372036854776000
         },
         {
           "op": "const_i",
@@ -829,6 +829,159 @@
         "steps": 0
       },
       "notes": "profile_entry belongs to RawSingleFrameProgram in the Lean proof harness; normative CCAM invocation begins at instruction zero and has no user-supplied per-function entry field."
+    },
+    {
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "id": "SF-021",
+      "name": "checked subtraction returns the expected signed result",
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 50
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 8
+        },
+        {
+          "op": "sub_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 42
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "steps": 4
+      }
+    },
+    {
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "id": "SF-022",
+      "name": "checked multiplication returns the expected signed result",
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 6
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 7
+        },
+        {
+          "op": "mul_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 42
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "steps": 4
+      }
+    },
+    {
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "id": "SF-023",
+      "name": "multiplication overflow traps at the arithmetic instruction",
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 4611686018427388000
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 2
+        },
+        {
+          "op": "mul_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "trap",
+          "code": "integer_overflow",
+          "pc": 2
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2
+        ],
+        "steps": 3
+      }
     }
   ],
   "out_of_profile": [
