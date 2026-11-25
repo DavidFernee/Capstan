@@ -372,3 +372,118 @@ test "Halyard ledger rejects negative limits and charges" {
         assert(false);
     }
 }
+
+test "Halyard exact reads exhaustively preserve cursor boundaries" {
+    for (int count = 0; count <= 5; count += 1) {
+        List<int> bytes = new List<int>();
+        bytes.push(10); bytes.push(20); bytes.push(30); bytes.push(40);
+        HalyardByteSourceResult made = halyard_source_from_list(bytes, 4);
+        assert(made.ok);
+        if (let source = made.source) {
+            HalyardBytesResult got = halyard_read_exact(source, count);
+            if (count <= 4) {
+                assert(got.ok && got.bytes.len() == count);
+                assert(halyard_source_remaining(source) == 4 - count);
+            } else {
+                assert(!got.ok && got.error == "truncated");
+                assert(halyard_source_remaining(source) == 4);
+            }
+        } else {
+            assert(false);
+        }
+    }
+}
+
+test "Halyard five-dimensional reservations exhaustively match the admission predicate" {
+    for (int a = 0; a <= 2; a += 1) {
+        for (int b = 0; b <= 2; b += 1) {
+            for (int c = 0; c <= 2; c += 1) {
+                for (int d = 0; d <= 2; d += 1) {
+                    for (int e = 0; e <= 2; e += 1) {
+                        HalyardLedgerResult made = halyard_ledger_create(2, 2, 2, 2, 2);
+                        assert(made.ok);
+                        if (let ledger = made.ledger) {
+                            HalyardBudgetCharge base = new HalyardBudgetCharge{
+                                input_bytes: 1, retained_bytes: 1, output_bytes: 1,
+                                decoded_units: 1, work_units: 1
+                            };
+                            assert(halyard_ledger_reserve(ledger, base));
+                            HalyardBudgetCharge request = new HalyardBudgetCharge{
+                                input_bytes: a, retained_bytes: b, output_bytes: c,
+                                decoded_units: d, work_units: e
+                            };
+                            bool expected = a <= 1 && b <= 1 && c <= 1 && d <= 1 && e <= 1;
+                            bool actual = halyard_ledger_reserve(ledger, request);
+                            assert(actual == expected);
+                            int add_a = expected ? a : 0;
+                            int add_b = expected ? b : 0;
+                            int add_c = expected ? c : 0;
+                            int add_d = expected ? d : 0;
+                            int add_e = expected ? e : 0;
+                            assert(ledger.used_input_bytes == 1 + add_a);
+                            assert(ledger.used_retained_bytes == 1 + add_b);
+                            assert(ledger.used_output_bytes == 1 + add_c);
+                            assert(ledger.used_decoded_units == 1 + add_d);
+                            assert(ledger.used_work_units == 1 + add_e);
+                            if (expected) { assert(halyard_ledger_release(ledger, request)); }
+                            assert(halyard_ledger_release(ledger, base));
+                            assert(ledger.used_input_bytes == 0);
+                            assert(ledger.used_retained_bytes == 0);
+                            assert(ledger.used_output_bytes == 0);
+                            assert(ledger.used_decoded_units == 0);
+                            assert(ledger.used_work_units == 0);
+                        } else {
+                            assert(false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "Halyard release rejects underflow independently in every dimension" {
+    for (int dimension = 0; dimension < 5; dimension += 1) {
+        HalyardLedgerResult made = halyard_ledger_create(2, 2, 2, 2, 2);
+        assert(made.ok);
+        if (let ledger = made.ledger) {
+            HalyardBudgetCharge one = new HalyardBudgetCharge{
+                input_bytes: 1, retained_bytes: 1, output_bytes: 1,
+                decoded_units: 1, work_units: 1
+            };
+            assert(halyard_ledger_reserve(ledger, one));
+            HalyardBudgetCharge invalid_release = new HalyardBudgetCharge{
+                input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+                decoded_units: 0, work_units: 0
+            };
+            if (dimension == 0) { invalid_release.input_bytes = 2; }
+            if (dimension == 1) { invalid_release.retained_bytes = 2; }
+            if (dimension == 2) { invalid_release.output_bytes = 2; }
+            if (dimension == 3) { invalid_release.decoded_units = 2; }
+            if (dimension == 4) { invalid_release.work_units = 2; }
+            assert(!halyard_ledger_release(ledger, invalid_release));
+            assert(ledger.used_input_bytes == 1);
+            assert(ledger.used_retained_bytes == 1);
+            assert(ledger.used_output_bytes == 1);
+            assert(ledger.used_decoded_units == 1);
+            assert(ledger.used_work_units == 1);
+        } else {
+            assert(false);
+        }
+    }
+}
+
+test "Halyard ledger rejects corrupted public state" {
+    HalyardLedgerResult made = halyard_ledger_create(4, 4, 4, 4, 4);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        ledger.used_work_units = -1;
+        HalyardBudgetCharge zero = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0
+        };
+        assert(!halyard_ledger_reserve(ledger, zero));
+    } else {
+        assert(false);
+    }
+}
