@@ -85,6 +85,13 @@ else
   bad "bounded concurrency reference machine" "$out"
 fi
 
+section "Capstan-native verification: Halyard single-owner resource admission"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/halyard_resource_actor.cap" 2>&1)"; then
+  ok "bounded FIFO admission, serial resource accounting, failure atomicity and one-shot release"
+else
+  bad "Halyard resource actor model" "$out"
+fi
+
 section "Capstan-native verification: finite protocol automata"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
   ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
@@ -286,6 +293,16 @@ if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
 else
   echo "  skip  sanitizers not available for $CC"
 fi
+
+section "halyard: Capstan-native Media Core, Shanty and Deadeye"
+for media_file in "$ROOT/lib/halyard/core.cap" "$ROOT/lib/halyard/shanty.cap" "$ROOT/lib/halyard/deadeye.cap"; do
+  media_name="${media_file#$ROOT/}"
+  if out="$( "$ROOT/bin/capstan" test "$media_file" 2>&1)"; then
+    ok "$media_name ($out)"
+  else
+    bad "$media_name" "$out"
+  fi
+done
 
 section "gc"
 "$C" build -o "$tmp/churn.c" "$ROOT/tests/gc/churn.cap" >/dev/null && "$CC" $CFLAGS "$tmp/churn.c" -o "$tmp/churn"

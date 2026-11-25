@@ -1,0 +1,614 @@
+// Shanty — first Capstan-native audio vertical slice.
+// Bounded RIFF/WAVE PCM parsing and deterministic integer sample decoding.
+// This module has no filesystem, network, device, C ABI or third-party codec authority.
+
+import "core.cap";
+
+const int SHANTY_WAV_MAX_CHUNKS = 1024;
+const int SHANTY_WAV_MAX_INPUT_BYTES = 8388608;
+const int SHANTY_WAV_MAX_CHANNELS = 8;
+const int SHANTY_WAV_MAX_SAMPLE_RATE = 384000;
+
+struct ShantyWave {
+    int sample_rate;
+    int channels;
+    int bits_per_sample;
+    int block_align;
+    int byte_rate;
+    List<int> pcm_bytes;
+}
+
+struct ShantyWaveResult {
+    bool ok;
+    ShantyWave? wave;
+    string error;
+}
+
+struct ShantyPcmBuffer {
+    int sample_rate;
+    int channels;
+    int bits_per_sample;
+    int frame_count;
+    List<int> samples;
+}
+
+struct ShantyPcmResult {
+    bool ok;
+    ShantyPcmBuffer? buffer;
+    string error;
+}
+
+int shanty_u16_le(List<int> bytes, int at) {
+    return bytes[at] | (bytes[at + 1] << 8);
+}
+
+int shanty_u32_le(List<int> bytes, int at) {
+    return bytes[at] | (bytes[at + 1] << 8) |
+        (bytes[at + 2] << 16) | (bytes[at + 3] << 24);
+}
+
+bool shanty_is_fourcc(List<int> bytes, int at, int a, int b, int c, int d) {
+    return bytes[at] == a && bytes[at + 1] == b &&
+        bytes[at + 2] == c && bytes[at + 3] == d;
+}
+
+bool shanty_supported_pcm_bits(int bits) {
+    return bits == 8 || bits == 16 || bits == 24 || bits == 32;
+}
+
+ShantyWaveResult shanty_wave_error(string error) {
+    return new ShantyWaveResult{ok: false, wave: none, error: error};
+}
+
+// Strict RIFF/WAVE profile:
+// - one RIFF/WAVE form, one fmt chunk before one data chunk;
+// - integer PCM format tag 1, 1..8 channels, 1..384000 Hz;
+// - 8/16/24/32-bit samples, exact block alignment and byte rate;
+// - unknown chunks are skipped, including their required odd-size pad byte;
+// - at most 1024 chunks; trailing bytes and duplicate fmt/data chunks are rejected.
+ShantyWaveResult shanty_wave_parse_internal(
+    HalyardByteSource source, HalyardConsumptionBudget? budget
+) {
+    if (!halyard_source_shape_valid(source)) {
+        return shanty_wave_error("invalid_source");
+    }
+    int source_length = halyard_source_length(source);
+    if (source_length > SHANTY_WAV_MAX_INPUT_BYTES) {
+        return shanty_wave_error("input_limit");
+    }
+    if (let budget_value = budget) {
+        HalyardConsumptionCharge charge = new HalyardConsumptionCharge{
+            input_bytes: source_length, output_bytes: 0,
+            decoded_units: 0, work_units: source_length
+        };
+        if (!halyard_consumption_budget_consume(budget_value, charge)) {
+            return shanty_wave_error("budget_exceeded");
+        }
+    }
+    if (source.position != 0) {
+        return shanty_wave_error("source_not_at_start");
+    }
+    if (!halyard_source_validate(source)) {
+        return shanty_wave_error("invalid_source");
+    }
+
+    HalyardBytesResult header = halyard_read_exact(source, 12);
+    if (!header.ok) { return shanty_wave_error("truncated_riff_header"); }
+    if (!shanty_is_fourcc(header.bytes, 0, 'R', 'I', 'F', 'F')) {
+        return shanty_wave_error("not_riff");
+    }
+    if (!shanty_is_fourcc(header.bytes, 8, 'W', 'A', 'V', 'E')) {
+        return shanty_wave_error("not_wave");
+    }
+
+    int riff_size = shanty_u32_le(header.bytes, 4);
+    if (riff_size < 4) { return shanty_wave_error("invalid_riff_size"); }
+    if (riff_size - 4 != halyard_source_remaining(source)) {
+        return shanty_wave_error("riff_size_mismatch");
+    }
+
+    bool format_seen = false;
+    bool data_seen = false;
+    int channels = 0;
+    int sample_rate = 0;
+    int bits_per_sample = 0;
+    int block_align = 0;
+    int byte_rate = 0;
+    List<int> pcm_bytes = new List<int>();
+    int chunk_count = 0;
+
+    while (halyard_source_remaining(source) > 0) {
+        if (chunk_count >= SHANTY_WAV_MAX_CHUNKS) {
+            return shanty_wave_error("chunk_limit");
+        }
+        if (halyard_source_remaining(source) < 8) {
+            return shanty_wave_error("truncated_chunk_header");
+        }
+
+        HalyardBytesResult chunk_header = halyard_read_exact(source, 8);
+        if (!chunk_header.ok) {
+            return shanty_wave_error("truncated_chunk_header");
+        }
+        int chunk_size = shanty_u32_le(chunk_header.bytes, 4);
+        int remaining = halyard_source_remaining(source);
+        int padding = chunk_size % 2;
+        if (chunk_size > remaining || padding > remaining - chunk_size) {
+            return shanty_wave_error("truncated_chunk");
+        }
+
+        bool is_format = shanty_is_fourcc(chunk_header.bytes, 0, 'f', 'm', 't', ' ');
+        bool is_data = shanty_is_fourcc(chunk_header.bytes, 0, 'd', 'a', 't', 'a');
+
+        if (is_format) {
+            if (format_seen) { return shanty_wave_error("duplicate_fmt"); }
+            if (chunk_size < 16) { return shanty_wave_error("short_fmt"); }
+
+            HalyardBytesResult fmt = halyard_read_exact(source, 16);
+            if (!fmt.ok) { return shanty_wave_error("truncated_fmt"); }
+
+            int format_tag = shanty_u16_le(fmt.bytes, 0);
+            channels = shanty_u16_le(fmt.bytes, 2);
+            sample_rate = shanty_u32_le(fmt.bytes, 4);
+            byte_rate = shanty_u32_le(fmt.bytes, 8);
+            block_align = shanty_u16_le(fmt.bytes, 12);
+            bits_per_sample = shanty_u16_le(fmt.bytes, 14);
+
+            if (chunk_size > 16 && !halyard_skip(source, chunk_size - 16)) {
+                return shanty_wave_error("truncated_fmt_extension");
+            }
+            if (padding == 1 && !halyard_skip(source, 1)) {
+                return shanty_wave_error("truncated_fmt_padding");
+            }
+
+            if (format_tag != 1) { return shanty_wave_error("unsupported_format"); }
+            if (channels < 1 || channels > SHANTY_WAV_MAX_CHANNELS) {
+                return shanty_wave_error("invalid_channels");
+            }
+            if (sample_rate < 1 || sample_rate > SHANTY_WAV_MAX_SAMPLE_RATE) {
+                return shanty_wave_error("invalid_sample_rate");
+            }
+            if (!shanty_supported_pcm_bits(bits_per_sample)) {
+                return shanty_wave_error("unsupported_bit_depth");
+            }
+            int expected_align = channels * (bits_per_sample / 8);
+            int expected_rate = sample_rate * expected_align;
+            if (block_align != expected_align || byte_rate != expected_rate) {
+                return shanty_wave_error("invalid_pcm_alignment");
+            }
+            format_seen = true;
+        } else if (is_data) {
+            if (!format_seen) { return shanty_wave_error("fmt_required_before_data"); }
+            if (data_seen) { return shanty_wave_error("duplicate_data"); }
+            if (chunk_size % block_align != 0) {
+                return shanty_wave_error("invalid_data_alignment");
+            }
+            if (let budget_value = budget) {
+                HalyardConsumptionCharge output_charge = new HalyardConsumptionCharge{
+                    input_bytes: 0, output_bytes: chunk_size,
+                    decoded_units: 0, work_units: chunk_size
+                };
+                if (!halyard_consumption_budget_consume(budget_value, output_charge)) {
+                    return shanty_wave_error("budget_exceeded");
+                }
+            }
+            HalyardBytesResult data = halyard_read_exact(source, chunk_size);
+            if (!data.ok) { return shanty_wave_error("truncated_data"); }
+            pcm_bytes = data.bytes;
+            if (padding == 1 && !halyard_skip(source, 1)) {
+                return shanty_wave_error("truncated_data_padding");
+            }
+            data_seen = true;
+        } else {
+            if (!halyard_skip(source, chunk_size)) {
+                return shanty_wave_error("truncated_unknown_chunk");
+            }
+            if (padding == 1 && !halyard_skip(source, 1)) {
+                return shanty_wave_error("truncated_unknown_padding");
+            }
+        }
+        chunk_count += 1;
+    }
+
+    if (!format_seen) { return shanty_wave_error("missing_fmt"); }
+    if (!data_seen) { return shanty_wave_error("missing_data"); }
+
+    ShantyWave wave = new ShantyWave{
+        sample_rate: sample_rate,
+        channels: channels,
+        bits_per_sample: bits_per_sample,
+        block_align: block_align,
+        byte_rate: byte_rate,
+        pcm_bytes: pcm_bytes
+    };
+    return new ShantyWaveResult{ok: true, wave: wave, error: ""};
+}
+
+ShantyWaveResult shanty_wave_parse(HalyardByteSource source) {
+    return shanty_wave_parse_internal(source, none);
+}
+
+// Charges input/work before parsing and the retained PCM copy before materialising it.
+ShantyWaveResult shanty_wave_parse_budgeted(
+    HalyardByteSource source, HalyardConsumptionBudget budget
+) {
+    return shanty_wave_parse_internal(source, budget);
+}
+
+// Decodes interleaved integer PCM into signed sample values in the original
+// bit-depth domain. Eight-bit WAVE PCM is unsigned and is centred at zero.
+ShantyPcmResult shanty_wave_decode_samples_internal(
+    ShantyWave wave, HalyardConsumptionBudget? budget
+) {
+    if (wave.channels < 1 || wave.channels > SHANTY_WAV_MAX_CHANNELS ||
+        wave.sample_rate < 1 || wave.sample_rate > SHANTY_WAV_MAX_SAMPLE_RATE ||
+        !shanty_supported_pcm_bits(wave.bits_per_sample)) {
+        return new ShantyPcmResult{ok: false, buffer: none, error: "invalid_wave"};
+    }
+
+    int bytes_per_sample = wave.bits_per_sample / 8;
+    int expected_align = wave.channels * bytes_per_sample;
+    int expected_rate = wave.sample_rate * expected_align;
+    if (wave.block_align <= 0 || wave.block_align != expected_align ||
+        wave.byte_rate != expected_rate ||
+        wave.pcm_bytes.len() > SHANTY_WAV_MAX_INPUT_BYTES ||
+        wave.pcm_bytes.len() % wave.block_align != 0) {
+        return new ShantyPcmResult{ok: false, buffer: none, error: "invalid_pcm_alignment"};
+    }
+    if (let budget_value = budget) {
+        HalyardConsumptionCharge scan_charge = new HalyardConsumptionCharge{
+            input_bytes: 0, output_bytes: 0, decoded_units: 0,
+            work_units: wave.pcm_bytes.len()
+        };
+        if (!halyard_consumption_budget_consume(budget_value, scan_charge)) {
+            return new ShantyPcmResult{ok: false, buffer: none, error: "budget_exceeded"};
+        }
+    }
+    for (int byte_index = 0; byte_index < wave.pcm_bytes.len(); byte_index += 1) {
+        if (wave.pcm_bytes[byte_index] < 0 || wave.pcm_bytes[byte_index] > 255) {
+            return new ShantyPcmResult{ok: false, buffer: none, error: "invalid_sample_byte"};
+        }
+    }
+
+    int frame_count = wave.pcm_bytes.len() / wave.block_align;
+    int sample_count = wave.pcm_bytes.len() / bytes_per_sample;
+    if (let budget_value = budget) {
+        HalyardConsumptionCharge charge = new HalyardConsumptionCharge{
+            input_bytes: 0, output_bytes: sample_count * bytes_per_sample,
+            decoded_units: sample_count, work_units: sample_count
+        };
+        if (!halyard_consumption_budget_consume(budget_value, charge)) {
+            return new ShantyPcmResult{ok: false, buffer: none, error: "budget_exceeded"};
+        }
+    }
+    List<int> samples = new List<int>();
+
+    for (int i = 0; i < sample_count; i += 1) {
+        int at = i * bytes_per_sample;
+        int value = 0;
+        if (wave.bits_per_sample == 8) {
+            value = wave.pcm_bytes[at] - 128;
+        } else if (wave.bits_per_sample == 16) {
+            value = wave.pcm_bytes[at] | (wave.pcm_bytes[at + 1] << 8);
+            if (value >= 32768) { value -= 65536; }
+        } else if (wave.bits_per_sample == 24) {
+            value = wave.pcm_bytes[at] |
+                (wave.pcm_bytes[at + 1] << 8) |
+                (wave.pcm_bytes[at + 2] << 16);
+            if (value >= 8388608) { value -= 16777216; }
+        } else {
+            value = wave.pcm_bytes[at] |
+                (wave.pcm_bytes[at + 1] << 8) |
+                (wave.pcm_bytes[at + 2] << 16) |
+                (wave.pcm_bytes[at + 3] << 24);
+            if (value >= 2147483648) { value -= 4294967296; }
+        }
+        samples.push(value);
+    }
+
+    ShantyPcmBuffer buffer = new ShantyPcmBuffer{
+        sample_rate: wave.sample_rate,
+        channels: wave.channels,
+        bits_per_sample: wave.bits_per_sample,
+        frame_count: frame_count,
+        samples: samples
+    };
+    return new ShantyPcmResult{ok: true, buffer: buffer, error: ""};
+}
+
+ShantyPcmResult shanty_wave_decode_samples(ShantyWave wave) {
+    return shanty_wave_decode_samples_internal(wave, none);
+}
+
+// Charges decoded samples and logical PCM output bytes before allocating the sample list.
+ShantyPcmResult shanty_wave_decode_samples_budgeted(
+    ShantyWave wave, HalyardConsumptionBudget budget
+) {
+    return shanty_wave_decode_samples_internal(wave, budget);
+}
+
+void shanty_test_push_u16_le(List<int> bytes, int value) {
+    bytes.push(value & 0xFF);
+    bytes.push((value >>> 8) & 0xFF);
+}
+
+void shanty_test_push_u32_le(List<int> bytes, int value) {
+    bytes.push(value & 0xFF);
+    bytes.push((value >>> 8) & 0xFF);
+    bytes.push((value >>> 16) & 0xFF);
+    bytes.push((value >>> 24) & 0xFF);
+}
+
+List<int> shanty_test_stereo_wave() {
+    List<int> bytes = new List<int>();
+    bytes.push('R'); bytes.push('I'); bytes.push('F'); bytes.push('F');
+    shanty_test_push_u32_le(bytes, 44);
+    bytes.push('W'); bytes.push('A'); bytes.push('V'); bytes.push('E');
+    bytes.push('f'); bytes.push('m'); bytes.push('t'); bytes.push(' ');
+    shanty_test_push_u32_le(bytes, 16);
+    shanty_test_push_u16_le(bytes, 1);
+    shanty_test_push_u16_le(bytes, 2);
+    shanty_test_push_u32_le(bytes, 48000);
+    shanty_test_push_u32_le(bytes, 192000);
+    shanty_test_push_u16_le(bytes, 4);
+    shanty_test_push_u16_le(bytes, 16);
+    bytes.push('d'); bytes.push('a'); bytes.push('t'); bytes.push('a');
+    shanty_test_push_u32_le(bytes, 8);
+    bytes.push(255); bytes.push(127);
+    bytes.push(0); bytes.push(128);
+    bytes.push(255); bytes.push(255);
+    bytes.push(0); bytes.push(0);
+    return bytes;
+}
+
+test "Shanty parses bounded stereo PCM WAVE metadata" {
+    List<int> bytes = shanty_test_stereo_wave();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    assert(made.ok);
+    if (let source = made.source) {
+        ShantyWaveResult parsed = shanty_wave_parse(source);
+        assert(parsed.ok);
+        if (let wave = parsed.wave) {
+            assert(wave.sample_rate == 48000);
+            assert(wave.channels == 2);
+            assert(wave.bits_per_sample == 16);
+            assert(wave.block_align == 4);
+            assert(wave.byte_rate == 192000);
+            assert(wave.pcm_bytes.len() == 8);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Shanty decodes signed interleaved 16-bit PCM exactly" {
+    List<int> bytes = shanty_test_stereo_wave();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    assert(made.ok);
+    if (let source = made.source) {
+        ShantyWaveResult parsed = shanty_wave_parse(source);
+        assert(parsed.ok);
+        if (let wave = parsed.wave) {
+            ShantyPcmResult decoded = shanty_wave_decode_samples(wave);
+            assert(decoded.ok);
+            if (let pcm = decoded.buffer) {
+                assert(pcm.frame_count == 2);
+                assert(pcm.samples.len() == 4);
+                assert(pcm.samples[0] == 32767);
+                assert(pcm.samples[1] == -32768);
+                assert(pcm.samples[2] == -1);
+                assert(pcm.samples[3] == 0);
+            } else {
+                assert(false);
+            }
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Shanty rejects malformed RIFF signatures and declared sizes" {
+    List<int> bad_signature = shanty_test_stereo_wave();
+    bad_signature[0] = 'X';
+    HalyardByteSourceResult first = halyard_source_from_list(bad_signature, 64);
+    assert(first.ok);
+    if (let source = first.source) {
+        ShantyWaveResult parsed = shanty_wave_parse(source);
+        assert(!parsed.ok && parsed.error == "not_riff");
+    } else {
+        assert(false);
+    }
+
+    List<int> bad_size = shanty_test_stereo_wave();
+    bad_size[4] = 45;
+    HalyardByteSourceResult second = halyard_source_from_list(bad_size, 64);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        ShantyWaveResult parsed2 = shanty_wave_parse(source2);
+        assert(!parsed2.ok && parsed2.error == "riff_size_mismatch");
+    } else {
+        assert(false);
+    }
+}
+
+test "Shanty rejects unsupported format and invalid PCM alignment" {
+    List<int> compressed = shanty_test_stereo_wave();
+    compressed[20] = 3;
+    HalyardByteSourceResult first = halyard_source_from_list(compressed, 64);
+    assert(first.ok);
+    if (let source = first.source) {
+        ShantyWaveResult parsed = shanty_wave_parse(source);
+        assert(!parsed.ok && parsed.error == "unsupported_format");
+    } else {
+        assert(false);
+    }
+
+    List<int> bad_align = shanty_test_stereo_wave();
+    bad_align[32] = 3;
+    HalyardByteSourceResult second = halyard_source_from_list(bad_align, 64);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        ShantyWaveResult parsed2 = shanty_wave_parse(source2);
+        assert(!parsed2.ok && parsed2.error == "invalid_pcm_alignment");
+    } else {
+        assert(false);
+    }
+}
+
+test "Shanty decodes unsigned 8-bit PCM around zero" {
+    List<int> bytes = new List<int>();
+    bytes.push(0); bytes.push(128); bytes.push(255);
+    ShantyWave wave = new ShantyWave{
+        sample_rate: 48000, channels: 1, bits_per_sample: 8,
+        block_align: 1, byte_rate: 48000, pcm_bytes: bytes
+    };
+    ShantyPcmResult decoded = shanty_wave_decode_samples(wave);
+    assert(decoded.ok);
+    if (let pcm = decoded.buffer) {
+        assert(pcm.frame_count == 3);
+        assert(pcm.samples[0] == -128);
+        assert(pcm.samples[1] == 0);
+        assert(pcm.samples[2] == 127);
+    } else {
+        assert(false);
+    }
+}
+
+test "Shanty decodes signed 24-bit and 32-bit PCM boundaries" {
+    List<int> bytes24 = new List<int>();
+    bytes24.push(0); bytes24.push(0); bytes24.push(128);
+    bytes24.push(255); bytes24.push(255); bytes24.push(127);
+    ShantyWave wave24 = new ShantyWave{
+        sample_rate: 48000, channels: 1, bits_per_sample: 24,
+        block_align: 3, byte_rate: 144000, pcm_bytes: bytes24
+    };
+    ShantyPcmResult decoded24 = shanty_wave_decode_samples(wave24);
+    assert(decoded24.ok);
+    if (let pcm24 = decoded24.buffer) {
+        assert(pcm24.samples[0] == -8388608);
+        assert(pcm24.samples[1] == 8388607);
+    } else {
+        assert(false);
+    }
+
+    List<int> bytes32 = new List<int>();
+    bytes32.push(0); bytes32.push(0); bytes32.push(0); bytes32.push(128);
+    bytes32.push(255); bytes32.push(255); bytes32.push(255); bytes32.push(127);
+    ShantyWave wave32 = new ShantyWave{
+        sample_rate: 48000, channels: 1, bits_per_sample: 32,
+        block_align: 4, byte_rate: 192000, pcm_bytes: bytes32
+    };
+    ShantyPcmResult decoded32 = shanty_wave_decode_samples(wave32);
+    assert(decoded32.ok);
+    if (let pcm32 = decoded32.buffer) {
+        assert(pcm32.samples[0] == -2147483648);
+        assert(pcm32.samples[1] == 2147483647);
+    } else {
+        assert(false);
+    }
+}
+
+test "Shanty rejects a source that was mutated after construction" {
+    List<int> bytes = shanty_test_stereo_wave();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    assert(made.ok);
+    if (let source = made.source) {
+        source.bytes[0] = 999;
+        ShantyWaveResult parsed = shanty_wave_parse(source);
+        assert(!parsed.ok && parsed.error == "invalid_source");
+    } else {
+        assert(false);
+    }
+}
+
+
+test "Shanty skips bounded unknown chunks and RIFF odd-byte padding" {
+    List<int> base = shanty_test_stereo_wave();
+    List<int> bytes = new List<int>();
+    for (int i = 0; i < 12; i += 1) { bytes.push(base[i]); }
+    bytes[4] = 54;
+    bytes.push('J'); bytes.push('U'); bytes.push('N'); bytes.push('K');
+    shanty_test_push_u32_le(bytes, 1);
+    bytes.push(77);
+    bytes.push(0);
+    for (int j = 12; j < base.len(); j += 1) { bytes.push(base[j]); }
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    assert(made.ok);
+    if (let source = made.source) {
+        ShantyWaveResult parsed = shanty_wave_parse(source);
+        assert(parsed.ok);
+        if (let wave = parsed.wave) {
+            assert(wave.pcm_bytes.len() == 8);
+            assert(wave.channels == 2 && wave.sample_rate == 48000);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Shanty rejects forged PCM byte arrays and inconsistent byte rates" {
+    List<int> invalid_bytes = new List<int>();
+    invalid_bytes.push(999);
+    ShantyWave invalid_wave = new ShantyWave{
+        sample_rate: 48000, channels: 1, bits_per_sample: 8,
+        block_align: 1, byte_rate: 48000, pcm_bytes: invalid_bytes
+    };
+    ShantyPcmResult invalid = shanty_wave_decode_samples(invalid_wave);
+    assert(!invalid.ok && invalid.error == "invalid_sample_byte");
+
+    List<int> valid_bytes = new List<int>();
+    valid_bytes.push(128);
+    ShantyWave bad_rate = new ShantyWave{
+        sample_rate: 48000, channels: 1, bits_per_sample: 8,
+        block_align: 1, byte_rate: 1, pcm_bytes: valid_bytes
+    };
+    ShantyPcmResult rate_result = shanty_wave_decode_samples(bad_rate);
+    assert(!rate_result.ok && rate_result.error == "invalid_pcm_alignment");
+}
+
+
+test "Shanty budgeted parse and decode charge before materialising output" {
+    List<int> bytes = shanty_test_stereo_wave();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(64, 16, 4, 128);
+    assert(made.ok && budget_result.ok);
+    if (let source = made.source) {
+        if (let budget = budget_result.budget) {
+            ShantyWaveResult parsed = shanty_wave_parse_budgeted(source, budget);
+            assert(parsed.ok);
+            assert(budget.used_input_bytes == 52);
+            assert(budget.used_output_bytes == 8);
+            assert(budget.used_work_units == 60);
+            if (let wave = parsed.wave) {
+                ShantyPcmResult decoded = shanty_wave_decode_samples_budgeted(wave, budget);
+                assert(decoded.ok);
+                assert(budget.used_decoded_units == 4);
+                assert(budget.used_output_bytes == 16);
+                assert(budget.used_work_units == 72);
+            } else { assert(false); }
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Shanty budget rejects PCM copy before allocation and keeps failure atomic" {
+    List<int> bytes = shanty_test_stereo_wave();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(64, 7, 4, 128);
+    assert(made.ok && budget_result.ok);
+    if (let source = made.source) {
+        if (let budget = budget_result.budget) {
+            ShantyWaveResult parsed = shanty_wave_parse_budgeted(source, budget);
+            assert(!parsed.ok && parsed.error == "budget_exceeded");
+            assert(budget.used_input_bytes == 52);
+            assert(budget.used_output_bytes == 0);
+            assert(budget.used_work_units == 52);
+        } else { assert(false); }
+    } else { assert(false); }
+}
