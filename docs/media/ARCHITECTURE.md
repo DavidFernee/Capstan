@@ -39,9 +39,10 @@ shell, Python, C, C++ or other-language implementation or test source is added.
 
 This is not an MC1 gate exit. Publicly mutable struct fields prevent an enforced opaque
 ownership boundary; the ledger is not concurrency-safe; reservation is not yet coupled
-atomically to source allocation; the resource vector is incomplete; and bounded sinks,
-cancellation, lifetime-bound reservations and full clock/discontinuity semantics remain
-outstanding. Rational timestamp rescaling now has an initial Capstan-native implementation
+atomically to source allocation; the resource vector is incomplete; and ledger-coupled output reservations, cancellation, lifetime-bound ownership and full
+clock/discontinuity semantics remain outstanding. A first bounded in-memory byte sink is
+now implemented, but its copy-on-commit temporary allocation is not yet covered by the
+aggregate resource ledger. Rational timestamp rescaling now has an initial Capstan-native implementation
 with checked integer arithmetic and explicit rounding, but no complete clock model.
 See [CORE-PRIMITIVES.md](CORE-PRIMITIVES.md) and follow-up issue #293. Exact-head CI is
 pending and no test pass is asserted until its result is observed.
