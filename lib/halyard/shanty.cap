@@ -254,6 +254,15 @@ ShantyPcmResult shanty_wave_decode_samples_internal(
         wave.pcm_bytes.len() % wave.block_align != 0) {
         return new ShantyPcmResult{ok: false, buffer: none, error: "invalid_pcm_alignment"};
     }
+    if (let budget_value = budget) {
+        HalyardConsumptionCharge scan_charge = new HalyardConsumptionCharge{
+            input_bytes: 0, output_bytes: 0, decoded_units: 0,
+            work_units: wave.pcm_bytes.len()
+        };
+        if (!halyard_consumption_budget_consume(budget_value, scan_charge)) {
+            return new ShantyPcmResult{ok: false, buffer: none, error: "budget_exceeded"};
+        }
+    }
     for (int byte_index = 0; byte_index < wave.pcm_bytes.len(); byte_index += 1) {
         if (wave.pcm_bytes[byte_index] < 0 || wave.pcm_bytes[byte_index] > 255) {
             return new ShantyPcmResult{ok: false, buffer: none, error: "invalid_sample_byte"};
@@ -581,7 +590,7 @@ test "Shanty budgeted parse and decode charge before materialising output" {
                 assert(decoded.ok);
                 assert(budget.used_decoded_units == 4);
                 assert(budget.used_output_bytes == 16);
-                assert(budget.used_work_units == 64);
+                assert(budget.used_work_units == 72);
             } else { assert(false); }
         } else { assert(false); }
     } else { assert(false); }
