@@ -262,10 +262,13 @@ void check_hardcoded(Checker c, Node at, string name, Node value) {
 
 // ---- expressions ----------------------------------------------------------------
 
-List<string> field_names(Checker c, string sname) {
+List<string> field_names(Checker c, string sname, int requester_file) {
     List<string> out = new List<string>();
     if (let st = c.structs.get(sname)) {
-        for (int i = 0; i < st.kids.len(); i += 1) { out.push(st.kids[i].s); }
+        for (int i = 0; i < st.kids.len(); i += 1) {
+            Node fd = st.kids[i];
+            if (fd.s2 != "private" || requester_file == st.file) { out.push(fd.s); }
+        }
     }
     return out;
 }
@@ -410,7 +413,7 @@ Type check_expr(Checker c, Node e) {
             }
             return typed(e, ty_of(fd));
         }
-        error_at(c.ctx, e, "", "struct " + ot.name + " has no field '" + e.s + "'" + suggest(e.s, field_names(c, ot.name)));
+        error_at(c.ctx, e, "", "struct " + ot.name + " has no field '" + e.s + "'" + suggest(e.s, field_names(c, ot.name, e.file)));
         return typed(e, mk_type(TY_ERR));
     }
     if (k == N_INDEX) {
@@ -1222,10 +1225,18 @@ Type check_new(Checker c, Node e) {
                 error_at(c.ctx, init, "", "struct " + e.s + " has no field '" + init.s + "'");
             }
         }
+        bool missing_private = false;
         for (int j = 0; j < st.kids.len(); j += 1) {
             if (!seen.has(st.kids[j].s)) {
-                error_at(c.ctx, e, "CWE-908", "field '" + st.kids[j].s + "' of " + e.s + " is not initialised");
+                if (st.kids[j].s2 == "private" && e.file != st.file) {
+                    missing_private = true;
+                } else {
+                    error_at(c.ctx, e, "CWE-908", "field '" + st.kids[j].s + "' of " + e.s + " is not initialised");
+                }
             }
+        }
+        if (missing_private) {
+            error_at(c.ctx, e, "CAP-PRIVATE", "private state of " + e.s + " must be initialised by its defining module");
         }
         return mk_named(TY_STRUCT, e.s);
     }
