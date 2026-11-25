@@ -484,3 +484,100 @@ test "Deadeye decodes stco and co64 with strict offset limits" {
     );
     assert(!too_wide.ok);
 }
+
+
+// Decode ctts v0 (unsigned offsets) and v1 (signed offsets) into
+// (sample_count, composition_offset) pairs. Other versions/flags fail closed.
+DeadeyeMp4IntListResult deadeye_mp4_decode_ctts(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_table_payload_valid(bytes, start, end) ||
+        end - start < 8 || (bytes[start] != 0 && bytes[start] != 1) ||
+        bytes[start + 1] != 0 || bytes[start + 2] != 0 ||
+        bytes[start + 3] != 0) {
+        return deadeye_mp4_table_decode_error("invalid_ctts_header");
+    }
+    int version = bytes[start];
+    int entries = deadeye_mp4_table_u32(bytes, start + 4);
+    if (entries < 1 || entries > DEADEYE_MP4_MAX_TABLE_RUNS ||
+        end - start != 8 + entries * 8) {
+        return deadeye_mp4_table_decode_error("invalid_ctts_length");
+    }
+    List<int> values = new List<int>();
+    for (int i = 0; i < entries; i += 1) {
+        int at = start + 8 + i * 8;
+        int count = deadeye_mp4_table_u32(bytes, at);
+        int raw_offset = deadeye_mp4_table_u32(bytes, at + 4);
+        int offset = raw_offset;
+        if (version == 1 && raw_offset >= 2147483648) {
+            offset = raw_offset - 4294967296;
+        }
+        if (count < 1 || count > DEADEYE_MP4_MAX_SAMPLES ||
+            offset > DEADEYE_MP4_MAX_DECODED_DURATION ||
+            offset < -DEADEYE_MP4_MAX_DECODED_DURATION) {
+            return deadeye_mp4_table_decode_error("ctts_value_limit");
+        }
+        values.push(count);
+        values.push(offset);
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+// Decode stss one-based sync sample numbers. The sample_count argument is
+// independently bounded; indices must be strictly increasing and in range.
+DeadeyeMp4IntListResult deadeye_mp4_decode_stss(
+    List<int> bytes, int start, int end, int sample_count
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_stss_header");
+    }
+    if (sample_count < 1 || sample_count > DEADEYE_MP4_MAX_SAMPLES) {
+        return deadeye_mp4_table_decode_error("stss_sample_count_limit");
+    }
+    int entries = deadeye_mp4_table_u32(bytes, start + 4);
+    if (entries < 1 || entries > sample_count ||
+        end - start != 8 + entries * 4) {
+        return deadeye_mp4_table_decode_error("invalid_stss_length");
+    }
+    List<int> values = new List<int>();
+    int previous = 0;
+    for (int i = 0; i < entries; i += 1) {
+        int sample_number = deadeye_mp4_table_u32(bytes, start + 8 + i * 4);
+        if (sample_number < 1 || sample_number > sample_count ||
+            sample_number <= previous) {
+            return deadeye_mp4_table_decode_error("invalid_stss_index");
+        }
+        values.push(sample_number);
+        previous = sample_number;
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+test "Deadeye decodes ctts signed and unsigned composition offsets" {
+    List<int> version_zero = [0,0,0,0, 0,0,0,1, 0,0,0,2, 0,0,0,10];
+    DeadeyeMp4IntListResult unsigned_offsets = deadeye_mp4_decode_ctts(
+        version_zero, 0, version_zero.len()
+    );
+    assert(unsigned_offsets.ok && unsigned_offsets.values[1] == 10);
+    List<int> version_one = [1,0,0,0, 0,0,0,1, 0,0,0,2, 255,255,255,246];
+    DeadeyeMp4IntListResult signed_offsets = deadeye_mp4_decode_ctts(
+        version_one, 0, version_one.len()
+    );
+    assert(signed_offsets.ok && signed_offsets.values[1] == -10);
+    List<int> invalid_version = [2,0,0,0, 0,0,0,1, 0,0,0,2, 0,0,0,10];
+    assert(!deadeye_mp4_decode_ctts(
+        invalid_version, 0, invalid_version.len()
+    ).ok);
+}
+
+test "Deadeye decodes strictly ordered stss sync sample indices" {
+    List<int> valid = [0,0,0,0, 0,0,0,2, 0,0,0,1, 0,0,0,4];
+    DeadeyeMp4IntListResult sync = deadeye_mp4_decode_stss(
+        valid, 0, valid.len(), 4
+    );
+    assert(sync.ok && sync.values[1] == 4);
+    List<int> duplicate = [0,0,0,0, 0,0,0,2, 0,0,0,2, 0,0,0,2];
+    assert(!deadeye_mp4_decode_stss(
+        duplicate, 0, duplicate.len(), 4
+    ).ok);
+}
