@@ -66,7 +66,7 @@ if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out
 
 section "Capstan-native verification: F1 compositional guarantee model"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/f1_guarantee_model.cap" 2>&1)"; then
-  ok "provenance, confidentiality, context safety, authority, effects and bounded-resource composition"
+  ok "data, selection and control provenance; confidentiality; context safety; authority, effects and bounded-resource composition"
 else
   bad "F1 compositional guarantee model" "$out"
 fi
