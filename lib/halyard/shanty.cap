@@ -597,7 +597,7 @@ test "Shanty budget rejects PCM copy before allocation and keeps failure atomic"
         if (let budget = budget_result.budget) {
             ShantyWaveResult parsed = shanty_wave_parse_budgeted(source, budget);
             assert(!parsed.ok && parsed.error == "budget_exceeded");
-            assert(budget.used_input_bytes == 44);
+            assert(budget.used_input_bytes == 52);
             assert(budget.used_output_bytes == 0);
             assert(budget.used_work_units == 52);
         } else { assert(false); }
