@@ -552,3 +552,8 @@ The artefact must pass the exact-head standard suite and receive independent sem
 The first checker implementation slice is documented in [PROVENANCE-SCALAR-SLICE.md](../assurance/PROVENANCE-SCALAR-SLICE.md). It extends the existing Capstan checker analysis to preserve Boolean expression/local dependencies, Tainted length metadata, scalar parameter summaries, `to_text`, and `join` propagation. The analysis remains a coarse variable-name may-analysis; this does not implement the proposed abstract heap or complete sink semantics.
 
 The CWE atlas now includes a helper-mediated Tainted-length reconstruction probe expected to be rejected, and an explicitly retained Boolean-to-text output gap. Exact-head CI and semantic review are required before treating this as integrated. This experiment must not be described as closing the wider TYPE finding set.
+
+
+### F1 implementation design: source-derived abstract state
+
+The next checker architecture is specified in [F1-ABSTRACT-STATE-DESIGN.md](F1-ABSTRACT-STATE-DESIGN.md). It defines a bounded provenance lattice, typed access paths, explicit locals/reference/heap state, conservative alias and escape handling, strong-versus-weak update conditions, and source-derived interprocedural summaries. It is a research design, not an implementation. The staged gates begin with an AST/runtime semantic inventory and scalar reassignment/flow joins before aggregate heap and alias support. Unknown effects, unsupported nodes and exhausted analysis budgets must widen or reject; they must never be interpreted as purity or absence of provenance.
