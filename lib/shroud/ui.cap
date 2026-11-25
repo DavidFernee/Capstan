@@ -118,6 +118,22 @@ struct Ui {
     int view_count;
     int now_ms;
 
+    // Resize the software surface without reconstructing the Ui. Invalid
+    // dimensions or scale leave every field untouched. A successful resize
+    // invalidates the old hit-test tree until the host renders a fresh frame.
+    bool resize(int width_px, int height_px, int next_scale) {
+        if (!pixmap_size_valid(width_px, height_px) || next_scale < 64 || next_scale > 1024) {
+            return false;
+        }
+        Pixmap replacement = new_pixmap(width_px, height_px);
+        self.pixmap = replacement;
+        self.scale = next_scale;
+        self.root = none;
+        self.hover = "";
+        self.pressed = "";
+        return true;
+    }
+
     // Lays out and draws `root`, the whole interface, at time `time_ms`.
     void render(View root, int time_ms) {
         self.render_generation += 1;
