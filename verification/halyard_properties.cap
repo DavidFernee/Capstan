@@ -1,0 +1,114 @@
+// Halyard Core deterministic bounded-state property regressions.
+// These tests exhaust a small state space; they are not a concurrency proof.
+import "../lib/halyard/core.cap";
+
+int main() {
+    // Exhaustively check read_exact for every count around a four-byte source.
+    for (int count = 0; count <= 5; count += 1) {
+        List<int> bytes = new List<int>();
+        bytes.push(10); bytes.push(20); bytes.push(30); bytes.push(40);
+        HalyardByteSourceResult made = halyard_source_from_list(bytes, 4);
+        if (!made.ok) { return 1; }
+        if (let source = made.source) {
+            HalyardBytesResult got = halyard_read_exact(source, count);
+            if (count <= 4) {
+                if (!got.ok || got.bytes.len() != count) { return 2; }
+                if (halyard_source_remaining(source) != 4 - count) { return 3; }
+            } else {
+                if (got.ok || got.error != "truncated") { return 4; }
+                if (halyard_source_remaining(source) != 4) { return 5; }
+            }
+        } else { return 6; }
+    }
+
+    // Exhaustively check 3^5 small five-dimensional admission requests.
+    // Start at one unit in each dimension with a limit of two. A request fits
+    // iff every dimension is <= 1. Failed reservations must mutate nothing.
+    for (int a = 0; a <= 2; a += 1) {
+        for (int b = 0; b <= 2; b += 1) {
+            for (int c = 0; c <= 2; c += 1) {
+                for (int d = 0; d <= 2; d += 1) {
+                    for (int e = 0; e <= 2; e += 1) {
+                        HalyardLedgerResult made = halyard_ledger_create(2, 2, 2, 2, 2);
+                        if (!made.ok) { return 7; }
+                        if (let ledger = made.ledger) {
+                            HalyardBudgetCharge base = new HalyardBudgetCharge{
+                                input_bytes: 1, retained_bytes: 1, output_bytes: 1,
+                                decoded_units: 1, work_units: 1
+                            };
+                            if (!halyard_ledger_reserve(ledger, base)) { return 8; }
+                            HalyardBudgetCharge request = new HalyardBudgetCharge{
+                                input_bytes: a, retained_bytes: b, output_bytes: c,
+                                decoded_units: d, work_units: e
+                            };
+                            bool expected = a <= 1 && b <= 1 && c <= 1 && d <= 1 && e <= 1;
+                            bool actual = halyard_ledger_reserve(ledger, request);
+                            if (actual != expected) { return 9; }
+                            int add_a = expected ? a : 0;
+                            int add_b = expected ? b : 0;
+                            int add_c = expected ? c : 0;
+                            int add_d = expected ? d : 0;
+                            int add_e = expected ? e : 0;
+                            if (!(ledger.used_input_bytes == 1 + add_a &&
+                                  ledger.used_retained_bytes == 1 + add_b &&
+                                  ledger.used_output_bytes == 1 + add_c &&
+                                  ledger.used_decoded_units == 1 + add_d &&
+                                  ledger.used_work_units == 1 + add_e)) { return 10; }
+                            if (expected && !halyard_ledger_release(ledger, request)) { return 11; }
+                            if (!halyard_ledger_release(ledger, base)) { return 12; }
+                            if (!(ledger.used_input_bytes == 0 &&
+                                  ledger.used_retained_bytes == 0 &&
+                                  ledger.used_output_bytes == 0 &&
+                                  ledger.used_decoded_units == 0 &&
+                                  ledger.used_work_units == 0)) { return 13; }
+                        } else { return 14; }
+                    }
+                }
+            }
+        }
+    }
+
+    // Each release dimension independently rejects underflow atomically.
+    for (int dimension = 0; dimension < 5; dimension += 1) {
+        HalyardLedgerResult made = halyard_ledger_create(2, 2, 2, 2, 2);
+        if (!made.ok) { return 15; }
+        if (let ledger = made.ledger) {
+            HalyardBudgetCharge one = new HalyardBudgetCharge{
+                input_bytes: 1, retained_bytes: 1, output_bytes: 1,
+                decoded_units: 1, work_units: 1
+            };
+            if (!halyard_ledger_reserve(ledger, one)) { return 16; }
+            HalyardBudgetCharge invalid_release = new HalyardBudgetCharge{
+                input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+                decoded_units: 0, work_units: 0
+            };
+            if (dimension == 0) { invalid_release.input_bytes = 2; }
+            if (dimension == 1) { invalid_release.retained_bytes = 2; }
+            if (dimension == 2) { invalid_release.output_bytes = 2; }
+            if (dimension == 3) { invalid_release.decoded_units = 2; }
+            if (dimension == 4) { invalid_release.work_units = 2; }
+            if (halyard_ledger_release(ledger, invalid_release)) { return 17; }
+            if (!(ledger.used_input_bytes == 1 &&
+                  ledger.used_retained_bytes == 1 &&
+                  ledger.used_output_bytes == 1 &&
+                  ledger.used_decoded_units == 1 &&
+                  ledger.used_work_units == 1)) { return 18; }
+        } else { return 19; }
+    }
+
+    // Corrupted public state must fail closed. This demonstrates defensive
+    // validation, not opacity: clients can still mutate these public fields.
+    HalyardLedgerResult corrupt = halyard_ledger_create(4, 4, 4, 4, 4);
+    if (!corrupt.ok) { return 20; }
+    if (let ledger = corrupt.ledger) {
+        ledger.used_work_units = -1;
+        HalyardBudgetCharge zero = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0
+        };
+        if (halyard_ledger_reserve(ledger, zero)) { return 21; }
+    } else { return 22; }
+
+    println("Halyard bounded-state property regressions: ok");
+    return 0;
+}
