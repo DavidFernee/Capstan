@@ -20,7 +20,7 @@ The invariant is:
 
 `root_balance + child_balance + grandchild_balance + spent = total`
 
-All account balances are non-negative, all leases have consistent live state, and all transitions preserve the invariant. Eight tests cover nested conservation, exact consumption, descendant-before-parent release, one-shot returns, stale-generation rejection, slot reissue, failure-atomic invalid, zero and over-budget operations, and exhaustive nested split/consume/return sweeps for totals 1 through 8. This is an abstract accounting model: it does not yet cover concurrent split/consume/return races, physical resource measurement, wall-clock deadlines, DMA, or implementation refinement.
+All account balances are non-negative, all leases have consistent live state, and all transitions preserve the invariant. Eight tests cover nested conservation, exact consumption, descendant-before-parent release, one-shot returns, stale-generation rejection, slot reissue, failure-atomic invalid, zero and over-budget operations, and exhaustive nested split/consume/return sweeps for totals 1 through 8. **Critical limitation:** `SBMHandle` is an ordinary transparent Capstan struct and can be constructed by a caller. The model does not establish unforgeable lease ownership or an authenticated root issuer. It checks generation and accounting transitions conditional on trusted API entry and intact state. It does not yet cover concurrent split/consume/return races, physical resource measurement, wall-clock deadlines, DMA, or implementation refinement.
 
 ## Evidence ladder
 
