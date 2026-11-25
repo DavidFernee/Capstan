@@ -159,7 +159,7 @@ int main() {
     result = wayland_protocol_dispatch(create_frame, wayland_frame_header(create_frame, 0),
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != 1 || result.created_ids.len() != 1 || result.created_ids[0] != 4) { return 22; }
-    if (wayland_object_get(objects, 4).interface_id != 40 || wayland_object_get(objects, 77).version != 2) { return 23; }
+    if (wayland_object_get(objects, 4).interface_id != 40 || wayland_object_get(objects, 4).version != 2) { return 23; }
     result = wayland_protocol_dispatch(create_frame, wayland_frame_header(create_frame, 0),
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != -1 || wayland_object_get(objects, 4).state != 1) { return 24; }
