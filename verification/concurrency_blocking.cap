@@ -111,6 +111,12 @@ bool cb_invariant(CBState s) {
     if (s.consumer_status == CB_TASK_BLOCKED && s.channel_count != 0) {
         return false;
     }
+    if (s.channel_closed && s.consumer_status == CB_TASK_BLOCKED) {
+        return false;
+    }
+    if (s.channel_closed && s.message_owner == CB_OWNER_PRODUCER) {
+        return false;
+    }
     if (s.consumer_wait_registered !=
         (s.consumer_wait == CB_WAIT_CHANNEL_MESSAGE)) { return false; }
     if (cb_terminal(s.consumer_status) &&
