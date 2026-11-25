@@ -9,7 +9,7 @@ integration with the larger formal library.
 
 namespace CapstanNativeMemory
 
-universe u
+universe u v
 
 /-- A slot has exactly one lifecycle state; occupancy cannot be represented
 by a separate Boolean that can disagree with a payload pointer. -/
@@ -32,7 +32,7 @@ table or an explicit rejection containing the original table. -/
 abbrev SlotTable (slotCount : Nat) (Object : Type u) :=
   Fin slotCount → SlotState Object
 
-inductive TransitionResult (State : Type u) (Output : Type u) where
+inductive TransitionResult (State : Type u) (Output : Type v) where
   | rejected (unchanged : State)
   | accepted (next : State) (output : Output)
 deriving Repr
@@ -133,13 +133,17 @@ theorem allocateSlot_success_resolves
   cases slot with
   | neverUsed =>
       simp [allocateSlot] at h
-      cases h
-      rfl
+      injection h with hnext hgeneration
+      subst next
+      subst generation
+      simp [resolveSlot]
   | free current =>
       by_cases hpositive : 0 < current
       · by_cases hbound : current ≤ maximumGeneration
         · simp [allocateSlot, hpositive, hbound] at h
-          cases h
+          injection h with hnext hgeneration
+          subst next
+          subst generation
           simp [resolveSlot]
         · simp [allocateSlot, hpositive, hbound] at h
       · simp [allocateSlot, hpositive] at h
@@ -246,6 +250,7 @@ theorem releaseAt_rejection_is_atomic
         rfl
     | some replacement =>
         simp [hslot] at h
+        cases h
   · simp [hdomain] at h
     cases h
     rfl
