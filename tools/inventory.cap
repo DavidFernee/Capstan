@@ -1,0 +1,327 @@
+// Capstan-native repository inventory reporter.
+//
+// Usage:
+//   capstan build -o build/inventory.c tools/inventory.cap
+//   cc -std=gnu11 -O2 -Iruntime build/inventory.c -o build/capstan-inventory
+//   build/capstan-inventory [--output report.csv] file...
+//
+// Supply tracked paths from a complete Git tree listing. This program counts
+// physical lines in each readable text file and aggregates by source extension.
+// It does not walk directories: Capstan's current standard library has no
+// directory-enumeration API. It never silently treats a partial file list as
+// a complete repository inventory.
+//
+// Physical lines: number of LF bytes, plus one if a non-empty file does not
+// end in LF. CRLF is counted as one line break. Empty files have zero lines.
+
+const int MAX_INVENTORY_FILE_BYTES = 16777216;
+const int MAX_INVENTORY_FILES = 10000;
+const int MAX_INVENTORY_PATH_BYTES = 4096;
+
+struct Inventory {
+    List<string> languages;
+    List<int> files;
+    List<int> lines;
+    List<int> bytes;
+    int total_files;
+    int total_lines;
+    int total_bytes;
+    int unreadable;
+}
+
+bool inventory_path_length_allowed(int length) {
+    return length > 0 && length <= MAX_INVENTORY_PATH_BYTES;
+}
+
+bool inventory_path_allowed(string path) {
+    return inventory_path_length_allowed(path.len());
+}
+
+bool has_path_segment(string path, string wanted) {
+    int start = 0;
+    for (int i = 0; i <= path.len(); i += 1) {
+        if (i == path.len() || path.at(i) == '/') {
+            if (path.slice(start, i) == wanted) { return true; }
+            start = i + 1;
+        }
+    }
+    return false;
+}
+
+string classification_for_path(string path) {
+    if (has_path_segment(path, "generated")) { return "Generated"; }
+    if (has_path_segment(path, "vendor") ||
+        has_path_segment(path, "vendors") ||
+        has_path_segment(path, "third_party") ||
+        has_path_segment(path, "third-party") ||
+        has_path_segment(path, "node_modules")) { return "Vendored"; }
+    if (has_path_segment(path, "tests") ||
+        has_path_segment(path, "test") ||
+        has_path_segment(path, "testdata") ||
+        has_path_segment(path, "fixtures")) { return "Test"; }
+    if (has_path_segment(path, "docs") ||
+        has_path_segment(path, "documentation")) { return "Documentation"; }
+    return "Repository";
+}
+
+string language_for_path(string path) {
+    int dot = -1;
+    int slash = -1;
+    for (int i = 0; i < path.len(); i += 1) {
+        if (path.at(i) == '/') { slash = i; }
+        if (path.at(i) == '.') { dot = i; }
+    }
+    if (dot <= slash || dot == path.len() - 1) {
+        string basename = path.slice(slash + 1, path.len());
+        if (basename == "Makefile" || basename == "makefile" || basename == "GNUmakefile") { return "Make"; }
+        return "unknown";
+    }
+    string ext = path.slice(dot, path.len());
+    if (ext == ".cap") { return "Capstan"; }
+    if (ext == ".py") { return "Python"; }
+    if (ext == ".c" || ext == ".h" || ext == ".cc" || ext == ".cpp" || ext == ".hpp") { return "C/C++"; }
+    if (ext == ".sh" || ext == ".bash") { return "Shell"; }
+    if (ext == ".lean") { return "Lean"; }
+    if (ext == ".rs") { return "Rust"; }
+    if (ext == ".go") { return "Go"; }
+    if (ext == ".js" || ext == ".mjs" || ext == ".cjs") { return "JavaScript"; }
+    if (ext == ".ts" || ext == ".tsx") { return "TypeScript"; }
+    if (ext == ".java") { return "Java"; }
+    if (ext == ".rb") { return "Ruby"; }
+    if (ext == ".php") { return "PHP"; }
+    if (ext == ".pl") { return "Perl"; }
+    if (ext == ".lua") { return "Lua"; }
+    if (ext == ".sql") { return "SQL"; }
+    if (ext == ".html" || ext == ".htm") { return "HTML"; }
+    if (ext == ".css") { return "CSS"; }
+    if (ext == ".xml") { return "XML"; }
+    if (ext == ".yml" || ext == ".yaml") { return "YAML"; }
+    if (ext == ".md" || ext == ".markdown") { return "Markdown"; }
+    if (ext == ".json") { return "JSON"; }
+    if (ext == ".toml") { return "TOML"; }
+    if (ext == ".txt") { return "Text"; }
+    if (ext == ".cmake") { return "CMake"; }
+    return "other";
+}
+
+bool contains_nul(Tainted source) {
+    for (int i = 0; i < source.len(); i += 1) {
+        if (source.at(i) == '\0') { return true; }
+    }
+    return false;
+}
+
+int physical_lines(Tainted source) {
+    int n = source.len();
+    if (n == 0) { return 0; }
+    int count = 0;
+    for (int i = 0; i < n; i += 1) {
+        if (source.at(i) == '\n') { count += 1; }
+    }
+    if (source.at(n - 1) != '\n') { count += 1; }
+    return count;
+}
+
+int language_index(Inventory inv, string language) {
+    for (int i = 0; i < inv.languages.len(); i += 1) {
+        if (inv.languages[i] == language) { return i; }
+    }
+    inv.languages.push(language);
+    inv.files.push(0);
+    inv.lines.push(0);
+    inv.bytes.push(0);
+    return inv.languages.len() - 1;
+}
+
+Inventory record_file(Inventory inv, string language, int line_count, int byte_count) {
+    int at = language_index(inv, language);
+    inv.files[at] += 1;
+    inv.lines[at] += line_count;
+    inv.bytes[at] += byte_count;
+    inv.total_files += 1;
+    inv.total_lines += line_count;
+    inv.total_bytes += byte_count;
+    return inv;
+}
+
+string csv_cell(string value) {
+    return escape_csv(taint(value));
+}
+
+string inventory_report(Inventory inv, List<string> rows) {
+    rows.push("");
+    rows.push("SUMMARY");
+    rows.push("language,files,lines,bytes");
+    for (int i = 0; i < inv.languages.len(); i += 1) {
+        rows.push(csv_cell(inv.languages[i]) + "," + int_to_str(inv.files[i]) + "," + int_to_str(inv.lines[i]) + "," + int_to_str(inv.bytes[i]));
+    }
+    rows.push("TOTAL," + int_to_str(inv.total_files) + "," + int_to_str(inv.total_lines) + "," + int_to_str(inv.total_bytes));
+    rows.push("UNREADABLE," + int_to_str(inv.unreadable) + ",0,0");
+    return join(rows, "\n") + "\n";
+}
+
+void usage() {
+    println("Capstan repository inventory");
+    println("usage: capstan-inventory [--output report.csv] file...");
+    println("Input must be a complete, explicit list of tracked files (for example, from git ls-files).");
+}
+
+int main() {
+    List<string> argv = args();
+    string output_path = "";
+    List<string> paths = new List<string>();
+    bool options = true;
+    for (int i = 0; i < argv.len(); i += 1) {
+        string arg = argv[i];
+        if (options && arg == "--") {
+            options = false;
+        } else if (options && arg == "--output") {
+            if (i + 1 >= argv.len() || output_path != "") {
+                usage();
+                return 2;
+            }
+            output_path = argv[i + 1];
+            i += 1;
+        } else if (options && arg == "--help") {
+            usage();
+            return 0;
+        } else if (options && arg.len() > 0 && arg.at(0) == '-') {
+            println("unknown option: " + arg);
+            usage();
+            return 2;
+        } else {
+            if (!inventory_path_allowed(arg)) {
+                println("input path is empty or exceeds 4096 bytes");
+                return 2;
+            }
+            if (paths.len() >= MAX_INVENTORY_FILES) {
+                println("input exceeds the 10000-file inventory limit");
+                return 2;
+            }
+            paths.push(arg);
+        }
+    }
+    if (paths.len() == 0) {
+        usage();
+        return 2;
+    }
+
+    Inventory inv = new Inventory{
+        languages: new List<string>(),
+        files: new List<int>(),
+        lines: new List<int>(),
+        bytes: new List<int>(),
+        total_files: 0,
+        total_lines: 0,
+        total_bytes: 0,
+        unreadable: 0
+    };
+    List<string> rows = new List<string>();
+    rows.push("path,classification,language,lines,bytes,status");
+
+    for (int p = 0; p < paths.len(); p += 1) {
+        string path = paths[p];
+        string language = language_for_path(path);
+        string classification = classification_for_path(path);
+        if (let source = read_file(path, MAX_INVENTORY_FILE_BYTES)) {
+            int nbytes = source.len();
+            if (contains_nul(source)) {
+                inv = record_file(inv, "Binary (NUL)", 0, nbytes);
+                rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell("Binary (NUL)") + ",0," + int_to_str(nbytes) + ",nul_byte_detected");
+            } else {
+                int nlines = physical_lines(source);
+                inv = record_file(inv, language, nlines, nbytes);
+                rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell(language) + "," + int_to_str(nlines) + "," + int_to_str(nbytes) + ",ok");
+            }
+        } else {
+            inv.unreadable += 1;
+            rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell(language) + ",0,0,unreadable_or_over_limit");
+            println("cannot inventory: " + path + " (unreadable, non-regular, or exceeds 16 MiB)");
+        }
+    }
+
+    string report = inventory_report(inv, rows);
+    if (output_path == "") {
+        print(report);
+    } else if (!write_file(output_path, report)) {
+        println("cannot write report: " + output_path);
+        return 2;
+    }
+    if (inv.unreadable > 0) { return 1; }
+    return 0;
+}
+
+
+test "inventory input bounds" {
+    assert inventory_path_allowed("src/main.cap");
+    assert !inventory_path_allowed("");
+    assert inventory_path_length_allowed(1);
+    assert inventory_path_length_allowed(MAX_INVENTORY_PATH_BYTES);
+    assert !inventory_path_length_allowed(MAX_INVENTORY_PATH_BYTES + 1);
+    assert !inventory_path_length_allowed(0);
+}
+
+test "inventory path classification" {
+    assert classification_for_path("compiler/main.cap") == "Repository";
+    assert classification_for_path("docs/SPEC.md") == "Documentation";
+    assert classification_for_path("tests/unit/check.py") == "Test";
+    assert classification_for_path("fixtures/input.bin") == "Test";
+    assert classification_for_path("third_party/lib/source.c") == "Vendored";
+    assert classification_for_path("vendor/source.c") == "Vendored";
+    assert classification_for_path("build/generated/parser.c") == "Generated";
+    assert classification_for_path("lib/generated/schema.cap") == "Generated";
+    assert !has_path_segment("mytests/helper.cap", "tests");
+}
+
+test "inventory language classification" {
+    assert language_for_path("compiler/main.cap") == "Capstan";
+    assert language_for_path("bootstrap/capstan0.py") == "Python";
+    assert language_for_path("runtime/capstan_rt.h") == "C/C++";
+    assert language_for_path("tests/run.sh") == "Shell";
+    assert language_for_path("verification/proof.lean") == "Lean";
+    assert language_for_path("docs/README.md") == "Markdown";
+    assert language_for_path("unknown.blarg") == "other";
+    assert language_for_path("build/Makefile") == "Make";
+    assert language_for_path("build/GNUmakefile") == "Make";
+}
+
+
+test "inventory aggregate totals" {
+    Inventory inv = new Inventory{
+        languages: new List<string>(),
+        files: new List<int>(),
+        lines: new List<int>(),
+        bytes: new List<int>(),
+        total_files: 0,
+        total_lines: 0,
+        total_bytes: 0,
+        unreadable: 0
+    };
+    inv = record_file(inv, "Capstan", 3, 30);
+    inv = record_file(inv, "Python", 2, 20);
+    inv = record_file(inv, "Capstan", 4, 40);
+    assert inv.total_files == 3;
+    assert inv.total_lines == 9;
+    assert inv.total_bytes == 90;
+    assert inv.files[0] == 2;
+    assert inv.lines[0] == 7;
+    assert inv.bytes[0] == 70;
+    assert inv.files[1] == 1;
+    assert inv.lines[1] == 2;
+    assert inv.bytes[1] == 20;
+}
+
+test "inventory NUL-byte detection" {
+    assert !contains_nul(taint(""));
+    assert !contains_nul(taint("ordinary text"));
+    assert contains_nul(taint("prefix\0suffix"));
+}
+
+test "inventory physical line counting" {
+    assert physical_lines(taint("")) == 0;
+    assert physical_lines(taint("one")) == 1;
+    assert physical_lines(taint("one\n")) == 1;
+    assert physical_lines(taint("one\ntwo")) == 2;
+    assert physical_lines(taint("one\n\n")) == 2;
+    assert physical_lines(taint("one\r\ntwo\r\n")) == 2;
+}
