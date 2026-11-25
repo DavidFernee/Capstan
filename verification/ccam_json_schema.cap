@@ -285,11 +285,12 @@ bool ccam_json_schema_instruction(
         return ccam_json_schema_integer(source, tokens, instruction_at, "dst", true) &&
             value >= 0 && (tokens[value].kind == CCAM_JSON_T_TRUE || tokens[value].kind == CCAM_JSON_T_FALSE);
     }
-    if (op == taint("move") || op == taint("not_b") || op == taint("ret")) {
-        return ccam_json_schema_field_index(source, tokens, instruction_at,
-            op == taint("ret") ? "src" : "dst") &&
-            ccam_json_schema_field_index(source, tokens, instruction_at,
-            op == taint("move") || op == taint("not_b") || op == taint("ret") ? "src" : "dst");
+    if (op == taint("ret")) {
+        return ccam_json_schema_field_index(source, tokens, instruction_at, "src");
+    }
+    if (op == taint("move") || op == taint("not_b")) {
+        return ccam_json_schema_field_index(source, tokens, instruction_at, "dst") &&
+            ccam_json_schema_field_index(source, tokens, instruction_at, "src");
     }
     if (op == taint("add_i") || op == taint("sub_i") ||
         op == taint("mul_i") || op == taint("div_i") ||
