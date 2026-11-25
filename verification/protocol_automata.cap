@@ -9,6 +9,10 @@ const int PA_MAX_STATES = 32;
 const int PA_MAX_TRANSITIONS = 128;
 const int PA_MAX_ROLES = 8;
 const int PA_MAX_OPERATION = 255;
+const int PA_OWNER_NONE = -1;
+const int PA_EFFECT_ALLOCATE = 1;
+const int PA_EFFECT_TRANSFER = 2;
+const int PA_EFFECT_RELEASE = 3;
 
 struct PAEdge {
     int from_state;
@@ -17,11 +21,20 @@ struct PAEdge {
     int to_state;
 }
 
+struct PAContract {
+    int message_type;
+    int owner_before;
+    int owner_after;
+    int resource_delta;
+    int effect;
+}
+
 struct PASpec {
     int state_count;
     int role_count;
     int initial_state;
     List<PAEdge> transitions;
+    List<PAContract> contracts;
     List<int> terminal_states;
 }
 
@@ -33,6 +46,14 @@ struct PAValidation {
 struct PAStep {
     bool accepted;
     int next_state;
+    string error;
+}
+
+struct PAContractStep {
+    bool accepted;
+    int next_state;
+    int next_owner;
+    int next_live_resources;
     string error;
 }
 
@@ -64,6 +85,9 @@ PAValidation pa_validate(PASpec spec) {
     if (spec.transitions.len() > PA_MAX_TRANSITIONS) {
         return pa_reject("too_many_transitions");
     }
+    if (spec.contracts.len() != spec.transitions.len()) {
+        return pa_reject("transition_contract_count_mismatch");
+    }
     if (spec.terminal_states.len() == 0 ||
         spec.terminal_states.len() > spec.state_count) {
         return pa_reject("invalid_terminal_state_set");
@@ -94,6 +118,45 @@ PAValidation pa_validate(PASpec spec) {
         }
         if (edge.operation < 1 || edge.operation > PA_MAX_OPERATION) {
             return pa_reject("invalid_operation");
+        }
+        PAContract contract = spec.contracts[i];
+        if (contract.message_type < 1 || contract.message_type > PA_MAX_OPERATION) {
+            return pa_reject("invalid_message_type");
+        }
+        if (contract.owner_before < PA_OWNER_NONE ||
+            contract.owner_before > spec.role_count ||
+            contract.owner_after < PA_OWNER_NONE ||
+            contract.owner_after > spec.role_count) {
+            return pa_reject("contract_owner_out_of_range");
+        }
+        if (contract.resource_delta < -1 || contract.resource_delta > 1) {
+            return pa_reject("contract_resource_delta_out_of_range");
+        }
+        if (i > 0 && contract.message_type != spec.contracts[0].message_type) {
+            return pa_reject("mixed_message_types_in_protocol");
+        }
+        if (contract.owner_before == PA_OWNER_NONE &&
+            contract.owner_after == edge.role &&
+            contract.resource_delta == 1 &&
+            contract.effect == PA_EFFECT_ALLOCATE) {
+            // A role creates the unique live message.
+        } else if (contract.owner_before == edge.role &&
+            contract.owner_after == spec.role_count &&
+            contract.resource_delta == 0 &&
+            contract.effect == PA_EFFECT_TRANSFER) {
+            // The acting role transfers the message into channel ownership.
+        } else if (contract.owner_before == spec.role_count &&
+            contract.owner_after == edge.role &&
+            contract.resource_delta == 0 &&
+            contract.effect == PA_EFFECT_TRANSFER) {
+            // The acting role receives channel ownership.
+        } else if (contract.owner_before == edge.role &&
+            contract.owner_after == PA_OWNER_NONE &&
+            contract.resource_delta == -1 &&
+            contract.effect == PA_EFFECT_RELEASE) {
+            // The acting role releases the unique live message.
+        } else {
+            return pa_reject("invalid_ownership_resource_contract");
         }
         if (pa_contains(spec.terminal_states, edge.from_state)) {
             return pa_reject("terminal_state_has_outgoing_transition");
@@ -229,6 +292,96 @@ PAStep pa_step(PASpec spec, int current_state, int role, int operation) {
     };
 }
 
+List<PAContract> pa_linear_message_contracts() {
+    List<PAContract> contracts = new List<PAContract>();
+    contracts.push(new PAContract{
+        message_type: 1, owner_before: PA_OWNER_NONE, owner_after: 1,
+        resource_delta: 1, effect: PA_EFFECT_ALLOCATE
+    });
+    contracts.push(new PAContract{
+        message_type: 1, owner_before: 1, owner_after: 3,
+        resource_delta: 0, effect: PA_EFFECT_TRANSFER
+    });
+    contracts.push(new PAContract{
+        message_type: 1, owner_before: 3, owner_after: 2,
+        resource_delta: 0, effect: PA_EFFECT_TRANSFER
+    });
+    contracts.push(new PAContract{
+        message_type: 1, owner_before: 2, owner_after: PA_OWNER_NONE,
+        resource_delta: -1, effect: PA_EFFECT_RELEASE
+    });
+    return contracts;
+}
+
+PAContractStep pa_step_with_resources(
+    PASpec spec, int current_state, int role, int operation,
+    int current_owner, int live_resources, int max_resources, int message_type
+) {
+    PAValidation validation = pa_validate(spec);
+    if (!validation.valid) {
+        return new PAContractStep{
+            accepted: false, next_state: current_state,
+            next_owner: current_owner, next_live_resources: live_resources,
+            error: validation.error
+        };
+    }
+    if (live_resources < 0 || max_resources < 0 ||
+        live_resources > max_resources) {
+        return new PAContractStep{
+            accepted: false, next_state: current_state,
+            next_owner: current_owner, next_live_resources: live_resources,
+            error: "invalid_resource_state"
+        };
+    }
+    for (int i = 0; i < spec.transitions.len(); i += 1) {
+        PAEdge edge = spec.transitions[i];
+        if (edge.from_state == current_state &&
+            edge.role == role && edge.operation == operation) {
+            PAContract contract = spec.contracts[i];
+            if (message_type != contract.message_type) {
+                return new PAContractStep{
+                    accepted: false, next_state: current_state,
+                    next_owner: current_owner, next_live_resources: live_resources,
+                    error: "message_type_mismatch"
+                };
+            }
+            if (current_owner != contract.owner_before) {
+                return new PAContractStep{
+                    accepted: false, next_state: current_state,
+                    next_owner: current_owner, next_live_resources: live_resources,
+                    error: "message_owner_mismatch"
+                };
+            }
+            if (contract.resource_delta > 0 &&
+                contract.resource_delta > max_resources - live_resources) {
+                return new PAContractStep{
+                    accepted: false, next_state: current_state,
+                    next_owner: current_owner, next_live_resources: live_resources,
+                    error: "resource_budget_exceeded"
+                };
+            }
+            if (contract.resource_delta < 0 && live_resources < 1) {
+                return new PAContractStep{
+                    accepted: false, next_state: current_state,
+                    next_owner: current_owner, next_live_resources: live_resources,
+                    error: "resource_underflow"
+                };
+            }
+            return new PAContractStep{
+                accepted: true, next_state: edge.to_state,
+                next_owner: contract.owner_after,
+                next_live_resources: live_resources + contract.resource_delta,
+                error: ""
+            };
+        }
+    }
+    return new PAContractStep{
+        accepted: false, next_state: current_state,
+        next_owner: current_owner, next_live_resources: live_resources,
+        error: "operation_not_enabled"
+    };
+}
+
 PASpec pa_linear_message_protocol() {
     List<PAEdge> transitions = new List<PAEdge>();
     transitions.push(new PAEdge{
@@ -250,6 +403,7 @@ PASpec pa_linear_message_protocol() {
         role_count: 3,
         initial_state: 0,
         transitions: transitions,
+        contracts: pa_linear_message_contracts(),
         terminal_states: terminals
     };
 }
@@ -284,6 +438,10 @@ test "PA rejects duplicate transition labels as nondeterministic" {
     spec.transitions.push(new PAEdge{
         from_state: 0, role: 1, operation: 1, to_state: 2
     });
+    spec.contracts.push(new PAContract{
+        message_type: 1, owner_before: PA_OWNER_NONE, owner_after: 1,
+        resource_delta: 1, effect: PA_EFFECT_ALLOCATE
+    });
     PAValidation result = pa_validate(spec);
     assert(!result.valid);
     assert(result.error == "nondeterministic_transition_label");
@@ -310,6 +468,7 @@ test "PA rejects a cyclic protocol" {
         role_count: 3,
         initial_state: 0,
         transitions: transitions,
+        contracts: pa_linear_message_contracts(),
         terminal_states: terminals
     };
     PAValidation result = pa_validate(spec);
@@ -344,6 +503,7 @@ test "PA rejects a reachable nonterminal dead end" {
         role_count: 3,
         initial_state: 0,
         transitions: transitions,
+        contracts: pa_linear_message_contracts(),
         terminal_states: terminals
     };
     PAValidation result = pa_validate(spec);
@@ -357,4 +517,73 @@ test "PA rejects out-of-range roles and states" {
     };
     PAValidation result = pa_validate(spec);
     assert(!result.valid && result.error == "transition_role_out_of_range");
+}
+
+test "PA enforces message ownership and resource deltas atomically" {
+    PASpec spec = pa_linear_message_protocol();
+    PAContractStep produce = pa_step_with_resources(
+        spec, 0, 1, 1, PA_OWNER_NONE, 0, 1, 1
+    );
+    assert(produce.accepted);
+    assert(produce.next_state == 1 && produce.next_owner == 1);
+    assert(produce.next_live_resources == 1);
+
+    PAContractStep wrong_owner = pa_step_with_resources(
+        spec, 1, 1, 2, 2, 1, 1, 1
+    );
+    assert(!wrong_owner.accepted);
+    assert(wrong_owner.error == "message_owner_mismatch");
+    assert(wrong_owner.next_state == 1 && wrong_owner.next_owner == 2);
+    assert(wrong_owner.next_live_resources == 1);
+
+    PAContractStep send = pa_step_with_resources(
+        spec, 1, 1, 2, 1, 1, 1, 1
+    );
+    assert(send.accepted && send.next_owner == 3);
+    assert(send.next_live_resources == 1);
+    PAContractStep receive = pa_step_with_resources(
+        spec, 2, 2, 3, 3, 1, 1, 1
+    );
+    assert(receive.accepted && receive.next_owner == 2);
+    PAContractStep release = pa_step_with_resources(
+        spec, 3, 2, 4, 2, 1, 1, 1
+    );
+    assert(release.accepted && release.next_owner == PA_OWNER_NONE);
+    assert(release.next_live_resources == 0);
+}
+
+test "PA rejects allocation beyond the resource budget without mutation" {
+    PASpec spec = pa_linear_message_protocol();
+    PAContractStep rejected = pa_step_with_resources(
+        spec, 0, 1, 1, PA_OWNER_NONE, 0, 0, 1
+    );
+    assert(!rejected.accepted);
+    assert(rejected.error == "resource_budget_exceeded");
+    assert(rejected.next_state == 0);
+    assert(rejected.next_owner == PA_OWNER_NONE);
+    assert(rejected.next_live_resources == 0);
+}
+
+test "PA rejects the wrong message type without mutation" {
+    PASpec spec = pa_linear_message_protocol();
+    PAContractStep rejected = pa_step_with_resources(
+        spec, 0, 1, 1, PA_OWNER_NONE, 0, 1, 2
+    );
+    assert(!rejected.accepted && rejected.error == "message_type_mismatch");
+    assert(rejected.next_state == 0 && rejected.next_live_resources == 0);
+}
+
+test "PA rejects malformed ownership and resource contracts" {
+    PASpec spec = pa_linear_message_protocol();
+    spec.contracts[0].resource_delta = 0;
+    PAValidation result = pa_validate(spec);
+    assert(!result.valid);
+    assert(result.error == "invalid_ownership_resource_contract");
+}
+
+test "PA rejects a transition-contract count mismatch" {
+    PASpec spec = pa_linear_message_protocol();
+    spec.contracts.pop();
+    PAValidation result = pa_validate(spec);
+    assert(!result.valid && result.error == "transition_contract_count_mismatch");
 }
