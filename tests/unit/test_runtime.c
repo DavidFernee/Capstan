@@ -619,6 +619,7 @@ static void test_workspace_files(void) {
     CHECK(root_fd >= 0);
     if (root_fd >= 0) {
         CHECK(str_is(cap_workspace_read_file(root_fd, CAP_LIT("data.cap", 8), 1024, 0), "inside", 6));
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("data.cap", 8), 3, 0) == NULL);
         CHECK(cap_workspace_read_file(root_fd, CAP_LIT("../secret.cap", 13), 1024, 0) == NULL);
         CHECK(cap_workspace_read_file(root_fd, CAP_LIT("/etc/passwd", 11), 1024, 0) == NULL);
         CHECK(cap_workspace_read_file(root_fd, CAP_LIT("missing.cap", 11), 1024, 0) == NULL);
