@@ -498,6 +498,20 @@ test "GC rejects a stale-generation graph edge" {
 }
 
 
+test "GC rejects a stale-generation edge source" {
+    GCSpec spec = gc_empty_spec(2);
+    spec.objects.push(gc_object(0, GC_KIND_TRACED));
+    spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
+    spec.roots.push(gc_ref(0, 1));
+    spec.edges.push(new GCEdge{
+        from_id: 0, from_generation: 2, to_id: 1, to_generation: 1
+    });
+    GCResult result = gc_collect(spec);
+    assert(result.status == GC_INVALID);
+    assert(result.objects[0].allocated && result.objects[1].allocated);
+}
+
+
 test "GC root-omission negative control exposes false reclamation" {
     GCSpec complete_roots = gc_empty_spec(2);
     complete_roots.objects.push(gc_object(0, GC_KIND_TRACED));
