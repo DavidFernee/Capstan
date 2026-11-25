@@ -142,11 +142,17 @@ struct Canvas {
     }
 
     void fill_path(Path p, Paint paint, int rule) {
+        // Validate every path before flattening, including immediate-mode callers.
+        // This prevents malformed point streams and oversized coordinates from
+        // reaching curve arithmetic or causing unbounded temporary allocations.
+        int upper_bound = path_flatten_segment_bound(p);
+        if (upper_bound < 0 || upper_bound > MAX_DISPLAY_SEGMENTS_PER_PATH) {
+            println("shroud: path rejected by structural/resource preflight");
+            exit(101);
+        }
         if (self.recording) {
-            int upper_bound = path_flatten_segment_bound(p);
             if (self.budget.len() != 1 || self.budget[0] < 0 ||
-                self.budget[0] > MAX_DISPLAY_SEGMENTS || upper_bound < 0 ||
-                upper_bound > MAX_DISPLAY_SEGMENTS_PER_PATH ||
+                self.budget[0] > MAX_DISPLAY_SEGMENTS ||
                 self.commands.len() >= MAX_DISPLAY_COMMANDS ||
                 upper_bound > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
                 println("shroud: display list path rejected by resource preflight");
