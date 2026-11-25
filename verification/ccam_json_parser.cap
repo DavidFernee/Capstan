@@ -41,8 +41,6 @@ bool ccam_json_parser_fail(CCAMJsonParser p, int code) {
     return false;
 }
 
-bool ccam_json_parse_value(CCAMJsonParser p, int depth);
-
 bool ccam_json_parse_object(CCAMJsonParser p, int depth) {
     p.pos += 1; // opening brace
     if (ccam_json_parser_kind(p) == CCAM_JSON_T_RBRACE) {
