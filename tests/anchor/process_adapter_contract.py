@@ -584,6 +584,8 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(process.terminal_reason, "timeout")
         self.clock.advance(250)
         self.supervisor.tick(process)
+        self.assertEqual(process.child.state, ProcessState.KILL_REQUESTED)
+        self.supervisor.tick(process)  # observe exit after force termination
         self.assertEqual(process.child.state, ProcessState.REAPED)
 
     def test_natural_exit_is_observed_and_reaped_once(self):
