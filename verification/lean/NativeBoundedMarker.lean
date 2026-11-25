@@ -160,8 +160,6 @@ def markerLoop {slotCount : Nat}
               else
                 markerLoop isLive referenceEdges descriptorCost roots budget fuel
                   nextPending (visited ++ [handle]) nextCounters
-termination_by fuel
-decreasing_by omega
 
 /-- Start with deduplicated roots. The fuel bound is maxWork + 1; reaching
 zero with pending work is always rejection, never successful completion. -/
