@@ -459,10 +459,10 @@ def check_wayland_wire(capstanc, cc, cflags, tmp):
 def check_wayland_protocol(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/wayland_protocol.cap", "wayland-protocol")
     r = run(exe, check=False)
-    expected = "Wayland protocol schema and object lifecycle: 35 assertions passed\n"
+    expected = "Wayland protocol schema and object lifecycle: 37 assertions passed\n"
     if r.returncode != 0 or r.stdout != expected:
         sys.exit(f"Wayland protocol schema/object lifecycle: exit {r.returncode}:\n{r.stdout}{r.stderr}")
-    return "35 checks: interface/opcode/direction/version resolution, typed arguments, nullable values, descriptor counts, object references, staged new IDs, destructor retirement/release, forged frames and fixed-capacity admission"
+    return "37 checks: interface/opcode/direction/version resolution, typed arguments, nullable values, descriptor counts, object references, staged new IDs, destructor retirement/release, forged frames and fixed-capacity admission"
 
 
 def check_pixmap_limits(capstanc, cc, cflags, tmp):
