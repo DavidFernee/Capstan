@@ -26,6 +26,7 @@ const int CCAM_JSON_MAX_DEPTH = 64;
 const int CCAM_JSON_MAX_NODES = 1000000;
 const int CCAM_JSON_MAX_STRING_BYTES = 1048576;
 const int CCAM_JSON_MAX_TOTAL_STRING_BYTES = 4194304;
+const int CCAM_JSON_MAX_OBJECT_FIELDS = 64;
 const int CCAM_JSON_MAX_FUNCTIONS = 4096;
 const int CCAM_JSON_MAX_TOTAL_INSTRUCTIONS = 65536;
 
@@ -332,6 +333,10 @@ CCAMJsonValue ccam_json_read_value(CCAMJsonParser p, int depth) {
                 ccam_json_fail(p, "object key must be a string");
                 return object;
             }
+            if (object.keys.len() >= CCAM_JSON_MAX_OBJECT_FIELDS) {
+                ccam_json_fail(p, "object field count limit exceeded");
+                return object;
+            }
             Tainted key = ccam_json_read_string(p);
             for (int k = 0; k < object.keys.len(); k += 1) {
                 if (object.keys[k] == key) {
@@ -552,6 +557,7 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
 
     List<CCAMFunction> functions = new List<CCAMFunction>();
     List<string> names = new List<string>();
+    Map<int> function_indices = new Map<int>();
     int total_instructions = 0;
     int total_registers = 0;
     int total_name_bytes = 0;
@@ -571,16 +577,15 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
             return ccam_json_program_error("invalid_function_name");
         }
         string name = name_result.value;
-        for (int j = 0; j < names.len(); j += 1) {
-            if (names[j] == name) {
-                return ccam_json_program_error("duplicate_function_name");
-            }
+        if (function_indices.has(name)) {
+            return ccam_json_program_error("duplicate_function_name");
         }
         if (name.len() > CCAM_MAX_TOTAL_FUNCTION_NAME_BYTES - total_name_bytes) {
             return ccam_json_program_error("total_function_name_limit_exceeded");
         }
         total_name_bytes += name.len();
         names.push(name);
+        function_indices.set(name, fi);
 
         CCAMJsonValue registers_json = ccam_json_member(fn_json, "register_types");
         if (registers_json.kind != CCAM_JSON_ARRAY ||
@@ -642,13 +647,15 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
     }
 
     int entry_index = -1;
-    for (int i = 0; i < names.len(); i += 1) {
-        if (names[i] == entry_result.value) { entry_index = i; }
+    if (let found_entry = function_indices.get(entry_result.value)) {
+        entry_index = found_entry;
     }
     if (entry_index < 0) {
         return ccam_json_program_error("entry_function_not_found");
     }
 
+    int total_call_arguments = 0;
+    int total_output_literals = 0;
     // Pass two decodes exact opcode schemas and resolves call names.
     for (int fi = 0; fi < functions_json.items.len(); fi += 1) {
         CCAMJsonValue fn_json = functions_json.items[fi];
@@ -750,17 +757,19 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
                     return ccam_json_program_error("call_function_must_be_string");
                 }
                 int callee_index = -1;
-                for (int j = 0; j < names.len(); j += 1) {
-                    if (names[j] == callee_name.value) { callee_index = j; }
+                if (let found_callee = function_indices.get(callee_name.value)) {
+                    callee_index = found_callee;
                 }
                 if (callee_index < 0) {
                     return ccam_json_program_error("call_target_not_found");
                 }
                 CCAMJsonValue args_json = ccam_json_member(op_json, "args");
                 if (args_json.kind != CCAM_JSON_ARRAY ||
-                    args_json.items.len() > CCAM_MAX_CALL_ARGUMENTS) {
+                    args_json.items.len() >
+                        CCAM_MAX_CALL_ARGUMENTS - total_call_arguments) {
                     return ccam_json_program_error("call_arguments_invalid");
                 }
+                total_call_arguments += args_json.items.len();
                 List<int> args = new List<int>();
                 for (int ai = 0; ai < args_json.items.len(); ai += 1) {
                     CCAMJsonIntResult argument =
@@ -814,9 +823,11 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
                 fields.push("bytes");
                 CCAMJsonValue bytes_json = ccam_json_member(op_json, "bytes");
                 if (bytes_json.kind != CCAM_JSON_ARRAY ||
-                    bytes_json.items.len() > CCAM_MAX_OUTPUT_BYTES) {
+                    bytes_json.items.len() >
+                        CCAM_MAX_OUTPUT_BYTES - total_output_literals) {
                     return ccam_json_program_error("byte_output_payload_invalid");
                 }
+                total_output_literals += bytes_json.items.len();
                 for (int bi = 0; bi < bytes_json.items.len(); bi += 1) {
                     CCAMJsonIntResult byte_value =
                         ccam_json_integer(bytes_json.items[bi]);
