@@ -96,11 +96,11 @@ The uniprocessor scheduler is the initial correctness target. SMP is a separate 
 
 **First target:** x86-64 under QEMU with an explicitly versioned virtual machine configuration. This is a development target, not a hardware-support claim.
 
-**Initial boot candidate:** a documented Multiboot2-compatible bootloader handoff. This provides a narrow emulator boot path, but the bootloader and firmware are outside the kernel implementation and remain explicit trusted inputs. Before implementation, verify the exact protocol version, image format, entry mode, memory map, module handoff and CPU state against the chosen bootloader and QEMU configuration.
+**Initial boot protocol:** Limine x86-64, with a pinned bootloader release and a pinned protocol base revision (minimum base revision 5 for the initial x86-64 target). Limine provides a native 64-bit entry contract and an ELF-oriented image path, avoiding a 32-bit protected-mode-to-long-mode trampoline in the first kernel slice. Firmware and bootloader remain explicit trusted inputs. The kernel must install its own IDT immediately, establish its own GDT and page tables before reclaiming bootloader memory, and treat every response pointer, count, range and memory-map entry as untrusted input. The bootloader's higher-half direct-map mappings are not the kernel's final protection policy; Helm must replace them with explicit permissions and ownership tracking. The protocol's HHDM offset is discovered, never hard-coded. Multiboot2 remains a possible alternative if later compatibility requirements justify its additional entry-transition work.
 
 The existing Capstan native backend emits a freestanding Linux process using the System V AMD64 process ABI and Linux syscalls. It is not a bare-metal kernel backend. Its process entry point and syscall conventions must not be reused as if they were valid at kernel privilege.
 
-The kernel target must define the ELF image layout and linker script; boot header and entry contract; initial CPU mode and long-mode transition; stack and page-table establishment; GDT, IDT, exception and interrupt entry/exit; Capstan kernel calling convention; privileged instruction boundary; serial output; and reproducible image build.
+The kernel target must define the ELF image layout and linker script; Limine request/base-revision contract; higher-half image and entry contract; stack handoff; GDT, IDT, exception and interrupt entry/exit; Capstan kernel calling convention; privileged instruction boundary; serial output; and reproducible image build. The Limine x86-64 entry ABI is System V AMD64 without FP/SIMD; the first kernel subset must not emit floating-point or SIMD instructions.
 
 The minimum assembly surface is limited to boot entry, privilege/interrupt entry and return, context switch, and narrowly defined register/CPU operations. Each stub has a typed Capstan-facing contract and a testable register, stack and flags-preservation specification.
 
@@ -149,14 +149,14 @@ Bare-metal work must not assume capabilities the compiler does not yet provide. 
 
 1. Capstan freestanding target profile and explicit no-runtime mode.
 2. Kernel code generation for the selected scalar/record subset, without process ABI assumptions.
-3. Linker script and Multiboot2 ELF image construction.
+3. Linker script and Limine-compatible higher-half ELF image construction.
 4. Minimal entry assembly and register/stack contract.
 5. Explicit privileged-instruction interface.
 6. Deterministic serial output and panic/fault path.
 7. QEMU boot harness with timeouts, output bounds and image-hash capture.
 8. Negative boot tests for malformed boot information, missing memory regions and invalid CPU features.
 
-The first kernel slice is deliberately tiny: validate boot handoff data, establish a bounded stack, initialise serial diagnostics and halt safely. It must not enable interrupts, start user tasks, enable DMA or claim memory isolation until those properties have their own specifications and tests.
+The first kernel slice is deliberately staged: (a) enter x86-64 kernel code, switch to a kernel-owned bounded stack, invoke a Capstan-generated scalar entry routine and halt through a test-only QEMU exit device; (b) install a minimal exception IDT and validate bounded Limine handoff data through a separately specified Capstan memory-view interface; (c) initialise serial diagnostics. It must not enable interrupts, start user tasks, enable DMA or claim memory isolation until those properties have their own specifications and tests.
 
 ## 11. Non-goals for the first kernel
 
