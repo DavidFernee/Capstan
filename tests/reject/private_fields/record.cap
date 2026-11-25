@@ -6,3 +6,12 @@ struct Vault {
 Vault make_vault() {
     return new Vault{secret: 41, label: 7};
 }
+
+opaque struct SealedVault {
+    int secret;
+    int counter;
+}
+
+SealedVault make_sealed_vault() {
+    return new SealedVault{secret: 73, counter: 0};
+}
