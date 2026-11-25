@@ -1,5 +1,19 @@
 # Capstan
 
+<p align="center">
+  <img src="brand/capstan.svg" alt="Capstan provisional logo" width="112" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="brand/shroud.svg" alt="Shroud provisional logo" width="112" />
+  &nbsp;&nbsp;&nbsp;
+  <img src="brand/anchor.svg" alt="Anchor provisional logo" width="112" />
+</p>
+<p align="center">
+  <sub>Capstan · Shroud · Anchor — provisional identity marks</sub>
+</p>
+
+> **Branding status:** These are provisional placeholder marks, not approved final logos. See [brand/README.md](brand/README.md) for the design direction, usage limits and review criteria.
+
+
 **A security-oriented, self-hosting programming language with C/Java-style syntax.** Capstan uses static checks, runtime guards and explicit trust boundaries to prevent or contain classes of defects; the scope and residual gaps are documented in [CWE coverage](docs/CWE-COVERAGE.md) and the [threat model](docs/assurance/THREAT-MODEL.md). These guarantees apply to the Capstan program model, not automatically to the C runtime, compiler toolchain or host platform.
 
 ```java
