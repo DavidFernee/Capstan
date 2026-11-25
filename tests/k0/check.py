@@ -134,9 +134,9 @@ with tempfile.TemporaryDirectory() as temporary:
 with tempfile.TemporaryDirectory() as temporary:
     path = pathlib.Path(temporary) / "reviewed.csv"
     population = [{"id": "CVE-2025-10001"}]
-    path.write_text("id,class\\nCVE-2025-10001,use-after-free\\n", encoding="utf-8")
+    path.write_text("id,class\nCVE-2025-10001,use-after-free\n", encoding="utf-8")
     assert study.load_reviewed(population, str(path)) == {"CVE-2025-10001": "use-after-free"}
-    path.write_text("id,class\\nCVE-2025-10001,use-after-free\\nCVE-2025-10001,logic error\\n",
+    path.write_text("id,class\nCVE-2025-10001,use-after-free\nCVE-2025-10001,logic error\n",
                     encoding="utf-8")
     try:
         study.load_reviewed(population, str(path))
@@ -144,14 +144,14 @@ with tempfile.TemporaryDirectory() as temporary:
         assert "duplicate" in str(error)
     else:
         raise AssertionError("duplicate review labels were accepted")
-    path.write_text("id,class\\nCVE-2024-10001,use-after-free\\n", encoding="utf-8")
+    path.write_text("id,class\nCVE-2024-10001,use-after-free\n", encoding="utf-8")
     try:
         study.load_reviewed(population, str(path))
     except RuntimeError as error:
         assert "absent from the source population" in str(error)
     else:
         raise AssertionError("stale review label was accepted")
-    path.write_text("id,class\\nCVE-2025-10001,not-a-real-class\\n", encoding="utf-8")
+    path.write_text("id,class\nCVE-2025-10001,not-a-real-class\n", encoding="utf-8")
     try:
         study.load_reviewed(population, str(path))
     except RuntimeError as error:
@@ -169,22 +169,22 @@ with tempfile.TemporaryDirectory() as temporary:
     label_dir = pathlib.Path(temporary) / "tests" / "k0"
     label_dir.mkdir(parents=True)
     label_path = label_dir / "labels.csv"
-    label_path.write_text("id,class\\nCVE-2025-10001,use-after-free\\n"
-                          "CVE-2025-10001,logic error\\n", encoding="utf-8")
+    label_path.write_text("id,class\nCVE-2025-10001,use-after-free\n"
+                          "CVE-2025-10001,logic error\n", encoding="utf-8")
     try:
         study.check_labels([], {}, "labels.csv")
     except ValueError as error:
         assert "duplicate" in str(error)
     else:
         raise AssertionError("duplicate tuning labels were accepted")
-    label_path.write_text("id,class\\nCVE-2024-10001,use-after-free\\n", encoding="utf-8")
+    label_path.write_text("id,class\nCVE-2024-10001,use-after-free\n", encoding="utf-8")
     try:
         study.check_labels([], {}, "labels.csv")
     except ValueError as error:
         assert "absent from the source population" in str(error)
     else:
         raise AssertionError("stale tuning label was accepted")
-    label_path.write_text("id,class\\nCVE-2025-10001,not-a-real-class\\n", encoding="utf-8")
+    label_path.write_text("id,class\nCVE-2025-10001,not-a-real-class\n", encoding="utf-8")
     try:
         study.check_labels([{"id": "CVE-2025-10001"}], {}, "labels.csv")
     except ValueError as error:
