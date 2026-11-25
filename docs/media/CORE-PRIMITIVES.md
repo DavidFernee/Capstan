@@ -91,9 +91,28 @@ retained references and derived outputs remain charged for their actual lifetime
 The prototype does not yet have cancellation, deadlines, lifetime-bound reservations,
 or an RAII/linear ownership mechanism. Those are explicit follow-up requirements.
 
-## 5. Test obligations
+## 5. Rational timebase and timestamp rescaling
 
-The regression suite is expressed as Capstan `test` declarations in `lib/halyard/core.cap`.
+`HalyardTimebase` represents seconds per tick as a positive reduced fraction
+`numerator/denominator`. `halyard_timebase_create` rejects non-positive terms and
+normalises by the greatest common divisor. `halyard_timestamp_rescale` converts ticks
+between source and target timebases using integer arithmetic only. It cross-cancels
+factors before checked multiplication and supports explicit `Exact`, `TowardZero`,
+`Floor`, `Ceil` and `NearestEven` policies. Exact mode rejects non-integral results;
+other modes apply their named rule, including ties-to-even. Invalid or non-normalised
+public timebase values are rejected.
+
+This is a first implementation, not a complete clock model. The conservative checked
+intermediate representation can reject a conversion when an intermediate product is
+outside signed-64 range even if a wider-arithmetic implementation could represent the
+final quotient. It does not yet model timestamp epochs, discontinuities, wrap domains,
+clock drift, resampling, A/V master-clock selection or seek/pause transitions. Those
+semantics remain required before media graph scheduling. The timebase structs are also
+publicly mutable; every conversion validates them, but this is not an opaque type boundary.
+
+## 6. Test obligations
+
+The regression suite is expressed as 16 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -105,6 +124,10 @@ contains no shell, Python, C, or other-language source. It covers:
 - over-limit reservation with all counters unchanged;
 - full release and release-underflow rejection;
 - negative reservation rejection;
+- reduced rational timebase construction and invalid numerator/denominator rejection;
+- exact 48 kHz to 90 kHz timestamp conversion;
+- explicit positive and negative rounding modes and nearest-even ties;
+- checked overflow rejection and rejection of forged non-normalised timebases;
 - exhaustive exact-read counts around a four-byte source;
 - exhaustive (3^5) five-dimensional admission requests;
 - independent underflow rejection for every release dimension;
@@ -121,14 +144,14 @@ Still required before MC1 can pass:
 7. allocation, CPU and retained-memory measurements under adversarial inputs;
 8. independent review and exact-head CI on supported platforms.
 
-## 6. Implementation provenance
+## 7. Implementation provenance
 
 | Module | First-party source | Current status |
 |---|---|---|
 | Byte source | `lib/halyard/core.cap` | Prototype; public mutable representation; Capstan-native tests colocated |
 | Aggregate ledger | `lib/halyard/core.cap` | Sequential all-or-nothing prototype; not concurrency-safe |
 | Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native regression cases; exact-head CI pending |
-| Rational timebase | Not implemented | Contract and test vectors remain under MC1 / issue #286 |
+| Rational timebase | `lib/halyard/core.cap` | Initial checked integer rescaling with explicit rounding; no full clock/discontinuity model |
 | Format registry | Not implemented | MC0 / issue #287 |
 | Bounded sink | Not implemented | Required before encoder/output work |
 
