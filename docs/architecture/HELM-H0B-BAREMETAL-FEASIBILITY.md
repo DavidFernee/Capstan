@@ -178,9 +178,9 @@ Do not add a generic `unsafe` escape hatch, arbitrary inline assembly, arbitrary
 
 ## 9. Capstan-native boot-memory reference model
 
-The initial executable model is in `verification/helm_boot_memory_model.cap` and is wired into `tests/run.sh`. It covers U64 limb arithmetic/carry/borrow/overflow, unsigned ordering across the signed bit, four-level x86-64 canonical-address checks, range containment and wrap rejection, bounded immutable byte snapshots, little-endian u8/u16/u32/u64 reads, and exact-end/truncated/invalid-byte cases.
+The initial executable model is in `verification/helm_boot_memory_model.cap` and is wired into `tests/run.sh`. It covers U64 limb arithmetic/carry/borrow/overflow, unsigned ordering across the signed bit, four-level x86-64 canonical-address checks, range containment and wrap rejection, bounded owned byte snapshots with read-only accessors, little-endian u8/u16/u32/u64 reads, and exact-end/truncated/invalid-byte cases.
 
-The model is intentionally not described as a kernel memory accessor. It uses ordinary Capstan lists and is intended to be an executable semantic reference for the later hardware adapter. Its test status remains UNKNOWN until the exact branch is run through CI or a local Capstan test runner.
+The model is intentionally not described as a kernel memory accessor. It uses ordinary Capstan lists and is intended to be an executable semantic reference for the later hardware adapter. The snapshot breaks aliasing with the caller's source list, but Capstan structs do not yet provide a private/immutable field boundary; direct mutation of the model's exposed list is therefore not prevented by the type system. The later kernel view must be an opaque capability whose byte storage cannot be mutated through ordinary code. Its test status remains UNKNOWN until the exact branch is run through CI or a local Capstan test runner.
 
 ## 10. H0-B acceptance checklist
 
