@@ -17,6 +17,7 @@ from enum import Enum, auto
 MAX_FRAME_BYTES = 16 * 1024 * 1024
 MAX_HEADER_BYTES = 4096
 MAX_HEADER_FIELDS = 16
+MAX_READ_CHUNK = 64 * 1024
 MAX_RETAINED_OUTPUT = 64 * 1024
 ALLOWED_ENV = frozenset({"LANG", "LC_ALL", "TZ"})
 FORBIDDEN_ENV = frozenset({"PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES"})
@@ -73,8 +74,10 @@ class BoundedFrameDecoder:
     def feed(self, chunk):
         if not isinstance(chunk, (bytes, bytearray)):
             raise TypeError("wire input must be bytes")
-        if len(self.buffer) + len(chunk) > self.max_body + MAX_HEADER_BYTES:
-            raise ContractError("buffer exceeds the maximum incomplete frame")
+        if len(chunk) > MAX_READ_CHUNK:
+            raise ContractError("transport read exceeds configured chunk limit")
+        if len(self.buffer) + len(chunk) > self.max_body + MAX_HEADER_BYTES + MAX_READ_CHUNK:
+            raise ContractError("buffer exceeds the maximum incomplete frame plus one read")
         self.buffer.extend(chunk)
         messages = []
         while True:
@@ -207,13 +210,13 @@ class StartRequest:
             raise ContractError("deadline outside profile limits")
         if not 1 <= self.output_limit <= MAX_RETAINED_OUTPUT:
             raise ContractError("output limit outside profile limits")
+        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in self.environment):
+            raise ContractError("environment entries must be strings")
         names = [key for key, _ in self.environment]
         if len(names) != len(set(names)):
             raise ContractError("duplicate environment variable")
         if any(key in FORBIDDEN_ENV or key not in ALLOWED_ENV for key in names):
             raise ContractError("environment variable is not permitted")
-        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in self.environment):
-            raise ContractError("environment entries must be strings")
 
 
 class FakeClock:
@@ -326,7 +329,7 @@ class ProcessSupervisorModel:
             process.retained_output.extend(data)
 
     def cancel(self, process):
-        if process.terminal_reason is None:
+        if process.terminal_reason is None and process.child.state is ProcessState.RUNNING:
             self._request_termination(process, "cancelled")
 
     def _request_termination(self, process, reason):
@@ -339,16 +342,27 @@ class ProcessSupervisorModel:
     def tick(self, process):
         if process.child.state is ProcessState.REAPED:
             return
+        # Observe an already-exited child before applying timeout/cancellation.
+        # This makes exit-vs-deadline races deterministic and avoids relabelling
+        # an exit that happened first as a timeout.
+        if process.child.exit_code is not None:
+            self._reap(process)
+            return
         if process.terminal_reason is None and self.clock.now_ms >= process.deadline_ms:
             self._request_termination(process, "timeout")
         if (process.child.state is ProcessState.TERMINATION_REQUESTED and
                 process.kill_deadline_ms is not None and
                 self.clock.now_ms >= process.kill_deadline_ms):
             self.backend.terminate(process.child, force=True)
-        if process.child.exit_code is not None and process.child.state is not ProcessState.REAPED:
-            process.exit_code = self.backend.reap(process.child)
-            process.child.state = ProcessState.REAPED
-            self.active.pop(process.child.pid, None)
+        if process.child.exit_code is not None:
+            self._reap(process)
+
+    def _reap(self, process):
+        process.exit_code = self.backend.reap(process.child)
+        process.child.state = ProcessState.REAPED
+        if process.terminal_reason is None:
+            process.terminal_reason = "exited"
+        self.active.pop(process.child.pid, None)
 
 
 def restart_delay_ms(failures, base_ms=100, cap_ms=5000):
@@ -446,9 +460,21 @@ class ContractTests(unittest.TestCase):
         self.backend.observe_exit(process.child, 7)
         self.supervisor.tick(process)
         self.assertEqual(process.exit_code, 7)
+        self.assertEqual(process.terminal_reason, "exited")
         self.assertEqual(process.child.state, ProcessState.REAPED)
         with self.assertRaises(ContractError):
             self.backend.reap(process.child)
+
+    def test_exit_wins_race_with_deadline_and_late_cancel(self):
+        process = self.supervisor.start(self.request(deadline_ms=1))
+        self.clock.advance(1)
+        self.backend.observe_exit(process.child, 0)
+        self.supervisor.cancel(process)
+        self.supervisor.tick(process)
+        self.assertEqual(process.terminal_reason, "exited")
+        self.assertEqual(process.exit_code, 0)
+        self.assertEqual(process.child.state, ProcessState.REAPED)
+        self.assertFalse(any(event[0] in ("terminate", "kill") for event in self.backend.events))
 
     def test_restart_backoff_is_bounded(self):
         delays = [restart_delay_ms(n) for n in range(8)]
