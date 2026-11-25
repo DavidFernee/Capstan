@@ -46,13 +46,13 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         unit = build(capstanc, cc, cflags, tmp, "tests/shroud/frame_budget.cap", "frame-budget")
         result = run([unit])
-        if "frame text budget: 14 assertions" not in result.stdout:
+        if "frame text budget: 16 assertions" not in result.stdout:
             raise SystemExit(f"frame budget: unexpected unit output {result.stdout!r}")
         reject = build(capstanc, cc, cflags, tmp, "tests/shroud/frame_budget_reject.cap", "frame-budget-reject")
         result = run([reject], expected=101)
         if "shroud: frame view or text budget exceeded" not in result.stdout:
             raise SystemExit(f"frame budget: missing preflight diagnostic: {result.stdout!r}")
-    print("frame budget: 14 unit assertions; aggregate over-budget tree rejected before layout")
+    print("frame budget: 16 unit assertions; aggregate over-budget tree rejected before layout")
 
 
 if __name__ == "__main__":
