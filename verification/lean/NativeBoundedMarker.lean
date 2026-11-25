@@ -56,17 +56,7 @@ def certificateCheck {slotCount : Nat}
     (referenceEdges handle).all (fun target => decide (target ∈ marked)))
 
 
-/-- Independent certificate validation: every root is marked; every marked
-handle resolves; and every descriptor-projected edge from a marked handle
-terminates in the marked set. -/
-def certificateCheck {slotCount : Nat}
-    (isLive : Handle slotCount → Bool)
-    (referenceEdges : Handle slotCount → List (Handle slotCount))
-    (roots marked : List (Handle slotCount)) : Bool :=
-  roots.all (fun root => decide (root ∈ marked)) &&
-  marked.all (fun handle =>
-    isLive handle &&
-    (referenceEdges handle).all (fun target => decide (target ∈ marked)))
+
 
 
 /-- A complete result carries the successful independent certificate check.
