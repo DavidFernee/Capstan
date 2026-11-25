@@ -366,6 +366,17 @@
         "ok": false,
         "error": "invalid_wrap_width"
       }
+    },
+    {
+      "id": "RTB-W08",
+      "width": 8,
+      "anchor_unwrapped": "9223372036854775807",
+      "raw": "0",
+      "max_abs_delta": "10",
+      "expected": {
+        "ok": false,
+        "error": "overflow"
+      }
     }
   ],
   "epoch_vectors": [
@@ -530,7 +541,8 @@
       "expected": {
         "ok": true,
         "clock_ticks": "2000000000"
-      }
+      },
+      "rounding": "exact"
     },
     {
       "id": "RTB-C02",
@@ -549,7 +561,8 @@
       "expected": {
         "ok": true,
         "clock_ticks": "0"
-      }
+      },
+      "rounding": "exact"
     },
     {
       "id": "RTB-C03",
