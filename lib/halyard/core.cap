@@ -237,6 +237,215 @@ bool halyard_ledger_release(HalyardLedger ledger, HalyardBudgetCharge charge) {
     return true;
 }
 
+
+struct HalyardCheckedIntResult {
+    bool ok;
+    int value;
+    string error;
+}
+
+struct HalyardTimebase {
+    int numerator;
+    int denominator;
+}
+
+struct HalyardTimebaseResult {
+    bool ok;
+    HalyardTimebase? timebase;
+    string error;
+}
+
+struct HalyardTimestampResult {
+    bool ok;
+    int ticks;
+    string error;
+}
+
+enum HalyardRounding { Exact, TowardZero, Floor, Ceil, NearestEven }
+
+const int HALYARD_I64_MAX = 0x7FFFFFFFFFFFFFFF;
+const int HALYARD_I64_MIN = 0x8000000000000000;
+
+// Greatest common divisor of abs(a) and positive b. The remainder magnitude
+// is strictly less than b, so negating it cannot overflow even when a is MIN.
+int halyard_gcd_with_positive(int a, int b) {
+    if (b <= 0) { return 0; }
+    int remainder = a % b;
+    if (remainder < 0) { remainder = -remainder; }
+    int left = b;
+    int right = remainder;
+    while (right != 0) {
+        int next = left % right;
+        left = right;
+        right = next;
+    }
+    return left;
+}
+
+HalyardCheckedIntResult halyard_checked_mul(int a, int b) {
+    if (a == 0 || b == 0) {
+        return new HalyardCheckedIntResult{ok: true, value: 0, error: ""};
+    }
+    if ((a == HALYARD_I64_MIN && b == -1) ||
+        (b == HALYARD_I64_MIN && a == -1)) {
+        return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+    }
+    if (a > 0) {
+        if (b > 0 && a > HALYARD_I64_MAX / b) {
+            return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+        }
+        if (b < 0 && b < HALYARD_I64_MIN / a) {
+            return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+        }
+    } else {
+        if (b > 0 && a < HALYARD_I64_MIN / b) {
+            return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+        }
+        if (b < 0 && a < HALYARD_I64_MAX / b) {
+            return new HalyardCheckedIntResult{ok: false, value: 0, error: "overflow"};
+        }
+    }
+    return new HalyardCheckedIntResult{ok: true, value: a * b, error: ""};
+}
+
+// A timebase is seconds per tick, represented as a positive reduced fraction.
+// For example, 1/48000 represents 48 kHz and 1/90000 represents 90 kHz.
+HalyardTimebaseResult halyard_timebase_create(int numerator, int denominator) {
+    if (numerator <= 0 || denominator <= 0) {
+        return new HalyardTimebaseResult{ok: false, timebase: none, error: "invalid_timebase"};
+    }
+    int divisor = halyard_gcd_with_positive(numerator, denominator);
+    if (divisor <= 0) {
+        return new HalyardTimebaseResult{ok: false, timebase: none, error: "invalid_timebase"};
+    }
+    HalyardTimebase value = new HalyardTimebase{
+        numerator: numerator / divisor,
+        denominator: denominator / divisor
+    };
+    return new HalyardTimebaseResult{ok: true, timebase: value, error: ""};
+}
+
+bool halyard_timebase_valid(HalyardTimebase timebase) {
+    return timebase.numerator > 0 &&
+        timebase.denominator > 0 &&
+        halyard_gcd_with_positive(timebase.numerator, timebase.denominator) == 1;
+}
+
+// Rescale an integer timestamp between rational timebases without floating
+// point. The factor lists are cross-cancelled before multiplication to reduce
+// overflow risk. If a remaining exact intermediate is not representable, the
+// operation fails explicitly rather than wrapping or silently losing time.
+HalyardTimestampResult halyard_timestamp_rescale(
+    int ticks, HalyardTimebase source, HalyardTimebase target,
+    HalyardRounding rounding
+) {
+    if (!halyard_timebase_valid(source) || !halyard_timebase_valid(target)) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: "invalid_timebase"};
+    }
+    if (ticks == 0) {
+        return new HalyardTimestampResult{ok: true, ticks: 0, error: ""};
+    }
+
+    List<int> numerator_factors = new List<int>();
+    numerator_factors.push(ticks);
+    numerator_factors.push(source.numerator);
+    numerator_factors.push(target.denominator);
+
+    List<int> denominator_factors = new List<int>();
+    denominator_factors.push(source.denominator);
+    denominator_factors.push(target.numerator);
+
+    for (int i = 0; i < numerator_factors.len(); i += 1) {
+        for (int j = 0; j < denominator_factors.len(); j += 1) {
+            int divisor = halyard_gcd_with_positive(
+                numerator_factors[i], denominator_factors[j]
+            );
+            if (divisor > 1) {
+                numerator_factors[i] = numerator_factors[i] / divisor;
+                denominator_factors[j] = denominator_factors[j] / divisor;
+            }
+        }
+    }
+
+    HalyardCheckedIntResult n1 = halyard_checked_mul(
+        numerator_factors[0], numerator_factors[1]
+    );
+    if (!n1.ok) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: n1.error};
+    }
+    HalyardCheckedIntResult numerator = halyard_checked_mul(
+        n1.value, numerator_factors[2]
+    );
+    if (!numerator.ok) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: numerator.error};
+    }
+
+    HalyardCheckedIntResult denominator = halyard_checked_mul(
+        denominator_factors[0], denominator_factors[1]
+    );
+    if (!denominator.ok || denominator.value <= 0) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+    }
+
+    int quotient = numerator.value / denominator.value;
+    int remainder = numerator.value % denominator.value;
+    if (remainder == 0) {
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+    if (rounding == HalyardRounding.Exact) {
+        return new HalyardTimestampResult{ok: false, ticks: 0, error: "inexact"};
+    }
+    if (rounding == HalyardRounding.TowardZero) {
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+
+    int remainder_magnitude = remainder;
+    if (remainder_magnitude < 0) { remainder_magnitude = -remainder_magnitude; }
+
+    if (rounding == HalyardRounding.Floor) {
+        if (numerator.value < 0) {
+            if (quotient == HALYARD_I64_MIN) {
+                return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+            }
+            quotient -= 1;
+        }
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+
+    if (rounding == HalyardRounding.Ceil) {
+        if (numerator.value > 0) {
+            if (quotient == HALYARD_I64_MAX) {
+                return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+            }
+            quotient += 1;
+        }
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+
+    if (rounding == HalyardRounding.NearestEven) {
+        bool above_half = remainder_magnitude > denominator.value / 2;
+        bool exactly_half = denominator.value % 2 == 0 &&
+            remainder_magnitude == denominator.value / 2;
+        bool adjust = above_half || (exactly_half && quotient % 2 != 0);
+        if (adjust) {
+            if (numerator.value > 0) {
+                if (quotient == HALYARD_I64_MAX) {
+                    return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+                }
+                quotient += 1;
+            } else {
+                if (quotient == HALYARD_I64_MIN) {
+                    return new HalyardTimestampResult{ok: false, ticks: 0, error: "overflow"};
+                }
+                quotient -= 1;
+            }
+        }
+        return new HalyardTimestampResult{ok: true, ticks: quotient, error: ""};
+    }
+
+    return new HalyardTimestampResult{ok: false, ticks: 0, error: "invalid_rounding"};
+}
+
 // The Halyard Core regression suite lives with its implementation so that
 // the test program exercises exactly this module without a path-traversal
 // import or a second implementation in a different source file.
@@ -486,4 +695,134 @@ test "Halyard ledger rejects corrupted public state" {
     } else {
         assert(false);
     }
+}
+
+
+test "Halyard timebases are positive reduced rational values" {
+    HalyardTimebaseResult reduced = halyard_timebase_create(2, 96000);
+    assert(reduced.ok);
+    if (let value = reduced.timebase) {
+        assert(value.numerator == 1 && value.denominator == 48000);
+        assert(halyard_timebase_valid(value));
+    } else {
+        assert(false);
+    }
+    assert(!halyard_timebase_create(0, 1).ok);
+    assert(!halyard_timebase_create(1, 0).ok);
+    assert(!halyard_timebase_create(-1, 1).ok);
+    assert(!halyard_timebase_create(1, -1).ok);
+}
+
+test "Halyard timebase conversion preserves exact 48 kHz to 90 kHz time" {
+    HalyardTimebaseResult audio = halyard_timebase_create(1, 48000);
+    HalyardTimebaseResult video = halyard_timebase_create(1, 90000);
+    assert(audio.ok && video.ok);
+    if (let a = audio.timebase) {
+        if (let v = video.timebase) {
+            HalyardTimestampResult converted = halyard_timestamp_rescale(
+                48000, a, v, HalyardRounding.Exact
+            );
+            assert(converted.ok && converted.ticks == 90000);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard timestamp rounding is explicit for positive and negative values" {
+    HalyardTimebaseResult source = halyard_timebase_create(1, 3);
+    HalyardTimebaseResult target = halyard_timebase_create(1, 2);
+    assert(source.ok && target.ok);
+    if (let s = source.timebase) {
+        if (let t = target.timebase) {
+            HalyardTimestampResult exact = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.Exact
+            );
+            HalyardTimestampResult trunc = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.TowardZero
+            );
+            HalyardTimestampResult floor_value = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.Floor
+            );
+            HalyardTimestampResult ceil_value = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.Ceil
+            );
+            HalyardTimestampResult nearest = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.NearestEven
+            );
+            assert(!exact.ok && exact.error == "inexact");
+            assert(trunc.ok && trunc.ticks == 0);
+            assert(floor_value.ok && floor_value.ticks == 0);
+            assert(ceil_value.ok && ceil_value.ticks == 1);
+            assert(nearest.ok && nearest.ticks == 1);
+
+            HalyardTimestampResult negative_floor = halyard_timestamp_rescale(
+                -1, s, t, HalyardRounding.Floor
+            );
+            HalyardTimestampResult negative_ceil = halyard_timestamp_rescale(
+                -1, s, t, HalyardRounding.Ceil
+            );
+            HalyardTimestampResult negative_nearest = halyard_timestamp_rescale(
+                -1, s, t, HalyardRounding.NearestEven
+            );
+            assert(negative_floor.ok && negative_floor.ticks == -1);
+            assert(negative_ceil.ok && negative_ceil.ticks == 0);
+            assert(negative_nearest.ok && negative_nearest.ticks == -1);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard nearest-even rounding resolves exact ties to an even tick" {
+    HalyardTimebaseResult half_second = halyard_timebase_create(1, 2);
+    HalyardTimebaseResult one_second = halyard_timebase_create(1, 1);
+    assert(half_second.ok && one_second.ok);
+    if (let s = half_second.timebase) {
+        if (let t = one_second.timebase) {
+            HalyardTimestampResult even_down = halyard_timestamp_rescale(
+                1, s, t, HalyardRounding.NearestEven
+            );
+            HalyardTimestampResult even_up = halyard_timestamp_rescale(
+                3, s, t, HalyardRounding.NearestEven
+            );
+            HalyardTimestampResult negative_even = halyard_timestamp_rescale(
+                -3, s, t, HalyardRounding.NearestEven
+            );
+            assert(even_down.ok && even_down.ticks == 0);
+            assert(even_up.ok && even_up.ticks == 2);
+            assert(negative_even.ok && negative_even.ticks == -2);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard rational timestamp conversion fails closed on overflow and forged timebases" {
+    HalyardTimebaseResult one = halyard_timebase_create(1, 1);
+    HalyardTimebaseResult tiny = halyard_timebase_create(1, HALYARD_I64_MAX);
+    assert(one.ok && tiny.ok);
+    if (let s = one.timebase) {
+        if (let t = tiny.timebase) {
+            HalyardTimestampResult overflow = halyard_timestamp_rescale(
+                HALYARD_I64_MAX, s, t, HalyardRounding.TowardZero
+            );
+            assert(!overflow.ok && overflow.error == "overflow");
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+    HalyardTimebase forged = new HalyardTimebase{numerator: 2, denominator: 4};
+    HalyardTimestampResult invalid = halyard_timestamp_rescale(
+        10, forged, forged, HalyardRounding.Exact
+    );
+    assert(!invalid.ok && invalid.error == "invalid_timebase");
 }
