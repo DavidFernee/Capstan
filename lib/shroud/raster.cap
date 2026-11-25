@@ -231,16 +231,25 @@ struct Canvas {
 
     // Puts paint at (x, y) with coverage 0..255.
     void blend(int x, int y, Paint paint, int coverage) {
+        // Keep the primitive safe even when called directly rather than through
+        // fill_rect/fill_path/draw_mask. This also makes replayed blend commands
+        // obey the same clip and surface boundary as every other command.
+        if (x < 0 || y < 0 || x >= self.pm.w || y >= self.pm.h) { return; }
+        Rect c = self.clip();
+        if (x < c.x || y < c.y || x >= c.right() || y >= c.bottom()) { return; }
+        int bounded_coverage = clamp(coverage, 0, 255);
+        int bounded_opacity = clamp(self.opacity, 0, 255);
+        if (bounded_coverage == 0 || bounded_opacity == 0) { return; }
         if (self.recording) {
             DisplayCommand cmd = new DisplayCommand{
-                kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: self.clip(),
+                kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: c,
                 paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: none, mask_w: 0, mask_h: 0,
-                x: x, y: y, coverage: coverage, opacity: self.opacity
+                x: x, y: y, coverage: bounded_coverage, opacity: bounded_opacity
             };
             display_list_append(self, cmd, 0);
             return;
         }
-        int cv = div255(coverage * self.opacity);
+        int cv = div255(bounded_coverage * bounded_opacity);
         if (cv <= 0) { return; }
         int src = scale_px(premultiply(paint_at(paint, x, y)), cv);
         int i = y * self.pm.w + x;
