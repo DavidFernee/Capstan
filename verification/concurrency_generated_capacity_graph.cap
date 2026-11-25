@@ -23,6 +23,8 @@ const int CSG_RECEIVE_FIRST = 2;
 const int CSG_RELEASE_FIRST = 3;
 const int CSG_CANCEL_PRODUCER = 4;
 const int CSG_RECEIVE_SECOND = 5;
+const int CSG_RELEASE_SECOND = 6;
+const int CSG_FINISH_CONSUMER = 7;
 
 const int CSG_INVALID = 0;
 const int CSG_DEADLOCK = 1;
@@ -68,8 +70,10 @@ CSGState csg_initial() {
 }
 
 bool csg_terminal(CSGState s) {
-    return s.producer_status == CSG_DONE ||
-        s.producer_status == CSG_CANCELLED;
+    return (s.producer_status == CSG_DONE ||
+        s.producer_status == CSG_CANCELLED) &&
+        (s.consumer_status == CSG_DONE ||
+        s.consumer_status == CSG_CANCELLED);
 }
 
 bool csg_invariant(CSGState s) {
@@ -198,6 +202,23 @@ CSGStep csg_step(CSGState before, int action) {
         next.second_message_owner = CSG_NONE;
         return csg_accept(next);
     }
+    if (action == CSG_RELEASE_SECOND) {
+        if (before.second_message_owner != CSG_CONSUMER) {
+            return csg_reject(before);
+        }
+        next.second_message_owner = CSG_NONE;
+        return csg_accept(next);
+    }
+    if (action == CSG_FINISH_CONSUMER) {
+        if (before.consumer_status != CSG_RUNNABLE ||
+            before.channel_count != 0 ||
+            before.first_message_owner != CSG_NONE ||
+            before.second_message_owner != CSG_NONE) {
+            return csg_reject(before);
+        }
+        next.consumer_status = CSG_DONE;
+        return csg_accept(next);
+    }
     if (action == CSG_RECEIVE_SECOND) {
         if (before.consumer_status != CSG_RUNNABLE ||
             before.channel_count != 1 ||
@@ -228,7 +249,7 @@ CSGResult csg_explore(int state_limit) {
     while (cursor < states.len()) {
         CSGState current = states[cursor];
         int enabled_count = 0;
-        for (int action = CSG_SEND_SECOND; action <= CSG_RECEIVE_SECOND;
+        for (int action = CSG_SEND_SECOND; action <= CSG_FINISH_CONSUMER;
             action += 1) {
             CSGStep transition = csg_step(current, action);
             if (transition.enabled) {
