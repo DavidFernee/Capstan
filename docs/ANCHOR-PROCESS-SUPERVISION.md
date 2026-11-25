@@ -2,9 +2,11 @@
 
 **Status:** proposed architecture RFC; no process API is implemented by this document.
 **Parent:** docs/ANCHOR.md; docs/ANCHOR-ARCHITECTURE.md; docs/ANCHOR-WORKSPACE-SECURITY.md
-**Related:** docs/SHROUD-HOST.md; docs/architecture/C-FREE-RUNTIME-BOUNDARY-INVENTORY.md; docs/research/BASELINE-INVENTORY-2026-11-25.md
+**Related:** [existing Anchor process-adapter issue #279](https://github.com/DavidFernee/Capstan/issues/279); docs/SHROUD-HOST.md; docs/architecture/C-FREE-RUNTIME-BOUNDARY-INVENTORY.md; docs/research/BASELINE-INVENTORY-2026-11-25.md
 
 ## 1. Decision sought
+
+This RFC is the architecture/specification deliverable for the existing Anchor process-adapter work item [#279](https://github.com/DavidFernee/Capstan/issues/279). It supersedes neither that issue's mock-conformance-harness acceptance criteria nor its required explicit owner decision; the harness remains a follow-on deliverable.
 
 Anchor needs to launch and supervise the configured Capstan compiler/LSP and explicit build/test/format commands. The current public runtime surface has no child-process creation, wait, cancellation or process-group API. Anchor must not work around that absence with shell commands, `system()`, `popen()`, private C shims or an ambient PATH lookup.
 
