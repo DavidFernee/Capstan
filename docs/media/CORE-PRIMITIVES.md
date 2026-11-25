@@ -93,6 +93,12 @@ work; releasing a lease returns that live capacity. In particular, callers must 
 its release operation to account for total bytes parsed, output emitted, samples decoded
 or CPU/work already consumed. Those quantities require monotonic counters.
 
+`halyard_ledger_acquire` also returns a one-shot reservation handle, and
+`halyard_reservation_release` rejects a repeated release. This is a trusted-caller API
+convenience, **not yet a non-forgeable capability**: the reservation struct and fields are
+public, and the raw ledger release function remains callable. Do not treat the handle as
+an ownership/security boundary until opaque state and module-level access control land.
+
 The first implementation satisfies this all-or-nothing rule for sequential calls. It is
 **not thread-safe**: concurrent reserve/release calls can race. No claim of atomic
 concurrent admission is made. Before the ledger is shared by workers or concurrent graph
@@ -192,7 +198,8 @@ contains no shell, Python, C, or other-language source. It covers:
 - defensive rejection of corrupted public ledger state;
 - defensive validation of source bounds and byte contents before parser use;
 - separation of cheap source-shape preflight from the bounded byte-domain scan;
-- monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics.
+- monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics;
+- one-shot reservation-handle release and rejection of a handle for a failed reservation.
 
 Still required before MC1 can pass:
 
@@ -213,6 +220,7 @@ Still required before MC1 can pass:
 | Byte source | `lib/halyard/core.cap` | Prototype; public mutable representation; Capstan-native tests colocated |
 | Live reservation ledger | `lib/halyard/core.cap` | Sequential all-or-nothing live lease prototype; not concurrency-safe |
 | Cumulative consumption budget | `lib/halyard/core.cap` | Monotonic input/output/decode/work counters; sequential prototype; not yet integrated into parsers |
+| Reservation handle | `lib/halyard/core.cap` | One-shot trusted-caller handle; public/forgeable until opaque types land |
 | Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native cases; exact-head execution pending |
 | Rational timebase | `lib/halyard/core.cap` | Initial checked integer rescaling with explicit rounding; no full clock/discontinuity model |
 | Format registry | Not implemented | MC0 / issue #287 |
