@@ -79,8 +79,8 @@ Decision values:
 - Hardware/software paths and decode/encode directions are reported separately; no video playback claim before the full path is integrated and tested.
 
 ### Cross-product media integration
-- Shroud consumes stable presentation APIs and does not duplicate codecs or media-runtime logic.
-- Keel may orchestrate media graphs but does not redefine container/codec semantics or bypass Core budgets.
+- Shroud core remains media-independent; optional Halyard–Shroud adapters consume versioned media presentation APIs without introducing a reverse dependency from either media engine.
+- Keel may consume and orchestrate media graphs but does not redefine container/codec semantics or bypass Core budgets.
 - A/V synchronisation defines master-clock policy, drift correction, pause/seek/resync and clock-domain transitions.
 - Anchor exposes media inspection/playback workflows only through approved APIs and bounded project/workspace permissions.
 
