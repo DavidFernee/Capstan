@@ -1231,11 +1231,11 @@ Type check_new(Checker c, Node e) {
                     } else {
                         expect_type(c, init, vt, ty_of(fd), "field '" + init.s + "'");
                     }
-                    check_hardcoded(c, init, init.s, init.kids[0]);
                 } else {
                     error_at(c.ctx, init, "", "struct " + e.s + " has no field '" + init.s + "'");
                 }
             }
+            check_hardcoded(c, init, init.s, init.kids[0]);
         }
         if (!opaque_external) {
             bool missing_private = false;
