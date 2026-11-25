@@ -1136,7 +1136,7 @@ a separately reviewed capability and isolation design exists.
 
 The governing architecture map is [docs/media/HALYARD.md](media/HALYARD.md); detailed component design, design charter, format catalogue and mandatory security policy are maintained alongside it.
 
-Core is below both engines and must not depend on either. Shanty and Deadeye share Core contracts but retain domain-specific schedulers and APIs. Shroud consumes presentation surfaces/events; Keel may orchestrate media graphs; neither duplicates codec semantics. Anchor remains a Shroud application.
+Core is below both engines and must not depend on either. Shanty and Deadeye share Core contracts but retain domain-specific schedulers and APIs. Shroud core remains media-independent; an optional, separately versioned Halyard–Shroud adapter consumes media presentation surfaces/events together with Shroud rendering/input APIs. Neither media engine depends on Shroud. Keel consumes media APIs when orchestrating graphs and does not duplicate codec semantics. Anchor remains a Shroud application.
 
 The architecture, threat model, format taxonomy and stage gates are specified in [media/ARCHITECTURE.md](media/ARCHITECTURE.md) and [media/FORMAT-CATALOGUE.md](media/FORMAT-CATALOGUE.md). At this revision these are specifications and targets, not evidence of implemented codecs, playback, recording, platform adapters or formal verification. The initial vertical slices are deliberately modest: bounded WAV/PCM offline processing for Shanty, and a bounded still-image/frame pipeline for Deadeye. Shroud's PNG output path must not be mistaken for a general image decoder.
 
