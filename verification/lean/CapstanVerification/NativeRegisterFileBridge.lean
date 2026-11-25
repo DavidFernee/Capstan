@@ -335,4 +335,90 @@ theorem nativeWriteRegisterSigned_nonnegative
   have hnotnegative : ¬ index < 0 := by omega
   simp [nativeWriteRegisterSigned, hnotnegative]
 
+
+/-- A successful native write necessarily addresses an existing slot. -/
+theorem nativeWriteRegister_index_in_bounds
+    (registers updated : List NativeCCAMRegister)
+    (index : Nat) (replacement : NativeCCAMRegister)
+    (hwrite : nativeWriteRegister registers index replacement = .ok updated) :
+    index < registers.length := by
+  unfold nativeWriteRegister at hwrite
+  cases hreg : registers[index]? with
+  | none => simp [hreg] at hwrite
+  | some old => exact List.isSome_get?_1 hreg
+
+/-- A successful abstract runtime write necessarily addresses an existing slot. -/
+theorem runtimeWriteRegister_index_in_bounds
+    (registers updated : List RuntimeRegister)
+    (index : Nat) (replacement : RuntimeRegister)
+    (hwrite : runtimeWriteRegister registers index replacement = .ok updated) :
+    index < registers.length := by
+  unfold runtimeWriteRegister at hwrite
+  cases hreg : runtimeRegisterAt registers index with
+  | none => simp [hreg] at hwrite
+  | some old =>
+      have hsome : registers[index]? = some old := hreg
+      exact List.isSome_get?_1 hsome
+
+/-- Paired successful native/runtime writes preserve the pointwise register
+representation relation, including the target and all untouched slots.
+
+The two successful-write premises deliberately isolate the representation
+proof from the separate obligation to show the concrete and abstract type
+checks accept exactly the same inputs. -/
+theorem nativeRuntimeRegisterFileRelation_write
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hrel : NativeRuntimeRegisterFileRelation native runtime)
+    (index : Nat)
+    (nativeReplacement : NativeCCAMRegister)
+    (runtimeReplacement : RuntimeRegister)
+    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement)
+    {nativeUpdated : List NativeCCAMRegister}
+    {runtimeUpdated : List RuntimeRegister}
+    (hnativeWrite :
+      nativeWriteRegister native index nativeReplacement = .ok nativeUpdated)
+    (hruntimeWrite :
+      runtimeWriteRegister runtime index runtimeReplacement = .ok runtimeUpdated) :
+    NativeRuntimeRegisterFileRelation nativeUpdated runtimeUpdated := by
+  refine {
+    length_eq := by
+      rw [nativeWriteRegister_length native nativeUpdated index nativeReplacement hnativeWrite,
+        runtimeWriteRegister_length runtime runtimeUpdated index runtimeReplacement hruntimeWrite]
+      exact hrel.length_eq
+    matches_at := ?_
+  }
+  intro other nativeReg runtimeReg hnativeAt hruntimeAt
+  by_cases htarget : other = index
+  · subst other
+    have hnativeTarget :=
+      nativeWriteRegister_target native nativeUpdated index nativeReplacement hnativeWrite
+    have hruntimeTarget :=
+      runtimeWriteRegister_target runtime runtimeUpdated index runtimeReplacement hruntimeWrite
+    rw [hnativeTarget] at hnativeAt
+    rw [hruntimeTarget] at hruntimeAt
+    cases hnativeAt
+    cases hruntimeAt
+    exact hreplacement
+  · have hindexNative :=
+      nativeWriteRegister_index_in_bounds native nativeUpdated index nativeReplacement hnativeWrite
+    have hindexRuntime :=
+      runtimeWriteRegister_index_in_bounds runtime runtimeUpdated index runtimeReplacement hruntimeWrite
+    have hotherNative : other < native.length := by
+      have hnewBound := List.isSome_get?_1 hnativeAt
+      rw [nativeWriteRegister_length native nativeUpdated index nativeReplacement hnativeWrite] at hnewBound
+      exact hnewBound
+    have hotherRuntime : other < runtime.length := by
+      have hnewBound := List.isSome_get?_1 hruntimeAt
+      rw [runtimeWriteRegister_length runtime runtimeUpdated index runtimeReplacement hruntimeWrite] at hnewBound
+      exact hnewBound
+    have hnativeUnchanged :=
+      nativeWriteRegister_other_unchanged native nativeUpdated index other
+        nativeReplacement hnativeWrite hindexNative hotherNative (Ne.symm htarget)
+    have hruntimeUnchanged :=
+      runtimeWriteRegister_other_unchanged runtime runtimeUpdated index other
+        runtimeReplacement hruntimeWrite (Ne.symm htarget)
+    rw [hnativeUnchanged] at hnativeAt
+    rw [hruntimeUnchanged] at hruntimeAt
+    exact hrel.matches_at other nativeReg runtimeReg hnativeAt hruntimeAt
+
 end CapstanVerification
