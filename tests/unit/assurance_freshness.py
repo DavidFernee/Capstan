@@ -129,6 +129,69 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("schema: /snapshot: must be an object", output.getvalue())
 
+
+    def test_require_fresh_rejects_active_claim_after_covered_code_changes(self):
+        # Exercise the CLI gate, not just the lower-level changed-path helper.
+        with open(os.path.join(self.repo, "src", "covered.c"), "w", encoding="utf-8") as f:
+            f.write("int value = 2;\\n")
+        run_git(self.repo, "add", ".")
+        run_git(self.repo, "commit", "-qm", "covered implementation changed")
+
+        schema_path = os.path.join(self.repo, "schema.json")
+        manifest_path = os.path.join(self.repo, "manifest.json")
+        with open(schema_path, "w", encoding="utf-8") as f:
+            f.write("{}")
+        manifest = {
+            "snapshot": {"commit": self.baseline},
+            "claims": [{
+                "id": "MEM-001",
+                "state": "active",
+                "covers": ["src/covered.c"],
+                "review": {"reviewed_commit": self.baseline},
+                "evidence": [{
+                    "kind": "test", "result": "available",
+                    "revision": self.baseline, "artifacts": ["evidence.txt"]
+                }]
+            }]
+        }
+        import json
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest, f)
+
+        class FakeValidator:
+            @staticmethod
+            def check_schema(schema):
+                return None
+
+            def __init__(self, schema, format_checker=None):
+                pass
+
+            def iter_errors(self, manifest):
+                return []
+
+        fake = types.ModuleType("jsonschema")
+        fake.Draft202012Validator = FakeValidator
+        fake.FormatChecker = lambda: None
+        fake.SchemaError = type("SchemaError", (Exception,), {})
+        previous_module = sys.modules.get("jsonschema")
+        previous_argv = sys.argv
+        sys.modules["jsonschema"] = fake
+        sys.argv = ["assurance-validate.py", "--schema", "schema.json",
+                    "--manifest", "manifest.json", "--require-fresh"]
+        output = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(output):
+                result = MODULE.main()
+        finally:
+            sys.argv = previous_argv
+            if previous_module is None:
+                sys.modules.pop("jsonschema", None)
+            else:
+                sys.modules["jsonschema"] = previous_module
+        self.assertEqual(result, 1)
+        self.assertIn("STALE MEM-001", output.getvalue())
+        self.assertIn("active/qualified claims", output.getvalue())
+
     def test_unrelated_revision_is_rejected(self):
         with self.assertRaises(ValueError):
             MODULE.changed_paths("0" * 40, ["src/covered.c"])
