@@ -261,4 +261,9 @@ theorem reuse_rejects_previous_incarnation
     released = some (.free (current + 1)) ∧
       reallocated = some (.occupied (current + 1) replacement, current + 1) ∧
       resolveSlot current (.occupied (current + 1) replacement) = none := by
-  simp [releaseSlot, h, allocateSlot, resolveSlot, Nat.ne_of_lt (Nat.lt_succ_of_le (Nat.le_of_lt h))]
+  constructor
+  · simp [releaseSlot, h]
+  constructor
+  · have hbound : current + 1 ≤ maximumGeneration := by omega
+    simp [allocateSlot, hbound]
+  · simp [resolveSlot]
