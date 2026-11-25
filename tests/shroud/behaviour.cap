@@ -309,6 +309,32 @@ void test_utf8_byte_ends(Tally t) {
         expect_int(t, bad_ends[1], 3, "utf8 offsets: malformed maximal subpart end");
         expect_int(t, bad_ends[2], 4, "utf8 offsets: trailing ASCII end");
     }
+    // Invalid continuation bytes terminate the maximal subpart without
+    // swallowing the following valid ASCII byte; isolated continuations each
+    // receive their own replacement span.
+    Tainted mixed = taint("A" + char_str(0xE2) + char_str(0x82) + "B" +
+        char_str(0xF0) + char_str(0x9F) + "A" + char_str(0xC0) + char_str(0xAF));
+    Utf8Decoded mixed_decoded = utf8_decode_with_ends(tainted_bytes(mixed));
+    expect_int(t, mixed_decoded.codepoints.len(), 7,
+        "utf8 offsets: malformed prefixes and isolated continuations form maximal subparts");
+    if (mixed_decoded.codepoints.len() == 7) {
+        expect_int(t, mixed_decoded.codepoints[0], 0x41, "utf8 offsets: leading ASCII survives");
+        expect_int(t, mixed_decoded.codepoints[1], REPLACEMENT_CHAR, "utf8 offsets: truncated three-byte prefix replaced");
+        expect_int(t, mixed_decoded.codepoints[2], 0x42, "utf8 offsets: ASCII after bad prefix survives");
+        expect_int(t, mixed_decoded.codepoints[3], REPLACEMENT_CHAR, "utf8 offsets: truncated four-byte prefix replaced");
+        expect_int(t, mixed_decoded.codepoints[4], 0x41, "utf8 offsets: second ASCII after bad prefix survives");
+        expect_int(t, mixed_decoded.codepoints[5], REPLACEMENT_CHAR, "utf8 offsets: illegal lead replaced");
+        expect_int(t, mixed_decoded.codepoints[6], REPLACEMENT_CHAR, "utf8 offsets: isolated continuation replaced");
+    }
+    if (mixed_decoded.byte_ends.len() == 7) {
+        expect_int(t, mixed_decoded.byte_ends[0], 1, "utf8 offsets: mixed ASCII end");
+        expect_int(t, mixed_decoded.byte_ends[1], 3, "utf8 offsets: malformed prefix end");
+        expect_int(t, mixed_decoded.byte_ends[2], 4, "utf8 offsets: ASCII after malformed prefix end");
+        expect_int(t, mixed_decoded.byte_ends[3], 6, "utf8 offsets: second malformed prefix end");
+        expect_int(t, mixed_decoded.byte_ends[4], 7, "utf8 offsets: second ASCII end");
+        expect_int(t, mixed_decoded.byte_ends[5], 8, "utf8 offsets: illegal lead end");
+        expect_int(t, mixed_decoded.byte_ends[6], 9, "utf8 offsets: isolated continuation end");
+    }
 }
 
 // U0: decoding preserves valid Unicode scalar values independently of the
