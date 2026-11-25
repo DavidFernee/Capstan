@@ -829,8 +829,6 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
             } else {
                 return ccam_json_program_error("unknown_opcode");
             }
-                return ccam_json_program_error("unknown_opcode");
-            }
 
             if (!ccam_json_exact_fields(op_json, fields)) {
                 return ccam_json_program_error("instruction_schema_mismatch");
