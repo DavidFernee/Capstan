@@ -608,11 +608,11 @@ add(20, "Improper input validation (laundering through Boolean comparison)", "ga
     note="The current byte-reconstruction sink is not a general information-flow sink. Boolean comparison provenance is now tracked through locals, but the compiler does not yet define a policy for every control-flow observation.")
 
 add(20, "Improper input validation (laundering through to_text)", "reject",
-    "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\\"A\\", \\"trusted\\"); string key = to_text(input.at(0)); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); string key = to_text(input.at(0)); if (let value = table.get(key)) { println(value); } } return 0; }",
     "CWE-20", "Numeric-to-text conversion must preserve provenance before a trusted map lookup.")
 
 add(20, "Improper input validation (laundering through join)", "reject",
-    "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\\"A\\", \\"trusted\\"); List<string> parts = new List<string>(); parts.push(to_text(input.at(0))); string key = join(parts, \\"\\"); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); List<string> parts = new List<string>(); parts.push(to_text(input.at(0))); string key = join(parts, \"\"); if (let value = table.get(key)) { println(value); } } return 0; }",
     "CWE-20", "Collection aggregation must preserve element provenance before a trusted map lookup.")
 
 # ---------------------------------------------------------------- harness
