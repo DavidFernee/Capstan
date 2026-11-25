@@ -206,9 +206,13 @@ struct Canvas {
             exit(101);
         }
         if (self.recording) {
+            // Snapshot cached glyph pixels into frame-owned storage. A later font
+            // cache eviction/rebuild must not change an already-recorded frame.
+            List<int> mask_copy = new List<int>();
+            for (int i = 0; i < alpha.len(); i += 1) { mask_copy.push(alpha[i]); }
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_MASK, bounds: rect(0, 0, 0, 0), clip: self.clip(),
-                paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: alpha,
+                paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: mask_copy,
                 mask_w: width, mask_h: height, x: x, y: y, coverage: 0,
                 opacity: self.opacity
             };
@@ -288,7 +292,13 @@ void display_list_append(Canvas cv, DisplayCommand cmd, int segments) {
 // Publishing the list ends recording. The command and geometry lists are frame-owned
 // and have no mutation API after this value is returned.
 DisplayList finish_display_list(Canvas cv) {
-    return new DisplayList{width: cv.pm.w, height: cv.pm.h, commands: cv.commands};
+    // Publish a stable command-sequence snapshot. The recorder may be reused for
+    // another frame without appending to a previously returned DisplayList.
+    List<DisplayCommand> commands = new List<DisplayCommand>();
+    for (int i = 0; i < cv.commands.len(); i += 1) {
+        commands.push(cv.commands[i]);
+    }
+    return new DisplayList{width: cv.pm.w, height: cv.pm.h, commands: commands};
 }
 
 // Execute the same immutable commands through the reference integer rasteriser.
