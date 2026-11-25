@@ -2,7 +2,7 @@
 # capstan: front end for the Capstan compiler.
 #   capstan run   file.cap... [-- program args]
 #   capstan build file.cap... -o program [--release] [--strict]
-#   capstan native file.cap... -o program [--release] [--strict] (Linux x86-64 prototype)
+#   capstan native [--root DIR] file.cap... -o program [--release] [--strict] (Linux x86-64 prototype)
 #   capstan test  file.cap...           [--strict]
 #   capstan check file.cap...           [--release] [--strict]
 #   capstan fmt   file.cap...           [--check]
