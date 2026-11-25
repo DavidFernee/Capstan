@@ -53,6 +53,7 @@ jobs:
         working-directory: verification/lean
         shell: bash
         run: |
+          mkdir -p .lake/build/lib/lean
           lake env lean -o .lake/build/lib/lean/NativeMemoryLifecycle.olean NativeMemoryLifecycle.lean | tee "$RUNNER_TEMP/native-memory-axioms.txt"
           if grep -q 'sorryAx' "$RUNNER_TEMP/native-memory-axioms.txt"; then
             echo "Unexpected sorryAx dependency in lifecycle model."
