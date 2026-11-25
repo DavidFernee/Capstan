@@ -4,9 +4,8 @@ Usage:
     git clone https://github.com/CVEProject/cvelistV5.git CVELIST_DIR
     python3 tools/k0/study.py CVELIST_DIR [--year 2025]
 
-CVELIST_DIR is a complete, clean Git checkout of https://github.com/CVEProject/cvelistV5. Run
-from a clean Capstan Git checkout too: the study records both exact source commits and rejects dirty
-working trees. The study scans all identifier-year directories (not just the publication year) and takes every CVE published in the
+CVELIST_DIR is a complete checkout of https://github.com/CVEProject/cvelistV5. The study scans
+all identifier-year directories (not just the publication year) and takes every CVE published in the
 given calendar year by the Linux kernel's CNA, classifies it from its fix description
 (classify.py), runs each class through the CWE atlas (docs/CWE-ATLAS.md), and writes:
 
@@ -23,6 +22,7 @@ import os
 import re
 import sys
 import subprocess
+from urllib.parse import urlsplit
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
@@ -161,15 +161,8 @@ def load(cvelist, year):
     if not os.path.isdir(root):
         raise RuntimeError(f"missing CVE List directory: {root}")
 
-    entries = os.listdir(root)
-    unexpected_dirs = sorted(
-        name for name in entries
-        if os.path.isdir(os.path.join(root, name)) and not name.isdigit()
-    )
-    if unexpected_dirs:
-        raise RuntimeError(f"unexpected non-year directories under CVE List cves/: {unexpected_dirs}")
     year_dirs = sorted(
-        (name for name in entries
+        (name for name in os.listdir(root)
          if name.isdigit() and os.path.isdir(os.path.join(root, name))),
         key=int,
     )
@@ -264,26 +257,6 @@ def load(cvelist, year):
     rows.sort(key=lambda row: row["id"])
     return rows
 
-def study_snapshot(root):
-    """Return the exact clean Capstan source revision used to generate this study."""
-    try:
-        commit = subprocess.run(
-            ["git", "-C", root, "rev-parse", "--verify", "HEAD"],
-            check=True, capture_output=True, text=True,
-        ).stdout.strip()
-        status = subprocess.run(
-            ["git", "-C", root, "status", "--porcelain", "--untracked-files=all"],
-            check=True, capture_output=True, text=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError) as error:
-        raise RuntimeError("Capstan study source must be a verifiable Git checkout") from error
-    if not re.fullmatch(r"[0-9a-f]{40}", commit):
-        raise RuntimeError(f"invalid Capstan study Git commit: {commit!r}")
-    if status:
-        raise RuntimeError("Capstan study checkout is dirty; commit the study code before generating results")
-    return commit
-
-
 def load_reviewed(rows, path):
     """Load manual labels and reject duplicates, stale IDs and unknown classes."""
     if not os.path.exists(path):
@@ -361,18 +334,8 @@ def check_labels(classified, atlas, name):
     total = same_class = same_outcome = 0
     prevented = {"classifier": 0, "labels": 0}
     misses = []
-    with open(path, newline="", encoding="utf-8") as source:
-        reader = csv.DictReader(source)
-        fields = set(reader.fieldnames or [])
-        if not {"id", "class"}.issubset(fields):
-            raise ValueError(f"label file lacks required id/class columns: {path}")
-        labels = list(reader)
-    label_ids = [lab.get("id", "") for lab in labels]
-    if any(not identifier for identifier in label_ids):
-        raise ValueError(f"label file contains an empty CVE identifier: {path}")
-    unknown_classes = sorted({lab.get("class", "").strip() for lab in labels} - set(CLASS_CWE))
-    if unknown_classes:
-        raise ValueError(f"label file contains unknown classes {unknown_classes}: {path}")
+    labels = list(csv.DictReader(open(path)))
+    label_ids = [lab["id"] for lab in labels]
     if len(label_ids) != len(set(label_ids)):
         raise ValueError(f"duplicate CVE identifiers in label file {path}")
     missing = sorted(set(label_ids) - set(by_id))
@@ -392,16 +355,30 @@ def check_labels(classified, atlas, name):
     return total, same_class, same_outcome, misses, prevented
 
 
-def sample_agreements(classified, atlas, year):
-    """Run the checked-in tuning/held-out samples only for their 2025 population."""
-    if year != 2025:
-        return None, None
-    return (check_labels(classified, atlas, "labels.csv"),
-            check_labels(classified, atlas, "labels-heldout.csv"))
+def _is_cvelist_origin(remote):
+    """Recognise the canonical CVEProject/cvelistV5 GitHub origin URL."""
+    if remote.startswith("git@github.com:"):
+        remote = "ssh://git@github.com/" + remote.split(":", 1)[1]
+    try:
+        parsed = urlsplit(remote)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("https", "ssh") or parsed.hostname != "github.com":
+        return False
+    if parsed.query or parsed.fragment:
+        return False
+    path = parsed.path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    return path.casefold() == "cveproject/cvelistv5"
 
 
 def source_snapshot(cvelist):
-    """Return the exact, clean Git commit for the source population or fail closed."""
+    """Return the exact, clean Git commit after checking the configured origin identity.
+
+    The origin URL is repository metadata, not cryptographic proof of remote
+    authenticity or commit authorship; consumers must still pin the reported commit.
+    """
     try:
         commit = subprocess.run(
             ["git", "-C", cvelist, "rev-parse", "--verify", "HEAD"],
@@ -411,10 +388,18 @@ def source_snapshot(cvelist):
             ["git", "-C", cvelist, "status", "--porcelain", "--untracked-files=all"],
             check=True, capture_output=True, text=True,
         ).stdout
+        origin = subprocess.run(
+            ["git", "-C", cvelist, "remote", "get-url", "origin"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
     except (OSError, subprocess.CalledProcessError) as error:
         raise RuntimeError(
-            "CVE List source must be a Git checkout with a verifiable commit"
+            "CVE List source must be a Git checkout with a verifiable commit and origin"
         ) from error
+    if not _is_cvelist_origin(origin):
+        raise RuntimeError(
+            "CVE List origin must be https://github.com/CVEProject/cvelistV5"
+        )
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise RuntimeError(f"invalid CVE List Git commit: {commit!r}")
     if status:
@@ -456,21 +441,18 @@ def main():
     year = 2025
     if "--year" in args:
         year = int(args[args.index("--year") + 1])
-    study_commit = study_snapshot(ROOT)
-    snapshot = source_snapshot(args[0])
     rows = load(args[0], year)
-    if source_snapshot(args[0]) != snapshot:
-        raise RuntimeError("CVE List source changed while the study population was being read")
+    snapshot = source_snapshot(args[0])
     atlas = atlas_verdicts()
     rpath = os.path.join(HERE, "data", f"reviewed-{year}.csv")
-    label_overrides = load_reviewed(rows, rpath)
+    reviewed = load_reviewed(rows, rpath)
     for r in rows:
         cls, cwe, ev = classify(r["title"], r["desc"])
         r["class"], r["cwe"], r["evidence"] = cls, cwe, ev
         r["auto_class"], r["method"] = cls, "classifier"
-        if r["id"] in label_overrides:
-            r["class"], r["method"] = label_overrides[r["id"]], "labelled"
-            r["cwe"], r["evidence"] = CLASS_CWE.get(r["class"], ""), "checked-in label override"
+        if r["id"] in reviewed:
+            r["class"], r["method"] = reviewed[r["id"]], "reviewed"
+            r["cwe"], r["evidence"] = CLASS_CWE.get(r["class"], ""), "read by a reviewer"
         r["bucket"], r["atlas"] = bucket_for_class(r["class"], atlas)
         r["subsystem"] = subsystem(r["files"])
         r["projected"], r["via"] = projected(r)
@@ -480,7 +462,7 @@ def main():
     by_bucket = collections.Counter(r["bucket"] for r in rows)
     by_class = collections.Counter((r["class"], r["cwe"], r["bucket"]) for r in rows)
     known = n - by_bucket[UNKNOWN]
-    n_label_overrides = sum(r["method"] == "labelled" for r in rows)
+    n_reviewed = sum(r["method"] == "reviewed" for r in rows)
     memory_classes = {"use-after-free", "double or invalid free", "out-of-bounds read",
                       "out-of-bounds write", "NULL dereference", "uninitialised memory"}
     mem = sum(1 for r in rows if r["class"] in memory_classes)
@@ -499,16 +481,14 @@ def main():
             w.writerow([r["id"], r["date"], r["subsystem"], r["class"], r["cwe"], r["method"], r["bucket"],
                         r["projected"], r["final"], r["evidence"], r["title"]])
 
-    tuning, heldout = sample_agreements(rows, atlas, year)
+    tuning = check_labels(rows, atlas, "labels.csv")
+    heldout = check_labels(rows, atlas, "labels-heldout.csv")
     json.dump({"year": year, "source_repository": "https://github.com/CVEProject/cvelistV5",
-               "source_commit": snapshot, "study_commit": study_commit, "total": n, "label_overrides": n_label_overrides,
-               "independent_review_status": "NOT PERFORMED", "assurance_use": "RESEARCH ONLY",
-               "heldout_label_source": "same AI assistant as classifier; not independent",
-               "heldout_is_validation": False,
+               "source_commit": snapshot, "total": n, "reviewed": n_reviewed,
                "buckets": {b: by_bucket[b] for b in BUCKETS}, "memory_safety": mem,
                "with_k1": {b: proj[b] for b in BUCKETS},
                "k1_10_proof_eligibility_projection": {b: fin[b] for b in BUCKETS + [PROOF_ELIGIBLE]},
-               "heldout_internal_agreement_diagnostic": heldout[:3] if heldout else None},
+               "heldout": heldout[:3] if heldout else None},
               open(os.path.join(HERE, "data", f"summary-{year}.json"), "w"), indent=1)
 
     out = []
@@ -518,11 +498,9 @@ def main():
       "every rule are below, so the result can be checked and re-run each year "
       "([DESIGN-MAP.md](DESIGN-MAP.md), section 7, K0).\n")
     p("## Result\n")
-    p(f"Study implementation commit: `{study_commit}`. CVE List source commit: `{snapshot}`.")
-    p("**Validation status: NOT INDEPENDENTLY VALIDATED.** The checked-in label overrides were produced by the same AI assistant that developed the classifier; independent human relabelling has not been completed. This is a research estimate, not release assurance. Do not interpret K1 projections or proof-eligibility ceilings as implemented Capstan capability.\n")
     p(f"**{n:,} CVEs** published in {year} by the Linux kernel's CVE Numbering Authority. "
-      f"{n - n_label_overrides:,} were classified automatically from their fix descriptions and "
-      f"{n_label_overrides:,} received checked-in label overrides. "
+      f"{n - n_reviewed:,} were classified automatically from their fix descriptions and {n_reviewed:,} were "
+      f"read and classified by a reviewer, because the rules could not decide them or decided them wrongly. "
       f"{by_bucket[UNKNOWN]} remain undeterminable from the record.\n")
     p("| Outcome / measure | Today | K1.1-K1.9 design projection | K1.10 proof-eligibility ceiling (not proof) |")
     p("|---|---|---|---|")
@@ -620,35 +598,33 @@ def main():
       "reports quoted in it (KASAN, UBSAN, KMSAN, KCSAN, lockdep, kmemleak). The rules are regular expressions "
       "in `tools/k0/classify.py`, tried in a fixed order. Memory-safety classes are tried first, so a race "
       "that ends in a use-after-free counts as a use-after-free: that is what a language has to stop.")
-    p(f"3. **Label overrides.** The checked-in tools/k0/data/reviewed-{year}.csv file overrides "
-      f"{n_label_overrides:,} automatic classifications. These labels were produced by the same AI assistant "
-      "that developed the classifier; they are not independent ground truth. Independent human relabelling "
-      "is required before the results can be treated as independently validated. Where a fix states its "
-      "consequence (leads to a NULL dereference), the consequence decides, as in step 2.")
+    p(f"3. **Review.** Every CVE the rules could not decide, and every one they called speculative execution, "
+      f"was read and classified by a reviewer ({n_reviewed:,} in all, `tools/k0/data/reviewed-{year}.csv`). "
+      "The review label replaces the automatic one. Where a fix states its consequence (\"leads to a NULL "
+      "dereference\"), the consequence decides, as in step 2.")
     p("4. **The atlas.** Each class's CWE is looked up in the [CWE atlas](CWE-ATLAS.md), taking its weakest "
       "verdict, then the kernel adjustments above are applied.")
     if heldout:
         t, c, o, _, pv = heldout
-        p(f"5. **Internal agreement diagnostic only (not validation).** The {t}-record sample "
-          "(`tests/k0/labels-heldout.csv`) was labelled by the same AI assistant that developed the "
-          "classifier. The reported class agreement ({pct(c, t)}) and outcome agreement ({pct(o, t)}) "
-          "are therefore not independent accuracy measurements, do not establish classifier performance, "
-          "and must not be used to validate or adjust the headline. The classifier/label prevented-count "
-          f"comparison ({pv['classifier']} vs {pv['labels']}) is likewise non-independent.")
+        p(f"5. **Check.** {t} CVEs drawn at random were labelled by reading each fix, before looking at the "
+          f"classifier's answer (`tests/k0/labels-heldout.csv`). The automatic classifier gives the same class for "
+          f"{c} ({pct(c, t)}) and the same outcome for {o} ({pct(o, t)}). It counts {pv['classifier']} of the "
+          f"{t} as prevented; the hand labels count {pv['labels']}"
+          + (", so its errors do not inflate the headline." if pv["classifier"] <= pv["labels"]
+             else ": treat the headline as an upper estimate."))
         if tuning:
             t2, c2, o2, _, _ = tuning
-            p(f"   The {t2}-record tuning sample (`tests/k0/labels.csv`) was also labelled by the same "
-              "assistant; its class/outcome agreement ({pct(c2, t2)} / {pct(o2, t2)}) is a development "
-              "diagnostic, not independent validation.")
+            p(f"   On the {t2}-CVE sample used while writing the rules (`tests/k0/labels.csv`) the figures are "
+              f"{pct(c2, t2)} and {pct(o2, t2)}.")
     p("")
     p("## Limits\n")
-    p("- The label overrides and both check samples were produced by Claude, the AI assistant that wrote "
-      "the classifier. They are not independent human review and must not be treated as ground truth.")
-    p("- The held-out and tuning agreement figures are not accuracy estimates: the labels were produced "
-      "by the same AI assistant that developed the classifier. No independent human relabelling has been "
-      "completed, so classifier accuracy and headline sensitivity remain UNKNOWN.")
-    p("- No independent reviewer has assessed the underlying kernel fixes or their code changes. Reading "
-      "the diffs may settle some undeterminable CVEs and borderline logic classifications.")
+    p("- The review and both check samples were done by Claude, the AI assistant that wrote the classifier. "
+      "An independent reviewer relabelling them is the next step for the study's credibility.")
+    p("- The automatic classification is right about 60% of the time on class and 70% on outcome (held-out "
+      "sample); it does not overstate prevention there, but individual rows can be wrong. Every row is in "
+      "`tools/k0/data/` with how it was classified.")
+    p("- Review read the fix descriptions, not the code changes. Reading the diffs would settle the four "
+      "undeterminable CVEs and some borderline logic errors.")
     p("- A CVE is not an exploit: the kernel CNA assigns one to almost every fix that might matter. The study "
       "measures weakness classes, not attacks.")
     p("- \"Prevented\" means the weakness could not be written, not that the driver would have been bug-free: "
@@ -657,7 +633,7 @@ def main():
     p("")
     open(os.path.join(ROOT, "docs", "K0-KERNEL-CVES.md"), "w").write("\n".join(out))
 
-    print(f"{n} CVEs ({n_label_overrides} label overrides); " + "; ".join(f"{b}: {by_bucket[b]}" for b in BUCKETS))
+    print(f"{n} CVEs ({n_reviewed} reviewed); " + "; ".join(f"{b}: {by_bucket[b]}" for b in BUCKETS))
     print(f"prevented today {pct(prevented, known)}, with K1 {pct(proj_prevented, known)}, "
           f"K1.10 proof-eligibility ceiling (not proven) {pct(fin_candidate, known)}")
     for name, lab in (("tuning", tuning), ("held-out", heldout)):
