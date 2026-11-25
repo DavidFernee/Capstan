@@ -215,43 +215,68 @@ test "GC handle enforces nominal descriptor identity" {
 }
 
 test "GC layout rejects duplicate reference offsets" {
-    GCHHeap heap = gch_fixture_heap();
+    GCHHeap base = gch_fixture_heap();
     List<int> duplicate_offsets = new List<int>();
     duplicate_offsets.push(1);
     duplicate_offsets.push(1);
-    heap.layouts.push(new GCHLayout{
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    layouts.push(new GCHLayout{
         descriptor_id: 9, field_count: 2,
         reference_offsets: duplicate_offsets
     });
-    assert(!gch_heap_valid(heap));
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
 }
 
 test "GC layout rejects out-of-range reference offsets" {
-    GCHHeap heap = gch_fixture_heap();
+    GCHHeap base = gch_fixture_heap();
     List<int> invalid_offsets = new List<int>();
     invalid_offsets.push(4);
-    heap.layouts.push(new GCHLayout{
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    layouts.push(new GCHLayout{
         descriptor_id: 9, field_count: 4,
         reference_offsets: invalid_offsets
     });
-    assert(!gch_heap_valid(heap));
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
 }
 
 test "GC heap rejects allocated slots with unknown descriptors" {
-    GCHHeap heap = gch_fixture_heap();
-    heap.slots.push(new GCHSlot{
+    GCHHeap base = gch_fixture_heap();
+    List<GCHSlot> slots = new List<GCHSlot>();
+    slots.push(base.slots[0]);
+    slots.push(base.slots[1]);
+    slots.push(base.slots[2]);
+    slots.push(new GCHSlot{
         slot_id: 3, generation: 1, allocated: true, descriptor_id: 99
     });
-    assert(!gch_heap_valid(heap));
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: base.layouts, slots: slots
+    };
+    assert(!gch_heap_valid(invalid));
 }
 
 test "GC heap rejects duplicate descriptor identities" {
-    GCHHeap heap = gch_fixture_heap();
+    GCHHeap base = gch_fixture_heap();
     List<int> offsets = new List<int>();
-    heap.layouts.push(new GCHLayout{
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    layouts.push(new GCHLayout{
         descriptor_id: 7, field_count: 0, reference_offsets: offsets
     });
-    assert(!gch_heap_valid(heap));
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
 }
 
 test "GC resolution rejects negative generations" {
