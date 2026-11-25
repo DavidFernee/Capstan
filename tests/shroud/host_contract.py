@@ -123,14 +123,17 @@ class OwnedHandle:
 
 
 def receive_rights(sender_handles, receiver, max_fds=MAX_FDS_PER_MESSAGE,
-                   payload_truncated=False, control_truncated=False):
+                   payload_truncated=False, control_truncated=False, received_sink=None):
     """Model SCM_RIGHTS: receiver gets owned duplicates; sender keeps its handles."""
     received = []
     try:
         if len(sender_handles) > max_fds or len(sender_handles) > MAX_FDS_PER_MESSAGE:
             raise ProtocolError("descriptor count exceeds limit")
         for handle in sender_handles:
-            received.append(handle.duplicate_for(receiver))
+            duplicate = handle.duplicate_for(receiver)
+            received.append(duplicate)
+            if received_sink is not None:
+                received_sink.append(duplicate)
         if payload_truncated or control_truncated:
             raise ProtocolError("truncated ancillary message")
         return received
@@ -355,15 +358,20 @@ class ContractTests(unittest.TestCase):
         sender = [OwnedHandle("sender") for _ in range(MAX_FDS_PER_MESSAGE + 1)]
         with self.assertRaisesRegex(ProtocolError, "count exceeds"):
             receive_rights(sender, "receiver")
+        closed = OwnedHandle("sender")
+        closed.close()
         with self.assertRaisesRegex(ProtocolError, "closed handle"):
-            receive_rights([OwnedHandle("sender")], "receiver",
-                           payload_truncated=True)
+            receive_rights([closed], "receiver")
 
     def test_descriptor_transfer_closes_partial_rights_on_control_truncation(self):
         sender = [OwnedHandle("sender") for _ in range(3)]
         # The helper closes every receiver-side duplicate before surfacing truncation.
+        received = []
         with self.assertRaisesRegex(ProtocolError, "truncated ancillary"):
-            receive_rights(sender, "receiver", control_truncated=True)
+            receive_rights(sender, "receiver", control_truncated=True,
+                           received_sink=received)
+        self.assertEqual(len(received), 3)
+        self.assertTrue(all(h.closed for h in received))
         self.assertTrue(all(not h.closed for h in sender))
 
     def test_readiness_wait_retries_eintr_with_absolute_deadline(self):
