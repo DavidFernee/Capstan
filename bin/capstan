@@ -2,6 +2,7 @@
 # capstan: front end for the Capstan compiler.
 #   capstan run   file.cap... [-- program args]
 #   capstan build file.cap... -o program [--release] [--strict]
+#   capstan native file.cap... -o program [--release] [--strict] (Linux x86-64 prototype)
 #   capstan test  file.cap...           [--strict]
 #   capstan check file.cap...           [--release] [--strict]
 #   capstan fmt   file.cap...           [--check]
@@ -51,5 +52,34 @@ case "$cmd" in
     "$CAPSTANC" test -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
     "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/tests"
     "$tmp/tests" ;;
+  native)
+    [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]] || {
+      echo "capstan native: this prototype currently targets Linux x86-64 only" >&2
+      exit 2
+    }
+    [[ -n "$out" ]] || { echo "capstan native: needs -o program" >&2; exit 2; }
+    "$CAPSTANC" build -o "$tmp/native-driver.c" \
+      "$ROOT/compiler/ast.cap" \
+      "$ROOT/compiler/lexer.cap" \
+      "$ROOT/compiler/parser.cap" \
+      "$ROOT/compiler/checker.cap" \
+      "$ROOT/verification/ccam_core.cap" \
+      "$ROOT/verification/ccam_calls.cap" \
+      "$ROOT/verification/ccam_lowering.cap" \
+      "$ROOT/verification/ccam_native_x64.cap" \
+      "$ROOT/tools/native_driver.cap"
+    "$CC" $CFLAGS "$tmp/native-driver.c" -o "$tmp/native-driver"
+    "$tmp/native-driver" -o "$tmp/out.s" "${flags[@]}" "${files[@]}"
+    "${AS:-as}" --64 "$tmp/out.s" -o "$tmp/out.o"
+    "${LD:-ld}" -o "$out" "$tmp/out.o"
+    if readelf -l "$out" | grep -q "INTERP"; then
+      echo "capstan native: linked ELF unexpectedly has a dynamic interpreter" >&2
+      exit 1
+    fi
+    if [[ -n "$(nm -u "$out")" ]]; then
+      echo "capstan native: linked ELF has undefined external symbols" >&2
+      exit 1
+    fi
+    ;;
   *) echo "usage: capstan (run|build|test|check|fmt|lsp) file.cap... [-o program] [--release] [--strict] [--check]" >&2; exit 2 ;;
 esac
