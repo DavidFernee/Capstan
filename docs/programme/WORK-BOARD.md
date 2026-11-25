@@ -108,11 +108,52 @@ Keel K0 is represented by the open [PR #277](https://github.com/DavidFernee/Caps
 
 Next candidate slices after these: GPU resource lifetime/teardown contract; reference-scene renderer conformance harness; deterministic simulation/replay. These must be separate worker cards with explicit CPU/GPU/driver trust boundaries.
 
+### Media family — Capstan Media Core, Shanty and Deadeye
+
+The media proposal is already in progress in [PR #291](https://github.com/DavidFernee/Capstan/pull/291). It defines **Capstan Media Core** as shared primitives, with **Shanty** (audio) and **Deadeye** (video/image) as independent engines. Shanty and Deadeye do not depend on one another. Shroud owns presentation adapters, while Keel may orchestrate media graphs without duplicating codec semantics.
+
+The media implementation-origin rule is strict: Media Core, Shanty and Deadeye implementation code is written from scratch in Capstan. No external multimedia framework, third-party codec implementation, copied/vendored parser or generated-C/C++ media runtime may be linked or shipped. Independent implementations may be used only as isolated test oracles. The current C-backed Capstan compiler/runtime remains an explicit TCB dependency until the C-free path is implemented and independently qualified.
+
+| Priority | Pull card | Existing issue / PR | Acceptance focus | Dependencies / caution |
+|---|---|---|---|---|
+| P0 | Review media architecture and threat model | [#283](https://github.com/DavidFernee/Capstan/issues/283), [PR #291](https://github.com/DavidFernee/Capstan/pull/291) | Acyclic graph, product ownership, trust boundaries, licence/patent/provenance, honest implementation status | Do not duplicate PR #291; review it against programme boundaries |
+| P0 | Specify bounded byte sources, sinks and ownership | [#284](https://github.com/DavidFernee/Capstan/issues/284) | Immutable spans, output reservations, EOF/short I/O/cancellation/seek and failure atomicity | Core prerequisite for all parsers |
+| P0 | Define aggregate resource ledger and atomic reservations | [#285](https://github.com/DavidFernee/Capstan/issues/285) | Overflow-safe admission and compositional budgets across nested stages/workers | Must precede parser implementation using declared sizes |
+| P0 | Specify rational timebases and timestamp arithmetic | [#286](https://github.com/DavidFernee/Capstan/issues/286) | Integer/rational clocks, checked rescaling, VFR, wrap, discontinuity and seek vectors | Required before synchronised playback |
+| P0 | Define versioned media format/codec registry | [#287](https://github.com/DavidFernee/Capstan/issues/287) | Container/codec/profile/level/direction separation, deterministic registration and provenance | Registry is not a codec implementation |
+| P0 | Audit Capstan runtime and establish WAV/PCM corpus | [#288](https://github.com/DavidFernee/Capstan/issues/288) | Exact runtime capability gaps and independently checked PCM fixtures | Audit only; no playback or complete WAV claim |
+| P0 | Audit Shroud PNG path and select first image decoder | [#289](https://github.com/DavidFernee/Capstan/issues/289) | Distinguish PNG output from decode; select one format with legal/security rationale | No assumption that Shroud has a general PNG decoder |
+| P1 | Literature review and baseline protocol for bounded media | [#290](https://github.com/DavidFernee/Capstan/issues/290) | Reproducible related-work protocol, hypotheses, baselines, metrics and negative-result policy | Feeds research register R8; novelty remains a hypothesis |
+| P0 | Complete audio/video vulnerability accounting programme | [#292](https://github.com/DavidFernee/Capstan/issues/292) | SBOM, advisory reconciliation, root-cause ledger, regression corpus, fuzzing and release gates | Release-blocking; finite known-issue accounting is not proof of no unknown defects |
+
+#### Media family gates
+
+- **MC0:** architecture, threat model, ownership and format taxonomy.
+- **MC1:** bounded streams, rational timebases, aggregate budgets and registry.
+- **SH0:** deterministic WAV/PCM offline vertical slice.
+- **DE0:** one selected bounded image/frame vertical slice.
+- **MC2:** restricted codec-worker boundary and output validation.
+- **SH1/DE1:** device playback/capture and video presentation foundations.
+- **MC3:** synchronised A/V graph with bounded queues and explicit clock policy.
+- **MC4:** format compatibility expansion with per-profile/per-direction evidence.
+- **MC5:** security, fuzzing, independent assurance and reproducible performance.
+- **MC6:** scientific/digital-twin, HDR, spatial audio and professional workflows.
+
+These are media-specific gates layered on shared G0–G5. They are not claims that any listed capability is already implemented.
+
+#### Subsequent worker slices (create only after prerequisite review)
+
+- Shanty: RIFF/WAVE parser specification → bounded metadata parser → PCM conversion → deterministic offline mixer → real-time callback contract → device backend.
+- Deadeye: image descriptor/pixel oracle → selected image decoder → image transforms → container demux → video decode/frame scheduling → presentation/encode.
+- Media Core: codec-worker protocol → graph planner/backpressure → A/V clock integration → compatibility and performance harness.
+- Cross-product: Shroud presentation adapters; Keel media-graph orchestration; Anchor media inspection workflows.
+
 ## In progress / integration watch
 
 The following open PRs must be reviewed and mapped to the cards before new implementation begins:
 
 - **Keel:** #277 is the sole open K0 architecture/research PR; #276 was closed as duplicate and #275 is closed.
+- **Media:** #291 is the proposed Media Core/Shanty/Deadeye architecture PR; issues #283–#290 and #292 are the existing media work packages. Do not create duplicates before review.
 - **Shroud:** #274 — resize; #272 and #271 — PNG/font hardening overlap.
 - **CCAM/formal/native:** #216, #245, #246, #254, #255, #256, #258, #262, #266, #228.
 - **Research/assurance:** #238, #260.
@@ -125,6 +166,9 @@ The board snapshot also identified 36 open issues and 17 open PRs on 2026-11-25.
 - Anchor native window/editor features until Shroud's public host/editor contracts exist; A0 remains headless.
 - Keel scene-core and asset parser implementation until K0 decisions in #277 are accepted; #281/#282 can prepare reference models and bounded contracts without a GPU backend.
 - Keel GPU implementation until the engine's resource/lifetime contract and trusted boundary are specified.
+- Media parser/codec implementation until Core byte-source and aggregate-budget contracts (#284/#285), format selection (#287–#289) and relevant MC/SH/DE gates are satisfied.
+- Audio/video playback until timebase and clock contracts (#286), device callback/presentation APIs and integration evidence exist.
+- Media release until issue #292's applicable vulnerability ledger, regression corpus and independent security gates are satisfied.
 - Full C-free release claims until compiler, runtime, standard library, bootstrap and platform dependencies are separately qualified.
 - End-to-end verified execution claims until the implementation/refinement chain is established.
 
@@ -137,7 +181,7 @@ Use this structure for every new issue:
 One independently reviewable deliverable.
 
 ## Product / milestone
-CAP | SHR | ANC | KEL — Mx
+CAP | SHR | ANC | KEL | SHANTY | DEADEYE | MEDIA CORE — Mx
 
 ## Scope
 ### In
@@ -178,5 +222,7 @@ Files changed, API/schema changes, migration notes, residual limitations.
 1. Reconcile the open PRs listed above, especially duplicate-looking Shroud and Keel work.
 2. Review and assign Anchor cards #279/#280; preserve the process API blocker.
 3. Review and assign Keel cards #281/#282 after K0 decisions in PR #277 are accepted.
-4. Add labels consistently: `product:capstan`, `product:shroud`, `product:anchor`, `product:keel`, `type:implementation`, `type:research`, `type:assurance`, `stage:ready`, `stage:blocked`, `evidence-required`, `release-blocker`.
-5. Keep issue state as the live Kanban state; this document is the programme index and should be refreshed as work moves.
+4. Review PR #291 and media architecture issue #283; reconcile all existing media cards #284–#290 and #292.
+5. Prioritise Core contracts #284–#287, Shanty/Deadeye capability audits #288/#289 and the release-blocking security programme #292 before codec implementation.
+6. Add labels consistently: `product:capstan`, `product:shroud`, `product:anchor`, `product:keel`, `type:implementation`, `type:research`, `type:assurance`, `stage:ready`, `stage:blocked`, `evidence-required`, `release-blocker`.
+7. Keep issue state as the live Kanban state; this document is the programme index and should be refreshed as work moves.
