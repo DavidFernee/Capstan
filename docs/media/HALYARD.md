@@ -90,7 +90,7 @@ Capstan tests. The WAVE profile and explicit limitations are documented in
 These are prototypes, not MC1/SH0 gate exits. Opaque state, concurrent-safe or single-owner
 accounting, lifetime-bound reservations, atomic reservation plus allocation, cumulative
 work budgets, complete resource dimensions, ledger-coupled sink/sample allocation and
-full clock/discontinuity semantics remain outstanding. See [Core primitive contract](CORE-PRIMITIVES.md),
+full clock/discontinuity semantics, colour management and ledger-coupled frame/sample allocations remain outstanding. See [Core primitive contract](CORE-PRIMITIVES.md),
 issues #293 and #303, and the [detailed architecture](ARCHITECTURE.md).
 
 ## 7. Normative specifications and programme
@@ -100,6 +100,7 @@ issues #293 and #303, and the [detailed architecture](ARCHITECTURE.md).
 | [Architecture](ARCHITECTURE.md) | Detailed component boundaries, pipeline design, formats and staged implementation |
 | [Core primitives](CORE-PRIMITIVES.md) | MC1 byte-source, sink, aggregate-ledger and rational-timebase contracts and release blockers |
 | [Shanty WAVE slice](SHANTY-WAVE.md) | First audio parser/decoder profile, Capstan tests, limitations and release blockers |
+| [Deadeye BMP slice](DEADEYE-BMP.md) | First still-image parser/decoder profile, Shroud audit, Capstan tests and release blockers |
 | [Design Charter](DESIGN-CHARTER.md) | Co-equal objectives, trade-off rules and component review checklist |
 | [Security Assurance](SECURITY-ASSURANCE.md) | Vulnerability accounting, threat catalogue, testing and release gates |
 | [Format Catalogue](FORMAT-CATALOGUE.md) | Target formats and per-feature compatibility status |
