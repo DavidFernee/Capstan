@@ -117,7 +117,7 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     native_run ccam-native-x64-step-limit 73
     native_run ccam-native-x64-depth-limit 74
     native_run ccam-native-x64-uninitialised 75
-    if "$ROOT/bin/capstan" native "$ROOT/tests/fixtures/native_return_42.cap" -o "$tmp/capstan-native-cli"; then
+    if "$ROOT/bin/capstan" native --root "$ROOT" "$ROOT/tests/fixtures/native_return_42.cap" -o "$tmp/capstan-native-cli"; then
       "$tmp/capstan-native-cli"
       cli_status=$?
       if [[ $cli_status -eq 42 ]]; then
@@ -128,12 +128,36 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     else
       bad "capstan native CLI" "source-to-freestanding-ELF build failed"
     fi
-    if "$ROOT/bin/capstan" native "$ROOT/tests/fixtures/native_reject_parent_import.cap" -o "$tmp/rejected-native" >"$tmp/native-import.out" 2>&1; then
+    if "$ROOT/bin/capstan" native --root "$ROOT" "$ROOT/tests/fixtures/native_reject_parent_import.cap" -o "$tmp/rejected-native" >"$tmp/native-import.out" 2>&1; then
       bad "native CLI import confinement" "parent-directory import was accepted"
     elif grep -q "relative .cap path without absolute or dot-segment traversal" "$tmp/native-import.out"; then
       ok "native CLI rejects lexical parent-directory import traversal"
     else
       bad "native CLI import confinement" "$(cat "$tmp/native-import.out")"
+    fi
+
+    native_workspace="$tmp/native-workspace"
+    native_outside="$tmp/native-outside"
+    mkdir -p "$native_workspace" "$native_outside"
+    printf 'fn secret() -> int { return 42; }\\n' > "$native_outside/secret.cap"
+    printf 'import "linked/secret.cap";\\nfn main() -> int { return 0; }\\n' > "$native_workspace/main.cap"
+    ln -s "$native_outside" "$native_workspace/linked"
+    if "$ROOT/bin/capstan" native --root "$native_workspace" main.cap -o "$tmp/rejected-symlink-native" >"$tmp/native-symlink.out" 2>&1; then
+      bad "native CLI symlink confinement" "import through a workspace symlink was accepted"
+    elif grep -q "cannot read imported file" "$tmp/native-symlink.out"; then
+      ok "native CLI rejects symlinked import components"
+    else
+      bad "native CLI symlink confinement" "$(cat "$tmp/native-symlink.out")"
+    fi
+
+    ln -s "$native_outside/secret.cap" "$native_workspace/file-link.cap"
+    printf 'import "file-link.cap";\\nfn main() -> int { return 0; }\\n' > "$native_workspace/main-file-link.cap"
+    if "$ROOT/bin/capstan" native --root "$native_workspace" main-file-link.cap -o "$tmp/rejected-file-symlink-native" >"$tmp/native-file-symlink.out" 2>&1; then
+      bad "native CLI final-component symlink confinement" "import through a file symlink was accepted"
+    elif grep -q "cannot read imported file" "$tmp/native-file-symlink.out"; then
+      ok "native CLI rejects final-component symlinks"
+    else
+      bad "native CLI final-component symlink confinement" "$(cat "$tmp/native-file-symlink.out")"
     fi
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
