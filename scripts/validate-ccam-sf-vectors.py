@@ -198,10 +198,14 @@ def main() -> int:
                 require(isinstance(vector["max_steps"], int) and
                         not isinstance(vector["max_steps"], bool) and vector["max_steps"] >= 0,
                         f"{where}: max_steps must be a non-negative integer")
+                if group_name == "vectors":
+                    require("profile_entry" in vector,
+                            f"{where}: proof-profile vector requires profile_entry")
                 if "profile_entry" in vector:
-                    require(isinstance(vector["profile_entry"], int) and
-                            not isinstance(vector["profile_entry"], bool) and
-                            vector["profile_entry"] >= 0, f"{where}: invalid profile_entry")
+                    entry = vector["profile_entry"]
+                    require(isinstance(entry, int) and not isinstance(entry, bool)
+                            and 0 <= entry < len(vector["instructions"]),
+                            f"{where}: profile_entry must identify an instruction")
 
                 require(isinstance(vector["instructions"], list) and vector["instructions"],
                         f"{where}: instructions must be a non-empty array")
@@ -214,6 +218,25 @@ def main() -> int:
                 if group_name == "vectors":
                     expected = vector["expected"]
                     require(isinstance(expected, dict), f"{where}: expected must be an object")
+                    allowed_expected = {
+                        "profile_validation", "normative_validation", "outcome",
+                        "trace_pcs", "steps", "profile_execution", "normative_execution",
+                        "expected_concrete",
+                    }
+                    require(set(expected) <= allowed_expected,
+                            f"{where}.expected: unknown fields {sorted(set(expected) - allowed_expected)}")
+                    require(expected.get("profile_validation") in {"accept", "reject"},
+                            f"{where}: invalid profile_validation")
+                    require(expected.get("normative_validation") in {"accept", "reject", "not_applicable"},
+                            f"{where}: invalid normative_validation")
+                    if vector.get("profile_entry") != 0:
+                        require(expected["profile_validation"] == "reject"
+                                and expected["normative_validation"] == "not_applicable",
+                                f"{where}: nonzero profile entry must be explicitly out of normative scope and rejected by SF-P")
+                    if expected["profile_validation"] == "reject":
+                        require(expected.get("outcome", {}).get("kind") == "not_executed"
+                                and expected.get("trace_pcs") == [] and expected.get("steps") == 0,
+                                f"{where}: profile-rejected vector must not execute")
                     for name in ("profile_execution", "normative_execution", "expected_concrete"):
                         if name in expected:
                             check_trace(expected[name], f"{where}.{name}", len(vector["instructions"]))
