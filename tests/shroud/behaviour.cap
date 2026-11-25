@@ -589,7 +589,7 @@ void test_raster(Tally t) {
     expect(t, ch_a(back) == 0x80 && int_abs(ch_r(back) - 0x33) <= 1 && int_abs(ch_g(back) - 0x66) <= 1 && int_abs(ch_b(back) - 0x99) <= 1, "colour: translucent colours survive within one step", $"{back}");
 }
 
-void test_display_list(Tally t) {
+void test_display_list(Tally t, Font font) {
     Pixmap direct = new_pixmap(48, 36);
     Pixmap replayed = new_pixmap(48, 36);
     direct.clear(0xFF182838);
@@ -611,6 +611,9 @@ void test_display_list(Tally t) {
     recorder.blend(8, 8, solid(0x80FFFFFF), 117);
     a.pop_clip();
     recorder.pop_clip();
+    List<int> glyphs = text_codepoints("GPU");
+    int _direct_pen = draw_glyphs(a, font, fx(11), glyphs, 0, glyphs.len(), fx(2), fx(33), 0xFFE0F0FF);
+    int _recorded_pen = draw_glyphs(recorder, font, fx(11), glyphs, 0, glyphs.len(), fx(2), fx(33), 0xFFE0F0FF);
     a.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
     recorder.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
 
@@ -712,7 +715,7 @@ int main() {
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
-            test_display_list(t);
+            test_display_list(t, f);
             test_resize(t, f, fb);
             test_scale(t, f, fb);
         }
