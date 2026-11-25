@@ -131,8 +131,21 @@ int main() {
     span = wayland_frame_array(wayland_test_bytes(joined), forged, 8);
     if (span.status != -1) { return 31; }
 
+
+    // Signed int32 decoding uses the protocol's two's-complement representation.
+    List<int> signed_bytes = new List<int>();
+    signed_bytes.push(255); signed_bytes.push(255); signed_bytes.push(255); signed_bytes.push(255);
+    WaylandPayloadWord signed_word = wayland_payload_i32(wayland_test_bytes(signed_bytes), 0, 4);
+    if (signed_word.status != 1 || signed_word.value != -1) { return 32; }
+    signed_bytes[0] = 0; signed_bytes[1] = 0; signed_bytes[2] = 0; signed_bytes[3] = 128;
+    signed_word = wayland_payload_i32(wayland_test_bytes(signed_bytes), 0, 4);
+    if (signed_word.status != 1 || signed_word.value != -2147483648) { return 33; }
+    signed_bytes[0] = 255; signed_bytes[1] = 255; signed_bytes[2] = 255; signed_bytes[3] = 127;
+    signed_word = wayland_payload_i32(wayland_test_bytes(signed_bytes), 0, 4);
+    if (signed_word.status != 1 || signed_word.value != 2147483647) { return 34; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing and payload spans: 31 adversarial assertions passed");
+    println("Wayland framing and payload spans: 34 adversarial assertions passed");
     return 0;
 }
