@@ -633,22 +633,32 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         decoded_units: 0, work_units: estimated_work
     };
     if (!halyard_consumption_budget_consume(budget,work)) {
-        halyard_reservation_release(ledger,temporary_lease);
+        if (!halyard_reservation_release(ledger,temporary_lease)) {
+            return deadeye_mp4_movie_error("temporary_reservation_release_failed");
+        }
         return deadeye_mp4_movie_error("consumption_budget_exceeded");
     }
 
     DeadeyeMp4MovieTracksResult parsed =
         deadeye_mp4_parse_moov_tracks_internal(bytes,supplied_moov);
-    if (!halyard_reservation_release(ledger,temporary_lease)) {
-        return deadeye_mp4_movie_error("temporary_reservation_release_failed");
+    if (!parsed.ok) {
+        if (!halyard_reservation_release(ledger,temporary_lease)) {
+            return deadeye_mp4_movie_error("temporary_reservation_release_failed");
+        }
+        return parsed;
     }
-    if (!parsed.ok) { return parsed; }
     HalyardConsumptionCharge output = new HalyardConsumptionCharge{
         input_bytes: 0, output_bytes: 8192,
         decoded_units: 0, work_units: 0
     };
     if (!halyard_consumption_budget_consume(budget,output)) {
+        if (!halyard_reservation_release(ledger,temporary_lease)) {
+            return deadeye_mp4_movie_error("temporary_reservation_release_failed");
+        }
         return deadeye_mp4_movie_error("output_budget_exceeded");
+    }
+    if (!halyard_reservation_release(ledger,temporary_lease)) {
+        return deadeye_mp4_movie_error("temporary_reservation_release_failed");
     }
     return parsed;
 }
