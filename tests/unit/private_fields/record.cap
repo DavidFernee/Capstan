@@ -15,3 +15,21 @@ Vault update_private(Vault value, int next_secret) {
     value.secret = next_secret;
     return value;
 }
+
+opaque struct SealedVault {
+    int secret;
+    int counter;
+}
+
+SealedVault make_sealed_vault() {
+    return new SealedVault{secret: 73, counter: 0};
+}
+
+bool sealed_vault_is_valid(SealedVault value) {
+    return value.secret == 73;
+}
+
+SealedVault update_sealed_vault(SealedVault value, int next_counter) {
+    value.counter = next_counter;
+    return value;
+}
