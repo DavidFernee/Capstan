@@ -21,30 +21,34 @@ Halyard is the media architecture of the Capstan ecosystem. Its implementation c
 
 Shanty and Deadeye are independently usable products. Neither may require the other.
 They share versioned Core contracts and may be composed into synchronised audiovisual
-pipelines. Shroud consumes their presentation surfaces and events; it does not become
-a second codec or media-runtime implementation. Keel may orchestrate media graphs and
-application lifecycles but must not duplicate codec semantics.
+pipelines. Shroud core remains media-independent. An optional, separately versioned
+Halyard–Shroud adapter consumes Shanty/Deadeye presentation APIs together with Shroud
+rendering/input APIs; this integration package is not a dependency of either media
+engine. Keel may consume and orchestrate media graphs and application lifecycles but
+must not duplicate codec semantics.
 
 ## 2. Dependency direction
 
 ```
-                 Anchor / Capstan applications / Keel
-                              |
-                   Shroud presentation adapters
-                              |
-              +---------------+---------------+
-              |                               |
-           Shanty                          Deadeye
-          audio graph                    video graph
-              |                               |
-              +---------------+---------------+
-                              |
-                    Capstan Media Core
-          streams | buffers | clocks | budgets | registry
-                              |
-              Capstan runtime / CCAM / platform adapters
-                              |
-                   OS, devices and hardware
+            Anchor / applications / Keel
+                         |
+       optional Halyard–Shroud presentation adapter
+                  /                    \
+          Shroud APIs              Halyard APIs
+                                      |
+                         +------------+------------+
+                         |                         |
+                      Shanty                    Deadeye
+                    audio graph               video graph
+                         |                         |
+                         +------------+------------+
+                                      |
+                            Capstan Media Core
+                 streams | buffers | clocks | budgets | registry
+                                      |
+                       Capstan runtime / CCAM / platform adapters
+                                      |
+                            OS, devices and hardware
 ```
 
 Core owns shared semantics, not a giant universal player. Audio and video have distinct
@@ -52,8 +56,10 @@ real-time requirements, graph schedulers and domain-specific types. A common
 synchronisation contract connects them without forcing identical execution models.
 
 The dependency graph is acyclic. Core does not depend on Shanty, Deadeye, Shroud, Anchor
-or Keel. Shanty and Deadeye depend on Core. Shroud depends on stable presentation APIs.
-Anchor remains a consumer of Shroud and compiler services.
+or Keel. Shanty and Deadeye depend on Core. Shroud core does not depend on Halyard.
+The optional Halyard–Shroud adapter depends on both Shroud and Halyard; Anchor may
+consume it. Keel depends on the media APIs it orchestrates. Anchor remains a consumer
+of Shroud and compiler services.
 
 ## 3. Architectural layers
 
