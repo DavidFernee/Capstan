@@ -65,7 +65,7 @@ of Shroud and compiler services.
 
 ### 3.1 Core primitives
 
-The first normative contracts are:
+The first normative contracts are specified in [CORE-PRIMITIVES.md](CORE-PRIMITIVES.md) and include:
 
 - bounded byte sources and sinks, with explicit ownership and cancellation;
 - immutable input spans and explicit mutable output reservations;
