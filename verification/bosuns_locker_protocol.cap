@@ -252,6 +252,13 @@ BLRecoveryResult bl_recover(BLTxnState before, bool durable_commit_found) {
         before.phase == BL_PHASE_PREPARING ||
         before.phase == BL_PHASE_ABORTING ||
         before.phase == BL_PHASE_ABORTED) {
+        if (durable_commit_found) {
+            return new BLRecoveryResult{
+                valid: false,
+                state: before,
+                error: "commit_record_found_without_commit_decision"
+            };
+        }
         BLTxnState aborted = new BLTxnState{
             phase: BL_PHASE_ABORTED,
             remaining_operations: before.remaining_operations,
@@ -352,7 +359,7 @@ BLStorageTransition bl_storage_step(BLStorageState state, int action, int argume
     BLStorageState next = bl_storage_copy_state(state);
 
     if (action == BL_STORAGE_APPEND_UPDATE) {
-        if (argument != 0 || next.acknowledged) {
+        if (argument != 0 || next.acknowledged || next.commit_lsn != 0) {
             return bl_storage_reject(state, "invalid_update_append");
         }
         next.next_lsn += 1;
@@ -378,7 +385,7 @@ BLStorageTransition bl_storage_step(BLStorageState state, int action, int argume
 
     if (action == BL_STORAGE_FLUSH_PAGE) {
         if (argument <= 0 || argument > next.next_lsn ||
-            argument > next.durable_lsn) {
+            argument > next.durable_lsn || argument < next.page_lsn) {
             return bl_storage_reject(state, "write_ahead_log_order_violation");
         }
         next.page_lsn = argument;
@@ -524,3 +531,23 @@ test "Bosun transaction state invariant rejects forged durability flags" {
     assert(rejected.error == "invalid_prior_transaction_state");
 }
 
+
+test "Bosun WAL model rejects page-LSN regression and post-commit updates" {
+    BLStorageState initial = bl_storage_initial();
+    BLStorageState update = bl_storage_step(initial, BL_STORAGE_APPEND_UPDATE, 0).state;
+    BLStorageState commit = bl_storage_step(update, BL_STORAGE_APPEND_COMMIT, 0).state;
+    BLStorageState flushed = bl_storage_step(commit, BL_STORAGE_FLUSH_LOG, commit.commit_lsn).state;
+    BLStorageState page = bl_storage_step(flushed, BL_STORAGE_FLUSH_PAGE, 1).state;
+    BLStorageTransition stale = bl_storage_step(page, BL_STORAGE_FLUSH_PAGE, 0);
+    assert(!stale.accepted);
+    assert(stale.error == "write_ahead_log_order_violation");
+    BLStorageTransition late_update = bl_storage_step(commit, BL_STORAGE_APPEND_UPDATE, 0);
+    assert(!late_update.accepted);
+}
+
+test "Bosun recovery rejects a commit record without a commit decision" {
+    BLTxnState active = bl_txn_step(bl_txn_initial(2), BL_ACTION_BEGIN).state;
+    BLRecoveryResult inconsistent = bl_recover(active, true);
+    assert(!inconsistent.valid);
+    assert(inconsistent.error == "commit_record_found_without_commit_decision");
+}
