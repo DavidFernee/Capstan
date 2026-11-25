@@ -23,8 +23,8 @@ bool wayland_frame_size_valid(int size) {
 }
 
 int wayland_u32_le(Tainted bytes, int at) {
-    return (bytes[at] & 0xFF) | ((bytes[at + 1] & 0xFF) << 8)
-        | ((bytes[at + 2] & 0xFF) << 16) | ((bytes[at + 3] & 0xFF) << 24);
+    return (bytes.at(at) & 0xFF) | ((bytes.at(at + 1) & 0xFF) << 8)
+        | ((bytes.at(at + 2) & 0xFF) << 16) | ((bytes.at(at + 3) & 0xFF) << 24);
 }
 WaylandFrameHeader wayland_bad_frame() {
     return new WaylandFrameHeader{status: -1, object_id: 0, size: 0, opcode: 0, end_offset: 0};
