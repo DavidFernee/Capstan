@@ -923,8 +923,7 @@ static int cap_openat2_checked(int dirfd, const char *path, uint64_t flags, uint
 
 /* Returns an O_PATH directory descriptor, or -1. The root path itself must
    be absolute and contain no symlink, magic-link or dot component. */
-static int64_t cap_workspace_open(CapStr *root, int64_t loc) {
-    (void)loc;
+static int64_t cap_workspace_open(CapStr *root) {
 #if defined(__linux__) && defined(O_PATH) && defined(RESOLVE_BENEATH) && defined(RESOLVE_NO_SYMLINKS)
     if (!cap_workspace_components_ok(root, true)) return -1;
     int slash = open("/", O_PATH | O_DIRECTORY | O_CLOEXEC);
