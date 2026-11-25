@@ -102,8 +102,9 @@ PR #329 now removes the silent-prefix behaviour: `string_bytes()` and
 `tainted_bytes()` reject values above `MAX_TEXT_BYTES` with the library's
 fail-fast exit path (status 101). Frame preflight checks text, value, accessibility
 label and hint lengths, the aggregate frame budget, and the tighter 64 KiB initial
-text-field value limit, before code-point decoding or layout allocation. The helpers retain independent defensive checks for callers
-outside layout. Regression coverage includes just below the limit, the exact limit,
+text-field value limit, before code-point decoding or layout allocation. The shared `utf8_decode_into()` primitive also enforces the byte bound, so direct
+`List<int>` decoder callers cannot bypass it. The helpers retain independent defensive
+checks for callers outside layout. Regression coverage includes just below the limit, the exact limit,
 and a hostile suffix one byte beyond it, for trusted and Tainted inputs, plus
 oversized per-view text, value, label and hint cases.
 
