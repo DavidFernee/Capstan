@@ -290,15 +290,30 @@ test "PA rejects duplicate transition labels as nondeterministic" {
 }
 
 test "PA rejects a cyclic protocol" {
-    PASpec spec = pa_linear_message_protocol();
-    spec.transitions.push(new PAEdge{
-        from_state: 4, role: 1, operation: 9, to_state: 0
+    List<PAEdge> transitions = new List<PAEdge>();
+    transitions.push(new PAEdge{
+        from_state: 0, role: 1, operation: 1, to_state: 1
     });
-    spec.terminal_states = new List<int>();
+    transitions.push(new PAEdge{
+        from_state: 1, role: 1, operation: 2, to_state: 2
+    });
+    transitions.push(new PAEdge{
+        from_state: 2, role: 2, operation: 3, to_state: 1
+    });
+    transitions.push(new PAEdge{
+        from_state: 2, role: 2, operation: 4, to_state: 3
+    });
+    List<int> terminals = new List<int>();
+    terminals.push(3);
+    PASpec spec = new PASpec{
+        state_count: 4,
+        role_count: 3,
+        initial_state: 0,
+        transitions: transitions,
+        terminal_states: terminals
+    };
     PAValidation result = pa_validate(spec);
-    assert(!result.valid);
-    assert(result.error == "terminal_state_has_outgoing_transition" ||
-        result.error == "cyclic_protocol");
+    assert(!result.valid && result.error == "cyclic_protocol");
 }
 
 test "PA rejects unreachable states" {
@@ -308,29 +323,31 @@ test "PA rejects unreachable states" {
     assert(!result.valid && result.error == "unreachable_protocol_state");
 }
 
-test "PA rejects nonterminal dead ends" {
-    PASpec spec = pa_linear_message_protocol();
-    spec.transitions = new List<PAEdge>();
-    spec.transitions.push(new PAEdge{
+test "PA rejects a reachable nonterminal dead end" {
+    List<PAEdge> transitions = new List<PAEdge>();
+    transitions.push(new PAEdge{
         from_state: 0, role: 1, operation: 1, to_state: 1
     });
-    spec.transitions.push(new PAEdge{
+    transitions.push(new PAEdge{
         from_state: 1, role: 1, operation: 2, to_state: 2
     });
-    spec.transitions.push(new PAEdge{
+    transitions.push(new PAEdge{
         from_state: 2, role: 2, operation: 3, to_state: 3
     });
-    spec.terminal_states = new List<int>();
-    spec.terminal_states.push(4);
-    PASpec result_spec = new PASpec{
+    transitions.push(new PAEdge{
+        from_state: 2, role: 2, operation: 4, to_state: 4
+    });
+    List<int> terminals = new List<int>();
+    terminals.push(4);
+    PASpec spec = new PASpec{
         state_count: 5,
         role_count: 3,
         initial_state: 0,
-        transitions: spec.transitions,
-        terminal_states: spec.terminal_states
+        transitions: transitions,
+        terminal_states: terminals
     };
-    PAValidation result = pa_validate(result_spec);
-    assert(!result.valid && result.error == "unreachable_protocol_state");
+    PAValidation result = pa_validate(spec);
+    assert(!result.valid && result.error == "nonterminal_dead_end");
 }
 
 test "PA rejects out-of-range roles and states" {
