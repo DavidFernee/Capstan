@@ -29,6 +29,7 @@ struct PAContract {
     int effect;
     int peer_role;
     int peer_operation;
+    int peer_state;
 }
 
 struct PASpec {
@@ -99,6 +100,8 @@ bool pa_has_dual_transfer(PASpec spec, int index) {
             peer.owner_after == spec.role_count;
         if (peer_edge.role == contract.peer_role &&
             peer_edge.operation == contract.peer_operation &&
+            peer_edge.from_state == contract.peer_state &&
+            peer.peer_state == edge.from_state &&
             peer.message_type == contract.message_type &&
             peer.effect == PA_EFFECT_TRANSFER &&
             peer.peer_role == edge.role &&
@@ -199,11 +202,14 @@ PAValidation pa_validate(PASpec spec) {
             return pa_reject("invalid_ownership_resource_contract");
         }
         if (contract.effect == PA_EFFECT_TRANSFER) {
-            if (!pa_has_dual_transfer(spec, i)) {
+            if (contract.peer_state < 0 ||
+                contract.peer_state >= spec.state_count ||
+                !pa_has_dual_transfer(spec, i)) {
                 return pa_reject("invalid_dual_transfer_contract");
             }
         } else if (contract.peer_role != PA_OWNER_NONE ||
-            contract.peer_operation != 0) {
+            contract.peer_operation != 0 ||
+            contract.peer_state != PA_OWNER_NONE) {
             return pa_reject("unexpected_peer_on_local_effect");
         }
         if (pa_contains(spec.terminal_states, edge.from_state)) {
@@ -345,17 +351,17 @@ List<PAContract> pa_linear_message_contracts() {
     contracts.push(new PAContract{
         message_type: 1, owner_before: PA_OWNER_NONE, owner_after: 1,
         resource_delta: 1, effect: PA_EFFECT_ALLOCATE,
-        peer_role: PA_OWNER_NONE, peer_operation: 0
+        peer_role: PA_OWNER_NONE, peer_operation: 0, peer_state: PA_OWNER_NONE
     });
     contracts.push(new PAContract{
         message_type: 1, owner_before: 1, owner_after: 3,
         resource_delta: 0, effect: PA_EFFECT_TRANSFER,
-        peer_role: 2, peer_operation: 3
+        peer_role: 2, peer_operation: 3, peer_state: 2
     });
     contracts.push(new PAContract{
         message_type: 1, owner_before: 3, owner_after: 2,
         resource_delta: 0, effect: PA_EFFECT_TRANSFER,
-        peer_role: 1, peer_operation: 2
+        peer_role: 1, peer_operation: 2, peer_state: 1
     });
     contracts.push(new PAContract{
         message_type: 1, owner_before: 2, owner_after: PA_OWNER_NONE,
@@ -691,6 +697,13 @@ test "PA rejects a transfer without a matching dual peer" {
 test "PA rejects a peer that does not reciprocate the transfer" {
     PASpec spec = pa_linear_message_protocol();
     spec.contracts[2].peer_operation = 4;
+    PAValidation result = pa_validate(spec);
+    assert(!result.valid && result.error == "invalid_dual_transfer_contract");
+}
+
+test "PA rejects a transfer paired with the wrong peer state" {
+    PASpec spec = pa_linear_message_protocol();
+    spec.contracts[1].peer_state = 3;
     PAValidation result = pa_validate(spec);
     assert(!result.valid && result.error == "invalid_dual_transfer_contract");
 }
