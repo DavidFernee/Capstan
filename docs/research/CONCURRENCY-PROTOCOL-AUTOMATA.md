@@ -199,6 +199,6 @@ No novelty or superiority claim should be made until the related-work review and
 7. Add branching and recursion only with explicit resource and termination contracts.
 8. Establish the compiler/runtime refinement bridge before promoting the feature into the safe-profile guarantee set.
 
-## 11. Explicit non-claims
+## 11. Next semantic increment: blocking and deadlock\n\nThe finite reference interpreter currently rejects an operation that is not enabled (for example, receive on an empty channel). A native concurrent runtime must distinguish invalid operations from valid-but-disabled operations, blocked tasks, wakeups, and deadlock. The next design and acceptance gates are specified in [Blocking, wakeup and deadlock semantics](CONCURRENCY-BLOCKING-AND-DEADLOCK-SEMANTICS.md). Until that work is implemented, the current model does not establish deadlock freedom, starvation freedom, or scheduler liveness.\n\n## 12. Explicit non-claims
 
 This proposal does not establish general deadlock freedom, starvation freedom, timing guarantees, weak-memory correctness, distributed consistency, or immunity to all concurrency vulnerabilities. Those properties require separate assumptions, definitions and evidence. The finite reference machine is neither a native scheduler nor proof of arbitrary Capstan program behaviour.
