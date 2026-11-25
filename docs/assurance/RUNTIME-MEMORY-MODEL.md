@@ -75,18 +75,21 @@ Secrets that require deterministic destruction likewise require an explicit dest
 
 ## 5. Secret-memory semantics
 
-The secret allocation kind is intended to reduce residual secret data in reclaimed managed storage. The collector attempts to wipe unreachable secret allocations during sweep. On current main, large secret allocations use a volatile byte-wise wipe before the underlying allocation is freed. Small secret slots are passed through `memset` during sweep, but the allocator then writes the free-list link into the first pointer-sized word of each slot. Consequently, the entire small secret slot is not zero while it is free, and the current-main implementation does not satisfy a full-slot-erasure invariant. PR #51 proposes out-of-line free-slot metadata and a non-elidable wipe to avoid reusing secret payload bytes for allocator links; this remains unintegrated and requires exact-head validation.
+The secret allocation kind reduces residual secret data in reclaimed managed storage. Current main wipes unreachable secret allocations during sweep. PR #143 moved small-secret free-slot metadata out of the payload, so reclaimed secret slots remain zero while free; large secret mappings are wiped before release. These are reclamation-time guarantees, not deterministic destruction at a chosen point in program execution.
+
+The native runtime also has an explicit scratch lifecycle in this change: `CapSecretScratch` allocates outside the collector and `cap_secret_scratch_destroy` performs a volatile wipe before releasing the allocation. Native PBKDF2 uses one such region for its message, U/T intermediates and keyed SHA-256 states. The descriptor is an internal C interface with a zero-initialisation/no-copy/no-retained-alias contract; it is not yet a source-language ownership type and is not compiler-enforced.
 
 This behaviour has important limits:
 
-- Wiping happens only when a collection runs and only after the collector decides the allocation is unreachable.
-- Conservative false roots and stale pointer-bearing slots can delay reclamation.
-- A wipe of one allocation does not erase copies in registers, stack slots, compiler temporaries, ordinary allocations, kernel buffers, files, swap, crash dumps, snapshots, or device caches.
+- GC-managed secret wiping happens only when a collection runs and only after the collector decides the allocation is unreachable.
+- Conservative false roots can delay reclamation.
+- Explicit native scratch destruction covers only that allocation. It does not erase input/output copies, registers, stack slots, compiler temporaries, ordinary allocations, kernel buffers, files, swap, crash dumps, snapshots, or device caches.
 - The operating system and hardware determine whether physical media and backing stores are actually overwritten.
 - A collection-time wipe does not establish a deterministic destruction deadline.
-- A non-elidable wipe primitive and an explicit ownership/invalidation API are required for a stronger deterministic contract.
+- The public Capstan crypto library still represents byte sequences as ordinary GC-managed `List<int>`; this change does not give those values deterministic destruction.
+- Optimised object-code inspection remains a separate acceptance requirement for each supported compiler/target combination.
 
-Accordingly, the runtime must not claim that garbage collection guarantees prompt or complete secret destruction. Tests can establish that a particular implementation path wrote zeros to a particular mapping before release; they cannot establish erasure of all copies in the system.
+Accordingly, the runtime must not claim that garbage collection guarantees prompt or complete secret destruction, or that explicit scratch wiping erases every copy of a secret. Tests can establish that a particular implementation path wrote zeros to a particular allocation before release; they cannot establish erasure of all copies in the system.
 
 ## 6. Resource limits and failure behaviour
 
@@ -157,7 +160,7 @@ The following invariants are the basis for implementation checks and future proo
 | MEM-07 | Heap accounting changes exactly once for each successful page backing acquisition/release and large-object allocation/free. | Arithmetic and underflow checks are merged in #112; `madvise` success/failure handling and exact release-transition observation remain outstanding in #51 |
 | MEM-08 | Every live pointer-bearing object reachable from a supported root is marked before sweep. | Requires collector proof under explicit ABI/root assumptions and adversarial tests |
 | MEM-09 | Atomic allocations are never scanned as pointer-bearing objects. | Structural allocator property; testable |
-| MEM-10 | Secret wiping occurs before reclaimed storage is made available for reuse or returned to the OS. | Large-object and small-slot wipe behaviour remains subject to #51; small secret free slots on main still have allocator metadata written into the first pointer-sized word |
+| MEM-10 | Secret wiping occurs before reclaimed storage is made available for reuse or returned to the OS. | PR #143 adds out-of-line small-secret free-slot metadata and wiping before reuse/release; this change adds native explicit scratch destruction tested at the pre-free boundary |
 | MEM-11 | No concurrent runtime entry occurs under the v0.6 execution model. | External program/runtime-use assumption; not internally enforced |
 | MEM-12 | A failed allocation does not return a partially initialized object to the caller. | Current failure is process-fatal; recoverable failure atomicity is not promised |
 
