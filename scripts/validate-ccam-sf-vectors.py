@@ -14,6 +14,9 @@ from pathlib import Path
 CORPUS = Path(__file__).resolve().parents[1] / "verification" / "ccam_sf_vectors.json"
 I64_MIN = -(1 << 63)
 I64_MAX = (1 << 63) - 1
+MAX_REGISTERS = 4096
+MAX_INSTRUCTIONS = 65536
+MAX_VECTORS = 64
 
 TOP_KEYS = {
     "format", "profile", "normative_specification",
@@ -214,6 +217,8 @@ def main() -> int:
         require(data["profile"] == "CCAM-SF-P", "unexpected proof profile")
         require(isinstance(data["vectors"], list), "vectors must be an array")
         require(isinstance(data["out_of_profile"], list), "out_of_profile must be an array")
+        require(len(data["vectors"]) + len(data["out_of_profile"]) <= MAX_VECTORS,
+                f"corpus exceeds the {MAX_VECTORS}-vector harness bound")
 
         seen_ids = set()
         total = 0
@@ -239,6 +244,8 @@ def main() -> int:
                 total += 1
 
                 require(isinstance(vector["register_types"], list), f"{where}: register_types must be an array")
+                require(len(vector["register_types"]) <= MAX_REGISTERS,
+                        f"{where}: register count exceeds the evaluator admission limit")
                 require(all(t in ("int", "bool") for t in vector["register_types"]),
                         f"{where}: unsupported register type")
                 require(vector["return_type"] in ("int", "bool", "void"),
@@ -248,6 +255,8 @@ def main() -> int:
                         f"{where}: max_steps must be a non-negative integer")
                 require(isinstance(vector["instructions"], list) and vector["instructions"],
                         f"{where}: instructions must be a non-empty array")
+                require(len(vector["instructions"]) <= MAX_INSTRUCTIONS,
+                        f"{where}: instruction count exceeds the evaluator admission limit")
                 if group_name == "vectors":
                     require("profile_entry" in vector,
                             f"{where}: proof-profile vector requires profile_entry")
