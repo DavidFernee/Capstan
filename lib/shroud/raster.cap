@@ -205,13 +205,19 @@ struct Canvas {
             println("shroud: invalid display mask dimensions");
             exit(101);
         }
+        Rect c = self.clip();
+        // Reject a mask wholly outside the clip before adding width/height to
+        // caller-supplied coordinates. The subtraction checks keep those sums
+        // in a small, surface-relative range and avoid signed overflow.
+        if (x >= c.right() || y >= c.bottom() ||
+            x < c.x - width || y < c.y - height) { return; }
         if (self.recording) {
             // Snapshot cached glyph pixels into frame-owned storage. A later font
             // cache eviction/rebuild must not change an already-recorded frame.
             List<int> mask_copy = new List<int>();
             for (int i = 0; i < alpha.len(); i += 1) { mask_copy.push(alpha[i]); }
             DisplayCommand cmd = new DisplayCommand{
-                kind: DISPLAY_MASK, bounds: rect(0, 0, 0, 0), clip: self.clip(),
+                kind: DISPLAY_MASK, bounds: rect(0, 0, 0, 0), clip: c,
                 paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: mask_copy,
                 mask_w: width, mask_h: height, x: x, y: y, coverage: 0,
                 opacity: self.opacity
@@ -219,7 +225,6 @@ struct Canvas {
             display_list_append(self, cmd, alpha.len());
             return;
         }
-        Rect c = self.clip();
         int x0 = int_max(x, c.x);
         int x1 = int_min(x + width, c.right());
         int y0 = int_max(y, c.y);
