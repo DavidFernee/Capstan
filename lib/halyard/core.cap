@@ -1707,6 +1707,31 @@ test "Halyard managed sink charges both old and replacement payload during commi
     } else { assert(false); }
 }
 
+
+test "Halyard managed sink accounts for old and replacement allocation overlap" {
+    HalyardLedgerResult made =
+        halyard_ledger_create_bounded(0, 8, 8, 0, 0, 1, 0, 0, 0, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 8);
+        assert(created.ok);
+        assert(ledger.used_allocation_units == 1);
+        if (let managed = created.managed) {
+            List<int> input = new List<int>();
+            input.push(4);
+            HalyardSinkWriteResult rejected =
+                halyard_managed_sink_write_exact(ledger, managed, input);
+            assert(!rejected.ok && rejected.error == "reservation_rejected");
+            assert(ledger.used_allocation_units == 1);
+            assert(ledger.used_retained_bytes == 0);
+            HalyardSinkSnapshotResult snapshot = halyard_managed_sink_snapshot(managed);
+            assert(snapshot.ok && snapshot.bytes.len() == 0);
+            assert(halyard_managed_sink_close(ledger, managed));
+            assert(ledger.used_allocation_units == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
 test "Halyard managed sink rejects capacity before acquiring replacement lease" {
     HalyardLedgerResult made = halyard_ledger_create_bounded(0, 2, 2, 0, 0, 2, 0, 0, 0, 0, 0, 0);
     assert(made.ok);
