@@ -821,6 +821,7 @@ int main() {
             test_single_line_oversized_paste(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_utf8_byte_ends(t);
             test_unicode_logical_preservation(t);
+            test_unicode_semantic_sequences(t);
             test_caret_byte_positions(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
