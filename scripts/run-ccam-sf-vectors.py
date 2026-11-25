@@ -164,8 +164,10 @@ def main() -> int:
         return 2
 
     generated = "\n\n".join(vector_test(v) for v in admitted + rejected) + "\n"
+    build_dir = ROOT / "build"
+    build_dir.mkdir(exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".cap",
-                                     prefix="ccam-sf-", delete=False) as handle:
+                                     prefix="ccam-sf-", dir=build_dir, delete=False) as handle:
         handle.write(generated)
         generated_path = Path(handle.name)
     try:
