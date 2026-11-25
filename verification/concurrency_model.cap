@@ -295,8 +295,9 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
     // Reserve cleanup capacity before any state mutation: exhausting this
     // budget must reject atomically, never return a partially cleaned state.
     int cleanup_cost = 0;
-    if (action == CCM_ACT_FAIL_PRODUCER || action == CCM_ACT_FAIL_CONSUMER ||
-        (action == CCM_ACT_COMPLETE_SCOPE && !before.scope_cancel_requested)) {
+    if (!before.scope_cancel_requested &&
+        (action == CCM_ACT_FAIL_PRODUCER || action == CCM_ACT_FAIL_CONSUMER ||
+         action == CCM_ACT_COMPLETE_SCOPE)) {
         cleanup_cost = 2;
     } else if (ccm_cleanup_action(action)) {
         cleanup_cost = 1;
@@ -516,6 +517,9 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         next.producer_status = CCM_TASK_FAILED;
         next.scope_cancel_requested = true;
         next.scope_failed = true;
+        if (before.scope_cancel_requested) {
+            return ccm_accept_cleanup(next, 1);
+        }
         return ccm_accept_cleanup(next, 2);
     }
 
@@ -539,6 +543,9 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         next.consumer_status = CCM_TASK_FAILED;
         next.scope_cancel_requested = true;
         next.scope_failed = true;
+        if (before.scope_cancel_requested) {
+            return ccm_accept_cleanup(next, 1);
+        }
         return ccm_accept_cleanup(next, 2);
     }
 
@@ -1246,4 +1253,40 @@ test "CCM protocol typestate marks cancellation disposal as aborted" {
     state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
     assert(state.protocol_phase == CCM_PROTO_ABORTED);
     assert(ccm_invariant(state));
+}
+
+test "CCM aggregates multiple child failures without double-spending scope cancellation" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_FAIL_PRODUCER);
+    assert(state.scope_failed && state.scope_cancel_requested);
+    assert(state.cleanup_reserved == 5);
+    state = ccm_apply(state, 2, CCM_ACT_FAIL_CONSUMER);
+    assert(ccm_invariant(state));
+    assert(state.producer_status == CCM_TASK_FAILED);
+    assert(state.consumer_status == CCM_TASK_FAILED);
+    assert(state.cleanup_reserved == 4);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state));
+    assert(state.root_status == CCM_TASK_FAILED && state.cleanup_reserved == 0);
+}
+
+test "CCM child failure after parent cancellation does not reserve cancellation twice" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_REQUEST_SCOPE_CANCEL);
+    state = ccm_apply(state, 1, CCM_ACT_FAIL_PRODUCER);
+    assert(ccm_invariant(state));
+    assert(state.scope_failed && state.cleanup_reserved == 5);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state) && state.root_status == CCM_TASK_FAILED);
 }
