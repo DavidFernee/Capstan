@@ -178,7 +178,7 @@ Accessibility JSON is a distinct output sink. The public `A11yNode` keeps names 
 `Tainted` raw text; `a11y_json()` is the sole conversion point and escapes IDs, roles, names,
 values and states there. The serializer preflights a 32 MiB conservative output budget, node
 count and recursion depth before constructing output, then emits bounded 4096-fragment chunks
-and performs a final join. It must never interpolate caller-controlled fields directly into JSON.
+and performs a final join. It must never interpolate caller-controlled fields directly into JSON. This deliberately changes the public `A11yNode.name` and `.value` field types from pre-escaped `string` to raw `Tainted`; direct consumers must perform context-specific escaping themselves. Review/version this source-API change before merge.
 
 Accessibility names and values must carry the same logical Unicode sequence as the corresponding
 control. The platform bridge may expose additional annotations/description text for suspicious
