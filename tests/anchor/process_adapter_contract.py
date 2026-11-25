@@ -201,7 +201,7 @@ class StartRequest:
         if not re.fullmatch(r"sha256:[0-9a-f]{64}", self.executable_identity):
             raise ContractError("executable must have a valid pinned SHA-256 identity")
         if (not isinstance(self.argv, tuple) or not self.argv or
-                any(not isinstance(x, str) or "\\x00" in x for x in self.argv) or not self.argv[0]):
+                any(not isinstance(x, str) or "\x00" in x for x in self.argv) or not self.argv[0]):
             raise ContractError("argv must be a non-empty immutable vector without NUL bytes")
         if not self.working_directory_grant:
             raise ContractError("working directory grant is required")
@@ -212,7 +212,7 @@ class StartRequest:
         if not 1 <= self.output_limit <= MAX_RETAINED_OUTPUT:
             raise ContractError("output limit outside profile limits")
         if any(not isinstance(k, str) or not isinstance(v, str) or
-               not k or "\\x00" in k or "\\x00" in v for k, v in self.environment):
+               not k or "\x00" in k or "\x00" in v for k, v in self.environment):
             raise ContractError("environment entries must be valid NUL-free strings")
         names = [key for key, _ in self.environment]
         if len(names) != len(set(names)):
@@ -423,12 +423,12 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             self.request(executable_identity="sha256:not-a-digest").validate()
         with self.assertRaises(ContractError):
-            self.request(argv=("capstan\\x00",)).validate()
+            self.request(argv=("capstan\x00",)).validate()
         for name in ("PATH", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"):
             with self.subTest(name=name), self.assertRaises(ContractError):
                 self.request(environment=((name, "attacker-value"),)).validate()
         with self.assertRaises(ContractError):
-            self.request(environment=(("LANG", "C\\x00.UTF-8"),)).validate()
+            self.request(environment=(("LANG", "C\x00.UTF-8"),)).validate()
 
     def test_output_is_bounded_and_triggers_termination(self):
         process = self.supervisor.start(self.request(output_limit=8))
