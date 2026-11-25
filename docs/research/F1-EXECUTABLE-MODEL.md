@@ -21,6 +21,7 @@ The prototype represents a value as:
 Value = (
   data_provenance, data_top,
   selection_provenance, selection_top,
+  control_provenance, control_top,
   confidentiality,
   context_guarantees
 )
@@ -30,11 +31,12 @@ The components are independent:
 
 - Data provenance records direct dependencies.
 - Selection provenance records dependencies that determine which aggregate element is observed.
+- Control provenance records dependencies that determine which branch or control decision selected an observable result. It is kept distinct from data and selection provenance so integrity-validation policies need not be conflated with confidentiality policies.
 - The top flags mean that the finite source abstraction is no longer precise. They must not be interpreted as an empty set.
 - Confidentiality is an ordered lattice: Public < Secret < Unknown.
 - Context guarantees are a finite set. A sink is permitted only when its required context is present.
 
-The model uses integer bit masks for small, stable test identities. A production analysis must use a collision-free identity discipline within its compilation scope, an explicit bounded representation, and a sound widening rule. These masks are not a proposed user-facing source identity representation.
+The model uses integer bit masks for small, stable test identities. The only value marked safe in all four contexts is the empty string, which contributes no content; arbitrary string literals are not assumed safe. A production analysis must use a collision-free identity discipline within its compilation scope, an explicit bounded representation, and a sound widening rule. These masks are not a proposed user-facing source identity representation.
 
 ## 3. Transfer rules
 
@@ -47,6 +49,7 @@ For a binary value-producing operation:
 ```text
 data(out)       = data(left) ⊔ data(right)
 selection(out)  = selection(left) ⊔ selection(right)
+control(out)    = control(left) ⊔ control(right)
 conf(out)       = max(conf(left), conf(right))
 contexts(out)   = contexts(left) ∧ contexts(right)
 ```
@@ -66,13 +69,19 @@ contexts(out)   = contexts(selected)
 
 This is a deliberately conservative first rule. A later model must distinguish container shape, key/index selection, aliasing and aggregate-content dependencies more precisely.
 
+### Control dependence
+
+For a branch with condition `c` and arms `t` and `f`, the result joins the arm values and records the condition's data, selection and control provenance in a separate control-dependence component. Confidentiality joins with the condition even when both arms return constants. This is important for secret-dependent predicates and branch-only disclosures.
+
+This is still an abstract branch rule: the prototype does not model path-sensitive equivalence of the arms, program-counter stacks, termination channels, timing, or declassification. A production system must state exactly which control observations it tracks and where.
+
 ### Context-specific encoding
 
 Each encoder establishes exactly its own context guarantee. HTML, log, CSV and JSON guarantees are not interchangeable. Encoding does not declassify secrets or erase provenance.
 
 ### Interprocedural summaries
 
-A complete summary states whether the result depends on an argument and whether it preserves the argument's context guarantee. Applying an incomplete summary returns top provenance, top selection dependence and unknown confidentiality. The model does not treat a missing summary as a pure function.
+A complete summary separately states whether the result has data, selection or control dependence on an argument, and whether a data-dependent result preserves the argument's context guarantee. Applying an incomplete summary returns top provenance, top selection dependence and unknown confidentiality. The model does not treat a missing summary as a pure function.
 
 A real summary must be derived from a function body or independently checked evidence. The prototype's hand-authored summaries only test the transfer rule.
 
@@ -104,8 +113,11 @@ The Capstan test program currently checks:
 6. Authority and effects compose as distinct sets.
 7. Resource composition is exact at the declared boundary.
 8. Resource overflow and unknown bounds are rejected rather than wrapped or silently weakened.
-9. An incomplete function summary widens to unknown.
-10. Selection dependencies survive even when the selected payload itself is not returned.
+9. Secret-dependent branch results retain control dependence and confidentiality.
+10. An incomplete function summary widens to unknown.
+11. Invalid source identities widen rather than aliasing.
+12. Fuel and memory overflow are both rejected.
+13. Selection dependencies survive even when the selected payload itself is not returned.
 
 The standard runner invokes this artefact through `bin/capstan test`. It must remain in that runner; an uninvoked model is not conformance evidence.
 
