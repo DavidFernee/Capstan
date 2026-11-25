@@ -254,4 +254,92 @@ theorem nativeRegisterWriteBool_readback
     nativeRegisterReadBool (nativeRegisterWriteBool native value) = .ok value := by
   simp [nativeRegisterReadBool, nativeRegisterWriteBool, htag]
 
+/-- The native integer writer's local type check followed by its field update. -/
+def nativeRegisterWriteIntChecked
+    (reg : NativeCCAMRegister) (value : Int) (hvalue : inI64 value) :
+    Except Trap NativeCCAMRegister :=
+  if reg.declaredTypeTag = nativeIntTypeTag then
+    .ok (nativeRegisterWriteInt reg value hvalue)
+  else
+    .error .typeMismatch
+
+/-- The abstract integer writer's corresponding type check and field update. -/
+def runtimeRegisterWriteIntChecked
+    (reg : RuntimeRegister) (value : Int) (hvalue : inI64 value) :
+    Except Trap RuntimeRegister :=
+  if reg.declaredType = .int then
+    .ok (runtimeRegisterWriteInt reg value hvalue)
+  else
+    .error .typeMismatch
+
+/-- The native and abstract integer writers agree, including type-mismatch traps. -/
+theorem nativeRegisterWriteIntChecked_corresponds
+    (native : NativeCCAMRegister) (runtime : RuntimeRegister)
+    (value : Int) (hvalue : inI64 value)
+    (hmatch : NativeRegisterMatches native runtime) :
+    (nativeRegisterWriteIntChecked native value hvalue).map
+      (fun updated => (updated.declaredTypeTag, updated.initialized,
+        updated.intValue, updated.boolValue)) =
+    (runtimeRegisterWriteIntChecked runtime value hvalue).map
+      (fun updated => (native.declaredTypeTag, updated.initialized,
+        updated.intValue, updated.boolValue)) := by
+  rcases hmatch with ⟨htag, hinit, hint, hbool⟩
+  cases htype : runtime.declaredType with
+  | int =>
+      have htagInt : native.declaredTypeTag = nativeIntTypeTag :=
+        (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp (by
+          simpa [htype] using htag)
+      simp [nativeRegisterWriteIntChecked, runtimeRegisterWriteIntChecked,
+        htagInt, htype, nativeRegisterWriteInt, runtimeRegisterWriteInt]
+  | bool =>
+      have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
+        (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
+          simpa [htype] using htag)
+      simp [nativeRegisterWriteIntChecked, runtimeRegisterWriteIntChecked,
+        htagBool, htype, nativeRegisterWriteInt, runtimeRegisterWriteInt]
+
+/-- The native boolean writer's local type check followed by its field update. -/
+def nativeRegisterWriteBoolChecked
+    (reg : NativeCCAMRegister) (value : Bool) :
+    Except Trap NativeCCAMRegister :=
+  if reg.declaredTypeTag = nativeBoolTypeTag then
+    .ok (nativeRegisterWriteBool reg value)
+  else
+    .error .typeMismatch
+
+/-- The abstract boolean writer's corresponding type check and field update. -/
+def runtimeRegisterWriteBoolChecked
+    (reg : RuntimeRegister) (value : Bool) :
+    Except Trap RuntimeRegister :=
+  if reg.declaredType = .bool then
+    .ok (runtimeRegisterWriteBool reg value)
+  else
+    .error .typeMismatch
+
+/-- The native and abstract boolean writers agree, including type-mismatch traps. -/
+theorem nativeRegisterWriteBoolChecked_corresponds
+    (native : NativeCCAMRegister) (runtime : RuntimeRegister)
+    (value : Bool)
+    (hmatch : NativeRegisterMatches native runtime) :
+    (nativeRegisterWriteBoolChecked native value).map
+      (fun updated => (updated.declaredTypeTag, updated.initialized,
+        updated.intValue, updated.boolValue)) =
+    (runtimeRegisterWriteBoolChecked runtime value).map
+      (fun updated => (native.declaredTypeTag, updated.initialized,
+        updated.intValue, updated.boolValue)) := by
+  rcases hmatch with ⟨htag, hinit, hint, hbool⟩
+  cases htype : runtime.declaredType with
+  | int =>
+      have htagInt : native.declaredTypeTag = nativeIntTypeTag :=
+        (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp (by
+          simpa [htype] using htag)
+      simp [nativeRegisterWriteBoolChecked, runtimeRegisterWriteBoolChecked,
+        htagInt, htype, nativeRegisterWriteBool, runtimeRegisterWriteBool]
+  | bool =>
+      have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
+        (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
+          simpa [htype] using htag)
+      simp [nativeRegisterWriteBoolChecked, runtimeRegisterWriteBoolChecked,
+        htagBool, htype, nativeRegisterWriteBool, runtimeRegisterWriteBool]
+
 end CapstanVerification
