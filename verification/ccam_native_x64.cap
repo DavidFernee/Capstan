@@ -321,19 +321,45 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
         if (frame_bytes > max_frame_bytes) { max_frame_bytes = frame_bytes; }
     }
     // Give every live frame its maximum frame plus saved frame pointer and
-    // return address. Switch to this bounded BSS stack so host ulimit defaults
-    // cannot silently turn a valid CCAM call-depth into an OS stack fault.
-    int native_stack_bytes = (max_frame_bytes + 16) * max_depth;
-    if (native_stack_bytes > CCAM_X64_MAX_NATIVE_STACK_BYTES) {
+    // return address. Round the usable stack to pages and reserve one inaccessible
+    // guard page below it. Keep the complete mapping within the native stack budget.
+    int required_stack_bytes = (max_frame_bytes + 16) * max_depth;
+    if (required_stack_bytes > CCAM_X64_MAX_NATIVE_STACK_BYTES - 4095) {
         return new CCAMNativeResult{ok: false, assembly: "", error: "native_stack_limit"};
     }
+    int stack_bytes = ((required_stack_bytes + 4095) / 4096) * 4096;
 
     List<string> output = new List<string>();
     ccam_x64_line(output, ".text");
     ccam_x64_line(output, ".globl _start");
     ccam_x64_line(output, ".type _start, @function");
     ccam_x64_line(output, "_start:");
-    ccam_x64_line(output, "    leaq cap_native_stack+" + int_to_str(native_stack_bytes) + "(%rip), %rsp");
+    // mmap a PROT_NONE region with one guard page followed by the bounded stack.
+    ccam_x64_line(output, "    movq $9, %rax");
+    ccam_x64_line(output, "    xorq %rdi, %rdi");
+    ccam_x64_line(output, "    movq cap_stack_bytes(%rip), %rsi");
+    ccam_x64_line(output, "    addq $4096, %rsi");
+    ccam_x64_line(output, "    xorq %rdx, %rdx");
+    ccam_x64_line(output, "    movq $34, %r10");
+    ccam_x64_line(output, "    movq $-1, %r8");
+    ccam_x64_line(output, "    xorq %r9, %r9");
+    ccam_x64_line(output, "    syscall");
+    ccam_x64_line(output, "    testq %rax, %rax");
+    ccam_x64_line(output, "    js .Lcap_trap_stack_allocation");
+    ccam_x64_line(output, "    movq %rax, cap_stack_base(%rip)");
+    // Make only the usable pages readable/writable; the lowest page stays PROT_NONE.
+    ccam_x64_line(output, "    movq $10, %rax");
+    ccam_x64_line(output, "    movq cap_stack_base(%rip), %rdi");
+    ccam_x64_line(output, "    addq $4096, %rdi");
+    ccam_x64_line(output, "    movq cap_stack_bytes(%rip), %rsi");
+    ccam_x64_line(output, "    movq $3, %rdx");
+    ccam_x64_line(output, "    syscall");
+    ccam_x64_line(output, "    testq %rax, %rax");
+    ccam_x64_line(output, "    js .Lcap_trap_stack_allocation");
+    ccam_x64_line(output, "    movq cap_stack_base(%rip), %rsp");
+    ccam_x64_line(output, "    addq $4096, %rsp");
+    ccam_x64_line(output, "    addq cap_stack_bytes(%rip), %rsp");
+    ccam_x64_line(output, "    andq $-16, %rsp");
     ccam_x64_line(output, "    xorq %rbp, %rbp");
     ccam_x64_line(output, "    movq $1, cap_depth(%rip)");
     ccam_x64_line(output, "    call " + ccam_x64_function_label(entry_function));
@@ -362,6 +388,9 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, ".Lcap_trap_call_depth:");
     ccam_x64_line(output, "    movq $74, %rdi");
     ccam_x64_line(output, "    jmp .Lcap_exit");
+    ccam_x64_line(output, ".Lcap_trap_stack_allocation:");
+    ccam_x64_line(output, "    movq $75, %rdi");
+    ccam_x64_line(output, "    jmp .Lcap_exit");
     ccam_x64_line(output, ".Lcap_exit:");
     ccam_x64_line(output, "    movq $60, %rax");
     ccam_x64_line(output, "    syscall");
@@ -369,11 +398,12 @@ CCAMNativeResult ccam_x64_emit_linux_elf(
     ccam_x64_line(output, ".align 16");
     ccam_x64_line(output, "cap_steps: .zero 8");
     ccam_x64_line(output, "cap_depth: .zero 8");
-    ccam_x64_line(output, "cap_native_stack: .zero " + int_to_str(native_stack_bytes));
+    ccam_x64_line(output, "cap_stack_base: .zero 8");
     ccam_x64_line(output, ".data");
     ccam_x64_line(output, ".align 8");
     ccam_x64_line(output, "cap_max_steps: .quad " + int_to_str(max_steps));
     ccam_x64_line(output, "cap_max_depth: .quad " + int_to_str(max_depth));
+    ccam_x64_line(output, "cap_stack_bytes: .quad " + int_to_str(stack_bytes));
     ccam_x64_line(output, ".section .note.GNU-stack, \"\", @progbits");
     return new CCAMNativeResult{ok: true, assembly: join(output, ""), error: ""};
 }
@@ -446,6 +476,13 @@ test "CCAM x86-64 backend emits freestanding checked native assembly" {
     assert(ccam_x64_contains(native.assembly, "syscall"));
     assert(ccam_x64_contains(native.assembly, "cap_max_steps: .quad 100"));
     assert(ccam_x64_contains(native.assembly, "cap_max_depth: .quad 16"));
+    assert(ccam_x64_contains(native.assembly, "movq $9, %rax"));
+    assert(ccam_x64_contains(native.assembly, "movq $10, %rax"));
+    assert(ccam_x64_contains(native.assembly, "movq cap_stack_base(%rip), %rdi"));
+    assert(ccam_x64_contains(native.assembly, "addq $4096, %rdi"));
+    assert(ccam_x64_contains(native.assembly, "cap_stack_base: .zero 8"));
+    assert(ccam_x64_contains(native.assembly, "cap_stack_bytes: .quad "));
+    assert(ccam_x64_contains(native.assembly, ".Lcap_trap_stack_allocation"));
     assert(!ccam_x64_contains(native.assembly, "#include"));
     assert(!ccam_x64_contains(native.assembly, "capstan_rt"));
     assert(write_file("build/ccam-native-x64.s", native.assembly));
