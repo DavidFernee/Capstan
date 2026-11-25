@@ -151,7 +151,10 @@ GCResult gc_collect(GCSpec spec) {
         GCRef root = spec.roots[i];
         int root_id = root.id;
         int root_index = gc_find_object(spec.objects, root_id);
-        if (!marks[root_index]) {
+        // Use the pending worklist as the root de-duplication authority as well
+        // as the mark bitmap. This keeps duplicate roots idempotent even if a
+        // future bitmap representation changes its update semantics.
+        if (!gc_id_in(worklist, root_id)) {
             if (worklist.len() >= spec.worklist_capacity) {
                 return gc_failure(
                     spec, GC_WORKLIST_FULL, "root_worklist_capacity_exhausted",
