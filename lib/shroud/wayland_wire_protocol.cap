@@ -319,10 +319,13 @@ WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader
             }
         }
     }
-    if (cursor != frame.end_offset || fds != received_fd_count
-        || (direction == WAYLAND_DIRECTION_REQUEST
-            ? !wayland_client_ids_can_allocate(objects, pending_ids)
-            : !wayland_server_ids_can_allocate(objects, pending_ids))) {
+    bool ids_valid = false;
+    if (direction == WAYLAND_DIRECTION_REQUEST) {
+        ids_valid = wayland_client_ids_can_allocate(objects, pending_ids);
+    } else {
+        ids_valid = wayland_server_ids_can_allocate(objects, pending_ids);
+    }
+    if (cursor != frame.end_offset || fds != received_fd_count || !ids_valid) {
         return wayland_protocol_error();
     }
     if (spec.destroys_target && target.state != 1) { return wayland_protocol_error(); }
@@ -330,9 +333,12 @@ WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader
     // Commit only after the complete frame, all arguments, descriptor count,
     // object references, IDs and capacity have been validated.
     for (int i = 0; i < pending_ids.len(); i += 1) {
-        bool added = direction == WAYLAND_DIRECTION_REQUEST
-            ? wayland_object_add_client(objects, pending_ids[i], pending_interfaces[i], pending_versions[i])
-            : wayland_object_add_server(objects, pending_ids[i], pending_interfaces[i], pending_versions[i]);
+        bool added = false;
+        if (direction == WAYLAND_DIRECTION_REQUEST) {
+            added = wayland_object_add_client(objects, pending_ids[i], pending_interfaces[i], pending_versions[i]);
+        } else {
+            added = wayland_object_add_server(objects, pending_ids[i], pending_interfaces[i], pending_versions[i]);
+        }
         if (!added) {
             // Preflight makes this unreachable absent allocator failure or
             // concurrent mutation; this API is single-thread confined.
