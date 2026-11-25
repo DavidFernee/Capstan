@@ -386,6 +386,13 @@ int main() {
     F1ContractResult overflow = f1_compose_contract(too_large, b);
     if (overflow.ok || overflow.error != "fuel_bound_overflow") { return 1; }
 
+    F1Contract invalid_authority = f1_contract(16, 0, 1, 1);
+    F1ContractResult bad_authority = f1_compose_contract(invalid_authority, b);
+    if (bad_authority.ok || bad_authority.error != "invalid_effect_or_authority_set") { return 1; }
+    F1Contract invalid_effects = f1_contract(0, 16, 1, 1);
+    F1ContractResult bad_effects = f1_compose_contract(invalid_effects, b);
+    if (bad_effects.ok || bad_effects.error != "invalid_effect_or_authority_set") { return 1; }
+
     F1Contract unknown = f1_contract(0, 0, 0, 0);
     unknown.bounded = false;
     F1ContractResult unknown_result = f1_compose_contract(a, unknown);
@@ -476,6 +483,14 @@ test "effect and authority summaries compose independently" {
     assert(result.ok);
     assert(result.contract.required_authority == (F1_AUTH_FS_READ | F1_AUTH_NET));
     assert(result.contract.effects == (F1_EFFECT_IO | F1_EFFECT_ALLOC));
+}
+
+test "invalid authority and effect sets fail closed" {
+    F1Contract bad_authority = f1_contract(16, 0, 1, 1);
+    F1Contract bad_effects = f1_contract(0, 16, 1, 1);
+    F1Contract valid = f1_contract(0, 0, 1, 1);
+    assert(!f1_compose_contract(bad_authority, valid).ok);
+    assert(!f1_compose_contract(bad_effects, valid).ok);
 }
 
 test "resource composition is conservative and budget admission is exact" {
