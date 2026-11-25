@@ -38,7 +38,7 @@ A timestamp identity is the tuple:
 
 `(stream_id, epoch_id, timebase, clock_kind, ticks)`.
 
-The clock kind identifies at least PTS, DTS, duration, media clock or external monotonic clock. Comparison is defined only for values in the same stream and epoch after checked rescaling to a common timebase. Cross-epoch ordering is undefined unless an explicit epoch mapping is supplied. A consumer MUST NOT compare raw tick integers from different timebases or streams.
+The clock kind identifies at least PTS, DTS, duration, media clock or external monotonic clock. Comparison is defined only for values in the same stream, epoch and clock kind after checked rescaling to a common timebase. Cross-epoch ordering is undefined unless an explicit epoch mapping is supplied. A consumer MUST NOT compare raw tick integers from different timebases or streams.
 
 Negative PTS/DTS values are valid when the container or codec profile permits them (for example, decode preroll or an edit offset). They remain signed values; they are not sentinels. Missing timestamps and unknown durations use explicit optional/validity fields, never magic integer values such as -1.
 
@@ -71,7 +71,7 @@ This nearest-anchor rule is valid only for an ordered counter sequence whose tru
 
 A discontinuity starts a new epoch. Causes include a container discontinuity marker, source restart, clock reset, unannounced timestamp jump accepted by an explicit policy, stream replacement, and seek.
 
-An epoch record contains a monotonically allocated epoch identifier, stream identity, timebase, origin/anchor, and reason. Epoch identifiers MUST NOT be reused during the lifetime of a stream session. The transition is atomic: either the new epoch and its anchor are committed together, or the previous clock state remains unchanged.
+An epoch record contains a monotonically allocated epoch identifier, stream identity, timebase, origin/anchor, and reason. Epoch identifiers MUST NOT be reused during the lifetime of a stream session. Identifier allocation is checked; exhaustion is an error and MUST NOT wrap or reuse an earlier identifier. The transition is atomic: either the new epoch and its anchor are committed together, or the previous clock state remains unchanged.
 
 Default policy is **reject** unexplained backward/forward jumps outside the configured tolerance. A caller may explicitly choose:
 - **Reset:** start a new epoch with no cross-epoch time mapping.
@@ -82,14 +82,14 @@ There is no implicit "smooth over" operation. Interpolation, duration accumulati
 
 ## 7. Seek and resynchronisation
 
-A seek creates a new seek generation and a new clock epoch, even when the demuxer reports a timestamp close to the previous position. The seek result supplies the new stream/timebase anchor. Packets and asynchronous completions tagged with an older generation MUST NOT update the new clock state or be presented after the seek. Decode preroll may be processed when required by the codec, but presentation before the requested target is trimmed using integer timestamp comparisons within the new epoch.
+A seek creates a new seek generation and a new clock epoch, even when the demuxer reports a timestamp close to the previous position. Generation allocation is checked; exhaustion is an error and MUST NOT wrap or reuse an earlier generation. The seek result supplies the new stream/timebase anchor. Packets and asynchronous completions tagged with an older generation MUST NOT update the new clock state or be presented after the seek. Decode preroll may be processed when required by the codec, but presentation before the requested target is trimmed using integer timestamp comparisons within the new epoch.
 
 Resynchronisation to an external clock requires an explicit pair of anchors:
 - media anchor ((m_0, T_m));
 - external monotonic-clock anchor ((c_0, T_c));
 - an epoch/generation binding and a maximum permitted correction window.
 
-For a media timestamp (m), the nominal external-clock projection is (c_0 + operatorname{rescale}(m-m_0,T_m,T_c)), with checked subtraction, checked rescaling and checked addition. The external clock MUST be monotonic and its timebase MUST be explicit. Wall-clock time (UTC, civil time, NTP-derived display time) is not a substitute for a monotonic scheduling clock.
+For a media timestamp (m), the nominal external-clock projection is (c_0 + operatorname{rescale}(m-m_0,T_m,T_c)), with checked subtraction, checked rescaling and checked addition. The caller MUST select the rescaling rounding policy explicitly; there is no implicit floating-point or host-default rounding. The external clock MUST be monotonic and its timebase MUST be explicit. Wall-clock time (UTC, civil time, NTP-derived display time) is not a substitute for a monotonic scheduling clock.
 
 A resync operation either accepts the new anchor atomically or leaves the old mapping unchanged. Drift estimation and correction are separate from timestamp conversion: any rate correction MUST be represented as a bounded rational ratio with explicit limits, update interval and slew policy. No floating-point PLL or unbounded instantaneous timestamp jump is permitted as the authoritative mapping. A discontinuity or seek invalidates prior resync anchors unless a new mapping is explicitly installed.
 
