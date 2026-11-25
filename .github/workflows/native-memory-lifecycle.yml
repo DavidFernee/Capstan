@@ -16,6 +16,8 @@ on:
       - "verification/lean/NativeMemoryLifecycle.lean"
       - "verification/lean/NativeReachability.lean"
       - "verification/lean/NativeHandleReachability.lean"
+      - "verification/lean/NativeBoundedMarker.lean"
+      - "research/native-bootstrap/NATIVE-REACHABILITY-REFINEMENT.md"
       - ".github/workflows/native-memory-lifecycle.yml"
   workflow_dispatch:
 
