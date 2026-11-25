@@ -743,6 +743,10 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
                 file,moov_box.box,ledger,budget
             );
             assert(parsed.ok);
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_chunk_slots == 0);
+            assert(ledger.used_metadata_entries == 0);
+            assert(budget.used_output_bytes == 8192);
             if (let movie = parsed.movie) {
                 assert(movie.tracks.len() == 1);
                 assert(movie.tracks[0].handler == "soun");
@@ -755,6 +759,8 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
             DeadeyeMp4MovieTracksResult forged =
                 deadeye_mp4_parse_moov_tracks(file,forged_moov,ledger,budget);
             assert(!forged.ok);
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_chunk_slots == 0);
         } else { assert(false); }
     } else { assert(false); }
 }
