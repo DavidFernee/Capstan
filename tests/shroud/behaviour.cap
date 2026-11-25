@@ -611,9 +611,10 @@ void test_display_list(Tally t, Font font) {
     recorder.blend(8, 8, solid(0x80FFFFFF), 117);
     a.pop_clip();
     recorder.pop_clip();
-    List<int> glyphs = text_codepoints("GPU");
+    List<int> glyphs = text_codepoints("G P U");
     int _direct_pen = draw_glyphs(a, font, fx(11), glyphs, 0, glyphs.len(), fx(2), fx(33), 0xFFE0F0FF);
     int _recorded_pen = draw_glyphs(recorder, font, fx(11), glyphs, 0, glyphs.len(), fx(2), fx(33), 0xFFE0F0FF);
+    expect_int(t, _recorded_pen, _direct_pen, "display list: glyph advances are unchanged");
     a.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
     recorder.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
 
