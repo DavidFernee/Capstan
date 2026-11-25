@@ -589,6 +589,60 @@ void test_raster(Tally t) {
     expect(t, ch_a(back) == 0x80 && int_abs(ch_r(back) - 0x33) <= 1 && int_abs(ch_g(back) - 0x66) <= 1 && int_abs(ch_b(back) - 0x99) <= 1, "colour: translucent colours survive within one step", $"{back}");
 }
 
+void test_resize(Tally t, Font f, Font b) {
+    Ui ui = new_ui(f, b, light_theme(), 640, 480, 256);
+    View v = column()
+        .add(button("Danger", "danger").danger().key("danger"))
+        .add(text_field("field", taint("abc"), "Name").key("field"))
+        .add(scroll(column().add(button("Item", "item"))).height(40).key("scroll"));
+    ui.render(v, 1000);
+    string guard_id = laid_of(ui, "danger").id;
+    string field_id = laid_of(ui, "field").id;
+    int old_guard_time = 0;
+    if (let t0 = ui.shown_at.get(guard_id)) { old_guard_time = t0; }
+    ui.focus = field_id;
+    ui.caret.set(field_id, 2);
+    ui.scroll.set("scroll", fx(12));
+    ui.hover = guard_id;
+    ui.pressed = guard_id;
+
+    int old_w = ui.pixmap.w;
+    int old_h = ui.pixmap.h;
+    int old_scale = ui.scale;
+    expect(t, !ui.resize(0, 600, 384), "resize: zero width is rejected", "resize unexpectedly accepted zero width");
+    expect(t, !ui.resize(800, 600, 63), "resize: scale below minimum is rejected", "resize unexpectedly accepted invalid scale");
+    expect(t, ui.pixmap.w == old_w && ui.pixmap.h == old_h && ui.scale == old_scale &&
+        ui.focus == field_id && ui.hover == guard_id && ui.pressed == guard_id,
+        "resize: invalid requests leave Ui state unchanged", "state changed after rejected resize");
+
+    expect(t, ui.resize(800, 600, 384), "resize: valid dimensions and scale are accepted", "resize rejected valid dimensions and scale");
+    expect(t, ui.pixmap.w == 800 && ui.pixmap.h == 600 && ui.scale == 384,
+        "resize: pixel surface and scale update together", $"{ui.pixmap.w}x{ui.pixmap.h}@{ui.scale}");
+    bool old_tree_cleared = true;
+    if (let _old_root = ui.root) { old_tree_cleared = false; }
+    expect(t, old_tree_cleared && ui.hover == "" && ui.pressed == "",
+        "resize: old hit-test tree and transient pointer state are invalidated", "stale state retained");
+    expect(t, ui.focus == field_id, "resize: logical focus is preserved", ui.focus);
+    bool caret_preserved = false;
+    bool scroll_preserved = false;
+    if (let caret_value = ui.caret.get(field_id)) { caret_preserved = caret_value == 2; }
+    if (let scroll_value = ui.scroll.get("scroll")) { scroll_preserved = scroll_value == fx(12); }
+    expect(t, caret_preserved && scroll_preserved,
+        "resize: caret and scroll state are preserved", "retained state differs");
+    bool guard_preserved = false;
+    if (let guard_time = ui.shown_at.get(guard_id)) { guard_preserved = guard_time == old_guard_time; }
+    expect(t, guard_preserved,
+        "resize: guard history is retained until the next rendered frame", "guard history changed early");
+    expect_int(t, ui.handle(pointer_event(EV_POINTER_UP, 10, 10, 1100)).len(), 0,
+        "resize: pointer input is ignored until a fresh frame is rendered");
+
+    ui.render(v, 1200);
+    int new_guard_time = 0;
+    if (let t1 = ui.shown_at.get(guard_id)) { new_guard_time = t1; }
+    expect(t, new_guard_time == 1200,
+        "resize: scale transition restarts guarded activation after fresh layout", $"{new_guard_time}");
+}
+
 void test_scale(Tally t, Font f, Font b) {
     // At 150% every length in dp is 1.5 device pixels.
     Ui ui = new_ui(f, b, light_theme(), 300, 200, 384);
@@ -620,6 +674,7 @@ int main() {
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_resize(t, f, fb);
             test_scale(t, f, fb);
         }
     } else {
