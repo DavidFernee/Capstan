@@ -620,6 +620,37 @@ void test_untrusted_display(Tally t) {
 
 List<int> text_bytes_of(string s) { return string_bytes(s); }
 
+void test_a11y_utf8_encoder(Tally t) {
+    // A large mixed-width payload exercises the former quadratic append path.
+    List<int> expected = new List<int>();
+    for (int i = 0; i < 16384; i += 1) {
+        expected.push(0x41);
+        expected.push(0x00E9);
+        expected.push(0x20AC);
+        expected.push(0x1F600);
+    }
+    string encoded = utf8_from_codepoints(expected);
+    expect_int(t, encoded.len(), 163840,
+        "a11y UTF-8 encoder: large mixed-width output has exact byte length");
+    List<int> actual = utf8_decode(string_bytes(encoded));
+    expect_int(t, actual.len(), expected.len(),
+        "a11y UTF-8 encoder: large output decodes to the original scalar count");
+    if (actual.len() == expected.len()) {
+        bool equal = true;
+        for (int j = 0; j < expected.len(); j += 1) {
+            if (actual[j] != expected[j]) { equal = false; }
+        }
+        expect(t, equal, "a11y UTF-8 encoder: large mixed-width round trip is exact",
+            "decoded scalar sequence differs from source");
+    }
+    string visible = visible_untrusted_text(taint("A" + char_str(0xC3) + char_str(0xA9) +
+        char_str(0xE2) + char_str(0x82) + char_str(0xAC)));
+    expect(t, visible == "A" + char_str(0xC3) + char_str(0xA9) +
+        char_str(0xE2) + char_str(0x82) + char_str(0xAC),
+        "a11y UTF-8 encoder: visible untrusted text preserves UTF-8 bytes", visible);
+}
+
+
 void test_a11y(Tally t, Ui ui) {
     View v = column().add(text_field("p", taint("hunter2"), "Password").key("pw")).add(password_field("q", taint("hunter2"), "Secret").key("pw2")).add(button("", "x").key("nameless")).add(button("", "y").label("Close").key("named"));
     ui.render(v, 0);
@@ -823,6 +854,7 @@ int main() {
             test_unicode_logical_preservation(t);
             test_unicode_semantic_sequences(t);
             test_caret_byte_positions(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_a11y_utf8_encoder(t);
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
