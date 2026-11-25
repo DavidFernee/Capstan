@@ -546,3 +546,9 @@ The next experiments are to (1) compare factored judgements with a unified produ
 
 The artefact must pass the exact-head standard suite and receive independent semantic review before any language guarantee is claimed. Passing it alone establishes neither soundness nor the absence of vulnerabilities in the compiler, runtime, generated code, host or ecosystem.
 
+
+### F1 implementation experiment: scalar and metadata provenance
+
+The first checker implementation slice is documented in [PROVENANCE-SCALAR-SLICE.md](../assurance/PROVENANCE-SCALAR-SLICE.md). It extends the existing Capstan checker analysis to preserve Boolean expression/local dependencies, Tainted length metadata, scalar parameter summaries, `to_text`, and `join` propagation. The analysis remains a coarse variable-name may-analysis; this does not implement the proposed abstract heap or complete sink semantics.
+
+The CWE atlas now includes a helper-mediated Tainted-length reconstruction probe expected to be rejected, and an explicitly retained Boolean-to-text output gap. Exact-head CI and semantic review are required before treating this as integrated. This experiment must not be described as closing the wider TYPE finding set.
