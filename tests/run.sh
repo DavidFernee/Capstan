@@ -106,6 +106,48 @@ else
   bad "concurrency protocol refinement" "$out"
 fi
 
+section "Capstan-native verification: bounded concurrency transition graph"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_transition_graph.cap" 2>&1)"; then
+  ok "bounded explicit transition-graph reachability, deadlock witnesses and fail-closed state limits"
+else
+  bad "bounded concurrency transition graph" "$out"
+fi
+
+section "Capstan-native verification: generated concurrency transition graph"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_generated_graph.cap" 2>&1)"; then
+  ok "model-derived BFS, enabled-action enumeration, canonical state keys and fail-closed bounds"
+else
+  bad "generated concurrency transition graph" "$out"
+fi
+
+section "Capstan-native verification: generated channel-capacity graph"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_generated_capacity_graph.cap" 2>&1)"; then
+  ok "generated capacity-blocking graph, ownership invariants, wakeup and cancellation"
+else
+  bad "generated channel-capacity graph" "$out"
+fi
+
+section "Capstan-native verification: wait-for and deadlock classification"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_wait_for.cap" 2>&1)"; then
+  ok "typed join/event waits, terminal outcomes, environment quiescence and fail-closed deadlock classification"
+else
+  bad "wait-for and deadlock classification" "$out"
+fi
+
+section "Capstan-native verification: blocking receive and wakeup semantics"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_blocking.cap" 2>&1)"; then
+  ok "blocked receive, atomic waiter registration/wakeup, close, cancellation and stale-wakeup semantics"
+else
+  bad "blocking receive and wakeup semantics" "$out"
+fi
+
+section "Capstan-native verification: capacity-blocked send and wakeup semantics"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_blocking_send.cap" 2>&1)"; then
+  ok "capacity backpressure, producer wait registration, dequeue wakeup and cancellation semantics"
+else
+  bad "capacity-blocked send and wakeup semantics" "$out"
+fi
+
 section "Capstan-native verification: checked source to CCAM lowering"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
   ok "checked scalar source lowers to validated CCAM and executes in the Capstan evaluator"
@@ -286,6 +328,7 @@ else bad "shroud" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud PNG export budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/host_contract.py" 2>&1)"; then ok "$out"; else bad "shroud native-host contract" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/gpu_backend_model.py" 2>&1)"; then ok "$out"; else bad "shroud GPU backend contract model" "$out"; fi
 printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
 if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
