@@ -128,7 +128,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 7. Test obligations
 
-The regression suite is expressed as 24 Capstan `test` declarations in `lib/halyard/core.cap`, supplemented by the bounded Python actor model.
+The regression suite is expressed as 25 Capstan `test` declarations in `lib/halyard/core.cap`, supplemented by the bounded Python actor model.
 Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -147,7 +147,8 @@ contains no shell, Python, C, or other-language source. It covers:
 - exhaustive exact-read counts around a four-byte source;
 - exhaustive (3^5) five-dimensional admission requests;
 - independent underflow rejection for every release dimension;
-- defensive rejection of corrupted public ledger state.
+- defensive rejection of corrupted public ledger state;
+- defensive validation of source bounds and byte contents before parser use.
 
 Still required before MC1 can pass:
 
