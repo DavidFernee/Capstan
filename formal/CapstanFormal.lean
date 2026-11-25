@@ -135,6 +135,36 @@ theorem capacityGrowth_total (limit current required : Nat)
     · exact ⟨current, by simp [hEnough]⟩
     · exact ⟨required, by simp [hEnough, hRequired]⟩
 
+
+/-- One geometric metadata-capacity growth step, saturating at the largest
+    representable element count instead of allowing multiplication to wrap. -/
+def capacityGrowthStep (maxCount current : Nat) : Nat :=
+  if current > maxCount / 2 then maxCount else current * 2
+
+/-- A growth step never shrinks a valid positive capacity and never exceeds maxCount. -/
+theorem capacityGrowthStep_bounds (maxCount current : Nat)
+    (hPositive : 0 < current) (hCurrent : current ≤ maxCount) :
+    current ≤ capacityGrowthStep maxCount current ∧
+      capacityGrowthStep maxCount current ≤ maxCount := by
+  unfold capacityGrowthStep
+  by_cases hHalf : current > maxCount / 2
+  · simp [hHalf]
+    omega
+  · simp [hHalf]
+    omega
+
+/-- Unless already at the maximum, geometric growth makes strict progress. -/
+theorem capacityGrowthStep_strict (maxCount current : Nat)
+    (hPositive : 0 < current) (hCurrent : current ≤ maxCount)
+    (hBelow : current < maxCount) :
+    current < capacityGrowthStep maxCount current := by
+  unfold capacityGrowthStep
+  by_cases hHalf : current > maxCount / 2
+  · simp [hHalf]
+    omega
+  · simp [hHalf]
+    omega
+
 /-- Whether the OS accepted an advice operation on a retained page. -/
 inductive PageBacking where
   | resident
