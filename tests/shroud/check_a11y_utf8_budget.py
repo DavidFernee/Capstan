@@ -41,7 +41,7 @@ def main():
 int main() {
     List<int> cps = new List<int>();
     for (int i = 0; i < MAX_TEXT_BYTES; i += 1) { cps.push(0x41); }
-    string encoded = utf8_from_codepoints(cps);
+    Tainted encoded = utf8_from_codepoints(cps);
     if (encoded.len() != MAX_TEXT_BYTES) { return 1; }
     if (encoded.at(0) != 0x41 || encoded.at(MAX_TEXT_BYTES - 1) != 0x41) { return 2; }
     println("a11y UTF-8 budget: 1 MiB ASCII encoded exactly");
