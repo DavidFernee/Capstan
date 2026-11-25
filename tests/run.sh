@@ -152,7 +152,7 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
       if [[ $status -eq $expected ]] && cmp -s "$tmp/$name.expected" "$tmp/$name.stdout"; then
         ok "freestanding $name emits exact bytes and exits $expected"
       else
-        bad "freestanding $name output" "expected exit $expected and exact output bytes; got exit $status"
+        bad "freestanding $name output" "expected exit $expected and exact output bytes; got exit $status; actual bytes: $(od -An -v -tx1 "$tmp/$name.stdout")"
       fi
     }
     native_run_output ccam-native-x64-hello 0 'Hello, World!\n'
