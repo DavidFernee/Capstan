@@ -220,8 +220,21 @@ int main() {
     signed_word = wayland_payload_fixed(wayland_test_bytes(signed_bytes), 0, 4);
     if (signed_word.status != 1 || signed_word.value != 384) { return 48; }
 
+
+    // A complete frame whose argument length crosses its own boundary is invalid,
+    // even if the receive buffer contains later bytes.
+    List<int> short_frame = new List<int>();
+    short_frame.push(1); short_frame.push(0); short_frame.push(0); short_frame.push(0);
+    short_frame.push(0); short_frame.push(0); short_frame.push(12); short_frame.push(0);
+    short_frame.push(4); short_frame.push(0); short_frame.push(0); short_frame.push(0);
+    short_frame.push(0); short_frame.push(0); short_frame.push(0); short_frame.push(0);
+    WaylandFrameHeader short_header = wayland_frame_header(wayland_test_bytes(short_frame), 0);
+    if (short_header.status != 1) { return 49; }
+    span = wayland_frame_array(wayland_test_bytes(short_frame), short_header, 8);
+    if (span.status != -1) { return 49; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing and payload spans: 48 adversarial assertions passed");
+    println("Wayland framing and payload spans: 49 adversarial assertions passed");
     return 0;
 }

@@ -178,7 +178,11 @@ WaylandPayloadSpan wayland_frame_payload_span(Tainted bytes, WaylandFrameHeader 
         || actual.end_offset != frame.end_offset) { return wayland_bad_payload_span(); }
     int payload_start = frame_start + WAYLAND_HEADER_BYTES;
     if (offset < payload_start || offset > frame.end_offset) { return wayland_bad_payload_span(); }
-    return wayland_payload_span(bytes, offset, frame.end_offset, nul_terminated);
+    WaylandPayloadSpan span = wayland_payload_span(bytes, offset, frame.end_offset, nul_terminated);
+    // The enclosing frame is already complete. A declared argument extending
+    // past its end is malformed, not an incomplete stream fragment.
+    if (span.status == 0) { return wayland_bad_payload_span(); }
+    return span;
 }
 WaylandPayloadSpan wayland_frame_array(Tainted bytes, WaylandFrameHeader frame, int offset) {
     return wayland_frame_payload_span(bytes, frame, offset, false);
