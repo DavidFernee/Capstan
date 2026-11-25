@@ -336,16 +336,45 @@ bool display_paint_valid(Paint p) {
         display_coord_valid(p.x1) && display_coord_valid(p.y1);
 }
 
+// Conservative frame-wide upper bound on validation and rasterisation work.
+// One unit bounds a primitive loop/comparison; it is not a CPU-cycle estimate.
+const int MAX_DISPLAY_WORK = 100000000;
+
+bool display_work_fits(int used, int charge) {
+    return used >= 0 && used <= MAX_DISPLAY_WORK &&
+        charge >= 0 && charge <= MAX_DISPLAY_WORK - used;
+}
+
+// ceil(log2(n)); the Capstan runtime uses stable merge sort.
+int display_sort_levels(int n) {
+    int levels = 0;
+    int capacity = 1;
+    while (capacity < n) {
+        capacity *= 2;
+        levels += 1;
+    }
+    return levels;
+}
+
 bool display_list_valid(DisplayList dl, Pixmap pm) {
     if (!pixmap_size_valid(pm.w, pm.h) || pm.px.len() != pm.w * pm.h ||
         dl.width != pm.w || dl.height != pm.h || dl.commands.len() > MAX_DISPLAY_COMMANDS) { return false; }
     int payload = 0;
+    int work = dl.commands.len();
     for (int i = 0; i < dl.commands.len(); i += 1) {
         DisplayCommand cmd = dl.commands[i];
         if (!display_clip_valid(cmd.clip, dl.width, dl.height) || cmd.opacity < 0 || cmd.opacity > 255 ||
             !display_paint_valid(cmd.paint)) { return false; }
         if (cmd.kind == DISPLAY_RECT) {
             if (!display_rect_valid(cmd.bounds)) { return false; }
+            int x0 = int_max(fx_floor(cmd.bounds.x), cmd.clip.x);
+            int y0 = int_max(fx_floor(cmd.bounds.y), cmd.clip.y);
+            int x1 = int_min(fx_ceil(cmd.bounds.right()), cmd.clip.right());
+            int y1 = int_min(fx_ceil(cmd.bounds.bottom()), cmd.clip.bottom());
+            int area = 0;
+            if (x0 < x1 && y0 < y1) { area = (x1 - x0) * (y1 - y0); }
+            if (!display_work_fits(work, area)) { return false; }
+            work += area;
         } else if (cmd.kind == DISPLAY_PATH) {
             if (cmd.rule != FILL_NONZERO && cmd.rule != FILL_EVENODD) { return false; }
             if (let seg = cmd.segments) {
@@ -353,14 +382,44 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                 if (n > MAX_DISPLAY_SEGMENTS_PER_PATH || seg.y0.len() != n ||
                     seg.x1.len() != n || seg.y1.len() != n || n > MAX_DISPLAY_SEGMENTS - payload) { return false; }
                 payload += n;
+                int minx = UNBOUNDED;
+                int miny = UNBOUNDED;
+                int maxx = -UNBOUNDED;
+                int maxy = -UNBOUNDED;
                 for (int j = 0; j < n; j += 1) {
-                    if (!display_coord_valid(seg.x0[j]) || !display_coord_valid(seg.y0[j]) ||
-                        !display_coord_valid(seg.x1[j]) || !display_coord_valid(seg.y1[j])) { return false; }
+                    int x0 = seg.x0[j];
+                    int y0 = seg.y0[j];
+                    int x1 = seg.x1[j];
+                    int y1 = seg.y1[j];
+                    if (!display_coord_valid(x0) || !display_coord_valid(y0) ||
+                        !display_coord_valid(x1) || !display_coord_valid(y1)) { return false; }
+                    minx = int_min(minx, int_min(x0, x1));
+                    miny = int_min(miny, int_min(y0, y1));
+                    maxx = int_max(maxx, int_max(x0, x1));
+                    maxy = int_max(maxy, int_max(y0, y1));
                 }
+                // fill_segments scans n segments per row, then constructs and
+                // merge-sorts crossings on each sub-scanline before blending.
+                int charge = n;
+                if (n > 0) {
+                    int px0 = int_max(fx_floor(minx), cmd.clip.x);
+                    int py0 = int_max(fx_floor(miny), cmd.clip.y);
+                    int px1 = int_min(fx_ceil(maxx), cmd.clip.right());
+                    int py1 = int_min(fx_ceil(maxy), cmd.clip.bottom());
+                    int width = int_max(0, px1 - px0);
+                    int height = int_max(0, py1 - py0);
+                    int area = width * height;
+                    int row_factor = 1 + SUBSAMPLES * (3 + display_sort_levels(n));
+                    charge += n * height * row_factor + area;
+                }
+                if (!display_work_fits(work, charge)) { return false; }
+                work += charge;
             } else { return false; }
         } else if (cmd.kind == DISPLAY_BLEND) {
             if (cmd.x < 0 || cmd.y < 0 || cmd.x >= dl.width || cmd.y >= dl.height ||
                 cmd.coverage < 0 || cmd.coverage > 255) { return false; }
+            if (!display_work_fits(work, 1)) { return false; }
+            work += 1;
         } else if (cmd.kind == DISPLAY_MASK) {
             if (let alpha = cmd.mask_alpha) {
                 if (alpha.len() > MAX_DISPLAY_MASK_PIXELS || cmd.mask_w < 0 || cmd.mask_h < 0) { return false; }
@@ -376,6 +435,15 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                     if (alpha[j] < 0 || alpha[j] > 255) { return false; }
                 }
                 payload += alpha.len();
+                int x0 = int_max(cmd.x, cmd.clip.x);
+                int y0 = int_max(cmd.y, cmd.clip.y);
+                int x1 = int_min(cmd.x + cmd.mask_w, cmd.clip.right());
+                int y1 = int_min(cmd.y + cmd.mask_h, cmd.clip.bottom());
+                int area = 0;
+                if (x0 < x1 && y0 < y1) { area = (x1 - x0) * (y1 - y0); }
+                int charge = alpha.len() + area;
+                if (!display_work_fits(work, charge)) { return false; }
+                work += charge;
             } else { return false; }
         } else { return false; }
     }
