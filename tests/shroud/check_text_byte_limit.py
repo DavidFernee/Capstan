@@ -71,6 +71,24 @@ int main() {
     return 1;
 }
 """,
+        "decoder": """
+int main() {
+    List<int> bytes = new List<int>();
+    for (int i = 0; i <= MAX_TEXT_BYTES; i += 1) { bytes.push(0x41); }
+    utf8_decode(bytes);
+    println("unexpectedly accepted oversized decoder input");
+    return 1;
+}
+""",
+        "decoder-with-ends": """
+int main() {
+    List<int> bytes = new List<int>();
+    for (int i = 0; i <= MAX_TEXT_BYTES; i += 1) { bytes.push(0x41); }
+    utf8_decode_with_ends(bytes);
+    println("unexpectedly accepted oversized decoder input with offsets");
+    return 1;
+}
+""",
     }
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -92,11 +110,12 @@ int main() {
         for name, source in rejected.items():
             exe = build(source, "text-byte-limit-" + name)
             result = run([exe], expected=101)
-            expected = (
-                "shroud: text byte limit exceeded"
-                if name == "trusted"
-                else "shroud: untrusted text byte limit exceeded"
-            )
+            expected = {
+                "trusted": "shroud: text byte limit exceeded",
+                "tainted": "shroud: untrusted text byte limit exceeded",
+                "decoder": "shroud: UTF-8 decoder byte limit exceeded",
+                "decoder-with-ends": "shroud: UTF-8 decoder byte limit exceeded",
+            }[name]
             if expected not in result.stdout:
                 raise SystemExit(f"text byte limit: {name} rejection diagnostic missing: {result.stdout!r}")
 
