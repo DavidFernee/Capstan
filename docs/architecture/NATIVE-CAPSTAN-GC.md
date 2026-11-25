@@ -204,6 +204,10 @@ The first executable model slice is in `verification/gc_model.cap` and is wired 
 
 An independently structured fixed-point reachability oracle is included for differential checks. Tests cover cycles, transitive reachability, duplicate roots/edges, atomic/secret leaves, empty roots, invalid and stale-generation references, missing objects, secret-wipe state transitions, and bounded-worklist exhaustion. The new test is registered in the repository test harness. **No test execution or CI result is claimed yet**; the exact branch must compile and run this file before the model can be considered executable evidence.
 
+A second Capstan model, `verification/gc_handle_model.cap`, now specifies heap-instance-scoped handles and immutable layout metadata. It validates unique descriptor identities, bounded and non-duplicated reference offsets, dense slot identities, positive generations, and allocated-slot descriptor membership. Handle resolution distinguishes foreign heaps, malformed/out-of-range handles, stale generations, unallocated slots and nominal descriptor mismatches. Eleven tests cover these cases. The tests construct alternative heap values rather than mutating nested struct fields, avoiding dependence on the unresolved CCAM local-copy/aliasing semantics documented in the language-compatibility work.
+
+This remains a logical identity/layout model. It does not implement allocation, generation advancement/reuse, descriptor storage protection, pointer-field loads, or refinement to physical memory. The two model files are registered separately in `tests/run.sh`; exact-head execution is still required.
+
 The current model does not prove compiler root completeness. Its root list is an explicit premise. A root-omission negative control is now included: a complete-root oracle identifies both live objects, while a deliberately incomplete root set causes the collector model to reclaim the omitted object. This demonstrates the consequence of a missing root; it does not establish that compiler-generated roots are complete.
 
 ## 14. Explicit non-claims
