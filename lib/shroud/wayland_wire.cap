@@ -22,7 +22,7 @@ bool wayland_frame_size_valid(int size) {
     return size >= WAYLAND_HEADER_BYTES && size <= WAYLAND_MAX_FRAME_BYTES && size % 4 == 0;
 }
 
-int wayland_u32_le(List<int> bytes, int at) {
+int wayland_u32_le(Tainted bytes, int at) {
     return (bytes[at] & 0xFF) | ((bytes[at + 1] & 0xFF) << 8)
         | ((bytes[at + 2] & 0xFF) << 16) | ((bytes[at + 3] & 0xFF) << 24);
 }
@@ -35,12 +35,12 @@ WaylandFrameHeader wayland_incomplete_frame(int object_id, int size, int opcode)
 WaylandFrameHeader wayland_complete_frame(int object_id, int size, int opcode, int end_offset) {
     return new WaylandFrameHeader{status: 1, object_id: object_id, size: size, opcode: opcode, end_offset: end_offset};
 }
-WaylandFrameHeader wayland_frame_header(List<int> bytes, int offset) {
+WaylandFrameHeader wayland_frame_header(Tainted bytes, int offset) {
     if (offset < 0 || offset > bytes.len()) { return wayland_bad_frame(); }
     int remaining = bytes.len() - offset;
     if (remaining < WAYLAND_HEADER_BYTES) { return wayland_incomplete_frame(0, 0, 0); }
     for (int i = 0; i < WAYLAND_HEADER_BYTES; i += 1) {
-        int b = bytes[offset + i];
+        int b = bytes.at(offset + i);
         if (b < 0 || b > 255) { return wayland_bad_frame(); }
     }
     int object_id = wayland_u32_le(bytes, offset);
