@@ -78,6 +78,13 @@ else
   bad "CCAM multi-function evaluator" "$out"
 fi
 
+section "Capstan-native verification: Bosun's Locker transaction lifecycle and WAL model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/bosuns_locker_protocol.cap" 2>&1)"; then
+  ok "Bosun transaction typestate transitions, cancellation boundary, recovery idempotence and WAL durability ordering"
+else
+  bad "Bosun transaction lifecycle and WAL model" "$out"
+fi
+
 section "Capstan-native verification: Bosun's Locker bounded transaction-history oracle"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/bosuns_locker_history.cap" 2>&1)"; then
   ok "Bosun transaction histories: witness, real-time order, write-skew rejection and bounded inconclusive result"
