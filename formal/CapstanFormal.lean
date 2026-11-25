@@ -143,7 +143,7 @@ def capacityGrowthStep (maxCount current : Nat) : Nat :=
 
 /-- A growth step never shrinks a valid positive capacity and never exceeds maxCount. -/
 theorem capacityGrowthStep_bounds (maxCount current : Nat)
-    (hPositive : 0 < current) (hCurrent : current ≤ maxCount) :
+    (hCurrent : current ≤ maxCount) :
     current ≤ capacityGrowthStep maxCount current ∧
       capacityGrowthStep maxCount current ≤ maxCount := by
   unfold capacityGrowthStep
@@ -155,8 +155,7 @@ theorem capacityGrowthStep_bounds (maxCount current : Nat)
 
 /-- Unless already at the maximum, geometric growth makes strict progress. -/
 theorem capacityGrowthStep_strict (maxCount current : Nat)
-    (hPositive : 0 < current) (hCurrent : current ≤ maxCount)
-    (hBelow : current < maxCount) :
+    (hPositive : 0 < current) (hBelow : current < maxCount) :
     current < capacityGrowthStep maxCount current := by
   unfold capacityGrowthStep
   by_cases hHalf : current > maxCount / 2
