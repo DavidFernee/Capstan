@@ -87,7 +87,8 @@ def check_trace(record, where: str, instruction_count: int | None = None) -> Non
 
 
 def check_instruction(instruction, registers, instruction_count: int,
-                      return_type: str, where: str, allow_trap: bool = False) -> None:
+                      return_type: str, where: str, allow_trap: bool = False,
+                      validate_semantics: bool = True) -> None:
     require(isinstance(instruction, dict), f"{where}: instruction must be an object")
     op = instruction.get("op")
     require(isinstance(op, str) and op in INSTRUCTION_FIELDS,
@@ -96,6 +97,23 @@ def check_instruction(instruction, registers, instruction_count: int,
             f"{where}: fields do not match opcode {op}")
     require(allow_trap or op != "trap",
             f"{where}: explicit trap is outside CCAM-SF-P")
+    if not validate_semantics:
+        # Negative test vectors must remain in the corpus: check their JSON
+        # operand kinds, but do not reject the very range/type defect the vector
+        # is intended to test.
+        for key, value in instruction.items():
+            if key == "op":
+                continue
+            if op == "const_b" and key == "value":
+                require(isinstance(value, bool), f"{where}.{key}: expected boolean")
+            elif op == "trap" and key == "reason":
+                require(isinstance(value, str), f"{where}.{key}: expected string")
+            else:
+                require(isinstance(value, int) and not isinstance(value, bool),
+                        f"{where}.{key}: expected integer operand")
+        if op == "const_i":
+            check_i64(instruction["value"], f"{where}.value")
+        return
     count = len(registers)
 
     def index(key: str, bound: int, kind: str) -> int:
@@ -211,9 +229,14 @@ def main() -> int:
 
                 for pc, instruction in enumerate(vector["instructions"]):
                     iw = f"{where}.instructions[{pc}]"
+                    normative_disposition = (
+                        vector["expected"].get("normative_validation")
+                        if group_name == "vectors" else "accept"
+                    )
                     check_instruction(
                         instruction, vector["register_types"], len(vector["instructions"]),
-                        vector["return_type"], iw, allow_trap=(group_name == "out_of_profile"))
+                        vector["return_type"], iw, allow_trap=(group_name == "out_of_profile"),
+                        validate_semantics=(normative_disposition != "reject"))
 
                 if group_name == "vectors":
                     expected = vector["expected"]
