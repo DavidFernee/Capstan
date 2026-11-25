@@ -1,0 +1,345 @@
+// Schooner S1: bounded interleaving model for revocation and in-flight use.
+//
+// This is a finite abstract machine, not a scheduler or kernel implementation.
+// The gate-check + in-flight pin is one atomic transition: that is the proposed
+// access linearization point. Revocation closes the gate and advances the epoch
+// atomically, then waits for existing pins to drain before returning/reclaiming.
+// A use pinned before revocation may finish after the revoke commit, but the
+// revoker cannot return or reclaim while that use remains in flight.
+
+const int SCC_ACCESS_NONE = 0;
+const int SCC_ACCESS_INVOKED = 1;
+const int SCC_ACCESS_PINNED = 2;
+const int SCC_ACCESS_SUCCEEDED = 3;
+const int SCC_ACCESS_REJECTED = 4;
+
+const int SCC_REVOKE_NONE = 0;
+const int SCC_REVOKE_INVOKED = 1;
+const int SCC_REVOKE_COMMITTED = 2;
+const int SCC_REVOKE_RETURNED = 3;
+
+const int SCC_ACCESS_INVOKE = 1;
+const int SCC_ACCESS_ACQUIRE = 2;
+const int SCC_ACCESS_FINISH = 3;
+const int SCC_REVOKE_INVOKE = 4;
+const int SCC_REVOKE_COMMIT = 5;
+const int SCC_REVOKE_RETURN = 6;
+
+const int SCC_INVALID = 0;
+const int SCC_PROGRESS = 1;
+const int SCC_TERMINAL = 2;
+const int SCC_UNKNOWN = 3;
+
+struct SCCState {
+    int access_status;
+    int revoke_status;
+    bool gate_open;
+    bool revoked;
+    int epoch;
+    int in_flight;
+    bool reclaimed;
+}
+
+struct SCCStep {
+    bool enabled;
+    SCCState next;
+}
+
+struct SCCExplore {
+    bool valid;
+    bool complete;
+    int classification;
+    int explored;
+    int terminal_count;
+}
+
+SCCState scc_initial() {
+    return new SCCState{
+        access_status: SCC_ACCESS_NONE,
+        revoke_status: SCC_REVOKE_NONE,
+        gate_open: true,
+        revoked: false,
+        epoch: 1,
+        in_flight: 0,
+        reclaimed: false
+    };
+}
+
+SCCState scc_copy(SCCState s) {
+    return new SCCState{
+        access_status: s.access_status,
+        revoke_status: s.revoke_status,
+        gate_open: s.gate_open,
+        revoked: s.revoked,
+        epoch: s.epoch,
+        in_flight: s.in_flight,
+        reclaimed: s.reclaimed
+    };
+}
+
+bool scc_terminal(SCCState s) {
+    bool access_done = s.access_status == SCC_ACCESS_SUCCEEDED ||
+        s.access_status == SCC_ACCESS_REJECTED;
+    return access_done && s.revoke_status == SCC_REVOKE_RETURNED;
+}
+
+bool scc_invariant(SCCState s) {
+    if (s.access_status < SCC_ACCESS_NONE ||
+        s.access_status > SCC_ACCESS_REJECTED ||
+        s.revoke_status < SCC_REVOKE_NONE ||
+        s.revoke_status > SCC_REVOKE_RETURNED) { return false; }
+    if (s.epoch != 1 && s.epoch != 2) { return false; }
+    if (s.gate_open == s.revoked) { return false; }
+    if (s.revoked != (s.epoch == 2)) { return false; }
+    if (s.in_flight < 0 || s.in_flight > 1) { return false; }
+    if ((s.access_status == SCC_ACCESS_PINNED) != (s.in_flight == 1)) {
+        return false;
+    }
+    if (s.access_status == SCC_ACCESS_SUCCEEDED &&
+        s.in_flight != 0) { return false; }
+    if (s.access_status == SCC_ACCESS_REJECTED && s.in_flight != 0) {
+        return false;
+    }
+    if (s.revoke_status >= SCC_REVOKE_COMMITTED && !s.revoked) {
+        return false;
+    }
+    if (s.revoke_status == SCC_REVOKE_RETURNED && s.in_flight != 0) {
+        return false;
+    }
+    if (s.reclaimed && (s.revoke_status != SCC_REVOKE_RETURNED ||
+        s.in_flight != 0 || !s.revoked)) { return false; }
+    if (s.reclaimed && s.access_status == SCC_ACCESS_PINNED) { return false; }
+    return true;
+}
+
+int scc_key(SCCState s) {
+    int key = s.access_status;
+    key = key * 4 + s.revoke_status;
+    if (s.gate_open) { key = key * 2 + 1; } else { key = key * 2; }
+    if (s.revoked) { key = key * 2 + 1; } else { key = key * 2; }
+    key = key * 3 + s.epoch - 1;
+    key = key * 2 + s.in_flight;
+    if (s.reclaimed) { key = key * 2 + 1; } else { key = key * 2; }
+    return key;
+}
+
+bool scc_seen(List<int> keys, int key) {
+    for (int i = 0; i < keys.len(); i += 1) {
+        if (keys[i] == key) { return true; }
+    }
+    return false;
+}
+
+SCCStep scc_reject(SCCState s) {
+    return new SCCStep{enabled: false, next: s};
+}
+
+SCCStep scc_accept(SCCState s) {
+    return new SCCStep{enabled: true, next: s};
+}
+
+// Each transition is an indivisible abstract event. In particular, checking
+// the gate and taking the pin cannot be split into separately schedulable steps.
+SCCStep scc_step(SCCState before, int action) {
+    if (!scc_invariant(before)) { return scc_reject(before); }
+    SCCState next = scc_copy(before);
+    if (action == SCC_ACCESS_INVOKE) {
+        if (before.access_status != SCC_ACCESS_NONE) { return scc_reject(before); }
+        next.access_status = SCC_ACCESS_INVOKED;
+        return scc_accept(next);
+    }
+    if (action == SCC_ACCESS_ACQUIRE) {
+        if (before.access_status != SCC_ACCESS_INVOKED) { return scc_reject(before); }
+        if (!before.gate_open || before.revoked) {
+            next.access_status = SCC_ACCESS_REJECTED;
+            return scc_accept(next);
+        }
+        next.access_status = SCC_ACCESS_PINNED;
+        next.in_flight = 1;
+        return scc_accept(next);
+    }
+    if (action == SCC_ACCESS_FINISH) {
+        if (before.access_status != SCC_ACCESS_PINNED ||
+            before.in_flight != 1) { return scc_reject(before); }
+        next.access_status = SCC_ACCESS_SUCCEEDED;
+        next.in_flight = 0;
+        return scc_accept(next);
+    }
+    if (action == SCC_REVOKE_INVOKE) {
+        if (before.revoke_status != SCC_REVOKE_NONE) { return scc_reject(before); }
+        next.revoke_status = SCC_REVOKE_INVOKED;
+        return scc_accept(next);
+    }
+    if (action == SCC_REVOKE_COMMIT) {
+        if (before.revoke_status != SCC_REVOKE_INVOKED ||
+            before.revoked || before.epoch != 1) { return scc_reject(before); }
+        next.gate_open = false;
+        next.revoked = true;
+        next.epoch = 2;
+        next.revoke_status = SCC_REVOKE_COMMITTED;
+        return scc_accept(next);
+    }
+    if (action == SCC_REVOKE_RETURN) {
+        if (before.revoke_status != SCC_REVOKE_COMMITTED ||
+            before.in_flight != 0) { return scc_reject(before); }
+        next.revoke_status = SCC_REVOKE_RETURNED;
+        next.reclaimed = true;
+        return scc_accept(next);
+    }
+    return scc_reject(before);
+}
+
+// Enumerate every scheduler interleaving in the finite action alphabet.
+// Reaching the state bound is UNKNOWN, never a successful completion claim.
+SCCExplore scc_explore(int state_limit) {
+    if (state_limit < 1 || !scc_invariant(scc_initial())) {
+        return new SCCExplore{
+            valid: false, complete: false, classification: SCC_INVALID,
+            explored: 0, terminal_count: 0
+        };
+    }
+    List<SCCState> states = new List<SCCState>();
+    List<int> keys = new List<int>();
+    SCCState initial = scc_initial();
+    states.push(initial);
+    keys.push(scc_key(initial));
+    int cursor = 0;
+    int terminals = 0;
+    while (cursor < states.len()) {
+        SCCState current = states[cursor];
+        if (!scc_invariant(current)) {
+            return new SCCExplore{
+                valid: false, complete: false, classification: SCC_INVALID,
+                explored: states.len(), terminal_count: terminals
+            };
+        }
+        int enabled = 0;
+        for (int action = SCC_ACCESS_INVOKE; action <= SCC_REVOKE_RETURN;
+            action += 1) {
+            SCCStep step = scc_step(current, action);
+            if (step.enabled) {
+                enabled += 1;
+                if (!scc_invariant(step.next)) {
+                    return new SCCExplore{
+                        valid: false, complete: false, classification: SCC_INVALID,
+                        explored: states.len(), terminal_count: terminals
+                    };
+                }
+                int key = scc_key(step.next);
+                if (!scc_seen(keys, key)) {
+                    if (states.len() >= state_limit) {
+                        return new SCCExplore{
+                            valid: true, complete: false, classification: SCC_UNKNOWN,
+                            explored: states.len(), terminal_count: terminals
+                        };
+                    }
+                    states.push(step.next);
+                    keys.push(key);
+                }
+            }
+        }
+        if (scc_terminal(current)) { terminals += 1; }
+        else if (enabled == 0) {
+            return new SCCExplore{
+                valid: false, complete: true, classification: SCC_INVALID,
+                explored: states.len(), terminal_count: terminals
+            };
+        }
+        cursor += 1;
+    }
+    bool all_terminal = true;
+    for (int i = 0; i < states.len(); i += 1) {
+        if (!scc_terminal(states[i])) { all_terminal = false; }
+    }
+    int classification = SCC_PROGRESS;
+    if (all_terminal) { classification = SCC_TERMINAL; }
+    return new SCCExplore{
+        valid: true, complete: true, classification: classification,
+        explored: states.len(), terminal_count: terminals
+    };
+}
+
+test "SCC gate closes at revoke commit and rejects later acquisitions" {
+    SCCState s = scc_initial();
+    s = scc_step(s, SCC_ACCESS_INVOKE).next;
+    s = scc_step(s, SCC_REVOKE_INVOKE).next;
+    s = scc_step(s, SCC_REVOKE_COMMIT).next;
+    SCCStep acquire = scc_step(s, SCC_ACCESS_ACQUIRE);
+    assert(acquire.enabled);
+    assert(acquire.next.access_status == SCC_ACCESS_REJECTED);
+    assert(acquire.next.in_flight == 0);
+}
+
+test "SCC access pinned before revoke may finish but delays revoke return" {
+    SCCState s = scc_initial();
+    s = scc_step(s, SCC_ACCESS_INVOKE).next;
+    s = scc_step(s, SCC_ACCESS_ACQUIRE).next;
+    s = scc_step(s, SCC_REVOKE_INVOKE).next;
+    s = scc_step(s, SCC_REVOKE_COMMIT).next;
+    assert(s.in_flight == 1 && s.revoked);
+    SCCStep premature = scc_step(s, SCC_REVOKE_RETURN);
+    assert(!premature.enabled);
+    assert(s.revoke_status == SCC_REVOKE_COMMITTED && !s.reclaimed);
+    s = scc_step(s, SCC_ACCESS_FINISH).next;
+    assert(s.in_flight == 0 && s.access_status == SCC_ACCESS_SUCCEEDED);
+    s = scc_step(s, SCC_REVOKE_RETURN).next;
+    assert(s.revoke_status == SCC_REVOKE_RETURNED && s.reclaimed);
+    assert(scc_invariant(s));
+}
+
+test "SCC revocation may complete before a later access invocation" {
+    SCCState s = scc_initial();
+    s = scc_step(s, SCC_REVOKE_INVOKE).next;
+    s = scc_step(s, SCC_REVOKE_COMMIT).next;
+    s = scc_step(s, SCC_REVOKE_RETURN).next;
+    s = scc_step(s, SCC_ACCESS_INVOKE).next;
+    s = scc_step(s, SCC_ACCESS_ACQUIRE).next;
+    assert(s.access_status == SCC_ACCESS_REJECTED);
+    assert(s.reclaimed && s.in_flight == 0);
+    assert(scc_invariant(s));
+}
+
+test "SCC revoke cannot return before an acquired access drains" {
+    SCCState s = scc_initial();
+    s = scc_step(s, SCC_ACCESS_INVOKE).next;
+    s = scc_step(s, SCC_ACCESS_ACQUIRE).next;
+    s = scc_step(s, SCC_REVOKE_INVOKE).next;
+    s = scc_step(s, SCC_REVOKE_COMMIT).next;
+    assert(!scc_step(s, SCC_REVOKE_RETURN).enabled);
+    assert(scc_step(s, SCC_ACCESS_FINISH).enabled);
+}
+
+test "SCC access before revocation is admitted exactly once" {
+    SCCState s = scc_initial();
+    s = scc_step(s, SCC_ACCESS_INVOKE).next;
+    s = scc_step(s, SCC_ACCESS_ACQUIRE).next;
+    assert(s.access_status == SCC_ACCESS_PINNED && s.in_flight == 1);
+    assert(!scc_step(s, SCC_ACCESS_ACQUIRE).enabled);
+    s = scc_step(s, SCC_ACCESS_FINISH).next;
+    assert(s.access_status == SCC_ACCESS_SUCCEEDED && s.in_flight == 0);
+}
+
+test "SCC failed and duplicate actions preserve state" {
+    SCCState s = scc_initial();
+    SCCStep bad_finish = scc_step(s, SCC_ACCESS_FINISH);
+    assert(!bad_finish.enabled && scc_key(bad_finish.next) == scc_key(s));
+    s = scc_step(s, SCC_ACCESS_INVOKE).next;
+    SCCStep duplicate = scc_step(s, SCC_ACCESS_INVOKE);
+    assert(!duplicate.enabled && scc_key(duplicate.next) == scc_key(s));
+    SCCStep bad_revoke = scc_step(s, SCC_REVOKE_RETURN);
+    assert(!bad_revoke.enabled && scc_key(bad_revoke.next) == scc_key(s));
+}
+
+test "SCC generated interleaving graph is complete and reaches only safe states" {
+    SCCExplore result = scc_explore(64);
+    assert(result.valid && result.complete);
+    assert(result.classification == SCC_TERMINAL);
+    assert(result.explored > 1);
+    assert(result.terminal_count > 0);
+}
+
+test "SCC interleaving exploration fails closed at the state bound" {
+    SCCExplore result = scc_explore(2);
+    assert(result.valid && !result.complete);
+    assert(result.classification == SCC_UNKNOWN);
+}
