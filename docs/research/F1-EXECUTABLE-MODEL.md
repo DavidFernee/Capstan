@@ -75,6 +75,8 @@ For a branch with condition `c` and arms `t` and `f`, the result joins the arm v
 
 This is still an abstract branch rule: the prototype does not model path-sensitive equivalence of the arms, program-counter stacks, termination channels, timing, or declassification. A production system must state exactly which control observations it tracks and where.
 
+**Open semantic conflict:** the existing proposed `docs/assurance/PROVENANCE-SEMANTICS.md` excludes pure control dependence from its default provenance mode and treats strict control-flow tracking as optional. This F1 prototype deliberately tests a stricter rule for confidentiality: secret-dependent control decisions must not silently become public merely because the returned value is a constant. The two positions are not reconciled or adopted as normative here. F1 must evaluate precision, usability and leakage counterexamples, then revise the semantic contract explicitly before implementation. In particular, control dependence for integrity/taint and control dependence for confidentiality may require different sink policies.
+
 ### Context-specific encoding
 
 Each encoder establishes exactly its own context guarantee. HTML, log, CSV and JSON guarantees are not interchangeable. Encoding does not declassify secrets or erase provenance.
