@@ -19,6 +19,8 @@ MAX_INSTRUCTIONS = 65536
 MAX_VECTORS = 64
 MAX_CORPUS_INSTRUCTIONS = 65536
 MAX_CORPUS_REGISTERS = 65536
+MAX_CORPUS_BYTES = 4 * 1024 * 1024
+MAX_VECTOR_STEPS = 1_000_000
 
 TOP_KEYS = {
     "format", "profile", "normative_specification",
@@ -206,6 +208,8 @@ def check_instruction(instruction, registers, instruction_count: int,
 
 def main() -> int:
     try:
+        require(CORPUS.stat().st_size <= MAX_CORPUS_BYTES,
+                f"corpus exceeds the {MAX_CORPUS_BYTES}-byte input bound")
         raw = CORPUS.read_text(encoding="utf-8")
         data = json.loads(raw, parse_int=int, parse_float=lambda x: (_ for _ in ()).throw(
             ValueError(f"floating-point token is forbidden: {x}")),
@@ -258,8 +262,9 @@ def main() -> int:
                 require(vector["return_type"] in ("int", "bool", "void"),
                         f"{where}: unsupported return type")
                 require(isinstance(vector["max_steps"], int) and
-                        not isinstance(vector["max_steps"], bool) and vector["max_steps"] >= 0,
-                        f"{where}: max_steps must be a non-negative integer")
+                        not isinstance(vector["max_steps"], bool) and
+                        0 <= vector["max_steps"] <= MAX_VECTOR_STEPS,
+                        f"{where}: max_steps must be in [0, {MAX_VECTOR_STEPS}]")
                 require(isinstance(vector["instructions"], list) and vector["instructions"],
                         f"{where}: instructions must be a non-empty array")
                 require(len(vector["instructions"]) <= MAX_INSTRUCTIONS,
@@ -367,7 +372,7 @@ def main() -> int:
         print(f"CCAM-SF-P corpus: {total} unique vectors; strict JSON, schema, trace and signed-64 checks passed")
         return 0
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
-            TypeError, KeyError, AttributeError) as exc:
+            TypeError, KeyError, AttributeError, RecursionError) as exc:
         print(f"CCAM-SF-P corpus validation failed: {exc}", file=sys.stderr)
         return 1
 
