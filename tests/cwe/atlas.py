@@ -604,7 +604,7 @@ add(20, "Improper input validation (laundering through Tainted length)", "reject
     "CWE-20", "Length is derived metadata; helper summaries must preserve the Tainted parameter dependency.")
 
 add(20, "Improper input validation (laundering through Boolean comparison)", "gap",
-    "int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; if (matched) { char_str(input.at(0)); } } return 0; }",
+    "int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; string output = to_text(matched); bool ok = write_file(\\"out.txt\\", output); } return 0; }",
     note="The current byte-reconstruction sink is not a general information-flow sink. Boolean comparison provenance is now tracked through locals, but the compiler does not yet define a policy for every control-flow observation.")
 
 # ---------------------------------------------------------------- harness
