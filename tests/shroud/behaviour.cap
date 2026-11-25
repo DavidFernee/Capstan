@@ -681,6 +681,32 @@ void test_display_list(Tally t, Font font) {
     expect(t, !display_list_valid(bad_opacity_frame, guarded),
         "display list: out-of-range opacity is rejected", "invalid opacity accepted");
 
+    // Variable-sized payloads on the wrong command kind must not evade the
+    // aggregate geometry/mask accounting merely because the executor ignores them.
+    List<int> hidden_payload = new List<int>();
+    hidden_payload.push(255);
+    DisplayCommand bad_rect_payload = frame.commands[0];
+    bad_rect_payload.mask_alpha = hidden_payload;
+    List<DisplayCommand> bad_rect_payload_commands = new List<DisplayCommand>();
+    bad_rect_payload_commands.push(bad_rect_payload);
+    DisplayList bad_rect_payload_frame = new DisplayList{
+        width: 48, height: 36, commands: bad_rect_payload_commands
+    };
+    expect(t, !display_list_valid(bad_rect_payload_frame, guarded),
+        "display list: rectangle cannot smuggle an unaccounted mask payload",
+        "hidden rectangle payload accepted");
+
+    DisplayCommand bad_path_payload = frame.commands[1];
+    bad_path_payload.mask_alpha = hidden_payload;
+    List<DisplayCommand> bad_path_payload_commands = new List<DisplayCommand>();
+    bad_path_payload_commands.push(bad_path_payload);
+    DisplayList bad_path_payload_frame = new DisplayList{
+        width: 48, height: 36, commands: bad_path_payload_commands
+    };
+    expect(t, !display_list_valid(bad_path_payload_frame, guarded),
+        "display list: path cannot smuggle an unaccounted mask payload",
+        "hidden path payload accepted");
+
     List<int> invalid_alpha = new List<int>();
     invalid_alpha.push(256);
     DisplayCommand bad_mask = frame.commands[0];
