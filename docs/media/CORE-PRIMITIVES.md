@@ -128,7 +128,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 7. Test obligations
 
-The regression suite is expressed as 24 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 24 Capstan `test` declarations in `lib/halyard/core.cap`, supplemented by the bounded Python actor model.
 Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -161,13 +161,45 @@ Still required before MC1 can pass:
 8. allocation, CPU and retained-memory measurements under adversarial inputs;
 9. independent review and exact-head CI on supported platforms.
 
-## 8. Implementation provenance
+## 8. Bounded single-owner reservation actor model
+
+`tests/halyard/resource_actor_model.py` is an executable finite reference machine
+for the candidate message-passing design. It models a single ledger-owning actor and
+a bounded FIFO inbox. Producers submit reserve/release commands; a successful enqueue
+is the ownership commit point. The actor alone mutates active leases, in FIFO order.
+
+The model checks these properties over every reachable state through the declared
+exploration depth:
+
+- inbox occupancy never exceeds its configured capacity;
+- request identity is unique across queued and completed commands;
+- a queued command has one owner (the actor); a failed enqueue leaves the state
+  unchanged and leaves the command with its sender;
+- reserve admission checks all five resource dimensions before publishing a lease;
+- rejected admission and cancellation do not create a lease;
+- release consumes an active lease once; a replayed release is rejected;
+- actor processing is deterministic for a given FIFO queue and state.
+
+The script also contains direct regression cases for a full inbox, cancellation before
+processing, successful release and duplicate release. It uses only the Python standard
+library and is wired into the standard `tests/run.sh` suite alongside the Capstan-native
+Halyard tests.
+
+**Scope limit:** this is a finite abstract model of one actor and one bounded inbox. It
+does not model actual Capstan tasks, scheduler fairness, multiple actors, worker death,
+allocator failure, source-snapshot atomicity, byte-span aliasing, native threads, memory
+ordering or the implementation/refinement bridge. It is not evidence that the current
+mutable Capstan ledger is thread-safe. Those obligations remain open under #229, #249
+and #293. The model is a research artefact and regression oracle, not a concurrency
+runtime.
+
+## 9. Implementation provenance
 
 | Module | First-party source | Current status |
 |---|---|---|
 | Byte source | `lib/halyard/core.cap` | Prototype; public mutable representation; Capstan-native tests colocated |
 | Aggregate ledger | `lib/halyard/core.cap` | Sequential all-or-nothing prototype; not concurrency-safe |
-| Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native regression cases; exact-head CI pending |
+| Regression vectors | `lib/halyard/core.cap` and `tests/halyard/resource_actor_model.py` | Capstan-native cases plus bounded abstract actor exploration; exact-head CI pending |
 | Rational timebase | `lib/halyard/core.cap` | Initial checked integer rescaling with explicit rounding; no full clock/discontinuity model |
 | Format registry | Not implemented | MC0 / issue #287 |
 | Bounded sink | `lib/halyard/core.cap` | In-memory bounded copy-on-commit prototype; aggregate allocation/retention accounting and lifetime-bound output reservation remain outstanding |
