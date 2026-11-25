@@ -106,8 +106,8 @@ F1Value f1_derive(F1Value left, F1Value right) {
 // both influence the observed result, even if the selector is not returned.
 F1Value f1_select(F1Value container, F1Value selector, F1Value selected) {
     F1Value out = f1_derive(selected, selector);
-    out.selection_sources = out.selection_sources | container.data_sources;
-    out.selection_top = out.selection_top || container.data_top;
+    out.selection_sources = out.selection_sources | selector.data_sources | container.data_sources;
+    out.selection_top = out.selection_top || selector.data_top || container.data_top;
     out.confidentiality = f1_max(out.confidentiality, container.confidentiality);
     out.contexts = selected.contexts;
     return out;
