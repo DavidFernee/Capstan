@@ -1,0 +1,28 @@
+name: Native bootstrap ELF harness
+
+on:
+  push:
+    branches:
+      - research/native-compiler-bootstrap
+    paths:
+      - "research/native-bootstrap/**"
+      - ".github/workflows/native-bootstrap-audit.yml"
+  pull_request:
+    paths:
+      - "research/native-bootstrap/**"
+      - ".github/workflows/native-bootstrap-audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-freestanding-elf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Check out isolated research branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Run bounded ELF inspection fixture
+        run: |
+          chmod +x research/native-bootstrap/check-elf.sh
+          research/native-bootstrap/check-elf.sh research/native-bootstrap/fixtures/exit-42.s 42
