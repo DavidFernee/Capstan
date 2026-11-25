@@ -371,3 +371,21 @@ test "CSG second queued message is received only after first slot is freed" {
     assert(received.next.second_message_owner == CSG_CONSUMER);
     assert(csg_invariant(received.next));
 }
+
+test "CSG cancelled sender and drained channel reach explicit terminal completion" {
+    CSGState blocked = csg_step(csg_initial(), CSG_SEND_SECOND).next;
+    CSGState cancelled = csg_step(blocked, CSG_CANCEL_PRODUCER).next;
+    CSGState received = csg_step(cancelled, CSG_RECEIVE_FIRST).next;
+    CSGState released = csg_step(received, CSG_RELEASE_FIRST).next;
+    CSGStep finished = csg_step(released, CSG_FINISH_CONSUMER);
+    assert(finished.enabled);
+    assert(finished.next.consumer_status == CSG_DONE);
+    assert(csg_terminal(finished.next));
+    assert(csg_invariant(finished.next));
+}
+
+test "CSG consumer cannot finish while a message remains owned" {
+    CSGStep finished = csg_step(csg_initial(), CSG_FINISH_CONSUMER);
+    assert(!finished.enabled);
+    assert(csg_key(finished.next) == csg_key(csg_initial()));
+}
