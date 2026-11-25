@@ -719,6 +719,10 @@ void test_path_flatten_preflight(Tally t) {
     trailing.pts.push(7);
     expect_int(t, path_flatten_segment_bound(trailing), -1,
         "path preflight: rejects unconsumed point data");
+
+    Path extreme = new_path().move_to(2147483647, 0).line_to(0, 0);
+    expect_int(t, path_flatten_segment_bound(extreme), -1,
+        "path preflight: rejects coordinates outside the safe curve-arithmetic domain");
 }
 
 void test_display_work_budget(Tally t) {
