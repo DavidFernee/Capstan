@@ -644,6 +644,49 @@ HalyardTimestampResult halyard_timestamp_rescale(
     return new HalyardTimestampResult{ok: false, ticks: 0, error: "invalid_rounding"};
 }
 
+
+// A one-shot lease wrapper prevents accidental duplicate release through the
+// supported ownership API. This remains a sequential prototype: public fields
+// are forgeable until Capstan opaque/linear types are available.
+struct HalyardReservation {
+    HalyardBudgetCharge charge;
+    bool active;
+}
+
+struct HalyardReservationResult {
+    bool ok;
+    HalyardReservation? reservation;
+    string error;
+}
+
+// Acquire a live reservation and return the sole release capability.
+HalyardReservationResult halyard_ledger_acquire(
+    HalyardLedger ledger, HalyardBudgetCharge charge
+) {
+    if (!halyard_ledger_reserve(ledger, charge)) {
+        return new HalyardReservationResult{
+            ok: false, reservation: none, error: "reservation_rejected"
+        };
+    }
+    HalyardReservation reservation = new HalyardReservation{
+        charge: charge, active: true
+    };
+    return new HalyardReservationResult{
+        ok: true, reservation: reservation, error: ""
+    };
+}
+
+// A reservation can be released once. Failed or repeated release leaves the
+// ledger unchanged. Do not expose the raw aggregate release API to workers.
+bool halyard_reservation_release(
+    HalyardLedger ledger, HalyardReservation reservation
+) {
+    if (!reservation.active) { return false; }
+    if (!halyard_ledger_release(ledger, reservation.charge)) { return false; }
+    reservation.active = false;
+    return true;
+}
+
 // The Halyard Core regression suite lives with its implementation so that
 // the test program exercises exactly this module without a path-traversal
 // import or a second implementation in a different source file.
@@ -1279,3 +1322,45 @@ test "Halyard cumulative budget rejects negative charges and corrupted state" {
         assert(false);
     }
 }
+
+test "Halyard reservation lease releases exactly once" {
+    HalyardLedgerResult made = halyard_ledger_create(4, 4, 4, 4, 4);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge charge = new HalyardBudgetCharge{
+            input_bytes: 2, retained_bytes: 1, output_bytes: 1,
+            decoded_units: 1, work_units: 2
+        };
+        HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
+        assert(acquired.ok);
+        if (let lease = acquired.reservation) {
+            assert(ledger.used_input_bytes == 2);
+            assert(halyard_reservation_release(ledger, lease));
+            assert(!halyard_reservation_release(ledger, lease));
+            assert(ledger.used_input_bytes == 0);
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_output_bytes == 0);
+            assert(ledger.used_decoded_units == 0);
+            assert(ledger.used_work_units == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard rejected reservation creates no release capability" {
+    HalyardLedgerResult made = halyard_ledger_create(1, 1, 1, 1, 1);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge too_large = new HalyardBudgetCharge{
+            input_bytes: 2, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0
+        };
+        HalyardReservationResult rejected = halyard_ledger_acquire(ledger, too_large);
+        assert(!rejected.ok && rejected.error == "reservation_rejected");
+        assert(ledger.used_input_bytes == 0);
+        assert(ledger.used_retained_bytes == 0);
+        assert(ledger.used_output_bytes == 0);
+        assert(ledger.used_decoded_units == 0);
+        assert(ledger.used_work_units == 0);
+    } else { assert(false); }
+}
+
