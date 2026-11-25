@@ -1,0 +1,12 @@
+struct Vault {
+    private int secret;
+    int label;
+}
+
+Vault make_vault() {
+    return new Vault{secret: 41, label: 7};
+}
+
+bool vault_is_valid(Vault value) {
+    return value.secret == 41;
+}
