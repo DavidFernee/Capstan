@@ -129,7 +129,7 @@ The architecture therefore requires:
 - fuzzing, sanitizers where applicable, mutation testing and independent review;
 - a public threat model, vulnerability disclosure process and residual-risk register.
 
-See [Security Assurance](keel/SECURITY-ASSURANCE.md).
+See [Security Assurance](keel/SECURITY-ASSURANCE.md) and the [detailed technical architecture supplement](KEEL-ARCHITECTURE.md), which expands resource accounting, scene/handle invariants, asset validation, numeric semantics and CPU/GPU trust boundaries without changing the K0/K1 phase gate.
 
 ## 7. Research programme
 
