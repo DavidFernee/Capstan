@@ -43,7 +43,7 @@
 
 ## Existing implementation-test crosswalk
 
-The following names were checked against `verification/ccam_core.cap` on main after PR #253 merged. Existing tests exercise related behaviour, but they do not automatically provide the exact shared vector trace/oracle assertions.
+The following names were checked against `verification/ccam_core.cap` on main after PR #253 merged. This crosswalk records the pre-existing colocated tests that motivated the vectors; the new corpus driver now independently constructs and executes the 17 admitted plus 4 rejected in-profile vectors, asserting exact PC traces, step counts and outcomes.
 
 | Vector | Existing Capstan test evidence | Remaining vector-specific work |
 |---|---|---|
@@ -70,7 +70,7 @@ The following names were checked against `verification/ccam_core.cap` on main af
 | SF-020 | Lean theorems `validateSingleFrameProfile_rejects_nonzero_entry` and `validateSingleFrameProfile_entry_zero` in the PR #241 branch | Exercise the profile admission predicate in a Lean test/example; this is not a normative CCAM input field. |
 | SF-X01 | `CCAM machine returns void and preserves explicit trap detail`; `CCAM validator accepts and rejects canonical trap reasons` | Keep concrete-only until issue #265 establishes exact Lean reason/detail semantics. |
 
-PR #253 has merged. Its two regression tests are now mainline evidence; they still do not consume the shared JSON corpus. The crosswalk is a test-discovery aid, not a claim that the current tests execute this JSON corpus.
+PR #253 has merged. Its two regression tests are mainline evidence. The new driver now consumes the shared JSON corpus directly for the 17 admitted and 4 rejected in-profile cases; the table remains a test-discovery crosswalk, not an additional independent oracle.
 
 ## Important semantic boundary: explicit traps
 
@@ -80,13 +80,13 @@ The initial proof-profile corpus includes the finite built-in traps represented 
 
 ## Execution and proof status
 
-This file is the canonical oracle data for the next harness increment. It is not yet consumed by either implementation. The next work must:
+This file is the canonical oracle data. `scripts/validate-ccam-sf-vectors.py` validates its structure and signed-64 integers; `scripts/run-ccam-sf-vectors.py` constructs and executes the in-profile vectors against the concrete Capstan evaluator. The next work must:
 
 1. Strict corpus-integrity validation is now implemented in `scripts/validate-ccam-sf-vectors.py` and wired into the CI workflow (duplicate JSON keys, unique IDs, exact instruction fields, signed-64 literal bounds, typed/indexed operands, profile exclusions, and trace/step consistency). This is a corpus linter, not an execution adapter.
-2. Add a Capstan-native corpus runner that constructs `CCAMInstruction` values and checks validation, outcome, trace and step count.
-3. Add a Lean corpus reader/adapter or a generated Lean fixture from this same source file. Generation must be deterministic and must not generate expected outcomes from either executor.
+2. The Capstan-native runner is implemented and registered in `tests/run.sh`; it checks the concrete validator, exact PC trace, terminal state, trap/return payload and step count for all in-profile vectors.
+3. Add a Lean corpus reader/adapter or generated Lean fixture from this same source file. Generation must be deterministic and must not generate expected outcomes from either executor.
 4. Define the complete machine-state relation, reusing `RuntimeBridge.lean` and `NativeRegisterBridge.lean`; do not recreate the register relation.
 5. Prove the initial-state correspondence and instruction-level simulation, then exact budget correspondence.
-6. Run both suites and the Lean build/checker on the same exact commit in CI.
+6. Keep the concrete corpus driver, Lean build/checker and pinned formal toolchain on the same exact CI commit.
 
-Until these steps pass, this corpus is an independently specified oracle, not evidence of cross-model conformance or formal implementation refinement.
+Until the Lean adapter and simulation theorem exist, this is concrete evaluator conformance-to-oracle evidence only; it is not evidence of cross-model conformance or formal implementation refinement.
