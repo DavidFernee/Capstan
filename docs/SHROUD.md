@@ -145,7 +145,7 @@ and isolation of each platform embedder's vendor libraries (DESIGN-MAP v0.10).
 Toolkits that draw their own widgets must describe them to assistive technology themselves.
 Flutter showed that this can be done well, and that it is easy to leave out. In Shroud:
 
-- **Every frame has an accessibility tree** with roles, names, values, states and bounds. The
+- **Every frame has an accessibility tree** with roles, names, values, states and bounds. Bounds are clipped to the window, and descendants of a scroll view are clipped to that viewport; fully clipped controls are omitted so assistive technology does not navigate to off-screen content. The
   embedders translate it into UI Automation (Windows), NSAccessibility (macOS) and AT-SPI
   (Linux). Plain layout containers are flattened, as screen readers expect.
 - **Everything works from the keyboard.** Tab and Shift+Tab move through controls in reading
