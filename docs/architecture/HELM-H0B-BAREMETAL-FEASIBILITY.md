@@ -94,7 +94,7 @@ Reasons:
 1. The Limine x86-64 contract enters directly in 64-bit mode, with a defined System V ABI (without FP/SIMD), a bootloader-provided stack, and interrupts disabled. This avoids adding a 32-bit protected-mode-to-long-mode trampoline to the first bring-up milestone.
 2. The protocol provides a memory-map response and an explicit HHDM request/response. The HHDM offset is runtime data and must never be hard-coded.
 3. ELF is strongly recommended. Loadable segment permissions are reflected in mappings, so the kernel image can request distinct RX, R and RW segments.
-4. Base revision 5 or later defines a more deterministic x86-64 entry state, including control-register/EFER state and an explicitly empty IDT. Helm must still install its own IDT and must not rely on bootloader descriptor tables.
+4. Base revision 6 is requested and its support marker must be checked; it includes the deterministic x86-64 entry state, including control-register/EFER state and an explicitly empty IDT. Helm must still install its own IDT and must not rely on bootloader descriptor tables.
 5. The protocol explicitly marks responses and associated data as bootloader-reclaimable. Helm must preserve them until it has copied/consumed all required data and established its own mappings.
 
 Security caveats are material:
