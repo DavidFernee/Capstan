@@ -165,3 +165,41 @@ This contract does not establish:
 - a completed implementation-refinement proof.
 
 The next implementation increment should add the concrete vector driver and exact trace assertions, then use its stable observation format as the target for the formal relation. Do not weaken the contract to match a failing implementation; investigate and resolve semantic discrepancies explicitly.
+
+
+## Additional validator audit (2026-11-26)
+
+A source-level comparison of `ccam_validate_single_frame` at
+`verification/ccam_core.cap` (blob
+`b29b6190d2eb3d9998a6d13d620e2e67a8165d7c`) with
+`validateSingleFrameProgram` / `validateSingleFrameProfile` in
+`ProgramValidator.lean` identifies the following admission asymmetry:
+
+- Both paths validate every instruction's opcode and operand typing, including
+  unreachable instructions.
+- The Lean profile requires the *last instruction in the entire instruction
+  table* to be terminal.
+- The concrete validator instead performs reachability from PC 0 and rejects
+  fallthrough only when a reachable non-terminal instruction has no successor.
+  It can therefore accept a program with an unreachable, non-terminal final
+  instruction if all reachable paths terminate.
+- Both implementation-alignment paths require entry zero: the concrete
+  constructor starts at PC 0, while `validateSingleFrameProfile` adds the
+  explicit raw-entry-zero condition.
+
+This means the Lean proof profile is stricter for this case. It does not create
+an unsafe admission relative to the concrete evaluator, but it prevents claiming
+validator equivalence. The refinement theorem should state the direction it
+actually needs: every Lean-profile-admitted program is accepted by the concrete
+validator, with an explicit construction of the corresponding concrete input.
+A separate theorem is needed if equivalence is desired.
+
+A second boundary is explicit traps. The concrete validator accepts trap
+reason strings matching `[a-z][a-z0-9_]{0,63}`; the Lean instruction model
+accepts only values of its finite `Trap` inductive. This is not a total
+bijection. The current SF-P corpus gate rejects explicit-trap instructions, and
+SF-X01 remains out of profile. Keep explicit traps outside the implementation
+simulation theorem until the profile states a closed reason mapping or the
+abstract outcome carries the concrete payload.
+
+These are source-inspection findings, not executed tests or proved theorems.
