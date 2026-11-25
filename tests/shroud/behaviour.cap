@@ -249,6 +249,74 @@ void test_host_cancellation(Tally t, Ui ui) {
         "window focus: preserved widget focus works after reactivation", $"{activated.len()} messages");
 }
 
+void test_resize(Tally t, Font f, Font b) {
+    Ui ui = new_ui(f, b, light_theme(), 240, 160, 256);
+    View v = column().add(button("Keep focus", "keep").key("resize-focus"));
+    ui.render(v, 1000);
+    Laid control = laid_of(ui, "resize-focus");
+    ui.handle(pointer_event(EV_POINTER_DOWN,
+        control.frame.x + control.frame.w / 2, control.frame.y + control.frame.h / 2, 1010));
+    ui.focus_visible = true;
+    ui.scroll.set("retained-scroll", 37);
+    ui.caret.set("retained-caret", 9);
+    ui.hover = "transient-hover";
+    ui.pressed = "transient-press";
+    bool bad_zero = ui.resize(0, 160, 384);
+    bool bad_negative = ui.resize(240, -1, 384);
+    bool bad_side = ui.resize(16385, 160, 384);
+    bool bad_area = ui.resize(4096, 4096, 384);
+    bool bad_scale_low = ui.resize(240, 160, 63);
+    bool bad_scale_high = ui.resize(240, 160, 1025);
+    expect(t, !bad_zero && !bad_negative && !bad_side && !bad_area &&
+        !bad_scale_low && !bad_scale_high,
+        "resize: invalid dimensions and scales are rejected", "one invalid resize succeeded");
+    expect(t, ui.pixmap.w == 240 && ui.pixmap.h == 160 && ui.scale == 256,
+        "resize: rejected requests preserve surface and scale", $"{ui.pixmap.w}x{ui.pixmap.h}@{ui.scale}");
+    bool rejected_scroll_kept = false;
+    bool rejected_caret_kept = false;
+    if (let s = ui.scroll.get("retained-scroll")) { rejected_scroll_kept = s == 37; }
+    if (let c = ui.caret.get("retained-caret")) { rejected_caret_kept = c == 9; }
+    expect(t, ui.focus == "resize-focus" && ui.focus_visible &&
+        rejected_scroll_kept && rejected_caret_kept,
+        "resize: rejected requests preserve logical state", ui.focus);
+    expect(t, ui.hover == "transient-hover" && ui.pressed == "transient-press",
+        "resize: rejected requests preserve transient state", ui.hover + "/" + ui.pressed);
+
+    bool ok = ui.resize(360, 240, 384);
+    expect(t, ok && ui.pixmap.w == 360 && ui.pixmap.h == 240 && ui.scale == 384,
+        "resize: valid request updates surface and scale", $"{ui.pixmap.w}x{ui.pixmap.h}@{ui.scale}");
+    bool resized_scroll_kept = false;
+    bool resized_caret_kept = false;
+    if (let s = ui.scroll.get("retained-scroll")) { resized_scroll_kept = s == 37; }
+    if (let c = ui.caret.get("retained-caret")) { resized_caret_kept = c == 9; }
+    expect(t, ui.focus == "resize-focus" && ui.focus_visible &&
+        resized_scroll_kept && resized_caret_kept,
+        "resize: focus, scroll and caret survive", ui.focus);
+    expect(t, ui.hover == "" && ui.pressed == "",
+        "resize: transient pointer state is cleared", ui.hover + "/" + ui.pressed);
+    expect_int(t, ui.handle(key_event(KEY_ENTER, 0, 1020)).len(), 0,
+        "resize: stale layout receives no input before fresh render");
+    expect(t, ui.focus == "resize-focus", "resize: logical focus survives layout invalidation", ui.focus);
+    ui.render(v, 1100);
+    expect(t, ui.focus == "resize-focus", "resize: focus is restored against fresh layout", ui.focus);
+
+    Ui guarded = new_ui(f, b, light_theme(), 200, 100, 256);
+    View guard_view = row().align(ALIGN_CENTER, ALIGN_CENTER)
+        .add(button("Danger", "danger").danger().key("resize-guard"));
+    guarded.render(guard_view, 2000);
+    int old_x = laid_of(guarded, "resize-guard").frame.x;
+    expect(t, guarded.resize(300, 100, 256), "resize: guarded surface resize succeeds", "resize failed");
+    guarded.render(guard_view, 2100);
+    int new_x = laid_of(guarded, "resize-guard").frame.x;
+    expect(t, new_x != old_x, "resize: test control moved with the new surface", $"{old_x} -> {new_x}");
+    expect_int(t, click_at(guarded, "resize-guard", 2150).len(), 0,
+        "resize: moved guarded control restarts activation delay");
+    guarded.render(guard_view, 2700);
+    List<Msg> accepted = click_at(guarded, "resize-guard", 2700);
+    expect(t, accepted.len() == 1 && accepted[0].action == "danger",
+        "resize: guarded control activates after renewed delay", $"{accepted.len()} messages");
+}
+
 void test_keyboard(Tally t, Ui ui) {
     View v = column().add(button("One", "one").key("k1")).add(text("label")).add(checkbox("Two", false, "two").key("k2")).add(button("Three", "three").disabled(true).key("k3")).add(slider(5, 0, 10, "s").key("k4").label("Level"));
     ui.render(v, 0);
@@ -608,6 +676,7 @@ int main() {
             test_duplicate_key_collisions(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_disabled_hit_blocking(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_host_cancellation(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_resize(t, f, fb);
             test_keyboard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_text_field(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_single_line_unicode_controls(t, new_ui(f, fb, light_theme(), 640, 480, 256));
