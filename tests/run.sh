@@ -78,6 +78,13 @@ else
   bad "CCAM multi-function evaluator" "$out"
 fi
 
+section "Capstan-native verification: Helm bounded boot-memory reference model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/helm_boot_memory_model.cap" 2>&1)"; then
+  ok "unsigned x86-64 address limbs, canonicality, bounded ranges and immutable little-endian boot views"
+else
+  bad "Helm boot-memory reference model" "$out"
+fi
+
 section "Capstan-native verification: bounded concurrency reference machine"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
   ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"
