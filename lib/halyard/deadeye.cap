@@ -498,7 +498,13 @@ bool deadeye_presentation_frame_valid(DeadeyeRgbaFrame frame) {
         return false;
     }
     int pixels = frame.width * frame.height;
-    return frame.rgba.len() == pixels * 4;
+    if (frame.rgba.len() != pixels * 4) { return false; }
+    // The queue is a presentation boundary: reject forged channel values
+    // rather than allowing invalid integers to reach a renderer or device.
+    for (int i = 0; i < frame.rgba.len(); i += 1) {
+        if (frame.rgba[i] < 0 || frame.rgba[i] > 255) { return false; }
+    }
+    return true;
 }
 
 int deadeye_presentation_frame_bytes(DeadeyeRgbaFrame frame) {
@@ -770,6 +776,25 @@ test "Deadeye presentation queue snapshots pixels and flushes on close" {
             assert(queue.closed && queue.entries.len() == 0);
             assert(queue.retained_bytes == 0);
             assert(!deadeye_presentation_queue_close(queue));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye presentation queue rejects out-of-domain RGBA channel values" {
+    HalyardTimebaseResult tb = halyard_timebase_create(1, 1);
+    assert(tb.ok);
+    if (let timebase = tb.timebase) {
+        DeadeyePresentationQueueResult made =
+            deadeye_presentation_queue_create(timebase, 2, 8);
+        assert(made.ok);
+        if (let queue = made.queue) {
+            DeadeyeRgbaFrame negative = deadeye_test_presentation_frame(1);
+            negative.rgba[0] = -1;
+            assert(!deadeye_presentation_queue_push(queue, negative, 0, 1));
+            DeadeyeRgbaFrame oversized = deadeye_test_presentation_frame(1);
+            oversized.rgba[2] = 256;
+            assert(!deadeye_presentation_queue_push(queue, oversized, 0, 1));
+            assert(queue.entries.len() == 0 && queue.retained_bytes == 0);
         } else { assert(false); }
     } else { assert(false); }
 }
