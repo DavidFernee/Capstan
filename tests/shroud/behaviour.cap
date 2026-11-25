@@ -546,7 +546,10 @@ void test_themes(Tally t) {
 
 void test_scroll(Tally t, Ui ui) {
     View list = column();
-    for (int i = 0; i < 40; i += 1) { list.add(button($"Item {i}", "item").key($"item{i}")); }
+    for (int i = 0; i < 40; i += 1) {
+        if (i == 0) { list.add(button("", "item").key("item0")); }
+        else { list.add(button($"Item {i}", "item").key($"item{i}")); }
+    }
     View v = column().add(scroll(list).height(200).key("sc"));
     ui.render(v, 0);
     Laid sc = laid_of(ui, "sc");
@@ -566,6 +569,8 @@ void test_scroll(Tally t, Ui ui) {
             "scroll: fully clipped controls are absent from accessibility tree", snapshot);
         expect(t, contains(snapshot, "\"id\":\"item39\""),
             "scroll: visible controls remain in accessibility tree", snapshot);
+        expect(t, !contains(join(a11y_problems(ui), "; "), "button item0"),
+            "scroll: fully clipped controls are excluded from accessibility diagnostics", join(a11y_problems(ui), "; "));
     } else {
         expect(t, false, "scroll: accessibility tree exists after scrolling", "none");
     }
