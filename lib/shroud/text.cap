@@ -35,7 +35,16 @@ struct Utf8Decoded {
 
 // Strict UTF-8 decoding with optional byte-end offsets. Invalid sequences use the
 // maximal-subpart replacement behaviour documented above.
+void require_utf8_byte_limit(List<int> b) {
+    if (b.len() > MAX_TEXT_BYTES) {
+        println("shroud: UTF-8 decoder byte limit exceeded");
+        exit(101);
+    }
+}
+
 void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
+    // Keep the core guard for direct callers; wrappers also check before allocating.
+    require_utf8_byte_limit(b);
     int i = 0;
     int n = b.len();
     while (i < n) {
@@ -101,6 +110,7 @@ void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
 }
 
 Utf8Decoded utf8_decode_with_ends(List<int> b) {
+    require_utf8_byte_limit(b);
     List<int> out = new List<int>();
     List<int> ends = new List<int>();
     utf8_decode_into(b, out, ends);
@@ -108,22 +118,29 @@ Utf8Decoded utf8_decode_with_ends(List<int> b) {
 }
 
 List<int> utf8_decode(List<int> b) {
+    require_utf8_byte_limit(b);
     List<int> out = new List<int>();
     utf8_decode_into(b, out, none);
     return out;
 }
 
 List<int> string_bytes(string s) {
+    if (s.len() > MAX_TEXT_BYTES) {
+        println("shroud: text byte limit exceeded");
+        exit(101);
+    }
     List<int> out = new List<int>();
-    int n = int_min(s.len(), MAX_TEXT_BYTES);
-    for (int i = 0; i < n; i += 1) { out.push(s.at(i)); }
+    for (int i = 0; i < s.len(); i += 1) { out.push(s.at(i)); }
     return out;
 }
 
 List<int> tainted_bytes(Tainted s) {
+    if (s.len() > MAX_TEXT_BYTES) {
+        println("shroud: untrusted text byte limit exceeded");
+        exit(101);
+    }
     List<int> out = new List<int>();
-    int n = int_min(s.len(), MAX_TEXT_BYTES);
-    for (int i = 0; i < n; i += 1) { out.push(s.at(i)); }
+    for (int i = 0; i < s.len(); i += 1) { out.push(s.at(i)); }
     return out;
 }
 
