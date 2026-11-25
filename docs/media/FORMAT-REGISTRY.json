@@ -1,0 +1,25 @@
+{
+ "schema_version":"1.0.0","registry_version":"1.0.0","records":[
+  {
+   "id":"shanty.riff-wave.pcm-integer.decode","version":"0.1.0",
+   "container":"riff-wave","codec":"pcm-integer",
+   "profile":"RIFF/WAVE format tag 1; 1-8 channels; 1-384000 Hz; 8/16/24/32-bit; one fmt chunk before one data chunk",
+   "level":null,"operation":"decode","ancillary_formats":[],"bit_depth":null,"chroma":null,
+   "channel_layout":"interleaved; 1-8 channels","platforms":["capstan-portable"],
+   "implementation":"lib/halyard/shanty.cap","source_revision":"189f19dd2a39c169e033691856d675b070fb2864",
+   "licence_review":"not-reviewed","patent_review":"not-reviewed","corpus_revision":"none",
+   "test_status":"present-not-run","fuzz_status":"not-run","assurance_level":"prototype",
+   "known_limitations":["Prototype only; not release-ready.","No WAVE_FORMAT_EXTENSIBLE, floating-point PCM, RF64, multiple data chunks, streaming decode, playback or capture.","Public mutable source and budget state; legacy unbudgeted entry points remain callable.","Eleven colocated Capstan test declarations are documented; this entry does not claim they passed."]
+  },
+  {
+   "id":"deadeye.bmp.bi-rgb.decode","version":"0.1.0","container":"bmp","codec":"bi-rgb",
+   "profile":"40-byte Windows BITMAPINFOHEADER; BI_RGB; 24-bit BGR or 32-bit BGRx; canonical pixel offset 54",
+   "level":null,"operation":"decode","ancillary_formats":[],"bit_depth":null,"chroma":null,"channel_layout":null,
+   "platforms":["capstan-portable"],"implementation":"lib/halyard/deadeye.cap",
+   "source_revision":"189f19dd2a39c169e033691856d675b070fb2864",
+   "licence_review":"not-reviewed","patent_review":"not-reviewed","corpus_revision":"none",
+   "test_status":"present-not-run","fuzz_status":"not-run","assurance_level":"prototype",
+   "known_limitations":["Prototype only; not release-ready.","No palettes, bitfields, RLE, OS/2 or V4/V5 headers, embedded profiles, arbitrary offsets or colour management.","Public mutable source, budget and frame state; allocator-exact memory accounting is not established.","Eight colocated Capstan test declarations are documented; this entry does not claim they passed."]
+  }
+ ]
+}
