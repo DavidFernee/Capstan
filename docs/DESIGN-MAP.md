@@ -1157,3 +1157,25 @@ The ambition is broad practical historical and modern format compatibility, not 
 
 
 Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vulnerability accounting, root-cause taxonomy, safe reproducer protocol, SBOM/advisory reconciliation and release-blocking gates are specified in [media/SECURITY-ASSURANCE.md](media/SECURITY-ASSURANCE.md) and tracked in [#292](https://github.com/DavidFernee/Capstan/issues/292). No media release may treat a clean scanner or absence of assigned CVEs as evidence that the attack surface is safe.
+
+
+## Bosun's Locker — Capstan-native database programme
+
+Bosun's Locker is the planned single-node, durable, strict-serializable database and
+storage engine. Its architecture and transaction-history contract are specified in
+[the Bosun architecture](database/BOSUNS-LOCKER-ARCHITECTURE.md) and
+[transaction-history semantics](database/TRANSACTION-HISTORY-SEMANTICS.md).
+These documents are proposals/contracts, not evidence of a complete database.
+
+The first executable storage work is the bounded in-memory region kernel at
+`lib/bosun/storage.cap`. It is a sequential prototype with public mutable structs,
+logical payload accounting, and no recoverable allocation-failure, persistence,
+transaction, concurrency or durability guarantee. Its tests are invoked by the
+standard suite. Do not describe it as production-ready or as a security boundary.
+
+The next gates are: opaque/affine storage ownership enforced by the compiler;
+fallible allocation with failure-atomic admission; an independent reference model
+and refinement tests; page format and checksums; WAL writer and crash-injection
+recovery; MVCC and strict-serializable transaction execution; and only then query
+execution and external interfaces. Each gate requires exact-head CI and evidence
+appropriate to the claim before the status advances.
