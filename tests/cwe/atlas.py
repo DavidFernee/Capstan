@@ -228,7 +228,7 @@ add(89, "SQL injection (attempt through a bound parameter)", "neutral",
 add(90, "LDAP injection", "na", note="No LDAP facility.")
 add(91, "XML injection", "absent", XML)
 add(93, "CRLF injection", "reject",
-    'int main() { println("Location: " + taint("/home\\r\nSet-Cookie: admin=1")); return 0; }', "CWE-117")
+    'int main() { println("Location: " + taint("/home\\r\\nSet-Cookie: admin=1")); return 0; }', "CWE-117")
 add(94, "Code injection", "absent", EVAL)
 add(95, "Eval injection", "reject", EVAL, "CWE-95")
 add(96, "Static code injection", "absent", INCLUDE)
@@ -244,16 +244,16 @@ add(116, "Improper encoding: HTML-escaped text written into a CSV file", "gap",
     'int main() { Html cell = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", cell); return 0; }',
     note="write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap.")
 add(117, "Improper output neutralization for logs", "reject",
-    'int main() { println("login failed: " + taint("bob\nINFO admin ok")); return 0; }', "CWE-117")
+    'int main() { println("login failed: " + taint("bob\\nINFO admin ok")); return 0; }', "CWE-117")
 add(117, "Log injection (attempt after escape_log)", "neutral",
-    'int main() { println("login failed: " + escape_log(taint("bob\nINFO admin ok"))); return 0; }', "bob\\x0aINFO")
+    'int main() { println("login failed: " + escape_log(taint("bob\\nINFO admin ok"))); return 0; }', "bob\\x0aINFO")
 add(643, "XPath injection", "na", note="No XPath facility.")
 add(652, "XQuery injection", "na", note="No XQuery facility.")
 add(611, "XML external entity reference (XXE)", "absent", XML)
 add(776, "XML entity expansion (billion laughs)", "absent", XML)
 add(917, "Expression language injection", "absent", EVAL)
 add(1236, "CSV formula injection", "reject",
-    'int main() { Tainted cell = taint("=HYPERLINK(\"http://evil\")"); bool ok = write_file("export.csv", "name\n" + cell); return 0; }', "escape_csv",
+    'int main() { Tainted cell = taint("=HYPERLINK(\\"http://evil\\")"); bool ok = write_file("export.csv", "name\\n" + cell); return 0; }', "escape_csv",
     "Untrusted text cannot be written to a file unchanged.")
 add(1236, "CSV formula injection (attempt after escape_csv)", "neutral",
     'int main() { println(escape_csv(taint("=HYPERLINK(1)"))); return 0; }', "\"'=HYPERLINK(1)\"")
@@ -636,7 +636,7 @@ add(88, "Argument injection (computed argument read as an option)", "reject",
 add(79, "Cross-site scripting (escaped text in an unquoted attribute)", "reject",
     'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<img src=" + escape_html(t) + ">"); } return 0; }', "CWE-79")
 add(79, "Cross-site scripting (escaped text in a URL attribute)", "reject",
-    'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<a href=\"" + escape_html(t) + "\">x</a>"); } return 0; }', "CWE-79")
+    'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<a href=\\"" + escape_html(t) + "\\">x</a>"); } return 0; }', "CWE-79")
 add(79, "Cross-site scripting (escaped text in a script block)", "reject",
     'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<script>var n = \'" + escape_html(t) + "\';</script>"); } return 0; }', "CWE-79")
 add(79, "Cross-site scripting (Html assembled across separate statements)", "gap",
