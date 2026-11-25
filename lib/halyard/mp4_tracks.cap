@@ -776,6 +776,32 @@ test "Deadeye parser reserves resources before work and releases on budget failu
     } else { assert(false); }
 }
 
+test "Deadeye refuses MP4 parsing before allocation when the live ledger is insufficient" {
+    List<int> file = deadeye_mp4_test_minimal_file();
+    DeadeyeMp4BoxResult first = deadeye_mp4_box_read(file,0,file.len());
+    DeadeyeMp4BoxResult movie_box = deadeye_mp4_box_read(
+        file,first.box.end,file.len()
+    );
+    HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
+        67108864, 33554431, 0, 0, 400000000,
+        128, 8192, 0, 0, 16, 32, 32768
+    );
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(67108864,8192,0,400000000);
+    assert(ledger_result.ok && budget_result.ok);
+    if (let ledger = ledger_result.ledger) {
+        if (let budget = budget_result.budget) {
+            DeadeyeMp4MovieTracksResult rejected =
+                deadeye_mp4_parse_moov_tracks(file,movie_box.box,ledger,budget);
+            assert(!rejected.ok &&
+                rejected.error == "temporary_resource_reservation_failed");
+            assert(ledger.used_retained_bytes == 0);
+            assert(budget.used_input_bytes == 0);
+            assert(budget.used_work_units == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
 test "Deadeye rejects track hierarchy mismatches and external data references" {
     List<int> bad_handler = [0,0,0,0,0,0,0,0,'v','i','d','e',
         0,0,0,0,0,0,0,0,0,0,0,0];
