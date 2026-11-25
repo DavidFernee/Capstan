@@ -504,6 +504,22 @@ void emit_contour(Path p, List<int> px, List<int> py, List<int> flags, int first
     p.close();
 }
 
+// Resolve TrueType component translation semantics. A scaled offset is
+// transformed by the component's F2Dot14 matrix; an unscaled/default offset is
+// preserved and is transformed only by the containing glyph's parent matrix.
+List<int> component_offset(int dx, int dy, int a, int b, int c, int d, bool scaled) {
+    if (scaled) {
+        int next_dx = (a * dx + c * dy) / 16384;
+        int next_dy = (b * dx + d * dy) / 16384;
+        dx = next_dx;
+        dy = next_dy;
+    }
+    List<int> result = new List<int>();
+    result.push(dx);
+    result.push(dy);
+    return result;
+}
+
 // Compose the current F2Dot14 linear transform with one composite component.
 List<int> compose_matrix(List<int> m, int a, int b, int c, int d) {
     List<int> next = new List<int>();
@@ -586,12 +602,11 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
             pos += 8;
         }
         if (!r.ok) { return false; }
-        if ((flags & 0x0800) != 0) {
-            int scaled_dx = (a * dx + c * dy) / 16384;
-            int scaled_dy = (b * dx + d * dy) / 16384;
-            dx = scaled_dx;
-            dy = scaled_dy;
-        }
+        List<int> offset = component_offset(
+            dx, dy, a, b, c, d, (flags & 0x0800) != 0
+        );
+        dx = offset[0];
+        dy = offset[1];
         List<int> next = compose_matrix(m, a, b, c, d);
         int dx2 = mul_div(dx, num, den);
         int dy2 = mul_div(dy, num, den);
