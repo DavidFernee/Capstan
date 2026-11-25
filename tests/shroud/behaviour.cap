@@ -315,6 +315,14 @@ void test_resize(Tally t, Font f, Font b) {
     List<Msg> accepted = click_at(guarded, "resize-guard", 2700);
     expect(t, accepted.len() == 1 && accepted[0].action == "danger",
         "resize: guarded control activates after renewed delay", $"{accepted.len()} messages");
+    expect(t, guarded.resize(300, 100, 384),
+        "resize: scale-only transition succeeds", "resize failed");
+    guarded.render(guard_view, 2800);
+    expect_int(t, click_at(guarded, "resize-guard", 2850).len(), 0,
+        "resize: scale transition restarts guarded activation delay");
+    guarded.render(guard_view, 3400);
+    expect_int(t, click_at(guarded, "resize-guard", 3400).len(), 1,
+        "resize: scale-adjusted guard activates after renewed delay");
 }
 
 void test_keyboard(Tally t, Ui ui) {
