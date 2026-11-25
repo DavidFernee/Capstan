@@ -78,6 +78,7 @@ inductive MarkerOutcome {slotCount : Nat}
 
 theorem certificateCheck_sound {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
+    (descriptorValid : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots marked : List (Handle slotCount))
     (checked : certificateCheck isLive descriptorValid referenceEdges roots marked = true) :
@@ -90,7 +91,7 @@ theorem certificateCheck_sound {slotCount : Nat}
   rcases Bool.and_eq_true.mp checked with ⟨rootsChecked, markedChecked⟩
   have rootsValid := List.all_eq_true.mp rootsChecked
   have markedValid := List.all_eq_true.mp markedChecked
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro root rootMember
     exact of_decide_eq_true (rootsValid root rootMember)
   · intro handle handleMember
@@ -182,7 +183,7 @@ def markerLoop {slotCount : Nat}
     | fuel + 1 =>
       match pending with
       | [] =>
-        if checked : certificateCheck isLive referenceEdges roots visited = true then
+        if checked : certificateCheck isLive descriptorValid referenceEdges roots visited = true then
           .complete visited counters checked
         else
           .rejected .certificateRejected counters
@@ -245,7 +246,7 @@ def runBoundedMarker {slotCount : Nat}
     if initial.length > budget.maxWorklist then
       .rejected .worklistLimit counters
     else
-      markerLoop isLive referenceEdges descriptorCost roots budget
+      markerLoop isLive descriptorValid referenceEdges descriptorCost roots budget
         (budget.maxWork + 1) initial [] counters
 
 /-- A successful marker result is a checked certificate, not a partial
