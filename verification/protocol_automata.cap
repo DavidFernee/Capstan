@@ -366,7 +366,7 @@ List<PAContract> pa_linear_message_contracts() {
     contracts.push(new PAContract{
         message_type: 1, owner_before: 2, owner_after: PA_OWNER_NONE,
         resource_delta: -1, effect: PA_EFFECT_RELEASE,
-        peer_role: PA_OWNER_NONE, peer_operation: 0
+        peer_role: PA_OWNER_NONE, peer_operation: 0, peer_state: PA_OWNER_NONE
     });
     return contracts;
 }
@@ -521,7 +521,7 @@ test "PA rejects duplicate transition labels as nondeterministic" {
     spec.contracts.push(new PAContract{
         message_type: 1, owner_before: PA_OWNER_NONE, owner_after: 1,
         resource_delta: 1, effect: PA_EFFECT_ALLOCATE,
-        peer_role: PA_OWNER_NONE, peer_operation: 0
+        peer_role: PA_OWNER_NONE, peer_operation: 0, peer_state: PA_OWNER_NONE
     });
     PAValidation result = pa_validate(spec);
     assert(!result.valid);
