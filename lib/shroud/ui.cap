@@ -350,7 +350,10 @@ struct Ui {
 
     void insert(Laid n, Tainted s, List<Msg> out) {
         Tainted val = n.v.value;
-        if (s.len() == 0 || val.len() + s.len() > MAX_FIELD_BYTES) { return; }
+        if (s.len() == 0) { return; }
+        if (val.len() > MAX_FIELD_BYTES) { return; }
+        // Subtraction-based admission avoids signed overflow in val.len()+s.len().
+        if (s.len() > MAX_FIELD_BYTES - val.len()) { return; }
         int c = field_caret(self, n.id, val);
         self.caret.set(n.id, c + s.len());
         out.push(msg_text(n.v.action, 0, val.slice(0, c) + s + val.slice(c, val.len())));
