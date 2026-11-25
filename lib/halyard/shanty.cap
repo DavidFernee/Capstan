@@ -5,6 +5,7 @@
 import "core.cap";
 
 const int SHANTY_WAV_MAX_CHUNKS = 1024;
+const int SHANTY_WAV_MAX_INPUT_BYTES = 8388608;
 const int SHANTY_WAV_MAX_CHANNELS = 8;
 const int SHANTY_WAV_MAX_SAMPLE_RATE = 384000;
 
@@ -68,6 +69,9 @@ ShantyWaveResult shanty_wave_error(string error) {
 ShantyWaveResult shanty_wave_parse(HalyardByteSource source) {
     if (!halyard_source_validate(source)) {
         return shanty_wave_error("invalid_source");
+    }
+    if (halyard_source_length(source) > SHANTY_WAV_MAX_INPUT_BYTES) {
+        return shanty_wave_error("input_limit");
     }
     if (source.position != 0) {
         return shanty_wave_error("source_not_at_start");
@@ -206,9 +210,17 @@ ShantyPcmResult shanty_wave_decode_samples(ShantyWave wave) {
 
     int bytes_per_sample = wave.bits_per_sample / 8;
     int expected_align = wave.channels * bytes_per_sample;
-    if (wave.block_align != expected_align || wave.block_align <= 0 ||
+    int expected_rate = wave.sample_rate * expected_align;
+    if (wave.block_align <= 0 || wave.block_align != expected_align ||
+        wave.byte_rate != expected_rate ||
+        wave.pcm_bytes.len() > SHANTY_WAV_MAX_INPUT_BYTES ||
         wave.pcm_bytes.len() % wave.block_align != 0) {
         return new ShantyPcmResult{ok: false, buffer: none, error: "invalid_pcm_alignment"};
+    }
+    for (int byte_index = 0; byte_index < wave.pcm_bytes.len(); byte_index += 1) {
+        if (wave.pcm_bytes[byte_index] < 0 || wave.pcm_bytes[byte_index] > 255) {
+            return new ShantyPcmResult{ok: false, buffer: none, error: "invalid_sample_byte"};
+        }
     }
 
     int frame_count = wave.pcm_bytes.len() / wave.block_align;
@@ -444,4 +456,51 @@ test "Shanty rejects a source that was mutated after construction" {
     } else {
         assert(false);
     }
+}
+
+
+test "Shanty skips bounded unknown chunks and RIFF odd-byte padding" {
+    List<int> base = shanty_test_stereo_wave();
+    List<int> bytes = new List<int>();
+    for (int i = 0; i < 12; i += 1) { bytes.push(base[i]); }
+    bytes[4] = 54;
+    bytes.push('J'); bytes.push('U'); bytes.push('N'); bytes.push('K');
+    shanty_test_push_u32_le(bytes, 1);
+    bytes.push(77);
+    bytes.push(0);
+    for (int j = 12; j < base.len(); j += 1) { bytes.push(base[j]); }
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    assert(made.ok);
+    if (let source = made.source) {
+        ShantyWaveResult parsed = shanty_wave_parse(source);
+        assert(parsed.ok);
+        if (let wave = parsed.wave) {
+            assert(wave.pcm_bytes.len() == 8);
+            assert(wave.channels == 2 && wave.sample_rate == 48000);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Shanty rejects forged PCM byte arrays and inconsistent byte rates" {
+    List<int> invalid_bytes = new List<int>();
+    invalid_bytes.push(999);
+    ShantyWave invalid_wave = new ShantyWave{
+        sample_rate: 48000, channels: 1, bits_per_sample: 8,
+        block_align: 1, byte_rate: 48000, pcm_bytes: invalid_bytes
+    };
+    ShantyPcmResult invalid = shanty_wave_decode_samples(invalid_wave);
+    assert(!invalid.ok && invalid.error == "invalid_sample_byte");
+
+    List<int> valid_bytes = new List<int>();
+    valid_bytes.push(128);
+    ShantyWave bad_rate = new ShantyWave{
+        sample_rate: 48000, channels: 1, bits_per_sample: 8,
+        block_align: 1, byte_rate: 1, pcm_bytes: valid_bytes
+    };
+    ShantyPcmResult rate_result = shanty_wave_decode_samples(bad_rate);
+    assert(!rate_result.ok && rate_result.error == "invalid_pcm_alignment");
 }
