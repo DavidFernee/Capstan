@@ -148,7 +148,8 @@ bool cb_invariant(CBState s) {
 CBTransition cb_receive(CBState before) {
     if (before.consumer_status != CB_TASK_RUNNABLE ||
         before.consumer_wait_registered ||
-        before.consumer_result != CB_RESULT_PENDING) {
+        before.consumer_result == CB_RESULT_EOF ||
+        before.consumer_result == CB_RESULT_CANCELLED) {
         return cb_reject(before, "consumer_not_receive_eligible");
     }
     CBState next = cb_copy(before);
@@ -166,6 +167,7 @@ CBTransition cb_receive(CBState before) {
         return cb_accept(next);
     }
     next.consumer_status = CB_TASK_BLOCKED;
+    next.consumer_result = CB_RESULT_PENDING;
     next.consumer_wait = CB_WAIT_CHANNEL_MESSAGE;
     next.consumer_wait_registered = true;
     return cb_accept(next);
