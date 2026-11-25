@@ -147,7 +147,8 @@ def main() -> int:
                 if v["expected"]["profile_validation"] == "accept"]
     rejected = [v for v in corpus["vectors"]
                 if v["expected"]["profile_validation"] == "reject"
-                and v["expected"]["normative_validation"] in {"reject", "not_applicable"}]
+                and v["expected"]["normative_validation"] == "reject"
+                and v["profile_entry"] == 0]
     if len(admitted) != 17 or len(rejected) != 4:
         print(f"unexpected corpus partition: admitted={len(admitted)}, rejected={len(rejected)}",
               file=sys.stderr)
