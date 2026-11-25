@@ -6,6 +6,7 @@ on:
       - research/native-compiler-bootstrap
     paths:
       - "verification/lean/NativeMemoryLifecycle.lean"
+      - "verification/lean/NativeReachability.lean"
       - ".github/workflows/native-memory-lifecycle.yml"
   pull_request:
     paths:
@@ -51,6 +52,23 @@ jobs:
         run: |
           lake env lean -o NativeMemoryLifecycle.olean NativeMemoryLifecycle.lean | tee "$RUNNER_TEMP/native-memory-axioms.txt"
           if grep -q 'sorryAx' "$RUNNER_TEMP/native-memory-axioms.txt"; then
-            echo "Unexpected sorryAx dependency."
+            echo "Unexpected sorryAx dependency in lifecycle model."
+            exit 1
+          fi
+      - name: Reject unfinished reachability proofs and local axioms
+        working-directory: verification/lean
+        shell: bash
+        run: |
+          if grep -nE '(^|[^[:alnum:]_])(sorry|admit)([^[:alnum:]_]|$)|^[[:space:]]*axiom[[:space:]]' NativeReachability.lean; then
+            echo "Unfinished proof or local axiom declaration found."
+            exit 1
+          fi
+      - name: Compile explicit-root reachability model and audit theorem axioms
+        working-directory: verification/lean
+        shell: bash
+        run: |
+          lake env lean -o NativeReachability.olean NativeReachability.lean | tee "$RUNNER_TEMP/native-reachability-axioms.txt"
+          if grep -q 'sorryAx' "$RUNNER_TEMP/native-reachability-axioms.txt"; then
+            echo "Unexpected sorryAx dependency in reachability model."
             exit 1
           fi
