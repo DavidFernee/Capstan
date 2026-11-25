@@ -188,7 +188,7 @@ The old C-backed mode remains explicitly labelled compatibility-only until the r
 
 1. **GC-R0 — root contract:** settle precise root-frame ABI, safepoint rules, frame descriptors, global roots, helper temporaries and unwind semantics with compiler/native-backend owners.
 2. **GC-R1 — model:** *initial slice implemented; compiler execution and review pending.* The first Capstan model covers generation-tagged roots/edges, traced versus pointer-free objects, transitive and cyclic reachability, an independent fixed-point oracle, validation and transactional worklist failure. Full allocator/page/descriptor/metadata state and reconciliation with PR #309 remain outstanding.
-3. **GC-R2 — handle/layout substrate:** opaque heap-instance handles, immutable descriptors, checked reference operations and failure-atomic object publication.
+3. **GC-R2 — handle/layout substrate:** *logical model slice implemented; concrete execution pending.* Opaque heap-instance handles, immutable descriptor validation, checked handle resolution, failure-atomic slot publication/release and generation retirement are modeled. Physical payload access, descriptor storage protection and refinement to the PR #309 allocator partition remain outstanding.
 4. **GC-R3 — allocator:** bounded metadata arena, page/slot allocator, large objects, exact free-list ownership and accounting.
 5. **GC-R4 — precise tracer:** bounded worklist, exact root traversal, object-layout scanning and sweep.
 6. **GC-R5 — platform adapter:** native page provider with explicit result semantics and per-target tests.
