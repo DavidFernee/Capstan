@@ -78,6 +78,13 @@ else
   bad "precise GC reachability and transactional sweep model" "$out"
 fi
 
+section "Capstan-native verification: GC handles and immutable object layouts"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/gc_handle_model.cap" 2>&1)"; then
+  ok "heap-instance identity, generation checks, nominal descriptors and pointer-map validation"
+else
+  bad "GC handles and immutable object layouts" "$out"
+fi
+
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
