@@ -16,7 +16,7 @@ rejection. The first conformance fixture is a linear-message protocol.
 
 This implementation is deliberately narrower than the full design above.
 
-Transfer contracts now identify the peer role and operation. Validation requires a reciprocal sender/receiver pair with the same message type, the channel as the shared intermediate owner, and zero resource delta on both sides. Local allocation and release effects are forbidden from declaring peer operations. Negative tests corrupt each side of this pairing.
+Transfer contracts now identify the peer role, operation and protocol state. Validation requires a reciprocal sender/receiver pair at the declared peer state, with the same message type, the channel as the shared intermediate owner, and zero resource delta on both sides. Local allocation and release effects are forbidden from declaring peer operations. Negative tests corrupt the peer role, operation and state.
 
 The descriptor now carries a per-transition contract containing a message-type
 tag, owner-before and owner-after identities, a bounded resource delta, and an
