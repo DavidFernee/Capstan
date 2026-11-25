@@ -384,6 +384,83 @@ void test_unicode_logical_preservation(Tally t) {
     }
 }
 
+// U0 semantic sequences: decoding must preserve the exact logical sequence,
+// not merely individual code points in isolation. These are decoder/source-map
+// tests only; they do not claim grapheme, bidi or shaping conformance.
+void test_unicode_semantic_sequences(Tally t) {
+    // Persian "می‌روم" (the ZWNJ is linguistically significant).
+    string persian = char_str(0xD9) + char_str(0x85) +
+        char_str(0xDB) + char_str(0x8C) +
+        char_str(0xE2) + char_str(0x80) + char_str(0x8C) +
+        char_str(0xD8) + char_str(0xB1) +
+        char_str(0xD9) + char_str(0x88) +
+        char_str(0xD9) + char_str(0x85);
+    Utf8Decoded p = utf8_decode_with_ends(string_bytes(persian));
+    expect_int(t, p.codepoints.len(), 6, "unicode U0: Persian ZWNJ word retains six logical scalars");
+    if (p.codepoints.len() == 6) {
+        expect_int(t, p.codepoints[0], 0x0645, "unicode U0: Persian meem preserved");
+        expect_int(t, p.codepoints[1], 0x06CC, "unicode U0: Persian yeh preserved");
+        expect_int(t, p.codepoints[2], 0x200C, "unicode U0: Persian ZWNJ preserved in context");
+        expect_int(t, p.codepoints[3], 0x0631, "unicode U0: Persian reh preserved");
+        expect_int(t, p.codepoints[4], 0x0648, "unicode U0: Persian vav preserved");
+        expect_int(t, p.codepoints[5], 0x0645, "unicode U0: final Persian meem preserved");
+    }
+    expect_int(t, p.byte_ends.len(), 6, "unicode U0: Persian source map covers every scalar");
+    if (p.byte_ends.len() == 6) {
+        expect_int(t, p.byte_ends[0], 2, "unicode U0: Persian first span end");
+        expect_int(t, p.byte_ends[1], 4, "unicode U0: Persian second span end");
+        expect_int(t, p.byte_ends[2], 7, "unicode U0: Persian ZWNJ span end");
+        expect_int(t, p.byte_ends[3], 9, "unicode U0: Persian fourth span end");
+        expect_int(t, p.byte_ends[4], 11, "unicode U0: Persian fifth span end");
+        expect_int(t, p.byte_ends[5], 13, "unicode U0: Persian final span end");
+    }
+
+    // Devanagari KA + VIRAMA + ZWJ + SSA: preserve the joiner-sensitive input.
+    string indic = char_str(0xE0) + char_str(0xA4) + char_str(0x95) +
+        char_str(0xE0) + char_str(0xA5) + char_str(0x8D) +
+        char_str(0xE2) + char_str(0x80) + char_str(0x8D) +
+        char_str(0xE0) + char_str(0xA4) + char_str(0xB7);
+    Utf8Decoded d = utf8_decode_with_ends(string_bytes(indic));
+    expect_int(t, d.codepoints.len(), 4, "unicode U0: Indic joiner-sensitive sequence retains four scalars");
+    if (d.codepoints.len() == 4) {
+        expect_int(t, d.codepoints[0], 0x0915, "unicode U0: Devanagari KA preserved");
+        expect_int(t, d.codepoints[1], 0x094D, "unicode U0: Devanagari VIRAMA preserved");
+        expect_int(t, d.codepoints[2], 0x200D, "unicode U0: Indic ZWJ preserved");
+        expect_int(t, d.codepoints[3], 0x0937, "unicode U0: Devanagari SSA preserved");
+    }
+    expect_int(t, d.byte_ends.len(), 4, "unicode U0: Indic source map covers every scalar");
+    if (d.byte_ends.len() == 4) {
+        expect_int(t, d.byte_ends[0], 3, "unicode U0: Indic KA span end");
+        expect_int(t, d.byte_ends[1], 6, "unicode U0: Indic VIRAMA span end");
+        expect_int(t, d.byte_ends[2], 9, "unicode U0: Indic ZWJ span end");
+        expect_int(t, d.byte_ends[3], 12, "unicode U0: Indic SSA span end");
+    }
+
+    // Emoji family sequence: MAN + ZWJ + WOMAN + ZWJ + GIRL.
+    string family = char_str(0xF0) + char_str(0x9F) + char_str(0x91) + char_str(0xA8) +
+        char_str(0xE2) + char_str(0x80) + char_str(0x8D) +
+        char_str(0xF0) + char_str(0x9F) + char_str(0x91) + char_str(0xA9) +
+        char_str(0xE2) + char_str(0x80) + char_str(0x8D) +
+        char_str(0xF0) + char_str(0x9F) + char_str(0x91) + char_str(0xA7);
+    Utf8Decoded e = utf8_decode_with_ends(string_bytes(family));
+    expect_int(t, e.codepoints.len(), 5, "unicode U0: emoji family source retains five scalars");
+    if (e.codepoints.len() == 5) {
+        expect_int(t, e.codepoints[0], 0x1F468, "unicode U0: family MAN preserved");
+        expect_int(t, e.codepoints[1], 0x200D, "unicode U0: first family ZWJ preserved");
+        expect_int(t, e.codepoints[2], 0x1F469, "unicode U0: family WOMAN preserved");
+        expect_int(t, e.codepoints[3], 0x200D, "unicode U0: second family ZWJ preserved");
+        expect_int(t, e.codepoints[4], 0x1F467, "unicode U0: family GIRL preserved");
+    }
+    expect_int(t, e.byte_ends.len(), 5, "unicode U0: emoji source map covers every scalar");
+    if (e.byte_ends.len() == 5) {
+        expect_int(t, e.byte_ends[0], 4, "unicode U0: emoji MAN span end");
+        expect_int(t, e.byte_ends[1], 7, "unicode U0: emoji first ZWJ span end");
+        expect_int(t, e.byte_ends[2], 11, "unicode U0: emoji WOMAN span end");
+        expect_int(t, e.byte_ends[3], 14, "unicode U0: emoji second ZWJ span end");
+        expect_int(t, e.byte_ends[4], 18, "unicode U0: emoji GIRL span end");
+    }
+}
+
 void test_caret_byte_positions(Tally t, Ui ui) {
     string rlo = char_str(0xE2) + char_str(0x80) + char_str(0xAE);
     Tainted valid = taint("A" + rlo + "B");
