@@ -72,6 +72,7 @@ int ccam_json_schema_member_count(List<CCAMJsonToken> tokens, int object_at) {
 bool ccam_json_schema_exact_fields(
     Tainted source, List<CCAMJsonToken> tokens, int object_at, List<string> expected
 ) {
+    if (object_at < 0 || object_at >= tokens.len() || tokens[object_at].kind != CCAM_JSON_T_LBRACE) { return false; }
     if (ccam_json_schema_member_count(tokens, object_at) != expected.len()) { return false; }
     for (int i = 0; i < expected.len(); i += 1) {
         if (ccam_json_schema_find(source, tokens, object_at, expected[i]) < 0) { return false; }
