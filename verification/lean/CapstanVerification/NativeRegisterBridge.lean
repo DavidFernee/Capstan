@@ -38,8 +38,7 @@ theorem decodeNativeTypeTag_bool_iff (tag : Int) :
     by_cases hInt : tag = nativeIntTypeTag
     · subst tag
       simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag] at h
-    · have htags_ne : nativeIntTypeTag ≠ nativeBoolTypeTag := by decide
-      simp [decodeNativeTypeTag, hInt, htags_ne, nativeIntTypeTag, nativeBoolTypeTag] at h
+    · simp [decodeNativeTypeTag, hInt, nativeIntTypeTag, nativeBoolTypeTag] at h
       exact h
   · intro h
     subst tag
