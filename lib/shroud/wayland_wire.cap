@@ -106,3 +106,20 @@ WaylandPayloadSpan wayland_payload_array(Tainted bytes, int offset, int end) {
 WaylandPayloadSpan wayland_payload_string(Tainted bytes, int offset, int end) {
     return wayland_payload_span(bytes, offset, end, true);
 }
+
+ // Bind payload parsing to a previously validated frame boundary. This prevents
+ // a length field in one frame from consuming bytes belonging to the next frame.
+WaylandPayloadSpan wayland_frame_payload_span(Tainted bytes, WaylandFrameHeader frame, int offset, bool nul_terminated) {
+    if (frame.status != 1 || !wayland_frame_size_valid(frame.size)) { return wayland_bad_payload_span(); }
+    if (frame.end_offset < frame.size || frame.end_offset > bytes.len()) { return wayland_bad_payload_span(); }
+    int frame_start = frame.end_offset - frame.size;
+    int payload_start = frame_start + WAYLAND_HEADER_BYTES;
+    if (offset < payload_start || offset > frame.end_offset) { return wayland_bad_payload_span(); }
+    return wayland_payload_span(bytes, offset, frame.end_offset, nul_terminated);
+}
+WaylandPayloadSpan wayland_frame_array(Tainted bytes, WaylandFrameHeader frame, int offset) {
+    return wayland_frame_payload_span(bytes, frame, offset, false);
+}
+WaylandPayloadSpan wayland_frame_string(Tainted bytes, WaylandFrameHeader frame, int offset) {
+    return wayland_frame_payload_span(bytes, frame, offset, true);
+}

@@ -106,8 +106,22 @@ int main() {
     span = wayland_payload_array(wayland_test_bytes(empty_bytes), 0, 4);
     if (span.status != -1) { return 26; }
 
+
+    // A payload reader bound to frame one must not consume frame two's bytes.
+    List<int> joined = new List<int>();
+    joined.push(1); joined.push(0); joined.push(0); joined.push(0);
+    joined.push(0); joined.push(0); joined.push(8); joined.push(0);
+    joined.push(2); joined.push(0); joined.push(0); joined.push(0);
+    joined.push(0); joined.push(0); joined.push(12); joined.push(0);
+    WaylandFrameHeader first = wayland_frame_header(wayland_test_bytes(joined), 0);
+    if (first.status != 1 || first.end_offset != 8) { return 27; }
+    span = wayland_frame_array(wayland_test_bytes(joined), first, 8);
+    if (span.status != 0) { return 28; }
+    span = wayland_frame_array(wayland_test_bytes(joined), first, 4);
+    if (span.status != -1) { return 29; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing and payload spans: 26 adversarial assertions passed");
+    println("Wayland framing and payload spans: 29 adversarial assertions passed");
     return 0;
 }
