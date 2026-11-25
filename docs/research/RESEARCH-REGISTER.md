@@ -211,8 +211,8 @@ implementation and proof fragments into tightly scoped, reproducible claims.
 
 The Halyard working branch now contains Capstan-native Core prototypes in
 `lib/halyard/core.cap`: a validated bounded byte source, copy-on-commit bounded sink,
-five-dimensional sequential aggregate ledger and rational timebase/timestamp rescaling
-with explicit rounding. Twenty-five Core `test` declarations are colocated with the
+five-dimensional sequential live-reservation ledger, a separate monotonic input/output/decode/work budget, and rational timebase/timestamp rescaling
+with explicit rounding. Thirty Core `test` declarations are colocated with the
 implementation, including exhaustive small-state checks for exact-read boundaries, the
 3^5 resource-admission state space, per-dimension release underflow, sink failure
 atomicity, rational rescaling, rounding and signed multiplication boundaries.
@@ -234,7 +234,7 @@ detailed contract and limitations are recorded in `docs/media/CORE-PRIMITIVES.md
 This is an implementation experiment, not a research result. The current public struct
 representation permits client mutation; the ledger is not concurrency-safe; reservation
 is not yet coupled atomically to source allocation; the ledger does not yet cover the full
-resource vector; full clock epochs/discontinuities, ledger-coupled sink reservations and format registration remain unimplemented. No
+resource vector; full clock epochs/discontinuities, parser integration of cumulative budgets, ledger-coupled sink reservations and format registration remain unimplemented. No
 benchmark, proof, novelty claim or MC1 completion is asserted. Follow-up issue #293
 tracks opaque state, lifetime-bound reservation ownership and the concurrency model.
 
