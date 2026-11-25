@@ -1,0 +1,252 @@
+// Deadeye bounded sample-table consistency and media-extent validation.
+// This module accepts already-decoded table values. It does not yet decode MP4
+// box payloads; that integration is a separate parser milestone.
+// The constrained profile deliberately rejects ambiguous/non-monotonic layouts.
+import "core.cap";
+
+const int DEADEYE_MP4_MAX_SAMPLES = 1048576;
+const int DEADEYE_MP4_MAX_CHUNKS = 65536;
+const int DEADEYE_MP4_MAX_TABLE_RUNS = 65536;
+const int DEADEYE_MP4_MAX_SAMPLE_BYTES = 67108864;
+const int DEADEYE_MP4_MAX_DECODED_DURATION = 2147483647;
+
+struct DeadeyeMp4TableValidation {
+    bool ok;
+    int sample_count;
+    int chunk_count;
+    int total_duration;
+    int total_sample_bytes;
+    string error;
+}
+
+DeadeyeMp4TableValidation deadeye_mp4_table_error(string error) {
+    return new DeadeyeMp4TableValidation{
+        ok: false, sample_count: 0, chunk_count: 0,
+        total_duration: 0, total_sample_bytes: 0, error: error
+    };
+}
+
+// stts is flattened as (sample_count, sample_delta) pairs.
+// stsc is flattened as (first_chunk, samples_per_chunk, sample_description_index)
+// triples. sample_sizes contains the expanded stsz values; zero-sized samples
+// are rejected in this profile. chunk_offsets are absolute file offsets.
+// mdat_ranges is flattened as (payload_start, payload_end) half-open intervals.
+DeadeyeMp4TableValidation deadeye_mp4_validate_sample_tables(
+    List<int> stts, List<int> stsc, List<int> sample_sizes,
+    List<int> chunk_offsets, List<int> mdat_ranges
+) {
+    int samples = sample_sizes.len();
+    int chunks = chunk_offsets.len();
+    int time_runs = stts.len() / 2;
+    int chunk_runs = stsc.len() / 3;
+
+    if (stts.len() % 2 != 0 || stsc.len() % 3 != 0) {
+        return deadeye_mp4_table_error("malformed_table_shape");
+    }
+    if (samples < 1 || samples > DEADEYE_MP4_MAX_SAMPLES ||
+        chunks < 1 || chunks > DEADEYE_MP4_MAX_CHUNKS ||
+        time_runs < 1 || time_runs > DEADEYE_MP4_MAX_TABLE_RUNS ||
+        chunk_runs < 1 || chunk_runs > DEADEYE_MP4_MAX_TABLE_RUNS) {
+        return deadeye_mp4_table_error("table_count_limit");
+    }
+    if (mdat_ranges.len() < 2 || mdat_ranges.len() % 2 != 0 ||
+        mdat_ranges.len() > 512) {
+        return deadeye_mp4_table_error("invalid_mdat_ranges");
+    }
+
+    int mdat_count = mdat_ranges.len() / 2;
+    for (int r = 0; r < mdat_count; r += 1) {
+        int begin = mdat_ranges[r * 2];
+        int end = mdat_ranges[r * 2 + 1];
+        if (begin < 0 || end <= begin ||
+            end > DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+            return deadeye_mp4_table_error("invalid_mdat_range");
+        }
+        if (r > 0 && begin < mdat_ranges[(r - 1) * 2 + 1]) {
+            return deadeye_mp4_table_error("overlapping_mdat_ranges");
+        }
+    }
+
+    int timed_samples = 0;
+    int total_duration = 0;
+    for (int t = 0; t < time_runs; t += 1) {
+        int run_samples = stts[t * 2];
+        int delta = stts[t * 2 + 1];
+        if (run_samples < 1 || delta < 1 ||
+            run_samples > samples - timed_samples) {
+            return deadeye_mp4_table_error("invalid_stts_run");
+        }
+        if (delta > DEADEYE_MP4_MAX_DECODED_DURATION / run_samples) {
+            return deadeye_mp4_table_error("duration_limit");
+        }
+        int run_duration = run_samples * delta;
+        if (run_duration > DEADEYE_MP4_MAX_DECODED_DURATION - total_duration) {
+            return deadeye_mp4_table_error("duration_limit");
+        }
+        timed_samples += run_samples;
+        total_duration += run_duration;
+    }
+    if (timed_samples != samples) {
+        return deadeye_mp4_table_error("stts_sample_count_mismatch");
+    }
+
+    int previous_first_chunk = 0;
+    for (int c = 0; c < chunk_runs; c += 1) {
+        int first_chunk = stsc[c * 3];
+        int per_chunk = stsc[c * 3 + 1];
+        int description = stsc[c * 3 + 2];
+        if (first_chunk < 1 || first_chunk > chunks ||
+            first_chunk <= previous_first_chunk || per_chunk < 1 ||
+            description != 1) {
+            return deadeye_mp4_table_error("invalid_stsc_run");
+        }
+        if (c == 0 && first_chunk != 1) {
+            return deadeye_mp4_table_error("stsc_must_start_at_chunk_one");
+        }
+        previous_first_chunk = first_chunk;
+    }
+
+    int sample_index = 0;
+    int total_bytes = 0;
+    int run_index = 0;
+    int run_first_chunk = stsc[0];
+    int run_samples_per_chunk = stsc[1];
+    for (int chunk = 1; chunk <= chunks; chunk += 1) {
+        if (run_index + 1 < chunk_runs &&
+            chunk >= stsc[(run_index + 1) * 3]) {
+            run_index += 1;
+            run_first_chunk = stsc[run_index * 3];
+            run_samples_per_chunk = stsc[run_index * 3 + 1];
+        }
+        if (chunk < run_first_chunk) {
+            return deadeye_mp4_table_error("unmapped_chunk");
+        }
+        int offset = chunk_offsets[chunk - 1];
+        if (offset < 0 || (chunk > 1 && offset <= chunk_offsets[chunk - 2])) {
+            return deadeye_mp4_table_error("non_monotonic_chunk_offsets");
+        }
+        if (run_samples_per_chunk > samples - sample_index) {
+            return deadeye_mp4_table_error("chunk_sample_count_overflow");
+        }
+
+        int chunk_bytes = 0;
+        for (int j = 0; j < run_samples_per_chunk; j += 1) {
+            int sample_size = sample_sizes[sample_index + j];
+            if (sample_size < 1 || sample_size > DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+                return deadeye_mp4_table_error("invalid_sample_size");
+            }
+            if (sample_size > DEADEYE_MP4_MAX_SAMPLE_BYTES - chunk_bytes) {
+                return deadeye_mp4_table_error("chunk_size_limit");
+            }
+            chunk_bytes += sample_size;
+        }
+        if (chunk_bytes > DEADEYE_MP4_MAX_SAMPLE_BYTES - total_bytes) {
+            return deadeye_mp4_table_error("sample_bytes_limit");
+        }
+
+        int chunk_end = offset;
+        if (chunk_bytes > DEADEYE_MP4_MAX_SAMPLE_BYTES - chunk_end) {
+            return deadeye_mp4_table_error("chunk_extent_overflow");
+        }
+        chunk_end += chunk_bytes;
+        bool inside_mdat = false;
+        for (int r = 0; r < mdat_count; r += 1) {
+            int begin = mdat_ranges[r * 2];
+            int end = mdat_ranges[r * 2 + 1];
+            if (offset >= begin && chunk_end <= end) { inside_mdat = true; }
+        }
+        if (!inside_mdat) {
+            return deadeye_mp4_table_error("chunk_outside_mdat");
+        }
+        if (chunk < chunks && chunk_end > chunk_offsets[chunk]) {
+            return deadeye_mp4_table_error("overlapping_chunk_extents");
+        }
+        sample_index += run_samples_per_chunk;
+        total_bytes += chunk_bytes;
+    }
+
+    if (sample_index != samples) {
+        return deadeye_mp4_table_error("stsc_sample_count_mismatch");
+    }
+    return new DeadeyeMp4TableValidation{
+        ok: true, sample_count: samples, chunk_count: chunks,
+        total_duration: total_duration, total_sample_bytes: total_bytes,
+        error: ""
+    };
+}
+
+test "Deadeye sample tables validate bounded time, chunk and mdat mappings" {
+    List<int> stts = [4, 1000];
+    List<int> stsc = [1, 2, 1];
+    List<int> sizes = [4, 5, 6, 7];
+    List<int> offsets = [100, 120];
+    List<int> ranges = [100, 140];
+    DeadeyeMp4TableValidation result =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes, offsets, ranges);
+    assert(result.ok);
+    assert(result.sample_count == 4 && result.chunk_count == 2);
+    assert(result.total_duration == 4000 && result.total_sample_bytes == 22);
+}
+
+test "Deadeye sample tables reject duration and sample-count overflow" {
+    List<int> stsc = [1, 1, 1];
+    List<int> sizes = [1, 1];
+    List<int> offsets = [100, 110];
+    List<int> ranges = [100, 120];
+    DeadeyeMp4TableValidation duration =
+        deadeye_mp4_validate_sample_tables([2, 2147483647], stsc,
+            sizes, offsets, ranges);
+    assert(!duration.ok && duration.error == "duration_limit");
+    DeadeyeMp4TableValidation mismatch =
+        deadeye_mp4_validate_sample_tables([1, 1], stsc,
+            sizes, offsets, ranges);
+    assert(!mismatch.ok && mismatch.error == "stts_sample_count_mismatch");
+}
+
+test "Deadeye sample tables reject malformed stsc and unmapped samples" {
+    List<int> stts = [3, 1];
+    List<int> sizes = [1, 1, 1];
+    List<int> offsets = [100, 110];
+    List<int> ranges = [100, 120];
+    DeadeyeMp4TableValidation first_chunk =
+        deadeye_mp4_validate_sample_tables(stts, [2, 1, 1],
+            sizes, offsets, ranges);
+    assert(!first_chunk.ok && first_chunk.error == "stsc_must_start_at_chunk_one");
+    DeadeyeMp4TableValidation sample_mismatch =
+        deadeye_mp4_validate_sample_tables(stts, [1, 1, 1],
+            sizes, offsets, ranges);
+    assert(!sample_mismatch.ok && sample_mismatch.error == "stsc_sample_count_mismatch");
+}
+
+test "Deadeye sample tables reject out-of-mdat and overlapping extents" {
+    List<int> stts = [2, 1];
+    List<int> stsc = [1, 1, 1];
+    List<int> sizes = [8, 8];
+    DeadeyeMp4TableValidation outside =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
+            [100, 200], [100, 116]);
+    assert(!outside.ok && outside.error == "chunk_outside_mdat");
+    DeadeyeMp4TableValidation overlap =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
+            [100, 108], [100, 120]);
+    assert(!overlap.ok && overlap.error == "overlapping_chunk_extents");
+}
+
+test "Deadeye sample tables reject bad ranges, zero sizes and nonmonotonic offsets" {
+    List<int> stts = [2, 1];
+    List<int> stsc = [1, 1, 1];
+    List<int> sizes = [0, 1];
+    List<int> offsets = [100, 110];
+    List<int> ranges = [100, 120];
+    DeadeyeMp4TableValidation zero =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes, offsets, ranges);
+    assert(!zero.ok && zero.error == "invalid_sample_size");
+    DeadeyeMp4TableValidation order =
+        deadeye_mp4_validate_sample_tables(stts, stsc, [1, 1],
+            [110, 100], ranges);
+    assert(!order.ok && order.error == "non_monotonic_chunk_offsets");
+    DeadeyeMp4TableValidation bad_range =
+        deadeye_mp4_validate_sample_tables(stts, stsc, [1, 1],
+            offsets, [100, 90]);
+    assert(!bad_range.ok && bad_range.error == "invalid_mdat_range");
+}
