@@ -1,6 +1,6 @@
 # Helm H0-B — bare-metal target feasibility and implementation plan
 
-**Status:** source-level feasibility audit; no target implementation or QEMU execution claimed  
+**Status:** H0-B source audit complete; H0-C0 entry/linker substrate authored; no Capstan kernel backend, boot image or QEMU execution claimed  
 **Date:** 2026-11-26  
 **Branch:** `helm/h0b-limine-feasibility-2026-11-26`  
 **Depends on:** `HELM-ADR-001.md`, `HELM-THREAT-MODEL.md`, `HELM-INVARIANTS.md`
@@ -9,7 +9,7 @@
 
 Capstan has a useful but deliberately narrow x86-64 native code-generation prototype on `main`. It emits scalar CCAM programs as GNU assembler source and the test suite assembles and links freestanding Linux ELF executables without a C compiler or C runtime in the *target executable*.
 
-This is not yet a kernel backend. The current entry point, process exit path, and platform contract are Linux-specific. The current CCAM machine also lacks the memory, byte-view, I/O, interrupt, atomic and privileged-instruction semantics required for a kernel. There is no discovered Limine boot target, kernel linker script, kernel entry stub, QEMU kernel smoke test or kernel-specific build target in the inspected source paths.
+This is not yet a kernel backend. The current entry point, process exit path, and platform contract are Linux-specific. The current CCAM machine also lacks the memory, byte-view, I/O, interrupt, atomic and privileged-instruction semantics required for a kernel. The repository now contains an initial Limine-oriented x86-64 entry stub and a permission-separated higher-half ELF linker script, plus a host-side artifact contract test. There is still no Capstan kernel backend, bootable Limine image, pinned bootloader binary/configuration, QEMU smoke test or kernel-specific compiler target.
 
 **Conclusion:** a small x86-64 kernel proof-of-execution is feasible without introducing a C implementation, but it requires a distinct kernel target adapter and a narrowly specified Capstan memory/platform interface. Do not fork or relabel the Linux process emitter as a kernel emitter. Preserve the Linux backend as a conformance target and factor shared instruction emission only where the contracts genuinely match.
 
@@ -182,7 +182,7 @@ The initial executable model is in `verification/helm_boot_memory_model.cap` and
 
 The model is intentionally not described as a kernel memory accessor. It uses ordinary Capstan lists and is intended to be an executable semantic reference for the later hardware adapter. The snapshot breaks aliasing with the caller's source list, but Capstan structs do not yet provide a private/immutable field boundary; direct mutation of the model's exposed list is therefore not prevented by the type system. The later kernel view must be an opaque capability whose byte storage cannot be mutated through ordinary code. Its test status remains UNKNOWN until the exact branch is run through CI or a local Capstan test runner.
 
-## 10. H0-B acceptance checklist
+## 10. H0-B and H0-C0 acceptance checklist
 
 | Requirement | Current result |
 |---|---|
@@ -194,11 +194,11 @@ The model is intentionally not described as a kernel memory accessor. It uses or
 | Bare-metal target implementation | NOT STARTED |
 | Kernel linker script and image | NOT STARTED |
 | QEMU boot test | NOT STARTED |
-| Boot-memory view semantics | SPECIFICATION REQUIRED |
+| Boot-memory view semantics | REFERENCE MODEL EXISTS; hardware adapter and opaque capability NOT IMPLEMENTED |
 | Kernel code execution at ring 0 | NOT DEMONSTRATED |
 | Memory isolation/security proof | NOT CLAIMED |
 
-H0-B is complete as a source-level feasibility and dependency assessment, with an initial Capstan reference model added for the unsigned-address and bounded-view semantics. The model has not yet been executed in this review. H0-C remains blocked on the target adapter, linker/image, pinned bootloader/emulator harness and a hardware-backed memory-view implementation. No implementation test or proof is implied by this report.
+H0-B is complete as a source-level feasibility and dependency assessment. H0-C0 has begun: `_start` disables interrupts, clears the direction flag, switches to a private 64 KiB bootstrap stack and calls the separately supplied `helm_kernel_main`; the linker script defines distinct RX, R and RW load segments at the Limine higher-half base. The artifact test assembles and links a stub image and inspects its ELF headers, program headers, symbols and entry disassembly. This does not yet execute the image, establish an IDT, parse boot metadata, or provide a Capstan-generated kernel routine. CI results for the new test are pending; no local execution or QEMU boot is claimed.
 
 ## 10. External protocol references
 
