@@ -72,6 +72,21 @@ dimension fails, every counter remains unchanged. Release follows the same patte
 every amount is validated against the corresponding used counter before any decrement.
 No saturating arithmetic, wraparound, or partial reservation is permitted.
 
+The supported acquisition path now returns a one-shot `HalyardReservation`
+capability via `halyard_ledger_acquire`. The matching
+`halyard_reservation_release` consumes that capability only after a successful
+ledger decrement; a second release through the same capability is rejected without
+changing counters. Rejected acquisition returns no capability. This closes the
+ordinary duplicate-release path in sequential use and makes the intended ownership
+protocol explicit.
+
+This is not yet a non-forgeable lease: Capstan struct fields remain public, and the
+low-level `halyard_ledger_reserve` / `halyard_ledger_release` primitives remain
+available for the current regression suite and internal composition. Untrusted callers
+must not be given direct access to those primitives or allowed to construct/mutate
+reservation values. Opaque/linear types and synchronised ownership are still required
+before this can be treated as a security boundary. No concurrent-safety claim is made.
+
 The current `HalyardLedger` is a **live reservation ledger**, not a cumulative
 consumption budget. Its counters represent currently admitted occupancy/outstanding
 work; releasing a lease returns that live capacity. In particular, callers must not use
