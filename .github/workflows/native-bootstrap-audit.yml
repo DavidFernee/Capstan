@@ -1,0 +1,66 @@
+name: Native bootstrap ELF harness
+
+on:
+  push:
+    branches:
+      - research/native-compiler-bootstrap
+    paths:
+      - "research/native-bootstrap/**"
+      - ".github/workflows/native-bootstrap-audit.yml"
+      - "verification/ccam_core.cap"
+      - "verification/ccam_calls.cap"
+      - "verification/ccam_lowering.cap"
+      - "verification/ccam_native_x64.cap"
+      - "compiler/ast.cap"
+      - "compiler/lexer.cap"
+      - "compiler/parser.cap"
+      - "compiler/checker.cap"
+      - "Makefile"
+      - "bin/capstan"
+
+  pull_request:
+    paths:
+      - "research/native-bootstrap/**"
+      - ".github/workflows/native-bootstrap-audit.yml"
+      - "verification/ccam_core.cap"
+      - "verification/ccam_calls.cap"
+      - "verification/ccam_lowering.cap"
+      - "verification/ccam_native_x64.cap"
+      - "compiler/ast.cap"
+      - "compiler/lexer.cap"
+      - "compiler/parser.cap"
+      - "compiler/checker.cap"
+      - "Makefile"
+      - "bin/capstan"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-freestanding-elf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out isolated research branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Run bounded ELF inspection fixture
+        run: |
+          chmod +x research/native-bootstrap/check-elf.sh
+          research/native-bootstrap/check-elf.sh research/native-bootstrap/fixtures/exit-42.s 42
+      - name: Generate Capstan native assembly (transitional bootstrap)
+        run: |
+          make -s bootstrap
+          ./bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/ccam_native_x64.cap
+      - name: Inspect and execute Capstan-emitted native programs
+        run: |
+          set -eu
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64.s 42
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-loop.s 42
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-recursion.s 42
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-overflow.s 70
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-divzero.s 71
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-div-overflow.s 70
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-rem-min.s 0
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-step-limit.s 73
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-depth-limit.s 74
+          research/native-bootstrap/check-elf.sh build/ccam-native-x64-uninitialised.s 75
