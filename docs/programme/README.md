@@ -2,7 +2,7 @@
 
 **Status:** proposed programme baseline for review  
 **Revision date:** 2026-11-25  
-**Scope:** Capstan, Shroud, Anchor and Keel
+**Scope:** Capstan, Shroud, Anchor, Keel, Shanty and Deadeye, with shared Capstan Media Core
 
 ## Purpose
 
@@ -18,8 +18,12 @@ The programme deliberately distinguishes implementation maturity from assurance 
 | **Shroud** | Reusable GUI framework: layout, widgets, input, focus, text, rendering, export and narrow platform hosts | Language acceptance, compiler security policy, 3D scene/simulation semantics |
 | **Anchor** | IDE, project/workspace UX, editor integration, diagnostics presentation, build/test/debug workflows and developer-facing orchestration | A second compiler, independent type checker, or alternative security-policy authority |
 | **Keel** | 3D engine: scene model, geometry, assets, animation/simulation, rendering orchestration, GPU resource lifecycle and engine-specific APIs | A second GUI framework, language/compiler semantics, unrestricted platform/GPU trust |
+| **Shanty** | Independent audio engine: ingest, decode/encode, playback/capture, mixing, resampling, synthesis, spatialisation and audio processing | Video engine, shared media primitives, GUI framework or a third-party multimedia runtime |
+| **Deadeye** | Independent video/image engine: ingest, demux/decode, encode, frame scheduling, presentation, composition, colour management and streaming | Audio engine, shared media primitives, GUI framework or a third-party multimedia runtime |
 
-Shroud is a reusable framework. Anchor is built on Shroud. Keel is also built on Shroud but owns its 3D engine abstractions. Capstan provides the language/runtime substrate and compiler services. Product boundaries are contractual; shared code does not imply shared ownership of semantics.
+**Capstan Media Core** is a shared architectural component, not a seventh product: it owns bounded byte streams, buffers, rational clocks/timebases, resource accounting, format/codec registry and worker contracts. Core must not depend on Shanty or Deadeye; both engines depend on Core and remain independently usable.
+
+Shroud is a reusable framework. Anchor and Keel consume Shroud presentation APIs; Keel owns its 3D engine abstractions. Shanty and Deadeye consume Media Core and expose stable presentation surfaces/events to Shroud. Keel may orchestrate media graphs but must not duplicate codec semantics. Capstan provides the language/runtime substrate and compiler services. All media implementation code is authored from scratch in Capstan; external media frameworks and codec implementations are not runtime/build dependencies. Product boundaries are contractual; shared code does not imply shared ownership of semantics.
 
 ## Architecture
 
@@ -56,7 +60,7 @@ flowchart TB
   E --> K
 ```
 
-The arrows represent architectural dependencies, not a serial release schedule. Product teams may progress in parallel against versioned contracts and mocks. No cycle is permitted: the compiler must not depend on Shroud, Anchor or Keel; Anchor must consume compiler services rather than reimplement compiler rules.
+The arrows represent architectural dependencies, not a serial release schedule. Product teams may progress in parallel against versioned contracts and mocks. No cycle is permitted: the compiler must not depend on Shroud, Anchor, Keel or Media; Media Core must not depend on Shanty/Deadeye; Shanty and Deadeye must not depend on each other; Anchor must consume compiler services rather than reimplement compiler rules. Shroud owns presentation adapters, not codecs. Keel may orchestrate media graphs but does not own media format semantics.
 
 ## Programme milestones
 
@@ -70,8 +74,12 @@ The arrows represent architectural dependencies, not a serial release schedule. 
 | M5 | Shroud framework | GUI contracts, rendering/resource bounds, input/focus, text, platform hosts and accessibility conformance |
 | M6 | Anchor IDE | IDE workflows consume canonical Capstan services and remain isolated from untrusted workspaces/projects |
 | M7 | Keel engine | Bounded asset/scene pipeline, deterministic core, rendering/GPU lifecycle contracts and vertical slice |
-| M8 | Research validation | Research claims are falsifiable, reproducible, independently reviewable and publication-scoped |
-| M9 | Product release qualification | Each product independently satisfies its release gates; ecosystem compatibility is demonstrated |
+| M8 | Capstan Media Core | Bounded streams/buffers, rational timebases, aggregate resource ledger, format registry and worker contract |
+| M9 | Shanty audio engine | WAV/PCM offline slice, deterministic processing, then independently gated playback/capture and codec expansion |
+| M10 | Deadeye video/image engine | Selected bounded image/frame slice, then demux/decode/encode and presentation expansion |
+| M11 | Cross-product integration | Shroud presentation adapters, Keel media orchestration, Anchor workflows and synchronised A/V interfaces |
+| M12 | Research validation | Research claims are falsifiable, reproducible, independently reviewable and publication-scoped |
+| M13 | Product release qualification | Each product independently satisfies its release gates; ecosystem compatibility is demonstrated |
 
 Milestones are outcomes, not calendar promises. A milestone may contain several independently pullable work packages.
 
@@ -124,3 +132,6 @@ Research questions are shared; each work package has one accountable product own
 - [V1 release scorecard](../assurance/V1-RELEASE-SCORECARD.md)
 - [Work board](WORK-BOARD.md)
 - [Stage gates](STAGE-GATES.md)
+- [Media architecture proposal](../media/ARCHITECTURE.md)
+- [Media format catalogue](../media/FORMAT-CATALOGUE.md)
+- [Media security assurance](../media/SECURITY-ASSURANCE.md)
