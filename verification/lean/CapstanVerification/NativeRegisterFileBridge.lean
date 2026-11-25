@@ -457,4 +457,89 @@ theorem nativeWriteRegister_preserves_finite_relation
       hdecl hinit hruntimeWrite
   ⟩
 
+
+/-- For corresponding native and runtime registers, the concrete tag check
+accepts exactly when the abstract declared-type check accepts. -/
+theorem nativeRegisterMatches_tag_eq_iff
+    (native : NativeCCAMRegister) (runtime : RuntimeRegister)
+    (nativeReplacement : NativeCCAMRegister)
+    (runtimeReplacement : RuntimeRegister)
+    (hmatch : NativeRegisterMatches native runtime)
+    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement) :
+    native.declaredTypeTag = nativeReplacement.declaredTypeTag ↔
+      runtime.declaredType = runtimeReplacement.declaredType := by
+  rcases hmatch with ⟨htag, _, _, _⟩
+  rcases hreplacement with ⟨hreplacementTag, _, _, _⟩
+  constructor
+  · intro htags
+    have hdecoded := congrArg decodeNativeTypeTag htags
+    rw [htag, hreplacementTag] at hdecoded
+    exact Option.some.inj hdecoded
+  · intro htypes
+    have hreplacementTag' :
+        decodeNativeTypeTag nativeReplacement.declaredTypeTag =
+          some runtime.declaredType := by
+      rw [← htypes]
+      exact hreplacementTag
+    cases htype : runtime.declaredType with
+    | int =>
+        have hleft := (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp
+          (by simpa [htype] using htag)
+        have hright :=
+          (decodeNativeTypeTag_int_iff nativeReplacement.declaredTypeTag).mp
+            (by simpa [htype] using hreplacementTag')
+        exact hleft.trans hright.symm
+    | bool =>
+        have hleft := (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp
+          (by simpa [htype] using htag)
+        have hright :=
+          (decodeNativeTypeTag_bool_iff nativeReplacement.declaredTypeTag).mp
+            (by simpa [htype] using hreplacementTag')
+        exact hleft.trans hright.symm
+
+/-- Given witnesses for the same existing slot in related files, native and
+abstract dynamic writes have identical success/failure acceptance decisions.
+The separate preservation theorem supplies the relation between successful
+outputs. -/
+theorem nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hrel : NativeRuntimeRegisterFileRelation native runtime)
+    (index : Nat)
+    (oldNative : NativeCCAMRegister) (oldRuntime : RuntimeRegister)
+    (nativeReplacement : NativeCCAMRegister)
+    (runtimeReplacement : RuntimeRegister)
+    (hnativeSlot : native[index]? = some oldNative)
+    (hruntimeSlot : runtime[index]? = some oldRuntime)
+    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement) :
+    (∃ updated, nativeWriteRegister native index nativeReplacement = .ok updated) ↔
+      (∃ updated, runtimeWriteRegister runtime index runtimeReplacement = .ok updated) := by
+  have hmatch := hrel.matches_at index oldNative oldRuntime hnativeSlot hruntimeSlot
+  have htagEq := nativeRegisterMatches_tag_eq_iff oldNative oldRuntime
+    nativeReplacement runtimeReplacement hmatch hreplacement
+  constructor
+  · rintro ⟨updated, hwrite⟩
+    have hnativeType :
+        oldNative.declaredTypeTag = nativeReplacement.declaredTypeTag := by
+      by_cases htype :
+          oldNative.declaredTypeTag = nativeReplacement.declaredTypeTag
+      · exact htype
+      · simp [nativeWriteRegister, hnativeSlot, htype] at hwrite
+    have hruntimeType :
+        oldRuntime.declaredType = runtimeReplacement.declaredType :=
+      htagEq.mp hnativeType
+    refine ⟨runtimeSetAt runtime index runtimeReplacement, ?_⟩
+    simp [runtimeWriteRegister, runtimeRegisterAt, hruntimeSlot, hruntimeType]
+  · rintro ⟨updated, hwrite⟩
+    have hruntimeType :
+        oldRuntime.declaredType = runtimeReplacement.declaredType := by
+      by_cases htype :
+          oldRuntime.declaredType = runtimeReplacement.declaredType
+      · exact htype
+      · simp [runtimeWriteRegister, runtimeRegisterAt, hruntimeSlot, htype] at hwrite
+    have hnativeType :
+        oldNative.declaredTypeTag = nativeReplacement.declaredTypeTag :=
+      htagEq.mpr hruntimeType
+    refine ⟨nativeRegisterSetAt native index nativeReplacement, ?_⟩
+    simp [nativeWriteRegister, hnativeSlot, hnativeType]
+
 end CapstanVerification
