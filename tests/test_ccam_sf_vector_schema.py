@@ -55,6 +55,20 @@ class CorpusSchemaNegativeControls(unittest.TestCase):
                 {"outcome": {"kind": "not_executed", "code": "unexpected"}},
                 "negative-control")
 
+    def test_halt_cannot_smuggle_unrecognised_fields(self):
+        with self.assertRaises(ValueError):
+            VALIDATOR.check_outcome(
+                {"outcome": {"kind": "halt", "value": {"type": "int", "value": 1},
+                             "ignored": "payload"}},
+                "negative-control")
+
+    def test_trap_detail_must_be_a_string(self):
+        with self.assertRaises(ValueError):
+            VALIDATOR.check_outcome(
+                {"outcome": {"kind": "trap", "code": "explicit_trap",
+                             "pc": 0, "detail": 7}},
+                "negative-control")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
