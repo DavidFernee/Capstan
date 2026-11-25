@@ -86,7 +86,9 @@ else
 fi
 
 section "Helm H0-C0: freestanding x86-64 entry and ELF layout"
-if out="$(bash "$ROOT/tests/helm/check_boot_artifacts.sh" 2>&1)"; then
+if [[ "$(uname)" != Linux ]]; then
+  echo "  skip  ELF boot-artifact contract requires Linux GNU binutils"
+elif out="$(bash "$ROOT/tests/helm/check_boot_artifacts.sh" 2>&1)"; then
   ok "$out"
 else
   bad "Helm H0-C0 boot artifacts" "$out"
