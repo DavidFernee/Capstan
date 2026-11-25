@@ -1399,3 +1399,14 @@ test "CCAM source lowering preserves short-circuit call suppression" {
     assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
     assert(machine.trap_code == "");
 }
+
+test "CCAM literal byte decoder round-trips every octet through escape_c" {
+    for (int value = 0; value <= 255; value += 1) {
+        string original = char_str(value);
+        string canonical = escape_c(original);
+        CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(canonical, 1);
+        assert(decoded.ok);
+        assert(decoded.bytes.len() == 1);
+        assert(decoded.bytes[0] == value);
+    }
+}
