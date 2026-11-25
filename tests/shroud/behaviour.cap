@@ -712,23 +712,24 @@ void test_a11y_untrusted(Tally t, Ui ui) {
 
 void test_a11y_json_escaping(Tally t) {
     List<string> states = new List<string>();
-    states.push("focused\\\",\\\"injected\\\":true");
+    states.push("focused\",\"injected\":true");
     A11yNode hostile = new A11yNode{
-        id: "node\\\",\\\"injected\\\":true",
-        role: "button\\\",\\\"injected\\\":true",
-        name: taint("name\\\",\\\"injected\\\":true"),
+        id: "node\",\"injected\":true",
+        role: "button\",\"injected\":true",
+        name: taint("name\",\"injected\":true"),
         value: taint(""),
         states: states,
         bounds: rect(0, 0, 1, 1),
         kids: new List<A11yNode>()
     };
     string json = a11y_json(hostile);
-    expect(t, !contains(json, "\\\\"injected\\\\\\\":true"),
-        "a11y JSON: public node fields cannot inject JSON members", json);
-    expect(t, contains(json, escape_json(taint(hostile.role))),
-        "a11y JSON: role is escaped at the serialization boundary", json);
-    expect(t, contains(json, escape_json(hostile.name)),
-        "a11y JSON: name is escaped exactly once at the serialization boundary", json);
+    string expected = "{\"id\":\"" + escape_json(taint(hostile.id)) +
+        "\",\"role\":\"" + escape_json(taint(hostile.role)) +
+        "\",\"name\":\"" + escape_json(hostile.name) +
+        "\",\"states\":[\"" + escape_json(taint(states[0])) +
+        "\"],\"bounds\":[0,0,1,1]}";
+    expect(t, json == expected,
+        "a11y JSON: every public string field is escaped exactly once", json);
 }
 
 void test_themes(Tally t) {
