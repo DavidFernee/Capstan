@@ -1,0 +1,217 @@
+// Capstan-native JSON string-body decoder.
+// The caller supplies bytes between the surrounding quotation marks.
+// Output remains Tainted. This routine validates UTF-8 and JSON escapes;
+// it does not scan object/array structure or validate the enclosing document.
+
+const int CCAM_JSON_MAX_STRING_BYTES = 1048576;
+const int CCAM_JSON_MAX_STRING_TOKEN_BYTES = 6291456;
+
+struct CCAMJsonStringResult {
+    bool ok;
+    Tainted value;
+    int error;
+}
+
+int ccam_json_hex_digit(int c) {
+    if (c >= '0' && c <= '9') { return c - '0'; }
+    if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+    if (c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+    return -1;
+}
+
+int ccam_json_hex4(Tainted token, int pos) {
+    if (pos < 0 || pos + 4 > token.len()) { return -1; }
+    int value = 0;
+    for (int j = 0; j < 4; j += 1) {
+        int digit = ccam_json_hex_digit(token.at(pos + j));
+        if (digit < 0) { return -1; }
+        value = value * 16 + digit;
+    }
+    return value;
+}
+
+Tainted ccam_json_encode_scalar(int cp) {
+    Tainted out = taint("");
+    if (cp <= 0x7F) {
+        return taint_char(cp);
+    }
+    if (cp <= 0x7FF) {
+        out = out + taint_char(0xC0 | (cp >> 6));
+        out = out + taint_char(0x80 | (cp & 0x3F));
+        return out;
+    }
+    if (cp <= 0xFFFF) {
+        out = out + taint_char(0xE0 | (cp >> 12));
+        out = out + taint_char(0x80 | ((cp >> 6) & 0x3F));
+        out = out + taint_char(0x80 | (cp & 0x3F));
+        return out;
+    }
+    out = out + taint_char(0xF0 | (cp >> 18));
+    out = out + taint_char(0x80 | ((cp >> 12) & 0x3F));
+    out = out + taint_char(0x80 | ((cp >> 6) & 0x3F));
+    out = out + taint_char(0x80 | (cp & 0x3F));
+    return out;
+}
+
+CCAMJsonStringResult ccam_json_string_error(int code) {
+    return new CCAMJsonStringResult{ok: false, value: taint(""), error: code};
+}
+
+CCAMJsonStringResult ccam_json_decode_string_body(Tainted token) {
+    int n = token.len();
+    if (n > CCAM_JSON_MAX_STRING_TOKEN_BYTES) { return ccam_json_string_error(1); }
+
+    Tainted out = taint("");
+    int i = 0;
+    while (i < n) {
+        int c = token.at(i);
+        Tainted piece = taint("");
+        int width = 1;
+
+        if (c == 92) {
+            if (i + 1 >= n) { return ccam_json_string_error(2); }
+            int e = token.at(i + 1);
+            if (e == 34 || e == 92 || e == 47) {
+                piece = taint_char(e);
+                width = 2;
+            } else if (e == 'b') {
+                piece = taint_char(8); width = 2;
+            } else if (e == 'f') {
+                piece = taint_char(12); width = 2;
+            } else if (e == 'n') {
+                piece = taint_char(10); width = 2;
+            } else if (e == 'r') {
+                piece = taint_char(13); width = 2;
+            } else if (e == 't') {
+                piece = taint_char(9); width = 2;
+            } else if (e == 'u') {
+                if (i + 6 > n) { return ccam_json_string_error(2); }
+                int first = ccam_json_hex4(token, i + 2);
+                if (first < 0) { return ccam_json_string_error(3); }
+                int cp = first;
+                width = 6;
+                if (first >= 0xD800 && first <= 0xDBFF) {
+                    if (i + 12 > n || token.at(i + 6) != 92 || token.at(i + 7) != 'u') {
+                        return ccam_json_string_error(4);
+                    }
+                    int second = ccam_json_hex4(token, i + 8);
+                    if (second < 0xDC00 || second > 0xDFFF) {
+                        return ccam_json_string_error(4);
+                    }
+                    cp = 0x10000 + ((first - 0xD800) * 1024) + (second - 0xDC00);
+                    width = 12;
+                } else if (first >= 0xDC00 && first <= 0xDFFF) {
+                    return ccam_json_string_error(4);
+                }
+                piece = ccam_json_encode_scalar(cp);
+            } else {
+                return ccam_json_string_error(3);
+            }
+        } else if (c < 0x20) {
+            return ccam_json_string_error(3);
+        } else if (c <= 0x7F) {
+            piece = token.slice(i, i + 1);
+        } else {
+            if (c >= 0xC2 && c <= 0xDF) {
+                width = 2;
+                if (i + width > n || token.at(i + 1) < 0x80 || token.at(i + 1) > 0xBF) {
+                    return ccam_json_string_error(5);
+                }
+            } else if (c == 0xE0) {
+                width = 3;
+                if (i + width > n || token.at(i + 1) < 0xA0 || token.at(i + 1) > 0xBF ||
+                    token.at(i + 2) < 0x80 || token.at(i + 2) > 0xBF) {
+                    return ccam_json_string_error(5);
+                }
+            } else if ((c >= 0xE1 && c <= 0xEC) || (c >= 0xEE && c <= 0xEF)) {
+                width = 3;
+                if (i + width > n || token.at(i + 1) < 0x80 || token.at(i + 1) > 0xBF ||
+                    token.at(i + 2) < 0x80 || token.at(i + 2) > 0xBF) {
+                    return ccam_json_string_error(5);
+                }
+            } else if (c == 0xED) {
+                width = 3;
+                if (i + width > n || token.at(i + 1) < 0x80 || token.at(i + 1) > 0x9F ||
+                    token.at(i + 2) < 0x80 || token.at(i + 2) > 0xBF) {
+                    return ccam_json_string_error(5);
+                }
+            } else if (c == 0xF0) {
+                width = 4;
+                if (i + width > n || token.at(i + 1) < 0x90 || token.at(i + 1) > 0xBF ||
+                    token.at(i + 2) < 0x80 || token.at(i + 2) > 0xBF ||
+                    token.at(i + 3) < 0x80 || token.at(i + 3) > 0xBF) {
+                    return ccam_json_string_error(5);
+                }
+            } else if (c >= 0xF1 && c <= 0xF3) {
+                width = 4;
+                if (i + width > n || token.at(i + 1) < 0x80 || token.at(i + 1) > 0xBF ||
+                    token.at(i + 2) < 0x80 || token.at(i + 2) > 0xBF ||
+                    token.at(i + 3) < 0x80 || token.at(i + 3) > 0xBF) {
+                    return ccam_json_string_error(5);
+                }
+            } else if (c == 0xF4) {
+                width = 4;
+                if (i + width > n || token.at(i + 1) < 0x80 || token.at(i + 1) > 0x8F ||
+                    token.at(i + 2) < 0x80 || token.at(i + 2) > 0xBF ||
+                    token.at(i + 3) < 0x80 || token.at(i + 3) > 0xBF) {
+                    return ccam_json_string_error(5);
+                }
+            } else {
+                return ccam_json_string_error(5);
+            }
+            piece = token.slice(i, i + width);
+        }
+
+        if (out.len() > CCAM_JSON_MAX_STRING_BYTES - piece.len()) {
+            return ccam_json_string_error(6);
+        }
+        out = out + piece;
+        i += width;
+    }
+    return new CCAMJsonStringResult{ok: true, value: out, error: 0};
+}
+
+int main() {
+    CCAMJsonStringResult r = ccam_json_decode_string_body(taint("plain"));
+    if (!r.ok || r.value != "plain") { return 1; }
+    r = ccam_json_decode_string_body(taint("\\\"\\\\\\/"));
+    if (!r.ok || r.value.len() != 3 || r.value.at(0) != 34 || r.value.at(1) != 92 || r.value.at(2) != 47) { return 1; }
+    r = ccam_json_decode_string_body(taint("\\b\\f\\n\\r\\t"));
+    if (!r.ok || r.value.len() != 5 || r.value.at(0) != 8 || r.value.at(1) != 12 ||
+        r.value.at(2) != 10 || r.value.at(3) != 13 || r.value.at(4) != 9) { return 1; }
+    r = ccam_json_decode_string_body(taint("\\u0041\\u20AC"));
+    if (!r.ok || r.value.len() != 4 || r.value.at(0) != 65 ||
+        r.value.at(1) != 0xE2 || r.value.at(2) != 0x82 || r.value.at(3) != 0xAC) { return 1; }
+    r = ccam_json_decode_string_body(taint("\\uD83D\\uDE00"));
+    if (!r.ok || r.value.len() != 4 || r.value.at(0) != 0xF0 ||
+        r.value.at(1) != 0x9F || r.value.at(2) != 0x98 || r.value.at(3) != 0x80) { return 1; }
+    if (ccam_json_decode_string_body(taint("\\uD800")).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint("\\uDC00")).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint("\\uD800\\u0041")).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint("\\x41")).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(10)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(0xC0) + taint_char(0x80)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(0xED) + taint_char(0xA0) + taint_char(0x80)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(0xF4) + taint_char(0x90) + taint_char(0x80) + taint_char(0x80)).ok) { return 1; }
+    println("CCAM JSON string decoder: ok");
+    return 0;
+}
+
+test "CCAM JSON string decoder decodes escapes and surrogate pairs" {
+    CCAMJsonStringResult a = ccam_json_decode_string_body(taint("\\u0041\\u20AC"));
+    assert(a.ok && a.value.len() == 4 && a.value.at(0) == 65);
+    CCAMJsonStringResult b = ccam_json_decode_string_body(taint("\\uD83D\\uDE00"));
+    assert(b.ok && b.value.len() == 4 && b.value.at(0) == 0xF0);
+}
+
+test "CCAM JSON string decoder rejects malformed escapes and surrogates" {
+    assert(!ccam_json_decode_string_body(taint("\\uD800")).ok);
+    assert(!ccam_json_decode_string_body(taint("\\uDC00")).ok);
+    assert(!ccam_json_decode_string_body(taint("\\x41")).ok);
+}
+
+test "CCAM JSON string decoder rejects invalid UTF-8 and raw controls" {
+    assert(!ccam_json_decode_string_body(taint_char(10)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xC0) + taint_char(0x80)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xED) + taint_char(0xA0) + taint_char(0x80)).ok);
+}
