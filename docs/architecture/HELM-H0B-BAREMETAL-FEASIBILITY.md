@@ -198,7 +198,7 @@ The model is intentionally not described as a kernel memory accessor. It uses or
 | Kernel code execution at ring 0 | NOT DEMONSTRATED |
 | Memory isolation/security proof | NOT CLAIMED |
 
-H0-B is complete as a source-level feasibility and dependency assessment. H0-C0 has begun: `_start` disables interrupts, clears the direction flag, switches to a private 64 KiB bootstrap stack and calls the separately supplied `helm_kernel_main`; the linker script defines distinct RX, R and RW load segments at the Limine higher-half base. The artifact test assembles and links a stub image and inspects its ELF headers, program headers, symbols and entry disassembly. This does not yet execute the image, establish an IDT, parse boot metadata, or provide a Capstan-generated kernel routine. CI results for the new test are pending; no local execution or QEMU boot is claimed.
+H0-B is complete as a source-level feasibility and dependency assessment. H0-C0 has begun: `_start` disables interrupts, clears the direction flag, checks that Limine set the base-revision-6 support marker to zero (otherwise it halts), switches to a private 64 KiB bootstrap stack and calls the separately supplied `helm_kernel_main`; the linker script defines distinct RX, R and RW load segments at the Limine higher-half base. The artifact test assembles and links a stub image and inspects its ELF headers, program headers, symbols and entry disassembly. This does not yet execute the image, establish an IDT, parse boot metadata, or provide a Capstan-generated kernel routine. CI results for the new test are pending; no local execution or QEMU boot is claimed.
 
 ## 10. External protocol references
 
