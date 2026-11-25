@@ -240,6 +240,8 @@ int main() {
     } else { return 27; }
     Font truncated = truncated_composite_args_fixture();
     List<int> truncated_budget = new List<int>();
+    truncated_budget.push(MAX_GLYPH_POINTS_TOTAL);
+    truncated_budget.push(MAX_COMPOSITE_COMPONENTS_TOTAL);
     Path truncated_path = new_path();
     bool truncated_ok = glyph_outline_budgeted(
         truncated, 1, truncated_path, 16384, 1, 0, 0,
