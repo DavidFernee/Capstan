@@ -374,11 +374,10 @@ DeadeyeMp4TrackParts deadeye_mp4_find_track_parts(
     };
 }
 
-DeadeyeMp4TrackResult deadeye_mp4_parse_trak(
+DeadeyeMp4TrackResult deadeye_mp4_parse_trak_validated(
     List<int> bytes, DeadeyeMp4Box trak, List<int> mdat_ranges
 ) {
-    if (!deadeye_mp4_track_range_bytes_valid(bytes,0,bytes.len()) ||
-        trak.start < 0 || trak.start >= bytes.len()) {
+    if (trak.start < 0 || trak.start >= bytes.len()) {
         return deadeye_mp4_track_error("invalid_trak_input");
     }
     DeadeyeMp4BoxResult actual = deadeye_mp4_box_read(
@@ -456,6 +455,19 @@ bool deadeye_mp4_track_file_valid(List<int> bytes) {
 
 // Public movie entrypoint derives every mdat interval from the actual top-level
 // file. It does not trust caller-supplied offsets or a caller-forged moov box.
+
+// Standalone entrypoint validates the entire caller-owned byte vector once.
+// The movie parser uses the already-validated internal path to avoid rescanning
+// a large file once per track (which would amplify CPU work by track_count).
+DeadeyeMp4TrackResult deadeye_mp4_parse_trak(
+    List<int> bytes, DeadeyeMp4Box trak, List<int> mdat_ranges
+) {
+    if (!deadeye_mp4_track_range_bytes_valid(bytes,0,bytes.len())) {
+        return deadeye_mp4_track_error("invalid_trak_input");
+    }
+    return deadeye_mp4_parse_trak_validated(bytes,trak,mdat_ranges);
+}
+
 DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
     List<int> bytes, DeadeyeMp4Box supplied_moov
 ) {
@@ -560,7 +572,7 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
             if (tracks.len() >= DEADEYE_MP4_MAX_TRACKS) {
                 return deadeye_mp4_movie_error("track_count_limit");
             }
-            DeadeyeMp4TrackResult result = deadeye_mp4_parse_trak(
+            DeadeyeMp4TrackResult result = deadeye_mp4_parse_trak_validated(
                 bytes,box,mdat_ranges
             );
             if (!result.ok) { return deadeye_mp4_movie_error(result.error); }
