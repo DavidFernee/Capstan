@@ -55,6 +55,21 @@ struct HalyardSinkSnapshotResult {
     List<int> bytes;
     string error;
 }
+ 
+struct HalyardManagedByteSink {
+    HalyardByteSink sink;
+    HalyardReservation reservation;
+    HalyardReservation retired_reservation;
+    bool has_retired_reservation;
+    bool closed;
+}
+
+struct HalyardManagedByteSinkResult {
+    bool ok;
+    HalyardManagedByteSink? managed;
+    string error;
+}
+
 
 // An in-memory bounded sink. It has no filesystem, network or device authority.
 HalyardByteSinkResult halyard_sink_create(int max_bytes) {
@@ -127,6 +142,149 @@ bool halyard_sink_close(HalyardByteSink sink) {
     sink.closed = true;
     return true;
 }
+
+// A managed sink keeps its current payload charged. Copy-on-commit temporarily
+// acquires a second full-payload lease before constructing the replacement.
+// After commit the previous lease is retired; if retirement fails, both leases
+// remain recorded and further writes are blocked until cleanup succeeds.
+HalyardManagedByteSinkResult halyard_managed_sink_create(
+    HalyardLedger ledger, int max_bytes
+) {
+    HalyardByteSinkResult made = halyard_sink_create(max_bytes);
+    if (!made.ok) {
+        return new HalyardManagedByteSinkResult{
+            ok: false, managed: none, error: made.error
+        };
+    }
+    HalyardBudgetCharge zero = new HalyardBudgetCharge{
+        input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+        decoded_units: 0, work_units: 0
+    };
+    HalyardReservationResult acquired = halyard_ledger_acquire(ledger, zero);
+    if (!acquired.ok) {
+        return new HalyardManagedByteSinkResult{
+            ok: false, managed: none, error: acquired.error
+        };
+    }
+    if (let sink = made.sink) {
+        if (let lease = acquired.reservation) {
+            HalyardReservation empty_retired = new HalyardReservation{
+                charge: zero, active: false
+            };
+            HalyardManagedByteSink managed = new HalyardManagedByteSink{
+                sink: sink, reservation: lease,
+                retired_reservation: empty_retired,
+                has_retired_reservation: false, closed: false
+            };
+            return new HalyardManagedByteSinkResult{
+                ok: true, managed: managed, error: ""
+            };
+        }
+    }
+    return new HalyardManagedByteSinkResult{
+        ok: false, managed: none, error: "sink_unavailable"
+    };
+}
+
+bool halyard_managed_sink_cleanup_retired(
+    HalyardLedger ledger, HalyardManagedByteSink managed
+) {
+    if (!managed.has_retired_reservation) { return true; }
+    if (!halyard_reservation_release(ledger, managed.retired_reservation)) {
+        return false;
+    }
+    managed.has_retired_reservation = false;
+    return true;
+}
+
+HalyardSinkWriteResult halyard_managed_sink_write_exact(
+    HalyardLedger ledger, HalyardManagedByteSink managed, List<int> input
+) {
+    if (managed.closed || managed.sink.closed) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: "closed"
+        };
+    }
+    if (!halyard_managed_sink_cleanup_retired(ledger, managed)) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: "retired_lease_pending"
+        };
+    }
+    if (!halyard_sink_state_valid(managed.sink)) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: "invalid_state"
+        };
+    }
+    if (input.len() > managed.sink.max_bytes - managed.sink.bytes.len()) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: "output_limit"
+        };
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) {
+            return new HalyardSinkWriteResult{
+                ok: false, written: 0, error: "invalid_byte"
+            };
+        }
+    }
+
+    int replacement_length = managed.sink.bytes.len() + input.len();
+    HalyardBudgetCharge replacement_charge = new HalyardBudgetCharge{
+        input_bytes: 0, retained_bytes: replacement_length,
+        output_bytes: replacement_length, decoded_units: 0, work_units: 0
+    };
+    HalyardReservationResult acquired =
+        halyard_ledger_acquire(ledger, replacement_charge);
+    if (!acquired.ok) {
+        return new HalyardSinkWriteResult{
+            ok: false, written: 0, error: acquired.error
+        };
+    }
+    if (let replacement_lease = acquired.reservation) {
+        HalyardSinkWriteResult wrote =
+            halyard_sink_write_exact(managed.sink, input);
+        if (!wrote.ok) {
+            halyard_reservation_release(ledger, replacement_lease);
+            return wrote;
+        }
+        HalyardReservation previous = managed.reservation;
+        managed.reservation = replacement_lease;
+        if (halyard_reservation_release(ledger, previous)) {
+            managed.has_retired_reservation = false;
+        } else {
+            managed.retired_reservation = previous;
+            managed.has_retired_reservation = true;
+        }
+        return wrote;
+    }
+    return new HalyardSinkWriteResult{
+        ok: false, written: 0, error: "lease_unavailable"
+    };
+}
+
+HalyardSinkSnapshotResult halyard_managed_sink_snapshot(
+    HalyardManagedByteSink managed
+) {
+    if (managed.closed) {
+        return new HalyardSinkSnapshotResult{
+            ok: false, bytes: new List<int>(), error: "closed"
+        };
+    }
+    return halyard_sink_snapshot(managed.sink);
+}
+
+bool halyard_managed_sink_close(
+    HalyardLedger ledger, HalyardManagedByteSink managed
+) {
+    if (managed.closed) { return false; }
+    if (!halyard_sink_close(managed.sink)) { return false; }
+    managed.closed = true;
+    bool current_released =
+        halyard_reservation_release(ledger, managed.reservation);
+    bool retired_released = halyard_managed_sink_cleanup_retired(ledger, managed);
+    return current_released && retired_released;
+}
+
 
 struct HalyardLedger {
     int limit_input_bytes;
@@ -1321,6 +1479,76 @@ test "Halyard bounded sink rejects corrupted public state" {
     }
 }
 
+
+
+test "Halyard managed sink charges both old and replacement payload during commit" {
+    HalyardLedgerResult made = halyard_ledger_create(0, 8, 8, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 4);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            List<int> first = new List<int>();
+            first.push(1); first.push(2);
+            assert(halyard_managed_sink_write_exact(ledger, managed, first).ok);
+            assert(ledger.used_retained_bytes == 2);
+            assert(ledger.used_output_bytes == 2);
+            List<int> second = new List<int>();
+            second.push(3); second.push(4);
+            assert(halyard_managed_sink_write_exact(ledger, managed, second).ok);
+            assert(ledger.used_retained_bytes == 4);
+            assert(ledger.used_output_bytes == 4);
+            assert(halyard_managed_sink_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_output_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed sink rejects capacity before acquiring replacement lease" {
+    HalyardLedgerResult made = halyard_ledger_create(0, 2, 2, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 2);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            List<int> first = new List<int>();
+            first.push(1); first.push(2);
+            assert(halyard_managed_sink_write_exact(ledger, managed, first).ok);
+            List<int> extra = new List<int>();
+            extra.push(3);
+            HalyardSinkWriteResult rejected =
+                halyard_managed_sink_write_exact(ledger, managed, extra);
+            assert(!rejected.ok && rejected.error == "reservation_rejected");
+            assert(ledger.used_retained_bytes == 2);
+            assert(ledger.used_output_bytes == 2);
+            assert(halyard_managed_sink_close(ledger, managed));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed sink preserves prior payload after invalid write" {
+    HalyardLedgerResult made = halyard_ledger_create(0, 8, 8, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 4);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            List<int> first = new List<int>();
+            first.push(9);
+            assert(halyard_managed_sink_write_exact(ledger, managed, first).ok);
+            List<int> invalid = new List<int>();
+            invalid.push(300);
+            HalyardSinkWriteResult rejected =
+                halyard_managed_sink_write_exact(ledger, managed, invalid);
+            assert(!rejected.ok && rejected.error == "invalid_byte");
+            HalyardSinkSnapshotResult snapshot = halyard_managed_sink_snapshot(managed);
+            assert(snapshot.ok && snapshot.bytes.len() == 1 && snapshot.bytes[0] == 9);
+            assert(ledger.used_retained_bytes == 1);
+            assert(halyard_managed_sink_close(ledger, managed));
+        } else { assert(false); }
+    } else { assert(false); }
+}
 
 test "Halyard source validation rejects forged bounds and bytes" {
     List<int> input = new List<int>();
