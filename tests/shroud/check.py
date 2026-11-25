@@ -315,7 +315,7 @@ def check_table_span_rejection(exe, tmp):
     # Redirect a Unicode cmap record into another in-file table, whose first bytes
     # are made a minimal format-12 subtable. The file bounds remain valid.
     target = next(((tag, off) for tag, (off, length) in sorted(tables.items(), key=lambda x: x[1][0], reverse=True)
-                   if off > cmap_off and off + 16 <= len(original)), None)
+                   if off > cmap_off and length >= 16 and off + 16 <= len(original)), None)
     if target is None:
         sys.exit("font table-span tests: no later table for adjacent-table mutation")
     _, target_off = target
@@ -323,6 +323,12 @@ def check_table_span_rejection(exe, tmp):
     struct.pack_into(">HHIII", b, target_off, 12, 0, 16, 0, 0)
     struct.pack_into(">I", b, cmap_record + 4, target_off - cmap_off)
     cases = [("cmap offset into adjacent table", b)]
+
+    # A truncated sfnt table directory must be rejected even when all required
+    # records happen to occur before the truncated boundary.
+    b = bytearray(original)
+    struct.pack_into(">H", b, 4, 0xFFFF)
+    cases.append(("truncated table directory", b))
 
     if sub_format == 12:
         b = bytearray(original)
@@ -339,6 +345,19 @@ def check_table_span_rejection(exe, tmp):
     loca_format = struct.unpack_from(">h", original, tables[b"head"][0] + 50)[0]
     loca_required = (glyphs + 1) * (4 if loca_format == 1 else 2)
     hmtx_required = 4 * metrics + 2 * (glyphs - metrics)
+    # Make one loca pair descend while leaving every byte inside the loca table.
+    loca_off, loca_len = tables[b"loca"]
+    entry_size = 4 if loca_format == 1 else 2
+    loca_values = [struct.unpack_from(">I" if entry_size == 4 else ">H", original,
+                                     loca_off + entry_size * i)[0] for i in range(glyphs + 1)]
+    pair = next((i for i in range(glyphs) if loca_values[i + 1] < (0xFFFFFFFF if entry_size == 4 else 0xFFFF)), None)
+    if pair is None:
+        sys.exit("font table-span tests: no loca pair available for monotonicity mutation")
+    b = bytearray(original)
+    struct.pack_into(">I" if entry_size == 4 else ">H", b, loca_off + entry_size * pair,
+                     loca_values[pair + 1] + 1)
+    cases.append(("descending loca offsets", b))
+
     for tag, required, label in ((b"loca", loca_required, "loca final entry beyond table"),
                                  (b"hmtx", hmtx_required, "hmtx metrics beyond table")):
         off, length = tables[tag]
