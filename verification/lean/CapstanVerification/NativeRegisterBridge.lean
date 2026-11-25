@@ -33,7 +33,17 @@ theorem decodeNativeTypeTag_int_iff (tag : Int) :
 
 theorem decodeNativeTypeTag_bool_iff (tag : Int) :
     decodeNativeTypeTag tag = some .bool ↔ tag = nativeBoolTypeTag := by
-  simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
+  constructor
+  · intro h
+    unfold decodeNativeTypeTag at h
+    split at h
+    · contradiction
+    · split at h
+      · rfl
+      · contradiction
+  · intro h
+    subst tag
+    simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
 
 /-- Explicit model of the fields in the executable CCAMRegister structure. -/
 structure NativeCCAMRegister where
@@ -48,7 +58,7 @@ def runtimeRegisterInit (ty : Ty) : RuntimeRegister :=
   { declaredType := ty
     initialized := false
     intValue := 0
-    intValue_in_range := by norm_num [inI64, inI64B, two63, maxI64Nat]
+    intValue_in_range := by change inI64B 0 = true; decide
     boolValue := false }
 
 /-- The native register constructor used after the type tag has been checked. -/
