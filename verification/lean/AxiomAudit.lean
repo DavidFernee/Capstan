@@ -140,3 +140,6 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.nativeRegisterWriteBool_preserves_relation
 #print axioms CapstanVerification.nativeRegisterWriteInt_readback
 #print axioms CapstanVerification.nativeRegisterWriteBool_readback
+
+#print axioms CapstanVerification.nativeRegisterWriteIntChecked_corresponds
+#print axioms CapstanVerification.nativeRegisterWriteBoolChecked_corresponds
