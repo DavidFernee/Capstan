@@ -85,6 +85,13 @@ else
   bad "Helm boot-memory reference model" "$out"
 fi
 
+section "Helm H0-C0: freestanding x86-64 entry and ELF layout"
+if out="$(bash "$ROOT/tests/helm/check_boot_artifacts.sh" 2>&1)"; then
+  ok "$out"
+else
+  bad "Helm H0-C0 boot artifacts" "$out"
+fi
+
 section "Capstan-native verification: bounded concurrency reference machine"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
   ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"
