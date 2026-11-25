@@ -33,8 +33,8 @@ The first MC1 prototype is on the Halyard working branch:
 
 - `lib/halyard/core.cap`: in-memory bounded byte source and sink, sequential aggregate ledger, and rational timestamp rescaling;
 - Capstan `test` declarations in `lib/halyard/core.cap`: source, sink, ledger and timebase boundary regressions;
-- `lib/halyard/shanty.cap`: bounded RIFF/WAVE integer-PCM parsing and offline 8/16/24/32-bit sample decoding, with nine colocated Capstan tests.
-- `lib/halyard/deadeye.cap`: strict uncompressed 24/32-bit BMP decoding into bounded RGBA frames, with six colocated Capstan tests.
+- `lib/halyard/shanty.cap`: bounded RIFF/WAVE integer-PCM parsing and offline 8/16/24/32-bit sample decoding, with eleven colocated Capstan tests.
+- `lib/halyard/deadeye.cap`: strict uncompressed 24/32-bit BMP decoding into bounded RGBA frames, with eight colocated Capstan tests.
 
 The Halyard implementation and its test logic are authored in Capstan. No Halyard-specific
 shell, Python, C, C++ or other-language implementation or test source is added.
@@ -43,7 +43,7 @@ The Shanty first slice accepts RIFF/WAVE PCM format tag 1, 1–8 channels, 1–3
 8/16/24/32-bit integer samples, at most 8 MiB per input and 1024 chunks. It skips
 unknown chunks with RIFF padding and rejects duplicate format/data chunks, malformed
 alignment and trailing-size mismatches. It does not provide device playback/capture,
-compressed codecs, WAVE extensible, floating-point PCM or ledger-coupled sample allocation.
+compressed codecs, WAVE extensible or floating-point PCM. Budgeted entry points charge bounded parser work, retained PCM payload and decoded sample units; the live ledger does not yet own every sample allocation.
 
 The Deadeye first slice accepts a strict 40-byte Windows BITMAPINFOHEADER/BI_RGB profile:
 24-bit BGR or 32-bit BGRx, top-down or bottom-up, canonical pixel offset, 16 MiB input,
@@ -52,12 +52,8 @@ bitfields, RLE, other DIB headers and trailing data. It is not a general BMP dec
 colour-managed image pipeline.
 
 This is not an MC1 gate exit. Publicly mutable struct fields prevent an enforced opaque
-ownership boundary; the live ledger and cumulative budget are sequential-only and publicly mutable; reservation is not yet coupled
-atomically to source allocation; the resource vector is incomplete; and parser integration of cumulative budgets, ledger-coupled output reservations, cancellation, lifetime-bound ownership and full
-clock/discontinuity semantics remain outstanding. A first bounded in-memory byte sink is
-now implemented, but its copy-on-commit temporary allocation is not yet covered by the
-aggregate resource ledger. Rational timestamp rescaling now has an initial Capstan-native implementation
-with checked integer arithmetic and explicit rounding, but no complete clock model.
+ownership boundary; the live ledger and cumulative budget are sequential-only and publicly mutable; and
+allocation admission still cannot guarantee rollback after allocator exhaustion because the runtime lacks a recoverable allocation-result contract. The extended live vector has twelve dimensions, but logical allocation-object slots are not allocator-exact memory accounting. Managed source and sink paths now charge retained payload and allocation-object slots, including copy-on-commit peak overlap; parser/sample/frame allocations are not yet all tied to live leases. Budgeted Shanty/Deadeye entry points charge cumulative input, work, output and decoded-unit budgets, but legacy unbudgeted APIs remain callable. Cancellation, lifetime-bound opaque ownership, full parser/worker resource coupling and clock/discontinuity semantics remain outstanding. Rational timestamp rescaling has an initial Capstan-native implementation with checked integer arithmetic and explicit rounding, but no complete clock model.
 See [CORE-PRIMITIVES.md](CORE-PRIMITIVES.md) and follow-up issue #293. Exact-head CI is
 pending and no test pass is asserted until its result is observed.
 
