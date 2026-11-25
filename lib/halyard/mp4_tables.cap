@@ -1,5 +1,5 @@
 // Deadeye bounded sample-table decoding, consistency and media-extent validation.
- // Payload decoders are separate from track-hierarchy integration and packet emission.
+// Payload decoders and one stbl-level integration are implemented; full trak/codec integration and packet emission remain open.
 // The constrained profile deliberately rejects ambiguous/non-monotonic layouts.
 import "core.cap";
 import "mp4.cap";
@@ -675,7 +675,8 @@ DeadeyeMp4StblResult deadeye_mp4_decode_stbl(
         deadeye_mp4_decode_stsc(bytes, stsc_start, stsc_end);
     DeadeyeMp4IntListResult sizes =
         deadeye_mp4_decode_stsz(bytes, stsz_start, stsz_end);
-    DeadeyeMp4IntListResult offsets;
+    DeadeyeMp4IntListResult offsets =
+        deadeye_mp4_table_decode_error("chunk_offsets_uninitialized");
     if (has_stco) {
         offsets = deadeye_mp4_decode_chunk_offsets(
             bytes, stco_start, stco_end, false
