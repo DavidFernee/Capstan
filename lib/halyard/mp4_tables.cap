@@ -793,3 +793,49 @@ test "Deadeye rejects duplicate and malformed stbl child tables" {
     );
     assert(!forged.ok && forged.error == "invalid_stbl_range_or_byte");
 }
+
+
+test "Deadeye sample-table decoders reject every strict truncation boundary" {
+    List<int> stts = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,40];
+    List<int> stsc = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1, 0,0,0,1];
+    List<int> stsz = [0,0,0,0, 0,0,0,0, 0,0,0,1, 0,0,0,4];
+    List<int> stco = [0,0,0,0, 0,0,0,1, 0,0,0,100];
+    List<int> ctts = [1,0,0,0, 0,0,0,1, 0,0,0,1, 255,255,255,246];
+    List<int> stss = [0,0,0,0, 0,0,0,1, 0,0,0,1];
+    for (int n = 0; n < stts.len(); n += 1) {
+        assert(!deadeye_mp4_decode_stts(stts, 0, n).ok);
+    }
+    for (int n = 0; n < stsc.len(); n += 1) {
+        assert(!deadeye_mp4_decode_stsc(stsc, 0, n).ok);
+    }
+    for (int n = 0; n < stsz.len(); n += 1) {
+        assert(!deadeye_mp4_decode_stsz(stsz, 0, n).ok);
+    }
+    for (int n = 0; n < stco.len(); n += 1) {
+        assert(!deadeye_mp4_decode_chunk_offsets(stco, 0, n, false).ok);
+    }
+    for (int n = 0; n < ctts.len(); n += 1) {
+        assert(!deadeye_mp4_decode_ctts(ctts, 0, n).ok);
+    }
+    for (int n = 0; n < stss.len(); n += 1) {
+        assert(!deadeye_mp4_decode_stss(stss, 0, n, 1).ok);
+    }
+}
+
+test "Deadeye sample-table decoders reject declared counts above hard limits" {
+    List<int> oversized_stts = [0,0,0,0, 0,1,0,1];
+    DeadeyeMp4IntListResult too_many_runs = deadeye_mp4_decode_stts(
+        oversized_stts, 0, oversized_stts.len()
+    );
+    assert(!too_many_runs.ok);
+    List<int> oversized_stsz = [0,0,0,0, 0,0,0,1, 0,16,0,1];
+    DeadeyeMp4IntListResult too_many_samples = deadeye_mp4_decode_stsz(
+        oversized_stsz, 0, oversized_stsz.len()
+    );
+    assert(!too_many_samples.ok);
+    List<int> oversized_stco = [0,0,0,0, 0,1,0,1];
+    DeadeyeMp4IntListResult too_many_chunks = deadeye_mp4_decode_chunk_offsets(
+        oversized_stco, 0, oversized_stco.len(), false
+    );
+    assert(!too_many_chunks.ok);
+}
