@@ -17,7 +17,7 @@ const int GCH_MAX_SLOTS = 65536;
 const int GCH_MAX_FIELDS = 4096;
 const int GCH_MAX_GENERATION = 0x7FFFFFFFFFFFFFFF;
 const int GCH_NO_CAPACITY = 8;
-const int GCH_INVALID_DESCRIPTOR = 9;
+const int GCH_INVALID_DESCRIPTOR = 9;\nconst int GCH_INVALID_FIELD = 10;\nconst int GCH_FIELD_KIND_MISMATCH = 11;
 
 struct GCHLayout {
     int descriptor_id;
@@ -54,6 +54,12 @@ struct GCHTransitionResult {
 struct GCHResolveResult {
     int status;
     int slot_index;
+    int descriptor_id;
+}
+
+struct GCHFieldCheckResult {
+    int status;
+    bool is_reference;
     int descriptor_id;
 }
 
@@ -163,6 +169,46 @@ GCHResolveResult gch_resolve(
     };
 }
 
+bool gch_layout_has_reference(GCHLayout layout, int field_offset) {
+    for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
+        if (layout.reference_offsets[i] == field_offset) { return true; }
+    }
+    return false;
+}
+
+// Validate a field operation against the resolved object's immutable descriptor.
+// This checks field bounds and the declared scalar/reference kind before any
+// eventual payload access. It does not load or store physical payload bytes.
+GCHFieldCheckResult gch_check_field(
+    GCHHeap heap, GCHHandle handle, int field_offset, bool expect_reference
+) {
+    GCHResolveResult resolved = gch_resolve(heap, handle, 0);
+    if (resolved.status != GCH_OK) {
+        return new GCHFieldCheckResult{
+            status: resolved.status, is_reference: false, descriptor_id: 0
+        };
+    }
+    int layout_index = gch_find_layout(heap.layouts, resolved.descriptor_id);
+    GCHLayout layout = heap.layouts[layout_index];
+    if (field_offset < 0 || field_offset >= layout.field_count) {
+        return new GCHFieldCheckResult{
+            status: GCH_INVALID_FIELD, is_reference: false,
+            descriptor_id: resolved.descriptor_id
+        };
+    }
+    bool is_reference = gch_layout_has_reference(layout, field_offset);
+    if (is_reference != expect_reference) {
+        return new GCHFieldCheckResult{
+            status: GCH_FIELD_KIND_MISMATCH, is_reference: is_reference,
+            descriptor_id: resolved.descriptor_id
+        };
+    }
+    return new GCHFieldCheckResult{
+        status: GCH_OK, is_reference: is_reference,
+        descriptor_id: resolved.descriptor_id
+    };
+}
+
 GCHHeap gch_fixture_heap() {
     List<int> offsets = new List<int>();
     offsets.push(1);
@@ -246,6 +292,46 @@ GCHTransitionResult gch_reclaim_slot(GCHHeap heap, GCHHandle handle) {
     return new GCHTransitionResult{
         status: GCH_OK, heap: published, handle: gch_handle(0, 0, 0)
     };
+}
+
+test "GC field check accepts a declared reference offset" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, true
+    );
+    assert(result.status == GCH_OK);
+    assert(result.is_reference);
+    assert(result.descriptor_id == 7);
+}
+
+test "GC field check accepts a declared scalar offset" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 2, false
+    );
+    assert(result.status == GCH_OK);
+    assert(!result.is_reference);
+}
+
+test "GC field check rejects offsets outside descriptor extent" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 4, true
+    );
+    assert(result.status == GCH_INVALID_FIELD);
+}
+
+test "GC field check rejects scalar access to a reference field" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 3, false
+    );
+    assert(result.status == GCH_FIELD_KIND_MISMATCH);
+    assert(result.is_reference);
+}
+
+test "GC field check rejects reference access to a scalar field" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 0, true
+    );
+    assert(result.status == GCH_FIELD_KIND_MISMATCH);
+    assert(!result.is_reference);
 }
 
 test "GC handle resolves within its originating heap" {
