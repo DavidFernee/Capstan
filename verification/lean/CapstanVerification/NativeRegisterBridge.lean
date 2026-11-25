@@ -29,30 +29,11 @@ def decodeNativeTypeTag (tag : Int) : Option Ty :=
 
 theorem decodeNativeTypeTag_int_iff (tag : Int) :
     decodeNativeTypeTag tag = some .int ↔ tag = nativeIntTypeTag := by
-  constructor
-  · intro h
-    by_cases htag : tag = nativeIntTypeTag
-    · exact htag
-    · simp [decodeNativeTypeTag, nativeIntTypeTag, htag] at h
-      by_cases hbool : tag = nativeBoolTypeTag
-      · simp [hbool] at h
-      · simp [hbool] at h
-  · intro h
-    subst tag
-    simp [decodeNativeTypeTag, nativeIntTypeTag]
+  simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
 
 theorem decodeNativeTypeTag_bool_iff (tag : Int) :
     decodeNativeTypeTag tag = some .bool ↔ tag = nativeBoolTypeTag := by
-  constructor
-  · intro h
-    by_cases htag : tag = nativeIntTypeTag
-    · simp [decodeNativeTypeTag, nativeIntTypeTag, htag] at h
-    · by_cases hbool : tag = nativeBoolTypeTag
-      · exact hbool
-      · simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag, htag, hbool] at h
-  · intro h
-    subst tag
-    simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
+  simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
 
 /-- Explicit model of the fields in the executable CCAMRegister structure. -/
 structure NativeCCAMRegister where
@@ -67,7 +48,7 @@ def runtimeRegisterInit (ty : Ty) : RuntimeRegister :=
   { declaredType := ty
     initialized := false
     intValue := 0
-    intValue_in_range := by decide
+    intValue_in_range := by norm_num [inI64, inI64B, two63, maxI64Nat]
     boolValue := false }
 
 /-- The native register constructor used after the type tag has been checked. -/
@@ -146,11 +127,11 @@ theorem nativeRegisterReadInt_corresponds
       · have hnativeInit : native.initialized = false := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadInt, runtimeRegisterReadInt,
-          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit]
+          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit, htype]
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadInt, runtimeRegisterReadInt,
-          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit, hint]
+          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit, htype, hint]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
@@ -159,11 +140,11 @@ theorem nativeRegisterReadInt_corresponds
       · have hnativeInit : native.initialized = false := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadInt, runtimeRegisterReadInt,
-          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit]
+          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype]
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadInt, runtimeRegisterReadInt,
-          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit]
+          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype]
 
 theorem nativeRegisterReadBool_corresponds
     (native : NativeCCAMRegister) (runtime : RuntimeRegister)
@@ -192,11 +173,11 @@ theorem nativeRegisterReadBool_corresponds
       · have hnativeInit : native.initialized = false := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadBool, runtimeRegisterReadBool,
-          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit]
+          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype]
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
         simp [nativeRegisterReadBool, runtimeRegisterReadBool,
-          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, hbool]
+          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype, hbool]
 
 /-- Model the native integer-field assignment and initialization-bit update. -/
 def nativeRegisterWriteInt
@@ -290,13 +271,13 @@ theorem nativeRegisterWriteIntChecked_corresponds
         (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteIntChecked, runtimeRegisterWriteIntChecked,
-        htagInt, htype, hbool, nativeRegisterWriteInt, runtimeRegisterWriteInt]
+        htagInt, htype, hbool, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteInt, runtimeRegisterWriteInt]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteIntChecked, runtimeRegisterWriteIntChecked,
-        htagBool, htype, hbool, nativeRegisterWriteInt, runtimeRegisterWriteInt]
+        htagBool, htype, hbool, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteInt, runtimeRegisterWriteInt]
 
 /-- The native boolean writer's local type check followed by its field update. -/
 def nativeRegisterWriteBoolChecked
@@ -334,12 +315,12 @@ theorem nativeRegisterWriteBoolChecked_corresponds
         (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteBoolChecked, runtimeRegisterWriteBoolChecked,
-        htagInt, htype, hint, nativeRegisterWriteBool, runtimeRegisterWriteBool]
+        htagInt, htype, hint, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteBool, runtimeRegisterWriteBool]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteBoolChecked, runtimeRegisterWriteBoolChecked,
-        htagBool, htype, hint, nativeRegisterWriteBool, runtimeRegisterWriteBool]
+        htagBool, htype, hint, nativeIntTypeTag, nativeBoolTypeTag, nativeRegisterWriteBool, runtimeRegisterWriteBool]
 
 end CapstanVerification
