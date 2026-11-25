@@ -44,6 +44,8 @@ Six colocated Capstan test declarations cover:
 Run the module tests by invoking Capstan test mode on `lib/halyard/deadeye.cap`.
 Exact-head execution is still required; no test-pass or conformance claim is made until observed.
 
+The parser consumes its source. On failure it returns no partial wave/frame value, but the source cursor remains at the point where the error was detected; callers should discard that source rather than retry from an assumed initial position.
+
 ## Explicit non-goals and release blockers
 
 - BMP palettes, bitfields, RLE, OS/2, V4/V5, embedded profiles and arbitrary offsets.
