@@ -109,9 +109,13 @@ HBMU64Result hbm_u64_sub(HBMU64 left, HBMU64 right) {
 
 // Four-level x86-64 canonical address check (48-bit virtual addresses).
 // Five-level paging is deliberately not part of the H0 platform profile.
+int hbm_x64_sign_bit(HBMU64 address) {
+    return (address.hi / 32768) % 2;
+}
+
 bool hbm_x64_canonical48(HBMU64 address) {
     if (!hbm_u64_valid(address)) { return false; }
-    int sign_bit = (address.hi / 32768) % 2;
+    int sign_bit = hbm_x64_sign_bit(address);
     int upper_16 = address.hi / 65536;
     if (sign_bit == 0) { return upper_16 == 0; }
     return upper_16 == 65535;
@@ -147,7 +151,8 @@ bool hbm_u64_canonical_range(HBMU64 base, HBMU64 length) {
     if (!last_offset.ok) { return false; }
     HBMU64Result last = hbm_u64_add(base, last_offset.value);
     if (!last.ok) { return false; }
-    return hbm_x64_canonical48(last.value);
+    return hbm_x64_canonical48(last.value) &&
+        hbm_x64_sign_bit(base) == hbm_x64_sign_bit(last.value);
 }
 
 // Construct an owned, read-only snapshot. The caller cannot mutate the view
@@ -335,6 +340,10 @@ test "Helm canonical ranges validate both endpoints" {
         hbm_u64(0xFFFF8000, 0), hbm_u64(0, 4096)));
     assert(!hbm_u64_canonical_range(
         hbm_u64(0xFFFF7FFF, HBM_U32_MAX), hbm_u64(0, 2)));
+    // Both endpoints are canonical, but the contiguous interval crosses the
+    // non-canonical hole between the low and high canonical regions.
+    assert(!hbm_u64_canonical_range(
+        hbm_u64(0x00007FFF, HBM_U32_MAX), hbm_u64(0xFFFF0000, 2)));
 }
 
 test "Helm boot view snapshots bytes and decodes little endian values" {
