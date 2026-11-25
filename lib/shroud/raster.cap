@@ -220,12 +220,7 @@ struct Canvas {
             // Enforce the per-mask cap as well as the aggregate frame cap
             // before allocating the owned copy. Validate dimensions without
             // multiplying untrusted width and height first.
-            if (alpha.len() > MAX_DISPLAY_MASK_PIXELS || width < 0 || height < 0 ||
-                (width == 0 && (height != 0 || alpha.len() != 0)) ||
-                (height == 0 && (width != 0 || alpha.len() != 0)) ||
-                (width > 0 && height > 0 &&
-                    (width > alpha.len() / height || width * height != alpha.len())) ||
-                !display_list_payload_fits(self, alpha.len())) {
+            if (!display_mask_admissible(self, width, height, alpha.len())) {
                 println("shroud: display list mask payload is invalid or over budget");
                 exit(101);
             }
@@ -308,6 +303,18 @@ bool display_list_payload_fits(Canvas cv, int payload) {
         cv.budget[0] >= 0 && cv.budget[0] <= MAX_DISPLAY_SEGMENTS &&
         payload >= 0 && cv.commands.len() < MAX_DISPLAY_COMMANDS &&
         payload <= MAX_DISPLAY_SEGMENTS - cv.budget[0];
+}
+
+bool display_mask_admissible(Canvas cv, int width, int height, int pixels) {
+    if (pixels < 0 || pixels > MAX_DISPLAY_MASK_PIXELS || width < 0 || height < 0) {
+        return false;
+    }
+    if (width == 0 || height == 0) {
+        if (width != 0 || height != 0 || pixels != 0) { return false; }
+    } else if (width > pixels / height || width * height != pixels) {
+        return false;
+    }
+    return display_list_payload_fits(cv, pixels);
 }
 
 void display_list_append(Canvas cv, DisplayCommand cmd, int payload) {
