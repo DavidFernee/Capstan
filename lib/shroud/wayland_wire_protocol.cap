@@ -18,13 +18,23 @@ const int WAYLAND_ARG_NEW_ID = 8;
 const int WAYLAND_ARG_FD = 9;
 
 // Object states: 0 unused/released, 1 live, 2 retired awaiting protocol release.
+const int WAYLAND_OBJECT_OWNER_UNSPECIFIED = 0;
+const int WAYLAND_OBJECT_OWNER_CLIENT = 1;
+const int WAYLAND_OBJECT_OWNER_SERVER = 2;
+const int WAYLAND_CLIENT_OBJECT_ID_MIN = 2;
+const int WAYLAND_CLIENT_OBJECT_ID_MAX = 4278190079;
+
 struct WaylandObject {
     int id;
     int interface_id;
     int version;
-    int state;
+    int state; // 0 unused, 1 live, 2 retired awaiting delete_id, 3 released client ID
+    int owner;
 }
-struct WaylandObjectTable { List<WaylandObject> slots; }
+struct WaylandObjectTable {
+    List<WaylandObject> slots;
+    int next_client_id;
+}
 struct WaylandArgSpec {
     int kind;
     int interface_id;
@@ -49,14 +59,14 @@ struct WaylandProtocolResult {
 }
 
 WaylandObject wayland_empty_object() {
-    return new WaylandObject{id: 0, interface_id: 0, version: 0, state: 0};
+    return new WaylandObject{id: 0, interface_id: 0, version: 0, state: 0, owner: WAYLAND_OBJECT_OWNER_UNSPECIFIED};
 }
 WaylandObjectTable wayland_object_table() {
     // Preallocate the bounded slot table. Message commits then cannot allocate
     // while partially applying a set of new object IDs.
     List<WaylandObject> slots = new List<WaylandObject>();
     for (int i = 0; i < WAYLAND_OBJECT_SLOTS_MAX; i += 1) { slots.push(wayland_empty_object()); }
-    return new WaylandObjectTable{slots: slots};
+    return new WaylandObjectTable{slots: slots, next_client_id: WAYLAND_CLIENT_OBJECT_ID_MIN};
 }
 WaylandProtocolResult wayland_protocol_result(int status, int next_offset, int fd_count,
     List<int> created_ids, int retired_id) {
@@ -91,14 +101,53 @@ int wayland_object_free_slots(WaylandObjectTable table) {
 bool wayland_object_add(WaylandObjectTable table, int id, int interface_id, int version) {
     if (id <= 0 || id > 4294967295 || interface_id <= 0 || version <= 0
         || wayland_object_index(table, id) >= 0 || wayland_object_free_slots(table) <= 0) { return false; }
-    WaylandObject value = new WaylandObject{id: id, interface_id: interface_id, version: version, state: 1};
+    WaylandObject value = new WaylandObject{id: id, interface_id: interface_id, version: version,
+        state: 1, owner: WAYLAND_OBJECT_OWNER_UNSPECIFIED};
     for (int i = 0; i < table.slots.len(); i += 1) {
-        if (table.slots[i].state == 0) {
-            table.slots[i] = value;
-            return true;
-        }
+        if (table.slots[i].state == 0) { table.slots[i] = value; return true; }
     }
     return false;
+}
+// Client-created IDs are allocated densely from 2. A previously allocated ID
+// becomes reusable only after a matching wl_display.delete_id release.
+bool wayland_object_add_client(WaylandObjectTable table, int id, int interface_id, int version) {
+    if (id < WAYLAND_CLIENT_OBJECT_ID_MIN || id > WAYLAND_CLIENT_OBJECT_ID_MAX
+        || interface_id <= 0 || version <= 0) { return false; }
+    int existing = wayland_object_index(table, id);
+    if (id == table.next_client_id) {
+        if (existing >= 0 || table.next_client_id > WAYLAND_CLIENT_OBJECT_ID_MAX
+            || wayland_object_free_slots(table) <= 0) { return false; }
+        int slot = -1;
+        for (int i = 0; i < table.slots.len(); i += 1) {
+            if (slot < 0 && table.slots[i].state == 0) { slot = i; }
+        }
+        if (slot < 0) { return false; }
+        table.slots[slot] = new WaylandObject{id: id, interface_id: interface_id, version: version,
+            state: 1, owner: WAYLAND_OBJECT_OWNER_CLIENT};
+        table.next_client_id += 1;
+        return true;
+    }
+    if (id > table.next_client_id || existing < 0 || table.slots[existing].state != 3
+        || table.slots[existing].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
+    table.slots[existing] = new WaylandObject{id: id, interface_id: interface_id, version: version,
+        state: 1, owner: WAYLAND_OBJECT_OWNER_CLIENT};
+    return true;
+}
+bool wayland_client_ids_can_allocate(WaylandObjectTable table, List<int> ids) {
+    int next_id = table.next_client_id;
+    for (int i = 0; i < ids.len(); i += 1) {
+        int id = ids[i];
+        int existing = wayland_object_index(table, id);
+        if (id == next_id) {
+            if (existing >= 0 || next_id > WAYLAND_CLIENT_OBJECT_ID_MAX) { return false; }
+            next_id += 1;
+        } else {
+            if (id > next_id || existing < 0 || table.slots[existing].state != 3
+                || table.slots[existing].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
+        }
+        for (int j = 0; j < i; j += 1) { if (ids[j] == id) { return false; } }
+    }
+    return wayland_object_free_slots(table) >= ids.len();
 }
 bool wayland_object_retire(WaylandObjectTable table, int id) {
     int i = wayland_object_index(table, id);
@@ -110,8 +159,9 @@ bool wayland_object_retire(WaylandObjectTable table, int id) {
 // notification (for client-created IDs, wl_display.delete_id).
 bool wayland_object_release(WaylandObjectTable table, int id) {
     int i = wayland_object_index(table, id);
-    if (i < 0 || table.slots[i].state != 2) { return false; }
-    table.slots[i] = wayland_empty_object();
+    if (i < 0 || table.slots[i].state != 2
+        || table.slots[i].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
+    table.slots[i].state = 3;
     return true;
 }
 
@@ -228,7 +278,7 @@ WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader
         }
     }
     if (cursor != frame.end_offset || fds != received_fd_count
-        || wayland_object_free_slots(objects) < pending_ids.len()) {
+        || !wayland_client_ids_can_allocate(objects, pending_ids)) {
         return wayland_protocol_error();
     }
     if (spec.destroys_target && target.state != 1) { return wayland_protocol_error(); }
@@ -236,7 +286,7 @@ WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader
     // Commit only after the complete frame, all arguments, descriptor count,
     // object references, IDs and capacity have been validated.
     for (int i = 0; i < pending_ids.len(); i += 1) {
-        if (!wayland_object_add(objects, pending_ids[i], pending_interfaces[i], pending_versions[i])) {
+        if (!wayland_object_add_client(objects, pending_ids[i], pending_interfaces[i], pending_versions[i])) {
             // Preflight makes this unreachable absent allocator failure or
             // concurrent mutation; this API is single-thread confined.
             return wayland_protocol_error();
