@@ -463,12 +463,13 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                 if (cmd.x < -MAX_PIXMAP_SIDE || cmd.x > MAX_PIXMAP_SIDE ||
                     cmd.y < -MAX_PIXMAP_SIDE || cmd.y > MAX_PIXMAP_SIDE ||
                     cmd.mask_w > MAX_DISPLAY_SEGMENTS - payload || alpha.len() > MAX_DISPLAY_SEGMENTS - payload) { return false; }
-                // Validation scans every alpha byte; replay may visit every
-                // visible mask pixel (at most alpha.len()). Charge both passes.
-                if (alpha.len() > (MAX_DISPLAY_WORK - work) / 2) { return false; }
+                // Frame validation scans alpha, draw_mask revalidates it at
+                // execution, and the visible-pixel loop may visit the full mask.
+                // Charge all three bounded passes before replay starts.
+                if (alpha.len() > (MAX_DISPLAY_WORK - work) / 3) { return false; }
                 if (!display_mask_alpha_valid(alpha)) { return false; }
                 payload += alpha.len();
-                work += 2 * alpha.len();
+                work += 3 * alpha.len();
             } else { return false; }
         } else { return false; }
     }
