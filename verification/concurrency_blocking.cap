@@ -186,12 +186,14 @@ CBTransition cb_receive(CBState before) {
 // removing its wait registration and making it runnable are part of this
 // same transition. Message ownership remains with the channel until receive.
 CBTransition cb_send(CBState before) {
+    // Closed-channel rejection has precedence over producer ownership:
+    // once closed, every send attempt is observably rejected as such.
+    if (before.channel_closed) {
+        return cb_reject(before, "send_on_closed_channel");
+    }
     if (before.producer_status != CB_TASK_RUNNABLE ||
         !before.message_live || before.message_owner != CB_OWNER_PRODUCER) {
         return cb_reject(before, "producer_does_not_own_message");
-    }
-    if (before.channel_closed) {
-        return cb_reject(before, "send_on_closed_channel");
     }
     if (before.channel_count >= before.channel_capacity) {
         return cb_reject(before, "channel_full");
