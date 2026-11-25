@@ -72,6 +72,12 @@ dimension fails, every counter remains unchanged. Release follows the same patte
 every amount is validated against the corresponding used counter before any decrement.
 No saturating arithmetic, wraparound, or partial reservation is permitted.
 
+The current `HalyardLedger` is a **live reservation ledger**, not a cumulative
+consumption budget. Its counters represent currently admitted occupancy/outstanding
+work; releasing a lease returns that live capacity. In particular, callers must not use
+its release operation to account for total bytes parsed, output emitted, samples decoded
+or CPU/work already consumed. Those quantities require monotonic counters.
+
 The first implementation satisfies this all-or-nothing rule for sequential calls. It is
 **not thread-safe**: concurrent reserve/release calls can race. No claim of atomic
 concurrent admission is made. Before the ledger is shared by workers or concurrent graph
@@ -84,7 +90,22 @@ decoded samples, pixels, frames, queue depth, threads, CPU/work units, deadlines
 bounded cleanup. Avoid double-charging the same physical allocation while ensuring
 retained references and derived outputs remain charged for their actual lifetime.
 
-## 4. Failure and ownership rules
+## 4. Monotonic consumption budget
+
+`HalyardConsumptionBudget` separately tracks cumulative input bytes, output bytes,
+decoded units and work units. `halyard_consumption_budget_consume` preflights all
+dimensions before changing any counter. It has deliberately no release/refund operation:
+completed parsing, decoding and work cannot be made free by releasing a live buffer.
+This prevents a decode-and-discard loop from resetting its cumulative work allowance.
+
+This is an initial sequential prototype. Its fields are publicly mutable, it is not
+concurrency-safe, and the Shanty/Deadeye parsers do not yet consume it. Parser integration
+must charge input/work before processing and decoded/output units before materialising
+results, with failure and cancellation semantics specified. The cumulative budget and
+live lease ledger must eventually share one atomic admission/ownership model without
+confusing their different lifetimes.
+
+## 5. Failure and ownership rules
 
 - Validation must precede allocation and state mutation.
 - Failed reads and failed reservations preserve observable state.
@@ -98,7 +119,7 @@ retained references and derived outputs remain charged for their actual lifetime
 The prototype does not yet have cancellation, deadlines, lifetime-bound reservations,
 or an RAII/linear ownership mechanism. Those are explicit follow-up requirements.
 
-## 5. Bounded in-memory byte sink
+## 6. Bounded in-memory byte sink
 
 `HalyardByteSink` is a first Capstan-native in-memory sink with a per-instance payload
 limit. `halyard_sink_write_exact` validates the sink state, capacity and every input byte
@@ -113,7 +134,7 @@ there is no lifetime-bound reservation, and allocator exhaustion remains a termi
 runtime outcome rather than a recoverable sink error. It is a correctness prototype, not
 a hostile-input output boundary.
 
-## 6. Rational timebase and timestamp rescaling
+## 7. Rational timebase and timestamp rescaling
 
 `HalyardTimebase` represents seconds per tick as a positive reduced fraction
 `numerator/denominator`. `halyard_timebase_create` rejects non-positive terms and
@@ -132,9 +153,9 @@ clock drift, resampling, A/V master-clock selection or seek/pause transitions. T
 semantics remain required before media graph scheduling. The timebase structs are also
 publicly mutable; every conversion validates them, but this is not an opaque type boundary.
 
-## 7. Test obligations
+## 8. Test obligations
 
-The regression suite is expressed as 26 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 30 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -155,7 +176,8 @@ contains no shell, Python, C, or other-language source. It covers:
 - independent underflow rejection for every release dimension;
 - defensive rejection of corrupted public ledger state;
 - defensive validation of source bounds and byte contents before parser use;
-- separation of cheap source-shape preflight from the bounded byte-domain scan.
+- separation of cheap source-shape preflight from the bounded byte-domain scan;
+- monotonic cumulative input/output/decode/work budget admission, failure atomicity and no-refund semantics.
 
 Still required before MC1 can pass:
 
@@ -169,12 +191,13 @@ Still required before MC1 can pass:
 8. allocation, CPU and retained-memory measurements under adversarial inputs;
 9. independent review and exact-head CI on supported platforms.
 
-## 8. Implementation provenance
+## 9. Implementation provenance
 
 | Module | First-party source | Current status |
 |---|---|---|
 | Byte source | `lib/halyard/core.cap` | Prototype; public mutable representation; Capstan-native tests colocated |
-| Aggregate ledger | `lib/halyard/core.cap` | Sequential all-or-nothing prototype; not concurrency-safe |
+| Live reservation ledger | `lib/halyard/core.cap` | Sequential all-or-nothing live lease prototype; not concurrency-safe |
+| Cumulative consumption budget | `lib/halyard/core.cap` | Monotonic input/output/decode/work counters; sequential prototype; not yet integrated into parsers |
 | Regression vectors | `lib/halyard/core.cap` test declarations | Capstan-native cases; exact-head execution pending |
 | Rational timebase | `lib/halyard/core.cap` | Initial checked integer rescaling with explicit rounding; no full clock/discontinuity model |
 | Format registry | Not implemented | MC0 / issue #287 |
