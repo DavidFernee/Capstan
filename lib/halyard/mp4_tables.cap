@@ -364,6 +364,9 @@ DeadeyeMp4IntListResult deadeye_mp4_decode_stsz(
     if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
         return deadeye_mp4_table_decode_error("invalid_stsz_header");
     }
+    if (end - start < 12) {
+        return deadeye_mp4_table_decode_error("truncated_stsz_header");
+    }
     int default_size = deadeye_mp4_table_u32(bytes, start + 4);
     int count = deadeye_mp4_table_u32(bytes, start + 8);
     if (count < 1 || count > DEADEYE_MP4_MAX_SAMPLES) {
@@ -458,6 +461,10 @@ test "Deadeye decodes constant and explicit stsz with exact lengths" {
         trailing, 0, trailing.len()
     );
     assert(!rejected.ok);
+    DeadeyeMp4IntListResult short_header = deadeye_mp4_decode_stsz(
+        [0,0,0,0, 0,0,0,0], 0, 8
+    );
+    assert(!short_header.ok && short_header.error == "truncated_stsz_header");
 }
 
 test "Deadeye decodes stco and co64 with strict offset limits" {
