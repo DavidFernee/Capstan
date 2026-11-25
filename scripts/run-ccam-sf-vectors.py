@@ -186,11 +186,21 @@ def main() -> int:
         handle.write(generated)
         generated_path = Path(handle.name)
     try:
-        result = subprocess.run(
-            [str(CAPSTAN), "test", str(ROOT / "verification" / "ccam_core.cap"),
-             str(generated_path)],
-            cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        )
+        try:
+            result = subprocess.run(
+                [str(CAPSTAN), "test", str(ROOT / "verification" / "ccam_core.cap"),
+                 str(generated_path)],
+                cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired as exc:
+            captured = exc.stdout or b""
+            if isinstance(captured, bytes):
+                captured = captured.decode("utf-8", errors="replace")
+            print(captured, end="", file=sys.stderr)
+            print("CCAM-SF-P concrete evaluator exceeded the 120-second harness timeout",
+                  file=sys.stderr)
+            return 124
         print(result.stdout, end="")
         if result.returncode:
             return result.returncode
