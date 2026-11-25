@@ -365,7 +365,7 @@ List<int> deadeye_mp4_test_minimal_file() {
 
     List<int> mvhd_payload = new List<int>();
     for (int i = 0; i < 20; i += 1) { mvhd_payload.push(0); }
-    mvhd_payload[15] = 232; // timescale = 1000, big-endian at payload offset 12
+    mvhd_payload[14] = 3; mvhd_payload[15] = 232; // timescale = 1000, big-endian at payload offset 12
     List<int> mvhd = new List<int>();
     deadeye_mp4_test_push_box(mvhd, 'm', 'v', 'h', 'd', mvhd_payload);
     List<int> trak = new List<int>();
@@ -412,6 +412,10 @@ test "Deadeye MP4 rejects unsupported and encrypted profiles" {
     unsupported[9] = 't';
     unsupported[10] = ' ';
     unsupported[11] = ' ';
+    unsupported[16] = 'q';
+    unsupported[17] = 't';
+    unsupported[18] = ' ';
+    unsupported[19] = ' ';
     HalyardByteSourceResult first = halyard_source_from_list(unsupported, 1024);
     assert(first.ok);
     if (let source = first.source) {
