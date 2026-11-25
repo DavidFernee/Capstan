@@ -45,6 +45,12 @@ The current API therefore relies on a module-ownership convention and is not sui
 as a hostile-input trust boundary until encapsulation is enforced by the language or a
 runtime-validated opaque representation is introduced.
 
+The source API separates a cheap shape preflight (`halyard_source_shape_valid` and
+`halyard_source_length`) from the full byte-domain scan (`halyard_source_validate`).
+Parsers first reject an oversized source using the constant-time shape/length checks,
+then scan the bounded byte vector once before parsing. This prevents an attacker-sized
+input from forcing a full byte scan before the parser applies its input ceiling.
+
 Construction copies bytes. Callers must reserve aggregate input/retained memory before
 calling the constructor. A later API must combine reservation and construction into one
 failure-atomic operation so the copy cannot occur before the charge is secured.
