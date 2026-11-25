@@ -106,6 +106,17 @@ DeadeyeMp4TableValidation deadeye_mp4_validate_sample_tables(
         previous_first_chunk = first_chunk;
     }
 
+    // Validate the complete offset sequence before checking extents. Otherwise
+    // an earlier chunk can be reported as overlapping when the actual defect is
+    // a later non-monotonic offset, making the validator's failure classification
+    // depend on the order in which extents happen to be consumed.
+    for (int chunk = 0; chunk < chunks; chunk += 1) {
+        if (chunk_offsets[chunk] < 0 ||
+            (chunk > 0 && chunk_offsets[chunk] <= chunk_offsets[chunk - 1])) {
+            return deadeye_mp4_table_error("non_monotonic_chunk_offsets");
+        }
+    }
+
     int sample_index = 0;
     int total_bytes = 0;
     int run_index = 0;
