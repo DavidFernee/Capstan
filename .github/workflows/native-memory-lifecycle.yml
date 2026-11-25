@@ -37,6 +37,39 @@ jobs:
           lint: false
           leanchecker: false
           nanoda: false
-      - name: Check standalone lifecycle model with warnings as errors
+      - name: Reject unfinished proofs and local axioms
         working-directory: verification/lean
-        run: lake env lean NativeMemoryLifecycle.lean
+        shell: bash
+        run: |
+          if grep -nE '(^|[^[:alnum:]_])(sorry|admit)([^[:alnum:]_]|$)|^[[:space:]]*axiom[[:space:]]' NativeMemoryLifecycle.lean; then
+            echo "Unfinished proof or local axiom declaration found."
+            exit 1
+          fi
+      - name: Compile standalone lifecycle model
+        working-directory: verification/lean
+        run: lake env lean -o NativeMemoryLifecycle.olean NativeMemoryLifecycle.lean
+      - name: Audit theorem axiom dependencies
+        working-directory: verification/lean
+        shell: bash
+        run: |
+          cat > NativeMemoryLifecycleAxiomAudit.lean <<'EOF'
+          import NativeMemoryLifecycle
+          open CapstanNativeMemory
+          #print axioms allocateSlot_success_resolves
+          #print axioms allocateSlot_rejects_occupied
+          #print axioms allocateSlot_rejects_retired
+          #print axioms releaseSlot_rejects_stale
+          #print axioms releaseSlot_retires_at_maximum
+          #print axioms releaseSlot_advances_generation
+          #print axioms resolveSlot_rejects_free_generation
+          #print axioms resolveHandle_rejects_cross_domain
+          #print axioms allocateAt_rejection_is_atomic
+          #print axioms releaseAt_rejection_is_atomic
+          #print axioms updateSlot_preserves_other
+          #print axioms reuse_rejects_previous_incarnation
+          EOF
+          lake env lean NativeMemoryLifecycleAxiomAudit.lean | tee "$RUNNER_TEMP/native-memory-axioms.txt"
+          if grep -q 'sorryAx' "$RUNNER_TEMP/native-memory-axioms.txt"; then
+            echo "Unexpected sorryAx dependency."
+            exit 1
+          fi
