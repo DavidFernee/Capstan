@@ -275,7 +275,9 @@ DeadeyeMp4IntListResult deadeye_mp4_table_decode_ok(List<int> values) {
 }
 
 bool deadeye_mp4_table_payload_valid(List<int> bytes, int start, int end) {
-    if (start < 0 || end < start || end > bytes.len()) { return false; }
+    if (bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES ||
+        start < 0 || end < start || end > bytes.len() ||
+        end - start > DEADEYE_MP4_MAX_INPUT_BYTES) { return false; }
     for (int i = start; i < end; i += 1) {
         if (bytes[i] < 0 || bytes[i] > 255) { return false; }
     }
