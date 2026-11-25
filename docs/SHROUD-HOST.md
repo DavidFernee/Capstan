@@ -51,7 +51,7 @@ The existing pixel buffer stores premultiplied `0xAARRGGBB` integer pixels, row-
 - A DPI transition is a resize/scale transition. The host must update both the physical surface dimensions and scale as one coherent change; it must not render one frame with a new scale and an old-size surface.
 - Fractional scaling must preserve integer rounding rules and be tested at 100%, 125%, 150%, 175% and 200%, including monitor-to-monitor transitions.
 
-S0 has no `Ui.resize` method. S1 must introduce a reviewed resize operation or an explicit state-preserving reconstruction contract. Reconstructing `Ui` with `new_ui` currently resets focus, scroll offsets, caret positions and activation-guard history; the host must not pretend those states survive. Until a preserving resize API exists, a resize that reconstructs `Ui` is a documented state reset, not a transparent resize.
+S0 provides `bool Ui.resize(width_px, height_px, scale)`. It validates the complete request before allocation; invalid dimensions or scale return `false` without mutating the `Ui`. On success it replaces the pixmap, updates scale, invalidates the previous layout, and clears transient hover/pressed state while preserving logical focus, focus visibility, scroll offsets, text carets and guard history. The host must render a fresh frame before dispatching pointer input against the new surface. Guarded controls whose geometry changes restart their activation delay during that render.
 
 ## 4. Clock and event-time trust
 
