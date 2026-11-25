@@ -94,6 +94,17 @@ int ccam_json_schema_array_count(List<CCAMJsonToken> tokens, int array_at) {
     return count;
 }
 
+// Advance from one array element to the next in O(size of current element).
+// Iteration sites use this cursor rather than repeatedly rescanning from '['.
+int ccam_json_schema_array_next(List<CCAMJsonToken> tokens, int item_at) {
+    int next = ccam_json_schema_skip(tokens, item_at);
+    if (next < 0) { return -1; }
+    if (next < tokens.len() && tokens[next].kind == CCAM_JSON_T_COMMA) {
+        next += 1;
+    }
+    return next;
+}
+
 int ccam_json_schema_array_item(List<CCAMJsonToken> tokens, int array_at, int wanted) {
     if (wanted < 0 || array_at < 0 || array_at >= tokens.len() ||
         tokens[array_at].kind != CCAM_JSON_T_LBRACKET) { return -1; }
@@ -213,9 +224,11 @@ bool ccam_json_schema_array_indices(
 ) {
     int count = ccam_json_schema_array_count(tokens, array_at);
     if (count < 0 || count > maximum) { return false; }
+    int at = array_at + 1;
     for (int i = 0; i < count; i += 1) {
-        int at = ccam_json_schema_array_item(tokens, array_at, i);
         if (!ccam_json_schema_integer(source, tokens, at, true)) { return false; }
+        at = ccam_json_schema_array_next(tokens, at);
+        if (at < 0) { return false; }
     }
     return true;
 }
@@ -356,8 +369,9 @@ CCAMJsonSchemaResult ccam_json_validate_program_schema(Tainted source) {
     int total_instructions = 0;
     int total_arguments = 0;
     int total_name_bytes = 0;
+    int function_at_cursor = functions_at + 1;
     for (int f = 0; f < function_count; f += 1) {
-        int function_at = ccam_json_schema_array_item(tokens, functions_at, f);
+        int function_at = function_at_cursor;
         List<string> function_fields = new List<string>();
         function_fields.push("name"); function_fields.push("register_types");
         function_fields.push("parameter_count"); function_fields.push("return_type");
@@ -385,12 +399,14 @@ CCAMJsonSchemaResult ccam_json_validate_program_schema(Tainted source) {
             return ccam_json_schema_error(37, tokens[registers_at].start);
         }
         total_registers += register_count;
+        int type_at_cursor = registers_at + 1;
         for (int r = 0; r < register_count; r += 1) {
-            int type_at = ccam_json_schema_array_item(tokens, registers_at, r);
+            int type_at = type_at_cursor;
             if (!ccam_json_schema_string_eq(source, tokens, type_at, "int") &&
                 !ccam_json_schema_string_eq(source, tokens, type_at, "bool")) {
                 return ccam_json_schema_error(38, tokens[type_at].start);
             }
+            type_at_cursor = ccam_json_schema_array_next(tokens, type_at_cursor);
         }
 
         int parameter_at = ccam_json_schema_find(source, tokens, function_at, "parameter_count");
@@ -421,8 +437,9 @@ CCAMJsonSchemaResult ccam_json_validate_program_schema(Tainted source) {
             return ccam_json_schema_error(42, tokens[instructions_at].start);
         }
         total_instructions += instruction_count;
+        int instruction_at_cursor = instructions_at + 1;
         for (int n = 0; n < instruction_count; n += 1) {
-            int instruction_at = ccam_json_schema_array_item(tokens, instructions_at, n);
+            int instruction_at = instruction_at_cursor;
             if (!ccam_json_schema_instruction(source, tokens, instruction_at)) {
                 return ccam_json_schema_error(43, tokens[instruction_at].start);
             }
@@ -434,7 +451,9 @@ CCAMJsonSchemaResult ccam_json_validate_program_schema(Tainted source) {
                     return ccam_json_schema_error(44, tokens[args_at].start);
                 }
             }
+            instruction_at_cursor = ccam_json_schema_array_next(tokens, instruction_at_cursor);
         }
+        function_at_cursor = ccam_json_schema_array_next(tokens, function_at_cursor);
     }
 
     int entry_index = -1;
