@@ -442,6 +442,9 @@ test "Deadeye budget rejects pixel materialisation before allocation" {
             assert(budget.used_output_bytes == 0);
             assert(budget.used_decoded_units == 0);
             assert(budget.used_work_units == 70);
+            // The parser has consumed only the fixed header. It must reject
+            // the output charge before read_exact materialises the pixel copy.
+            assert(source.position == 54);
         } else { assert(false); }
     } else { assert(false); }
 }
