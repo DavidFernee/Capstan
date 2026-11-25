@@ -687,6 +687,51 @@ void test_display_list(Tally t, Font font) {
         "display list: malformed mask validation is non-mutating");
 }
 
+void test_display_work_budget(Tally t) {
+    Pixmap target = new_pixmap(1, MAX_PIXMAP_SIDE);
+    Segments small = new_segments();
+    for (int i = 0; i < 8; i += 1) {
+        small.add(0, 0, FX, fx(MAX_PIXMAP_SIDE));
+    }
+    DisplayCommand small_cmd = new DisplayCommand{
+        kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0),
+        clip: rect_px(0, 0, 1, MAX_PIXMAP_SIDE),
+        paint: solid(0xFFFFFFFF), rule: FILL_NONZERO,
+        segments: small, mask_alpha: none, mask_w: 0, mask_h: 0,
+        x: 0, y: 0, coverage: 0, opacity: 255
+    };
+    List<DisplayCommand> small_commands = new List<DisplayCommand>();
+    small_commands.push(small_cmd);
+    DisplayList small_frame = new DisplayList{
+        width: 1, height: MAX_PIXMAP_SIDE, commands: small_commands
+    };
+    expect(t, display_list_valid(small_frame, target),
+        "display work: a bounded tall path remains admissible", "small path rejected");
+
+    Segments adversarial = new_segments();
+    for (int j = 0; j < 512; j += 1) {
+        adversarial.add(0, 0, FX, fx(MAX_PIXMAP_SIDE));
+    }
+    DisplayCommand adversarial_cmd = new DisplayCommand{
+        kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0),
+        clip: rect_px(0, 0, 1, MAX_PIXMAP_SIDE),
+        paint: solid(0xFFFFFFFF), rule: FILL_NONZERO,
+        segments: adversarial, mask_alpha: none, mask_w: 0, mask_h: 0,
+        x: 0, y: 0, coverage: 0, opacity: 255
+    };
+    List<DisplayCommand> adversarial_commands = new List<DisplayCommand>();
+    adversarial_commands.push(adversarial_cmd);
+    DisplayList adversarial_frame = new DisplayList{
+        width: 1, height: MAX_PIXMAP_SIDE, commands: adversarial_commands
+    };
+    expect(t, !display_list_valid(adversarial_frame, target),
+        "display work: segment-by-row amplification is rejected before replay",
+        "high-work path accepted");
+    int before = target.get(0, 0);
+    expect_int(t, target.get(0, 0), before,
+        "display work: admission checks leave the destination unchanged");
+}
+
 void test_blend_bounds(Tally t) {
     Pixmap pm = new_pixmap(2, 2);
     Canvas cv = new_canvas(pm);
@@ -814,6 +859,7 @@ int main() {
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_display_list(t, f);
+            test_display_work_budget(t);
             test_blend_bounds(t);
             test_resize(t, f, fb);
             test_scale(t, f, fb);
