@@ -228,8 +228,12 @@ test "Deadeye sample tables reject out-of-mdat and overlapping extents" {
     assert(!outside.ok && outside.error == "chunk_outside_mdat");
     DeadeyeMp4TableValidation overlap =
         deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
-            [100, 108], [100, 120]);
+            [100, 107], [100, 120]);
     assert(!overlap.ok && overlap.error == "overlapping_chunk_extents");
+    DeadeyeMp4TableValidation adjacent =
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
+            [100, 108], [100, 120]);
+    assert(adjacent.ok);
 }
 
 test "Deadeye sample tables reject bad ranges, zero sizes and nonmonotonic offsets" {
@@ -249,4 +253,227 @@ test "Deadeye sample tables reject bad ranges, zero sizes and nonmonotonic offse
         deadeye_mp4_validate_sample_tables(stts, stsc, [1, 1],
             offsets, [100, 90]);
     assert(!bad_range.ok && bad_range.error == "invalid_mdat_range");
+}
+
+// Decode normalized MP4 sample-table payloads directly from bounded file bytes.
+// Every decoder checks the FullBox header, count cap and exact payload length
+// before allocating or appending any decoded entries.
+struct DeadeyeMp4IntListResult {
+    bool ok;
+    List<int> values;
+    string error;
+}
+
+DeadeyeMp4IntListResult deadeye_mp4_table_decode_error(string error) {
+    return new DeadeyeMp4IntListResult{
+        ok: false, values: new List<int>(), error: error
+    };
+}
+
+DeadeyeMp4IntListResult deadeye_mp4_table_decode_ok(List<int> values) {
+    return new DeadeyeMp4IntListResult{ok: true, values: values, error: ""};
+}
+
+bool deadeye_mp4_table_payload_valid(List<int> bytes, int start, int end) {
+    if (start < 0 || end < start || end > bytes.len()) { return false; }
+    for (int i = start; i < end; i += 1) {
+        if (bytes[i] < 0 || bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+int deadeye_mp4_table_u32(List<int> bytes, int at) {
+    return (bytes[at] << 24) | (bytes[at + 1] << 16) |
+        (bytes[at + 2] << 8) | bytes[at + 3];
+}
+
+bool deadeye_mp4_table_fullbox_v0(List<int> bytes, int start, int end) {
+    return deadeye_mp4_table_payload_valid(bytes, start, end) &&
+        end - start >= 8 && bytes[start] == 0 &&
+        bytes[start + 1] == 0 && bytes[start + 2] == 0 &&
+        bytes[start + 3] == 0;
+}
+
+// Decode stts FullBox payload to (sample_count, sample_delta) pairs.
+DeadeyeMp4IntListResult deadeye_mp4_decode_stts(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_stts_header");
+    }
+    int entries = deadeye_mp4_table_u32(bytes, start + 4);
+    if (entries < 1 || entries > DEADEYE_MP4_MAX_TABLE_RUNS ||
+        end - start != 8 + entries * 8) {
+        return deadeye_mp4_table_decode_error("invalid_stts_length");
+    }
+    List<int> values = new List<int>();
+    for (int i = 0; i < entries; i += 1) {
+        int count = deadeye_mp4_table_u32(bytes, start + 8 + i * 8);
+        int delta = deadeye_mp4_table_u32(bytes, start + 12 + i * 8);
+        if (count < 1 || delta < 1 ||
+            count > DEADEYE_MP4_MAX_SAMPLES ||
+            delta > DEADEYE_MP4_MAX_DECODED_DURATION) {
+            return deadeye_mp4_table_decode_error("stts_value_limit");
+        }
+        values.push(count);
+        values.push(delta);
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+// Decode stsc triples. The restricted profile uses sample description 1 only.
+DeadeyeMp4IntListResult deadeye_mp4_decode_stsc(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_stsc_header");
+    }
+    int entries = deadeye_mp4_table_u32(bytes, start + 4);
+    if (entries < 1 || entries > DEADEYE_MP4_MAX_TABLE_RUNS ||
+        end - start != 8 + entries * 12) {
+        return deadeye_mp4_table_decode_error("invalid_stsc_length");
+    }
+    List<int> values = new List<int>();
+    int previous = 0;
+    for (int i = 0; i < entries; i += 1) {
+        int at = start + 8 + i * 12;
+        int first_chunk = deadeye_mp4_table_u32(bytes, at);
+        int per_chunk = deadeye_mp4_table_u32(bytes, at + 4);
+        int description = deadeye_mp4_table_u32(bytes, at + 8);
+        if (first_chunk < 1 || first_chunk <= previous ||
+            per_chunk < 1 || per_chunk > DEADEYE_MP4_MAX_SAMPLES ||
+            description != 1) {
+            return deadeye_mp4_table_decode_error("invalid_stsc_value");
+        }
+        values.push(first_chunk);
+        values.push(per_chunk);
+        values.push(description);
+        previous = first_chunk;
+    }
+    if (values[0] != 1) {
+        return deadeye_mp4_table_decode_error("stsc_must_start_at_chunk_one");
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+// Decode stsz, expanding the constant-size representation only after the
+// sample count is validated and exact payload length has been established.
+DeadeyeMp4IntListResult deadeye_mp4_decode_stsz(
+    List<int> bytes, int start, int end
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_stsz_header");
+    }
+    int default_size = deadeye_mp4_table_u32(bytes, start + 4);
+    int count = deadeye_mp4_table_u32(bytes, start + 8);
+    if (count < 1 || count > DEADEYE_MP4_MAX_SAMPLES) {
+        return deadeye_mp4_table_decode_error("stsz_sample_count_limit");
+    }
+    if (default_size > DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+        return deadeye_mp4_table_decode_error("stsz_size_limit");
+    }
+    if (default_size != 0) {
+        if (end - start != 12) {
+            return deadeye_mp4_table_decode_error("invalid_stsz_length");
+        }
+        List<int> constant_values = new List<int>();
+        for (int i = 0; i < count; i += 1) { constant_values.push(default_size); }
+        return deadeye_mp4_table_decode_ok(constant_values);
+    }
+    if (end - start != 12 + count * 4) {
+        return deadeye_mp4_table_decode_error("invalid_stsz_length");
+    }
+    List<int> values = new List<int>();
+    for (int i = 0; i < count; i += 1) {
+        int sample_size = deadeye_mp4_table_u32(bytes, start + 12 + i * 4);
+        if (sample_size < 1 || sample_size > DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+            return deadeye_mp4_table_decode_error("stsz_value_limit");
+        }
+        values.push(sample_size);
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+// Decode stco/co64. The file-size ceiling makes any non-zero co64 high word
+// invalid; rejecting it prevents narrowing or signed conversion ambiguity.
+DeadeyeMp4IntListResult deadeye_mp4_decode_chunk_offsets(
+    List<int> bytes, int start, int end, bool wide
+) {
+    if (!deadeye_mp4_table_fullbox_v0(bytes, start, end)) {
+        return deadeye_mp4_table_decode_error("invalid_chunk_offset_header");
+    }
+    int count = deadeye_mp4_table_u32(bytes, start + 4);
+    if (count < 1 || count > DEADEYE_MP4_MAX_CHUNKS) {
+        return deadeye_mp4_table_decode_error("chunk_count_limit");
+    }
+    int width = wide ? 8 : 4;
+    if (end - start != 8 + count * width) {
+        return deadeye_mp4_table_decode_error("invalid_chunk_offset_length");
+    }
+    List<int> values = new List<int>();
+    for (int i = 0; i < count; i += 1) {
+        int at = start + 8 + i * width;
+        if (wide && deadeye_mp4_table_u32(bytes, at) != 0) {
+            return deadeye_mp4_table_decode_error("co64_offset_limit");
+        }
+        int offset = deadeye_mp4_table_u32(bytes, at + (wide ? 4 : 0));
+        if (offset < 0 || offset >= DEADEYE_MP4_MAX_SAMPLE_BYTES) {
+            return deadeye_mp4_table_decode_error("chunk_offset_limit");
+        }
+        values.push(offset);
+    }
+    return deadeye_mp4_table_decode_ok(values);
+}
+
+test "Deadeye decodes stts and rejects truncated entries" {
+    List<int> payload = [0,0,0,0, 0,0,0,1, 0,0,0,4, 0,0,3,232];
+    DeadeyeMp4IntListResult decoded = deadeye_mp4_decode_stts(payload, 0, payload.len());
+    assert(decoded.ok && decoded.values.len() == 2);
+    assert(decoded.values[0] == 4 && decoded.values[1] == 1000);
+    DeadeyeMp4IntListResult truncated = deadeye_mp4_decode_stts(payload, 0, 15);
+    assert(!truncated.ok);
+}
+
+test "Deadeye decodes stsc and rejects invalid description indices" {
+    List<int> payload = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,2, 0,0,0,1];
+    DeadeyeMp4IntListResult decoded = deadeye_mp4_decode_stsc(payload, 0, payload.len());
+    assert(decoded.ok && decoded.values.len() == 3);
+    List<int> invalid = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1, 0,0,0,2];
+    DeadeyeMp4IntListResult rejected = deadeye_mp4_decode_stsc(invalid, 0, invalid.len());
+    assert(!rejected.ok);
+}
+
+test "Deadeye decodes constant and explicit stsz with exact lengths" {
+    List<int> constant = [0,0,0,0, 0,0,0,5, 0,0,0,3];
+    DeadeyeMp4IntListResult repeated = deadeye_mp4_decode_stsz(constant, 0, constant.len());
+    assert(repeated.ok && repeated.values.len() == 3 && repeated.values[2] == 5);
+    List<int> explicit_sizes = [0,0,0,0, 0,0,0,0, 0,0,0,2,
+                                0,0,0,4, 0,0,0,7];
+    DeadeyeMp4IntListResult expanded = deadeye_mp4_decode_stsz(
+        explicit_sizes, 0, explicit_sizes.len()
+    );
+    assert(expanded.ok && expanded.values[0] == 4 && expanded.values[1] == 7);
+    List<int> trailing = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1];
+    DeadeyeMp4IntListResult rejected = deadeye_mp4_decode_stsz(
+        trailing, 0, trailing.len()
+    );
+    assert(!rejected.ok);
+}
+
+test "Deadeye decodes stco and co64 with strict offset limits" {
+    List<int> stco = [0,0,0,0, 0,0,0,2, 0,0,0,100, 0,0,0,120];
+    DeadeyeMp4IntListResult offsets = deadeye_mp4_decode_chunk_offsets(
+        stco, 0, stco.len(), false
+    );
+    assert(offsets.ok && offsets.values[1] == 120);
+    List<int> co64 = [0,0,0,0, 0,0,0,1, 0,0,0,0, 0,0,0,100];
+    DeadeyeMp4IntListResult wide = deadeye_mp4_decode_chunk_offsets(
+        co64, 0, co64.len(), true
+    );
+    assert(wide.ok && wide.values[0] == 100);
+    List<int> high = [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,100];
+    DeadeyeMp4IntListResult too_wide = deadeye_mp4_decode_chunk_offsets(
+        high, 0, high.len(), true
+    );
+    assert(!too_wide.ok);
 }
