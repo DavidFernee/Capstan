@@ -1,6 +1,6 @@
 # CCAM Native Backend: Linux x86-64
 
-**Status:** prototype implementation under review in PR #212; not yet integrated into the production compiler CLI  
+**Status:** experimental freestanding backend integrated in PR #212; the user-facing native CLI remains under review in PR #228  
 **Input:** validated multi-function CCAM v0.1 scalar subset  
 **Target:** freestanding Linux x86-64 ELF, System V AMD64 calling convention, GNU assembler syntax
 
