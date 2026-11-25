@@ -529,29 +529,26 @@ test "PA rejects duplicate transition labels as nondeterministic" {
 }
 
 test "PA rejects a cyclic protocol" {
-    List<PAEdge> transitions = new List<PAEdge>();
-    transitions.push(new PAEdge{
-        from_state: 0, role: 1, operation: 1, to_state: 1
+    PASpec spec = pa_linear_message_protocol();
+    spec.state_count = 6;
+    spec.terminal_states = new List<int>();
+    spec.terminal_states.push(5);
+    spec.transitions.push(new PAEdge{
+        from_state: 4, role: 1, operation: 9, to_state: 0
     });
-    transitions.push(new PAEdge{
-        from_state: 1, role: 1, operation: 2, to_state: 2
+    spec.contracts.push(new PAContract{
+        message_type: 1, owner_before: PA_OWNER_NONE, owner_after: 1,
+        resource_delta: 1, effect: PA_EFFECT_ALLOCATE,
+        peer_role: PA_OWNER_NONE, peer_operation: 0, peer_state: PA_OWNER_NONE
     });
-    transitions.push(new PAEdge{
-        from_state: 2, role: 2, operation: 3, to_state: 1
+    spec.transitions.push(new PAEdge{
+        from_state: 4, role: 1, operation: 10, to_state: 5
     });
-    transitions.push(new PAEdge{
-        from_state: 2, role: 2, operation: 4, to_state: 3
+    spec.contracts.push(new PAContract{
+        message_type: 1, owner_before: PA_OWNER_NONE, owner_after: 1,
+        resource_delta: 1, effect: PA_EFFECT_ALLOCATE,
+        peer_role: PA_OWNER_NONE, peer_operation: 0, peer_state: PA_OWNER_NONE
     });
-    List<int> terminals = new List<int>();
-    terminals.push(3);
-    PASpec spec = new PASpec{
-        state_count: 4,
-        role_count: 3,
-        initial_state: 0,
-        transitions: transitions,
-        contracts: pa_linear_message_contracts(),
-        terminal_states: terminals
-    };
     PAValidation result = pa_validate(spec);
     assert(!result.valid && result.error == "cyclic_protocol");
 }
@@ -569,22 +566,27 @@ test "PA rejects a reachable nonterminal dead end" {
         from_state: 0, role: 1, operation: 1, to_state: 1
     });
     transitions.push(new PAEdge{
-        from_state: 1, role: 1, operation: 2, to_state: 2
+        from_state: 0, role: 1, operation: 2, to_state: 2
     });
-    transitions.push(new PAEdge{
-        from_state: 2, role: 2, operation: 3, to_state: 3
+    List<PAContract> contracts = new List<PAContract>();
+    contracts.push(new PAContract{
+        message_type: 1, owner_before: PA_OWNER_NONE, owner_after: 1,
+        resource_delta: 1, effect: PA_EFFECT_ALLOCATE,
+        peer_role: PA_OWNER_NONE, peer_operation: 0, peer_state: PA_OWNER_NONE
     });
-    transitions.push(new PAEdge{
-        from_state: 2, role: 2, operation: 4, to_state: 4
+    contracts.push(new PAContract{
+        message_type: 1, owner_before: PA_OWNER_NONE, owner_after: 1,
+        resource_delta: 1, effect: PA_EFFECT_ALLOCATE,
+        peer_role: PA_OWNER_NONE, peer_operation: 0, peer_state: PA_OWNER_NONE
     });
     List<int> terminals = new List<int>();
-    terminals.push(4);
+    terminals.push(2);
     PASpec spec = new PASpec{
-        state_count: 5,
+        state_count: 3,
         role_count: 3,
         initial_state: 0,
         transitions: transitions,
-        contracts: pa_linear_message_contracts(),
+        contracts: contracts,
         terminal_states: terminals
     };
     PAValidation result = pa_validate(spec);
