@@ -264,11 +264,13 @@ run proves only that this compiler version accepted this source under these flag
 - build instructions and known limitations;
 - no compiler, runtime or Shroud internals changed.
 
-**A1 — Host process adapter:**
-- cross-platform native window/embedder decision with Shroud contributor;
-- supervised LSP child and bounded JSON-RPC adapter;
-- explicit compiler command runner and output panel;
-- tests for hostile output, process timeout, restart and stale diagnostics.
+**A1 — Host and process foundations (split into independent gates):**
+
+- **A1-P — Process service:** capability-scoped compiler/LSP child supervision and explicit CLI operations. See [ANCHOR-PROCESS-SUPERVISION.md](ANCHOR-PROCESS-SUPERVISION.md).
+- **A1-H — Shroud native host:** native window, Wayland protocol, input, frame presentation and lifecycle, following [SHROUD-HOST.md](SHROUD-HOST.md) and [SHROUD-LINUX-WAYLAND-PREREQUISITES.md](proposals/SHROUD-LINUX-WAYLAND-PREREQUISITES.md).
+- **A1-I — Anchor integration:** connect the independently gated host and process services. See [ANCHOR-A1-WORKSTREAMS.md](ANCHOR-A1-WORKSTREAMS.md).
+
+The split is intentional: Shroud's Wayland host does not need to spawn a compositor/helper process, and Anchor's process supervisor can be tested headlessly. The shared requirements delta is recorded in [ANCHOR-CAPABILITY-IO-REQUIREMENTS.md](ANCHOR-CAPABILITY-IO-REQUIREMENTS.md). Neither track may bypass the reviewed Capstan capability-I/O and platform contracts.
 
 **A2 — Workspace and editing:**
 - confined project tree, tabs, single-line input only where appropriate;
