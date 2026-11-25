@@ -331,6 +331,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         next.buffered_bytes += before.message_bytes;
         next.message_owner = CCM_OWNER_CHANNEL;
         next.producer_status = CCM_TASK_DONE;
+        next.cleanup_reserved -= 1;
         return ccm_accept(next);
     }
 
@@ -357,6 +358,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         next.message_owner = CCM_OWNER_NONE;
         next.live_bytes = 0;
         next.consumer_status = CCM_TASK_DONE;
+        next.cleanup_reserved -= 1;
         return ccm_accept(next);
     }
 
@@ -494,7 +496,10 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             next.root_status = CCM_TASK_DONE;
         }
         next.scope_closed = true;
-        return ccm_accept_cleanup(next, 1);
+        if (before.scope_cancel_requested) {
+            return ccm_accept_cleanup(next, 1);
+        }
+        return ccm_accept_cleanup(next, 2);
     }
 
     return ccm_reject(before, "unknown_transition");
@@ -1087,7 +1092,7 @@ test "CCM cleanup budget remains available after normal step budget exhaustion" 
     state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
     assert(ccm_invariant(state));
     assert(state.steps == 1 && state.cleanup_steps == 3);
-    assert(state.cleanup_reserved == 0);
+    assert(state.cleanup_reserved == 2);
 }
 
 test "CCM spawn reserves cleanup capacity before admitting a child" {
