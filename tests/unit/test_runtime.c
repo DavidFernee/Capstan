@@ -8,9 +8,20 @@
  */
 #define CAP_GC_TESTING 1
 #define CAP_PBKDF2_TEST_HOOK 1
+#define CAP_SECRET_SCRATCH_TEST_HOOK 1
 #define CAP_SIPHASH_TEST_HOOK 1
+#define CAP_SHA256_WIPE_TEST_HOOK 1
+#include <stddef.h>
+static void cap_sha256_wipe_test_observe(const volatile unsigned char *p, size_t n);
 #include "capstan_rt.h"
 #include <sys/wait.h>
+
+static unsigned sha256_wipe_observations = 0;
+static unsigned sha256_wipe_failures = 0;
+static void cap_sha256_wipe_test_observe(const volatile unsigned char *p, size_t n) {
+    sha256_wipe_observations++;
+    for (size_t i = 0; i < n; i++) if (p[i] != 0) sha256_wipe_failures++;
+}
 
 static int failures = 0, checks = 0;
 static const char *unit_files[] = {"unit"};
@@ -25,19 +36,6 @@ static void observe_siphash_wipe(const void *memory, size_t n) {
     const volatile unsigned char *p = (const volatile unsigned char *)memory;
     siphash_wipe_regions++;
     for (size_t i = 0; i < n; i++) if (p[i] != 0) siphash_wipe_failures++;
-}
-
-static void hexof(const unsigned char *p, size_t n, char *out) { cap_hex(p, n, out); }
-
-static int sha_hex_is(const void *data, size_t n, const char *want) {
-    CapSha256 s;
-    unsigned char d[32];
-    char h[65];
-    cap_sha256_init(&s);
-    cap_sha256_update(&s, (const unsigned char *)data, n);
-    cap_sha256_final(&s, d);
-    hexof(d, 32, h);
-    return strcmp(h, want) == 0;
 }
 
 static void test_siphash_wipe(void) {
@@ -57,7 +55,71 @@ static void test_siphash_wipe(void) {
     CHECK(siphash_wipe_failures == 0);
 }
 
+static size_t secret_scratch_wipe_calls;
+static size_t secret_scratch_wipe_last_len;
+static int secret_scratch_wipe_clean;
+
+static void observe_secret_scratch_wipe(const void *memory, size_t n) {
+    const volatile unsigned char *bytes = (const volatile unsigned char *)memory;
+    for (size_t i = 0; i < n; i++) if (bytes[i] != 0) secret_scratch_wipe_clean = 0;
+    secret_scratch_wipe_last_len = n;
+    secret_scratch_wipe_calls++;
+}
+
+static void test_secret_scratch_lifecycle(void) {
+    CapSecretScratch scratch = {0};
+    secret_scratch_wipe_calls = 0;
+    secret_scratch_wipe_clean = 1;
+    cap_secret_scratch_test_wipe_hook = observe_secret_scratch_wipe;
+
+    CHECK(cap_secret_scratch_init(&scratch, 97));
+    CHECK(scratch.active && scratch.data != NULL && scratch.len == 97);
+    memset(scratch.data, 0xa5, scratch.len);
+    CHECK(!cap_secret_scratch_init(&scratch, 8));
+    cap_secret_scratch_destroy(&scratch);
+    CHECK(!scratch.active && scratch.data == NULL && scratch.len == 0);
+    CHECK(secret_scratch_wipe_calls == 1 && secret_scratch_wipe_clean);
+    cap_secret_scratch_destroy(&scratch); /* repeated destroy is a no-op */
+    CHECK(secret_scratch_wipe_calls == 1);
+
+    CHECK(cap_secret_scratch_init(&scratch, 0));
+    CHECK(scratch.active && scratch.data == NULL && scratch.len == 0);
+    cap_secret_scratch_destroy(&scratch);
+    CHECK(!scratch.active && secret_scratch_wipe_calls == 1);
+    cap_secret_scratch_destroy(&scratch);
+    CHECK(secret_scratch_wipe_calls == 1);
+
+    /* PBKDF2 intermediates are wiped as one region immediately before free. */
+    unsigned char salt[16] = {0}, derived[32];
+    secret_scratch_wipe_calls = 0;
+    secret_scratch_wipe_last_len = 0;
+    secret_scratch_wipe_clean = 1;
+    cap_pbkdf2("pw", 2, salt, sizeof salt, 1, derived);
+    CHECK(secret_scratch_wipe_calls == 1 && secret_scratch_wipe_clean);
+    CHECK(secret_scratch_wipe_last_len == sizeof(CapPbkdf2Scratch));
+    cap_wipe(derived, sizeof derived);
+
+    CHECK(!cap_secret_scratch_init(NULL, 8));
+    CHECK(!cap_secret_scratch_init(&scratch, CAP_MAX_LEN + (size_t)1));
+    cap_secret_scratch_test_wipe_hook = NULL;
+}
+
+static void hexof(const unsigned char *p, size_t n, char *out) { cap_hex(p, n, out); }
+
+static int sha_hex_is(const void *data, size_t n, const char *want) {
+    CapSha256 s;
+    unsigned char d[32];
+    char h[65];
+    cap_sha256_init(&s);
+    cap_sha256_update(&s, (const unsigned char *)data, n);
+    cap_sha256_final(&s, d);
+    hexof(d, 32, h);
+    return strcmp(h, want) == 0;
+}
+
 static void test_sha256(void) {
+    unsigned wipe_observations_before = sha256_wipe_observations;
+    unsigned wipe_failures_before = sha256_wipe_failures;
     CHECK(sha_hex_is("", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
     CHECK(sha_hex_is("abc", 3, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
     const char *m448 = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
@@ -82,6 +144,8 @@ static void test_sha256(void) {
     const volatile unsigned char *state_bytes = (const volatile unsigned char *)&state;
     for (size_t i = 0; i < sizeof state; i++) if (state_bytes[i] != 0) state_wiped = 0;
     CHECK(state_wiped);
+    CHECK(sha256_wipe_observations > wipe_observations_before);
+    CHECK(sha256_wipe_failures == wipe_failures_before);
     cap_wipe(state_digest, sizeof state_digest);
 }
 
@@ -1253,6 +1317,7 @@ static void test_secret_page_free_stack(void) {
 int main(void) {
     cap_gc_init();
     cap_files = unit_files;
+    test_secret_scratch_lifecycle();
     test_siphash_wipe();
     test_sha256();
     test_hmac();
