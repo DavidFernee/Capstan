@@ -269,3 +269,138 @@ theorem complete_result_is_certificate {slotCount : Nat}
 #print axioms CapstanNativeBoundedMarker.complete_result_is_certificate
 
 end CapstanNativeBoundedMarker
+
+
+/-! ## Executable adversarial regression cases
+
+These closed examples exercise boundary conditions in the reference marker.
+They are deliberately evaluated by Lean's kernel reduction, not by an external
+test harness. They do not substitute for testing a concrete collector or
+proving a refinement to one.
+-/
+
+namespace AdversarialTests
+
+open CapstanNativeMemory
+open CapstanNativeBoundedMarker
+
+def h0 : Handle 3 := { domain := 7, slot := ⟨0, by decide⟩, generation := 0 }
+def h1 : Handle 3 := { domain := 7, slot := ⟨1, by decide⟩, generation := 0 }
+def h2 : Handle 3 := { domain := 7, slot := ⟨2, by decide⟩, generation := 0 }
+
+def budget (roots objects edges worklist descriptorSlots work : Nat) : MarkerBudget :=
+  { maxRoots := roots, maxObjects := objects, maxEdges := edges,
+    maxWorklist := worklist, maxDescriptorSlots := descriptorSlots,
+    maxWork := work }
+
+def noEdges (_ : Handle 3) : List (Handle 3) := []
+def allLive (_ : Handle 3) : Bool := true
+def allDescriptorsValid (_ : Handle 3) : Bool := true
+def zeroDescriptorCost (_ : Handle 3) : Nat := 0
+
+def completes (result : MarkerOutcome allLive allDescriptorsValid noEdges [h0]) : Bool :=
+  match result with
+  | .complete _ _ _ => true
+  | .rejected _ _ => false
+
+/-- A single root succeeds when every independent budget is exactly sufficient. -/
+example :
+    completes (runBoundedMarker allLive allDescriptorsValid noEdges
+      zeroDescriptorCost [h0] (budget 1 1 0 1 0 1)) = true := by
+  decide
+
+/-- Root input is charged before deduplication and rejected before resolution. -/
+example :
+    (match runBoundedMarker (fun _ : Handle 3 => false) allDescriptorsValid
+      noEdges zeroDescriptorCost [h0, h0] (budget 1 1 0 1 0 1) with
+     | .rejected .rootLimit _ => true
+     | _ => false) = true := by
+  decide
+
+/-- A stale/unresolvable root fails closed. -/
+example :
+    (match runBoundedMarker (fun _ : Handle 3 => false) allDescriptorsValid
+      noEdges zeroDescriptorCost [h0] (budget 1 1 0 1 0 1) with
+     | .rejected .invalidHandle _ => true
+     | _ => false) = true := by
+  decide
+
+/-- A live handle with an invalid descriptor is rejected before edge access. -/
+example :
+    (match runBoundedMarker allLive (fun _ : Handle 3 => false)
+      noEdges zeroDescriptorCost [h0] (budget 1 1 0 1 0 1) with
+     | .rejected .invalidDescriptor _ => true
+     | _ => false) = true := by
+  decide
+
+/-- The total-work budget is enforced even when roots are already admitted. -/
+example :
+    (match runBoundedMarker allLive allDescriptorsValid noEdges
+      zeroDescriptorCost [h0] (budget 1 1 0 1 0 0) with
+     | .rejected .workLimit _ => true
+     | _ => false) = true := by
+  decide
+
+/-- A self-cycle is accepted at the exact object, edge, worklist and work limits. -/
+def selfCycle (handle : Handle 3) : List (Handle 3) :=
+  if handle == h0 then [h0] else []
+
+example :
+    (match runBoundedMarker allLive allDescriptorsValid selfCycle
+      zeroDescriptorCost [h0] (budget 1 1 1 1 0 1) with
+     | .complete marked counters _ =>
+         decide (h0 ∈ marked) && decide (counters.edges = 1) &&
+           decide (counters.work = 1)
+     | .rejected _ _ => false) = true := by
+  decide
+
+/-- The same self-cycle is rejected when the edge budget is one below need. -/
+example :
+    (match runBoundedMarker allLive allDescriptorsValid selfCycle
+      zeroDescriptorCost [h0] (budget 1 1 0 1 0 1) with
+     | .rejected .edgeLimit _ => true
+     | _ => false) = true := by
+  decide
+
+/-- Duplicate outgoing edges are charged as inspected edges but enqueue once. -/
+def duplicateEdges (handle : Handle 3) : List (Handle 3) :=
+  if handle == h0 then [h1, h1] else []
+
+example :
+    (match runBoundedMarker allLive allDescriptorsValid duplicateEdges
+      zeroDescriptorCost [h0] (budget 1 2 2 1 0 2) with
+     | .complete marked counters _ =>
+         decide (marked.length = 2) && decide (counters.edges = 2) &&
+           decide (counters.work = 2) && decide (counters.worklistPeak = 1)
+     | .rejected _ _ => false) = true := by
+  decide
+
+/-- A descriptor cost is independently bounded, including exact-limit success. -/
+def unitDescriptorCost (_ : Handle 3) : Nat := 1
+
+example :
+    (match runBoundedMarker allLive allDescriptorsValid noEdges
+      unitDescriptorCost [h0] (budget 1 1 0 1 1 1) with
+     | .complete _ counters _ => decide (counters.descriptorSlots = 1)
+     | .rejected _ _ => false) = true := by
+  decide
+
+example :
+    (match runBoundedMarker allLive allDescriptorsValid noEdges
+      unitDescriptorCost [h0] (budget 1 1 0 1 0 1) with
+     | .rejected .descriptorLimit _ => true
+     | _ => false) = true := by
+  decide
+
+/-- Pending-work growth is bounded independently of total object capacity. -/
+def branchingEdges (handle : Handle 3) : List (Handle 3) :=
+  if handle == h0 then [h1, h2] else []
+
+example :
+    (match runBoundedMarker allLive allDescriptorsValid branchingEdges
+      zeroDescriptorCost [h0] (budget 1 3 2 1 0 3) with
+     | .rejected .worklistLimit _ => true
+     | _ => false) = true := by
+  decide
+
+end AdversarialTests
