@@ -78,6 +78,13 @@ else
   bad "CCAM multi-function evaluator" "$out"
 fi
 
+section "Capstan-native verification: Bosun's Locker bounded transaction-history oracle"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/bosuns_locker_history.cap" 2>&1)"; then
+  ok "Bosun transaction histories: witness, real-time order, write-skew rejection and bounded inconclusive result"
+else
+  bad "Bosun transaction-history oracle" "$out"
+fi
+
 section "Capstan-native verification: bounded concurrency reference machine"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
   ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"
