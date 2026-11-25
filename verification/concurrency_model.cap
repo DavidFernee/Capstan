@@ -114,6 +114,41 @@ CCMState ccm_initial_state() {
     };
 }
 
+// CCAM structs are reference values. A state transition must therefore
+// construct a fresh state rather than assign an alias and mutate the caller's
+// snapshot. This explicit copy is also required by the BFS explorer: otherwise
+// exploring one edge mutates the queued predecessor and corrupts deduplication.
+CCMState ccm_copy_state(CCMState source) {
+    return new CCMState{
+        root_status: source.root_status,
+        producer_status: source.producer_status,
+        consumer_status: source.consumer_status,
+        producer_handle: source.producer_handle,
+        consumer_handle: source.consumer_handle,
+        task_count: source.task_count,
+        max_tasks: source.max_tasks,
+        channel_count: source.channel_count,
+        channel_capacity: source.channel_capacity,
+        channel_closed: source.channel_closed,
+        buffered_bytes: source.buffered_bytes,
+        max_buffered_bytes: source.max_buffered_bytes,
+        message_live: source.message_live,
+        message_owner: source.message_owner,
+        protocol_phase: source.protocol_phase,
+        message_bytes: source.message_bytes,
+        live_bytes: source.live_bytes,
+        max_live_bytes: source.max_live_bytes,
+        steps: source.steps,
+        max_steps: source.max_steps,
+        cleanup_steps: source.cleanup_steps,
+        max_cleanup_steps: source.max_cleanup_steps,
+        cleanup_reserved: source.cleanup_reserved,
+        scope_cancel_requested: source.scope_cancel_requested,
+        scope_failed: source.scope_failed,
+        scope_closed: source.scope_closed
+    };
+}
+
 CCMTransition ccm_reject(CCMState state, string error) {
     return new CCMTransition{ok: false, state: state, error: error};
 }
@@ -323,7 +358,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         return ccm_reject(before, "task_cancellation_requested");
     }
 
-    CCMState next = before;
+    CCMState next = ccm_copy_state(before);
 
     if (action == CCM_ACT_SPAWN_PRODUCER) {
         if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
@@ -744,6 +779,18 @@ CCMExploreResult ccm_explore(int max_states) {
         invalid_budget: false,
         counterexample: new List<int>()
     };
+}
+
+test "CCM transitions preserve their input state snapshot" {
+    CCMState before = ccm_initial_state();
+    CCMTransition spawned = ccm_step(before, 0, CCM_ACT_SPAWN_PRODUCER);
+    assert(spawned.ok);
+    assert(before.producer_status == CCM_TASK_NEW);
+    assert(before.task_count == 1);
+    assert(before.steps == 0);
+    assert(spawned.state.producer_status == CCM_TASK_RUNNABLE);
+    assert(spawned.state.task_count == 2);
+    assert(spawned.state.steps == 1);
 }
 
 test "CCM bounded breadth-first exploration reaches a fixed point" {
