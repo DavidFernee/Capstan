@@ -1,0 +1,720 @@
+// Bosun's Locker — bounded in-memory storage kernel (BL1 prototype).
+//
+// This is an executable Capstan reference implementation, not a production
+// storage engine. It provides preallocated byte regions, aggregate admission,
+// generation-checked references and typed byte access. It performs no file,
+// device, WAL, transaction, concurrency or durability operations.
+//
+// Assurance boundary:
+// - Capstan structs/lists are currently publicly mutable and forgeable.
+// - Allocation failure is not recoverable through the current runtime API.
+// - Operations are sequential/thread-confined; no concurrent-safety claim.
+// - Logical payload capacity excludes list/object/GC/runtime overhead.
+// - Generation/owner checks defend ordinary stale/cross-owner use, not a
+//   malicious caller able to forge or mutate public values.
+// Opaque/affine ownership, fallible allocation and a proved implementation
+// refinement are prerequisites for promoting this prototype to a safe API.
+
+const int BOSUN_MAX_REGIONS = 8;
+const int BOSUN_MAX_REGION_BYTES = 1048576;
+const int BOSUN_MAX_TOTAL_BYTES = 8388608;
+const int BOSUN_MAX_GENERATION = 2147483647;
+
+struct BosunRegion {
+    List<int> bytes;
+    int capacity;
+    int used;
+    int owner;
+    int generation;
+    bool active;
+}
+
+struct BosunStorage {
+    List<BosunRegion> regions;
+    int owner;
+    int capacity_limit;
+    int capacity_admitted;
+    int bytes_reserved;
+}
+
+struct BosunStorageResult {
+    bool ok;
+    BosunStorage? storage;
+    string error;
+}
+
+struct BosunRef {
+    int region_index;
+    int owner;
+    int generation;
+    int offset;
+    int length;
+}
+
+struct BosunRefResult {
+    bool ok;
+    BosunRef? reference;
+    string error;
+}
+
+struct BosunBytesResult {
+    bool ok;
+    List<int> bytes;
+    string error;
+}
+
+struct BosunI64Result {
+    bool ok;
+    int value;
+    string error;
+}
+
+struct BosunBoolResult {
+    bool ok;
+    bool value;
+    string error;
+}
+
+BosunStorageResult bosun_storage_create(int owner, int capacity_limit) {
+    if (owner <= 0) {
+        return new BosunStorageResult{ok: false, storage: none, error: "invalid_owner"};
+    }
+    if (capacity_limit < 0 || capacity_limit > BOSUN_MAX_TOTAL_BYTES) {
+        return new BosunStorageResult{ok: false, storage: none, error: "invalid_capacity"};
+    }
+    BosunStorage storage = new BosunStorage{
+        regions: new List<BosunRegion>(),
+        owner: owner,
+        capacity_limit: capacity_limit,
+        capacity_admitted: 0,
+        bytes_reserved: 0
+    };
+    return new BosunStorageResult{ok: true, storage: storage, error: ""};
+}
+
+bool bosun_storage_state_valid(BosunStorage storage) {
+    if (storage.owner <= 0 || storage.capacity_limit < 0 ||
+        storage.capacity_limit > BOSUN_MAX_TOTAL_BYTES ||
+        storage.capacity_admitted < 0 ||
+        storage.capacity_admitted > storage.capacity_limit ||
+        storage.bytes_reserved < 0 ||
+        storage.bytes_reserved > storage.capacity_admitted ||
+        storage.regions.len() > BOSUN_MAX_REGIONS) {
+        return false;
+    }
+    int capacity_sum = 0;
+    int reserved_sum = 0;
+    for (int i = 0; i < storage.regions.len(); i += 1) {
+        BosunRegion region = storage.regions[i];
+        if (!region.active || region.owner != storage.owner ||
+            region.generation <= 0 || region.capacity < 0 ||
+            region.capacity > BOSUN_MAX_REGION_BYTES ||
+            region.bytes.len() != region.capacity ||
+            region.used < 0 || region.used > region.capacity) {
+            return false;
+        }
+        if (region.capacity > storage.capacity_limit - capacity_sum) { return false; }
+        capacity_sum += region.capacity;
+        if (region.used > storage.capacity_admitted - reserved_sum) { return false; }
+        reserved_sum += region.used;
+    }
+    return capacity_sum == storage.capacity_admitted &&
+        reserved_sum == storage.bytes_reserved;
+}
+
+// Region admission is all-or-nothing at the logical state level. The complete
+// backing list is created before it is published in the region table.
+bool bosun_storage_add_region(BosunStorage storage, int capacity) {
+    if (!bosun_storage_state_valid(storage)) { return false; }
+    if (storage.regions.len() >= BOSUN_MAX_REGIONS) { return false; }
+    if (capacity <= 0 || capacity > BOSUN_MAX_REGION_BYTES) { return false; }
+    if (capacity > storage.capacity_limit - storage.capacity_admitted) { return false; }
+
+    List<int> backing = new List<int>();
+    for (int i = 0; i < capacity; i += 1) { backing.push(0); }
+    BosunRegion region = new BosunRegion{
+        bytes: backing,
+        capacity: capacity,
+        used: 0,
+        owner: storage.owner,
+        generation: 1,
+        active: true
+    };
+    storage.regions.push(region);
+    storage.capacity_admitted += capacity;
+    return true;
+}
+
+int bosun_storage_region_count(BosunStorage storage) {
+    if (!bosun_storage_state_valid(storage)) { return -1; }
+    return storage.regions.len();
+}
+
+int bosun_storage_available(BosunStorage storage) {
+    if (!bosun_storage_state_valid(storage)) { return -1; }
+    return storage.capacity_admitted - storage.bytes_reserved;
+}
+
+// Bump allocation never moves or reallocates the region's backing bytes.
+// Failure leaves both region and aggregate counters unchanged.
+BosunRefResult bosun_storage_reserve(
+    BosunStorage storage, int region_index, int length
+) {
+    if (!bosun_storage_state_valid(storage)) {
+        return new BosunRefResult{ok: false, reference: none, error: "invalid_state"};
+    }
+    if (region_index < 0 || region_index >= storage.regions.len()) {
+        return new BosunRefResult{ok: false, reference: none, error: "invalid_region"};
+    }
+    if (length <= 0) {
+        return new BosunRefResult{ok: false, reference: none, error: "invalid_length"};
+    }
+    BosunRegion region = storage.regions[region_index];
+    if (length > region.capacity - region.used) {
+        return new BosunRefResult{ok: false, reference: none, error: "region_full"};
+    }
+    if (length > storage.capacity_admitted - storage.bytes_reserved) {
+        return new BosunRefResult{ok: false, reference: none, error: "storage_full"};
+    }
+
+    int offset = region.used;
+    region.used += length;
+    storage.regions[region_index] = region;
+    storage.bytes_reserved += length;
+    BosunRef reference = new BosunRef{
+        region_index: region_index,
+        owner: storage.owner,
+        generation: region.generation,
+        offset: offset,
+        length: length
+    };
+    return new BosunRefResult{ok: true, reference: reference, error: ""};
+}
+
+bool bosun_ref_valid(BosunStorage storage, BosunRef reference) {
+    if (!bosun_storage_state_valid(storage)) { return false; }
+    if (reference.owner != storage.owner ||
+        reference.region_index < 0 ||
+        reference.region_index >= storage.regions.len() ||
+        reference.offset < 0 || reference.length <= 0) {
+        return false;
+    }
+    BosunRegion region = storage.regions[reference.region_index];
+    if (!region.active || region.owner != reference.owner ||
+        region.generation != reference.generation) {
+        return false;
+    }
+    if (reference.offset > region.used ||
+        reference.length > region.used - reference.offset) {
+        return false;
+    }
+    return true;
+}
+
+// Exact write: validate the reference, length and entire byte domain before
+// changing any backing byte. Rejected writes are failure-atomic.
+bool bosun_storage_write(BosunStorage storage, BosunRef reference, List<int> input) {
+    if (!bosun_ref_valid(storage, reference)) { return false; }
+    if (input.len() != reference.length) { return false; }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) { return false; }
+    }
+    BosunRegion region = storage.regions[reference.region_index];
+    for (int j = 0; j < input.len(); j += 1) {
+        region.bytes[reference.offset + j] = input[j];
+    }
+    storage.regions[reference.region_index] = region;
+    return true;
+}
+
+BosunBytesResult bosun_storage_read(BosunStorage storage, BosunRef reference) {
+    List<int> empty = new List<int>();
+    if (!bosun_ref_valid(storage, reference)) {
+        return new BosunBytesResult{ok: false, bytes: empty, error: "invalid_reference"};
+    }
+    BosunRegion region = storage.regions[reference.region_index];
+    for (int i = 0; i < reference.length; i += 1) {
+        int value = region.bytes[reference.offset + i];
+        if (value < 0 || value > 255) {
+            return new BosunBytesResult{
+                ok: false, bytes: empty, error: "invalid_byte_state"
+            };
+        }
+    }
+    List<int> copy = new List<int>();
+    for (int j = 0; j < reference.length; j += 1) {
+        copy.push(region.bytes[reference.offset + j]);
+    }
+    return new BosunBytesResult{ok: true, bytes: copy, error: ""};
+}
+
+bool bosun_storage_store_i64_le(BosunStorage storage, BosunRef reference, int value) {
+    if (!bosun_ref_valid(storage, reference) || reference.length != 8) { return false; }
+    List<int> encoded = new List<int>();
+    for (int i = 0; i < 8; i += 1) {
+        encoded.push((value >> (i * 8)) & 255);
+    }
+    return bosun_storage_write(storage, reference, encoded);
+}
+
+BosunI64Result bosun_storage_load_i64_le(BosunStorage storage, BosunRef reference) {
+    if (!bosun_ref_valid(storage, reference) || reference.length != 8) {
+        return new BosunI64Result{ok: false, value: 0, error: "invalid_i64_reference"};
+    }
+    BosunRegion region = storage.regions[reference.region_index];
+    for (int i = 0; i < 8; i += 1) {
+        int byte_value = region.bytes[reference.offset + i];
+        if (byte_value < 0 || byte_value > 255) {
+            return new BosunI64Result{
+                ok: false, value: 0, error: "invalid_byte_state"
+            };
+        }
+    }
+    // Compose the low 56 bits without ever left-shifting the sign byte.
+    // The final byte is interpreted as a signed two's-complement high byte.
+    int value = 0;
+    for (int i = 0; i < 7; i += 1) {
+        value = value | (region.bytes[reference.offset + i] << (i * 8));
+    }
+    int high = region.bytes[reference.offset + 7];
+    if (high < 128) {
+        value += high * 72057594037927936;
+    } else if (high == 128) {
+        value = value - 9223372036854775807 - 1;
+    } else {
+        value -= (256 - high) * 72057594037927936;
+    }
+    return new BosunI64Result{ok: true, value: value, error: ""};
+}
+
+bool bosun_storage_store_bool(BosunStorage storage, BosunRef reference, bool value) {
+    if (!bosun_ref_valid(storage, reference) || reference.length != 1) { return false; }
+    List<int> encoded = new List<int>();
+    if (value) { encoded.push(1); }
+    else { encoded.push(0); }
+    return bosun_storage_write(storage, reference, encoded);
+}
+
+BosunBoolResult bosun_storage_load_bool(BosunStorage storage, BosunRef reference) {
+    if (!bosun_ref_valid(storage, reference) || reference.length != 1) {
+        return new BosunBoolResult{ok: false, value: false, error: "invalid_bool_reference"};
+    }
+    BosunRegion region = storage.regions[reference.region_index];
+    int encoded = region.bytes[reference.offset];
+    if (encoded < 0 || encoded > 255) {
+        return new BosunBoolResult{ok: false, value: false, error: "invalid_byte_state"};
+    }
+    if (encoded != 0 && encoded != 1) {
+        return new BosunBoolResult{ok: false, value: false, error: "noncanonical_bool"};
+    }
+    return new BosunBoolResult{ok: true, value: encoded == 1, error: ""};
+}
+
+// Reset wipes the full logical region and advances its generation, invalidating
+// every outstanding reference into that region. This is logical zeroing only;
+// it is not a claim of physical or process-wide secret erasure.
+bool bosun_storage_reset_region(BosunStorage storage, int region_index) {
+    if (!bosun_storage_state_valid(storage)) { return false; }
+    if (region_index < 0 || region_index >= storage.regions.len()) { return false; }
+    BosunRegion region = storage.regions[region_index];
+    if (region.generation >= BOSUN_MAX_GENERATION) { return false; }
+    if (region.used > storage.bytes_reserved) { return false; }
+
+    for (int i = 0; i < region.capacity; i += 1) { region.bytes[i] = 0; }
+    storage.bytes_reserved -= region.used;
+    region.used = 0;
+    region.generation += 1;
+    storage.regions[region_index] = region;
+    return true;
+}
+
+test "Bosun storage admits multiple regions within aggregate capacity" {
+    BosunStorageResult made = bosun_storage_create(41, 12);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 5));
+        assert(bosun_storage_add_region(storage, 7));
+        assert(bosun_storage_region_count(storage) == 2);
+        assert(storage.capacity_admitted == 12);
+        assert(bosun_storage_available(storage) == 12);
+        assert(!bosun_storage_add_region(storage, 1));
+        assert(storage.capacity_admitted == 12);
+        assert(bosun_storage_region_count(storage) == 2);
+    } else { assert(false); }
+}
+
+test "Bosun storage rejects invalid limits and region-count overflow" {
+    assert(!bosun_storage_create(0, 1).ok);
+    assert(!bosun_storage_create(1, -1).ok);
+    assert(!bosun_storage_create(1, BOSUN_MAX_TOTAL_BYTES + 1).ok);
+    BosunStorageResult made = bosun_storage_create(7, 100);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        for (int i = 0; i < BOSUN_MAX_REGIONS; i += 1) {
+            assert(bosun_storage_add_region(storage, 1));
+        }
+        assert(!bosun_storage_add_region(storage, 1));
+        assert(storage.regions.len() == BOSUN_MAX_REGIONS);
+    } else { assert(false); }
+}
+
+test "Bosun reservation rejects over-capacity without changing counters" {
+    BosunStorageResult made = bosun_storage_create(3, 4);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 4));
+        BosunRefResult first = bosun_storage_reserve(storage, 0, 3);
+        assert(first.ok);
+        assert(storage.bytes_reserved == 3);
+        BosunRefResult rejected = bosun_storage_reserve(storage, 0, 2);
+        assert(!rejected.ok && rejected.error == "region_full");
+        assert(storage.bytes_reserved == 3);
+        assert(storage.regions[0].used == 3);
+        assert(bosun_storage_available(storage) == 1);
+    } else { assert(false); }
+}
+
+test "Bosun references enforce owner generation and bounds" {
+    BosunStorageResult a = bosun_storage_create(11, 8);
+    BosunStorageResult b = bosun_storage_create(12, 8);
+    assert(a.ok && b.ok);
+    if (let sa = a.storage) {
+        if (let sb = b.storage) {
+            assert(bosun_storage_add_region(sa, 8));
+            assert(bosun_storage_add_region(sb, 8));
+            BosunRefResult made = bosun_storage_reserve(sa, 0, 4);
+            assert(made.ok);
+            if (let reference = made.reference) {
+                assert(bosun_ref_valid(sa, reference));
+                assert(!bosun_ref_valid(sb, reference));
+                BosunRef forged = reference;
+                forged.offset = 3;
+                forged.length = 2;
+                assert(!bosun_ref_valid(sa, forged));
+            } else { assert(false); }
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Bosun byte writes are exact and failure atomic" {
+    BosunStorageResult made = bosun_storage_create(21, 8);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 8));
+        BosunRefResult allocated = bosun_storage_reserve(storage, 0, 3);
+        assert(allocated.ok);
+        if (let reference = allocated.reference) {
+            List<int> initial = new List<int>();
+            initial.push(10); initial.push(20); initial.push(30);
+            assert(bosun_storage_write(storage, reference, initial));
+            List<int> invalid = new List<int>();
+            invalid.push(99); invalid.push(256); invalid.push(77);
+            assert(!bosun_storage_write(storage, reference, invalid));
+            BosunBytesResult read = bosun_storage_read(storage, reference);
+            assert(read.ok);
+            assert(read.bytes[0] == 10 && read.bytes[1] == 20 && read.bytes[2] == 30);
+            List<int> short_input = new List<int>();
+            short_input.push(1);
+            assert(!bosun_storage_write(storage, reference, short_input));
+            assert(bosun_storage_read(storage, reference).bytes[0] == 10);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Bosun typed i64 little-endian round trips signed values" {
+    BosunStorageResult made = bosun_storage_create(31, 16);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 16));
+        BosunRefResult allocated = bosun_storage_reserve(storage, 0, 8);
+        assert(allocated.ok);
+        if (let reference = allocated.reference) {
+            assert(bosun_storage_store_i64_le(storage, reference, 123456789));
+            BosunI64Result positive = bosun_storage_load_i64_le(storage, reference);
+            assert(positive.ok && positive.value == 123456789);
+            assert(bosun_storage_store_i64_le(storage, reference, -123456789));
+            BosunI64Result negative = bosun_storage_load_i64_le(storage, reference);
+            assert(negative.ok && negative.value == -123456789);
+            assert(bosun_storage_store_i64_le(storage, reference, 9223372036854775807));
+            BosunI64Result maximum = bosun_storage_load_i64_le(storage, reference);
+            assert(maximum.ok && maximum.value == 9223372036854775807);
+            assert(bosun_storage_store_i64_le(storage, reference, -9223372036854775807 - 1));
+            BosunI64Result minimum = bosun_storage_load_i64_le(storage, reference);
+            assert(minimum.ok && minimum.value == -9223372036854775807 - 1);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Bosun boolean encoding is canonical and typed" {
+    BosunStorageResult made = bosun_storage_create(32, 2);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 2));
+        BosunRefResult allocated = bosun_storage_reserve(storage, 0, 1);
+        assert(allocated.ok);
+        if (let reference = allocated.reference) {
+            assert(bosun_storage_store_bool(storage, reference, true));
+            BosunBoolResult yes = bosun_storage_load_bool(storage, reference);
+            assert(yes.ok && yes.value);
+            assert(bosun_storage_store_bool(storage, reference, false));
+            BosunBoolResult no = bosun_storage_load_bool(storage, reference);
+            assert(no.ok && !no.value);
+            BosunRegion region = storage.regions[0];
+            region.bytes[reference.offset] = 2;
+            storage.regions[0] = region;
+            BosunBoolResult malformed = bosun_storage_load_bool(storage, reference);
+            assert(!malformed.ok && malformed.error == "noncanonical_bool");
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Bosun rejects corrupted backing shape and byte values" {
+    BosunStorageResult made = bosun_storage_create(52, 4);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 4));
+        BosunRefResult allocated = bosun_storage_reserve(storage, 0, 2);
+        assert(allocated.ok);
+        if (let reference = allocated.reference) {
+            BosunRegion region = storage.regions[0];
+            region.bytes[reference.offset] = 300;
+            storage.regions[0] = region;
+            BosunBytesResult invalid = bosun_storage_read(storage, reference);
+            assert(!invalid.ok && invalid.error == "invalid_byte_state");
+            region = storage.regions[0];
+            region.bytes = new List<int>();
+            storage.regions[0] = region;
+            assert(bosun_storage_available(storage) == -1);
+            assert(!bosun_ref_valid(storage, reference));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Bosun reset invalidates stale references and zeroes the region" {
+    BosunStorageResult made = bosun_storage_create(51, 4);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 4));
+        BosunRefResult allocated = bosun_storage_reserve(storage, 0, 4);
+        assert(allocated.ok);
+        if (let reference = allocated.reference) {
+            List<int> data = new List<int>();
+            data.push(1); data.push(2); data.push(3); data.push(4);
+            assert(bosun_storage_write(storage, reference, data));
+            assert(bosun_storage_reset_region(storage, 0));
+            assert(!bosun_ref_valid(storage, reference));
+            assert(storage.bytes_reserved == 0);
+            for (int i = 0; i < 4; i += 1) {
+                assert(storage.regions[0].bytes[i] == 0);
+            }
+            BosunRefResult fresh = bosun_storage_reserve(storage, 0, 4);
+            assert(fresh.ok);
+            if (let current = fresh.reference) {
+                assert(current.generation != reference.generation);
+                assert(bosun_ref_valid(storage, current));
+            } else { assert(false); }
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+
+// Independent abstract storage oracle.
+//
+// The oracle uses one flat byte vector plus disjoint region intervals. It
+// intentionally does not share the implementation's nested region backing
+// lists, cached aggregate counters, or state-validation routine. Every
+// aggregate is derived from the region vectors. It is a finite test oracle,
+// not a proof and not a substitute for compiler-enforced ownership.
+struct BosunOracle {
+    List<int> starts;
+    List<int> capacities;
+    List<int> used;
+    List<int> generations;
+    List<int> bytes;
+    int owner;
+    int limit;
+}
+
+BosunOracle bosun_oracle_create(int owner, int limit) {
+    return new BosunOracle{
+        starts: new List<int>(),
+        capacities: new List<int>(),
+        used: new List<int>(),
+        generations: new List<int>(),
+        bytes: new List<int>(),
+        owner: owner,
+        limit: limit
+    };
+}
+
+int bosun_oracle_capacity(BosunOracle oracle) {
+    int total = 0;
+    for (int i = 0; i < oracle.capacities.len(); i += 1) {
+        total += oracle.capacities[i];
+    }
+    return total;
+}
+
+int bosun_oracle_reserved(BosunOracle oracle) {
+    int total = 0;
+    for (int i = 0; i < oracle.used.len(); i += 1) {
+        total += oracle.used[i];
+    }
+    return total;
+}
+
+bool bosun_oracle_add(BosunOracle oracle, int capacity) {
+    if (oracle.owner <= 0 || capacity <= 0 ||
+        capacity > BOSUN_MAX_REGION_BYTES ||
+        oracle.capacities.len() >= BOSUN_MAX_REGIONS ||
+        capacity > oracle.limit - bosun_oracle_capacity(oracle)) {
+        return false;
+    }
+    oracle.starts.push(oracle.bytes.len());
+    oracle.capacities.push(capacity);
+    oracle.used.push(0);
+    oracle.generations.push(1);
+    for (int i = 0; i < capacity; i += 1) { oracle.bytes.push(0); }
+    return true;
+}
+
+bool bosun_oracle_reserve(
+    BosunOracle oracle, int region_index, int length, int expected_offset
+) {
+    if (region_index < 0 || region_index >= oracle.capacities.len() ||
+        length <= 0) { return false; }
+    int remaining = oracle.capacities[region_index] - oracle.used[region_index];
+    if (length > remaining) { return false; }
+    if (oracle.used[region_index] != expected_offset) { return false; }
+    oracle.used[region_index] += length;
+    return true;
+}
+
+bool bosun_oracle_ref_valid(BosunOracle oracle, BosunRef reference) {
+    if (reference.owner != oracle.owner ||
+        reference.region_index < 0 ||
+        reference.region_index >= oracle.capacities.len() ||
+        reference.length <= 0 || reference.offset < 0) { return false; }
+    int i = reference.region_index;
+    if (reference.generation != oracle.generations[i]) { return false; }
+    if (reference.offset > oracle.used[i] ||
+        reference.length > oracle.used[i] - reference.offset) { return false; }
+    return true;
+}
+
+bool bosun_oracle_write(
+    BosunOracle oracle, BosunRef reference, List<int> input
+) {
+    if (!bosun_oracle_ref_valid(oracle, reference) ||
+        input.len() != reference.length) { return false; }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) { return false; }
+    }
+    int base = oracle.starts[reference.region_index] + reference.offset;
+    for (int i = 0; i < input.len(); i += 1) {
+        oracle.bytes[base + i] = input[i];
+    }
+    return true;
+}
+
+bool bosun_oracle_reset(BosunOracle oracle, int region_index) {
+    if (region_index < 0 || region_index >= oracle.capacities.len()) { return false; }
+    if (oracle.generations[region_index] >= BOSUN_MAX_GENERATION) { return false; }
+    int base = oracle.starts[region_index];
+    int capacity = oracle.capacities[region_index];
+    for (int i = 0; i < capacity; i += 1) { oracle.bytes[base + i] = 0; }
+    oracle.used[region_index] = 0;
+    oracle.generations[region_index] += 1;
+    return true;
+}
+
+bool bosun_oracle_matches(BosunStorage storage, BosunOracle oracle) {
+    if (storage.owner != oracle.owner ||
+        storage.regions.len() != oracle.capacities.len() ||
+        storage.capacity_admitted != bosun_oracle_capacity(oracle) ||
+        storage.bytes_reserved != bosun_oracle_reserved(oracle)) { return false; }
+    for (int i = 0; i < oracle.capacities.len(); i += 1) {
+        BosunRegion region = storage.regions[i];
+        if (region.capacity != oracle.capacities[i] ||
+            region.used != oracle.used[i] ||
+            region.generation != oracle.generations[i]) { return false; }
+        for (int j = 0; j < oracle.capacities[i]; j += 1) {
+            if (region.bytes[j] != oracle.bytes[oracle.starts[i] + j]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+test "Bosun implementation conforms to independent flat storage oracle" {
+    BosunStorageResult made = bosun_storage_create(61, 9);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        BosunOracle oracle = bosun_oracle_create(61, 9);
+        bool model_add_a = bosun_oracle_add(oracle, 4);
+        bool impl_add_a = bosun_storage_add_region(storage, 4);
+        assert(model_add_a == impl_add_a);
+        assert(bosun_oracle_matches(storage, oracle));
+
+        bool model_add_b = bosun_oracle_add(oracle, 5);
+        bool impl_add_b = bosun_storage_add_region(storage, 5);
+        assert(model_add_b == impl_add_b);
+        assert(bosun_oracle_matches(storage, oracle));
+
+        bool model_reject = bosun_oracle_add(oracle, 1);
+        bool impl_reject = bosun_storage_add_region(storage, 1);
+        assert(model_reject == impl_reject && !impl_reject);
+        assert(bosun_oracle_matches(storage, oracle));
+
+        bool model_reserve_a = bosun_oracle_reserve(oracle, 0, 3, 0);
+        BosunRefResult impl_reserve_a = bosun_storage_reserve(storage, 0, 3);
+        assert(model_reserve_a == impl_reserve_a.ok && impl_reserve_a.ok);
+        assert(bosun_oracle_matches(storage, oracle));
+
+        bool model_reserve_b = bosun_oracle_reserve(oracle, 1, 2, 0);
+        BosunRefResult impl_reserve_b = bosun_storage_reserve(storage, 1, 2);
+        assert(model_reserve_b == impl_reserve_b.ok && impl_reserve_b.ok);
+        assert(bosun_oracle_matches(storage, oracle));
+
+        if (let ref_a = impl_reserve_a.reference) {
+            List<int> payload = new List<int>();
+            payload.push(0); payload.push(127); payload.push(255);
+            bool expected_write = bosun_oracle_write(oracle, ref_a, payload);
+            bool actual_write = bosun_storage_write(storage, ref_a, payload);
+            assert(expected_write == actual_write && actual_write);
+            assert(bosun_oracle_matches(storage, oracle));
+
+            List<int> malformed = new List<int>();
+            malformed.push(9); malformed.push(300); malformed.push(8);
+            bool expected_bad = bosun_oracle_write(oracle, ref_a, malformed);
+            bool actual_bad = bosun_storage_write(storage, ref_a, malformed);
+            assert(expected_bad == actual_bad && !actual_bad);
+            assert(bosun_oracle_matches(storage, oracle));
+
+            bool expected_reset = bosun_oracle_reset(oracle, 0);
+            bool actual_reset = bosun_storage_reset_region(storage, 0);
+            assert(expected_reset == actual_reset && actual_reset);
+            assert(bosun_oracle_matches(storage, oracle));
+            assert(!bosun_oracle_ref_valid(oracle, ref_a));
+            assert(!bosun_ref_valid(storage, ref_a));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Bosun boolean loader rejects corrupted non-byte backing values" {
+    BosunStorageResult made = bosun_storage_create(62, 1);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 1));
+        BosunRefResult allocated = bosun_storage_reserve(storage, 0, 1);
+        assert(allocated.ok);
+        if (let reference = allocated.reference) {
+            BosunRegion region = storage.regions[0];
+            region.bytes[0] = 256;
+            storage.regions[0] = region;
+            BosunBoolResult loaded = bosun_storage_load_bool(storage, reference);
+            assert(!loaded.ok && loaded.error == "invalid_byte_state");
+        } else { assert(false); }
+    } else { assert(false); }
+}
