@@ -8,7 +8,7 @@ A bounded byte-output transition model for the CCAM v0.2 output extension.
 The trace is a sequence of octets, not a Unicode string. The model therefore
 preserves NUL and all 256 byte values without decoding or normalisation.
 This file proves the abstract append/budget/step properties. The refinement
-from the Capstan evaluator and Linux syscall adapter remains a separate proof.
+from the Capstan evaluator and Linux syscall adapter remains a separate proof. The separately emitted Linux x86-64 backend is not covered by these abstract theorems; its conformance tests and a future lowering-refinement proof remain independent obligations.
 -/
 
 inductive OutputTrap where
