@@ -38,6 +38,34 @@
 | SF-020 | Nonzero proof-model entry | Profile reject; not a normative input case |
 | SF-X01 | Application-defined explicit trap detail | Concrete CCAM case; excluded from dual execution |
 
+## Existing implementation-test crosswalk
+
+The following names were checked against `verification/ccam_core.cap` on main and the open PR #253 branch. Existing tests exercise related behaviour, but they do not automatically provide the exact shared vector trace/oracle assertions.
+
+| Vector | Existing Capstan test evidence | Remaining vector-specific work |
+|---|---|---|
+| SF-001 | `CCAM machine executes checked arithmetic and returns a value` | Add the shared vector ID and assert the full PC trace. |
+| SF-002 | `CCAM evaluator traps on checked addition overflow` | Assert the shared trace and exact trap PC/step count. |
+| SF-003 | `CCAM evaluator traps on division overflow at minimum integer`; helper test `CCAM division rejects minimum divided by negative one` | Assert evaluator trace and budget count in the corpus runner. |
+| SF-004 | Helper test `CCAM remainder of minimum by negative one is zero`; PR #253 adds evaluator test `CCAM evaluator returns zero for minimum remainder negative one` | PR #253 must pass exact-head CI; then bind this case to SF-004. |
+| SF-005 | `CCAM machine consumes a step for a dynamic arithmetic trap`; `CCAM remainder by zero traps` covers helper semantics | Confirm the evaluator test uses the same division-by-zero vector and assert exact trace. |
+| SF-006 | `CCAM machine follows a boolean branch` | Add shared vector ID and trace assertion. |
+| SF-007 | `CCAM machine follows the false branch arm` | Add shared vector ID and trace assertion. |
+| SF-008 | `CCAM machine moves typed values and returns a boolean` | Add shared vector ID and trace assertion. |
+| SF-009 | `CCAM machine compares integers and negates booleans` | Add shared vector ID and trace assertion. |
+| SF-010 | `CCAM machine returns void and preserves explicit trap detail` | Separate the void-return assertion from its explicit-trap portion; assert the one-step void halt. |
+| SF-011 | `CCAM machine rejects an uninitialised return source` | Add shared vector ID and exact trap/trace assertion. |
+| SF-012 | `CCAM machine checks a zero instruction budget before dispatch` | Add shared vector ID; expected trace is empty and steps are zero. |
+| SF-013 | No exact two-instruction success-at-limit vector identified | Add a dedicated exact-budget success test. |
+| SF-014 | `CCAM machine checks the step limit before executing the next instruction` | Bind to shared vector and assert PC 1, one dispatched step. |
+| SF-015–016 | `CCAM validator rejects bad operand indices and static types` | Split into separately identified malformed-destination and static-type vectors. |
+| SF-017–018 | `CCAM validator rejects invalid branch targets and reachable fallthrough` | Bind target rejection and reachable-fall-through rejection separately. |
+| SF-019 | PR #253 adds `CCAM validator accepts unreachable nonterminal final instruction` | PR #253 must pass exact-head CI; assert normative accept and SF-P reject as separate results. |
+| SF-020 | Lean theorems `validateSingleFrameProfile_rejects_nonzero_entry` and `validateSingleFrameProfile_entry_zero` in the PR #241 branch | Exercise the profile admission predicate in a Lean test/example; this is not a normative CCAM input field. |
+| SF-X01 | `CCAM machine returns void and preserves explicit trap detail`; `CCAM validator accepts and rejects canonical trap reasons` | Keep concrete-only until issue #265 establishes exact Lean reason/detail semantics. |
+
+PR #253 is still open. Its two new tests are not counted as merged mainline evidence. The crosswalk is a test-discovery aid, not a claim that the current tests execute this JSON corpus.
+
 ## Important semantic boundary: explicit traps
 
 The current Lean `MachineInstr.explicitTrap` constructor takes the finite `Trap` enumeration. The concrete CCAM `trap` opcode instead returns the machine code `explicit_trap` together with its validated application reason as detail. Those are not equivalent outcomes. SF-X01 is therefore retained as an explicit out-of-profile vector. Do not map an arbitrary reason to a similarly named finite machine trap, and do not count SF-X01 as Lean/Capstan agreement.
