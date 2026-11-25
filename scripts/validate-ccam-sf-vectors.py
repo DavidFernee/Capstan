@@ -198,6 +198,8 @@ def main() -> int:
                 require(isinstance(vector["max_steps"], int) and
                         not isinstance(vector["max_steps"], bool) and vector["max_steps"] >= 0,
                         f"{where}: max_steps must be a non-negative integer")
+                require(isinstance(vector["instructions"], list) and vector["instructions"],
+                        f"{where}: instructions must be a non-empty array")
                 if group_name == "vectors":
                     require("profile_entry" in vector,
                             f"{where}: proof-profile vector requires profile_entry")
@@ -207,8 +209,6 @@ def main() -> int:
                             and 0 <= entry < len(vector["instructions"]),
                             f"{where}: profile_entry must identify an instruction")
 
-                require(isinstance(vector["instructions"], list) and vector["instructions"],
-                        f"{where}: instructions must be a non-empty array")
                 for pc, instruction in enumerate(vector["instructions"]):
                     iw = f"{where}.instructions[{pc}]"
                     check_instruction(
