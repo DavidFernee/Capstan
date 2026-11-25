@@ -208,6 +208,9 @@ CBTransition cb_close(CBState before) {
     if (before.channel_closed) {
         return cb_reject(before, "channel_already_closed");
     }
+    if (before.message_owner == CB_OWNER_PRODUCER) {
+        return cb_reject(before, "producer_owns_uncommitted_message");
+    }
     CBState next = cb_copy(before);
     next.channel_closed = true;
     if (next.consumer_wait_registered && next.channel_count == 0) {
@@ -251,8 +254,6 @@ test "CB receive blocks and registers exactly one wait without moving ownership"
 
 test "CB send atomically wakes blocked receiver and commits channel ownership" {
     CBState before = cb_initial();
-    before.message_live = false;
-    before.message_owner = CB_OWNER_NONE;
     CBTransition blocked = cb_receive(before);
     CBTransition sent = cb_send(blocked.state);
     assert(sent.ok);
@@ -267,8 +268,6 @@ test "CB send atomically wakes blocked receiver and commits channel ownership" {
 
 test "CB awakened receiver consumes message only when it is scheduled" {
     CBState before = cb_initial();
-    before.message_live = false;
-    before.message_owner = CB_OWNER_NONE;
     CBTransition blocked = cb_receive(before);
     CBTransition sent = cb_send(blocked.state);
     assert(sent.state.consumer_status == CB_TASK_RUNNABLE);
@@ -312,8 +311,6 @@ test "CB close preserves committed message for drain before EOF" {
 
 test "CB cancellation removes blocked waiter and prevents stale wakeup" {
     CBState before = cb_initial();
-    before.message_live = false;
-    before.message_owner = CB_OWNER_NONE;
     CBTransition blocked = cb_receive(before);
     CBTransition cancelled = cb_cancel_consumer(blocked.state);
     assert(cancelled.ok);
@@ -330,8 +327,6 @@ test "CB cancellation removes blocked waiter and prevents stale wakeup" {
 
 test "CB duplicate wake and cancellation attempts are rejected without mutation" {
     CBState before = cb_initial();
-    before.message_live = false;
-    before.message_owner = CB_OWNER_NONE;
     CBState blocked = cb_receive(before).state;
     CBState sent = cb_send(blocked).state;
     CBTransition duplicate_receive = cb_receive(sent);
@@ -353,9 +348,21 @@ test "CB empty open receive is suspension rather than protocol rejection" {
     assert(result.error == "");
 }
 
+test "CB close rejects an uncommitted producer-owned message without mutation" {
+    CBState before = cb_initial();
+    CBTransition closed = cb_close(before);
+    assert(!closed.ok);
+    assert(closed.error == "producer_owns_uncommitted_message");
+    assert(closed.state.message_owner == CB_OWNER_PRODUCER);
+    assert(!closed.state.channel_closed);
+    assert(closed.state.steps == before.steps);
+    assert(cb_invariant(closed.state));
+}
+
 test "CB repeated close and send after close fail atomically" {
     CBState before = cb_initial();
-    CBState closed = cb_close(before).state;
+    CBState committed = cb_send(before).state;
+    CBState closed = cb_close(committed).state;
     CBTransition duplicate = cb_close(closed);
     assert(!duplicate.ok && duplicate.error == "channel_already_closed");
     CBTransition send = cb_send(closed);
