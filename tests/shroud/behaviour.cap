@@ -559,6 +559,16 @@ void test_scroll(Tally t, Ui ui) {
     ui.render(v, 40);
     Laid last = laid_of(ui, "item39");
     expect_int(t, last.frame.bottom(), laid_of(ui, "sc").frame.bottom(), "scroll: clamped at the end");
+    // The accessibility snapshot must mirror the same scroll clipping as the painter.
+    if (let tree = a11y_tree(ui)) {
+        string snapshot = a11y_json(tree);
+        expect(t, !contains(snapshot, "\\\"id\\\":\\\"item0\\\""),
+            "scroll: fully clipped controls are absent from accessibility tree", snapshot);
+        expect(t, contains(snapshot, "\\\"id\\\":\\\"item39\\\""),
+            "scroll: visible controls remain in accessibility tree", snapshot);
+    } else {
+        expect(t, false, "scroll: accessibility tree exists after scrolling", "none");
+    }
     // A control scrolled out of view cannot be clicked through the viewport's edge.
     Laid first = laid_of(ui, "item0");
     List<Msg> m = ui.handle(pointer_event(EV_POINTER_DOWN, first.frame.x + FX, first.frame.y + FX, 50));
