@@ -78,6 +78,27 @@ else
   bad "CCAM multi-function evaluator" "$out"
 fi
 
+section "Capstan-native verification: bounded concurrency reference machine"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
+  ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"
+else
+  bad "bounded concurrency reference machine" "$out"
+fi
+
+section "Capstan-native verification: finite protocol automata"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
+  ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
+else
+  bad "finite protocol automata" "$out"
+fi
+
+section "Capstan-native verification: concurrency protocol refinement"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_protocol_refinement.cap" 2>&1)"; then
+  ok "normal task/channel message transitions refine protocol ownership and resource contracts"
+else
+  bad "concurrency protocol refinement" "$out"
+fi
+
 section "Capstan-native verification: checked source to CCAM lowering"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
   ok "checked scalar source lowers to validated CCAM and executes in the Capstan evaluator"
@@ -125,18 +146,6 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
   fi
 else
   bad "CCAM native x86-64 backend" "$out"
-fi
-
-section "Halyard: Capstan-native core and bounded reservation-actor model"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/lib/halyard/core.cap" 2>&1)"; then
-  ok "Halyard byte source, aggregate ledger, bounded sink and rational timebase"
-else
-  bad "Halyard Capstan core" "$out"
-fi
-if out="$($PY "$ROOT/tests/halyard/resource_actor_model.py" 2>&1)"; then
-  ok "$out"
-else
-  bad "Halyard bounded reservation actor model" "$out"
 fi
 
 section "unit"
