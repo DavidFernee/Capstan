@@ -289,6 +289,22 @@ A test corpus is not a proof. Formal claims require a named theorem, assumptions
 | F1-D09 | Module ABI and evidence binding | Specify nominal identity, versioning, package graph and deterministic linking | Extended libraries and package manager |
 | F1-D10 | Safe-profile treatment of escape hatches | Inventory `trust`, platform adapters and any unsafe primitive; formalise a quarantine boundary | Safe-profile claim and ecosystem packages |
 
+
+## 14.1 Known CWE gaps that block the Safe-profile claim
+
+The current research atlas records six distinct weakness classes that remain expressible (with three separate CWE-916 attack variants). They are explicit F1 closure targets, not accepted residual risks for a Safe-profile release:
+
+| CWE | Current gap | F1 property required |
+|---|---|---|
+| CWE-116 | Context-escaped output can be sent to a different format sink (HTML-escaped text into CSV). | Sink-specific nominal serialization types and typed complete-document writers; no cross-context coercion. |
+| CWE-798 | A hard-coded password-like literal can be hidden under an innocuous identifier. | Credential provenance and policy for embedded credentials; name/format heuristics are supplemental only. |
+| CWE-916 | Password provenance can be hidden by an innocuous variable, method call or helper call before fast hashing. | Password-specific provenance preserved through all value transformations; ordinary integrity hashes cannot accept password provenance. |
+| CWE-862 | Sensitive data may be left undeclared and therefore unprotected. | An enforceable declaration/completeness model or a narrower profile that rejects unclassified data access at the relevant boundary. |
+| CWE-306 | A critical operation may be left undeclared as protected. | Explicit operation classification/completeness contract, with a fail-closed policy for the Safe profile. |
+| CWE-79 | HTML context assembled across statements is not fully tracked. | Stateful structured-template/context semantics that preserve context across locals, helpers and composition. |
+
+The atlas is a project attack corpus, not an official MITRE mapping. Its headline counts are not prevention percentages. Each gap closes only after the actual negative fixture is rejected or neutralised, a positive control passes, bypass variants are tested, the implementation and specification agree, and exact-head CI plus independent review provide evidence. These rules do not imply that all six can be solved by a type system alone; the research must compare static typing, explicit contracts, verified sinks, runtime enforcement and deployment policy.
+
 ## 15. F1 acceptance gate
 
 F1 is complete only when all of the following are true:
