@@ -140,6 +140,16 @@ int main() {
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != -1) { return 21; }
 
+
+    // Metadata cannot declare scalar arguments nullable.
+    bool_args[0] = wayland_protocol_arg(WAYLAND_ARG_BOOL, 0, 0, true);
+    catalog[0] = wayland_protocol_spec(10, 4, WAYLAND_DIRECTION_REQUEST, 1, bool_args, 0, false);
+    List<int> good_bool_payload = new List<int>(); wayland_protocol_push_u32(good_bool_payload, 1);
+    Tainted good_bool = wayland_protocol_make_frame(1, 4, good_bool_payload);
+    result = wayland_protocol_dispatch(good_bool, wayland_frame_header(good_bool, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1) { return 34; }
+
     // Static new_id creation is committed only after every argument validates.
     List<WaylandArgSpec> create_args = new List<WaylandArgSpec>();
     create_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 40, 2, false));
@@ -169,6 +179,14 @@ int main() {
     // Destruction retires an ID; it cannot be looked up or reused until release.
     catalog[0] = wayland_protocol_spec(30, 7, WAYLAND_DIRECTION_REQUEST, 1, no_args, 0, true);
     Tainted destroy_frame = wayland_protocol_make_frame(3, 7, new List<int>());
+
+    // A destructor schema is valid only for a request, never an event.
+    catalog[0] = wayland_protocol_spec(30, 7, WAYLAND_DIRECTION_EVENT, 1, no_args, 0, true);
+    result = wayland_protocol_dispatch(destroy_frame, wayland_frame_header(destroy_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_EVENT, 0);
+    if (result.status != -1 || wayland_object_get(objects, 3).state != 1) { return 35; }
+
+    catalog[0] = wayland_protocol_spec(30, 7, WAYLAND_DIRECTION_REQUEST, 1, no_args, 0, true);
     result = wayland_protocol_dispatch(destroy_frame, wayland_frame_header(destroy_frame, 0),
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != 1 || result.retired_id != 3 || wayland_object_get(objects, 3).state != 0) { return 26; }
@@ -192,6 +210,6 @@ int main() {
     if (wayland_object_add(objects, 4000, 50, 1)) { return 32; }
     if (wayland_object_free_slots(objects) != 0) { return 33; }
 
-    println("Wayland protocol schema and object lifecycle: 33 assertions passed");
+    println("Wayland protocol schema and object lifecycle: 35 assertions passed");
     return 0;
 }
