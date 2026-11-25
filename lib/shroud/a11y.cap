@@ -65,7 +65,6 @@ string role_of(View v) {
 string name_of(View v) {
     if (v.label != "") { return escape_json(v.label); }
     if (v.kind == K_TEXT && v.has_value) { return escape_json(visible_untrusted_text(v.value)); }
-    if (v.kind == K_TEXT_FIELD) { return escape_json(v.hint); }
     return escape_json(v.text);
 }
 
