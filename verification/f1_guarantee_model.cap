@@ -144,28 +144,29 @@ F1Value f1_branch(F1Value condition, F1Value when_true, F1Value when_false) {
     return out;
 }
 
+F1Value f1_with_context(F1Value input, int contexts) {
+    return f1_make(
+        input.data_sources, input.data_top,
+        input.selection_sources, input.selection_top,
+        input.control_sources, input.control_top,
+        input.confidentiality, contexts
+    );
+}
+
 F1Value f1_encode_html(F1Value input) {
-    F1Value out = input;
-    out.contexts = F1_CTX_HTML;
-    return out;
+    return f1_with_context(input, F1_CTX_HTML);
 }
 
 F1Value f1_encode_log(F1Value input) {
-    F1Value out = input;
-    out.contexts = F1_CTX_LOG;
-    return out;
+    return f1_with_context(input, F1_CTX_LOG);
 }
 
 F1Value f1_encode_csv(F1Value input) {
-    F1Value out = input;
-    out.contexts = F1_CTX_CSV;
-    return out;
+    return f1_with_context(input, F1_CTX_CSV);
 }
 
 F1Value f1_encode_json(F1Value input) {
-    F1Value out = input;
-    out.contexts = F1_CTX_JSON;
-    return out;
+    return f1_with_context(input, F1_CTX_JSON);
 }
 
 // Concatenation is safe only in contexts safe for every component.
@@ -460,6 +461,9 @@ test "encoding guarantees are context-specific and non-substitutable" {
     F1Value source = f1_source(1, false);
     F1Value html = f1_encode_html(source);
     F1Value csv = f1_encode_csv(source);
+    assert(source.contexts == F1_CTX_NONE);
+    assert(html.contexts == F1_CTX_HTML);
+    assert(csv.contexts == F1_CTX_CSV);
     assert(f1_context_sink_allowed(html, F1_CTX_HTML));
     assert(!f1_context_sink_allowed(html, F1_CTX_CSV));
     assert(!f1_context_sink_allowed(csv, F1_CTX_HTML));
