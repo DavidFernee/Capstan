@@ -146,7 +146,7 @@ These are media-specific gates layered on shared G0–G5. They are not claims th
 - Shanty: RIFF/WAVE parser specification → bounded metadata parser → PCM conversion → deterministic offline mixer → real-time callback contract → device backend.
 - Deadeye: image descriptor/pixel oracle → selected image decoder → image transforms → container demux → video decode/frame scheduling → presentation/encode.
 - Media Core: codec-worker protocol → graph planner/backpressure → A/V clock integration → compatibility and performance harness.
-- Cross-product: Shroud presentation adapters; Keel media-graph orchestration; Anchor media inspection workflows.
+- Cross-product: optional Halyard–Shroud presentation adapter; Keel media-graph orchestration; Anchor media inspection workflows.
 
 ## In progress / integration watch
 
