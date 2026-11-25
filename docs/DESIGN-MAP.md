@@ -1157,3 +1157,8 @@ The ambition is broad practical historical and modern format compatibility, not 
 
 
 Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vulnerability accounting, root-cause taxonomy, safe reproducer protocol, SBOM/advisory reconciliation and release-blocking gates are specified in [media/SECURITY-ASSURANCE.md](media/SECURITY-ASSURANCE.md) and tracked in [#292](https://github.com/DavidFernee/Capstan/issues/292). No media release may treat a clean scanner or absence of assigned CVEs as evidence that the attack surface is safe.
+
+
+## Capstan-only language and library foundation
+
+The governing programme is specified in [CAPSTAN-ONLY-FOUNDATION.md](CAPSTAN-ONLY-FOUNDATION.md). The F1 language contract is [F1-LANGUAGE-CONTRACT.md](F1-LANGUAGE-CONTRACT.md), and its prior-art synthesis is [F1-RELATED-WORK.md](F1-RELATED-WORK.md). These are research drafts, not claims that the target guarantees are implemented. F1 proposes a factored-but-mutually-checked guarantee calculus as an experiment, not a settled language design.

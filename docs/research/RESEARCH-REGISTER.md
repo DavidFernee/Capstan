@@ -25,6 +25,36 @@ The present implementation remains C-backed. The C-free/CCAM programme is active
 not the default compiler or an end-to-end verified execution pipeline. This distinction
 is a hard constraint on all abstracts, diagrams and claims.
 
+## F1 language-contract execution status
+
+The selective related-work review is [F1-RELATED-WORK.md](../F1-RELATED-WORK.md). It sharpens the F1 hypothesis toward one shared derivation with distinct, mutually checked typing, ownership, authority/effect, information-flow and resource components. The review is not systematic and makes no novelty claim; the next step is a discriminating formal prototype.
+
+The active language-contract research draft is [F1-LANGUAGE-CONTRACT.md](../F1-LANGUAGE-CONTRACT.md),
+coordinated by the [programming-language research agenda](PROGRAMMING-LANGUAGE-RESEARCH-AGENDA.md).
+It records the current v0.1 source-language semantics, the gap between built-in generic
+containers and user-defined generics, and a proposed syntax-neutral judgement spanning
+types, ownership, authority, effects and resource budgets.
+
+**Maturity: E0 design draft.** No new type-system, effect-system, ownership or capability
+implementation is claimed. The draft identifies ten open design decisions and requires
+comparison of alternative models before selecting syntax or compiler architecture. It
+also elevates the six distinct CWE atlas gaps (116, 798, 916, 862, 306, 79) to explicit
+Safe-profile blockers. The atlas remains a project corpus, not an official MITRE mapping;
+its counts are not prevention percentages.
+
+The next evidence-producing work is:
+1. A formal core model for combined versus factored guarantee judgements.
+2. Small-step operational semantics and preservation/progress obligations for the current
+   source subset, including traps, side-effect order and bounded admission.
+3. A capability/effect model with explicit host-adapter authority and no ambient fallback.
+4. A resource-budget algebra with composition rules and adversarial counterexamples.
+5. Information-flow/context types that preserve provenance through calls, containers,
+   serialization and cross-statement output construction.
+6. A mapping from each model property to compiler, CCAM, runtime and test enforcement points.
+
+Until those artefacts exist and are independently challenged, F1 remains in progress and
+no Safe or Verified profile claim is authorised by the draft.
+
 ### Candidate papers
 
 | ID | Working title / question | Current contribution | Maturity | Publication decision |
