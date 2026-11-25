@@ -79,7 +79,8 @@ bool preflight_frame_view(View v, List<int> budget, int depth) {
     if (budget[1] > MAX_VIEWS) { return false; }
     // Per-value bounds are checked before any decoding or layout allocation.
     // The byte conversion helpers enforce the same limit defensively.
-    if (v.text.len() > MAX_TEXT_BYTES || v.value.len() > MAX_TEXT_BYTES) { return false; }
+    if (v.text.len() > MAX_TEXT_BYTES || v.value.len() > MAX_TEXT_BYTES ||
+        v.label.len() > MAX_TEXT_BYTES || v.hint.len() > MAX_TEXT_BYTES) { return false; }
     if (!frame_text_budget_add(budget, v.text.len())) { return false; }
     if (!frame_text_budget_add(budget, v.value.len())) { return false; }
     if (!frame_text_budget_add(budget, v.action.len())) { return false; }
