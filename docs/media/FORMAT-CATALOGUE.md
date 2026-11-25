@@ -9,7 +9,8 @@
 
 | Family | Formats / codecs | Intended use | Initial status |
 |---|---|---|---|
-| PCM containers | WAV/RIFF, RF64, WAVE64, AIFF, AU, CAF | Uncompressed and archival audio | Target |
+| WAV/RIFF | PCM format tag 1 only; 8/16/24/32-bit integer, 1–8 channels, 1–384 kHz | Offline PCM ingest | Capstan prototype in `lib/halyard/shanty.cap`; 8 MiB/1,024-chunk bound; 9 tests; not fuzzed or release-assured |
+| Other PCM containers | RF64, WAVE64, AIFF, AU, CAF | Uncompressed and archival audio | Target |
 | Lossless | FLAC, ALAC, WavPack, Monkey's Audio | Archival, production | Target |
 | Lossy | MP3, AAC, Vorbis, Opus | Consumer and streaming | Target |
 | Broadcast/pro | BWF, ADM metadata, AC-3, E-AC-3, DTS | Broadcast and delivery | Target |
