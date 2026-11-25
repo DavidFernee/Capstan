@@ -15,6 +15,8 @@
 // end in LF. CRLF is counted as one line break. Empty files have zero lines.
 
 const int MAX_INVENTORY_FILE_BYTES = 16777216;
+const int MAX_INVENTORY_FILES = 10000;
+const int MAX_INVENTORY_PATH_BYTES = 4096;
 
 struct Inventory {
     List<string> languages;
@@ -25,6 +27,10 @@ struct Inventory {
     int total_lines;
     int total_bytes;
     int unreadable;
+}
+
+bool inventory_path_allowed(string path) {
+    return path.len() > 0 && path.len() <= MAX_INVENTORY_PATH_BYTES;
 }
 
 bool has_path_segment(string path, string wanted) {
@@ -180,6 +186,14 @@ int main() {
             usage();
             return 2;
         } else {
+            if (!inventory_path_allowed(arg)) {
+                println("input path is empty or exceeds 4096 bytes");
+                return 2;
+            }
+            if (paths.len() >= MAX_INVENTORY_FILES) {
+                println("input exceeds the 10000-file inventory limit");
+                return 2;
+            }
             paths.push(arg);
         }
     }
@@ -233,6 +247,12 @@ int main() {
     return 0;
 }
 
+
+test "inventory input bounds" {
+    assert inventory_path_allowed("src/main.cap");
+    assert !inventory_path_allowed("");
+    assert !inventory_path_allowed(repeat("x", MAX_INVENTORY_PATH_BYTES + 1));
+}
 
 test "inventory path classification" {
     assert classification_for_path("compiler/main.cap") == "Repository";
