@@ -667,6 +667,19 @@ void test_display_list(Tally t, Font font) {
     expect(t, nested_snapshot,
         "display list: path and mask payloads are deep-snapshotted",
         "recorder mutation changed a published nested payload");
+
+    // Snapshot admission recomputes bounds instead of trusting the recorder's
+    // mutable cached budget, and rejects malformed parallel path arrays.
+    Canvas malformed_recorder = new_recording_canvas(new_pixmap(1, 1));
+    DisplayCommand malformed_snapshot = frame.commands[1];
+    Segments mismatched_segments = new_segments();
+    mismatched_segments.x0.push(0);
+    malformed_snapshot.segments = mismatched_segments;
+    malformed_recorder.commands.push(malformed_snapshot);
+    expect(t, !display_snapshot_fits(malformed_recorder),
+        "display list: malformed recorder geometry is rejected before snapshot",
+        "mismatched segment arrays admitted");
+
     // Appending to the recorder after publication must not mutate the frame.
     recorder.fill_rect(rect_px(45, 33, 1, 1), solid(0xFFFF0000));
     execute_display_list(frame, replayed);
