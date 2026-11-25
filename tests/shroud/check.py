@@ -327,6 +327,15 @@ def check_single_line_budget(capstanc, cc, cflags, tmp):
     return f"65,536-byte alternating input -> 32,768 retained bytes; total Capstan allocation {allocated} bytes"
 
 
+def check_wayland_wire(capstanc, cc, cflags, tmp):
+    exe = build(capstanc, cc, cflags, tmp, "tests/shroud/wayland_wire.cap", "wayland-wire")
+    r = run(exe, check=False)
+    expected = "Wayland framing: 16 adversarial assertions passed\n"
+    if r.returncode != 0 or r.stdout != expected:
+        sys.exit(f"Wayland wire framing: exit {r.returncode}:\n{r.stdout}{r.stderr}")
+    return "16 checks: exhaustive 16-bit size domain, fragmentation, concatenation, offsets, malformed sizes and the 65,532-byte maximum"
+
+
 def check_pixmap_limits(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits.cap", "pixmap-limits")
     ok = run(exe)
@@ -391,6 +400,7 @@ def main():
         report.append("utf-8: " + check_utf8(vec, tmp))
         report.append("png: " + check_png(vec, tmp))
         report.append("font fuzz: " + check_fuzz(vec, tmp))
+        report.append("Wayland wire framing: " + check_wayland_wire(capstanc, cc, cflags, tmp))
         report.append("pixmap limits: " + check_pixmap_limits(capstanc, cc, cflags, tmp))
         report.append("single-line filtering: " + check_single_line_budget(capstanc, cc, cflags, tmp))
         report.append("golden: " + check_golden(capstanc, cc, cflags, tmp, update))
