@@ -280,3 +280,18 @@ theorem reuse_rejects_previous_incarnation
 
 
 end CapstanNativeMemory
+
+
+#print axioms CapstanNativeMemory.allocateSlot_success_resolves
+#print axioms CapstanNativeMemory.allocateSlot_rejects_invalid_free_generation
+#print axioms CapstanNativeMemory.allocateSlot_rejects_occupied
+#print axioms CapstanNativeMemory.allocateSlot_rejects_retired
+#print axioms CapstanNativeMemory.releaseSlot_rejects_stale
+#print axioms CapstanNativeMemory.releaseSlot_retires_at_maximum
+#print axioms CapstanNativeMemory.releaseSlot_advances_generation
+#print axioms CapstanNativeMemory.resolveSlot_rejects_free_generation
+#print axioms CapstanNativeMemory.resolveHandle_rejects_cross_domain
+#print axioms CapstanNativeMemory.allocateAt_rejection_is_atomic
+#print axioms CapstanNativeMemory.releaseAt_rejection_is_atomic
+#print axioms CapstanNativeMemory.updateSlot_preserves_other
+#print axioms CapstanNativeMemory.reuse_rejects_previous_incarnation
