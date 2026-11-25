@@ -219,6 +219,38 @@ theorem finiteProgram_final_terminal
     HasExplicitControlEffect (program.code (Fin.last m)) :=
   finiteProgram_final_instruction_has_control_effect program
 
+/-- Admission predicate for the implementation-alignment proof profile.
+
+Unlike the lower-level typed conversion above, the executable Capstan
+single-frame evaluator always starts at instruction zero. The profile
+therefore rejects every raw program whose entry is not zero.
+-/
+def validateSingleFrameProfile {n m : Nat} {types : RegTypes n}
+    (raw : RawSingleFrameProgram n m types) : Option (FiniteProgram n m types) :=
+  if raw.entry = 0 then validateSingleFrameProgram raw else none
+
+/-- The implementation-alignment profile rejects every nonzero entry. -/
+theorem validateSingleFrameProfile_rejects_nonzero_entry
+    {n m : Nat} {types : RegTypes n}
+    (raw : RawSingleFrameProgram n m types)
+    (hentry : raw.entry ≠ 0) :
+    validateSingleFrameProfile raw = none := by
+  simp [validateSingleFrameProfile, hentry]
+
+/-- Every successfully admitted profile program starts at instruction zero. -/
+theorem validateSingleFrameProfile_entry_zero
+    {n m : Nat} {types : RegTypes n}
+    (raw : RawSingleFrameProgram n m types)
+    (program : FiniteProgram n m types)
+    (h : validateSingleFrameProfile raw = some program) :
+    program.entry.val = 0 := by
+  unfold validateSingleFrameProfile at h
+  by_cases hzero : raw.entry = 0
+  · simp [hzero] at h
+    have hentry := validateSingleFrameProgram_entry_sound raw program h
+    simpa [hzero] using hentry
+  · simp [hzero] at h
+
 /-- Every instruction in a finite program has bounded control-flow targets. -/
 theorem finiteProgram_targets_bounded
     {n m : Nat} {types : RegTypes n}

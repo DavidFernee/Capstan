@@ -23,11 +23,11 @@ CCAM-SF-P covers only the single-frame instruction fragment represented by `Mach
 - bounded unconditional and conditional branch targets;
 - typed integer, boolean and void returns;
 - explicit traps;
-- a single entry frame.
+- a single entry frame, starting at instruction index zero.
 
-It excludes calls, function tables, caller continuations, multi-frame execution, JSON decoding, duplicate-key detection, whole-program function validation, source lowering, native code generation, host effects and runtime services.
+It excludes calls, function tables, caller continuations, multi-frame execution, JSON decoding, duplicate-key detection, whole-program function validation, source lowering, native code generation, host effects and runtime services. The formal `Trap` type is a finite enumeration: arbitrary application-defined explicit-trap reason strings and their detail payloads are not represented by the current Lean `MachineInstr.explicitTrap` constructor. Such payload cases are outside the initial profile until a distinct bounded reason type is added.
 
-The profile's formal validator checks every instruction, including unreachable instructions, and validates the entry and finite control-flow targets.
+The profile's admission predicate is `validateSingleFrameProfile`: it wraps the lower-level typed conversion, requires the entry index to be exactly zero (the concrete Capstan evaluator's initial PC), checks every instruction including unreachable instructions, and validates finite control-flow targets. The lower-level `validateSingleFrameProgram` remains a conversion helper and by itself permits any in-range entry; it is not the implementation-alignment profile predicate.
 
 ## 3. Deliberately conservative terminality rule
 
@@ -69,13 +69,14 @@ The earlier research crosswalk treated this distinction as a blocker to the one-
 At the baseline revision:
 
 - `tests/run.sh` runs Capstan-native tests for the single-frame evaluator, multi-function evaluator and checked source-to-CCAM lowering.
-- The Lean package contains a typed finite single-frame machine, validator and progress results.
+- The Lean package contains a typed finite single-frame machine, a conservative terminal-slot validator, an implementation-alignment wrapper that enforces entry PC zero, and progress results.
 - The Lean model has exact one-step instruction-budget accounting as described above.
 - `RuntimeBridge.lean` proves selected representation/read and list-update facts for an abstract runtime-style record/list model.
 
 These facts do **not** establish:
 
 - that the Capstan-native validator accepts exactly the same programs as the Lean validator;
+- arbitrary normative explicit-trap reason strings/details (the current Lean trap representation is a finite enum);
 - that the Capstan evaluator's transitions simulate `machineStep` or `budgetedMachineStep`;
 - that the source lowerer preserves source semantics;
 - that multi-function calls or their frame protocol are formally modelled;
@@ -88,7 +89,7 @@ The tests are implementation evidence. The Lean theorems are model evidence. The
 
 The next increment should be narrow and reviewable:
 
-1. Define a canonical finite corpus for CCAM-SF-P, including arithmetic, branches, returns, explicit traps, uninitialised reads and exact step-limit boundaries.
+1. Define a canonical finite corpus for CCAM-SF-P, including arithmetic, branches, returns, finite-enum traps, uninitialised reads and exact step-limit boundaries; explicitly exclude arbitrary explicit-trap reason payloads.
 2. Give each vector an independently specified expected validation result and execution trace/outcome.
 3. Exercise the same vectors in the Capstan-native evaluator and a Lean executable model. Where the Lean model cannot represent a vector, mark it out of profile rather than silently skipping it.
 4. Define a representation relation from Capstan register/program state to the Lean state; prove read/write correspondence and then one-step simulation for each instruction constructor.
