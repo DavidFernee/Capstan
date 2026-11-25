@@ -409,7 +409,7 @@ Type check_expr(Checker c, Node e) {
             }
         }
         if (let fd = field_decl(c, ot.name, e.s)) {
-            if (fd.s2 == "private") {
+            if (field_is_private(c, ot.name, fd)) {
                 if (let owner = c.structs.get(ot.name)) {
                     if (e.file != owner.file) {
                         error_at(c.ctx, e, "CAP-PRIVATE", "private field '" + e.s + "' of " + ot.name + " is accessible only within its defining module");
