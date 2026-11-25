@@ -99,8 +99,13 @@ theorem certificateCheck_sound {slotCount : Nat}
 def freshTargets {slotCount : Nat}
     (targets visited pending : List (Handle slotCount)) :
     List (Handle slotCount) :=
-  targets.filter (fun target =>
-    !(decide (target ∈ visited) || decide (target ∈ pending)))
+  targets.foldl (fun accepted target =>
+    if decide (target ∈ visited) ||
+       decide (target ∈ pending) ||
+       decide (target ∈ accepted) then
+      accepted
+    else
+      accepted ++ [target]) []
 
 /-- Fuel-bounded FIFO worklist. Every object is scanned at most once; every
 budget is checked before the corresponding work is admitted. -/
