@@ -170,7 +170,43 @@ int main() {
         depth_rejected = run([depth_exe], env=env, expected=101)
         if "shroud: accessibility JSON node/depth/byte budget exceeded" not in depth_rejected.stdout:
             raise SystemExit(f"a11y UTF-8 budget: missing JSON depth diagnostic: {depth_rejected.stdout!r}")
-    print(f"a11y UTF-8 budget: 1 MiB encoded; peak Capstan managed heap {peak} bytes (64 MiB cap); invalid scalar, oversized UTF-8/JSON and excessive depth rejected")
+
+        json_stress_source = """
+int main() {
+    List<string> chars = new List<string>();
+    for (int i = 0; i < 4096; i += 1) { chars.push(char_str(1)); }
+    string chunk = join(chars, "");
+    List<string> chunks = new List<string>();
+    for (int i = 0; i < 256; i += 1) { chunks.push(chunk); }
+    Tainted large = taint(join(chunks, ""));
+    A11yNode n = new A11yNode{
+        id: "node", role: "text", name: large, value: taint(""),
+        states: new List<string>(), bounds: rect(0, 0, 1, 1),
+        kids: new List<A11yNode>()
+    };
+    string json = a11y_json(n);
+    if (json.len() < MAX_TEXT_BYTES * 6) { return 1; }
+    println("a11y JSON stress: 1 MiB controls escaped");
+    return 0;
+}
+"""
+        stress_cap = os.path.join(tmp, "a11y-json-stress.cap")
+        stress_c = os.path.join(tmp, "a11y-json-stress.c")
+        stress_exe = os.path.join(tmp, "a11y-json-stress")
+        with open(stress_cap, "w", encoding="utf-8") as stream:
+            stream.write(json_stress_source)
+        run([capstanc, "build", "--strict", "-o", stress_c] + LIB + [stress_cap])
+        run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), stress_c, "-o", stress_exe])
+        stress = run([stress_exe], env=env)
+        if "1 MiB controls escaped" not in stress.stdout:
+            raise SystemExit(f"a11y UTF-8 budget: missing JSON stress confirmation: {stress.stdout!r}")
+        stress_match = re.search(r"peak_heap=(\d+)", stress.stderr)
+        if not stress_match:
+            raise SystemExit(f"a11y UTF-8 budget: JSON stress peak heap not reported: {stress.stderr!r}")
+        stress_peak = int(stress_match.group(1))
+        if stress_peak > limit:
+            raise SystemExit(f"a11y UTF-8 budget: JSON stress peak managed heap {stress_peak} exceeds {limit}")
+    print(f"a11y UTF-8 budget: 1 MiB encoded; encoder peak {peak} bytes; 1 MiB control JSON peak {stress_peak} bytes (64 MiB managed-heap cap); invalid scalar, oversized UTF-8/JSON and excessive depth rejected")
 
 
 if __name__ == "__main__":
