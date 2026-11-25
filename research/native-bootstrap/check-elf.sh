@@ -64,17 +64,26 @@ if readelf -l "$executable" | grep -q 'INTERP'; then
 fi
 
 echo "== dynamic section =="
-if readelf -d "$executable" >"$work/dynamic.txt" 2>&1; then
-    cat "$work/dynamic.txt"
-    echo "unexpected dynamic section" >&2
+readelf -d "$executable" >"$work/dynamic.txt" 2>&1
+cat "$work/dynamic.txt"
+grep -Eiq 'There is no dynamic section in this file|no dynamic section' "$work/dynamic.txt" || {
+    echo "dynamic section present or absence could not be established" >&2
     exit 1
-else
-    cat "$work/dynamic.txt"
-    grep -q 'no dynamic section' "$work/dynamic.txt" || {
-        echo "could not establish absence of dynamic section" >&2
-        exit 1
-    }
+}
+
+echo "== load segment and stack permissions =="
+program_headers=$(readelf -lW "$executable")
+printf '%s\\n' "$program_headers"
+if printf '%s\\n' "$program_headers" | grep -Eq 'LOAD.*W.*E|LOAD.*E.*W'; then
+    echo "writable+executable LOAD segment rejected" >&2
+    exit 1
 fi
+stack_line=$(printf '%s\\n' "$program_headers" | grep 'GNU_STACK' || true)
+[ -n "$stack_line" ] || { echo "missing GNU_STACK program header" >&2; exit 1; }
+printf '%s\\n' "$stack_line" | grep -q 'E' && {
+    echo "executable GNU_STACK rejected" >&2
+    exit 1
+} || true
 
 echo "== undefined symbols =="
 undefined=$(nm -u "$executable")
