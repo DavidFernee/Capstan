@@ -4,9 +4,13 @@
 **Input:** validated multi-function CCAM v0.1 scalar subset  
 **Target:** freestanding Linux x86-64 ELF, System V AMD64 calling convention, GNU assembler syntax
 
-## 1. Prototype loader security boundary
+## 1. Workspace loader security boundary
 
-The experimental driver bounds the import queue to 256 paths and aggregate source bytes to 64 MiB, in addition to the per-file compiler source limit. Import strings are checked for absolute paths and dot-segment traversal. This is **lexical filtering only**: the prototype does not resolve symlinks or prevent concurrent path replacement, and the initial source paths are supplied by the caller. Do not use this command to compile untrusted workspaces with access to sensitive host files. Descriptor-relative, no-follow import loading and canonical workspace confinement are required before the command can be treated as safe for untrusted projects.
+The driver bounds the import queue to 256 paths and aggregate source bytes to 64 MiB, in addition to the per-file compiler source limit. The CLI selects a canonical workspace root and converts initial source paths to relative paths beneath it. The driver opens that root once and retains the directory descriptor while loading the complete import graph.
+
+Each source is opened with Linux `openat2` relative to the pinned root descriptor using `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV`. Only regular files are accepted. The read is bounded, the opened inode is pinned by its descriptor, and metadata is checked again after the read. Root-path or file-path symlinks, magic links, dot-segment traversal, mount crossings, non-regular files and kernels without `openat2` fail closed. There is no check-then-open fallback.
+
+The root descriptor is an integer process capability used only by the trusted native driver; it is not an unforgeable language-level sandbox type. General `read_file` and `write_file` remain ambient APIs. This loader hardens the native compiler's source-import boundary, but it does not by itself sandbox arbitrary Capstan programs or establish a process-wide filesystem policy.
 
 ## 1. Contract
 
