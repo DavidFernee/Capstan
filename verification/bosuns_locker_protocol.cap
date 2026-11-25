@@ -540,8 +540,8 @@ test "Bosun WAL model rejects page-LSN regression and post-commit updates" {
     BLStorageState update = bl_storage_step(initial, BL_STORAGE_APPEND_UPDATE, 0).state;
     BLStorageState commit = bl_storage_step(update, BL_STORAGE_APPEND_COMMIT, 0).state;
     BLStorageState flushed = bl_storage_step(commit, BL_STORAGE_FLUSH_LOG, commit.commit_lsn).state;
-    BLStorageState page = bl_storage_step(flushed, BL_STORAGE_FLUSH_PAGE, 1).state;
-    BLStorageTransition stale = bl_storage_step(page, BL_STORAGE_FLUSH_PAGE, 0);
+    BLStorageState page = bl_storage_step(flushed, BL_STORAGE_FLUSH_PAGE, 2).state;
+    BLStorageTransition stale = bl_storage_step(page, BL_STORAGE_FLUSH_PAGE, 1);
     assert(!stale.accepted);
     assert(stale.error == "page_lsn_regression");
     BLStorageTransition late_update = bl_storage_step(commit, BL_STORAGE_APPEND_UPDATE, 0);
