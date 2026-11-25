@@ -1128,11 +1128,13 @@ never shell interpolation. Project hooks and in-process plugins are out of scope
 a separately reviewed capability and isolation design exists.
 
 
-### Capstan Media, Shanty and Deadeye
+### Halyard: Capstan's media architecture
 
-10. **Capstan Media Core** — shared, versioned media primitives: bounded byte streams and sinks, explicit ownership, checked size arithmetic, aggregate resource reservations, rational clocks/timebases, timestamps, format registry, structured errors, cancellation and codec-worker contracts.
+10. **Halyard** — Capstan's media architecture, comprising Capstan Media Core, Shanty and Deadeye. **Capstan Media Core** supplies shared, versioned media primitives: bounded byte streams and sinks, explicit ownership, checked size arithmetic, aggregate resource reservations, rational clocks/timebases, timestamps, format registry, structured errors, cancellation and codec-worker contracts.
 11. **Shanty** — independent audio engine for ingest, decode/encode, playback/capture, mixing, resampling, synthesis, spatialisation and processing.
 12. **Deadeye** — independent video/image engine for ingest, demux/decode, encode, frame scheduling, presentation, composition, colour management, effects and streaming.
+
+The governing architecture map is [docs/media/HALYARD.md](media/HALYARD.md); detailed component design, design charter, format catalogue and mandatory security policy are maintained alongside it.
 
 Core is below both engines and must not depend on either. Shanty and Deadeye share Core contracts but retain domain-specific schedulers and APIs. Shroud consumes presentation surfaces/events; Keel may orchestrate media graphs; neither duplicates codec semantics. Anchor remains a Shroud application.
 
