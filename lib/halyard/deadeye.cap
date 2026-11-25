@@ -1,0 +1,372 @@
+// Deadeye — first Capstan-native image vertical slice.
+// Strict uncompressed BMP ingest into an opaque-format RGBA frame value.
+// No filesystem, network, device, C ABI or third-party image implementation.
+
+import "core.cap";
+
+const int DEADEYE_BMP_MAX_INPUT_BYTES = 16777216;
+const int DEADEYE_BMP_MAX_PIXELS = 2097152;
+const int DEADEYE_BMP_MAX_SIDE = 8192;
+
+struct DeadeyeRgbaFrame {
+    int width;
+    int height;
+    List<int> rgba;
+}
+
+struct DeadeyeImageResult {
+    bool ok;
+    DeadeyeRgbaFrame? frame;
+    string error;
+}
+
+int deadeye_u16_le(List<int> bytes, int at) {
+    return bytes[at] | (bytes[at + 1] << 8);
+}
+
+int deadeye_u32_le(List<int> bytes, int at) {
+    return bytes[at] | (bytes[at + 1] << 8) |
+        (bytes[at + 2] << 16) | (bytes[at + 3] << 24);
+}
+
+DeadeyeImageResult deadeye_bmp_error(string error) {
+    return new DeadeyeImageResult{ok: false, frame: none, error: error};
+}
+
+// Strict Windows BITMAPINFOHEADER profile:
+// - 14-byte BMP file header and 40-byte DIB header, pixel data starts at byte 54;
+// - BI_RGB (uncompressed), 24-bit BGR or 32-bit BGRx only;
+// - no palette, bitfields, colour masks, metadata gap, RLE or trailing bytes;
+// - signed height supports both bottom-up and top-down rows;
+// - input and pixel counts are bounded before pixel-buffer allocation.
+DeadeyeImageResult deadeye_bmp_decode(HalyardByteSource source) {
+    if (!halyard_source_validate(source)) {
+        return deadeye_bmp_error("invalid_source");
+    }
+    if (source.position != 0) {
+        return deadeye_bmp_error("source_not_at_start");
+    }
+    int source_length = halyard_source_length(source);
+    if (source_length > DEADEYE_BMP_MAX_INPUT_BYTES) {
+        return deadeye_bmp_error("input_limit");
+    }
+
+    HalyardBytesResult header = halyard_read_exact(source, 54);
+    if (!header.ok) { return deadeye_bmp_error("truncated_header"); }
+    if (header.bytes[0] != 'B' || header.bytes[1] != 'M') {
+        return deadeye_bmp_error("not_bmp");
+    }
+
+    int file_size = deadeye_u32_le(header.bytes, 2);
+    int reserved_one = deadeye_u16_le(header.bytes, 6);
+    int reserved_two = deadeye_u16_le(header.bytes, 8);
+    int pixel_offset = deadeye_u32_le(header.bytes, 10);
+    int dib_size = deadeye_u32_le(header.bytes, 14);
+    int width_raw = deadeye_u32_le(header.bytes, 18);
+    int height_raw = deadeye_u32_le(header.bytes, 22);
+    int planes = deadeye_u16_le(header.bytes, 26);
+    int bits_per_pixel = deadeye_u16_le(header.bytes, 28);
+    int compression = deadeye_u32_le(header.bytes, 30);
+    int image_size = deadeye_u32_le(header.bytes, 34);
+    int colours_used = deadeye_u32_le(header.bytes, 46);
+    int important_colours = deadeye_u32_le(header.bytes, 50);
+
+    if (reserved_one != 0 || reserved_two != 0) {
+        return deadeye_bmp_error("reserved_fields_nonzero");
+    }
+    if (dib_size != 40) { return deadeye_bmp_error("unsupported_dib_header"); }
+    if (pixel_offset != 54) { return deadeye_bmp_error("unsupported_pixel_offset"); }
+    if (planes != 1) { return deadeye_bmp_error("invalid_planes"); }
+    if (compression != 0) { return deadeye_bmp_error("unsupported_compression"); }
+    if (bits_per_pixel != 24 && bits_per_pixel != 32) {
+        return deadeye_bmp_error("unsupported_bit_depth");
+    }
+    if (colours_used != 0 || important_colours != 0) {
+        return deadeye_bmp_error("unsupported_palette");
+    }
+
+    int width = width_raw;
+    int height = height_raw;
+    if (width >= 2147483648) { width -= 4294967296; }
+    if (height >= 2147483648) { height -= 4294967296; }
+    if (width < 1 || width > DEADEYE_BMP_MAX_SIDE) {
+        return deadeye_bmp_error("invalid_width");
+    }
+    if (height == 0 || height == -2147483648) {
+        return deadeye_bmp_error("invalid_height");
+    }
+
+    bool top_down = height < 0;
+    int absolute_height = height;
+    if (top_down) { absolute_height = -height; }
+    if (absolute_height > DEADEYE_BMP_MAX_SIDE ||
+        width > DEADEYE_BMP_MAX_PIXELS / absolute_height) {
+        return deadeye_bmp_error("pixel_limit");
+    }
+
+    int bytes_per_pixel = bits_per_pixel / 8;
+    int row_bits = width * bits_per_pixel;
+    int row_stride = ((row_bits + 31) / 32) * 4;
+    int image_bytes = row_stride * absolute_height;
+    int expected_file_size = 54 + image_bytes;
+
+    if (file_size != source_length || file_size != expected_file_size) {
+        return deadeye_bmp_error("file_size_mismatch");
+    }
+    if (image_size != 0 && image_size != image_bytes) {
+        return deadeye_bmp_error("image_size_mismatch");
+    }
+    if (halyard_source_remaining(source) != image_bytes) {
+        return deadeye_bmp_error("pixel_data_size_mismatch");
+    }
+
+    HalyardBytesResult pixels = halyard_read_exact(source, image_bytes);
+    if (!pixels.ok) { return deadeye_bmp_error("truncated_pixel_data"); }
+
+    int pixel_count = width * absolute_height;
+    List<int> rgba = new List<int>();
+    for (int output_y = 0; output_y < absolute_height; output_y += 1) {
+        int input_y = output_y;
+        if (!top_down) { input_y = absolute_height - 1 - output_y; }
+        int input_row = input_y * row_stride;
+        for (int x = 0; x < width; x += 1) {
+            int input_at = input_row + x * bytes_per_pixel;
+            int blue = pixels.bytes[input_at];
+            int green = pixels.bytes[input_at + 1];
+            int red = pixels.bytes[input_at + 2];
+            rgba.push(red);
+            rgba.push(green);
+            rgba.push(blue);
+            // BI_RGB 32-bit fourth bytes are reserved, not a defined alpha
+            // channel in this profile. Output alpha is therefore always opaque.
+            rgba.push(255);
+        }
+    }
+
+    if (rgba.len() != pixel_count * 4) {
+        return deadeye_bmp_error("internal_pixel_count_mismatch");
+    }
+    DeadeyeRgbaFrame frame = new DeadeyeRgbaFrame{
+        width: width, height: absolute_height, rgba: rgba
+    };
+    return new DeadeyeImageResult{ok: true, frame: frame, error: ""};
+}
+
+void deadeye_test_push_u16_le(List<int> bytes, int value) {
+    bytes.push(value & 0xFF);
+    bytes.push((value >>> 8) & 0xFF);
+}
+
+void deadeye_test_push_u32_le(List<int> bytes, int value) {
+    bytes.push(value & 0xFF);
+    bytes.push((value >>> 8) & 0xFF);
+    bytes.push((value >>> 16) & 0xFF);
+    bytes.push((value >>> 24) & 0xFF);
+}
+
+List<int> deadeye_test_bmp_24_bottom_up() {
+    List<int> bytes = new List<int>();
+    bytes.push('B'); bytes.push('M');
+    deadeye_test_push_u32_le(bytes, 70);
+    deadeye_test_push_u16_le(bytes, 0);
+    deadeye_test_push_u16_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 54);
+    deadeye_test_push_u32_le(bytes, 40);
+    deadeye_test_push_u32_le(bytes, 2);
+    deadeye_test_push_u32_le(bytes, 2);
+    deadeye_test_push_u16_le(bytes, 1);
+    deadeye_test_push_u16_le(bytes, 24);
+    deadeye_test_push_u32_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 16);
+    deadeye_test_push_u32_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 0);
+    // Bottom row first: blue, white; two bytes of row padding.
+    bytes.push(255); bytes.push(0); bytes.push(0);
+    bytes.push(255); bytes.push(255); bytes.push(255);
+    bytes.push(0); bytes.push(0);
+    // Top row: red, green; two bytes of row padding.
+    bytes.push(0); bytes.push(0); bytes.push(255);
+    bytes.push(0); bytes.push(255); bytes.push(0);
+    bytes.push(0); bytes.push(0);
+    return bytes;
+}
+
+List<int> deadeye_test_bmp_32_top_down() {
+    List<int> bytes = new List<int>();
+    bytes.push('B'); bytes.push('M');
+    deadeye_test_push_u32_le(bytes, 58);
+    deadeye_test_push_u16_le(bytes, 0);
+    deadeye_test_push_u16_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 54);
+    deadeye_test_push_u32_le(bytes, 40);
+    deadeye_test_push_u32_le(bytes, 1);
+    deadeye_test_push_u32_le(bytes, -1);
+    deadeye_test_push_u16_le(bytes, 1);
+    deadeye_test_push_u16_le(bytes, 32);
+    deadeye_test_push_u32_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 4);
+    deadeye_test_push_u32_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 0);
+    deadeye_test_push_u32_le(bytes, 0);
+    // B=3, G=2, R=1, reserved fourth byte=0x55 (ignored, output alpha=255).
+    bytes.push(3); bytes.push(2); bytes.push(1); bytes.push(85);
+    return bytes;
+}
+
+test "Deadeye decodes bottom-up 24-bit BMP rows and padding" {
+    List<int> bytes = deadeye_test_bmp_24_bottom_up();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 128);
+    assert(made.ok);
+    if (let source = made.source) {
+        DeadeyeImageResult decoded = deadeye_bmp_decode(source);
+        assert(decoded.ok);
+        if (let frame = decoded.frame) {
+            assert(frame.width == 2 && frame.height == 2);
+            assert(frame.rgba.len() == 16);
+            // Top row: red, green.
+            assert(frame.rgba[0] == 255 && frame.rgba[1] == 0);
+            assert(frame.rgba[2] == 0 && frame.rgba[3] == 255);
+            assert(frame.rgba[4] == 0 && frame.rgba[5] == 255);
+            assert(frame.rgba[6] == 0 && frame.rgba[7] == 255);
+            // Bottom row: blue, white.
+            assert(frame.rgba[8] == 0 && frame.rgba[9] == 0);
+            assert(frame.rgba[10] == 255 && frame.rgba[11] == 255);
+            assert(frame.rgba[12] == 255 && frame.rgba[13] == 255);
+            assert(frame.rgba[14] == 255 && frame.rgba[15] == 255);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Deadeye decodes top-down 32-bit BMP and treats BI_RGB fourth byte as reserved" {
+    List<int> bytes = deadeye_test_bmp_32_top_down();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 128);
+    assert(made.ok);
+    if (let source = made.source) {
+        DeadeyeImageResult decoded = deadeye_bmp_decode(source);
+        assert(decoded.ok);
+        if (let frame = decoded.frame) {
+            assert(frame.width == 1 && frame.height == 1);
+            assert(frame.rgba.len() == 4);
+            assert(frame.rgba[0] == 1 && frame.rgba[1] == 2);
+            assert(frame.rgba[2] == 3 && frame.rgba[3] == 255);
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
+
+test "Deadeye rejects malformed BMP signatures and file sizes" {
+    List<int> bad_signature = deadeye_test_bmp_24_bottom_up();
+    bad_signature[0] = 'X';
+    HalyardByteSourceResult first = halyard_source_from_list(bad_signature, 128);
+    assert(first.ok);
+    if (let source = first.source) {
+        DeadeyeImageResult decoded = deadeye_bmp_decode(source);
+        assert(!decoded.ok && decoded.error == "not_bmp");
+    } else {
+        assert(false);
+    }
+
+    List<int> bad_size = deadeye_test_bmp_24_bottom_up();
+    bad_size[2] = 69;
+    HalyardByteSourceResult second = halyard_source_from_list(bad_size, 128);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        DeadeyeImageResult decoded2 = deadeye_bmp_decode(source2);
+        assert(!decoded2.ok && decoded2.error == "file_size_mismatch");
+    } else {
+        assert(false);
+    }
+}
+
+test "Deadeye rejects unsupported BMP headers, compression and bit depths" {
+    List<int> bad_dib = deadeye_test_bmp_24_bottom_up();
+    bad_dib[14] = 108;
+    HalyardByteSourceResult first = halyard_source_from_list(bad_dib, 128);
+    assert(first.ok);
+    if (let source = first.source) {
+        DeadeyeImageResult decoded = deadeye_bmp_decode(source);
+        assert(!decoded.ok && decoded.error == "unsupported_dib_header");
+    } else {
+        assert(false);
+    }
+
+    List<int> compressed = deadeye_test_bmp_24_bottom_up();
+    compressed[30] = 1;
+    HalyardByteSourceResult second = halyard_source_from_list(compressed, 128);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        DeadeyeImageResult decoded2 = deadeye_bmp_decode(source2);
+        assert(!decoded2.ok && decoded2.error == "unsupported_compression");
+    } else {
+        assert(false);
+    }
+
+    List<int> bad_depth = deadeye_test_bmp_24_bottom_up();
+    bad_depth[28] = 8;
+    HalyardByteSourceResult third = halyard_source_from_list(bad_depth, 128);
+    assert(third.ok);
+    if (let source3 = third.source) {
+        DeadeyeImageResult decoded3 = deadeye_bmp_decode(source3);
+        assert(!decoded3.ok && decoded3.error == "unsupported_bit_depth");
+    } else {
+        assert(false);
+    }
+}
+
+test "Deadeye rejects invalid dimensions and noncanonical pixel offsets" {
+    List<int> bad_width = deadeye_test_bmp_24_bottom_up();
+    bad_width[18] = 0;
+    HalyardByteSourceResult first = halyard_source_from_list(bad_width, 128);
+    assert(first.ok);
+    if (let source = first.source) {
+        DeadeyeImageResult decoded = deadeye_bmp_decode(source);
+        assert(!decoded.ok && decoded.error == "invalid_width");
+    } else {
+        assert(false);
+    }
+
+    List<int> bad_offset = deadeye_test_bmp_24_bottom_up();
+    bad_offset[10] = 55;
+    HalyardByteSourceResult second = halyard_source_from_list(bad_offset, 128);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        DeadeyeImageResult decoded2 = deadeye_bmp_decode(source2);
+        assert(!decoded2.ok && decoded2.error == "unsupported_pixel_offset");
+    } else {
+        assert(false);
+    }
+}
+
+test "Deadeye rejects mismatched image size and forged source bytes" {
+    List<int> bad_image_size = deadeye_test_bmp_24_bottom_up();
+    bad_image_size[34] = 15;
+    HalyardByteSourceResult first = halyard_source_from_list(bad_image_size, 128);
+    assert(first.ok);
+    if (let source = first.source) {
+        DeadeyeImageResult decoded = deadeye_bmp_decode(source);
+        assert(!decoded.ok && decoded.error == "image_size_mismatch");
+    } else {
+        assert(false);
+    }
+
+    List<int> bytes = deadeye_test_bmp_24_bottom_up();
+    HalyardByteSourceResult second = halyard_source_from_list(bytes, 128);
+    assert(second.ok);
+    if (let source2 = second.source) {
+        source2.bytes[0] = 999;
+        DeadeyeImageResult decoded2 = deadeye_bmp_decode(source2);
+        assert(!decoded2.ok && decoded2.error == "invalid_source");
+    } else {
+        assert(false);
+    }
+}
