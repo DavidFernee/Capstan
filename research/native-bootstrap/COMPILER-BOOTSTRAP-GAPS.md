@@ -100,7 +100,7 @@ The production compiler does not necessarily need the entire application runtime
 | Work item | Assessment | Reason |
 |---|---|---|
 | Audit and document scalar CCAM subset | Feasible now | Integrated source and tests are available |
-| Existing scalar native vertical slice | Demonstrated by baseline Ubuntu/GCC CI | Ten Capstan-generated programs were assembled, linked and executed directly; stronger ELF inspection remains pending |
+| Existing scalar native vertical slice | Demonstrated and now subject to extended ELF audit | Baseline CI and research workflow 45708842914 both exercise ten Capstan-generated programs; the latter checks dynamic metadata, relocations, W^X, GNU_STACK and bounded execution |
 | Native scalar executable tests for small process statuses and current trap codes | Demonstrated in baseline CI | Ten native programs pass; current exit-status interface is only an 8-bit projection and does not establish arbitrary int64 results |
 | Full signed-64 result and structured trap equivalence | Blocked by backend result protocol | Exit status is only eight bits; trap detail is discarded |
 | Strict external CCAM interchange | Blocked by integration | Wait for PR #315 Linux CI and stable interface |
