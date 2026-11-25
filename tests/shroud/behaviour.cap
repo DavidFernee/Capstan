@@ -667,6 +667,13 @@ void test_blend_bounds(Tally t) {
     expect_int(t, pm.px[0], premultiply(0xFFFF0000),
         "raster: coverage above 255 is safely clamped");
 
+    List<int> one_pixel = new List<int>();
+    one_pixel.push(255);
+    cv.draw_mask(one_pixel, 1, 1, 2147483647, 0, solid(0xFFFFFFFF));
+    cv.draw_mask(one_pixel, 1, 1, -2147483647, 0, solid(0xFFFFFFFF));
+    expect_int(t, pm.px[0], premultiply(0xFFFF0000),
+        "raster: extreme glyph-mask coordinates are rejected safely");
+
     Pixmap recorded = new_pixmap(2, 2);
     Canvas recorder = new_recording_canvas(recorded);
     recorder.push_clip(rect_px(0, 0, 1, 1));
