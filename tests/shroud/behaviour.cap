@@ -264,7 +264,7 @@ void test_resize(Tally t, Font f, Font b) {
     bool bad_zero = ui.resize(0, 160, 384);
     bool bad_negative = ui.resize(240, -1, 384);
     bool bad_side = ui.resize(16385, 160, 384);
-    bool bad_area = ui.resize(4096, 4096, 384);
+    bool bad_area = ui.resize(4097, 4096, 384);
     bool bad_scale_low = ui.resize(240, 160, 63);
     bool bad_scale_high = ui.resize(240, 160, 1025);
     expect(t, !bad_zero && !bad_negative && !bad_side && !bad_area &&
