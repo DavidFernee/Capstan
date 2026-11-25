@@ -715,7 +715,7 @@ void test_unicode_logical_preservation(Tally t) {
 }
 
 void test_unicode_semantic_sequences(Tally t) {
-    // Persian "می‌روم" (the ZWNJ is linguistically significant).
+    // Persian code points U+0645 U+06CC U+200C U+0631 U+0648 U+0645; the joiner is significant.
     string persian = char_str(0xD9) + char_str(0x85) +
         char_str(0xDB) + char_str(0x8C) +
         char_str(0xE2) + char_str(0x80) + char_str(0x8C) +
