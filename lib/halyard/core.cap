@@ -159,8 +159,15 @@ HalyardManagedByteSinkResult halyard_managed_sink_create(
     }
     HalyardBudgetCharge zero = new HalyardBudgetCharge{
         input_bytes: 0, retained_bytes: 0, output_bytes: 0,
-        decoded_units: 0, work_units: 0
-    };
+        decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
     HalyardReservationResult acquired = halyard_ledger_acquire(ledger, zero);
     if (!acquired.ok) {
         return new HalyardManagedByteSinkResult{
@@ -233,8 +240,15 @@ HalyardSinkWriteResult halyard_managed_sink_write_exact(
     int replacement_length = managed.sink.bytes.len() + input.len();
     HalyardBudgetCharge replacement_charge = new HalyardBudgetCharge{
         input_bytes: 0, retained_bytes: replacement_length,
-        output_bytes: replacement_length, decoded_units: 0, work_units: 0
-    };
+        output_bytes: replacement_length, decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
     HalyardReservationResult acquired =
         halyard_ledger_acquire(ledger, replacement_charge);
     if (!acquired.ok) {
@@ -298,11 +312,25 @@ struct HalyardLedger {
     int limit_output_bytes;
     int limit_decoded_units;
     int limit_work_units;
+    int limit_allocation_units;
+    int limit_metadata_entries;
+    int limit_queue_slots;
+    int limit_worker_slots;
+    int limit_nesting_slots;
+    int limit_track_slots;
+    int limit_chunk_slots;
     int used_input_bytes;
     int used_retained_bytes;
     int used_output_bytes;
     int used_decoded_units;
     int used_work_units;
+    int used_allocation_units;
+    int used_metadata_entries;
+    int used_queue_slots;
+    int used_worker_slots;
+    int used_nesting_slots;
+    int used_track_slots;
+    int used_chunk_slots;
 }
 
 struct HalyardLedgerResult {
@@ -399,6 +427,13 @@ struct HalyardBudgetCharge {
     int output_bytes;
     int decoded_units;
     int work_units;
+    int allocation_units;
+    int metadata_entries;
+    int queue_slots;
+    int worker_slots;
+    int nesting_slots;
+    int track_slots;
+    int chunk_slots;
 }
 
 // Construct a source from an already-owned in-memory list. The source takes a
@@ -519,11 +554,15 @@ HalyardReadResult halyard_read_u32_be(HalyardByteSource source) {
     return new HalyardReadResult{ok: true, value: value, error: ""};
 }
 
-HalyardLedgerResult halyard_ledger_create(int input_limit, int retained_limit,
-                                          int output_limit, int decoded_limit,
-                                          int work_limit) {
+HalyardLedgerResult halyard_ledger_create_bounded(
+    int input_limit, int retained_limit, int output_limit, int decoded_limit,
+    int work_limit, int allocation_limit, int metadata_limit, int queue_limit,
+    int worker_limit, int nesting_limit, int track_limit, int chunk_limit
+) {
     if (input_limit < 0 || retained_limit < 0 || output_limit < 0 ||
-        decoded_limit < 0 || work_limit < 0) {
+        decoded_limit < 0 || work_limit < 0 || allocation_limit < 0 ||
+        metadata_limit < 0 || queue_limit < 0 || worker_limit < 0 ||
+        nesting_limit < 0 || track_limit < 0 || chunk_limit < 0) {
         return new HalyardLedgerResult{ok: false, ledger: none, error: "negative_limit"};
     }
     HalyardLedger ledger = new HalyardLedger{
@@ -532,10 +571,31 @@ HalyardLedgerResult halyard_ledger_create(int input_limit, int retained_limit,
         limit_output_bytes: output_limit,
         limit_decoded_units: decoded_limit,
         limit_work_units: work_limit,
+        limit_allocation_units: allocation_limit,
+        limit_metadata_entries: metadata_limit,
+        limit_queue_slots: queue_limit,
+        limit_worker_slots: worker_limit,
+        limit_nesting_slots: nesting_limit,
+        limit_track_slots: track_limit,
+        limit_chunk_slots: chunk_limit,
         used_input_bytes: 0, used_retained_bytes: 0, used_output_bytes: 0,
-        used_decoded_units: 0, used_work_units: 0
+        used_decoded_units: 0, used_work_units: 0,
+        used_allocation_units: 0, used_metadata_entries: 0,
+        used_queue_slots: 0, used_worker_slots: 0, used_nesting_slots: 0,
+        used_track_slots: 0, used_chunk_slots: 0
     };
     return new HalyardLedgerResult{ok: true, ledger: ledger, error: ""};
+}
+
+// Compatibility constructor: legacy callers receive zero capacity for the
+// newly modelled live-resource dimensions and must opt into explicit limits.
+HalyardLedgerResult halyard_ledger_create(int input_limit, int retained_limit,
+                                          int output_limit, int decoded_limit,
+                                          int work_limit) {
+    return halyard_ledger_create_bounded(
+        input_limit, retained_limit, output_limit, decoded_limit, work_limit,
+        0, 0, 0, 0, 0, 0, 0
+    );
 }
 
 bool halyard_ledger_state_valid(HalyardLedger ledger) {
@@ -549,6 +609,20 @@ bool halyard_ledger_state_valid(HalyardLedger ledger) {
         ledger.used_output_bytes >= 0 &&
         ledger.used_decoded_units >= 0 &&
         ledger.used_work_units >= 0 &&
+        ledger.limit_allocation_units >= 0 && ledger.used_allocation_units >= 0 &&
+        ledger.used_allocation_units <= ledger.limit_allocation_units &&
+        ledger.limit_metadata_entries >= 0 && ledger.used_metadata_entries >= 0 &&
+        ledger.used_metadata_entries <= ledger.limit_metadata_entries &&
+        ledger.limit_queue_slots >= 0 && ledger.used_queue_slots >= 0 &&
+        ledger.used_queue_slots <= ledger.limit_queue_slots &&
+        ledger.limit_worker_slots >= 0 && ledger.used_worker_slots >= 0 &&
+        ledger.used_worker_slots <= ledger.limit_worker_slots &&
+        ledger.limit_nesting_slots >= 0 && ledger.used_nesting_slots >= 0 &&
+        ledger.used_nesting_slots <= ledger.limit_nesting_slots &&
+        ledger.limit_track_slots >= 0 && ledger.used_track_slots >= 0 &&
+        ledger.used_track_slots <= ledger.limit_track_slots &&
+        ledger.limit_chunk_slots >= 0 && ledger.used_chunk_slots >= 0 &&
+        ledger.used_chunk_slots <= ledger.limit_chunk_slots &&
         ledger.used_input_bytes <= ledger.limit_input_bytes &&
         ledger.used_retained_bytes <= ledger.limit_retained_bytes &&
         ledger.used_output_bytes <= ledger.limit_output_bytes &&
@@ -562,12 +636,26 @@ bool halyard_ledger_reserve(HalyardLedger ledger, HalyardBudgetCharge charge) {
     if (!halyard_ledger_state_valid(ledger)) { return false; }
     if (charge.input_bytes < 0 || charge.retained_bytes < 0 ||
         charge.output_bytes < 0 || charge.decoded_units < 0 ||
-        charge.work_units < 0) { return false; }
+        charge.work_units < 0 ||
+        charge.allocation_units < 0 ||
+        charge.metadata_entries < 0 ||
+        charge.queue_slots < 0 ||
+        charge.worker_slots < 0 ||
+        charge.nesting_slots < 0 ||
+        charge.track_slots < 0 ||
+        charge.chunk_slots < 0) { return false; }
     if (charge.input_bytes > ledger.limit_input_bytes - ledger.used_input_bytes ||
         charge.retained_bytes > ledger.limit_retained_bytes - ledger.used_retained_bytes ||
         charge.output_bytes > ledger.limit_output_bytes - ledger.used_output_bytes ||
         charge.decoded_units > ledger.limit_decoded_units - ledger.used_decoded_units ||
-        charge.work_units > ledger.limit_work_units - ledger.used_work_units) {
+        charge.work_units > ledger.limit_work_units - ledger.used_work_units ||
+        charge.allocation_units > ledger.limit_allocation_units - ledger.used_allocation_units ||
+        charge.metadata_entries > ledger.limit_metadata_entries - ledger.used_metadata_entries ||
+        charge.queue_slots > ledger.limit_queue_slots - ledger.used_queue_slots ||
+        charge.worker_slots > ledger.limit_worker_slots - ledger.used_worker_slots ||
+        charge.nesting_slots > ledger.limit_nesting_slots - ledger.used_nesting_slots ||
+        charge.track_slots > ledger.limit_track_slots - ledger.used_track_slots ||
+        charge.chunk_slots > ledger.limit_chunk_slots - ledger.used_chunk_slots) {
         return false;
     }
     ledger.used_input_bytes += charge.input_bytes;
@@ -575,6 +663,13 @@ bool halyard_ledger_reserve(HalyardLedger ledger, HalyardBudgetCharge charge) {
     ledger.used_output_bytes += charge.output_bytes;
     ledger.used_decoded_units += charge.decoded_units;
     ledger.used_work_units += charge.work_units;
+    ledger.used_allocation_units += charge.allocation_units;
+    ledger.used_metadata_entries += charge.metadata_entries;
+    ledger.used_queue_slots += charge.queue_slots;
+    ledger.used_worker_slots += charge.worker_slots;
+    ledger.used_nesting_slots += charge.nesting_slots;
+    ledger.used_track_slots += charge.track_slots;
+    ledger.used_chunk_slots += charge.chunk_slots;
     return true;
 }
 
@@ -588,7 +683,14 @@ bool halyard_ledger_release(HalyardLedger ledger, HalyardBudgetCharge charge) {
         charge.retained_bytes > ledger.used_retained_bytes ||
         charge.output_bytes > ledger.used_output_bytes ||
         charge.decoded_units > ledger.used_decoded_units ||
-        charge.work_units > ledger.used_work_units) {
+        charge.work_units > ledger.used_work_units ||
+        charge.allocation_units > ledger.used_allocation_units ||
+        charge.metadata_entries > ledger.used_metadata_entries ||
+        charge.queue_slots > ledger.used_queue_slots ||
+        charge.worker_slots > ledger.used_worker_slots ||
+        charge.nesting_slots > ledger.used_nesting_slots ||
+        charge.track_slots > ledger.used_track_slots ||
+        charge.chunk_slots > ledger.used_chunk_slots) {
         return false;
     }
     ledger.used_input_bytes -= charge.input_bytes;
@@ -596,6 +698,13 @@ bool halyard_ledger_release(HalyardLedger ledger, HalyardBudgetCharge charge) {
     ledger.used_output_bytes -= charge.output_bytes;
     ledger.used_decoded_units -= charge.decoded_units;
     ledger.used_work_units -= charge.work_units;
+    ledger.used_allocation_units -= charge.allocation_units;
+    ledger.used_metadata_entries -= charge.metadata_entries;
+    ledger.used_queue_slots -= charge.queue_slots;
+    ledger.used_worker_slots -= charge.worker_slots;
+    ledger.used_nesting_slots -= charge.nesting_slots;
+    ledger.used_track_slots -= charge.track_slots;
+    ledger.used_chunk_slots -= charge.chunk_slots;
     return true;
 }
 
@@ -893,8 +1002,15 @@ HalyardManagedByteSourceResult halyard_managed_source_create(
 
     HalyardBudgetCharge charge = new HalyardBudgetCharge{
         input_bytes: 0, retained_bytes: input.len(), output_bytes: 0,
-        decoded_units: 0, work_units: 0
-    };
+        decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
     HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
     if (!acquired.ok) {
         return new HalyardManagedByteSourceResult{
@@ -1043,12 +1159,26 @@ test "Halyard ledger reserves every dimension or none" {
     if (let ledger = created.ledger) {
         HalyardBudgetCharge exact = new HalyardBudgetCharge{
             input_bytes: 10, retained_bytes: 20, output_bytes: 30,
-            decoded_units: 40, work_units: 50
+            decoded_units: 40, work_units: 50,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         assert(halyard_ledger_reserve(ledger, exact));
         HalyardBudgetCharge one_more = new HalyardBudgetCharge{
             input_bytes: 1, retained_bytes: 0, output_bytes: 0,
-            decoded_units: 0, work_units: 0
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         assert(!halyard_ledger_reserve(ledger, one_more));
         assert(ledger.used_input_bytes == 10);
@@ -1067,12 +1197,26 @@ test "Halyard ledger release rejects underflow without mutation" {
     if (let ledger = created.ledger) {
         HalyardBudgetCharge exact = new HalyardBudgetCharge{
             input_bytes: 10, retained_bytes: 20, output_bytes: 30,
-            decoded_units: 40, work_units: 50
+            decoded_units: 40, work_units: 50,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         assert(halyard_ledger_reserve(ledger, exact));
         HalyardBudgetCharge release = new HalyardBudgetCharge{
             input_bytes: 10, retained_bytes: 20, output_bytes: 30,
-            decoded_units: 40, work_units: 50
+            decoded_units: 40, work_units: 50,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         assert(halyard_ledger_release(ledger, release));
         assert(!halyard_ledger_release(ledger, release));
@@ -1093,7 +1237,14 @@ test "Halyard ledger rejects negative limits and charges" {
     if (let ledger = created.ledger) {
         HalyardBudgetCharge negative = new HalyardBudgetCharge{
             input_bytes: -1, retained_bytes: 0, output_bytes: 0,
-            decoded_units: 0, work_units: 0
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         assert(!halyard_ledger_reserve(ledger, negative));
         assert(ledger.used_input_bytes == 0);
@@ -1138,13 +1289,27 @@ test "Halyard five-dimensional reservations exhaustively match the admission pre
                         if (let ledger = made.ledger) {
                             HalyardBudgetCharge base = new HalyardBudgetCharge{
                                 input_bytes: 1, retained_bytes: 1, output_bytes: 1,
-                                decoded_units: 1, work_units: 1
-                            };
+                                decoded_units: 1, work_units: 1,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
                             assert(halyard_ledger_reserve(ledger, base));
                             HalyardBudgetCharge request = new HalyardBudgetCharge{
                                 input_bytes: a, retained_bytes: b, output_bytes: c,
-                                decoded_units: d, work_units: e
-                            };
+                                decoded_units: d, work_units: e,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
                             bool expected = a <= 1 && b <= 1 && c <= 1 && d <= 1 && e <= 1;
                             bool actual = halyard_ledger_reserve(ledger, request);
                             assert(actual == expected);
@@ -1189,13 +1354,27 @@ test "Halyard release rejects underflow independently in every dimension" {
         if (let ledger = made.ledger) {
             HalyardBudgetCharge one = new HalyardBudgetCharge{
                 input_bytes: 1, retained_bytes: 1, output_bytes: 1,
-                decoded_units: 1, work_units: 1
-            };
+                decoded_units: 1, work_units: 1,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
             assert(halyard_ledger_reserve(ledger, one));
             HalyardBudgetCharge invalid_release = new HalyardBudgetCharge{
                 input_bytes: 0, retained_bytes: 0, output_bytes: 0,
-                decoded_units: 0, work_units: 0
-            };
+                decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
+        };
             if (dimension == 0) { invalid_release.input_bytes = 2; }
             if (dimension == 1) { invalid_release.retained_bytes = 2; }
             if (dimension == 2) { invalid_release.output_bytes = 2; }
@@ -1220,7 +1399,14 @@ test "Halyard ledger rejects corrupted public state" {
         ledger.used_work_units = -1;
         HalyardBudgetCharge zero = new HalyardBudgetCharge{
             input_bytes: 0, retained_bytes: 0, output_bytes: 0,
-            decoded_units: 0, work_units: 0
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         assert(!halyard_ledger_reserve(ledger, zero));
     } else {
@@ -1705,7 +1891,14 @@ test "Halyard reservation lease releases exactly once" {
     if (let ledger = made.ledger) {
         HalyardBudgetCharge charge = new HalyardBudgetCharge{
             input_bytes: 2, retained_bytes: 1, output_bytes: 1,
-            decoded_units: 1, work_units: 2
+            decoded_units: 1, work_units: 2,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
         assert(acquired.ok);
@@ -1728,7 +1921,14 @@ test "Halyard rejected reservation returns no lease handle" {
     if (let ledger = made.ledger) {
         HalyardBudgetCharge too_large = new HalyardBudgetCharge{
             input_bytes: 2, retained_bytes: 0, output_bytes: 0,
-            decoded_units: 0, work_units: 0
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         HalyardReservationResult rejected = halyard_ledger_acquire(ledger, too_large);
         assert(!rejected.ok && rejected.error == "reservation_rejected");
@@ -1747,7 +1947,14 @@ test "Halyard reservation aliases share one release state" {
     if (let ledger = made.ledger) {
         HalyardBudgetCharge charge = new HalyardBudgetCharge{
             input_bytes: 1, retained_bytes: 1, output_bytes: 1,
-            decoded_units: 1, work_units: 1
+            decoded_units: 1, work_units: 1,
+            allocation_units: 0,
+            metadata_entries: 0,
+            queue_slots: 0,
+            worker_slots: 0,
+            nesting_slots: 0,
+            track_slots: 0,
+            chunk_slots: 0
         };
         HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
         assert(acquired.ok);
@@ -1808,6 +2015,78 @@ test "Halyard managed source rolls back lease on invalid input" {
             halyard_managed_source_create(ledger, input, 4);
         assert(!rejected.ok && rejected.error == "invalid_byte");
         assert(ledger.used_retained_bytes == 0);
+    } else { assert(false); }
+}
+
+
+test "Halyard live-resource vector admits and releases every added dimension atomically" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 0, 0, 0, 0, 2, 3, 4, 1, 5, 6, 7
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge all = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 2, metadata_entries: 3, queue_slots: 4,
+            worker_slots: 1, nesting_slots: 5, track_slots: 6, chunk_slots: 7
+        };
+        assert(halyard_ledger_reserve(ledger, all));
+        assert(ledger.used_allocation_units == 2);
+        assert(ledger.used_metadata_entries == 3);
+        assert(ledger.used_queue_slots == 4);
+        assert(ledger.used_worker_slots == 1);
+        assert(ledger.used_nesting_slots == 5);
+        assert(ledger.used_track_slots == 6);
+        assert(ledger.used_chunk_slots == 7);
+        assert(halyard_ledger_release(ledger, all));
+        assert(ledger.used_allocation_units == 0);
+        assert(ledger.used_metadata_entries == 0);
+        assert(ledger.used_queue_slots == 0);
+        assert(ledger.used_worker_slots == 0);
+        assert(ledger.used_nesting_slots == 0);
+        assert(ledger.used_track_slots == 0);
+        assert(ledger.used_chunk_slots == 0);
+    } else { assert(false); }
+}
+
+test "Halyard live-resource vector rejects one over-limit dimension without partial admission" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge too_large = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 1, metadata_entries: 1, queue_slots: 1,
+            worker_slots: 1, nesting_slots: 1, track_slots: 1, chunk_slots: 2
+        };
+        assert(!halyard_ledger_reserve(ledger, too_large));
+        assert(ledger.used_allocation_units == 0);
+        assert(ledger.used_metadata_entries == 0);
+        assert(ledger.used_queue_slots == 0);
+        assert(ledger.used_worker_slots == 0);
+        assert(ledger.used_nesting_slots == 0);
+        assert(ledger.used_track_slots == 0);
+        assert(ledger.used_chunk_slots == 0);
+    } else { assert(false); }
+}
+
+test "Halyard live-resource vector rejects release underflow without mutation" {
+    HalyardLedgerResult made = halyard_ledger_create_bounded(
+        0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1
+    );
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge underflow = new HalyardBudgetCharge{
+            input_bytes: 0, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0,
+            allocation_units: 0, metadata_entries: 0, queue_slots: 0,
+            worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 1
+        };
+        assert(!halyard_ledger_release(ledger, underflow));
+        assert(ledger.used_chunk_slots == 0);
     } else { assert(false); }
 }
 
