@@ -244,17 +244,17 @@ CBTransition cb_cancel_consumer(CBState before) {
 
 test "CB receive blocks and registers exactly one wait without moving ownership" {
     CBState before = cb_initial();
-    before.message_live = false;
-    before.message_owner = CB_OWNER_NONE;
     CBTransition blocked = cb_receive(before);
     assert(blocked.ok);
     assert(blocked.state.consumer_status == CB_TASK_BLOCKED);
     assert(blocked.state.consumer_wait_registered);
     assert(blocked.state.consumer_wait == CB_WAIT_CHANNEL_MESSAGE);
-    assert(!blocked.state.message_live);
+    assert(blocked.state.message_live);
+    assert(blocked.state.message_owner == CB_OWNER_PRODUCER);
     assert(blocked.state.steps == 1);
     assert(cb_invariant(blocked.state));
     assert(before.consumer_status == CB_TASK_RUNNABLE);
+    assert(before.message_owner == CB_OWNER_PRODUCER);
     assert(!before.consumer_wait_registered);
 }
 
@@ -335,9 +335,12 @@ test "CB duplicate wake and cancellation attempts are rejected without mutation"
     CBState before = cb_initial();
     CBState blocked = cb_receive(before).state;
     CBState sent = cb_send(blocked).state;
-    CBTransition duplicate_receive = cb_receive(sent);
-    assert(duplicate_receive.ok);
-    CBTransition duplicate_cancel = cb_cancel_consumer(duplicate_receive.state);
+    CBTransition received = cb_receive(sent);
+    assert(received.ok);
+    CBTransition duplicate_send = cb_send(received.state);
+    assert(!duplicate_send.ok);
+    assert(duplicate_send.state.consumer_status == CB_TASK_RUNNABLE);
+    CBTransition duplicate_cancel = cb_cancel_consumer(duplicate_send.state);
     assert(!duplicate_cancel.ok);
     assert(duplicate_cancel.state.consumer_status == CB_TASK_RUNNABLE);
     assert(!duplicate_cancel.state.consumer_wait_registered);
