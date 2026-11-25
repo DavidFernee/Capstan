@@ -445,6 +445,7 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
     List<int> mdat_ranges = new List<int>();
     DeadeyeMp4Box moov;
     bool found_moov = false;
+    bool found_ftyp = false;
     int top = 0;
     int top_count = 0;
     while (top < bytes.len()) {
@@ -459,7 +460,27 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         if (top_count > DEADEYE_MP4_MAX_BOXES) {
             return deadeye_mp4_movie_error("top_level_box_limit");
         }
-        if (deadeye_mp4_track_box(top_box,'m','o','o','v')) {
+        if (top_count == 1 &&
+            !deadeye_mp4_track_box(top_box,'f','t','y','p')) {
+            return deadeye_mp4_movie_error("ftyp_must_be_first");
+        }
+        if (deadeye_mp4_track_box(top_box,'f','t','y','p')) {
+            int ftyp_size = top_box.end - top_box.payload_start;
+            if (found_ftyp || ftyp_size < 8 || (ftyp_size - 8) % 4 != 0 ||
+                !deadeye_mp4_brand_supported(bytes,top_box.payload_start)) {
+                return deadeye_mp4_movie_error("invalid_or_unsupported_ftyp");
+            }
+            bool compatible = false;
+            int brand_at = top_box.payload_start + 8;
+            while (brand_at < top_box.end) {
+                if (deadeye_mp4_brand_supported(bytes,brand_at)) { compatible = true; }
+                brand_at += 4;
+            }
+            if (!compatible) {
+                return deadeye_mp4_movie_error("unsupported_compatible_brands");
+            }
+            found_ftyp = true;
+        } else if (deadeye_mp4_track_box(top_box,'m','o','o','v')) {
             if (found_moov || top_box.start != supplied_moov.start ||
                 top_box.end != supplied_moov.end) {
                 return deadeye_mp4_movie_error("moov_identity_mismatch");
@@ -475,10 +496,17 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         } else if (deadeye_mp4_track_box(top_box,'m','o','o','f') ||
                    deadeye_mp4_track_box(top_box,'u','u','i','d')) {
             return deadeye_mp4_movie_error("unsupported_top_level_profile");
+        } else if (!deadeye_mp4_track_box(top_box,'f','t','y','p') &&
+                   !deadeye_mp4_track_box(top_box,'m','o','o','v') &&
+                   !deadeye_mp4_track_box(top_box,'m','d','a','t') &&
+                   !deadeye_mp4_track_box(top_box,'f','r','e','e') &&
+                   !deadeye_mp4_track_box(top_box,'s','k','i','p') &&
+                   !deadeye_mp4_track_box(top_box,'w','i','d','e')) {
+            return deadeye_mp4_movie_error("unsupported_top_level_box");
         }
         top = top_box.end;
     }
-    if (top != bytes.len() || !found_moov || mdat_ranges.len() == 0) {
+    if (top != bytes.len() || !found_ftyp || !found_moov || mdat_ranges.len() == 0) {
         return deadeye_mp4_movie_error("missing_moov_or_mdat");
     }
     if (!deadeye_mp4_track_box(moov,'m','o','o','v') ||
@@ -547,7 +575,7 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
     deadeye_mp4_test_push_box(stbl,'s','t','s','z',
         [0,0,0,0,0,0,0,4,0,0,0,1]);
     deadeye_mp4_test_push_box(stbl,'s','t','c','o',
-        [0,0,0,0,0,0,0,1,0,0,0,200]);
+        [0,0,0,0,0,0,0,1,0,0,1,128]); // absolute mdat payload offset 384
 
     List<int> url = new List<int>();
     deadeye_mp4_test_push_box(url,'u','r','l',' ',[0,0,0,1]);
