@@ -83,6 +83,13 @@ bool scc_terminal(SCCState s) {
     return access_done && s.revoke_status == SCC_REVOKE_RETURNED;
 }
 
+// A strictly increasing rank rules out cycles in the finite transition graph.
+// Every enabled action advances one status; revocation advances by five so
+// it dominates any access-status change in the same interleaving.
+int scc_rank(SCCState s) {
+    return s.access_status + 5 * s.revoke_status;
+}
+
 bool scc_invariant(SCCState s) {
     if (s.access_status < SCC_ACCESS_NONE ||
         s.access_status > SCC_ACCESS_REJECTED ||
@@ -219,7 +226,8 @@ SCCExplore scc_explore(int state_limit) {
             SCCStep step = scc_step(current, action);
             if (step.enabled) {
                 enabled += 1;
-                if (!scc_invariant(step.next)) {
+                if (!scc_invariant(step.next) ||
+                    scc_rank(step.next) <= scc_rank(current)) {
                     return new SCCExplore{
                         valid: false, complete: false, classification: SCC_INVALID,
                         explored: states.len(), terminal_count: terminals
@@ -238,8 +246,15 @@ SCCExplore scc_explore(int state_limit) {
                 }
             }
         }
-        if (scc_terminal(current)) { terminals += 1; }
-        else if (enabled == 0) {
+        if (scc_terminal(current)) {
+            if (enabled != 0) {
+                return new SCCExplore{
+                    valid: false, complete: true, classification: SCC_INVALID,
+                    explored: states.len(), terminal_count: terminals
+                };
+            }
+            terminals += 1;
+        } else if (enabled == 0) {
             return new SCCExplore{
                 valid: false, complete: true, classification: SCC_INVALID,
                 explored: states.len(), terminal_count: terminals
@@ -247,12 +262,11 @@ SCCExplore scc_explore(int state_limit) {
         }
         cursor += 1;
     }
-    bool all_terminal = true;
-    for (int i = 0; i < states.len(); i += 1) {
-        if (!scc_terminal(states[i])) { all_terminal = false; }
-    }
+    // The graph is finite and complete; strict rank growth excludes cycles.
+    // Every nonterminal has a successor and every terminal is a sink, so every
+    // maximal execution ends in a terminal state.
     int classification = SCC_PROGRESS;
-    if (all_terminal) { classification = SCC_TERMINAL; }
+    if (terminals > 0) { classification = SCC_TERMINAL; }
     return new SCCExplore{
         valid: true, complete: true, classification: classification,
         explored: states.len(), terminal_count: terminals
