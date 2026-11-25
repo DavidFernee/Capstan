@@ -279,7 +279,8 @@ theorem reuse_rejects_previous_incarnation
   constructor
   · simp [releaseSlot, h]
   constructor
-  · have hbound : current + 1 ≤ maximumGeneration := by omega
+  · have hbound : current + 1 ≤ maximumGeneration := by
+      simpa [Nat.add_comm] using Nat.succ_le_iff.mpr h
     simp [allocateSlot, hbound]
   · simp [resolveSlot]
 
