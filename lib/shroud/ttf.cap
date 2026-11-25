@@ -611,7 +611,9 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
         int dx2 = mul_div(dx, num, den);
         int dy2 = mul_div(dy, num, den);
         int x = ox + mul_div(m[0], dx2, 16384) + mul_div(m[2], dy2, 16384);
-        int y = oy + mul_div(m[1], dx2, 16384) + mul_div(m[3], dy2, 16384);
+        // Font-space Y offsets point upward; Path coordinates point downward.
+        // Apply the inverse sign here, matching the Y inversion in simple outlines.
+        int y = oy - mul_div(m[1], dx2, 16384) - mul_div(m[3], dy2, 16384);
         if (!glyph_outline_budgeted(f, g, p, num, den, x, y, next, depth + 1, budget)) { return false; }
         parts += 1;
     }
