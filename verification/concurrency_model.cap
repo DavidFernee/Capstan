@@ -203,6 +203,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
 
     if (action == CCM_ACT_SPAWN_PRODUCER) {
         if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
+            before.scope_cancel_requested ||
             before.producer_status != CCM_TASK_NEW ||
             before.producer_handle != CCM_HANDLE_NONE) {
             return ccm_reject(before, "invalid_producer_spawn");
@@ -218,6 +219,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
 
     if (action == CCM_ACT_SPAWN_CONSUMER) {
         if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
+            before.scope_cancel_requested ||
             before.consumer_status != CCM_TASK_NEW ||
             before.consumer_handle != CCM_HANDLE_NONE) {
             return ccm_reject(before, "invalid_consumer_spawn");
@@ -901,4 +903,14 @@ test "CCM scope cancellation cannot complete while child handles remain live" {
     assert(!premature.ok);
     assert(premature.error == "scope_has_live_descendants_or_handles");
     assert(!premature.state.scope_closed);
+}
+
+test "CCM parent cancellation prevents new child creation" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_REQUEST_SCOPE_CANCEL);
+    CCMTransition spawn = ccm_step(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    assert(!spawn.ok);
+    assert(spawn.error == "invalid_producer_spawn");
+    assert(spawn.state.producer_status == CCM_TASK_NEW);
+    assert(spawn.state.task_count == 1 && spawn.state.steps == state.steps);
 }
