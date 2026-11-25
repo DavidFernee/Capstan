@@ -17,6 +17,8 @@ I64_MAX = (1 << 63) - 1
 MAX_REGISTERS = 4096
 MAX_INSTRUCTIONS = 65536
 MAX_VECTORS = 64
+MAX_CORPUS_INSTRUCTIONS = 65536
+MAX_CORPUS_REGISTERS = 65536
 
 TOP_KEYS = {
     "format", "profile", "normative_specification",
@@ -222,6 +224,8 @@ def main() -> int:
 
         seen_ids = set()
         total = 0
+        corpus_instructions = 0
+        corpus_registers = 0
         groups = (
             ("vectors", data["vectors"], VECTOR_REQUIRED, VECTOR_OPTIONAL),
             ("out_of_profile", data["out_of_profile"],
@@ -246,6 +250,9 @@ def main() -> int:
                 require(isinstance(vector["register_types"], list), f"{where}: register_types must be an array")
                 require(len(vector["register_types"]) <= MAX_REGISTERS,
                         f"{where}: register count exceeds the evaluator admission limit")
+                corpus_registers += len(vector["register_types"])
+                require(corpus_registers <= MAX_CORPUS_REGISTERS,
+                        f"corpus exceeds the {MAX_CORPUS_REGISTERS}-register aggregate harness bound")
                 require(all(t in ("int", "bool") for t in vector["register_types"]),
                         f"{where}: unsupported register type")
                 require(vector["return_type"] in ("int", "bool", "void"),
@@ -257,6 +264,9 @@ def main() -> int:
                         f"{where}: instructions must be a non-empty array")
                 require(len(vector["instructions"]) <= MAX_INSTRUCTIONS,
                         f"{where}: instruction count exceeds the evaluator admission limit")
+                corpus_instructions += len(vector["instructions"])
+                require(corpus_instructions <= MAX_CORPUS_INSTRUCTIONS,
+                        f"corpus exceeds the {MAX_CORPUS_INSTRUCTIONS}-instruction aggregate harness bound")
                 if group_name == "vectors":
                     require("profile_entry" in vector,
                             f"{where}: proof-profile vector requires profile_entry")
