@@ -664,7 +664,6 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
     }
 
     int total_call_arguments = 0;
-    int total_output_literals = 0;
     // Pass two decodes exact opcode schemas and resolves call names.
     for (int fi = 0; fi < functions_json.items.len(); fi += 1) {
         CCAMJsonValue fn_json = functions_json.items[fi];
@@ -827,26 +826,9 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
                     return ccam_json_program_error("trap_reason_invalid");
                 }
                 instruction.reason = reason.value;
-            } else if (op == "emit_bytes") {
-                instruction.op = CCAM_OP_EMIT_BYTES;
-                fields.push("bytes");
-                CCAMJsonValue bytes_json = ccam_json_member(op_json, "bytes");
-                if (bytes_json.kind != CCAM_JSON_ARRAY ||
-                    bytes_json.items.len() >
-                        CCAM_MAX_OUTPUT_BYTES - total_output_literals) {
-                    return ccam_json_program_error("byte_output_payload_invalid");
-                }
-                total_output_literals += bytes_json.items.len();
-                for (int bi = 0; bi < bytes_json.items.len(); bi += 1) {
-                    CCAMJsonIntResult byte_value =
-                        ccam_json_integer(bytes_json.items[bi]);
-                    if (!byte_value.ok || byte_value.value < 0 ||
-                        byte_value.value > 255) {
-                        return ccam_json_program_error("byte_output_value_out_of_range");
-                    }
-                    instruction.byte_data.push(byte_value.value);
-                }
             } else {
+                return ccam_json_program_error("unknown_opcode");
+            }
                 return ccam_json_program_error("unknown_opcode");
             }
 
