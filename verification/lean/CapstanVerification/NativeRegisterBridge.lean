@@ -290,13 +290,13 @@ theorem nativeRegisterWriteIntChecked_corresponds
         (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteIntChecked, runtimeRegisterWriteIntChecked,
-        htagInt, htype, nativeRegisterWriteInt, runtimeRegisterWriteInt]
+        htagInt, htype, hbool, nativeRegisterWriteInt, runtimeRegisterWriteInt]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteIntChecked, runtimeRegisterWriteIntChecked,
-        htagBool, htype, nativeRegisterWriteInt, runtimeRegisterWriteInt]
+        htagBool, htype, hbool, nativeRegisterWriteInt, runtimeRegisterWriteInt]
 
 /-- The native boolean writer's local type check followed by its field update. -/
 def nativeRegisterWriteBoolChecked
@@ -334,12 +334,12 @@ theorem nativeRegisterWriteBoolChecked_corresponds
         (decodeNativeTypeTag_int_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteBoolChecked, runtimeRegisterWriteBoolChecked,
-        htagInt, htype, nativeRegisterWriteBool, runtimeRegisterWriteBool]
+        htagInt, htype, hint, nativeRegisterWriteBool, runtimeRegisterWriteBool]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
           simpa [htype] using htag)
       simp [nativeRegisterWriteBoolChecked, runtimeRegisterWriteBoolChecked,
-        htagBool, htype, nativeRegisterWriteBool, runtimeRegisterWriteBool]
+        htagBool, htype, hint, nativeRegisterWriteBool, runtimeRegisterWriteBool]
 
 end CapstanVerification
