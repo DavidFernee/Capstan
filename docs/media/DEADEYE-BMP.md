@@ -33,24 +33,37 @@ All decoder, conversion, helper and regression logic is authored in Capstan in
 parent-directory imports, foreign-language shims, third-party image code or generated-C
 media implementation.
 
-Six colocated Capstan test declarations cover:
+Eight colocated Capstan test declarations cover:
 - bottom-up 24-bit decode with row padding and exact pixel orientation;
 - top-down 32-bit decode and opaque alpha handling;
 - malformed signatures and file-size mismatch;
 - unsupported DIB header, compression and bit depth;
 - invalid dimensions and noncanonical pixel offset;
-- image-size mismatch and mutated-source rejection.
+- image-size mismatch and mutated-source rejection;
+- cumulative input/work and temporary-plus-final pixel payload accounting;
+- rejection of an over-budget frame before pixel materialisation.
 
 Run the module tests by invoking Capstan test mode on `lib/halyard/deadeye.cap`.
 Exact-head execution is still required; no test-pass or conformance claim is made until observed.
 
 The parser consumes its source. On failure it returns no partial wave/frame value, but the source cursor remains at the point where the error was detected; callers should discard that source rather than retry from an assumed initial position.
 
+The budgeted entry point `deadeye_bmp_decode_budgeted` charges input bytes and bounded
+parser work before parsing. After dimensions and file lengths are validated, it charges
+both the temporary pixel-byte copy and final RGBA payload, decoded pixel count, and pixel
+copy/conversion work before reading/materialising those buffers. The charge is monotonic
+and is not refunded on later failure. These are logical payload charges, not exact
+process-memory accounting; allocator metadata and list/object overhead are not covered.
+The legacy unbudgeted decoder remains for trusted bounded composition only. Public
+mutable source/budget/frame structs and the absence of mandatory managed-source ownership
+mean this is not yet a hostile-input security boundary.
+
 ## Explicit non-goals and release blockers
 
 - BMP palettes, bitfields, RLE, OS/2, V4/V5, embedded profiles and arbitrary offsets.
 - PNG/JPEG/WebP/AVIF/TIFF/OpenEXR and all compressed image/video formats.
 - Streaming decode, zero-copy frame views or GPU/hardware paths.
-- Aggregate-ledger reservations for pixel input, temporary copies and RGBA output.
+- Opaque budget/source/frame state and managed-source integration;
+- allocator-exact accounting beyond logical pixel payloads, including list/object overhead.
 - Opaque frame/source state, lifetime-bound ownership, cancellation and full colour-management semantics.
 - Adversarial corpus, fuzzing, differential tests, independent review and exact-head CI.
