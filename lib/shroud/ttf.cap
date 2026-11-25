@@ -140,7 +140,7 @@ bool font_directory_valid(FontReader r) {
         int tag = r.u32(rec);
         int off = r.u32(rec + 8);
         int len = r.u32(rec + 12);
-        if (!r.ok || off < directory_end || off > r.b.len() ||
+        if (!r.ok || (len > 0 && off < directory_end) || off > r.b.len() ||
             len > r.b.len() - off || off % 4 != 0) { return false; }
         for (int j = 0; j < i; j += 1) {
             int prior = 12 + 16 * j;
