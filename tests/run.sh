@@ -80,7 +80,7 @@ fi
 
 section "Capstan-native verification: Helm bounded boot-memory reference model"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/helm_boot_memory_model.cap" 2>&1)"; then
-  ok "unsigned x86-64 address limbs, canonicality, bounded ranges and immutable little-endian boot views"
+  ok "unsigned x86-64 address limbs, canonicality, bounded ranges and owned-snapshot little-endian boot views"
 else
   bad "Helm boot-memory reference model" "$out"
 fi
