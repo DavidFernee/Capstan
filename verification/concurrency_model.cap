@@ -1330,3 +1330,23 @@ test "CCM cancellation request blocks new work but permits owned-resource cleanu
     assert(state.protocol_phase == CCM_PROTO_RELEASED);
     assert(ccm_invariant(state));
 }
+
+test "CCM aggregates child failures symmetrically when consumer fails first" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 2, CCM_ACT_FAIL_CONSUMER);
+    assert(state.scope_failed && state.scope_cancel_requested);
+    assert(state.cleanup_reserved == 5);
+    state = ccm_apply(state, 1, CCM_ACT_FAIL_PRODUCER);
+    assert(ccm_invariant(state));
+    assert(state.producer_status == CCM_TASK_FAILED);
+    assert(state.consumer_status == CCM_TASK_FAILED);
+    assert(state.cleanup_reserved == 4);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state));
+    assert(state.root_status == CCM_TASK_FAILED && state.cleanup_reserved == 0);
+}
