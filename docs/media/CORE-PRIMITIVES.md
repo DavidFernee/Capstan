@@ -171,10 +171,15 @@ pre-commit ownership and changes no ledger dimension.
 The Capstan-native reference machine is
 `verification/halyard_resource_actor.cap`. It models two competing request
 identities, a bounded FIFO, serial processing, all-or-nothing admission and one-shot
-release. Its tests cover both enqueue orders, aggregate overcommit prevention,
+release. The companion `verification/halyard_resource_vector_actor.cap` extends the
+admission transition to a three-dimensional live-resource vector (retained bytes,
+allocation slots and metadata entries), with all dimensions preflighted before any
+counter changes. Its tests cover both enqueue orders, aggregate overcommit prevention,
 queue-full rejection, invalid/duplicate requests, repeated release and rejection of
-corrupted resource/queue state before transition. The model now has seven Capstan
-test declarations; the standard test runner executes it.
+corrupted resource/queue state before transition. The scalar policy model has seven Capstan test declarations; the standard test runner
+executes it. The vector model adds five tests for FIFO aggregate admission, a single
+exhausted dimension, exact-boundary admission, one-shot release, queue/negative-charge
+rejection and corrupted-state rejection; it is also registered in the standard test runner.
 
 This is a **policy model**, not a live concurrent actor implementation. It assumes
 the owner processes transitions serially; it does not itself establish that a
@@ -346,3 +351,6 @@ Still required before MC1 can pass:
 No third-party media implementation code is used by this slice. The existing Capstan
 compiler/runtime remains C-backed in the current production build and remains in the
 trusted computing base until the C-free execution path is qualified.
+
+
+The vector actor is still an abstract single-owner policy model. It does not prove the runtime actually serialises requests, model every live-resource dimension, include cumulative consumption (which is intentionally non-refundable and tested separately), or establish cancellation/worker-death cleanup. Those remain explicit gates under #285, #293, #303, #229 and #249.
