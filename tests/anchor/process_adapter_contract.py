@@ -443,7 +443,11 @@ class ProcessSupervisorModel:
             return
         # The fake OS reports a killed process only on a later wait poll.
         # This keeps kill request, exit observation and reap as distinct states.
-        self.backend.poll_pending_exits(process.child)
+        observed_exits = self.backend.poll_pending_exits(process.child)
+        if observed_exits:
+            # Preserve a distinct observation state for at least one supervisor
+            # turn; reaping is a separate operation on a subsequent tick.
+            return
         # Observe a direct-child exit before applying its deadline. If descendants
         # remain in the owned process group, terminate and reap them as well.
         if process.child.exit_code is not None:
@@ -570,6 +574,9 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(process.child.state, ProcessState.KILL_REQUESTED)
         self.assertIsNone(process.exit_code)
         self.supervisor.tick(process)
+        self.assertEqual(process.child.state, ProcessState.EXITED)
+        self.assertIsNone(process.exit_code)
+        self.supervisor.tick(process)
         self.assertEqual(process.child.state, ProcessState.REAPED)
         self.assertEqual(process.exit_code, -9)
         self.assertEqual([e[0] for e in self.backend.events if e[0] in ("terminate", "kill", "reap")],
@@ -585,6 +592,11 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(process.child.state, ProcessState.KILL_REQUESTED)
         self.assertEqual(child.state, ProcessState.KILL_REQUESTED)
         self.supervisor.tick(process)  # observe the fake backend's completed kill
+        self.assertEqual(process.child.state, ProcessState.EXITED)
+        self.assertEqual(child.state, ProcessState.EXITED)
+        self.assertEqual(grandchild.state, ProcessState.EXITED)
+        self.assertIsNone(process.exit_code)
+        self.supervisor.tick(process)  # reap only after the observed-exit turn
         self.assertEqual(process.child.state, ProcessState.REAPED)
         self.assertEqual(child.state, ProcessState.REAPED)
         self.assertEqual(grandchild.state, ProcessState.REAPED)
@@ -603,6 +615,9 @@ class ContractTests(unittest.TestCase):
         self.supervisor.tick(process)
         self.assertEqual(process.child.state, ProcessState.KILL_REQUESTED)
         self.supervisor.tick(process)  # observe exit after force termination
+        self.assertEqual(process.child.state, ProcessState.EXITED)
+        self.assertIsNone(process.exit_code)
+        self.supervisor.tick(process)
         self.assertEqual(process.child.state, ProcessState.REAPED)
 
     def test_natural_exit_is_observed_and_reaped_once(self):
@@ -638,7 +653,11 @@ class ContractTests(unittest.TestCase):
         self.supervisor.tick(process)
         self.assertEqual(process.child.state, ProcessState.EXITED)
         self.assertEqual(descendant.state, ProcessState.KILL_REQUESTED)
-        self.supervisor.tick(process)  # observe descendant exit, then reap the tree
+        self.supervisor.tick(process)  # observe descendant exit
+        self.assertEqual(process.child.state, ProcessState.EXITED)
+        self.assertEqual(descendant.state, ProcessState.EXITED)
+        self.assertIsNone(process.exit_code)
+        self.supervisor.tick(process)  # reap the tree on a later turn
         self.assertEqual(process.child.state, ProcessState.REAPED)
         self.assertEqual(descendant.state, ProcessState.REAPED)
         self.assertEqual(process.exit_code, 0)
