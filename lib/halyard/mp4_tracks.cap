@@ -463,7 +463,10 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         return deadeye_mp4_movie_error("invalid_mp4_file_bytes");
     }
     List<int> mdat_ranges = new List<int>();
-    DeadeyeMp4Box moov;
+    DeadeyeMp4Box moov = new DeadeyeMp4Box{
+        start:0,size:0,header_size:0,payload_start:0,end:0,
+        type_a:0,type_b:0,type_c:0,type_d:0
+    };
     bool found_moov = false;
     bool found_ftyp = false;
     int top = 0;
