@@ -1364,3 +1364,23 @@ test "Halyard rejected reservation creates no release capability" {
     } else { assert(false); }
 }
 
+
+test "Halyard reservation aliases share one release state" {
+    HalyardLedgerResult made = halyard_ledger_create(2, 2, 2, 2, 2);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardBudgetCharge charge = new HalyardBudgetCharge{
+            input_bytes: 1, retained_bytes: 1, output_bytes: 1,
+            decoded_units: 1, work_units: 1
+        };
+        HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
+        assert(acquired.ok);
+        if (let lease = acquired.reservation) {
+            HalyardReservation alias = lease;
+            assert(halyard_reservation_release(ledger, lease));
+            assert(!halyard_reservation_release(ledger, alias));
+            assert(ledger.used_input_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
