@@ -7,11 +7,13 @@ on:
     paths:
       - "verification/lean/NativeMemoryLifecycle.lean"
       - "verification/lean/NativeReachability.lean"
+      - "verification/lean/NativeHandleReachability.lean"
       - ".github/workflows/native-memory-lifecycle.yml"
   pull_request:
     paths:
       - "verification/lean/NativeMemoryLifecycle.lean"
       - "verification/lean/NativeReachability.lean"
+      - "verification/lean/NativeHandleReachability.lean"
       - ".github/workflows/native-memory-lifecycle.yml"
   workflow_dispatch:
 
@@ -60,7 +62,7 @@ jobs:
         working-directory: verification/lean
         shell: bash
         run: |
-          if grep -nE '(^|[^[:alnum:]_])(sorry|admit)([^[:alnum:]_]|$)|^[[:space:]]*axiom[[:space:]]' NativeReachability.lean; then
+          if grep -nE '(^|[^[:alnum:]_])(sorry|admit)([^[:alnum:]_]|$)|^[[:space:]]*axiom[[:space:]]' NativeReachability.lean NativeHandleReachability.lean; then
             echo "Unfinished proof or local axiom declaration found."
             exit 1
           fi
@@ -71,5 +73,14 @@ jobs:
           lake env lean -o NativeReachability.olean NativeReachability.lean | tee "$RUNNER_TEMP/native-reachability-axioms.txt"
           if grep -q 'sorryAx' "$RUNNER_TEMP/native-reachability-axioms.txt"; then
             echo "Unexpected sorryAx dependency in reachability model."
+            exit 1
+          fi
+      - name: Compile generation-checked internal-edge model and audit theorem axioms
+        working-directory: verification/lean
+        shell: bash
+        run: |
+          lake env lean -o NativeHandleReachability.olean NativeHandleReachability.lean | tee "$RUNNER_TEMP/native-handle-reachability-axioms.txt"
+          if grep -q "sorryAx" "$RUNNER_TEMP/native-handle-reachability-axioms.txt"; then
+            echo "Unexpected sorryAx dependency in handle reachability model."
             exit 1
           fi
