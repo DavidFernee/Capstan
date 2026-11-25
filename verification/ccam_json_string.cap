@@ -189,7 +189,9 @@ int main() {
     if (ccam_json_decode_string_body(taint("\\uDC00")).ok) { return 1; }
     if (ccam_json_decode_string_body(taint("\\uD800\\u0041")).ok) { return 1; }
     if (ccam_json_decode_string_body(taint("\\x41")).ok) { return 1; }
-    if (ccam_json_decode_string_body(taint_char(10)).ok) { return 1; }\n    if (ccam_json_decode_string_body(taint_char(34)).ok) { return 1; }\n    if (ccam_json_decode_string_body(taint_char(0xE2) + taint_char(0x82)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(10)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(34)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(0xE2) + taint_char(0x82)).ok) { return 1; }
     if (ccam_json_decode_string_body(taint_char(0xC0) + taint_char(0x80)).ok) { return 1; }
     if (ccam_json_decode_string_body(taint_char(0xED) + taint_char(0xA0) + taint_char(0x80)).ok) { return 1; }
     if (ccam_json_decode_string_body(taint_char(0xF4) + taint_char(0x90) + taint_char(0x80) + taint_char(0x80)).ok) { return 1; }
@@ -211,7 +213,9 @@ test "CCAM JSON string decoder rejects malformed escapes and surrogates" {
 }
 
 test "CCAM JSON string decoder rejects invalid UTF-8 and raw controls" {
-    assert(!ccam_json_decode_string_body(taint_char(10)).ok);\n    assert(!ccam_json_decode_string_body(taint_char(34)).ok);\n    assert(!ccam_json_decode_string_body(taint_char(0xE2) + taint_char(0x82)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(10)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(34)).ok);
+    assert(!ccam_json_decode_string_body(taint_char(0xE2) + taint_char(0x82)).ok);
     assert(!ccam_json_decode_string_body(taint_char(0xC0) + taint_char(0x80)).ok);
     assert(!ccam_json_decode_string_body(taint_char(0xED) + taint_char(0xA0) + taint_char(0x80)).ok);
 }
