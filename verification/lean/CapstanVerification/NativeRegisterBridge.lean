@@ -33,17 +33,8 @@ theorem decodeNativeTypeTag_int_iff (tag : Int) :
 
 theorem decodeNativeTypeTag_bool_iff (tag : Int) :
     decodeNativeTypeTag tag = some .bool ↔ tag = nativeBoolTypeTag := by
-  constructor
-  · intro h
-    unfold decodeNativeTypeTag at h
-    split at h
-    · contradiction
-    · split at h
-      · rfl
-      · contradiction
-  · intro h
-    subst tag
-    simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag]
+  have htags_ne : nativeIntTypeTag ≠ nativeBoolTypeTag := by decide
+  simp [decodeNativeTypeTag, nativeIntTypeTag, nativeBoolTypeTag, htags_ne]
 
 /-- Explicit model of the fields in the executable CCAMRegister structure. -/
 structure NativeCCAMRegister where
@@ -66,7 +57,7 @@ def nativeRegisterInit (tag : Int) : NativeCCAMRegister :=
   { declaredTypeTag := tag
     initialized := false
     intValue := 0
-    intValue_in_range := by norm_num [inI64, inI64B, two63, maxI64Nat]
+    intValue_in_range := by change inI64B 0 = true; decide
     boolValue := false }
 
 /-- Relate the concrete integer tag and payload fields to the abstract record. -/
@@ -153,8 +144,10 @@ theorem nativeRegisterReadInt_corresponds
           nativeIntTypeTag, nativeBoolTypeTag]
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
+        have htags_ne : nativeBoolTypeTag ≠ nativeIntTypeTag := by decide
         simp [nativeRegisterReadInt, runtimeRegisterReadInt,
-          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype]
+          RuntimeRegister.value?, htagBool, hnativeInit, hruntimeInit, htype,
+          htags_ne]
 
 theorem nativeRegisterReadBool_corresponds
     (native : NativeCCAMRegister) (runtime : RuntimeRegister)
@@ -174,8 +167,9 @@ theorem nativeRegisterReadBool_corresponds
           nativeIntTypeTag, nativeBoolTypeTag]
       · have hnativeInit : native.initialized = true := by
           rw [hinit, hruntimeInit]
+        have htags_ne : nativeIntTypeTag ≠ nativeBoolTypeTag := by decide
         simp [nativeRegisterReadBool, runtimeRegisterReadBool,
-          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit]
+          RuntimeRegister.value?, htagInt, hnativeInit, hruntimeInit, htags_ne]
   | bool =>
       have htagBool : native.declaredTypeTag = nativeBoolTypeTag :=
         (decodeNativeTypeTag_bool_iff native.declaredTypeTag).mp (by
