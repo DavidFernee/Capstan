@@ -116,10 +116,32 @@ device or secret access. A worker receives only bounded input and explicit outpu
 reservations. Worker death, timeout, malformed output or budget exhaustion is a typed
 failure, never permission to continue with partially trusted state.
 
-The long-term preferred path is memory-safe Capstan implementations for critical parsers
-and codecs where this is technically and economically justified. Mature external
-implementations may be integrated after licence, patent, provenance, configuration and
-security review. Rewriting a codec is not automatically safer.
+**Implementation-origin rule: all media implementation code is written from scratch in
+Capstan.** This applies to Media Core, Shanty, Deadeye, every parser, demuxer, bitstream
+reader, decoder, encoder, resampler, synthesiser, mixer, filter, colour transform, image
+operation, protocol/manifest handler and codec worker. No external multimedia framework,
+codec library, parser library, or copied/vendored implementation may sit underneath or
+inside these products. In particular, FFmpeg, GStreamer, libav and third-party codec
+implementations are not runtime dependencies and are not code-generation backends.
+
+External specifications, standards, published research, advisories, test vectors and
+independently produced test corpora may be consulted under their applicable terms.
+Independent implementations may be used as differential-test oracles in isolated
+development/test infrastructure, but their code must not be linked, copied or shipped
+as part of Capstan Media. Every implementation must have recorded authorship and source
+provenance. Standards-essential patent and licence questions still require review.
+
+The Capstan language/compiler/runtime path is the implementation target. The programme
+must advance in step with Capstan's C-free native execution and self-hosting work: no
+generated-C media implementation, no C codec shim, and no hidden C/C++ multimedia
+runtime. Until the C-free path is actually available and evidenced, any unavoidable
+host-runtime boundary must be explicitly identified as a temporary trusted-computing-base
+dependency, not misrepresented as a completed native guarantee.
+
+Building from scratch is not a security proof. Each implementation must earn its
+assurance through typed contracts, checked arithmetic, bounded resource use, adversarial
+testing, fuzzing, independent review and—where the research stream can establish it—
+machine-checked properties and implementation-refinement evidence.
 
 ### 3.4 Pipeline graph
 
@@ -179,9 +201,13 @@ Mandatory invariants:
     properties. A proof of a parser model is not proof of its implementation absent a
     correspondence argument.
 
-The current Capstan C runtime and host toolchain remain part of the trusted computing
-base. Writing a decoder in Capstan does not by itself establish end-to-end memory safety.
-The C-free/CCAM path is a future assurance opportunity, not an assumed current property.
+The media implementation must be authored in Capstan and must not introduce C/C++ media
+code or generated-C output. The current compiler/runtime execution path may still have
+C-backed components; these remain explicit trusted-computing-base dependencies until
+the C-free native compiler/runtime path is implemented, bootstrapped and independently
+verified. Writing a decoder in Capstan does not by itself establish end-to-end memory
+safety. Media milestones must track and consume the C-free/CCAM assurance gates rather
+than silently treating them as complete.
 
 ## 5. Shanty scope
 
@@ -319,7 +345,8 @@ Work packages should remain small, independently reviewable and explicitly depen
 - DEADEYE-001: audit Shroud PNG code and distinguish PNG rendering from image decoding.
 - DEADEYE-002: select first image decoder based on format, licence and security review.
 - DEADEYE-003: define bounded image/frame descriptors and pixel-oracle corpus.
-- MEDIA-006: define worker protocol and isolation threat model before loading third-party codecs.
+- MEDIA-006: define the native Capstan worker protocol and isolation threat model; workers
+  execute first-party Capstan media implementations only.
 - RESEARCH-MEDIA-001: literature review and reproducible protocol for aggregate resource accounting.
 
 ## 12. Non-goals and prohibitions
@@ -331,7 +358,8 @@ Work packages should remain small, independently reviewable and explicitly depen
 - No silent decode fallback that changes colour, bit depth, channel layout or fidelity.
 - No claiming Shroud's PNG output is a general image decoder.
 - No treating Capstan source syntax as proof that current C-backed runtime boundaries are safe.
-- No codec dependency adoption without version, licence, patent, provenance and security review.
+- No third-party media implementation dependencies, vendored codec code, copied parser
+  code, generated-C media path or C/C++ media shim.
 - No "fastest", "safest" or "best" market claims without reproducible comparative evidence.
 
 
