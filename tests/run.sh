@@ -106,6 +106,13 @@ else
   bad "CCAM JSON program schema" "$out"
 fi
 
+section "Capstan-native verification: CCAM whole-program JSON validation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_semantics.cap" 2>&1)"; then
+  ok "CCAM JSON validates register types, call signatures, targets and reachable termination"
+else
+  bad "CCAM JSON whole-program validation" "$out"
+fi
+
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
