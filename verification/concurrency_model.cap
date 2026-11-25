@@ -305,6 +305,13 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
     if (cleanup_cost > 0 && before.cleanup_reserved < cleanup_cost) {
         return ccm_reject(before, "cleanup_reservation_missing");
     }
+    // Once cancellation is requested, child work may perform cleanup or
+    // report failure, but cannot begin another producer/consumer operation.
+    if (before.scope_cancel_requested && actor != 0 &&
+        (action == CCM_ACT_PRODUCE || action == CCM_ACT_SEND ||
+         action == CCM_ACT_RECEIVE)) {
+        return ccm_reject(before, "task_cancellation_requested");
+    }
 
     CCMState next = before;
 
@@ -1306,4 +1313,20 @@ test "CCM channel byte admission failure preserves producer ownership" {
     assert(rejected.state.buffered_bytes == 0);
     assert(rejected.state.protocol_phase == CCM_PROTO_PRODUCED);
     assert(rejected.state.steps == state.steps);
+}
+
+test "CCM cancellation request blocks new work but permits owned-resource cleanup" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    state = ccm_apply(state, 1, CCM_ACT_SEND);
+    state = ccm_apply(state, 2, CCM_ACT_RECEIVE);
+    state = ccm_apply(state, 0, CCM_ACT_REQUEST_SCOPE_CANCEL);
+    CCMTransition receive_again = ccm_step(state, 2, CCM_ACT_RECEIVE);
+    assert(!receive_again.ok && receive_again.error == "task_cancellation_requested");
+    assert(receive_again.state.protocol_phase == CCM_PROTO_RECEIVED);
+    state = ccm_apply(state, 2, CCM_ACT_RELEASE);
+    assert(state.protocol_phase == CCM_PROTO_RELEASED);
+    assert(ccm_invariant(state));
 }
