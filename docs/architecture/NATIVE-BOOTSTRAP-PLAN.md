@@ -284,7 +284,20 @@ Proof order:
 - **PRs #371 and #372:** current assurance contributions do not establish completed implementation refinement. This workstream will consume no unmerged code from them.
 - Any future shared-file/interface change must be proposed in issue #370 and coordinated after the integration worker has stabilised the relevant mainline interface.
 
-## 10. Deliverable status and acceptance gates
+## 10. B1 prototype work started and native-backend audit notes
+
+An isolated research harness now exists at `research/native-bootstrap/check-elf.sh`. It accepts assembly emitted by the Capstan-native test driver, invokes GNU `as` and `ld` directly (never a C compiler driver), requests a static `-nostdlib` ELF executable, checks ELF64/x86-64/ET_EXEC, rejects PT_INTERP and a dynamic section, rejects undefined symbols and remaining relocations, executes the result against an expected exit status, and prints tool versions and artifact hashes.
+
+**Execution status:** the harness has been authored but has not yet been run against actual emitted assembly. No ELF artifact, runtime result or binary inspection result is claimed. The current test helper `ccam_x64_write_test_program` can write assembly from Capstan source, but it is invoked by the existing Capstan test environment; therefore the harness itself does not remove the transitional Python/C test bootstrap.
+
+A source-level audit of `ccam_native_x64.cap` also identified two semantic/evidence items to resolve before claiming native CCAM equivalence:
+
+1. The in-memory CCAM explicit trap carries a reason/detail, while the x86-64 emitter routes every explicit trap to a single exit status (72). This may preserve termination but does not preserve the full specified trap observation. The native profile must either define and validate a precise observable trap projection or retain reason/detail through an explicit output contract; it must not call the result fully equivalent while this information is discarded.
+2. Native stack-allocation failure and uninitialised-register failure currently route to the same process exit status (75). These are distinct failure causes and should be distinguishable in the native result contract, or the documented profile must explicitly state the coarser projection and prove that no caller depends on the distinction.
+
+The emitter's static assembly contains explicit Linux `mmap`, `mprotect` and `exit` syscalls, bounded stack sizing, guard-page setup, call-depth checks and per-instruction step checks. These are source observations only. The actual assembled ELF must still be inspected for load segments, permissions, entry point, interpreter/dynamic metadata, symbols and relocations, and the executable must be run under adversarial stack/resource tests.
+
+## 11. Deliverable status and acceptance gates
 
 | Deliverable | Status | Acceptance evidence |
 |---|---|---|
