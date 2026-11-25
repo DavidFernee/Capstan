@@ -1,3 +1,5 @@
+import NativeMemoryLifecycle
+
 /-!
 Explicit-root, descriptor-guided reachability model.
 
@@ -12,8 +14,6 @@ edges, then sweeps everything outside that set. This proves the safety of
 sweeping from a valid certificate. It does NOT yet prove an executable marker
 constructs such a certificate; that is the next refinement obligation.
 -/
-
-import NativeMemoryLifecycle
 
 namespace CapstanNativeReachability
 
