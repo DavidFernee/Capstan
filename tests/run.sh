@@ -62,7 +62,7 @@ section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
 else
   bad "CCAM Capstan arithmetic, register validation and evaluator" "$out"
