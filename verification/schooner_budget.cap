@@ -332,3 +332,28 @@ test "SBM returned slot can be reissued only with a fresh generation" {
     assert(!stale.ok && stale.error == "invalid_child_lease");
     assert(sbm_same_state(stale.state, second.state));
 }
+
+test "SBM exhaustively conserves bounded nested splits consumption and returns" {
+    for (int total = 1; total <= 8; total += 1) {
+        for (int child_amount = 1; child_amount <= total; child_amount += 1) {
+            for (int grand_amount = 1; grand_amount <= child_amount; grand_amount += 1) {
+                for (int consumed = 1; consumed <= grand_amount; consumed += 1) {
+                    SBMState state = sbm_initial(total);
+                    SBMTransition child = sbm_split_root(state, child_amount);
+                    assert(child.ok && sbm_invariant(child.state));
+                    SBMTransition grand = sbm_split_child(child.state, child.handle, grand_amount);
+                    assert(grand.ok && sbm_invariant(grand.state));
+                    SBMTransition use = sbm_consume_grandchild(grand.state, grand.handle, consumed);
+                    assert(use.ok && sbm_invariant(use.state));
+                    SBMTransition grand_return = sbm_return_grandchild(use.state, grand.handle);
+                    assert(grand_return.ok && sbm_invariant(grand_return.state));
+                    SBMTransition child_return = sbm_return_child(grand_return.state, child.handle);
+                    assert(child_return.ok && sbm_invariant(child_return.state));
+                    assert(child_return.state.root_balance == total - consumed);
+                    assert(child_return.state.spent == consumed);
+                    assert(child_return.state.root_balance + child_return.state.spent == total);
+                }
+            }
+        }
+    }
+}
