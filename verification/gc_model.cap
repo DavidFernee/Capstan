@@ -27,9 +27,16 @@ struct GCObject {
     bool secret_wiped;
 }
 
+struct GCRef {
+    int id;
+    int generation;
+}
+
 struct GCEdge {
     int from_id;
+    int from_generation;
     int to_id;
+    int to_generation;
 }
 
 struct GCSpec {
