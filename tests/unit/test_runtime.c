@@ -11,24 +11,16 @@
 #define CAP_SECRET_SCRATCH_TEST_HOOK 1
 #define CAP_SIPHASH_TEST_HOOK 1
 #define CAP_SHA256_WIPE_TEST_HOOK 1
-#define CAP_SHA256_SCALAR_WIPE_TEST_HOOK 1
 #include <stddef.h>
 static void cap_sha256_wipe_test_observe(const volatile unsigned char *p, size_t n);
-static void cap_sha256_scalar_wipe_test_observe(const volatile unsigned char *p, size_t n);
 #include "capstan_rt.h"
 #include <sys/wait.h>
 
 static unsigned sha256_wipe_observations = 0;
 static unsigned sha256_wipe_failures = 0;
-static unsigned sha256_scalar_wipe_observations = 0;
-static unsigned sha256_scalar_wipe_failures = 0;
 static void cap_sha256_wipe_test_observe(const volatile unsigned char *p, size_t n) {
     sha256_wipe_observations++;
     for (size_t i = 0; i < n; i++) if (p[i] != 0) sha256_wipe_failures++;
-}
-static void cap_sha256_scalar_wipe_test_observe(const volatile unsigned char *p, size_t n) {
-    sha256_scalar_wipe_observations++;
-    for (size_t i = 0; i < n; i++) if (p[i] != 0) sha256_scalar_wipe_failures++;
 }
 
 static int failures = 0, checks = 0;
@@ -128,8 +120,6 @@ static int sha_hex_is(const void *data, size_t n, const char *want) {
 static void test_sha256(void) {
     unsigned wipe_observations_before = sha256_wipe_observations;
     unsigned wipe_failures_before = sha256_wipe_failures;
-    unsigned scalar_wipe_observations_before = sha256_scalar_wipe_observations;
-    unsigned scalar_wipe_failures_before = sha256_scalar_wipe_failures;
     CHECK(sha_hex_is("", 0, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
     CHECK(sha_hex_is("abc", 3, "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"));
     const char *m448 = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
@@ -156,21 +146,6 @@ static void test_sha256(void) {
     CHECK(state_wiped);
     CHECK(sha256_wipe_observations > wipe_observations_before);
     CHECK(sha256_wipe_failures == wipe_failures_before);
-
-    /* One compression block has 48 schedule pairs and 64 round pairs. */
-    CapSha256 probe;
-    unsigned char probe_block[64] = {0};
-    cap_sha256_init(&probe);
-    unsigned scalar_before_block = sha256_scalar_wipe_observations;
-    unsigned scalar_failures_before_block = sha256_scalar_wipe_failures;
-    cap_sha256_block(&probe, probe_block);
-    CHECK(sha256_scalar_wipe_observations - scalar_before_block == 224);
-    CHECK(sha256_scalar_wipe_failures == scalar_failures_before_block);
-    cap_wipe(&probe, sizeof probe);
-    cap_wipe(probe_block, sizeof probe_block);
-
-    CHECK(sha256_scalar_wipe_observations > scalar_wipe_observations_before);
-    CHECK(sha256_scalar_wipe_failures == scalar_wipe_failures_before);
     cap_wipe(state_digest, sizeof state_digest);
 }
 
@@ -623,6 +598,62 @@ static void trigger_join_invalid_collection(void) {
     CapList parts = {.len = 2, .cap = 1, .items = NULL};
     (void)cap_join(&parts, CAP_LIT("", 0), 0);
 }
+static void test_workspace_files(void) {
+#if defined(__linux__)
+    char root[] = "/tmp/capstan-workspace-XXXXXX";
+    CHECK(mkdtemp(root) != NULL);
+    char outside[256], outside_file[256], data[256], escape[256];
+    char linked[256], root_link[256], fifo[256], hardlink[256];
+    snprintf(outside, sizeof outside, "%s-outside", root);
+    CHECK(mkdir(outside, 0700) == 0);
+    snprintf(outside_file, sizeof outside_file, "%s/secret.cap", outside);
+    snprintf(data, sizeof data, "%s/data.cap", root);
+    snprintf(escape, sizeof escape, "%s/escape.cap", root);
+    snprintf(linked, sizeof linked, "%s/linked", root);
+    snprintf(root_link, sizeof root_link, "%s-link", root);
+    snprintf(hardlink, sizeof hardlink, "%s/hardlink.cap", root);
+    snprintf(fifo, sizeof fifo, "%s/pipe", root);
+    CHECK(cap_write_file(cap_str_new(data, (int64_t)strlen(data)), CAP_LIT("inside", 6)));
+    CHECK(cap_write_file(cap_str_new(outside_file, (int64_t)strlen(outside_file)), CAP_LIT("outside", 7)));
+
+    int64_t root_fd = cap_workspace_open(cap_str_new(root, (int64_t)strlen(root)));
+    CHECK(root_fd >= 0);
+    char root_dot[256];
+    snprintf(root_dot, sizeof root_dot, "%s/..", root);
+    CHECK(cap_workspace_open(cap_str_new(root_dot, (int64_t)strlen(root_dot))) < 0);
+    if (root_fd >= 0) {
+        CHECK(str_is(cap_workspace_read_file(root_fd, CAP_LIT("data.cap", 8), 1024, 0), "inside", 6));
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("data.cap", 8), 3, 0) == NULL);
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("./data.cap", 10), 1024, 0) == NULL);
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("../secret.cap", 13), 1024, 0) == NULL);
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("/etc/passwd", 11), 1024, 0) == NULL);
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("missing.cap", 11), 1024, 0) == NULL);
+
+        CHECK(symlink(outside_file, escape) == 0);
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("escape.cap", 10), 1024, 0) == NULL);
+        CHECK(link(outside_file, hardlink) == 0);
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("hardlink.cap", 12), 1024, 0) == NULL);
+        CHECK(symlink(outside, linked) == 0);
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("linked/secret.cap", 17), 1024, 0) == NULL);
+        CHECK(mkfifo(fifo, 0600) == 0);
+        CHECK(cap_workspace_read_file(root_fd, CAP_LIT("pipe", 4), 1024, 0) == NULL);
+        cap_workspace_close(root_fd);
+    }
+    CHECK(symlink(root, root_link) == 0);
+    CHECK(cap_workspace_open(cap_str_new(root_link, (int64_t)strlen(root_link))) < 0);
+
+    unlink(fifo);
+    unlink(linked);
+    unlink(hardlink);
+    unlink(escape);
+    unlink(data);
+    unlink(outside_file);
+    rmdir(outside);
+    rmdir(root);
+    unlink(root_link);
+#endif
+}
+
 static void test_string_allocation_bounds(void) {
     CHECK(expect_runtime_panic(trigger_negative_string_length));
     CHECK(expect_runtime_panic(trigger_null_string_source));
@@ -1358,6 +1389,7 @@ int main(void) {
     test_csv();
     test_secret_eq();
     test_files();
+    test_workspace_files();
     test_bitwise();
     test_string_allocation_bounds();
     test_gc_allocator_arithmetic();

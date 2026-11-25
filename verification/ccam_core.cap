@@ -78,48 +78,6 @@ CCAMIntResult ccam_rem(int a, int b) {
     return new CCAMIntResult{ok: true, value: a % b, trap: ""};
 }
 
-int main() {
-    CCAMIntResult r = ccam_add(20, 22);
-    if (!(r.ok && r.value == 42)) { return 1; }
-    r = ccam_add(CCAM_I64_MAX, 1);
-    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
-    r = ccam_sub(CCAM_I64_MIN, 1);
-    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
-    r = ccam_sub(CCAM_I64_MAX, -1);
-    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
-    r = ccam_sub(20, 22);
-    if (!(r.ok && r.value == -2)) { return 1; }
-    r = ccam_mul(6, 7);
-    if (!(r.ok && r.value == 42)) { return 1; }
-    r = ccam_mul(CCAM_I64_MIN, -1);
-    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
-    r = ccam_mul(CCAM_I64_MIN, 1);
-    if (!(r.ok && r.value == CCAM_I64_MIN)) { return 1; }
-    r = ccam_mul(-3037000500, -3037000500);
-    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
-    r = ccam_mul(-3037000499, -3037000499);
-    if (!(r.ok)) { return 1; }
-    r = ccam_div(-7, 3);
-    if (!(r.ok && r.value == -2)) { return 1; }
-    r = ccam_div(1, 0);
-    if (!(!r.ok && r.trap == "division_by_zero")) { return 1; }
-    r = ccam_rem(1, 0);
-    if (!(!r.ok && r.trap == "division_by_zero")) { return 1; }
-    r = ccam_div(CCAM_I64_MIN, -1);
-    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
-    r = ccam_rem(-7, 3);
-    if (!(r.ok && r.value == -1)) { return 1; }
-    r = ccam_rem(7, -3);
-    if (!(r.ok && r.value == 1)) { return 1; }
-    r = ccam_rem(-7, -3);
-    if (!(r.ok && r.value == -1)) { return 1; }
-    r = ccam_rem(7, 3);
-    if (!(r.ok && r.value == 1)) { return 1; }
-    r = ccam_rem(CCAM_I64_MIN, -1);
-    if (!(r.ok && r.value == 0)) { return 1; }
-    println("CCAM Capstan arithmetic: ok");
-    return 0;
-}
 
 test "CCAM addition traps on signed overflow" {
     CCAMIntResult r = ccam_add(CCAM_I64_MAX, 1);

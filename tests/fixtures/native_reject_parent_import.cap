@@ -1,0 +1,2 @@
+import "../outside.cap";
+int main() { return 42; }
