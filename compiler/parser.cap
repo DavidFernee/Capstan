@@ -666,10 +666,20 @@ Node parse_decl(Parser p) {
         st.s = expect_ident(p);
         expect(p, "{");
         while (!at(p, "}") && !is_eof(p)) {
+            bool private_field = false;
+            if (at(p, "private")) {
+                private_field = true;
+                advance(p);
+            }
             Node fd = node_here(p, N_FIELD);
+            if (private_field) { fd.s2 = "private"; }
             fd.ty = parse_type(p);
             fd.s = expect_ident(p);
             if (at(p, "(")) {
+                if (private_field) {
+                    parse_fail(p, "private currently applies only to struct fields, not methods");
+                    return st;
+                }
                 // A method: a function named Struct__name whose first parameter is `self`.
                 Node fn = mk_node(N_FN, fd.file, fd.line);
                 fn.col = fd.col;
