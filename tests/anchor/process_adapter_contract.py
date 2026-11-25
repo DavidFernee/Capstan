@@ -439,7 +439,10 @@ class ProcessSupervisorModel:
         if (process.child.state is ProcessState.TERMINATION_REQUESTED and
                 process.kill_deadline_ms is not None and
                 self.clock.now_ms >= process.kill_deadline_ms):
+            # A kill request is not proof of exit. The backend must report the
+            # eventual wait result on a later tick before the process is reaped.
             self.backend.terminate(process.child, force=True)
+            return
         if process.child.exit_code is not None:
             if self._terminate_live_descendants(process):
                 return
@@ -454,7 +457,9 @@ class ProcessSupervisorModel:
             self.backend.terminate(process.child)
         elif (process.kill_deadline_ms is not None and
               self.clock.now_ms >= process.kill_deadline_ms):
+            # Keep the tree owned until a later observation confirms exit.
             self.backend.terminate(process.child, force=True)
+            return True
         if not self.backend.has_live_descendants(process.child):
             self._reap(process)
         return True
@@ -560,6 +565,9 @@ class ContractTests(unittest.TestCase):
         self.supervisor.cancel(process)
         self.clock.advance(250)
         self.supervisor.tick(process)
+        self.assertEqual(process.child.state, ProcessState.KILL_REQUESTED)
+        self.assertEqual(child.state, ProcessState.KILL_REQUESTED)
+        self.supervisor.tick(process)  # observe the fake backend's completed kill
         self.assertEqual(process.child.state, ProcessState.REAPED)
         self.assertEqual(child.state, ProcessState.REAPED)
         self.assertEqual(grandchild.state, ProcessState.REAPED)
@@ -609,6 +617,9 @@ class ContractTests(unittest.TestCase):
         self.assertIsNone(process.exit_code)
         self.clock.advance(250)
         self.supervisor.tick(process)
+        self.assertEqual(process.child.state, ProcessState.EXITED)
+        self.assertEqual(descendant.state, ProcessState.KILL_REQUESTED)
+        self.supervisor.tick(process)  # observe descendant exit, then reap the tree
         self.assertEqual(process.child.state, ProcessState.REAPED)
         self.assertEqual(descendant.state, ProcessState.REAPED)
         self.assertEqual(process.exit_code, 0)
