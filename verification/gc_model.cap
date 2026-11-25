@@ -347,7 +347,7 @@ test "GC duplicate graph edges do not duplicate work" {
     GCSpec spec = gc_empty_spec(2);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
     spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
-    spec.roots.push(0);
+    spec.roots.push(gc_ref(0, 1));
     spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 1, to_generation: 1});
     spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 1, to_generation: 1});
     GCResult result = gc_collect(spec);
@@ -383,8 +383,8 @@ test "GC rejects edges from pointer-free objects" {
     GCSpec spec = gc_empty_spec(2);
     spec.objects.push(gc_object(0, GC_KIND_ATOMIC));
     spec.objects.push(gc_object(1, GC_KIND_TRACED));
-    spec.roots.push(0);
-    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    spec.roots.push(gc_ref(0, 1));
+    spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 1, to_generation: 1});
     GCResult result = gc_collect(spec);
     assert(result.status == GC_INVALID);
     assert(result.objects[1].allocated);
@@ -393,7 +393,7 @@ test "GC rejects edges from pointer-free objects" {
 test "GC rejects an edge to a missing object" {
     GCSpec spec = gc_empty_spec(2);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
-    spec.roots.push(0);
+    spec.roots.push(gc_ref(0, 1));
     spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 9, to_generation: 1});
     GCResult result = gc_collect(spec);
     assert(result.status == GC_INVALID);
@@ -404,8 +404,8 @@ test "GC worklist exhaustion fails closed without sweeping" {
     GCSpec spec = gc_empty_spec(1);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
     spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
-    spec.roots.push(0);
-    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    spec.roots.push(gc_ref(0, 1));
+    spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 1, to_generation: 1});
     GCResult result = gc_collect(spec);
     assert(result.status == GC_WORKLIST_FULL);
     assert(result.reclaimed_ids.len() == 0);
@@ -415,7 +415,7 @@ test "GC worklist exhaustion fails closed without sweeping" {
 test "GC zero worklist capacity rejects nonempty roots transactionally" {
     GCSpec spec = gc_empty_spec(0);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
-    spec.roots.push(0);
+    spec.roots.push(gc_ref(0, 1));
     GCResult result = gc_collect(spec);
     assert(result.status == GC_WORKLIST_FULL);
     assert(result.objects[0].allocated);
