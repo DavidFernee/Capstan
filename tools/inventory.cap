@@ -88,7 +88,7 @@ int language_index(Inventory inv, string language) {
     return inv.languages.len() - 1;
 }
 
-void record_file(Inventory inv, string language, int line_count, int byte_count) {
+Inventory record_file(Inventory inv, string language, int line_count, int byte_count) {
     int at = language_index(inv, language);
     inv.files[at] += 1;
     inv.lines[at] += line_count;
@@ -96,6 +96,7 @@ void record_file(Inventory inv, string language, int line_count, int byte_count)
     inv.total_files += 1;
     inv.total_lines += line_count;
     inv.total_bytes += byte_count;
+    return inv;
 }
 
 string csv_cell(string value) {
@@ -171,7 +172,7 @@ int main() {
         if (let source = read_file(path, MAX_INVENTORY_FILE_BYTES)) {
             int nlines = physical_lines(source);
             int nbytes = source.len();
-            record_file(inv, language, nlines, nbytes);
+            inv = record_file(inv, language, nlines, nbytes);
             rows.push(csv_cell(path) + "," + csv_cell(language) + "," + int_to_str(nlines) + "," + int_to_str(nbytes) + ",ok");
         } else {
             inv.unreadable += 1;
@@ -200,6 +201,32 @@ test "inventory language classification" {
     assert language_for_path("verification/proof.lean") == "Lean";
     assert language_for_path("docs/README.md") == "Markdown";
     assert language_for_path("unknown.blarg") == "other";
+}
+
+
+test "inventory aggregate totals" {
+    Inventory inv = new Inventory{
+        languages: new List<string>(),
+        files: new List<int>(),
+        lines: new List<int>(),
+        bytes: new List<int>(),
+        total_files: 0,
+        total_lines: 0,
+        total_bytes: 0,
+        unreadable: 0
+    };
+    inv = record_file(inv, "Capstan", 3, 30);
+    inv = record_file(inv, "Python", 2, 20);
+    inv = record_file(inv, "Capstan", 4, 40);
+    assert inv.total_files == 3;
+    assert inv.total_lines == 9;
+    assert inv.total_bytes == 90;
+    assert inv.files[0] == 2;
+    assert inv.lines[0] == 7;
+    assert inv.bytes[0] == 70;
+    assert inv.files[1] == 1;
+    assert inv.lines[1] == 2;
+    assert inv.bytes[1] == 20;
 }
 
 test "inventory physical line counting" {
