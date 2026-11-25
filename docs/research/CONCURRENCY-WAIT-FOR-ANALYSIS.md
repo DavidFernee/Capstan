@@ -1,6 +1,6 @@
 # Wait-for analysis and deadlock classification
 
-**Status:** research specification; not executable evidence.  
+**Status:** research specification plus a first bounded executable join/event classifier in `verification/concurrency_wait_for.cap`; exact-head CI is pending.  
 **Scope:** finite task, channel, join, and resource dependencies for the Capstan concurrency reference machine.  
 **Prerequisites:** the single-waiter blocking model and the runtime-refinement gap analysis. The single-waiter exact-head CI gate remains outstanding.
 
@@ -164,15 +164,15 @@ For every rejected transition, assert state preservation. For every classified d
 
 ## 11. Research and implementation sequence
 
-1. Define the typed wait/dependency representation in the abstract model.
-2. Add a closed-world, single-provider join-cycle example and a replayable deadlock witness.
-3. Add channel and capacity dependencies using the same representation.
+1. **Partial:** define typed wait records for JOIN and EVENT dependencies in the two-task executable model.
+2. **Partial:** add a closed-world mutual-join cycle and a replayable task/target witness; exact-head test evidence is pending.
+3. Extend the executable representation to channel-message and channel-capacity dependencies.
 4. Add explicit external-event sources and the `ENVIRONMENT_WAIT` result.
 5. Add AND/OR predicates only after the single-provider classifier is stable.
 6. Exhaustively compare graph-derived candidates with the canonical enabled-transition classifier over small finite states.
 7. Only then investigate SCC-based reductions, compositional summaries, or partial-order reduction.
 
-The initial implementation should not claim parameterised deadlock freedom. Finite exhaustive results apply only to the declared bounds and exact environment model.
+The executable slice currently classifies two tasks with JOIN or EVENT waits. It distinguishes runnable progress, satisfied joins, terminal success/failure/cancellation, live external-event waits, unknown environment availability, incomplete exploration, invalid states, and closed-world deadlock. It does not yet enumerate a transition graph or prove dependency completeness. The initial implementation should not claim parameterised deadlock freedom. Finite results apply only to the declared bounds and exact environment model.
 
 ## 12. Explicit non-claims
 
