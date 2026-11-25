@@ -144,8 +144,25 @@ int main() {
     signed_word = wayland_payload_i32(wayland_test_bytes(signed_bytes), 0, 4);
     if (signed_word.status != 1 || signed_word.value != 2147483647) { return 34; }
 
+
+    // The maximum legal array span exactly fills a maximum-sized frame.
+    List<int> max_payload_frame = new List<int>();
+    max_payload_frame.push(1); max_payload_frame.push(0); max_payload_frame.push(0); max_payload_frame.push(0);
+    max_payload_frame.push(0); max_payload_frame.push(0); max_payload_frame.push(252); max_payload_frame.push(255);
+    max_payload_frame.push(0xF0); max_payload_frame.push(0xFF); max_payload_frame.push(0); max_payload_frame.push(0);
+    for (int n = 0; n < 65520; n += 1) { max_payload_frame.push(0); }
+    WaylandFrameHeader max_payload_header = wayland_frame_header(wayland_test_bytes(max_payload_frame), 0);
+    if (max_payload_header.status != 1 || max_payload_header.end_offset != 65532) { return 35; }
+    span = wayland_frame_array(wayland_test_bytes(max_payload_frame), max_payload_header, 12);
+    if (span.status != 1 || span.length != 65520 || span.end_offset != 65532) { return 35; }
+
+    // A high-bit-set uint32 length is far outside the legal frame budget.
+    empty_bytes[0] = 0; empty_bytes[1] = 0; empty_bytes[2] = 0; empty_bytes[3] = 128;
+    span = wayland_payload_array(wayland_test_bytes(empty_bytes), 0, 4);
+    if (span.status != -1) { return 36; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing and payload spans: 34 adversarial assertions passed");
+    println("Wayland framing and payload spans: 36 adversarial assertions passed");
     return 0;
 }
