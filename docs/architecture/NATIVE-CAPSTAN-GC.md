@@ -68,7 +68,7 @@ The initial implementation is single-threaded. No threads, async callbacks, sign
 
 ## 4. Object model and pointer classification
 
-The collector operates on opaque object identities/handles, not forged integers or arbitrary native addresses at the Capstan API boundary. A handle identifies a heap instance, object slot and generation. Validation rejects null where forbidden, foreign-heap handles, stale generations, unallocated slots and descriptor mismatches before mutation.
+The collector operates on opaque object identities/handles, not forged integers or arbitrary native addresses at the Capstan API boundary. A handle identifies a heap instance, object slot and generation. Validation rejects null where forbidden, foreign-heap handles, stale generations, unallocated slots and descriptor mismatches before mutation. The heap-instance token is itself an allocation-incarnation identity: it must be globally unique for the lifetime of every handle and must never be recycled. Runtime handle construction and decomposition remain private; the public language surface exposes an opaque reference, not user-forgeable token/slot/generation integers. The current logical model assumes token uniqueness and does not yet model heap creation, token allocation or token exhaustion. Its `heap_token` corresponds to the region identity in the existing generational-handle research model.
 
 Each allocated object has an immutable layout descriptor:
 - allocation size and alignment;
