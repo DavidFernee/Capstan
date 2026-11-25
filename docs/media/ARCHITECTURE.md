@@ -32,10 +32,17 @@ must not duplicate codec semantics.
 The first MC1 prototype is on the Halyard working branch:
 
 - `lib/halyard/core.cap`: in-memory bounded byte source and sink, sequential aggregate ledger, and rational timestamp rescaling;
-- Capstan `test` declarations in `lib/halyard/core.cap`: initial boundary and failure-atomicity regressions.
+- Capstan `test` declarations in `lib/halyard/core.cap`: source, sink, ledger and timebase boundary regressions;
+- `lib/halyard/shanty.cap`: bounded RIFF/WAVE integer-PCM parsing and offline 8/16/24/32-bit sample decoding, with nine colocated Capstan tests.
 
 The Halyard implementation and its test logic are authored in Capstan. No Halyard-specific
 shell, Python, C, C++ or other-language implementation or test source is added.
+
+The Shanty first slice accepts RIFF/WAVE PCM format tag 1, 1–8 channels, 1–384 kHz,
+8/16/24/32-bit integer samples, at most 8 MiB per input and 1024 chunks. It skips
+unknown chunks with RIFF padding and rejects duplicate format/data chunks, malformed
+alignment and trailing-size mismatches. It does not provide device playback/capture,
+compressed codecs, WAVE extensible, floating-point PCM or ledger-coupled sample allocation.
 
 This is not an MC1 gate exit. Publicly mutable struct fields prevent an enforced opaque
 ownership boundary; the ledger is not concurrency-safe; reservation is not yet coupled
