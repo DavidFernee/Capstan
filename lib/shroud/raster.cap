@@ -198,6 +198,8 @@ struct Canvas {
     // Draw a cached glyph/image alpha mask. A recording canvas retains the
     // immutable frame-owned mask as one command rather than expanding it to pixels.
     void draw_mask(List<int> alpha, int width, int height, int x, int y, Paint paint) {
+        // Spaces and other empty glyphs have a valid 0x0 mask.
+        if (width == 0 && height == 0 && alpha.len() == 0) { return; }
         if (width < 1 || height < 1 || width > alpha.len() / height ||
             width * height != alpha.len() || alpha.len() > MAX_DISPLAY_MASK_PIXELS) {
             println("shroud: invalid display mask dimensions");
