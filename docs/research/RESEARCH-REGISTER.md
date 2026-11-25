@@ -2,12 +2,16 @@
 
 **Status:** initial research inventory; hypotheses and evidence map, not publication claims  
 **Last reviewed:** 2026-11-25  
-**Repository:** [DavidFernee/Capstan](https://github.com/DavidFernee/Capstan)
+**Repository:** [DavidFernee/Capstan](https://github.com/DavidFernee/Capstan)  
+**Programme charter:** [PROGRAMMING-LANGUAGE-RESEARCH-AGENDA.md](PROGRAMMING-LANGUAGE-RESEARCH-AGENDA.md)
 
 This register separates implemented engineering from research hypotheses, formal results,
-empirical results and publication readiness. Inclusion here does not establish novelty,
-correctness, completeness or peer-review readiness. Every paper claim must be tied to an
-exact source revision, reproducible evidence and an explicit scope statement.
+empirical results and publication readiness. The linked programme charter defines the broader
+research portfolio, priorities and work-package coordination; this register remains the
+source of truth for candidate papers, implementation/proof/test evidence and publication
+maturity. Inclusion here does not establish novelty, correctness, completeness or peer-review
+readiness. Every paper claim must be tied to an exact source revision, reproducible evidence
+and an explicit scope statement.
 
 ## 1. Research programme
 
