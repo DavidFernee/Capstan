@@ -212,3 +212,6 @@ Capstan Media is the shared media foundation for two independent first-class eng
 - **Capstan Media Core** — bounded streams, buffers, clocks, timestamps, resource accounting, format registry, graph contracts and codec-worker boundaries.
 
 The architecture and initial format catalogue are specified in [docs/media/ARCHITECTURE.md](docs/media/ARCHITECTURE.md) and [docs/media/FORMAT-CATALOGUE.md](docs/media/FORMAT-CATALOGUE.md). These documents describe the target and staged work; they do not imply that codecs, playback or hardware backends are implemented. The first implementation gates are a bounded WAV/PCM offline audio slice and a separately selected bounded image/frame slice. Shroud consumes presentation APIs; it does not duplicate codec implementations. See the design map for dependency and assurance boundaries.
+
+
+**Media security is release-gated.** The vulnerability accounting policy, root-cause threat catalogue, reproducer workflow and release-blocking criteria are defined in [docs/media/SECURITY-ASSURANCE.md](docs/media/SECURITY-ASSURANCE.md). Every supported media configuration must have evidence-backed dispositions for known applicable findings; a clean scanner is not proof of safety. See tracking issue [#292](https://github.com/DavidFernee/Capstan/issues/292).
