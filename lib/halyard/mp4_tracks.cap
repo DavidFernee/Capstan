@@ -607,6 +607,9 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         !halyard_consumption_budget_valid(budget)) {
         return deadeye_mp4_movie_error("invalid_resource_budget_or_input");
     }
+    // The table caps bound the simultaneous decoded vectors (sample sizes,
+    // sync indices, timing/chunk runs and offsets). 32 MiB is a logical
+    // expansion envelope, not a claim about allocator capacity or metadata.
     HalyardBudgetCharge temporary_charge = new HalyardBudgetCharge{
         input_bytes: 0, retained_bytes: 33554432, output_bytes: 0,
         decoded_units: 0, work_units: 0,
