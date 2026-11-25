@@ -141,7 +141,6 @@ int main() {
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != -1) { return 21; }
 
-
     // Metadata cannot declare scalar arguments nullable.
     bool_args[0] = wayland_protocol_arg(WAYLAND_ARG_BOOL, 0, 0, true);
     catalog[0] = wayland_protocol_spec(10, 4, WAYLAND_DIRECTION_REQUEST, 1, bool_args, 0, false);
@@ -239,7 +238,6 @@ int main() {
     result = wayland_protocol_dispatch(empty_frame, forged, objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != -1) { return 30; }
 
-
     // Duplicate new IDs within one message are rejected before either is installed.
     List<WaylandArgSpec> duplicate_new_args = new List<WaylandArgSpec>();
     duplicate_new_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 60, 1, false));
@@ -283,7 +281,6 @@ int main() {
     result = wayland_protocol_dispatch(full_frame, wayland_frame_header(full_frame, 0),
         objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
     if (result.status != -1 || wayland_object_get(objects, 6).state != 0) { return 37; }
-
 
     println("Wayland protocol schema and object lifecycle: 47 assertions passed");
     return 0;
