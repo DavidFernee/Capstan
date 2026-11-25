@@ -55,10 +55,13 @@ Every slot has exactly one logical state:
 
 The model must distinguish page-level spare/released state from slot-level state.
 An empty page's slots are not simultaneously entries in active per-class free lists.
-The current implementation uses in-band free-list links for all small slots; in
-particular, a wipe followed by writing a link into a secret slot does not establish
-`SecretErasedFree`. The stronger secret state is a target invariant requiring an
-implementation design that keeps free-slot metadata out of the payload.
+The current implementation uses in-band free-list links for ordinary small-object kinds.
+Secret-kind pages instead use an out-of-line `free_slots` index array; page formatting
+wipes the page before populating that array, and sweep wipes an allocated secret slot
+before publishing its index as free. This is a material implementation improvement over
+the historical in-band secret-list design. The proof obligation is now to establish the
+wipe-before-publication/reuse ordering, array bounds and representation correspondence;
+source inspection alone is not a machine-checked erasure theorem.
 
 ## 4. Transition system
 
@@ -92,9 +95,13 @@ failure-atomicity proof; it must not be inferred from this model.
 
 ### OS page advice
 
-The current mainline `cap_gc_release` ignores the return value of `madvise`, then sets
-`released` and subtracts one page from `cap_gc.heap`. This is an implementation defect
-and an explicit proof blocker. The intended contract is:
+At historical baseline `bc0a283df5a964e7340cd48ec8ce4a1e8fb3acde`, `cap_gc_release`
+ignored the return value of `madvise`, then set `released` and subtracted one page from
+`cap_gc.heap`. That defect has since been corrected in the inspected mainline snapshot
+`9674d810c0f16c415b1c90ace9a4b5ac89cf2138`: `cap_gc_release` records the advice result
+and `cap_gc_account_release` leaves the page accounted and retryable when advice fails.
+This code-level correction removes the original blocker but does not itself prove the C
+implementation refines the Lean release model. The intended contract remains:
 
 - on successful advice, the page may transition to `ReleasedSpare` and accounting
   decreases by exactly one page;
@@ -204,3 +211,17 @@ abstract state and transition. The relation must cover:
 
 A diagram, test suite, matching function names, or informal statement of correspondence
 is not by itself a refinement proof.
+
+## Current implementation delta against the historical baseline
+
+The formal specification baseline above is historical. A source inspection of mainline
+commit `9674d810c0f16c415b1c90ace9a4b5ac89cf2138` confirms two relevant runtime changes:
+
+- Page release now consumes the `madvise` result; failed advice leaves the page unreleased
+  and accounted, while successful advice updates the release flag and heap counter.
+- Secret small-object pages use out-of-line `free_slots` indices; formatting wipes the
+  page, and sweep wipes an allocated secret payload before publishing its slot index.
+
+These observations update the implementation-risk assessment, not the proof status.
+The C operations still require a formal representation relation, transition refinement,
+and tests/assurance for volatile wiping, OS semantics and metadata invariants.
