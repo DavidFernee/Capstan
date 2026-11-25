@@ -23,7 +23,7 @@ The programme deliberately distinguishes implementation maturity from assurance 
 
 **Capstan Media Core** is a shared architectural component, not a seventh product: it owns bounded byte streams, buffers, rational clocks/timebases, resource accounting, format/codec registry and worker contracts. Core must not depend on Shanty or Deadeye; both engines depend on Core and remain independently usable.
 
-Shroud is a reusable framework. Anchor and Keel consume Shroud presentation APIs; Keel owns its 3D engine abstractions. Shanty and Deadeye consume Media Core and expose stable presentation surfaces/events to Shroud. Keel may orchestrate media graphs but must not duplicate codec semantics. Capstan provides the language/runtime substrate and compiler services. All media implementation code is authored from scratch in Capstan; external media frameworks and codec implementations are not runtime/build dependencies. Product boundaries are contractual; shared code does not imply shared ownership of semantics.
+Shroud's core remains media-independent. Where an application needs media presentation, a separately versioned optional Halyard–Shroud adapter package consumes Shanty/Deadeye presentation APIs and Shroud rendering/input APIs; neither media engine depends on Shroud. Anchor may consume that adapter as an optional application integration. Keel consumes Shanty/Deadeye APIs when orchestrating media graphs; Keel does not become a codec owner. Shanty and Deadeye depend on Media Core, not on one another. Capstan provides the language/runtime substrate and compiler services. All media implementation code is authored from scratch in Capstan; external media frameworks and codec implementations are not runtime/build dependencies. Product boundaries are contractual; shared code does not imply shared ownership of semantics.
 
 ## Architecture
 
@@ -42,6 +42,7 @@ flowchart TB
   MC["Capstan Media Core\nstreams · buffers · clocks · budgets · registry"]
   SH["Shanty\nAudio engine"]
   DE["Deadeye\nVideo and image engine"]
+  HA["Optional Halyard–Shroud presentation adapters"]
 
   C --> S
   C --> N
@@ -49,12 +50,16 @@ flowchart TB
   C --> K
   S --> K
   C --> MC
+  C --> SH
+  C --> DE
   MC --> SH
   MC --> DE
-  S --> SH
-  S --> DE
-  K --> SH
-  K --> DE
+  SH --> K
+  DE --> K
+  S --> HA
+  SH --> HA
+  DE --> HA
+  HA --> N
 
   R --> C
   R --> S
