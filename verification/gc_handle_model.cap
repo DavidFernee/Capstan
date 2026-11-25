@@ -45,7 +45,13 @@ struct GCHHeap {
     List<GCHSlot> slots;
 }
 
-struct GCHTransitionResult {\n    int status;\n    GCHHeap heap;\n    GCHHandle handle;\n}\n\nstruct GCHResolveResult {
+struct GCHTransitionResult {
+    int status;
+    GCHHeap heap;
+    GCHHandle handle;
+}
+
+struct GCHResolveResult {
     int status;
     int slot_index;
     int descriptor_id;
