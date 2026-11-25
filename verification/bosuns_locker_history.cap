@@ -394,3 +394,36 @@ test "Bosun history checker rejects malformed keys and duplicate identifiers" {
     );
     assert(duplicate_result.status == BL_CHECK_INVALID);
 }
+
+test "Bosun history checker preserves transaction program order and read-your-writes" {
+    List<BLOperation> ops = new List<BLOperation>();
+    ops.push(bl_write(0, 73));
+    ops.push(bl_read(0, 73, true));
+    List<BLTransaction> txs = new List<BLTransaction>();
+    txs.push(bl_transaction(55, 1, 9, ops));
+
+    BLCheckResult result = bl_check_history(
+        txs, 1, bl_empty_values(1), bl_empty_presence(1),
+        BL_DEFAULT_NODE_BUDGET
+    );
+    assert(result.status == BL_CHECK_ACCEPT);
+    assert(result.serial_order.len() == 1);
+    assert(result.serial_order[0] == 55);
+}
+
+test "Bosun history checker rejects incomplete and aborted history entries" {
+    List<BLOperation> ops = new List<BLOperation>();
+    BLTransaction aborted = new BLTransaction{
+        id: 9,
+        invoke: 1,
+        response: 2,
+        committed: false,
+        operations: ops
+    };
+    List<BLTransaction> txs = new List<BLTransaction>();
+    txs.push(aborted);
+    BLCheckResult result = bl_check_history(
+        txs, 1, bl_empty_values(1), bl_empty_presence(1), 100
+    );
+    assert(result.status == BL_CHECK_INVALID);
+}
