@@ -92,6 +92,13 @@ else
   bad "bounded concurrency transition graph" "$out"
 fi
 
+section "Capstan-native verification: generated concurrency transition graph"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_generated_graph.cap" 2>&1)"; then
+  ok "model-derived BFS, enabled-action enumeration, canonical state keys and fail-closed bounds"
+else
+  bad "generated concurrency transition graph" "$out"
+fi
+
 section "Capstan-native verification: finite protocol automata"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
   ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
