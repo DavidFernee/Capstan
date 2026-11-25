@@ -140,12 +140,20 @@ struct Canvas {
     }
 
     void fill_path(Path p, Paint paint, int rule) {
-        Segments s = flatten(p);
         if (self.recording) {
-            if (s.x0.len() > MAX_DISPLAY_SEGMENTS_PER_PATH) {
-                println("shroud: display list path segment budget exceeded");
+            // Reserve against the conservative worst-case flattening cost before
+            // allocating any segment arrays. Check both the per-path and frame
+            // remainder so an over-budget path cannot create a large temporary.
+            int upper_bound = path_flatten_segment_bound(p);
+            if (upper_bound < 0 || upper_bound > MAX_DISPLAY_SEGMENTS_PER_PATH ||
+                self.commands.len() >= MAX_DISPLAY_COMMANDS ||
+                upper_bound > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
+                println("shroud: display list path rejected by resource preflight");
                 exit(101);
             }
+        }
+        Segments s = flatten(p);
+        if (self.recording) {
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0), clip: self.clip(),
                 paint: paint, rule: rule, segments: s, mask_alpha: none, mask_w: 0, mask_h: 0, x: 0, y: 0,
