@@ -282,7 +282,7 @@ bool ccam_json_schema_instruction(
     }
     if (op == taint("const_b")) {
         int value = ccam_json_schema_find(source, tokens, instruction_at, "value");
-        return ccam_json_schema_integer(source, tokens, instruction_at, "dst", true) &&
+        return ccam_json_schema_field_integer(source, tokens, instruction_at, "dst", true) &&
             value >= 0 && (tokens[value].kind == CCAM_JSON_T_TRUE || tokens[value].kind == CCAM_JSON_T_FALSE);
     }
     if (op == taint("ret")) {
