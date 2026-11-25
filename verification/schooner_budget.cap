@@ -75,8 +75,10 @@ SBMTransition sbm_accept(SBMState after, SBMHandle handle) {
 
 bool sbm_invariant(SBMState state) {
     if (state.total < 0 || state.total > SBM_MAX_TOTAL ||
-        state.root_balance < 0 || state.child_balance < 0 ||
-        state.grandchild_balance < 0 || state.spent < 0) { return false; }
+        state.root_balance < 0 || state.root_balance > state.total ||
+        state.child_balance < 0 || state.child_balance > state.total ||
+        state.grandchild_balance < 0 || state.grandchild_balance > state.total ||
+        state.spent < 0 || state.spent > state.total) { return false; }
     if (state.root_balance + state.child_balance +
         state.grandchild_balance + state.spent != state.total) { return false; }
     if (state.child_generation < 0 || state.grandchild_generation < 0) { return false; }
@@ -313,4 +315,20 @@ test "SBM zero and over-budget consumption never mutate accounting" {
     SBMTransition valid = sbm_consume_root(state, 7);
     assert(valid.ok && valid.state.root_balance == 5 && valid.state.spent == 7);
     assert(sbm_invariant(valid.state));
+}
+
+test "SBM returned slot can be reissued only with a fresh generation" {
+    SBMState state = sbm_initial(20);
+    SBMTransition first = sbm_split_root(state, 10);
+    assert(first.ok);
+    state = first.state;
+    SBMTransition returned = sbm_return_child(state, first.handle);
+    assert(returned.ok);
+    state = returned.state;
+    SBMTransition second = sbm_split_root(state, 7);
+    assert(second.ok);
+    assert(second.handle.generation == first.handle.generation + 1);
+    SBMTransition stale = sbm_consume_child(second.state, first.handle, 1);
+    assert(!stale.ok && stale.error == "invalid_child_lease");
+    assert(sbm_same_state(stale.state, second.state));
 }
