@@ -67,11 +67,14 @@ ShantyWaveResult shanty_wave_error(string error) {
 // - unknown chunks are skipped, including their required odd-size pad byte;
 // - at most 1024 chunks; trailing bytes and duplicate fmt/data chunks are rejected.
 ShantyWaveResult shanty_wave_parse(HalyardByteSource source) {
-    if (!halyard_source_validate(source)) {
+    if (!halyard_source_shape_valid(source)) {
         return shanty_wave_error("invalid_source");
     }
     if (halyard_source_length(source) > SHANTY_WAV_MAX_INPUT_BYTES) {
         return shanty_wave_error("input_limit");
+    }
+    if (!halyard_source_validate(source)) {
+        return shanty_wave_error("invalid_source");
     }
     if (source.position != 0) {
         return shanty_wave_error("source_not_at_start");
