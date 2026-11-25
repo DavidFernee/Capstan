@@ -64,6 +64,13 @@ if out="$($PY "$ROOT/tests/k0/check.py" 2>&1)"; then ok "$out"; else bad "K0 stu
 section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
+section "Halyard MC1: bounded byte source and aggregate resource ledger"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/halyard_core.cap" 2>&1)"; then
+  ok "Halyard bounded source, atomic reservations, failure atomicity and regression vectors"
+else
+  bad "Halyard Core bounded source and resource ledger" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
