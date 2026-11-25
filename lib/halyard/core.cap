@@ -966,3 +966,101 @@ test "Halyard checked multiplication covers signed boundary cases" {
     assert(near_square.ok);
     assert(!far_square.ok && far_square.error == "overflow");
 }
+
+
+test "Halyard bounded sink appends bytes and returns defensive snapshots" {
+    HalyardByteSinkResult made = halyard_sink_create(4);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        List<int> first = new List<int>();
+        first.push(1); first.push(2);
+        HalyardSinkWriteResult wrote = halyard_sink_write_exact(sink, first);
+        assert(wrote.ok && wrote.written == 2);
+        List<int> second = new List<int>();
+        second.push(3); second.push(4);
+        HalyardSinkWriteResult appended = halyard_sink_write_exact(sink, second);
+        assert(appended.ok && appended.written == 2);
+        assert(halyard_sink_remaining(sink) == 0);
+        HalyardSinkSnapshotResult snapshot = halyard_sink_snapshot(sink);
+        assert(snapshot.ok && snapshot.bytes.len() == 4);
+        assert(snapshot.bytes[0] == 1 && snapshot.bytes[1] == 2);
+        assert(snapshot.bytes[2] == 3 && snapshot.bytes[3] == 4);
+        snapshot.bytes[0] = 99;
+        HalyardSinkSnapshotResult fresh = halyard_sink_snapshot(sink);
+        assert(fresh.ok && fresh.bytes[0] == 1);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard bounded sink rejects invalid and oversized writes atomically" {
+    HalyardByteSinkResult made = halyard_sink_create(3);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        List<int> initial = new List<int>();
+        initial.push(10); initial.push(20);
+        assert(halyard_sink_write_exact(sink, initial).ok);
+        List<int> invalid = new List<int>();
+        invalid.push(256);
+        HalyardSinkWriteResult invalid_write = halyard_sink_write_exact(sink, invalid);
+        assert(!invalid_write.ok && invalid_write.error == "invalid_byte");
+        List<int> too_large = new List<int>();
+        too_large.push(30); too_large.push(40);
+        HalyardSinkWriteResult large_write = halyard_sink_write_exact(sink, too_large);
+        assert(!large_write.ok && large_write.error == "output_limit");
+        assert(halyard_sink_remaining(sink) == 1);
+        HalyardSinkSnapshotResult snapshot = halyard_sink_snapshot(sink);
+        assert(snapshot.ok && snapshot.bytes.len() == 2);
+        assert(snapshot.bytes[0] == 10 && snapshot.bytes[1] == 20);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard bounded sink close is one-shot and prevents writes" {
+    HalyardByteSinkResult made = halyard_sink_create(2);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        assert(halyard_sink_close(sink));
+        assert(!halyard_sink_close(sink));
+        List<int> byte = new List<int>();
+        byte.push(1);
+        HalyardSinkWriteResult wrote = halyard_sink_write_exact(sink, byte);
+        assert(!wrote.ok && wrote.error == "closed");
+        assert(halyard_sink_remaining(sink) == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard bounded sink handles zero capacity and empty writes" {
+    HalyardByteSinkResult made = halyard_sink_create(0);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        List<int> empty = new List<int>();
+        HalyardSinkWriteResult zero = halyard_sink_write_exact(sink, empty);
+        assert(zero.ok && zero.written == 0);
+        List<int> byte = new List<int>();
+        byte.push(1);
+        HalyardSinkWriteResult denied = halyard_sink_write_exact(sink, byte);
+        assert(!denied.ok && denied.error == "output_limit");
+        assert(halyard_sink_remaining(sink) == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard bounded sink rejects corrupted public state" {
+    HalyardByteSinkResult made = halyard_sink_create(2);
+    assert(made.ok);
+    if (let sink = made.sink) {
+        sink.bytes.push(300);
+        List<int> empty = new List<int>();
+        HalyardSinkWriteResult wrote = halyard_sink_write_exact(sink, empty);
+        assert(!wrote.ok && wrote.error == "invalid_state");
+        HalyardSinkSnapshotResult snapshot = halyard_sink_snapshot(sink);
+        assert(!snapshot.ok && snapshot.error == "invalid_state");
+    } else {
+        assert(false);
+    }
+}
