@@ -211,9 +211,11 @@ implementation and proof fragments into tightly scoped, reproducible claims.
 
 The Halyard working branch now contains a first Capstan-native prototype in
 `lib/halyard/core.cap`: an in-memory bounded byte source and a five-dimensional
-sequential aggregate ledger. Regression cases are in `verification/halyard_core.cap`
-and are invoked by `tests/run.sh`. The detailed contract and limitations are recorded
-in `docs/media/CORE-PRIMITIVES.md`.
+sequential aggregate ledger. Eleven Capstan `test` declarations are colocated with the
+implementation, including exhaustive small-state checks for exact-read boundaries,
+the (3^5) resource-admission state space and per-dimension release underflow. No
+Halyard-specific shell, Python, C, C++ or other-language test source is added. The
+detailed contract and limitations are recorded in `docs/media/CORE-PRIMITIVES.md`.
 
 This is an implementation experiment, not a research result. The current public struct
 representation permits client mutation; the ledger is not concurrency-safe; reservation
