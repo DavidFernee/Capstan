@@ -155,6 +155,13 @@ DeadeyeMp4SampleEntry deadeye_mp4_parse_video_entry(
         return deadeye_mp4_sample_entry_error("truncated_visual_sample_entry");
     }
     int p = entry.payload_start;
+    for (int r = 0; r < 24; r += 1) {
+        if (r < 6 || r >= 8) {
+            if (bytes[p + r] != 0) {
+                return deadeye_mp4_sample_entry_error("invalid_visual_reserved_fields");
+            }
+        }
+    }
     if (deadeye_mp4_se_u16(bytes, p + 6) != 1) {
         return deadeye_mp4_sample_entry_error("unsupported_data_reference");
     }
@@ -163,6 +170,13 @@ DeadeyeMp4SampleEntry deadeye_mp4_parse_video_entry(
     if (width < 1 || width > 8192 || height < 1 || height > 8192 ||
         width > 16777216 / height) {
         return deadeye_mp4_sample_entry_error("invalid_video_dimensions");
+    }
+    if (deadeye_mp4_u32_be(bytes, p + 36) != 0 ||
+        deadeye_mp4_se_u16(bytes, p + 40) != 1 ||
+        deadeye_mp4_se_u16(bytes, p + 74) != 24 ||
+        deadeye_mp4_se_u16(bytes, p + 76) != 65535 ||
+        bytes[p + 42] > 31) {
+        return deadeye_mp4_sample_entry_error("invalid_visual_sample_entry_fields");
     }
     int child_at = p + 78;
     bool has_avcc = false;
@@ -219,9 +233,18 @@ DeadeyeMp4SampleEntry deadeye_mp4_parse_audio_entry(
         return deadeye_mp4_sample_entry_error("truncated_audio_sample_entry");
     }
     int p = entry.payload_start;
+    for (int r = 0; r < 6; r += 1) {
+        if (bytes[p + r] != 0) {
+            return deadeye_mp4_sample_entry_error("invalid_audio_reserved_fields");
+        }
+    }
     if (deadeye_mp4_se_u16(bytes, p + 6) != 1 ||
-        deadeye_mp4_se_u16(bytes, p + 8) != 0) {
-        return deadeye_mp4_sample_entry_error("unsupported_audio_entry_version_or_reference");
+        deadeye_mp4_se_u16(bytes, p + 8) != 0 ||
+        deadeye_mp4_se_u16(bytes, p + 10) != 0 ||
+        deadeye_mp4_u32_be(bytes, p + 12) != 0 ||
+        deadeye_mp4_se_u16(bytes, p + 20) != 0 ||
+        deadeye_mp4_se_u16(bytes, p + 22) != 0) {
+        return deadeye_mp4_sample_entry_error("unsupported_audio_entry_version_or_reserved");
     }
     int channels = deadeye_mp4_se_u16(bytes, p + 16);
     int bits = deadeye_mp4_se_u16(bytes, p + 18);
@@ -322,6 +345,8 @@ List<int> deadeye_mp4_se_test_avc1() {
     payload[6] = 0; payload[7] = 1;
     payload[24] = 1; payload[25] = 128; // width 384
     payload[26] = 0; payload[27] = 240; // height 240
+    payload[40] = 0; payload[41] = 1; // one frame per sample entry
+    payload[75] = 24; payload[76] = 255; payload[77] = 255;
     List<int> avcc = [1,66,0,30,255,225, 0,2, 103,128, 1, 0,2, 104,0x80];
     deadeye_mp4_se_test_box(payload, 'a','v','c','C', avcc);
     List<int> entry = new List<int>();
