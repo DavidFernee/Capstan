@@ -1,4 +1,4 @@
-// expect: field 'secret' of Vault is not initialised
+// expect: private state of Vault must be initialised by its defining module
 import "private_fields/record.cap";
 
 int main() {
