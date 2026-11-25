@@ -659,7 +659,8 @@ struct HalyardReservationResult {
     string error;
 }
 
-// Acquire a live reservation and return the sole release capability.
+// Acquire a live reservation and return a one-shot handle for trusted single-owner callers.
+// The public struct/fields and raw release API mean this is not yet a non-forgeable capability.
 HalyardReservationResult halyard_ledger_acquire(
     HalyardLedger ledger, HalyardBudgetCharge charge
 ) {
@@ -676,8 +677,9 @@ HalyardReservationResult halyard_ledger_acquire(
     };
 }
 
-// A reservation can be released once. Failed or repeated release leaves the
-// ledger unchanged. Do not expose the raw aggregate release API to workers.
+// A normal handle can be released once. Failed or repeated release leaves the
+// ledger unchanged. Opaque handle state and removal of raw release from untrusted
+// callers remain prerequisites tracked by the Halyard ownership work.
 bool halyard_reservation_release(
     HalyardLedger ledger, HalyardReservation reservation
 ) {
@@ -1346,7 +1348,7 @@ test "Halyard reservation lease releases exactly once" {
     } else { assert(false); }
 }
 
-test "Halyard rejected reservation creates no release capability" {
+test "Halyard rejected reservation returns no lease handle" {
     HalyardLedgerResult made = halyard_ledger_create(1, 1, 1, 1, 1);
     assert(made.ok);
     if (let ledger = made.ledger) {
