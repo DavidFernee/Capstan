@@ -49,7 +49,11 @@ struct WaylandProtocolResult {
 }
 
 WaylandObjectTable wayland_object_table() {
-    return new WaylandObjectTable{slots: new List<WaylandObject>()};
+    // Preallocate the bounded slot table. Message commits then cannot allocate
+    // while partially applying a set of new object IDs.
+    List<WaylandObject> slots = new List<WaylandObject>();
+    for (int i = 0; i < WAYLAND_OBJECT_SLOTS_MAX; i += 1) { slots.push(wayland_empty_object()); }
+    return new WaylandObjectTable{slots: slots};
 }
 WaylandObject wayland_empty_object() {
     return new WaylandObject{id: 0, interface_id: 0, version: 0, state: 0};
@@ -78,7 +82,7 @@ WaylandObject wayland_object_get(WaylandObjectTable table, int id) {
     return table.slots[i];
 }
 int wayland_object_free_slots(WaylandObjectTable table) {
-    int free = WAYLAND_OBJECT_SLOTS_MAX - table.slots.len();
+    int free = 0;
     for (int i = 0; i < table.slots.len(); i += 1) {
         if (table.slots[i].state == 0) { free += 1; }
     }
@@ -88,15 +92,13 @@ bool wayland_object_add(WaylandObjectTable table, int id, int interface_id, int 
     if (id <= 0 || id > 4294967295 || interface_id <= 0 || version <= 0
         || wayland_object_index(table, id) >= 0 || wayland_object_free_slots(table) <= 0) { return false; }
     WaylandObject value = new WaylandObject{id: id, interface_id: interface_id, version: version, state: 1};
-    bool placed = false;
     for (int i = 0; i < table.slots.len(); i += 1) {
-        if (!placed && table.slots[i].state == 0) {
+        if (table.slots[i].state == 0) {
             table.slots[i] = value;
-            placed = true;
+            return true;
         }
     }
-    if (!placed) { table.slots.push(value); }
-    return true;
+    return false;
 }
 bool wayland_object_retire(WaylandObjectTable table, int id) {
     int i = wayland_object_index(table, id);
@@ -111,6 +113,16 @@ bool wayland_object_release(WaylandObjectTable table, int id) {
     if (i < 0 || table.slots[i].state != 2) { return false; }
     table.slots[i] = wayland_empty_object();
     return true;
+}
+
+bool wayland_protocol_frame_valid(Tainted bytes, WaylandFrameHeader frame) {
+    if (frame.status != 1 || !wayland_frame_size_valid(frame.size)
+        || frame.end_offset < frame.size || frame.end_offset > bytes.len()) { return false; }
+    int start = frame.end_offset - frame.size;
+    WaylandFrameHeader actual = wayland_frame_header(bytes, start);
+    return actual.status == 1 && actual.object_id == frame.object_id
+        && actual.opcode == frame.opcode && actual.size == frame.size
+        && actual.end_offset == frame.end_offset;
 }
 
 bool wayland_arg_kind_valid(int kind) {
@@ -130,7 +142,7 @@ int wayland_message_fd_schema_count(WaylandMessageSpec spec) {
 WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader frame,
     WaylandObjectTable objects, WaylandMessageSpec spec, int direction, int received_fd_count) {
     if (frame.status == 0) { return wayland_protocol_incomplete(); }
-    if (frame.status != 1 || direction < WAYLAND_DIRECTION_REQUEST
+    if (!wayland_protocol_frame_valid(bytes, frame) || direction < WAYLAND_DIRECTION_REQUEST
         || direction > WAYLAND_DIRECTION_EVENT) { return wayland_protocol_error(); }
     WaylandObject target = wayland_object_get(objects, frame.object_id);
     if (target.state != 1 || target.interface_id != spec.interface_id
@@ -173,7 +185,7 @@ WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader
             } else {
                 span = wayland_frame_array(bytes, frame, cursor);
             }
-            if (span.status != 1 || (span.length == 0 && !arg.nullable)) {
+            if (span.status != 1 || (arg.kind == WAYLAND_ARG_STRING && span.length == 0 && !arg.nullable)) {
                 return wayland_protocol_error();
             }
             cursor = span.end_offset;
@@ -229,7 +241,7 @@ WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader
 WaylandProtocolResult wayland_protocol_dispatch(Tainted bytes, WaylandFrameHeader frame,
     WaylandObjectTable objects, List<WaylandMessageSpec> catalog, int direction, int received_fd_count) {
     if (frame.status == 0) { return wayland_protocol_incomplete(); }
-    if (frame.status != 1) { return wayland_protocol_error(); }
+    if (!wayland_protocol_frame_valid(bytes, frame)) { return wayland_protocol_error(); }
     WaylandObject target = wayland_object_get(objects, frame.object_id);
     if (target.state != 1) { return wayland_protocol_error(); }
     int found = -1;
