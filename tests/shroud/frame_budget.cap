@@ -33,6 +33,11 @@ int main() {
     if (frame_text_budget_valid(button(oversized, "action"))) { return 15; }
     if (frame_text_budget_valid(text_field("value", taint(""), oversized))) { return 16; }
 
+    // Programmatic initial field values must obey the same limit as user edits.
+    string max_field = repeat_ascii(MAX_FIELD_BYTES);
+    if (!frame_text_budget_valid(text_field("field", taint(max_field), "hint"))) { return 17; }
+    if (frame_text_budget_valid(text_field("field", taint(max_field + "!"), "hint"))) { return 18; }
+
     // Two individually valid maximum-size values exactly fill the frame budget.
     string half = repeat_ascii(MAX_TEXT_BYTES);
     View exact = column().add(text(half)).add(text(half));
@@ -65,6 +70,6 @@ int main() {
     cycle_a.add(cycle_b);
     if (frame_text_budget_valid(cycle_a)) { return 12; }
 
-    println("frame text budget: 16 assertions");
+    println("frame text budget: 18 assertions");
     return 0;
 }
