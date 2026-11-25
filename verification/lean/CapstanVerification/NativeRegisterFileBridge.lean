@@ -51,7 +51,7 @@ theorem nativeRegisterSetAt_get_same
       | zero => rfl
       | succ index =>
           simp only [List.length_cons] at hbound
-          simp only [nativeRegisterSetAt, List.get?_cons_succ]
+          simp [nativeRegisterSetAt]
           exact ih index (by omega)
 
 /-- A native replacement leaves a distinct, in-bounds slot unchanged. -/
@@ -76,8 +76,8 @@ theorem nativeRegisterSetAt_get_other
           | zero => rfl
           | succ other =>
               simp only [List.length_cons] at hbound hother
-              simp only [nativeRegisterSetAt, List.get?_cons_succ]
-              apply ih index other replacement
+              simp [nativeRegisterSetAt]
+              apply ih index other
               · omega
               · omega
               · intro heq
@@ -88,7 +88,7 @@ structure NativeRuntimeRegisterFileRelation
     (native : List NativeCCAMRegister)
     (runtime : List RuntimeRegister) : Prop where
   length_eq : native.length = runtime.length
-  matches_at : ∀ index nativeReg runtimeReg,
+  matches_at : ∀ (index : Nat) nativeReg runtimeReg,
     native[index]? = some nativeReg →
     runtime[index]? = some runtimeReg →
     NativeRegisterMatches nativeReg runtimeReg
@@ -260,6 +260,22 @@ def nativeWriteRegister (registers : List NativeCCAMRegister)
       else
         .error .typeMismatch
 
+/-- A successful optional list lookup implies that its index is in bounds. -/
+theorem list_get?_some_implies_lt {α : Type} (values : List α)
+    (index : Nat) (value : α)
+    (hlookup : values[index]? = some value) :
+    index < values.length := by
+  induction values generalizing index with
+  | nil => simp at hlookup
+  | cons head tail ih =>
+      cases index with
+      | zero => simp
+      | succ index =>
+          have htail : tail[index]? = some value := by simpa using hlookup
+          have hbound := ih index htail
+          simp only [List.length_cons]
+          omega
+
 /-- A successful native indexed write installs its replacement at the target. -/
 theorem nativeWriteRegister_target
     (registers updated : List NativeCCAMRegister)
@@ -273,7 +289,7 @@ theorem nativeWriteRegister_target
       by_cases htype : old.declaredTypeTag = replacement.declaredTypeTag
       · simp [hreg, htype] at hwrite
         cases hwrite
-        have hbound : index < registers.length := List.isSome_get?_1 hreg
+        have hbound : index < registers.length := list_get?_some_implies_lt registers index old hreg
         exact nativeRegisterSetAt_get_same registers index replacement hbound
       · simp [hreg, htype] at hwrite
 
@@ -345,7 +361,7 @@ theorem nativeWriteRegister_index_in_bounds
   unfold nativeWriteRegister at hwrite
   cases hreg : registers[index]? with
   | none => simp [hreg] at hwrite
-  | some old => exact List.isSome_get?_1 hreg
+  | some old => exact list_get?_some_implies_lt registers index old hreg
 
 /-- A successful abstract runtime write necessarily addresses an existing slot. -/
 theorem runtimeWriteRegister_index_in_bounds
@@ -358,7 +374,7 @@ theorem runtimeWriteRegister_index_in_bounds
   | none => simp [hreg] at hwrite
   | some old =>
       have hsome : registers[index]? = some old := hreg
-      exact List.isSome_get?_1 hsome
+      exact list_get?_some_implies_lt registers index old hsome
 
 /-- Paired successful native/runtime writes preserve the pointwise register
 representation relation, including the target and all untouched slots.
@@ -404,11 +420,11 @@ theorem nativeRuntimeRegisterFileRelation_write
     have hindexRuntime :=
       runtimeWriteRegister_index_in_bounds runtime runtimeUpdated index runtimeReplacement hruntimeWrite
     have hotherNative : other < native.length := by
-      have hnewBound := List.isSome_get?_1 hnativeAt
+      have hnewBound := list_get?_some_implies_lt nativeUpdated other nativeReg hnativeAt
       rw [nativeWriteRegister_length native nativeUpdated index nativeReplacement hnativeWrite] at hnewBound
       exact hnewBound
     have hotherRuntime : other < runtime.length := by
-      have hnewBound := List.isSome_get?_1 hruntimeAt
+      have hnewBound := list_get?_some_implies_lt runtimeUpdated other runtimeReg hruntimeAt
       rw [runtimeWriteRegister_length runtime runtimeUpdated index runtimeReplacement hruntimeWrite] at hnewBound
       exact hnewBound
     have hnativeUnchanged :=
@@ -479,7 +495,7 @@ theorem nativeRegisterMatches_tag_eq_iff
     have hreplacementTag' :
         decodeNativeTypeTag nativeReplacement.declaredTypeTag =
           some runtime.declaredType := by
-      rw [← htypes]
+      rw [htypes]
       exact hreplacementTag
     cases htype : runtime.declaredType with
     | int =>
@@ -539,23 +555,6 @@ theorem nativeRuntimeRegisterFileRelation_slot_exists
                 by simpa using hruntime,
                 hmatch⟩
 
-/-- For every in-bounds index, native and abstract dynamic writes have the
-same acceptance decision without caller-supplied slot witnesses. -/
-theorem nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts_of_in_bounds
-    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
-    (hrel : NativeRuntimeRegisterFileRelation native runtime)
-    (index : Nat) (hbound : index < native.length)
-    (nativeReplacement : NativeCCAMRegister)
-    (runtimeReplacement : RuntimeRegister)
-    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement) :
-    (∃ updated, nativeWriteRegister native index nativeReplacement = .ok updated) ↔
-      (∃ updated, runtimeWriteRegister runtime index runtimeReplacement = .ok updated) := by
-  obtain ⟨oldNative, oldRuntime, hnativeSlot, hruntimeSlot, _⟩ :=
-    nativeRuntimeRegisterFileRelation_slot_exists hrel index hbound
-  exact nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts
-    hrel index oldNative oldRuntime nativeReplacement runtimeReplacement
-    hnativeSlot hruntimeSlot hreplacement
-
 /-- Given witnesses for the same existing slot in related files, native and
 abstract dynamic writes have identical success/failure acceptance decisions.
 The separate preservation theorem supplies the relation between successful
@@ -601,6 +600,23 @@ theorem nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts
     refine ⟨nativeRegisterSetAt native index nativeReplacement, ?_⟩
     simp [nativeWriteRegister, hnativeSlot, hnativeType]
 
+
+/-- For every in-bounds index, native and abstract dynamic writes have the
+same acceptance decision without caller-supplied slot witnesses. -/
+theorem nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts_of_in_bounds
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hrel : NativeRuntimeRegisterFileRelation native runtime)
+    (index : Nat) (hbound : index < native.length)
+    (nativeReplacement : NativeCCAMRegister)
+    (runtimeReplacement : RuntimeRegister)
+    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement) :
+    (∃ updated, nativeWriteRegister native index nativeReplacement = .ok updated) ↔
+      (∃ updated, runtimeWriteRegister runtime index runtimeReplacement = .ok updated) := by
+  obtain ⟨oldNative, oldRuntime, hnativeSlot, hruntimeSlot, _⟩ :=
+    nativeRuntimeRegisterFileRelation_slot_exists hrel index hbound
+  exact nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts
+    hrel index oldNative oldRuntime nativeReplacement runtimeReplacement
+    hnativeSlot hruntimeSlot hreplacement
 
 /-- A successful native write has a corresponding successful abstract write,
 and the resulting register files remain related. The slot witnesses make the
