@@ -189,17 +189,24 @@ HRVTransition hrv_process_one(HRVState before) {
     bool choose_a = before.a_status == HRV_PENDING &&
         (before.b_status != HRV_PENDING ||
          before.a_sequence < before.b_sequence);
-    int retained = choose_a ? before.a_retained : before.b_retained;
-    int allocations = choose_a ? before.a_allocations : before.b_allocations;
-    int metadata = choose_a ? before.a_metadata : before.b_metadata;
+    int retained = before.b_retained;
+    int allocations = before.b_allocations;
+    int metadata = before.b_metadata;
+    if (choose_a) {
+        retained = before.a_retained;
+        allocations = before.a_allocations;
+        metadata = before.a_metadata;
+    }
     bool fits = retained <= before.capacity_retained - before.used_retained &&
         allocations <= before.capacity_allocations - before.used_allocations &&
         metadata <= before.capacity_metadata - before.used_metadata;
     next.queued -= 1;
     if (choose_a) {
-        next.a_status = fits ? HRV_ACCEPTED : HRV_REJECTED;
+        if (fits) { next.a_status = HRV_ACCEPTED; }
+        else { next.a_status = HRV_REJECTED; }
     } else {
-        next.b_status = fits ? HRV_ACCEPTED : HRV_REJECTED;
+        if (fits) { next.b_status = HRV_ACCEPTED; }
+        else { next.b_status = HRV_REJECTED; }
     }
     if (fits) {
         next.used_retained += retained;
