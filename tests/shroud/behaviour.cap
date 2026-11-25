@@ -197,6 +197,61 @@ void test_disabled_hit_blocking(Tally t, Ui ui) {
     expect(t, ui.focus == "", "input: disabled overlay does not receive focus", ui.focus);
 }
 
+void test_host_cancellation(Tally t, Ui ui) {
+    View v = column()
+        .add(button("Cancel me", "cancelled").key("cancel-button"))
+        .add(slider(5, 0, 10, "slide").key("cancel-slider"));
+    ui.render(v, 0);
+    Laid button_view = laid_of(ui, "cancel-button");
+    int bx = button_view.frame.x + button_view.frame.w / 2;
+    int by = button_view.frame.y + button_view.frame.h / 2;
+    ui.handle(pointer_event(EV_POINTER_DOWN, bx, by, 10));
+    expect(t, ui.pressed == button_view.id, "input cancel: pointer down records pressed control", ui.pressed);
+    ui.handle(pointer_event(EV_POINTER_CANCEL, bx, by, 20));
+    expect(t, ui.pressed == "" && ui.hover == "", "input cancel: capture loss clears transient state", ui.pressed + "/" + ui.hover);
+    List<Msg> released = ui.handle(pointer_event(EV_POINTER_UP, bx, by, 30));
+    expect_int(t, released.len(), 0, "input cancel: later release cannot activate the cancelled control");
+
+    // Pointer leave is not capture loss: it clears hover but keeps the press until
+    // an actual release or explicit cancellation arrives.
+    ui.handle(pointer_event(EV_POINTER_DOWN, bx, by, 40));
+    ui.handle(new_event(EV_POINTER_LEAVE, 45));
+    expect(t, ui.pressed == button_view.id && ui.hover == "",
+        "input cancel: pointer leave does not cancel the press", ui.pressed + "/" + ui.hover);
+    ui.handle(new_event(EV_POINTER_CANCEL, 50));
+
+    // A cancelled slider drag must not continue producing messages on later motion.
+    Laid slider_view = laid_of(ui, "cancel-slider");
+    int sx = slider_view.frame.x + slider_view.frame.w / 2;
+    int sy = slider_view.frame.y + slider_view.frame.h / 2;
+    ui.handle(pointer_event(EV_POINTER_DOWN, sx, sy, 60));
+    ui.handle(new_event(EV_POINTER_CANCEL, 65));
+    List<Msg> drag = ui.handle(pointer_event(EV_POINTER_MOVE, slider_view.frame.right(), sy, 70));
+    expect_int(t, drag.len(), 0, "input cancel: slider stops tracking after capture loss");
+
+    // Native deactivation clears transient pointer state and suppresses all input,
+    // while retaining logical widget focus so it can be restored on activation.
+    ui.handle(pointer_event(EV_POINTER_DOWN, bx, by, 80));
+    string focused = ui.focus;
+    ui.handle(new_event(EV_FOCUS_LOST, 90));
+    expect(t, !ui.host_focused && ui.pressed == "" && ui.hover == "",
+        "window focus: loss clears transient pointer state", ui.pressed + "/" + ui.hover);
+    expect(t, focused != "" && ui.focus == focused,
+        "window focus: logical widget focus is preserved", ui.focus);
+    expect_int(t, ui.handle(key_event(KEY_ENTER, 0, 100)).len(), 0,
+        "window focus: keyboard input is ignored while inactive");
+    expect_int(t, ui.handle(text_event(taint("x"), 110)).len(), 0,
+        "window focus: committed text is ignored while inactive");
+    ui.handle(new_event(EV_FOCUS_GAINED, 120));
+    expect(t, ui.host_focused, "window focus: activation restores input delivery", "not focused");
+    List<Msg> stale_release = ui.handle(pointer_event(EV_POINTER_UP, bx, by, 125));
+    expect_int(t, stale_release.len(), 0,
+        "window focus: stale pre-deactivation pointer release cannot activate");
+    List<Msg> activated = ui.handle(key_event(KEY_ENTER, 0, 130));
+    expect(t, activated.len() == 1 && activated[0].action == "cancelled",
+        "window focus: preserved widget focus works after reactivation", $"{activated.len()} messages");
+}
+
 void test_keyboard(Tally t, Ui ui) {
     View v = column().add(button("One", "one").key("k1")).add(text("label")).add(checkbox("Two", false, "two").key("k2")).add(button("Three", "three").disabled(true).key("k3")).add(slider(5, 0, 10, "s").key("k4").label("Level"));
     ui.render(v, 0);
@@ -555,6 +610,7 @@ int main() {
             test_duplicate_keys(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_duplicate_key_collisions(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_disabled_hit_blocking(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_host_cancellation(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_keyboard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_text_field(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_single_line_unicode_controls(t, new_ui(f, fb, light_theme(), 640, 480, 256));
