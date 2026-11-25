@@ -132,13 +132,13 @@ test "CCAM literal decoder preserves escaped and arbitrary byte values" {
 
     decoded = ccam_decode_escaped_literal("\\\\", 1);
     assert(decoded.ok && decoded.bytes.len() == 1);
-    assert(decoded.bytes.at(0) == '\\\\');
+    assert(decoded.bytes.at(0) == 92);
 }
 
 test "CCAM literal decoder rejects malformed and oversized encodings" {
-    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal("\\12", 1);
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal("\\\\12", 1);
     assert(!decoded.ok && decoded.error == "truncated_octal_literal_escape");
-    decoded = ccam_decode_escaped_literal("\\400", 1);
+    decoded = ccam_decode_escaped_literal("\\\\400", 1);
     assert(!decoded.ok && decoded.error == "octal_literal_byte_out_of_range");
     decoded = ccam_decode_escaped_literal("A", 2);
     assert(!decoded.ok && decoded.error == "literal_byte_count_mismatch");
