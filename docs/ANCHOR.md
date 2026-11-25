@@ -270,7 +270,7 @@ run proves only that this compiler version accepted this source under these flag
 - **A1-H — Shroud native host:** native window, Wayland protocol, input, frame presentation and lifecycle, following [SHROUD-HOST.md](SHROUD-HOST.md) and [SHROUD-LINUX-WAYLAND-PREREQUISITES.md](proposals/SHROUD-LINUX-WAYLAND-PREREQUISITES.md).
 - **A1-I — Anchor integration:** connect the independently gated host and process services. See [ANCHOR-A1-WORKSTREAMS.md](ANCHOR-A1-WORKSTREAMS.md).
 
-The split is intentional: Shroud's Wayland host does not need to spawn a compositor/helper process, and Anchor's process supervisor can be tested headlessly. Neither track may bypass the reviewed Capstan capability-I/O and platform contracts.
+The split is intentional: Shroud's Wayland host does not need to spawn a compositor/helper process, and Anchor's process supervisor can be tested headlessly. The shared requirements delta is recorded in [ANCHOR-CAPABILITY-IO-REQUIREMENTS.md](ANCHOR-CAPABILITY-IO-REQUIREMENTS.md). Neither track may bypass the reviewed Capstan capability-I/O and platform contracts.
 
 **A2 — Workspace and editing:**
 - confined project tree, tabs, single-line input only where appropriate;
