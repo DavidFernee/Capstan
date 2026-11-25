@@ -169,8 +169,12 @@ def check_vector(v: object, seen: set[str], index: int) -> None:
     if expected.get("normative_validation") not in {"accept", "reject", "not_applicable"}:
         fail(where, "normative_validation must be accept, reject or not_applicable")
     outcome = expected.get("outcome")
-    if not isinstance(outcome, dict) or outcome.get("kind") not in OUTCOME_KINDS:
+    if outcome is not None and (
+        not isinstance(outcome, dict) or outcome.get("kind") not in OUTCOME_KINDS
+    ):
         fail(where, "expected.outcome has an unknown kind")
+    if outcome is None and v["id"] != "SF-019":
+        fail(where, "expected.outcome is required except for the split normative/profile SF-019 case")
     trace = expected.get("trace_pcs")
     steps = expected.get("steps")
     if trace is not None:
@@ -198,6 +202,14 @@ def check_vector(v: object, seen: set[str], index: int) -> None:
         if not (expected.get("profile_validation") == "reject"
                 and expected.get("normative_validation") == "accept"):
             fail(where, "SF-019 must distinguish profile rejection from normative acceptance")
+        normative = expected.get("normative_execution")
+        if not isinstance(normative, dict) or not isinstance(normative.get("outcome"), dict):
+            fail(where, "SF-019 must carry a normative execution outcome")
+        else:
+            trace = normative.get("trace_pcs")
+            steps = normative.get("steps")
+            if not isinstance(trace, list) or not is_int(steps) or steps != len(trace):
+                fail(where, "SF-019 normative trace and step count must agree")
     if v["id"] == "SF-020" and entry == 0:
         fail(where, "SF-020 must retain a nonzero proof-model entry")
 
