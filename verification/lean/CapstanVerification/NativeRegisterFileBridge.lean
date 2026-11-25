@@ -248,3 +248,75 @@ theorem nativeRegisterReadBoolAtSigned_nonnegative
   simp [nativeRegisterReadBoolAtSigned, hnotnegative]
 
 end CapstanVerification
+
+
+/-- A checked native slot replacement rejects missing indices and preserves
+the declared type of an existing slot. -/
+def nativeWriteRegister (registers : List NativeCCAMRegister)
+    (index : Nat) (replacement : NativeCCAMRegister) :
+    Except Trap (List NativeCCAMRegister) :=
+  match registers[index]? with
+  | none => .error .invalidRegister
+  | some old =>
+      if old.declaredTypeTag = replacement.declaredTypeTag then
+        .ok (nativeRegisterSetAt registers index replacement)
+      else
+        .error .typeMismatch
+
+/-- Successful native indexed replacement preserves the register-file length. -/
+theorem nativeWriteRegister_length
+    (registers updated : List NativeCCAMRegister)
+    (index : Nat) (replacement : NativeCCAMRegister)
+    (hwrite : nativeWriteRegister registers index replacement = .ok updated) :
+    updated.length = registers.length := by
+  unfold nativeWriteRegister at hwrite
+  cases hreg : registers[index]? with
+  | none => simp [hreg] at hwrite
+  | some old =>
+      by_cases htype : old.declaredTypeTag = replacement.declaredTypeTag
+      · simp [hreg, htype] at hwrite
+        cases hwrite
+        exact nativeRegisterSetAt_length registers index replacement
+      · simp [hreg, htype] at hwrite
+
+/-- Successful native indexed replacement installs the requested target slot. -/
+theorem nativeWriteRegister_target
+    (registers updated : List NativeCCAMRegister)
+    (index : Nat) (replacement : NativeCCAMRegister)
+    (hwrite : nativeWriteRegister registers index replacement = .ok updated) :
+    registers[index]? = some (registers[index]!.getD replacement) := by
+  unfold nativeWriteRegister at hwrite
+  cases hreg : registers[index]? with
+  | none => simp [hreg] at hwrite
+  | some old =>
+      by_cases htype : old.declaredTypeTag = replacement.declaredTypeTag
+      · simp [hreg, htype] at hwrite
+        cases hwrite
+        simp [nativeRegisterSetAt_get_same, hreg]
+      · simp [hreg, htype] at hwrite
+
+/-- A successful native indexed replacement leaves every distinct slot intact. -/
+theorem nativeWriteRegister_other_unchanged
+    (registers updated : List NativeCCAMRegister)
+    (index other : Nat) (replacement : NativeCCAMRegister)
+    (hwrite : nativeWriteRegister registers index replacement = .ok updated)
+    (hother : other ≠ index) :
+    updated[other]? = registers[other]? := by
+  unfold nativeWriteRegister at hwrite
+  cases hreg : registers[index]? with
+  | none => simp [hreg] at hwrite
+  | some old =>
+      by_cases htype : old.declaredTypeTag = replacement.declaredTypeTag
+      · simp [hreg, htype] at hwrite
+        cases hwrite
+        exact nativeRegisterSetAt_get_other registers index other replacement
+          (by
+            have : index < registers.length := List.isSome_get?_1 hreg
+            exact this)
+          (by
+            by_contra hnot
+            have : registers[other]? = none := List.get?_eq_none_iff.mpr (by omega)
+            rw [this] at hother
+            simp at hother)
+          hother
+      · simp [hreg, htype] at hwrite
