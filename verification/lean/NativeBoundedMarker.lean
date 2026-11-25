@@ -153,7 +153,8 @@ def markerLoop {slotCount : Nat}
               let nextPending := rest ++ discovered
               let nextPeak := max counters.worklistPeak nextPending.length
               let nextCounters :=
-                { objects := counters.objects + 1
+                { roots := counters.roots
+                  objects := counters.objects + 1
                   edges := counters.edges + outgoing.length
                   worklistPeak := nextPeak
                   descriptorSlots := counters.descriptorSlots + cost
