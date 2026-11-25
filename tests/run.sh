@@ -85,6 +85,13 @@ else
   bad "CCAM JSON string decoder" "$out"
 fi
 
+section "Capstan-native verification: bounded CCAM JSON lexical scanner"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_string.cap" "$ROOT/verification/ccam_json_scanner.cap" 2>&1)"; then
+  ok "CCAM JSON scanner tokenises bounded input and rejects malformed lexical forms"
+else
+  bad "CCAM JSON lexical scanner" "$out"
+fi
+
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
