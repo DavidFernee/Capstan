@@ -42,6 +42,60 @@ identifier presentation**. A single global replacement list cannot satisfy all t
 7. **Bounded work.** Every decoding, segmentation, bidi, shaping, fallback and diagnostic pass is
    covered by explicit aggregate budgets and fails closed when a budget is exceeded.
 
+
+## 2A. Security acceptance gate — prevention, not warning
+
+This section is a release gate for every text-consuming Shroud API. A diagnostic or
+annotation is not a security control. If a sink cannot establish that its input is safe
+for that sink's semantics, it must reject the operation or use a documented inert
+fallback. It must not publish a partially validated result.
+
+1. **No implicit sink conversion.** Raw or `Tainted` text must not flow directly into
+   security-sensitive identifiers, URLs/origins, executable names, filesystem paths,
+   permission labels, audit records, or command-like values. Each sink requires an
+   explicit, typed validation/policy step. Rendering-safe text is not identifier-safe.
+2. **Validate before effects.** Validation and resource-budget checks complete before
+   text is committed to a widget tree, accessibility tree, clipboard operation, host
+   request, log record, or persistent state. On failure, the operation is atomic: no
+   partial value or side effect escapes.
+3. **Comparison uses canonical policy, not appearance.** Security decisions must use
+   the original logical value plus an explicit, version-pinned comparison policy.
+   Painted glyphs, normalized display strings, case-folded labels, and security
+   annotations are never authoritative identity values. Where the application has
+   not selected a comparison policy, reject ambiguous identifiers rather than guess.
+4. **Controls cannot steer security decisions.** Bidi formatting controls, invisible
+   separators, default-ignorables, confusables and mixed-script signals must be
+   classified using pinned Unicode data and sink-specific rules. A visual warning is
+   supplementary; security-sensitive use is rejected unless the policy explicitly
+   permits the exact class and context. Do not treat every joiner or variation
+   selector as malicious: validate its context and preserve its logical value.
+5. **No trust laundering.** Decoding, escaping, normalization, annotation, truncation,
+   shaping, copying or rendering cannot convert `Tainted` input into trusted input.
+   Trust transitions require the existing explicit validation operation and must be
+   auditable at the call site.
+6. **Fail closed on unknowns.** Unknown Unicode versions, missing property tables,
+   unsupported bidi behaviour, exhausted budgets, malformed input where a sink
+   requires valid text, or unavailable policy configuration cause rejection. They
+   must not silently fall back to permissive rendering or comparison.
+7. **Safe observability.** Diagnostics retain source spans and code-point/property
+   details but must themselves be escaped and bounded. Logs must not render attacker
+   controls as active formatting, and must not disclose protected-field contents.
+8. **Complete sink inventory.** Every public and internal text sink must be listed,
+   classified, and covered by a negative test proving rejection of disallowed input.
+   New sinks require tests and policy review in the same change. A sink without a
+   classification is not approved for untrusted input.
+
+The acceptance criterion is not "the UI displays a warning". It is: **no
+security-sensitive operation consumes an unvalidated value, and a failed validation
+produces no externally observable partial effect.** Conformance vectors must test both
+the accepted cases and the rejection/atomicity cases.
+
+These controls reduce the attack surface but do not constitute a proof that every
+application built on Shroud is vulnerability-free. Downstream applications remain
+responsible for applying the appropriate typed validation at their own trust
+boundaries; Shroud must make unsafe implicit flows difficult or impossible through
+its API design.
+
 ## 3. Text representations
 
 The implementation should keep three representations distinct.
