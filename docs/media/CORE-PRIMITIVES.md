@@ -351,3 +351,10 @@ Still required before MC1 can pass:
 No third-party media implementation code is used by this slice. The existing Capstan
 compiler/runtime remains C-backed in the current production build and remains in the
 trusted computing base until the C-free execution path is qualified.
+
+
+## 5.2 Cross-ledger non-refund regression
+
+The cumulative consumption budget and live-resource lease ledger are independent state machines. Releasing a retained-byte/allocation lease must not refund input, output, decoded-unit or work consumption. The regression test `Halyard live lease release never refunds cumulative decode or work` in `lib/halyard/core.cap` exercises the actual lease acquisition/release API between two consumption attempts: the first attempt consumes the full decoded/work allowance, releases its retained-byte/allocation lease, and the second attempt is still rejected with all cumulative counters unchanged.
+
+This is a narrow sequential model regression. It does not establish that every parser/decoder operation charges every required work unit, that cumulative charges are coupled to every allocation/output path, or that a concurrent/cancelled worker cannot leak a lease. Those remain #303/#293 acceptance work.
