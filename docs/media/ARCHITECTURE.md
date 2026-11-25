@@ -333,3 +333,8 @@ Work packages should remain small, independently reviewable and explicitly depen
 - No treating Capstan source syntax as proof that current C-backed runtime boundaries are safe.
 - No codec dependency adoption without version, licence, patent, provenance and security review.
 - No "fastest", "safest" or "best" market claims without reproducible comparative evidence.
+
+
+## 13. Mandatory security assurance
+
+The normative vulnerability accounting, root-cause threat catalogue, reproducer and regression protocol, continuous advisory reconciliation and release-blocking security gates are specified in [SECURITY-ASSURANCE.md](SECURITY-ASSURANCE.md). These requirements apply to Core, Shanty, Deadeye, all shipped codecs, parsers, protocol handlers, platform adapters and transitive/build-time dependencies. Architecture review and implementation must not weaken these gates.
