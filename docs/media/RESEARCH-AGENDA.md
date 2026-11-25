@@ -193,6 +193,19 @@ A result is not state of the art because it is faster on one machine. Compare co
 security, worst-case resource use, latency tails, fidelity, portability, energy and
 engineering cost. No composite score may conceal a severe regression in one dimension.
 
+## Pullable research packages
+
+| Issue | Research problem | Hypothesis | Gate / dependency |
+|---|---|---|---|
+| [#294](https://github.com/DavidFernee/Capstan/issues/294) | Compositional resource accounting and reservation leases | H1 | MC1; #285/#293 |
+| [#295](https://github.com/DavidFernee/Capstan/issues/295) | Verified Capstan media format descriptions | H2 | MC0/MC1; #284/#285/#293 |
+| [#296](https://github.com/DavidFernee/Capstan/issues/296) | Format-aware differential and metamorphic fuzzing | H7 | SH0/DE0; #288/#289 |
+| [#297](https://github.com/DavidFernee/Capstan/issues/297) | Multi-clock media time and bounded A/V drift | H5 | MC1/MC3; #286 |
+| [#298](https://github.com/DavidFernee/Capstan/issues/298) | Preflighted deterministic real-time audio | H4 | SH1 preparation; #285/#286/#293 |
+| [#299](https://github.com/DavidFernee/Capstan/issues/299) | Distributed graph execution (deferred) | H9 | Post-MC3 |
+| [#300](https://github.com/DavidFernee/Capstan/issues/300) | Proof-preserving graph rewrites | H6 | Stable graph IR; #286/#294 |
+| [#301](https://github.com/DavidFernee/Capstan/issues/301) | Typed colour/HDR/scientific image semantics | H8 | DE0–MC6; #287/#289 |
+
 ## Initial literature anchors
 
 - Yi Cai et al., “Vest: Verified, Secure, High-Performance Parsing and Serialization
