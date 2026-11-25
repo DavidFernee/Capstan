@@ -270,12 +270,17 @@ List<string> field_names(Checker c, string sname) {
     return out;
 }
 
-Type? field_type(Checker c, string sname, string fname) {
+Node? field_decl(Checker c, string sname, string fname) {
     if (let st = c.structs.get(sname)) {
         for (int i = 0; i < st.kids.len(); i += 1) {
-            if (st.kids[i].s == fname) { return ty_of(st.kids[i]); }
+            if (st.kids[i].s == fname) { return st.kids[i]; }
         }
     }
+    return none;
+}
+
+Type? field_type(Checker c, string sname, string fname) {
+    if (let fd = field_decl(c, sname, fname)) { return ty_of(fd); }
     return none;
 }
 
@@ -394,7 +399,17 @@ Type check_expr(Checker c, Node e) {
                 return typed(e, mk_type(TY_ERR));
             }
         }
-        if (let ft = field_type(c, ot.name, e.s)) { return typed(e, ft); }
+        if (let fd = field_decl(c, ot.name, e.s)) {
+            if (fd.s2 == "private") {
+                if (let owner = c.structs.get(ot.name)) {
+                    if (e.file != owner.file) {
+                        error_at(c.ctx, e, "CAP-PRIVATE", "private field '" + e.s + "' of " + ot.name + " is accessible only within its defining module");
+                        return typed(e, mk_type(TY_ERR));
+                    }
+                }
+            }
+            return typed(e, ty_of(fd));
+        }
         error_at(c.ctx, e, "", "struct " + ot.name + " has no field '" + e.s + "'" + suggest(e.s, field_names(c, ot.name)));
         return typed(e, mk_type(TY_ERR));
     }
@@ -1196,8 +1211,12 @@ Type check_new(Checker c, Node e) {
                 error_at(c.ctx, init, "", "field '" + init.s + "' initialised twice");
             }
             seen.set(init.s, 1);
-            if (let ft = field_type(c, e.s, init.s)) {
-                expect_type(c, init, vt, ft, "field '" + init.s + "'");
+            if (let fd = field_decl(c, e.s, init.s)) {
+                if (fd.s2 == "private" && init.file != st.file) {
+                    error_at(c.ctx, init, "CAP-PRIVATE", "private field '" + init.s + "' of " + e.s + " may be initialised only within its defining module");
+                } else {
+                    expect_type(c, init, vt, ty_of(fd), "field '" + init.s + "'");
+                }
                 check_hardcoded(c, init, init.s, init.kids[0]);
             } else {
                 error_at(c.ctx, init, "", "struct " + e.s + " has no field '" + init.s + "'");
