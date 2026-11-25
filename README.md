@@ -2,6 +2,8 @@
 
 **A security-oriented, self-hosting programming language with C/Java-style syntax.** Capstan uses static checks, runtime guards and explicit trust boundaries to prevent or contain classes of defects; the scope and residual gaps are documented in [CWE coverage](docs/CWE-COVERAGE.md) and the [threat model](docs/assurance/THREAT-MODEL.md). These guarantees apply to the Capstan program model, not automatically to the C runtime, compiler toolchain or host platform.
 
+![The Capstan Ecosystem — Capstan, Shroud and Anchor](assets/branding/capstan-ecosystem-brand-board.png)
+
 ```java
 policy ReadRecord(User u, Record r) {
     if (u.role == ROLE_CLINICIAN && u.id == r.treating_clinician) { return true; }
