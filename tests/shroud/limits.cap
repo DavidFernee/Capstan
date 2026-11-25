@@ -14,6 +14,8 @@ void limits_append_u32(List<int> bytes, int value) {
     limits_append_u16(bytes, value & 65535);
 }
 
+Tainted limits_tainted(List<int> bytes) { return taint(bytes_text(bytes)); }
+
 FontReader directory_fixture(int mode) {
     List<int> bytes = new List<int>();
     limits_append_u32(bytes, 0x00010000);
@@ -37,7 +39,7 @@ FontReader directory_fixture(int mode) {
     limits_append_u32(bytes, second_offset);
     limits_append_u32(bytes, 4);
     for (int i = 0; i < 8; i += 1) { bytes.push(0); }
-    return new FontReader{b: bytes, ok: true};
+    return new FontReader{b: limits_tainted(bytes), ok: true};
 }
 
 Font composite_budget_fixture() {
@@ -67,7 +69,7 @@ Font composite_budget_fixture() {
         limits_append_u16(bytes, 1);
         bytes.push(0); bytes.push(0);
     }
-    FontReader reader = new FontReader{b: bytes, ok: true};
+    FontReader reader = new FontReader{b: limits_tainted(bytes), ok: true};
     return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
         line_gap: 0, num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
         t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
@@ -85,7 +87,7 @@ Font metrics_fixture(int table_len) {
     bytes.push(0x00); bytes.push(0x05);
     bytes.push(0x00); bytes.push(0x06);
     bytes.push(0x00); bytes.push(0x07);
-    FontReader reader = new FontReader{b: bytes, ok: true};
+    FontReader reader = new FontReader{b: limits_tainted(bytes), ok: true};
     return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
         line_gap: 0, num_glyphs: 4, num_hmetrics: 2, loca_long: 0,
         t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
@@ -94,7 +96,83 @@ Font metrics_fixture(int table_len) {
         cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
 }
 
+Font truncated_composite_args_fixture() {
+    List<int> bytes = new List<int>();
+    for (int i = 0; i < 24; i += 1) { bytes.push(0); }
+    // Short loca entries: glyph 0 = [0,0), glyph 1 = [0,14),
+    // glyph 2 = [14,16). The composite's XY arguments are absent from
+    // glyph 1 and exist only at the start of glyph 2.
+    bytes[5] = 7;
+    bytes[7] = 8;
+    bytes[8] = 255;
+    bytes[9] = 255;
+    bytes[19] = 2;
+    bytes[20] = 0;
+    bytes[21] = 0;
+    bytes[22] = 0;
+    bytes[23] = 0;
+    FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
+    return new Font{
+        r: r, units_per_em: 1000, ascent: 800, descent: -200, line_gap: 0,
+        num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: -1, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 16,
+        t_hmtx: 0, hmtx_len: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0
+    };
+}
+
+Font truncated_simple_coords_fixture() {
+    List<int> bytes = new List<int>();
+    for (int i = 0; i < 28; i += 1) { bytes.push(0); }
+    // Glyph 1 is a one-point simple glyph. Its flag says that both x and y
+    // deltas follow, but the glyph ends before those coordinates; glyph 2
+    // supplies the bytes that a file-only check could accidentally consume.
+    bytes[5] = 8;
+    bytes[7] = 10;
+    bytes[9] = 1;
+    bytes[22] = 0;
+    bytes[23] = 0;
+    FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
+    return new Font{
+        r: r, units_per_em: 1000, ascent: 800, descent: -200, line_gap: 0,
+        num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: -1, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 20,
+        t_hmtx: 0, hmtx_len: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0
+    };
+}
+
+Font truncated_composite_transform_fixture() {
+    List<int> bytes = new List<int>();
+    for (int i = 0; i < 26; i += 1) { bytes.push(0); }
+    // The component's 2-byte scale transform exists only in glyph 2.
+    bytes[5] = 8;
+    bytes[7] = 9;
+    bytes[8] = 255;
+    bytes[9] = 255;
+    bytes[19] = 10;
+    bytes[20] = 0;
+    bytes[21] = 0;
+    bytes[22] = 0;
+    bytes[23] = 0;
+    FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
+    return new Font{
+        r: r, units_per_em: 1000, ascent: 800, descent: -200, line_gap: 0,
+        num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: -1, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 18,
+        t_hmtx: 0, hmtx_len: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0
+    };
+}
+
 int main() {
+    List<int> scaled_offset = component_offset(10, 20, 8192, 0, 0, 16384, true);
+    if (scaled_offset[0] != 5 || scaled_offset[1] != 20) { return 51; }
+    List<int> unscaled_offset = component_offset(10, 20, 8192, 0, 0, 16384, false);
+    if (unscaled_offset[0] != 10 || unscaled_offset[1] != 20) { return 52; }
     if (pixmap_size_valid(1, 1) != true) { return 1; }
     if (pixmap_size_valid(4096, 4096) != true) { return 2; }
     if (pixmap_size_valid(16384, 1024) != true) { return 3; }
@@ -141,9 +219,15 @@ int main() {
     if (font_directory_valid(directory_fixture(4))) { return 47; }
     Font composite_font = composite_budget_fixture();
     Path leaf_path = new_path();
-    if (glyph_outline(composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0) != true) { return 28; }
+    bool leaf_ok = glyph_outline(
+        composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0
+    );
+    if (!leaf_ok) { return 28; }
     Path aggregate_path = new_path();
-    if (glyph_outline(composite_font, 2, aggregate_path, 1, 1, 0, 0, identity_transform(), 0) != false) { return 29; }
+    bool aggregate_ok = glyph_outline(
+        composite_font, 2, aggregate_path, 1, 1, 0, 0, identity_transform(), 0
+    );
+    if (aggregate_ok) { return 29; }
     if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
         if (let font = font_load(data)) {
             for (int cp = 33; cp < 127; cp += 1) {
@@ -154,6 +238,43 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
-    println("resource limits: 47 assertions and glyph cache exercised");
+    Font truncated = truncated_composite_args_fixture();
+    List<int> truncated_budget = new List<int>();
+    truncated_budget.push(MAX_GLYPH_POINTS_TOTAL);
+    truncated_budget.push(MAX_COMPOSITE_COMPONENTS_TOTAL);
+    Path truncated_path = new_path();
+    bool truncated_ok = glyph_outline_budgeted(
+        truncated, 1, truncated_path, 16384, 1, 0, 0,
+        identity_transform(), 0, truncated_budget
+    );
+    if (truncated_ok) { return 48; }
+    Font truncated_simple = truncated_simple_coords_fixture();
+    List<int> simple_budget = new List<int>();
+    simple_budget.push(MAX_GLYPH_POINTS_TOTAL);
+    simple_budget.push(MAX_COMPOSITE_COMPONENTS_TOTAL);
+    Path simple_path = new_path();
+    bool simple_ok = glyph_outline_budgeted(
+        truncated_simple, 1, simple_path, 16384, 1, 0, 0,
+        identity_transform(), 0, simple_budget
+    );
+    if (simple_ok) { return 49; }
+    Font truncated_transform = truncated_composite_transform_fixture();
+    List<int> transform_budget = new List<int>();
+    transform_budget.push(MAX_GLYPH_POINTS_TOTAL);
+    transform_budget.push(MAX_COMPOSITE_COMPONENTS_TOTAL);
+    Path transform_path = new_path();
+    bool transform_ok = glyph_outline_budgeted(
+        truncated_transform, 1, transform_path, 16384, 1, 0, 0,
+        identity_transform(), 0, transform_budget
+    );
+    if (transform_ok) { return 50; }
+    List<int> shear = compose_matrix(identity_transform(), 16384, 8192, 0, 16384);
+    if (shear[0] != 16384 || shear[1] != 8192 || shear[2] != 0 || shear[3] != 16384) { return 51; }
+    List<int> translated = identity_transform();
+    translated[4] = 7;
+    translated[5] = 9;
+    List<int> preserved = compose_matrix(translated, 16384, 0, 0, 16384);
+    if (preserved[4] != 7 || preserved[5] != 9) { return 52; }
+    println("resource limits: 52 assertions and glyph cache exercised");
     return 0;
 }
