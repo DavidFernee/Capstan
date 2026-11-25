@@ -60,7 +60,7 @@ A feature is not a differentiator merely because Capstan has syntax for it. The 
 
 Each area below is a standing research stream. It is not a mandate to implement every fashionable feature. Each stream must identify a question that matters to Capstan's thesis, review the strongest existing approaches, and recommend either adoption, adaptation or a reasoned decision not to pursue.
 
-### R1. Formal semantics and language foundations
+### AREA-01. Formal semantics and language foundations
 
 **Questions**
 - What is the smallest useful formal core for Capstan?
@@ -72,7 +72,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 **Success evidence:** a versioned formal core, machine-checked properties with explicit assumptions, conformance tests, and traceable correspondence to implementation.
 
-### R2. Type systems, contracts and abstraction
+### AREA-02. Type systems, contracts and abstraction
 
 **Questions**
 - Can ordinary types, refinement predicates, ownership, lifetimes, effects, capabilities and resource contracts share a compositional model?
@@ -83,7 +83,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 **Success evidence:** a formal typing discipline, soundness results for a clearly bounded core, usable diagnostics, and benchmarked compile-time and annotation costs.
 
-### R3. Memory, ownership and resource lifecycle
+### AREA-03. Memory, ownership and resource lifecycle
 
 **Questions**
 - Can memory safety and resource lifecycle be expressed beyond conventional ownership/borrowing?
@@ -94,7 +94,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 **Success evidence:** adversarial tests, formal properties for the chosen core, measured runtime/compile-time overhead, and a documented account of what remains dynamic or trusted.
 
-### R4. Security, capabilities, effects and information flow
+### AREA-04. Security, capabilities, effects and information flow
 
 **Questions**
 - Can authority be explicit in function signatures and module interfaces?
@@ -106,7 +106,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 **Success evidence:** reference semantics, non-interference or confinement properties where feasible, hostile-host tests, capability-leak tests and explicit adapter/TCB analysis.
 
-### R5. Resource-bounded computation
+### AREA-05. Resource-bounded computation
 
 **Questions**
 - Which resources can be bounded compositionally: fuel, stack, memory, allocation, output, file descriptors, tasks, energy?
@@ -117,7 +117,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 **Success evidence:** soundness conditions for each analysis, exact runtime enforcement semantics, predictable behaviour at limit boundaries, and comparisons of bound tightness and analysis cost.
 
-### R6. Concurrency, parallelism and distributed execution
+### AREA-06. Concurrency, parallelism and distributed execution
 
 **Questions**
 - Can data races, unsafe sharing and protocol misuse be excluded by construction?
@@ -129,7 +129,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 **Success evidence:** formal guarantees for bounded models, stress/fuzz testing, scheduler-independent conformance tests, and performance comparison with Rust, Swift, C++ and relevant runtimes.
 
-### R7. Execution models, CCAM and runtime architecture
+### AREA-07. Execution models, CCAM and runtime architecture
 
 **Questions**
 - What is the smallest canonical machine that can serve as semantic authority and a stable compilation boundary?
@@ -140,7 +140,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 **Success evidence:** conformance across execution engines, explicit refinement obligations, target-executed tests, bounded runtime behaviour and a precise trusted-base inventory. C-free claims remain scoped to the exact compiler/build/run path demonstrated.
 
-### R8. Compiler correctness and optimisation
+### AREA-08. Compiler correctness and optimisation
 
 **Questions**
 - Which compiler stages should be verified, validated or independently checked first?
@@ -152,7 +152,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 **Success evidence:** per-pass semantic preservation evidence or translation validation, reproducible miscompilation testing, performance results and a disclosed proof/validation boundary.
 
-### R9. Evidence-carrying execution and artefacts
+### AREA-09. Evidence-carrying execution and artefacts
 
 **Questions**
 - What exactly should an executable certificate assert?
@@ -166,7 +166,7 @@ Each area below is a standing research stream. It is not a mandate to implement 
 
 This stream is coordinated with the existing draft evidence-carrying execution proposal (PR #214). That proposal is not integrated merely by being drafted, and its obligations must be reconciled with the current merged CCAM and evaluator contracts before implementation.
 
-### R10. Developer experience, diagnostics and human factors
+### AREA-10. Developer experience, diagnostics and human factors
 
 **Questions**
 - How can the compiler explain not only that a program is rejected, but which guarantee failed and why?
@@ -178,7 +178,7 @@ This stream is coordinated with the existing draft evidence-carrying execution p
 
 **Success evidence:** task-based usability studies, diagnostic comprehension measures, reduced time-to-fix, and IDE behaviour that never presents unknown or stale evidence as a verified result.
 
-### R11. Metaprogramming, extensibility and language evolution
+### AREA-11. Metaprogramming, extensibility and language evolution
 
 **Questions**
 - How can compile-time computation and macros preserve hygiene, determinism and assurance?
@@ -189,7 +189,7 @@ This stream is coordinated with the existing draft evidence-carrying execution p
 
 **Success evidence:** semantics for expansion and staging, reproducible builds, hygiene/security tests, and explicit compatibility and migration guarantees.
 
-### R12. Interoperability, packages and software supply chain
+### AREA-12. Interoperability, packages and software supply chain
 
 **Questions**
 - How can Capstan interoperate with C and other ecosystems without importing unsound assumptions?
@@ -200,7 +200,7 @@ This stream is coordinated with the existing draft evidence-carrying execution p
 
 **Success evidence:** hostile FFI tests, ABI conformance, reproducible dependency builds, provenance verification and clearly identified trust boundaries.
 
-### R13. Heterogeneous and specialised computing
+### AREA-13. Heterogeneous and specialised computing
 
 **Questions**
 - Can Capstan's guarantees survive compilation to GPUs, accelerators, embedded devices and distributed targets?
@@ -211,7 +211,7 @@ This stream is coordinated with the existing draft evidence-carrying execution p
 
 **Success evidence:** target-specific conformance, resource/energy measurements, explicit device assumptions and comparison against established toolchains.
 
-### R14. AI-assisted programming and verified synthesis
+### AREA-14. AI-assisted programming and verified synthesis
 
 **Questions**
 - Can specifications be translated into candidate programs whose properties are checked independently?
@@ -222,7 +222,7 @@ This stream is coordinated with the existing draft evidence-carrying execution p
 
 **Success evidence:** independent checking of every accepted result, benchmarked correctness and usefulness, adversarial prompt/input testing, and strict separation between advisory AI and normative compiler decisions.
 
-### R15. Testing, measurement and scientific reproducibility
+### AREA-15. Testing, measurement and scientific reproducibility
 
 **Questions**
 - How do we know that a claimed guarantee holds beyond hand-picked examples?
@@ -259,12 +259,12 @@ Organise the research effort into six coordinated groups. These are technical re
 
 | Group | Primary streams | Principal outputs |
 |---|---|---|
-| Language Theory and Foundations | R1, R2, R3, R5 | Formal core, type/effect/resource models, metatheory |
-| Security and Authority | R4, R5, R12 | Capability model, information-flow model, secure boundary contracts |
-| Compiler and Execution | R7, R8, R9 | CCAM, evaluator/backend refinement, certificates and checker |
-| Concurrency and Systems | R3, R6, R7, R13 | Resource-safe systems, concurrency model, target execution |
-| Developer Experience and Ecosystem | R10, R11, R12 | Tooling, metaprogramming, packages, interoperability |
-| Research Infrastructure and Evaluation | R14, R15, cross-cutting | Benchmarks, proof/test infrastructure, reproducibility and claim register |
+| Language Theory and Foundations | AREA-01, AREA-02, AREA-03, AREA-05 | Formal core, type/effect/resource models, metatheory |
+| Security and Authority | AREA-04, AREA-05, AREA-12 | Capability model, information-flow model, secure boundary contracts |
+| Compiler and Execution | AREA-07, AREA-08, AREA-09 | CCAM, evaluator/backend refinement, certificates and checker |
+| Concurrency and Systems | AREA-03, AREA-06, AREA-07, AREA-13 | Resource-safe systems, concurrency model, target execution |
+| Developer Experience and Ecosystem | AREA-10, AREA-11, AREA-12 | Tooling, metaprogramming, packages, interoperability |
+| Research Infrastructure and Evaluation | AREA-14, AREA-15, cross-cutting | Benchmarks, proof/test infrastructure, reproducibility and claim register |
 
 ### 5.1 Work-package size
 
