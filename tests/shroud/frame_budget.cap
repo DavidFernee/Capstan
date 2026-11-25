@@ -32,6 +32,7 @@ int main() {
     if (frame_text_budget_valid(text_field("value", taint(oversized), "hint"))) { return 14; }
     if (frame_text_budget_valid(button(oversized, "action"))) { return 15; }
     if (frame_text_budget_valid(text_field("value", taint(""), oversized))) { return 16; }
+    if (frame_text_budget_valid(button("ok", "action").label(oversized))) { return 19; }
 
     // Programmatic initial field values must obey the same limit as user edits.
     string max_field = repeat_ascii(MAX_FIELD_BYTES);
@@ -70,6 +71,6 @@ int main() {
     cycle_a.add(cycle_b);
     if (frame_text_budget_valid(cycle_a)) { return 12; }
 
-    println("frame text budget: 18 assertions");
+    println("frame text budget: 19 assertions");
     return 0;
 }
