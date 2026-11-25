@@ -1,4 +1,4 @@
-// expect: private field 'secret' of SealedVault may be initialised only within its defining module
+// expect: opaque struct SealedVault may be constructed only within its defining module
 import "private_fields/record.cap";
 
 int main() {
