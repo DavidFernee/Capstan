@@ -51,13 +51,14 @@ def literal(value) -> str:
     raise ValueError(f"unsupported Capstan literal: {type(value).__name__}")
 
 
-def instruction_source(instruction: dict) -> list[str]:
+def instruction_source(instruction: dict, index: int) -> list[str]:
     op = instruction["op"]
     opcode, fields = OPS[op]
-    lines = [f"    CCAMInstruction instruction = ccam_instruction({opcode});"]
+    variable = f"instruction_{index}"
+    lines = [f"    CCAMInstruction {variable} = ccam_instruction({opcode});"]
     for source_field, target_field in fields.items():
-        lines.append(f"    instruction.{target_field} = {literal(instruction[source_field])};")
-    lines.append("    code.push(instruction);")
+        lines.append(f"    {variable}.{target_field} = {literal(instruction[source_field])};")
+    lines.append(f"    code.push({variable});")
     return lines
 
 
@@ -70,8 +71,8 @@ def vector_test(vector: dict) -> str:
     for ty in vector["register_types"]:
         lines.append(f"    register_types.push({REGISTER_TYPES[ty]});")
     lines.append("    List<CCAMInstruction> code = new List<CCAMInstruction>();")
-    for instruction in vector["instructions"]:
-        lines.extend(instruction_source(instruction))
+    for index, instruction in enumerate(vector["instructions"]):
+        lines.extend(instruction_source(instruction, index))
     lines.extend([
         "    CCAMMachineCreateResult created = ccam_machine_create_validated(",
         f"        register_types, code, {vector['max_steps']}, {RETURN_TYPES[vector['return_type']]});",
