@@ -220,7 +220,7 @@ GCHTransitionResult gch_allocate(GCHHeap heap, int descriptor_id) {
     };
 }
 
-GCHTransitionResult gch_release(GCHHeap heap, GCHHandle handle) {
+GCHTransitionResult gch_reclaim_slot(GCHHeap heap, GCHHandle handle) {
     GCHResolveResult resolved = gch_resolve(heap, handle, 0);
     if (resolved.status != GCH_OK) {
         return new GCHTransitionResult{status: resolved.status, heap: heap, handle: gch_handle(0, 0, 0)};
@@ -391,29 +391,29 @@ test "GC allocation rejects unknown descriptors atomically" {
     assert(rejected.handle.heap_token == 0);
 }
 
-test "GC release invalidates the released handle" {
+test "GC reclamation invalidates the reclaimed handle" {
     GCHHeap heap = gch_fixture_heap();
-    GCHTransitionResult released = gch_release(heap, gch_handle(91, 0, 3));
-    assert(released.status == GCH_OK);
-    assert(!released.heap.slots[0].allocated);
-    assert(released.heap.slots[0].descriptor_id == 0);
-    assert(gch_resolve(released.heap, gch_handle(91, 0, 3), 0).status == GCH_UNALLOCATED);
+    GCHTransitionResult reclaimed = gch_reclaim_slot(heap, gch_handle(91, 0, 3));
+    assert(reclaimed.status == GCH_OK);
+    assert(!reclaimed.heap.slots[0].allocated);
+    assert(reclaimed.heap.slots[0].descriptor_id == 0);
+    assert(gch_resolve(reclaimed.heap, gch_handle(91, 0, 3), 0).status == GCH_UNALLOCATED);
     assert(gch_resolve(heap, gch_handle(91, 0, 3), 0).status == GCH_OK);
 }
 
 test "GC slot reuse advances generation and rejects old handle" {
     GCHHeap heap = gch_fixture_heap();
-    GCHTransitionResult released = gch_release(heap, gch_handle(91, 2, 4));
-    GCHTransitionResult allocated = gch_allocate(released.heap, 8);
+    GCHTransitionResult reclaimed = gch_reclaim_slot(heap, gch_handle(91, 2, 4));
+    GCHTransitionResult allocated = gch_allocate(reclaimed.heap, 8);
     assert(allocated.status == GCH_OK);
     assert(allocated.handle.slot_id == 2);
     assert(allocated.handle.generation == 5);
     assert(gch_resolve(allocated.heap, gch_handle(91, 2, 4), 0).status == GCH_STALE_HANDLE);
 }
 
-test "GC release rejects stale handles atomically" {
+test "GC reclamation rejects stale handles atomically" {
     GCHHeap heap = gch_fixture_heap();
-    GCHTransitionResult rejected = gch_release(heap, gch_handle(91, 0, 2));
+    GCHTransitionResult rejected = gch_reclaim_slot(heap, gch_handle(91, 0, 2));
     assert(rejected.status == GCH_STALE_HANDLE);
     assert(rejected.heap.slots[0].allocated);
     assert(rejected.heap.slots[0].generation == 3);
@@ -426,10 +426,10 @@ test "GC maximum-generation release retires the slot" {
     slots.push(base.slots[1]);
     slots.push(base.slots[2]);
     GCHHeap heap = new GCHHeap{heap_token: base.heap_token, layouts: base.layouts, slots: slots};
-    GCHTransitionResult released = gch_release(heap, gch_handle(91, 0, GCH_MAX_GENERATION));
-    assert(released.status == GCH_OK);
-    assert(released.heap.slots[0].retired);
-    GCHTransitionResult allocated = gch_allocate(released.heap, 7);
+    GCHTransitionResult reclaimed = gch_reclaim_slot(heap, gch_handle(91, 0, GCH_MAX_GENERATION));
+    assert(reclaimed.status == GCH_OK);
+    assert(reclaimed.heap.slots[0].retired);
+    GCHTransitionResult allocated = gch_allocate(reclaimed.heap, 7);
     assert(allocated.status == GCH_OK);
     assert(allocated.handle.slot_id == 2);
 }
