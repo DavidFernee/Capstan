@@ -170,6 +170,18 @@ bool deadeye_mp4_scan_children(
             if (state.track_count > DEADEYE_MP4_MAX_TRACKS) { return false; }
         }
         if (deadeye_mp4_box_type(box, 'm', 'v', 'h', 'd')) {
+            if (state.has_mvhd) { return false; }
+            int payload_bytes = box.end - box.payload_start;
+            if (payload_bytes < 20) { return false; }
+            int version = bytes[box.payload_start];
+            int timescale_at = box.payload_start + 12;
+            if (version == 1) {
+                if (payload_bytes < 32) { return false; }
+                timescale_at = box.payload_start + 20;
+            } else if (version != 0) {
+                return false;
+            }
+            if (deadeye_mp4_u32_be(bytes, timescale_at) == 0) { return false; }
             state.has_mvhd = true;
         }
         if (deadeye_mp4_is_container(box)) {
@@ -353,6 +365,7 @@ List<int> deadeye_mp4_test_minimal_file() {
 
     List<int> mvhd_payload = new List<int>();
     for (int i = 0; i < 20; i += 1) { mvhd_payload.push(0); }
+    mvhd_payload[15] = 232; // timescale = 1000, big-endian at payload offset 12
     List<int> mvhd = new List<int>();
     deadeye_mp4_test_push_box(mvhd, 'm', 'v', 'h', 'd', mvhd_payload);
     List<int> trak = new List<int>();
