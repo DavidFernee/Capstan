@@ -618,7 +618,18 @@ void test_display_list(Tally t, Font font) {
     a.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
     recorder.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
 
+    // A recorded mask owns its pixels; mutating the font-side source afterwards
+    // must not change the already-recorded frame.
+    List<int> mask = new List<int>();
+    mask.push(255);
+    a.draw_mask(mask, 1, 1, 40, 30, solid(0xFFFFFF00));
+    recorder.draw_mask(mask, 1, 1, 40, 30, solid(0xFFFFFF00));
+    mask[0] = 0;
+
     DisplayList frame = finish_display_list(recorder);
+    int published_commands = frame.commands.len();
+    // Appending to the recorder after publication must not mutate the frame.
+    recorder.fill_rect(rect_px(45, 33, 1, 1), solid(0xFFFF0000));
     execute_display_list(frame, replayed);
     bool same = direct.px.len() == replayed.px.len();
     for (int i = 0; i < direct.px.len() && same; i += 1) {
@@ -626,9 +637,13 @@ void test_display_list(Tally t, Font font) {
     }
     expect(t, same, "display list: replay is byte-identical to immediate software rasterisation",
         $"commands={frame.commands.len()}");
-    expect(t, frame.width == 48 && frame.height == 36 && frame.commands.len() >= 4,
+    expect(t, frame.width == 48 && frame.height == 36 && frame.commands.len() >= 5,
         "display list: frame dimensions and commands are retained",
         $"{frame.width}x{frame.height}, {frame.commands.len()} commands");
+    expect_int(t, frame.commands.len(), published_commands,
+        "display list: published command sequence is isolated from later recording");
+    expect_int(t, ch_r(replayed.get(40, 30)), 255,
+        "display list: glyph mask pixels are snapshotted at record time");
 }
 
 void test_blend_bounds(Tally t) {
