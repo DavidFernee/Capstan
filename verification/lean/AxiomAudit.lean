@@ -128,3 +128,14 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.finiteProgram_targets_bounded
 
 #print axioms CapstanVerification.validateFunctionInstr_rejects_return_mismatch
+
+#print axioms CapstanVerification.decodeNativeTypeTag_int_iff
+#print axioms CapstanVerification.decodeNativeTypeTag_bool_iff
+#print axioms CapstanVerification.nativeRegisterInit_matches_int
+#print axioms CapstanVerification.nativeRegisterInit_matches_bool
+#print axioms CapstanVerification.nativeRegisterReadInt_corresponds
+#print axioms CapstanVerification.nativeRegisterReadBool_corresponds
+#print axioms CapstanVerification.nativeRegisterWriteInt_preserves_relation
+#print axioms CapstanVerification.nativeRegisterWriteBool_preserves_relation
+#print axioms CapstanVerification.nativeRegisterWriteInt_readback
+#print axioms CapstanVerification.nativeRegisterWriteBool_readback
