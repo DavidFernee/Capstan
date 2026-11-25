@@ -80,64 +80,6 @@ WaylandPayloadSpan wayland_complete_payload_span(int length, int data_offset, in
 // Parse a length-prefixed Wayland array/string as a span into tainted input.
 // String lengths include a trailing NUL; zero length is the nullable wire value.
 // No copy or declassification occurs. Interface metadata decides nullability.
-WaylandPayloadSpan wayland_payload_span(Tainted bytes, int offset, int end, bool nul_terminated) {
-    WaylandPayloadWord word = wayland_payload_word(bytes, offset, end);
-    if (word.status != 1) {
-        if (word.status == 0) { return wayland_incomplete_payload_span(); }
-        return wayland_bad_payload_span();
-    }
-    int length = word.value;
-    if (length > WAYLAND_MAX_FRAME_BYTES - 12) { return wayland_bad_payload_span(); }
-    int padded = ((length + 3) / 4) * 4;
-    int data_offset = word.end_offset;
-    int payload_end = data_offset + padded;
-    if (payload_end > end) { return wayland_incomplete_payload_span(); }
-    if (nul_terminated && length > 0) {
-        if (bytes.at(data_offset + length - 1) != 0) { return wayland_bad_payload_span(); }
-        for (int i = 0; i < length - 1; i += 1) {
-            if (bytes.at(data_offset + i) == 0) { return wayland_bad_payload_span(); }
-        }
-        if (!wayland_utf8_valid_span(bytes, data_offset, length - 1)) { return wayland_bad_payload_span(); }
-    }
-    return wayland_complete_payload_span(length, data_offset, payload_end);
-}
-WaylandPayloadSpan wayland_payload_array(Tainted bytes, int offset, int end) {
-    return wayland_payload_span(bytes, offset, end, false);
-}
-WaylandPayloadSpan wayland_payload_string(Tainted bytes, int offset, int end) {
-    return wayland_payload_span(bytes, offset, end, true);
-}
-
- // Bind payload parsing to a previously validated frame boundary. This prevents
- // a length field in one frame from consuming bytes belonging to the next frame.
-WaylandPayloadSpan wayland_frame_payload_span(Tainted bytes, WaylandFrameHeader frame, int offset, bool nul_terminated) {
-    if (frame.status != 1 || !wayland_frame_size_valid(frame.size)) { return wayland_bad_payload_span(); }
-    if (frame.end_offset < frame.size || frame.end_offset > bytes.len()) { return wayland_bad_payload_span(); }
-    int frame_start = frame.end_offset - frame.size;
-    WaylandFrameHeader actual = wayland_frame_header(bytes, frame_start);
-    if (actual.status != 1 || actual.object_id != frame.object_id
-        || actual.opcode != frame.opcode || actual.size != frame.size
-        || actual.end_offset != frame.end_offset) { return wayland_bad_payload_span(); }
-    int payload_start = frame_start + WAYLAND_HEADER_BYTES;
-    if (offset < payload_start || offset > frame.end_offset) { return wayland_bad_payload_span(); }
-    return wayland_payload_span(bytes, offset, frame.end_offset, nul_terminated);
-}
-WaylandPayloadSpan wayland_frame_array(Tainted bytes, WaylandFrameHeader frame, int offset) {
-    return wayland_frame_payload_span(bytes, frame, offset, false);
-}
-WaylandPayloadSpan wayland_frame_string(Tainted bytes, WaylandFrameHeader frame, int offset) {
-    return wayland_frame_payload_span(bytes, frame, offset, true);
-}
-
- // Decode a Wayland signed int32 without relying on the host's integer width.
-WaylandPayloadWord wayland_payload_i32(Tainted bytes, int offset, int end) {
-    WaylandPayloadWord word = wayland_payload_word(bytes, offset, end);
-    if (word.status != 1) { return word; }
-    int value = word.value;
-    if (value >= 2147483648) { value -= 4294967296; }
-    return wayland_complete_payload_word(value, word.end_offset);
-}
-
 bool wayland_utf8_continuation(int b) { return b >= 0x80 && b <= 0xBF; }
 
 // Validate UTF-8 without allocating or converting the tainted wire bytes.
@@ -194,4 +136,62 @@ bool wayland_utf8_valid_span(Tainted bytes, int start, int length) {
         return false;
     }
     return true;
+}
+
+WaylandPayloadSpan wayland_payload_span(Tainted bytes, int offset, int end, bool nul_terminated) {
+    WaylandPayloadWord word = wayland_payload_word(bytes, offset, end);
+    if (word.status != 1) {
+        if (word.status == 0) { return wayland_incomplete_payload_span(); }
+        return wayland_bad_payload_span();
+    }
+    int length = word.value;
+    if (length > WAYLAND_MAX_FRAME_BYTES - 12) { return wayland_bad_payload_span(); }
+    int padded = ((length + 3) / 4) * 4;
+    int data_offset = word.end_offset;
+    int payload_end = data_offset + padded;
+    if (payload_end > end) { return wayland_incomplete_payload_span(); }
+    if (nul_terminated && length > 0) {
+        if (bytes.at(data_offset + length - 1) != 0) { return wayland_bad_payload_span(); }
+        for (int i = 0; i < length - 1; i += 1) {
+            if (bytes.at(data_offset + i) == 0) { return wayland_bad_payload_span(); }
+        }
+        if (!wayland_utf8_valid_span(bytes, data_offset, length - 1)) { return wayland_bad_payload_span(); }
+    }
+    return wayland_complete_payload_span(length, data_offset, payload_end);
+}
+WaylandPayloadSpan wayland_payload_array(Tainted bytes, int offset, int end) {
+    return wayland_payload_span(bytes, offset, end, false);
+}
+WaylandPayloadSpan wayland_payload_string(Tainted bytes, int offset, int end) {
+    return wayland_payload_span(bytes, offset, end, true);
+}
+
+ // Bind payload parsing to a previously validated frame boundary. This prevents
+ // a length field in one frame from consuming bytes belonging to the next frame.
+WaylandPayloadSpan wayland_frame_payload_span(Tainted bytes, WaylandFrameHeader frame, int offset, bool nul_terminated) {
+    if (frame.status != 1 || !wayland_frame_size_valid(frame.size)) { return wayland_bad_payload_span(); }
+    if (frame.end_offset < frame.size || frame.end_offset > bytes.len()) { return wayland_bad_payload_span(); }
+    int frame_start = frame.end_offset - frame.size;
+    WaylandFrameHeader actual = wayland_frame_header(bytes, frame_start);
+    if (actual.status != 1 || actual.object_id != frame.object_id
+        || actual.opcode != frame.opcode || actual.size != frame.size
+        || actual.end_offset != frame.end_offset) { return wayland_bad_payload_span(); }
+    int payload_start = frame_start + WAYLAND_HEADER_BYTES;
+    if (offset < payload_start || offset > frame.end_offset) { return wayland_bad_payload_span(); }
+    return wayland_payload_span(bytes, offset, frame.end_offset, nul_terminated);
+}
+WaylandPayloadSpan wayland_frame_array(Tainted bytes, WaylandFrameHeader frame, int offset) {
+    return wayland_frame_payload_span(bytes, frame, offset, false);
+}
+WaylandPayloadSpan wayland_frame_string(Tainted bytes, WaylandFrameHeader frame, int offset) {
+    return wayland_frame_payload_span(bytes, frame, offset, true);
+}
+
+ // Decode a Wayland signed int32 without relying on the host's integer width.
+WaylandPayloadWord wayland_payload_i32(Tainted bytes, int offset, int end) {
+    WaylandPayloadWord word = wayland_payload_word(bytes, offset, end);
+    if (word.status != 1) { return word; }
+    int value = word.value;
+    if (value >= 2147483648) { value -= 4294967296; }
+    return wayland_complete_payload_word(value, word.end_offset);
 }
