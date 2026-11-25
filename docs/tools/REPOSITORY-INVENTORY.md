@@ -17,7 +17,8 @@ The current compiler wrapper emits C and therefore still requires the existing C
 ## Run against tracked files
 
 ```sh
-mapfile -d '' -t tracked < <(git ls-files -z)
+tracked=()
+while IFS= read -r -d '' path; do tracked[${#tracked[@]}]="$path"; done < <(git ls-files -z)
 build/capstan-inventory --output build/inventory.csv -- "${tracked[@]}"
 ```
 
