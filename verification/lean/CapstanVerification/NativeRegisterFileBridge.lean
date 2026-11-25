@@ -497,6 +497,65 @@ theorem nativeRegisterMatches_tag_eq_iff
             (by simpa [htype] using hreplacementTag')
         exact hleft.trans hright.symm
 
+/-- Equal-length related register files provide paired witnesses for every
+in-bounds index. This removes the need for callers to supply two independent
+list-lookup witnesses when reasoning about a shared dynamic index. -/
+theorem nativeRuntimeRegisterFileRelation_slot_exists
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hrel : NativeRuntimeRegisterFileRelation native runtime)
+    (index : Nat) (hbound : index < native.length) :
+    ∃ nativeReg runtimeReg,
+      native[index]? = some nativeReg ∧
+      runtime[index]? = some runtimeReg ∧
+      NativeRegisterMatches nativeReg runtimeReg := by
+  induction native generalizing runtime index with
+  | nil => simp at hbound
+  | cons nativeHead nativeTail ih =>
+      cases runtime with
+      | nil =>
+          have hfalse : False := by
+            have hlen : (nativeHead :: nativeTail).length = ([] : List RuntimeRegister).length :=
+              hrel.length_eq
+            simp at hlen
+          exact hfalse.elim
+      | cons runtimeHead runtimeTail =>
+          cases index with
+          | zero =>
+              exact ⟨nativeHead, runtimeHead, rfl, rfl,
+                hrel.matches_at 0 nativeHead runtimeHead rfl rfl⟩
+          | succ index =>
+              have htail : NativeRuntimeRegisterFileRelation nativeTail runtimeTail := by
+                constructor
+                · simpa using hrel.length_eq
+                · intro j nativeReg runtimeReg hnative hruntime
+                  exact hrel.matches_at (Nat.succ j) nativeReg runtimeReg
+                    (by simpa using hnative) (by simpa using hruntime)
+              have htailBound : index < nativeTail.length := by
+                simpa using hbound
+              obtain ⟨nativeReg, runtimeReg, hnative, hruntime, hmatch⟩ :=
+                ih htail htailBound
+              exact ⟨nativeReg, runtimeReg,
+                by simpa using hnative,
+                by simpa using hruntime,
+                hmatch⟩
+
+/-- For every in-bounds index, native and abstract dynamic writes have the
+same acceptance decision without caller-supplied slot witnesses. -/
+theorem nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts_of_in_bounds
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hrel : NativeRuntimeRegisterFileRelation native runtime)
+    (index : Nat) (hbound : index < native.length)
+    (nativeReplacement : NativeCCAMRegister)
+    (runtimeReplacement : RuntimeRegister)
+    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement) :
+    (∃ updated, nativeWriteRegister native index nativeReplacement = .ok updated) ↔
+      (∃ updated, runtimeWriteRegister runtime index runtimeReplacement = .ok updated) := by
+  obtain ⟨oldNative, oldRuntime, hnativeSlot, hruntimeSlot, _⟩ :=
+    nativeRuntimeRegisterFileRelation_slot_exists hrel index hbound
+  exact nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts
+    hrel index oldNative oldRuntime nativeReplacement runtimeReplacement
+    hnativeSlot hruntimeSlot hreplacement
+
 /-- Given witnesses for the same existing slot in related files, native and
 abstract dynamic writes have identical success/failure acceptance decisions.
 The separate preservation theorem supplies the relation between successful
