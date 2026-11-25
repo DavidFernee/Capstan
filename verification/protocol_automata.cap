@@ -1,0 +1,343 @@
+// Finite protocol-automaton descriptor and reference interpreter.
+//
+// This is a deliberately bounded, non-recursive automaton core. It validates
+// deterministic labelled transitions, reachability, terminal states and
+// acyclicity before interpreting any operation. It is not yet a language
+// type-system feature or a compiler/runtime refinement proof.
+
+const int PA_MAX_STATES = 32;
+const int PA_MAX_TRANSITIONS = 128;
+const int PA_MAX_ROLES = 8;
+const int PA_MAX_OPERATION = 255;
+
+struct PAEdge {
+    int from_state;
+    int role;
+    int operation;
+    int to_state;
+}
+
+struct PASpec {
+    int state_count;
+    int role_count;
+    int initial_state;
+    List<PAEdge> transitions;
+    List<int> terminal_states;
+}
+
+struct PAValidation {
+    bool valid;
+    string error;
+}
+
+struct PAStep {
+    bool accepted;
+    int next_state;
+    string error;
+}
+
+bool pa_contains(List<int> values, int value) {
+    for (int i = 0; i < values.len(); i += 1) {
+        if (values[i] == value) { return true; }
+    }
+    return false;
+}
+
+PAValidation pa_reject(string error) {
+    return new PAValidation{valid: false, error: error};
+}
+
+PAValidation pa_accept() {
+    return new PAValidation{valid: true, error: ""};
+}
+
+PAValidation pa_validate(PASpec spec) {
+    if (spec.state_count < 1 || spec.state_count > PA_MAX_STATES) {
+        return pa_reject("invalid_state_count");
+    }
+    if (spec.role_count < 1 || spec.role_count > PA_MAX_ROLES) {
+        return pa_reject("invalid_role_count");
+    }
+    if (spec.initial_state < 0 || spec.initial_state >= spec.state_count) {
+        return pa_reject("invalid_initial_state");
+    }
+    if (spec.transitions.len() > PA_MAX_TRANSITIONS) {
+        return pa_reject("too_many_transitions");
+    }
+    if (spec.terminal_states.len() == 0 ||
+        spec.terminal_states.len() > spec.state_count) {
+        return pa_reject("invalid_terminal_state_set");
+    }
+
+    for (int i = 0; i < spec.terminal_states.len(); i += 1) {
+        int terminal = spec.terminal_states[i];
+        if (terminal < 0 || terminal >= spec.state_count) {
+            return pa_reject("terminal_state_out_of_range");
+        }
+        for (int j = 0; j < i; j += 1) {
+            if (spec.terminal_states[j] == terminal) {
+                return pa_reject("duplicate_terminal_state");
+            }
+        }
+    }
+
+    // A terminal state is a true protocol endpoint, not a state with
+    // additional outgoing operations.
+    for (int i = 0; i < spec.transitions.len(); i += 1) {
+        PAEdge edge = spec.transitions[i];
+        if (edge.from_state < 0 || edge.from_state >= spec.state_count ||
+            edge.to_state < 0 || edge.to_state >= spec.state_count) {
+            return pa_reject("transition_state_out_of_range");
+        }
+        if (edge.role < 0 || edge.role >= spec.role_count) {
+            return pa_reject("transition_role_out_of_range");
+        }
+        if (edge.operation < 1 || edge.operation > PA_MAX_OPERATION) {
+            return pa_reject("invalid_operation");
+        }
+        if (pa_contains(spec.terminal_states, edge.from_state)) {
+            return pa_reject("terminal_state_has_outgoing_transition");
+        }
+        for (int j = 0; j < i; j += 1) {
+            PAEdge prior = spec.transitions[j];
+            if (prior.from_state == edge.from_state &&
+                prior.role == edge.role &&
+                prior.operation == edge.operation) {
+                return pa_reject("nondeterministic_transition_label");
+            }
+        }
+    }
+
+    // Compute transitive closure over the bounded state graph. Any diagonal
+    // reachability denotes a cycle, which this first finite core excludes.
+    List<int> reach = new List<int>();
+    for (int i = 0; i < spec.state_count * spec.state_count; i += 1) {
+        reach.push(0);
+    }
+    for (int i = 0; i < spec.transitions.len(); i += 1) {
+        PAEdge edge = spec.transitions[i];
+        reach[edge.from_state * spec.state_count + edge.to_state] = 1;
+    }
+    for (int via = 0; via < spec.state_count; via += 1) {
+        for (int from = 0; from < spec.state_count; from += 1) {
+            for (int to = 0; to < spec.state_count; to += 1) {
+                int from_via = reach[from * spec.state_count + via];
+                int via_to = reach[via * spec.state_count + to];
+                if (from_via == 1 && via_to == 1) {
+                    reach[from * spec.state_count + to] = 1;
+                }
+            }
+        }
+    }
+    for (int state = 0; state < spec.state_count; state += 1) {
+        if (reach[state * spec.state_count + state] == 1) {
+            return pa_reject("cyclic_protocol");
+        }
+    }
+
+    // Every declared state must be reachable from the initial state.
+    List<int> reached = new List<int>();
+    reached.push(spec.initial_state);
+    int cursor = 0;
+    while (cursor < reached.len()) {
+        int current = reached[cursor];
+        cursor += 1;
+        for (int i = 0; i < spec.transitions.len(); i += 1) {
+            PAEdge edge = spec.transitions[i];
+            if (edge.from_state == current &&
+                !pa_contains(reached, edge.to_state)) {
+                reached.push(edge.to_state);
+            }
+        }
+    }
+    if (reached.len() != spec.state_count) {
+        return pa_reject("unreachable_protocol_state");
+    }
+
+    // Every nonterminal state must have at least one outgoing operation.
+    for (int state = 0; state < spec.state_count; state += 1) {
+        if (pa_contains(spec.terminal_states, state)) { continue; }
+        bool has_outgoing = false;
+        for (int i = 0; i < spec.transitions.len(); i += 1) {
+            if (spec.transitions[i].from_state == state) {
+                has_outgoing = true;
+                break;
+            }
+        }
+        if (!has_outgoing) { return pa_reject("nonterminal_dead_end"); }
+    }
+
+    // At least one declared terminal must be reachable from the initial
+    // state. Combined with reachability and acyclicity, every maximal path
+    // through this finite graph ends at a declared terminal.
+    bool terminal_reachable = false;
+    for (int i = 0; i < spec.terminal_states.len(); i += 1) {
+        if (pa_contains(reached, spec.terminal_states[i])) {
+            terminal_reachable = true;
+        }
+    }
+    if (!terminal_reachable) { return pa_reject("no_reachable_terminal"); }
+    return pa_accept();
+}
+
+PAStep pa_step(PASpec spec, int current_state, int role, int operation) {
+    PAValidation validation = pa_validate(spec);
+    if (!validation.valid) {
+        return new PAStep{
+            accepted: false,
+            next_state: current_state,
+            error: validation.error
+        };
+    }
+    if (current_state < 0 || current_state >= spec.state_count) {
+        return new PAStep{
+            accepted: false,
+            next_state: current_state,
+            error: "current_state_out_of_range"
+        };
+    }
+    if (role < 0 || role >= spec.role_count ||
+        operation < 1 || operation > PA_MAX_OPERATION) {
+        return new PAStep{
+            accepted: false,
+            next_state: current_state,
+            error: "invalid_role_or_operation"
+        };
+    }
+    if (pa_contains(spec.terminal_states, current_state)) {
+        return new PAStep{
+            accepted: false,
+            next_state: current_state,
+            error: "protocol_already_terminal"
+        };
+    }
+    for (int i = 0; i < spec.transitions.len(); i += 1) {
+        PAEdge edge = spec.transitions[i];
+        if (edge.from_state == current_state &&
+            edge.role == role && edge.operation == operation) {
+            return new PAStep{
+                accepted: true,
+                next_state: edge.to_state,
+                error: ""
+            };
+        }
+    }
+    return new PAStep{
+        accepted: false,
+        next_state: current_state,
+        error: "operation_not_enabled"
+    };
+}
+
+PASpec pa_linear_message_protocol() {
+    List<PAEdge> transitions = new List<PAEdge>();
+    transitions.push(new PAEdge{
+        from_state: 0, role: 1, operation: 1, to_state: 1
+    });
+    transitions.push(new PAEdge{
+        from_state: 1, role: 1, operation: 2, to_state: 2
+    });
+    transitions.push(new PAEdge{
+        from_state: 2, role: 2, operation: 3, to_state: 3
+    });
+    transitions.push(new PAEdge{
+        from_state: 3, role: 2, operation: 4, to_state: 4
+    });
+    List<int> terminals = new List<int>();
+    terminals.push(4);
+    return new PASpec{
+        state_count: 5,
+        role_count: 3,
+        initial_state: 0,
+        transitions: transitions,
+        terminal_states: terminals
+    };
+}
+
+test "PA validates and executes a finite linear message protocol" {
+    PASpec spec = pa_linear_message_protocol();
+    PAValidation valid = pa_validate(spec);
+    assert(valid.valid);
+    PAStep produce = pa_step(spec, 0, 1, 1);
+    assert(produce.accepted && produce.next_state == 1);
+    PAStep send = pa_step(spec, produce.next_state, 1, 2);
+    assert(send.accepted && send.next_state == 2);
+    PAStep receive = pa_step(spec, send.next_state, 2, 3);
+    assert(receive.accepted && receive.next_state == 3);
+    PAStep release = pa_step(spec, receive.next_state, 2, 4);
+    assert(release.accepted && release.next_state == 4);
+    PAStep after_terminal = pa_step(spec, release.next_state, 2, 5);
+    assert(!after_terminal.accepted);
+    assert(after_terminal.error == "protocol_already_terminal");
+    assert(after_terminal.next_state == 4);
+}
+
+test "PA rejects an operation from the wrong role without changing state" {
+    PASpec spec = pa_linear_message_protocol();
+    PAStep rejected = pa_step(spec, 0, 2, 1);
+    assert(!rejected.accepted && rejected.error == "operation_not_enabled");
+    assert(rejected.next_state == 0);
+}
+
+test "PA rejects duplicate transition labels as nondeterministic" {
+    PASpec spec = pa_linear_message_protocol();
+    spec.transitions.push(new PAEdge{
+        from_state: 0, role: 1, operation: 1, to_state: 2
+    });
+    PAValidation result = pa_validate(spec);
+    assert(!result.valid);
+    assert(result.error == "nondeterministic_transition_label");
+}
+
+test "PA rejects a cyclic protocol" {
+    PASpec spec = pa_linear_message_protocol();
+    spec.transitions.push(new PAEdge{
+        from_state: 4, role: 1, operation: 9, to_state: 0
+    });
+    spec.terminal_states = new List<int>();
+    PAValidation result = pa_validate(spec);
+    assert(!result.valid);
+    assert(result.error == "terminal_state_has_outgoing_transition" ||
+        result.error == "cyclic_protocol");
+}
+
+test "PA rejects unreachable states" {
+    PASpec spec = pa_linear_message_protocol();
+    spec.state_count = 6;
+    PAValidation result = pa_validate(spec);
+    assert(!result.valid && result.error == "unreachable_protocol_state");
+}
+
+test "PA rejects nonterminal dead ends" {
+    PASpec spec = pa_linear_message_protocol();
+    spec.transitions = new List<PAEdge>();
+    spec.transitions.push(new PAEdge{
+        from_state: 0, role: 1, operation: 1, to_state: 1
+    });
+    spec.transitions.push(new PAEdge{
+        from_state: 1, role: 1, operation: 2, to_state: 2
+    });
+    spec.transitions.push(new PAEdge{
+        from_state: 2, role: 2, operation: 3, to_state: 3
+    });
+    spec.terminal_states = new List<int>();
+    spec.terminal_states.push(4);
+    PASpec result_spec = new PASpec{
+        state_count: 5,
+        role_count: 3,
+        initial_state: 0,
+        transitions: spec.transitions,
+        terminal_states: spec.terminal_states
+    };
+    PAValidation result = pa_validate(result_spec);
+    assert(!result.valid && result.error == "unreachable_protocol_state");
+}
+
+test "PA rejects out-of-range roles and states" {
+    PASpec spec = pa_linear_message_protocol();
+    spec.transitions[0] = new PAEdge{
+        from_state: 0, role: 9, operation: 1, to_state: 1
+    };
+    PAValidation result = pa_validate(spec);
+    assert(!result.valid && result.error == "transition_role_out_of_range");
+}
