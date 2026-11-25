@@ -1,0 +1,403 @@
+// Shroud: bounded, metadata-driven Wayland interface/opcode validation.
+// This layer consumes the wire parser's validated frame and never performs I/O.
+// Message metadata is supplied by a protocol binding; this is not a generated
+// copy of the complete wayland.xml catalogue.
+const int WAYLAND_OBJECT_SLOTS_MAX = 1024;
+const int WAYLAND_MESSAGE_ARGS_MAX = 64;
+const int WAYLAND_FDS_MAX = 16;
+const int WAYLAND_DIRECTION_REQUEST = 0;
+const int WAYLAND_DIRECTION_EVENT = 1;
+const int WAYLAND_ARG_UINT = 1;
+const int WAYLAND_ARG_INT = 2;
+const int WAYLAND_ARG_FIXED = 3;
+const int WAYLAND_ARG_BOOL = 4;
+const int WAYLAND_ARG_STRING = 5;
+const int WAYLAND_ARG_ARRAY = 6;
+const int WAYLAND_ARG_OBJECT = 7;
+const int WAYLAND_ARG_NEW_ID = 8;
+const int WAYLAND_ARG_FD = 9;
+
+// Object states: 0 unused/released, 1 live, 2 retired awaiting protocol release.
+const int WAYLAND_OBJECT_OWNER_UNSPECIFIED = 0;
+const int WAYLAND_OBJECT_OWNER_CLIENT = 1;
+const int WAYLAND_OBJECT_OWNER_SERVER = 2;
+const int WAYLAND_CLIENT_OBJECT_ID_MIN = 2;
+const int WAYLAND_CLIENT_OBJECT_ID_MAX = 4278190079;
+const int WAYLAND_SERVER_OBJECT_ID_MIN = 4278190080;
+const int WAYLAND_SERVER_OBJECT_ID_MAX = 4294967295;
+
+struct WaylandObject {
+    int id;
+    int interface_id;
+    int version;
+    int state; // 0 unused, 1 live, 2 retired awaiting delete_id, 3 released client ID
+    int owner;
+}
+struct WaylandObjectTable {
+    List<WaylandObject> slots;
+    int next_client_id;
+    int next_server_id;
+}
+struct WaylandArgSpec {
+    int kind;
+    int interface_id;
+    int version;
+    bool nullable;
+}
+struct WaylandMessageSpec {
+    int interface_id;
+    int opcode;
+    int direction;
+    int since_version;
+    List<WaylandArgSpec> args;
+    int fd_count;
+    bool destroys_target;
+}
+struct WaylandProtocolResult {
+    int status;
+    int next_offset;
+    int fd_count;
+    List<int> created_ids;
+    int retired_id;
+}
+
+WaylandObject wayland_empty_object() {
+    return new WaylandObject{id: 0, interface_id: 0, version: 0, state: 0, owner: WAYLAND_OBJECT_OWNER_UNSPECIFIED};
+}
+WaylandObjectTable wayland_object_table() {
+    // Preallocate the bounded slot table. Message commits then cannot allocate
+    // while partially applying a set of new object IDs.
+    List<WaylandObject> slots = new List<WaylandObject>();
+    for (int i = 0; i < WAYLAND_OBJECT_SLOTS_MAX; i += 1) { slots.push(wayland_empty_object()); }
+    return new WaylandObjectTable{slots: slots, next_client_id: WAYLAND_CLIENT_OBJECT_ID_MIN,
+        next_server_id: WAYLAND_SERVER_OBJECT_ID_MIN};
+}
+WaylandProtocolResult wayland_protocol_result(int status, int next_offset, int fd_count,
+    List<int> created_ids, int retired_id) {
+    return new WaylandProtocolResult{status: status, next_offset: next_offset,
+        fd_count: fd_count, created_ids: created_ids, retired_id: retired_id};
+}
+WaylandProtocolResult wayland_protocol_error() {
+    return wayland_protocol_result(-1, 0, 0, new List<int>(), 0);
+}
+WaylandProtocolResult wayland_protocol_incomplete() {
+    return wayland_protocol_result(0, 0, 0, new List<int>(), 0);
+}
+
+int wayland_object_index(WaylandObjectTable table, int id) {
+    for (int i = 0; i < table.slots.len(); i += 1) {
+        if (table.slots[i].state != 0 && table.slots[i].id == id) { return i; }
+    }
+    return -1;
+}
+WaylandObject wayland_object_get(WaylandObjectTable table, int id) {
+    int i = wayland_object_index(table, id);
+    if (i < 0 || table.slots[i].state != 1) { return wayland_empty_object(); }
+    return table.slots[i];
+}
+int wayland_object_free_slots(WaylandObjectTable table) {
+    int free = 0;
+    for (int i = 0; i < table.slots.len(); i += 1) {
+        if (table.slots[i].state == 0) { free += 1; }
+    }
+    return free;
+}
+// Object ID 1 is the only bootstrap object installed outside the two allocators.
+bool wayland_object_add(WaylandObjectTable table, int id, int interface_id, int version) {
+    if (id != 1 || interface_id <= 0 || version <= 0
+        || wayland_object_index(table, id) >= 0 || wayland_object_free_slots(table) <= 0) { return false; }
+    WaylandObject value = new WaylandObject{id: id, interface_id: interface_id, version: version,
+        state: 1, owner: WAYLAND_OBJECT_OWNER_UNSPECIFIED};
+    for (int i = 0; i < table.slots.len(); i += 1) {
+        if (table.slots[i].state == 0) { table.slots[i] = value; return true; }
+    }
+    return false;
+}
+// Client-created IDs are allocated densely from 2. A previously allocated ID
+// becomes reusable only after a matching wl_display.delete_id release.
+bool wayland_object_add_client(WaylandObjectTable table, int id, int interface_id, int version) {
+    if (id < WAYLAND_CLIENT_OBJECT_ID_MIN || id > WAYLAND_CLIENT_OBJECT_ID_MAX
+        || interface_id <= 0 || version <= 0) { return false; }
+    int existing = wayland_object_index(table, id);
+    if (id == table.next_client_id) {
+        if (existing >= 0 || table.next_client_id > WAYLAND_CLIENT_OBJECT_ID_MAX
+            || wayland_object_free_slots(table) <= 0) { return false; }
+        int slot = -1;
+        for (int i = 0; i < table.slots.len(); i += 1) {
+            if (slot < 0 && table.slots[i].state == 0) { slot = i; }
+        }
+        if (slot < 0) { return false; }
+        table.slots[slot] = new WaylandObject{id: id, interface_id: interface_id, version: version,
+            state: 1, owner: WAYLAND_OBJECT_OWNER_CLIENT};
+        table.next_client_id += 1;
+        return true;
+    }
+    if (id > table.next_client_id || existing < 0 || table.slots[existing].state != 3
+        || table.slots[existing].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
+    table.slots[existing] = new WaylandObject{id: id, interface_id: interface_id, version: version,
+        state: 1, owner: WAYLAND_OBJECT_OWNER_CLIENT};
+    return true;
+}
+bool wayland_object_add_server(WaylandObjectTable table, int id, int interface_id, int version) {
+    if (id != table.next_server_id || id < WAYLAND_SERVER_OBJECT_ID_MIN
+        || id > WAYLAND_SERVER_OBJECT_ID_MAX || interface_id <= 0 || version <= 0
+        || wayland_object_index(table, id) >= 0 || wayland_object_free_slots(table) <= 0) { return false; }
+    int slot = -1;
+    for (int i = 0; i < table.slots.len(); i += 1) {
+        if (slot < 0 && table.slots[i].state == 0) { slot = i; }
+    }
+    if (slot < 0) { return false; }
+    table.slots[slot] = new WaylandObject{id: id, interface_id: interface_id, version: version,
+        state: 1, owner: WAYLAND_OBJECT_OWNER_SERVER};
+    table.next_server_id += 1;
+    return true;
+}
+bool wayland_server_ids_can_allocate(WaylandObjectTable table, List<int> ids) {
+    int next_id = table.next_server_id;
+    for (int i = 0; i < ids.len(); i += 1) {
+        if (ids[i] != next_id || next_id > WAYLAND_SERVER_OBJECT_ID_MAX
+            || wayland_object_index(table, ids[i]) >= 0) { return false; }
+        next_id += 1;
+        for (int j = 0; j < i; j += 1) { if (ids[j] == ids[i]) { return false; } }
+    }
+    return wayland_object_free_slots(table) >= ids.len();
+}
+bool wayland_object_destroy_server(WaylandObjectTable table, int id) {
+    int i = wayland_object_index(table, id);
+    if (i < 0 || table.slots[i].state != 1
+        || table.slots[i].owner != WAYLAND_OBJECT_OWNER_SERVER) { return false; }
+    table.slots[i] = wayland_empty_object();
+    return true;
+}
+
+bool wayland_client_ids_can_allocate(WaylandObjectTable table, List<int> ids) {
+    int next_id = table.next_client_id;
+    int new_slots_needed = 0;
+    for (int i = 0; i < ids.len(); i += 1) {
+        int id = ids[i];
+        int existing = wayland_object_index(table, id);
+        if (id == next_id) {
+            if (existing >= 0 || next_id > WAYLAND_CLIENT_OBJECT_ID_MAX) { return false; }
+            next_id += 1;
+            new_slots_needed += 1;
+        } else {
+            if (id > next_id || existing < 0 || table.slots[existing].state != 3
+                || table.slots[existing].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
+        }
+        for (int j = 0; j < i; j += 1) { if (ids[j] == id) { return false; } }
+    }
+    return wayland_object_free_slots(table) >= new_slots_needed;
+}
+bool wayland_object_retire(WaylandObjectTable table, int id) {
+    int i = wayland_object_index(table, id);
+    if (i < 0 || table.slots[i].state != 1
+        || table.slots[i].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
+    table.slots[i].state = 2;
+    return true;
+}
+// A retired ID becomes reusable only after the protocol's explicit release
+// notification (for client-created IDs, wl_display.delete_id).
+bool wayland_object_release(WaylandObjectTable table, int id) {
+    int i = wayland_object_index(table, id);
+    if (i < 0 || table.slots[i].state != 2
+        || table.slots[i].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
+    table.slots[i].state = 3;
+    return true;
+}
+
+bool wayland_protocol_frame_valid(Tainted bytes, WaylandFrameHeader frame) {
+    if (frame.status != 1 || !wayland_frame_size_valid(frame.size)
+        || frame.end_offset < frame.size || frame.end_offset > bytes.len()) { return false; }
+    int start = frame.end_offset - frame.size;
+    WaylandFrameHeader actual = wayland_frame_header(bytes, start);
+    return actual.status == 1 && actual.object_id == frame.object_id
+        && actual.opcode == frame.opcode && actual.size == frame.size
+        && actual.end_offset == frame.end_offset;
+}
+
+bool wayland_arg_kind_valid(int kind) {
+    return kind >= WAYLAND_ARG_UINT && kind <= WAYLAND_ARG_FD;
+}
+bool wayland_arg_spec_valid(WaylandArgSpec arg) {
+    if (!wayland_arg_kind_valid(arg.kind)) { return false; }
+    if (arg.kind == WAYLAND_ARG_OBJECT) {
+        return arg.interface_id >= 0 && arg.version == 0;
+    }
+    if (arg.kind == WAYLAND_ARG_NEW_ID) {
+        return arg.interface_id > 0 && arg.version > 0 && !arg.nullable;
+    }
+    if (arg.kind == WAYLAND_ARG_STRING) {
+        return arg.interface_id == 0 && arg.version == 0;
+    }
+    return arg.interface_id == 0 && arg.version == 0 && !arg.nullable;
+}
+int wayland_message_fd_schema_count(WaylandMessageSpec spec) {
+    int count = 0;
+    for (int i = 0; i < spec.args.len(); i += 1) {
+        if (spec.args[i].kind == WAYLAND_ARG_FD) { count += 1; }
+    }
+    return count;
+}
+
+// Validate a single resolved message schema. All semantic checks and capacity
+// reservations happen before object-table mutation. Ancillary descriptors are
+// supplied by the transport and are counted here, never read from frame bytes.
+WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader frame,
+    WaylandObjectTable objects, WaylandMessageSpec spec, int direction, int received_fd_count) {
+    if (frame.status == 0) { return wayland_protocol_incomplete(); }
+    if (!wayland_protocol_frame_valid(bytes, frame) || direction < WAYLAND_DIRECTION_REQUEST
+        || direction > WAYLAND_DIRECTION_EVENT) { return wayland_protocol_error(); }
+    WaylandObject target = wayland_object_get(objects, frame.object_id);
+    if (target.state != 1 || target.interface_id != spec.interface_id
+        || target.version < spec.since_version || spec.since_version <= 0
+        || frame.opcode != spec.opcode || spec.direction != direction
+        || spec.args.len() > WAYLAND_MESSAGE_ARGS_MAX
+        || spec.interface_id <= 0
+        || (spec.destroys_target && target.owner == WAYLAND_OBJECT_OWNER_UNSPECIFIED)
+        || spec.fd_count < 0 || spec.fd_count > WAYLAND_FDS_MAX
+        || received_fd_count < 0 || received_fd_count > WAYLAND_FDS_MAX
+        || spec.fd_count != received_fd_count
+        || wayland_message_fd_schema_count(spec) != spec.fd_count) {
+        return wayland_protocol_error();
+    }
+
+    int cursor = frame.end_offset - frame.size + WAYLAND_HEADER_BYTES;
+    List<int> pending_ids = new List<int>();
+    List<int> pending_interfaces = new List<int>();
+    List<int> pending_versions = new List<int>();
+    int fds = 0;
+    for (int i = 0; i < spec.args.len(); i += 1) {
+        WaylandArgSpec arg = spec.args[i];
+        if (!wayland_arg_spec_valid(arg)) { return wayland_protocol_error(); }
+        if (arg.kind == WAYLAND_ARG_FD) {
+            fds += 1;
+        } else if (arg.kind == WAYLAND_ARG_UINT || arg.kind == WAYLAND_ARG_INT
+            || arg.kind == WAYLAND_ARG_FIXED || arg.kind == WAYLAND_ARG_BOOL) {
+            WaylandPayloadWord word = new WaylandPayloadWord{status: -1, value: 0, end_offset: 0};
+            if (arg.kind == WAYLAND_ARG_INT || arg.kind == WAYLAND_ARG_FIXED) {
+                word = wayland_payload_i32(bytes, cursor, frame.end_offset);
+            } else if (arg.kind == WAYLAND_ARG_BOOL) {
+                word = wayland_payload_bool(bytes, cursor, frame.end_offset);
+            } else {
+                word = wayland_payload_word(bytes, cursor, frame.end_offset);
+            }
+            if (word.status != 1) { return wayland_protocol_error(); }
+            cursor = word.end_offset;
+        } else if (arg.kind == WAYLAND_ARG_STRING || arg.kind == WAYLAND_ARG_ARRAY) {
+            WaylandPayloadSpan span = new WaylandPayloadSpan{status: -1, length: 0, data_offset: 0, end_offset: 0};
+            if (arg.kind == WAYLAND_ARG_STRING) {
+                span = wayland_frame_string(bytes, frame, cursor);
+            } else {
+                span = wayland_frame_array(bytes, frame, cursor);
+            }
+            if (span.status != 1 || (arg.kind == WAYLAND_ARG_STRING && span.length == 0 && !arg.nullable)) {
+                return wayland_protocol_error();
+            }
+            cursor = span.end_offset;
+        } else if (arg.kind == WAYLAND_ARG_OBJECT || arg.kind == WAYLAND_ARG_NEW_ID) {
+            WaylandPayloadWord word = wayland_payload_word(bytes, cursor, frame.end_offset);
+            if (word.status != 1) { return wayland_protocol_error(); }
+            cursor = word.end_offset;
+            if (arg.kind == WAYLAND_ARG_OBJECT) {
+                if (word.value == 0) {
+                    if (!arg.nullable) { return wayland_protocol_error(); }
+                } else {
+                    WaylandObject referenced = wayland_object_get(objects, word.value);
+                    if (referenced.state != 1 || (arg.interface_id != 0
+                        && referenced.interface_id != arg.interface_id)) { return wayland_protocol_error(); }
+                }
+            } else {
+                if (word.value == 0 || arg.interface_id <= 0 || arg.version <= 0) {
+                    return wayland_protocol_error();
+                }
+                for (int j = 0; j < pending_ids.len(); j += 1) {
+                    if (pending_ids[j] == word.value) { return wayland_protocol_error(); }
+                }
+                pending_ids.push(word.value);
+                pending_interfaces.push(arg.interface_id);
+                pending_versions.push(arg.version);
+            }
+        }
+    }
+    bool ids_valid = false;
+    if (direction == WAYLAND_DIRECTION_REQUEST) {
+        ids_valid = wayland_client_ids_can_allocate(objects, pending_ids);
+    } else {
+        ids_valid = wayland_server_ids_can_allocate(objects, pending_ids);
+    }
+    if (cursor != frame.end_offset || fds != received_fd_count || !ids_valid) {
+        return wayland_protocol_error();
+    }
+    if (spec.destroys_target && target.state != 1) { return wayland_protocol_error(); }
+
+    // Commit only after the complete frame, all arguments, descriptor count,
+    // object references, IDs and capacity have been validated.
+    for (int i = 0; i < pending_ids.len(); i += 1) {
+        bool added = false;
+        if (direction == WAYLAND_DIRECTION_REQUEST) {
+            added = wayland_object_add_client(objects, pending_ids[i], pending_interfaces[i], pending_versions[i]);
+        } else {
+            added = wayland_object_add_server(objects, pending_ids[i], pending_interfaces[i], pending_versions[i]);
+        }
+        if (!added) {
+            // Preflight makes this unreachable absent allocator failure or
+            // concurrent mutation; this API is single-thread confined.
+            return wayland_protocol_error();
+        }
+    }
+    int retired = 0;
+    if (spec.destroys_target) {
+        if (target.owner == WAYLAND_OBJECT_OWNER_CLIENT) {
+            if (!wayland_object_retire(objects, frame.object_id)) { return wayland_protocol_error(); }
+            retired = frame.object_id;
+        } else if (target.owner == WAYLAND_OBJECT_OWNER_SERVER) {
+            if (!wayland_object_destroy_server(objects, frame.object_id)) { return wayland_protocol_error(); }
+        }
+    }
+    return wayland_protocol_result(1, cursor, fds, pending_ids, retired);
+}
+
+// Resolve an opcode against metadata for the target object's interface and
+// direction. Duplicate opcode entries are rejected as an ambiguous schema.
+WaylandProtocolResult wayland_protocol_dispatch(Tainted bytes, WaylandFrameHeader frame,
+    WaylandObjectTable objects, List<WaylandMessageSpec> catalog, int direction, int received_fd_count) {
+    if (frame.status == 0) { return wayland_protocol_incomplete(); }
+    if (!wayland_protocol_frame_valid(bytes, frame)) { return wayland_protocol_error(); }
+    WaylandObject target = wayland_object_get(objects, frame.object_id);
+    if (target.state != 1) { return wayland_protocol_error(); }
+    int found = -1;
+    int matches = 0;
+    for (int i = 0; i < catalog.len(); i += 1) {
+        if (catalog[i].interface_id == target.interface_id && catalog[i].opcode == frame.opcode
+            && catalog[i].direction == direction) {
+            found = i;
+            matches += 1;
+        }
+    }
+    if (matches != 1) { return wayland_protocol_error(); }
+    return wayland_validate_message(bytes, frame, objects, catalog[found], direction, received_fd_count);
+}
+
+// wl_display.delete_id (event opcode 1, signature "u") is the only transition
+// that releases a retired client-owned ID for reuse.
+WaylandProtocolResult wayland_display_delete_id(Tainted bytes, WaylandFrameHeader frame,
+    WaylandObjectTable objects, int display_object_id, int display_interface_id) {
+    if (frame.status == 0) { return wayland_protocol_incomplete(); }
+    if (!wayland_protocol_frame_valid(bytes, frame) || frame.object_id != display_object_id
+        || frame.opcode != 1) { return wayland_protocol_error(); }
+    WaylandObject display = wayland_object_get(objects, display_object_id);
+    if (display.state != 1 || display.interface_id != display_interface_id) {
+        return wayland_protocol_error();
+    }
+    int cursor = frame.end_offset - frame.size + WAYLAND_HEADER_BYTES;
+    WaylandPayloadWord id = wayland_payload_word(bytes, cursor, frame.end_offset);
+    if (id.status != 1 || id.value < WAYLAND_CLIENT_OBJECT_ID_MIN
+        || id.value > WAYLAND_CLIENT_OBJECT_ID_MAX || id.end_offset != frame.end_offset) {
+        return wayland_protocol_error();
+    }
+    int index = wayland_object_index(objects, id.value);
+    if (index < 0 || objects.slots[index].state != 2
+        || objects.slots[index].owner != WAYLAND_OBJECT_OWNER_CLIENT
+        || !wayland_object_release(objects, id.value)) { return wayland_protocol_error(); }
+    return wayland_protocol_result(1, frame.end_offset, 0, new List<int>(), 0);
+}
