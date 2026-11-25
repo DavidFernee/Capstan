@@ -3,6 +3,12 @@
 // Tainted; the caller chooses the field type before invoking this routine.
 
 import "ccam_json_integer_core.cap";
+
+bool ccam_json_i64_rejects(Tainted input) {
+    if (let value = ccam_json_parse_i64(input)) { return false; }
+    return true;
+}
+
 int main() {
     if (let v = ccam_json_parse_i64(taint("0"))) { if (v != 0) { return 1; } } else { return 1; }
     if (let v = ccam_json_parse_i64(taint("-0"))) { if (v != 0) { return 1; } } else { return 1; }
@@ -11,19 +17,19 @@ int main() {
     if (let v = ccam_json_parse_i64(taint("9223372036854775807"))) { if (v != JSON_I64_MAX) { return 1; } } else { return 1; }
     if (let v = ccam_json_parse_i64(taint("-9223372036854775808"))) { if (v != JSON_I64_MIN) { return 1; } } else { return 1; }
 
-    if (ccam_json_parse_i64(taint("")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("-")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("+1")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("01")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("-01")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("1.0")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("1e0")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("--1")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("9223372036854775808")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("-9223372036854775809")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("99999999999999999999")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("true")) != none) { return 1; }
-    if (ccam_json_parse_i64(taint("null")) != none) { return 1; }
+    if (!ccam_json_i64_rejects(taint(""))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("-"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("+1"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("01"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("-01"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("1.0"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("1e0"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("--1"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("9223372036854775808"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("-9223372036854775809"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("99999999999999999999"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("true"))) { return 1; }
+    if (!ccam_json_i64_rejects(taint("null"))) { return 1; }
     println("CCAM JSON signed integer parser: ok");
     return 0;
 }
