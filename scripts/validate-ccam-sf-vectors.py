@@ -71,19 +71,48 @@ def check_i64(value, where: str) -> None:
 
 
 def check_trace(record, where: str, instruction_count: int | None = None) -> None:
-    if not isinstance(record, dict):
-        return
-    trace = record.get("trace_pcs")
-    steps = record.get("steps")
-    if trace is not None or steps is not None:
-        require(isinstance(trace, list), f"{where}: trace_pcs must be an array")
-        require(isinstance(steps, int) and not isinstance(steps, bool),
-                f"{where}: steps must be an integer")
-        require(steps == len(trace),
-                f"{where}: steps ({steps}) must equal dispatched PC count ({len(trace)})")
-        require(all(isinstance(pc, int) and not isinstance(pc, bool) and pc >= 0
-                    and (instruction_count is None or pc < instruction_count)
-                    for pc in trace), f"{where}: trace PCs must be valid instruction indices")
+    require(isinstance(record, dict), f"{where}: execution record must be an object")
+    require("trace_pcs" in record and "steps" in record,
+            f"{where}: execution record requires trace_pcs and steps")
+    trace = record["trace_pcs"]
+    steps = record["steps"]
+    require(isinstance(trace, list), f"{where}: trace_pcs must be an array")
+    require(isinstance(steps, int) and not isinstance(steps, bool) and steps >= 0,
+            f"{where}: steps must be a non-negative integer")
+    require(steps == len(trace),
+            f"{where}: steps ({steps}) must equal dispatched PC count ({len(trace)})")
+    require(all(isinstance(pc, int) and not isinstance(pc, bool) and pc >= 0
+                and (instruction_count is None or pc < instruction_count)
+                for pc in trace), f"{where}: trace PCs must be valid instruction indices")
+
+
+def check_outcome(record, where: str) -> None:
+    require(isinstance(record, dict), f"{where}: execution record must be an object")
+    outcome = record.get("outcome")
+    require(isinstance(outcome, dict), f"{where}: outcome is required")
+    kind = outcome.get("kind")
+    require(kind in {"halt", "halt_void", "trap", "not_executed"},
+            f"{where}: unsupported or missing outcome kind")
+    if kind == "halt":
+        value = outcome.get("value")
+        require(isinstance(value, dict) and set(value) == {"type", "value"}
+                and value["type"] in {"int", "bool"},
+                f"{where}: halt requires a typed integer or boolean value")
+        if value["type"] == "int":
+            require(isinstance(value["value"], int) and not isinstance(value["value"], bool),
+                    f"{where}: integer halt payload must be an integer")
+            check_i64(value["value"], f"{where}.outcome.value")
+        else:
+            require(isinstance(value["value"], bool),
+                    f"{where}: boolean halt payload must be boolean")
+    elif kind == "trap":
+        require(isinstance(outcome.get("code"), str) and outcome["code"],
+                f"{where}: trap requires a non-empty code")
+        require(isinstance(outcome.get("pc"), int) and not isinstance(outcome.get("pc"), bool)
+                and outcome["pc"] >= 0,
+                f"{where}: trap requires a non-negative PC")
+    else:
+        require(set(outcome) == {"kind"}, f"{where}: {kind} outcome has unexpected payload")
 
 
 def check_instruction(instruction, registers, instruction_count: int,
@@ -256,22 +285,47 @@ def main() -> int:
                         require(expected["profile_validation"] == "reject"
                                 and expected["normative_validation"] == "not_applicable",
                                 f"{where}: nonzero profile entry must be explicitly out of normative scope and rejected by SF-P")
-                    if expected["profile_validation"] == "reject":
-                        if expected["normative_validation"] == "reject" or expected["normative_validation"] == "not_applicable":
-                            outcome = expected.get("outcome")
-                            require(isinstance(outcome, dict) and outcome.get("kind") == "not_executed"
-                                    and expected.get("trace_pcs") == [] and expected.get("steps") == 0,
+                    if expected["profile_validation"] == "accept":
+                        require(expected["normative_validation"] == "accept",
+                                f"{where}: an SF-P-admitted vector must also be normatively accepted")
+                        require(vector.get("profile_entry") == 0,
+                                f"{where}: SF-P execution requires entry zero")
+                        require({"outcome", "trace_pcs", "steps"} <= set(expected),
+                                f"{where}: admitted vector requires outcome, trace_pcs and steps")
+                        check_outcome({"outcome": expected["outcome"]}, f"{where}.expected")
+                        check_trace(expected, f"{where}.expected", len(vector["instructions"]))
+                    else:
+                        if expected["normative_validation"] in {"reject", "not_applicable"}:
+                            require({"outcome", "trace_pcs", "steps"} <= set(expected),
+                                    f"{where}: non-executable rejected vector requires outcome, trace_pcs and steps")
+                            check_outcome({"outcome": expected["outcome"]}, f"{where}.expected")
+                            require(expected["outcome"].get("kind") == "not_executed"
+                                    and expected["trace_pcs"] == [] and expected["steps"] == 0,
                                     f"{where}: rejected vector must not execute")
                         else:
                             profile_execution = expected.get("profile_execution")
                             require(isinstance(profile_execution, dict)
+                                    and set(profile_execution) == {"kind"}
                                     and profile_execution.get("kind") == "not_run",
                                     f"{where}: profile rejection with normative acceptance must explicitly mark profile execution not_run")
+                            normative_execution = expected.get("normative_execution")
+                            check_outcome(normative_execution, f"{where}.normative_execution")
+                            check_trace(normative_execution, f"{where}.normative_execution",
+                                        len(vector["instructions"]))
                     for name in ("profile_execution", "normative_execution", "expected_concrete"):
-                        if name in expected:
+                        if name in expected and name == "expected_concrete":
+                            check_outcome(expected[name], f"{where}.{name}")
                             check_trace(expected[name], f"{where}.{name}", len(vector["instructions"]))
-                    check_trace(expected, f"{where}.expected", len(vector["instructions"]))
+                    if expected["profile_validation"] == "accept":
+                        require(set(expected) >= {"profile_validation", "normative_validation",
+                                                  "outcome", "trace_pcs", "steps"},
+                                f"{where}: incomplete admitted-vector oracle")
+                    if expected["profile_validation"] == "reject" and expected["normative_validation"] in {"reject", "not_applicable"}:
+                        require(set(expected) >= {"profile_validation", "normative_validation",
+                                                  "outcome", "trace_pcs", "steps"},
+                                f"{where}: incomplete rejected-vector oracle")
                 else:
+                    check_outcome(vector["expected_concrete"], f"{where}.expected_concrete")
                     check_trace(vector["expected_concrete"], f"{where}.expected_concrete",
                                 len(vector["instructions"]))
 
