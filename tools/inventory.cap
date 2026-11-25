@@ -251,7 +251,6 @@ int main() {
     return 0;
 }
 
-
 test "inventory input bounds" {
     assert inventory_path_allowed("src/main.cap");
     assert !inventory_path_allowed("");
@@ -284,7 +283,6 @@ test "inventory language classification" {
     assert language_for_path("build/Makefile") == "Make";
     assert language_for_path("build/GNUmakefile") == "Make";
 }
-
 
 test "inventory aggregate totals" {
     Inventory inv = new Inventory{
