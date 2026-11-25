@@ -4,6 +4,97 @@
 import "core.cap";
 import "mp4.cap";
 
+List<int> deadeye_mp4_test_list_2(int v0, int v1) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    return out;
+}
+
+List<int> deadeye_mp4_test_list_3(int v0, int v1, int v2) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    return out;
+}
+
+List<int> deadeye_mp4_test_list_8(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    return out;
+}
+
+List<int> deadeye_mp4_test_list_12(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    return out;
+}
+
+List<int> deadeye_mp4_test_list_16(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11, int v12, int v13, int v14, int v15) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    out.push(v12);
+    out.push(v13);
+    out.push(v14);
+    out.push(v15);
+    return out;
+}
+
+List<int> deadeye_mp4_test_list_20(int v0, int v1, int v2, int v3, int v4, int v5, int v6, int v7, int v8, int v9, int v10, int v11, int v12, int v13, int v14, int v15, int v16, int v17, int v18, int v19) {
+    List<int> out = new List<int>();
+    out.push(v0);
+    out.push(v1);
+    out.push(v2);
+    out.push(v3);
+    out.push(v4);
+    out.push(v5);
+    out.push(v6);
+    out.push(v7);
+    out.push(v8);
+    out.push(v9);
+    out.push(v10);
+    out.push(v11);
+    out.push(v12);
+    out.push(v13);
+    out.push(v14);
+    out.push(v15);
+    out.push(v16);
+    out.push(v17);
+    out.push(v18);
+    out.push(v19);
+    return out;
+}
+
 const int DEADEYE_MP4_MAX_SAMPLES = 524288;
 const int DEADEYE_MP4_MAX_CHUNKS = 32768;
 const int DEADEYE_MP4_MAX_TABLE_RUNS = 32768;
@@ -216,11 +307,11 @@ test "Deadeye sample tables reject duration and sample-count overflow" {
     ranges.push(100);
     ranges.push(120);
     DeadeyeMp4TableValidation duration =
-        deadeye_mp4_validate_sample_tables([2, 2147483647], stsc,
+        deadeye_mp4_validate_sample_tables(deadeye_mp4_test_list_2(2, 2147483647), stsc,
             sizes, offsets, ranges);
     assert(!duration.ok && duration.error == "duration_limit");
     DeadeyeMp4TableValidation mismatch =
-        deadeye_mp4_validate_sample_tables([1, 1], stsc,
+        deadeye_mp4_validate_sample_tables(deadeye_mp4_test_list_2(1, 1), stsc,
             sizes, offsets, ranges);
     assert(!mismatch.ok && mismatch.error == "stts_sample_count_mismatch");
 }
@@ -240,11 +331,11 @@ test "Deadeye sample tables reject malformed stsc and unmapped samples" {
     ranges.push(100);
     ranges.push(120);
     DeadeyeMp4TableValidation first_chunk =
-        deadeye_mp4_validate_sample_tables(stts, [2, 1, 1],
+        deadeye_mp4_validate_sample_tables(stts,deadeye_mp4_test_list_3(2, 1, 1),
             sizes, offsets, ranges);
     assert(!first_chunk.ok && first_chunk.error == "stsc_must_start_at_chunk_one");
     DeadeyeMp4TableValidation sample_mismatch =
-        deadeye_mp4_validate_sample_tables(stts, [1, 1, 1],
+        deadeye_mp4_validate_sample_tables(stts,deadeye_mp4_test_list_3(1, 1, 1),
             sizes, offsets, ranges);
     assert(!sample_mismatch.ok && sample_mismatch.error == "stsc_sample_count_mismatch");
 }
@@ -261,16 +352,13 @@ test "Deadeye sample tables reject out-of-mdat and overlapping extents" {
     sizes.push(8);
     sizes.push(8);
     DeadeyeMp4TableValidation outside =
-        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
-            [100, 200], [100, 116]);
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,deadeye_mp4_test_list_2(100, 200),deadeye_mp4_test_list_2(100, 116));
     assert(!outside.ok && outside.error == "chunk_outside_mdat");
     DeadeyeMp4TableValidation overlap =
-        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
-            [100, 107], [100, 120]);
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,deadeye_mp4_test_list_2(100, 107),deadeye_mp4_test_list_2(100, 120));
     assert(!overlap.ok && overlap.error == "overlapping_chunk_extents");
     DeadeyeMp4TableValidation adjacent =
-        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,
-            [100, 108], [100, 120]);
+        deadeye_mp4_validate_sample_tables(stts, stsc, sizes,deadeye_mp4_test_list_2(100, 108),deadeye_mp4_test_list_2(100, 120));
     assert(adjacent.ok);
 }
 
@@ -295,12 +383,11 @@ test "Deadeye sample tables reject bad ranges, zero sizes and nonmonotonic offse
         deadeye_mp4_validate_sample_tables(stts, stsc, sizes, offsets, ranges);
     assert(!zero.ok && zero.error == "invalid_sample_size");
     DeadeyeMp4TableValidation order =
-        deadeye_mp4_validate_sample_tables(stts, stsc, [1, 1],
-            [110, 100], ranges);
+        deadeye_mp4_validate_sample_tables(stts, stsc,deadeye_mp4_test_list_2(1, 1),deadeye_mp4_test_list_2(110, 100), ranges);
     assert(!order.ok && order.error == "non_monotonic_chunk_offsets");
     DeadeyeMp4TableValidation bad_range =
-        deadeye_mp4_validate_sample_tables(stts, stsc, [1, 1],
-            offsets, [100, 90]);
+        deadeye_mp4_validate_sample_tables(stts, stsc,deadeye_mp4_test_list_2(1, 1),
+            offsets,deadeye_mp4_test_list_2(100, 90));
     assert(!bad_range.ok && bad_range.error == "invalid_mdat_range");
 }
 
@@ -618,8 +705,7 @@ test "Deadeye decodes constant and explicit stsz with exact lengths" {
         trailing, 0, trailing.len()
     );
     assert(!rejected.ok);
-    DeadeyeMp4IntListResult short_header = deadeye_mp4_decode_stsz(
-        [0,0,0,0, 0,0,0,0], 0, 8
+    DeadeyeMp4IntListResult short_header = deadeye_mp4_decode_stsz(deadeye_mp4_test_list_8(0, 0, 0, 0, 0, 0, 0, 0), 0, 8
     );
     assert(!short_header.ok && short_header.error == "truncated_stsz_header");
 }
@@ -1041,16 +1127,12 @@ void deadeye_mp4_test_append_box(
 
 test "Deadeye decodes a complete stbl child set and validates media extents" {
     List<int> stbl = new List<int>();
-    deadeye_mp4_test_append_box(stbl, 's','t','t','s',
-        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,40]);
-    deadeye_mp4_test_append_box(stbl, 's','t','s','c',
-        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
-    deadeye_mp4_test_append_box(stbl, 's','t','s','z',
-        [0,0,0,0, 0,0,0,10, 0,0,0,1]);
-    deadeye_mp4_test_append_box(stbl, 's','t','c','o',
-        [0,0,0,0, 0,0,0,1, 0,0,0,100]);
+    deadeye_mp4_test_append_box(stbl, 's','t','t','s',deadeye_mp4_test_list_16(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 40));
+    deadeye_mp4_test_append_box(stbl, 's','t','s','c',deadeye_mp4_test_list_20(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1));
+    deadeye_mp4_test_append_box(stbl, 's','t','s','z',deadeye_mp4_test_list_12(0, 0, 0, 0, 0, 0, 0, 10, 0, 0, 0, 1));
+    deadeye_mp4_test_append_box(stbl, 's','t','c','o',deadeye_mp4_test_list_12(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 100));
     DeadeyeMp4StblResult decoded = deadeye_mp4_decode_stbl(
-        stbl, 0, stbl.len(), [100,110]
+        stbl, 0, stbl.len(),deadeye_mp4_test_list_2(100, 110)
     );
     assert(decoded.ok && decoded.validation.sample_count == 1);
     assert(decoded.sample_sizes[0] == 10 && decoded.chunk_offsets[0] == 100);
@@ -1058,12 +1140,10 @@ test "Deadeye decodes a complete stbl child set and validates media extents" {
 
 test "Deadeye rejects duplicate and malformed stbl child tables" {
     List<int> duplicate = new List<int>();
-    deadeye_mp4_test_append_box(duplicate, 's','t','t','s',
-        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
-    deadeye_mp4_test_append_box(duplicate, 's','t','t','s',
-        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
+    deadeye_mp4_test_append_box(duplicate, 's','t','t','s',deadeye_mp4_test_list_16(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1));
+    deadeye_mp4_test_append_box(duplicate, 's','t','t','s',deadeye_mp4_test_list_16(0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1));
     DeadeyeMp4StblResult repeated = deadeye_mp4_decode_stbl(
-        duplicate, 0, duplicate.len(), [100,110]
+        duplicate, 0, duplicate.len(),deadeye_mp4_test_list_2(100, 110)
     );
     assert(!repeated.ok && repeated.error == "duplicate_stts");
     List<int> malformed = new List<int>();
@@ -1076,7 +1156,7 @@ test "Deadeye rejects duplicate and malformed stbl child tables" {
     malformed.push('t');
     malformed.push('s');
     DeadeyeMp4StblResult truncated = deadeye_mp4_decode_stbl(
-        malformed, 0, malformed.len(), [100,110]
+        malformed, 0, malformed.len(),deadeye_mp4_test_list_2(100, 110)
     );
     assert(!truncated.ok && truncated.error == "malformed_stbl_child");
     List<int> forged_bytes = new List<int>();
@@ -1090,7 +1170,7 @@ test "Deadeye rejects duplicate and malformed stbl child tables" {
     forged_bytes.push('s');
     forged_bytes[4] = -1;
     DeadeyeMp4StblResult forged = deadeye_mp4_decode_stbl(
-        forged_bytes, 0, forged_bytes.len(), [100,110]
+        forged_bytes, 0, forged_bytes.len(),deadeye_mp4_test_list_2(100, 110)
     );
     assert(!forged.ok && forged.error == "invalid_stbl_range_or_byte");
 }
