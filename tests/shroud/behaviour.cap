@@ -618,10 +618,16 @@ void test_resize(Tally t, Font f, Font b) {
     expect(t, ui.resize(800, 600, 384), "resize: valid dimensions and scale are accepted");
     expect(t, ui.pixmap.w == 800 && ui.pixmap.h == 600 && ui.scale == 384,
         "resize: pixel surface and scale update together", $"{ui.pixmap.w}x{ui.pixmap.h}@{ui.scale}");
-    expect(t, ui.root == none && ui.hover == "" && ui.pressed == "",
+    bool old_tree_cleared = true;
+    if (let old_root = ui.root) { old_tree_cleared = false; }
+    expect(t, old_tree_cleared && ui.hover == "" && ui.pressed == "",
         "resize: old hit-test tree and transient pointer state are invalidated", "stale state retained");
     expect(t, ui.focus == field_id, "resize: logical focus is preserved", ui.focus);
-    expect(t, ui.caret.get(field_id) == 2 && ui.scroll.get("scroll") == fx(12),
+    bool caret_preserved = false;
+    bool scroll_preserved = false;
+    if (let caret_value = ui.caret.get(field_id)) { caret_preserved = caret_value == 2; }
+    if (let scroll_value = ui.scroll.get("scroll")) { scroll_preserved = scroll_value == fx(12); }
+    expect(t, caret_preserved && scroll_preserved,
         "resize: caret and scroll state are preserved", "retained state differs");
     expect(t, ui.shown_at.get(guard_id) == old_guard_time,
         "resize: guard history is retained until the next rendered frame", "guard history changed early");
