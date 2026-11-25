@@ -1,0 +1,406 @@
+// Helm H0-C1 reference model: bounded boot-memory views and unsigned addresses.
+// This is an executable Capstan model over an owned byte snapshot. It does NOT
+// dereference physical memory and is NOT the kernel's hardware access path.
+// Its purpose is to make bounds, little-endian decoding and U64 address rules
+// executable before a narrow assembly-backed memory-view adapter is written.
+
+const int HBM_U32_BASE = 4294967296;
+const int HBM_U32_MAX = 4294967295;
+const int HBM_MAX_VIEW_BYTES = 1048576;
+
+struct HBMU64 {
+    int hi;
+    int lo;
+}
+
+struct HBMU64Result {
+    bool ok;
+    HBMU64 value;
+    string error;
+}
+
+struct HBMView {
+    List<int> bytes;
+    int length;
+}
+
+struct HBMViewResult {
+    bool ok;
+    HBMView view;
+    string error;
+}
+
+struct HBMReadResult {
+    bool ok;
+    int value;
+    string error;
+}
+
+struct HBMU64ReadResult {
+    bool ok;
+    HBMU64 value;
+    string error;
+}
+
+HBMU64 hbm_u64(int hi, int lo) {
+    return new HBMU64{hi: hi, lo: lo};
+}
+
+bool hbm_u64_valid(HBMU64 value) {
+    return value.hi >= 0 && value.hi <= HBM_U32_MAX &&
+        value.lo >= 0 && value.lo <= HBM_U32_MAX;
+}
+
+// Unsigned comparison over two 32-bit limbs. No signed reinterpretation of a
+// canonical high-half x86-64 address is performed.
+int hbm_u64_compare(HBMU64 left, HBMU64 right) {
+    if (left.hi < right.hi) { return -1; }
+    if (left.hi > right.hi) { return 1; }
+    if (left.lo < right.lo) { return -1; }
+    if (left.lo > right.lo) { return 1; }
+    return 0;
+}
+
+HBMU64Result hbm_u64_add(HBMU64 left, HBMU64 right) {
+    if (!hbm_u64_valid(left) || !hbm_u64_valid(right)) {
+        return new HBMU64Result{
+            ok: false, value: hbm_u64(0, 0), error: "invalid_u64"
+        };
+    }
+    int low_sum = left.lo + right.lo;
+    int carry = 0;
+    if (low_sum >= HBM_U32_BASE) {
+        low_sum -= HBM_U32_BASE;
+        carry = 1;
+    }
+    int high_sum = left.hi + right.hi + carry;
+    if (high_sum >= HBM_U32_BASE) {
+        return new HBMU64Result{
+            ok: false, value: hbm_u64(0, 0), error: "u64_overflow"
+        };
+    }
+    return new HBMU64Result{
+        ok: true, value: hbm_u64(high_sum, low_sum), error: ""
+    };
+}
+
+HBMU64Result hbm_u64_sub(HBMU64 left, HBMU64 right) {
+    if (!hbm_u64_valid(left) || !hbm_u64_valid(right)) {
+        return new HBMU64Result{
+            ok: false, value: hbm_u64(0, 0), error: "invalid_u64"
+        };
+    }
+    if (hbm_u64_compare(left, right) < 0) {
+        return new HBMU64Result{
+            ok: false, value: hbm_u64(0, 0), error: "u64_underflow"
+        };
+    }
+    int low = left.lo - right.lo;
+    int borrow = 0;
+    if (low < 0) {
+        low += HBM_U32_BASE;
+        borrow = 1;
+    }
+    int high = left.hi - right.hi - borrow;
+    return new HBMU64Result{
+        ok: true, value: hbm_u64(high, low), error: ""
+    };
+}
+
+// Four-level x86-64 canonical address check (48-bit virtual addresses).
+// Five-level paging is deliberately not part of the H0 platform profile.
+bool hbm_x64_canonical48(HBMU64 address) {
+    if (!hbm_u64_valid(address)) { return false; }
+    int sign_bit = (address.hi / 32768) % 2;
+    int upper_16 = address.hi / 65536;
+    if (sign_bit == 0) { return upper_16 == 0; }
+    return upper_16 == 65535;
+}
+
+bool hbm_u64_range_contains(
+    HBMU64 region_base,
+    HBMU64 region_length,
+    HBMU64 requested_base,
+    HBMU64 requested_length
+) {
+    if (!hbm_u64_valid(region_base) ||
+        !hbm_u64_valid(region_length) ||
+        !hbm_u64_valid(requested_base) ||
+        !hbm_u64_valid(requested_length)) { return false; }
+    HBMU64Result region_end = hbm_u64_add(region_base, region_length);
+    if (!region_end.ok) { return false; }
+    HBMU64Result requested_end = hbm_u64_add(requested_base, requested_length);
+    if (!requested_end.ok) { return false; }
+    if (hbm_u64_compare(requested_base, region_base) < 0) { return false; }
+    if (hbm_u64_compare(requested_end.value, region_end.value) > 0) {
+        return false;
+    }
+    return true;
+}
+
+bool hbm_u64_canonical_range(HBMU64 base, HBMU64 length) {
+    if (!hbm_x64_canonical48(base) || !hbm_u64_valid(length)) {
+        return false;
+    }
+    if (length.hi == 0 && length.lo == 0) { return true; }
+    HBMU64Result last_offset = hbm_u64_sub(length, hbm_u64(0, 1));
+    if (!last_offset.ok) { return false; }
+    HBMU64Result last = hbm_u64_add(base, last_offset.value);
+    if (!last.ok) { return false; }
+    return hbm_x64_canonical48(last.value);
+}
+
+// Construct an owned, read-only snapshot. The caller cannot mutate the view
+// by retaining and modifying the source List after successful construction.
+HBMViewResult hbm_view_create(
+    List<int> source,
+    int source_offset,
+    int byte_length
+) {
+    if (source_offset < 0 || byte_length < 0) {
+        return new HBMViewResult{
+            ok: false,
+            view: new HBMView{bytes: new List<int>(), length: 0},
+            error: "negative_range"
+        };
+    }
+    if (byte_length > HBM_MAX_VIEW_BYTES) {
+        return new HBMViewResult{
+            ok: false,
+            view: new HBMView{bytes: new List<int>(), length: 0},
+            error: "view_limit"
+        };
+    }
+    if (source_offset > source.len() ||
+        byte_length > source.len() - source_offset) {
+        return new HBMViewResult{
+            ok: false,
+            view: new HBMView{bytes: new List<int>(), length: 0},
+            error: "range_out_of_bounds"
+        };
+    }
+    // Validate the complete range before allocating/copying the snapshot.
+    for (int i = 0; i < byte_length; i += 1) {
+        int value = source[source_offset + i];
+        if (value < 0 || value > 255) {
+            return new HBMViewResult{
+                ok: false,
+                view: new HBMView{bytes: new List<int>(), length: 0},
+                error: "invalid_byte"
+            };
+        }
+    }
+    List<int> owned = new List<int>();
+    for (int i = 0; i < byte_length; i += 1) {
+        owned.push(source[source_offset + i]);
+    }
+    return new HBMViewResult{
+        ok: true,
+        view: new HBMView{bytes: owned, length: byte_length},
+        error: ""
+    };
+}
+
+HBMReadResult hbm_read_u8(HBMView view, int offset) {
+    if (offset < 0 || offset >= view.length ||
+        view.bytes.len() != view.length) {
+        return new HBMReadResult{ok: false, value: 0, error: "out_of_bounds"};
+    }
+    return new HBMReadResult{
+        ok: true, value: view.bytes[offset], error: ""
+    };
+}
+
+HBMReadResult hbm_read_u16le(HBMView view, int offset) {
+    if (offset < 0 || offset > view.length - 2 ||
+        view.bytes.len() != view.length) {
+        return new HBMReadResult{ok: false, value: 0, error: "out_of_bounds"};
+    }
+    int value = view.bytes[offset] + view.bytes[offset + 1] * 256;
+    return new HBMReadResult{ok: true, value: value, error: ""};
+}
+
+HBMReadResult hbm_read_u32le(HBMView view, int offset) {
+    if (offset < 0 || offset > view.length - 4 ||
+        view.bytes.len() != view.length) {
+        return new HBMReadResult{ok: false, value: 0, error: "out_of_bounds"};
+    }
+    int value = view.bytes[offset] +
+        view.bytes[offset + 1] * 256 +
+        view.bytes[offset + 2] * 65536 +
+        view.bytes[offset + 3] * 16777216;
+    return new HBMReadResult{ok: true, value: value, error: ""};
+}
+
+HBMU64ReadResult hbm_read_u64le(HBMView view, int offset) {
+    if (offset < 0 || offset > view.length - 8 ||
+        view.bytes.len() != view.length) {
+        return new HBMU64ReadResult{
+            ok: false, value: hbm_u64(0, 0), error: "out_of_bounds"
+        };
+    }
+    int low = view.bytes[offset] +
+        view.bytes[offset + 1] * 256 +
+        view.bytes[offset + 2] * 65536 +
+        view.bytes[offset + 3] * 16777216;
+    int high = view.bytes[offset + 4] +
+        view.bytes[offset + 5] * 256 +
+        view.bytes[offset + 6] * 65536 +
+        view.bytes[offset + 7] * 16777216;
+    return new HBMU64ReadResult{
+        ok: true, value: hbm_u64(high, low), error: ""
+    };
+}
+
+int main() {
+    List<int> bytes = new List<int>();
+    bytes.push(0x12);
+    bytes.push(0x34);
+    bytes.push(0x56);
+    bytes.push(0x78);
+    bytes.push(0x9A);
+    bytes.push(0xBC);
+    bytes.push(0xDE);
+    bytes.push(0xF0);
+    HBMViewResult created = hbm_view_create(bytes, 0, 8);
+    if (!created.ok || created.view.length != 8) { return 1; }
+    HBMReadResult u8 = hbm_read_u8(created.view, 0);
+    HBMReadResult u16 = hbm_read_u16le(created.view, 0);
+    HBMReadResult u32 = hbm_read_u32le(created.view, 0);
+    HBMU64ReadResult u64 = hbm_read_u64le(created.view, 0);
+    if (!(u8.ok && u8.value == 0x12)) { return 1; }
+    if (!(u16.ok && u16.value == 0x3412)) { return 1; }
+    if (!(u32.ok && u32.value == 0x78563412)) { return 1; }
+    if (!(u64.ok && u64.value.hi == 0xF0DEBC9A &&
+        u64.value.lo == 0x78563412)) { return 1; }
+    println("Helm boot memory reference model: ok");
+    return 0;
+}
+
+test "Helm U64 addition carries and rejects overflow" {
+    HBMU64Result carry = hbm_u64_add(
+        hbm_u64(1, HBM_U32_MAX), hbm_u64(0, 1));
+    HBMU64Result overflow = hbm_u64_add(
+        hbm_u64(HBM_U32_MAX, HBM_U32_MAX), hbm_u64(0, 1));
+    assert(carry.ok && carry.value.hi == 2 && carry.value.lo == 0);
+    assert(!overflow.ok && overflow.error == "u64_overflow");
+}
+
+test "Helm U64 subtraction borrows and rejects underflow" {
+    HBMU64Result borrow = hbm_u64_sub(
+        hbm_u64(2, 0), hbm_u64(1, 1));
+    HBMU64Result underflow = hbm_u64_sub(
+        hbm_u64(0, 0), hbm_u64(0, 1));
+    assert(borrow.ok && borrow.value.hi == 0 && borrow.value.lo == HBM_U32_MAX);
+    assert(!underflow.ok && underflow.error == "u64_underflow");
+}
+
+test "Helm U64 comparison is unsigned across the sign bit" {
+    assert(hbm_u64_compare(hbm_u64(0x7FFFFFFF, HBM_U32_MAX),
+        hbm_u64(0x80000000, 0)) < 0);
+    assert(hbm_u64_compare(hbm_u64(0xFFFF8000, 0),
+        hbm_u64(0x7FFFFFFF, HBM_U32_MAX)) > 0);
+    assert(hbm_u64_compare(hbm_u64(1, 2), hbm_u64(1, 2)) == 0);
+}
+
+test "Helm x86-64 canonical address validation" {
+    assert(hbm_x64_canonical48(hbm_u64(0x00007FFF, HBM_U32_MAX)));
+    assert(hbm_x64_canonical48(hbm_u64(0xFFFF8000, 0)));
+    assert(!hbm_x64_canonical48(hbm_u64(0x00008000, 0)));
+    assert(!hbm_x64_canonical48(hbm_u64(0xFFFF7FFF, HBM_U32_MAX)));
+    assert(!hbm_x64_canonical48(hbm_u64(-1, 0)));
+}
+
+test "Helm bounded U64 ranges reject wraparound and escape" {
+    assert(hbm_u64_range_contains(
+        hbm_u64(0, 100), hbm_u64(0, 100),
+        hbm_u64(0, 150), hbm_u64(0, 50)));
+    assert(!hbm_u64_range_contains(
+        hbm_u64(0, 100), hbm_u64(0, 100),
+        hbm_u64(0, 150), hbm_u64(0, 51)));
+    assert(!hbm_u64_range_contains(
+        hbm_u64(0, HBM_U32_MAX), hbm_u64(0, 2),
+        hbm_u64(0, HBM_U32_MAX), hbm_u64(0, 2)));
+    assert(!hbm_u64_range_contains(
+        hbm_u64(0, 100), hbm_u64(0, 100),
+        hbm_u64(0, 99), hbm_u64(0, 2)));
+}
+
+test "Helm canonical ranges validate both endpoints" {
+    assert(hbm_u64_canonical_range(
+        hbm_u64(0x00007FFF, HBM_U32_MAX), hbm_u64(0, 1)));
+    assert(!hbm_u64_canonical_range(
+        hbm_u64(0x00007FFF, HBM_U32_MAX), hbm_u64(0, 2)));
+    assert(hbm_u64_canonical_range(
+        hbm_u64(0xFFFF8000, 0), hbm_u64(0, 4096)));
+    assert(!hbm_u64_canonical_range(
+        hbm_u64(0xFFFF7FFF, HBM_U32_MAX), hbm_u64(0, 2)));
+}
+
+test "Helm boot view snapshots bytes and decodes little endian values" {
+    List<int> source = new List<int>();
+    source.push(0xAA);
+    source.push(0x12);
+    source.push(0x34);
+    source.push(0x56);
+    source.push(0x78);
+    source.push(0x9A);
+    source.push(0xBC);
+    source.push(0xDE);
+    source.push(0xF0);
+    HBMViewResult result = hbm_view_create(source, 1, 8);
+    assert(result.ok && result.view.length == 8);
+    source[1] = 0;
+    HBMReadResult u8 = hbm_read_u8(result.view, 0);
+    HBMReadResult u16 = hbm_read_u16le(result.view, 0);
+    HBMReadResult u32 = hbm_read_u32le(result.view, 0);
+    HBMU64ReadResult u64 = hbm_read_u64le(result.view, 0);
+    assert(u8.ok && u8.value == 0x12);
+    assert(u16.ok && u16.value == 0x3412);
+    assert(u32.ok && u32.value == 0x78563412);
+    assert(u64.ok && u64.value.hi == 0xF0DEBC9A &&
+        u64.value.lo == 0x78563412);
+}
+
+test "Helm boot view rejects invalid construction before snapshot" {
+    List<int> source = new List<int>();
+    source.push(1);
+    source.push(2);
+    source.push(256);
+    HBMViewResult negative = hbm_view_create(source, -1, 1);
+    HBMViewResult too_long = hbm_view_create(source, 0, 4);
+    HBMViewResult invalid_byte = hbm_view_create(source, 0, 3);
+    HBMViewResult over_limit = hbm_view_create(
+        source, 0, HBM_MAX_VIEW_BYTES + 1);
+    assert(!negative.ok && negative.error == "negative_range");
+    assert(!too_long.ok && too_long.error == "range_out_of_bounds");
+    assert(!invalid_byte.ok && invalid_byte.error == "invalid_byte");
+    assert(!over_limit.ok && over_limit.error == "view_limit");
+}
+
+test "Helm boot view reads reject negative and truncated offsets" {
+    List<int> source = new List<int>();
+    for (int i = 0; i < 8; i += 1) { source.push(i); }
+    HBMViewResult result = hbm_view_create(source, 0, 8);
+    assert(result.ok);
+    HBMReadResult neg = hbm_read_u8(result.view, -1);
+    HBMReadResult end = hbm_read_u8(result.view, 8);
+    HBMReadResult short16 = hbm_read_u16le(result.view, 7);
+    HBMReadResult short32 = hbm_read_u32le(result.view, 5);
+    HBMU64ReadResult short64 = hbm_read_u64le(result.view, 1);
+    assert(!neg.ok && !end.ok && !short16.ok && !short32.ok && !short64.ok);
+}
+
+test "Helm boot view supports exact-end reads" {
+    List<int> source = new List<int>();
+    for (int i = 0; i < 8; i += 1) { source.push(255); }
+    HBMViewResult result = hbm_view_create(source, 0, 8);
+    assert(result.ok);
+    HBMReadResult u16 = hbm_read_u16le(result.view, 6);
+    HBMReadResult u32 = hbm_read_u32le(result.view, 4);
+    HBMU64ReadResult u64 = hbm_read_u64le(result.view, 0);
+    assert(u16.ok && u16.value == 65535);
+    assert(u32.ok && u32.value == HBM_U32_MAX);
+    assert(u64.ok && u64.value.hi == HBM_U32_MAX &&
+        u64.value.lo == HBM_U32_MAX);
+}
