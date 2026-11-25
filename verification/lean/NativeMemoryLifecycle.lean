@@ -267,7 +267,9 @@ cannot resolve to the replacement object. This composes release, allocation
 and resolution rather than proving the steps only in isolation. -/
 theorem reuse_rejects_previous_incarnation
     {Object : Type u} (maximumGeneration current : Nat)
-    (old replacement : Object) (h : current < maximumGeneration) :
+    (old replacement : Object)
+    (hadvance : current < maximumGeneration)
+    (hbound : current + 1 ≤ maximumGeneration) :
     let released :=
       releaseSlot maximumGeneration (.occupied current old) current
     let reallocated :=
@@ -276,11 +278,9 @@ theorem reuse_rejects_previous_incarnation
       reallocated = some (.occupied (current + 1) replacement, current + 1) ∧
       resolveSlot current (.occupied (current + 1) replacement) = none := by
   constructor
-  · simp [releaseSlot, h]
+  · simp [releaseSlot, hadvance]
   constructor
-  · have hbound : current + 1 ≤ maximumGeneration := by
-      simpa [Nat.add_comm] using Nat.succ_le_iff.mpr h
-    simp [allocateSlot, hbound]
+  · simp [allocateSlot, hbound]
   · simp [resolveSlot]
 
 
