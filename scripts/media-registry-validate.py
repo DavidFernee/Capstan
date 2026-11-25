@@ -10,7 +10,7 @@ FIELDS = {"id","version","container","codec","profile","level","operation","anci
           "bit_depth","chroma","channel_layout","platforms","implementation","source_revision",
           "licence_review","patent_review","corpus_revision","test_status","fuzz_status",
           "assurance_level","known_limitations"}
-SEMVER = re.compile(r"^[0-9]+\\.[0-9]+\\.[0-9]+$")
+SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 IDENT = re.compile(r"^[a-z0-9][a-z0-9._-]{2,95}$")
 REV = re.compile(r"^[0-9a-f]{40}([0-9a-f]{24})?$")
 ENUMS = {
@@ -54,7 +54,7 @@ def validate_registry(value):
         if isinstance(r.get("version"), str) and not SEMVER.fullmatch(r["version"]):
             errors.append(f"{p}.version: expected numeric major.minor.patch")
         for k, allowed in ENUMS.items():
-            if r.get(k) not in allowed: errors.append(f"{p}.{k}: unknown value")
+            if not isinstance(r.get(k), str) or r.get(k) not in allowed: errors.append(f"{p}.{k}: unknown value")
         if not isinstance(r.get("source_revision"), str) or not REV.fullmatch(r["source_revision"]):
             errors.append(f"{p}.source_revision: expected 40- or 64-character lowercase Git object id")
         for k in ("level","chroma","channel_layout"):
@@ -72,8 +72,8 @@ def validate_registry(value):
             elif len(a) != len(set(a)):
                 errors.append(f"{p}.{k}: duplicate entries are not permitted")
         # Duplicate exact operation/profile tuples are conflicts, even under distinct IDs.
-        key = tuple(r.get(k) for k in ("container","codec","profile","level","operation",
-                                       "bit_depth","chroma","channel_layout"))
+        key = json.dumps([r.get(k) for k in ("container","codec","profile","level","operation",
+                                               "bit_depth","chroma","channel_layout")], sort_keys=True)
         if key in tuples: errors.append(f"{p}: duplicate/conflicting registration tuple")
         tuples.add(key)
     return sorted(errors)
