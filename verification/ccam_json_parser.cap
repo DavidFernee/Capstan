@@ -12,12 +12,18 @@ struct CCAMJsonDocumentResult {
     int token_pos;
 }
 
+const int CCAM_JSON_MAX_OBJECT_MEMBERS = 1024;
+const int CCAM_JSON_MAX_TOTAL_MEMBERS = 16384;
+const int CCAM_JSON_MAX_TOTAL_KEY_BYTES = 4194304;
+
 struct CCAMJsonParser {
     List<CCAMJsonToken> tokens;
     Tainted source;
     int pos;
     int error;
     int error_pos;
+    int member_count;
+    int key_bytes;
 }
 
 int ccam_json_parser_kind(CCAMJsonParser p) {
@@ -45,7 +51,14 @@ bool ccam_json_parse_object(CCAMJsonParser p, int depth) {
     }
 
     List<Tainted> keys = new List<Tainted>();
+    int object_members = 0;
     while (true) {
+        object_members += 1;
+        p.member_count += 1;
+        if (object_members > CCAM_JSON_MAX_OBJECT_MEMBERS ||
+            p.member_count > CCAM_JSON_MAX_TOTAL_MEMBERS) {
+            return ccam_json_parser_fail(p, 20);
+        }
         if (ccam_json_parser_kind(p) != CCAM_JSON_T_STRING) {
             return ccam_json_parser_fail(p, 10);
         }
@@ -53,6 +66,10 @@ bool ccam_json_parse_object(CCAMJsonParser p, int depth) {
         Tainted key_body = p.source.slice(key_token.start + 1, key_token.end - 1);
         CCAMJsonStringResult decoded = ccam_json_decode_string_body(key_body);
         if (!decoded.ok) { return ccam_json_parser_fail(p, 11); }
+        if (decoded.value.len() > CCAM_JSON_MAX_TOTAL_KEY_BYTES - p.key_bytes) {
+            return ccam_json_parser_fail(p, 21);
+        }
+        p.key_bytes += decoded.value.len();
         for (int k = 0; k < keys.len(); k += 1) {
             if (keys[k] == decoded.value) {
                 return ccam_json_parser_fail(p, 12);
@@ -127,7 +144,8 @@ CCAMJsonDocumentResult ccam_json_validate_document(Tainted source) {
         };
     }
     CCAMJsonParser parser = new CCAMJsonParser{
-        tokens: scanned.tokens, source: source, pos: 0, error: 0, error_pos: 0
+        tokens: scanned.tokens, source: source, pos: 0, error: 0, error_pos: 0,
+        member_count: 0, key_bytes: 0
     };
     if (scanned.tokens.len() == 0) {
         return new CCAMJsonDocumentResult{
