@@ -87,6 +87,11 @@ SCMTransition scm_accept(SCMState after, SCMHandle handle) {
     };
 }
 
+bool scm_valid_rights(int rights) {
+    return rights > 0 && rights <= SCM_RIGHT_ALL &&
+        (rights & SCM_RIGHT_ALL) == rights;
+}
+
 bool scm_invariant(SCMState state) {
     if (state.object_generation <= 0 || state.revocation_epoch <= 0 ||
         state.root_generation < 0 || state.child_generation < 0) { return false; }
@@ -96,11 +101,6 @@ bool scm_invariant(SCMState state) {
     if (!state.child_live && state.child_rights != 0) { return false; }
     if (state.revoked && (state.root_live || state.child_live)) { return false; }
     return true;
-}
-
-bool scm_valid_rights(int rights) {
-    return rights > 0 && rights <= SCM_RIGHT_ALL &&
-        (rights & SCM_RIGHT_ALL) == rights;
 }
 
 // This predicate validates the complete model handle against the current
