@@ -78,12 +78,12 @@ DeadeyeMp4BoxResult deadeye_mp4_box_read(
 ) {
     if (offset < 0 || parent_end < offset || parent_end > bytes.len()) {
         return new DeadeyeMp4BoxResult{
-            ok: false, box: new DeadeyeMp4Box{}, error: "invalid_box_range"
+            ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "invalid_box_range"
         };
     }
     if (parent_end - offset < 8) {
         return new DeadeyeMp4BoxResult{
-            ok: false, box: new DeadeyeMp4Box{}, error: "truncated_box_header"
+            ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "truncated_box_header"
         };
     }
     int size32 = deadeye_mp4_u32_be(bytes, offset);
@@ -92,13 +92,13 @@ DeadeyeMp4BoxResult deadeye_mp4_box_read(
     if (size32 == 1) {
         if (parent_end - offset < 16) {
             return new DeadeyeMp4BoxResult{
-                ok: false, box: new DeadeyeMp4Box{}, error: "truncated_extended_size"
+                ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "truncated_extended_size"
             };
         }
         // The input ceiling is 64 MiB, so any non-zero high word is too large.
         if (deadeye_mp4_u32_be(bytes, offset + 8) != 0) {
             return new DeadeyeMp4BoxResult{
-                ok: false, box: new DeadeyeMp4Box{}, error: "box_size_limit"
+                ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "box_size_limit"
             };
         }
         box_size = deadeye_mp4_u32_be(bytes, offset + 12);
@@ -108,7 +108,7 @@ DeadeyeMp4BoxResult deadeye_mp4_box_read(
     }
     if (box_size < header_size || box_size > parent_end - offset) {
         return new DeadeyeMp4BoxResult{
-            ok: false, box: new DeadeyeMp4Box{}, error: "invalid_box_size"
+            ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "invalid_box_size"
         };
     }
     DeadeyeMp4Box box = new DeadeyeMp4Box{
@@ -231,7 +231,7 @@ DeadeyeMp4SummaryResult deadeye_mp4_inspect_internal(
     if (let budget_value = budget) {
         HalyardConsumptionCharge input_charge = new HalyardConsumptionCharge{
             input_bytes: source_length, output_bytes: 0,
-            decoded_units: 0, work_units: source_length
+            decoded_units: 0, work_units: source_length * 2 + DEADEYE_MP4_MAX_BOXES
         };
         if (!halyard_consumption_budget_consume(budget_value, input_charge)) {
             return deadeye_mp4_error("budget_exceeded");
@@ -458,11 +458,53 @@ test "Deadeye MP4 rejects missing metadata and fragmented layouts" {
     } else { assert(false); }
 }
 
+
+test "Deadeye MP4 box reader validates extended sizes and size-to-parent boxes" {
+    List<int> extended = new List<int>();
+    deadeye_mp4_test_push_u32(extended, 1);
+    extended.push('f'); extended.push('r'); extended.push('e'); extended.push('e');
+    deadeye_mp4_test_push_u32(extended, 0);
+    deadeye_mp4_test_push_u32(extended, 16);
+    DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(extended, 0, 16);
+    assert(parsed.ok && parsed.box.size == 16 && parsed.box.header_size == 16);
+
+    List<int> oversized = new List<int>();
+    deadeye_mp4_test_push_u32(oversized, 1);
+    oversized.push('f'); oversized.push('r'); oversized.push('e'); oversized.push('e');
+    deadeye_mp4_test_push_u32(oversized, 1);
+    deadeye_mp4_test_push_u32(oversized, 16);
+    DeadeyeMp4BoxResult rejected = deadeye_mp4_box_read(oversized, 0, 16);
+    assert(!rejected.ok && rejected.error == "box_size_limit");
+
+    List<int> to_end = new List<int>();
+    deadeye_mp4_test_push_u32(to_end, 0);
+    to_end.push('f'); to_end.push('r'); to_end.push('e'); to_end.push('e');
+    to_end.push(1); to_end.push(2); to_end.push(3);
+    DeadeyeMp4BoxResult final_box = deadeye_mp4_box_read(to_end, 0, 11);
+    assert(final_box.ok && final_box.box.size == 11);
+}
+
+test "Deadeye MP4 enforces the global box-count limit" {
+    List<int> bytes = new List<int>();
+    List<int> empty = new List<int>();
+    for (int i = 0; i < DEADEYE_MP4_MAX_BOXES + 1; i += 1) {
+        deadeye_mp4_test_push_box(bytes, 'f', 'r', 'e', 'e', empty);
+    }
+    HalyardByteSourceResult source_result = halyard_source_from_list(
+        bytes, DEADEYE_MP4_MAX_INPUT_BYTES
+    );
+    assert(source_result.ok);
+    if (let source = source_result.source) {
+        DeadeyeMp4SummaryResult result = deadeye_mp4_inspect(source);
+        assert(!result.ok && result.error == "box_count_limit");
+    } else { assert(false); }
+}
+
 test "Deadeye MP4 charges input and defensive snapshot before parsing" {
     List<int> bytes = deadeye_mp4_test_minimal_file();
     HalyardByteSourceResult source_result = halyard_source_from_list(bytes, 1024);
     HalyardConsumptionBudgetResult budget_result =
-        halyard_consumption_budget_create(1024, bytes.len() - 1, 0, 1024);
+        halyard_consumption_budget_create(1024, bytes.len() - 1, 0, 8192);
     assert(source_result.ok && budget_result.ok);
     if (let source = source_result.source) {
         if (let budget = budget_result.budget) {
