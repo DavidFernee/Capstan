@@ -25,7 +25,7 @@ int? ccam_json_parse_i64(Tainted token) {
         if (c < '0' || c > '9') { return none; }
         int digit = c - '0';
         if (value < multiply_limit) { return none; }
-        value *= 10;
+        value = value * 10;
         if (value < limit + digit) { return none; }
         value -= digit;
     }
