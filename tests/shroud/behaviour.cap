@@ -644,6 +644,29 @@ void test_display_list(Tally t, Font font) {
         "display list: published command sequence is isolated from later recording");
     expect_int(t, ch_r(replayed.get(40, 30)), 255,
         "display list: glyph mask pixels are snapshotted at record time");
+
+    // The executor accepts public DisplayList values, not just recorder output.
+    // Invalid metadata must be rejected before any destination pixel is touched.
+    Pixmap guarded = new_pixmap(48, 36);
+    guarded.clear(0xFF123456);
+    int before = guarded.get(0, 0);
+    DisplayCommand bad_clip = frame.commands[0];
+    bad_clip.clip = rect(-1, 0, 2, 2);
+    List<DisplayCommand> bad_clip_commands = new List<DisplayCommand>();
+    bad_clip_commands.push(bad_clip);
+    DisplayList bad_clip_frame = new DisplayList{width: 48, height: 36, commands: bad_clip_commands};
+    expect(t, !display_list_valid(bad_clip_frame, guarded),
+        "display list: out-of-surface clip is rejected", "invalid clip accepted");
+    expect_int(t, guarded.get(0, 0), before,
+        "display list: validation does not mutate the target");
+
+    DisplayCommand bad_opacity = frame.commands[0];
+    bad_opacity.opacity = 256;
+    List<DisplayCommand> bad_opacity_commands = new List<DisplayCommand>();
+    bad_opacity_commands.push(bad_opacity);
+    DisplayList bad_opacity_frame = new DisplayList{width: 48, height: 36, commands: bad_opacity_commands};
+    expect(t, !display_list_valid(bad_opacity_frame, guarded),
+        "display list: out-of-range opacity is rejected", "invalid opacity accepted");
 }
 
 void test_blend_bounds(Tally t) {
