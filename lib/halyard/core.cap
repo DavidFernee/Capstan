@@ -32,6 +32,102 @@ struct HalyardBytesResult {
     string error;
 }
 
+struct HalyardByteSink {
+    List<int> bytes;
+    int max_bytes;
+    bool closed;
+}
+
+struct HalyardByteSinkResult {
+    bool ok;
+    HalyardByteSink? sink;
+    string error;
+}
+
+struct HalyardSinkWriteResult {
+    bool ok;
+    int written;
+    string error;
+}
+
+struct HalyardSinkSnapshotResult {
+    bool ok;
+    List<int> bytes;
+    string error;
+}
+
+// An in-memory bounded sink. It has no filesystem, network or device authority.
+HalyardByteSinkResult halyard_sink_create(int max_bytes) {
+    if (max_bytes < 0) {
+        return new HalyardByteSinkResult{ok: false, sink: none, error: "negative_limit"};
+    }
+    HalyardByteSink sink = new HalyardByteSink{
+        bytes: new List<int>(), max_bytes: max_bytes, closed: false
+    };
+    return new HalyardByteSinkResult{ok: true, sink: sink, error: ""};
+}
+
+bool halyard_sink_state_valid(HalyardByteSink sink) {
+    if (sink.max_bytes < 0 || sink.bytes.len() > sink.max_bytes) { return false; }
+    for (int i = 0; i < sink.bytes.len(); i += 1) {
+        if (sink.bytes[i] < 0 || sink.bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
+int halyard_sink_remaining(HalyardByteSink sink) {
+    if (sink.closed || !halyard_sink_state_valid(sink)) { return 0; }
+    return sink.max_bytes - sink.bytes.len();
+}
+
+// All validation and capacity checks precede allocation and state replacement.
+// A rejected write leaves the previous sink contents unchanged.
+HalyardSinkWriteResult halyard_sink_write_exact(HalyardByteSink sink, List<int> input) {
+    if (sink.closed) {
+        return new HalyardSinkWriteResult{ok: false, written: 0, error: "closed"};
+    }
+    if (!halyard_sink_state_valid(sink)) {
+        return new HalyardSinkWriteResult{ok: false, written: 0, error: "invalid_state"};
+    }
+    if (input.len() > sink.max_bytes - sink.bytes.len()) {
+        return new HalyardSinkWriteResult{ok: false, written: 0, error: "output_limit"};
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) {
+            return new HalyardSinkWriteResult{ok: false, written: 0, error: "invalid_byte"};
+        }
+    }
+
+    List<int> replacement = new List<int>();
+    for (int j = 0; j < sink.bytes.len(); j += 1) {
+        replacement.push(sink.bytes[j]);
+    }
+    for (int k = 0; k < input.len(); k += 1) {
+        replacement.push(input[k]);
+    }
+    sink.bytes = replacement;
+    return new HalyardSinkWriteResult{ok: true, written: input.len(), error: ""};
+}
+
+HalyardSinkSnapshotResult halyard_sink_snapshot(HalyardByteSink sink) {
+    if (!halyard_sink_state_valid(sink)) {
+        return new HalyardSinkSnapshotResult{
+            ok: false, bytes: new List<int>(), error: "invalid_state"
+        };
+    }
+    List<int> snapshot = new List<int>();
+    for (int i = 0; i < sink.bytes.len(); i += 1) {
+        snapshot.push(sink.bytes[i]);
+    }
+    return new HalyardSinkSnapshotResult{ok: true, bytes: snapshot, error: ""};
+}
+
+bool halyard_sink_close(HalyardByteSink sink) {
+    if (sink.closed || !halyard_sink_state_valid(sink)) { return false; }
+    sink.closed = true;
+    return true;
+}
+
 struct HalyardLedger {
     int limit_input_bytes;
     int limit_retained_bytes;
