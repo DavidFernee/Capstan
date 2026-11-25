@@ -155,6 +155,10 @@ int verb_points(int v) {
 // malformed verb/point streams fail closed. A -1 result means reject.
 const int MAX_PATH_VERBS = 65536;
 const int MAX_PATH_FLATTENED_SEGMENTS = 65536;
+// Keep fixed-point curve arithmetic well inside signed 64-bit intermediates.
+const int MAX_PATH_COORD = 8388608;
+
+bool path_coord_valid(int v) { return v >= -MAX_PATH_COORD && v <= MAX_PATH_COORD; }
 
 int path_flatten_segment_bound(Path p) {
     int verb_count = p.verbs.len();
@@ -165,20 +169,27 @@ int path_flatten_segment_bound(Path p) {
     for (int i = 0; i < verb_count; i += 1) {
         int v = p.verbs[i];
         if (v == VERB_MOVE) {
-            if (point_at > p.pts.len() - 2) { return -1; }
+            if (point_at > p.pts.len() - 2 ||
+                !path_coord_valid(p.pts[point_at]) || !path_coord_valid(p.pts[point_at + 1])) { return -1; }
             if (open) { bound += 1; }
             open = true;
             point_at += 2;
         } else if (v == VERB_LINE) {
-            if (!open || point_at > p.pts.len() - 2) { return -1; }
+            if (!open || point_at > p.pts.len() - 2 ||
+                !path_coord_valid(p.pts[point_at]) || !path_coord_valid(p.pts[point_at + 1])) { return -1; }
             bound += 1;
             point_at += 2;
         } else if (v == VERB_QUAD) {
-            if (!open || point_at > p.pts.len() - 4) { return -1; }
+            if (!open || point_at > p.pts.len() - 4 ||
+                !path_coord_valid(p.pts[point_at]) || !path_coord_valid(p.pts[point_at + 1]) ||
+                !path_coord_valid(p.pts[point_at + 2]) || !path_coord_valid(p.pts[point_at + 3])) { return -1; }
             bound += MAX_CURVE_SEGMENTS;
             point_at += 4;
         } else if (v == VERB_CUBIC) {
-            if (!open || point_at > p.pts.len() - 6) { return -1; }
+            if (!open || point_at > p.pts.len() - 6 ||
+                !path_coord_valid(p.pts[point_at]) || !path_coord_valid(p.pts[point_at + 1]) ||
+                !path_coord_valid(p.pts[point_at + 2]) || !path_coord_valid(p.pts[point_at + 3]) ||
+                !path_coord_valid(p.pts[point_at + 4]) || !path_coord_valid(p.pts[point_at + 5])) { return -1; }
             bound += MAX_CURVE_SEGMENTS;
             point_at += 6;
         } else if (v == VERB_CLOSE) {
