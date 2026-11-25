@@ -111,4 +111,36 @@ theorem cross_domain_internal_handle_rejected {slotCount : Nat}
 #print axioms CapstanNativeHandleReachability.stale_internal_handle_rejected
 #print axioms CapstanNativeHandleReachability.cross_domain_internal_handle_rejected
 
+
+/-- No descriptor edge can terminate at a stale/unresolvable handle. This
+rules out treating a stale field as an edge to a recycled occupant. -/
+theorem no_descriptor_edge_to_stale_handle {slotCount : Nat}
+    (descriptors : DescriptorTable)
+    (heap : HandleHeap slotCount) (domain : Nat)
+    (source target : ObjectHandle slotCount)
+    (stale : resolveHandle heap domain target = none) :
+    ¬ HandleDescriptorEdge descriptors heap domain source target := by
+  intro edge
+  cases edge with
+  | field _ targetRes _ _ =>
+      simp [stale] at targetRes
+
+/-- A stale handle cannot seed reachability, even if it appears in the
+untrusted root-frame input list. -/
+theorem stale_handle_not_reachable_from_root {slotCount : Nat}
+    (descriptors : DescriptorTable)
+    (heap : HandleHeap slotCount) (domain : Nat)
+    (roots : HandleRootFrame slotCount)
+    (handle : ObjectHandle slotCount)
+    (stale : resolveHandle heap domain handle = none)
+    (member : handle ∈ roots) :
+    ¬ HandleReachable descriptors heap domain roots handle := by
+  intro reachable
+  cases reachable with
+  | root _ resolves =>
+      obtain ⟨object, resolves⟩ := resolves
+      simp [stale] at resolves
+  | edge prior edge =>
+      exact no_descriptor_edge_to_stale_handle descriptors heap domain _ _ stale edge
+
 end CapstanNativeHandleReachability
