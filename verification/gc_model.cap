@@ -281,6 +281,13 @@ GCObject gc_object(int id, int kind) {
     };
 }
 
+GCObject gc_unallocated_object(int id, int kind) {
+    return new GCObject{
+        id: id, generation: 1, kind: kind, allocated: false,
+        marked: false, secret_wiped: kind == GC_KIND_SECRET
+    };
+}
+
 GCSpec gc_empty_spec(int capacity) {
     List<GCObject> objects = new List<GCObject>();
     List<int> roots = new List<int>();
@@ -381,8 +388,7 @@ test "GC empty root set reclaims all unreachable objects" {
 test "GC rejects stale or unallocated root before sweeping" {
     GCSpec spec = gc_empty_spec(2);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
-    spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
-    spec.objects[1].allocated = false;
+    spec.objects.push(gc_unallocated_object(1, GC_KIND_ATOMIC));
     spec.roots.push(gc_ref(1, 1));
     GCResult result = gc_collect(spec);
     assert(result.status == GC_INVALID);
