@@ -98,26 +98,20 @@ its API design.
 
 ## 2B. Existing fail-closed blocker: byte-limit truncation
 
-The current `string_bytes()` and `tainted_bytes()` helpers cap input with
-`min(length, MAX_TEXT_BYTES)` and silently discard the suffix. This is not an
-acceptable security boundary: validation, display, accessibility and application
-logic can then operate on different effective values if another layer retains or
-processes the complete input. An attacker may place a delimiter, extension, control,
-or policy-relevant suffix beyond the cap.
+PR #329 now removes the silent-prefix behaviour: `string_bytes()` and
+`tainted_bytes()` reject values above `MAX_TEXT_BYTES` with the library's
+fail-fast exit path (status 101). Frame preflight checks text, value, accessibility
+label and hint lengths, and the aggregate frame budget, before code-point decoding or
+layout allocation. The helpers retain independent defensive checks for callers
+outside layout. Regression coverage includes just below the limit, the exact limit,
+and a hostile suffix one byte beyond it, for trusted and Tainted inputs, plus
+oversized per-view text, value, label and hint cases.
 
-Until this is corrected, no caller may treat the returned prefix as the complete
-validated value. The required correction is an explicit bounded conversion result
-that distinguishes success from over-limit input; over-limit input must be rejected
-before layout, accessibility publication, editing, copying or other side effects.
-A truncated prefix is not a successful parse and must never be used for an
-identity/security decision. The rejection path must be atomic and tested at
-MAX_TEXT_BYTES-1, exactly MAX_TEXT_BYTES, and MAX_TEXT_BYTES+1, including hostile
-suffixes after the boundary.
-
-This is a known implementation gap, not a claim that the current code already
-satisfies the gate. It blocks declaring the Unicode input pipeline security-complete.
-The fix requires tracing every caller and defining a compatible error/abort path
-before changing these helpers; do not patch the helpers in isolation.
+This is a targeted remediation in PR #329, not yet a validated or merged fix:
+required CI and review remain pending. The fail-fast process exit is deliberately
+not a successful truncated conversion and no prefix is returned for a security
+decision. All callers and externally observable effects still require review before
+the Unicode input pipeline can be described as security-complete.
 
 ## 3. Text representations
 
