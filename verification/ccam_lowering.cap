@@ -128,6 +128,9 @@ test "CCAM literal decoder preserves escaped and arbitrary byte values" {
     assert(utf8.ok && utf8.bytes.len() == 2);
     assert(utf8.bytes[0] == 195 && utf8.bytes[1] == 169);
 
+    CCAMLiteralBytesResult controls = ccam_decode_escaped_literal("\\011\\015", 2);
+    assert(controls.ok && controls.bytes[0] == 9 && controls.bytes[1] == 13);
+
     CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(
         "A\\012\\000\\377", 4);
     assert(decoded.ok);
