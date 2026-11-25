@@ -86,13 +86,11 @@ views, fonts and application state can increase the observed process heap.
 The 4 MiB raw-byte ceiling is therefore emphatically **not** a 4 MiB heap or
 RSS ceiling.
 
-### Historical 2 MiB CI high-water marks (not current-limit evidence)
+### Historical 2 MiB CI high-water marks
 
-The standalone verifier runs three actual exports (128×128, 560×520 and
-1023×512), independently decodes them, and records `CAPSTAN_GC_STATS` peak
-heap for the combined test process. After reusing one bounded 4 KiB parts list
-across conversion chunks, exact-head CI run `45350392496` on commit
-`c1d6386a9d96b4dcecf67bd7394251ffa875fdf8` passed all four jobs:
+The former 2 MiB / 1023×512 workload produced these historical combined-process
+GC heap high-water marks. They are retained for comparison only and are not
+used as evidence for the current 4 MiB limit:
 
 | Runner | Normal peak GC heap | ASan+UBSan peak GC heap |
 |---|---:|---:|
@@ -100,11 +98,42 @@ across conversion chunks, exact-head CI run `45350392496` on commit
 | Ubuntu / Clang | 43.0 MiB | 47.0 MiB |
 | Ubuntu / GCC | 47.1 MiB | 56.9 MiB |
 
-These are historical measurements from the former 2 MiB / 1023×512 workload, not measurements of the current 4 MiB / 2047×512 ceiling. They are Capstan GC heap high-water marks, not resident-set-size measurements or a worst-case bound. Fresh exact-head measurements for the 4 MiB workload are required before publishing a current peak figure.
+### Current 4 MiB limit — exact-head measurements and regression gates
 
-### Current 4 MiB limit — remeasurement required
+The standalone verifier runs the actual 128×128, 560×520 and 2047×512 encoder
+paths in one process, independently validates the PNG/zlib stream and every
+pixel, and records the collector's peak heap. Exact-head CI run
+`45708575117` on commit
+`8c1b68af38073091836adbd15ec1dd08b24556e6` passed Ubuntu/GCC,
+Ubuntu/Clang and macOS/Clang, including the normal and ASan+UBSan Shroud PNG
+verifier:
 
-The 4 MiB ceiling is selected to accommodate Anchor's 1100×720 preview: `(1 + 4*1100) * 720 = 3,168,720` filtered bytes. The 2047×512 boundary fixture exercises 4,192,768 bytes, 1,536 bytes below the cap; 2048×512 is rejected at 4,194,816 bytes. Exact-head CI for PR #272 must complete the normal, sanitizer, Anchor and supply-chain workloads. Record new normal and ASan+UBSan peak-heap measurements from that run before treating the allocation estimate as empirically validated.
+| Runner | Normal peak GC heap | ASan+UBSan peak GC heap |
+|---|---:|---:|
+| macOS / Clang | 68.8 MiB | 76.8 MiB |
+| Ubuntu / Clang | 68.8 MiB | 76.8 MiB |
+| Ubuntu / GCC | 77.0 MiB | 77.0 MiB |
+
+The measured maximum was 77.0 MiB. The verifier now fails closed if the
+combined normal or sanitizer test process does not report `peak_heap` or
+exceeds a **96 MiB peak-GC-heap regression ceiling**. This leaves 19 MiB above
+the highest observed result; the threshold is a CI regression budget, not a
+claim that every application process or combination of retained views is
+bounded to 96 MiB.
+
+A separate GC-stress mode repeats eight deterministic 128×128 encodes. Each
+filtered stream crosses the 65,535-byte stored-DEFLATE block boundary. It
+runs with `CAPSTAN_GC_STRESS=1` (collection on every allocation), checks each
+complete encoded byte list against the reference output, and enforces a
+32 MiB peak-GC-heap ceiling. This exercises repeated allocation/reclamation
+without applying collect-every-allocation to the 2047×512 workload, which
+would distort the large-image timing and create an impractically expensive
+test.
+
+These are Capstan GC heap high-water marks, not RSS measurements, a formal
+worst-case bound, or a process-wide memory guarantee. The 4 MiB raw-byte
+ceiling is not a 4 MiB heap/RSS ceiling. The conservative cumulative allocation
+derivation above remains distinct from simultaneously live heap.
 
 ## 4. Verification
 
