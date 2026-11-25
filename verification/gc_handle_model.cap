@@ -211,6 +211,25 @@ GCHFieldCheckResult gch_check_field(
     };
 }
 
+// A reference store is admissible only when the owner field is declared
+// reference-bearing and the target is a live handle in the same heap.
+GCHFieldCheckResult gch_check_reference_store(
+    GCHHeap heap, GCHHandle owner, int field_offset, GCHHandle target
+) {
+    GCHFieldCheckResult field = gch_check_field(
+        heap, owner, field_offset, true
+    );
+    if (field.status != GCH_OK) { return field; }
+    GCHResolveResult resolved_target = gch_resolve(heap, target, 0);
+    if (resolved_target.status != GCH_OK) {
+        return new GCHFieldCheckResult{
+            status: resolved_target.status, is_reference: true,
+            descriptor_id: field.descriptor_id
+        };
+    }
+    return field;
+}
+
 GCHHeap gch_fixture_heap() {
     List<int> offsets = new List<int>();
     offsets.push(1);
@@ -294,6 +313,41 @@ GCHTransitionResult gch_reclaim_slot(GCHHeap heap, GCHHandle handle) {
     return new GCHTransitionResult{
         status: GCH_OK, heap: published, handle: gch_handle(0, 0, 0)
     };
+}
+
+test "GC reference store accepts a live same-heap target" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(91, 1, 1)
+    );
+    assert(result.status == GCH_OK);
+}
+
+test "GC reference store rejects a foreign-heap target" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(92, 1, 1)
+    );
+    assert(result.status == GCH_FOREIGN_HEAP);
+}
+
+test "GC reference store rejects a stale target generation" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(91, 1, 2)
+    );
+    assert(result.status == GCH_STALE_HANDLE);
+}
+
+test "GC reference store rejects an unallocated target" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(91, 2, 4)
+    );
+    assert(result.status == GCH_UNALLOCATED);
+}
+
+test "GC reference store rejects a scalar owner field" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 2, gch_handle(91, 1, 1)
+    );
+    assert(result.status == GCH_FIELD_KIND_MISMATCH);
 }
 
 test "GC field check accepts a declared reference offset" {
