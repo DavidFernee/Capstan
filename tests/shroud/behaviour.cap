@@ -693,7 +693,7 @@ void test_a11y_untrusted(Tally t, Ui ui) {
     string zwsp = char_str(0xE2) + char_str(0x80) + char_str(0x8B);
     string replacement = char_str(0xEF) + char_str(0xBF) + char_str(0xBD);
     Tainted deceptive = taint("pay" + rlo + "pal" + zwsp + "x");
-    string visible = "pay" + replacement + "pal" + replacement + "x";
+    Tainted visible = taint("pay" + replacement + "pal" + replacement + "x");
     ui.render(column()
         .add(user_text(deceptive).key("untrusted-label"))
         .add(text_field("field", deceptive, "Name").key("untrusted-field")), 0);
