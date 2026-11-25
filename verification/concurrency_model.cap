@@ -149,6 +149,10 @@ bool ccm_task_terminal(int status) {
         status == CCM_TASK_FAILED;
 }
 
+bool ccm_task_finished_or_unspawned(int status) {
+    return status == CCM_TASK_NEW || ccm_task_terminal(status);
+}
+
 // The invariant checker is intentionally independent of transition selection.
 // It checks resource bounds, queue/message consistency, unique message
 // ownership, handle/task consistency, and scope closure.
@@ -250,10 +254,16 @@ bool ccm_invariant(CCMState state) {
         (!state.scope_cancel_requested || state.scope_failed)) { return false; }
     if (state.root_status == CCM_TASK_FAILED && !state.scope_failed) { return false; }
     if (state.scope_closed) {
-        if (!ccm_task_terminal(state.producer_status) ||
-            !ccm_task_terminal(state.consumer_status)) { return false; }
-        if (state.producer_handle != CCM_HANDLE_CONSUMED ||
-            state.consumer_handle != CCM_HANDLE_CONSUMED ||
+        if (!ccm_task_finished_or_unspawned(state.producer_status) ||
+            !ccm_task_finished_or_unspawned(state.consumer_status)) { return false; }
+        if ((state.producer_status == CCM_TASK_NEW &&
+             state.producer_handle != CCM_HANDLE_NONE) ||
+            (state.producer_status != CCM_TASK_NEW &&
+             state.producer_handle != CCM_HANDLE_CONSUMED) ||
+            (state.consumer_status == CCM_TASK_NEW &&
+             state.consumer_handle != CCM_HANDLE_NONE) ||
+            (state.consumer_status != CCM_TASK_NEW &&
+             state.consumer_handle != CCM_HANDLE_CONSUMED) ||
             !state.channel_closed) { return false; }
         if (state.message_live || state.channel_count != 0 ||
             state.live_bytes != 0 || state.buffered_bytes != 0) { return false; }
@@ -560,10 +570,16 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE) {
             return ccm_reject(before, "invalid_scope_completion");
         }
-        if (!ccm_task_terminal(before.producer_status) ||
-            !ccm_task_terminal(before.consumer_status) ||
-            before.producer_handle != CCM_HANDLE_CONSUMED ||
-            before.consumer_handle != CCM_HANDLE_CONSUMED) {
+        if (!ccm_task_finished_or_unspawned(before.producer_status) ||
+            !ccm_task_finished_or_unspawned(before.consumer_status) ||
+            (before.producer_status == CCM_TASK_NEW &&
+             before.producer_handle != CCM_HANDLE_NONE) ||
+            (before.producer_status != CCM_TASK_NEW &&
+             before.producer_handle != CCM_HANDLE_CONSUMED) ||
+            (before.consumer_status == CCM_TASK_NEW &&
+             before.consumer_handle != CCM_HANDLE_NONE) ||
+            (before.consumer_status != CCM_TASK_NEW &&
+             before.consumer_handle != CCM_HANDLE_CONSUMED)) {
             return ccm_reject(before, "scope_has_live_descendants_or_handles");
         }
         if (!before.channel_closed) {
@@ -1349,4 +1365,41 @@ test "CCM aggregates child failures symmetrically when consumer fails first" {
     state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
     assert(ccm_invariant(state));
     assert(state.root_status == CCM_TASK_FAILED && state.cleanup_reserved == 0);
+}
+
+test "CCM empty scope can close without spawning optional children" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state));
+    assert(state.scope_closed && state.root_status == CCM_TASK_DONE);
+    assert(state.producer_status == CCM_TASK_NEW);
+    assert(state.consumer_status == CCM_TASK_NEW);
+    assert(state.producer_handle == CCM_HANDLE_NONE);
+    assert(state.consumer_handle == CCM_HANDLE_NONE);
+    assert(state.cleanup_reserved == 0);
+}
+
+test "CCM scope can close after spawning only the producer" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state) && state.scope_closed);
+    assert(state.consumer_status == CCM_TASK_NEW);
+    assert(state.consumer_handle == CCM_HANDLE_NONE);
+}
+
+test "CCM scope can close after spawning only the consumer" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state) && state.scope_closed);
+    assert(state.producer_status == CCM_TASK_NEW);
+    assert(state.producer_handle == CCM_HANDLE_NONE);
 }
