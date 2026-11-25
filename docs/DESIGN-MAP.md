@@ -1,5 +1,268 @@
 # Capstan design map
 
+> **Architecture revision — 2026-11-25**
+>
+> This map is the repository's top-level architecture index and decision record. It
+> distinguishes the integrated implementation from active proposals and target-state
+> requirements. Subsystem specifications remain authoritative for their detailed
+> contracts; this map records how they fit together and the gates between them.
+>
+> **Status vocabulary**
+>
+> - **Integrated** — present on the default branch and covered by the repository's tests.
+> - **Validated** — integrated and supported by the stated test/conformance evidence.
+> - **Formally verified** — the exact stated property is established by a machine-checked
+>   theorem whose assumptions and implementation correspondence are disclosed.
+> - **In progress** — implementation or documentation exists on a working branch or in
+>   an incomplete mainline workstream; this is not a release claim.
+> - **Specified** — a reviewed or proposed contract exists; implementation is not implied.
+> - **Target** — an architectural objective with acceptance gates still outstanding.
+>
+> A pull request, proof fragment, prototype, benchmark, design note or successful
+> self-hosting fixpoint is not by itself evidence that a capability is integrated,
+> complete, secure or formally verified. All status statements are relative to the
+> named branch and revision date. When in doubt, the default branch and exact-head CI
+> determine the integrated state.
+>
+> ## Architecture decisions and current status
+>
+> ### System decomposition
+>
+> Capstan is a family of cooperating components with deliberately separate trust and
+> semantic responsibilities:
+>
+> 1. **Language and compiler** — source syntax, name/type checking, security diagnostics,
+>    source tooling and lowering. The compiler is the authority for language acceptance;
+>    clients must not reimplement its rules.
+> 2. **CCAM** — the canonical typed core representation and reference abstract machine
+>    for the C-free execution programme. Its normative specification defines values,
+>    evaluation order, checked arithmetic, traps, control flow and deterministic resource
+>    accounting. A derived optimisation IR is permitted only with a validator and a
+>    refinement path back to CCAM.
+> 3. **CCAM validator and evaluator** — accept only bounded, structurally valid programs;
+>    execute the specified abstract machine with explicit step and call-depth limits.
+>    Decoder, schema, aggregate-allocation and validation-order guarantees are part of
+>    the contract, not incidental implementation details.
+> 4. **Native backends and platform adapters** — consume validated CCAM, preserve its
+>    observable outcomes and resource limits, and isolate target ABI/syscall/vendor
+>    interfaces behind narrow, documented boundaries.
+> 5. **Runtime and standard library** — allocation, collection, strings, crypto, secrets,
+>    grants, I/O and other services. These remain separate assurance targets; a C-free
+>    instruction backend does not make the runtime C-free or verified.
+> 6. **Bootstrap and build system** — establish how compiler stages are built, compared
+>    and trusted. Self-hosting and reproducibility are useful evidence, not proofs of
+>    compiler correctness or freedom from a trusting-trust attack.
+> 7. **Shroud** — an independently reusable, cross-platform GUI toolkit implemented in
+>    Capstan, with platform hosts kept narrow and auditable.
+> 8. **Anchor** — the Capstan IDE built in Capstan on Shroud. It consumes compiler and
+>    language-server services; it is not a second compiler or security-policy engine.
+> 9. **Assurance and supply chain** — tests, fuzzing, sanitizers, proofs, SBOMs, provenance,
+>    signatures, vulnerability response and the explicit trusted-computing-base inventory.
+>
+> The dependency direction is intentional: compiler semantics and CCAM contracts are
+> below execution and tooling; Shroud is below Anchor; Anchor consumes compiler services.
+> No cycle is permitted (in particular, the compiler must not depend on Anchor or Shroud).
+>
+> ### Present execution path versus target
+>
+> The integrated default-branch compiler path remains the C-generating pipeline:
+>
+> ```
+> Capstan source -> lexer/parser/checker -> C code generation
+>               -> host C compiler/linker -> executable
+>               -> C runtime / conservative collector / OS interfaces
+> ```
+>
+> The C-free path is a separate, staged programme, not the present production default:
+>
+> ```
+> Capstan source -> checked source subset -> CCAM lowering
+>               -> bounded CCAM validation -> CCAM evaluator / reference semantics
+>               -> native backend -> target executable
+>                                      |
+>                                      +-> narrow platform/OS adapter
+> ```
+>
+> The current work demonstrates components and restricted vertical slices; it does not
+> yet establish an end-to-end C-free compiler, standard library and runtime on all target
+> platforms. In particular, a freestanding Linux x86-64 executable generated from a
+> restricted CCAM program is not the same claim as a C-free compiler bootstrap or a
+> general-purpose C-free runtime. Keep those claims separate in status reports.
+>
+> ### Semantic authority and correctness obligations
+>
+> CCAM is the canonical semantic boundary for the C-free path. Its normative contract
+> must settle, version and test at least:
+>
+> - scalar and aggregate value representation, types and register initialization;
+> - left-to-right evaluation and exact error/trap precedence;
+> - checked integer operations, signed division/remainder edge cases and branch rules;
+> - function signatures, calls, returns, frame construction and failure atomicity;
+> - explicit traps and observable effects;
+> - step, depth, stack, memory, instruction, function, argument and aggregate input limits;
+> - deterministic behaviour when a limit is reached.
+>
+> The implementation layers have distinct obligations:
+>
+> - **Source lowering:** preserve source evaluation order, lvalue identity, effects, security
+>   qualifiers and trap-before-effect behaviour.
+> - **Validation:** reject malformed encodings and invalid typed/control-flow structures
+>   before unsafe allocation or execution; bound total work and memory, not just individual
+>   arrays. A decoder must specify duplicate-key, unknown-field, integer-range and size
+>   handling where a serialized format is used.
+> - **Evaluator:** refine the CCAM abstract machine, including call/return, trap ordering
+>   and exact shared resource accounting.
+> - **Native backend:** preserve values, traps, effects and resource bounds. Architecture
+>   tests must execute generated binaries, not merely inspect assembly text.
+> - **Runtime/platform adapters:** specify ownership, allocation, GC, I/O, entropy,
+>   cryptography, secret lifecycle, process creation and OS error mapping separately.
+>
+> A proof of a model fragment does not prove the Capstan evaluator, validator, lowerer,
+> backend, runtime or hardware. Each correspondence link must be stated and evidenced.
+> The C backend remains a useful differential comparator but is not the normative oracle;
+> independent CCAM semantics and conformance vectors are.
+>
+> ### Formal assurance model
+>
+> Assurance claims must identify both the property and the artefact to which it applies.
+> The evidence ladder is:
+>
+> 1. normative specification and explicit assumptions;
+> 2. deterministic examples and positive/negative conformance tests;
+> 3. property-based, differential, mutation and adversarial fuzz testing;
+> 4. sanitizer, resource-exhaustion and platform execution testing;
+> 5. machine-checked theorems over a named formal model;
+> 6. a proved or validated correspondence between model and implementation;
+> 7. independent review/reproduction of the result.
+>
+> These are complementary, not interchangeable. A theorem about a mathematical model
+> must not be reported as a theorem about implementation code until the refinement link
+> is established. Every proof report records toolchain version, exact commit, theorem
+> scope, imports/axioms, assumptions, unproved obligations and implementation boundary.
+> No admitted theorem, `sorry`, `admit`, custom axiom or hidden trust assumption may be
+> presented as a completed proof.
+>
+> ### C-free engineering sequence
+>
+> The work is ordered by semantic dependency, not by optimistic release dates:
+>
+> 1. Stabilise and version the CCAM semantics and resource contract.
+> 2. Complete bounded validation and its malformed-input/aggregate-budget tests.
+> 3. Complete multi-function execution and call/return invariants.
+> 4. Complete source-to-CCAM lowering with evaluation-order and effect-sensitive tests.
+> 5. Establish an end-to-end native Linux x86-64 vertical slice, including executable
+>    output, traps and bounded stack behaviour.
+> 6. Connect evaluator and lowering to formal models with explicit simulation/refinement
+>    obligations; prove only properties actually established.
+> 7. Define and execute the S0→S1→S2→S3 bootstrap, retaining diverse independent seeds as
+>    comparison tools rather than final runtime dependencies.
+> 8. Port through separate architecture/OS adapter work to Linux ARM64, macOS and Windows
+>    x86-64/ARM64. Do not infer platform support from host-independent CCAM conformance.
+> 9. Migrate runtime and standard-library responsibilities incrementally, each behind
+>    compatibility tests and a reviewed trust-boundary contract.
+> 10. Retire the C path only after the replacement meets conformance, security, bootstrap,
+>     portability, performance and assurance acceptance gates.
+>
+> The order may overlap across isolated workstreams, but no dependent change may silently
+> assume an unmerged semantic or validator contract. The C-backed baseline remains
+> available as a compatibility and differential oracle until the retirement gate passes.
+>
+> ### Platform and portability policy
+>
+> Separate three claims: (a) CCAM semantics are host-independent; (b) a backend/adapter
+> exists for a particular ISA/ABI/OS; (c) the complete compiler/runtime/toolchain is
+> supported on that platform. Each requires its own evidence. The eventual target matrix
+> is Linux, macOS and Windows on x86-64 and ARM64, but it is a target matrix, not a claim
+> of current support.
+>
+> Linux may use a narrow, documented syscall interface. macOS and Windows may require
+> vendor system libraries or platform services; "C-free" means no C implementation or
+> generated-C dependency in Capstan's own compiler/runtime path, not that vendor OS
+> internals are written in Capstan. Treat every OS result as untrusted input. Pin ABI
+> contracts and test platform-specific error, path, entropy, memory and process semantics.
+>
+> ### Bootstrap and diverse compilation
+>
+> Distinguish self-hosting, fixed-point reproducibility, bootstrapping, diverse double
+> compilation and compiler correctness. The current C/Python seed path remains part of
+> today's trust inventory. The intended native bootstrap removes those as runtime/build
+> dependencies only when a reproducible stage chain has been demonstrated. Retaining an
+> independent seed compiler as an audit comparator is compatible with a C-free final
+> build, provided it is not a dependency of that final build. A fixpoint alone cannot
+> exclude a common-mode or trusting-trust defect.
+>
+> ### Shroud and Anchor boundary
+>
+> Shroud is a toolkit product with its own API, platform-host contract, resource budgets,
+> text/input/accessibility model, rendering conformance suite and release gates. Anchor
+> is one Shroud application and the reference Capstan IDE. Shroud must not absorb compiler
+> semantics; Anchor must not duplicate them.
+>
+> Anchor's trust model is fail-closed and evidence-aware: opening a workspace never runs
+> project code; build/test/format actions are explicit and use fixed executables plus
+> argument vectors (never shell interpolation); workspace and symlink traversal are
+> confined; subprocess output and execution are bounded and cancellable; plugins are
+> excluded until separately specified isolation/capability controls exist. Compiler
+> diagnostics are authoritative for language errors. The UI must distinguish compile-time
+> enforcement, runtime checks, tested claims, formal results, assumptions, and unknown
+> evidence. Missing, stale or unverifiable evidence is **unknown**, never a green result.
+> Component catalogue entries are pinned, attributable and scoped; "verified secure" is
+> never an unqualified or permanent label.
+>
+> ### Supply-chain and remediation policy
+>
+> SBOM, provenance, signature and advisory data are evidence inputs, not a guarantee that
+> a dependency is benign. Vulnerability reachability claims require reproducible evidence
+> and must not be inferred from an incomplete call graph. Offline environments consume
+> signed, versioned database snapshots.
+>
+> Deterministic local quick fixes may be offered, but compiler/toolchain changes, trust-root
+> changes, capability increases, dependency changes with security impact and any action
+> that executes project code require explicit review/approval under organisation policy.
+> Do not make automatic adoption of new compiler/toolchain releases the default. Every
+> remediation is attributable, reviewable, test-gated and reversible; AI review remains
+> advisory unless a separately governed, reproducible gate is explicitly enabled.
+>
+> ### Release and architecture acceptance gates
+>
+> A release claim is made per capability and platform. Before a C-free 1.0 claim, require:
+>
+> - complete, versioned language and CCAM specifications with conformance vectors;
+> - source-lowering, validator, evaluator and backend correctness evidence at declared
+>   assurance levels;
+> - no generated C, C compiler, libc or C runtime dependency in the claimed build/run path;
+> - a documented bootstrap chain and reproducible outputs, with independent comparison;
+> - runtime and standard-library inventory with explicit residual trusted base;
+> - bounded resource behaviour, adversarial malformed-input tests and secret-lifecycle tests;
+> - supported-platform CI and executable tests for each claimed ISA/ABI/OS combination;
+> - full security suite, fuzzing, sanitizers, supply-chain attestations and external review
+>   appropriate to the release claim;
+> - no open critical/high security defect without an explicit, approved disposition.
+>
+> The language's stable 1.0 release and the C-free toolchain milestone are related but
+> distinct decisions. A stable language may retain a compatibility backend; a C-free
+> prototype does not by itself justify language stability or a complete assurance claim.
+>
+> ### Architecture risks requiring continuous tracking
+>
+> - Semantic drift between source, CCAM, evaluator and native backend.
+> - Resource limits enforced locally but not in aggregate, or with different meanings
+>   across interpreter and native execution.
+> - Proof/model mismatch and unsupported claims based on isolated theorem fragments.
+> - Runtime/GC/secret-wiping assumptions outside the current formal model.
+> - Platform adapter and ABI differences hidden behind apparently portable source.
+> - Bootstrap common-mode failures and compromised build infrastructure.
+> - Workspace escape, command injection, stale evidence and dependency compromise in IDEs.
+> - Scope coupling between language releases, C-free engineering, Shroud and Anchor.
+>
+> The remainder of this document retains the detailed language, kernel, security, Shroud
+> and Anchor programme specifications. Where older roadmap text conflicts with this
+> architecture revision, this revision's status definitions, dependency order and
+> acceptance gates take precedence; the detailed subsystem documents govern their
+> respective technical contracts.
+>
+> ---
+>
 ## 1. Purpose
 
 Capstan's goal: **with familiar C/Java syntax, make every common vulnerability class
@@ -156,9 +419,7 @@ formatted, and the suite enforces it and fuzzes the formatter (see TESTING.md).
 
 Carried forward, because neither blocks everyday use:
 - `public`/`private` visibility for module members (v0.5, alongside interfaces)
-- parser error recovery, so one run reports more than one syntax error (with the LSP server, Phase A)
-  *(done: the parser resumes at the next statement or declaration and reports up to 50 syntax
-  errors per run; tests/recovery)*
+- parser error recovery *(integrated: the parser resumes at the next statement or declaration and reports up to 50 syntax errors per run; tests/recovery)*
 
 ### v0.4 — Performance *(in progress)*
 Done:
@@ -239,18 +500,16 @@ Remaining:
   live SBOM, vulnerability checks and default remediation build on these (section 5)
 - audit command: lists every `trust()`, isolated foreign component and suppressed warning in a project
 
-### v1.0 — Stable
-- language and standard library stability guarantee
-- complete specification; optional formal verification of the checker's core rules
-- WebAssembly backend alongside C
+### v1.0 — Stable (release proposal; acceptance gates apply)
+- language and standard library stability guarantee with a complete normative specification
+- mandatory, explicitly scoped assurance case for the checker and runtime; formal results are reported by theorem scope and implementation correspondence, not as an optional marketing label
+- backend support is selected and accepted independently; WebAssembly and native targets are not assumed complete merely by being listed here
 
 ## 5. Tooling and IDE
 
-### Phase A — Language server (in progress, alongside v0.4)
+### Phase A — Language server (integrated baseline; remaining features tracked below)
 An LSP server written in Capstan, reusing the compiler front end:
-- prerequisite: parser error recovery, so an editor sees every error in a file at once
-  (still needed: until then the server shows the first syntax error, and every checker
-  diagnostic once the file parses)
+- parser error recovery is integrated; the server reuses compiler diagnostics. Do not describe this prerequisite as outstanding.
 - red and yellow underlines with CWE codes, linking to the CWE description
   (done: `capstan lsp`, `tools/lsp.cap`, gives exactly the compiler's diagnostics)
 - hover types (`Tainted`, `Grant<ReadRecord>`), go to definition, find references, rename
@@ -294,8 +553,7 @@ and whenever a source publishes:
 
 **Fixed by default.** When an update, an advisory or a warning has a fix, the IDE applies it
 without being asked, unless the user has chosen to see warnings before remediation:
-- the setting is per user, per project and per organisation (an organisation can require review
-  for its projects); its default is **remediate automatically**
+- the setting is per user, per project and per organisation; security-sensitive, dependency, compiler/toolchain, trust-root or capability changes require explicit approval
 - **what is remediated:** dependency updates that fix an advisory; new versions of dependencies
   and of the toolchain; compiler warnings that have a deterministic quick fix (wrap in
   `escape_log()`, add `"--"`, unwrap an optional). Capstan Review's AI findings are never applied
@@ -361,17 +619,11 @@ removes a dependency altogether.
 | T7 (v0.8) | **Verified low-level Capstan:** the few raw operations the runtime needs (read or write raw memory, convert an address, call the kernel) are allowed only when the compiler proves their preconditions with an automated solver, as SPARK Ada does for run-time errors and Verus does for low-level Rust. Unprovable code does not compile. There is no `unsafe` escape hatch | Capstan's guarantees hold in the runtime too, established by proof instead of run-time checks |
 | T8 (v0.9) | **Runtime in verified Capstan:** garbage collector, allocator and safety primitives, every raw operation proved; the C remaining is only the program entry point, until the native backend removes it | No unchecked code in the runtime |
 | T9 (v0.9) | **Verified C compilation option:** generated C builds with CompCert (formally verified), for high-assurance users | The C compiler leaves the trusted base (CompCert needs a commercial licence outside research) |
-| T10 (v1.0) | **WebAssembly backend:** Capstan emits WebAssembly directly, no C | First backend with no C at all; sandboxed execution contains even compiler bugs |
-| T11 (after v1.0) | **Native backend:** Capstan emits x86-64 and ARM64 directly. Designed for verification (small, simple, with translation validation) rather than peak speed; the C path remains for performance builds | Capstan all the way down |
+| T10 (independent backend track) | **WebAssembly backend:** direct WebAssembly emission, if selected after a separate ABI/runtime and assurance design | A C-free target for the specified subset; not proof of a C-free compiler or runtime |
+| T11 (active C-free engineering track; not a release-date promise) | **Native backend:** incrementally emit target machine code from validated CCAM, beginning with a restricted Linux x86-64 slice; extend to other ISAs/OSes only after per-target gates | C-free execution for the explicitly supported subset; full Capstan all-the-way-down remains a later milestone |
 | T12 (after v1.0) | **Full functional verification:** the type and safety checker proved to enforce Capstan's rules, and the runtime proved to meet its specification (not only free of memory errors) | Proof, not just testing, for everything Capstan relies on |
 
-**No unsafe component.** Capstan's guarantees apply at all times, to all code, including
-the runtime and the standard library. Ordinary code is protected by the type system and run-time
-checks; the runtime's low-level operations are protected by machine-checked proof. Code that cannot be proved safe does not
-compile, so there is no code anywhere that runs unchecked. What remains to be trusted is the
-irreducible minimum for any system: the proof checker, the specifications (a proof shows code
-meets its specification, not that the specification is right), the operating-system kernel and
-the hardware, the same residue that seL4 and CompCert rest on.
+**Target assurance boundary (not a present-state claim).** The long-term design aims to apply Capstan's guarantees to the runtime and standard library as well as ordinary programs. That state has not yet been established for every component. Until each low-level operation has a proved or otherwise explicitly justified contract, the runtime, compiler, generated C, C compiler, linker, OS interfaces and hardware remain in the applicable trusted base. The proof checker, specifications and hardware also remain assumptions even in a highly assured end state.
 
 **Testing the runtime as hard as it is proved.** Proof and testing complement each other:
 - **checked build:** in test runs, every raw operation in the runtime is also checked at run time
