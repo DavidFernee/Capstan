@@ -78,7 +78,17 @@ HDR/wide-gamut workflows and future media forms.
 Foundational types and contracts should preserve timing, provenance, precision, colour,
 channel layout, metadata and transformation history where required by the domain.
 
-## 6. Normative specifications and programme
+## 6. Initial implementation status
+
+The working branch contains the first MC1 prototype: a bounded in-memory byte source and
+a sequential five-dimensional resource ledger in `lib/halyard/core.cap`, with regression
+coverage in `verification/halyard_core.cap`. It is not release-ready and does not pass
+the MC1 exit gate: opaque state, concurrent-safe or single-owner accounting, lifetime-
+bound reservations, atomic reservation plus allocation, full resource dimensions,
+rational timebases and bounded sinks remain outstanding. See
+[Core primitive contract](CORE-PRIMITIVES.md) and issue #293.
+
+## 7. Normative specifications and programme
 
 | Document | Authority |
 |---|---|
