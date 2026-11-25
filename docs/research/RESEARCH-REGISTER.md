@@ -194,3 +194,53 @@ engineering evidence. It does not yet have, on the evidence recorded here, a dem
 end-to-end formally verified C-free compiler/runtime, a final independently replicated K0
 study, or four completed journal papers. The immediate research task is to turn promising
 implementation and proof fragments into tightly scoped, reproducible claims.
+
+
+### R8 — Bounded, high-performance media processing
+
+**Question:** Can explicit ownership, aggregate resource accounting, rational timebases and typed bounded processing graphs make hostile-media handling measurably safer while preserving or improving throughput and latency?
+
+**Candidate contributions:** (1) aggregate rather than per-buffer resource admission for parsers and decoders; (2) failure-atomic reservation and bounded queue protocols; (3) rational-clock state machines for variable-frame-rate audio/video synchronisation; (4) differential fuzzing across independent media implementations; (5) graph planning that reduces copies without changing reference output semantics.
+
+**Maturity:** Architecture and hypotheses specified in docs/media/ARCHITECTURE.md; no implementation, benchmark, novelty claim, proof or publication result is claimed by this entry. The work must begin with literature review and baseline selection, then publish reproducible corpora, raw results, exact source revisions, negative results and explicit proof boundaries.
+
+**Next evidence:** MC0 review; MC1 bounded stream/resource/timebase conformance; Shanty WAV/PCM and Deadeye image/frame vertical slices; adversarial fuzzing; implementation-linked model refinement before any formal assurance claim.
+
+
+#### R8 implementation note — Halyard MC1 prototype (2026-11-25)
+
+The Halyard working branch now contains Capstan-native Core prototypes in
+`lib/halyard/core.cap`: a validated bounded byte source, copy-on-commit bounded sink,
+five-dimensional sequential live-reservation ledger, a separate monotonic input/output/decode/work budget, one-shot trusted-caller reservation handles, and rational timebase/timestamp rescaling
+with explicit rounding. Thirty-three Core `test` declarations are colocated with the
+implementation, including exhaustive small-state checks for exact-read boundaries, the
+3^5 resource-admission state space, per-dimension release underflow, sink failure
+atomicity, rational rescaling, rounding and signed multiplication boundaries.
+
+Shanty's first audio vertical slice is implemented in `lib/halyard/shanty.cap`: a bounded
+RIFF/WAVE PCM parser and integer decoder for 8/16/24/32-bit samples, with nine colocated
+Capstan tests. The implementation has a strict 8 MiB/1,024-chunk profile and no device
+playback, capture, compressed codec or ledger-coupled sample allocation.
+
+Deadeye's first still-image vertical slice is implemented in `lib/halyard/deadeye.cap`:
+a strict uncompressed BMP decoder for 24-bit BGR and 32-bit BGRx, including top-down and
+bottom-up row order and checked row padding, with six colocated Capstan tests. The Shroud
+audit confirmed `lib/shroud/png.cap` is an encoder only; Python zlib in Shroud's tests is
+an isolated oracle, not a Halyard dependency. BMP was selected as the bounded first
+parser rather than prematurely adding a DEFLATE/PNG inflater.
+No Halyard-specific shell, Python, C, C++ or other-language test source is added. The
+detailed contract and limitations are recorded in `docs/media/CORE-PRIMITIVES.md`.
+
+This is an implementation experiment, not a research result. The current public struct
+representation permits client mutation; the ledger is not concurrency-safe; reservation
+is not yet coupled atomically to source allocation; the ledger does not yet cover the full
+resource vector; full clock epochs/discontinuities, parser integration of cumulative budgets, ledger-coupled sink reservations and format registration remain unimplemented. No
+benchmark, proof, novelty claim or MC1 completion is asserted. Follow-up issue #293
+tracks opaque state, lifetime-bound reservation ownership and the concurrency model.
+
+The first testable research question is now sharpened: **does all-dimensions-preflighted
+admission, when coupled to opaque ownership and bounded parser graphs, prevent aggregate
+resource-limit bypasses that per-buffer limits permit, without unacceptable throughput,
+latency or memory overhead?** Baselines must compare identical workloads and report
+rejection correctness, peak retained bytes, allocation count, CPU work, throughput and
+tail latency. The sequential prototype alone cannot answer this question.

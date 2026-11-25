@@ -1,0 +1,280 @@
+// Halyard resource-actor reference machine.
+// This is a deterministic Capstan-native model of the selected single-owner
+// admission policy. It is not a concurrent runtime and does not prove that
+// callers are actually serialized; the bridge to the structured concurrency
+// implementation is tracked by issues #229 and #249.
+
+const int HRA_EMPTY = 0;
+const int HRA_PENDING = 1;
+const int HRA_ACCEPTED = 2;
+const int HRA_REJECTED = 3;
+const int HRA_RELEASED = 4;
+
+struct HRAState {
+    int capacity;
+    int used;
+    int queue_capacity;
+    int queued;
+    int max_used;
+    int next_sequence;
+    int a_status;
+    int a_amount;
+    int a_sequence;
+    int b_status;
+    int b_amount;
+    int b_sequence;
+}
+
+struct HRATransition {
+    bool ok;
+    HRAState state;
+    string error;
+}
+
+HRAState hra_initial(int capacity, int queue_capacity) {
+    return new HRAState{
+        capacity: capacity, used: 0,
+        queue_capacity: queue_capacity, queued: 0, max_used: 0,
+        next_sequence: 1,
+        a_status: HRA_EMPTY, a_amount: 0, a_sequence: 0,
+        b_status: HRA_EMPTY, b_amount: 0, b_sequence: 0
+    };
+}
+
+HRAState hra_copy(HRAState source) {
+    return new HRAState{
+        capacity: source.capacity, used: source.used,
+        queue_capacity: source.queue_capacity, queued: source.queued,
+        max_used: source.max_used, next_sequence: source.next_sequence,
+        a_status: source.a_status, a_amount: source.a_amount,
+        a_sequence: source.a_sequence,
+        b_status: source.b_status, b_amount: source.b_amount,
+        b_sequence: source.b_sequence
+    };
+}
+
+HRATransition hra_reject(HRAState state, string error) {
+    return new HRATransition{ok: false, state: state, error: error};
+}
+
+HRATransition hra_accept(HRAState state) {
+    return new HRATransition{ok: true, state: state, error: ""};
+}
+
+bool hra_invariant(HRAState state) {
+    if (state.capacity < 0 || state.used < 0 ||
+        state.used > state.capacity || state.queue_capacity < 0 ||
+        state.queued < 0 || state.queued > state.queue_capacity ||
+        state.max_used < state.used || state.max_used > state.capacity ||
+        state.next_sequence < 1) { return false; }
+    if (state.a_status < HRA_EMPTY || state.a_status > HRA_RELEASED ||
+        state.b_status < HRA_EMPTY || state.b_status > HRA_RELEASED) { return false; }
+    if (state.a_amount < 0 || state.b_amount < 0) { return false; }
+    int expected_queued = 0;
+    int expected_used = 0;
+    if (state.a_status == HRA_PENDING) { expected_queued += 1; }
+    if (state.b_status == HRA_PENDING) { expected_queued += 1; }
+    if (state.a_status == HRA_ACCEPTED) { expected_used += state.a_amount; }
+    if (state.b_status == HRA_ACCEPTED) { expected_used += state.b_amount; }
+    if (state.queued != expected_queued || state.used != expected_used) { return false; }
+    if (state.a_status == HRA_EMPTY &&
+        (state.a_amount != 0 || state.a_sequence != 0)) { return false; }
+    if (state.b_status == HRA_EMPTY &&
+        (state.b_amount != 0 || state.b_sequence != 0)) { return false; }
+    if (state.a_status != HRA_EMPTY &&
+        (state.a_sequence < 1 || state.a_sequence >= state.next_sequence)) { return false; }
+    if (state.b_status != HRA_EMPTY &&
+        (state.b_sequence < 1 || state.b_sequence >= state.next_sequence)) { return false; }
+    if (state.a_status != HRA_EMPTY && state.b_status != HRA_EMPTY &&
+        state.a_sequence == state.b_sequence) { return false; }
+    return true;
+}
+
+// Enqueue is the ownership commit point: rejection preserves the prior state;
+// acceptance assigns one FIFO sequence number and occupies exactly one slot.
+HRATransition hra_enqueue(HRAState before, int request_id, int amount) {
+    if (!hra_invariant(before)) { return hra_reject(before, "invalid_state"); }
+    if (amount < 0) { return hra_reject(before, "negative_charge"); }
+    if (before.queued >= before.queue_capacity) {
+        return hra_reject(before, "queue_full");
+    }
+    HRAState next = hra_copy(before);
+    if (request_id == 1) {
+        if (before.a_status != HRA_EMPTY) {
+            return hra_reject(before, "duplicate_request");
+        }
+        next.a_status = HRA_PENDING;
+        next.a_amount = amount;
+        next.a_sequence = before.next_sequence;
+    } else if (request_id == 2) {
+        if (before.b_status != HRA_EMPTY) {
+            return hra_reject(before, "duplicate_request");
+        }
+        next.b_status = HRA_PENDING;
+        next.b_amount = amount;
+        next.b_sequence = before.next_sequence;
+    } else {
+        return hra_reject(before, "unknown_request");
+    }
+    next.queued += 1;
+    next.next_sequence += 1;
+    return hra_accept(next);
+}
+
+// Only the ledger owner processes requests. Each transition is a single
+// linearization point: either the full charge is admitted or nothing is charged.
+HRATransition hra_process_one(HRAState before) {
+    if (!hra_invariant(before)) { return hra_reject(before, "invalid_state"); }
+    if (before.queued == 0) { return hra_reject(before, "queue_empty"); }
+    HRAState next = hra_copy(before);
+    bool choose_a = before.a_status == HRA_PENDING &&
+        (before.b_status != HRA_PENDING ||
+         before.a_sequence < before.b_sequence);
+    if (choose_a) {
+        next.queued -= 1;
+        if (before.a_amount > before.capacity - before.used) {
+            next.a_status = HRA_REJECTED;
+        } else {
+            next.a_status = HRA_ACCEPTED;
+            next.used += before.a_amount;
+            if (next.used > next.max_used) { next.max_used = next.used; }
+        }
+    } else {
+        next.queued -= 1;
+        if (before.b_amount > before.capacity - before.used) {
+            next.b_status = HRA_REJECTED;
+        } else {
+            next.b_status = HRA_ACCEPTED;
+            next.used += before.b_amount;
+            if (next.used > next.max_used) { next.max_used = next.used; }
+        }
+    }
+    if (!hra_invariant(next)) { return hra_reject(before, "transition_invariant"); }
+    return hra_accept(next);
+}
+
+// A successful release consumes the owner's lease exactly once.
+HRATransition hra_release(HRAState before, int request_id) {
+    if (!hra_invariant(before)) { return hra_reject(before, "invalid_state"); }
+    HRAState next = hra_copy(before);
+    if (request_id == 1) {
+        if (before.a_status != HRA_ACCEPTED) {
+            return hra_reject(before, "lease_not_owned");
+        }
+        next.used -= before.a_amount;
+        next.a_status = HRA_RELEASED;
+    } else if (request_id == 2) {
+        if (before.b_status != HRA_ACCEPTED) {
+            return hra_reject(before, "lease_not_owned");
+        }
+        next.used -= before.b_amount;
+        next.b_status = HRA_RELEASED;
+    } else {
+        return hra_reject(before, "unknown_request");
+    }
+    if (!hra_invariant(next)) { return hra_reject(before, "transition_invariant"); }
+    return hra_accept(next);
+}
+
+test "HRA serial admission prevents aggregate overcommit in FIFO order" {
+    HRAState state = hra_initial(1, 2);
+    HRATransition a = hra_enqueue(state, 1, 1);
+    assert(a.ok);
+    state = a.state;
+    HRATransition b = hra_enqueue(state, 2, 1);
+    assert(b.ok);
+    state = b.state;
+    HRATransition first = hra_process_one(state);
+    assert(first.ok);
+    state = first.state;
+    assert(state.a_status == HRA_ACCEPTED && state.used == 1);
+    HRATransition second = hra_process_one(state);
+    assert(second.ok);
+    state = second.state;
+    assert(state.b_status == HRA_REJECTED && state.used == 1);
+    assert(hra_invariant(state) && state.max_used == 1);
+}
+
+test "HRA FIFO order follows enqueue commit order rather than request identity" {
+    HRAState state = hra_initial(1, 2);
+    HRATransition eb = hra_enqueue(state, 2, 1);
+    assert(eb.ok);
+    state = eb.state;
+    HRATransition ea = hra_enqueue(state, 1, 1);
+    assert(ea.ok);
+    state = ea.state;
+    HRATransition pb = hra_process_one(state);
+    assert(pb.ok);
+    state = pb.state;
+    assert(state.b_status == HRA_ACCEPTED && state.a_status == HRA_PENDING);
+    HRATransition pa = hra_process_one(state);
+    assert(pa.ok);
+    state = pa.state;
+    assert(state.a_status == HRA_REJECTED && state.used == 1);
+    assert(hra_invariant(state));
+}
+
+test "HRA bounded queue rejection is failure atomic" {
+    HRAState state = hra_initial(4, 1);
+    HRATransition enqueued = hra_enqueue(state, 1, 2);
+    assert(enqueued.ok);
+    state = enqueued.state;
+    HRATransition rejected = hra_enqueue(state, 2, 1);
+    assert(!rejected.ok && rejected.error == "queue_full");
+    assert(rejected.state.queued == 1);
+    assert(rejected.state.a_status == HRA_PENDING);
+    assert(rejected.state.b_status == HRA_EMPTY);
+    assert(rejected.state.next_sequence == state.next_sequence);
+    assert(hra_invariant(rejected.state));
+}
+
+test "HRA invalid charges and duplicate requests do not mutate the queue" {
+    HRAState state = hra_initial(4, 2);
+    HRATransition negative = hra_enqueue(state, 1, -1);
+    assert(!negative.ok && negative.error == "negative_charge");
+    assert(negative.state.queued == 0 && negative.state.next_sequence == 1);
+    HRATransition enqueued = hra_enqueue(state, 1, 2);
+    assert(enqueued.ok);
+    state = enqueued.state;
+    HRATransition duplicate = hra_enqueue(state, 1, 1);
+    assert(!duplicate.ok && duplicate.error == "duplicate_request");
+    assert(duplicate.state.queued == 1 && duplicate.state.a_amount == 2);
+}
+
+test "HRA lease release is one-shot and preserves capacity invariants" {
+    HRAState state = hra_initial(3, 1);
+    HRATransition enqueued = hra_enqueue(state, 1, 3);
+    assert(enqueued.ok);
+    state = enqueued.state;
+    HRATransition processed = hra_process_one(state);
+    assert(processed.ok);
+    state = processed.state;
+    assert(state.used == 3 && state.a_status == HRA_ACCEPTED);
+    HRATransition released = hra_release(state, 1);
+    assert(released.ok);
+    state = released.state;
+    assert(state.used == 0 && state.a_status == HRA_RELEASED);
+    HRATransition twice = hra_release(state, 1);
+    assert(!twice.ok && twice.error == "lease_not_owned");
+    assert(twice.state.used == 0 && hra_invariant(twice.state));
+}
+
+test "HRA oversized request is rejected without changing admitted occupancy" {
+    HRAState state = hra_initial(2, 2);
+    HRATransition ea = hra_enqueue(state, 1, 1);
+    assert(ea.ok);
+    state = ea.state;
+    HRATransition eb = hra_enqueue(state, 2, 3);
+    assert(eb.ok);
+    state = eb.state;
+    HRATransition pa = hra_process_one(state);
+    assert(pa.ok);
+    state = pa.state;
+    HRATransition pb = hra_process_one(state);
+    assert(pb.ok);
+    state = pb.state;
+    assert(state.a_status == HRA_ACCEPTED);
+    assert(state.b_status == HRA_REJECTED);
+    assert(state.used == 1 && state.max_used == 1);
+    assert(hra_invariant(state));
+}
