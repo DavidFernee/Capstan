@@ -572,8 +572,8 @@ void test_ui_state_pruning(Tally t, Ui ui) {
     ui.scroll.set(scroll_id, 17);
     ui.caret.set(field_id, 2);
     ui.render(live, 1);
-    expect_int(t, ui.scroll.len(), 1, "UI state: live scroll offset is retained");
-    expect_int(t, ui.caret.len(), 1, "UI state: live text caret is retained");
+    expect_int(t, ui.scroll.keys().len(), 1, "UI state: live scroll offset is retained");
+    expect_int(t, ui.caret.keys().len(), 1, "UI state: live text caret is retained");
     int scroll_value = 0;
     int caret_value = 0;
     if (let value = ui.scroll.get(scroll_id)) { scroll_value = value; }
@@ -582,8 +582,8 @@ void test_ui_state_pruning(Tally t, Ui ui) {
     expect_int(t, caret_value, 2, "UI state: retained caret is unchanged");
 
     ui.render(text("replacement").key("replacement"), 2);
-    expect_int(t, ui.scroll.len(), 0, "UI state: removed scroll node is pruned");
-    expect_int(t, ui.caret.len(), 0, "UI state: removed text field is pruned");
+    expect_int(t, ui.scroll.keys().len(), 0, "UI state: removed scroll node is pruned");
+    expect_int(t, ui.caret.keys().len(), 0, "UI state: removed text field is pruned");
 
     // Repeated generations with fresh stale IDs must not grow retained state.
     for (int i = 0; i < 1000; i += 1) {
@@ -591,8 +591,8 @@ void test_ui_state_pruning(Tally t, Ui ui) {
         ui.caret.set($"stale-caret-{i}", i);
         ui.render(text("stable").key("stable"), i + 3);
     }
-    expect_int(t, ui.scroll.len(), 0, "UI state: scroll map stays bounded across 1000 generations");
-    expect_int(t, ui.caret.len(), 0, "UI state: caret map stays bounded across 1000 generations");
+    expect_int(t, ui.scroll.keys().len(), 0, "UI state: scroll map stays bounded across 1000 generations");
+    expect_int(t, ui.caret.keys().len(), 0, "UI state: caret map stays bounded across 1000 generations");
 }
 
 void test_raster(Tally t) {
