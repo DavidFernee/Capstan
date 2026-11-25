@@ -244,6 +244,9 @@ void test_host_cancellation(Tally t, Ui ui) {
         "window focus: committed text is ignored while inactive");
     ui.handle(new_event(EV_FOCUS_GAINED, 120));
     expect(t, ui.host_focused, "window focus: activation restores input delivery", "not focused");
+    List<Msg> stale_release = ui.handle(pointer_event(EV_POINTER_UP, bx, by, 125));
+    expect_int(t, stale_release.len(), 0,
+        "window focus: stale pre-deactivation pointer release cannot activate");
     List<Msg> activated = ui.handle(key_event(KEY_ENTER, 0, 130));
     expect(t, activated.len() == 1 && activated[0].action == "cancelled",
         "window focus: preserved widget focus works after reactivation", $"{activated.len()} messages");
