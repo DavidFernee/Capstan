@@ -246,3 +246,68 @@ The next implementation unit should be **M1: a pure handle-table transition mode
 It should avoid `struct` mutation and mutable collection aliasing until #255's correspondence work closes that gap. If the supported language cannot express the handle-table transition without those semantics, stop and record the language/compiler prerequisite rather than quietly relying on behaviour that the language contract excludes.
 
 Only after handle freshness, validation, no-wrap and atomicity are represented in supported Capstan semantics should M2 allocate object storage. The collector follows only after explicit root frames and typed edge metadata exist.
+
+
+## 11. Concrete compiler object-graph inventory
+
+This inventory is based on the current compiler sources at the branch baseline, not a hypothetical minimal compiler. It is included to prevent the memory design being reduced to a scalar register array.
+
+### 11.1 Frontend graph
+
+| Module/type | Object and edge shape | Heap requirement |
+|---|---|---|
+| `compiler/ast.cap: Type` | kind, name string, recursive `List<Type>` arguments | Recursive typed objects; immutable or controlled-mutation type nodes; bounded argument vectors |
+| `compiler/ast.cap: Node` | kind, two strings, scalar/source positions, recursive `List<Node>` children, optional `Type` | Dominant recursive AST graph; optional reference; source-span metadata; arena/GC lifetime across checker and codegen |
+| `compiler/ast.cap: Diag` | source location, code and message strings | Diagnostic graph and bounded message storage |
+| `compiler/ast.cap: Ctx` | lists of paths, tainted source objects and diagnostics plus flags | Long-lived compilation roots; source buffers and diagnostics retained across phases |
+| `compiler/lexer.cap: Token` | kind, string payload, integer and source position | Large flat token arrays; strings may reference source slices or own decoded content |
+| `compiler/lexer.cap: Lexer` | source object, cursor state, context and token list | Lexer state and token-list ownership; bounded input/token counts |
+| `compiler/parser.cap: Parser` | token list, context, recursion depth, extra declarations | Recursive parser stack plus AST allocation; explicit parser depth and node budgets |
+| `compiler/checker.cap: Checker` | multiple maps of AST nodes/types, nested scope/map lists, counters and context | Hash/index storage, many aliasing references to AST nodes, scoped lifetime and deterministic map growth |
+| `compiler/checker.cap: Flow/FlowSummary` | maps of flow facts and lists of boolean summaries | Repeated temporary analysis graphs and bounded fixed-point work |
+| `compiler/ranges.cap: Rg/Snap` | maps of intervals, maps of lists, nested snapshots and copied environments | High temporary allocation/churn; explicit work budget and predictable snapshot cost |
+| `compiler/main.cap` | paths, source list, loaded-file map, import queue, provenance arrays, combined declarations | Multi-file ownership, import-cycle/duplicate control and whole-compilation root set |
+
+The AST is a graph, not simply a tree once checker tables, declaration maps and type references point into it. The collector must preserve shared nodes and must not assume a single-parent tree. Parser recursion, AST depth, token count, diagnostics and import count need independent bounds; a single heap-byte cap does not bound CPU or recursion.
+
+### 11.2 Required roots and phase transitions
+
+At minimum the compiler's root set must include:
+- loaded source buffers and their path/name metadata;
+- lexer token buffers while parsing is active;
+- parser token stream, current construction stack, partial AST roots and lifted method declarations;
+- the complete declaration list and AST roots between parse, checker, range analysis and code generation;
+- checker declaration maps, nested scope maps, current expression/statement nodes and type nodes;
+- range-analysis environments, snapshots, fixed-point maps and current work items;
+- diagnostics until they have been rendered or deliberately discarded;
+- generated assembly/output buffers while writing the artifact.
+
+A phase boundary is not automatically a collection boundary. A node reachable only through a checker map or a diagnostic must remain live until that map/diagnostic is dropped. Conversely, after a phase completes, the compiler should be able to release phase-local roots deterministically so memory can be reclaimed before the next source file or compilation request.
+
+For a future persistent LSP process, each open document needs an explicit ownership domain: document version, AST/type/checker roots, diagnostics, pending requests and cancellation state. Replacing a document version must detach old roots only after no in-flight request can reference them. The first native CLI can avoid concurrency, but its ownership model should not preclude this.
+
+### 11.3 Storage and tracing consequences
+
+- Recursive `Node.kids`, `Type.args`, nested maps and map values require descriptor-guided tracing; raw integer/string fields must not be treated as references.
+- `Map<Node>`, `Map<Type>` and `Map<List<Iv>>` create graph edges through both map entry storage and nested collection storage. The map's index table is also managed memory and must be included in the accounting.
+- Source substrings and decoded token strings require an explicit policy: either immutable slices retain a source-buffer handle plus byte offsets, or they own copied byte strings. A slice must never be a naked pointer into a movable or reclaimed source buffer.
+- The current lexer builds decoded strings by repeated concatenation in some escape paths. The native lexer should use a bounded byte builder with checked geometric growth and one final immutable string publication, not quadratic repeated copies.
+- Parser construction repeatedly appends child nodes. AST child vectors therefore need amortised growth with capacity accounting and failure atomicity.
+- Checker and range analysis create short-lived maps/lists repeatedly. They need region/epoch allocation or tracing collection, not an unbounded process-lifetime arena for a persistent LSP.
+- Descriptor tables and compiler metadata should be immutable after validation and rooted for the lifetime of the compiler image.
+
+### 11.4 Concrete boundedness dimensions to measure
+
+Before selecting heap defaults, collect real corpus maxima and enforce configurable ceilings for:
+- source bytes per file and total imported source bytes;
+- token count and total decoded token bytes;
+- AST node count, maximum AST depth, child-vector capacity and total string bytes;
+- type-node count and type-argument depth;
+- diagnostics count and total diagnostic bytes;
+- import count, graph depth and total path bytes;
+- map entries and aggregate map index capacity;
+- checker/range-analysis worklist entries, iterations and total work;
+- root-frame slots and maximum live roots;
+- live object count, payload bytes, reserved bytes, metadata bytes and GC work.
+
+These are separate resource contracts. An AST with a million shallow nodes and one with extreme recursive depth stress different resources; a small source can still trigger high analysis work. The first native compiler should use conservative explicit limits and reject excess input deterministically rather than rely on host memory exhaustion.
