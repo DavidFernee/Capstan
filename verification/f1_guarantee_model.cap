@@ -82,6 +82,9 @@ F1Value f1_make(int data_sources, bool data_top,
 }
 
 F1Value f1_source(int identity_bit, bool is_secret) {
+    if (identity_bit <= 0 || (identity_bit & (identity_bit - 1)) != 0) {
+        return f1_unknown();
+    }
     int confidentiality = F1_CONF_PUBLIC;
     if (is_secret) { confidentiality = F1_CONF_SECRET; }
     return f1_make(identity_bit, false, 0, false, confidentiality, F1_CTX_NONE);
@@ -288,6 +291,13 @@ int main() {
     F1ContractResult unknown_result = f1_compose_contract(a, unknown);
     if (unknown_result.ok) { return 1; }
 
+    F1Contract memory_large = f1_contract(0, 0, 1, F1_I64_MAX);
+    F1ContractResult memory_overflow = f1_compose_contract(memory_large, b);
+    if (memory_overflow.ok || memory_overflow.error != "memory_bound_overflow") { return 1; }
+
+    F1Value invalid_source = f1_source(3, false);
+    if (!invalid_source.data_top) { return 1; }
+
     F1Value unknown_value = f1_apply_summary(f1_unknown_summary(), untrusted);
     if (!unknown_value.data_top || !unknown_value.selection_top) { return 1; }
     if (f1_public_sink_allowed(unknown_value)) { return 1; }
@@ -363,6 +373,18 @@ test "resource overflow fails closed rather than wrapping" {
     F1Contract b = f1_contract(0, 0, 1, 1);
     F1ContractResult result = f1_compose_contract(a, b);
     assert(!result.ok && result.error == "fuel_bound_overflow");
+}
+
+test "invalid source identities widen instead of aliasing" {
+    F1Value invalid = f1_source(3, false);
+    assert(invalid.data_top && invalid.selection_top);
+}
+
+test "memory-bound overflow fails closed" {
+    F1Contract a = f1_contract(0, 0, 1, F1_I64_MAX);
+    F1Contract b = f1_contract(0, 0, 1, 1);
+    F1ContractResult result = f1_compose_contract(a, b);
+    assert(!result.ok && result.error == "memory_bound_overflow");
 }
 
 test "unknown summaries widen provenance and confidentiality" {
