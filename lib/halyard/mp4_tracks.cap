@@ -725,7 +725,7 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
         128, 8192, 0, 0, 16, 32, 32768
     );
     HalyardConsumptionBudgetResult budget_result =
-        halyard_consumption_budget_create(67108864,0,0,400000000);
+        halyard_consumption_budget_create(67108864,8192,0,400000000);
     assert(ledger_result.ok && budget_result.ok);
     if (let ledger = ledger_result.ledger) {
         if (let budget = budget_result.budget) {
