@@ -710,11 +710,19 @@ class ContractTests(unittest.TestCase):
         for raw in (b"Content-Length: 1\r\n\r\n{",
                     b'Content-Length: 25\r\n\r\n{"jsonrpc":"2.0","id":1',
                     b'Content-Length: 33\r\n\r\n{"jsonrpc":"2.0","jsonrpc":"2.0"}',
-                    b'Content-Length: 53\r\n\r\n{"jsonrpc":"2.0","method":"x","params":{"n":NaN}}'):
+                    b'Content-Length: 33\r\n\r\n{"jsonrpc":"2.0","jsonrpc":"2.0"}'):
             decoder = BoundedFrameDecoder()
             with self.subTest(raw=raw), self.assertRaises(ContractError):
                 decoder.feed(raw)
                 decoder.finish()
+
+    def test_nonstandard_json_numeric_constants_are_rejected(self):
+        for constant in (b"NaN", b"Infinity", b"-Infinity"):
+            body = b'{"jsonrpc":"2.0","method":"x","params":{"n":' + constant + b"}}"
+            frame = (b"Content-Length: " + str(len(body)).encode("ascii") +
+                     b"\r\n\r\n" + body)
+            with self.subTest(constant=constant), self.assertRaises(ContractError):
+                BoundedFrameDecoder().feed(frame)
 
     def test_request_correlation_duplicate_ids_late_reply_and_queue_limit(self):
         tracker = RequestTracker(max_pending=1)
