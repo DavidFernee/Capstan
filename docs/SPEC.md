@@ -12,7 +12,7 @@
   Java (`0xFFFFFFFFFFFFFFFF` is `-1`, `0x8000000000000000` is the smallest int).
 - Character literals: `'a'`, `'\n'`, `'\''`; they are `int` values 0–255.
 - String literals: `"..."` with escapes `\n \t \r \0 \\ \" \'`. Strings are byte sequences.
-- Keywords: `struct const if else while for return break continue true false none new let protected policy public test authorize assert_denied assert_granted`.
+- Keywords: `struct const if else while for return break continue true false none new let protected policy public private test authorize assert_denied assert_granted`.
 
 ## Types
 
