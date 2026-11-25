@@ -450,10 +450,10 @@ def check_single_line_budget(capstanc, cc, cflags, tmp):
 def check_wayland_wire(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/wayland_wire.cap", "wayland-wire")
     r = run(exe, check=False)
-    expected = "Wayland framing and payload spans: 26 adversarial assertions passed\n"
+    expected = "Wayland framing and payload spans: 29 adversarial assertions passed\n"
     if r.returncode != 0 or r.stdout != expected:
         sys.exit(f"Wayland wire framing and payload spans: exit {r.returncode}:\n{r.stdout}{r.stderr}")
-    return "26 checks: exhaustive frame-size domain, fragmentation, concatenation, bounded uint32 reads, array padding, string termination/null handling and malformed lengths"
+    return "29 checks: exhaustive frame-size domain, fragmentation, concatenation, bounded uint32 reads, array padding, string termination/null handling, malformed lengths and frame-boundary isolation"
 
 
 def check_pixmap_limits(capstanc, cc, cflags, tmp):
