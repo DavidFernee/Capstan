@@ -319,14 +319,14 @@ Still required before MC1 can pass:
 
 1. opaque or otherwise non-forgeable source and ledger state;
 2. a single-owner or synchronised concurrency model;
-3. allocator-exact byte charging, recoverable allocation failure and ownership transfer;
-3. atomic reservation tied to source snapshot allocation;
-4. explicit thread-confinement until the language-level ownership/channel model from #229/#249 is available; no caller may share a mutable ledger across concurrent tasks;
-5. lifetime-bound reservations and cancellation/cleanup semantics;
-6. larger model/property tests over generated operation sequences and concurrent schedules;
-7. malformed-state and mutation tests;
-8. allocation, CPU and retained-memory measurements under adversarial inputs;
-9. independent review and exact-head CI on supported platforms.
+3. allocator-exact byte charging, recoverable allocation failure and explicit ownership transfer;
+4. an allocator API that can make admission plus allocation failure-atomic (the current runtime cannot report recoverable allocation failure);
+5. explicit thread-confinement until the language-level ownership/channel model from #229/#249 is available; no caller may share a mutable ledger across concurrent tasks;
+6. lifetime-bound reservations and cancellation/cleanup semantics;
+7. larger model/property tests over generated operation sequences and concurrent schedules;
+8. malformed-state and mutation tests;
+9. allocation, CPU and retained-memory measurements under adversarial inputs;
+10. independent review and exact-head CI on supported platforms.
 
 ## 9. Implementation provenance
 
