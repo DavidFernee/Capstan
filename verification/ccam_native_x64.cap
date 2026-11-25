@@ -699,7 +699,7 @@ test "CCAM x86-64 backend emits freestanding Hello World output" {
 
 test "CCAM x86-64 backend preserves NUL and UTF-8 output bytes" {
     assert(ccam_x64_write_test_program(
-        "int main() { print(\"A\\\\0éB\"); return 0; }",
+        "int main() { print(\"A" + char_str(92) + "0éB\"); return 0; }",
         "build/ccam-native-x64-output-bytes.s", 100, 16));
 }
 
