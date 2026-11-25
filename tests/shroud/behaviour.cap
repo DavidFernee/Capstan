@@ -590,6 +590,19 @@ void test_raster(Tally t) {
 }
 
 void test_display_list(Tally t, Font font) {
+    List<int> canonical_alpha = new List<int>();
+    canonical_alpha.push(0);
+    canonical_alpha.push(128);
+    canonical_alpha.push(255);
+    expect(t, display_mask_alpha_valid(canonical_alpha),
+        "display list: canonical glyph alpha is accepted", "valid alpha rejected");
+    List<int> invalid_alpha_values = new List<int>();
+    invalid_alpha_values.push(-1);
+    expect(t, !display_mask_alpha_valid(invalid_alpha_values),
+        "display list: negative glyph alpha is rejected", "negative alpha accepted");
+    invalid_alpha_values[0] = 256;
+    expect(t, !display_mask_alpha_valid(invalid_alpha_values),
+        "display list: over-range glyph alpha is rejected", "over-range alpha accepted");
     Pixmap direct = new_pixmap(48, 36);
     Pixmap replayed = new_pixmap(48, 36);
     direct.clear(0xFF182838);
