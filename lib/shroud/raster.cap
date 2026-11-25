@@ -94,7 +94,7 @@ struct DisplayCommand {
     Rect clip;
     Paint paint;
     int rule;
-    Segments segments;
+    Segments? segments;
     int x;
     int y;
     int coverage;
@@ -158,7 +158,7 @@ struct Canvas {
         if (self.recording) {
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_RECT, bounds: r, clip: self.clip(),
-                paint: paint, rule: FILL_NONZERO, segments: new_segments(),
+                paint: paint, rule: FILL_NONZERO, segments: none,
                 x: 0, y: 0, coverage: 0, opacity: self.opacity
             };
             display_list_append(self, cmd, 0);
@@ -195,7 +195,7 @@ struct Canvas {
         if (self.recording) {
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: self.clip(),
-                paint: paint, rule: FILL_NONZERO, segments: new_segments(),
+                paint: paint, rule: FILL_NONZERO, segments: none,
                 x: x, y: y, coverage: coverage, opacity: self.opacity
             };
             display_list_append(self, cmd, 0);
@@ -258,7 +258,12 @@ void execute_display_list(DisplayList dl, Pixmap pm) {
         if (cmd.kind == DISPLAY_RECT) {
             cv.fill_rect(cmd.bounds, cmd.paint);
         } else if (cmd.kind == DISPLAY_PATH) {
-            fill_segments(cv, cmd.segments, cmd.paint, cmd.rule);
+            if (let s = cmd.segments) {
+                fill_segments(cv, s, cmd.paint, cmd.rule);
+            } else {
+                println("shroud: path command has no segments");
+                exit(101);
+            }
         } else if (cmd.kind == DISPLAY_BLEND) {
             cv.blend(cmd.x, cmd.y, cmd.paint, cmd.coverage);
         } else {
