@@ -1,0 +1,179 @@
+import "ccam_json_string.cap";
+
+// Bounded lexical scanner for untrusted CCAM JSON documents.
+// Emits a token tape containing source spans; it does not allocate decoded
+// values, build containers, detect duplicate object keys or validate schemas.
+// String bodies are delegated to ccam_json_decode_string_body.
+
+const int CCAM_JSON_MAX_INPUT_BYTES = 16777216;
+const int CCAM_JSON_MAX_TOKENS = 1048576;
+const int CCAM_JSON_MAX_DEPTH = 64;
+
+const int CCAM_JSON_T_LBRACE = 1;
+const int CCAM_JSON_T_RBRACE = 2;
+const int CCAM_JSON_T_LBRACKET = 3;
+const int CCAM_JSON_T_RBRACKET = 4;
+const int CCAM_JSON_T_COLON = 5;
+const int CCAM_JSON_T_COMMA = 6;
+const int CCAM_JSON_T_STRING = 7;
+const int CCAM_JSON_T_NUMBER = 8;
+const int CCAM_JSON_T_TRUE = 9;
+const int CCAM_JSON_T_FALSE = 10;
+const int CCAM_JSON_T_NULL = 11;
+
+struct CCAMJsonToken {
+    int kind;
+    int start;
+    int end;
+}
+
+struct CCAMJsonScanResult {
+    bool ok;
+    List<CCAMJsonToken> tokens;
+    int error;
+    int error_pos;
+}
+
+CCAMJsonScanResult ccam_json_scan_error(List<CCAMJsonToken> tokens, int code, int pos) {
+    return new CCAMJsonScanResult{ok: false, tokens: tokens, error: code, error_pos: pos};
+}
+
+bool ccam_json_is_digit(int c) {
+    return c >= '0' && c <= '9';
+}
+
+bool ccam_json_is_ws(int c) {
+    return c == 32 || c == 9 || c == 10 || c == 13;
+}
+
+bool ccam_json_match(Tainted input, int pos, string word) {
+    if (pos + word.len() > input.len()) { return false; }
+    for (int i = 0; i < word.len(); i += 1) {
+        if (input.at(pos + i) != word.at(i)) { return false; }
+    }
+    return true;
+}
+
+CCAMJsonScanResult ccam_json_scan(Tainted input) {
+    List<CCAMJsonToken> tokens = new List<CCAMJsonToken>();
+    int n = input.len();
+    if (n > CCAM_JSON_MAX_INPUT_BYTES) { return ccam_json_scan_error(tokens, 1, 0); }
+
+    int i = 0;
+    int depth = 0;
+    while (i < n) {
+        int c = input.at(i);
+        if (ccam_json_is_ws(c)) { i += 1; continue; }
+
+        int kind = 0;
+        int start = i;
+        if (c == '{') { kind = CCAM_JSON_T_LBRACE; depth += 1; i += 1; }
+        else if (c == '}') { kind = CCAM_JSON_T_RBRACE; depth -= 1; i += 1; }
+        else if (c == '[') { kind = CCAM_JSON_T_LBRACKET; depth += 1; i += 1; }
+        else if (c == ']') { kind = CCAM_JSON_T_RBRACKET; depth -= 1; i += 1; }
+        else if (c == ':') { kind = CCAM_JSON_T_COLON; i += 1; }
+        else if (c == ',') { kind = CCAM_JSON_T_COMMA; i += 1; }
+        else if (c == '"') {
+            kind = CCAM_JSON_T_STRING;
+            i += 1;
+            int body_start = i;
+            while (i < n && input.at(i) != '"') {
+                if (input.at(i) == 92) {
+                    if (i + 1 >= n) { return ccam_json_scan_error(tokens, 2, i); }
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            if (i >= n) { return ccam_json_scan_error(tokens, 2, start); }
+            if (!ccam_json_decode_string_body(input.slice(body_start, i)).ok) {
+                return ccam_json_scan_error(tokens, 3, body_start);
+            }
+            i += 1;
+        } else if (c == '-' || ccam_json_is_digit(c)) {
+            kind = CCAM_JSON_T_NUMBER;
+            if (input.at(i) == '-') {
+                i += 1;
+                if (i >= n || !ccam_json_is_digit(input.at(i))) {
+                    return ccam_json_scan_error(tokens, 4, start);
+                }
+            }
+            if (input.at(i) == '0') {
+                i += 1;
+                if (i < n && ccam_json_is_digit(input.at(i))) {
+                    return ccam_json_scan_error(tokens, 4, i);
+                }
+            } else {
+                while (i < n && ccam_json_is_digit(input.at(i))) { i += 1; }
+            }
+            if (i < n && input.at(i) == '.') {
+                i += 1;
+                if (i >= n || !ccam_json_is_digit(input.at(i))) {
+                    return ccam_json_scan_error(tokens, 4, i);
+                }
+                while (i < n && ccam_json_is_digit(input.at(i))) { i += 1; }
+            }
+            if (i < n && (input.at(i) == 'e' || input.at(i) == 'E')) {
+                i += 1;
+                if (i < n && (input.at(i) == '+' || input.at(i) == '-')) { i += 1; }
+                if (i >= n || !ccam_json_is_digit(input.at(i))) {
+                    return ccam_json_scan_error(tokens, 4, i);
+                }
+                while (i < n && ccam_json_is_digit(input.at(i))) { i += 1; }
+            }
+        } else if (c == 't' && ccam_json_match(input, i, "true")) {
+            kind = CCAM_JSON_T_TRUE; i += 4;
+        } else if (c == 'f' && ccam_json_match(input, i, "false")) {
+            kind = CCAM_JSON_T_FALSE; i += 5;
+        } else if (c == 'n' && ccam_json_match(input, i, "null")) {
+            kind = CCAM_JSON_T_NULL; i += 4;
+        } else {
+            return ccam_json_scan_error(tokens, 5, i);
+        }
+
+        if (depth < 0 || depth > CCAM_JSON_MAX_DEPTH) {
+            return ccam_json_scan_error(tokens, 6, start);
+        }
+        if (tokens.len() >= CCAM_JSON_MAX_TOKENS) {
+            return ccam_json_scan_error(tokens, 7, start);
+        }
+        tokens.push(new CCAMJsonToken{kind: kind, start: start, end: i});
+    }
+    if (depth != 0) { return ccam_json_scan_error(tokens, 8, n); }
+    return new CCAMJsonScanResult{ok: true, tokens: tokens, error: 0, error_pos: n};
+}
+
+test "CCAM JSON scanner tokenises punctuation literals and numbers" {
+    CCAMJsonScanResult r = ccam_json_scan(taint("{\"a\":[-1,2.5e+3,true,false,null]}"));
+    assert(r.ok);
+    assert(r.tokens.len() == 15);
+    assert(r.tokens[0].kind == CCAM_JSON_T_LBRACE);
+    assert(r.tokens[1].kind == CCAM_JSON_T_STRING);
+    assert(r.tokens[3].kind == CCAM_JSON_T_LBRACKET);
+    assert(r.tokens[4].kind == CCAM_JSON_T_NUMBER);
+    assert(r.tokens[6].kind == CCAM_JSON_T_NUMBER);
+    assert(r.tokens[8].kind == CCAM_JSON_T_TRUE);
+    assert(r.tokens[9].kind == CCAM_JSON_T_COMMA);
+    assert(r.tokens[10].kind == CCAM_JSON_T_FALSE);
+    assert(r.tokens[12].kind == CCAM_JSON_T_NULL);
+    assert(r.tokens[13].kind == CCAM_JSON_T_RBRACKET);
+    assert(r.tokens[14].kind == CCAM_JSON_T_RBRACE);
+}
+
+test "CCAM JSON scanner rejects malformed strings numbers and literals" {
+    assert(!ccam_json_scan(taint("\"unterminated")).ok);
+    assert(!ccam_json_scan(taint("\"bad\\xescape\"")).ok);
+    assert(!ccam_json_scan(taint("01")).ok);
+    assert(!ccam_json_scan(taint("-")).ok);
+    assert(!ccam_json_scan(taint("1.")).ok);
+    assert(!ccam_json_scan(taint("1e+")).ok);
+    assert(!ccam_json_scan(taint("truth")).ok);
+    assert(!ccam_json_scan(taint("@")).ok);
+}
+
+test "CCAM JSON scanner enforces bounded nesting and balanced delimiters" {
+    assert(!ccam_json_scan(taint("]")).ok);
+    assert(!ccam_json_scan(taint("[")).ok);
+    assert(!ccam_json_scan(taint("{}]")).ok);
+    assert(ccam_json_scan(taint("{[]}")).ok);
+}

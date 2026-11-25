@@ -1,0 +1,318 @@
+// Validated CCAM v0.1 JSON-to-machine boundary.
+// The scanner/parser/schema/semantic passes reject untrusted input before
+// this component constructs evaluator-owned function tables or frames.
+// ccam_call_machine_create performs a second typed in-memory validation and
+// deep-copies the program before execution.
+
+import "ccam_json_semantics.cap";
+import "ccam_calls.cap";
+
+struct CCAMJsonMachineResult {
+    bool ok;
+    CCAMCallMachine machine;
+    int error_code;
+    int error_pos;
+    string error;
+}
+
+CCAMJsonMachineResult ccam_json_machine_error(
+    int code, int pos, string error
+) {
+    return new CCAMJsonMachineResult{
+        ok: false, machine: ccam_empty_call_machine(),
+        error_code: code, error_pos: pos, error: error
+    };
+}
+
+CCAMJsonMachineResult ccam_json_machine_ok(CCAMCallMachine machine) {
+    return new CCAMJsonMachineResult{
+        ok: true, machine: machine, error_code: 0, error_pos: 0, error: ""
+    };
+}
+
+string ccam_json_machine_string(Tainted value) {
+    return trust(value,
+        "CCAM JSON semantic validation established UTF-8 validity, NUL exclusion and field bounds");
+}
+
+int ccam_json_machine_integer(
+    Tainted source, List<CCAMJsonToken> tokens, int at
+) {
+    if (at < 0 || at >= tokens.len()) { return 0; }
+    CCAMJsonToken token = tokens[at];
+    int? parsed = ccam_json_parse_i64(source.slice(token.start, token.end));
+    if (let value = parsed) { return value; }
+    return 0;
+}
+
+CCAMJsonMachineResult ccam_json_machine_create(
+    Tainted source, int max_steps, int max_depth
+) {
+    // Reject invalid runtime budgets before parsing or materialising attacker-
+    // controlled program tables.
+    if (max_steps < 0) {
+        return ccam_json_machine_error(81, 0, "invalid_step_limit");
+    }
+    if (max_steps > CCAM_MAX_STEPS) {
+        return ccam_json_machine_error(82, 0, "configured_step_limit_too_large");
+    }
+    if (max_depth < 1) {
+        return ccam_json_machine_error(83, 0, "invalid_call_depth_limit");
+    }
+    if (max_depth > CCAM_MAX_CALL_DEPTH) {
+        return ccam_json_machine_error(84, 0, "configured_call_depth_too_large");
+    }
+
+    CCAMJsonSchemaResult validated = ccam_json_validate_program_semantics(source);
+    if (!validated.ok) {
+        return ccam_json_machine_error(
+            validated.error, validated.error_pos, "ccam_json_validation_failed"
+        );
+    }
+
+    // The token tape is bounded by the scanner and is only consulted after
+    // complete structural, schema and whole-program validation.
+    CCAMJsonScanResult scanned = ccam_json_scan(source);
+    if (!scanned.ok) {
+        return ccam_json_machine_error(
+            scanned.error, scanned.error_pos, "ccam_json_scan_failed"
+        );
+    }
+    List<CCAMJsonToken> tokens = scanned.tokens;
+    int entry_at = ccam_json_schema_find(source, tokens, 0, "entry");
+    string entry_name = ccam_json_machine_string(
+        ccam_json_schema_decoded_string(source, tokens, entry_at)
+    );
+    int functions_at = ccam_json_schema_find(source, tokens, 0, "functions");
+
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    Map<int> function_indices = new Map<int>();
+
+    // Pass one creates the complete signature table. This makes forward and
+    // recursive calls resolvable without constructing any evaluator frames.
+    int function_cursor = functions_at + 1;
+    for (int f = 0; f < validated.function_count; f += 1) {
+        int function_at = function_cursor;
+        int name_at = ccam_json_schema_find(source, tokens, function_at, "name");
+        string name = ccam_json_machine_string(
+            ccam_json_schema_decoded_string(source, tokens, name_at)
+        );
+
+        int registers_at = ccam_json_schema_find(
+            source, tokens, function_at, "register_types");
+        int register_count = ccam_json_schema_array_count(tokens, registers_at);
+        List<int> register_types = new List<int>();
+        int register_cursor = registers_at + 1;
+        for (int r = 0; r < register_count; r += 1) {
+            int type_at = register_cursor;
+            if (ccam_json_schema_string_eq(source, tokens, type_at, "int")) {
+                register_types.push(CCAM_TYPE_INT);
+            } else {
+                register_types.push(CCAM_TYPE_BOOL);
+            }
+            register_cursor = ccam_json_schema_array_next(tokens, register_cursor);
+        }
+
+        int parameter_count = ccam_json_semantic_field_int(
+            source, tokens, function_at, "parameter_count"
+        );
+        int return_at = ccam_json_schema_find(source, tokens, function_at, "return_type");
+        int return_type = CCAM_RETURN_VOID;
+        if (ccam_json_schema_string_eq(source, tokens, return_at, "int")) {
+            return_type = CCAM_RETURN_INT;
+        } else if (ccam_json_schema_string_eq(source, tokens, return_at, "bool")) {
+            return_type = CCAM_RETURN_BOOL;
+        }
+
+        function_indices.set(name, f);
+        functions.push(new CCAMFunction{
+            name: name,
+            register_types: register_types,
+            parameter_count: parameter_count,
+            return_type: return_type,
+            instructions: new List<CCAMInstruction>(),
+            call_sites: new List<CCAMCallSite>()
+        });
+        function_cursor = ccam_json_schema_array_next(tokens, function_cursor);
+    }
+
+    int entry_function = -1;
+    if (let found_entry = function_indices.get(entry_name)) {
+        entry_function = found_entry;
+    }
+    if (entry_function < 0) {
+        return ccam_json_machine_error(80, tokens[entry_at].start, "entry_function_not_found");
+    }
+
+    // Pass two materialises only the opcode fields admitted by the closed
+    // schema. The semantic pass has already checked indices and types.
+    function_cursor = functions_at + 1;
+    for (int f = 0; f < validated.function_count; f += 1) {
+        int function_at = function_cursor;
+        int instructions_at = ccam_json_schema_find(
+            source, tokens, function_at, "instructions"
+        );
+        int instruction_count = ccam_json_schema_array_count(tokens, instructions_at);
+        int instruction_cursor = instructions_at + 1;
+        CCAMFunction fn = functions[f];
+
+        for (int pc = 0; pc < instruction_count; pc += 1) {
+            int instruction_at = instruction_cursor;
+            int op_at = ccam_json_schema_find(source, tokens, instruction_at, "op");
+            CCAMInstruction instruction = ccam_instruction(0);
+
+            if (ccam_json_schema_string_eq(source, tokens, op_at, "const_i")) {
+                instruction.op = CCAM_OP_CONST_I;
+                instruction.dst = ccam_json_semantic_field_int(source, tokens, instruction_at, "dst");
+                int value_at = ccam_json_schema_find(source, tokens, instruction_at, "value");
+                instruction.int_value = ccam_json_machine_integer(source, tokens, value_at);
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "const_b")) {
+                instruction.op = CCAM_OP_CONST_B;
+                instruction.dst = ccam_json_semantic_field_int(source, tokens, instruction_at, "dst");
+                int value_at = ccam_json_schema_find(source, tokens, instruction_at, "value");
+                instruction.bool_value = tokens[value_at].kind == CCAM_JSON_T_TRUE;
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "move")) {
+                instruction.op = CCAM_OP_MOVE;
+                instruction.dst = ccam_json_semantic_field_int(source, tokens, instruction_at, "dst");
+                instruction.src = ccam_json_semantic_field_int(source, tokens, instruction_at, "src");
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "not_b")) {
+                instruction.op = CCAM_OP_NOT_B;
+                instruction.dst = ccam_json_semantic_field_int(source, tokens, instruction_at, "dst");
+                instruction.src = ccam_json_semantic_field_int(source, tokens, instruction_at, "src");
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "add_i")) {
+                instruction.op = CCAM_OP_ADD_I;
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "sub_i")) {
+                instruction.op = CCAM_OP_SUB_I;
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "mul_i")) {
+                instruction.op = CCAM_OP_MUL_I;
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "div_i")) {
+                instruction.op = CCAM_OP_DIV_I;
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "rem_i")) {
+                instruction.op = CCAM_OP_REM_I;
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "eq_i")) {
+                instruction.op = CCAM_OP_EQ_I;
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "lt_i")) {
+                instruction.op = CCAM_OP_LT_I;
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "jump")) {
+                instruction.op = CCAM_OP_JUMP;
+                instruction.target = ccam_json_semantic_field_int(source, tokens, instruction_at, "target");
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "branch")) {
+                instruction.op = CCAM_OP_BRANCH;
+                instruction.src = ccam_json_semantic_field_int(source, tokens, instruction_at, "cond");
+                instruction.if_true = ccam_json_semantic_field_int(source, tokens, instruction_at, "if_true");
+                instruction.if_false = ccam_json_semantic_field_int(source, tokens, instruction_at, "if_false");
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "call")) {
+                instruction.op = CCAM_OP_CALL;
+                int callee_at = ccam_json_schema_find(source, tokens, instruction_at, "function");
+                string callee_name = ccam_json_machine_string(
+                    ccam_json_schema_decoded_string(source, tokens, callee_at)
+                );
+                int callee_index = -1;
+                if (let found_callee = function_indices.get(callee_name)) {
+                    callee_index = found_callee;
+                }
+                int args_at = ccam_json_schema_find(source, tokens, instruction_at, "args");
+                int arg_count = ccam_json_schema_array_count(tokens, args_at);
+                List<int> args = new List<int>();
+                int arg_cursor = args_at + 1;
+                for (int a = 0; a < arg_count; a += 1) {
+                    args.push(ccam_json_semantic_int(source, tokens, arg_cursor));
+                    arg_cursor = ccam_json_schema_array_next(tokens, arg_cursor);
+                }
+                int dst_at = ccam_json_schema_find(source, tokens, instruction_at, "dst");
+                bool has_destination = tokens[dst_at].kind != CCAM_JSON_T_NULL;
+                int destination = 0;
+                if (has_destination) {
+                    destination = ccam_json_semantic_int(source, tokens, dst_at);
+                }
+                fn.call_sites.push(new CCAMCallSite{
+                    instruction_index: pc,
+                    callee_index: callee_index,
+                    argument_registers: args,
+                    destination_register: destination,
+                    has_destination: has_destination
+                });
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "ret")) {
+                instruction.op = CCAM_OP_RET;
+                instruction.src = ccam_json_semantic_field_int(source, tokens, instruction_at, "src");
+            } else if (ccam_json_schema_string_eq(source, tokens, op_at, "ret_void")) {
+                instruction.op = CCAM_OP_RET_VOID;
+            } else {
+                instruction.op = CCAM_OP_TRAP;
+                int reason_at = ccam_json_schema_find(source, tokens, instruction_at, "reason");
+                instruction.reason = ccam_json_machine_string(
+                    ccam_json_schema_decoded_string(source, tokens, reason_at)
+                );
+            }
+
+            if (instruction.op == CCAM_OP_ADD_I || instruction.op == CCAM_OP_SUB_I ||
+                instruction.op == CCAM_OP_MUL_I || instruction.op == CCAM_OP_DIV_I ||
+                instruction.op == CCAM_OP_REM_I || instruction.op == CCAM_OP_EQ_I ||
+                instruction.op == CCAM_OP_LT_I) {
+                instruction.dst = ccam_json_semantic_field_int(source, tokens, instruction_at, "dst");
+                instruction.lhs = ccam_json_semantic_field_int(source, tokens, instruction_at, "lhs");
+                instruction.rhs = ccam_json_semantic_field_int(source, tokens, instruction_at, "rhs");
+            }
+            fn.instructions.push(instruction);
+            instruction_cursor = ccam_json_schema_array_next(tokens, instruction_cursor);
+        }
+
+        functions[f] = fn;
+        function_cursor = ccam_json_schema_array_next(tokens, function_cursor);
+    }
+
+    // The evaluator constructor validates the typed representation again and
+    // deep-copies its program tables before creating the initial frame.
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, entry_function, max_steps, max_depth
+    );
+    if (!created.ok) {
+        return ccam_json_machine_error(0, 0, created.error);
+    }
+    return ccam_json_machine_ok(created.machine);
+}
+
+test "CCAM modular JSON decoder materialises and executes a minimal program" {
+    Tainted source = taint("{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":42},{\"op\":\"ret\",\"src\":0}]}]}");
+    CCAMJsonMachineResult created = ccam_json_machine_create(source, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM modular JSON decoder resolves forward calls before machine creation" {
+    Tainted source = taint("{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"call\",\"dst\":0,\"function\":\"answer\",\"args\":[]},{\"op\":\"ret\",\"src\":0}]},{\"name\":\"answer\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":42},{\"op\":\"ret\",\"src\":0}]}]}");
+    CCAMJsonMachineResult created = ccam_json_machine_create(source, 100, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM modular JSON decoder rejects bad semantics before constructing a machine" {
+    Tainted source = taint("{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"bool\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":42},{\"op\":\"ret\",\"src\":0}]}]}");
+    CCAMJsonMachineResult rejected = ccam_json_machine_create(source, 100, 16);
+    assert(!rejected.ok && rejected.error_code != 0);
+    assert(rejected.machine.halted && rejected.machine.functions.len() == 0);
+}
+
+test "CCAM modular JSON decoder rejects invalid runtime budgets before parsing" {
+    Tainted source = taint("{}");
+    CCAMJsonMachineResult negative_steps = ccam_json_machine_create(source, -1, 16);
+    CCAMJsonMachineResult excessive_depth = ccam_json_machine_create(
+        source, 100, CCAM_MAX_CALL_DEPTH + 1);
+    assert(!negative_steps.ok && negative_steps.error == "invalid_step_limit");
+    assert(!excessive_depth.ok &&
+        excessive_depth.error == "configured_call_depth_too_large");
+}

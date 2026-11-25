@@ -1,6 +1,6 @@
 # CCAM JSON decoder — bounded input and validation contract
 
-**Status:** implementation contract proposal; not yet implemented or normative CCAM v0.1  
+**Status:** partial Capstan-native implementation; the full exit gate remains open and this document is not yet normative CCAM v0.1  
 **Depends on:** CCAM.md, ccam-v0.1.schema.json and verification/ccam_calls.cap
 
 This contract closes the gap between the published JSON schema and the current in-memory evaluator. A schema describes shapes; it does not establish safe parsing, duplicate-key handling, exact-number conversion, allocation bounds or validation order.
@@ -18,6 +18,12 @@ Before an evaluator receives a program, the decoder MUST establish:
 7. Rejection is a validation error, never a runtime trap; rejected input never starts execution.
 
 The decoder remains in the trusted computing base until its implementation is verified or replaced by a verified implementation. JSON Schema validation alone is insufficient.
+
+## 1.1 Current implementation status
+
+The current implementation provides a bounded Capstan-native scanner and structural parser, strict UTF-8/JSON string decoding, exact signed-i64 integer parsing, decoded-key duplicate rejection, closed v0.1 schema checks, whole-program register/call/return/control-flow validation, linear token-array traversal, indexed call-target resolution, and a JSON-to-machine constructor. The constructor materialises typed function, instruction and call-site tables only after validation, then delegates to the multi-function evaluator's validating, deep-copying machine constructor.
+
+This is an executable path for the declared v0.1 scalar instruction subset, but it does not yet satisfy the complete contract below. The intermediate typed tables are not represented by a separately immutable program type; the implementation has not been proved to refine the Lean validated-program predicate; adversarial/fuzz coverage is incomplete; and the v0.2 output extension is deliberately rejected by this v0.1 schema. Unicode normalization is not performed: keys that decode to byte-identical strings are duplicates.
 
 ## 2. Parsing architecture
 
@@ -134,4 +140,4 @@ The trusted-base inventory must include the compiler used to build the decoder, 
 
 This work is complete only when one exact revision contains a Capstan-native bounded scanner and decoder, duplicate-key and exact-integer rejection, closed schema and whole-program validation, adversarial/fuzz tests, an immutable typed output, formal results with explicit assumptions, and implementation-to-model correspondence evidence.
 
-Until then, external CCAM JSON decoding is NOT IMPLEMENTED. The current in-memory evaluator must not be described as accepting arbitrary external CCAM JSON documents.
+Until then, external CCAM JSON decoding is only partially implemented. The v0.1 scalar path is executable, but it must not be described as a complete, formally verified or production-normative external-input boundary, and the evaluator must not be described as accepting arbitrary CCAM JSON documents.
