@@ -18,7 +18,7 @@ consistent for the listed cases.
 **What passing does not mean:** it does not test a production process adapter, a
 real kernel process group/job object, real descriptor inheritance, actual OS I/O,
 a native Anchor LSP connection, or any security property of an unimplemented
-backend. The fake backend never calls `subprocess`, `fork`, `exec`, or shell APIs.
+backend. The fake backend never calls `subprocess`, `fork`, `exec`, or shell APIs. Its lifecycle model keeps force-kill request, wait-result observation, and reaping on distinct supervisor turns.
 
 When a production Capstan-native adapter is available, retain these vectors and
 run the same semantic cases against an adapter conformance bridge. Do not replace
