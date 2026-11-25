@@ -350,7 +350,6 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             next.channel_count = 0;
             next.buffered_bytes = 0;
         }
-        next.channel_closed = true;
         next.consumer_status = CCM_TASK_CANCELLED;
         return ccm_accept(next);
     }
@@ -793,8 +792,9 @@ test "CCM consumer cancellation drops channel-owned message and closes channel" 
     state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
     assert(ccm_invariant(state));
     assert(state.consumer_status == CCM_TASK_CANCELLED);
-    assert(state.channel_closed && state.channel_count == 0);
+    assert(!state.channel_closed && state.channel_count == 0);
     assert(!state.message_live && state.live_bytes == 0);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
     state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
     state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
     state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
