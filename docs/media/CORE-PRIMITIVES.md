@@ -104,7 +104,11 @@ contains no shell, Python, C, or other-language source. It covers:
 - exact-limit aggregate reservation;
 - over-limit reservation with all counters unchanged;
 - full release and release-underflow rejection;
-- negative reservation rejection.
+- negative reservation rejection;
+- exhaustive exact-read counts around a four-byte source;
+- exhaustive (3^5) five-dimensional admission requests;
+- independent underflow rejection for every release dimension;
+- defensive rejection of corrupted public ledger state.
 
 Still required before MC1 can pass:
 
@@ -112,7 +116,7 @@ Still required before MC1 can pass:
 2. a single-owner or synchronised concurrency model;
 3. atomic reservation tied to source snapshot allocation;
 4. lifetime-bound reservations and cancellation/cleanup semantics;
-5. model/property tests over generated operation sequences;
+5. larger model/property tests over generated operation sequences and concurrent schedules;
 6. malformed-state and mutation tests;
 7. allocation, CPU and retained-memory measurements under adversarial inputs;
 8. independent review and exact-head CI on supported platforms.
