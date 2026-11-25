@@ -479,8 +479,17 @@ string ccam_json_string_to_machine(Tainted value) {
 }
 
 CCAMJsonStringResult ccam_json_string_value(CCAMJsonValue value) {
-    if (value.kind != CCAM_JSON_STRING) {
+    if (value.kind != CCAM_JSON_STRING ||
+        value.text.len() > CCAM_JSON_MAX_STRING_BYTES) {
         return new CCAMJsonStringResult{ok: false, value: ""};
+    }
+    // The decoder's machine-string boundary excludes embedded NUL from every
+    // schema string, not only function names. UTF-8 scalar validity was already
+    // established by ccam_json_read_string.
+    for (int i = 0; i < value.text.len(); i += 1) {
+        if (value.text.at(i) == 0) {
+            return new CCAMJsonStringResult{ok: false, value: ""};
+        }
     }
     return new CCAMJsonStringResult{
         ok: true, value: ccam_json_string_to_machine(value.text)
