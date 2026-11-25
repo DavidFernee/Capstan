@@ -13,7 +13,7 @@ M0 should freeze the observable source semantics independently of the native hea
 
 ## 2. Candidate source-level contract
 
-The following is the minimum coherent contract to review and, if accepted, promote into the normative language specification.
+The following is the minimum coherent contract to review and, if accepted, promote into the normative language specification. One important part is already normative: `docs/SPEC.md` explicitly binds structs and collections by identity for policy grants, while strings bind by content and scalars by value. Therefore list/map identity must be preserved by the native representation; this is not an open choice for the native bootstrap.
 
 ### 2.1 Identity and copying
 
@@ -49,15 +49,14 @@ A failed operation has one defined outcome. It must not leave a half-advanced ge
 
 ### 2.5 Collections
 
-The language must explicitly decide and specify:
-- whether `List<T>` and `Map<T>` are mutable reference objects (the likely compatibility-preserving choice);
-- whether assignment/argument/return/storage copy collection identity;
-- alias-visible effects of `push`, indexed assignment, `set`, and mutation through nested collections;
-- whether iteration observes a snapshot or live mutation, and what happens when the collection changes during iteration;
-- whether map key equality/hash semantics and insertion order are stable across mutation;
-- how removed/replaced elements cease to be traced and how their reference slots are cleared before collection.
+The normative specification already settles the key identity distinction: structs and collections are bound by identity in policy grants. Existing implementation evidence is consistent with this:
+- `compiler/codegen.cap` emits struct, list and map values as pointers to runtime-managed objects;
+- `tests/accept/structs.cap` demonstrates struct alias mutation through argument passing and a nested field;
+- `tests/accept/compound_field_receiver_identity.cap` verifies that an lvalue retains the original receiver object even when the list slot used to find it is replaced during RHS evaluation;
+- `tests/unit/grant_reference.py` independently checks identity-based equivalence for struct, list and map values;
+- `tests/accept/collections.cap` exercises nested mutable lists and map-held lists.
 
-Do not infer these semantics from today's C implementation or tests alone. Record each as a compatibility decision with conformance vectors.
+This is enough to close the *identity class* decision for M0: native assignment, argument passing, return, field storage and collection storage must preserve logical collection identity, not deep-copy values. The remaining M0 conformance work is to pin down alias-visible mutation and iteration edge cases (especially mutation during iteration), map key/order stability under mutation, and the precise lifetime of references removed from/replaced in collections. The C pointer representation is evidence of current implementation behaviour, not a requirement that the native runtime expose addresses.
 
 ## 3. Audit of the current formal work
 
