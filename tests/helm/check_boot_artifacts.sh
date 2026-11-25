@@ -53,10 +53,12 @@ grep -q '<_start>:' "$tmp/disassembly"
 grep -q 'cli' "$tmp/disassembly"
 grep -q 'cld' "$tmp/disassembly"
 grep -q 'call.*helm_kernel_main' "$tmp/disassembly"
+grep -q 'cmpq.*helm_limine_base_revision_tag' "$tmp/disassembly"
 
 # The stack must be a bounded, page-aligned NOBITS allocation in the RW segment.
 "$READELF" -sW "$tmp/helm-kernel.elf" > "$tmp/symbols"
 grep -q 'helm_boot_stack_bottom' "$tmp/symbols"
 grep -q 'helm_boot_stack_top' "$tmp/symbols"
+grep -q 'helm_limine_base_revision_tag' "$tmp/symbols"
 
 echo "Helm H0-C0: entry assembly, higher-half ELF entry, RX/R/RW segments and bounded bootstrap stack verified"
