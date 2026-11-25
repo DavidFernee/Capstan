@@ -371,3 +371,27 @@ WaylandProtocolResult wayland_protocol_dispatch(Tainted bytes, WaylandFrameHeade
     if (matches != 1) { return wayland_protocol_error(); }
     return wayland_validate_message(bytes, frame, objects, catalog[found], direction, received_fd_count);
 }
+
+ // wl_display.delete_id (event opcode 1, signature "u") is the only transition
+ // that releases a retired client-owned ID for reuse.
+WaylandProtocolResult wayland_display_delete_id(Tainted bytes, WaylandFrameHeader frame,
+    WaylandObjectTable objects, int display_object_id, int display_interface_id) {
+    if (frame.status == 0) { return wayland_protocol_incomplete(); }
+    if (!wayland_protocol_frame_valid(bytes, frame) || frame.object_id != display_object_id
+        || frame.opcode != 1) { return wayland_protocol_error(); }
+    WaylandObject display = wayland_object_get(objects, display_object_id);
+    if (display.state != 1 || display.interface_id != display_interface_id) {
+        return wayland_protocol_error();
+    }
+    int cursor = frame.end_offset - frame.size + WAYLAND_HEADER_BYTES;
+    WaylandPayloadWord id = wayland_payload_word(bytes, cursor, frame.end_offset);
+    if (id.status != 1 || id.value < WAYLAND_CLIENT_OBJECT_ID_MIN
+        || id.value > WAYLAND_CLIENT_OBJECT_ID_MAX || id.end_offset != frame.end_offset) {
+        return wayland_protocol_error();
+    }
+    int index = wayland_object_index(objects, id.value);
+    if (index < 0 || objects.slots[index].state != 2
+        || objects.slots[index].owner != WAYLAND_OBJECT_OWNER_CLIENT
+        || !wayland_object_release(objects, id.value)) { return wayland_protocol_error(); }
+    return wayland_protocol_result(1, frame.end_offset, 0, new List<int>(), 0);
+}
