@@ -284,6 +284,7 @@ if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
   ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
 else bad "shroud" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_text_byte_limit.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud text byte limit" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud PNG export budget" "$out"; fi
 printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
