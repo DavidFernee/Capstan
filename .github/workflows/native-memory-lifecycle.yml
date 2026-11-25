@@ -10,6 +10,7 @@ on:
       - "verification/lean/NativeHandleReachability.lean"
       - "verification/lean/NativeBoundedMarker.lean"
       - "research/native-bootstrap/NATIVE-REACHABILITY-REFINEMENT.md"
+      - "research/native-bootstrap/NATIVE-ROBUSTNESS-ASSURANCE.md"
       - ".github/workflows/native-memory-lifecycle.yml"
   pull_request:
     paths:
