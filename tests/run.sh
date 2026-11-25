@@ -128,6 +128,13 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     else
       bad "capstan native CLI" "source-to-freestanding-ELF build failed"
     fi
+    if "$ROOT/bin/capstan" native "$ROOT/tests/fixtures/native_reject_parent_import.cap" -o "$tmp/rejected-native" >"$tmp/native-import.out" 2>&1; then
+      bad "native CLI import confinement" "parent-directory import was accepted"
+    elif grep -q "relative .cap path without absolute or dot-segment traversal" "$tmp/native-import.out"; then
+      ok "native CLI rejects lexical parent-directory import traversal"
+    else
+      bad "native CLI import confinement" "$(cat "$tmp/native-import.out")"
+    fi
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
