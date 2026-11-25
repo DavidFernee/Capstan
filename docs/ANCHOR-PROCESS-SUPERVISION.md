@@ -30,6 +30,28 @@ Not in scope:
 - process spawning as a prerequisite of the Shroud Wayland window host;
 - claims that a process group or job object alone provides a security sandbox.
 
+## 2.1 Proposed ownership decision for issue #279
+
+**Selected architectural owner: the Capstan runtime/process service.** The public process capability contract, lifecycle state machine, handle ownership, resource accounting, stream supervision and process-tree policy belong to one Capstan-native process service in the runtime/standard-library layer. The narrow platform adapter supplies only target-specific OS process and handle operations.
+
+The responsibilities are deliberately split:
+
+| Owner | Responsibility | Explicit exclusion |
+|---|---|---|
+| Capstan process service | Public capability API; validate start requests; create/wait/terminate/reap; process-handle lifetime; budgets; bounded stream endpoints; platform-result mapping | Anchor command policy, LSP semantics, shell interpretation |
+| OS platform adapter | Minimal ABI entry points for spawn/exec, wait, signal/job operations, pipe/handle creation and close; exact platform error conversion | Policy, executable selection, argument construction, UI, JSON-RPC |
+| Anchor application | Trusted toolchain selection and pinning; fixed `lsp/check/build/test/fmt` profiles; argv construction; workspace/document provenance; JSON-RPC correlation, LSP generation/restart policy and presentation | Direct OS calls, raw PID/descriptor handling, alternate process launcher |
+| Shroud native host | Window, input, display transport, frame presentation and native lifecycle | Child-process creation or compiler supervision |
+
+This is one ownership decision, not a shared-ownership arrangement: **Capstan owns process creation and supervision semantics; the OS adapter implements only the kernel boundary; Anchor is a client.** Shroud is not a process-service owner.
+
+Rejected alternatives:
+- **Shroud-owned process API:** couples a reusable GUI toolkit to unrelated compiler/build policy and gives every Shroud application a process surface it does not need.
+- **Anchor-private platform launcher:** duplicates capability, ownership and error semantics, creates a second OS boundary, and would tempt a C shim or shell workaround.
+- **Direct raw OS API in Anchor:** leaks PID/descriptor semantics and makes confinement dependent on application discipline.
+
+The exact source syntax, capability representation and effect annotations remain blocked on the reviewed capability/effect result in issue [#222](https://github.com/DavidFernee/Capstan/issues/222) and the T6/runtime contract. That dependency does not change the ownership boundary selected here. Runtime maintainers must approve/version the public interface before implementation; this RFC records the proposed decision for review, not an already approved API.
+
 ## 3. Capability model
 
 The API is capability-oriented, not descriptor-oriented. Proposed conceptual authorities (names are illustrative):
