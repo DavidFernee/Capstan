@@ -64,6 +64,13 @@ if out="$($PY "$ROOT/tests/k0/check.py" 2>&1)"; then ok "$out"; else bad "K0 stu
 section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
+section "Capstan-native verification: F1 compositional guarantee model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/f1_guarantee_model.cap" 2>&1)"; then
+  ok "provenance, confidentiality, context safety, authority, effects and bounded-resource composition"
+else
+  bad "F1 compositional guarantee model" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
