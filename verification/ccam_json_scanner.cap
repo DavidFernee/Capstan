@@ -7,7 +7,7 @@ import "ccam_json_string.cap";
 
 const int CCAM_JSON_MAX_INPUT_BYTES = 16777216;
 const int CCAM_JSON_MAX_TOKENS = 1048576;
-const int CCAM_JSON_MAX_DEPTH = 256;
+const int CCAM_JSON_MAX_DEPTH = 64;
 
 const int CCAM_JSON_T_LBRACE = 1;
 const int CCAM_JSON_T_RBRACE = 2;
