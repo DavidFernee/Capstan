@@ -144,17 +144,18 @@ CCAMJsonScanResult ccam_json_scan(Tainted input) {
 test "CCAM JSON scanner tokenises punctuation literals and numbers" {
     CCAMJsonScanResult r = ccam_json_scan(taint("{\"a\":[-1,2.5e+3,true,false,null]}"));
     assert(r.ok);
-    assert(r.tokens.len() == 13);
+    assert(r.tokens.len() == 15);
     assert(r.tokens[0].kind == CCAM_JSON_T_LBRACE);
     assert(r.tokens[1].kind == CCAM_JSON_T_STRING);
     assert(r.tokens[3].kind == CCAM_JSON_T_LBRACKET);
     assert(r.tokens[4].kind == CCAM_JSON_T_NUMBER);
     assert(r.tokens[6].kind == CCAM_JSON_T_NUMBER);
-    assert(r.tokens[7].kind == CCAM_JSON_T_TRUE);
-    assert(r.tokens[8].kind == CCAM_JSON_T_COMMA);
-    assert(r.tokens[9].kind == CCAM_JSON_T_FALSE);
-    assert(r.tokens[11].kind == CCAM_JSON_T_NULL);
-    assert(r.tokens[12].kind == CCAM_JSON_T_RBRACKET);
+    assert(r.tokens[8].kind == CCAM_JSON_T_TRUE);
+    assert(r.tokens[9].kind == CCAM_JSON_T_COMMA);
+    assert(r.tokens[10].kind == CCAM_JSON_T_FALSE);
+    assert(r.tokens[12].kind == CCAM_JSON_T_NULL);
+    assert(r.tokens[13].kind == CCAM_JSON_T_RBRACKET);
+    assert(r.tokens[14].kind == CCAM_JSON_T_RBRACE);
 }
 
 test "CCAM JSON scanner rejects malformed strings numbers and literals" {
