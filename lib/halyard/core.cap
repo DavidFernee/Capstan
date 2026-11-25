@@ -689,6 +689,123 @@ bool halyard_reservation_release(
     return true;
 }
 
+
+struct HalyardManagedByteSource {
+    HalyardByteSource source;
+    HalyardReservation reservation;
+    bool closed;
+}
+
+struct HalyardManagedByteSourceResult {
+    bool ok;
+    HalyardManagedByteSource? managed;
+    string error;
+}
+
+// Admit retained bytes before making the defensive source snapshot. The
+// reservation follows the source lifetime and is released only on close.
+// This API is sequential and trusted-caller only until opaque types and
+// synchronised ownership are available.
+HalyardManagedByteSourceResult halyard_managed_source_create(
+    HalyardLedger ledger, List<int> input, int max_bytes
+) {
+    if (max_bytes < 0) {
+        return new HalyardManagedByteSourceResult{
+            ok: false, managed: none, error: "negative_limit"
+        };
+    }
+    if (input.len() > max_bytes) {
+        return new HalyardManagedByteSourceResult{
+            ok: false, managed: none, error: "input_limit"
+        };
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) {
+            return new HalyardManagedByteSourceResult{
+                ok: false, managed: none, error: "invalid_byte"
+            };
+        }
+    }
+
+    HalyardBudgetCharge charge = new HalyardBudgetCharge{
+        input_bytes: 0, retained_bytes: input.len(), output_bytes: 0,
+        decoded_units: 0, work_units: 0
+    };
+    HalyardReservationResult acquired = halyard_ledger_acquire(ledger, charge);
+    if (!acquired.ok) {
+        return new HalyardManagedByteSourceResult{
+            ok: false, managed: none, error: acquired.error
+        };
+    }
+    if (let lease = acquired.reservation) {
+        HalyardByteSourceResult created = halyard_source_from_list(input, max_bytes);
+        if (!created.ok) {
+            // All validation is repeated by the source constructor. If a
+            // caller mutates input concurrently this can fail; thread sharing
+            // is unsupported, but release the preflight lease on this path.
+            halyard_reservation_release(ledger, lease);
+            return new HalyardManagedByteSourceResult{
+                ok: false, managed: none, error: created.error
+            };
+        }
+        if (let source = created.source) {
+            HalyardManagedByteSource managed = new HalyardManagedByteSource{
+                source: source, reservation: lease, closed: false
+            };
+            return new HalyardManagedByteSourceResult{
+                ok: true, managed: managed, error: ""
+            };
+        }
+        halyard_reservation_release(ledger, lease);
+        return new HalyardManagedByteSourceResult{
+            ok: false, managed: none, error: "source_unavailable"
+        };
+    }
+    return new HalyardManagedByteSourceResult{
+        ok: false, managed: none, error: "lease_unavailable"
+    };
+}
+
+int halyard_managed_source_remaining(HalyardManagedByteSource managed) {
+    if (managed.closed || managed.source.closed) { return 0; }
+    return halyard_source_remaining(managed.source);
+}
+
+HalyardReadResult halyard_managed_source_read_u8(HalyardManagedByteSource managed) {
+    if (managed.closed) {
+        return new HalyardReadResult{ok: false, value: 0, error: "closed"};
+    }
+    return halyard_read_u8(managed.source);
+}
+
+HalyardBytesResult halyard_managed_source_read_exact(
+    HalyardManagedByteSource managed, int count
+) {
+    if (managed.closed) {
+        return new HalyardBytesResult{
+            ok: false, bytes: new List<int>(), error: "closed"
+        };
+    }
+    return halyard_read_exact(managed.source, count);
+}
+
+// Close the source first, then release its lease. If release encounters a
+// corrupted ledger, the source remains closed and a later call can retry the
+// lease release; it never reopens or double-releases the source allocation.
+bool halyard_managed_source_close(
+    HalyardLedger ledger, HalyardManagedByteSource managed
+) {
+    if (managed.closed) { return false; }
+    if (!managed.source.closed) {
+        if (!halyard_source_close(managed.source)) { return false; }
+    }
+    if (!halyard_reservation_release(ledger, managed.reservation)) {
+        return false;
+    }
+    managed.closed = true;
+    return true;
+}
+
 // The Halyard Core regression suite lives with its implementation so that
 // the test program exercises exactly this module without a path-traversal
 // import or a second implementation in a different source file.
