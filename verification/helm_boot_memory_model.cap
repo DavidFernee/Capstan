@@ -319,8 +319,8 @@ test "Helm bounded U64 ranges reject wraparound and escape" {
         hbm_u64(0, 100), hbm_u64(0, 100),
         hbm_u64(0, 150), hbm_u64(0, 51)));
     assert(!hbm_u64_range_contains(
-        hbm_u64(0, HBM_U32_MAX), hbm_u64(0, 2),
-        hbm_u64(0, HBM_U32_MAX), hbm_u64(0, 2)));
+        hbm_u64(HBM_U32_MAX, HBM_U32_MAX), hbm_u64(0, 1),
+        hbm_u64(HBM_U32_MAX, HBM_U32_MAX), hbm_u64(0, 1)));
     assert(!hbm_u64_range_contains(
         hbm_u64(0, 100), hbm_u64(0, 100),
         hbm_u64(0, 99), hbm_u64(0, 2)));
