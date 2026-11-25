@@ -230,9 +230,9 @@ int main() {
     short_frame.push(0); short_frame.push(0); short_frame.push(12); short_frame.push(0);
     short_frame.push(4); short_frame.push(0); short_frame.push(0); short_frame.push(0);
     short_frame.push(0); short_frame.push(0); short_frame.push(0); short_frame.push(0);
-    WaylandFrameHeader short_header = wayland_frame_header(wayland_test_bytes(short_frame), 0);
-    if (short_header.status != 1) { return 49; }
-    span = wayland_frame_array(wayland_test_bytes(short_frame), short_header, 8);
+    WaylandFrameHeader short_frame_header = wayland_frame_header(wayland_test_bytes(short_frame), 0);
+    if (short_frame_header.status != 1) { return 49; }
+    span = wayland_frame_array(wayland_test_bytes(short_frame), short_frame_header, 8);
     if (span.status != -1) { return 49; }
 
     // The parser's input type is Tainted: network bytes are never trusted here.
