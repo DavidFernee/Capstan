@@ -236,3 +236,139 @@ bool halyard_ledger_release(HalyardLedger ledger, HalyardBudgetCharge charge) {
     ledger.used_work_units -= charge.work_units;
     return true;
 }
+
+// The Halyard Core regression suite lives with its implementation so that
+// the test program exercises exactly this module without a path-traversal
+// import or a second implementation in a different source file.
+
+test "Halyard source snapshots caller bytes" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    HalyardByteSourceResult created = halyard_source_from_list(input, 2);
+    assert(created.ok);
+    if (let source = created.source) {
+        input[0] = 99;
+        HalyardReadResult first = halyard_read_u8(source);
+        assert(first.ok && first.value == 1);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard exact read failure preserves cursor" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2); input.push(3); input.push(4);
+    HalyardByteSourceResult created = halyard_source_from_list(input, 4);
+    assert(created.ok);
+    if (let source = created.source) {
+        HalyardReadResult first = halyard_read_u8(source);
+        assert(first.ok && first.value == 1);
+        HalyardBytesResult short_read = halyard_read_exact(source, 4);
+        assert(!short_read.ok && short_read.error == "truncated");
+        assert(halyard_source_remaining(source) == 3);
+        HalyardBytesResult rest = halyard_read_exact(source, 3);
+        assert(rest.ok && rest.bytes.len() == 3);
+        assert(rest.bytes[0] == 2 && rest.bytes[1] == 3 && rest.bytes[2] == 4);
+        assert(halyard_source_remaining(source) == 0);
+        HalyardReadResult eof = halyard_read_u8(source);
+        assert(!eof.ok && eof.error == "eof");
+        assert(halyard_source_close(source));
+        HalyardReadResult closed = halyard_read_u8(source);
+        assert(!closed.ok && closed.error == "closed");
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard big endian word decoding is exact" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2); input.push(3); input.push(4);
+    HalyardByteSourceResult created = halyard_source_from_list(input, 4);
+    assert(created.ok);
+    if (let source = created.source) {
+        HalyardReadResult word = halyard_read_u32_be(source);
+        assert(word.ok && word.value == 16909060);
+        assert(halyard_source_remaining(source) == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard source rejects invalid byte and oversized input" {
+    List<int> invalid = new List<int>();
+    invalid.push(256);
+    assert(!halyard_source_from_list(invalid, 1).ok);
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    assert(!halyard_source_from_list(input, 1).ok);
+    assert(!halyard_source_from_list(input, -1).ok);
+}
+
+test "Halyard ledger reserves every dimension or none" {
+    HalyardLedgerResult created = halyard_ledger_create(10, 20, 30, 40, 50);
+    assert(created.ok);
+    if (let ledger = created.ledger) {
+        HalyardBudgetCharge exact = new HalyardBudgetCharge{
+            input_bytes: 10, retained_bytes: 20, output_bytes: 30,
+            decoded_units: 40, work_units: 50
+        };
+        assert(halyard_ledger_reserve(ledger, exact));
+        HalyardBudgetCharge one_more = new HalyardBudgetCharge{
+            input_bytes: 1, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0
+        };
+        assert(!halyard_ledger_reserve(ledger, one_more));
+        assert(ledger.used_input_bytes == 10);
+        assert(ledger.used_retained_bytes == 20);
+        assert(ledger.used_output_bytes == 30);
+        assert(ledger.used_decoded_units == 40);
+        assert(ledger.used_work_units == 50);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard ledger release rejects underflow without mutation" {
+    HalyardLedgerResult created = halyard_ledger_create(10, 20, 30, 40, 50);
+    assert(created.ok);
+    if (let ledger = created.ledger) {
+        HalyardBudgetCharge exact = new HalyardBudgetCharge{
+            input_bytes: 10, retained_bytes: 20, output_bytes: 30,
+            decoded_units: 40, work_units: 50
+        };
+        assert(halyard_ledger_reserve(ledger, exact));
+        HalyardBudgetCharge release = new HalyardBudgetCharge{
+            input_bytes: 10, retained_bytes: 20, output_bytes: 30,
+            decoded_units: 40, work_units: 50
+        };
+        assert(halyard_ledger_release(ledger, release));
+        assert(!halyard_ledger_release(ledger, release));
+        assert(ledger.used_input_bytes == 0);
+        assert(ledger.used_retained_bytes == 0);
+        assert(ledger.used_output_bytes == 0);
+        assert(ledger.used_decoded_units == 0);
+        assert(ledger.used_work_units == 0);
+    } else {
+        assert(false);
+    }
+}
+
+test "Halyard ledger rejects negative limits and charges" {
+    assert(!halyard_ledger_create(-1, 0, 0, 0, 0).ok);
+    HalyardLedgerResult created = halyard_ledger_create(10, 10, 10, 10, 10);
+    assert(created.ok);
+    if (let ledger = created.ledger) {
+        HalyardBudgetCharge negative = new HalyardBudgetCharge{
+            input_bytes: -1, retained_bytes: 0, output_bytes: 0,
+            decoded_units: 0, work_units: 0
+        };
+        assert(!halyard_ledger_reserve(ledger, negative));
+        assert(ledger.used_input_bytes == 0);
+        assert(ledger.used_retained_bytes == 0);
+        assert(ledger.used_output_bytes == 0);
+        assert(ledger.used_decoded_units == 0);
+        assert(ledger.used_work_units == 0);
+    } else {
+        assert(false);
+    }
+}
