@@ -55,6 +55,10 @@ struct DeadeyeMp4SummaryResult {
 }
 
 int deadeye_mp4_u32_be(List<int> bytes, int at) {
+    if (at < 0 || bytes.len() < 4 || at > bytes.len() - 4) { return -1; }
+    for (int i = 0; i < 4; i += 1) {
+        if (bytes[at + i] < 0 || bytes[at + i] > 255) { return -1; }
+    }
     return (bytes[at] << 24) | (bytes[at + 1] << 16) |
         (bytes[at + 2] << 8) | bytes[at + 3];
 }
@@ -62,6 +66,10 @@ int deadeye_mp4_u32_be(List<int> bytes, int at) {
 bool deadeye_mp4_fourcc(
     List<int> bytes, int at, int a, int b, int c, int d
 ) {
+    if (at < 0 || bytes.len() < 4 || at > bytes.len() - 4) { return false; }
+    for (int i = 0; i < 4; i += 1) {
+        if (bytes[at + i] < 0 || bytes[at + i] > 255) { return false; }
+    }
     return bytes[at] == a && bytes[at + 1] == b &&
         bytes[at + 2] == c && bytes[at + 3] == d;
 }
@@ -76,7 +84,8 @@ bool deadeye_mp4_box_type(
 DeadeyeMp4BoxResult deadeye_mp4_box_read(
     List<int> bytes, int offset, int parent_end
 ) {
-    if (offset < 0 || parent_end < offset || parent_end > bytes.len()) {
+    if (bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES ||
+        offset < 0 || parent_end < offset || parent_end > bytes.len()) {
         return new DeadeyeMp4BoxResult{
             ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "invalid_box_range"
         };
@@ -85,6 +94,13 @@ DeadeyeMp4BoxResult deadeye_mp4_box_read(
         return new DeadeyeMp4BoxResult{
             ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "truncated_box_header"
         };
+    }
+    for (int i = 0; i < 8; i += 1) {
+        if (bytes[offset + i] < 0 || bytes[offset + i] > 255) {
+            return new DeadeyeMp4BoxResult{
+                ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "invalid_box_header_byte"
+            };
+        }
     }
     int size32 = deadeye_mp4_u32_be(bytes, offset);
     int header_size = 8;
@@ -96,6 +112,13 @@ DeadeyeMp4BoxResult deadeye_mp4_box_read(
             };
         }
         // The input ceiling is 64 MiB, so any non-zero high word is too large.
+        for (int i = 8; i < 16; i += 1) {
+            if (bytes[offset + i] < 0 || bytes[offset + i] > 255) {
+                return new DeadeyeMp4BoxResult{
+                    ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "invalid_extended_size_byte"
+                };
+            }
+        }
         if (deadeye_mp4_u32_be(bytes, offset + 8) != 0) {
             return new DeadeyeMp4BoxResult{
                 ok: false, box: new DeadeyeMp4Box{start: 0, size: 0, header_size: 0, payload_start: 0, end: 0, type_a: 0, type_b: 0, type_c: 0, type_d: 0}, error: "box_size_limit"
