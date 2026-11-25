@@ -143,4 +143,8 @@ theorem stale_handle_not_reachable_from_root {slotCount : Nat}
   | edge prior edge =>
       exact no_descriptor_edge_to_stale_handle descriptors heap domain _ _ stale edge
 
+
+#print axioms CapstanNativeHandleReachability.no_descriptor_edge_to_stale_handle
+#print axioms CapstanNativeHandleReachability.stale_handle_not_reachable_from_root
+
 end CapstanNativeHandleReachability
