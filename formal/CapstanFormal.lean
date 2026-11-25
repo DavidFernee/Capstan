@@ -66,7 +66,7 @@ theorem checkedMul_sound (limit a b result : Nat)
   unfold checkedMul at h
   by_cases hfit : a * b ≤ limit
   · simp [hfit] at h
-    exact ⟨h, hfit⟩
+    exact ⟨h.symm, hfit⟩
   · simp [hfit] at h
 
 /-- Every representable product is accepted by the checked-multiplication model. -/
@@ -115,7 +115,7 @@ theorem capacityGrowth_sound (limit current required result : Nat)
     by_cases hFits : required ≤ limit
     · simp [hFits] at h
       subst result
-      exact ⟨le_rfl, hFits⟩
+      exact ⟨Nat.le_refl _, hFits⟩
     · simp [hFits] at h
 
 /-- Capacity growth succeeds exactly when the request fits the configured limit,
@@ -127,7 +127,7 @@ theorem capacityGrowth_total (limit current required : Nat)
   constructor
   · rintro ⟨result, h⟩
     exact (capacityGrowth_sound limit current required result hCurrent h).1
-      |> fun hRequired => le_trans hRequired
+      |> fun hRequired => Nat.le_trans hRequired
         (capacityGrowth_sound limit current required result hCurrent h).2
   · intro hRequired
     unfold capacityGrowth
