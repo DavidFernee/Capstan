@@ -104,7 +104,10 @@ Hardware faults, arbitrary memory scribbles, compromised compiler/runtime, and m
 
 The current BL1 storage prototype is intentionally **not** a safe API:
 
-- its structs and lists are publicly mutable and forgeable;
+- its structs and lists are publicly mutable and forgeable; a caller can copy a
+  `BosunRegion` value and insert it again, or construct distinct region records that
+  share one backing `List<int>`; the current validator has no language-level
+  non-aliasing guarantee for those backing lists;
 - owner identities are ordinary integers;
 - references are ordinary constructible values;
 - there is no compiler-enforced affine ownership, borrow/lifetime or typestate;
