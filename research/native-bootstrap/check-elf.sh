@@ -73,14 +73,14 @@ grep -Eiq 'There is no dynamic section in this file|no dynamic section' "$work/d
 
 echo "== load segment and stack permissions =="
 program_headers=$(readelf -lW "$executable")
-printf '%s\\n' "$program_headers"
-if printf '%s\\n' "$program_headers" | grep -Eq 'LOAD.*W.*E|LOAD.*E.*W'; then
+printf '%s\n' "$program_headers"
+if printf '%s\n' "$program_headers" | grep -Eq 'LOAD.*W.*E|LOAD.*E.*W'; then
     echo "writable+executable LOAD segment rejected" >&2
     exit 1
 fi
-stack_line=$(printf '%s\\n' "$program_headers" | grep 'GNU_STACK' || true)
+stack_line=$(printf '%s\n' "$program_headers" | grep 'GNU_STACK' || true)
 [ -n "$stack_line" ] || { echo "missing GNU_STACK program header" >&2; exit 1; }
-printf '%s\\n' "$stack_line" | grep -q 'E' && {
+printf '%s\n' "$stack_line" | grep -q 'E' && {
     echo "executable GNU_STACK rejected" >&2
     exit 1
 } || true
