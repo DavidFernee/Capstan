@@ -69,21 +69,21 @@ else
 fi
 
 section "Capstan-native verification: CCAM multi-function calls and frames"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
 else
   bad "CCAM multi-function evaluator" "$out"
 fi
 
 section "Capstan-native verification: checked source to CCAM lowering"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
   ok "checked scalar source lowers to validated CCAM and executes in the Capstan evaluator"
 else
   bad "CCAM source-to-IR lowering" "$out"
 fi
 
 section "Capstan-native verification: freestanding Linux x86-64 native backend"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" "$ROOT/verification/ccam_lowering.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
   ok "CCAM emits freestanding x86-64 assembly without C runtime references"
   if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
     native_run() {
