@@ -234,9 +234,16 @@ def main() -> int:
                                 and expected["normative_validation"] == "not_applicable",
                                 f"{where}: nonzero profile entry must be explicitly out of normative scope and rejected by SF-P")
                     if expected["profile_validation"] == "reject":
-                        require(expected.get("outcome", {}).get("kind") == "not_executed"
-                                and expected.get("trace_pcs") == [] and expected.get("steps") == 0,
-                                f"{where}: profile-rejected vector must not execute")
+                        if expected["normative_validation"] == "reject" or expected["normative_validation"] == "not_applicable":
+                            outcome = expected.get("outcome")
+                            require(isinstance(outcome, dict) and outcome.get("kind") == "not_executed"
+                                    and expected.get("trace_pcs") == [] and expected.get("steps") == 0,
+                                    f"{where}: rejected vector must not execute")
+                        else:
+                            profile_execution = expected.get("profile_execution")
+                            require(isinstance(profile_execution, dict)
+                                    and profile_execution.get("kind") == "not_run",
+                                    f"{where}: profile rejection with normative acceptance must explicitly mark profile execution not_run")
                     for name in ("profile_execution", "normative_execution", "expected_concrete"):
                         if name in expected:
                             check_trace(expected[name], f"{where}.{name}", len(vector["instructions"]))
