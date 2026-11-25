@@ -179,7 +179,7 @@ source from the first implementation. The existing bootstrap may temporarily
 execute Capstan source through the current compiler/C path; that is solely a
 bootstrap mechanism and must not be mistaken for the target architecture.
 
-No Python or C interpreter/runtime for CCAM is to be introduced. The repository now has a Capstan-native single-frame typed evaluator (PR #142), a bounded typed in-memory validator merged to `main` (PR #163), a bounded multi-function call-frame evaluator under review (PR #187), and checked source-to-CCAM lowering for a scalar subset under review (PR #195).
+No Python or C interpreter/runtime for CCAM is to be introduced. The repository now has a Capstan-native single-frame typed evaluator (PR #142), a bounded typed in-memory validator merged to `main` (PR #163), a bounded multi-function call-frame evaluator under review (PR #201), and checked source-to-CCAM lowering for a scalar subset under review (PR #195).
 
 The lowering tests parse and check actual Capstan source, lower it to the validated multi-function CCAM representation, and execute it in the Capstan evaluator. The subset includes integer/boolean locals, checked arithmetic and comparisons, direct calls, short-circuit booleans, if/else, while/for, break/continue and returns. Unsupported constructs fail closed.
 
