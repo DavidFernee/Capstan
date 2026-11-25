@@ -1,6 +1,6 @@
 # Blocking, wakeup and deadlock semantics for Capstan concurrency
 
-**Status:** research specification and implementation plan; not yet implemented or proven.  
+**Status:** research specification; the initial one-producer/one-consumer blocking-receive slice is now implemented as a bounded reference model. The general scheduler and liveness claims remain unimplemented and unproven.  
 **Scope:** the next extension of the bounded task/channel reference machine.  
 **Prerequisites:** `CONCURRENCY-PROTOCOL-AUTOMATA.md`, `CONCURRENCY-GUARANTEE-CALCULUS.md`, and the bounded reference machine.
 
@@ -174,7 +174,7 @@ The implementation should be informed by the concurrency literature rather than 
 
 A claimed research contribution must be stated as a precise problem, compared with prior methods, and supported by proof or reproducible evaluation.
 
-## 9. Acceptance gates
+## 9. Initial implementation status\n\nThe first C1 slice is implemented in `verification/concurrency_blocking.cap` and registered in `tests/run.sh`. It covers a single blocked receiver, atomic wait-registration removal and wakeup on send, resumed receive, close/EOF wakeup, draining a committed message after close, cancellation of a blocked receiver, and rejection of duplicate close/cancellation. The model deliberately keeps one receiver and one message; it does not yet implement blocked senders, multiple waiters, a native scheduler, wait-for graph analysis, or liveness proofs.\n\nThe implementation is an abstract reference machine. Its test registration is not evidence that the suite has passed; exact-head CI remains the acceptance oracle.\n\n## 10. Acceptance gates
 
 **Gate A — semantics:** document the task execution-state machine, wait reasons, wakeup winner rules, close semantics and scheduler policy.
 
@@ -188,6 +188,6 @@ A claimed research contribution must be stated as a precise problem, compared wi
 
 **Gate F — assurance:** add adversarial tests, fuzz-generated schedules, sanitizer coverage and regression fixtures. Promote no liveness guarantee into the safe profile until its assumptions and evidence are explicit.
 
-## 10. Explicit non-claims
+## 11. Explicit non-claims
 
 This document does not establish deadlock freedom, starvation freedom, bounded cancellation latency, fairness, weak-memory correctness or correctness of a native scheduler. It defines the next research and implementation target. The current reference machine remains a bounded sequentially enabled protocol model.
