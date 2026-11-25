@@ -1,0 +1,1695 @@
+int main() {
+    CCAMIntResult r = ccam_add(20, 22);
+    if (!(r.ok && r.value == 42)) { return 1; }
+    r = ccam_add(CCAM_I64_MAX, 1);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_sub(CCAM_I64_MIN, 1);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_sub(CCAM_I64_MAX, -1);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_sub(20, 22);
+    if (!(r.ok && r.value == -2)) { return 1; }
+    r = ccam_mul(6, 7);
+    if (!(r.ok && r.value == 42)) { return 1; }
+    r = ccam_mul(CCAM_I64_MIN, -1);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_mul(CCAM_I64_MIN, 1);
+    if (!(r.ok && r.value == CCAM_I64_MIN)) { return 1; }
+    r = ccam_mul(-3037000500, -3037000500);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_mul(-3037000499, -3037000499);
+    if (!(r.ok)) { return 1; }
+    r = ccam_div(-7, 3);
+    if (!(r.ok && r.value == -2)) { return 1; }
+    r = ccam_div(1, 0);
+    if (!(!r.ok && r.trap == "division_by_zero")) { return 1; }
+    r = ccam_rem(1, 0);
+    if (!(!r.ok && r.trap == "division_by_zero")) { return 1; }
+    r = ccam_div(CCAM_I64_MIN, -1);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_rem(-7, 3);
+    if (!(r.ok && r.value == -1)) { return 1; }
+    r = ccam_rem(7, -3);
+    if (!(r.ok && r.value == 1)) { return 1; }
+    r = ccam_rem(-7, -3);
+    if (!(r.ok && r.value == -1)) { return 1; }
+    r = ccam_rem(7, 3);
+    if (!(r.ok && r.value == 1)) { return 1; }
+    r = ccam_rem(CCAM_I64_MIN, -1);
+    if (!(r.ok && r.value == 0)) { return 1; }
+    println("CCAM Capstan arithmetic: ok");
+    return 0;
+}
+
+test "CCAM addition traps on signed overflow" {
+    CCAMIntResult r = ccam_add(CCAM_I64_MAX, 1);
+    assert(!r.ok && r.trap == "integer_overflow");
+}
+
+test "CCAM multiplication traps on signed overflow" {
+    CCAMIntResult r = ccam_mul(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
+}
+
+test "CCAM division truncates toward zero" {
+    CCAMIntResult r = ccam_div(-7, 3);
+    assert(r.ok && r.value == -2);
+}
+
+test "CCAM subtraction checks both overflow directions" {
+    CCAMIntResult hi = ccam_sub(CCAM_I64_MAX, -1);
+    CCAMIntResult lo = ccam_sub(CCAM_I64_MIN, 1);
+    assert(!hi.ok && !lo.ok);
+}
+
+test "CCAM multiplication handles negative boundaries" {
+    CCAMIntResult min_ok = ccam_mul(CCAM_I64_MIN, 1);
+    CCAMIntResult overflow = ccam_mul(-3037000500, -3037000500);
+    assert(min_ok.ok && min_ok.value == CCAM_I64_MIN);
+    assert(!overflow.ok && overflow.trap == "integer_overflow");
+}
+
+test "CCAM division rejects minimum divided by negative one" {
+    CCAMIntResult r = ccam_div(CCAM_I64_MIN, -1);
+    assert(!r.ok && r.trap == "integer_overflow");
+}
+
+test "CCAM remainder has dividend sign for every sign combination" {
+    CCAMIntResult a = ccam_rem(-7, 3);
+    CCAMIntResult b = ccam_rem(7, -3);
+    CCAMIntResult c = ccam_rem(-7, -3);
+    CCAMIntResult d = ccam_rem(7, 3);
+    assert(a.ok && a.value == -1);
+    assert(b.ok && b.value == 1);
+    assert(c.ok && c.value == -1);
+    assert(d.ok && d.value == 1);
+}
+
+test "CCAM remainder of minimum by negative one is zero" {
+    CCAMIntResult r = ccam_rem(CCAM_I64_MIN, -1);
+    assert(r.ok && r.value == 0);
+}
+
+
+// Typed register-file substrate for the CCAM evaluator. Register contents are
+// represented as Capstan values; the declared type and initialisation bit are
+// independent, so an uninitialised read is never confused with integer zero.
+const int CCAM_TYPE_INT = 1;
+const int CCAM_TYPE_BOOL = 2;
+
+struct CCAMRegister {
+    int declared_type;
+    bool initialized;
+    int int_value;
+    bool bool_value;
+}
+
+struct CCAMRegisterResult {
+    bool ok;
+    int int_value;
+    bool bool_value;
+    string trap;
+}
+
+struct CCAMRegisterFileResult {
+    bool ok;
+    List<CCAMRegister> registers;
+    string error;
+}
+
+CCAMRegisterResult ccam_register_error(string trap) {
+    return new CCAMRegisterResult{ok: false, int_value: 0, bool_value: false, trap: trap};
+}
+
+CCAMRegisterResult ccam_register_int(int value) {
+    return new CCAMRegisterResult{ok: true, int_value: value, bool_value: false, trap: ""};
+}
+
+CCAMRegisterResult ccam_register_bool(bool value) {
+    return new CCAMRegisterResult{ok: true, int_value: 0, bool_value: value, trap: ""};
+}
+
+CCAMRegisterFileResult ccam_registers_create(List<int> types) {
+    // Validate the complete type vector before constructing any register.
+    for (int i = 0; i < types.len(); i += 1) {
+        int declared_type = types[i];
+        if (declared_type != CCAM_TYPE_INT && declared_type != CCAM_TYPE_BOOL) {
+            List<CCAMRegister> empty = new List<CCAMRegister>();
+            return new CCAMRegisterFileResult{
+                ok: false,
+                registers: empty,
+                error: "invalid_register_type"
+            };
+        }
+    }
+
+    List<CCAMRegister> registers = new List<CCAMRegister>();
+    for (int i = 0; i < types.len(); i += 1) {
+        int declared_type = types[i];
+        CCAMRegister reg = new CCAMRegister{
+            declared_type: declared_type,
+            initialized: false,
+            int_value: 0,
+            bool_value: false
+        };
+        registers.push(reg);
+    }
+    return new CCAMRegisterFileResult{ok: true, registers: registers, error: ""};
+}
+
+CCAMRegisterResult ccam_register_read_int(List<CCAMRegister> registers, int index) {
+    if (index < 0 || index >= registers.len()) {
+        return ccam_register_error("invalid_register");
+    }
+    CCAMRegister reg = registers[index];
+    if (!reg.initialized) {
+        return ccam_register_error("uninitialised_register");
+    }
+    if (reg.declared_type != CCAM_TYPE_INT) {
+        return ccam_register_error("register_type_mismatch");
+    }
+    return ccam_register_int(reg.int_value);
+}
+
+CCAMRegisterResult ccam_register_read_bool(List<CCAMRegister> registers, int index) {
+    if (index < 0 || index >= registers.len()) {
+        return ccam_register_error("invalid_register");
+    }
+    CCAMRegister reg = registers[index];
+    if (!reg.initialized) {
+        return ccam_register_error("uninitialised_register");
+    }
+    if (reg.declared_type != CCAM_TYPE_BOOL) {
+        return ccam_register_error("register_type_mismatch");
+    }
+    return ccam_register_bool(reg.bool_value);
+}
+
+string ccam_register_write_int(List<CCAMRegister> registers, int index, int value) {
+    if (index < 0 || index >= registers.len()) {
+        return "invalid_register";
+    }
+    CCAMRegister reg = registers[index];
+    if (reg.declared_type != CCAM_TYPE_INT) {
+        return "register_type_mismatch";
+    }
+    reg.int_value = value;
+    reg.initialized = true;
+    return "";
+}
+
+string ccam_register_write_bool(List<CCAMRegister> registers, int index, bool value) {
+    if (index < 0 || index >= registers.len()) {
+        return "invalid_register";
+    }
+    CCAMRegister reg = registers[index];
+    if (reg.declared_type != CCAM_TYPE_BOOL) {
+        return "register_type_mismatch";
+    }
+    reg.bool_value = value;
+    reg.initialized = true;
+    return "";
+}
+
+test "CCAM register files preserve declared types and uninitialised state" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL);
+    CCAMRegisterFileResult created = ccam_registers_create(types);
+    assert(created.ok);
+    List<CCAMRegister> registers = created.registers;
+    CCAMRegisterResult read_int = ccam_register_read_int(registers, 0);
+    assert(!read_int.ok && read_int.trap == "uninitialised_register");
+    assert(ccam_register_write_int(registers, 0, 42) == "");
+    assert(ccam_register_write_bool(registers, 1, true) == "");
+    read_int = ccam_register_read_int(registers, 0);
+    CCAMRegisterResult read_bool = ccam_register_read_bool(registers, 1);
+    assert(read_int.ok && read_int.int_value == 42);
+    assert(read_bool.ok && read_bool.bool_value);
+}
+
+test "CCAM register files reject invalid indices and type confusion" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    CCAMRegisterFileResult created = ccam_registers_create(types);
+    assert(created.ok);
+    List<CCAMRegister> registers = created.registers;
+    assert(ccam_register_write_bool(registers, 0, true) == "register_type_mismatch");
+    assert(ccam_register_write_int(registers, 1, 9) == "invalid_register");
+    assert(ccam_register_write_int(registers, 0, 1) == "");
+    CCAMRegisterResult wrong_type = ccam_register_read_bool(registers, 0);
+    CCAMRegisterResult bad_index = ccam_register_read_int(registers, -1);
+    assert(!wrong_type.ok && wrong_type.trap == "register_type_mismatch");
+    assert(!bad_index.ok && bad_index.trap == "invalid_register");
+}
+
+test "CCAM remainder by zero traps" {
+    CCAMIntResult r = ccam_rem(7, 0);
+    assert(!r.ok && r.trap == "division_by_zero");
+}
+
+
+test "CCAM register-file constructor rejects unknown type tags" {
+    List<int> unknown = new List<int>();
+    unknown.push(0);
+    CCAMRegisterFileResult zero = ccam_registers_create(unknown);
+    assert(!zero.ok && zero.error == "invalid_register_type");
+
+    List<int> negative = new List<int>();
+    negative.push(-1);
+    CCAMRegisterFileResult negative_result = ccam_registers_create(negative);
+    assert(!negative_result.ok && negative_result.error == "invalid_register_type");
+
+    List<int> future = new List<int>();
+    future.push(3);
+    CCAMRegisterFileResult future_result = ccam_registers_create(future);
+    assert(!future_result.ok && future_result.error == "invalid_register_type");
+
+    List<int> mixed = new List<int>();
+    mixed.push(CCAM_TYPE_INT);
+    mixed.push(CCAM_TYPE_BOOL);
+    mixed.push(0);
+    CCAMRegisterFileResult mixed_result = ccam_registers_create(mixed);
+    assert(!mixed_result.ok && mixed_result.error == "invalid_register_type");
+    assert(mixed_result.registers.len() == 0);
+}
+
+
+// CCAM single-frame executable evaluator, implemented in Capstan.
+// This is a deliberately restricted execution slice over the existing typed
+// register substrate in ccam_core.cap. It assumes the program has already
+// passed the typed structural validator for this in-memory subset. It is not
+// a JSON decoder or closed-schema validator, and it does not yet implement
+// calls, frames, or source lowering.
+//
+// Semantic authority: docs/architecture/CCAM.md.
+// The step counter is consumed before dispatch. A dynamic trap therefore
+// consumes one instruction; a step-limit trap does not.
+
+const int CCAM_OP_CONST_I = 1;
+const int CCAM_OP_CONST_B = 2;
+const int CCAM_OP_ADD_I = 3;
+const int CCAM_OP_SUB_I = 4;
+const int CCAM_OP_MUL_I = 5;
+const int CCAM_OP_DIV_I = 6;
+const int CCAM_OP_REM_I = 7;
+const int CCAM_OP_EQ_I = 8;
+const int CCAM_OP_LT_I = 9;
+const int CCAM_OP_NOT_B = 10;
+const int CCAM_OP_JUMP = 11;
+const int CCAM_OP_BRANCH = 12;
+const int CCAM_OP_RET = 13;
+const int CCAM_OP_RET_VOID = 14;
+const int CCAM_OP_TRAP = 15;
+const int CCAM_OP_MOVE = 16;
+
+struct CCAMInstruction {
+    int op;
+    int dst;
+    int lhs;
+    int rhs;
+    int src;
+    int target;
+    int if_true;
+    int if_false;
+    int int_value;
+    bool bool_value;
+    string reason;
+}
+
+struct CCAMMachineState {
+    List<CCAMRegister> registers;
+    List<CCAMInstruction> instructions;
+    int pc;
+    int steps;
+    int max_steps;
+    bool halted;
+    bool halt_has_value;
+    int halt_value;
+    bool halt_bool_value;
+    string trap_code;
+    string trap_detail;
+}
+
+struct CCAMMachineCreateResult {
+    bool ok;
+    CCAMMachineState state;
+    string error;
+}
+
+CCAMInstruction ccam_copy_instruction(CCAMInstruction source) {
+    return new CCAMInstruction{
+        op: source.op,
+        dst: source.dst,
+        lhs: source.lhs,
+        rhs: source.rhs,
+        src: source.src,
+        target: source.target,
+        if_true: source.if_true,
+        if_false: source.if_false,
+        int_value: source.int_value,
+        bool_value: source.bool_value,
+        reason: source.reason
+    };
+}
+
+CCAMMachineCreateResult ccam_machine_create(List<int> register_types,
+                                     List<CCAMInstruction> instructions,
+                                     int max_steps) {
+    CCAMRegisterFileResult created = ccam_registers_create(register_types);
+    if (!created.ok || max_steps < 0) {
+        List<CCAMRegister> empty_registers = new List<CCAMRegister>();
+        List<CCAMInstruction> empty_instructions = new List<CCAMInstruction>();
+        CCAMMachineState empty_state = new CCAMMachineState{
+            registers: empty_registers,
+            instructions: empty_instructions,
+            pc: 0,
+            steps: 0,
+            max_steps: 0,
+            halted: true,
+            halt_has_value: false,
+            halt_value: 0,
+            halt_bool_value: false,
+            trap_code: "",
+            trap_detail: ""
+        };
+        string error = "invalid_step_limit";
+        if (!created.ok) {
+            error = created.error;
+        }
+        return new CCAMMachineCreateResult{
+            ok: false, state: empty_state, error: error
+        };
+    }
+    // Snapshot the validated program so later mutation through the caller's
+    // list or instruction references cannot change the executing program.
+    List<CCAMInstruction> program = new List<CCAMInstruction>();
+    for (int i = 0; i < instructions.len(); i += 1) {
+        program.push(ccam_copy_instruction(instructions[i]));
+    }
+    CCAMMachineState state = new CCAMMachineState{
+        registers: created.registers,
+        instructions: program,
+        pc: 0,
+        steps: 0,
+        max_steps: max_steps,
+        halted: false,
+        halt_has_value: false,
+        halt_value: 0,
+        halt_bool_value: false,
+        trap_code: "",
+        trap_detail: ""
+    };
+    return new CCAMMachineCreateResult{ok: true, state: state, error: ""};
+}
+
+CCAMMachineState ccam_machine_create_valid(List<int> register_types,
+                                           List<CCAMInstruction> instructions,
+                                           int max_steps) {
+    CCAMMachineCreateResult created = ccam_machine_create(
+        register_types, instructions, max_steps);
+    if (!created.ok) {
+        created.state.trap_code = created.error;
+    }
+    return created.state;
+}
+
+void ccam_machine_trap(CCAMMachineState state, string code) {
+    state.halted = true;
+    state.halt_has_value = false;
+    state.trap_code = code;
+    state.trap_detail = "";
+}
+
+void ccam_machine_advance(CCAMMachineState state) {
+    state.pc += 1;
+}
+
+void ccam_machine_step(CCAMMachineState state) {
+    if (state.halted) {
+        return;
+    }
+    if (state.steps >= state.max_steps) {
+        ccam_machine_trap(state, "step_limit_exceeded");
+        return;
+    }
+    if (state.pc < 0 || state.pc >= state.instructions.len()) {
+        // A validated program cannot reach this state. Keep the evaluator
+        // fail-closed if its precondition is violated by an internal caller.
+        ccam_machine_trap(state, "invalid_program_counter");
+        return;
+    }
+
+    CCAMInstruction instruction = state.instructions[state.pc];
+    state.steps += 1;
+
+    if (instruction.op == CCAM_OP_MOVE) {
+        if (instruction.src < 0 || instruction.src >= state.registers.len() ||
+            instruction.dst < 0 || instruction.dst >= state.registers.len()) {
+            ccam_machine_trap(state, "invalid_register");
+            return;
+        }
+        CCAMRegister source = state.registers[instruction.src];
+        CCAMRegister destination = state.registers[instruction.dst];
+        if (!source.initialized) {
+            ccam_machine_trap(state, "uninitialised_register");
+            return;
+        }
+        if (source.declared_type != destination.declared_type) {
+            ccam_machine_trap(state, "register_type_mismatch");
+            return;
+        }
+        string error = "";
+        if (source.declared_type == CCAM_TYPE_INT) {
+            error = ccam_register_write_int(
+                state.registers, instruction.dst, source.int_value);
+        } else if (source.declared_type == CCAM_TYPE_BOOL) {
+            error = ccam_register_write_bool(
+                state.registers, instruction.dst, source.bool_value);
+        } else {
+            ccam_machine_trap(state, "register_type_mismatch");
+            return;
+        }
+        if (error != "") {
+            ccam_machine_trap(state, error);
+            return;
+        }
+        ccam_machine_advance(state);
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_CONST_I) {
+        string error = ccam_register_write_int(
+            state.registers, instruction.dst, instruction.int_value);
+        if (error != "") {
+            ccam_machine_trap(state, error);
+            return;
+        }
+        ccam_machine_advance(state);
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_CONST_B) {
+        string error = ccam_register_write_bool(
+            state.registers, instruction.dst, instruction.bool_value);
+        if (error != "") {
+            ccam_machine_trap(state, error);
+            return;
+        }
+        ccam_machine_advance(state);
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_ADD_I ||
+        instruction.op == CCAM_OP_SUB_I ||
+        instruction.op == CCAM_OP_MUL_I ||
+        instruction.op == CCAM_OP_DIV_I ||
+        instruction.op == CCAM_OP_REM_I) {
+        // Reads are deliberately ordered lhs then rhs. A failed lhs read
+        // prevents the rhs read and all arithmetic.
+        CCAMRegisterResult lhs = ccam_register_read_int(
+            state.registers, instruction.lhs);
+        if (!lhs.ok) {
+            ccam_machine_trap(state, lhs.trap);
+            return;
+        }
+        CCAMRegisterResult rhs = ccam_register_read_int(
+            state.registers, instruction.rhs);
+        if (!rhs.ok) {
+            ccam_machine_trap(state, rhs.trap);
+            return;
+        }
+
+        CCAMIntResult result = ccam_add(0, 0);
+        if (instruction.op == CCAM_OP_ADD_I) {
+            result = ccam_add(lhs.int_value, rhs.int_value);
+        } else if (instruction.op == CCAM_OP_SUB_I) {
+            result = ccam_sub(lhs.int_value, rhs.int_value);
+        } else if (instruction.op == CCAM_OP_MUL_I) {
+            result = ccam_mul(lhs.int_value, rhs.int_value);
+        } else if (instruction.op == CCAM_OP_DIV_I) {
+            result = ccam_div(lhs.int_value, rhs.int_value);
+        } else {
+            result = ccam_rem(lhs.int_value, rhs.int_value);
+        }
+        if (!result.ok) {
+            ccam_machine_trap(state, result.trap);
+            return;
+        }
+        string error = ccam_register_write_int(
+            state.registers, instruction.dst, result.value);
+        if (error != "") {
+            ccam_machine_trap(state, error);
+            return;
+        }
+        ccam_machine_advance(state);
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_EQ_I || instruction.op == CCAM_OP_LT_I) {
+        CCAMRegisterResult lhs = ccam_register_read_int(
+            state.registers, instruction.lhs);
+        if (!lhs.ok) {
+            ccam_machine_trap(state, lhs.trap);
+            return;
+        }
+        CCAMRegisterResult rhs = ccam_register_read_int(
+            state.registers, instruction.rhs);
+        if (!rhs.ok) {
+            ccam_machine_trap(state, rhs.trap);
+            return;
+        }
+        bool value = lhs.int_value == rhs.int_value;
+        if (instruction.op == CCAM_OP_LT_I) {
+            value = lhs.int_value < rhs.int_value;
+        }
+        string error = ccam_register_write_bool(
+            state.registers, instruction.dst, value);
+        if (error != "") {
+            ccam_machine_trap(state, error);
+            return;
+        }
+        ccam_machine_advance(state);
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_NOT_B) {
+        CCAMRegisterResult source = ccam_register_read_bool(
+            state.registers, instruction.lhs);
+        if (!source.ok) {
+            ccam_machine_trap(state, source.trap);
+            return;
+        }
+        string error = ccam_register_write_bool(
+            state.registers, instruction.dst, !source.bool_value);
+        if (error != "") {
+            ccam_machine_trap(state, error);
+            return;
+        }
+        ccam_machine_advance(state);
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_JUMP) {
+        state.pc = instruction.target;
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_BRANCH) {
+        CCAMRegisterResult condition = ccam_register_read_bool(
+            state.registers, instruction.lhs);
+        if (!condition.ok) {
+            ccam_machine_trap(state, condition.trap);
+            return;
+        }
+        if (condition.bool_value) {
+            state.pc = instruction.if_true;
+        } else {
+            state.pc = instruction.if_false;
+        }
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_RET) {
+        if (instruction.lhs < 0 || instruction.lhs >= state.registers.len()) {
+            ccam_machine_trap(state, "invalid_register");
+            return;
+        }
+        CCAMRegister source = state.registers[instruction.lhs];
+        if (source.declared_type == CCAM_TYPE_INT) {
+            CCAMRegisterResult value = ccam_register_read_int(
+                state.registers, instruction.lhs);
+            if (!value.ok) {
+                ccam_machine_trap(state, value.trap);
+                return;
+            }
+            state.halt_value = value.int_value;
+            state.halt_bool_value = false;
+        } else if (source.declared_type == CCAM_TYPE_BOOL) {
+            CCAMRegisterResult value = ccam_register_read_bool(
+                state.registers, instruction.lhs);
+            if (!value.ok) {
+                ccam_machine_trap(state, value.trap);
+                return;
+            }
+            state.halt_value = 0;
+            state.halt_bool_value = value.bool_value;
+        } else {
+            ccam_machine_trap(state, "register_type_mismatch");
+            return;
+        }
+        state.halted = true;
+        state.halt_has_value = true;
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_RET_VOID) {
+        state.halted = true;
+        state.halt_has_value = false;
+        return;
+    }
+
+    if (instruction.op == CCAM_OP_TRAP) {
+        state.halted = true;
+        state.halt_has_value = false;
+        state.trap_code = "explicit_trap";
+        state.trap_detail = instruction.reason;
+        return;
+    }
+
+    // Unknown opcodes are excluded by the structural validator. This branch
+    // is defensive only and is not a substitute for validation.
+    ccam_machine_trap(state, "invalid_instruction");
+}
+
+CCAMInstruction ccam_instruction(int op) {
+    return new CCAMInstruction{
+        op: op,
+        dst: 0,
+        lhs: 0,
+        rhs: 0,
+        src: 0,
+        target: 0,
+        if_true: 0,
+        if_false: 0,
+        int_value: 0,
+        bool_value: false,
+        reason: ""
+    };
+}
+
+test "CCAM machine creation rejects invalid register tags and step limits" {
+    List<int> invalid_types = new List<int>();
+    invalid_types.push(7);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMMachineCreateResult invalid_registers = ccam_machine_create(
+        invalid_types, code, 1);
+    assert(!invalid_registers.ok);
+    assert(invalid_registers.error == "invalid_register_type");
+
+    List<int> valid_types = new List<int>();
+    CCAMMachineCreateResult invalid_limit = ccam_machine_create(
+        valid_types, code, -1);
+    assert(!invalid_limit.ok);
+    assert(invalid_limit.error == "invalid_step_limit");
+}
+
+test "CCAM machine executes checked arithmetic and returns a value" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 19;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 23;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_ADD_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 2;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 4);
+    for (int n = 0; n < 4; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.halt_has_value && state.halt_value == 42);
+    assert(state.trap_code == "" && state.steps == 4);
+}
+
+test "CCAM machine snapshots instructions before execution" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 42;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 2);
+    CCAMInstruction caller_owned = code[0];
+    caller_owned.int_value = 99;
+    code.push(ccam_instruction(CCAM_OP_TRAP));
+    ccam_machine_step(state);
+    ccam_machine_step(state);
+    assert(state.halted && state.halt_has_value && state.halt_value == 42);
+    assert(state.instructions.len() == 2 && state.steps == 2);
+}
+
+test "CCAM machine consumes a step for a dynamic arithmetic trap" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 7;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 0;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_DIV_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 3);
+    ccam_machine_step(state);
+    ccam_machine_step(state);
+    ccam_machine_step(state);
+    assert(state.halted && state.trap_code == "division_by_zero");
+    assert(state.steps == 3 && state.pc == 2);
+}
+
+test "CCAM machine checks the step limit before executing the next instruction" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 9;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 1);
+    ccam_machine_step(state);
+    ccam_machine_step(state);
+    assert(state.halted && state.trap_code == "step_limit_exceeded");
+    assert(state.steps == 1 && state.pc == 1);
+}
+
+test "CCAM machine follows a boolean branch" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_BOOL);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_B);
+    i.dst = 0;
+    i.bool_value = true;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 0;
+    i.if_true = 2;
+    i.if_false = 4;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 42;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_JUMP);
+    i.target = 5;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 99;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 1;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 5);
+    for (int n = 0; n < 5; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.halt_has_value && state.halt_value == 42);
+    assert(state.steps == 5);
+}
+
+test "CCAM machine compares integers and negates booleans" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL);
+    types.push(CCAM_TYPE_BOOL);
+    types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 5;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 8;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_LT_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_NOT_B);
+    i.dst = 3;
+    i.lhs = 2;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_EQ_I);
+    i.dst = 4;
+    i.lhs = 0;
+    i.rhs = 0;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 3;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 6);
+    for (int n = 0; n < 6; n += 1) {
+        ccam_machine_step(state);
+    }
+    CCAMRegister equality = state.registers[4];
+    assert(state.halted && state.halt_has_value && !state.halt_bool_value);
+    assert(equality.initialized && equality.bool_value);
+    assert(state.steps == 6 && state.trap_code == "");
+}
+
+test "CCAM machine moves typed values and returns a boolean" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_BOOL);
+    types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_B);
+    i.dst = 0;
+    i.bool_value = true;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_MOVE);
+    i.dst = 1;
+    i.src = 0;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 1;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 3);
+    for (int n = 0; n < 3; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.halt_has_value && state.halt_bool_value);
+    assert(state.steps == 3 && state.trap_code == "");
+}
+
+test "CCAM machine preserves the left operand trap precedence" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_ADD_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 1);
+    ccam_machine_step(state);
+    assert(state.halted && state.trap_code == "uninitialised_register");
+    assert(state.steps == 1 && state.pc == 0);
+}
+
+test "CCAM machine returns void and preserves explicit trap detail" {
+    List<int> types = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_RET_VOID);
+    code.push(i);
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 1);
+    ccam_machine_step(state);
+    assert(state.halted && !state.halt_has_value && state.trap_code == "");
+
+    List<CCAMInstruction> trapped_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_TRAP);
+    i.reason = "deliberate_stop";
+    trapped_code.push(i);
+    CCAMMachineState trapped = ccam_machine_create_valid(types, trapped_code, 1);
+    ccam_machine_step(trapped);
+    assert(trapped.halted && trapped.trap_code == "explicit_trap");
+    assert(trapped.trap_detail == "deliberate_stop");
+}
+
+
+test "CCAM machine follows the false branch arm" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_BOOL);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_B);
+    i.dst = 0;
+    i.bool_value = false;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 0;
+    i.if_true = 4;
+    i.if_false = 2;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 42;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 99;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 1;
+    code.push(i);
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 4);
+    for (int n = 0; n < 4; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.halt_has_value && state.halt_value == 42);
+    assert(state.steps == 4 && state.trap_code == "");
+}
+
+test "CCAM machine rejects an uninitialised return source" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    code.push(i);
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 1);
+    ccam_machine_step(state);
+    assert(state.halted && state.trap_code == "uninitialised_register");
+    assert(state.steps == 1 && !state.halt_has_value);
+}
+
+test "CCAM machine fails closed on invalid destination and type" {
+    List<int> int_types = new List<int>();
+    int_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> bad_index_code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 7;
+    bad_index_code.push(i);
+    CCAMMachineState bad_index = ccam_machine_create_valid(int_types, bad_index_code, 1);
+    ccam_machine_step(bad_index);
+    assert(bad_index.halted && bad_index.trap_code == "invalid_register");
+    assert(bad_index.steps == 1);
+
+    List<int> bool_types = new List<int>();
+    bool_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> bad_type_code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 7;
+    bad_type_code.push(i);
+    CCAMMachineState bad_type = ccam_machine_create_valid(bool_types, bad_type_code, 1);
+    ccam_machine_step(bad_type);
+    assert(bad_type.halted && bad_type.trap_code == "register_type_mismatch");
+    assert(bad_type.steps == 1);
+}
+
+test "CCAM machine traps defensively on invalid program counters and opcodes" {
+    List<int> types = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMMachineState bad_pc = ccam_machine_create_valid(types, code, 1);
+    bad_pc.pc = 1;
+    ccam_machine_step(bad_pc);
+    assert(bad_pc.halted && bad_pc.trap_code == "invalid_program_counter");
+    assert(bad_pc.steps == 0);
+
+    List<CCAMInstruction> bad_opcode_code = new List<CCAMInstruction>();
+    bad_opcode_code.push(ccam_instruction(999));
+    CCAMMachineState bad_opcode = ccam_machine_create_valid(types, bad_opcode_code, 1);
+    ccam_machine_step(bad_opcode);
+    assert(bad_opcode.halted && bad_opcode.trap_code == "invalid_instruction");
+    assert(bad_opcode.steps == 1);
+}
+
+test "CCAM machine checks a zero instruction budget before dispatch" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 7;
+    code.push(i);
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 0);
+    ccam_machine_step(state);
+    assert(state.halted && state.trap_code == "step_limit_exceeded");
+    assert(state.steps == 0 && state.pc == 0);
+}
+
+test "CCAM machine fails closed after an invalid branch target" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_B);
+    i.dst = 0;
+    i.bool_value = false;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 0;
+    i.if_true = 2;
+    i.if_false = 99;
+    code.push(i);
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 3);
+    ccam_machine_step(state);
+    ccam_machine_step(state);
+    assert(!state.halted && state.pc == 99 && state.steps == 2);
+    ccam_machine_step(state);
+    assert(state.halted && state.trap_code == "invalid_program_counter");
+    assert(state.steps == 2);
+}
+
+
+test "CCAM evaluator dispatches subtraction multiplication and remainder" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 20;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 6;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_SUB_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_MUL_I);
+    i.dst = 3;
+    i.lhs = 2;
+    i.rhs = 2;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_REM_I);
+    i.dst = 4;
+    i.lhs = 3;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 4;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 6);
+    for (int n = 0; n < 6; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.halt_has_value && state.halt_value == 4);
+    assert(state.steps == 6 && state.trap_code == "");
+}
+
+test "CCAM evaluator traps on checked addition overflow" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = CCAM_I64_MAX;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_ADD_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 3);
+    for (int n = 0; n < 3; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.trap_code == "integer_overflow");
+    assert(state.steps == 3 && state.pc == 2);
+}
+
+test "CCAM evaluator traps on division overflow at minimum integer" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = CCAM_I64_MIN;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = -1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_DIV_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+
+    CCAMMachineState state = ccam_machine_create_valid(types, code, 3);
+    for (int n = 0; n < 3; n += 1) {
+        ccam_machine_step(state);
+    }
+    assert(state.halted && state.trap_code == "integer_overflow");
+    assert(state.steps == 3 && state.pc == 2);
+}
+
+
+// Typed structural validation for the executable single-frame subset.
+// This validates the already-decoded Capstan instruction representation. It
+// is not a JSON decoder and cannot detect duplicate/unknown JSON object keys.
+const int CCAM_RETURN_INT = 1;
+const int CCAM_RETURN_BOOL = 2;
+const int CCAM_RETURN_VOID = 3;
+
+// Explicit limits for this in-memory executable subset. These are admission
+// limits, not a substitute for bounding raw JSON bytes in a future decoder.
+const int CCAM_MAX_REGISTERS = 4096;
+const int CCAM_MAX_INSTRUCTIONS = 65536;
+
+struct CCAMValidationResult {
+    bool ok;
+    string error;
+}
+
+CCAMValidationResult ccam_validation_error(string error) {
+    return new CCAMValidationResult{ok: false, error: error};
+}
+
+CCAMValidationResult ccam_validation_ok() {
+    return new CCAMValidationResult{ok: true, error: ""};
+}
+
+bool ccam_register_has_type(List<int> register_types, int index, int expected) {
+    if (index < 0 || index >= register_types.len()) {
+        return false;
+    }
+    return register_types[index] == expected;
+}
+
+bool ccam_valid_target(List<CCAMInstruction> instructions, int target) {
+    return target >= 0 && target < instructions.len();
+}
+
+bool ccam_valid_trap_reason(string reason) {
+    int n = reason.len();
+    if (n == 0 || n > 64) {
+        return false;
+    }
+    bool first_ok = false;
+    string first = reason.slice(0, 1);
+    for (int code = 97; code <= 122; code += 1) {
+        if (first == char_str(code)) {
+            first_ok = true;
+        }
+    }
+    if (!first_ok) {
+        return false;
+    }
+    for (int i = 1; i < n; i += 1) {
+        string ch = reason.slice(i, i + 1);
+        bool allowed = false;
+        for (int code = 97; code <= 122; code += 1) {
+            if (ch == char_str(code)) {
+                allowed = true;
+            }
+        }
+        for (int code = 48; code <= 57; code += 1) {
+            if (ch == char_str(code)) {
+                allowed = true;
+            }
+        }
+        if (ch == "_") {
+            allowed = true;
+        }
+        if (!allowed) {
+            return false;
+        }
+    }
+    return true;
+}
+
+CCAMValidationResult ccam_validate_single_frame(
+    List<int> register_types,
+    List<CCAMInstruction> instructions,
+    int return_type
+) {
+    // Reject oversized structures before allocating register or reachability
+    // storage. The future raw-program decoder must impose a byte limit too.
+    if (register_types.len() > CCAM_MAX_REGISTERS) {
+        return ccam_validation_error("register_limit_exceeded");
+    }
+    if (instructions.len() > CCAM_MAX_INSTRUCTIONS) {
+        return ccam_validation_error("instruction_limit_exceeded");
+    }
+    CCAMRegisterFileResult register_check = ccam_registers_create(register_types);
+    if (!register_check.ok) {
+        return ccam_validation_error(register_check.error);
+    }
+    if (return_type != CCAM_RETURN_INT &&
+        return_type != CCAM_RETURN_BOOL &&
+        return_type != CCAM_RETURN_VOID) {
+        return ccam_validation_error("invalid_return_type");
+    }
+    if (instructions.len() == 0) {
+        return ccam_validation_error("empty_instruction_sequence");
+    }
+
+    // First validate every instruction, including unreachable instructions.
+    // This pass is deliberately independent of control-flow reachability.
+    for (int i = 0; i < instructions.len(); i += 1) {
+        CCAMInstruction instruction = instructions[i];
+        if (instruction.op == CCAM_OP_CONST_I) {
+            if (!ccam_register_has_type(register_types, instruction.dst, CCAM_TYPE_INT)) {
+                return ccam_validation_error("invalid_or_mistyped_destination");
+            }
+        } else if (instruction.op == CCAM_OP_CONST_B) {
+            if (!ccam_register_has_type(register_types, instruction.dst, CCAM_TYPE_BOOL)) {
+                return ccam_validation_error("invalid_or_mistyped_destination");
+            }
+        } else if (instruction.op == CCAM_OP_MOVE) {
+            if (instruction.src < 0 || instruction.src >= register_types.len() ||
+                instruction.dst < 0 || instruction.dst >= register_types.len()) {
+                return ccam_validation_error("invalid_register");
+            }
+            if (register_types[instruction.src] != register_types[instruction.dst]) {
+                return ccam_validation_error("register_type_mismatch");
+            }
+        } else if (instruction.op == CCAM_OP_ADD_I ||
+                   instruction.op == CCAM_OP_SUB_I ||
+                   instruction.op == CCAM_OP_MUL_I ||
+                   instruction.op == CCAM_OP_DIV_I ||
+                   instruction.op == CCAM_OP_REM_I) {
+            if (!ccam_register_has_type(register_types, instruction.dst, CCAM_TYPE_INT) ||
+                !ccam_register_has_type(register_types, instruction.lhs, CCAM_TYPE_INT) ||
+                !ccam_register_has_type(register_types, instruction.rhs, CCAM_TYPE_INT)) {
+                return ccam_validation_error("invalid_or_mistyped_integer_operand");
+            }
+        } else if (instruction.op == CCAM_OP_EQ_I || instruction.op == CCAM_OP_LT_I) {
+            if (!ccam_register_has_type(register_types, instruction.dst, CCAM_TYPE_BOOL) ||
+                !ccam_register_has_type(register_types, instruction.lhs, CCAM_TYPE_INT) ||
+                !ccam_register_has_type(register_types, instruction.rhs, CCAM_TYPE_INT)) {
+                return ccam_validation_error("invalid_or_mistyped_comparison_operand");
+            }
+        } else if (instruction.op == CCAM_OP_NOT_B) {
+            if (!ccam_register_has_type(register_types, instruction.dst, CCAM_TYPE_BOOL) ||
+                !ccam_register_has_type(register_types, instruction.lhs, CCAM_TYPE_BOOL)) {
+                return ccam_validation_error("invalid_or_mistyped_boolean_operand");
+            }
+        } else if (instruction.op == CCAM_OP_JUMP) {
+            if (!ccam_valid_target(instructions, instruction.target)) {
+                return ccam_validation_error("invalid_branch_target");
+            }
+        } else if (instruction.op == CCAM_OP_BRANCH) {
+            if (!ccam_register_has_type(register_types, instruction.lhs, CCAM_TYPE_BOOL)) {
+                return ccam_validation_error("invalid_or_mistyped_branch_condition");
+            }
+            if (!ccam_valid_target(instructions, instruction.if_true) ||
+                !ccam_valid_target(instructions, instruction.if_false)) {
+                return ccam_validation_error("invalid_branch_target");
+            }
+        } else if (instruction.op == CCAM_OP_RET) {
+            if (instruction.lhs < 0 || instruction.lhs >= register_types.len()) {
+                return ccam_validation_error("invalid_return_register");
+            }
+            if (return_type == CCAM_RETURN_INT &&
+                register_types[instruction.lhs] != CCAM_TYPE_INT) {
+                return ccam_validation_error("return_type_mismatch");
+            }
+            if (return_type == CCAM_RETURN_BOOL &&
+                register_types[instruction.lhs] != CCAM_TYPE_BOOL) {
+                return ccam_validation_error("return_type_mismatch");
+            }
+            if (return_type == CCAM_RETURN_VOID) {
+                return ccam_validation_error("return_type_mismatch");
+            }
+        } else if (instruction.op == CCAM_OP_RET_VOID) {
+            if (return_type != CCAM_RETURN_VOID) {
+                return ccam_validation_error("return_type_mismatch");
+            }
+        } else if (instruction.op == CCAM_OP_TRAP) {
+            if (!ccam_valid_trap_reason(instruction.reason)) {
+                return ccam_validation_error("invalid_trap_reason");
+            }
+        } else {
+            return ccam_validation_error("invalid_instruction");
+        }
+    }
+
+    // Traverse the control-flow graph with a worklist. Each instruction is
+    // enqueued at most once, so reachability is O(V + E), including programs
+    // whose edges point backwards through the instruction sequence.
+    List<bool> reachable = new List<bool>();
+    for (int i = 0; i < instructions.len(); i += 1) {
+        reachable.push(false);
+    }
+    List<int> worklist = new List<int>();
+    reachable[0] = true;
+    worklist.push(0);
+    int worklist_index = 0;
+    while (worklist_index < worklist.len()) {
+        int i = worklist[worklist_index];
+        worklist_index += 1;
+        CCAMInstruction instruction = instructions[i];
+        if (instruction.op == CCAM_OP_JUMP) {
+            if (!reachable[instruction.target]) {
+                reachable[instruction.target] = true;
+                worklist.push(instruction.target);
+            }
+        } else if (instruction.op == CCAM_OP_BRANCH) {
+            if (!reachable[instruction.if_true]) {
+                reachable[instruction.if_true] = true;
+                worklist.push(instruction.if_true);
+            }
+            if (!reachable[instruction.if_false]) {
+                reachable[instruction.if_false] = true;
+                worklist.push(instruction.if_false);
+            }
+        } else if (instruction.op != CCAM_OP_RET &&
+                   instruction.op != CCAM_OP_RET_VOID &&
+                   instruction.op != CCAM_OP_TRAP) {
+            if (i + 1 >= instructions.len()) {
+                return ccam_validation_error("reachable_fallthrough");
+            }
+            if (!reachable[i + 1]) {
+                reachable[i + 1] = true;
+                worklist.push(i + 1);
+            }
+        }
+    }
+    return ccam_validation_ok();
+}
+
+// Safe construction path: callers must supply the declared return type and
+// pass static validation before an executable state is created.
+CCAMMachineCreateResult ccam_machine_create_validated(
+    List<int> register_types,
+    List<CCAMInstruction> instructions,
+    int max_steps,
+    int return_type
+) {
+    if (max_steps < 0) {
+        List<CCAMRegister> empty_registers = new List<CCAMRegister>();
+        List<CCAMInstruction> empty_instructions = new List<CCAMInstruction>();
+        CCAMMachineState empty_state = new CCAMMachineState{
+            registers: empty_registers,
+            instructions: empty_instructions,
+            pc: 0,
+            steps: 0,
+            max_steps: 0,
+            halted: true,
+            halt_has_value: false,
+            halt_value: 0,
+            halt_bool_value: false,
+            trap_code: "",
+            trap_detail: ""
+        };
+        return new CCAMMachineCreateResult{
+            ok: false, state: empty_state, error: "invalid_step_limit"
+        };
+    }
+    CCAMValidationResult validation = ccam_validate_single_frame(
+        register_types, instructions, return_type);
+    if (!validation.ok) {
+        List<CCAMRegister> empty_registers = new List<CCAMRegister>();
+        List<CCAMInstruction> empty_instructions = new List<CCAMInstruction>();
+        CCAMMachineState empty_state = new CCAMMachineState{
+            registers: empty_registers,
+            instructions: empty_instructions,
+            pc: 0,
+            steps: 0,
+            max_steps: 0,
+            halted: true,
+            halt_has_value: false,
+            halt_value: 0,
+            halt_bool_value: false,
+            trap_code: "",
+            trap_detail: ""
+        };
+        return new CCAMMachineCreateResult{
+            ok: false, state: empty_state, error: validation.error
+        };
+    }
+    return ccam_machine_create(register_types, instructions, max_steps);
+}
+
+test "CCAM validator enforces register and instruction admission limits" {
+    List<int> at_register_limit = new List<int>();
+    for (int i = 0; i < CCAM_MAX_REGISTERS; i += 1) {
+        at_register_limit.push(CCAM_TYPE_INT);
+    }
+    List<CCAMInstruction> terminal = new List<CCAMInstruction>();
+    terminal.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMValidationResult accepted = ccam_validate_single_frame(
+        at_register_limit, terminal, CCAM_RETURN_VOID);
+    assert(accepted.ok);
+
+    at_register_limit.push(CCAM_TYPE_INT);
+    CCAMValidationResult too_many_registers = ccam_validate_single_frame(
+        at_register_limit, terminal, CCAM_RETURN_VOID);
+    assert(!too_many_registers.ok &&
+           too_many_registers.error == "register_limit_exceeded");
+
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> at_instruction_limit = new List<CCAMInstruction>();
+    for (int i = 0; i < CCAM_MAX_INSTRUCTIONS; i += 1) {
+        at_instruction_limit.push(ccam_instruction(CCAM_OP_RET_VOID));
+    }
+    CCAMValidationResult instruction_boundary = ccam_validate_single_frame(
+        no_registers, at_instruction_limit, CCAM_RETURN_VOID);
+    assert(instruction_boundary.ok);
+
+    at_instruction_limit.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMValidationResult too_many_instructions = ccam_validate_single_frame(
+        no_registers, at_instruction_limit, CCAM_RETURN_VOID);
+    assert(!too_many_instructions.ok &&
+           too_many_instructions.error == "instruction_limit_exceeded");
+    CCAMMachineCreateResult rejected = ccam_machine_create_validated(
+        no_registers, at_instruction_limit, 8, CCAM_RETURN_VOID);
+    assert(!rejected.ok && rejected.error == "instruction_limit_exceeded");
+    assert(rejected.state.halted);
+    assert(rejected.state.instructions.len() == 0);
+}
+
+test "CCAM validated constructor rejects a negative step limit directly" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMMachineCreateResult rejected = ccam_machine_create_validated(
+        no_registers, code, -1, CCAM_RETURN_VOID);
+    assert(!rejected.ok && rejected.error == "invalid_step_limit");
+    assert(rejected.state.halted);
+    assert(rejected.state.instructions.len() == 0);
+}
+
+test "CCAM validator accepts and rejects canonical trap reasons" {
+    assert(ccam_valid_trap_reason("deliberate_stop"));
+    assert(ccam_valid_trap_reason("a"));
+    assert(ccam_valid_trap_reason("a9_b"));
+
+    assert(!ccam_valid_trap_reason(""));
+    assert(!ccam_valid_trap_reason("Upper"));
+    assert(!ccam_valid_trap_reason("_leading"));
+    assert(!ccam_valid_trap_reason("bad-name"));
+    assert(!ccam_valid_trap_reason("has space"));
+    assert(!ccam_valid_trap_reason("nonascii_é"));
+
+    string sixty_four = "";
+    for (int i = 0; i < 64; i += 1) {
+        sixty_four = sixty_four + "a";
+    }
+    assert(ccam_valid_trap_reason(sixty_four));
+    assert(!ccam_valid_trap_reason(sixty_four + "a"));
+
+    List<int> types = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction trap = ccam_instruction(CCAM_OP_TRAP);
+    trap.reason = "Bad";
+    code.push(trap);
+    CCAMValidationResult invalid = ccam_validate_single_frame(
+        types, code, CCAM_RETURN_VOID);
+    assert(!invalid.ok && invalid.error == "invalid_trap_reason");
+}
+
+test "CCAM validator accepts a typed arithmetic return program" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    i.int_value = 19;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1;
+    i.int_value = 23;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_ADD_I);
+    i.dst = 2;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 2;
+    code.push(i);
+    CCAMValidationResult result = ccam_validate_single_frame(
+        types, code, CCAM_RETURN_INT);
+    assert(result.ok);
+    CCAMMachineCreateResult created = ccam_machine_create_validated(
+        types, code, 4, CCAM_RETURN_INT);
+    assert(created.ok);
+    CCAMMachineState state = created.state;
+    while (!state.halted) {
+        ccam_machine_step(state);
+    }
+    assert(state.halt_has_value && state.halt_value == 42);
+}
+
+test "CCAM validator rejects bad operand indices and static types" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_ADD_I);
+    i.dst = 0;
+    i.lhs = 0;
+    i.rhs = 1;
+    code.push(i);
+    CCAMValidationResult result = ccam_validate_single_frame(
+        types, code, CCAM_RETURN_INT);
+    assert(!result.ok && result.error == "invalid_or_mistyped_integer_operand");
+
+    List<CCAMInstruction> bad_index = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 9;
+    bad_index.push(i);
+    result = ccam_validate_single_frame(types, bad_index, CCAM_RETURN_INT);
+    assert(!result.ok && result.error == "invalid_or_mistyped_destination");
+}
+
+test "CCAM validator rejects invalid branch targets and reachable fallthrough" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> bad_target = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 0;
+    i.if_true = 1;
+    i.if_false = 7;
+    bad_target.push(i);
+    bad_target.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMValidationResult result = ccam_validate_single_frame(
+        types, bad_target, CCAM_RETURN_VOID);
+    assert(!result.ok && result.error == "invalid_branch_target");
+
+    List<int> fallthrough_types = new List<int>();
+    fallthrough_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> falls_through = new List<CCAMInstruction>();
+    CCAMInstruction final_write = ccam_instruction(CCAM_OP_CONST_I);
+    final_write.dst = 0;
+    falls_through.push(final_write);
+    result = ccam_validate_single_frame(
+        fallthrough_types, falls_through, CCAM_RETURN_INT);
+    assert(!result.ok && result.error == "reachable_fallthrough");
+}
+
+test "CCAM validator permits unreachable fallthrough but validates unreachable instructions" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_JUMP);
+    i.target = 2;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0;
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0;
+    code.push(i);
+    CCAMValidationResult result = ccam_validate_single_frame(
+        types, code, CCAM_RETURN_INT);
+    assert(result.ok);
+
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> invalid_unreachable = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_JUMP);
+    i.target = 2;
+    invalid_unreachable.push(i);
+    i = ccam_instruction(999);
+    invalid_unreachable.push(i);
+    i = ccam_instruction(CCAM_OP_RET_VOID);
+    invalid_unreachable.push(i);
+    result = ccam_validate_single_frame(
+        no_registers, invalid_unreachable, CCAM_RETURN_VOID);
+    assert(!result.ok && result.error == "invalid_instruction");
+}
+
+test "CCAM validator uses a worklist for backward control-flow chains" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    int instruction_count = 512;
+
+    // The first jump reaches the final instruction. Each subsequent jump
+    // walks one instruction backwards, requiring many full scans in the
+    // former fixed-point implementation.
+    CCAMInstruction first = ccam_instruction(CCAM_OP_JUMP);
+    first.target = instruction_count - 1;
+    code.push(first);
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    for (int i = 2; i < instruction_count; i += 1) {
+        CCAMInstruction jump = ccam_instruction(CCAM_OP_JUMP);
+        jump.target = i - 1;
+        code.push(jump);
+    }
+
+    CCAMValidationResult result = ccam_validate_single_frame(
+        no_registers, code, CCAM_RETURN_VOID);
+    assert(result.ok);
+}
+
+test "CCAM validated constructor rejects malformed programs before execution" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> malformed = new List<CCAMInstruction>();
+    CCAMInstruction jump = ccam_instruction(CCAM_OP_JUMP);
+    jump.target = 4;
+    malformed.push(jump);
+    malformed.push(ccam_instruction(CCAM_OP_RET_VOID));
+
+    CCAMMachineCreateResult rejected = ccam_machine_create_validated(
+        no_registers, malformed, 8, CCAM_RETURN_VOID);
+    assert(!rejected.ok && rejected.error == "invalid_branch_target");
+    assert(rejected.state.halted);
+    assert(rejected.state.instructions.len() == 0);
+}
+
+test "CCAM validator enforces return contracts and terminal paths" {
+    List<int> ints = new List<int>();
+    ints.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> wrong_return = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_RET_VOID);
+    wrong_return.push(i);
+    CCAMValidationResult result = ccam_validate_single_frame(
+        ints, wrong_return, CCAM_RETURN_INT);
+    assert(!result.ok && result.error == "return_type_mismatch");
+
+    List<CCAMInstruction> loop = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_JUMP);
+    i.target = 0;
+    loop.push(i);
+    result = ccam_validate_single_frame(ints, loop, CCAM_RETURN_INT);
+    assert(result.ok);
+}
