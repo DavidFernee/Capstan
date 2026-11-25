@@ -15,3 +15,9 @@ opaque struct SealedVault {
 SealedVault make_sealed_vault() {
     return new SealedVault{secret: 73, counter: 0};
 }
+
+opaque struct EmptyCapability {}
+
+EmptyCapability make_empty_capability() {
+    return new EmptyCapability{};
+}
