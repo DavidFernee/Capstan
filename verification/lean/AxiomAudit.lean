@@ -1,6 +1,7 @@
 import CapstanVerification.Machine
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
+import CapstanVerification.NativeRegisterFileBridge
 import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
