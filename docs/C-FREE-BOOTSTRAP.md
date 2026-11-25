@@ -174,7 +174,8 @@ The current CCAM development slices on main are:
 - PR #142: restricted Capstan-native single-frame evaluator;
 - PR #163: typed in-memory structural validator for that single-frame subset;
 - PR #207: bounded multi-function call-frame evaluator, using transitional call-site side tables;
-- PR #210: checked scalar source-to-CCAM lowering, not wired into the production compiler CLI.
+- PR #210: checked scalar source-to-CCAM lowering, not wired into the production compiler CLI;
+- PR #205: concrete Lean-model correspondence lemmas for native CCAM register tags and checked field reads/writes; this is a register-representation result, not a whole-evaluator refinement theorem.
 
 The source for a narrow freestanding Linux x86-64 native emitter is present in `verification/ccam_native_x64.cap` and described in `docs/architecture/CCAM-NATIVE-BACKEND.md` (PR #212). It is an experimental scalar backend, not a production compiler backend: it lacks full CCAM instruction coverage, a complete runtime/output path, all-instruction differential conformance and an implementation-refinement theorem to the CCAM model.
 
