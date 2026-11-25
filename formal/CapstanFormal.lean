@@ -53,6 +53,117 @@ theorem checkedAdd_overflow_fatal (limit a b : Nat)
   have hfit : ¬ (a ≤ limit ∧ b ≤ limit - a) := by omega
   simp [hfit]
 
+
+/-- Mathematical checked multiplication contract. The product is accepted exactly
+    when it is representable at or below the supplied size limit. -/
+def checkedMul (limit a b : Nat) : CheckedAddResult :=
+  if a * b ≤ limit then .success (a * b) else .fatal
+
+/-- A successful checked multiplication returns the exact product within the limit. -/
+theorem checkedMul_sound (limit a b result : Nat)
+    (h : checkedMul limit a b = .success result) :
+    result = a * b ∧ a * b ≤ limit := by
+  unfold checkedMul at h
+  by_cases hfit : a * b ≤ limit
+  · simp [hfit] at h
+    exact ⟨h.symm, hfit⟩
+  · simp [hfit] at h
+
+/-- Every representable product is accepted by the checked-multiplication model. -/
+theorem checkedMul_complete (limit a b : Nat)
+    (h : a * b ≤ limit) :
+    checkedMul limit a b = .success (a * b) := by
+  unfold checkedMul
+  simp [h]
+
+/-- Checked multiplication accepts exactly the products within the limit. -/
+theorem checkedMul_exact (limit a b : Nat) :
+    (∃ result, checkedMul limit a b = .success result) ↔ a * b ≤ limit := by
+  constructor
+  · rintro ⟨result, h⟩
+    exact (checkedMul_sound limit a b result h).2
+  · intro h
+    exact ⟨a * b, checkedMul_complete limit a b h⟩
+
+/-- An out-of-range product takes the explicit fatal outcome. -/
+theorem checkedMul_overflow_fatal (limit a b : Nat)
+    (h : limit < a * b) :
+    checkedMul limit a b = .fatal := by
+  unfold checkedMul
+  have hfit : ¬ a * b ≤ limit := by omega
+  simp [hfit]
+
+/-- Capacity growth retains an adequate current capacity, otherwise grows directly
+    to the requested capacity if it is within the configured limit. Failure is explicit. -/
+def capacityGrowth (limit current required : Nat) : Option Nat :=
+  if required ≤ current then some current
+  else if required ≤ limit then some required
+  else none
+
+/-- Any successful capacity-growth result covers the request and remains within limit,
+    provided the incoming capacity was itself within limit. -/
+theorem capacityGrowth_sound (limit current required result : Nat)
+    (hCurrent : current ≤ limit)
+    (h : capacityGrowth limit current required = some result) :
+    required ≤ result ∧ result ≤ limit := by
+  unfold capacityGrowth at h
+  by_cases hEnough : required ≤ current
+  · simp [hEnough] at h
+    subst result
+    exact ⟨hEnough, hCurrent⟩
+  · simp [hEnough] at h
+    by_cases hFits : required ≤ limit
+    · simp [hFits] at h
+      subst result
+      exact ⟨Nat.le_refl _, hFits⟩
+    · simp [hFits] at h
+
+/-- Capacity growth succeeds exactly when the request fits the configured limit,
+    assuming the existing capacity is already valid. -/
+theorem capacityGrowth_total (limit current required : Nat)
+    (hCurrent : current ≤ limit) :
+    (∃ result, capacityGrowth limit current required = some result) ↔
+      required ≤ limit := by
+  constructor
+  · rintro ⟨result, h⟩
+    exact (capacityGrowth_sound limit current required result hCurrent h).1
+      |> fun hRequired => Nat.le_trans hRequired
+        (capacityGrowth_sound limit current required result hCurrent h).2
+  · intro hRequired
+    unfold capacityGrowth
+    by_cases hEnough : required ≤ current
+    · exact ⟨current, by simp [hEnough]⟩
+    · exact ⟨required, by simp [hEnough, hRequired]⟩
+
+
+/-- One geometric metadata-capacity growth step, saturating at the largest
+    representable element count instead of allowing multiplication to wrap. -/
+def capacityGrowthStep (maxCount current : Nat) : Nat :=
+  if current > maxCount / 2 then maxCount else current * 2
+
+/-- A growth step never shrinks a valid positive capacity and never exceeds maxCount. -/
+theorem capacityGrowthStep_bounds (maxCount current : Nat)
+    (hCurrent : current ≤ maxCount) :
+    current ≤ capacityGrowthStep maxCount current ∧
+      capacityGrowthStep maxCount current ≤ maxCount := by
+  unfold capacityGrowthStep
+  by_cases hHalf : current > maxCount / 2
+  · simp [hHalf]
+    omega
+  · simp [hHalf]
+    omega
+
+/-- Unless already at the maximum, geometric growth makes strict progress. -/
+theorem capacityGrowthStep_strict (maxCount current : Nat)
+    (hPositive : 0 < current) (hBelow : current < maxCount) :
+    current < capacityGrowthStep maxCount current := by
+  unfold capacityGrowthStep
+  by_cases hHalf : current > maxCount / 2
+  · simp [hHalf]
+    omega
+  · simp [hHalf]
+    omega
+
 /-- Whether the OS accepted an advice operation on a retained page. -/
 inductive PageBacking where
   | resident

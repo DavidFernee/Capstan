@@ -98,3 +98,28 @@ independent consistency check under an explicit allowlist, not a strict
 no-classical, no-quotient, or no-trustCompiler proof policy. Do not describe the
 result as axiom-free. A stricter policy requires a separate decision and a
 workflow change that fails on every dependency outside the approved set.
+
+
+## Checked multiplication and bounded-growth model
+
+**Result classification: model-only proof**
+
+- **Commit:** `254ccacaaf8f35fe946db9a62adf3083ef7bc2ac`
+- **Formal workflow:** [45590742560](https://github.com/DavidFernee/Capstan/actions/runs/45590742560) — passed
+- **Lean toolchain:** `leanprover/lean4:v4.36.0`
+- **Project:** `formal/CapstanFormal.lean`
+
+The exact-head run completed the Lake build, bundled Lean `leanchecker`, and axiom audit. The audit covered 107 declarations under `CapstanFormal`, all within the existing allowlist `propext`, `Classical.choice`, and `Quot.sound`. The independent Nanoda 0.4.32 check reported 60,082 declarations with no errors (with exported but unpermitted `sorryAx` skipped); the negative-control false theorem was rejected.
+
+New checked declarations:
+
+- `checkedMul_sound`
+- `checkedMul_complete`
+- `checkedMul_exact`
+- `checkedMul_overflow_fatal`
+- `capacityGrowth_sound`
+- `capacityGrowth_total`
+
+The checked-multiplication model accepts precisely products within the supplied natural-number limit and otherwise returns the explicit fatal result. The capacity-growth model preserves adequate capacity or grows directly to the requested capacity if within the limit.
+
+**Scope limitation:** these are model-only results. The capacity-growth definition is deliberately simpler than the current C `cap_gc_next_capacity` geometric-doubling loop. It does not establish that implementation's termination, saturation behaviour, initial-capacity handling or byte-size refinement. No C implementation theorem is claimed. The repository's separate C/platform CI was still running when this proof result was recorded.

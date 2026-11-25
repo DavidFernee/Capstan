@@ -1,0 +1,426 @@
+// Generated bounded graph for capacity-one channel backpressure.
+//
+// This model derives graph edges by executing its transition relation; it
+// does not accept supplied state IDs or edge lists. Its state fields and
+// action semantics mirror the bounded capacity-blocked sender reference slice.
+// The key encodes every action-relevant field in finite declared domains.
+
+const int CSG_RUNNABLE = 1;
+const int CSG_BLOCKED = 2;
+const int CSG_DONE = 3;
+const int CSG_CANCELLED = 4;
+
+const int CSG_WAIT_NONE = 0;
+const int CSG_WAIT_CAPACITY = 1;
+
+const int CSG_NONE = 0;
+const int CSG_CHANNEL = 1;
+const int CSG_PRODUCER = 2;
+const int CSG_CONSUMER = 3;
+
+const int CSG_SEND_SECOND = 1;
+const int CSG_RECEIVE_FIRST = 2;
+const int CSG_RELEASE_FIRST = 3;
+const int CSG_CANCEL_PRODUCER = 4;
+const int CSG_RECEIVE_SECOND = 5;
+const int CSG_RELEASE_SECOND = 6;
+const int CSG_FINISH_CONSUMER = 7;
+
+const int CSG_INVALID = 0;
+const int CSG_DEADLOCK = 1;
+const int CSG_TERMINAL = 2;
+const int CSG_PROGRESS = 3;
+const int CSG_UNKNOWN = 4;
+
+struct CSGState {
+    int producer_status;
+    int producer_wait;
+    bool producer_wait_registered;
+    int consumer_status;
+    int channel_count;
+    int first_message_owner;
+    int second_message_owner;
+    bool channel_closed;
+}
+
+struct CSGStep {
+    bool enabled;
+    CSGState next;
+}
+
+struct CSGResult {
+    bool valid;
+    bool complete;
+    int classification;
+    int explored;
+    int witness_key;
+}
+
+CSGState csg_initial() {
+    return new CSGState{
+        producer_status: CSG_RUNNABLE,
+        producer_wait: CSG_WAIT_NONE,
+        producer_wait_registered: false,
+        consumer_status: CSG_RUNNABLE,
+        channel_count: 1,
+        first_message_owner: CSG_CHANNEL,
+        second_message_owner: CSG_PRODUCER,
+        channel_closed: false
+    };
+}
+
+bool csg_terminal(CSGState s) {
+    return (s.producer_status == CSG_DONE ||
+        s.producer_status == CSG_CANCELLED) &&
+        (s.consumer_status == CSG_DONE ||
+        s.consumer_status == CSG_CANCELLED);
+}
+
+bool csg_invariant(CSGState s) {
+    if (s.producer_status != CSG_RUNNABLE &&
+        s.producer_status != CSG_BLOCKED &&
+        s.producer_status != CSG_DONE &&
+        s.producer_status != CSG_CANCELLED) { return false; }
+    if (s.consumer_status != CSG_RUNNABLE &&
+        s.consumer_status != CSG_DONE &&
+        s.consumer_status != CSG_CANCELLED) { return false; }
+    if ((s.producer_status == CSG_BLOCKED) != s.producer_wait_registered) {
+        return false;
+    }
+    if (s.producer_wait_registered !=
+        (s.producer_wait == CSG_WAIT_CAPACITY)) { return false; }
+    if (!s.producer_wait_registered && s.producer_wait != CSG_WAIT_NONE) {
+        return false;
+    }
+    if (s.channel_count < 0 || s.channel_count > 1) { return false; }
+    if (s.channel_closed && s.producer_status == CSG_RUNNABLE &&
+        s.second_message_owner == CSG_PRODUCER) { return false; }
+    if (s.producer_status == CSG_BLOCKED && s.channel_count != 1) {
+        return false;
+    }
+    if (s.channel_count == 1) {
+        if ((s.first_message_owner == CSG_CHANNEL) ==
+            (s.second_message_owner == CSG_CHANNEL)) { return false; }
+    } else if (s.first_message_owner == CSG_CHANNEL ||
+        s.second_message_owner == CSG_CHANNEL) { return false; }
+    if (s.first_message_owner != CSG_NONE &&
+        s.first_message_owner != CSG_CHANNEL &&
+        s.first_message_owner != CSG_CONSUMER) { return false; }
+    if (s.second_message_owner != CSG_NONE &&
+        s.second_message_owner != CSG_CHANNEL &&
+        s.second_message_owner != CSG_PRODUCER &&
+        s.second_message_owner != CSG_CONSUMER) { return false; }
+    if (s.first_message_owner == CSG_CONSUMER &&
+        s.consumer_status != CSG_RUNNABLE) { return false; }
+    if (s.second_message_owner == CSG_PRODUCER &&
+        s.producer_status != CSG_RUNNABLE &&
+        s.producer_status != CSG_BLOCKED) { return false; }
+    if (s.second_message_owner == CSG_CONSUMER &&
+        s.consumer_status != CSG_RUNNABLE) { return false; }
+    if (s.producer_status == CSG_DONE &&
+        s.second_message_owner == CSG_PRODUCER) { return false; }
+    return true;
+}
+
+// Mixed-radix key for status(4), wait(2), registered(2), consumer(3),
+// queue count(2), each owner(4), and closed(2). All legal values are bounded.
+int csg_key(CSGState s) {
+    int key = s.producer_status - 1;
+    int wait_registered_bit = 0;
+    int channel_closed_bit = 0;
+    if (s.producer_wait_registered) { wait_registered_bit = 1; }
+    if (s.channel_closed) { channel_closed_bit = 1; }
+    key = key * 2 + s.producer_wait;
+    key = key * 2 + wait_registered_bit;
+    key = key * 3 + (s.consumer_status - 1);
+    key = key * 2 + s.channel_count;
+    key = key * 4 + s.first_message_owner;
+    key = key * 4 + s.second_message_owner;
+    key = key * 2 + channel_closed_bit;
+    return key;
+}
+
+bool csg_seen(List<int> keys, int key) {
+    for (int i = 0; i < keys.len(); i += 1) {
+        if (keys[i] == key) { return true; }
+    }
+    return false;
+}
+
+// Struct values are references: a successor must not alias a BFS state.
+CSGState csg_copy(CSGState s) {
+    return new CSGState{
+        producer_status: s.producer_status,
+        producer_wait: s.producer_wait,
+        producer_wait_registered: s.producer_wait_registered,
+        consumer_status: s.consumer_status,
+        channel_count: s.channel_count,
+        first_message_owner: s.first_message_owner,
+        second_message_owner: s.second_message_owner,
+        channel_closed: s.channel_closed
+    };
+}
+
+CSGStep csg_reject(CSGState s) {
+    return new CSGStep{enabled: false, next: s};
+}
+
+CSGStep csg_accept(CSGState s) {
+    return new CSGStep{enabled: true, next: s};
+}
+
+// A send while full is an enabled blocking operation. It does not commit the
+// producer-owned message until the producer is woken and scheduled again.
+CSGStep csg_step(CSGState before, int action) {
+    if (!csg_invariant(before)) { return csg_reject(before); }
+    CSGState next = csg_copy(before);
+    if (action == CSG_SEND_SECOND) {
+        if (before.producer_status != CSG_RUNNABLE ||
+            before.second_message_owner != CSG_PRODUCER ||
+            before.channel_closed) { return csg_reject(before); }
+        if (before.channel_count == 1) {
+            next.producer_status = CSG_BLOCKED;
+            next.producer_wait = CSG_WAIT_CAPACITY;
+            next.producer_wait_registered = true;
+            return csg_accept(next);
+        }
+        next.channel_count = 1;
+        next.second_message_owner = CSG_CHANNEL;
+        next.producer_status = CSG_DONE;
+        return csg_accept(next);
+    }
+    if (action == CSG_RECEIVE_FIRST) {
+        if (before.consumer_status != CSG_RUNNABLE ||
+            before.channel_count != 1 ||
+            before.first_message_owner != CSG_CHANNEL) {
+            return csg_reject(before);
+        }
+        next.channel_count = 0;
+        next.first_message_owner = CSG_CONSUMER;
+        if (before.producer_wait_registered) {
+            next.producer_wait_registered = false;
+            next.producer_wait = CSG_WAIT_NONE;
+            next.producer_status = CSG_RUNNABLE;
+        }
+        return csg_accept(next);
+    }
+    if (action == CSG_RELEASE_FIRST) {
+        if (before.first_message_owner != CSG_CONSUMER) {
+            return csg_reject(before);
+        }
+        next.first_message_owner = CSG_NONE;
+        return csg_accept(next);
+    }
+    if (action == CSG_CANCEL_PRODUCER) {
+        if (before.producer_status != CSG_BLOCKED ||
+            !before.producer_wait_registered) { return csg_reject(before); }
+        next.producer_status = CSG_CANCELLED;
+        next.producer_wait = CSG_WAIT_NONE;
+        next.producer_wait_registered = false;
+        next.second_message_owner = CSG_NONE;
+        return csg_accept(next);
+    }
+    if (action == CSG_RELEASE_SECOND) {
+        if (before.second_message_owner != CSG_CONSUMER) {
+            return csg_reject(before);
+        }
+        next.second_message_owner = CSG_NONE;
+        return csg_accept(next);
+    }
+    if (action == CSG_FINISH_CONSUMER) {
+        if (before.consumer_status != CSG_RUNNABLE ||
+            before.channel_count != 0 ||
+            before.first_message_owner != CSG_NONE ||
+            before.second_message_owner != CSG_NONE) {
+            return csg_reject(before);
+        }
+        next.consumer_status = CSG_DONE;
+        return csg_accept(next);
+    }
+    if (action == CSG_RECEIVE_SECOND) {
+        if (before.consumer_status != CSG_RUNNABLE ||
+            before.channel_count != 1 ||
+            before.second_message_owner != CSG_CHANNEL) {
+            return csg_reject(before);
+        }
+        next.channel_count = 0;
+        next.second_message_owner = CSG_CONSUMER;
+        return csg_accept(next);
+    }
+    return csg_reject(before);
+}
+
+CSGResult csg_explore(int state_limit) {
+    if (state_limit < 1 || !csg_invariant(csg_initial())) {
+        return new CSGResult{
+            valid: false, complete: false, classification: CSG_INVALID,
+            explored: 0, witness_key: -1
+        };
+    }
+    List<CSGState> states = new List<CSGState>();
+    List<int> keys = new List<int>();
+    CSGState initial = csg_initial();
+    states.push(initial);
+    keys.push(csg_key(initial));
+    int cursor = 0;
+    int first_sink = -1;
+    while (cursor < states.len()) {
+        CSGState current = states[cursor];
+        int enabled_count = 0;
+        for (int action = CSG_SEND_SECOND; action <= CSG_FINISH_CONSUMER;
+            action += 1) {
+            CSGStep transition = csg_step(current, action);
+            if (transition.enabled) {
+                enabled_count += 1;
+                if (!csg_invariant(transition.next)) {
+                    return new CSGResult{
+                        valid: false, complete: false, classification: CSG_INVALID,
+                        explored: states.len(), witness_key: -1
+                    };
+                }
+                int key = csg_key(transition.next);
+                if (!csg_seen(keys, key)) {
+                    if (states.len() >= state_limit) {
+                        return new CSGResult{
+                            valid: true, complete: false, classification: CSG_UNKNOWN,
+                            explored: states.len(), witness_key: -1
+                        };
+                    }
+                    states.push(transition.next);
+                    keys.push(key);
+                }
+            }
+        }
+        if (!csg_terminal(current) && enabled_count == 0 && first_sink == -1) {
+            first_sink = csg_key(current);
+        }
+        cursor += 1;
+    }
+    if (first_sink != -1) {
+        return new CSGResult{
+            valid: true, complete: true, classification: CSG_DEADLOCK,
+            explored: states.len(), witness_key: first_sink
+        };
+    }
+    bool all_terminal = true;
+    for (int i = 0; i < states.len(); i += 1) {
+        if (!csg_terminal(states[i])) { all_terminal = false; }
+    }
+    int classification = CSG_PROGRESS;
+    if (all_terminal) { classification = CSG_TERMINAL; }
+    return new CSGResult{
+        valid: true, complete: true,
+        classification: classification,
+        explored: states.len(), witness_key: -1
+    };
+}
+
+test "CSG capacity model explores blocked send, wake, resumption and ownership" {
+    CSGResult result = csg_explore(64);
+    assert(result.valid && result.complete);
+    assert(result.classification == CSG_PROGRESS);
+    assert(result.explored > 1);
+}
+
+test "CSG capacity graph fails closed when its state budget is exhausted" {
+    CSGResult result = csg_explore(2);
+    assert(result.valid && !result.complete);
+    assert(result.classification == CSG_UNKNOWN);
+    assert(result.witness_key == -1);
+}
+
+test "CSG full channel blocks producer without transferring message ownership" {
+    CSGState initial = csg_initial();
+    CSGStep blocked = csg_step(initial, CSG_SEND_SECOND);
+    assert(blocked.enabled);
+    assert(blocked.next.producer_status == CSG_BLOCKED);
+    assert(blocked.next.producer_wait_registered);
+    assert(blocked.next.second_message_owner == CSG_PRODUCER);
+    assert(blocked.next.channel_count == 1);
+    assert(csg_invariant(blocked.next));
+}
+
+test "CSG dequeue wakes producer but does not commit its message" {
+    CSGState blocked = csg_step(csg_initial(), CSG_SEND_SECOND).next;
+    CSGStep received = csg_step(blocked, CSG_RECEIVE_FIRST);
+    assert(received.enabled);
+    assert(received.next.producer_status == CSG_RUNNABLE);
+    assert(!received.next.producer_wait_registered);
+    assert(received.next.second_message_owner == CSG_PRODUCER);
+    assert(received.next.channel_count == 0);
+    assert(csg_invariant(received.next));
+}
+
+test "CSG producer commits second message only after resumption" {
+    CSGState blocked = csg_step(csg_initial(), CSG_SEND_SECOND).next;
+    CSGState woken = csg_step(blocked, CSG_RECEIVE_FIRST).next;
+    CSGStep sent = csg_step(woken, CSG_SEND_SECOND);
+    assert(sent.enabled);
+    assert(sent.next.producer_status == CSG_DONE);
+    assert(sent.next.second_message_owner == CSG_CHANNEL);
+    assert(sent.next.channel_count == 1);
+    assert(csg_invariant(sent.next));
+}
+
+test "CSG cancellation wins atomically and removes producer message ownership" {
+    CSGState blocked = csg_step(csg_initial(), CSG_SEND_SECOND).next;
+    CSGStep cancelled = csg_step(blocked, CSG_CANCEL_PRODUCER);
+    assert(cancelled.enabled);
+    assert(cancelled.next.producer_status == CSG_CANCELLED);
+    assert(!cancelled.next.producer_wait_registered);
+    assert(cancelled.next.second_message_owner == CSG_NONE);
+    assert(csg_invariant(cancelled.next));
+}
+
+test "CSG duplicate cancellation and stale wake are rejected without mutation" {
+    CSGState blocked = csg_step(csg_initial(), CSG_SEND_SECOND).next;
+    CSGState cancelled = csg_step(blocked, CSG_CANCEL_PRODUCER).next;
+    CSGStep duplicate = csg_step(cancelled, CSG_CANCEL_PRODUCER);
+    CSGStep stale_send = csg_step(cancelled, CSG_SEND_SECOND);
+    assert(!duplicate.enabled && csg_key(duplicate.next) == csg_key(cancelled));
+    assert(!stale_send.enabled && csg_key(stale_send.next) == csg_key(cancelled));
+}
+
+test "CSG second queued message is received only after first slot is freed" {
+    CSGState blocked = csg_step(csg_initial(), CSG_SEND_SECOND).next;
+    CSGState woken = csg_step(blocked, CSG_RECEIVE_FIRST).next;
+    CSGState sent = csg_step(woken, CSG_SEND_SECOND).next;
+    CSGStep received = csg_step(sent, CSG_RECEIVE_SECOND);
+    assert(received.enabled);
+    assert(received.next.channel_count == 0);
+    assert(received.next.second_message_owner == CSG_CONSUMER);
+    assert(csg_invariant(received.next));
+}
+
+test "CSG cancelled sender and drained channel reach explicit terminal completion" {
+    CSGState blocked = csg_step(csg_initial(), CSG_SEND_SECOND).next;
+    CSGState cancelled = csg_step(blocked, CSG_CANCEL_PRODUCER).next;
+    CSGState received = csg_step(cancelled, CSG_RECEIVE_FIRST).next;
+    CSGState released = csg_step(received, CSG_RELEASE_FIRST).next;
+    CSGStep finished = csg_step(released, CSG_FINISH_CONSUMER);
+    assert(finished.enabled);
+    assert(finished.next.consumer_status == CSG_DONE);
+    assert(csg_terminal(finished.next));
+    assert(csg_invariant(finished.next));
+}
+
+test "CSG consumer cannot finish while a message remains owned" {
+    CSGStep finished = csg_step(csg_initial(), CSG_FINISH_CONSUMER);
+    assert(!finished.enabled);
+    assert(csg_key(finished.next) == csg_key(csg_initial()));
+}
+
+
+test "CSG accepted transition leaves its queued predecessor unchanged" {
+    CSGState initial = csg_initial();
+    CSGStep blocked = csg_step(initial, CSG_SEND_SECOND);
+    assert(blocked.enabled);
+    assert(initial.producer_status == CSG_RUNNABLE);
+    assert(initial.producer_wait == CSG_WAIT_NONE);
+    assert(!initial.producer_wait_registered);
+    assert(initial.channel_count == 1);
+    assert(initial.second_message_owner == CSG_PRODUCER);
+    assert(blocked.next.producer_status == CSG_BLOCKED);
+    assert(blocked.next.producer_wait_registered);
+    assert(csg_key(initial) != csg_key(blocked.next));
+}
