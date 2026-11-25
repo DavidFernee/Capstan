@@ -5,6 +5,7 @@
 
 const int CCAM_JSON_MAX_STRING_BYTES = 1048576;
 const int CCAM_JSON_MAX_STRING_TOKEN_BYTES = 6291456;
+const int CCAM_JSON_JOIN_BATCH_PARTS = 4096;
 
 struct CCAMJsonStringResult {
     bool ok;
@@ -64,7 +65,6 @@ CCAMJsonStringResult ccam_json_decode_string_body(Tainted token) {
     // Keep fragment accumulation bounded. Repeated Tainted concatenation
     // recopies the entire prefix and makes an attacker-controlled string
     // quadratic in both copied bytes and transient allocation.
-    const int CCAM_JSON_JOIN_BATCH_PARTS = 4096;
     List<Tainted> chunks = new List<Tainted>();
     List<Tainted> pieces = new List<Tainted>();
     int output_bytes = 0;
