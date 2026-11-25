@@ -8,6 +8,7 @@ on:
       - "verification/lean/NativeMemoryLifecycle.lean"
       - "verification/lean/NativeReachability.lean"
       - "verification/lean/NativeHandleReachability.lean"
+      - "verification/lean/NativeBoundedMarker.lean"
       - ".github/workflows/native-memory-lifecycle.yml"
   pull_request:
     paths:
@@ -63,7 +64,7 @@ jobs:
         working-directory: verification/lean
         shell: bash
         run: |
-          if grep -nE '(^|[^[:alnum:]_])(sorry|admit)([^[:alnum:]_]|$)|^[[:space:]]*axiom[[:space:]]' NativeReachability.lean NativeHandleReachability.lean; then
+          if grep -nE '(^|[^[:alnum:]_])(sorry|admit)([^[:alnum:]_]|$)|^[[:space:]]*axiom[[:space:]]' NativeReachability.lean NativeHandleReachability.lean NativeBoundedMarker.lean; then
             echo "Unfinished proof or local axiom declaration found."
             exit 1
           fi
@@ -83,5 +84,15 @@ jobs:
           lake env lean -o .lake/build/lib/lean/NativeHandleReachability.olean NativeHandleReachability.lean | tee "$RUNNER_TEMP/native-handle-reachability-axioms.txt"
           if grep -q "sorryAx" "$RUNNER_TEMP/native-handle-reachability-axioms.txt"; then
             echo "Unexpected sorryAx dependency in handle reachability model."
+            exit 1
+          fi
+
+      - name: Compile bounded fail-closed marker and audit theorem axioms
+        working-directory: verification/lean
+        shell: bash
+        run: |
+          lake env lean -o .lake/build/lib/lean/NativeBoundedMarker.olean NativeBoundedMarker.lean | tee "$RUNNER_TEMP/native-bounded-marker-axioms.txt"
+          if grep -q "sorryAx" "$RUNNER_TEMP/native-bounded-marker-axioms.txt"; then
+            echo "Unexpected sorryAx dependency in bounded marker model."
             exit 1
           fi
