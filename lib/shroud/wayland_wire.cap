@@ -195,3 +195,16 @@ WaylandPayloadWord wayland_payload_i32(Tainted bytes, int offset, int end) {
     if (value >= 2147483648) { value -= 4294967296; }
     return wayland_complete_payload_word(value, word.end_offset);
 }
+
+ // Wayland boolean is a uint32 with only 0 and 1 defined.
+WaylandPayloadWord wayland_payload_bool(Tainted bytes, int offset, int end) {
+    WaylandPayloadWord word = wayland_payload_word(bytes, offset, end);
+    if (word.status != 1) { return word; }
+    if (word.value != 0 && word.value != 1) { return wayland_bad_payload_word(); }
+    return word;
+}
+
+// Wayland fixed is signed 24.8, matching Shroud's 1/256-pixel FX units.
+WaylandPayloadWord wayland_payload_fixed(Tainted bytes, int offset, int end) {
+    return wayland_payload_i32(bytes, offset, end);
+}
