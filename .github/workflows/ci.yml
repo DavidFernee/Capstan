@@ -83,3 +83,5 @@ jobs:
       - name: Validate machine-readable assurance claims
         run: |
           "${RUNNER_TEMP}/sbom-venv/bin/python" -I scripts/assurance-validate.py --require-fresh
+      - name: Validate canonical CCAM-SF-P oracle corpus
+        run: python3 -I scripts/validate-ccam-sf-vectors.py
