@@ -658,7 +658,7 @@ test "PA rejects malformed ownership and resource contracts" {
 
 test "PA rejects a transition-contract count mismatch" {
     PASpec spec = pa_linear_message_protocol();
-    spec.contracts.pop();
+    spec.contracts = new List<PAContract>();
     PAValidation result = pa_validate(spec);
     assert(!result.valid && result.error == "transition_contract_count_mismatch");
 }
