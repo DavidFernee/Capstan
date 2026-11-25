@@ -27,6 +27,7 @@ SECTIONS
 
     .rodata ALIGN(0x1000) :
     {
+        KEEP(*(.limine_requests))
         *(.rodata .rodata.*)
     } :rodata
 
