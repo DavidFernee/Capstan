@@ -508,7 +508,10 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                     // stable merge-sort comparisons AND copies, and pixel blending.
                     // display_sort_levels() is ceil(log2(n)) + 1, deliberately
                     // conservative for the runtime's stable merge sort.
-                    int base = 2 * n + 2 * width;
+                    // Eight n-sized passes conservatively cover validation, orientation,
+                    // parallel-array writes and bookkeeping; two width passes cover
+                    // the initial coverage/difference scratch arrays.
+                    int base = 8 * n + 2 * width;
                     if (base > MAX_DISPLAY_WORK - work) { return false; }
                     work += base;
                     int row_factor = 1 + SUBSAMPLES * (3 + 2 * display_sort_levels(n));
