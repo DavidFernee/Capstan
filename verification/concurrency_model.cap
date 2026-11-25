@@ -240,6 +240,12 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
     if (before.steps >= before.max_steps && !ccm_cleanup_action(action)) {
         return ccm_reject(before, "step_budget_exhausted");
     }
+    // Reserve cleanup capacity before any state mutation: exhausting this
+    // budget must reject atomically, never return a partially cleaned state.
+    if (ccm_cleanup_action(action) &&
+        before.cleanup_steps >= before.max_cleanup_steps) {
+        return ccm_reject(before, "cleanup_budget_exhausted");
+    }
 
     CCMState next = before;
 
