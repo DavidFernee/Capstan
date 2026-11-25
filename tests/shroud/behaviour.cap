@@ -562,6 +562,51 @@ void test_scroll(Tally t, Ui ui) {
     expect_int(t, m.len() + m2.len(), 0, "scroll: hidden content is not clickable");
 }
 
+void test_ui_state_pruning(Tally t, Ui ui) {
+    View scroll_items = column();
+    for (int i = 0; i < 8; i += 1) { scroll_items.add(button($"item {i}", "item")); }
+    View live = column()
+        .add(scroll(scroll_items).height(40).key("live-scroll"))
+        .add(text_field("field", taint("abc"), "Name").key("live-field"));
+    ui.render(live, 0);
+    string scroll_id = laid_of(ui, "live-scroll").id;
+    string field_id = laid_of(ui, "live-field").id;
+    ui.scroll.set(scroll_id, 17);
+    ui.caret.set(field_id, 2);
+    ui.render(live, 1);
+    expect_int(t, ui.scroll.keys().len(), 1, "UI state: live scroll offset is retained");
+    expect_int(t, ui.caret.keys().len(), 1, "UI state: live text caret is retained");
+    int scroll_value = 0;
+    int caret_value = 0;
+    if (let value = ui.scroll.get(scroll_id)) { scroll_value = value; }
+    if (let value = ui.caret.get(field_id)) { caret_value = value; }
+    expect_int(t, scroll_value, 17, "UI state: retained scroll offset is unchanged");
+    expect_int(t, caret_value, 2, "UI state: retained caret is unchanged");
+
+    // Reusing the same key for a different widget kind must not preserve
+    // state whose semantics belong only to the former control kind.
+    ui.render(column()
+        .add(text("scroll replaced").key("live-scroll"))
+        .add(text("field replaced").key("live-field")), 2);
+    expect_int(t, ui.scroll.keys().len(), 0, "UI state: scroll state is pruned when node kind changes");
+    expect_int(t, ui.caret.keys().len(), 0, "UI state: caret state is pruned when node kind changes");
+
+    ui.scroll.set(scroll_id, 17);
+    ui.caret.set(field_id, 2);
+    ui.render(text("replacement").key("replacement"), 3);
+    expect_int(t, ui.scroll.keys().len(), 0, "UI state: removed scroll node is pruned");
+    expect_int(t, ui.caret.keys().len(), 0, "UI state: removed text field is pruned");
+
+    // Repeated generations with fresh stale IDs must not grow retained state.
+    for (int i = 0; i < 1000; i += 1) {
+        ui.scroll.set($"stale-scroll-{i}", i);
+        ui.caret.set($"stale-caret-{i}", i);
+        ui.render(text("stable").key("stable"), i + 3);
+    }
+    expect_int(t, ui.scroll.keys().len(), 0, "UI state: scroll map stays bounded across 1000 generations");
+    expect_int(t, ui.caret.keys().len(), 0, "UI state: caret map stays bounded across 1000 generations");
+}
+
 void test_raster(Tally t) {
     Pixmap pm = new_pixmap(10, 10);
     Canvas cv = new_canvas(pm);
@@ -674,6 +719,7 @@ int main() {
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_ui_state_pruning(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_resize(t, f, fb);
             test_scale(t, f, fb);
         }
