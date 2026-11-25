@@ -1,0 +1,7 @@
+// expect: private state of SealedVault must be initialised by its defining module
+import "private_fields/record.cap";
+
+int main() {
+    SealedVault value = new SealedVault{counter: 2};
+    return 0;
+}
