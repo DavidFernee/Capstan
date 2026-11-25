@@ -119,8 +119,9 @@ def invariant(state):
         {rid for rid, result in state.outcomes if result in
          ("cancelled", "rejected")})
     for request_id, result in state.outcomes:
-        assert result in {"cancelled", "granted", "rejected",
-                          "released", "release_rejected"}
+        assert (result in {"cancelled", "granted", "rejected"} or
+                result.startswith("released:") or
+                result.startswith("release_rejected:"))
         if result == "granted":
             assert request_id in lease_map(state) or any(
                 outcome == "released:" + str(request_id)
