@@ -61,7 +61,13 @@ CCAMJsonStringResult ccam_json_decode_string_body(Tainted token) {
     int n = token.len();
     if (n > CCAM_JSON_MAX_STRING_TOKEN_BYTES) { return ccam_json_string_error(1); }
 
-    Tainted out = taint("");
+    // Keep fragment accumulation bounded. Repeated Tainted concatenation
+    // recopies the entire prefix and makes an attacker-controlled string
+    // quadratic in both copied bytes and transient allocation.
+    const int CCAM_JSON_JOIN_BATCH_PARTS = 4096;
+    List<Tainted> chunks = new List<Tainted>();
+    List<Tainted> pieces = new List<Tainted>();
+    int output_bytes = 0;
     int i = 0;
     while (i < n) {
         int c = token.at(i);
@@ -162,12 +168,19 @@ CCAMJsonStringResult ccam_json_decode_string_body(Tainted token) {
             piece = token.slice(i, i + width);
         }
 
-        if (out.len() > CCAM_JSON_MAX_STRING_BYTES - piece.len()) {
+        if (output_bytes > CCAM_JSON_MAX_STRING_BYTES - piece.len()) {
             return ccam_json_string_error(6);
         }
-        out = out + piece;
+        output_bytes += piece.len();
+        pieces.push(piece);
+        if (pieces.len() >= CCAM_JSON_JOIN_BATCH_PARTS) {
+            chunks.push(join(pieces, ""));
+            pieces = new List<Tainted>();
+        }
         i += width;
     }
+    if (pieces.len() > 0) { chunks.push(join(pieces, "")); }
+    Tainted out = join(chunks, "");
     return new CCAMJsonStringResult{ok: true, value: out, error: 0};
 }
 
@@ -241,4 +254,23 @@ test "CCAM JSON string decoder rejects invalid UTF-8 boundary sequences" {
     assert(!ccam_json_decode_string_body(taint_char(0xF5) + taint_char(0x80) + taint_char(0x80) + taint_char(0x80)).ok);
     assert(!ccam_json_decode_string_body(taint_char(0xF4) + taint_char(0x90) + taint_char(0x80) + taint_char(0x80)).ok);
     assert(!ccam_json_decode_string_body(taint_char(0xF0) + taint_char(0x9F) + taint_char(0x98)).ok);
+}
+
+
+test "CCAM JSON string decoder handles large plain strings with linear joining" {
+    List<Tainted> parts = new List<Tainted>();
+    for (int i = 0; i < 65536; i += 1) { parts.push(taint("a")); }
+    Tainted input = join(parts, "");
+    CCAMJsonStringResult decoded = ccam_json_decode_string_body(input);
+    assert(decoded.ok && decoded.value.len() == 65536);
+    assert(decoded.value.at(0) == 'a' && decoded.value.at(65535) == 'a');
+}
+
+test "CCAM JSON string decoder handles many one-byte escape outputs" {
+    List<Tainted> parts = new List<Tainted>();
+    for (int i = 0; i < 8192; i += 1) { parts.push(taint("\\u0041")); }
+    Tainted input = join(parts, "");
+    CCAMJsonStringResult decoded = ccam_json_decode_string_body(input);
+    assert(decoded.ok && decoded.value.len() == 8192);
+    assert(decoded.value.at(0) == 'A' && decoded.value.at(8191) == 'A');
 }
