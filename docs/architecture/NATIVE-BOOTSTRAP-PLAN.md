@@ -288,7 +288,21 @@ Proof order:
 
 An isolated research harness now exists at `research/native-bootstrap/check-elf.sh`. It accepts assembly emitted by the Capstan-native test driver, invokes GNU `as` and `ld` directly (never a C compiler driver), requests a static `-nostdlib` ELF executable, checks ELF64/x86-64/ET_EXEC, rejects PT_INTERP and a dynamic section, rejects undefined symbols and remaining relocations, executes the result against an expected exit status, and prints tool versions and artifact hashes.
 
-**Execution status:** the harness has been authored but has not yet been run against actual emitted assembly. No ELF artifact, runtime result or binary inspection result is claimed. The current test helper `ccam_x64_write_test_program` can write assembly from Capstan source, but it is invoked by the existing Capstan test environment; therefore the harness itself does not remove the transitional Python/C test bootstrap.
+**Existing end-to-end CI evidence:** the integrated `tests/run.sh` already generates, assembles, links and directly executes ten native test programs. On the exact baseline `main` commit `189f19dd2a39c169e033691856d675b070fb2864`, GitHub Actions CI run [45695354353](https://github.com/DavidFernee/Capstan/actions/runs/45695354353), Ubuntu/GCC job 139491217684, completed successfully. Its log records successful native executions for:
+- scalar function call: exit 42;
+- loop/branch: exit 42;
+- recursion: exit 42;
+- checked overflow: exit 70;
+- division by zero: exit 71;
+- division overflow: exit 70;
+- INT64_MIN remainder -1: exit 0;
+- instruction limit: exit 73;
+- call-depth limit: exit 74;
+- uninitialised register: exit 75.
+
+This establishes a genuine end-to-end scalar vertical slice from checked source frontend through lowering/validation, assembly emission, direct GNU `as`/`ld` invocation and execution of the resulting freestanding program. The existing test helper runs inside the legacy Capstan test/compiler environment, so the test/bootstrap infrastructure remains Python/C-dependent. The generated executable's observed behavior is not thereby C-dependent.
+
+**Additional binary-assurance status:** the existing harness checks absence of PT_INTERP and undefined symbols, but does not explicitly check the dynamic section, relocations, W^X LOAD segments or GNU_STACK permissions. The new `check-elf.sh` adds these stronger checks. Its command sequence has been exercised against a minimal standalone freestanding ELF, but has not yet been run against Capstan-generated assembly. No claim is made for those additional binary properties until that exact-output run is captured.
 
 A source-level audit of `ccam_native_x64.cap` identified three observable-outcome mismatches before native CCAM equivalence can be claimed:
 
@@ -305,7 +319,7 @@ The harness's first dynamic-section check was corrected: GNU `readelf -d` return
 | Deliverable | Status | Acceptance evidence |
 |---|---|---|
 | B0 architecture/dependency report | This document establishes the initial contract and source audit | Review against current main; refresh identities and matrix after integration changes |
-| B1 native feasibility prototype | Not yet demonstrated end-to-end | Capstan source -> checked lowering -> validation -> assembly -> ELF -> direct execution; resource and binary tests |
+| B1 native feasibility prototype | Scalar end-to-end vertical slice demonstrated by baseline Ubuntu/GCC CI; stronger ELF audit and semantic gaps remain | Extend actual-output binary checks; add full-width result/trap protocol and adversarial stack/resource evidence |
 | B2 actual compiler bootstrap feasibility | Initial blockers identified in sections 3, 7 and 8 | Inventory every compiler dependency and map to supported S0/S1 subset, missing semantics, API and proof |
 | B3 integration proposal | Initial dependency/PR boundaries recorded in section 9 | Exact shared files/interfaces and PR sequence after integration stabilises |
 
