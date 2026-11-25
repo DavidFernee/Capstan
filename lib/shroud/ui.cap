@@ -146,11 +146,13 @@ struct Ui {
         // Retained per-node state is valid only while the keyed node is present.
         // Build one live-ID set so pruning remains O(nodes + retained entries),
         // rather than repeatedly searching the layout for each stale map key.
-        Map<int> live_ids = new Map<int>();
+        Map<int> live_scroll_ids = new Map<int>();
+        Map<int> live_caret_ids = new Map<int>();
         bool focus_alive = false;
         for (int i = 0; i < all.len(); i += 1) {
             Laid n = all[i];
-            live_ids.set(n.id, 1);
+            if (n.v.kind == K_SCROLL) { live_scroll_ids.set(n.id, 1); }
+            if (n.v.kind == K_TEXT_FIELD) { live_caret_ids.set(n.id, 1); }
             if (n.id == self.focus && n.v.focusable()) { focus_alive = true; }
             if (n.v.guard) {
                 string where = $"{n.frame.x},{n.frame.y},{n.frame.w},{n.frame.h}|{n.v.kind}|{n.v.style}|{n.v.action}|{n.v.text}|{n.v.label}|{n.v.hint}|{n.v.disabled}|{self.scale}|{n.v.num}|{n.v.font_size}|{n.v.bold}|{n.v.secure}";
@@ -185,13 +187,13 @@ struct Ui {
         List<string> old_scroll_ids = self.scroll.keys();
         for (int i = 0; i < old_scroll_ids.len(); i += 1) {
             bool live = false;
-            if (let present = live_ids.get(old_scroll_ids[i])) { live = true; }
+            if (let present = live_scroll_ids.get(old_scroll_ids[i])) { live = true; }
             if (!live) { self.scroll.remove(old_scroll_ids[i]); }
         }
         List<string> old_caret_ids = self.caret.keys();
         for (int i = 0; i < old_caret_ids.len(); i += 1) {
             bool live = false;
-            if (let present = live_ids.get(old_caret_ids[i])) { live = true; }
+            if (let present = live_caret_ids.get(old_caret_ids[i])) { live = true; }
             if (!live) { self.caret.remove(old_caret_ids[i]); }
         }
         if (!focus_alive) { self.focus = ""; }
