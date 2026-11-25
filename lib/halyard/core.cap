@@ -61,6 +61,7 @@ struct HalyardManagedByteSink {
     HalyardReservation reservation;
     HalyardReservation retired_reservation;
     bool has_retired_reservation;
+    bool current_lease_released;
     bool closed;
 }
 
@@ -174,7 +175,8 @@ HalyardManagedByteSinkResult halyard_managed_sink_create(
             HalyardManagedByteSink managed = new HalyardManagedByteSink{
                 sink: sink, reservation: lease,
                 retired_reservation: empty_retired,
-                has_retired_reservation: false, closed: false
+                has_retired_reservation: false,
+                current_lease_released: false, closed: false
             };
             return new HalyardManagedByteSinkResult{
                 ok: true, managed: managed, error: ""
@@ -277,12 +279,16 @@ bool halyard_managed_sink_close(
     HalyardLedger ledger, HalyardManagedByteSink managed
 ) {
     if (managed.closed) { return false; }
-    if (!halyard_sink_close(managed.sink)) { return false; }
+    if (!managed.sink.closed && !halyard_sink_close(managed.sink)) { return false; }
+    if (!managed.current_lease_released) {
+        if (!halyard_reservation_release(ledger, managed.reservation)) {
+            return false;
+        }
+        managed.current_lease_released = true;
+    }
+    if (!halyard_managed_sink_cleanup_retired(ledger, managed)) { return false; }
     managed.closed = true;
-    bool current_released =
-        halyard_reservation_release(ledger, managed.reservation);
-    bool retired_released = halyard_managed_sink_cleanup_retired(ledger, managed);
-    return current_released && retired_released;
+    return true;
 }
 
 
@@ -1523,6 +1529,29 @@ test "Halyard managed sink rejects capacity before acquiring replacement lease" 
             assert(ledger.used_retained_bytes == 2);
             assert(ledger.used_output_bytes == 2);
             assert(halyard_managed_sink_close(ledger, managed));
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed sink close retries after ledger repair without double release" {
+    HalyardLedgerResult made = halyard_ledger_create(0, 4, 4, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        HalyardManagedByteSinkResult created = halyard_managed_sink_create(ledger, 2);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            List<int> data = new List<int>();
+            data.push(5); data.push(6);
+            assert(halyard_managed_sink_write_exact(ledger, managed, data).ok);
+            ledger.used_output_bytes = 0;
+            assert(!halyard_managed_sink_close(ledger, managed));
+            assert(managed.sink.closed);
+            assert(!managed.closed);
+            ledger.used_output_bytes = 2;
+            assert(halyard_managed_sink_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+            assert(ledger.used_output_bytes == 0);
+            assert(managed.closed);
         } else { assert(false); }
     } else { assert(false); }
 }
