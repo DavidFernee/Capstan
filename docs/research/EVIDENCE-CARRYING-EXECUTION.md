@@ -27,7 +27,7 @@ The repository already contains useful components:
 - CCAM specifies typed scalar registers, deterministic instruction order, checked arithmetic, traps, call depth and instruction fuel.
 - A Capstan-native in-memory single-frame validator exists, but does not implement the complete JSON decoder/function-table contract.
 - Lean contains finite typed-machine and validator models, plus conditional runtime-register representation lemmas.
-- Multi-function evaluator, source lowering and native backend work exists in separate increments/branches; exact integrated status must be checked at the target commit.
+- The bounded multi-function evaluator is integrated on `main` (PR #207), and checked scalar source-to-CCAM lowering is integrated (PR #210). The freestanding Linux x86-64 backend is integrated (PR #212). These are real executable increments, but remain deliberately narrow: the evaluator uses transitional instruction-index/callee-index side tables rather than the normative named-call JSON representation; the current Lean machine/progress model remains single-frame; no multi-frame evaluator-refinement theorem connects the concrete evaluator to that model; and the native backend does not yet establish a complete source-to-platform correctness chain.
 - Capstan has policy/grant design and runtime enforcement work, but these are not yet a capability-typed CCAM execution contract.
 
 The current default compiler path remains C-generating and C-runtime-dependent. Existing Lean theorems concern named formal models and fragments. No claim here upgrades those facts to implementation refinement, full compiler correctness or verified execution.
