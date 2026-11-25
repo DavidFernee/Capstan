@@ -31,15 +31,16 @@ This slice does not implement:
 - multiple data chunks, RF64, BW64 or files larger than the declared bound;
 - device playback/capture, real-time callbacks, mixing, resampling or DSP;
 - streaming decode or zero-copy sample views;
-- aggregate-ledger reservations for the copied PCM payload and decoded sample list.
+- device playback/capture, streaming decode or zero-copy sample views;
+- mandatory budget use by the legacy trusted-input convenience entry points.
 
-The parser materialises the data chunk, and the decoder materialises an integer sample list. Their peak allocations are therefore larger than the input payload. The 8 MiB input cap is a prototype guard, not a process-memory guarantee. These allocations must be integrated with Halyard's cumulative work budgets and live-resource leases before hostile-input release.
+The budgeted entry points `shanty_wave_parse_budgeted` and `shanty_wave_decode_samples_budgeted` charge input bytes and parser work before parsing, charge the PCM data-chunk copy before reading it, charge the byte-validation scan, and charge decoded sample count plus logical PCM output bytes before building the sample list. Work is monotonic and is not refunded on parse/decode failure. These are logical payload charges, not allocator-exact process-memory bounds: list/object overhead, the caller-owned source and source snapshot are not covered by these consumption counters. The original unbudgeted entry points remain available for trusted, already-bounded composition only. The budget and source structs are public/mutable and sequential; neither API is yet a hostile-input security boundary.
 
 ## Capstan implementation and tests
 
 All parser, decoder, helper and regression logic is authored in Capstan in `lib/halyard/shanty.cap`. The module imports the sibling `core.cap`; it does not use parent-directory imports, foreign-language shims, third-party codec code or generated-C media implementation.
 
-Nine colocated Capstan test declarations cover:
+Eleven colocated Capstan test declarations cover:
 - metadata parsing for a stereo 48 kHz/16-bit WAVE file;
 - exact signed 16-bit interleaved decoding;
 - malformed RIFF signatures and declared sizes;
@@ -48,7 +49,9 @@ Nine colocated Capstan test declarations cover:
 - signed 24- and 32-bit boundary samples;
 - unknown-chunk skipping and odd-byte padding;
 - rejection of forged PCM byte arrays and inconsistent byte rates;
-- rejection of a source mutated after construction.
+- rejection of a source mutated after construction;
+- successful cumulative input/work/output/sample accounting;
+- rejection when the PCM copy would exceed the output budget, before materialising it.
 
 Run the colocated test declarations using Capstan's test mode for this module. The
 current repository bootstrap/toolchain is still part of the execution TCB; the Shanty
@@ -58,7 +61,7 @@ no test-pass or conformance claim is made until observed.
 ## Release blockers
 
 - Opaque/non-forgeable Core and Shanty state.
-- Aggregate output, retained-memory, allocation and decoded-sample accounting.
+- Opaque budget/source state, managed-source integration and live lifetime-bound reservations for parser outputs.
 - Cumulative work budget that cannot be refunded by releasing sample buffers.
 - A streaming parser/decoder design with explicit ownership and cancellation.
 - Adversarial RIFF corpus, fuzzing, property tests, malformed-chunk coverage and independent review.
