@@ -1,9 +1,11 @@
-# Keel 3D engine: architecture and K0 foundation
+# Keel: detailed technical architecture supplement
 
-> **Status:** proposed architecture; K0 implementation not yet integrated
+> **Status:** technical supplement to the K0 proposal; specifications only
 > **Revision:** 2026-11-25
-> **Parent:** Capstan ecosystem
-> **Depends on:** Capstan language/runtime contracts and Shroud's published host/presentation interfaces
+> **Parent architecture:** [Keel](KEEL.md)
+> **Research programme:** [Keel research programme](keel/RESEARCH-PROGRAMME.md)
+> **Security model:** [Keel security assurance](keel/SECURITY-ASSURANCE.md)
+> **Depends on:** reviewed Capstan language/runtime contracts and Shroud's published host/presentation interfaces
 > **Does not depend on:** Anchor
 >
 > This document defines an initial architecture and falsifiable foundation gates. It is
@@ -233,44 +235,46 @@ The eventual frame lifecycle is:
 Cancellation and shutdown must be defined at every stage. No background worker may retain
 unbounded references to application objects or mutate a published snapshot.
 
-## 9. K0 foundation: implementation sequence
+## 9. K0 specification and K1 implementation boundary
 
-K0 is deliberately narrower than a usable 3D engine.
+The parent proposal in [KEEL.md](KEEL.md) defines K0 as architecture, research and
+security specification, with no renderer implementation implied. This supplement does
+not change that gate. Its K0 work is limited to:
 
 **K0-A — Contract and threat model**
-- freeze public terminology, trust boundaries and non-goals;
-- specify handle identity, scene invariants, numeric semantics and resource-budget model;
-- define malformed-input and failure atomicity rules.
+- reconcile terminology, subsystem ownership, trust boundaries and non-goals with the
+  parent proposal and [security assurance](keel/SECURITY-ASSURANCE.md);
+- specify handle identity, scene invariants, numeric decision points and resource-budget
+  ownership without guessing unsupported Capstan APIs;
+- define malformed-input, cancellation and failure-atomicity requirements;
+- record unresolved dependencies against the owning Capstan and Shroud streams.
 
-**K0-B — Spatial core**
-- checked vector/matrix/transform operations;
-- explicit finite-value and overflow policies;
-- robust AABB, ray and plane primitives;
-- boundary, degeneracy and metamorphic tests.
+**K0-B — Research and evidence plan**
+- assign falsifiable hypotheses, baselines and reproducible experiment protocols using
+  [the Keel research programme](keel/RESEARCH-PROGRAMME.md);
+- identify which claims can be tested on today's C-backed Capstan path and which depend
+  on future language/runtime capabilities;
+- define evidence artifacts, status vocabulary and explicit non-claims.
 
-**K0-C — Scene core**
-- generational node handles;
-- acyclic parent/child structure;
-- bounded node count/depth;
-- mutation with validation-before-commit;
-- immutable deterministic traversal snapshots.
+The CPU reference scene/renderer slice belongs to **K1**, not K0. K1 implementation
+should begin only after actual compiler/runtime capabilities and numeric semantics have
+been checked against the repository. It should then cover, in order:
 
-**K0-D — CPU reference vertical slice**
-- construct a minimal scene with one camera and one indexed primitive;
-- validate geometry and transform bounds;
-- generate a deterministic backend-independent frame description;
-- render a minimal image through a CPU reference raster path only after its semantics are specified;
-- enforce per-scene and per-frame budgets before allocation.
+- checked spatial operations and finite-value/overflow policy;
+- bounded scene nodes, generational handles and acyclic hierarchy;
+- camera, transforms and a minimal indexed primitive;
+- deterministic backend-independent frame description;
+- a deliberately small CPU reference raster path with golden/property tests;
+- pre-allocation scene/frame budgets and malformed-scene rejection.
 
-**K0-E — Adversarial and assurance gate**
-- fuzz all external decoders and public constructors;
-- mutation-test malformed lengths, indices, cycles, NaNs, infinities and budget boundaries;
-- run ASan/UBSan where native host code exists;
-- verify deterministic outputs across repeated runs and supported CI targets;
-- publish raw corpus, seeds, exact revision and reproduction instructions.
+K1 adversarial evidence should include mutation tests for malformed lengths, indices,
+cycles, non-finite values and budget boundaries; sanitizer runs where native code exists;
+repeated-run determinism within the declared scope; and published seeds, exact revision,
+raw outputs and reproduction instructions.
 
-K0 does not include a production GPU backend, shader compiler, general-purpose asset
-catalogue, advanced physics, networking, editor, mobile support or security certification.
+K0 does not include engine implementation. K1 does not include a production GPU backend,
+shader compiler, general-purpose asset catalogue, advanced physics, networking, editor,
+mobile support or security certification.
 
 ## 10. Research programme
 
@@ -300,29 +304,33 @@ not an implementation proof; a parser fuzz result is not a proof of all parser i
 
 ## 11. K0 acceptance criteria
 
-K0 is complete only when all of the following are true:
+K0 is complete only when:
 
-- public API and threat model are versioned and reviewed;
-- scene graph invariants are enforced by constructors and mutation APIs;
-- handle invalidation and reuse tests cover stale generations and failure paths;
-- every public spatial operation has defined overflow/non-finite/degenerate behaviour;
-- resource budgets are checked before allocation or work and compose across nested calls;
-- failed scene/asset operations are failure-atomic;
-- deterministic reference vectors run in CI on at least two independent target
-  configurations before any cross-platform determinism claim;
-- malformed-input, property, mutation and fuzz suites have reproducible seeds and corpus;
-- benchmark results include baseline, hardware, toolchain, raw output and uncertainty;
-- documentation lists residual trust in runtime, OS, graphics driver and hardware.
+- the parent architecture, this technical supplement and the security-assurance model
+  agree on subsystem ownership and dependency direction;
+- all K0 decisions, unresolved questions and external dependencies are recorded;
+- the threat model inventories assets, project data, shader/extension inputs, network
+  messages, host/device interfaces and residual trust;
+- the resource-budget register names units, scope, owner, preflight point, failure result
+  and cleanup semantics, even where numeric limits remain undecided pending experiments;
+- numeric and determinism decisions distinguish simulation, geometry/topology and pixels;
+- the research programme has falsifiable hypotheses, related-work tasks, baselines and
+  reproducible evidence requirements;
+- no K0 text implies that scene, spatial, renderer, asset or GPU controls are implemented;
+- K1 prerequisites are checked against actual Capstan and Shroud interfaces rather than
+  guessed APIs.
 
-A green unit-test suite alone is not sufficient. Publication-quality evidence is an
-explicit acceptance criterion for research claims, not a substitute for product tests.
+A green documentation or unit-test check alone is not a research result. Publication-
+quality evidence is an explicit acceptance criterion for research claims, not a substitute
+for product tests.
 
 ## 12. Current status and non-claims
 
 | Capability | Status |
 |---|---|
 | Ecosystem placement and dependency rules | Specified in this document |
-| K0 public API | Target |
+| K0 public API and contracts | Target / specification work |
+| K1 spatial and scene implementation | Target |
 | Spatial core implementation | Not evidenced on this branch |
 | Scene graph implementation | Not evidenced on this branch |
 | CPU reference renderer | Target |
@@ -331,6 +339,7 @@ explicit acceptance criterion for research claims, not a substitute for product 
 | Formal Keel proofs | Not started / not evidenced |
 | Production readiness or security certification | Not claimed |
 
-The existence of this specification or the `keel/k0-foundation` branch is not evidence
-of an implemented engine. Reassess every status against the exact mainline revision and
-CI evidence before release claims.
+The existence of this supplement or the `keel/k0-foundation` branch is not evidence of
+an implemented engine. The parent K0 proposal remains authoritative for phase gates.
+Reassess every status against the exact mainline revision and CI evidence before release
+claims.
