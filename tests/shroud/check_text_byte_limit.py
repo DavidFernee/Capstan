@@ -44,10 +44,12 @@ string repeat_ascii(int n) {
 """
     exact = repeat + """
 int main() {
+    string below = repeat_ascii(MAX_TEXT_BYTES - 1);
+    if (string_bytes(below).len() != MAX_TEXT_BYTES - 1) { return 1; }
     string s = repeat_ascii(MAX_TEXT_BYTES);
-    if (string_bytes(s).len() != MAX_TEXT_BYTES) { return 1; }
+    if (string_bytes(s).len() != MAX_TEXT_BYTES) { return 2; }
     Tainted t = taint(s);
-    if (tainted_bytes(t).len() != MAX_TEXT_BYTES) { return 2; }
+    if (tainted_bytes(t).len() != MAX_TEXT_BYTES) { return 3; }
     println("text byte limit: exact boundary accepted for trusted and Tainted input");
     return 0;
 }
