@@ -1,0 +1,474 @@
+// Closed CCAM v0.1 JSON schema validation over the bounded token tape.
+// The document has already passed UTF-8, lexical and structural validation.
+// This pass never constructs evaluator frames or indexes an untrusted register.
+
+import "ccam_json_parser.cap";
+import "ccam_json_integer_core.cap";
+
+const int CCAM_JSON_MAX_FUNCTIONS = 4096;
+const int CCAM_JSON_MAX_REGISTERS = 262144;
+const int CCAM_JSON_MAX_INSTRUCTIONS = 1048576;
+const int CCAM_JSON_MAX_ARGUMENTS = 262144;
+const int CCAM_JSON_MAX_NAME_BYTES = 1024;
+const int CCAM_JSON_MAX_TOTAL_NAME_BYTES = 262144;
+
+struct CCAMJsonSchemaResult {
+    bool ok;
+    int error;
+    int error_pos;
+    int function_count;
+    int register_count;
+    int instruction_count;
+    int argument_count;
+}
+
+int ccam_json_schema_skip(List<CCAMJsonToken> tokens, int at) {
+    if (at < 0 || at >= tokens.len()) { return -1; }
+    int kind = tokens[at].kind;
+    if (kind != CCAM_JSON_T_LBRACE && kind != CCAM_JSON_T_LBRACKET) {
+        return at + 1;
+    }
+    int depth = 0;
+    for (int i = at; i < tokens.len(); i += 1) {
+        int k = tokens[i].kind;
+        if (k == CCAM_JSON_T_LBRACE || k == CCAM_JSON_T_LBRACKET) { depth += 1; }
+        if (k == CCAM_JSON_T_RBRACE || k == CCAM_JSON_T_RBRACKET) {
+            depth -= 1;
+            if (depth == 0) { return i + 1; }
+        }
+    }
+    return -1;
+}
+
+int ccam_json_schema_find(Tainted source, List<CCAMJsonToken> tokens, int object_at, string wanted) {
+    if (object_at < 0 || object_at >= tokens.len() ||
+        tokens[object_at].kind != CCAM_JSON_T_LBRACE) { return -1; }
+    int i = object_at + 1;
+    while (i < tokens.len() && tokens[i].kind != CCAM_JSON_T_RBRACE) {
+        CCAMJsonToken key_token = tokens[i];
+        Tainted body = source.slice(key_token.start + 1, key_token.end - 1);
+        CCAMJsonStringResult key = ccam_json_decode_string_body(body);
+        int value_at = i + 2;
+        if (key.ok && key.value == taint(wanted)) { return value_at; }
+        i = ccam_json_schema_skip(tokens, value_at);
+        if (i < 0) { return -1; }
+        if (i < tokens.len() && tokens[i].kind == CCAM_JSON_T_COMMA) { i += 1; }
+    }
+    return -1;
+}
+
+int ccam_json_schema_member_count(List<CCAMJsonToken> tokens, int object_at) {
+    int count = 0;
+    int i = object_at + 1;
+    while (i < tokens.len() && tokens[i].kind != CCAM_JSON_T_RBRACE) {
+        count += 1;
+        i = ccam_json_schema_skip(tokens, i + 2);
+        if (i < 0) { return -1; }
+        if (i < tokens.len() && tokens[i].kind == CCAM_JSON_T_COMMA) { i += 1; }
+    }
+    return count;
+}
+
+bool ccam_json_schema_exact_fields(
+    Tainted source, List<CCAMJsonToken> tokens, int object_at, List<string> expected
+) {
+    if (ccam_json_schema_member_count(tokens, object_at) != expected.len()) { return false; }
+    for (int i = 0; i < expected.len(); i += 1) {
+        if (ccam_json_schema_find(source, tokens, object_at, expected[i]) < 0) { return false; }
+    }
+    return true;
+}
+
+int ccam_json_schema_array_count(List<CCAMJsonToken> tokens, int array_at) {
+    if (array_at < 0 || array_at >= tokens.len() ||
+        tokens[array_at].kind != CCAM_JSON_T_LBRACKET) { return -1; }
+    int count = 0;
+    int i = array_at + 1;
+    while (i < tokens.len() && tokens[i].kind != CCAM_JSON_T_RBRACKET) {
+        count += 1;
+        i = ccam_json_schema_skip(tokens, i);
+        if (i < 0) { return -1; }
+        if (i < tokens.len() && tokens[i].kind == CCAM_JSON_T_COMMA) { i += 1; }
+    }
+    return count;
+}
+
+int ccam_json_schema_array_item(List<CCAMJsonToken> tokens, int array_at, int wanted) {
+    if (wanted < 0 || array_at < 0 || array_at >= tokens.len() ||
+        tokens[array_at].kind != CCAM_JSON_T_LBRACKET) { return -1; }
+    int i = array_at + 1;
+    int index = 0;
+    while (i < tokens.len() && tokens[i].kind != CCAM_JSON_T_RBRACKET) {
+        if (index == wanted) { return i; }
+        i = ccam_json_schema_skip(tokens, i);
+        if (i < 0) { return -1; }
+        if (i < tokens.len() && tokens[i].kind == CCAM_JSON_T_COMMA) { i += 1; }
+        index += 1;
+    }
+    return -1;
+}
+
+bool ccam_json_schema_string(Tainted source, List<CCAMJsonToken> tokens, int at) {
+    return at >= 0 && at < tokens.len() && tokens[at].kind == CCAM_JSON_T_STRING;
+}
+
+bool ccam_json_schema_string_eq(
+    Tainted source, List<CCAMJsonToken> tokens, int at, string expected
+) {
+    if (!ccam_json_schema_string(source, tokens, at)) { return false; }
+    CCAMJsonToken token = tokens[at];
+    CCAMJsonStringResult decoded = ccam_json_decode_string_body(
+        source.slice(token.start + 1, token.end - 1)
+    );
+    return decoded.ok && decoded.value == taint(expected);
+}
+
+bool ccam_json_schema_name(Tainted source, List<CCAMJsonToken> tokens, int at) {
+    if (!ccam_json_schema_string(source, tokens, at)) { return false; }
+    CCAMJsonToken token = tokens[at];
+    CCAMJsonStringResult decoded = ccam_json_decode_string_body(
+        source.slice(token.start + 1, token.end - 1)
+    );
+    if (!decoded.ok || decoded.value.len() == 0 ||
+        decoded.value.len() > CCAM_JSON_MAX_NAME_BYTES) { return false; }
+    for (int i = 0; i < decoded.value.len(); i += 1) {
+        if (decoded.value.at(i) == 0) { return false; }
+    }
+    return true;
+}
+
+Tainted ccam_json_schema_decoded_string(Tainted source, List<CCAMJsonToken> tokens, int at) {
+    if (!ccam_json_schema_string(source, tokens, at)) { return taint(""); }
+    CCAMJsonToken token = tokens[at];
+    CCAMJsonStringResult decoded = ccam_json_decode_string_body(
+        source.slice(token.start + 1, token.end - 1)
+    );
+    return decoded.value;
+}
+
+bool ccam_json_schema_integer(
+    Tainted source, List<CCAMJsonToken> tokens, int at, bool nonnegative
+) {
+    if (at < 0 || at >= tokens.len() || tokens[at].kind != CCAM_JSON_T_NUMBER) {
+        return false;
+    }
+    CCAMJsonToken token = tokens[at];
+    int? parsed = ccam_json_parse_i64(source.slice(token.start, token.end));
+    if (let value = parsed) {
+        if (nonnegative && value < 0) { return false; }
+        return true;
+    }
+    return false;
+}
+
+bool ccam_json_schema_field_integer(
+    Tainted source, List<CCAMJsonToken> tokens, int object_at, string field, bool nonnegative
+) {
+    int at = ccam_json_schema_find(source, tokens, object_at, field);
+    return ccam_json_schema_integer(source, tokens, at, nonnegative);
+}
+
+bool ccam_json_schema_field_string(
+    Tainted source, List<CCAMJsonToken> tokens, int object_at, string field
+) {
+    return ccam_json_schema_string(
+        source, tokens, ccam_json_schema_find(source, tokens, object_at, field)
+    );
+}
+
+bool ccam_json_schema_field_name(
+    Tainted source, List<CCAMJsonToken> tokens, int object_at, string field
+) {
+    return ccam_json_schema_name(
+        source, tokens, ccam_json_schema_find(source, tokens, object_at, field)
+    );
+}
+
+bool ccam_json_schema_field_bool(
+    List<CCAMJsonToken> tokens, int object_at, string field, Tainted source
+) {
+    int at = ccam_json_schema_find(source, tokens, object_at, field);
+    return at >= 0 && at < tokens.len() &&
+        (tokens[at].kind == CCAM_JSON_T_TRUE || tokens[at].kind == CCAM_JSON_T_FALSE);
+}
+
+bool ccam_json_schema_field_index(
+    Tainted source, List<CCAMJsonToken> tokens, int object_at, string field
+) {
+    return ccam_json_schema_field_integer(source, tokens, object_at, field, true);
+}
+
+bool ccam_json_schema_field_nullable_index(
+    Tainted source, List<CCAMJsonToken> tokens, int object_at, string field
+) {
+    int at = ccam_json_schema_find(source, tokens, object_at, field);
+    if (at < 0 || at >= tokens.len()) { return false; }
+    return tokens[at].kind == CCAM_JSON_T_NULL ||
+        ccam_json_schema_integer(source, tokens, at, true);
+}
+
+bool ccam_json_schema_array_indices(
+    Tainted source, List<CCAMJsonToken> tokens, int array_at, int maximum
+) {
+    int count = ccam_json_schema_array_count(tokens, array_at);
+    if (count < 0 || count > maximum) { return false; }
+    for (int i = 0; i < count; i += 1) {
+        int at = ccam_json_schema_array_item(tokens, array_at, i);
+        if (!ccam_json_schema_integer(source, tokens, at, true)) { return false; }
+    }
+    return true;
+}
+
+bool ccam_json_schema_trap_reason(Tainted source, List<CCAMJsonToken> tokens, int at) {
+    if (!ccam_json_schema_string(source, tokens, at)) { return false; }
+    Tainted value = ccam_json_schema_decoded_string(source, tokens, at);
+    if (value.len() == 0 || value.len() > 64) { return false; }
+    int first = value.at(0);
+    if (first < 'a' || first > 'z') { return false; }
+    for (int i = 1; i < value.len(); i += 1) {
+        int c = value.at(i);
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool ccam_json_schema_instruction(
+    Tainted source, List<CCAMJsonToken> tokens, int instruction_at
+) {
+    if (instruction_at < 0 || instruction_at >= tokens.len() ||
+        tokens[instruction_at].kind != CCAM_JSON_T_LBRACE) { return false; }
+    int op_at = ccam_json_schema_find(source, tokens, instruction_at, "op");
+    if (!ccam_json_schema_string(source, tokens, op_at)) { return false; }
+    Tainted op = ccam_json_schema_decoded_string(source, tokens, op_at);
+    List<string> fields = new List<string>();
+    fields.push("op");
+
+    if (op == taint("const_i") || op == taint("const_b")) {
+        fields.push("dst"); fields.push("value");
+    } else if (op == taint("move") || op == taint("not_b")) {
+        fields.push("dst"); fields.push("src");
+    } else if (op == taint("add_i") || op == taint("sub_i") ||
+               op == taint("mul_i") || op == taint("div_i") ||
+               op == taint("rem_i") || op == taint("eq_i") ||
+               op == taint("lt_i")) {
+        fields.push("dst"); fields.push("lhs"); fields.push("rhs");
+    } else if (op == taint("jump")) {
+        fields.push("target");
+    } else if (op == taint("branch")) {
+        fields.push("cond"); fields.push("if_true"); fields.push("if_false");
+    } else if (op == taint("call")) {
+        fields.push("dst"); fields.push("function"); fields.push("args");
+    } else if (op == taint("ret")) {
+        fields.push("src");
+    } else if (op == taint("ret_void")) {
+        // op is the only field.
+    } else if (op == taint("trap")) {
+        fields.push("reason");
+    } else {
+        return false;
+    }
+    if (!ccam_json_schema_exact_fields(source, tokens, instruction_at, fields)) {
+        return false;
+    }
+
+    if (op == taint("const_i")) {
+        int dst = ccam_json_schema_find(source, tokens, instruction_at, "dst");
+        int value = ccam_json_schema_find(source, tokens, instruction_at, "value");
+        return ccam_json_schema_integer(source, tokens, dst, true) &&
+            ccam_json_schema_integer(source, tokens, value, false);
+    }
+    if (op == taint("const_b")) {
+        int value = ccam_json_schema_find(source, tokens, instruction_at, "value");
+        return ccam_json_schema_integer(source, tokens, instruction_at, "dst", true) &&
+            value >= 0 && (tokens[value].kind == CCAM_JSON_T_TRUE || tokens[value].kind == CCAM_JSON_T_FALSE);
+    }
+    if (op == taint("move") || op == taint("not_b") || op == taint("ret")) {
+        return ccam_json_schema_field_index(source, tokens, instruction_at,
+            op == taint("ret") ? "src" : "dst") &&
+            ccam_json_schema_field_index(source, tokens, instruction_at,
+            op == taint("move") || op == taint("not_b") || op == taint("ret") ? "src" : "dst");
+    }
+    if (op == taint("add_i") || op == taint("sub_i") ||
+        op == taint("mul_i") || op == taint("div_i") ||
+        op == taint("rem_i") || op == taint("eq_i") || op == taint("lt_i")) {
+        return ccam_json_schema_field_index(source, tokens, instruction_at, "dst") &&
+            ccam_json_schema_field_index(source, tokens, instruction_at, "lhs") &&
+            ccam_json_schema_field_index(source, tokens, instruction_at, "rhs");
+    }
+    if (op == taint("jump")) {
+        return ccam_json_schema_field_index(source, tokens, instruction_at, "target");
+    }
+    if (op == taint("branch")) {
+        return ccam_json_schema_field_index(source, tokens, instruction_at, "cond") &&
+            ccam_json_schema_field_index(source, tokens, instruction_at, "if_true") &&
+            ccam_json_schema_field_index(source, tokens, instruction_at, "if_false");
+    }
+    if (op == taint("call")) {
+        int fn = ccam_json_schema_find(source, tokens, instruction_at, "function");
+        int args = ccam_json_schema_find(source, tokens, instruction_at, "args");
+        return ccam_json_schema_field_nullable_index(source, tokens, instruction_at, "dst") &&
+            ccam_json_schema_name(source, tokens, fn) &&
+            ccam_json_schema_array_indices(source, tokens, args, CCAM_JSON_MAX_ARGUMENTS);
+    }
+    if (op == taint("trap")) {
+        return ccam_json_schema_trap_reason(source, tokens,
+            ccam_json_schema_find(source, tokens, instruction_at, "reason"));
+    }
+    return true;
+}
+
+CCAMJsonSchemaResult ccam_json_schema_error(int code, int pos) {
+    return new CCAMJsonSchemaResult{
+        ok: false, error: code, error_pos: pos,
+        function_count: 0, register_count: 0, instruction_count: 0, argument_count: 0
+    };
+}
+
+CCAMJsonSchemaResult ccam_json_validate_program_schema(Tainted source) {
+    CCAMJsonDocumentResult document = ccam_json_validate_document(source);
+    if (!document.ok) { return ccam_json_schema_error(document.error, document.error_pos); }
+    CCAMJsonScanResult scanned = ccam_json_scan(source);
+    List<CCAMJsonToken> tokens = scanned.tokens;
+    List<string> root_fields = new List<string>();
+    root_fields.push("entry"); root_fields.push("functions");
+    if (!ccam_json_schema_exact_fields(source, tokens, 0, root_fields)) {
+        return ccam_json_schema_error(30, 0);
+    }
+    int entry_at = ccam_json_schema_find(source, tokens, 0, "entry");
+    if (!ccam_json_schema_name(source, tokens, entry_at)) {
+        return ccam_json_schema_error(31, tokens[entry_at].start);
+    }
+    Tainted entry_name = ccam_json_schema_decoded_string(source, tokens, entry_at);
+    int functions_at = ccam_json_schema_find(source, tokens, 0, "functions");
+    int function_count = ccam_json_schema_array_count(tokens, functions_at);
+    if (function_count < 1 || function_count > CCAM_JSON_MAX_FUNCTIONS) {
+        return ccam_json_schema_error(32, tokens[functions_at].start);
+    }
+
+    List<Tainted> names = new List<Tainted>();
+    List<int> parameter_counts = new List<int>();
+    List<int> return_types = new List<int>();
+    int total_registers = 0;
+    int total_instructions = 0;
+    int total_arguments = 0;
+    int total_name_bytes = 0;
+    for (int f = 0; f < function_count; f += 1) {
+        int function_at = ccam_json_schema_array_item(tokens, functions_at, f);
+        List<string> function_fields = new List<string>();
+        function_fields.push("name"); function_fields.push("register_types");
+        function_fields.push("parameter_count"); function_fields.push("return_type");
+        function_fields.push("instructions");
+        if (!ccam_json_schema_exact_fields(source, tokens, function_at, function_fields)) {
+            return ccam_json_schema_error(33, tokens[function_at].start);
+        }
+        int name_at = ccam_json_schema_find(source, tokens, function_at, "name");
+        if (!ccam_json_schema_name(source, tokens, name_at)) {
+            return ccam_json_schema_error(34, tokens[name_at].start);
+        }
+        Tainted name = ccam_json_schema_decoded_string(source, tokens, name_at);
+        for (int j = 0; j < names.len(); j += 1) {
+            if (names[j] == name) { return ccam_json_schema_error(35, tokens[name_at].start); }
+        }
+        names.push(name);
+        total_name_bytes += name.len();
+        if (total_name_bytes > CCAM_JSON_MAX_TOTAL_NAME_BYTES) {
+            return ccam_json_schema_error(36, tokens[name_at].start);
+        }
+
+        int registers_at = ccam_json_schema_find(source, tokens, function_at, "register_types");
+        int register_count = ccam_json_schema_array_count(tokens, registers_at);
+        if (register_count < 0 || total_registers + register_count > CCAM_JSON_MAX_REGISTERS) {
+            return ccam_json_schema_error(37, tokens[registers_at].start);
+        }
+        total_registers += register_count;
+        for (int r = 0; r < register_count; r += 1) {
+            int type_at = ccam_json_schema_array_item(tokens, registers_at, r);
+            if (!ccam_json_schema_string_eq(source, tokens, type_at, "int") &&
+                !ccam_json_schema_string_eq(source, tokens, type_at, "bool")) {
+                return ccam_json_schema_error(38, tokens[type_at].start);
+            }
+        }
+
+        int parameter_at = ccam_json_schema_find(source, tokens, function_at, "parameter_count");
+        if (!ccam_json_schema_integer(source, tokens, parameter_at, true)) {
+            return ccam_json_schema_error(39, tokens[parameter_at].start);
+        }
+        int? parameter_value = ccam_json_parse_i64(
+            source.slice(tokens[parameter_at].start, tokens[parameter_at].end)
+        );
+        int parameter_count = 0;
+        if (let parsed = parameter_value) { parameter_count = parsed; }
+        if (parameter_count > register_count) {
+            return ccam_json_schema_error(40, tokens[parameter_at].start);
+        }
+        parameter_counts.push(parameter_count);
+
+        int return_at = ccam_json_schema_find(source, tokens, function_at, "return_type");
+        int return_type = 0;
+        if (ccam_json_schema_string_eq(source, tokens, return_at, "int")) { return_type = 1; }
+        else if (ccam_json_schema_string_eq(source, tokens, return_at, "bool")) { return_type = 2; }
+        else if (ccam_json_schema_string_eq(source, tokens, return_at, "void")) { return_type = 3; }
+        else { return ccam_json_schema_error(41, tokens[return_at].start); }
+        return_types.push(return_type);
+
+        int instructions_at = ccam_json_schema_find(source, tokens, function_at, "instructions");
+        int instruction_count = ccam_json_schema_array_count(tokens, instructions_at);
+        if (instruction_count < 1 || total_instructions + instruction_count > CCAM_JSON_MAX_INSTRUCTIONS) {
+            return ccam_json_schema_error(42, tokens[instructions_at].start);
+        }
+        total_instructions += instruction_count;
+        for (int n = 0; n < instruction_count; n += 1) {
+            int instruction_at = ccam_json_schema_array_item(tokens, instructions_at, n);
+            if (!ccam_json_schema_instruction(source, tokens, instruction_at)) {
+                return ccam_json_schema_error(43, tokens[instruction_at].start);
+            }
+            int op_at = ccam_json_schema_find(source, tokens, instruction_at, "op");
+            if (ccam_json_schema_string_eq(source, tokens, op_at, "call")) {
+                int args_at = ccam_json_schema_find(source, tokens, instruction_at, "args");
+                total_arguments += ccam_json_schema_array_count(tokens, args_at);
+                if (total_arguments > CCAM_JSON_MAX_ARGUMENTS) {
+                    return ccam_json_schema_error(44, tokens[args_at].start);
+                }
+            }
+        }
+    }
+
+    int entry_index = -1;
+    for (int i = 0; i < names.len(); i += 1) {
+        if (names[i] == entry_name) { entry_index = i; }
+    }
+    if (entry_index < 0 || parameter_counts[entry_index] != 0 ||
+        (return_types[entry_index] != 1 && return_types[entry_index] != 3)) {
+        return ccam_json_schema_error(45, tokens[entry_at].start);
+    }
+    return new CCAMJsonSchemaResult{
+        ok: true, error: 0, error_pos: source.len(),
+        function_count: function_count, register_count: total_registers,
+        instruction_count: total_instructions, argument_count: total_arguments
+    };
+}
+
+test "CCAM JSON schema accepts a minimal typed program" {
+    Tainted minimal = taint("{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":42},{\"op\":\"ret\",\"src\":0}]}]}");
+    CCAMJsonSchemaResult result = ccam_json_validate_program_schema(minimal);
+    assert(result.ok && result.function_count == 1 && result.register_count == 1);
+}
+
+test "CCAM JSON schema rejects open objects and missing required fields" {
+    assert(!ccam_json_validate_program_schema(taint("{\"entry\":\"main\",\"functions\":[],\"extra\":1}")).ok);
+    assert(!ccam_json_validate_program_schema(taint("{\"entry\":\"main\"}")).ok);
+    assert(!ccam_json_validate_program_schema(taint("{\"entry\":\"main\",\"functions\":[{\"name\":\"main\"}]}")).ok);
+}
+
+test "CCAM JSON schema rejects invalid instruction variants and scalar types" {
+    assert(!ccam_json_validate_program_schema(taint("{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"wat\"}]}]}")).ok);
+    assert(!ccam_json_validate_program_schema(taint("{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[],\"parameter_count\":false,\"return_type\":\"int\",\"instructions\":[{\"op\":\"ret_void\"}]}]}")).ok);
+}
+
+test "CCAM JSON schema rejects invalid names and entry signatures" {
+    assert(!ccam_json_validate_program_schema(taint("{\"entry\":\"missing\",\"functions\":[{\"name\":\"main\",\"register_types\":[],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"ret\",\"src\":0}]}]}")).ok);
+    assert(!ccam_json_validate_program_schema(taint("{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[],\"parameter_count\":1,\"return_type\":\"int\",\"instructions\":[{\"op\":\"ret_void\"}]}]}")).ok);
+    assert(!ccam_json_validate_program_schema(taint("{\"entry\":\"\\u0000\",\"functions\":[]}")).ok);
+}
