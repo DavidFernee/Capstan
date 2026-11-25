@@ -250,6 +250,8 @@ int main() {
     if (truncated_ok) { return 48; }
     Font truncated_simple = truncated_simple_coords_fixture();
     List<int> simple_budget = new List<int>();
+    simple_budget.push(MAX_GLYPH_POINTS_TOTAL);
+    simple_budget.push(MAX_COMPOSITE_COMPONENTS_TOTAL);
     Path simple_path = new_path();
     bool simple_ok = glyph_outline_budgeted(
         truncated_simple, 1, simple_path, 16384, 1, 0, 0,
