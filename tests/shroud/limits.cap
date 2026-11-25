@@ -39,7 +39,7 @@ FontReader directory_fixture(int mode) {
     limits_append_u32(bytes, second_offset);
     limits_append_u32(bytes, 4);
     for (int i = 0; i < 8; i += 1) { bytes.push(0); }
-    return new FontReader{b: bytes, ok: true};
+    return new FontReader{b: limits_tainted(bytes), ok: true};
 }
 
 Font composite_budget_fixture() {
@@ -69,7 +69,7 @@ Font composite_budget_fixture() {
         limits_append_u16(bytes, 1);
         bytes.push(0); bytes.push(0);
     }
-    FontReader reader = new FontReader{b: bytes, ok: true};
+    FontReader reader = new FontReader{b: limits_tainted(bytes), ok: true};
     return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
         line_gap: 0, num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
         t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
@@ -87,7 +87,7 @@ Font metrics_fixture(int table_len) {
     bytes.push(0x00); bytes.push(0x05);
     bytes.push(0x00); bytes.push(0x06);
     bytes.push(0x00); bytes.push(0x07);
-    FontReader reader = new FontReader{b: bytes, ok: true};
+    FontReader reader = new FontReader{b: limits_tainted(bytes), ok: true};
     return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
         line_gap: 0, num_glyphs: 4, num_hmetrics: 2, loca_long: 0,
         t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
@@ -113,8 +113,12 @@ Font truncated_composite_args_fixture() {
     bytes[23] = 0;
     FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
     return new Font{
-        r: r, num_glyphs: 3, loca_long: false,
-        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 16
+        r: r, units_per_em: 1000, ascent: 800, descent: -200, line_gap: 0,
+        num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: -1, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 16,
+        t_hmtx: 0, hmtx_len: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0
     };
 }
 
@@ -131,8 +135,12 @@ Font truncated_simple_coords_fixture() {
     bytes[23] = 0;
     FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
     return new Font{
-        r: r, num_glyphs: 3, loca_long: false,
-        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 20
+        r: r, units_per_em: 1000, ascent: 800, descent: -200, line_gap: 0,
+        num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: -1, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 20,
+        t_hmtx: 0, hmtx_len: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0
     };
 }
 
@@ -151,8 +159,12 @@ Font truncated_composite_transform_fixture() {
     bytes[23] = 0;
     FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
     return new Font{
-        r: r, num_glyphs: 3, loca_long: false,
-        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 18
+        r: r, units_per_em: 1000, ascent: 800, descent: -200, line_gap: 0,
+        num_glyphs: 3, num_hmetrics: 1, loca_long: 0,
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: -1, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 18,
+        t_hmtx: 0, hmtx_len: 0, cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0
     };
 }
 
@@ -229,7 +241,7 @@ int main() {
     Font truncated = truncated_composite_args_fixture();
     List<int> truncated_budget = new List<int>();
     Path truncated_path = new_path();
-    bool truncated_ok = glyph_outline(
+    bool truncated_ok = glyph_outline_budgeted(
         truncated, 1, truncated_path, 16384, 1, 0, 0,
         identity_transform(), 0, truncated_budget
     );
@@ -237,7 +249,7 @@ int main() {
     Font truncated_simple = truncated_simple_coords_fixture();
     List<int> simple_budget = new List<int>();
     Path simple_path = new_path();
-    bool simple_ok = glyph_outline(
+    bool simple_ok = glyph_outline_budgeted(
         truncated_simple, 1, simple_path, 16384, 1, 0, 0,
         identity_transform(), 0, simple_budget
     );
@@ -245,7 +257,7 @@ int main() {
     Font truncated_transform = truncated_composite_transform_fixture();
     List<int> transform_budget = new List<int>();
     Path transform_path = new_path();
-    bool transform_ok = glyph_outline(
+    bool transform_ok = glyph_outline_budgeted(
         truncated_transform, 1, transform_path, 16384, 1, 0, 0,
         identity_transform(), 0, transform_budget
     );
