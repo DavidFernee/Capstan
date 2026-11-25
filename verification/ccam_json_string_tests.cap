@@ -1,0 +1,29 @@
+import "ccam_json_string.cap";
+
+int main() {
+    CCAMJsonStringResult r = ccam_json_decode_string_body(taint("plain"));
+    if (!r.ok || r.value != "plain") { return 1; }
+    r = ccam_json_decode_string_body(taint("\\\"\\\\\\/"));
+    if (!r.ok || r.value.len() != 3 || r.value.at(0) != 34 || r.value.at(1) != 92 || r.value.at(2) != 47) { return 1; }
+    r = ccam_json_decode_string_body(taint("\\b\\f\\n\\r\\t"));
+    if (!r.ok || r.value.len() != 5 || r.value.at(0) != 8 || r.value.at(1) != 12 ||
+        r.value.at(2) != 10 || r.value.at(3) != 13 || r.value.at(4) != 9) { return 1; }
+    r = ccam_json_decode_string_body(taint("\\u0041\\u20AC"));
+    if (!r.ok || r.value.len() != 4 || r.value.at(0) != 65 ||
+        r.value.at(1) != 0xE2 || r.value.at(2) != 0x82 || r.value.at(3) != 0xAC) { return 1; }
+    r = ccam_json_decode_string_body(taint("\\uD83D\\uDE00"));
+    if (!r.ok || r.value.len() != 4 || r.value.at(0) != 0xF0 ||
+        r.value.at(1) != 0x9F || r.value.at(2) != 0x98 || r.value.at(3) != 0x80) { return 1; }
+    if (ccam_json_decode_string_body(taint("\\uD800")).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint("\\uDC00")).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint("\\uD800\\u0041")).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint("\\x41")).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(10)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(34)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(0xE2) + taint_char(0x82)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(0xC0) + taint_char(0x80)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(0xED) + taint_char(0xA0) + taint_char(0x80)).ok) { return 1; }
+    if (ccam_json_decode_string_body(taint_char(0xF4) + taint_char(0x90) + taint_char(0x80) + taint_char(0x80)).ok) { return 1; }
+    println("CCAM JSON string decoder: ok");
+    return 0;
+}
