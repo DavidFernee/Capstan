@@ -828,6 +828,32 @@ void test_path_flatten_preflight(Tally t) {
         "path preflight: rejects coordinates outside the safe curve-arithmetic domain");
 }
 
+void test_display_payload_byte_budget(Tally t) {
+    Pixmap target = new_pixmap(1, 1);
+    Canvas recorder = new_recording_canvas(target);
+    expect(t, display_list_payload_fits(recorder, 1, 32),
+        "display bytes: one segment reserves four integer arrays", "small segment rejected");
+    expect(t, display_mask_admissible(recorder, 1, 1, 1),
+        "display bytes: one mask pixel reserves one integer", "small mask rejected");
+    expect(t, display_list_payload_fits(recorder, 1, MAX_DISPLAY_PAYLOAD_BYTES - DISPLAY_COMMAND_BUDGET_BYTES),
+        "display bytes: exact aggregate byte boundary is admitted", "exact boundary rejected");
+    expect(t, !display_list_payload_fits(recorder, 1, MAX_DISPLAY_PAYLOAD_BYTES),
+        "display bytes: command metadata cannot overflow aggregate byte budget",
+        "over-budget command admitted");
+
+    DisplayCommand command = new DisplayCommand{
+        kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: rect_px(0, 0, 1, 1),
+        paint: solid(0xFFFFFFFF), rule: FILL_NONZERO, segments: none, mask_alpha: none,
+        mask_w: 0, mask_h: 0, x: 0, y: 0, coverage: 255, opacity: 255
+    };
+    display_list_append(recorder, command, 0, 0);
+    expect(t, display_snapshot_fits(recorder),
+        "display bytes: snapshot verifies cached byte counters", "valid counters rejected");
+    recorder.budget[1] -= 1;
+    expect(t, !display_snapshot_fits(recorder),
+        "display bytes: forged byte counter is rejected", "forged counter accepted");
+}
+
 void test_display_work_budget(Tally t) {
     Pixmap target = new_pixmap(1, MAX_PIXMAP_SIDE);
     Segments small = new_segments();
@@ -1007,6 +1033,7 @@ int main() {
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_display_list(t, f);
             test_path_flatten_preflight(t);
+            test_display_payload_byte_budget(t);
             test_display_work_budget(t);
             test_blend_bounds(t);
             test_resize(t, f, fb);
