@@ -1,6 +1,8 @@
 // Deadeye bounded MP4 track hierarchy integration.
 // Strictly validates trak/mdia/minf/dinf/stbl relationships and connects the
 // previously independent sample-entry and sample-table validators.
+// Sample-table validation establishes offset ordering and mdat containment
+// before this layer accepts a track's hierarchy and sample mapping.
 import "core.cap";
 import "mp4.cap";
 import "mp4_tables.cap";
