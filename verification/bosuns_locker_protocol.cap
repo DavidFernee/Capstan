@@ -63,6 +63,38 @@ BLTxnState bl_txn_copy_state(BLTxnState source) {
     };
 }
 
+bool bl_txn_invariant(BLTxnState state) {
+    if (state.phase < BL_PHASE_NEW || state.phase > BL_PHASE_ABORTED ||
+        state.remaining_operations < 0) {
+        return false;
+    }
+    if (state.commit_record_durable &&
+        state.phase != BL_PHASE_DURABLE_COMMITTED) {
+        return false;
+    }
+    if (state.writes_visible &&
+        (state.phase != BL_PHASE_DURABLE_COMMITTED ||
+         !state.commit_record_durable)) {
+        return false;
+    }
+    if (state.acknowledged &&
+        (state.phase != BL_PHASE_DURABLE_COMMITTED ||
+         !state.commit_record_durable || !state.writes_visible)) {
+        return false;
+    }
+    if ((state.phase == BL_PHASE_NEW || state.phase == BL_PHASE_ACTIVE ||
+         state.phase == BL_PHASE_PREPARING || state.phase == BL_PHASE_ABORTING ||
+         state.phase == BL_PHASE_ABORTED || state.phase == BL_PHASE_COMMIT_DECIDED) &&
+        (state.commit_record_durable || state.writes_visible || state.acknowledged)) {
+        return false;
+    }
+    if (state.phase == BL_PHASE_DURABLE_COMMITTED &&
+        (!state.commit_record_durable || !state.writes_visible)) {
+        return false;
+    }
+    return true;
+}
+
 BLTxnTransition bl_txn_reject(BLTxnState state, string error) {
     return new BLTxnTransition{
         accepted: false,
@@ -82,6 +114,9 @@ BLTxnTransition bl_txn_accept(BLTxnState state) {
 // State transition checks are independent of callers. A rejected operation
 // returns the original state unchanged; callers cannot partially apply it.
 BLTxnTransition bl_txn_step(BLTxnState state, int action) {
+    if (!bl_txn_invariant(state)) {
+        return bl_txn_reject(state, "invalid_prior_transaction_state");
+    }
     BLTxnState next = bl_txn_copy_state(state);
     if (action == BL_ACTION_BEGIN) {
         if (next.phase != BL_PHASE_NEW || next.remaining_operations < 0) {
@@ -466,3 +501,26 @@ test "Bosun unflushed commit does not survive the declared crash model" {
     BLStorageState commit = bl_storage_step(update, BL_STORAGE_APPEND_COMMIT, 0).state;
     assert(!bl_storage_commit_survives_crash(commit));
 }
+
+test "Bosun transaction transitions preserve predecessor snapshots" {
+    BLTxnState initial = bl_txn_initial(3);
+    BLTxnState active = bl_txn_step(initial, BL_ACTION_BEGIN).state;
+    assert(initial.phase == BL_PHASE_NEW);
+    assert(active.phase == BL_PHASE_ACTIVE);
+    BLTxnState preparing = bl_txn_step(active, BL_ACTION_PREPARE).state;
+    assert(active.phase == BL_PHASE_ACTIVE);
+    assert(preparing.phase == BL_PHASE_PREPARING);
+    assert(bl_txn_invariant(initial));
+    assert(bl_txn_invariant(active));
+    assert(bl_txn_invariant(preparing));
+}
+
+test "Bosun transaction state invariant rejects forged durability flags" {
+    BLTxnState forged = bl_txn_initial(2);
+    forged.writes_visible = true;
+    assert(!bl_txn_invariant(forged));
+    BLTxnTransition rejected = bl_txn_step(forged, BL_ACTION_ACKNOWLEDGE);
+    assert(!rejected.accepted);
+    assert(rejected.error == "invalid_prior_transaction_state");
+}
+
