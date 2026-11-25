@@ -83,7 +83,7 @@ flowchart TB
   E --> DE
 ```
 
-The arrows represent architectural dependencies, not a serial release schedule. Product teams may progress in parallel against versioned contracts and mocks. No cycle is permitted: the compiler must not depend on Shroud, Anchor, Keel or Media; Media Core must not depend on Shanty/Deadeye; Shanty and Deadeye must not depend on each other; Anchor must consume compiler services rather than reimplement compiler rules. Shroud owns presentation adapters, not codecs. Keel may orchestrate media graphs but does not own media format semantics.
+The arrows represent architectural dependencies, not a serial release schedule. Product teams may progress in parallel against versioned contracts and mocks. No cycle is permitted: the compiler must not depend on Shroud, Anchor, Keel or Media; Media Core must not depend on Shanty/Deadeye; Shanty and Deadeye must not depend on each other; Anchor must consume compiler services rather than reimplement compiler rules. Shroud core remains media-independent; the optional Halyard–Shroud adapter is a separate integration layer. Keel consumes media APIs when orchestrating graphs and does not own media format semantics.
 
 ## Programme milestones
 
