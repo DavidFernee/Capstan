@@ -749,12 +749,61 @@ void test_scale(Tally t, Font f, Font b) {
     expect_int(t, laid_of(ui, "x").frame.h, fx(60), "scale: heights scale too");
 }
 
+void test_path_preflight(Tally t) {
+    Path small = new_path().move_to(0, 0).line_to(fx(1), 0).close();
+    expect_int(t, path_flatten_segment_bound(small), 2,
+        "path preflight: line and close have a bounded cost");
+
+    Path curves = new_path().move_to(0, 0);
+    for (int i = 0; i < 1000; i += 1) {
+        curves.cubic_to(fx(i + 1), fx(1), fx(i + 2), fx(1), fx(i + 3), 0);
+    }
+    curves.close();
+    expect(t, path_flatten_segment_bound(curves) >= 0,
+        "path preflight: accepts a path whose worst-case subdivision fits");
+
+    Path excessive = new_path().move_to(0, 0);
+    for (int j = 0; j < 1024; j += 1) {
+        excessive.cubic_to(fx(j + 1), fx(1), fx(j + 2), fx(1), fx(j + 3), 0);
+    }
+    excessive.close();
+    expect_int(t, path_flatten_segment_bound(excessive), -1,
+        "path preflight: rejects excessive worst-case curve expansion");
+
+    Path malformed = new_path();
+    malformed.verbs.push(VERB_LINE);
+    malformed.pts.push(0);
+    malformed.pts.push(0);
+    expect_int(t, path_flatten_segment_bound(malformed), -1,
+        "path preflight: rejects a line without a move");
+
+    Path trailing = new_path().move_to(0, 0);
+    trailing.pts.push(7);
+    expect_int(t, path_flatten_segment_bound(trailing), -1,
+        "path preflight: rejects unconsumed point data");
+}
+
+void test_display_mask_snapshot(Tally t) {
+    Pixmap target = new_pixmap(2, 2);
+    Canvas recorder = new_recording_canvas(target);
+    List<int> alpha = new List<int>();
+    alpha.push(255);
+    recorder.draw_mask(alpha, 1, 1, 0, 0, solid(0xFFFF0000));
+    alpha[0] = 0;
+    DisplayList frame = finish_display_list(recorder);
+    execute_display_list(frame, target);
+    expect_int(t, target.px[0], premultiply(0xFFFF0000),
+        "display list: recorded mask owns an immutable pixel snapshot");
+}
+
 int main() {
     Font? regular = none;
     Font? bold = none;
     if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) { regular = font_load(r); }
     if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
     Tally t = new Tally{failed: 0, passed: 0};
+    test_path_preflight(t);
+    test_display_mask_snapshot(t);
     if (let f = regular) {
         if (let fb = bold) {
             test_layout(t, new_ui(f, fb, light_theme(), 640, 480, 256));
