@@ -532,7 +532,10 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
         pos += 4;
         if (!r.ok || (flags & 0xE000) != 0) { return false; }
         if ((flags & 2) == 0) { return false; }
-        if ((flags & 0x0800) != 0 || (flags & 0x1000) != 0) { return false; }
+        // The two component-offset modes are valid TrueType flags. They are
+        // mutually exclusive; scaled offsets are transformed by this component's
+        // linear matrix before the parent transform is applied.
+        if ((flags & 0x0800) != 0 && (flags & 0x1000) != 0) { return false; }
         int transform_modes = 0;
         if ((flags & 8) != 0) { transform_modes += 1; }
         if ((flags & 64) != 0) { transform_modes += 1; }
@@ -583,6 +586,12 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
             pos += 8;
         }
         if (!r.ok) { return false; }
+        if ((flags & 0x0800) != 0) {
+            int scaled_dx = (a * dx + c * dy) / 16384;
+            int scaled_dy = (b * dx + d * dy) / 16384;
+            dx = scaled_dx;
+            dy = scaled_dy;
+        }
         List<int> next = compose_matrix(m, a, b, c, d);
         int dx2 = mul_div(dx, num, den);
         int dy2 = mul_div(dy, num, den);
