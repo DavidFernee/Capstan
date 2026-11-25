@@ -826,3 +826,22 @@ test "Halyard rational timestamp conversion fails closed on overflow and forged 
     );
     assert(!invalid.ok && invalid.error == "invalid_timebase");
 }
+
+
+test "Halyard checked multiplication accepts signed boundary identities" {
+    HalyardCheckedIntResult positive_max = halyard_checked_mul(HALYARD_I64_MAX, 1);
+    HalyardCheckedIntResult negative_min = halyard_checked_mul(HALYARD_I64_MIN, 1);
+    HalyardCheckedIntResult negative_max = halyard_checked_mul(-HALYARD_I64_MAX, 1);
+    assert(positive_max.ok && positive_max.value == HALYARD_I64_MAX);
+    assert(negative_min.ok && negative_min.value == HALYARD_I64_MIN);
+    assert(negative_max.ok && negative_max.value == -HALYARD_I64_MAX);
+}
+
+test "Halyard checked multiplication rejects signed overflow in every sign quadrant" {
+    assert(!halyard_checked_mul(HALYARD_I64_MAX, 2).ok);
+    assert(!halyard_checked_mul(HALYARD_I64_MIN, -1).ok);
+    assert(!halyard_checked_mul(-2, HALYARD_I64_MIN).ok);
+    assert(!halyard_checked_mul(HALYARD_I64_MIN, 2).ok);
+    assert(!halyard_checked_mul(-HALYARD_I64_MAX, -2).ok);
+    assert(!halyard_checked_mul(2, HALYARD_I64_MAX).ok);
+}
