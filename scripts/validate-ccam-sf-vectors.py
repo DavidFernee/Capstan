@@ -101,14 +101,20 @@ def main() -> int:
 
         seen_ids = set()
         total = 0
-        for group_name in ("vectors", "out_of_profile"):
-            for index, vector in enumerate(data[group_name]):
+        groups = (
+            ("vectors", data["vectors"], VECTOR_REQUIRED, VECTOR_OPTIONAL),
+            ("out_of_profile", data["out_of_profile"],
+             {"id", "name", "classification", "register_types", "return_type",
+              "max_steps", "instructions", "expected_concrete", "reason"}, set()),
+        )
+        for group_name, entries, required, optional in groups:
+            for index, vector in enumerate(entries):
                 where = f"{group_name}[{index}]"
                 require(isinstance(vector, dict), f"{where}: vector must be an object")
                 keys = set(vector)
-                require(VECTOR_REQUIRED <= keys <= VECTOR_REQUIRED | VECTOR_OPTIONAL,
-                        f"{where}: missing={sorted(VECTOR_REQUIRED - keys)}, "
-                        f"unknown={sorted(keys - VECTOR_REQUIRED - VECTOR_OPTIONAL)}")
+                require(required <= keys <= required | optional,
+                        f"{where}: missing={sorted(required - keys)}, "
+                        f"unknown={sorted(keys - required - optional)}")
                 ident = vector["id"]
                 require(isinstance(ident, str) and re.fullmatch(r"SF-(?:X)?[0-9]{2,3}", ident),
                         f"{where}: invalid vector ID")
@@ -139,12 +145,15 @@ def main() -> int:
                     require(set(instruction) == INSTRUCTION_FIELDS[op],
                             f"{iw}: fields do not match opcode {op}")
 
-                expected = vector["expected"]
-                require(isinstance(expected, dict), f"{where}: expected must be an object")
-                for name in ("profile_execution", "normative_execution", "expected_concrete"):
-                    if name in expected:
-                        check_trace(expected[name], f"{where}.{name}")
-                check_trace(expected, f"{where}.expected")
+                if group_name == "vectors":
+                    expected = vector["expected"]
+                    require(isinstance(expected, dict), f"{where}: expected must be an object")
+                    for name in ("profile_execution", "normative_execution", "expected_concrete"):
+                        if name in expected:
+                            check_trace(expected[name], f"{where}.{name}")
+                    check_trace(expected, f"{where}.expected")
+                else:
+                    check_trace(vector["expected_concrete"], f"{where}.expected_concrete")
 
         # Check every integer in the parsed corpus, including instruction operands,
         # PCs, budgets and expected values. Python preserves the exact JSON token.
