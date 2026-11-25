@@ -323,23 +323,27 @@ input hashes and machine-readable results.
 
 ## 9. Research stream
 
-Initial hypotheses:
-- H-MEDIA-01: aggregate resource accounting prevents classes of media decompression
-  exhaustion that per-buffer limits miss.
-- H-MEDIA-02: typed ownership and bounded graph queues enable zero-copy pipelines without
-  unbounded retention or use-after-release.
-- H-MEDIA-03: a rational-clock model plus explicit discontinuity transitions bounds A/V
-  drift under seek, pause and variable-frame-rate input.
-- H-MEDIA-04: a memory-safe parser substrate can match or exceed mature native parser
-  throughput when allocation, SIMD and data layout are co-designed.
-- H-MEDIA-05: differential fuzzing across independent implementations finds semantic
-  divergences that single-implementation tests miss.
-- H-MEDIA-06: graph-level cost planning can reduce copies and energy without changing
-  reference output semantics.
+The normative hypothesis register, literature anchors, experimental questions and
+research governance are maintained in [RESEARCH-AGENDA.md](RESEARCH-AGENDA.md).
+The active hypotheses are:
 
-Each hypothesis needs a literature review, threat/assumption statement, experimental
-protocol, baselines, preregistered metrics where practical, raw artefacts, reproducible
-analysis and explicit negative results. Research claims are separate from product claims.
+- **H1 / R8.1:** compositional resource semantics, reservation conservation and
+  alias/lifetime accounting under nested and concurrent media workloads.
+- **H2 / R8.2:** verified format descriptions and parser/serializer refinement for
+  realistic media structures.
+- **H3 / R8.3:** ownership-safe zero-copy with bounded leases and provable retention.
+- **H4 / R8.4:** preflighted deterministic real-time audio execution and deadline bounds.
+- **H5 / R8.5:** rational multi-clock A/V synchronisation and explicit discontinuities.
+- **H6 / R8.6:** proof-preserving graph optimisation with explicit resource deltas.
+- **H7 / R8.7:** format-aware differential and metamorphic fuzzing.
+- **H8 / R8.8:** typed colour/HDR/scientific signal semantics and provenance.
+- **H9 / R8.9:** contract-aware distributed graph execution (deferred until after MC3).
+
+Each hypothesis requires a literature review, threat/assumption statement, experimental
+protocol, named baselines, reproducible raw artefacts, independent reproduction and
+explicit negative results. Research hypotheses are not product guarantees. A model proof
+is not implementation refinement; benchmark improvements must not weaken correctness,
+security, fidelity or declared resource limits.
 
 ## 10. Stage gates
 
