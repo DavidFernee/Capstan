@@ -134,13 +134,12 @@ DeadeyeImageResult deadeye_bmp_decode_internal(
         return deadeye_bmp_error("pixel_data_size_mismatch");
     }
 
-    HalyardBytesResult pixels = halyard_read_exact(source, image_bytes);
-    if (!pixels.ok) { return deadeye_bmp_error("truncated_pixel_data"); }
-
     int pixel_count = width * absolute_height;
     if (let budget_value = budget) {
-        // read_exact creates a temporary pixel copy while the final RGBA list is
-        // built, so charge both simultaneously materialised payloads.
+        // Reserve the cumulative output/work allowance before read_exact creates
+        // its temporary pixel copy and before the final RGBA buffer is allocated.
+        // The exact remaining-length check above makes truncation impossible for
+        // a valid source; a corrupted source still fails closed after the charge.
         HalyardConsumptionCharge output_charge = new HalyardConsumptionCharge{
             input_bytes: 0, output_bytes: image_bytes + pixel_count * 4,
             decoded_units: pixel_count, work_units: image_bytes + pixel_count
@@ -149,6 +148,9 @@ DeadeyeImageResult deadeye_bmp_decode_internal(
             return deadeye_bmp_error("budget_exceeded");
         }
     }
+
+    HalyardBytesResult pixels = halyard_read_exact(source, image_bytes);
+    if (!pixels.ok) { return deadeye_bmp_error("truncated_pixel_data"); }
     List<int> rgba = new List<int>();
     for (int output_y = 0; output_y < absolute_height; output_y += 1) {
         int input_y = output_y;
