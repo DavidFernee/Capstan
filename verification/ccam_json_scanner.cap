@@ -1,3 +1,5 @@
+import "ccam_json_string.cap";
+
 // Bounded lexical scanner for untrusted CCAM JSON documents.
 // Emits a token tape containing source spans; it does not allocate decoded
 // values, build containers, detect duplicate object keys or validate schemas.
