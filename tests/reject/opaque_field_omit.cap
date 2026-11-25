@@ -1,4 +1,4 @@
-// expect: private state of SealedVault must be initialised by its defining module
+// expect: opaque struct SealedVault may be constructed only within its defining module
 import "private_fields/record.cap";
 
 int main() {
