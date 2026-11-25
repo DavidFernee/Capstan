@@ -482,6 +482,12 @@ validity, exact byte writes and region reset. Conformance vectors compare:
 - rejection of malformed writes without state mutation; and
 - invalidation of old references after reset.
 
+A deterministic exhaustive test enumerates all 27 three-operation histories over
+single-byte reservation, two-byte reservation and reset against a three-byte
+region. This covers capacity rejection, repeated reset, and reuse after generation
+changes. It is deliberately a small finite corpus, not a substitute for general
+property-based testing or a proof over unbounded histories.
+
 This is bounded executable differential testing, not a formal proof. It does
 not yet cover allocation failure, hostile mutation, concurrency, persistent
 storage, crash recovery, or all possible operation sequences. It also shares
