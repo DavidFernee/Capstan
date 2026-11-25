@@ -81,6 +81,8 @@ bool preflight_frame_view(View v, List<int> budget, int depth) {
     // The byte conversion helpers enforce the same limit defensively.
     if (v.text.len() > MAX_TEXT_BYTES || v.value.len() > MAX_TEXT_BYTES ||
         v.label.len() > MAX_TEXT_BYTES || v.hint.len() > MAX_TEXT_BYTES) { return false; }
+    // Text-field state has the tighter interactive-editing contract too.
+    if (v.kind == K_TEXT_FIELD && v.value.len() > MAX_FIELD_BYTES) { return false; }
     if (!frame_text_budget_add(budget, v.text.len())) { return false; }
     if (!frame_text_budget_add(budget, v.value.len())) { return false; }
     if (!frame_text_budget_add(budget, v.action.len())) { return false; }
