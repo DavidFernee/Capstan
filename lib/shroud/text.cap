@@ -36,6 +36,12 @@ struct Utf8Decoded {
 // Strict UTF-8 decoding with optional byte-end offsets. Invalid sequences use the
 // maximal-subpart replacement behaviour documented above.
 void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
+    // Guard the shared decoder itself so direct List<int> callers cannot bypass
+    // the string_bytes()/tainted_bytes() bounds.
+    if (b.len() > MAX_TEXT_BYTES) {
+        println("shroud: UTF-8 decoder byte limit exceeded");
+        exit(101);
+    }
     int i = 0;
     int n = b.len();
     while (i < n) {
