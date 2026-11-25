@@ -178,7 +178,7 @@ struct Canvas {
                 paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: none, mask_w: 0, mask_h: 0,
                 x: 0, y: 0, coverage: 0, opacity: self.opacity
             };
-            display_list_append(self, cmd, 0);
+            display_list_append(self, cmd, 0, 0);
             return;
         }
         Rect c = self.clip();
@@ -277,7 +277,7 @@ struct Canvas {
                 paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: none, mask_w: 0, mask_h: 0,
                 x: x, y: y, coverage: bounded_coverage, opacity: bounded_opacity
             };
-            display_list_append(self, cmd, 0);
+            display_list_append(self, cmd, 0, 0);
             return;
         }
         int cv = div255(bounded_coverage * bounded_opacity);
