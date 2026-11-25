@@ -25,7 +25,7 @@ structure ObjectHandle (slotCount : Nat) where
   domain : Nat
   slot : Fin slotCount
   generation : Nat
-deriving Repr
+deriving Repr, DecidableEq
 
 /-- The table is immutable at the model level. Every operation returns a new
 table or an explicit rejection containing the original table. -/
