@@ -203,7 +203,7 @@ struct Canvas {
         // Spaces and other empty glyphs have a valid 0x0 mask.
         if (width == 0 && height == 0 && alpha.len() == 0) { return; }
         if (width < 1 || height < 1 || width > alpha.len() / height ||
-            width * height != alpha.len() || alpha.len() > MAX_DISPLAY_MASK_PIXELS) {
+            width * height != alpha.len() || !display_mask_alpha_valid(alpha)) {
             println("shroud: invalid display mask dimensions");
             exit(101);
         }
@@ -317,6 +317,16 @@ DisplayList finish_display_list(Canvas cv) {
 // new_recording_canvas(). This also makes rejection failure-atomic.
 const int MAX_DISPLAY_COORD = MAX_PIXMAP_SIDE * FX * 2;
 
+// Glyph masks are an internal raster primitive and a public display-list payload.
+// Enforce one canonical alpha representation at both boundaries.
+bool display_mask_alpha_valid(List<int> alpha) {
+    if (alpha.len() > MAX_DISPLAY_MASK_PIXELS) { return false; }
+    for (int i = 0; i < alpha.len(); i += 1) {
+        if (alpha[i] < 0 || alpha[i] > 255) { return false; }
+    }
+    return true;
+}
+
 bool display_coord_valid(int v) { return v >= -MAX_DISPLAY_COORD && v <= MAX_DISPLAY_COORD; }
 
 bool display_rect_valid(Rect r) {
@@ -409,9 +419,7 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                     cmd.y < -MAX_PIXMAP_SIDE || cmd.y > MAX_PIXMAP_SIDE ||
                     cmd.mask_w > MAX_DISPLAY_SEGMENTS - payload || alpha.len() > MAX_DISPLAY_SEGMENTS - payload) { return false; }
                 if (alpha.len() > MAX_DISPLAY_WORK - work) { return false; }
-                for (int j = 0; j < alpha.len(); j += 1) {
-                    if (alpha[j] < 0 || alpha[j] > 255) { return false; }
-                }
+                if (!display_mask_alpha_valid(alpha)) { return false; }
                 payload += alpha.len();
                 work += alpha.len();
             } else { return false; }
