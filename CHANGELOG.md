@@ -90,16 +90,20 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
   and UTF-8 positions, imports; JSON-RPC errors for malformed input and bounded sizes (CWE-400);
   no `trust()`. Tested for agreement with the compiler on every test program, protocol behaviour,
   sanitizers and fuzzing (`tests/lsp/`). Pure Capstan, using `read_bytes()` and `flush()`
-- K0, the first kernel study: every Linux kernel CVE published in 2025, classified from its fix and
-  run through the CWE atlas with stated kernel adjustments (`tools/k0/`, docs/K0-KERNEL-CVES.md),
-  with a hand-labelled held-out sample to measure the classifier
+- K0, the initial Linux kernel CVE study (`tools/k0/`, docs/K0-KERNEL-CVES.md); its original
+  population, cross-field classifier precedence and kernel projections are under correction, and
+  its headline figures are withdrawn
+  pending a complete pinned source snapshot and independent review
 - K1 kernel-mode design (DESIGN-MAP section 7) aimed at what K0 found Capstan does not yet prevent:
   ownership and linear resources, data guarded by its lock, RCU as a type, execution contexts, lock
   levels, structured concurrency, typed views, checked shifts, entry-point policies, speculation
   hardening, bounded loops and declared formats; K0 projects the effect on the same CVEs
-- K0 review: all 588 CVEs the classifier could not decide (or called speculative execution) read
-  and classified by hand (`tools/k0/data/reviewed-2025.csv`); 4 of 2,702 remain undeterminable.
-  Measured today: 60.6% prevented; with K1.1 to K1.9: 79.1%; with K1.10 proofs: 98.7%
+- K0 review: the checked-in 2025 labels were produced by the same AI assistant that wrote the
+  classifier; independent human relabelling remains outstanding. Held-out/tuning agreement is an
+  internal diagnostic, not accuracy or validation evidence, and the fixed sample files apply only to
+  the 2025 publication population. The prior population scan omitted delayed publications and the
+  kernel UAF/double-free projection was unsupported by application memory-safety guarantees. The old
+  counts and percentages are superseded, not current assurance.
 - K1.8 extended (speculatively constant-time secrets, automatic per-processor mitigations, CFI) and
   K1.10, proof against a specification: contracts, lock invariants, protocols, termination,
   non-interference between security domains, refinement for the core, an independent proof checker,
