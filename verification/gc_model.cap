@@ -358,8 +358,8 @@ test "GC atomic objects are leaves" {
     assert(gc_id_in(result.reclaimed_ids, 2));
 }
 
-test "GC duplicate roots do not duplicate work" {
-    GCSpec spec = gc_empty_spec(2);
+test "GC duplicate roots do not duplicate work or exhaust capacity" {
+    GCSpec spec = gc_empty_spec(1);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
     spec.roots.push(gc_ref(0, 1));
     spec.roots.push(gc_ref(0, 1));
