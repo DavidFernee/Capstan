@@ -29,37 +29,43 @@ must not duplicate codec semantics.
 
 ## 2. Dependency direction
 
-```
-            Anchor / applications / Keel
-                         |
-       optional Halyard–Shroud presentation adapter
-                  /                    \
-          Shroud APIs              Halyard APIs
-                                      |
-                         +------------+------------+
-                         |                         |
-                      Shanty                    Deadeye
-                    audio graph               video graph
-                         |                         |
-                         +------------+------------+
-                                      |
-                            Capstan Media Core
-                 streams | buffers | clocks | budgets | registry
-                                      |
-                       Capstan runtime / CCAM / platform adapters
-                                      |
-                            OS, devices and hardware
+The graph below uses **provider → consumer** arrows. Halyard is the media architecture
+umbrella; it is not a dependency node or a fourth implementation library.
+
+```mermaid
+flowchart TB
+  C["Capstan language / compiler / runtime"]
+  MC["Capstan Media Core"]
+  S["Shroud core"]
+  SH["Shanty"]
+  DE["Deadeye"]
+  K["Keel"]
+  A["Anchor"]
+  HA["Optional Halyard–Shroud adapter"]
+
+  C --> MC
+  C --> S
+  C --> SH
+  C --> DE
+  C --> K
+  C --> A
+  MC --> SH
+  MC --> DE
+  S --> K
+  SH --> K
+  DE --> K
+  S --> A
+  S --> HA
+  SH --> HA
+  DE --> HA
+  HA --> A
 ```
 
-Core owns shared semantics, not a giant universal player. Audio and video have distinct
-real-time requirements, graph schedulers and domain-specific types. A common
-synchronisation contract connects them without forcing identical execution models.
-
-The dependency graph is acyclic. Core does not depend on Shanty, Deadeye, Shroud, Anchor
-or Keel. Shanty and Deadeye depend on Core. Shroud core does not depend on Halyard.
-The optional Halyard–Shroud adapter depends on both Shroud and Halyard; Anchor may
-consume it. Keel depends on the media APIs it orchestrates. Anchor remains a consumer
-of Shroud and compiler services.
+Core does not depend on Shanty, Deadeye, Shroud, Anchor or Keel. Shanty and Deadeye
+depend on Core and retain domain-specific types and schedulers; neither depends on the
+other. Shroud core remains media-independent. The optional Halyard–Shroud adapter
+depends on Shroud and the relevant media presentation APIs; neither media engine depends
+on Shroud. Keel and Anchor consume the APIs they need. The dependency graph is acyclic.
 
 ## 3. Architectural layers
 
