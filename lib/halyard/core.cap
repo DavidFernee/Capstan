@@ -181,20 +181,23 @@ HalyardByteSourceResult halyard_source_from_list(List<int> input, int max_bytes)
     return new HalyardByteSourceResult{ok: true, source: source, error: ""};
 }
 
+bool halyard_source_shape_valid(HalyardByteSource source) {
+    return !source.closed && source.max_bytes >= 0 &&
+        source.bytes.len() <= source.max_bytes &&
+        source.position >= 0 && source.position <= source.bytes.len();
+}
+
 bool halyard_source_validate(HalyardByteSource source) {
-    if (source.closed || source.max_bytes < 0 ||
-        source.bytes.len() > source.max_bytes ||
-        source.position < 0 || source.position > source.bytes.len()) {
-        return false;
-    }
+    if (!halyard_source_shape_valid(source)) { return false; }
     for (int i = 0; i < source.bytes.len(); i += 1) {
         if (source.bytes[i] < 0 || source.bytes[i] > 255) { return false; }
     }
     return true;
 }
 
+// Constant-time metadata query. Byte-domain validation is a separate bounded scan.
 int halyard_source_length(HalyardByteSource source) {
-    if (!halyard_source_validate(source)) { return -1; }
+    if (!halyard_source_shape_valid(source)) { return -1; }
     return source.bytes.len();
 }
 
