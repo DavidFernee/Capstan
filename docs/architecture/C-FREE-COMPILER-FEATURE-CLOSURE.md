@@ -94,7 +94,7 @@ Exact schemas, operand typing and trap precedence must be frozen only after revi
 | Arrays | `array_len`, `array_get`, `array_set` | Logical-length bounds; element type; initialisation; no unchecked index |
 | References | `ref_eq` | Identity equality only; no pointer ordering or integer conversion |
 | Byte substrate | `bytes_len`, `byte_get`, bounded slice/copy | Checked offsets/lengths; immutable string literals; source-level Unicode semantics remain separate |
-| Effects | proposed `emit_utf8` in #190 | Exact output trace and budget; no hidden IO in allocation/string operations |
+| Effects | proposed byte-oriented `emit_bytes` output instruction (the earlier `emit_utf8` proposal in #190 needs reconciliation with `docs/SPEC.md`) | Exact exact byte output trace and budget for `print(string)`/`println(string)`; no hidden IO in allocation/string operations |
 
 Lists and maps should initially be Capstan library abstractions over records and arrays, not additional primitive machine objects. A first map may use a bounded linear representation; hashing and resizing can follow as library/performance work. This keeps the semantic machine small and lets the type system define collection interfaces.
 
