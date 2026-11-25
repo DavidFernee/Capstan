@@ -37,6 +37,7 @@
 #   bench        (--full) speed against hand-written C, with a regression limit
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 C="$ROOT/build/capstanc"
 CC="${CC:-cc}"
 FULL=0; [[ "${1:-}" == "--full" ]] && FULL=1
@@ -80,6 +81,47 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
   ok "checked scalar source lowers to validated CCAM and executes in the Capstan evaluator"
 else
   bad "CCAM source-to-IR lowering" "$out"
+fi
+
+section "Capstan-native verification: freestanding Linux x86-64 native backend"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
+  ok "CCAM emits freestanding x86-64 assembly without C runtime references"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    native_run() {
+      local name="$1" expected="$2"
+      if as --64 "$ROOT/build/$name.s" -o "$tmp/$name.o" &&
+         ld -o "$tmp/$name" "$tmp/$name.o"; then
+        if readelf -l "$tmp/$name" | grep -q "INTERP"; then
+          bad "freestanding $name runtime audit" "ELF unexpectedly has an interpreter"
+        elif [[ -n "$(nm -u "$tmp/$name")" ]]; then
+          bad "freestanding $name runtime audit" "ELF has undefined external symbols"
+        else
+          "$tmp/$name"
+          local status=$?
+          if [[ $status -eq $expected ]]; then
+            ok "freestanding $name exits $expected with no interpreter or undefined symbols"
+          else
+            bad "freestanding $name exit status" "expected $expected, got $status"
+          fi
+        fi
+      else
+        bad "freestanding $name assembly/link" "GNU as or ld rejected generated assembly"
+      fi
+    }
+    native_run ccam-native-x64 42
+    native_run ccam-native-x64-loop 42
+    native_run ccam-native-x64-recursion 42
+    native_run ccam-native-x64-overflow 70
+    native_run ccam-native-x64-divzero 71
+    native_run ccam-native-x64-div-overflow 70
+    native_run ccam-native-x64-step-limit 73
+    native_run ccam-native-x64-depth-limit 74
+    native_run ccam-native-x64-uninitialised 75
+  else
+    ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
+  fi
+else
+  bad "CCAM native x86-64 backend" "$out"
 fi
 
 section "unit"
