@@ -4,7 +4,8 @@
 > **Revision:** 2026-11-25  
 > **Scope:** Language theory, compiler, execution, security, assurance, developer experience and ecosystem  
 > **Architecture authority:** `docs/DESIGN-MAP.md` and the relevant subsystem specifications  
-> **Coordination:** GitHub issue [#25](https://github.com/DavidFernee/Capstan/issues/25)
+> **Coordination:** GitHub issue [#25](https://github.com/DavidFernee/Capstan/issues/25)  
+> **Research evidence register:** [RESEARCH-REGISTER.md](RESEARCH-REGISTER.md)
 
 ## 1. Mission and research thesis
 
@@ -396,7 +397,7 @@ A paper should be submitted only when it has a precise contribution, comparison 
 
 ## 9. Hypothesis and evidence register
 
-Every major research stream maintains a register with the following fields:
+Every major research stream maintains a register with the following fields. The repository already has `docs/research/RESEARCH-REGISTER.md`, which remains the authoritative record for candidate papers, exact implementation/proof/test evidence, maturity, publication readiness and claim discipline. This agenda does not replace or duplicate that register: use it for programme hypotheses and work-package coordination, and update the research register when a result changes the evidence or publication status of an existing candidate. Link the two records by stable research-question or paper IDs.
 
 | Field | Required content |
 |---|---|
