@@ -1157,3 +1157,15 @@ The ambition is broad practical historical and modern format compatibility, not 
 
 
 Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vulnerability accounting, root-cause taxonomy, safe reproducer protocol, SBOM/advisory reconciliation and release-blocking gates are specified in [media/SECURITY-ASSURANCE.md](media/SECURITY-ASSURANCE.md) and tracked in [#292](https://github.com/DavidFernee/Capstan/issues/292). No media release may treat a clean scanner or absence of assigned CVEs as evidence that the attack surface is safe.
+
+
+## Capstan-only language and library foundation
+
+The governing language, compiler, runtime, standard-library, module/package and assurance
+programme is specified in [CAPSTAN-ONLY-FOUNDATION.md](CAPSTAN-ONLY-FOUNDATION.md).
+It establishes Capstan-only implementation as the target, a construction-safety contract,
+an evidence-driven vulnerability-prevention gate, and staged acceptance criteria. This is
+a proposed programme, not a claim that the target guarantees are already implemented.
+The vulnerability-prevention research stream in PR #238, the programming-language research
+agenda and the v0.6 standard-library roadmap remain supporting workstreams and must be
+reconciled against this foundation before dependent implementation is merged.
