@@ -150,14 +150,25 @@ test "CCAM literal decoder preserves escaped and arbitrary byte values" {
     assert(decoded.ok && decoded.bytes[0] == 63);
 }
 
-test "CCAM literal decoder rejects malformed and oversized encodings" {
-    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal("\\12", 1);
+test "CCAM literal decoder rejects a truncated octal escape" {
+    string malformed = char_str(92) + "12";
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(malformed, 1);
     assert(!decoded.ok && decoded.error == "truncated_octal_literal_escape");
-    decoded = ccam_decode_escaped_literal("\\400", 1);
+}
+
+test "CCAM literal decoder rejects octal values above one byte" {
+    string malformed = char_str(92) + "400";
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(malformed, 1);
     assert(!decoded.ok && decoded.error == "octal_literal_byte_out_of_range");
-    decoded = ccam_decode_escaped_literal("A", 2);
+}
+
+test "CCAM literal decoder rejects byte-count mismatches" {
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal("A", 2);
     assert(!decoded.ok && decoded.error == "literal_byte_count_mismatch");
-    decoded = ccam_decode_escaped_literal("", CCAM_MAX_LITERAL_OUTPUT_BYTES + 1);
+}
+
+test "CCAM literal decoder rejects oversized output declarations" {
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal("", CCAM_MAX_LITERAL_OUTPUT_BYTES + 1);
     assert(!decoded.ok && decoded.error == "literal_byte_limit");
 }
 
