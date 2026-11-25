@@ -631,6 +631,40 @@ void test_display_list(Tally t, Font font) {
         $"{frame.width}x{frame.height}, {frame.commands.len()} commands");
 }
 
+void test_blend_bounds(Tally t) {
+    Pixmap pm = new_pixmap(2, 2);
+    Canvas cv = new_canvas(pm);
+    // Out-of-surface and out-of-clip writes must be harmless.
+    cv.blend(-1, 0, solid(0xFFFF0000), 255);
+    cv.blend(2, 0, solid(0xFFFF0000), 255);
+    cv.blend(0, -1, solid(0xFFFF0000), 255);
+    cv.blend(0, 2, solid(0xFFFF0000), 255);
+    cv.push_clip(rect_px(0, 0, 1, 1));
+    cv.blend(1, 0, solid(0xFFFF0000), 255);
+    cv.blend(0, 1, solid(0xFFFF0000), 255);
+    cv.blend(0, 0, solid(0xFFFF0000), -1);
+    expect_int(t, pm.px[0], 0, "raster: invalid coverage is clamped to no-op");
+    expect_int(t, pm.px[1], 0, "raster: direct blend respects right clip edge");
+    expect_int(t, pm.px[2], 0, "raster: direct blend respects bottom clip edge");
+    expect_int(t, pm.px[3], 0, "raster: out-of-surface blend is ignored");
+
+    cv.blend(0, 0, solid(0xFFFF0000), 300);
+    expect_int(t, pm.px[0], premultiply(0xFFFF0000),
+        "raster: coverage above 255 is safely clamped");
+
+    Pixmap recorded = new_pixmap(2, 2);
+    Canvas recorder = new_recording_canvas(recorded);
+    recorder.push_clip(rect_px(0, 0, 1, 1));
+    recorder.blend(1, 0, solid(0xFF00FF00), 255);
+    recorder.blend(0, 0, solid(0xFF00FF00), 255);
+    DisplayList frame = finish_display_list(recorder);
+    execute_display_list(frame, recorded);
+    expect_int(t, recorded.px[0], premultiply(0xFF00FF00),
+        "display list: valid direct blend replays");
+    expect_int(t, recorded.px[1], 0,
+        "display list: blend outside recorded clip is discarded");
+}
+
 void test_resize(Tally t, Font f, Font b) {
     Ui ui = new_ui(f, b, light_theme(), 640, 480, 256);
     View v = column()
@@ -717,6 +751,7 @@ int main() {
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_display_list(t, f);
+            test_blend_bounds(t);
             test_resize(t, f, fb);
             test_scale(t, f, fb);
         }
