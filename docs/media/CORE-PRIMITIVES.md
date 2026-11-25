@@ -197,7 +197,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 ## 8. Test obligations
 
 The regression suite is expressed as 37 Capstan `test` declarations in `lib/halyard/core.cap`.
-Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
+Run it with `bin/capstan test lib/halyard/core.cap`. The standard `tests/run.sh` harness now invokes the Core, Shanty and Deadeye module suites independently. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
 - defensive snapshot from the original input list;
