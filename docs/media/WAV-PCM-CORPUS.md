@@ -29,3 +29,17 @@ Run:
 ## Evidence boundary and remaining work
 
 This corpus validates its own bytes and expected vectors against an independent reference decoder. It is not yet an executable differential input to shanty_wave_parse or shanty_wave_decode_samples; the current Capstan tests remain colocated in lib/halyard/shanty.cap. A follow-up should make the same canonical fixtures drive the Capstan evaluator without maintaining a second set of expected values. No fuzz campaign, exact-head Capstan corpus execution, timing, throughput or peak-memory measurement is claimed.
+
+
+## Exact Capstan/runtime capability evidence
+
+The current Halyard byte-source implementation in lib/halyard/core.cap provides:
+- halyard_source_from_list(input, max_bytes): validates the maximum and every byte (0..255), then copies the caller's list into a defensive snapshot. Its comment explicitly says this is not an ambient file/network source.
+- halyard_source_length() and halyard_source_remaining(): bounded metadata queries over the in-memory snapshot.
+- halyard_read_exact(source, count): uses the subtraction-form check count <= length - position; on failure the cursor is unchanged.
+- halyard_skip() and typed read-result structs for bounded parser movement.
+- halyard_consumption_budget_create(input_limit, output_limit, decoded_limit, work_limit): a four-dimensional monotonic consumption budget used by the budgeted Shanty entry points.
+
+The Shanty parser uses Capstan structs, optional values, List<int>, bounded loops, integer bitwise operations and typed result structs. The colocated tests use Capstan test declarations and construct deterministic in-memory fixtures. The source is deliberately independent of ambient filesystem, network and device authority.
+
+The gaps are equally concrete: no file-backed or streaming byte source, asynchronous/short-read transport contract, seek contract, recoverable allocation-result API, mandatory opaque ownership, concurrent ledger semantics or cancellation-aware source lifetime is present in this vertical slice. The public source/budget fields and legacy unbudgeted entry points remain callable. These are runtime/ownership gaps, not a lack of integer byte parsing capability.
