@@ -18,6 +18,7 @@ open CapstanNativeMemory
 abbrev Handle (slotCount : Nat) := ObjectHandle slotCount
 
 structure MarkerBudget where
+  maxRoots : Nat
   maxObjects : Nat
   maxEdges : Nat
   maxWorklist : Nat
@@ -26,6 +27,7 @@ structure MarkerBudget where
 deriving Repr, DecidableEq
 
 structure MarkerCounters where
+  roots : Nat
   objects : Nat
   edges : Nat
   worklistPeak : Nat
@@ -35,6 +37,7 @@ deriving Repr, DecidableEq
 
 inductive MarkerReject where
   | invalidHandle
+  | rootLimit
   | objectLimit
   | edgeLimit
   | worklistLimit
@@ -170,15 +173,19 @@ def runBoundedMarker {slotCount : Nat}
     (roots : List (Handle slotCount))
     (budget : MarkerBudget) :
     MarkerOutcome isLive referenceEdges roots :=
-  let initial := freshTargets roots [] []
-  let counters : MarkerCounters :=
-    { objects := 0, edges := 0, worklistPeak := initial.length,
+  let initialCounters : MarkerCounters :=
+    { roots := roots.length, objects := 0, edges := 0, worklistPeak := 0,
       descriptorSlots := 0, work := 0 }
-  if initial.length > budget.maxWorklist then
-    .rejected .worklistLimit counters
+  if roots.length > budget.maxRoots then
+    .rejected .rootLimit initialCounters
   else
-    markerLoop isLive referenceEdges descriptorCost roots budget
-      (budget.maxWork + 1) initial [] counters
+    let initial := freshTargets roots [] []
+    let counters := { initialCounters with worklistPeak := initial.length }
+    if initial.length > budget.maxWorklist then
+      .rejected .worklistLimit counters
+    else
+      markerLoop isLive referenceEdges descriptorCost roots budget
+        (budget.maxWork + 1) initial [] counters
 
 /-- A successful marker result is a checked certificate, not a partial
 traversal. This theorem exposes the root-inclusion and edge-closure facts
@@ -187,7 +194,6 @@ theorem complete_result_is_certificate {slotCount : Nat}
     (isLive : Handle slotCount → Bool)
     (referenceEdges : Handle slotCount → List (Handle slotCount))
     (roots marked : List (Handle slotCount))
-    (counters : MarkerCounters)
     (accepted : certificateCheck isLive referenceEdges roots marked = true) :
     (∀ root, root ∈ roots → root ∈ marked) ∧
     (∀ handle, handle ∈ marked → isLive handle = true) ∧
