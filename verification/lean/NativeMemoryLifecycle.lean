@@ -246,3 +246,19 @@ theorem updateSlot_preserves_other
   simp [updateSlot, h]
 
 end CapstanNativeMemory
+
+
+/-- Reusing a released slot advances the incarnation, so the old handle
+cannot resolve to the replacement object. This composes release, allocation
+and resolution rather than proving the steps only in isolation. -/
+theorem reuse_rejects_previous_incarnation
+    {Object : Type u} (maximumGeneration current : Nat)
+    (old replacement : Object) (h : current < maximumGeneration) :
+    let released :=
+      releaseSlot maximumGeneration (.occupied current old) current
+    let reallocated :=
+      allocateSlot maximumGeneration (.free (current + 1)) replacement
+    released = some (.free (current + 1)) ∧
+      reallocated = some (.occupied (current + 1) replacement, current + 1) ∧
+      resolveSlot current (.occupied (current + 1) replacement) = none := by
+  simp [releaseSlot, h, allocateSlot, resolveSlot, Nat.ne_of_lt (Nat.lt_succ_of_le (Nat.le_of_lt h))]
