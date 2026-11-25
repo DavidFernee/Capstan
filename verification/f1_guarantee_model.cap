@@ -76,7 +76,7 @@ F1Value f1_make(int data_sources, bool data_top,
     };
 }
 
-F1Value f1_public_literal() {
+// The empty string is context-neutral; this is not a claim about arbitrary literals.\nF1Value f1_empty_constant() {
     return f1_make(0, false, 0, false, F1_CONF_PUBLIC,
                    F1_CTX_HTML | F1_CTX_LOG | F1_CTX_CSV | F1_CTX_JSON);
 }
@@ -156,7 +156,7 @@ F1Summary f1_identity_summary() {
         complete: true,
         depends_on_argument: true,
         preserves_context: true,
-        constant_result: f1_public_literal()
+        constant_result: f1_empty_constant()
     };
 }
 
@@ -165,7 +165,7 @@ F1Summary f1_byte_rebuild_summary() {
         complete: true,
         depends_on_argument: true,
         preserves_context: false,
-        constant_result: f1_public_literal()
+        constant_result: f1_empty_constant()
     };
 }
 
@@ -174,7 +174,7 @@ F1Summary f1_unknown_summary() {
         complete: false,
         depends_on_argument: false,
         preserves_context: false,
-        constant_result: f1_public_literal()
+        constant_result: f1_empty_constant()
     };
 }
 
@@ -244,7 +244,7 @@ bool f1_budget_admits(F1Contract declared, int fuel_budget, int memory_budget) {
 int main() {
     F1Value untrusted = f1_source(1, false);
     F1Value secret = f1_source(2, true);
-    F1Value public_value = f1_public_literal();
+    F1Value public_value = f1_empty_constant();
 
     F1Value through_helper = f1_apply_summary(f1_identity_summary(), untrusted);
     through_helper = f1_apply_summary(f1_identity_summary(), through_helper);
@@ -319,7 +319,7 @@ test "byte reconstruction preserves provenance but drops unrelated context guara
 
 test "secret-derived predicates remain confidential" {
     F1Value secret = f1_source(2, true);
-    F1Value predicate = f1_derive(secret, f1_public_literal());
+    F1Value predicate = f1_derive(secret, f1_empty_constant());
     assert(!f1_public_sink_allowed(predicate));
 }
 
