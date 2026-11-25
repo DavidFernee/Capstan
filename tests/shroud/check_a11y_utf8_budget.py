@@ -110,7 +110,67 @@ int main() {
         invalid = run([invalid_exe], env=env, expected=101)
         if "shroud: invalid Unicode scalar in accessibility text" not in invalid.stdout:
             raise SystemExit(f"a11y UTF-8 budget: missing invalid-scalar diagnostic: {invalid.stdout!r}")
-    print(f"a11y UTF-8 budget: 1 MiB encoded; peak Capstan managed heap {peak} bytes (64 MiB cap); oversized and invalid scalar inputs rejected")
+
+        json_budget_source = """
+int main() {
+    List<string> chars = new List<string>();
+    for (int i = 0; i < 4096; i += 1) { chars.push("A"); }
+    string chunk = join(chars, "");
+    List<string> chunks = new List<string>();
+    for (int i = 0; i < 1500; i += 1) { chunks.push(chunk); }
+    Tainted large = taint(join(chunks, ""));
+    A11yNode n = new A11yNode{
+        id: "node", role: "text", name: large, value: taint(""),
+        states: new List<string>(), bounds: rect(0, 0, 1, 1),
+        kids: new List<A11yNode>()
+    };
+    a11y_json(n);
+    println("unexpectedly accepted oversized accessibility JSON");
+    return 1;
+}
+"""
+        json_cap = os.path.join(tmp, "a11y-json-over.cap")
+        json_c = os.path.join(tmp, "a11y-json-over.c")
+        json_exe = os.path.join(tmp, "a11y-json-over")
+        with open(json_cap, "w", encoding="utf-8") as stream:
+            stream.write(json_budget_source)
+        run([capstanc, "build", "--strict", "-o", json_c] + LIB + [json_cap])
+        run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), json_c, "-o", json_exe])
+        json_rejected = run([json_exe], env=env, expected=101)
+        if "shroud: accessibility JSON node/depth/byte budget exceeded" not in json_rejected.stdout:
+            raise SystemExit(f"a11y UTF-8 budget: missing JSON output-budget diagnostic: {json_rejected.stdout!r}")
+
+        depth_source = """
+int main() {
+    A11yNode n = new A11yNode{
+        id: "leaf", role: "text", name: taint("leaf"), value: taint(""),
+        states: new List<string>(), bounds: rect(0, 0, 1, 1),
+        kids: new List<A11yNode>()
+    };
+    for (int i = 0; i <= MAX_DEPTH; i += 1) {
+        List<A11yNode> kids = new List<A11yNode>();
+        kids.push(n);
+        n = new A11yNode{
+            id: "parent", role: "group", name: taint(""), value: taint(""),
+            states: new List<string>(), bounds: rect(0, 0, 1, 1), kids: kids
+        };
+    }
+    a11y_json(n);
+    println("unexpectedly accepted excessive accessibility JSON depth");
+    return 1;
+}
+"""
+        depth_cap = os.path.join(tmp, "a11y-json-depth.cap")
+        depth_c = os.path.join(tmp, "a11y-json-depth.c")
+        depth_exe = os.path.join(tmp, "a11y-json-depth")
+        with open(depth_cap, "w", encoding="utf-8") as stream:
+            stream.write(depth_source)
+        run([capstanc, "build", "--strict", "-o", depth_c] + LIB + [depth_cap])
+        run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), depth_c, "-o", depth_exe])
+        depth_rejected = run([depth_exe], env=env, expected=101)
+        if "shroud: accessibility JSON node/depth/byte budget exceeded" not in depth_rejected.stdout:
+            raise SystemExit(f"a11y UTF-8 budget: missing JSON depth diagnostic: {depth_rejected.stdout!r}")
+    print(f"a11y UTF-8 budget: 1 MiB encoded; peak Capstan managed heap {peak} bytes (64 MiB cap); invalid scalar, oversized UTF-8/JSON and excessive depth rejected")
 
 
 if __name__ == "__main__":
