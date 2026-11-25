@@ -179,6 +179,7 @@ exploration depth:
 - rejected admission and cancellation do not create a lease;
 - release consumes an active lease once; a replayed release is rejected;
 - actor processing is deterministic for a given FIFO queue and state.
+- a paired counterexample shows that split check/commit without synchronisation can over-admit, while linearized admission rejects the second reservation.
 
 The script also contains direct regression cases for a full inbox, cancellation before
 processing, successful release and duplicate release. It uses only the Python standard
