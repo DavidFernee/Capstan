@@ -177,3 +177,9 @@ The executable slice currently classifies two tasks and one channel. It distingu
 ## 12. Explicit non-claims
 
 This specification does not prove deadlock freedom, scheduler fairness, starvation freedom, or completeness of a future runtime dependency graph. It does not establish that the current Capstan runtime implements these semantics. The single-waiter exact-head CI gate remains a prerequisite for executable generalisation.
+
+## 13. Bounded explicit transition-graph prototype
+
+A separate executable prototype now exists in `verification/concurrency_transition_graph.cap`, registered in `tests/run.sh`. It explores an explicitly supplied finite directed transition graph breadth-first from its initial state. It distinguishes reachable nonterminal sink states (deadlock witnesses), complete graphs with no reachable nonterminal sink, all-terminal reachable graphs, invalid graph declarations, and state-limit exhaustion (unknown). It includes adversarial cases for a cycle with an enabled escape, a reachable sink, an unreachable dead end, duplicate action labels, terminal-state outgoing edges, and fail-closed state limits.
+
+This is deliberately a graph-level prototype, not yet an extractor from `CWFState` or the concrete channel/resource models. Its state IDs stand in for canonical full states; the prototype does not establish canonical-state equality, transition completeness, environment-event modelling, witness trace replay, or correspondence with the runtime. In particular, a complete graph with no reachable nonterminal sink establishes only the stated finite-graph property, not scheduler fairness, starvation freedom, or unbounded liveness. The next bridge must generate graph nodes and edges from actual model states and enabled transitions, then cross-check graph classification against the direct state classifier.
