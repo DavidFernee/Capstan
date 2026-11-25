@@ -131,7 +131,7 @@ The product ambition can be maximal while the public claims remain exacting and 
   production, spatial sound and real-time systems.
 - **Deadeye** applies it to images and video, from faithful bounded raster operations to
   high-end production, scientific imaging and synchronised presentation.
-- **Shroud** presents media without duplicating parsers or codec implementations.
+- **Shroud core** remains media-independent; an optional Halyard–Shroud adapter presents media without duplicating parsers or codec implementations.
 - **Keel** may orchestrate application and media graphs without owning codec semantics.
 - **Anchor** and other applications should benefit from the same coherent developer
   experience and inspectable guarantees.
