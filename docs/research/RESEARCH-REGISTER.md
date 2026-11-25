@@ -212,7 +212,7 @@ implementation and proof fragments into tightly scoped, reproducible claims.
 The Halyard working branch now contains Capstan-native Core prototypes in
 `lib/halyard/core.cap`: a validated bounded byte source, copy-on-commit bounded sink,
 five-dimensional sequential live-reservation ledger, a separate monotonic input/output/decode/work budget, one-shot trusted-caller reservation handles, and rational timebase/timestamp rescaling
-with explicit rounding. Thirty-two Core `test` declarations are colocated with the
+with explicit rounding. Thirty-three Core `test` declarations are colocated with the
 implementation, including exhaustive small-state checks for exact-read boundaries, the
 3^5 resource-admission state space, per-dimension release underflow, sink failure
 atomicity, rational rescaling, rounding and signed multiplication boundaries.
