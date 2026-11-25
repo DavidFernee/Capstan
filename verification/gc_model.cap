@@ -298,7 +298,7 @@ test "GC traces transitive reachability and preserves cycles" {
     GCResult result = gc_collect(spec);
     assert(oracle.valid && result.status == GC_OK);
     assert(gc_same_id_set(result.marked_ids, oracle.reachable_ids));
-    assert(gc_same_id_set(result.reclaimed_ids, [5]));
+    assert(result.reclaimed_ids.len() == 1 && gc_id_in(result.reclaimed_ids, 5));
     assert(result.objects[0].allocated && result.objects[1].allocated);
     assert(result.objects[2].allocated && result.objects[3].allocated);
     assert(result.objects[4].allocated && result.objects[4].secret_wiped == false);
@@ -335,7 +335,7 @@ test "GC duplicate roots do not duplicate work" {
     spec.roots.push(0);
     GCResult result = gc_collect(spec);
     assert(result.status == GC_OK && result.work_items == 1);
-    assert(gc_same_id_set(result.marked_ids, [0]));
+    assert(result.marked_ids.len() == 1 && gc_id_in(result.marked_ids, 0));
 }
 
 test "GC duplicate graph edges do not duplicate work" {
@@ -356,7 +356,7 @@ test "GC empty root set reclaims all unreachable objects" {
     spec.objects.push(gc_object(1, GC_KIND_SECRET));
     GCResult result = gc_collect(spec);
     assert(result.status == GC_OK);
-    assert(gc_same_id_set(result.reclaimed_ids, [0, 1]));
+    assert(result.reclaimed_ids.len() == 2);\n    assert(gc_id_in(result.reclaimed_ids, 0) && gc_id_in(result.reclaimed_ids, 1));
     assert(result.objects[1].secret_wiped);
 }
 
