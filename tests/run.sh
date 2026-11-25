@@ -64,13 +64,6 @@ if out="$($PY "$ROOT/tests/k0/check.py" 2>&1)"; then ok "$out"; else bad "K0 stu
 section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
-section "Capstan-native verification: bounded concurrency reference machine"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" "$ROOT/verification/protocol_automata.cap" "$ROOT/verification/concurrency_protocol_refinement.cap" "$ROOT/verification/concurrency_blocking.cap" "$ROOT/verification/concurrency_blocking_send.cap" 2>&1)"; then
-  ok "bounded task/channel lifecycle, protocol automata and concrete-to-abstract refinement"
-else
-  bad "concurrency reference machine" "$out"
-fi
-
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
@@ -83,6 +76,41 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; 
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
 else
   bad "CCAM multi-function evaluator" "$out"
+fi
+
+section "Capstan-native verification: bounded concurrency reference machine"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
+  ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"
+else
+  bad "bounded concurrency reference machine" "$out"
+fi
+
+section "Capstan-native verification: finite protocol automata"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
+  ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
+else
+  bad "finite protocol automata" "$out"
+fi
+
+section "Capstan-native verification: concurrency protocol refinement"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_protocol_refinement.cap" 2>&1)"; then
+  ok "normal task/channel message transitions refine protocol ownership and resource contracts"
+else
+  bad "concurrency protocol refinement" "$out"
+fi
+
+section "Capstan-native verification: blocking receive and wakeup semantics"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_blocking.cap" 2>&1)"; then
+  ok "blocked receive, atomic waiter registration/wakeup, close, cancellation and stale-wakeup semantics"
+else
+  bad "blocking receive and wakeup semantics" "$out"
+fi
+
+section "Capstan-native verification: capacity-blocked send and wakeup semantics"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_blocking_send.cap" 2>&1)"; then
+  ok "capacity backpressure, producer wait registration, dequeue wakeup and cancellation semantics"
+else
+  bad "capacity-blocked send and wakeup semantics" "$out"
 fi
 
 section "Capstan-native verification: checked source to CCAM lowering"
