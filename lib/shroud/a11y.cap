@@ -79,11 +79,17 @@ string value_of(View v) {
     return "";
 }
 
-A11yNode? a11y_node(Ui ui, Laid l) {
+A11yNode? a11y_node(Ui ui, Laid l, Rect clip) {
     View v = l.v;
+    Rect visible = l.frame.intersect(clip);
+    if (visible.empty()) { return none; }
+    // A scroll viewport clips its descendants just as the software painter does.
+    // Other containers may intentionally allow children to overflow their frame.
+    Rect child_clip = clip;
+    if (v.kind == K_SCROLL) { child_clip = clip.intersect(l.frame); }
     List<A11yNode> kids = new List<A11yNode>();
     for (int i = 0; i < l.kids.len(); i += 1) {
-        if (let k = a11y_node(ui, l.kids[i])) { kids.push(k); }
+        if (let k = a11y_node(ui, l.kids[i], child_clip)) { kids.push(k); }
     }
     string role = role_of(v);
     // Plain containers without a name are flattened into their children.
@@ -99,13 +105,13 @@ A11yNode? a11y_node(Ui ui, Laid l) {
         if (v.num != 0) { states.push("checked"); } else { states.push("unchecked"); }
     }
     if (v.secure) { states.push("protected"); }
-    Rect b = rect(fx_floor(l.frame.x), fx_floor(l.frame.y), fx_ceil(l.frame.right()) - fx_floor(l.frame.x), fx_ceil(l.frame.bottom()) - fx_floor(l.frame.y));
+    Rect b = rect(fx_floor(visible.x), fx_floor(visible.y), fx_ceil(visible.right()) - fx_floor(visible.x), fx_ceil(visible.bottom()) - fx_floor(visible.y));
     return new A11yNode{id: l.id, role: role, name: name_of(v), value: value_of(v), states: states, bounds: b, kids: kids};
 }
 
 // The current frame's accessibility tree, or none before the first render.
 A11yNode? a11y_tree(Ui ui) {
-    if (let l = ui.root) { return a11y_node(ui, l); }
+    if (let l = ui.root) { return a11y_node(ui, l, rect(0, 0, fx(ui.pixmap.w), fx(ui.pixmap.h))); }
     return none;
 }
 
