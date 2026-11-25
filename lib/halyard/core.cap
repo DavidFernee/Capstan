@@ -1503,3 +1503,74 @@ test "Halyard reservation aliases share one release state" {
     } else { assert(false); }
 }
 
+
+test "Halyard managed source holds retained-byte lease until close" {
+    HalyardLedgerResult made = halyard_ledger_create(0, 4, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(11); input.push(22); input.push(33);
+        HalyardManagedByteSourceResult created =
+            halyard_managed_source_create(ledger, input, 3);
+        assert(created.ok);
+        assert(ledger.used_retained_bytes == 3);
+        if (let managed = created.managed) {
+            HalyardReadResult first = halyard_managed_source_read_u8(managed);
+            assert(first.ok && first.value == 11);
+            assert(halyard_managed_source_remaining(managed) == 2);
+            assert(halyard_managed_source_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+            assert(halyard_managed_source_remaining(managed) == 0);
+            assert(!halyard_managed_source_close(ledger, managed));
+            HalyardReadResult closed = halyard_managed_source_read_u8(managed);
+            assert(!closed.ok && closed.error == "closed");
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Halyard managed source rejects admission before snapshot" {
+    HalyardLedgerResult made = halyard_ledger_create(0, 2, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(1); input.push(2); input.push(3);
+        HalyardManagedByteSourceResult rejected =
+            halyard_managed_source_create(ledger, input, 3);
+        assert(!rejected.ok && rejected.error == "reservation_rejected");
+        assert(ledger.used_retained_bytes == 0);
+    } else { assert(false); }
+}
+
+test "Halyard managed source rolls back lease on invalid input" {
+    HalyardLedgerResult made = halyard_ledger_create(0, 4, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(1); input.push(256);
+        HalyardManagedByteSourceResult rejected =
+            halyard_managed_source_create(ledger, input, 4);
+        assert(!rejected.ok && rejected.error == "invalid_byte");
+        assert(ledger.used_retained_bytes == 0);
+    } else { assert(false); }
+}
+
+test "Halyard managed source close can retry lease release after ledger repair" {
+    HalyardLedgerResult made = halyard_ledger_create(0, 2, 0, 0, 0);
+    assert(made.ok);
+    if (let ledger = made.ledger) {
+        List<int> input = new List<int>();
+        input.push(7); input.push(8);
+        HalyardManagedByteSourceResult created =
+            halyard_managed_source_create(ledger, input, 2);
+        assert(created.ok);
+        if (let managed = created.managed) {
+            ledger.used_retained_bytes = 0;
+            assert(!halyard_managed_source_close(ledger, managed));
+            assert(managed.source.closed);
+            ledger.used_retained_bytes = 2;
+            assert(halyard_managed_source_close(ledger, managed));
+            assert(ledger.used_retained_bytes == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
