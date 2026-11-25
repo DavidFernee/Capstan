@@ -107,6 +107,7 @@ def vector_test(vector: dict) -> str:
 
     if outcome["kind"] == "halt":
         value = outcome["value"]
+        lines.append(f"    assert(state.pc == {expected['trace_pcs'][-1]});")
         lines.append('    assert(state.halted && state.trap_code == "");')
         lines.append("    assert(state.halt_has_value);")
         if value["type"] == "int":
@@ -115,6 +116,7 @@ def vector_test(vector: dict) -> str:
             lines.append(f"    assert(state.halt_bool_value == {literal(value['value'])});")
     elif outcome["kind"] == "halt_void":
         lines.extend([
+            f"    assert(state.pc == {expected['trace_pcs'][-1]});",
             "    assert(state.halted && state.trap_code == \"\");",
             "    assert(!state.halt_has_value);",
         ])
