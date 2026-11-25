@@ -45,6 +45,24 @@ Font composite_budget_fixture() {
         cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
 }
 
+Font metrics_fixture(int table_len) {
+    List<int> bytes = new List<int>();
+    // Two long metrics: (1000, -2), (2000, 5); then bearings 6 and 7.
+    bytes.push(0x03); bytes.push(0xE8);
+    bytes.push(0xFF); bytes.push(0xFE);
+    bytes.push(0x07); bytes.push(0xD0);
+    bytes.push(0x00); bytes.push(0x05);
+    bytes.push(0x00); bytes.push(0x06);
+    bytes.push(0x00); bytes.push(0x07);
+    FontReader reader = new FontReader{b: bytes, ok: true};
+    return new Font{r: reader, units_per_em: 1000, ascent: 800, descent: -200,
+        line_gap: 0, num_glyphs: 4, num_hmetrics: 2, loca_long: 0,
+        t_head: 0, head_len: 0, t_hhea: 0, hhea_len: 0, t_maxp: 0, maxp_len: 0,
+        t_cmap: 0, cmap_len: 0, cmap_at: 0, cmap_sub_len: 0, cmap_format: 0,
+        t_loca: 0, loca_len: 0, t_glyf: 0, glyf_len: 0, t_hmtx: 0, hmtx_len: table_len,
+        cache: new Map<GlyphMask>(), cached: 0, cached_pixels: 0};
+}
+
 int main() {
     if (pixmap_size_valid(1, 1) != true) { return 1; }
     if (pixmap_size_valid(4096, 4096) != true) { return 2; }
@@ -76,6 +94,15 @@ int main() {
     if (font_span_fits(10, 10, 20, 1) != false) { return 33; }
     if (font_span_fits(10, 10, 9, 1) != false) { return 34; }
     if (font_span_fits(10, 10, 10, -1) != false) { return 35; }
+    Font metrics = metrics_fixture(12);
+    if (advance_units(metrics, 2) != 2000) { return 36; }
+    if (bearing_units(metrics, 0) != -2) { return 37; }
+    if (bearing_units(metrics, 1) != 5) { return 38; }
+    if (bearing_units(metrics, 2) != 6) { return 39; }
+    if (bearing_units(metrics, 3) != 7) { return 40; }
+    Font short_metrics = metrics_fixture(11);
+    if (bearing_units(short_metrics, 3) != 0) { return 41; }
+    if (advance_units(short_metrics, 2) != 2000) { return 42; }
     Font composite_font = composite_budget_fixture();
     Path leaf_path = new_path();
     if (glyph_outline(composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0) != true) { return 28; }
@@ -91,6 +118,6 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
-    println("resource limits: 35 assertions and glyph cache exercised");
+    println("resource limits: 42 assertions and glyph cache exercised");
     return 0;
 }
