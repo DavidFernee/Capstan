@@ -1,0 +1,407 @@
+// Bounded deterministic reference machine for the first concurrency slice.
+//
+// This is an executable semantic model, not a native-thread runtime and not
+// yet a language-level concurrency guarantee. It deliberately models one
+// structured scope, two child tasks, one linear message, and a capacity-one
+// FIFO channel. Every successful transition is atomic at this abstraction
+// level; rejected transitions return the original state unchanged.
+//
+// Semantic research contract: docs/research/CONCURRENCY-GUARANTEE-CALCULUS.md
+// Architecture contract: docs/architecture/CONCURRENCY-SAFETY-CORE.md
+// Work package: issue #249.
+
+const int CCM_TASK_NEW = 0;
+const int CCM_TASK_RUNNABLE = 1;
+const int CCM_TASK_DONE = 2;
+const int CCM_TASK_CANCELLED = 3;
+
+const int CCM_HANDLE_NONE = 0;
+const int CCM_HANDLE_HELD = 1;
+const int CCM_HANDLE_CONSUMED = 2;
+
+const int CCM_OWNER_NONE = 0;
+const int CCM_OWNER_PRODUCER = 1;
+const int CCM_OWNER_CHANNEL = 2;
+const int CCM_OWNER_CONSUMER = 3;
+
+const int CCM_ACT_SPAWN_PRODUCER = 1;
+const int CCM_ACT_SPAWN_CONSUMER = 2;
+const int CCM_ACT_PRODUCE = 3;
+const int CCM_ACT_SEND = 4;
+const int CCM_ACT_RECEIVE = 5;
+const int CCM_ACT_RELEASE = 6;
+const int CCM_ACT_JOIN_PRODUCER = 7;
+const int CCM_ACT_JOIN_CONSUMER = 8;
+const int CCM_ACT_CANCEL_PRODUCER = 9;
+const int CCM_ACT_COMPLETE_SCOPE = 10;
+
+struct CCMState {
+    int root_status;
+    int producer_status;
+    int consumer_status;
+    int producer_handle;
+    int consumer_handle;
+    int task_count;
+    int max_tasks;
+    int channel_count;
+    int channel_capacity;
+    int buffered_bytes;
+    int max_buffered_bytes;
+    bool message_live;
+    int message_owner;
+    int message_bytes;
+    int live_bytes;
+    int max_live_bytes;
+    int steps;
+    int max_steps;
+    bool scope_closed;
+}
+
+struct CCMTransition {
+    bool ok;
+    CCMState state;
+    string error;
+}
+
+CCMState ccm_initial_state() {
+    return new CCMState{
+        root_status: CCM_TASK_RUNNABLE,
+        producer_status: CCM_TASK_NEW,
+        consumer_status: CCM_TASK_NEW,
+        producer_handle: CCM_HANDLE_NONE,
+        consumer_handle: CCM_HANDLE_NONE,
+        task_count: 1,
+        max_tasks: 3,
+        channel_count: 0,
+        channel_capacity: 1,
+        buffered_bytes: 0,
+        max_buffered_bytes: 1,
+        message_live: false,
+        message_owner: CCM_OWNER_NONE,
+        message_bytes: 1,
+        live_bytes: 0,
+        max_live_bytes: 1,
+        steps: 0,
+        max_steps: 12,
+        scope_closed: false
+    };
+}
+
+CCMTransition ccm_reject(CCMState state, string error) {
+    return new CCMTransition{ok: false, state: state, error: error};
+}
+
+CCMTransition ccm_accept(CCMState state) {
+    state.steps += 1;
+    return new CCMTransition{ok: true, state: state, error: ""};
+}
+
+bool ccm_task_terminal(int status) {
+    return status == CCM_TASK_DONE || status == CCM_TASK_CANCELLED;
+}
+
+// The invariant checker is intentionally independent of transition selection.
+// It checks resource bounds, queue/message consistency, unique message
+// ownership, handle/task consistency, and scope closure.
+bool ccm_invariant(CCMState state) {
+    if (state.task_count < 1 || state.task_count > state.max_tasks) { return false; }
+    if (state.steps < 0 || state.steps > state.max_steps) { return false; }
+    if (state.channel_capacity != 1 || state.channel_count < 0 ||
+        state.channel_count > state.channel_capacity) { return false; }
+    if (state.buffered_bytes < 0 ||
+        state.buffered_bytes > state.max_buffered_bytes) { return false; }
+    if (state.live_bytes < 0 || state.live_bytes > state.max_live_bytes) { return false; }
+
+    if (state.channel_count == 1) {
+        if (!state.message_live || state.message_owner != CCM_OWNER_CHANNEL) { return false; }
+        if (state.buffered_bytes != state.message_bytes) { return false; }
+    } else {
+        if (state.buffered_bytes != 0) { return false; }
+        if (state.message_owner == CCM_OWNER_CHANNEL) { return false; }
+    }
+
+    if (state.message_live) {
+        if (state.live_bytes != state.message_bytes) { return false; }
+        if (state.message_owner != CCM_OWNER_PRODUCER &&
+            state.message_owner != CCM_OWNER_CHANNEL &&
+            state.message_owner != CCM_OWNER_CONSUMER) { return false; }
+    } else {
+        if (state.live_bytes != 0 || state.message_owner != CCM_OWNER_NONE) { return false; }
+    }
+
+    if (state.producer_handle == CCM_HANDLE_CONSUMED &&
+        !ccm_task_terminal(state.producer_status)) { return false; }
+    if (state.consumer_handle == CCM_HANDLE_CONSUMED &&
+        !ccm_task_terminal(state.consumer_status)) { return false; }
+
+    if (state.scope_closed) {
+        if (state.root_status != CCM_TASK_DONE) { return false; }
+        if (!ccm_task_terminal(state.producer_status) ||
+            !ccm_task_terminal(state.consumer_status)) { return false; }
+        if (state.producer_handle != CCM_HANDLE_CONSUMED ||
+            state.consumer_handle != CCM_HANDLE_CONSUMED) { return false; }
+        if (state.message_live || state.channel_count != 0) { return false; }
+    }
+    return true;
+}
+
+// A transition is selected by (actor, action). The actor IDs are fixed:
+// 0=root, 1=producer, 2=consumer. Invalid operations fail before mutation.
+CCMTransition ccm_step(CCMState before, int actor, int action) {
+    if (!ccm_invariant(before)) { return ccm_reject(before, "invalid_input_state"); }
+    if (before.scope_closed) { return ccm_reject(before, "scope_already_closed"); }
+    if (before.steps >= before.max_steps) { return ccm_reject(before, "step_budget_exhausted"); }
+
+    CCMState next = before;
+
+    if (action == CCM_ACT_SPAWN_PRODUCER) {
+        if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
+            before.producer_status != CCM_TASK_NEW ||
+            before.producer_handle != CCM_HANDLE_NONE) {
+            return ccm_reject(before, "invalid_producer_spawn");
+        }
+        if (before.task_count >= before.max_tasks) {
+            return ccm_reject(before, "task_budget_exhausted");
+        }
+        next.producer_status = CCM_TASK_RUNNABLE;
+        next.producer_handle = CCM_HANDLE_HELD;
+        next.task_count += 1;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_SPAWN_CONSUMER) {
+        if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
+            before.consumer_status != CCM_TASK_NEW ||
+            before.consumer_handle != CCM_HANDLE_NONE) {
+            return ccm_reject(before, "invalid_consumer_spawn");
+        }
+        if (before.task_count >= before.max_tasks) {
+            return ccm_reject(before, "task_budget_exhausted");
+        }
+        next.consumer_status = CCM_TASK_RUNNABLE;
+        next.consumer_handle = CCM_HANDLE_HELD;
+        next.task_count += 1;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_PRODUCE) {
+        if (actor != 1 || before.producer_status != CCM_TASK_RUNNABLE ||
+            before.message_live) {
+            return ccm_reject(before, "invalid_produce");
+        }
+        if (before.message_bytes <= 0 ||
+            before.message_bytes > before.max_live_bytes) {
+            return ccm_reject(before, "live_byte_budget_exhausted");
+        }
+        next.message_live = true;
+        next.message_owner = CCM_OWNER_PRODUCER;
+        next.live_bytes = before.message_bytes;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_SEND) {
+        if (actor != 1 || before.producer_status != CCM_TASK_RUNNABLE ||
+            !before.message_live ||
+            before.message_owner != CCM_OWNER_PRODUCER) {
+            return ccm_reject(before, "invalid_send_ownership");
+        }
+        if (before.channel_count >= before.channel_capacity) {
+            return ccm_reject(before, "channel_full");
+        }
+        if (before.buffered_bytes + before.message_bytes >
+            before.max_buffered_bytes) {
+            return ccm_reject(before, "channel_byte_budget_exhausted");
+        }
+        // Linearisation point: ownership and queue accounting change together.
+        next.channel_count += 1;
+        next.buffered_bytes += before.message_bytes;
+        next.message_owner = CCM_OWNER_CHANNEL;
+        next.producer_status = CCM_TASK_DONE;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_RECEIVE) {
+        if (actor != 2 || before.consumer_status != CCM_TASK_RUNNABLE ||
+            before.channel_count != 1 ||
+            before.message_owner != CCM_OWNER_CHANNEL) {
+            return ccm_reject(before, "receive_without_message");
+        }
+        // Linearisation point: dequeue and ownership transfer are one transition.
+        next.channel_count -= 1;
+        next.buffered_bytes -= before.message_bytes;
+        next.message_owner = CCM_OWNER_CONSUMER;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_RELEASE) {
+        if (actor != 2 || before.consumer_status != CCM_TASK_RUNNABLE ||
+            !before.message_live ||
+            before.message_owner != CCM_OWNER_CONSUMER) {
+            return ccm_reject(before, "invalid_release_ownership");
+        }
+        next.message_live = false;
+        next.message_owner = CCM_OWNER_NONE;
+        next.live_bytes = 0;
+        next.consumer_status = CCM_TASK_DONE;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_JOIN_PRODUCER) {
+        if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
+            before.producer_handle != CCM_HANDLE_HELD ||
+            !ccm_task_terminal(before.producer_status)) {
+            return ccm_reject(before, "producer_not_joinable");
+        }
+        next.producer_handle = CCM_HANDLE_CONSUMED;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_JOIN_CONSUMER) {
+        if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
+            before.consumer_handle != CCM_HANDLE_HELD ||
+            !ccm_task_terminal(before.consumer_status)) {
+            return ccm_reject(before, "consumer_not_joinable");
+        }
+        next.consumer_handle = CCM_HANDLE_CONSUMED;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_CANCEL_PRODUCER) {
+        if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
+            before.producer_handle != CCM_HANDLE_HELD ||
+            before.producer_status != CCM_TASK_RUNNABLE) {
+            return ccm_reject(before, "producer_not_cancellable");
+        }
+        // Cancellation cleanup is finite and atomic in this reference slice.
+        // A message not yet committed to the channel remains producer-owned
+        // and is released by the cancellation transition.
+        if (before.message_owner == CCM_OWNER_PRODUCER) {
+            next.message_live = false;
+            next.message_owner = CCM_OWNER_NONE;
+            next.live_bytes = 0;
+        }
+        next.producer_status = CCM_TASK_CANCELLED;
+        return ccm_accept(next);
+    }
+
+    if (action == CCM_ACT_COMPLETE_SCOPE) {
+        if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE) {
+            return ccm_reject(before, "invalid_scope_completion");
+        }
+        if (!ccm_task_terminal(before.producer_status) ||
+            !ccm_task_terminal(before.consumer_status) ||
+            before.producer_handle != CCM_HANDLE_CONSUMED ||
+            before.consumer_handle != CCM_HANDLE_CONSUMED) {
+            return ccm_reject(before, "scope_has_live_descendants_or_handles");
+        }
+        if (before.message_live || before.channel_count != 0 ||
+            before.live_bytes != 0 || before.buffered_bytes != 0) {
+            return ccm_reject(before, "scope_has_live_resources");
+        }
+        next.root_status = CCM_TASK_DONE;
+        next.scope_closed = true;
+        return ccm_accept(next);
+    }
+
+    return ccm_reject(before, "unknown_transition");
+}
+
+CCMState ccm_apply(CCMState state, int actor, int action) {
+    CCMTransition result = ccm_step(state, actor, action);
+    return result.state;
+}
+
+test "CCM rejects receive before a committed send without mutating state" {
+    CCMState state = ccm_initial_state();
+    CCMTransition result = ccm_step(state, 2, CCM_ACT_RECEIVE);
+    assert(!result.ok);
+    assert(result.error == "receive_without_message");
+    assert(result.state.steps == state.steps);
+    assert(result.state.channel_count == state.channel_count);
+    assert(result.state.message_owner == state.message_owner);
+}
+
+test "CCM producer consumer handshake transfers ownership exactly once" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    assert(ccm_invariant(state));
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    assert(ccm_invariant(state));
+    assert(state.message_owner == CCM_OWNER_PRODUCER);
+    state = ccm_apply(state, 1, CCM_ACT_SEND);
+    assert(ccm_invariant(state));
+    assert(state.message_owner == CCM_OWNER_CHANNEL);
+    assert(state.channel_count == 1 && state.buffered_bytes == 1);
+    state = ccm_apply(state, 2, CCM_ACT_RECEIVE);
+    assert(ccm_invariant(state));
+    assert(state.message_owner == CCM_OWNER_CONSUMER);
+    assert(state.channel_count == 0 && state.buffered_bytes == 0);
+    state = ccm_apply(state, 2, CCM_ACT_RELEASE);
+    assert(ccm_invariant(state));
+    assert(!state.message_live && state.live_bytes == 0);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    assert(ccm_invariant(state));
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state) && state.scope_closed);
+}
+
+test "CCM cancellation before send releases producer-owned resource" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    assert(state.message_live && state.message_owner == CCM_OWNER_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    assert(ccm_invariant(state));
+    assert(state.producer_status == CCM_TASK_CANCELLED);
+    assert(!state.message_live && state.message_owner == CCM_OWNER_NONE);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    // The consumer is still live: structured scope completion must fail.
+    CCMTransition premature = ccm_step(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(!premature.ok);
+    assert(premature.error == "scope_has_live_descendants_or_handles");
+}
+
+test "CCM rejects duplicate join and preserves the consumed handle" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_CANCEL_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    CCMTransition duplicate = ccm_step(state, 0, CCM_ACT_JOIN_PRODUCER);
+    assert(!duplicate.ok && duplicate.error == "producer_not_joinable");
+    assert(duplicate.state.producer_handle == CCM_HANDLE_CONSUMED);
+    assert(duplicate.state.steps == state.steps);
+}
+
+test "CCM enforces task and step budgets" {
+    CCMState state = ccm_initial_state();
+    state.max_tasks = 2;
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    CCMTransition spawn = ccm_step(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    assert(!spawn.ok && spawn.error == "task_budget_exhausted");
+    assert(spawn.state.task_count == 2);
+
+    state = ccm_initial_state();
+    state.max_steps = 1;
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    CCMTransition exhausted = ccm_step(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    assert(!exhausted.ok && exhausted.error == "step_budget_exhausted");
+    assert(exhausted.state.steps == 1);
+}
+
+test "CCM channel is bounded and send is rejected before ownership commit" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    state = ccm_apply(state, 1, CCM_ACT_SEND);
+    CCMTransition second_send = ccm_step(state, 1, CCM_ACT_SEND);
+    assert(!second_send.ok);
+    assert(second_send.error == "invalid_send_ownership");
+    assert(second_send.state.message_owner == CCM_OWNER_CHANNEL);
+    assert(second_send.state.channel_count == 1);
+    assert(ccm_invariant(second_send.state));
+}
