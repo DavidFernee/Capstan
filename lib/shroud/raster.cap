@@ -89,6 +89,9 @@ const int MAX_DISPLAY_COMMANDS = 262144;
 const int MAX_DISPLAY_SEGMENTS = 4194304;
 const int MAX_DISPLAY_MASK_PIXELS = 1048576;
 const int MAX_DISPLAY_SEGMENTS_PER_PATH = 65536;
+// Logical retained payload plus a conservative per-command metadata allowance.
+const int MAX_DISPLAY_PAYLOAD_BYTES = 67108864;
+const int DISPLAY_COMMAND_BUDGET_BYTES = 256;
 // Conservative upper bound on total raster work accepted for one frame.
 const int MAX_DISPLAY_WORK = 67108864;
 
@@ -149,7 +152,7 @@ struct Canvas {
             println("shroud: path rejected by structural/resource preflight");
             exit(101);
         }
-        if (self.recording && !display_list_payload_fits(self, upper_bound)) {
+        if (self.recording && !display_list_payload_fits(self, upper_bound, upper_bound * 32)) {
             println("shroud: display list path rejected by resource preflight");
             exit(101);
         }
@@ -160,7 +163,7 @@ struct Canvas {
                 paint: paint, rule: rule, segments: s, mask_alpha: none, mask_w: 0, mask_h: 0, x: 0, y: 0,
                 coverage: 0, opacity: self.opacity
             };
-            display_list_append(self, cmd, s.x0.len());
+            display_list_append(self, cmd, s.x0.len(), s.x0.len() * 32);
         } else {
             fill_segments(self, s, paint, rule);
         }
@@ -241,7 +244,7 @@ struct Canvas {
                 mask_w: width, mask_h: height, x: x, y: y, coverage: 0,
                 opacity: self.opacity
             };
-            display_list_append(self, cmd, alpha.len());
+            display_list_append(self, cmd, alpha.len(), alpha.len() * 8);
             return;
         }
         int x0 = int_max(x, c.x);
@@ -299,17 +302,22 @@ Canvas new_canvas(Pixmap pm) {
 Canvas new_recording_canvas(Pixmap pm) {
     Canvas cv = new_canvas(pm);
     cv.recording = true;
-    cv.budget.push(0); // aggregate flattened geometry and copied mask pixels
+    cv.budget.push(0); // aggregate segment and mask element count
+    cv.budget.push(0); // logical retained payload bytes, including command records
     return cv;
 }
 
-bool display_list_payload_fits(Canvas cv, int payload) {
-    // One aggregate bound covers both flattened path segments and copied mask
-    // pixels. Check it before any frame-owned payload allocation takes place.
-    return cv.recording && cv.budget.len() == 1 &&
-        cv.budget[0] >= 0 && cv.budget[0] <= MAX_DISPLAY_SEGMENTS &&
-        payload >= 0 && cv.commands.len() < MAX_DISPLAY_COMMANDS &&
-        payload <= MAX_DISPLAY_SEGMENTS - cv.budget[0];
+bool display_list_payload_fits(Canvas cv, int payload, int bytes) {
+    // One element-count limit and one byte limit cover all retained payloads.
+    // Charge command metadata before publishing a new command.
+    if (!cv.recording || cv.budget.len() != 2 ||
+        cv.budget[0] < 0 || cv.budget[0] > MAX_DISPLAY_SEGMENTS ||
+        cv.budget[1] < 0 || cv.budget[1] > MAX_DISPLAY_PAYLOAD_BYTES ||
+        payload < 0 || bytes < 0 || cv.commands.len() >= MAX_DISPLAY_COMMANDS) { return false; }
+    int command_bytes = DISPLAY_COMMAND_BUDGET_BYTES;
+    if (command_bytes > MAX_DISPLAY_PAYLOAD_BYTES - cv.budget[1]) { return false; }
+    if (bytes > MAX_DISPLAY_PAYLOAD_BYTES - cv.budget[1] - command_bytes) { return false; }
+    return payload <= MAX_DISPLAY_SEGMENTS - cv.budget[0];
 }
 
 bool display_mask_admissible(Canvas cv, int width, int height, int pixels) {
@@ -321,18 +329,19 @@ bool display_mask_admissible(Canvas cv, int width, int height, int pixels) {
     } else if (width > pixels / height || width * height != pixels) {
         return false;
     }
-    return display_list_payload_fits(cv, pixels);
+    return display_list_payload_fits(cv, pixels, pixels * 8);
 }
 
-void display_list_append(Canvas cv, DisplayCommand cmd, int payload) {
+void display_list_append(Canvas cv, DisplayCommand cmd, int payload, int bytes) {
     // Recheck at publication: callers must not bypass admission or exceed a
     // budget after a prior pre-allocation check.
-    if (!display_list_payload_fits(cv, payload)) {
+    if (!display_list_payload_fits(cv, payload, bytes)) {
         println("shroud: display list resource budget exceeded");
         exit(101);
     }
     cv.commands.push(cmd);
     cv.budget[0] += payload;
+    cv.budget[1] += bytes + DISPLAY_COMMAND_BUDGET_BYTES;
 }
 
 // Copy nested variable-sized payloads as well as the outer command sequence.
