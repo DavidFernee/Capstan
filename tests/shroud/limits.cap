@@ -127,7 +127,7 @@ Font truncated_simple_coords_fixture() {
     bytes[22] = 0;
     bytes[23] = 0;
     FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
-    return new Font{r:r, num_glyphs:3, loca_long:false, t_loca:0, loca_len:8, t_glyf:8, glyf_len:20};
+    return new Font{r: r, num_glyphs: 3, loca_long: false, t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 20};
 }
 
 Font truncated_composite_transform_fixture() {
