@@ -155,9 +155,24 @@ def main() -> int:
                 if v["expected"]["profile_validation"] == "reject"
                 and v["expected"]["normative_validation"] == "reject"
                 and v["profile_entry"] == 0]
-    if len(admitted) != 17 or len(rejected) != 4:
-        print(f"unexpected corpus partition: admitted={len(admitted)}, rejected={len(rejected)}",
+    expected_ids = {f"SF-{i:03d}" for i in range(1, 21)} | {
+        "SF-021", "SF-022", "SF-023"}
+    out_of_profile_ids = {"SF-X01"}
+    actual_ids = {v["id"] for v in corpus["vectors"]}
+    actual_out_of_profile_ids = {v["id"] for v in corpus["out_of_profile"]}
+    if (actual_ids != expected_ids or actual_out_of_profile_ids != out_of_profile_ids
+            or len(admitted) != 17 or len(rejected) != 4):
+        print(f"unexpected corpus partition: vectors={sorted(actual_ids)}, "
+              f"out_of_profile={sorted(actual_out_of_profile_ids)}, "
+              f"admitted={len(admitted)}, rejected={len(rejected)}",
               file=sys.stderr)
+        return 2
+    by_id = {v["id"]: v for v in corpus["vectors"]}
+    if (by_id["SF-019"]["expected"]["profile_execution"]["kind"] != "not_run"
+            or by_id["SF-019"]["expected"]["normative_validation"] != "accept"
+            or by_id["SF-020"]["expected"]["normative_validation"] != "not_applicable"
+            or by_id["SF-020"]["profile_entry"] == 0):
+        print("normative-only or Lean-only vector disposition changed", file=sys.stderr)
         return 2
     if any(v["profile_entry"] != 0 for v in admitted):
         print("admitted vector has nonzero proof-profile entry", file=sys.stderr)
