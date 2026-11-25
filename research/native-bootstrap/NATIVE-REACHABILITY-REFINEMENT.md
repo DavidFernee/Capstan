@@ -172,3 +172,12 @@ Important limits of this increment:
 - The model does not yet connect a complete outcome to the production sweep implementation.
 
 The dedicated workflow now compiles this module and audits the theorem axiom dependencies and unfinished-proof scan. The first exact-head run exposed that the output directory was not created before Lean's `-o` invocation; the workflow now creates it. The current exact-head CI is pending, so no compilation or theorem-check success is claimed yet.
+
+
+### R3b — Adversarial reference regressions and accounting boundary
+
+The bounded-marker module now includes kernel-reduced Lean examples for exact-limit success, root-limit rejection before handle resolution, stale-root rejection, invalid-descriptor rejection, total-work exhaustion, self-cycles, edge-limit exhaustion, duplicate-edge accounting/deduplication, descriptor-cost exact/over-limit cases, and worklist-growth rejection. These examples test the reference function's specified outcomes; exact-head CI compilation is still required before treating them as passing.
+
+A critical resource-accounting limitation is now explicit: the current API receives roots and each object's outgoing edges as already-materialised List values. It calls roots.length and obtains referenceEdges handle before checking the corresponding logical budget. Its list folds, membership checks, concatenations, and temporary lists also allocate/work outside the six logical counters. Therefore these counters do not bound the memory or CPU required to construct or traverse those input lists, and the model cannot by itself prevent an oversized root/edge list from exhausting resources before rejection. It is a fail-closed logical reference model, not an implementation-level resource bound.
+
+The production refinement must replace eager lists with bounded views over validated immutable storage: check root-frame extent before iterating; validate descriptor extent and reserve bounded collector storage before scanning; expose edges through an indexed/streaming cursor that checks and charges each slot before reading/admitting it; use preallocated bounded worklist/visited storage; and account for every probe, copy, and temporary byte. The implementation must not allocate a full outgoing-edge list as an intermediate. Its cost model must include the actual worst-case operations of the chosen data structures, including collision/probe behaviour. A new Lean interface and refinement theorem must connect those operations to the logical graph model before R3 can be considered complete.
