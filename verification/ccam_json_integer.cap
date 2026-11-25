@@ -40,22 +40,22 @@ test "CCAM JSON integer parser accepts signed 64-bit boundaries" {
 }
 
 test "CCAM JSON integer parser rejects overflow" {
-    assert(ccam_json_parse_i64(taint("9223372036854775808")) == none);
-    assert(ccam_json_parse_i64(taint("-9223372036854775809")) == none);
-    assert(ccam_json_parse_i64(taint("99999999999999999999")) == none);
+    assert(ccam_json_i64_rejects(taint("9223372036854775808")));
+    assert(ccam_json_i64_rejects(taint("-9223372036854775809")));
+    assert(ccam_json_i64_rejects(taint("99999999999999999999")));
 }
 
 test "CCAM JSON integer parser rejects non-integer number forms" {
-    assert(ccam_json_parse_i64(taint("1.0")) == none);
-    assert(ccam_json_parse_i64(taint("1e0")) == none);
-    assert(ccam_json_parse_i64(taint("+1")) == none);
-    assert(ccam_json_parse_i64(taint("01")) == none);
-    assert(ccam_json_parse_i64(taint("-01")) == none);
+    assert(ccam_json_i64_rejects(taint("1.0")));
+    assert(ccam_json_i64_rejects(taint("1e0")));
+    assert(ccam_json_i64_rejects(taint("+1")));
+    assert(ccam_json_i64_rejects(taint("01")));
+    assert(ccam_json_i64_rejects(taint("-01")));
 }
 
 test "CCAM JSON integer parser rejects truncated and non-number tokens" {
-    assert(ccam_json_parse_i64(taint("")) == none);
-    assert(ccam_json_parse_i64(taint("-")) == none);
-    assert(ccam_json_parse_i64(taint("true")) == none);
-    assert(ccam_json_parse_i64(taint("null")) == none);
+    assert(ccam_json_i64_rejects(taint("")));
+    assert(ccam_json_i64_rejects(taint("-")));
+    assert(ccam_json_i64_rejects(taint("true")));
+    assert(ccam_json_i64_rejects(taint("null")));
 }
