@@ -1,7 +1,9 @@
 Tainted wayland_test_bytes(List<int> bytes) {
-    List<string> parts = new List<string>();
-    for (int i = 0; i < bytes.len(); i += 1) { parts.push(char_str(bytes[i])); }
-    return taint(join(parts, ""));
+    // taint_char preserves each input octet verbatim; char_str would encode
+    // a Unicode scalar and therefore corrupt arbitrary protocol bytes.
+    List<Tainted> parts = new List<Tainted>();
+    for (int i = 0; i < bytes.len(); i += 1) { parts.push(taint_char(bytes[i])); }
+    return join(parts, "");
 }
 
 // Adversarial tests for the pure-Capstan Wayland frame-header parser.
