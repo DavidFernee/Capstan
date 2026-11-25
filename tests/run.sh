@@ -65,7 +65,7 @@ section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
 section "Capstan-native verification: bounded concurrency reference machine"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" "$ROOT/verification/protocol_automata.cap" "$ROOT/verification/concurrency_protocol_refinement.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" "$ROOT/verification/protocol_automata.cap" "$ROOT/verification/concurrency_protocol_refinement.cap" "$ROOT/verification/concurrency_blocking.cap" 2>&1)"; then
   ok "bounded task/channel lifecycle, protocol automata and concrete-to-abstract refinement"
 else
   bad "concurrency reference machine" "$out"
