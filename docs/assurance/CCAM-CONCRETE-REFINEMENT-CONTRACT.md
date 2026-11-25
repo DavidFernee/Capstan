@@ -203,3 +203,20 @@ simulation theorem until the profile states a closed reason mapping or the
 abstract outcome carries the concrete payload.
 
 These are source-inspection findings, not executed tests or proved theorems.
+
+
+## Terminal-state and budget correspondence refinement
+
+The abstract machine currently exposes `MachineOutcome` as `nextState | halt Val | haltVoid | trap Trap`. Its terminal constructors do not carry a post-state. The concrete `CCAMMachineState` retains observable terminal fields (PC, steps, halted, halt_has_value, integer and boolean return slots, trap_code, trap_detail). A refinement theorem must therefore use either an enriched abstract terminal result or a relational postcondition over the concrete pre-state and abstract outcome. Direct equality between the current `MachineOutcome` and the concrete post-state is not a meaningful relation.
+
+Required terminal obligations:
+
+- For return and dynamic trap after dispatch, the concrete PC remains the dispatched PC and the dispatch counter increases exactly once.
+- For pre-dispatch budget exhaustion, PC and dispatch count remain unchanged; the concrete step-limit trap is projected to the abstract instruction-limit outcome.
+- Integer return sets the integer payload and clears the boolean payload; boolean return sets the boolean payload and clears the integer payload; void return clears both payloads. Trap outcomes do not claim a return payload.
+- Trap correspondence must include both reason and detail, or explicitly state which detail is abstracted away. A reason-only theorem is not a full terminal-state equivalence theorem.
+- For binary arithmetic, concrete evaluation reads the left operand before the right. A failing left read prevents the right read and arithmetic. The simulation proof must preserve this observable error precedence.
+
+The existing `budgetedMachineStep_consumes_one` theorem establishes abstract budget consumption when dispatch is permitted, and `budgetedMachineStep_exhausted_before_instruction` establishes abstract exhaustion before instruction execution. Neither theorem alone relates the concrete mutable `steps` field or terminal payloads to the abstract result. That bridge remains an explicit proof obligation.
+
+This section refines the proof plan only. It does not add a theorem, execute a new proof, or upgrade the evidence classification of the current Lean results.
