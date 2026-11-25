@@ -130,21 +130,30 @@ string a11y_json(A11yNode n) {
     return join(parts, "");
 }
 
+// Visit only nodes exposed in the current viewport. This keeps diagnostics in sync
+// with the accessibility tree and the painter's nested scroll clipping.
+void collect_a11y_problems(Ui ui, Laid l, Rect clip, List<string> out) {
+    Rect visible = l.frame.intersect(clip);
+    if (visible.empty()) { return; }
+    View v = l.v;
+    bool interactive = v.kind == K_BUTTON || v.kind == K_CHECKBOX || v.kind == K_SWITCH || v.kind == K_RADIO || v.kind == K_TEXT_FIELD || v.kind == K_SLIDER;
+    if (interactive && name_of(v) == "") { out.push($"{role_of(v)} {l.id} has no accessible name: give it a label()"); }
+    // WCAG 2.5.8: only the visible, hit-testable portion is an effective target.
+    if (interactive && (visible.w < dp(ui, 24) || visible.h < dp(ui, 24))) {
+        out.push($"{role_of(v)} {l.id} is smaller than the 24 dp minimum target size");
+    }
+    Rect child_clip = clip;
+    if (v.kind == K_SCROLL) { child_clip = clip.intersect(l.frame); }
+    for (int i = 0; i < l.kids.len(); i += 1) {
+        collect_a11y_problems(ui, l.kids[i], child_clip, out);
+    }
+}
+
 // Problems an assistive-technology user would meet in the current frame.
 List<string> a11y_problems(Ui ui) {
     List<string> out = new List<string>();
     if (let l = ui.root) {
-        List<Laid> all = new List<Laid>();
-        collect(l, all);
-        for (int i = 0; i < all.len(); i += 1) {
-            View v = all[i].v;
-            bool interactive = v.kind == K_BUTTON || v.kind == K_CHECKBOX || v.kind == K_SWITCH || v.kind == K_RADIO || v.kind == K_TEXT_FIELD || v.kind == K_SLIDER;
-            if (interactive && name_of(v) == "") { out.push($"{role_of(v)} {all[i].id} has no accessible name: give it a label()"); }
-            // WCAG 2.5.8: targets at least 24 by 24 CSS pixels.
-            if (interactive && (all[i].frame.w < dp(ui, 24) || all[i].frame.h < dp(ui, 24))) {
-                out.push($"{role_of(v)} {all[i].id} is smaller than the 24 dp minimum target size");
-            }
-        }
+        collect_a11y_problems(ui, l, rect(0, 0, fx(ui.pixmap.w), fx(ui.pixmap.h)), out);
     }
     for (int j = 0; j < ui.problems.len(); j += 1) { out.push(ui.problems[j]); }
     return out;
