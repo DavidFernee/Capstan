@@ -38,6 +38,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ -n "$workspace_root" && "$cmd" != "native" ]]; then
+  echo "capstan: --root is supported only by the native command" >&2
+  exit 2
+fi
+
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 case "$cmd" in
   check) exec "$CAPSTANC" check "${flags[@]}" "${files[@]}" ;;
