@@ -16,3 +16,10 @@ test "public fields remain writable by importers" {
     value.label = 8;
     assert(value.label == 8);
 }
+
+test "opaque structs hide every field while module factories preserve invariants" {
+    SealedVault value = make_sealed_vault();
+    assert(sealed_vault_is_valid(value));
+    value = update_sealed_vault(value, 4);
+    assert(sealed_vault_is_valid(value));
+}
