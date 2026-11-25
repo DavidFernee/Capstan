@@ -1,0 +1,384 @@
+// Bounded executable model of blocking receive and channel wakeup semantics.
+//
+// Scope: one producer, one consumer, one linear message, capacity-one FIFO.
+// This is a reference semantics, not a native scheduler or liveness proof.
+// A blocked receive registers exactly one wait. Sending commits the message,
+// removes that wait, and makes the consumer runnable atomically. The consumer
+// performs the receive only when it is scheduled again.
+
+const int CB_TASK_NEW = 0;
+const int CB_TASK_RUNNABLE = 1;
+const int CB_TASK_BLOCKED = 2;
+const int CB_TASK_DONE = 3;
+const int CB_TASK_CANCELLED = 4;
+const int CB_TASK_FAILED = 5;
+
+const int CB_WAIT_NONE = 0;
+const int CB_WAIT_CHANNEL_MESSAGE = 1;
+
+const int CB_OWNER_NONE = 0;
+const int CB_OWNER_PRODUCER = 1;
+const int CB_OWNER_CHANNEL = 2;
+const int CB_OWNER_CONSUMER = 3;
+
+const int CB_RESULT_PENDING = 0;
+const int CB_RESULT_MESSAGE = 1;
+const int CB_RESULT_EOF = 2;
+const int CB_RESULT_CANCELLED = 3;
+
+struct CBState {
+    int producer_status;
+    int consumer_status;
+    int consumer_wait;
+    bool consumer_wait_registered;
+    int consumer_result;
+    bool channel_closed;
+    int channel_count;
+    int channel_capacity;
+    bool message_live;
+    int message_owner;
+    int steps;
+}
+
+struct CBTransition {
+    bool ok;
+    CBState state;
+    string error;
+}
+
+CBState cb_initial() {
+    return new CBState{
+        producer_status: CB_TASK_RUNNABLE,
+        consumer_status: CB_TASK_RUNNABLE,
+        consumer_wait: CB_WAIT_NONE,
+        consumer_wait_registered: false,
+        consumer_result: CB_RESULT_PENDING,
+        channel_closed: false,
+        channel_count: 0,
+        channel_capacity: 1,
+        message_live: true,
+        message_owner: CB_OWNER_PRODUCER,
+        steps: 0
+    };
+}
+
+CBState cb_copy(CBState s) {
+    return new CBState{
+        producer_status: s.producer_status,
+        consumer_status: s.consumer_status,
+        consumer_wait: s.consumer_wait,
+        consumer_wait_registered: s.consumer_wait_registered,
+        consumer_result: s.consumer_result,
+        channel_closed: s.channel_closed,
+        channel_count: s.channel_count,
+        channel_capacity: s.channel_capacity,
+        message_live: s.message_live,
+        message_owner: s.message_owner,
+        steps: s.steps
+    };
+}
+
+CBTransition cb_reject(CBState s, string error) {
+    return new CBTransition{ok: false, state: s, error: error};
+}
+
+CBTransition cb_accept(CBState s) {
+    s.steps += 1;
+    return new CBTransition{ok: true, state: s, error: ""};
+}
+
+bool cb_terminal(int status) {
+    return status == CB_TASK_DONE || status == CB_TASK_CANCELLED ||
+        status == CB_TASK_FAILED;
+}
+
+// The wait-list invariant is exact: the sole consumer is registered iff it
+// is blocked on the channel-message condition. No terminal task may be queued.
+bool cb_invariant(CBState s) {
+    if (s.channel_capacity != 1 || s.channel_count < 0 ||
+        s.channel_count > s.channel_capacity || s.steps < 0) { return false; }
+    if (s.producer_status != CB_TASK_RUNNABLE &&
+        s.producer_status != CB_TASK_DONE &&
+        s.producer_status != CB_TASK_CANCELLED &&
+        s.producer_status != CB_TASK_FAILED) { return false; }
+    if (s.consumer_status != CB_TASK_RUNNABLE &&
+        s.consumer_status != CB_TASK_BLOCKED &&
+        s.consumer_status != CB_TASK_DONE &&
+        s.consumer_status != CB_TASK_CANCELLED &&
+        s.consumer_status != CB_TASK_FAILED) { return false; }
+    if ((s.consumer_status == CB_TASK_BLOCKED) !=
+        s.consumer_wait_registered) { return false; }
+    if (s.consumer_status == CB_TASK_BLOCKED && s.channel_count != 0) {
+        return false;
+    }
+    if (s.channel_closed && s.consumer_status == CB_TASK_BLOCKED) {
+        return false;
+    }
+    if (s.channel_closed && s.message_owner == CB_OWNER_PRODUCER) {
+        return false;
+    }
+    if (s.consumer_wait_registered !=
+        (s.consumer_wait == CB_WAIT_CHANNEL_MESSAGE)) { return false; }
+    if (cb_terminal(s.consumer_status) &&
+        (s.consumer_wait_registered || s.consumer_wait != CB_WAIT_NONE)) {
+        return false;
+    }
+    if (s.channel_count == 1) {
+        if (!s.message_live || s.message_owner != CB_OWNER_CHANNEL) {
+            return false;
+        }
+    } else if (s.message_owner == CB_OWNER_CHANNEL) {
+        return false;
+    }
+    if (s.message_live) {
+        if (s.message_owner != CB_OWNER_PRODUCER &&
+            s.message_owner != CB_OWNER_CHANNEL &&
+            s.message_owner != CB_OWNER_CONSUMER) { return false; }
+    } else if (s.message_owner != CB_OWNER_NONE || s.channel_count != 0) {
+        return false;
+    }
+    if (s.message_owner == CB_OWNER_PRODUCER &&
+        s.producer_status != CB_TASK_RUNNABLE) { return false; }
+    if (s.message_owner == CB_OWNER_CONSUMER &&
+        s.consumer_status != CB_TASK_RUNNABLE) { return false; }
+    if (s.consumer_result == CB_RESULT_MESSAGE &&
+        (s.message_live || s.consumer_status == CB_TASK_BLOCKED)) {
+        return false;
+    }
+    if (s.consumer_result == CB_RESULT_EOF &&
+        (!s.channel_closed || s.message_live || s.channel_count != 0)) {
+        return false;
+    }
+    return true;
+}
+
+// A valid receive on an open empty channel blocks; it is not rejected.
+// Registration and suspension are one atomic state transition.
+CBTransition cb_receive(CBState before) {
+    if (before.consumer_status != CB_TASK_RUNNABLE ||
+        before.consumer_wait_registered ||
+        before.consumer_result == CB_RESULT_EOF ||
+        before.consumer_result == CB_RESULT_CANCELLED) {
+        return cb_reject(before, "consumer_not_receive_eligible");
+    }
+    CBState next = cb_copy(before);
+    if (next.channel_count == 1) {
+        next.channel_count = 0;
+        next.message_live = false;
+        next.message_owner = CB_OWNER_NONE;
+        next.consumer_status = CB_TASK_RUNNABLE;
+        next.consumer_result = CB_RESULT_MESSAGE;
+        return cb_accept(next);
+    }
+    if (next.channel_closed) {
+        next.consumer_status = CB_TASK_DONE;
+        next.consumer_result = CB_RESULT_EOF;
+        return cb_accept(next);
+    }
+    next.consumer_status = CB_TASK_BLOCKED;
+    next.consumer_result = CB_RESULT_PENDING;
+    next.consumer_wait = CB_WAIT_CHANNEL_MESSAGE;
+    next.consumer_wait_registered = true;
+    return cb_accept(next);
+}
+
+// Send linearises the message into the channel. If a receiver is waiting,
+// removing its wait registration and making it runnable are part of this
+// same transition. Message ownership remains with the channel until receive.
+CBTransition cb_send(CBState before) {
+    // Closed-channel rejection takes precedence over producer ownership:
+    // a send attempt against a closed endpoint is always classified as such,
+    // including after the producer's previous message has been committed.
+    if (before.channel_closed) {
+        return cb_reject(before, "send_on_closed_channel");
+    }
+    if (before.producer_status != CB_TASK_RUNNABLE ||
+        !before.message_live || before.message_owner != CB_OWNER_PRODUCER) {
+        return cb_reject(before, "producer_does_not_own_message");
+    }
+    if (before.channel_count >= before.channel_capacity) {
+        return cb_reject(before, "channel_full");
+    }
+    CBState next = cb_copy(before);
+    next.message_owner = CB_OWNER_CHANNEL;
+    next.channel_count = 1;
+    next.producer_status = CB_TASK_DONE;
+    if (next.consumer_wait_registered) {
+        next.consumer_wait_registered = false;
+        next.consumer_wait = CB_WAIT_NONE;
+        next.consumer_status = CB_TASK_RUNNABLE;
+    }
+    return cb_accept(next);
+}
+
+// Close resolves a blocked receiver only when no committed message remains.
+// A queued message is still drainable after close.
+CBTransition cb_close(CBState before) {
+    if (before.channel_closed) {
+        return cb_reject(before, "channel_already_closed");
+    }
+    if (before.message_owner == CB_OWNER_PRODUCER) {
+        return cb_reject(before, "producer_owns_uncommitted_message");
+    }
+    CBState next = cb_copy(before);
+    next.channel_closed = true;
+    if (next.consumer_wait_registered && next.channel_count == 0) {
+        next.consumer_wait_registered = false;
+        next.consumer_wait = CB_WAIT_NONE;
+        next.consumer_status = CB_TASK_RUNNABLE;
+    }
+    return cb_accept(next);
+}
+
+// Cancellation wins by removing the wait registration and terminalising the
+// task atomically. A later send cannot wake this terminal consumer.
+CBTransition cb_cancel_consumer(CBState before) {
+    if (before.consumer_status != CB_TASK_BLOCKED ||
+        !before.consumer_wait_registered) {
+        return cb_reject(before, "consumer_not_blocked");
+    }
+    CBState next = cb_copy(before);
+    next.consumer_wait_registered = false;
+    next.consumer_wait = CB_WAIT_NONE;
+    next.consumer_status = CB_TASK_CANCELLED;
+    next.consumer_result = CB_RESULT_CANCELLED;
+    return cb_accept(next);
+}
+
+test "CB receive blocks and registers exactly one wait without moving ownership" {
+    CBState before = cb_initial();
+    CBTransition blocked = cb_receive(before);
+    assert(blocked.ok);
+    assert(blocked.state.consumer_status == CB_TASK_BLOCKED);
+    assert(blocked.state.consumer_wait_registered);
+    assert(blocked.state.consumer_wait == CB_WAIT_CHANNEL_MESSAGE);
+    assert(blocked.state.message_live);
+    assert(blocked.state.message_owner == CB_OWNER_PRODUCER);
+    assert(blocked.state.steps == 1);
+    assert(cb_invariant(blocked.state));
+    assert(before.consumer_status == CB_TASK_RUNNABLE);
+    assert(before.message_owner == CB_OWNER_PRODUCER);
+    assert(!before.consumer_wait_registered);
+}
+
+test "CB send atomically wakes blocked receiver and commits channel ownership" {
+    CBState before = cb_initial();
+    CBTransition blocked = cb_receive(before);
+    CBTransition sent = cb_send(blocked.state);
+    assert(sent.ok);
+    assert(sent.state.consumer_status == CB_TASK_RUNNABLE);
+    assert(!sent.state.consumer_wait_registered);
+    assert(sent.state.consumer_wait == CB_WAIT_NONE);
+    assert(sent.state.producer_status == CB_TASK_DONE);
+    assert(sent.state.channel_count == 1);
+    assert(sent.state.message_owner == CB_OWNER_CHANNEL);
+    assert(cb_invariant(sent.state));
+}
+
+test "CB awakened receiver consumes message only when it is scheduled" {
+    CBState before = cb_initial();
+    CBTransition blocked = cb_receive(before);
+    CBTransition sent = cb_send(blocked.state);
+    assert(sent.state.consumer_status == CB_TASK_RUNNABLE);
+    assert(sent.state.message_owner == CB_OWNER_CHANNEL);
+    CBTransition received = cb_receive(sent.state);
+    assert(received.ok);
+    assert(received.state.consumer_result == CB_RESULT_MESSAGE);
+    assert(received.state.message_owner == CB_OWNER_NONE);
+    assert(!received.state.message_live);
+    assert(received.state.channel_count == 0);
+    assert(cb_invariant(received.state));
+}
+
+test "CB close wakes blocked receiver which observes EOF on resumption" {
+    CBState before = cb_initial();
+    before.message_live = false;
+    before.message_owner = CB_OWNER_NONE;
+    CBTransition blocked = cb_receive(before);
+    CBTransition closed = cb_close(blocked.state);
+    assert(closed.ok);
+    assert(closed.state.consumer_status == CB_TASK_RUNNABLE);
+    assert(!closed.state.consumer_wait_registered);
+    CBTransition eof = cb_receive(closed.state);
+    assert(eof.ok);
+    assert(eof.state.consumer_status == CB_TASK_DONE);
+    assert(eof.state.consumer_result == CB_RESULT_EOF);
+    assert(cb_invariant(eof.state));
+}
+
+test "CB close preserves committed message for drain before EOF" {
+    CBTransition send_result = cb_send(cb_initial());
+    assert(send_result.ok);
+    CBTransition closed = cb_close(send_result.state);
+    assert(closed.ok && closed.state.channel_count == 1);
+    CBTransition received = cb_receive(closed.state);
+    assert(received.ok && received.state.consumer_result == CB_RESULT_MESSAGE);
+    CBTransition eof = cb_receive(received.state);
+    assert(eof.ok && eof.state.consumer_result == CB_RESULT_EOF);
+    assert(cb_invariant(eof.state));
+}
+
+test "CB cancellation removes blocked waiter and prevents stale wakeup" {
+    CBState before = cb_initial();
+    CBTransition blocked = cb_receive(before);
+    CBTransition cancelled = cb_cancel_consumer(blocked.state);
+    assert(cancelled.ok);
+    assert(cancelled.state.consumer_status == CB_TASK_CANCELLED);
+    assert(!cancelled.state.consumer_wait_registered);
+    assert(cancelled.state.consumer_wait == CB_WAIT_NONE);
+    CBTransition later_send = cb_send(cancelled.state);
+    assert(later_send.ok);
+    assert(later_send.state.consumer_status == CB_TASK_CANCELLED);
+    assert(!later_send.state.consumer_wait_registered);
+    assert(later_send.state.channel_count == 1);
+    assert(cb_invariant(later_send.state));
+}
+
+test "CB duplicate wake and cancellation attempts are rejected without mutation" {
+    CBState before = cb_initial();
+    CBState blocked = cb_receive(before).state;
+    CBState sent = cb_send(blocked).state;
+    CBTransition received = cb_receive(sent);
+    assert(received.ok);
+    CBTransition duplicate_send = cb_send(received.state);
+    assert(!duplicate_send.ok);
+    assert(duplicate_send.state.consumer_status == CB_TASK_RUNNABLE);
+    CBTransition duplicate_cancel = cb_cancel_consumer(duplicate_send.state);
+    assert(!duplicate_cancel.ok);
+    assert(duplicate_cancel.state.consumer_status == CB_TASK_RUNNABLE);
+    assert(!duplicate_cancel.state.consumer_wait_registered);
+    assert(cb_invariant(duplicate_cancel.state));
+}
+
+test "CB empty open receive is suspension rather than protocol rejection" {
+    CBState before = cb_initial();
+    before.message_live = false;
+    before.message_owner = CB_OWNER_NONE;
+    CBTransition result = cb_receive(before);
+    assert(result.ok);
+    assert(result.state.consumer_status == CB_TASK_BLOCKED);
+    assert(result.error == "");
+}
+
+test "CB close rejects an uncommitted producer-owned message without mutation" {
+    CBState before = cb_initial();
+    CBTransition closed = cb_close(before);
+    assert(!closed.ok);
+    assert(closed.error == "producer_owns_uncommitted_message");
+    assert(closed.state.message_owner == CB_OWNER_PRODUCER);
+    assert(!closed.state.channel_closed);
+    assert(closed.state.steps == before.steps);
+    assert(cb_invariant(closed.state));
+}
+
+test "CB repeated close and send after close fail atomically" {
+    CBState before = cb_initial();
+    CBState committed = cb_send(before).state;
+    CBState closed = cb_close(committed).state;
+    CBTransition duplicate = cb_close(closed);
+    assert(!duplicate.ok && duplicate.error == "channel_already_closed");
+    CBTransition send = cb_send(closed);
+    assert(!send.ok && send.error == "send_on_closed_channel");
+    assert(send.state.steps == closed.steps);
+    assert(cb_invariant(send.state));
+}
