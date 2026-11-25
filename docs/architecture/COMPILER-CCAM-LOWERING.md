@@ -1,6 +1,6 @@
 # Compiler Contract: Lowering the Checked Source Core to CCAM
 
-**Status:** initial checked scalar lowering implementation under review in PR #210; complete typed-core contract and formal simulation remain open  
+**Status:** initial checked scalar lowering implementation integrated in PR #210; complete typed-core contract and formal simulation remain open  
 **Owner:** Compiler Architecture workstream  
 **Related:** `LANGUAGE-CORE.md`, `TYPED-IR.md`, `CCAM.md`, `COMPILER-PIPELINE-AUDIT.md`
 
