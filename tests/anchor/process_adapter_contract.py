@@ -198,10 +198,11 @@ class StartRequest:
     output_limit: int = MAX_RETAINED_OUTPUT
 
     def validate(self):
-        if not self.executable_identity or not self.executable_identity.startswith("sha256:"):
-            raise ContractError("executable must have a pinned content identity")
-        if not isinstance(self.argv, tuple) or any(not isinstance(x, str) for x in self.argv):
-            raise ContractError("argv must be an immutable vector of strings")
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", self.executable_identity):
+            raise ContractError("executable must have a valid pinned SHA-256 identity")
+        if (not isinstance(self.argv, tuple) or not self.argv or
+                any(not isinstance(x, str) or "\\x00" in x for x in self.argv) or not self.argv[0]):
+            raise ContractError("argv must be a non-empty immutable vector without NUL bytes")
         if not self.working_directory_grant:
             raise ContractError("working directory grant is required")
         if self.profile not in {"lsp", "check", "build", "test", "fmt"}:
@@ -210,8 +211,9 @@ class StartRequest:
             raise ContractError("deadline outside profile limits")
         if not 1 <= self.output_limit <= MAX_RETAINED_OUTPUT:
             raise ContractError("output limit outside profile limits")
-        if any(not isinstance(k, str) or not isinstance(v, str) for k, v in self.environment):
-            raise ContractError("environment entries must be strings")
+        if any(not isinstance(k, str) or not isinstance(v, str) or
+               not k or "\\x00" in k or "\\x00" in v for k, v in self.environment):
+            raise ContractError("environment entries must be valid NUL-free strings")
         names = [key for key, _ in self.environment]
         if len(names) != len(set(names)):
             raise ContractError("duplicate environment variable")
@@ -375,6 +377,8 @@ class RestartPolicy:
     """Bounded restart budget with reset only after a stable healthy interval."""
 
     def __init__(self, max_restarts=3, base_ms=100, cap_ms=5000):
+        if max_restarts < 0 or base_ms < 1 or cap_ms < base_ms:
+            raise ContractError("invalid restart policy limits")
         self.max_restarts = max_restarts
         self.base_ms = base_ms
         self.cap_ms = cap_ms
@@ -416,9 +420,15 @@ class ContractTests(unittest.TestCase):
     def test_unpinned_executable_and_ambient_environment_rejected(self):
         with self.assertRaises(ContractError):
             self.request(executable_identity="/usr/bin/capstan").validate()
+        with self.assertRaises(ContractError):
+            self.request(executable_identity="sha256:not-a-digest").validate()
+        with self.assertRaises(ContractError):
+            self.request(argv=("capstan\\x00",)).validate()
         for name in ("PATH", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES"):
             with self.subTest(name=name), self.assertRaises(ContractError):
                 self.request(environment=((name, "attacker-value"),)).validate()
+        with self.assertRaises(ContractError):
+            self.request(environment=(("LANG", "C\\x00.UTF-8"),)).validate()
 
     def test_output_is_bounded_and_triggers_termination(self):
         process = self.supervisor.start(self.request(output_limit=8))
