@@ -181,3 +181,30 @@ The bounded-marker module now includes kernel-reduced Lean examples for exact-li
 A critical resource-accounting limitation is now explicit: the current API receives roots and each object's outgoing edges as already-materialised List values. It calls roots.length and obtains referenceEdges handle before checking the corresponding logical budget. Its list folds, membership checks, concatenations, and temporary lists also allocate/work outside the six logical counters. Therefore these counters do not bound the memory or CPU required to construct or traverse those input lists, and the model cannot by itself prevent an oversized root/edge list from exhausting resources before rejection. It is a fail-closed logical reference model, not an implementation-level resource bound.
 
 The production refinement must replace eager lists with bounded views over validated immutable storage: check root-frame extent before iterating; validate descriptor extent and reserve bounded collector storage before scanning; expose edges through an indexed/streaming cursor that checks and charges each slot before reading/admitting it; use preallocated bounded worklist/visited storage; and account for every probe, copy, and temporary byte. The implementation must not allocate a full outgoing-edge list as an intermediate. Its cost model must include the actual worst-case operations of the chosen data structures, including collision/probe behaviour. A new Lean interface and refinement theorem must connect those operations to the logical graph model before R3 can be considered complete.
+
+
+### R3c — Certificate checking and admission must also be bounded
+
+Further inspection of the current reference function identifies additional work outside its counters:
+
+- The terminal `certificateCheck` traverses the full root list, marked list, and every projected outgoing-edge list. Its work is not charged to `maxWork`, `maxEdges`, or any separate validation budget.
+- Root deduplication constructs a new list before the worklist bound is checked.
+- For each object, the outgoing-edge list is materialised before the edge limit is checked.
+- Fresh-target construction and pending-list concatenation happen before the pending-worklist bound is checked.
+- List membership, append, length, and certificate validation have costs not represented by the logical counters.
+- A rejected marker is pure, but purity alone does not imply bounded resource consumption.
+
+Accordingly, the current six counters are **semantic admission limits on the abstract traversal**, not a bound on total marker execution. They must not be described as a hard CPU or memory bound.
+
+The production design must make resource admission precede the corresponding work:
+
+1. Receive root and descriptor storage as immutable bounded spans with validated extents. Reject over-limit extents before iteration.
+2. Reserve the maximum permitted collector metadata and worklist capacity before scanning; reservation failure returns without touching heap state.
+3. Use an indexed/streaming edge cursor. Charge and validate each descriptor slot before reading its contents; do not materialise an outgoing-edge list.
+4. Use a preallocated queue and visited index. Check capacity before enqueue and account for every probe, comparison, copy, and write.
+5. Validate the resulting certificate using the same bounded storage and an explicit validation budget, or derive the certificate theorem from the traversal invariant so that a second unmetered graph walk is unnecessary.
+6. Include initialization, clearing, cancellation, and failure cleanup in the resource ledger. A failure must not trigger an unbounded fallback or allocate additional memory.
+
+The formal contract should expose operation-level transitions (read root slot, resolve handle, inspect descriptor slot, read edge, probe visited index, enqueue, dequeue, publish certificate) and a monotonic resource ledger. The implementation proof must show each transition is admitted only when its exact resource cost fits, and that the complete marker's total cost is bounded by the configured limits. A data structure with expected constant-time hashing is insufficient unless adversarial probe cost is separately bounded; a deterministic bounded structure or an explicit probe budget is required.
+
+Until this contract is implemented and refined, R3 remains an executable logical reference model only, and its counters must not be used as a claim of total CPU or memory boundedness.
