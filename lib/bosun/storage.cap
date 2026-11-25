@@ -290,7 +290,8 @@ BosunI64Result bosun_storage_load_i64_le(BosunStorage storage, BosunRef referenc
 bool bosun_storage_store_bool(BosunStorage storage, BosunRef reference, bool value) {
     if (!bosun_ref_valid(storage, reference) || reference.length != 1) { return false; }
     List<int> encoded = new List<int>();
-    encoded.push(value ? 1 : 0);
+    if (value) { encoded.push(1); }
+    else { encoded.push(0); }
     return bosun_storage_write(storage, reference, encoded);
 }
 
