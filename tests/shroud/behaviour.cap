@@ -471,20 +471,24 @@ void test_untrusted_display(Tally t) {
 List<int> text_bytes_of(string s) { return string_bytes(s); }
 
 void test_a11y(Tally t, Ui ui) {
-    View v = column().add(text_field("p", taint("hunter2"), "Password").key("pw")).add(password_field("q", taint("hunter2"), "Secret").key("pw2")).add(button("", "x").key("nameless")).add(button("", "y").label("Close").key("named"));
+    View v = column().add(text_field("p", taint("hunter2"), "Password").key("pw").label("Password")).add(password_field("q", taint("hunter2"), "Secret").key("pw2").label("Secret")).add(text_field("search", taint(""), "Search").key("placeholder-only")).add(button("", "x").key("nameless")).add(button("", "y").label("Close").key("named"));
     ui.render(v, 0);
     List<string> problems = a11y_problems(ui);
     bool nameless = false;
     bool named = false;
+    bool placeholder_is_not_name = false;
     for (int i = 0; i < problems.len(); i += 1) {
         if (problems[i].len() > 14 && problems[i].slice(0, 15) == "button nameless") { nameless = true; }
         if (problems[i].len() > 11 && problems[i].slice(0, 12) == "button named") { named = true; }
+        if (contains(problems[i], "textbox placeholder-only")) { placeholder_is_not_name = true; }
     }
     expect(t, nameless, "a11y: a button without a name is reported", join(problems, "; "));
     expect(t, !named, "a11y: label() names a button", join(problems, "; "));
+    expect(t, placeholder_is_not_name, "a11y: placeholder text does not substitute for a textbox label", join(problems, "; "));
     if (let tree = a11y_tree(ui)) {
         string j = a11y_json(tree);
         expect(t, contains(j, "\"role\":\"password\""), "a11y: password fields have their own role", j);
+        expect(t, contains(j, "\"id\":\"placeholder-only\",\"role\":\"textbox\",\"name\":\"\""), "a11y: placeholder-only field has an empty accessible name", j);
         expect(t, contains(j, "7 characters"), "a11y: password length is announced", j);
         // The plain field exposes its value; the password field must not.
         expect_int(t, count_of(j, "hunter2"), 1, "a11y: a password is never exposed");
