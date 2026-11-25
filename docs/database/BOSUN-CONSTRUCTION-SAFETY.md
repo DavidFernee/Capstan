@@ -77,6 +77,8 @@ If any step before publication fails, the old abstract state remains unchanged. 
 
 ## 6. Compiler acceptance gates
 
+A first partial compiler implementation is being developed in [PR #360](https://github.com/DavidFernee/Capstan/pull/360): explicit private struct fields are restricted to their defining source-file module for reads, writes and literal initialisation. This is an encapsulation primitive only. It does not provide affine ownership, borrowing, lifetime checking, typestate, capability non-forgeability or a soundness proof, and it must not be treated as completing this contract.
+
 Bosun must not expose a production-safe API until the Capstan compiler can demonstrate, with positive and negative compiler tests:
 
 1. Opaque module-private representations; reject external construction, field access and mutation.
