@@ -174,7 +174,6 @@ int main() {
     if (added != WAYLAND_GLOBAL_SLOTS_MAX || wayland_global_add(full, 9999, 0, 1)
         || wayland_global_free_slots(full) != 0) { return 21; }
 
-
     // Local implementation version is an independent upper bound.
     List<int> shm_global_payload = new List<int>();
     wayland_registry_push_u32(shm_global_payload, 57);
@@ -217,7 +216,6 @@ int main() {
         objects, 1, 100, globals, interfaces);
     if (result.status != 0 || wayland_global_index(globals, 58) != -1) { return 26; }
 
-
     // A client bind cannot allocate a server-owned object ID.
     List<int> server_id_payload = new List<int>();
     wayland_registry_push_u32(server_id_payload, 55);
@@ -228,7 +226,6 @@ int main() {
     result = wayland_registry_bind(server_id_frame, wayland_frame_header(server_id_frame, 0),
         objects, 1, 100, globals, interfaces);
     if (result.status != -1 || wayland_object_get(objects, 4278190080).state != 0) { return 27; }
-
 
     // Client IDs are allocated densely; an ID gap is rejected without mutation.
     List<int> gap_bind_payload = new List<int>();
