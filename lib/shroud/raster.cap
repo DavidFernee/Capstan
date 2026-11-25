@@ -316,26 +316,51 @@ void display_list_append(Canvas cv, DisplayCommand cmd, int payload) {
 // Copy nested variable-sized payloads as well as the outer command sequence.
 // Capstan Lists are mutable values; copying only DisplayCommand structs would leave
 // path segments and glyph alpha shared with the recorder.
-Segments display_segments_copy(Segments source) {
-    Segments copy = new_segments();
-    for (int i = 0; i < source.x0.len(); i += 1) {
-        copy.x0.push(source.x0[i]);
-        copy.y0.push(source.y0[i]);
-        copy.x1.push(source.x1[i]);
-        copy.y1.push(source.y1[i]);
-    }
-    return copy;
-}
-
 List<int> display_alpha_copy(List<int> source) {
     List<int> copy = new List<int>();
     for (int i = 0; i < source.len(); i += 1) { copy.push(source[i]); }
     return copy;
 }
 
+Segments display_segments_copy(Segments source) {
+    // Copy each parallel array independently. Even a malformed recorder value
+    // must not trigger an unchecked cross-array index before frame validation.
+    return new Segments{
+        x0: display_alpha_copy(source.x0), y0: display_alpha_copy(source.y0),
+        x1: display_alpha_copy(source.x1), y1: display_alpha_copy(source.y1)
+    };
+}
+
+bool display_snapshot_fits(Canvas cv) {
+    if (cv.commands.len() > MAX_DISPLAY_COMMANDS) { return false; }
+    int payload = 0;
+    for (int i = 0; i < cv.commands.len(); i += 1) {
+        DisplayCommand cmd = cv.commands[i];
+        if (let segments = cmd.segments) {
+            int n = segments.x0.len();
+            if (n > MAX_DISPLAY_SEGMENTS_PER_PATH || segments.y0.len() != n ||
+                segments.x1.len() != n || segments.y1.len() != n ||
+                n > MAX_DISPLAY_SEGMENTS - payload) { return false; }
+            payload += n;
+        }
+        if (let alpha = cmd.mask_alpha) {
+            if (alpha.len() > MAX_DISPLAY_MASK_PIXELS ||
+                alpha.len() > MAX_DISPLAY_SEGMENTS - payload) { return false; }
+            payload += alpha.len();
+        }
+    }
+    return true;
+}
+
 // Publishing the list ends recording. Every mutable payload is copied into
 // frame-owned storage, so later recorder/cache mutation cannot alter the frame.
 DisplayList finish_display_list(Canvas cv) {
+    // Validate snapshot bounds before allocating any frame-owned copies. The
+    // recorder is a public value, so do not trust its cached budget counters.
+    if (!display_snapshot_fits(cv)) {
+        println("shroud: invalid or over-budget display list recording");
+        exit(101);
+    }
     // Snapshot the command sequence and all nested variable-sized payloads.
     List<DisplayCommand> commands = new List<DisplayCommand>();
     for (int i = 0; i < cv.commands.len(); i += 1) {
