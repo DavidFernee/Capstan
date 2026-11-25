@@ -77,13 +77,45 @@ Paint linear_gradient(int x0, int y0, int c0, int x1, int y1, int c1) {
     return new Paint{kind: PAINT_LINEAR, color: c0, x0: x0, y0: y0, x1: x1, y1: y1, c1: c1};
 }
 
-// ---- canvas ------------------------------------------------------------------------
+// ---- immutable display lists --------------------------------------------------------
+
+// Commands contain only value data and frame-owned flattened geometry. They never
+// retain a View, Laid, Font, Ui or application buffer.
+const int DISPLAY_RECT = 1;
+const int DISPLAY_PATH = 2;
+const int DISPLAY_BLEND = 3;
+const int MAX_DISPLAY_COMMANDS = 1048576;
+const int MAX_DISPLAY_SEGMENTS = 4194304;
+const int MAX_DISPLAY_SEGMENTS_PER_PATH = 65536;
+
+struct DisplayCommand {
+    int kind;
+    Rect bounds;
+    Rect clip;
+    Paint paint;
+    int rule;
+    Segments segments;
+    int x;
+    int y;
+    int coverage;
+    int opacity;
+}
+
+struct DisplayList {
+    int width;
+    int height;
+    List<DisplayCommand> commands;
+}
 
 // A pixmap with a stack of rectangular clips (whole pixels) and a global opacity.
+// Recording canvases append immutable commands; executor canvases rasterise them.
 struct Canvas {
     Pixmap pm;
     List<Rect> clips;
     int opacity;
+    bool recording;
+    List<DisplayCommand> commands;
+    List<int> budget;
 
     Rect clip() { return self.clips[self.clips.len() - 1]; }
 
@@ -103,12 +135,35 @@ struct Canvas {
     }
 
     void fill_path(Path p, Paint paint, int rule) {
-        fill_segments(self, flatten(p), paint, rule);
+        Segments s = flatten(p);
+        if (self.recording) {
+            if (s.x0.len() > MAX_DISPLAY_SEGMENTS_PER_PATH) {
+                println("shroud: display list path segment budget exceeded");
+                exit(101);
+            }
+            DisplayCommand cmd = new DisplayCommand{
+                kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0), clip: self.clip(),
+                paint: paint, rule: rule, segments: s, x: 0, y: 0,
+                coverage: 0, opacity: self.opacity
+            };
+            display_list_append(self, cmd, s.x0.len());
+        } else {
+            fill_segments(self, s, paint, rule);
+        }
     }
 
     // Axis-aligned rectangles are most of an interface, so they have their own path:
     // exact fractional coverage at the edges, no scanline sampling.
     void fill_rect(Rect r, Paint paint) {
+        if (self.recording) {
+            DisplayCommand cmd = new DisplayCommand{
+                kind: DISPLAY_RECT, bounds: r, clip: self.clip(),
+                paint: paint, rule: FILL_NONZERO, segments: new_segments(),
+                x: 0, y: 0, coverage: 0, opacity: self.opacity
+            };
+            display_list_append(self, cmd, 0);
+            return;
+        }
         Rect c = self.clip();
         int px0 = int_max(fx_floor(r.x), c.x);
         int py0 = int_max(fx_floor(r.y), c.y);
@@ -137,6 +192,15 @@ struct Canvas {
 
     // Puts paint at (x, y) with coverage 0..255.
     void blend(int x, int y, Paint paint, int coverage) {
+        if (self.recording) {
+            DisplayCommand cmd = new DisplayCommand{
+                kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: self.clip(),
+                paint: paint, rule: FILL_NONZERO, segments: new_segments(),
+                x: x, y: y, coverage: coverage, opacity: self.opacity
+            };
+            display_list_append(self, cmd, 0);
+            return;
+        }
         int cv = div255(coverage * self.opacity);
         if (cv <= 0) { return; }
         int src = scale_px(premultiply(paint_at(paint, x, y)), cv);
@@ -148,7 +212,60 @@ struct Canvas {
 Canvas new_canvas(Pixmap pm) {
     List<Rect> clips = new List<Rect>();
     clips.push(rect(0, 0, pm.w, pm.h));
-    return new Canvas{pm: pm, clips: clips, opacity: 255};
+    return new Canvas{
+        pm: pm, clips: clips, opacity: 255, recording: false,
+        commands: new List<DisplayCommand>(), budget: new List<int>()
+    };
+}
+
+// Begin a frame recording. The pixmap is retained only as the target dimensions;
+// no pixels are touched until execute_display_list.
+Canvas new_recording_canvas(Pixmap pm) {
+    Canvas cv = new_canvas(pm);
+    cv.recording = true;
+    cv.budget.push(0); // total flattened path segments
+    return cv;
+}
+
+void display_list_append(Canvas cv, DisplayCommand cmd, int segments) {
+    if (cv.commands.len() >= MAX_DISPLAY_COMMANDS ||
+        segments > MAX_DISPLAY_SEGMENTS - cv.budget[0]) {
+        println("shroud: display list resource budget exceeded");
+        exit(101);
+    }
+    cv.commands.push(cmd);
+    cv.budget[0] += segments;
+}
+
+// Publishing the list ends recording. The command and geometry lists are frame-owned
+// and have no mutation API after this value is returned.
+DisplayList finish_display_list(Canvas cv) {
+    return new DisplayList{width: cv.pm.w, height: cv.pm.h, commands: cv.commands};
+}
+
+// Execute the same immutable commands through the reference integer rasteriser.
+void execute_display_list(DisplayList dl, Pixmap pm) {
+    if (dl.width != pm.w || dl.height != pm.h) {
+        println("shroud: display list surface dimensions differ");
+        exit(101);
+    }
+    Canvas cv = new_canvas(pm);
+    for (int i = 0; i < dl.commands.len(); i += 1) {
+        DisplayCommand cmd = dl.commands[i];
+        cv.clips = new List<Rect>();
+        cv.clips.push(cmd.clip);
+        cv.opacity = cmd.opacity;
+        if (cmd.kind == DISPLAY_RECT) {
+            cv.fill_rect(cmd.bounds, cmd.paint);
+        } else if (cmd.kind == DISPLAY_PATH) {
+            fill_segments(cv, cmd.segments, cmd.paint, cmd.rule);
+        } else if (cmd.kind == DISPLAY_BLEND) {
+            cv.blend(cmd.x, cmd.y, cmd.paint, cmd.coverage);
+        } else {
+            println("shroud: invalid display list command");
+            exit(101);
+        }
+    }
 }
 
 // How much of the pixel [p, p + FX) lies in [a, b), in FX.
