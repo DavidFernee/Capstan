@@ -1,8 +1,8 @@
 # Shroud PNG export: limits, allocation accounting and remaining work
 
-Status: current implementation and allocation model; exact-head measurements for the
-current 4 MiB ceiling are pending. This document does **not** claim a process-wide
-memory bound or streaming.
+Status: current implementation, allocation model and exact-head 4 MiB peak-GC-heap
+measurements; CI regression ceilings are enforced by the standalone verifier. This
+document does **not** claim a process-wide memory bound or streaming.
 
 ## 1. Supported format
 
