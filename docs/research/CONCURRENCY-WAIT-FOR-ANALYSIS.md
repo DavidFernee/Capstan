@@ -1,6 +1,6 @@
 # Wait-for analysis and deadlock classification
 
-**Status:** research specification plus a first bounded executable join/event classifier in `verification/concurrency_wait_for.cap`; exact-head CI is pending.  
+**Status:** research specification plus a bounded executable two-task classifier for JOIN, channel-message, channel-capacity and external EVENT waits in `verification/concurrency_wait_for.cap`; exact-head CI is pending.  
 **Scope:** finite task, channel, join, and resource dependencies for the Capstan concurrency reference machine.  
 **Prerequisites:** the single-waiter blocking model and the runtime-refinement gap analysis. The single-waiter exact-head CI gate remains outstanding.
 
@@ -172,7 +172,7 @@ For every rejected transition, assert state preservation. For every classified d
 6. Exhaustively compare graph-derived candidates with the canonical enabled-transition classifier over small finite states.
 7. Only then investigate SCC-based reductions, compositional summaries, or partial-order reduction.
 
-The executable slice currently classifies two tasks with JOIN or EVENT waits. It distinguishes runnable progress, satisfied joins, terminal success/failure/cancellation, live external-event waits, unknown environment availability, incomplete exploration, invalid states, and closed-world deadlock. It does not yet enumerate a transition graph or prove dependency completeness. The initial implementation should not claim parameterised deadlock freedom. Finite results apply only to the declared bounds and exact environment model.
+The executable slice currently classifies two tasks and one channel. It distinguishes JOIN, channel-message, channel-capacity and EVENT waits; runnable progress; satisfied joins; terminal success/failure/cancellation; live external-event waits; unknown environment availability; incomplete exploration; invalid wait/channel identities; and closed-world deadlock. Channel waits name a provider task and channel identity, allowing a two-task receive/capacity dependency cycle to be represented. This remains a direct bounded state classifier: it does not yet enumerate a transition graph, establish provider completeness, model channel queue contents/reservations, or prove dependency completeness. The initial implementation should not claim parameterised deadlock freedom. Finite results apply only to the declared bounds and exact environment model.
 
 ## 12. Explicit non-claims
 
