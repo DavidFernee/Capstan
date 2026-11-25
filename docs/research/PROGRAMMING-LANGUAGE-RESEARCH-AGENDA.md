@@ -516,3 +516,34 @@ The programme succeeds only if Capstan produces all of the following:
 The ultimate goal is not merely to make Capstan another attractive systems language. It is to discover and establish a different engineering proposition: software can carry verifiable statements about its behaviour, authority and resource consumption, and the toolchain can preserve and check those statements through execution.
 
 **The standard is not that Capstan claims to do what other languages cannot. The standard is that Capstan demonstrates, with independently checkable evidence, a coherent set of guarantees that users cannot obtain as an equally integrated and practical property from the conventional alternatives.**
+
+
+## AREA-10. Spatial computing, graphics and simulation (Keel)
+
+**Questions**
+- Can scene, geometry, asset and frame resource budgets compose without hidden transient
+  allocation or work amplification?
+- Which numeric semantics give reproducible simulation and robust topology decisions
+  across heterogeneous targets?
+- Can asynchronous graphics-resource ownership be specified across submission,
+  completion, cancellation, shutdown and device loss?
+- What subset of rendering semantics can a CPU reference backend define, and how can
+  accelerated backends demonstrate refinement within declared tolerances?
+- Can untrusted asset formats be decoded with bounded work, failure atomicity and
+  independently reproducible adversarial evidence?
+
+**Candidate work:** resource-aware scene and render contracts; fixed-step deterministic
+simulation; fixed-point/IEEE-754/hybrid numeric comparison; robust geometric predicates;
+generational handles; GPU lifetime state machines; bounded asset decoders; CPU/GPU
+conformance; reproducible rendering benchmarks.
+
+**Success evidence:** versioned scene and numeric semantics; compositional budget
+soundness conditions; conformance vectors across independent targets; adversarial parser
+corpora and fuzz results; lifecycle state-machine tests/proofs; measured backend
+conformance and performance; explicit driver/OS/hardware assumptions.
+
+**Coordination:** Keel is specified in `docs/KEEL-ARCHITECTURE.md`. It consumes Shroud
+through public host/presentation interfaces only. The Shroud research stream remains
+independent; neither toolkit correctness nor Keel correctness is inferred from the
+other. K0 begins with a CPU-only, bounded vertical slice; GPU work follows only after
+the reference semantics and resource contracts are stable.
