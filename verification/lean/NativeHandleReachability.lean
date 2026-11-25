@@ -58,7 +58,7 @@ inductive HandleReachable {slotCount : Nat}
     ObjectHandle slotCount → Prop where
   | root {handle : ObjectHandle slotCount} :
       handle ∈ roots →
-      ∃ object, resolveHandle heap domain handle = some object →
+      (∃ object, resolveHandle heap domain handle = some object) →
       HandleReachable descriptors heap domain roots handle
   | edge {source target : ObjectHandle slotCount} :
       HandleReachable descriptors heap domain roots source →
