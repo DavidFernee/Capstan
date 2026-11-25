@@ -66,12 +66,24 @@ ShantyWaveResult shanty_wave_error(string error) {
 // - 8/16/24/32-bit samples, exact block alignment and byte rate;
 // - unknown chunks are skipped, including their required odd-size pad byte;
 // - at most 1024 chunks; trailing bytes and duplicate fmt/data chunks are rejected.
-ShantyWaveResult shanty_wave_parse(HalyardByteSource source) {
+ShantyWaveResult shanty_wave_parse_internal(
+    HalyardByteSource source, HalyardConsumptionBudget? budget
+) {
     if (!halyard_source_shape_valid(source)) {
         return shanty_wave_error("invalid_source");
     }
-    if (halyard_source_length(source) > SHANTY_WAV_MAX_INPUT_BYTES) {
+    int source_length = halyard_source_length(source);
+    if (source_length > SHANTY_WAV_MAX_INPUT_BYTES) {
         return shanty_wave_error("input_limit");
+    }
+    if (let budget_value = budget) {
+        HalyardConsumptionCharge charge = new HalyardConsumptionCharge{
+            input_bytes: source_length, output_bytes: 0,
+            decoded_units: 0, work_units: source_length
+        };
+        if (!halyard_consumption_budget_consume(budget_value, charge)) {
+            return shanty_wave_error("budget_exceeded");
+        }
     }
     if (source.position != 0) {
         return shanty_wave_error("source_not_at_start");
@@ -170,6 +182,15 @@ ShantyWaveResult shanty_wave_parse(HalyardByteSource source) {
             if (chunk_size % block_align != 0) {
                 return shanty_wave_error("invalid_data_alignment");
             }
+            if (let budget_value = budget) {
+                HalyardConsumptionCharge output_charge = new HalyardConsumptionCharge{
+                    input_bytes: 0, output_bytes: chunk_size,
+                    decoded_units: 0, work_units: chunk_size
+                };
+                if (!halyard_consumption_budget_consume(budget_value, output_charge)) {
+                    return shanty_wave_error("budget_exceeded");
+                }
+            }
             HalyardBytesResult data = halyard_read_exact(source, chunk_size);
             if (!data.ok) { return shanty_wave_error("truncated_data"); }
             pcm_bytes = data.bytes;
@@ -202,9 +223,22 @@ ShantyWaveResult shanty_wave_parse(HalyardByteSource source) {
     return new ShantyWaveResult{ok: true, wave: wave, error: ""};
 }
 
+ShantyWaveResult shanty_wave_parse(HalyardByteSource source) {
+    return shanty_wave_parse_internal(source, none);
+}
+
+// Charges input/work before parsing and the retained PCM copy before materialising it.
+ShantyWaveResult shanty_wave_parse_budgeted(
+    HalyardByteSource source, HalyardConsumptionBudget budget
+) {
+    return shanty_wave_parse_internal(source, budget);
+}
+
 // Decodes interleaved integer PCM into signed sample values in the original
 // bit-depth domain. Eight-bit WAVE PCM is unsigned and is centred at zero.
-ShantyPcmResult shanty_wave_decode_samples(ShantyWave wave) {
+ShantyPcmResult shanty_wave_decode_samples_internal(
+    ShantyWave wave, HalyardConsumptionBudget? budget
+) {
     if (wave.channels < 1 || wave.channels > SHANTY_WAV_MAX_CHANNELS ||
         wave.sample_rate < 1 || wave.sample_rate > SHANTY_WAV_MAX_SAMPLE_RATE ||
         !shanty_supported_pcm_bits(wave.bits_per_sample)) {
@@ -228,6 +262,15 @@ ShantyPcmResult shanty_wave_decode_samples(ShantyWave wave) {
 
     int frame_count = wave.pcm_bytes.len() / wave.block_align;
     int sample_count = wave.pcm_bytes.len() / bytes_per_sample;
+    if (let budget_value = budget) {
+        HalyardConsumptionCharge charge = new HalyardConsumptionCharge{
+            input_bytes: 0, output_bytes: sample_count * bytes_per_sample,
+            decoded_units: sample_count, work_units: sample_count
+        };
+        if (!halyard_consumption_budget_consume(budget_value, charge)) {
+            return new ShantyPcmResult{ok: false, buffer: none, error: "budget_exceeded"};
+        }
+    }
     List<int> samples = new List<int>();
 
     for (int i = 0; i < sample_count; i += 1) {
@@ -261,6 +304,17 @@ ShantyPcmResult shanty_wave_decode_samples(ShantyWave wave) {
         samples: samples
     };
     return new ShantyPcmResult{ok: true, buffer: buffer, error: ""};
+}
+
+ShantyPcmResult shanty_wave_decode_samples(ShantyWave wave) {
+    return shanty_wave_decode_samples_internal(wave, none);
+}
+
+// Charges decoded samples and logical PCM output bytes before allocating the sample list.
+ShantyPcmResult shanty_wave_decode_samples_budgeted(
+    ShantyWave wave, HalyardConsumptionBudget budget
+) {
+    return shanty_wave_decode_samples_internal(wave, budget);
 }
 
 void shanty_test_push_u16_le(List<int> bytes, int value) {
@@ -506,4 +560,46 @@ test "Shanty rejects forged PCM byte arrays and inconsistent byte rates" {
     };
     ShantyPcmResult rate_result = shanty_wave_decode_samples(bad_rate);
     assert(!rate_result.ok && rate_result.error == "invalid_pcm_alignment");
+}
+
+
+test "Shanty budgeted parse and decode charge before materialising output" {
+    List<int> bytes = shanty_test_stereo_wave();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(64, 16, 4, 128);
+    assert(made.ok && budget_result.ok);
+    if (let source = made.source) {
+        if (let budget = budget_result.budget) {
+            ShantyWaveResult parsed = shanty_wave_parse_budgeted(source, budget);
+            assert(parsed.ok);
+            assert(budget.used_input_bytes == 44);
+            assert(budget.used_output_bytes == 8);
+            assert(budget.used_work_units == 52);
+            if (let wave = parsed.wave) {
+                ShantyPcmResult decoded = shanty_wave_decode_samples_budgeted(wave, budget);
+                assert(decoded.ok);
+                assert(budget.used_decoded_units == 4);
+                assert(budget.used_output_bytes == 16);
+                assert(budget.used_work_units == 56);
+            } else { assert(false); }
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Shanty budget rejects PCM copy before allocation and keeps failure atomic" {
+    List<int> bytes = shanty_test_stereo_wave();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(64, 7, 4, 128);
+    assert(made.ok && budget_result.ok);
+    if (let source = made.source) {
+        if (let budget = budget_result.budget) {
+            ShantyWaveResult parsed = shanty_wave_parse_budgeted(source, budget);
+            assert(!parsed.ok && parsed.error == "budget_exceeded");
+            assert(budget.used_input_bytes == 44);
+            assert(budget.used_output_bytes == 0);
+            assert(budget.used_work_units == 44);
+        } else { assert(false); }
+    } else { assert(false); }
 }
