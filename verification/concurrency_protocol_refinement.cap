@@ -1,0 +1,182 @@
+// Refinement bridge between the concrete bounded task/channel model and
+// the generic protocol automaton's linear-message contract.
+//
+// Scope is intentionally limited to the four normal message transitions
+// (produce, enqueue, receive, release) and the current one-byte message.
+// Cancellation/failure/abort, multiple messages, and native scheduling are
+// not covered by this bridge.
+
+import "concurrency_model.cap";
+import "protocol_automata.cap";
+
+int ccm_pa_state(CCMState state) {
+    if (state.protocol_phase == CCM_PROTO_EMPTY) { return 0; }
+    if (state.protocol_phase == CCM_PROTO_PRODUCED) { return 1; }
+    if (state.protocol_phase == CCM_PROTO_ENQUEUED) { return 2; }
+    if (state.protocol_phase == CCM_PROTO_RECEIVED) { return 3; }
+    if (state.protocol_phase == CCM_PROTO_RELEASED) { return 4; }
+    return -1;
+}
+
+int ccm_pa_owner(CCMState state) {
+    if (state.message_owner == CCM_OWNER_NONE) { return PA_OWNER_NONE; }
+    if (state.message_owner == CCM_OWNER_PRODUCER) { return 1; }
+    if (state.message_owner == CCM_OWNER_CHANNEL) { return 3; }
+    if (state.message_owner == CCM_OWNER_CONSUMER) { return 2; }
+    return -2;
+}
+
+bool ccm_pa_refines_state(CCMState state) {
+    int protocol_state = ccm_pa_state(state);
+    if (protocol_state < 0 || state.message_bytes != 1) { return false; }
+    if (state.message_owner < CCM_OWNER_NONE ||
+        state.message_owner > CCM_OWNER_CONSUMER) { return false; }
+
+    bool expected_live = protocol_state == 1 ||
+        protocol_state == 2 || protocol_state == 3;
+    if (state.message_live != expected_live) { return false; }
+    if (expected_live && state.live_bytes != 1) { return false; }
+    if (!expected_live && state.live_bytes != 0) { return false; }
+
+    int expected_owner = PA_OWNER_NONE;
+    if (protocol_state == 1) { expected_owner = 1; }
+    if (protocol_state == 2) { expected_owner = 3; }
+    if (protocol_state == 3) { expected_owner = 2; }
+    if (ccm_pa_owner(state) != expected_owner) { return false; }
+
+    if (protocol_state == 2) {
+        if (state.channel_count != 1 ||
+            state.buffered_bytes != state.message_bytes) { return false; }
+    } else if (state.channel_count != 0 || state.buffered_bytes != 0) {
+        return false;
+    }
+    return true;
+}
+
+bool ccm_pa_transition_refines(
+    CCMState before, int actor, int action, CCMState after
+) {
+    int role = -1;
+    int operation = 0;
+    if (action == CCM_ACT_PRODUCE && actor == 1) {
+        role = 1;
+        operation = 1;
+    } else if (action == CCM_ACT_SEND && actor == 1) {
+        role = 1;
+        operation = 2;
+    } else if (action == CCM_ACT_RECEIVE && actor == 2) {
+        role = 2;
+        operation = 3;
+    } else if (action == CCM_ACT_RELEASE && actor == 2) {
+        role = 2;
+        operation = 4;
+    } else {
+        return false;
+    }
+
+    if (!ccm_pa_refines_state(before) || !ccm_pa_refines_state(after)) {
+        return false;
+    }
+    PASpec spec = pa_linear_message_protocol();
+    PAContractStep step = pa_step_with_resources(
+        spec,
+        ccm_pa_state(before),
+        role,
+        operation,
+        ccm_pa_owner(before),
+        before.live_bytes,
+        before.max_live_bytes,
+        1
+    );
+    if (!step.accepted) { return false; }
+    return step.next_state == ccm_pa_state(after) &&
+        step.next_owner == ccm_pa_owner(after) &&
+        step.next_live_resources == after.live_bytes;
+}
+
+test "CCM normal message transitions refine the protocol automaton" {
+    CCMState state = ccm_initial_state();
+    assert(ccm_pa_refines_state(state));
+
+    CCMTransition spawn_producer = ccm_step(
+        state, 0, CCM_ACT_SPAWN_PRODUCER
+    );
+    assert(spawn_producer.ok);
+    state = spawn_producer.state;
+    CCMTransition spawn_consumer = ccm_step(
+        state, 0, CCM_ACT_SPAWN_CONSUMER
+    );
+    assert(spawn_consumer.ok);
+    state = spawn_consumer.state;
+    assert(ccm_pa_refines_state(state));
+
+    CCMState before = state;
+    CCMTransition produce = ccm_step(state, 1, CCM_ACT_PRODUCE);
+    assert(produce.ok);
+    assert(ccm_pa_transition_refines(
+        before, 1, CCM_ACT_PRODUCE, produce.state
+    ));
+    state = produce.state;
+
+    before = state;
+    CCMTransition send = ccm_step(state, 1, CCM_ACT_SEND);
+    assert(send.ok);
+    assert(ccm_pa_transition_refines(
+        before, 1, CCM_ACT_SEND, send.state
+    ));
+    state = send.state;
+
+    before = state;
+    CCMTransition receive = ccm_step(state, 2, CCM_ACT_RECEIVE);
+    assert(receive.ok);
+    assert(ccm_pa_transition_refines(
+        before, 2, CCM_ACT_RECEIVE, receive.state
+    ));
+    state = receive.state;
+
+    before = state;
+    CCMTransition release = ccm_step(state, 2, CCM_ACT_RELEASE);
+    assert(release.ok);
+    assert(ccm_pa_transition_refines(
+        before, 2, CCM_ACT_RELEASE, release.state
+    ));
+    state = release.state;
+    assert(ccm_pa_refines_state(state));
+    assert(state.protocol_phase == CCM_PROTO_RELEASED);
+}
+
+test "CCM abort states are explicitly outside the normal protocol refinement" {
+    CCMState state = ccm_initial_state();
+    CCMTransition spawn = ccm_step(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    assert(spawn.ok);
+    state = spawn.state;
+    CCMTransition cancelled = ccm_step(
+        state, 0, CCM_ACT_CANCEL_PRODUCER
+    );
+    assert(cancelled.ok);
+    assert(cancelled.state.protocol_phase == CCM_PROTO_ABORTED);
+    assert(!ccm_pa_refines_state(cancelled.state));
+}
+
+test "CCM channel state cannot claim a protocol refinement with inconsistent queue ownership" {
+    CCMState state = ccm_initial_state();
+    CCMTransition spawn_producer = ccm_step(
+        state, 0, CCM_ACT_SPAWN_PRODUCER
+    );
+    assert(spawn_producer.ok);
+    state = spawn_producer.state;
+    CCMTransition spawn_consumer = ccm_step(
+        state, 0, CCM_ACT_SPAWN_CONSUMER
+    );
+    assert(spawn_consumer.ok);
+    state = spawn_consumer.state;
+    CCMTransition produce = ccm_step(state, 1, CCM_ACT_PRODUCE);
+    assert(produce.ok);
+    state = produce.state;
+    CCMTransition send = ccm_step(state, 1, CCM_ACT_SEND);
+    assert(send.ok);
+    state = send.state;
+    assert(ccm_pa_refines_state(state));
+    state.channel_count = 0;
+    assert(!ccm_pa_refines_state(state));
+}
