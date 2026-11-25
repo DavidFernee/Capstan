@@ -116,7 +116,7 @@ def check_stored_deflate(idat, expected_raw_length):
 
 
 def require_peak_heap(output, label, limit):
-    match = re.search(r"peak_heap=(\\d+)", output)
+    match = re.search(r"peak_heap=(\d+)", output)
     if not match:
         fail(f"{label}: runtime did not report CAPSTAN_GC_STATS peak_heap")
     peak = int(match.group(1))
