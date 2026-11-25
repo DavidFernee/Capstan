@@ -214,6 +214,13 @@ struct Canvas {
         if (x >= c.right() || y >= c.bottom() ||
             x < c.x - width || y < c.y - height) { return; }
         if (self.recording) {
+            // Admit the complete payload before copying it. Otherwise repeated
+            // masks can allocate far beyond the frame budget before append rejects
+            // the command.
+            if (!display_list_payload_fits(self, alpha.len())) {
+                println("shroud: display list resource budget exceeded");
+                exit(101);
+            }
             // Snapshot cached glyph pixels into frame-owned storage. A later font
             // cache eviction/rebuild must not change an already-recorded frame.
             List<int> mask_copy = new List<int>();
@@ -282,22 +289,28 @@ Canvas new_canvas(Pixmap pm) {
 Canvas new_recording_canvas(Pixmap pm) {
     Canvas cv = new_canvas(pm);
     cv.recording = true;
-    cv.budget.push(0); // total flattened path segments
+    cv.budget.push(0); // aggregate flattened geometry and copied mask pixels
     return cv;
 }
 
-void display_list_append(Canvas cv, DisplayCommand cmd, int segments) {
-    // This helper is also a callable library function: do not assume its caller
-    // came through new_recording_canvas or supplied a non-negative budget charge.
-    if (!cv.recording || cv.budget.len() != 1 ||
-        cv.budget[0] < 0 || cv.budget[0] > MAX_DISPLAY_SEGMENTS ||
-        segments < 0 || cv.commands.len() >= MAX_DISPLAY_COMMANDS ||
-        segments > MAX_DISPLAY_SEGMENTS - cv.budget[0]) {
+bool display_list_payload_fits(Canvas cv, int payload) {
+    // One aggregate bound covers both flattened path segments and copied mask
+    // pixels. Check it before any frame-owned payload allocation takes place.
+    return cv.recording && cv.budget.len() == 1 &&
+        cv.budget[0] >= 0 && cv.budget[0] <= MAX_DISPLAY_SEGMENTS &&
+        payload >= 0 && cv.commands.len() < MAX_DISPLAY_COMMANDS &&
+        payload <= MAX_DISPLAY_SEGMENTS - cv.budget[0];
+}
+
+void display_list_append(Canvas cv, DisplayCommand cmd, int payload) {
+    // Recheck at publication: callers must not bypass admission or exceed a
+    // budget after a prior pre-allocation check.
+    if (!display_list_payload_fits(cv, payload)) {
         println("shroud: display list resource budget exceeded");
         exit(101);
     }
     cv.commands.push(cmd);
-    cv.budget[0] += segments;
+    cv.budget[0] += payload;
 }
 
 // Publishing the list ends recording. The command and geometry lists are frame-owned
