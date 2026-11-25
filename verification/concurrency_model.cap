@@ -104,17 +104,48 @@ bool ccm_task_terminal(int status) {
 // It checks resource bounds, queue/message consistency, unique message
 // ownership, handle/task consistency, and scope closure.
 bool ccm_invariant(CCMState state) {
-    if (state.task_count < 1 || state.task_count > state.max_tasks) { return false; }
-    if (state.steps < 0 || state.steps > state.max_steps) { return false; }
+    if (state.root_status != CCM_TASK_RUNNABLE &&
+        state.root_status != CCM_TASK_DONE) { return false; }
+    if (state.producer_status != CCM_TASK_NEW &&
+        state.producer_status != CCM_TASK_RUNNABLE &&
+        state.producer_status != CCM_TASK_DONE &&
+        state.producer_status != CCM_TASK_CANCELLED) { return false; }
+    if (state.consumer_status != CCM_TASK_NEW &&
+        state.consumer_status != CCM_TASK_RUNNABLE &&
+        state.consumer_status != CCM_TASK_DONE &&
+        state.consumer_status != CCM_TASK_CANCELLED) { return false; }
+    if (state.producer_handle < CCM_HANDLE_NONE ||
+        state.producer_handle > CCM_HANDLE_CONSUMED ||
+        state.consumer_handle < CCM_HANDLE_NONE ||
+        state.consumer_handle > CCM_HANDLE_CONSUMED) { return false; }
+
+    if (state.producer_status == CCM_TASK_NEW) {
+        if (state.producer_handle != CCM_HANDLE_NONE) { return false; }
+    } else if (state.producer_handle == CCM_HANDLE_NONE) { return false; }
+    if (state.consumer_status == CCM_TASK_NEW) {
+        if (state.consumer_handle != CCM_HANDLE_NONE) { return false; }
+    } else if (state.consumer_handle == CCM_HANDLE_NONE) { return false; }
+
+    int expected_tasks = 1;
+    if (state.producer_status != CCM_TASK_NEW) { expected_tasks += 1; }
+    if (state.consumer_status != CCM_TASK_NEW) { expected_tasks += 1; }
+    if (state.task_count != expected_tasks ||
+        state.task_count > state.max_tasks) { return false; }
+    if (state.max_tasks < 1 || state.steps < 0 ||
+        state.steps > state.max_steps || state.max_steps < 0) { return false; }
+
     if (state.channel_capacity != 1 || state.channel_count < 0 ||
         state.channel_count > state.channel_capacity) { return false; }
-    if (state.buffered_bytes < 0 ||
+    if (state.message_bytes <= 0 || state.max_buffered_bytes < 0 ||
+        state.buffered_bytes < 0 ||
         state.buffered_bytes > state.max_buffered_bytes) { return false; }
-    if (state.live_bytes < 0 || state.live_bytes > state.max_live_bytes) { return false; }
+    if (state.max_live_bytes < 0 || state.live_bytes < 0 ||
+        state.live_bytes > state.max_live_bytes) { return false; }
 
     if (state.channel_count == 1) {
         if (!state.message_live || state.message_owner != CCM_OWNER_CHANNEL) { return false; }
         if (state.buffered_bytes != state.message_bytes) { return false; }
+        if (state.producer_status != CCM_TASK_DONE) { return false; }
     } else {
         if (state.buffered_bytes != 0) { return false; }
         if (state.message_owner == CCM_OWNER_CHANNEL) { return false; }
@@ -122,6 +153,10 @@ bool ccm_invariant(CCMState state) {
 
     if (state.message_live) {
         if (state.live_bytes != state.message_bytes) { return false; }
+        if (state.message_owner == CCM_OWNER_PRODUCER &&
+            state.producer_status != CCM_TASK_RUNNABLE) { return false; }
+        if (state.message_owner == CCM_OWNER_CONSUMER &&
+            state.consumer_status != CCM_TASK_RUNNABLE) { return false; }
         if (state.message_owner != CCM_OWNER_PRODUCER &&
             state.message_owner != CCM_OWNER_CHANNEL &&
             state.message_owner != CCM_OWNER_CONSUMER) { return false; }
@@ -134,13 +169,14 @@ bool ccm_invariant(CCMState state) {
     if (state.consumer_handle == CCM_HANDLE_CONSUMED &&
         !ccm_task_terminal(state.consumer_status)) { return false; }
 
+    if (state.scope_closed != (state.root_status == CCM_TASK_DONE)) { return false; }
     if (state.scope_closed) {
-        if (state.root_status != CCM_TASK_DONE) { return false; }
         if (!ccm_task_terminal(state.producer_status) ||
             !ccm_task_terminal(state.consumer_status)) { return false; }
         if (state.producer_handle != CCM_HANDLE_CONSUMED ||
             state.consumer_handle != CCM_HANDLE_CONSUMED) { return false; }
-        if (state.message_live || state.channel_count != 0) { return false; }
+        if (state.message_live || state.channel_count != 0 ||
+            state.live_bytes != 0 || state.buffered_bytes != 0) { return false; }
     }
     return true;
 }
@@ -392,7 +428,7 @@ test "CCM enforces task and step budgets" {
     assert(exhausted.state.steps == 1);
 }
 
-test "CCM channel is bounded and send is rejected before ownership commit" {
+test "CCM rejects a second send after ownership has transferred to the channel" {
     CCMState state = ccm_initial_state();
     state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
     state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
@@ -404,4 +440,15 @@ test "CCM channel is bounded and send is rejected before ownership commit" {
     assert(second_send.state.message_owner == CCM_OWNER_CHANNEL);
     assert(second_send.state.channel_count == 1);
     assert(ccm_invariant(second_send.state));
+}
+
+test "CCM rejects message allocation beyond the live-byte budget atomically" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state.max_live_bytes = 0;
+    CCMTransition rejected = ccm_step(state, 1, CCM_ACT_PRODUCE);
+    assert(!rejected.ok && rejected.error == "live_byte_budget_exhausted");
+    assert(!rejected.state.message_live);
+    assert(rejected.state.live_bytes == 0);
+    assert(rejected.state.steps == state.steps);
 }
