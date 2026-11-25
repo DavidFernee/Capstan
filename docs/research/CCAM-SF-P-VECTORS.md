@@ -43,7 +43,7 @@
 
 ## Existing implementation-test crosswalk
 
-The following names were checked against `verification/ccam_core.cap` on main and the open PR #253 branch. Existing tests exercise related behaviour, but they do not automatically provide the exact shared vector trace/oracle assertions.
+The following names were checked against `verification/ccam_core.cap` on main after PR #253 merged. Existing tests exercise related behaviour, but they do not automatically provide the exact shared vector trace/oracle assertions.
 
 | Vector | Existing Capstan test evidence | Remaining vector-specific work |
 |---|---|---|
@@ -53,7 +53,7 @@ The following names were checked against `verification/ccam_core.cap` on main an
 | SF-022 | `CCAM evaluator dispatches subtraction multiplication and remainder` | Bind the multiplication case to the shared vector and assert trace. |
 | SF-023 | `CCAM multiplication traps on signed overflow`; helper coverage includes negative multiplication boundaries | Add evaluator-level overflow trace assertion for the shared vector. |
 | SF-003 | `CCAM evaluator traps on division overflow at minimum integer`; helper test `CCAM division rejects minimum divided by negative one` | Assert evaluator trace and budget count in the corpus runner. |
-| SF-004 | Helper test `CCAM remainder of minimum by negative one is zero`; PR #253 adds evaluator test `CCAM evaluator returns zero for minimum remainder negative one` | PR #253 must pass exact-head CI; then bind this case to SF-004. |
+| SF-004 | Helper test `CCAM remainder of minimum by negative one is zero`; merged PR #253 adds evaluator test `CCAM evaluator returns zero for minimum remainder negative one` | PR #253 is merged with CI, formal-verification and CodeQL successful; bind this case to SF-004 in the evaluator adapter. |
 | SF-005 | `CCAM machine consumes a step for a dynamic arithmetic trap`; `CCAM remainder by zero traps` covers helper semantics | Confirm the evaluator test uses the same division-by-zero vector and assert exact trace. |
 | SF-006 | `CCAM machine follows a boolean branch` | Add shared vector ID and trace assertion. |
 | SF-007 | `CCAM machine follows the false branch arm` | Add shared vector ID and trace assertion. |
@@ -66,23 +66,23 @@ The following names were checked against `verification/ccam_core.cap` on main an
 | SF-014 | `CCAM machine checks the step limit before executing the next instruction` | Bind to shared vector and assert PC 1, one dispatched step. |
 | SF-015–016 | `CCAM validator rejects bad operand indices and static types` | Split into separately identified malformed-destination and static-type vectors. |
 | SF-017–018 | `CCAM validator rejects invalid branch targets and reachable fallthrough` | Bind target rejection and reachable-fall-through rejection separately. |
-| SF-019 | PR #253 adds `CCAM validator accepts unreachable nonterminal final instruction` | PR #253 must pass exact-head CI; assert normative accept and SF-P reject as separate results. |
+| SF-019 | merged PR #253 adds `CCAM validator accepts unreachable nonterminal final instruction` | PR #253 must pass exact-head CI; assert normative accept and SF-P reject as separate results. |
 | SF-020 | Lean theorems `validateSingleFrameProfile_rejects_nonzero_entry` and `validateSingleFrameProfile_entry_zero` in the PR #241 branch | Exercise the profile admission predicate in a Lean test/example; this is not a normative CCAM input field. |
 | SF-X01 | `CCAM machine returns void and preserves explicit trap detail`; `CCAM validator accepts and rejects canonical trap reasons` | Keep concrete-only until issue #265 establishes exact Lean reason/detail semantics. |
 
-PR #253 is still open. Its two new tests are not counted as merged mainline evidence. The crosswalk is a test-discovery aid, not a claim that the current tests execute this JSON corpus.
+PR #253 has merged. Its two regression tests are now mainline evidence; they still do not consume the shared JSON corpus. The crosswalk is a test-discovery aid, not a claim that the current tests execute this JSON corpus.
 
 ## Important semantic boundary: explicit traps
 
 The current Lean `MachineInstr.explicitTrap` constructor takes the finite `Trap` enumeration. The concrete CCAM `trap` opcode instead returns the machine code `explicit_trap` together with its validated application reason as detail. Those are not equivalent outcomes. SF-X01 is therefore retained as an explicit out-of-profile vector. Do not map an arbitrary reason to a similarly named finite machine trap, and do not count SF-X01 as Lean/Capstan agreement.
 
-The first dual-execution corpus covers the finite built-in traps represented by the model: integer overflow, division by zero, uninitialised register and instruction-limit exhaustion. Other defensive traps (invalid register, type mismatch, invalid PC/opcode) arise from violating the validated evaluator precondition and are not positive in-profile vectors. Malformed operands belong to validation tests, not execution traces.
+The initial proof-profile corpus includes the finite built-in traps represented by the model: integer overflow, division by zero, uninitialised register and instruction-limit exhaustion. Other defensive traps (invalid register, type mismatch, invalid PC/opcode) arise from violating the validated evaluator precondition and are not positive in-profile vectors. Malformed operands belong to validation tests, not execution traces.
 
 ## Execution and proof status
 
 This file is the canonical oracle data for the next harness increment. It is not yet consumed by either implementation. The next work must:
 
-1. Add strict schema validation for the corpus itself (duplicate IDs, exact fields, signed-64 literal bounds, valid indices and trace consistency).
+1. Strict corpus-integrity validation is now implemented in `tests/ccam_sf_vectors.py` and wired into `tests/run.sh` (duplicate IDs, exact instruction fields, signed-64 literal bounds, typed/indexed operands, and trace/step consistency). This is a corpus linter, not an execution adapter.
 2. Add a Capstan-native corpus runner that constructs `CCAMInstruction` values and checks validation, outcome, trace and step count.
 3. Add a Lean corpus reader/adapter or a generated Lean fixture from this same source file. Generation must be deterministic and must not generate expected outcomes from either executor.
 4. Define the complete machine-state relation, reusing `RuntimeBridge.lean` and `NativeRegisterBridge.lean`; do not recreate the register relation.
