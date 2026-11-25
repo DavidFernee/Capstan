@@ -214,9 +214,20 @@ struct Canvas {
             exit(101);
         }
         if (self.recording) {
+            // Reserve before copying; the previous append-time check happened
+            // after the allocation and therefore did not bound rejected work.
+            if (self.commands.len() >= MAX_DISPLAY_COMMANDS ||
+                alpha.len() > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
+                println("shroud: display list mask rejected by resource preflight");
+                exit(101);
+            }
+            // A frame owns its mask snapshot. Retaining the font/cache list would
+            // let later mutation change already-published display-list contents.
+            List<int> mask_copy = new List<int>();
+            for (int i = 0; i < alpha.len(); i += 1) { mask_copy.push(alpha[i]); }
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_MASK, bounds: rect(0, 0, 0, 0), clip: self.clip(),
-                paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: alpha,
+                paint: paint, rule: FILL_NONZERO, segments: none, mask_alpha: mask_copy,
                 mask_w: width, mask_h: height, x: x, y: y, coverage: 0,
                 opacity: self.opacity
             };
