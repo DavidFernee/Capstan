@@ -629,10 +629,10 @@ void test_a11y_utf8_encoder(Tally t) {
         expected.push(0x20AC);
         expected.push(0x1F600);
     }
-    string encoded = utf8_from_codepoints(expected);
+    Tainted encoded = utf8_from_codepoints(expected);
     expect_int(t, encoded.len(), 163840,
         "a11y UTF-8 encoder: large mixed-width output has exact byte length");
-    List<int> actual = utf8_decode(string_bytes(encoded));
+    List<int> actual = utf8_decode(tainted_bytes(encoded));
     expect_int(t, actual.len(), expected.len(),
         "a11y UTF-8 encoder: large output decodes to the original scalar count");
     if (actual.len() == expected.len()) {
@@ -643,11 +643,12 @@ void test_a11y_utf8_encoder(Tally t) {
         expect(t, equal, "a11y UTF-8 encoder: large mixed-width round trip is exact",
             "decoded scalar sequence differs from source");
     }
-    string visible = visible_untrusted_text(taint("A" + char_str(0xC3) + char_str(0xA9) +
+    Tainted visible = visible_untrusted_text(taint("A" + char_str(0xC3) + char_str(0xA9) +
         char_str(0xE2) + char_str(0x82) + char_str(0xAC)));
-    expect(t, visible == "A" + char_str(0xC3) + char_str(0xA9) +
-        char_str(0xE2) + char_str(0x82) + char_str(0xAC),
-        "a11y UTF-8 encoder: visible untrusted text preserves UTF-8 bytes", visible);
+    Tainted expected_visible = taint("A" + char_str(0xC3) + char_str(0xA9) +
+        char_str(0xE2) + char_str(0x82) + char_str(0xAC));
+    expect(t, escape_json(visible) == escape_json(expected_visible),
+        "a11y UTF-8 encoder: visible untrusted text preserves UTF-8 bytes", escape_json(visible));
 }
 
 
