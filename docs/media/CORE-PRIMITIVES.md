@@ -128,7 +128,7 @@ publicly mutable; every conversion validates them, but this is not an opaque typ
 
 ## 7. Test obligations
 
-The regression suite is expressed as 18 Capstan `test` declarations in `lib/halyard/core.cap`.
+The regression suite is expressed as 24 Capstan `test` declarations in `lib/halyard/core.cap`.
 Run it with `bin/capstan test lib/halyard/core.cap`. The Halyard-specific test logic
 contains no shell, Python, C, or other-language source. It covers:
 
@@ -143,7 +143,7 @@ contains no shell, Python, C, or other-language source. It covers:
 - reduced rational timebase construction and invalid numerator/denominator rejection;
 - exact 48 kHz to 90 kHz timestamp conversion;
 - explicit positive and negative rounding modes and nearest-even ties;
-- checked overflow rejection, signed multiplication boundary cases in all sign quadrants, and rejection of forged non-normalised timebases;
+- checked overflow rejection, signed multiplication boundary identities, all sign quadrants, near-limit products, and rejection of forged non-normalised timebases;
 - exhaustive exact-read counts around a four-byte source;
 - exhaustive (3^5) five-dimensional admission requests;
 - independent underflow rejection for every release dimension;
