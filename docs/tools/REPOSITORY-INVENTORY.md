@@ -41,6 +41,7 @@ The CSV contains a per-file section followed by per-language totals and reposito
 - Language classification is extension-based and intentionally conservative. Unknown extensions are reported as `other`; this is a review queue, not a claim that all files are programming languages.
 - `escape_csv` is used for every path/classification/language cell. It quotes cells, doubles embedded quotes and neutralises spreadsheet formula prefixes.
 - Files larger than 16 MiB, unreadable files and non-regular files are reported as unreadable and cause exit status 1. They are not silently counted as zero-line files.
+- The command accepts at most 10,000 input paths, each 1–4,096 bytes. Exceeding either limit is rejected before file reads begin. Each individual file read is capped at 16 MiB.
 
 The tool reports physical lines for files without NUL bytes, not language-aware code/comment/blank SLOC. Its NUL-byte check is deliberately described as a heuristic and must not be used as a security or content-validation boundary. It includes whatever paths the caller supplies; the purpose classification is descriptive and does not exclude any category from totals.
 
