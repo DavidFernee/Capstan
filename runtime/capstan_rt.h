@@ -515,7 +515,6 @@ static void cap_wipe(void *p, size_t n);
 #ifdef CAP_SIPHASH_TEST_HOOK
 static void (*cap_siphash_test_wipe_hook)(const void *, size_t) = NULL;
 #endif
-
 #define CAP_ROTL64(x, b) (uint64_t)(((x) << (b)) | ((x) >> (64 - (b))))
 #define CAP_SIPROUND do { \
     v0 += v1; v1 = CAP_ROTL64(v1, 13); v1 ^= v0; v0 = CAP_ROTL64(v0, 32); \
@@ -573,13 +572,27 @@ static uint64_t cap_siphash(const unsigned char *in, size_t len, uint64_t k0, ui
 static uint64_t cap_map_k0, cap_map_k1;
 static bool cap_map_keyed;
 
+/* The SipHash key remains process-global; clear its temporary stack copy. */
+static void cap_wipe(void *p, size_t n);
+
 static void cap_map_key_init(void) {
-    unsigned char k[16];
+    unsigned char k[16] = {0};
     FILE *r = fopen("/dev/urandom", "rb");
-    if (!r || fread(k, 1, 16, r) != 16) { fprintf(stderr, "capstan: no secure randomness available\n"); exit(103); }
+    if (!r) {
+        cap_wipe(k, sizeof k);
+        fprintf(stderr, "capstan: no secure randomness available\n");
+        exit(103);
+    }
+    size_t got = fread(k, 1, sizeof k, r);
     fclose(r);
+    if (got != sizeof k) {
+        cap_wipe(k, sizeof k);
+        fprintf(stderr, "capstan: no secure randomness available\n");
+        exit(103);
+    }
     cap_map_k0 = cap_map_k1 = 0;
     for (int i = 7; i >= 0; i--) { cap_map_k0 = (cap_map_k0 << 8) | k[i]; cap_map_k1 = (cap_map_k1 << 8) | k[8 + i]; }
+    cap_wipe(k, sizeof k);
     cap_map_keyed = true;
 }
 
@@ -1172,6 +1185,47 @@ static CapStr *cap_secret_env(CapStr *name) {
 
 static void cap_wipe(void *p, size_t n) { volatile unsigned char *w = (volatile unsigned char *)p; while (n--) *w++ = 0; }
 
+/* Explicit-lifetime scratch for native cryptographic code. Unlike cap_alloc_secret,
+   this storage is not GC-managed: the owner must destroy it on every exit path.
+   Do not copy this descriptor or retain aliases to data after destruction. */
+typedef struct CapSecretScratch {
+    unsigned char *data;
+    size_t len;
+    bool active;
+} CapSecretScratch;
+
+#ifdef CAP_SECRET_SCRATCH_TEST_HOOK
+static void (*cap_secret_scratch_test_wipe_hook)(const void *, size_t);
+#endif
+
+static bool cap_secret_scratch_init(CapSecretScratch *scratch, size_t n) {
+    if (!scratch || scratch->active || scratch->data || scratch->len != 0 || n > CAP_MAX_LEN)
+        return false;
+    unsigned char *memory = NULL;
+    if (n != 0) {
+        memory = (unsigned char *)malloc(n);
+        if (!memory) return false;
+        memset(memory, 0, n);
+    }
+    scratch->data = memory;
+    scratch->len = n;
+    scratch->active = true;
+    return true;
+}
+
+static void cap_secret_scratch_destroy(CapSecretScratch *scratch) {
+    if (!scratch || !scratch->active) return;
+    if (scratch->data) {
+        cap_wipe(scratch->data, scratch->len);
+#ifdef CAP_SECRET_SCRATCH_TEST_HOOK
+        if (cap_secret_scratch_test_wipe_hook)
+            cap_secret_scratch_test_wipe_hook(scratch->data, scratch->len);
+#endif
+        free(scratch->data);
+    }
+    cap_wipe(scratch, sizeof *scratch);
+}
+
 static bool cap_ct_eq(const char *a, int64_t an, const char *b, int64_t bn) {
     unsigned char d = (unsigned char)(an != bn);
     int64_t n = an < bn ? an : bn;
@@ -1188,6 +1242,15 @@ static bool cap_secret_eq(CapStr *a, CapStr *b) { return cap_ct_eq(a->data, a->l
 /* ------------------------------------------------------------------ */
 
 typedef struct { uint32_t h[8]; uint64_t bits; unsigned char buf[64]; size_t n; } CapSha256;
+
+/* One contiguous, explicitly destroyed region for native PBKDF2 intermediates. */
+typedef struct CapPbkdf2Scratch {
+    unsigned char msg[64 + 4];
+    unsigned char u[32];
+    unsigned char t[32];
+    CapSha256 inner;
+    CapSha256 outer;
+} CapPbkdf2Scratch;
 
 static const uint32_t cap_k256[64] = {
     0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
@@ -1222,6 +1285,17 @@ static void cap_sha256_block(CapSha256 *s, const unsigned char *p) {
     cap_wipe(&c, sizeof c); cap_wipe(&d, sizeof d);
     cap_wipe(&e, sizeof e); cap_wipe(&f, sizeof f);
     cap_wipe(&g, sizeof g); cap_wipe(&h, sizeof h);
+#ifdef CAP_SHA256_WIPE_TEST_HOOK
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)w, sizeof w);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&a, sizeof a);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&b, sizeof b);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&c, sizeof c);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&d, sizeof d);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&e, sizeof e);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&f, sizeof f);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&g, sizeof g);
+    cap_sha256_wipe_test_observe((const volatile unsigned char *)&h, sizeof h);
+#endif
 }
 
 static void cap_sha256_init(CapSha256 *s) {
@@ -1347,26 +1421,27 @@ static bool cap_hash_verify(CapStr *data, CapStr *tagged) {
 #define CAP_PASSWORD_RECORD_LEN 123
 
 static void cap_pbkdf2(const char *pw, size_t pn, const unsigned char *salt, size_t sn, int iter, unsigned char out[32]) {
-    if (!pw || !salt || pn > CAP_PASSWORD_MAX_BYTES || sn > 64 ||
+    if (!pw || !salt || !out || pn > CAP_PASSWORD_MAX_BYTES || sn > 64 ||
         iter < 1 || iter > CAP_PBKDF2_ITER)
         cap_panic("invalid PBKDF2 parameters", "CWE-789", 0);
 #ifdef CAP_PBKDF2_TEST_HOOK
     cap_pbkdf2_test_calls++;
 #endif
-    unsigned char msg[64 + 4], u[32], t[32];
-    CapSha256 inner, outer;
-    cap_hmac_sha256_prepare((const unsigned char *)pw, pn, &inner, &outer);
-    memcpy(msg, salt, sn);
-    msg[sn] = 0; msg[sn+1] = 0; msg[sn+2] = 0; msg[sn+3] = 1;
-    cap_hmac_sha256_prepared(&inner, &outer, msg, sn + 4, u);
-    memcpy(t, u, 32);
+    CapSecretScratch allocation = {0};
+    if (!cap_secret_scratch_init(&allocation, sizeof(CapPbkdf2Scratch)))
+        cap_panic("unable to allocate PBKDF2 secret scratch", "CWE-400", 0);
+    CapPbkdf2Scratch *work = (CapPbkdf2Scratch *)allocation.data;
+    cap_hmac_sha256_prepare((const unsigned char *)pw, pn, &work->inner, &work->outer);
+    memcpy(work->msg, salt, sn);
+    work->msg[sn] = 0; work->msg[sn+1] = 0; work->msg[sn+2] = 0; work->msg[sn+3] = 1;
+    cap_hmac_sha256_prepared(&work->inner, &work->outer, work->msg, sn + 4, work->u);
+    memcpy(work->t, work->u, 32);
     for (int i = 1; i < iter; i++) {
-        cap_hmac_sha256_prepared(&inner, &outer, u, 32, u);
-        for (int j = 0; j < 32; j++) t[j] ^= u[j];
+        cap_hmac_sha256_prepared(&work->inner, &work->outer, work->u, 32, work->u);
+        for (int j = 0; j < 32; j++) work->t[j] ^= work->u[j];
     }
-    memcpy(out, t, 32);
-    cap_wipe(u, sizeof u); cap_wipe(t, sizeof t); cap_wipe(msg, sizeof msg);
-    cap_wipe(&inner, sizeof inner); cap_wipe(&outer, sizeof outer);
+    memcpy(out, work->t, 32);
+    cap_secret_scratch_destroy(&allocation);
 }
 
 static CapStr *cap_hash_password(CapStr *pw) {
@@ -1385,7 +1460,12 @@ static CapStr *cap_hash_password(CapStr *pw) {
     int n = snprintf(out, sizeof out, "cap1$pbkdf2-sha256$%d$%s$%s", CAP_PBKDF2_ITER, shex, dhex);
     /* dhex is a second stack copy of the password-derived verifier key. */
     cap_wipe(dhex, sizeof dhex);
-    return cap_str_new(out, n);
+    CapStr *record = cap_str_new(out, n);
+    /* The returned CapStr owns the persistent record; clear temporary stack copies. */
+    cap_wipe(salt, sizeof salt);
+    cap_wipe(shex, sizeof shex);
+    cap_wipe(out, sizeof out);
+    return record;
 }
 
 static int cap_unhex(const char *h, size_t n, unsigned char *out) {
