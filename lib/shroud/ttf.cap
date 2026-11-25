@@ -166,6 +166,8 @@ Font? font_load(Tainted data) {
     FontReader r = new FontReader{b: bytes, ok: true};
     int version = r.u32(0);
     if (version != 0x00010000 && version != tag_of("true")) { return none; }
+    int table_count = r.u16(4);
+    if (table_count > (r.b.len() - 12) / 16) { return none; }
     List<int> head_size = new List<int>(); head_size.push(0);
     List<int> hhea_size = new List<int>(); hhea_size.push(0);
     List<int> maxp_size = new List<int>(); maxp_size.push(0);
@@ -221,6 +223,16 @@ Font? font_load(Tainted data) {
         }
     }
     if (f.cmap_at < 0 || !r.ok) { return none; }
+    // Validate the complete loca sequence once, not only glyphs eventually drawn.
+    // Equal adjacent offsets are valid empty glyphs; descending or out-of-glyf
+    // offsets are malformed and must reject the font at load time.
+    int previous = glyph_start(f, 0);
+    if (!r.ok || previous != 0) { return none; }
+    for (int g = 1; g <= f.num_glyphs; g += 1) {
+        int current = glyph_start(f, g);
+        if (!r.ok || current < previous || current > f.glyf_len) { return none; }
+        previous = current;
+    }
     return f;
 }
 
@@ -283,6 +295,20 @@ int advance_units(Font f, int g) {
     int at = f.t_hmtx + 4 * m;
     if (!font_span_fits(f.t_hmtx, f.hmtx_len, at, 2)) { f.r.ok = false; return 0; }
     return f.r.u16(at);
+}
+
+// Left side bearing of glyph g, in font units. The final numGlyphs-numHMetrics
+// values follow the long metrics as signed 16-bit entries.
+int bearing_units(Font f, int g) {
+    if (g < 0 || g >= f.num_glyphs) { f.r.ok = false; return 0; }
+    int at = f.t_hmtx + 2;
+    if (g < f.num_hmetrics) {
+        at = f.t_hmtx + 4 * g + 2;
+    } else {
+        at = f.t_hmtx + 4 * f.num_hmetrics + 2 * (g - f.num_hmetrics);
+    }
+    if (!font_span_fits(f.t_hmtx, f.hmtx_len, at, 2)) { f.r.ok = false; return 0; }
+    return f.r.i16(at);
 }
 
 // Start and end of glyph g's data in the 'glyf' table, relative to the table.
