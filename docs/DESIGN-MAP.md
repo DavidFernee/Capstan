@@ -1152,3 +1152,6 @@ Media security is an assurance workstream in its own right: aggregate resource a
 | MC4–MC6 | Compatibility, assurance, performance and scientific media | Exact feature matrix, reproducible benchmarks, fuzz/proof evidence and specialist corpus |
 
 The ambition is broad practical historical and modern format compatibility, not an unqualified promise to support undocumented, proprietary, encrypted or DRM-restricted formats. Container, codec, profile, operation direction and assurance status are reported separately.
+
+
+Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vulnerability accounting, root-cause taxonomy, safe reproducer protocol, SBOM/advisory reconciliation and release-blocking gates are specified in [media/SECURITY-ASSURANCE.md](media/SECURITY-ASSURANCE.md) and tracked in [#292](https://github.com/DavidFernee/Capstan/issues/292). No media release may treat a clean scanner or absence of assigned CVEs as evidence that the attack surface is safe.
