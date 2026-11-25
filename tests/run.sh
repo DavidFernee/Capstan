@@ -78,6 +78,13 @@ else
   bad "CCAM multi-function evaluator" "$out"
 fi
 
+section "Capstan-native verification: bounded strict CCAM JSON decoder and whole-program validator"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json.cap" 2>&1)"; then
+  ok "CCAM JSON duplicate-key rejection, strict Unicode/numbers, closed schemas and validated machine construction"
+else
+  bad "CCAM bounded JSON decoder and whole-program validation" "$out"
+fi
+
 section "Capstan-native verification: bounded concurrency reference machine"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
   ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"

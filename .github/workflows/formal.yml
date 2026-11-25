@@ -27,10 +27,85 @@ jobs:
       - name: Reject unfinished proofs and local axioms
         shell: bash
         run: |
-          if grep -R -nE '(^|[^[:alnum:]_])(sorry|admit)([^[:alnum:]_]|$)|^[[:space:]]*axiom[[:space:]]' --include='*.lean' verification/lean; then
-            echo "Unfinished proof or local axiom declaration found."
-            exit 1
-          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          token = re.compile(r"\\b(?:sorry|admit)\\b")
+          axiom = re.compile(r"(?m)^\\s*axiom\\s+[A-Za-z_][A-Za-z0-9_'.]*")
+          failures = []
+
+          def strip_comments_and_strings(source):
+              out = []
+              i = 0
+              block_depth = 0
+              in_string = False
+              line_comment = False
+              while i < len(source):
+                  if line_comment:
+                      if source[i] == "\\n":
+                          line_comment = False
+                          out.append("\\n")
+                      else:
+                          out.append(" ")
+                      i += 1
+                      continue
+                  if block_depth:
+                      if source.startswith("/-", i):
+                          block_depth += 1
+                          out.extend("  ")
+                          i += 2
+                      elif source.startswith("-/", i):
+                          block_depth -= 1
+                          out.extend("  ")
+                          i += 2
+                      else:
+                          out.append("\\n" if source[i] == "\\n" else " ")
+                          i += 1
+                      continue
+                  if in_string:
+                      if source[i] == "\\\\":
+                          out.extend("  ")
+                          i += 1
+                          if i < len(source):
+                              out.append("\\n" if source[i] == "\\n" else " ")
+                              i += 1
+                      elif source[i] == '"':
+                          in_string = False
+                          out.append(" ")
+                          i += 1
+                      else:
+                          out.append("\\n" if source[i] == "\\n" else " ")
+                          i += 1
+                      continue
+                  if source.startswith("--", i):
+                      line_comment = True
+                      out.extend("  ")
+                      i += 2
+                  elif source.startswith("/-", i):
+                      block_depth = 1
+                      out.extend("  ")
+                      i += 2
+                  elif source[i] == '"':
+                      in_string = True
+                      out.append(" ")
+                      i += 1
+                  else:
+                      out.append(source[i])
+                      i += 1
+              return "".join(out)
+
+          for path in sorted(Path("verification/lean").rglob("*.lean")):
+              code = strip_comments_and_strings(path.read_text(encoding="utf-8"))
+              if token.search(code) or axiom.search(code):
+                  failures.append(str(path))
+          if failures:
+              print("Unfinished proof token or local axiom declaration found:")
+              print("\\n".join(failures))
+              sys.exit(1)
+          print("No unfinished proof tokens or local axiom declarations found.")
+          PY
       - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
         with:
           lake-package-directory: verification/lean

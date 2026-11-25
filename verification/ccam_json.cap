@@ -1,0 +1,1037 @@
+// Bounded, strict JSON decoder and whole-program CCAM validator.
+// Input remains Tainted through lexical parsing. The explicit trust() boundary
+// is reached only after strict UTF-8/scalar decoding, string-size checks and
+// embedded-NUL rejection. Schema-specific name, enum and reason constraints
+// are then checked before a decoded value is retained in the machine model.
+//
+// Resource contract: 8 MiB input, depth 64, 1,000,000 JSON values,
+// 1 MiB per decoded string, 4 MiB aggregate decoded strings, 4096 functions,
+// 4096 registers/function, 65536 instructions/program, and the evaluator's
+// existing aggregate call/output limits.
+//
+// The decoder rejects duplicate keys during parsing (before lookup), malformed
+// UTF-8, unpaired UTF-16 surrogates, non-JSON numbers, trailing data, and any
+// field not in the closed CCAM schema.
+
+import "ccam_calls.cap";
+
+const int CCAM_JSON_NULL = 1;
+const int CCAM_JSON_BOOL = 2;
+const int CCAM_JSON_NUMBER = 3;
+const int CCAM_JSON_STRING = 4;
+const int CCAM_JSON_ARRAY = 5;
+const int CCAM_JSON_OBJECT = 6;
+
+const int CCAM_JSON_MAX_BYTES = 8388608;
+const int CCAM_JSON_MAX_DEPTH = 64;
+const int CCAM_JSON_MAX_NODES = 1000000;
+const int CCAM_JSON_MAX_STRING_BYTES = 1048576;
+const int CCAM_JSON_MAX_TOTAL_STRING_BYTES = 4194304;
+const int CCAM_JSON_MAX_OBJECT_FIELDS = 64;
+const int CCAM_JSON_MAX_FUNCTIONS = 4096;
+const int CCAM_JSON_MAX_TOTAL_INSTRUCTIONS = 65536;
+
+struct CCAMJsonValue {
+    int kind;
+    bool boolean_value;
+    Tainted text;                 // decoded string or exact number token
+    List<CCAMJsonValue> items;    // array values or object values
+    List<Tainted> keys;           // object keys, in source order
+}
+
+struct CCAMJsonParser {
+    Tainted input;
+    int position;
+    int nodes;
+    int string_bytes;
+    string error;
+}
+
+struct CCAMJsonParseResult {
+    bool ok;
+    CCAMJsonValue value;
+    string error;
+}
+
+struct CCAMJsonProgramResult {
+    bool ok;
+    List<CCAMFunction> functions;
+    int entry_function;
+    string error;
+}
+
+CCAMJsonValue ccam_json_new(int kind) {
+    return new CCAMJsonValue{
+        kind: kind, boolean_value: false, text: taint(""),
+        items: new List<CCAMJsonValue>(), keys: new List<Tainted>()
+    };
+}
+
+Tainted ccam_json_join_parts(List<Tainted> parts, int lo, int hi) {
+    if (hi <= lo) { return taint(""); }
+    if (hi - lo == 1) { return parts[lo]; }
+    int mid = lo + (hi - lo) / 2;
+    return ccam_json_join_parts(parts, lo, mid) +
+        ccam_json_join_parts(parts, mid, hi);
+}
+
+int ccam_json_ch(CCAMJsonParser p, int at) {
+    if (at < 0 || at >= p.input.len()) { return -1; }
+    return p.input.at(at);
+}
+
+void ccam_json_fail(CCAMJsonParser p, string message) {
+    if (p.error == "") {
+        p.error = message + " at byte " + int_to_str(p.position);
+    }
+    p.position = p.input.len();
+}
+
+int ccam_json_hex(int c) {
+    if (c >= '0' && c <= '9') { return c - '0'; }
+    if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+    if (c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+    return -1;
+}
+
+bool ccam_json_has_at(Tainted s, int at, string needle) {
+    if (at < 0 || at + needle.len() > s.len()) { return false; }
+    return s.slice(at, at + needle.len()) == needle;
+}
+
+// Strict UTF-8 scalar sequence length at byte i; rejects overlong forms,
+// surrogate encodings, stray continuations, truncation and > U+10FFFF.
+int ccam_json_utf8_length(Tainted s, int i) {
+    int c = -1;
+    if (i >= 0 && i < s.len()) { c = s.at(i); }
+    if (c < 0) { return 0; }
+    if (c < 128) { return 1; }
+    int n = 0;
+    int lo = 128;
+    int hi = 191;
+    if (c >= 194 && c <= 223) {
+        n = 2;
+    } else if (c >= 224 && c <= 239) {
+        n = 3;
+        if (c == 224) { lo = 160; }
+        if (c == 237) { hi = 159; }
+    } else if (c >= 240 && c <= 244) {
+        n = 4;
+        if (c == 240) { lo = 144; }
+        if (c == 244) { hi = 143; }
+    } else {
+        return 0;
+    }
+    if (i + n > s.len()) { return 0; }
+    int c1 = s.at(i + 1);
+    if (c1 < lo || c1 > hi) { return 0; }
+    for (int j = 2; j < n; j += 1) {
+        int cj = s.at(i + j);
+        if (cj < 128 || cj > 191) { return 0; }
+    }
+    return n;
+}
+
+void ccam_json_put_utf8(List<Tainted> parts, int cp) {
+    if (cp < 128) {
+        parts.push(taint_char(cp));
+    } else if (cp < 2048) {
+        parts.push(taint_char(192 + cp / 64));
+        parts.push(taint_char(128 + cp % 64));
+    } else if (cp < 65536) {
+        parts.push(taint_char(224 + cp / 4096));
+        parts.push(taint_char(128 + (cp / 64) % 64));
+        parts.push(taint_char(128 + cp % 64));
+    } else {
+        parts.push(taint_char(240 + cp / 262144));
+        parts.push(taint_char(128 + (cp / 4096) % 64));
+        parts.push(taint_char(128 + (cp / 64) % 64));
+        parts.push(taint_char(128 + cp % 64));
+    }
+}
+
+int ccam_json_hex4(CCAMJsonParser p) {
+    int value = 0;
+    for (int i = 0; i < 4; i += 1) {
+        int digit = ccam_json_hex(ccam_json_ch(p, p.position + i));
+        if (digit < 0) {
+            ccam_json_fail(p, "invalid Unicode escape");
+            return -1;
+        }
+        value = value * 16 + digit;
+    }
+    p.position += 4;
+    return value;
+}
+
+void ccam_json_ws(CCAMJsonParser p) {
+    while (p.error == "") {
+        int c = ccam_json_ch(p, p.position);
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            p.position += 1;
+        } else {
+            return;
+        }
+    }
+}
+
+// Called with the cursor at the opening quote. The decoded value is bounded
+// before it is admitted to the JSON tree.
+Tainted ccam_json_read_string(CCAMJsonParser p) {
+    p.position += 1;
+    List<Tainted> parts = new List<Tainted>();
+    int run = p.position;
+    while (p.error == "") {
+        int c = ccam_json_ch(p, p.position);
+        if (c < 0) {
+            ccam_json_fail(p, "unterminated string");
+        } else if (c == '"') {
+            parts.push(p.input.slice(run, p.position));
+            p.position += 1;
+            Tainted decoded = ccam_json_join_parts(parts, 0, parts.len());
+            if (decoded.len() > CCAM_JSON_MAX_STRING_BYTES) {
+                ccam_json_fail(p, "decoded string exceeds byte limit");
+                return taint("");
+            }
+            if (decoded.len() > CCAM_JSON_MAX_TOTAL_STRING_BYTES -
+                p.string_bytes) {
+                ccam_json_fail(p, "aggregate decoded strings exceed byte limit");
+                return taint("");
+            }
+            p.string_bytes += decoded.len();
+            return decoded;
+        } else if (c < 32) {
+            ccam_json_fail(p, "unescaped control byte in string");
+        } else if (c == '\\') {
+            parts.push(p.input.slice(run, p.position));
+            int escape = ccam_json_ch(p, p.position + 1);
+            p.position += 2;
+            if (escape == '"' || escape == '\\' || escape == '/') {
+                parts.push(p.input.slice(p.position - 1, p.position));
+            } else if (escape == 'n') {
+                parts.push(taint("\n"));
+            } else if (escape == 'r') {
+                parts.push(taint("\r"));
+            } else if (escape == 't') {
+                parts.push(taint("\t"));
+            } else if (escape == 'b') {
+                parts.push(taint_char(8));
+            } else if (escape == 'f') {
+                parts.push(taint_char(12));
+            } else if (escape == 'u') {
+                int cp = ccam_json_hex4(p);
+                if (cp >= 55296 && cp <= 56319) {
+                    if (!ccam_json_has_at(p.input, p.position, "\\u")) {
+                        ccam_json_fail(p, "unpaired high surrogate");
+                    } else {
+                        p.position += 2;
+                        int low = ccam_json_hex4(p);
+                        if (low < 56320 || low > 57343) {
+                            ccam_json_fail(p, "invalid low surrogate");
+                        } else {
+                            cp = 65536 + (cp - 55296) * 1024 +
+                                (low - 56320);
+                        }
+                    }
+                } else if (cp >= 56320 && cp <= 57343) {
+                    ccam_json_fail(p, "unpaired low surrogate");
+                }
+                if (p.error == "" && cp >= 0) {
+                    ccam_json_put_utf8(parts, cp);
+                }
+            } else {
+                ccam_json_fail(p, "invalid string escape");
+            }
+            run = p.position;
+        } else if (c >= 128) {
+            int width = ccam_json_utf8_length(p.input, p.position);
+            if (width == 0) {
+                ccam_json_fail(p, "invalid UTF-8 in string");
+            } else {
+                p.position += width;
+            }
+        } else {
+            p.position += 1;
+        }
+    }
+    return taint("");
+}
+
+bool ccam_json_digit(int c) {
+    return c >= '0' && c <= '9';
+}
+
+CCAMJsonValue ccam_json_read_number(CCAMJsonParser p) {
+    int start = p.position;
+    if (ccam_json_ch(p, p.position) == '-') { p.position += 1; }
+    if (ccam_json_ch(p, p.position) == '0') {
+        p.position += 1;
+    } else if (ccam_json_ch(p, p.position) >= '1' &&
+               ccam_json_ch(p, p.position) <= '9') {
+        while (ccam_json_digit(ccam_json_ch(p, p.position))) {
+            p.position += 1;
+        }
+    } else {
+        ccam_json_fail(p, "invalid JSON number");
+    }
+    if (ccam_json_ch(p, p.position) == '.') {
+        p.position += 1;
+        if (!ccam_json_digit(ccam_json_ch(p, p.position))) {
+            ccam_json_fail(p, "invalid JSON fraction");
+        }
+        while (ccam_json_digit(ccam_json_ch(p, p.position))) {
+            p.position += 1;
+        }
+    }
+    int e = ccam_json_ch(p, p.position);
+    if (e == 'e' || e == 'E') {
+        p.position += 1;
+        int sign = ccam_json_ch(p, p.position);
+        if (sign == '+' || sign == '-') { p.position += 1; }
+        if (!ccam_json_digit(ccam_json_ch(p, p.position))) {
+            ccam_json_fail(p, "invalid JSON exponent");
+        }
+        while (ccam_json_digit(ccam_json_ch(p, p.position))) {
+            p.position += 1;
+        }
+    }
+    CCAMJsonValue result = ccam_json_new(CCAM_JSON_NUMBER);
+    if (p.error == "") { result.text = p.input.slice(start, p.position); }
+    return result;
+}
+
+bool ccam_json_word(CCAMJsonParser p, string word) {
+    if (ccam_json_has_at(p.input, p.position, word)) {
+        p.position += word.len();
+        return true;
+    }
+    return false;
+}
+
+CCAMJsonValue ccam_json_read_value(CCAMJsonParser p, int depth) {
+    if (depth > CCAM_JSON_MAX_DEPTH) {
+        ccam_json_fail(p, "JSON nesting limit exceeded");
+        return ccam_json_new(CCAM_JSON_NULL);
+    }
+    p.nodes += 1;
+    if (p.nodes > CCAM_JSON_MAX_NODES) {
+        ccam_json_fail(p, "JSON node limit exceeded");
+        return ccam_json_new(CCAM_JSON_NULL);
+    }
+    ccam_json_ws(p);
+    int c = ccam_json_ch(p, p.position);
+    if (c == '{') {
+        CCAMJsonValue object = ccam_json_new(CCAM_JSON_OBJECT);
+        p.position += 1;
+        ccam_json_ws(p);
+        if (ccam_json_ch(p, p.position) == '}') {
+            p.position += 1;
+            return object;
+        }
+        while (p.error == "") {
+            ccam_json_ws(p);
+            if (ccam_json_ch(p, p.position) != '"') {
+                ccam_json_fail(p, "object key must be a string");
+                return object;
+            }
+            if (object.keys.len() >= CCAM_JSON_MAX_OBJECT_FIELDS) {
+                ccam_json_fail(p, "object field count limit exceeded");
+                return object;
+            }
+            Tainted key = ccam_json_read_string(p);
+            for (int k = 0; k < object.keys.len(); k += 1) {
+                if (object.keys[k] == key) {
+                    ccam_json_fail(p, "duplicate object key");
+                    return object;
+                }
+            }
+            ccam_json_ws(p);
+            if (ccam_json_ch(p, p.position) != ':') {
+                ccam_json_fail(p, "expected colon after object key");
+                return object;
+            }
+            p.position += 1;
+            CCAMJsonValue child = ccam_json_read_value(p, depth + 1);
+            object.keys.push(key);
+            object.items.push(child);
+            ccam_json_ws(p);
+            int delimiter = ccam_json_ch(p, p.position);
+            if (delimiter == '}') {
+                p.position += 1;
+                return object;
+            }
+            if (delimiter != ',') {
+                ccam_json_fail(p, "expected comma or closing brace");
+                return object;
+            }
+            p.position += 1;
+        }
+        return object;
+    }
+    if (c == '[') {
+        CCAMJsonValue array = ccam_json_new(CCAM_JSON_ARRAY);
+        p.position += 1;
+        ccam_json_ws(p);
+        if (ccam_json_ch(p, p.position) == ']') {
+            p.position += 1;
+            return array;
+        }
+        while (p.error == "") {
+            array.items.push(ccam_json_read_value(p, depth + 1));
+            ccam_json_ws(p);
+            int delimiter = ccam_json_ch(p, p.position);
+            if (delimiter == ']') {
+                p.position += 1;
+                return array;
+            }
+            if (delimiter != ',') {
+                ccam_json_fail(p, "expected comma or closing bracket");
+                return array;
+            }
+            p.position += 1;
+        }
+        return array;
+    }
+    if (c == '"') {
+        CCAMJsonValue value = ccam_json_new(CCAM_JSON_STRING);
+        value.text = ccam_json_read_string(p);
+        return value;
+    }
+    if (c == '-' || ccam_json_digit(c)) {
+        return ccam_json_read_number(p);
+    }
+    if (ccam_json_word(p, "true")) {
+        CCAMJsonValue value = ccam_json_new(CCAM_JSON_BOOL);
+        value.boolean_value = true;
+        return value;
+    }
+    if (ccam_json_word(p, "false")) {
+        return ccam_json_new(CCAM_JSON_BOOL);
+    }
+    if (ccam_json_word(p, "null")) {
+        return ccam_json_new(CCAM_JSON_NULL);
+    }
+    ccam_json_fail(p, "expected JSON value");
+    return ccam_json_new(CCAM_JSON_NULL);
+}
+
+CCAMJsonParseResult ccam_json_parse(Tainted input) {
+    if (input.len() == 0 || input.len() > CCAM_JSON_MAX_BYTES) {
+        return new CCAMJsonParseResult{
+            ok: false, value: ccam_json_new(CCAM_JSON_NULL),
+            error: "input_size_out_of_range"
+        };
+    }
+    CCAMJsonParser parser = new CCAMJsonParser{
+        input: input, position: 0, nodes: 0, string_bytes: 0, error: ""
+    };
+    CCAMJsonValue value = ccam_json_read_value(parser, 0);
+    ccam_json_ws(parser);
+    if (parser.error == "" && parser.position != input.len()) {
+        ccam_json_fail(parser, "trailing bytes after JSON value");
+    }
+    if (parser.error != "") {
+        return new CCAMJsonParseResult{
+            ok: false, value: ccam_json_new(CCAM_JSON_NULL),
+            error: parser.error
+        };
+    }
+    return new CCAMJsonParseResult{ok: true, value: value, error: ""};
+}
+
+struct CCAMJsonStringResult {
+    bool ok;
+    string value;
+}
+
+struct CCAMJsonIntResult {
+    bool ok;
+    int value;
+}
+
+CCAMJsonValue ccam_json_member(CCAMJsonValue object, string key) {
+    if (object.kind == CCAM_JSON_OBJECT) {
+        for (int i = 0; i < object.keys.len(); i += 1) {
+            if (object.keys[i] == key) { return object.items[i]; }
+        }
+    }
+    return ccam_json_new(0);
+}
+
+bool ccam_json_exact_fields(CCAMJsonValue object, List<string> expected) {
+    if (object.kind != CCAM_JSON_OBJECT ||
+        object.keys.len() != expected.len()) { return false; }
+    for (int i = 0; i < expected.len(); i += 1) {
+        bool found = false;
+        for (int j = 0; j < object.keys.len(); j += 1) {
+            if (object.keys[j] == expected[i]) { found = true; }
+        }
+        if (!found) { return false; }
+    }
+    return true;
+}
+
+string ccam_json_string_to_machine(Tainted value) {
+    // Reached only after strict JSON UTF-8/scalar validation, NUL checks and
+    // the relevant field grammar/length checks. This is the explicit taint
+    // boundary for machine identifiers and trap labels.
+    return trust(value,
+        "CCAM JSON decoder validated UTF-8 scalars, field grammar, NUL exclusion and bounds");
+}
+
+CCAMJsonStringResult ccam_json_string_value(CCAMJsonValue value) {
+    if (value.kind != CCAM_JSON_STRING ||
+        value.text.len() > CCAM_JSON_MAX_STRING_BYTES) {
+        return new CCAMJsonStringResult{ok: false, value: ""};
+    }
+    // The decoder's machine-string boundary excludes embedded NUL from every
+    // schema string, not only function names. UTF-8 scalar validity was already
+    // established by ccam_json_read_string.
+    for (int i = 0; i < value.text.len(); i += 1) {
+        if (value.text.at(i) == 0) {
+            return new CCAMJsonStringResult{ok: false, value: ""};
+        }
+    }
+    return new CCAMJsonStringResult{
+        ok: true, value: ccam_json_string_to_machine(value.text)
+    };
+}
+
+CCAMJsonStringResult ccam_json_get_string(CCAMJsonValue object, string key) {
+    return ccam_json_string_value(ccam_json_member(object, key));
+}
+
+CCAMJsonIntResult ccam_json_integer(CCAMJsonValue value) {
+    if (value.kind == CCAM_JSON_NUMBER) {
+        if (let number = validate_int(value.text)) {
+            return new CCAMJsonIntResult{ok: true, value: number};
+        }
+    }
+    return new CCAMJsonIntResult{ok: false, value: 0};
+}
+
+CCAMJsonIntResult ccam_json_get_int(CCAMJsonValue object, string key) {
+    return ccam_json_integer(ccam_json_member(object, key));
+}
+
+bool ccam_json_valid_name(string name) {
+    if (name.len() == 0 || name.len() > CCAM_MAX_FUNCTION_NAME_BYTES) {
+        return false;
+    }
+    for (int i = 0; i < name.len(); i += 1) {
+        if (name.at(i) == 0) { return false; }
+    }
+    return true;
+}
+
+bool ccam_json_valid_trap_name(string name) {
+    return ccam_valid_trap_reason(name);
+}
+
+CCAMJsonProgramResult ccam_json_program_error(string error) {
+    return new CCAMJsonProgramResult{
+        ok: false, functions: new List<CCAMFunction>(),
+        entry_function: -1, error: error
+    };
+}
+
+List<string> ccam_json_fields(string a, string b, string c, string d, string e) {
+    List<string> fields = new List<string>();
+    if (a != "") { fields.push(a); }
+    if (b != "") { fields.push(b); }
+    if (c != "") { fields.push(c); }
+    if (d != "") { fields.push(d); }
+    if (e != "") { fields.push(e); }
+    return fields;
+}
+
+CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
+    CCAMJsonParseResult parsed = ccam_json_parse(raw);
+    if (!parsed.ok) { return ccam_json_program_error(parsed.error); }
+    CCAMJsonValue root = parsed.value;
+    List<string> root_fields = ccam_json_fields("entry", "functions", "", "", "");
+    if (!ccam_json_exact_fields(root, root_fields)) {
+        return ccam_json_program_error("program_schema_mismatch");
+    }
+
+    CCAMJsonStringResult entry_result = ccam_json_get_string(root, "entry");
+    if (!entry_result.ok || !ccam_json_valid_name(entry_result.value)) {
+        return ccam_json_program_error("entry_must_be_valid_string");
+    }
+    CCAMJsonValue functions_json = ccam_json_member(root, "functions");
+    if (functions_json.kind != CCAM_JSON_ARRAY ||
+        functions_json.items.len() == 0 ||
+        functions_json.items.len() > CCAM_JSON_MAX_FUNCTIONS) {
+        return ccam_json_program_error("function_count_out_of_range");
+    }
+
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    Map<int> function_indices = new Map<int>();
+    int total_instructions = 0;
+    int total_registers = 0;
+    int total_name_bytes = 0;
+
+    // Pass one establishes every function signature before resolving forward
+    // and recursive call references.
+    for (int fi = 0; fi < functions_json.items.len(); fi += 1) {
+        CCAMJsonValue fn_json = functions_json.items[fi];
+        List<string> fn_fields = ccam_json_fields(
+            "name", "register_types", "parameter_count", "return_type", "instructions");
+        if (!ccam_json_exact_fields(fn_json, fn_fields)) {
+            return ccam_json_program_error("function_schema_mismatch");
+        }
+
+        CCAMJsonStringResult name_result = ccam_json_get_string(fn_json, "name");
+        if (!name_result.ok || !ccam_json_valid_name(name_result.value)) {
+            return ccam_json_program_error("invalid_function_name");
+        }
+        string name = name_result.value;
+        if (function_indices.has(name)) {
+            return ccam_json_program_error("duplicate_function_name");
+        }
+        if (name.len() > CCAM_MAX_TOTAL_FUNCTION_NAME_BYTES - total_name_bytes) {
+            return ccam_json_program_error("total_function_name_limit_exceeded");
+        }
+        total_name_bytes += name.len();
+        function_indices.set(name, fi);
+
+        CCAMJsonValue registers_json = ccam_json_member(fn_json, "register_types");
+        if (registers_json.kind != CCAM_JSON_ARRAY ||
+            registers_json.items.len() > CCAM_MAX_REGISTERS) {
+            return ccam_json_program_error("register_type_vector_invalid");
+        }
+        if (registers_json.items.len() > CCAM_MAX_TOTAL_REGISTERS - total_registers) {
+            return ccam_json_program_error("total_register_limit_exceeded");
+        }
+        total_registers += registers_json.items.len();
+        List<int> register_types = new List<int>();
+        for (int ri = 0; ri < registers_json.items.len(); ri += 1) {
+            CCAMJsonStringResult type_result =
+                ccam_json_string_value(registers_json.items[ri]);
+            if (!type_result.ok) {
+                return ccam_json_program_error("register_type_must_be_string");
+            }
+            if (type_result.value == "int") {
+                register_types.push(CCAM_TYPE_INT);
+            } else if (type_result.value == "bool") {
+                register_types.push(CCAM_TYPE_BOOL);
+            } else {
+                return ccam_json_program_error("unknown_register_type");
+            }
+        }
+
+        CCAMJsonIntResult parameter_result =
+            ccam_json_get_int(fn_json, "parameter_count");
+        if (!parameter_result.ok || parameter_result.value < 0 ||
+            parameter_result.value > register_types.len()) {
+            return ccam_json_program_error("invalid_parameter_count");
+        }
+        CCAMJsonStringResult return_result =
+            ccam_json_get_string(fn_json, "return_type");
+        if (!return_result.ok) {
+            return ccam_json_program_error("invalid_return_type");
+        }
+        int return_type = 0;
+        if (return_result.value == "int") { return_type = CCAM_RETURN_INT; }
+        else if (return_result.value == "bool") { return_type = CCAM_RETURN_BOOL; }
+        else if (return_result.value == "void") { return_type = CCAM_RETURN_VOID; }
+        else { return ccam_json_program_error("invalid_return_type"); }
+
+        CCAMJsonValue code_json = ccam_json_member(fn_json, "instructions");
+        if (code_json.kind != CCAM_JSON_ARRAY || code_json.items.len() == 0) {
+            return ccam_json_program_error("instruction_sequence_invalid");
+        }
+        if (code_json.items.len() >
+            CCAM_JSON_MAX_TOTAL_INSTRUCTIONS - total_instructions) {
+            return ccam_json_program_error("instruction_limit_exceeded");
+        }
+        total_instructions += code_json.items.len();
+        functions.push(new CCAMFunction{
+            name: name, register_types: register_types,
+            parameter_count: parameter_result.value, return_type: return_type,
+            instructions: new List<CCAMInstruction>(),
+            call_sites: new List<CCAMCallSite>()
+        });
+    }
+
+    int entry_index = -1;
+    if (let found_entry = function_indices.get(entry_result.value)) {
+        entry_index = found_entry;
+    }
+    if (entry_index < 0) {
+        return ccam_json_program_error("entry_function_not_found");
+    }
+
+    int total_call_arguments = 0;
+    // Pass two decodes exact opcode schemas and resolves call names.
+    for (int fi = 0; fi < functions_json.items.len(); fi += 1) {
+        CCAMJsonValue fn_json = functions_json.items[fi];
+        CCAMJsonValue code_json = ccam_json_member(fn_json, "instructions");
+        CCAMFunction fn = functions[fi];
+        for (int pc = 0; pc < code_json.items.len(); pc += 1) {
+            CCAMJsonValue op_json = code_json.items[pc];
+            if (op_json.kind != CCAM_JSON_OBJECT) {
+                return ccam_json_program_error("instruction_must_be_object");
+            }
+            CCAMJsonStringResult op_result = ccam_json_get_string(op_json, "op");
+            if (!op_result.ok) {
+                return ccam_json_program_error("instruction_missing_opcode");
+            }
+            string op = op_result.value;
+            CCAMInstruction instruction = new CCAMInstruction{
+                op: 0, dst: 0, lhs: 0, rhs: 0, src: 0, target: 0,
+                if_true: 0, if_false: 0, int_value: 0, bool_value: false,
+                reason: "", byte_data: new List<int>()
+            };
+            List<string> fields = new List<string>();
+            fields.push("op");
+
+            if (op == "const_i") {
+                instruction.op = CCAM_OP_CONST_I;
+                fields.push("dst"); fields.push("value");
+                CCAMJsonIntResult dst = ccam_json_get_int(op_json, "dst");
+                CCAMJsonIntResult value = ccam_json_get_int(op_json, "value");
+                if (!dst.ok || !value.ok || dst.value < 0) {
+                    return ccam_json_program_error("const_i_operand_invalid");
+                }
+                instruction.dst = dst.value; instruction.int_value = value.value;
+            } else if (op == "const_b") {
+                instruction.op = CCAM_OP_CONST_B;
+                fields.push("dst"); fields.push("value");
+                CCAMJsonIntResult dst = ccam_json_get_int(op_json, "dst");
+                CCAMJsonValue value = ccam_json_member(op_json, "value");
+                if (!dst.ok || dst.value < 0 || value.kind != CCAM_JSON_BOOL) {
+                    return ccam_json_program_error("const_b_operand_invalid");
+                }
+                instruction.dst = dst.value;
+                instruction.bool_value = value.boolean_value;
+            } else if (op == "move" || op == "not_b") {
+                if (op == "move") { instruction.op = CCAM_OP_MOVE; }
+                else { instruction.op = CCAM_OP_NOT_B; }
+                fields.push("dst"); fields.push("src");
+                CCAMJsonIntResult dst = ccam_json_get_int(op_json, "dst");
+                CCAMJsonIntResult src = ccam_json_get_int(op_json, "src");
+                if (!dst.ok || !src.ok || dst.value < 0 || src.value < 0) {
+                    return ccam_json_program_error("unary_operand_invalid");
+                }
+                instruction.dst = dst.value; instruction.src = src.value;
+            } else if (op == "add_i" || op == "sub_i" || op == "mul_i" ||
+                       op == "div_i" || op == "rem_i" || op == "eq_i" ||
+                       op == "lt_i") {
+                if (op == "add_i") { instruction.op = CCAM_OP_ADD_I; }
+                else if (op == "sub_i") { instruction.op = CCAM_OP_SUB_I; }
+                else if (op == "mul_i") { instruction.op = CCAM_OP_MUL_I; }
+                else if (op == "div_i") { instruction.op = CCAM_OP_DIV_I; }
+                else if (op == "rem_i") { instruction.op = CCAM_OP_REM_I; }
+                else if (op == "eq_i") { instruction.op = CCAM_OP_EQ_I; }
+                else { instruction.op = CCAM_OP_LT_I; }
+                fields.push("dst"); fields.push("lhs"); fields.push("rhs");
+                CCAMJsonIntResult dst = ccam_json_get_int(op_json, "dst");
+                CCAMJsonIntResult lhs = ccam_json_get_int(op_json, "lhs");
+                CCAMJsonIntResult rhs = ccam_json_get_int(op_json, "rhs");
+                if (!dst.ok || !lhs.ok || !rhs.ok ||
+                    dst.value < 0 || lhs.value < 0 || rhs.value < 0) {
+                    return ccam_json_program_error("binary_operand_invalid");
+                }
+                instruction.dst = dst.value; instruction.lhs = lhs.value;
+                instruction.rhs = rhs.value;
+            } else if (op == "jump") {
+                instruction.op = CCAM_OP_JUMP;
+                fields.push("target");
+                CCAMJsonIntResult target = ccam_json_get_int(op_json, "target");
+                if (!target.ok || target.value < 0) {
+                    return ccam_json_program_error("jump_target_invalid");
+                }
+                instruction.target = target.value;
+            } else if (op == "branch") {
+                instruction.op = CCAM_OP_BRANCH;
+                fields.push("cond"); fields.push("if_true"); fields.push("if_false");
+                CCAMJsonIntResult cond = ccam_json_get_int(op_json, "cond");
+                CCAMJsonIntResult yes = ccam_json_get_int(op_json, "if_true");
+                CCAMJsonIntResult no = ccam_json_get_int(op_json, "if_false");
+                if (!cond.ok || !yes.ok || !no.ok ||
+                    cond.value < 0 || yes.value < 0 || no.value < 0) {
+                    return ccam_json_program_error("branch_operand_invalid");
+                }
+                instruction.src = cond.value;
+                instruction.if_true = yes.value; instruction.if_false = no.value;
+            } else if (op == "call") {
+                instruction.op = CCAM_OP_CALL;
+                fields.push("dst"); fields.push("function"); fields.push("args");
+                CCAMJsonStringResult callee_name =
+                    ccam_json_get_string(op_json, "function");
+                if (!callee_name.ok) {
+                    return ccam_json_program_error("call_function_must_be_string");
+                }
+                int callee_index = -1;
+                if (let found_callee = function_indices.get(callee_name.value)) {
+                    callee_index = found_callee;
+                }
+                if (callee_index < 0) {
+                    return ccam_json_program_error("call_target_not_found");
+                }
+                CCAMJsonValue args_json = ccam_json_member(op_json, "args");
+                if (args_json.kind != CCAM_JSON_ARRAY ||
+                    args_json.items.len() >
+                        CCAM_MAX_CALL_ARGUMENTS - total_call_arguments) {
+                    return ccam_json_program_error("call_arguments_invalid");
+                }
+                total_call_arguments += args_json.items.len();
+                List<int> args = new List<int>();
+                for (int ai = 0; ai < args_json.items.len(); ai += 1) {
+                    CCAMJsonIntResult argument =
+                        ccam_json_integer(args_json.items[ai]);
+                    if (!argument.ok || argument.value < 0) {
+                        return ccam_json_program_error("call_argument_index_invalid");
+                    }
+                    args.push(argument.value);
+                }
+                CCAMJsonValue dst_json = ccam_json_member(op_json, "dst");
+                if (dst_json.kind == 0) {
+                    return ccam_json_program_error("call_destination_missing");
+                }
+                bool has_destination = false;
+                int destination = 0;
+                if (dst_json.kind != CCAM_JSON_NULL) {
+                    CCAMJsonIntResult dst = ccam_json_integer(dst_json);
+                    if (!dst.ok || dst.value < 0) {
+                        return ccam_json_program_error("call_destination_invalid");
+                    }
+                    has_destination = true;
+                    destination = dst.value;
+                }
+                fn.call_sites.push(new CCAMCallSite{
+                    instruction_index: pc, callee_index: callee_index,
+                    argument_registers: args,
+                    destination_register: destination,
+                    has_destination: has_destination
+                });
+            } else if (op == "ret") {
+                instruction.op = CCAM_OP_RET;
+                fields.push("src");
+                CCAMJsonIntResult src = ccam_json_get_int(op_json, "src");
+                if (!src.ok || src.value < 0) {
+                    return ccam_json_program_error("return_source_invalid");
+                }
+                instruction.src = src.value;
+            } else if (op == "ret_void") {
+                instruction.op = CCAM_OP_RET_VOID;
+            } else if (op == "trap") {
+                instruction.op = CCAM_OP_TRAP;
+                fields.push("reason");
+                CCAMJsonStringResult reason =
+                    ccam_json_get_string(op_json, "reason");
+                if (!reason.ok || !ccam_json_valid_trap_name(reason.value)) {
+                    return ccam_json_program_error("trap_reason_invalid");
+                }
+                instruction.reason = reason.value;
+            } else {
+                return ccam_json_program_error("unknown_opcode");
+            }
+
+            if (!ccam_json_exact_fields(op_json, fields)) {
+                return ccam_json_program_error("instruction_schema_mismatch");
+            }
+            fn.instructions.push(instruction);
+        }
+        functions[fi] = fn;
+    }
+
+    CCAMValidationResult validation =
+        ccam_validate_multi_function(functions, entry_index);
+    if (!validation.ok) {
+        return ccam_json_program_error(validation.error);
+    }
+    return new CCAMJsonProgramResult{
+        ok: true, functions: functions, entry_function: entry_index, error: ""
+    };
+}
+
+CCAMCallMachineCreateResult ccam_json_machine_create(
+    Tainted raw, int max_steps, int max_depth, int max_output_bytes
+) {
+    CCAMJsonProgramResult decoded = ccam_json_decode_program(raw);
+    if (!decoded.ok) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(), error: decoded.error
+        };
+    }
+    return ccam_call_machine_create_with_output_budget(
+        decoded.functions, decoded.entry_function,
+        max_steps, max_depth, max_output_bytes);
+}
+
+// ---- conformance tests -------------------------------------------------------------
+
+test "CCAM JSON parser accepts a minimal JSON object" {
+    CCAMJsonParseResult parsed = ccam_json_parse(
+        taint("{\"entry\":\"main\",\"functions\":[]}"));
+    assert(parsed.ok);
+    assert(parsed.value.kind == CCAM_JSON_OBJECT);
+}
+
+test "CCAM JSON parser rejects duplicate keys after escape decoding" {
+    CCAMJsonParseResult parsed = ccam_json_parse(
+        taint("{\"entry\":\"main\",\"\\u0065ntry\":\"other\"}"));
+    assert(!parsed.ok);
+    assert(parsed.error != "");
+}
+
+test "CCAM JSON parser rejects malformed UTF-8" {
+    Tainted invalid = taint_char(34) + taint_char(0xC0) +
+        taint_char(0xAF) + taint_char(34);
+    CCAMJsonParseResult parsed = ccam_json_parse(invalid);
+    assert(!parsed.ok);
+}
+
+test "CCAM JSON parser rejects unpaired surrogates" {
+    CCAMJsonParseResult high = ccam_json_parse(taint("\"\\uD800\""));
+    CCAMJsonParseResult low = ccam_json_parse(taint("\"\\uDC00\""));
+    assert(!high.ok && !low.ok);
+}
+
+test "CCAM JSON parser rejects trailing data and malformed numbers" {
+    assert(!ccam_json_parse(taint("{} {}")).ok);
+    assert(!ccam_json_parse(taint("{\"x\":01}")).ok);
+    assert(!ccam_json_parse(taint("{\"x\":1.}")).ok);
+}
+
+test "CCAM JSON parser enforces nesting and input limits" {
+    string nested = "";
+    for (int i = 0; i < CCAM_JSON_MAX_DEPTH + 2; i += 1) {
+        nested = nested + "[";
+    }
+    nested = nested + "0";
+    for (int i = 0; i < CCAM_JSON_MAX_DEPTH + 2; i += 1) {
+        nested = nested + "]";
+    }
+    assert(!ccam_json_parse(taint(nested)).ok);
+    assert(!ccam_json_parse(taint("")).ok);
+}
+
+test "CCAM JSON decoder accepts and validates a minimal integer program" {
+    string source = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":42},{\"op\":\"ret\",\"src\":0}]}]}";
+    CCAMJsonProgramResult decoded = ccam_json_decode_program(taint(source));
+    assert(decoded.ok);
+    assert(decoded.entry_function == 0);
+    assert(decoded.functions.len() == 1);
+    assert(decoded.functions[0].instructions.len() == 2);
+    CCAMCallMachineCreateResult machine = ccam_json_machine_create(
+        taint(source), 100, 8, CCAM_MAX_OUTPUT_BYTES);
+    assert(machine.ok);
+}
+
+test "CCAM JSON decoder rejects unknown and missing fields" {
+    string unknown = "{\"entry\":\"main\",\"functions\":[],\"extra\":0}";
+    string missing = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\"}]}";
+    assert(!ccam_json_decode_program(taint(unknown)).ok);
+    assert(!ccam_json_decode_program(taint(missing)).ok);
+}
+
+test "CCAM v0.1 JSON decoder rejects unversioned v0.2 output opcodes and extra instruction fields" {
+    string output_extension = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[],\"parameter_count\":0,\"return_type\":\"void\",\"instructions\":[{\"op\":\"emit_bytes\",\"bytes\":[65]},{\"op\":\"ret_void\"}]}]}";
+    string extra = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":1,\"surprise\":true},{\"op\":\"ret\",\"src\":0}]}]}";
+    assert(!ccam_json_decode_program(taint(output_extension)).ok);
+    assert(!ccam_json_decode_program(taint(extra)).ok);
+}
+
+test "CCAM JSON decoder rejects duplicate function names and invalid entry signature" {
+    string duplicate = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[],\"parameter_count\":0,\"return_type\":\"void\",\"instructions\":[{\"op\":\"ret_void\"}]},{\"name\":\"main\",\"register_types\":[],\"parameter_count\":0,\"return_type\":\"void\",\"instructions\":[{\"op\":\"ret_void\"}]}]}";
+    assert(!ccam_json_decode_program(taint(duplicate)).ok);
+    string bad_entry = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":1,\"return_type\":\"int\",\"instructions\":[{\"op\":\"ret\",\"src\":0}]}]}";
+    assert(!ccam_json_decode_program(taint(bad_entry)).ok);
+}
+
+test "CCAM JSON decoder rejects floating point and out of range integer fields" {
+    string fractional = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":1.0},{\"op\":\"ret\",\"src\":0}]}]}";
+    string overflow = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":9223372036854775808},{\"op\":\"ret\",\"src\":0}]}]}";
+    assert(!ccam_json_decode_program(taint(fractional)).ok);
+    assert(!ccam_json_decode_program(taint(overflow)).ok);
+}
+
+test "CCAM JSON decoder resolves forward calls and validates signatures" {
+    string source = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"call\",\"dst\":0,\"function\":\"answer\",\"args\":[]},{\"op\":\"ret\",\"src\":0}]},{\"name\":\"answer\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":42},{\"op\":\"ret\",\"src\":0}]}]}";
+    CCAMJsonProgramResult decoded = ccam_json_decode_program(taint(source));
+    assert(decoded.ok);
+    assert(decoded.functions[0].call_sites.len() == 1);
+    assert(decoded.functions[0].call_sites[0].callee_index == 1);
+    CCAMCallMachineCreateResult machine = ccam_json_machine_create(
+        taint(source), 100, 8, CCAM_MAX_OUTPUT_BYTES);
+    assert(machine.ok);
+    for (int step = 0; step < 8 && !machine.machine.halted; step += 1) {
+        ccam_call_machine_step(machine.machine);
+    }
+    assert(machine.machine.halted);
+    assert(machine.machine.halt_has_value);
+    assert(machine.machine.halt_value == 42);
+}
+
+test "CCAM JSON decoder rejects bad call targets and arity" {
+    string missing = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[],\"parameter_count\":0,\"return_type\":\"void\",\"instructions\":[{\"op\":\"call\",\"dst\":null,\"function\":\"missing\",\"args\":[]},{\"op\":\"ret_void\"}]}]}";
+    assert(!ccam_json_decode_program(taint(missing)).ok);
+}
+
+test "CCAM JSON machine constructor refuses malformed documents before execution" {
+    CCAMCallMachineCreateResult rejected = ccam_json_machine_create(
+        taint("{\"entry\":\"main\",\"functions\":[],\"unexpected\":true}"),
+        100, 8, CCAM_MAX_OUTPUT_BYTES);
+    assert(!rejected.ok);
+    assert(rejected.machine.frame_depth == 0);
+}
+
+
+test "CCAM JSON parser accepts a valid supplementary Unicode scalar" {
+    CCAMJsonParseResult parsed = ccam_json_parse(taint("\"\\uD83D\\uDE00\""));
+    assert(parsed.ok);
+    assert(parsed.value.kind == CCAM_JSON_STRING);
+    assert(parsed.value.text.len() == 4);
+}
+
+test "CCAM JSON parser rejects malformed UTF-8 continuation and truncation" {
+    Tainted stray = taint_char(34) + taint_char(0x80) + taint_char(34);
+    Tainted truncated = taint_char(34) + taint_char(0xE2) +
+        taint_char(0x82) + taint_char(34);
+    assert(!ccam_json_parse(stray).ok);
+    assert(!ccam_json_parse(truncated).ok);
+}
+
+test "CCAM JSON parser enforces the complete JSON number grammar" {
+    assert(!ccam_json_parse(taint("-")).ok);
+    assert(!ccam_json_parse(taint("01")).ok);
+    assert(!ccam_json_parse(taint("-01")).ok);
+    assert(!ccam_json_parse(taint("1.")).ok);
+    assert(!ccam_json_parse(taint(".1")).ok);
+    assert(!ccam_json_parse(taint("1e")).ok);
+    assert(!ccam_json_parse(taint("1e+")).ok);
+    assert(!ccam_json_parse(taint("+1")).ok);
+    assert(ccam_json_parse(taint("-0")).ok);
+    assert(ccam_json_parse(taint("1.25e-2")).ok);
+}
+
+test "CCAM JSON integer decoder rejects exponent and fractional representations" {
+    assert(!ccam_json_integer(ccam_json_parse(taint("1e0")).value).ok);
+    assert(!ccam_json_integer(ccam_json_parse(taint("1.0")).value).ok);
+    assert(ccam_json_integer(ccam_json_parse(taint("-9223372036854775808")).value).ok);
+    assert(ccam_json_integer(ccam_json_parse(taint("9223372036854775807")).value).ok);
+}
+
+
+test "CCAM JSON parser rejects trailing commas and invalid literal suffixes" {
+    assert(!ccam_json_parse(taint("[1,]")).ok);
+    assert(!ccam_json_parse(taint("{\"x\":1,}")).ok);
+    assert(!ccam_json_parse(taint("truex")).ok);
+    assert(!ccam_json_parse(taint("false0")).ok);
+    assert(!ccam_json_parse(taint("null_")).ok);
+}
+
+test "CCAM JSON decoder rejects call arity and argument type mismatches" {
+    string wrong_arity = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"call\",\"dst\":0,\"function\":\"callee\",\"args\":[]},{\"op\":\"ret\",\"src\":0}]},{\"name\":\"callee\",\"register_types\":[\"int\"],\"parameter_count\":1,\"return_type\":\"int\",\"instructions\":[{\"op\":\"ret\",\"src\":0}]}]}";
+    string wrong_type = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"bool\",\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"call\",\"dst\":1,\"function\":\"callee\",\"args\":[0]},{\"op\":\"ret\",\"src\":1}]},{\"name\":\"callee\",\"register_types\":[\"int\"],\"parameter_count\":1,\"return_type\":\"int\",\"instructions\":[{\"op\":\"ret\",\"src\":0}]}]}";
+    assert(!ccam_json_decode_program(taint(wrong_arity)).ok);
+    assert(!ccam_json_decode_program(taint(wrong_type)).ok);
+}
+
+test "CCAM JSON decoder rejects incompatible call return destinations" {
+    string wrong_destination = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"bool\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"call\",\"dst\":0,\"function\":\"callee\",\"args\":[]},{\"op\":\"const_i\",\"dst\":0,\"value\":1},{\"op\":\"ret\",\"src\":0}]},{\"name\":\"callee\",\"register_types\":[],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":7},{\"op\":\"ret\",\"src\":0}]}]}";
+    assert(!ccam_json_decode_program(taint(wrong_destination)).ok);
+}
