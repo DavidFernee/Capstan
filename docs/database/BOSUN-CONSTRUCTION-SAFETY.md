@@ -107,7 +107,12 @@ The current BL1 storage prototype is intentionally **not** a safe API:
 - its structs and lists are publicly mutable and forgeable; a caller can copy a
   `BosunRegion` value and insert it again, or construct distinct region records that
   share one backing `List<int>`; the current validator has no language-level
-  non-aliasing guarantee for those backing lists;
+  non-aliasing guarantee for those backing lists. In particular, duplicating a region
+  reference and adjusting the public aggregate counter can make the validator accept
+  two region entries that alias the same `used` field; a subsequent reservation can
+  update both logical regions while incrementing the aggregate reservation only once.
+  This is a concrete invalid-state counterexample and a release blocker, not merely a
+  theoretical concern;
 - owner identities are ordinary integers;
 - references are ordinary constructible values;
 - there is no compiler-enforced affine ownership, borrow/lifetime or typestate;
