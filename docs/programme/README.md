@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Coordinate four independently deliverable products through shared semantic foundations, research and assurance. This programme is a governance and planning layer; it does not supersede product specifications, the research register, the formal-verification matrix or the v1 release scorecard.
+Coordinate six independently deliverable products/components through shared semantic foundations, research and assurance. Capstan Media Core is the shared substrate for the two media engines, not an independent product release. This programme is a governance and planning layer; it does not supersede product specifications, the research register, the formal-verification matrix or the v1 release scorecard.
 
 The programme deliberately distinguishes implementation maturity from assurance maturity. A merged change, green CI run, prototype, model proof or self-hosting result must not be promoted into a broader correctness or security claim without evidence for that claim.
 
