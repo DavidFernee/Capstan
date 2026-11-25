@@ -8,7 +8,6 @@
 // decoder/schema implementation.
 //
 // Semantic authority: docs/architecture/CCAM.md.
-
 import "ccam_core.cap";
 
 const int CCAM_OP_CALL = 17;
@@ -61,6 +60,8 @@ struct CCAMCallMachine {
     string trap_function;
     int trap_pc;
     string trap_detail;
+    List<int> output_bytes;
+    int max_output_bytes;
 }
 
 struct CCAMCallMachineCreateResult {
@@ -249,6 +250,7 @@ CCAMValidationResult ccam_validate_multi_function(
     int total_registers = 0;
     int total_name_bytes = 0;
     int total_call_arguments = 0;
+    int total_output_literal_bytes = 0;
     Map<int> function_names = new Map<int>();
     // Bound aggregate metadata before allocating per-function validation or
     // machine-copy storage. A call may target a later function in the table.
@@ -294,6 +296,18 @@ CCAMValidationResult ccam_validate_multi_function(
             return ccam_validation_error("instruction_limit_exceeded");
         }
         total_instructions += fn.instructions.len();
+        // Bound aggregate literal storage across the entire program before
+        // the machine snapshots any function or instruction payload.
+        for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
+            CCAMInstruction instruction = fn.instructions[pc];
+            if (instruction.op == CCAM_OP_EMIT_BYTES) {
+                if (instruction.byte_data.len() >
+                    CCAM_MAX_OUTPUT_BYTES - total_output_literal_bytes) {
+                    return ccam_validation_error("output_literal_limit_exceeded");
+                }
+                total_output_literal_bytes += instruction.byte_data.len();
+            }
+        }
         // Every call-site record must correspond to a distinct instruction.
         // Bound the side table before iterating or copying attacker-controlled
         // call-site records.
@@ -367,16 +381,25 @@ CCAMCallMachine ccam_empty_call_machine() {
         trap_code: "",
         trap_function: "",
         trap_pc: 0,
-        trap_detail: ""
+        trap_detail: "",
+        output_bytes: new List<int>(),
+        max_output_bytes: 0
     };
 }
 
-CCAMCallMachineCreateResult ccam_call_machine_create(
+CCAMCallMachineCreateResult ccam_call_machine_create_with_output_budget(
     List<CCAMFunction> functions,
     int entry_function,
     int max_steps,
-    int max_depth
+    int max_depth,
+    int max_output_bytes
 ) {
+    if (max_output_bytes < 0 || max_output_bytes > CCAM_MAX_OUTPUT_BYTES) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(),
+            error: "invalid_output_limit"
+        };
+    }
     if (max_steps < 0) {
         return new CCAMCallMachineCreateResult{
             ok: false, machine: ccam_empty_call_machine(),
@@ -458,9 +481,21 @@ CCAMCallMachineCreateResult ccam_call_machine_create(
         trap_code: "",
         trap_function: "",
         trap_pc: 0,
-        trap_detail: ""
+        trap_detail: "",
+        output_bytes: new List<int>(),
+        max_output_bytes: max_output_bytes
     };
     return new CCAMCallMachineCreateResult{ok: true, machine: machine, error: ""};
+}
+
+CCAMCallMachineCreateResult ccam_call_machine_create(
+    List<CCAMFunction> functions,
+    int entry_function,
+    int max_steps,
+    int max_depth
+) {
+    return ccam_call_machine_create_with_output_budget(
+        functions, entry_function, max_steps, max_depth, CCAM_MAX_OUTPUT_BYTES);
 }
 
 void ccam_call_machine_trap(
@@ -694,10 +729,13 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
         halt_value: 0,
         halt_bool_value: false,
         trap_code: "",
-        trap_detail: ""
+        trap_detail: "",
+        output_bytes: machine.output_bytes,
+        max_output_bytes: machine.max_output_bytes
     };
     ccam_machine_step(frame_state);
     machine.steps = frame_state.steps;
+    machine.output_bytes = frame_state.output_bytes;
     active.pc = frame_state.pc;
     machine.frames[machine.frame_depth - 1] = active;
     if (frame_state.halted) {
@@ -1406,4 +1444,110 @@ test "CCAM multi-function validator enforces aggregate call-argument boundary" {
     functions[0] = updated_caller;
     CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
     assert(!rejected.ok && rejected.error == "call_argument_limit_exceeded");
+}
+
+
+test "CCAM multi-function evaluator preserves bounded byte output" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction emit = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    emit.byte_data.push(72);
+    emit.byte_data.push(105);
+    code.push(emit);
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMCallSite> no_calls = new List<CCAMCallSite>();
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main",
+        register_types: no_registers,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_VOID,
+        instructions: code,
+        call_sites: no_calls
+    });
+
+    CCAMCallMachineCreateResult created = ccam_call_machine_create_with_output_budget(
+        functions, 0, 10, 4, 2);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    ccam_call_machine_step(machine);
+    assert(machine.steps == 1 && machine.output_bytes.len() == 2);
+    assert(machine.output_bytes[0] == 72 && machine.output_bytes[1] == 105);
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "");
+}
+
+test "CCAM multi-function output budget traps without partial append" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction first = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    first.byte_data.push(65);
+    code.push(first);
+    CCAMInstruction second = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    second.byte_data.push(66);
+    second.byte_data.push(67);
+    code.push(second);
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMCallSite> no_calls = new List<CCAMCallSite>();
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main",
+        register_types: no_registers,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_VOID,
+        instructions: code,
+        call_sites: no_calls
+    });
+
+    CCAMCallMachineCreateResult created = ccam_call_machine_create_with_output_budget(
+        functions, 0, 10, 4, 2);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    ccam_call_machine_step(machine);
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "output_limit");
+    assert(machine.steps == 2);
+    assert(machine.output_bytes.len() == 1 && machine.output_bytes[0] == 65);
+}
+
+
+test "CCAM validator bounds aggregate output literals across functions" {
+    List<int> payload = new List<int>();
+    for (int i = 0; i < CCAM_MAX_OUTPUT_BYTES / 2 + 1; i += 1) {
+        payload.push(65);
+    }
+    List<int> no_registers = new List<int>();
+    List<CCAMCallSite> no_calls = new List<CCAMCallSite>();
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+
+    List<CCAMInstruction> first_code = new List<CCAMInstruction>();
+    CCAMInstruction first_emit = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    first_emit.byte_data = payload;
+    first_code.push(first_emit);
+    first_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    functions.push(new CCAMFunction{
+        name: "first",
+        register_types: no_registers,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_VOID,
+        instructions: first_code,
+        call_sites: no_calls
+    });
+
+    List<CCAMInstruction> second_code = new List<CCAMInstruction>();
+    CCAMInstruction second_emit = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    second_emit.byte_data = payload;
+    second_code.push(second_emit);
+    second_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    functions.push(new CCAMFunction{
+        name: "second",
+        register_types: no_registers,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_VOID,
+        instructions: second_code,
+        call_sites: no_calls
+    });
+
+    CCAMValidationResult result = ccam_validate_multi_function(functions, 0);
+    assert(!result.ok && result.error == "output_literal_limit_exceeded");
 }

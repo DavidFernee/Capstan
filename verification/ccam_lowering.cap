@@ -36,6 +36,142 @@ struct CCAMLoweringResult {
     string error;
 }
 
+const int CCAM_MAX_LITERAL_OUTPUT_BYTES = 1048576;
+
+struct CCAMLiteralBytesResult {
+    bool ok;
+    List<int> bytes;
+    string error;
+}
+
+// Decode only the canonical representation produced by escape_c(). This is
+// intentionally not a general C string-literal parser. Three-digit octal
+// escapes preserve every source byte, including NUL and non-ASCII UTF-8 bytes.
+CCAMLiteralBytesResult ccam_decode_escaped_literal(string escaped, int expected_bytes) {
+    if (expected_bytes < 0 || expected_bytes > CCAM_MAX_LITERAL_OUTPUT_BYTES) {
+        return new CCAMLiteralBytesResult{
+            ok: false, bytes: new List<int>(), error: "literal_byte_limit"
+        };
+    }
+    if (escaped.len() > expected_bytes * 4) {
+        return new CCAMLiteralBytesResult{
+            ok: false, bytes: new List<int>(), error: "invalid_escaped_literal_length"
+        };
+    }
+
+    List<int> decoded = new List<int>();
+    int i = 0;
+    while (i < escaped.len()) {
+        int value = escaped.at(i);
+        if (value == 92) {
+            if (i + 1 >= escaped.len()) {
+                return new CCAMLiteralBytesResult{
+                    ok: false, bytes: new List<int>(), error: "truncated_literal_escape"
+                };
+            }
+            int next = escaped.at(i + 1);
+            if (next == 92 || next == '"' || next == '?') {
+                value = next;
+                i += 2;
+            } else {
+                if (i + 3 >= escaped.len()) {
+                    return new CCAMLiteralBytesResult{
+                        ok: false, bytes: new List<int>(), error: "truncated_octal_literal_escape"
+                    };
+                }
+                int a = escaped.at(i + 1);
+                int b = escaped.at(i + 2);
+                int d = escaped.at(i + 3);
+                if (a < '0' || a > '7' || b < '0' || b > '7' ||
+                    d < '0' || d > '7') {
+                    return new CCAMLiteralBytesResult{
+                        ok: false, bytes: new List<int>(), error: "invalid_literal_escape"
+                    };
+                }
+                value = (a - '0') * 64 + (b - '0') * 8 + (d - '0');
+                if (value > 255) {
+                    return new CCAMLiteralBytesResult{
+                        ok: false, bytes: new List<int>(), error: "octal_literal_byte_out_of_range"
+                    };
+                }
+                i += 4;
+            }
+        } else {
+            // escape_c() emits only printable ASCII bytes without escaping.
+            if (value < 32 || value >= 127 || value == '"' || value == '?') {
+                return new CCAMLiteralBytesResult{
+                    ok: false, bytes: new List<int>(), error: "noncanonical_escaped_literal"
+                };
+            }
+            i += 1;
+        }
+        if (decoded.len() >= expected_bytes) {
+            return new CCAMLiteralBytesResult{
+                ok: false, bytes: new List<int>(), error: "literal_byte_count_mismatch"
+            };
+        }
+        decoded.push(value);
+    }
+    if (decoded.len() != expected_bytes) {
+        return new CCAMLiteralBytesResult{
+            ok: false, bytes: new List<int>(), error: "literal_byte_count_mismatch"
+        };
+    }
+    return new CCAMLiteralBytesResult{ok: true, bytes: decoded, error: ""};
+}
+
+test "CCAM literal decoder preserves escaped and arbitrary byte values" {
+    CCAMLiteralBytesResult empty = ccam_decode_escaped_literal("", 0);
+    assert(empty.ok && empty.bytes.len() == 0);
+
+    CCAMLiteralBytesResult utf8 = ccam_decode_escaped_literal("\\303\\251", 2);
+    assert(utf8.ok && utf8.bytes.len() == 2);
+    assert(utf8.bytes[0] == 195 && utf8.bytes[1] == 169);
+
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(
+        "A\\012\\000\\377", 4);
+    assert(decoded.ok);
+    assert(decoded.bytes.len() == 4);
+    assert(decoded.bytes[0] == 'A');
+    assert(decoded.bytes[1] == 10);
+    assert(decoded.bytes[2] == 0);
+    assert(decoded.bytes[3] == 255);
+
+    string escaped_backslash = char_str(92) + char_str(92);
+    decoded = ccam_decode_escaped_literal(escaped_backslash, 1);
+    assert(decoded.ok && decoded.bytes.len() == 1);
+    assert(decoded.bytes[0] == 92);
+
+    string escaped_quote = char_str(92) + char_str(34);
+    decoded = ccam_decode_escaped_literal(escaped_quote, 1);
+    assert(decoded.ok && decoded.bytes[0] == 34);
+    string escaped_question = char_str(92) + "?";
+    decoded = ccam_decode_escaped_literal(escaped_question, 1);
+    assert(decoded.ok && decoded.bytes[0] == 63);
+}
+
+test "CCAM literal decoder rejects a truncated octal escape" {
+    string malformed = char_str(92) + "12";
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(malformed, 1);
+    assert(!decoded.ok && decoded.error == "truncated_octal_literal_escape");
+}
+
+test "CCAM literal decoder rejects octal values above one byte" {
+    string malformed = char_str(92) + "400";
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(malformed, 1);
+    assert(!decoded.ok && decoded.error == "octal_literal_byte_out_of_range");
+}
+
+test "CCAM literal decoder rejects byte-count mismatches" {
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal("A", 2);
+    assert(!decoded.ok && decoded.error == "literal_byte_count_mismatch");
+}
+
+test "CCAM literal decoder rejects oversized output declarations" {
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal("", CCAM_MAX_LITERAL_OUTPUT_BYTES + 1);
+    assert(!decoded.ok && decoded.error == "literal_byte_limit");
+}
+
 int ccam_source_register_type(Type source_type) {
     if (source_type.k == TY_INT) { return CCAM_TYPE_INT; }
     if (source_type.k == TY_BOOL) { return CCAM_TYPE_BOOL; }
@@ -183,7 +319,43 @@ void ccam_lower_loop_jump(CCAMLoweringContext context, bool is_continue) {
     context.loops[context.loop_depth - 1] = loop;
 }
 
+int ccam_lower_output_builtin(CCAMLoweringContext context, Node expression) {
+    if (expression.kids.len() != 1) {
+        ccam_lower_fail(context, "unsupported_print_arity");
+        return -1;
+    }
+    Node argument = expression.kids[0];
+    if (argument.k != N_STR || ty_of(argument).k != TY_STR) {
+        ccam_lower_fail(context, "nonliteral_print_argument");
+        return -1;
+    }
+    CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(
+        argument.s, argument.n);
+    if (!decoded.ok) {
+        ccam_lower_fail(context, "invalid_string_literal_bytes");
+        return -1;
+    }
+    if (expression.s == "println") {
+        if (decoded.bytes.len() >= CCAM_MAX_OUTPUT_BYTES) {
+            ccam_lower_fail(context, "output_literal_limit_exceeded");
+            return -1;
+        }
+        decoded.bytes.push(10);
+    }
+    if (decoded.bytes.len() > CCAM_MAX_OUTPUT_BYTES) {
+        ccam_lower_fail(context, "output_literal_limit_exceeded");
+        return -1;
+    }
+    CCAMInstruction emit = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    emit.byte_data = decoded.bytes;
+    ccam_lower_emit(context, emit);
+    return 0;
+}
+
 int ccam_lower_call_expression(CCAMLoweringContext context, Node expression) {
+    if (expression.s == "print" || expression.s == "println") {
+        return ccam_lower_output_builtin(context, expression);
+    }
     if (!context.function_indices.has(expression.s)) {
         ccam_lower_fail(context, "unsupported_or_unknown_function_call");
         return -1;
@@ -1273,4 +1445,86 @@ test "CCAM source lowering preserves short-circuit call suppression" {
     }
     assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
     assert(machine.trap_code == "");
+}
+
+
+test "CCAM source lowering emits literal print bytes in source order" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("literal-print-lowering.cap");
+    Tainted source = taint("int main() { print(\"Hello\"); println(\", World!\"); return 42; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create_with_output_budget(
+        lowered.functions, lowered.entry_function, 100, 16, 32);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted && machine.trap_code == "");
+    assert(machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.output_bytes.len() == 14);
+    assert(machine.output_bytes[0] == 72);
+    assert(machine.output_bytes[1] == 101);
+    assert(machine.output_bytes[2] == 108);
+    assert(machine.output_bytes[3] == 108);
+    assert(machine.output_bytes[4] == 111);
+    assert(machine.output_bytes[5] == 44);
+    assert(machine.output_bytes[6] == 32);
+    assert(machine.output_bytes[7] == 87);
+    assert(machine.output_bytes[8] == 111);
+    assert(machine.output_bytes[9] == 114);
+    assert(machine.output_bytes[10] == 108);
+    assert(machine.output_bytes[11] == 100);
+    assert(machine.output_bytes[12] == 33);
+    assert(machine.output_bytes[13] == 10);
+}
+
+test "CCAM source lowering rejects nonliteral print arguments" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("dynamic-print-lowering.cap");
+    Tainted source = taint("int main() { print(\"a\" + \"b\"); return 0; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(!lowered.ok && lowered.error == "nonliteral_print_argument");
+}
+
+test "CCAM literal byte decoder round-trips every octet through escape_c" {
+    for (int value = 0; value <= 255; value += 1) {
+        string original = char_str(value);
+        string canonical = escape_c(original);
+        CCAMLiteralBytesResult decoded = ccam_decode_escaped_literal(canonical, 1);
+        assert(decoded.ok);
+        assert(decoded.bytes.len() == 1);
+        assert(decoded.bytes[0] == value);
+    }
 }

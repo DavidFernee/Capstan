@@ -1,6 +1,6 @@
 # CCAM v0.2 output extension — byte-oriented design contract
 
-**Status:** proposal for review; does not amend normative CCAM v0.1  
+**Status:** byte-output evaluator, formal output-transition model and Linux x86-64 native adapter are integrated on the `ccam/byte-output-evaluator-rebased-20261125` working branch through PRs #304, #306 and #307. PR #304 remains unmerged to `main`; the extension is experimental and does not amend normative CCAM v0.1.  
 **Depends on:** CCAM v0.1, checked source-to-CCAM lowering, native backend  
 **Initial use case:** compile `print("Hello, World!\\n")` to a freestanding native executable
 
@@ -33,13 +33,13 @@ Add one instruction to the v0.2 extension:
 
 | Instruction | Exact fields | Semantics |
 |---|---|---|
-| `emit_bytes` | `op:string, data:string` | Append the exact bytes of `data` to `stdout_bytes`. |
+| `emit_bytes` | `op:CCAM_OP_EMIT_BYTES, byte_data:List<int>` | Append the exact bytes of `byte_data` to `stdout_bytes`. |
 
-Here `data` is the existing Capstan byte-string value. Its byte length is `len(data)`; no Unicode interpretation is performed.
+The current Capstan-native representation stores the payload as `List<int>`, with each element validated to be in the inclusive range 0..255. Its byte length is `byte_data.len()`; no Unicode interpretation is performed. The future JSON wire representation is exactly `{ "op": "emit_bytes", "data": <string> }`; its serialized decoder is a separate bounded-validation workstream and is not part of the current in-memory instruction representation.
 
 Before changing machine state, execution MUST check:
 
-`stdout_bytes.length + len(data) <= maxOutputBytes`
+`stdout_bytes.length + byte_data.len() <= maxOutputBytes`
 
 If the check fails, execution traps with `output_limit` and leaves `stdout_bytes` unchanged. If it succeeds, the complete byte sequence is appended to the abstract trace. The instruction consumes exactly one CCAM step, regardless of byte length. Empty data is valid, appends no bytes, and still consumes one step.
 
@@ -47,7 +47,7 @@ The instruction is an effect barrier: a compiler or optimiser MUST NOT remove, r
 
 ## 4. Validation and resource rules
 
-The closed instruction schema MUST admit exactly `{ "op": "emit_bytes", "data": <string> }` for this opcode and reject missing, extra, duplicate, or wrongly typed fields.
+The typed in-memory validator MUST admit `CCAM_OP_EMIT_BYTES` only with a byte payload whose elements are all in 0..255. The current implementation validates the `List<int>` representation. When the JSON wire representation is enabled, its closed schema MUST admit exactly `{ "op": "emit_bytes", "data": <string> }` and reject missing, extra, duplicate or wrongly typed fields. The serialized decoder remains a separate integration gate and MUST NOT be claimed complete until its tests pass.
 
 The decoder must enforce an encoded literal size limit before allocating a decoded representation. Aggregate output literal bytes in one program MUST be bounded; the initial admission ceiling is 1 MiB. The evaluator's `maxOutputBytes` MUST be no greater than that ceiling in the first implementation.
 
@@ -63,7 +63,7 @@ The first source-level bridge may lower only direct calls to the existing `print
 
 The current lexer decodes supported escapes such as `\\0` into bytes, then stores `escape_c(decoded)` in the token and AST string field; the AST's integer length records the decoded byte count. That escaped representation is suitable for generated-C literals but is not itself the original byte sequence.
 
-Before this extension is implemented, the compiler must establish one unambiguous literal-data boundary. Either the AST retains the decoded byte sequence separately from its generated-C escaped form, or the lowerer uses a shared, bounded decoder for the canonical escaped representation. The lowerer MUST NOT treat the escaped AST field as raw bytes, UTF-8 encode it again, or use an unbounded ad-hoc escape parser. Tests MUST cover round trips for quotes, backslashes, LF, TAB, CR, NUL, and multibyte source bytes.
+The current implementation uses a shared, bounded decoder for the canonical `escape_c()` representation and produces a `List<int>` of exact source bytes. The AST's escaped field is therefore not treated as raw bytes and is not UTF-8 encoded a second time. Retaining decoded bytes separately in the AST remains a valid future alternative, but the present lowerer uses the shared decoder. Tests cover quotes, backslashes, octal bytes, NUL, empty strings and multibyte source bytes; broader lexer escape round-trip coverage remains part of conformance work.
 
 The existing lowerer resolves direct calls through its user-function table. It must explicitly recognise the existing `print` and `println` builtins before user-function lookup, then independently verify the one-literal-argument AST shape and output byte budget. It MUST preserve source order relative to calls, traps, and other effects.
 
@@ -75,12 +75,16 @@ The adapter MUST:
 
 1. preserve exact bytes, including NUL and non-ASCII byte sequences;
 2. advance the pointer after a positive partial write;
-3. retry when interrupted (`-EINTR`);
+3. retry when interrupted (`-EINTR`), with a finite consecutive-interruption retry bound;
 4. treat a zero-byte write with remaining bytes, or any other negative result, as an OS output failure;
-5. never spin on a zero-byte write;
-6. keep all literal offsets and lengths within the emitted read-only data section.
+5. never spin on a zero-byte write or retry interruption without a bound;
+6. keep all literal offsets and lengths within the emitted read-only data section;
+7. account for each successfully written prefix against the output budget;
+8. ignore `SIGPIPE` so a closed stdout pipe is observed as `EPIPE` and follows the output-failure path.
 
-The CCAM abstract machine specifies the output trace, not Linux file-descriptor behaviour. A native write failure is therefore a platform-adapter failure, reported through a documented process exit status distinct from CCAM trap statuses. A partial prefix may already have reached the host before such a failure; the adapter MUST NOT claim rollback or atomicity at the OS boundary.
+The current prototype uses a 64-consecutive-`EINTR` retry bound. It installs `SIG_IGN` for `SIGPIPE` with the Linux x86-64 `rt_sigaction` syscall before entering the program. Its process statuses are 76 for the CCAM output-limit trap, 77 for an output syscall failure, and 78 if signal setup fails. These values are platform-adapter statuses, not CCAM trap encodings.
+
+The CCAM abstract machine specifies the output trace, not Linux file-descriptor behaviour. A native write failure is therefore a platform-adapter failure. A partial prefix may already have reached the host before such a failure; the adapter MUST NOT claim rollback or atomicity at the OS boundary.
 
 The first target remains Linux x86-64 only. Other OS targets require separate ABI adapters and tests; they must not inherit Linux syscall numbers or assumptions.
 
