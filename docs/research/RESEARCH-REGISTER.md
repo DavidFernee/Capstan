@@ -194,3 +194,14 @@ engineering evidence. It does not yet have, on the evidence recorded here, a dem
 end-to-end formally verified C-free compiler/runtime, a final independently replicated K0
 study, or four completed journal papers. The immediate research task is to turn promising
 implementation and proof fragments into tightly scoped, reproducible claims.
+
+
+### R8 — Bounded, high-performance media processing
+
+**Question:** Can explicit ownership, aggregate resource accounting, rational timebases and typed bounded processing graphs make hostile-media handling measurably safer while preserving or improving throughput and latency?
+
+**Candidate contributions:** (1) aggregate rather than per-buffer resource admission for parsers and decoders; (2) failure-atomic reservation and bounded queue protocols; (3) rational-clock state machines for variable-frame-rate audio/video synchronisation; (4) differential fuzzing across independent media implementations; (5) graph planning that reduces copies without changing reference output semantics.
+
+**Maturity:** Architecture and hypotheses specified in docs/media/ARCHITECTURE.md; no implementation, benchmark, novelty claim, proof or publication result is claimed by this entry. The work must begin with literature review and baseline selection, then publish reproducible corpora, raw results, exact source revisions, negative results and explicit proof boundaries.
+
+**Next evidence:** MC0 review; MC1 bounded stream/resource/timebase conformance; Shanty WAV/PCM and Deadeye image/frame vertical slices; adversarial fuzzing; implementation-linked model refinement before any formal assurance claim.
