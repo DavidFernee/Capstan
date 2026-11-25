@@ -9,7 +9,6 @@
 // compiler/checker.cap in the verification test command. CCAM definitions are
 // imported from ccam_calls.cap.
 
-import "ccam_core.cap";
 import "ccam_calls.cap";
 
 struct CCAMLoweringLoop {
