@@ -39,19 +39,21 @@ Most importantly, its API mutates a `CCAMHeap` local and nested list values. PR 
 
 ### 2.2 Reference semantics and formal work (#255)
 
-PR #255 adds mathematical models for opaque identities, shallow reference copies, heap mutation, a monotone allocation frontier, and abstract mark/sweep reachability from explicit roots. The PR's own boundary states that it does not prove:
+PR #255 adds mathematical models for opaque identities, shallow reference copies, heap mutation, a monotone allocation frontier, and abstract mark/sweep reachability from explicit roots. Its current head also strengthens `NativeHeapRegisterFileRelation`: it now requires each referenced slot to resolve to an existing heap object, in addition to relating the heap payload to the mathematical register list. It includes a negative theorem rejecting a dangling slot against an empty heap. This addresses the vacuity issue raised in earlier review; the current head should not be described as still having that defect.
+
+The remaining boundary is substantial. The PR itself does not prove:
 - compiler lowering or field assignment realizes those rules;
 - concrete runtime allocation creates fresh identities;
 - evaluator operations preserve the invariants;
 - the current C collector's stack/register/global scan is complete for the formal reachability relation.
 
-The collector model assumes marker completeness; it does not prove a concrete marker is complete.
+The `GenerationalHandles` model proves rejection when a caller supplies a different generation, but its `handleAllocateAt` accepts an arbitrary generation and can overwrite a slot without a lifecycle precondition. It does not yet define one integrated allocate/release/reuse transition that enforces monotonic generation, retirement at exhaustion and failure atomicity. The collector model assumes marker completeness; it does not prove a concrete marker is complete.
 
 ### 2.3 Region-heap formal contract (#262)
 
-PR #262 adds an abstract allocation transition, byte/object/work/temporary budgets, rejected-allocation atomicity and candidate generation-handle properties. It explicitly does not prove the `.cap` implementation refines Lean, and its region capability is a model-level identity rather than an unforgeable runtime capability.
+PR #262 adds an abstract allocation transition, byte/object/work/temporary budgets, rejected-allocation atomicity and candidate generation-handle properties. Its `recycleSlot` transition increments a natural-number generation before publishing a replacement, and the stale-handle theorem follows for that transition. However, the model has no bounded generation maximum or retired-slot state, so it does not yet establish a finite-width implementation's no-wrap property. Its region capability remains a model-level identity/issuer ledger, not an unforgeable runtime capability; allocation and handle resolution are not yet composed into one capability-checked slot-table state machine.
 
-The temporary-byte bound is a logical request bound, not physical RSS or allocator-metadata accounting. The prototype remains outside normative CCAM v0.1.
+It explicitly does not prove the `.cap` implementation refines Lean. The temporary-byte bound is a logical request bound, not physical RSS or allocator-metadata accounting. The prototype remains outside normative CCAM v0.1.
 
 ### 2.4 Existing C runtime
 
