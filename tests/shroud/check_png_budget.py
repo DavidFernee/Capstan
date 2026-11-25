@@ -199,15 +199,23 @@ def main():
             row = gallery_raw[y * len(gallery_row):(y + 1) * len(gallery_row)]
             if row != gallery_row:
                 fail(f"560x520 gallery-size decoded pixels differ on row {y}")
-        peak = re.search(r"peak_heap=(\d+)", result.stderr + result.stdout)
-        heap_note = (f"; peak Capstan heap {int(peak.group(1)) / (1024 * 1024):.1f} MiB"
-                     if peak else "; peak Capstan heap metric unavailable")
+        stress_env = os.environ.copy()
+        stress_env["CAPSTAN_GC_STATS"] = "1"
+        stress_env["CAPSTAN_GC_STRESS"] = "1"
+        stress = run([exe, "--gc-stress"], env=stress_env)
+        if "png budget GC stress: 8 deterministic 128x128 exports" not in stress.stdout:
+            fail(f"GC-stress export loop did not complete: {stress.stdout!r}")
+        stress_peak = require_peak_heap(stress.stderr + stress.stdout,
+                                        "repeated-export GC stress", MAX_PNG_GC_STRESS_HEAP)
         print(f"png budget: 23 Capstan assertions; {width}x{height} RGBA / "
               f"{gallery_width}x{gallery_height} gallery-size / "
               f"{near_width}x{near_height} near-limit RGBA; "
               f"{blocks} / {gallery_blocks} / {near_blocks} stored DEFLATE blocks; CRC, zlib, Adler "
               "and every pixel verified; all 256 byte values preserved; "
-              "over-budget write produced no file" + heap_note)
+              "over-budget write produced no file; "
+              f"peak GC heap {peak_bytes / (1024 * 1024):.1f} MiB (96 MiB ceiling); "
+              f"8 repeated exports under GC stress, peak {stress_peak / (1024 * 1024):.1f} MiB "
+              "(32 MiB ceiling)")
 
 
 if __name__ == "__main__":
