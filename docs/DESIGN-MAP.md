@@ -1126,3 +1126,29 @@ missing, stale or unverifiable evidence is unknown, never green. Workspace openi
 not execute project code. Build commands use explicit executables and argument vectors,
 never shell interpolation. Project hooks and in-process plugins are out of scope until
 a separately reviewed capability and isolation design exists.
+
+
+### Capstan Media, Shanty and Deadeye
+
+10. **Capstan Media Core** — shared, versioned media primitives: bounded byte streams and sinks, explicit ownership, checked size arithmetic, aggregate resource reservations, rational clocks/timebases, timestamps, format registry, structured errors, cancellation and codec-worker contracts.
+11. **Shanty** — independent audio engine for ingest, decode/encode, playback/capture, mixing, resampling, synthesis, spatialisation and processing.
+12. **Deadeye** — independent video/image engine for ingest, demux/decode, encode, frame scheduling, presentation, composition, colour management, effects and streaming.
+
+Core is below both engines and must not depend on either. Shanty and Deadeye share Core contracts but retain domain-specific schedulers and APIs. Shroud consumes presentation surfaces/events; Keel may orchestrate media graphs; neither duplicates codec semantics. Anchor remains a Shroud application.
+
+The architecture, threat model, format taxonomy and stage gates are specified in [media/ARCHITECTURE.md](media/ARCHITECTURE.md) and [media/FORMAT-CATALOGUE.md](media/FORMAT-CATALOGUE.md). At this revision these are specifications and targets, not evidence of implemented codecs, playback, recording, platform adapters or formal verification. The initial vertical slices are deliberately modest: bounded WAV/PCM offline processing for Shanty, and a bounded still-image/frame pipeline for Deadeye. Shroud's PNG output path must not be mistaken for a general image decoder.
+
+Media security is an assurance workstream in its own right: aggregate resource accounting, checked offsets/dimensions/strides/timebases, bounded queues, capability-minimal codec workers, output revalidation, adversarial corpora, fuzzing and explicit model-to-implementation proof boundaries. The current C runtime remains in the trusted computing base; Capstan source alone does not make media code end-to-end memory-safe.
+
+| Gate | Scope | Exit evidence |
+|---|---|---|
+| MC0 | Architecture, threat model, format and licence policy | Reviewed contracts, dependency graph, resource ledger and research hypotheses |
+| MC1 | Core streams, ownership, clocks and budgets | Conformance vectors, overflow and atomic-reservation tests, adversarial cases |
+| SH0 | WAV/PCM offline slice | Differential sample vectors, malformed RIFF corpus, deterministic output |
+| DE0 | Image/frame slice | Selected decoder, bounded dimensions/strides, pixel oracle and malformed corpus |
+| MC2 | Codec worker boundary | Capability-minimal protocol, quotas, crash/timeout tests and output validation |
+| SH1/DE1 | Device playback and presentation | Platform adapter and callback/clock evidence |
+| MC3 | Synchronised media graph | A/V clock, VFR, drift, seek, discontinuity and backpressure tests |
+| MC4–MC6 | Compatibility, assurance, performance and scientific media | Exact feature matrix, reproducible benchmarks, fuzz/proof evidence and specialist corpus |
+
+The ambition is broad practical historical and modern format compatibility, not an unqualified promise to support undocumented, proprietary, encrypted or DRM-restricted formats. Container, codec, profile, operation direction and assurance status are reported separately.
