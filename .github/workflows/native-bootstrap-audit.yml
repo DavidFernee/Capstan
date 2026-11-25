@@ -17,6 +17,11 @@ on:
       - "compiler/checker.cap"
       - "Makefile"
       - "bin/capstan"
+
+  pull_request:
+    paths:
+      - "research/native-bootstrap/**"
+      - ".github/workflows/native-bootstrap-audit.yml"
       - "verification/ccam_core.cap"
       - "verification/ccam_calls.cap"
       - "verification/ccam_lowering.cap"
@@ -27,10 +32,6 @@ on:
       - "compiler/checker.cap"
       - "Makefile"
       - "bin/capstan"
-  pull_request:
-    paths:
-      - "research/native-bootstrap/**"
-      - ".github/workflows/native-bootstrap-audit.yml"
 
 permissions:
   contents: read
