@@ -143,3 +143,11 @@ import CapstanVerification.ProgramValidator
 
 #print axioms CapstanVerification.nativeRegisterWriteIntChecked_corresponds
 #print axioms CapstanVerification.nativeRegisterWriteBoolChecked_corresponds
+
+#print axioms CapstanVerification.nativeRegisterSetAt_length
+#print axioms CapstanVerification.nativeRegisterSetAt_get_same
+#print axioms CapstanVerification.nativeRegisterSetAt_get_other
+#print axioms CapstanVerification.nativeRegisterReadIntAt_corresponds
+#print axioms CapstanVerification.nativeRegisterReadBoolAt_corresponds
+#print axioms CapstanVerification.nativeRegisterReadIntAt_invalid
+#print axioms CapstanVerification.nativeRegisterReadBoolAt_invalid
