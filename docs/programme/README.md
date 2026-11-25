@@ -39,25 +39,43 @@ flowchart TB
   S["Shroud\nGUI framework · platform hosts"]
   N["Anchor\nIDE · developer workflows"]
   K["Keel\n3D engine · simulation · assets"]
+  MC["Capstan Media Core\nstreams · buffers · clocks · budgets · registry"]
+  SH["Shanty\nAudio engine"]
+  DE["Deadeye\nVideo and image engine"]
 
   C --> S
   C --> N
   S --> N
   C --> K
   S --> K
+  C --> MC
+  MC --> SH
+  MC --> DE
+  S --> SH
+  S --> DE
+  K --> SH
+  K --> DE
 
   R --> C
   R --> S
   R --> N
   R --> K
+  R --> SH
+  R --> DE
   A --> C
   A --> S
   A --> N
   A --> K
+  A --> MC
+  A --> SH
+  A --> DE
   E --> C
   E --> S
   E --> N
   E --> K
+  E --> MC
+  E --> SH
+  E --> DE
 ```
 
 The arrows represent architectural dependencies, not a serial release schedule. Product teams may progress in parallel against versioned contracts and mocks. No cycle is permitted: the compiler must not depend on Shroud, Anchor, Keel or Media; Media Core must not depend on Shanty/Deadeye; Shanty and Deadeye must not depend on each other; Anchor must consume compiler services rather than reimplement compiler rules. Shroud owns presentation adapters, not codecs. Keel may orchestrate media graphs but does not own media format semantics.
