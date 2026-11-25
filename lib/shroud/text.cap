@@ -114,16 +114,22 @@ List<int> utf8_decode(List<int> b) {
 }
 
 List<int> string_bytes(string s) {
+    if (s.len() > MAX_TEXT_BYTES) {
+        println("shroud: text byte limit exceeded");
+        exit(101);
+    }
     List<int> out = new List<int>();
-    int n = int_min(s.len(), MAX_TEXT_BYTES);
-    for (int i = 0; i < n; i += 1) { out.push(s.at(i)); }
+    for (int i = 0; i < s.len(); i += 1) { out.push(s.at(i)); }
     return out;
 }
 
 List<int> tainted_bytes(Tainted s) {
+    if (s.len() > MAX_TEXT_BYTES) {
+        println("shroud: untrusted text byte limit exceeded");
+        exit(101);
+    }
     List<int> out = new List<int>();
-    int n = int_min(s.len(), MAX_TEXT_BYTES);
-    for (int i = 0; i < n; i += 1) { out.push(s.at(i)); }
+    for (int i = 0; i < s.len(); i += 1) { out.push(s.at(i)); }
     return out;
 }
 
