@@ -32,16 +32,16 @@ Without `--output`, the CSV report is written to standard output. The process ex
 
 ## Report semantics
 
-The CSV contains a per-file section followed by per-language totals and repository totals:
+The CSV contains a per-file section followed by per-language totals and repository totals. Per-file rows include a `classification` column:
 
 - `lines` counts physical lines: LF bytes plus one when a non-empty file lacks a final LF. CRLF counts as one line break; an empty file has zero lines.
 - `bytes` counts file bytes, not Unicode characters.
 - A file containing a NUL byte is reported as `Binary (NUL)`, with zero physical source lines. This is a conservative binary-content heuristic, not complete binary-format detection: binary files without NUL bytes can still be counted as text.
-- Language classification is extension-based and intentionally conservative. Unknown extensions are reported as `other`; this is a review queue, not a claim that all files are programming languages.
-- `escape_csv` is used for every path/language cell. It quotes cells, doubles embedded quotes and neutralises spreadsheet formula prefixes.
+- Purpose classification uses exact path segments: `generated` becomes `Generated`; `vendor`, `vendors`, `third_party`, `third-party` and `node_modules` become `Vendored`; `tests`, `test`, `testdata` and `fixtures` become `Test`; `docs` and `documentation` become `Documentation`; other paths are `Repository`. This is a path convention heuristic, not provenance verification.\n- Language classification is extension-based and intentionally conservative. Unknown extensions are reported as `other`; this is a review queue, not a claim that all files are programming languages.
+- `escape_csv` is used for every path/classification/language cell. It quotes cells, doubles embedded quotes and neutralises spreadsheet formula prefixes.
 - Files larger than 16 MiB, unreadable files and non-regular files are reported as unreadable and cause exit status 1. They are not silently counted as zero-line files.
 
-The tool reports physical lines for files without NUL bytes, not language-aware code/comment/blank SLOC. Its NUL-byte check is deliberately described as a heuristic and must not be used as a security or content-validation boundary. It includes whatever paths the caller supplies; generated files, fixtures, vendored content and documentation must be classified separately by the inventory consumer.
+The tool reports physical lines for files without NUL bytes, not language-aware code/comment/blank SLOC. Its NUL-byte check is deliberately described as a heuristic and must not be used as a security or content-validation boundary. It includes whatever paths the caller supplies; the purpose classification is descriptive and does not exclude any category from totals.
 
 ## Important completeness boundary
 
