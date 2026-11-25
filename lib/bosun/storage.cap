@@ -253,9 +253,19 @@ BosunI64Result bosun_storage_load_i64_le(BosunStorage storage, BosunRef referenc
         return new BosunI64Result{ok: false, value: 0, error: "invalid_i64_reference"};
     }
     BosunRegion region = storage.regions[reference.region_index];
+    // Compose the low 56 bits without ever left-shifting the sign byte.
+    // The final byte is interpreted as a signed two's-complement high byte.
     int value = 0;
-    for (int i = 0; i < 8; i += 1) {
+    for (int i = 0; i < 7; i += 1) {
         value = value | (region.bytes[reference.offset + i] << (i * 8));
+    }
+    int high = region.bytes[reference.offset + 7];
+    if (high < 128) {
+        value += high * 72057594037927936;
+    } else if (high == 128) {
+        value = value - 9223372036854775807 - 1;
+    } else {
+        value -= (256 - high) * 72057594037927936;
     }
     return new BosunI64Result{ok: true, value: value, error: ""};
 }
