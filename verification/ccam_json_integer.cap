@@ -1,0 +1,85 @@
+// First executable component of the bounded CCAM JSON decoder.
+// Accepts only JSON integer lexemes representable as signed i64. Input remains
+// Tainted; the caller chooses the field type before invoking this routine.
+
+const int JSON_I64_MAX = 0x7FFFFFFFFFFFFFFF;
+const int JSON_I64_MIN = -0x7FFFFFFFFFFFFFFF - 1;
+
+int? ccam_json_parse_i64(Tainted token) {
+    int n = token.len();
+    if (n == 0 || n > 20) { return none; }
+    int pos = 0;
+    bool negative = false;
+    if (token.at(0) == '-') { negative = true; pos = 1; }
+    if (pos >= n) { return none; }
+    int first = token.at(pos);
+    if (first < '0' || first > '9') { return none; }
+    if (first == '0' && pos + 1 != n) { return none; }
+
+    int limit = -JSON_I64_MAX;
+    if (negative) { limit = JSON_I64_MIN; }
+    int multiply_limit = limit / 10;
+    int value = 0;
+    for (int i = pos; i < n; i += 1) {
+        int c = token.at(i);
+        if (c < '0' || c > '9') { return none; }
+        int digit = c - '0';
+        if (value < multiply_limit) { return none; }
+        value *= 10;
+        if (value < limit + digit) { return none; }
+        value -= digit;
+    }
+    if (negative) { return value; }
+    return -value;
+}
+
+int main() {
+    if (let v = ccam_json_parse_i64(taint("0"))) { if (v != 0) { return 1; } } else { return 1; }
+    if (let v = ccam_json_parse_i64(taint("-0"))) { if (v != 0) { return 1; } } else { return 1; }
+    if (let v = ccam_json_parse_i64(taint("42"))) { if (v != 42) { return 1; } } else { return 1; }
+    if (let v = ccam_json_parse_i64(taint("-42"))) { if (v != -42) { return 1; } } else { return 1; }
+    if (let v = ccam_json_parse_i64(taint("9223372036854775807"))) { if (v != JSON_I64_MAX) { return 1; } } else { return 1; }
+    if (let v = ccam_json_parse_i64(taint("-9223372036854775808"))) { if (v != JSON_I64_MIN) { return 1; } } else { return 1; }
+
+    if (ccam_json_parse_i64(taint("")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("-")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("+1")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("01")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("-01")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("1.0")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("1e0")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("--1")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("9223372036854775808")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("-9223372036854775809")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("99999999999999999999")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("true")) != none) { return 1; }
+    if (ccam_json_parse_i64(taint("null")) != none) { return 1; }
+    println("CCAM JSON signed integer parser: ok");
+    return 0;
+}
+
+test "CCAM JSON integer parser accepts signed 64-bit boundaries" {
+    if (let hi = ccam_json_parse_i64(taint("9223372036854775807"))) { assert(hi == JSON_I64_MAX); } else { assert(false); }
+    if (let lo = ccam_json_parse_i64(taint("-9223372036854775808"))) { assert(lo == JSON_I64_MIN); } else { assert(false); }
+}
+
+test "CCAM JSON integer parser rejects overflow" {
+    assert(ccam_json_parse_i64(taint("9223372036854775808")) == none);
+    assert(ccam_json_parse_i64(taint("-9223372036854775809")) == none);
+    assert(ccam_json_parse_i64(taint("99999999999999999999")) == none);
+}
+
+test "CCAM JSON integer parser rejects non-integer number forms" {
+    assert(ccam_json_parse_i64(taint("1.0")) == none);
+    assert(ccam_json_parse_i64(taint("1e0")) == none);
+    assert(ccam_json_parse_i64(taint("+1")) == none);
+    assert(ccam_json_parse_i64(taint("01")) == none);
+    assert(ccam_json_parse_i64(taint("-01")) == none);
+}
+
+test "CCAM JSON integer parser rejects truncated and non-number tokens" {
+    assert(ccam_json_parse_i64(taint("")) == none);
+    assert(ccam_json_parse_i64(taint("-")) == none);
+    assert(ccam_json_parse_i64(taint("true")) == none);
+    assert(ccam_json_parse_i64(taint("null")) == none);
+}

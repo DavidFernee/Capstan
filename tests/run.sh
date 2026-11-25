@@ -71,6 +71,13 @@ else
   bad "CCAM Capstan arithmetic, register validation and evaluator" "$out"
 fi
 
+section "Capstan-native verification: bounded CCAM JSON integer parsing"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_integer.cap" 2>&1)"; then
+  ok "CCAM JSON integer lexemes parse exactly within signed 64-bit bounds"
+else
+  bad "CCAM JSON integer parser" "$out"
+fi
+
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
