@@ -290,6 +290,20 @@ Do not assign a worker an open-ended task such as “implement the type system�
 - Merge only after dependency review, exact-head CI and required formal/security checks.
 - Every merged research artefact must state whether it is a proposal, prototype, integrated feature, tested property or formal result.
 
+### 5.3 Dependency lanes and integration ownership
+
+The programme is coordinated as dependency lanes rather than a flat feature backlog:
+
+1. **Semantic foundation:** CCAM specification, closed schemas, exact decoding, shared conformance vectors and evaluator invariants. One owner controls changes to shared semantic contracts.
+2. **Guarantee calculus:** a minimal composition model for types, effects, authority, information flow, resources and logical contracts. Begin with a small executable subset; do not attempt a whole-language calculus first.
+3. **Concurrency:** formalise task lifetime, ownership transfer, bounded channels, cancellation, failure propagation and deterministic scheduling. Separate race freedom, memory safety, deadlock freedom and progress in both claims and tests.
+4. **Evidence and assurance:** define a certificate/evidence format bound to source/program identity, CCAM version, policy and resource contract; build a small independent checker and implementation-linked proof obligations.
+5. **C-free execution:** continue the native vertical slice only against stable CCAM contracts; distinguish evaluator execution, native code generation, bootstrap, runtime and standard-library migration.
+6. **Security research:** turn CWE claims into executable per-attempt records and real-world CVE cases; record whether each case is impossible to express, rejected statically, stopped dynamically, mitigated externally, or not prevented.
+7. **Evaluation and usability:** maintain reproducible baselines for performance, resource bounds, false rejection, developer effort and evidence-checking cost.
+
+Work in lanes 2–7 may proceed in parallel where interfaces are stable. Any cross-lane change to CCAM semantics, shared resource units, capability meaning or evidence identity must be integrated by the designated owner and accompanied by migration/conformance tests. Open pull requests are inputs to review, not presumed dependencies or completed work.
+
 ## 6. Phased roadmap
 
 Phases describe dependency and maturity, not rigid calendar dates. Theory and literature reviews in later phases can begin while foundational implementation proceeds.
@@ -298,12 +312,13 @@ Phases describe dependency and maturity, not rigid calendar dates. Theory and li
 
 1. Inventory the current language, compiler, runtime, CCAM, formal models and trusted computing base.
 2. Create a claim register that separates aspiration, specification, prototype, integrated behaviour, test evidence, model theorem and implementation refinement.
-3. Reconcile the evidence-carrying execution proposal with the exact current CCAM/evaluator contract.
-4. Stabilise semantic definitions and conformance vectors for the supported core.
+3. Reconcile the evidence-carrying execution proposal (PR #214) with the exact current CCAM/evaluator/validator contracts and the open reconciliation issue #219.
+4. Treat CCAM v0.1 as normatively specified but not yet implemented as a conforming machine: identify the gaps in whole-program decoding/validation, duplicate-key rejection, multi-function validation, shared vectors and evaluator/model refinement.
 5. Establish reproducible fuzzing, differential testing, formal builds and benchmark infrastructure.
-6. Document current resource and authority enforcement, including known gaps.
+6. Document resource and authority enforcement, including aggregate budgets, host boundaries and unsupported execution paths.
+7. Record active concurrency proposals separately from integrated guarantees: PR #239 (structured-concurrency design), PR #254 (bounded task/channel reference machine), PR #248 (research integration), and open issues #229/#249.
 
-**Gate A:** No major research claim may depend on an ambiguous semantic contract or an undocumented trust assumption.
+**Gate A:** No major research claim may depend on an ambiguous semantic contract, an unmerged proposal presented as implementation, or an undocumented trust assumption.
 
 ### Phase B — Demonstrate the first integrated guarantee
 
@@ -432,16 +447,20 @@ The first allocations should be small enough for one focused session and should 
 
 | Priority | Work package | Deliverable | Dependency |
 |---|---|---|---|
-| P0 | Research baseline inventory | Current-state map of guarantees, implementations, proofs, trust boundaries and gaps | Current default branch |
-| P0 | Evidence architecture reconciliation | Crosswalk between PR #214 obligations and merged CCAM/evaluator/validator contracts | Baseline inventory |
-| P0 | State-of-the-art review: evidence-carrying execution | Annotated literature matrix, novelty risks and candidate contribution | None |
-| P0 | Resource-contract survey | Formal comparison of resource-aware type systems and analyses | None |
-| P0 | Capability/effect survey | Comparison of capability systems, effect systems and information-flow models | None |
-| P1 | Unified guarantee calculus proposal | Small formal core and explicit non-goals | P0 surveys |
-| P1 | Independent checker design | Certificate grammar, trust boundary, validation algorithm and threat model | Evidence reconciliation |
-| P1 | Benchmark protocol | Workload selection, baselines, metrics and reproducibility harness | Baseline inventory |
-| P1 | Concurrency research review | Candidate model, safety/progress properties and implementation implications | Formal core direction |
-| P2 | Developer experience study | Diagnostic taxonomy and usability evaluation plan | Candidate guarantee model |
+| P0 | Guarantee/trusted-base inventory | Branch-pinned matrix of claims, code, tests, proofs, trust boundaries and known gaps | Current default branch |
+| P0 | CCAM conformance closure plan | Exact gap list for JSON decoding, whole-program validation, duplicate keys, aggregate budgets, multi-function calls and vectors | CCAM v0.1 and current main |
+| P0 | Evidence architecture reconciliation | Obligation-by-obligation crosswalk of PR #214 against CCAM, evaluator, validator and source-lowering contracts; resolve issue #219 | CCAM conformance closure plan |
+| P0 | Concurrency proposal reconciliation | Compare PRs #239/#254/#248 and issues #229/#249; identify one normative model, prototype boundary and proof/test gaps | CCAM/resource contract inventory |
+| P0 | Real-world vulnerability benchmark | Small reproducible CVE cases with per-attempt CWE evidence records; classify static/dynamic/external/residual outcomes | Security test harness |
+| P0 | State-of-the-art: evidence-carrying execution | Annotated literature matrix, novelty risks and candidate contribution | None |
+| P0 | Resource-contract survey | Compare resource-aware type systems/analyses; define units, composition and enforcement gaps | None |
+| P0 | Capability/effect survey | Compare capability, effect and information-flow models, including attenuation and host boundaries | None |
+| P1 | Unified guarantee calculus | Minimal formal core for types/effects/authority/resources/contracts, explicit non-goals and one compositional example | P0 surveys |
+| P1 | Independent checker design | Certificate grammar, binding to exact program/semantics/policy, trust boundary and validation algorithm | Evidence reconciliation |
+| P1 | CCAM implementation-linked proof obligations | Named invariants and simulation obligations for validator/evaluator/lowering/native boundary | CCAM conformance closure plan |
+| P1 | Concurrency invariant package | Small task/channel semantics and first safety invariants; progress claims kept separate | Concurrency proposal reconciliation |
+| P1 | Comparative evaluation protocol | Workloads, serious baselines, metrics, hardware/toolchain disclosure and reproducibility harness | Guarantee/trusted-base inventory |
+| P2 | Developer experience study | Diagnostic taxonomy and usability study for evidence, effects, authority and resource failures | Candidate guarantee model |
 
 Each work package should be split further before assignment if it cannot be completed with a reviewable handoff in one session. The programme coordinator should maintain a dependency graph and avoid assigning multiple workers to the same shared file.
 
