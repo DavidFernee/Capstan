@@ -1,8 +1,8 @@
-# Capstan Media design charter
+# Halyard — design charter
 
 > **Status:** governing design principles, 2026-11-25.
 >
-> This charter applies to Capstan Media Core, Shanty and Deadeye, and to their
+> This charter governs Halyard: Capstan Media Core, Shanty and Deadeye, and their
 > integration with Capstan, Shroud, Keel, Anchor and the research stream.
 
 ## 1. Ambition
