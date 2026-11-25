@@ -56,6 +56,53 @@ Decision values:
 - Rendering correctness is tested against reference scenes, invariants and differential/golden outputs; tolerance and nondeterminism are explicit.
 - A vertical slice demonstrates asset ingestion through scene update to rendered frame without overstating driver/hardware verification.
 
+### Capstan Media Core
+- Bounded byte-source/sink contracts specify ownership, EOF, short reads/writes, cancellation, seeking and failure atomicity.
+- Rational/integer timebases and checked timestamp rescaling specify overflow, wrap, rounding, discontinuity, seek and VFR behaviour.
+- Aggregate resource ledger reserves bytes, allocations, tracks, chunks, samples, pixels, frames, work, threads and queue capacity before expensive work.
+- Format/codec registry separates container, codec, profile, level, ancillary data and operation direction; registrations are versioned and deterministic.
+- Codec-worker protocol has explicit capabilities, quotas, cancellation, timeout, crash handling and independent output validation.
+- Core has no dependency on Shanty or Deadeye; media primitives are not duplicated in either engine.
+
+### Shanty
+- Initial WAV/RIFF parser and PCM sample-frame path pass a legally redistributable, independently checked corpus including malformed and boundary cases.
+- Audio graph, sample formats, channel layouts, resampling and mixing semantics are explicit and deterministic for the declared profile.
+- Real-time device callbacks do not block, allocate unpredictably, perform I/O or acquire contended locks; device APIs are separately gated.
+- Capture/playback, codecs, synthesis, spatial audio and streaming are individually qualified by exact format/profile/direction and platform.
+- No playback or codec support is claimed merely from parser support or offline vectors.
+
+### Deadeye
+- The initial image format is selected after parser, licensing, patent, provenance and security review; Shroud PNG output is not assumed to be a general decoder.
+- Image/frame descriptors define dimensions, stride, pixel format, alpha, colour primaries, transfer, matrix and range.
+- Image/video parsers, demuxers, decoders, encoders and subtitle/metadata handlers have bounded resource use and adversarial corpora.
+- Rational presentation timestamps, VFR, frame duration, seek and discontinuity semantics are tested.
+- Hardware/software paths and decode/encode directions are reported separately; no video playback claim before the full path is integrated and tested.
+
+### Cross-product media integration
+- Shroud consumes stable presentation APIs and does not duplicate codecs or media-runtime logic.
+- Keel may orchestrate media graphs but does not redefine container/codec semantics or bypass Core budgets.
+- A/V synchronisation defines master-clock policy, drift correction, pause/seek/resync and clock-domain transitions.
+- Anchor exposes media inspection/playback workflows only through approved APIs and bounded project/workspace permissions.
+
+## Media-specific gate sequence
+
+The media family uses the product gates in `docs/media/ARCHITECTURE.md` in addition to shared G0–G5:
+
+| Media gate | Scope | Required exit evidence |
+|---|---|---|
+| MC0 | Architecture and threat model | Reviewed acyclic dependencies, ownership, threat model, format taxonomy, provenance/licence/patent policy and research hypotheses |
+| MC1 | Core substrate | Byte/stream contract, rational timebase, aggregate ledger and format registry; executable conformance vectors and adversarial boundary tests |
+| SH0 | Shanty first slice | WAV/PCM offline decode, exact sample vectors, malformed corpus and deterministic output |
+| DE0 | Deadeye first slice | Selected image format, bounded decode, frame descriptors, malformed corpus and pixel oracle |
+| MC2 | Codec-worker boundary | Capability-minimal protocol, quotas, cancellation, crash/timeout handling and independently validated output |
+| SH1 / DE1 | Device/presentation foundations | Audio callback and video presentation contracts, platform integration and timing tests |
+| MC3 | Synchronized graph | Master clock, VFR, drift correction, bounded queues, seek/pause/discontinuity tests |
+| MC4 | Compatibility expansion | Versioned format matrix, per-profile/per-direction corpus results and legal review |
+| MC5 | Assurance/performance | Vulnerability ledger, SBOM/advisory reconciliation, fuzz/sanitizer evidence, proof scope and reproducible benchmarks |
+| MC6 | Scientific/professional integration | Separately specified scientific/digital-twin, HDR, spatial-audio and production workflows |
+
+MC0–MC6 are media-family gates; they do not replace shared G0–G5. Passing an architecture gate does not imply a codec is implemented. See [media architecture](../media/ARCHITECTURE.md) and [media security assurance](../media/SECURITY-ASSURANCE.md).
+
 ## Evidence requirements
 
 For each result, retain:
