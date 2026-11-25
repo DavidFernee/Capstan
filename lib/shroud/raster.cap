@@ -140,12 +140,19 @@ struct Canvas {
     }
 
     void fill_path(Path p, Paint paint, int rule) {
-        Segments s = flatten(p);
         if (self.recording) {
-            if (s.x0.len() > MAX_DISPLAY_SEGMENTS_PER_PATH) {
-                println("shroud: display list path segment budget exceeded");
+            // Reject malformed or over-budget geometry before flatten() allocates
+            // the parallel segment arrays.
+            int upper_bound = path_flatten_segment_bound(p);
+            if (upper_bound < 0 || upper_bound > MAX_DISPLAY_SEGMENTS_PER_PATH ||
+                self.commands.len() >= MAX_DISPLAY_COMMANDS ||
+                upper_bound > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
+                println("shroud: display list path rejected by resource preflight");
                 exit(101);
             }
+        }
+        Segments s = flatten(p);
+        if (self.recording) {
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0), clip: self.clip(),
                 paint: paint, rule: rule, segments: s, mask_alpha: none, mask_w: 0, mask_h: 0, x: 0, y: 0,
@@ -212,6 +219,13 @@ struct Canvas {
         if (x >= c.right() || y >= c.bottom() ||
             x < c.x - width || y < c.y - height) { return; }
         if (self.recording) {
+            // Reserve before copying; append-time admission is too late to bound
+            // the temporary allocation for a rejected mask command.
+            if (self.commands.len() >= MAX_DISPLAY_COMMANDS ||
+                alpha.len() > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
+                println("shroud: display list mask rejected by resource preflight");
+                exit(101);
+            }
             // Snapshot cached glyph pixels into frame-owned storage. A later font
             // cache eviction/rebuild must not change an already-recorded frame.
             List<int> mask_copy = new List<int>();
