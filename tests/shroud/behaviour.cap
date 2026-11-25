@@ -667,6 +667,24 @@ void test_display_list(Tally t, Font font) {
     DisplayList bad_opacity_frame = new DisplayList{width: 48, height: 36, commands: bad_opacity_commands};
     expect(t, !display_list_valid(bad_opacity_frame, guarded),
         "display list: out-of-range opacity is rejected", "invalid opacity accepted");
+
+    List<int> invalid_alpha = new List<int>();
+    invalid_alpha.push(256);
+    DisplayCommand bad_mask = frame.commands[0];
+    bad_mask.kind = DISPLAY_MASK;
+    bad_mask.segments = none;
+    bad_mask.mask_alpha = invalid_alpha;
+    bad_mask.mask_w = 1;
+    bad_mask.mask_h = 1;
+    bad_mask.x = 0;
+    bad_mask.y = 0;
+    List<DisplayCommand> bad_mask_commands = new List<DisplayCommand>();
+    bad_mask_commands.push(bad_mask);
+    DisplayList bad_mask_frame = new DisplayList{width: 48, height: 36, commands: bad_mask_commands};
+    expect(t, !display_list_valid(bad_mask_frame, guarded),
+        "display list: noncanonical mask alpha is rejected", "invalid alpha accepted");
+    expect_int(t, guarded.get(0, 0), before,
+        "display list: malformed mask validation is non-mutating");
 }
 
 void test_blend_bounds(Tally t) {
