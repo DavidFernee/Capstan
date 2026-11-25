@@ -61,3 +61,17 @@ engine is strictly serializable.
 The standard `tests/run.sh` suite invokes this model directly with
 `bin/capstan test`. Extend the independent anomaly corpus and formal
 transaction semantics before using this checker as a release gate.
+
+
+[`bosuns_locker_protocol.cap`](bosuns_locker_protocol.cap) adds executable
+BL-003/BL-004 reference models for the transaction lifecycle and a minimal
+write-ahead-log persistence ordering contract. The transaction model distinguishes
+commit decision, durable commit, client acknowledgement and abort. Recovery
+uses the durable commit-record observation and is tested for idempotence. The
+storage model checks LSN monotonicity, WAL-before-page persistence and refuses
+to acknowledge a commit until its commit LSN is durable.
+
+These are intentionally small abstract models. They do not implement a WAL,
+filesystem adapter, device flush, page format or recovery scanner. The real
+platform persistence contract and its refinement remain unproved. The models
+are run by `tests/run.sh` using the Capstan test runner.
