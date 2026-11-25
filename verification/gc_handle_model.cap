@@ -25,6 +25,7 @@ struct GCHLayout {
     int descriptor_id;
     int field_count;
     List<int> reference_offsets;
+    List<int> reference_target_descriptors;
 }
 
 struct GCHSlot {
@@ -74,11 +75,13 @@ GCHHandle gch_handle(int heap_token, int slot_id, int generation) {
 bool gch_layout_valid(GCHLayout layout) {
     if (layout.descriptor_id <= 0 || layout.field_count < 0 ||
         layout.field_count > GCH_MAX_FIELDS ||
-        layout.reference_offsets.len() > layout.field_count) {
+        layout.reference_offsets.len() > layout.field_count ||
+        layout.reference_target_descriptors.len() != layout.reference_offsets.len()) {
         return false;
     }
     for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
         int offset = layout.reference_offsets[i];
+        if (layout.reference_target_descriptors[i] <= 0) { return false; }
         if (offset < 0 || offset >= layout.field_count) { return false; }
         for (int j = i + 1; j < layout.reference_offsets.len(); j += 1) {
             if (offset == layout.reference_offsets[j]) { return false; }
@@ -102,6 +105,13 @@ bool gch_heap_valid(GCHHeap heap) {
         for (int j = i + 1; j < heap.layouts.len(); j += 1) {
             if (heap.layouts[i].descriptor_id ==
                 heap.layouts[j].descriptor_id) { return false; }
+        }
+    }
+    for (int i = 0; i < heap.layouts.len(); i += 1) {
+        GCHLayout layout = heap.layouts[i];
+        for (int j = 0; j < layout.reference_target_descriptors.len(); j += 1) {
+            if (gch_find_layout(heap.layouts,
+                layout.reference_target_descriptors[j]) < 0) { return false; }
         }
     }
     for (int i = 0; i < heap.slots.len(); i += 1) {
@@ -178,6 +188,15 @@ bool gch_layout_has_reference(GCHLayout layout, int field_offset) {
     return false;
 }
 
+int gch_reference_target_descriptor(GCHLayout layout, int field_offset) {
+    for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
+        if (layout.reference_offsets[i] == field_offset) {
+            return layout.reference_target_descriptors[i];
+        }
+    }
+    return 0;
+}
+
 // Validate a field operation against the resolved object's immutable descriptor.
 // This checks field bounds and the declared scalar/reference kind before any
 // eventual payload access. It does not load or store physical payload bytes.
@@ -227,6 +246,19 @@ GCHFieldCheckResult gch_check_reference_store(
             descriptor_id: field.descriptor_id
         };
     }
+    int owner_layout_index = gch_find_layout(
+        heap.layouts, field.descriptor_id
+    );
+    GCHLayout owner_layout = heap.layouts[owner_layout_index];
+    int expected_target_descriptor = gch_reference_target_descriptor(
+        owner_layout, field_offset
+    );
+    if (resolved_target.descriptor_id != expected_target_descriptor) {
+        return new GCHFieldCheckResult{
+            status: GCH_LAYOUT_MISMATCH, is_reference: true,
+            descriptor_id: field.descriptor_id
+        };
+    }
     return field;
 }
 
@@ -236,11 +268,17 @@ GCHHeap gch_fixture_heap() {
     offsets.push(3);
     List<GCHLayout> layouts = new List<GCHLayout>();
     layouts.push(new GCHLayout{
-        descriptor_id: 7, field_count: 4, reference_offsets: offsets
+        descriptor_id: 7, field_count: 4, reference_offsets: offsets,
+        reference_target_descriptors: reference_targets
     });
     List<int> empty_offsets = new List<int>();
+    List<int> reference_targets = new List<int>();
+    reference_targets.push(8);
+    reference_targets.push(7);
+    List<int> no_reference_targets = new List<int>();
     layouts.push(new GCHLayout{
-        descriptor_id: 8, field_count: 0, reference_offsets: empty_offsets
+        descriptor_id: 8, field_count: 0, reference_offsets: empty_offsets,
+        reference_target_descriptors: no_reference_targets
     });
     List<GCHSlot> slots = new List<GCHSlot>();
     slots.push(new GCHSlot{
@@ -313,6 +351,13 @@ GCHTransitionResult gch_reclaim_slot(GCHHeap heap, GCHHandle handle) {
     return new GCHTransitionResult{
         status: GCH_OK, heap: published, handle: gch_handle(0, 0, 0)
     };
+}
+
+test "GC reference store rejects a live target of the wrong descriptor" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(91, 0, 3)
+    );
+    assert(result.status == GCH_LAYOUT_MISMATCH);
 }
 
 test "GC reference store accepts a live same-heap target" {
@@ -447,7 +492,8 @@ test "GC layout rejects duplicate reference offsets" {
     layouts.push(base.layouts[1]);
     layouts.push(new GCHLayout{
         descriptor_id: 9, field_count: 2,
-        reference_offsets: duplicate_offsets
+        reference_offsets: duplicate_offsets,
+        reference_target_descriptors: new List<int>()
     });
     GCHHeap invalid = new GCHHeap{
         heap_token: base.heap_token, layouts: layouts, slots: base.slots
@@ -464,7 +510,8 @@ test "GC layout rejects out-of-range reference offsets" {
     layouts.push(base.layouts[1]);
     layouts.push(new GCHLayout{
         descriptor_id: 9, field_count: 4,
-        reference_offsets: invalid_offsets
+        reference_offsets: invalid_offsets,
+        reference_target_descriptors: new List<int>()
     });
     GCHHeap invalid = new GCHHeap{
         heap_token: base.heap_token, layouts: layouts, slots: base.slots
@@ -494,7 +541,8 @@ test "GC heap rejects duplicate descriptor identities" {
     layouts.push(base.layouts[0]);
     layouts.push(base.layouts[1]);
     layouts.push(new GCHLayout{
-        descriptor_id: 7, field_count: 0, reference_offsets: offsets
+        descriptor_id: 7, field_count: 0, reference_offsets: offsets,
+        reference_target_descriptors: new List<int>()
     });
     GCHHeap invalid = new GCHHeap{
         heap_token: base.heap_token, layouts: layouts, slots: base.slots
@@ -509,7 +557,8 @@ test "GC layout rejects excessive field count" {
     layouts.push(base.layouts[0]);
     layouts.push(base.layouts[1]);
     layouts.push(new GCHLayout{
-        descriptor_id: 10, field_count: 4097, reference_offsets: offsets
+        descriptor_id: 10, field_count: 4097, reference_offsets: offsets,
+        reference_target_descriptors: new List<int>()
     });
     GCHHeap invalid = new GCHHeap{
         heap_token: base.heap_token, layouts: layouts, slots: base.slots
