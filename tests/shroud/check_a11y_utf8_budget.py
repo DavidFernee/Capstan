@@ -18,11 +18,11 @@ LIB = sorted(
 )
 
 
-def run(argv, *, env=None):
+def run(argv, *, env=None, expected=0):
     result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, env=env)
-    if result.returncode != 0:
+    if result.returncode != expected:
         raise SystemExit(
-            f"a11y UTF-8 budget: {argv[0]!r} exited {result.returncode}\n"
+            f"a11y UTF-8 budget: {argv[0]!r} exited {result.returncode}, expected {expected}\n"
             f"{result.stdout}{result.stderr}"
         )
     return result
@@ -70,7 +70,27 @@ int main() {
         limit = 64 * 1024 * 1024
         if peak > limit:
             raise SystemExit(f"a11y UTF-8 budget: peak managed heap {peak} exceeds {limit}")
-    print(f"a11y UTF-8 budget: 1 MiB encoded; peak Capstan managed heap {peak} bytes (64 MiB cap)")
+
+        over_source = """
+int main() {
+    List<int> cps = new List<int>();
+    for (int i = 0; i < 262145; i += 1) { cps.push(0x1F600); }
+    utf8_from_codepoints(cps);
+    println("unexpectedly accepted oversized accessibility text");
+    return 1;
+}
+"""
+        over_cap = os.path.join(tmp, "a11y-utf8-over.cap")
+        over_c = os.path.join(tmp, "a11y-utf8-over.c")
+        over_exe = os.path.join(tmp, "a11y-utf8-over")
+        with open(over_cap, "w", encoding="utf-8") as stream:
+            stream.write(over_source)
+        run([capstanc, "build", "--strict", "-o", over_c] + LIB + [over_cap])
+        run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), over_c, "-o", over_exe])
+        rejected = run([over_exe], env=env, expected=101)
+        if "shroud: accessibility UTF-8 byte limit exceeded" not in rejected.stdout:
+            raise SystemExit(f"a11y UTF-8 budget: missing over-limit diagnostic: {rejected.stdout!r}")
+    print(f"a11y UTF-8 budget: 1 MiB encoded; peak Capstan managed heap {peak} bytes (64 MiB cap); oversized multi-byte output rejected")
 
 
 if __name__ == "__main__":
