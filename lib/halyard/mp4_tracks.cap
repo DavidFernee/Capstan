@@ -619,7 +619,12 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
     if (!temporary.ok) {
         return deadeye_mp4_movie_error("temporary_resource_reservation_failed");
     }
-    if (!temporary.reservation.has_value()) {
+    HalyardReservation temporary_lease = new HalyardReservation{
+        charge: temporary_charge, active: false
+    };
+    if (let lease = temporary.reservation) {
+        temporary_lease = lease;
+    } else {
         return deadeye_mp4_movie_error("temporary_reservation_missing");
     }
     int estimated_work = bytes.len() * 4 + 8500000;
@@ -628,20 +633,14 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         decoded_units: 0, work_units: estimated_work
     };
     if (!halyard_consumption_budget_consume(budget,work)) {
-        if (let lease = temporary.reservation) {
-            halyard_reservation_release(ledger,lease);
-        }
+        halyard_reservation_release(ledger,temporary_lease);
         return deadeye_mp4_movie_error("consumption_budget_exceeded");
     }
 
     DeadeyeMp4MovieTracksResult parsed =
         deadeye_mp4_parse_moov_tracks_internal(bytes,supplied_moov);
-    if (let temporary_lease = temporary.reservation) {
-        if (!halyard_reservation_release(ledger,temporary_lease)) {
-            return deadeye_mp4_movie_error("temporary_reservation_release_failed");
-        }
-    } else {
-        return deadeye_mp4_movie_error("temporary_reservation_missing");
+    if (!halyard_reservation_release(ledger,temporary_lease)) {
+        return deadeye_mp4_movie_error("temporary_reservation_release_failed");
     }
     if (!parsed.ok) { return parsed; }
     HalyardConsumptionCharge output = new HalyardConsumptionCharge{
