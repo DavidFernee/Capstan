@@ -351,30 +351,91 @@ listed as incomplete. The current compiler still emits C.
 
 ### Active programme: C-free architecture and formal assurance
 
-The C-free programme is tracked separately from the versioned feature roadmap:
+The C-free programme is tracked separately from the versioned feature roadmap. The
+normative bootstrap and release contract is in [C-FREE-BOOTSTRAP.md](C-FREE-BOOTSTRAP.md).
+It distinguishes self-hosting from genuinely C-free native self-hosting, defines the
+S0→S1→S2→S3 bootstrap, and states platform and assurance gates. It is a target contract,
+not evidence that the implementation is complete.
 
-The normative bootstrap and release contract is in [C-FREE-BOOTSTRAP.md](C-FREE-BOOTSTRAP.md). It defines the distinction between self-hosting and genuinely C-free native self-hosting, the S0→S1→S2→S3 bootstrap, platform gates, and the formal/executable evidence required. It is a target contract, not a statement that the implementation is complete.
+**Current CCAM status (main, 2026-11-25):** the v0.1 specification is normative; the
+Capstan-native single-frame evaluator (PR #142), typed in-memory single-frame validator
+(PR #163), bounded multi-function evaluator (PR #207), and checked scalar source lowering
+(PR #210) are integrated. The implementation is explicitly **not yet a conforming CCAM
+v0.1 machine**. Whole-program closed-schema decoding, duplicate-key rejection, complete
+multi-function validation, shared conformance vectors, evaluator/model refinement and
+native correspondence remain open. The freestanding Linux x86-64 backend work is active
+in PR #212; it is not a production backend or proof of end-to-end C-free execution.
+The detailed contract and limitations in [CCAM.md](architecture/CCAM.md) govern.
 
-- **Architecture foundation:** define the target execution architecture and trust
-  boundaries; this is an active PR-level workstream, not yet the default build.
-- **Normative core semantics:** settle values, evaluation order, checked arithmetic,
-  traps, deterministic limits and machine-state transitions before treating CCAM as
-  normative.
-- **Canonical typed IR:** validate CCAM schemas and typed register/instruction
-  invariants; any future optimisation IR must refine to CCAM rather than replace its
-  semantic authority.
-- **Source lowering:** specify and test source-to-CCAM lowering, including evaluation
-  order, lvalue retention and effect-sensitive revalidation.
-- **Formal model:** continue Lean proofs for explicitly enumerated fragments. Record
-  theorem assumptions, axiom dependencies and unproved properties; do not infer
-  compiler correctness or native-code correctness from fragment proofs.
-- **Native execution:** implement and validate a C-free backend/runtime only after the
-  semantic and lowering contracts are stable. Treat this as a future integration gate.
+The active dependencies are:
 
-Dependencies are ordered: architecture foundation → semantic corrections → normative
-CCAM contract → source-lowering contract → proof refinement and executable conformance
-→ native implementation. A dependent proof or lowering branch must not be integrated
-against an obsolete semantic base.
+- **CCAM semantics and conformance:** preserve the normative specification; close
+  discrepancies through versioned decisions and shared positive/negative vectors.
+  Do not silently change instruction semantics to accommodate an implementation.
+- **Validation and decoding:** complete bounded raw-input decoding, exact integer
+  parsing, duplicate-key rejection, closed schemas, whole-program validation and
+  aggregate input/allocation budgets before execution.
+- **Multi-function execution:** replace transitional side-table call representation
+  with the normative named-call model; establish call/return, failure-atomicity and
+  shared-budget invariants.
+- **Source lowering:** preserve source evaluation order, lvalue identity, effects,
+  security qualifiers and trap-before-effect behaviour across the complete supported
+  subset.
+- **Formal correspondence:** connect named Lean properties to executable evaluator,
+  validator, lowering and backend boundaries. A model theorem alone is not an
+  implementation theorem.
+- **Native execution:** establish executable Linux x86-64 conformance, including traps,
+  calls, resource limits and failure behaviour, before expanding the supported subset.
+- **Bootstrap/runtime:** keep native execution, C-free compiler bootstrap, runtime and
+  standard-library migration as separate milestones with separate trust inventories.
+
+### Unified guarantee model
+
+The research and implementation programmes converge on one compositional model. A
+program component has a contract over:
+
+1. **Values and types:** representation, invariants, ownership and valid state transitions.
+2. **Effects and authority:** the operations it may perform, capabilities required, and
+   how authority is attenuated across calls, modules and host boundaries.
+3. **Information flow:** provenance and permitted transformations of tainted and secret data.
+4. **Resources:** deterministic fuel, call depth, stack, live/aggregate memory, allocation,
+   handles, tasks, messages, I/O and output, with explicit units and exhaustion behaviour.
+5. **Logical properties:** preconditions, postconditions, protocol invariants and policy claims.
+6. **Evidence:** the specification/version, checks, certificates, tests and refinement evidence
+   supporting each claim.
+
+These dimensions must compose across function and module boundaries. Unknown, unbounded,
+unanalysed or unsupported behaviour must remain explicit; it must not be silently treated
+as safe. Static rejection, runtime enforcement, testing, model proof and implementation
+refinement are distinct evidence categories. The first research target is deliberately
+small: a bounded CCAM subset with shared deterministic fuel and stack limits, one narrow
+capability policy, and an independently checkable evidence artefact.
+
+### Concurrency and resource-safety programme
+
+Concurrency is an active research and design stream, not an integrated language guarantee.
+PR #239 specifies a proposed race-free structured-concurrency core; PR #254 is an active
+Capstan-native bounded task/channel reference-machine prototype; PR #248 integrates
+concurrency into the research programme. The corresponding issues #229 and #249 remain
+the implementation/specification work queue. None of these open PRs establishes a shipped
+concurrency feature or a formal implementation guarantee.
+
+The first concurrency slice should prefer structured task lifetimes, ownership transfer,
+bounded channels, explicit cancellation and deterministic scheduling. It must define
+failure propagation, task completion, channel closure, queue limits and aggregate resource
+accounting. Race freedom is not deadlock freedom; structured concurrency is not a proof
+of progress. Locks, atomics and more general shared-memory concurrency follow only after
+the minimal model and its invariants are stable.
+
+### Dependency and integration rule
+
+The dependency order is: architecture and claim inventory → normative CCAM semantics and
+resource units → bounded decoder/validator and conformance vectors → multi-function
+execution and source lowering → unified contract/evidence model → concurrency and
+capability vertical slices → implementation-linked proofs and independent checking →
+native execution → bootstrap/runtime migration. Literature reviews, Shroud work and
+isolated tests may proceed in parallel. No dependent implementation or proof may assume
+an unmerged contract, and shared semantic files have one integration owner.
 
 ### Active implementation and remediation work
 
@@ -386,9 +447,11 @@ integration tests. Their presence in an open PR is not a completed milestone.
 ### Proposed and long-term research
 
 The versioned v0.5–v1.0 roadmap below remains a proposal unless a capability is
-implemented, tested and integrated. Kernel work, generational GC, concurrency, web,
-package management, SMT policy proofs and optional backends are not implied by the
-C-free programme. Each requires its own design and acceptance evidence.
+implemented, tested and integrated. Concurrency is now an active research/design stream
+(see the programme above), but the versioned language feature remains proposed until its
+semantics, implementation and acceptance evidence are integrated. Kernel work,
+generational GC, web, package management, SMT policy proofs and optional backends each
+retain separate design and acceptance gates; none is implied by the C-free programme.
 
 Each version must keep the self-hosting fixpoint, the full test suite and the
 compiler's own `--strict` check passing, and the repository formatted with `capstan fmt`.
@@ -478,12 +541,15 @@ Remaining:
 - secure random API (`random_bytes`, `random_int`)
 - authenticated encryption `seal()` / `open()` with algorithm tags; key rotation support
 
-### v0.7 — Concurrency
-- tasks and channels; data shared only by moving ownership or through typed locks
-  (data races become compile errors)
-- the kernel-ready forms of these are designed in section 7, K1.2 to K1.5: data guarded by its
-  lock, RCU as a type, execution contexts, lock ordering and structured concurrency
-- `async` I/O for servers
+### v0.7 — Concurrency *(proposed; research and reference prototypes active)*
+- structured task lifetimes, ownership transfer and bounded channels as the first
+  implementable concurrency subset; race freedom, cancellation, failure propagation,
+  completion and progress are separate properties with separate evidence gates
+- typed locks and more general shared mutable state only after the minimal task/channel
+  semantics and invariants are stable
+- kernel-oriented forms remain a separate design stream (section 7, K1.2–K1.5)
+- `async` I/O follows the capability and resource contracts; no concurrency guarantee
+  is implied by the current language/runtime
 
 ### v0.8 — Policies, proven
 - `assert never ...` policy properties checked by an SMT solver, with counter-examples
