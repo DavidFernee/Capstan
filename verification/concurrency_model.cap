@@ -247,7 +247,8 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
     // Reserve cleanup capacity before any state mutation: exhausting this
     // budget must reject atomically, never return a partially cleaned state.
     int cleanup_cost = 0;
-    if (action == CCM_ACT_FAIL_PRODUCER || action == CCM_ACT_FAIL_CONSUMER) {
+    if (action == CCM_ACT_FAIL_PRODUCER || action == CCM_ACT_FAIL_CONSUMER ||
+        (action == CCM_ACT_COMPLETE_SCOPE && !before.scope_cancel_requested)) {
         cleanup_cost = 2;
     } else if (ccm_cleanup_action(action)) {
         cleanup_cost = 1;
