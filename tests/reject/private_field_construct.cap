@@ -1,0 +1,7 @@
+// expect: private field 'secret' of Vault may be initialised only within its defining module
+import "private_fields/record.cap";
+
+int main() {
+    Vault value = new Vault{secret: 99, label: 2};
+    return 0;
+}
