@@ -90,7 +90,27 @@ int main() {
         rejected = run([over_exe], env=env, expected=101)
         if "shroud: accessibility UTF-8 byte limit exceeded" not in rejected.stdout:
             raise SystemExit(f"a11y UTF-8 budget: missing over-limit diagnostic: {rejected.stdout!r}")
-    print(f"a11y UTF-8 budget: 1 MiB encoded; peak Capstan managed heap {peak} bytes (64 MiB cap); oversized multi-byte output rejected")
+
+        invalid_source = """
+int main() {
+    List<int> cps = new List<int>();
+    cps.push(0xD800);
+    utf8_from_codepoints(cps);
+    println("unexpectedly accepted surrogate code point");
+    return 1;
+}
+"""
+        invalid_cap = os.path.join(tmp, "a11y-utf8-invalid.cap")
+        invalid_c = os.path.join(tmp, "a11y-utf8-invalid.c")
+        invalid_exe = os.path.join(tmp, "a11y-utf8-invalid")
+        with open(invalid_cap, "w", encoding="utf-8") as stream:
+            stream.write(invalid_source)
+        run([capstanc, "build", "--strict", "-o", invalid_c] + LIB + [invalid_cap])
+        run([cc] + cflags + ["-I", os.path.join(ROOT, "runtime"), invalid_c, "-o", invalid_exe])
+        invalid = run([invalid_exe], env=env, expected=101)
+        if "shroud: invalid Unicode scalar in accessibility text" not in invalid.stdout:
+            raise SystemExit(f"a11y UTF-8 budget: missing invalid-scalar diagnostic: {invalid.stdout!r}")
+    print(f"a11y UTF-8 budget: 1 MiB encoded; peak Capstan managed heap {peak} bytes (64 MiB cap); oversized and invalid scalar inputs rejected")
 
 
 if __name__ == "__main__":
