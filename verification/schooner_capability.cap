@@ -259,7 +259,7 @@ test "SCM attenuation cannot amplify rights" {
 
 test "SCM rejects wrong object slot generation epoch and rights" {
     SCMState state = scm_initial();
-    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_READ | SCM_RIGHT_ADMIN);
     assert(root.ok);
     SCMHandle forged = new SCMHandle{
         object_id: root.handle.object_id + 1,
