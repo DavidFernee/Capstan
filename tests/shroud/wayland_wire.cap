@@ -1,0 +1,62 @@
+// Adversarial tests for the pure-Capstan Wayland frame-header parser.
+int main() {
+    List<int> b = new List<int>();
+    // object ID 1, size 8, opcode 3.
+    b.push(1); b.push(0); b.push(0); b.push(0);
+    b.push(3); b.push(0); b.push(8); b.push(0);
+    List<int> r = wayland_frame_header(b, 0);
+    if (r[0] != 1 || r[1] != 1 || r[2] != 8 || r[3] != 3 || r[4] != 8) { return 1; }
+    // Two concatenated frames: parser returns the first frame's end.
+    b.push(9); b.push(0); b.push(0); b.push(0);
+    b.push(0); b.push(0); b.push(8); b.push(0);
+    r = wayland_frame_header(b, 0);
+    if (r[0] != 1 || r[4] != 8) { return 2; }
+    r = wayland_frame_header(b, 8);
+    if (r[0] != 1 || r[1] != 9 || r[4] != 16) { return 3; }
+    List<int> short_header = new List<int>();
+    for (int i = 0; i < 7; i += 1) { short_header.push(0); }
+    r = wayland_frame_header(short_header, 0);
+    if (r[0] != 0) { return 4; }
+    // Complete header, incomplete body.
+    List<int> body = new List<int>();
+    body.push(7); body.push(0); body.push(0); body.push(0);
+    body.push(1); body.push(0); body.push(12); body.push(0);
+    r = wayland_frame_header(body, 0);
+    if (r[0] != 0 || r[1] != 7 || r[2] != 12 || r[3] != 1) { return 5; }
+    // Invalid object ID, undersized frame, and unaligned frame size.
+    List<int> bad = new List<int>();
+    for (int j = 0; j < 8; j += 1) { bad.push(0); }
+    r = wayland_frame_header(bad, 0);
+    if (r[0] != -1) { return 6; }
+    bad[0] = 1; bad[6] = 4; bad[7] = 0;
+    r = wayland_frame_header(bad, 0);
+    if (r[0] != -1) { return 7; }
+    bad[6] = 10; bad[7] = 0;
+    r = wayland_frame_header(bad, 0);
+    if (r[0] != -1) { return 8; }
+    // Maximum aligned size: incomplete until all bytes are present.
+    List<int> max_header = new List<int>();
+    max_header.push(2); max_header.push(0); max_header.push(0); max_header.push(0);
+    max_header.push(0); max_header.push(0); max_header.push(255); max_header.push(255);
+    r = wayland_frame_header(max_header, 0);
+    if (r[0] != 0 || r[2] != 65532) { return 9; }
+    List<int> max_frame = new List<int>();
+    for (int k = 0; k < 65532; k += 1) { max_frame.push(0); }
+    max_frame[0] = 2; max_frame[6] = 255; max_frame[7] = 255;
+    r = wayland_frame_header(max_frame, 0);
+    if (r[0] != 1 || r[2] != 65532 || r[4] != 65532) { return 10; }
+    r = wayland_frame_header(b, -1);
+    if (r[0] != -1) { return 11; }
+    r = wayland_frame_header(b, b.len() + 1);
+    if (r[0] != -1) { return 12; }
+    r = wayland_frame_header(b, b.len());
+    if (r[0] != 0) { return 13; }
+    // Header octets outside 0..255 are rejected, not silently truncated.
+    List<int> non_octet = new List<int>();
+    for (int m = 0; m < 8; m += 1) { non_octet.push(0); }
+    non_octet[0] = 256;
+    r = wayland_frame_header(non_octet, 0);
+    if (r[0] != -1) { return 14; }
+    println("Wayland framing: 14 adversarial assertions passed");
+    return 0;
+}

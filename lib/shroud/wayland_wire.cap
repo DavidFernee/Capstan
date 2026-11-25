@@ -1,0 +1,51 @@
+// Shroud: bounded Wayland wire framing (protocol layer only).
+//
+// Header words are little-endian u32: object ID, then (size << 16) | opcode.
+// Size includes the 8-byte header, is four-byte aligned, and is at most 65,532.
+// No allocation or copy is made from the untrusted declared size.
+//
+// Result: [1, object_id, size, opcode, end_offset] complete;
+// [0, object_id, size, opcode, 0] incomplete; [-1,0,0,0,0] invalid.
+// Opcode/interface/argument validation belongs to the next protocol layer.
+const int WAYLAND_HEADER_BYTES = 8;
+const int WAYLAND_MAX_FRAME_BYTES = 65532;
+
+int wayland_u32_le(List<int> bytes, int at) {
+    return (bytes[at] & 0xFF) | ((bytes[at + 1] & 0xFF) << 8)
+        | ((bytes[at + 2] & 0xFF) << 16) | ((bytes[at + 3] & 0xFF) << 24);
+}
+List<int> wayland_bad_frame() {
+    List<int> out = new List<int>();
+    out.push(-1); out.push(0); out.push(0); out.push(0); out.push(0);
+    return out;
+}
+List<int> wayland_incomplete_frame(int object_id, int size, int opcode) {
+    List<int> out = new List<int>();
+    out.push(0); out.push(object_id); out.push(size); out.push(opcode); out.push(0);
+    return out;
+}
+List<int> wayland_complete_frame(int object_id, int size, int opcode, int end_offset) {
+    List<int> out = new List<int>();
+    out.push(1); out.push(object_id); out.push(size); out.push(opcode); out.push(end_offset);
+    return out;
+}
+List<int> wayland_frame_header(List<int> bytes, int offset) {
+    if (offset < 0 || offset > bytes.len()) { return wayland_bad_frame(); }
+    int remaining = bytes.len() - offset;
+    if (remaining < WAYLAND_HEADER_BYTES) { return wayland_incomplete_frame(0, 0, 0); }
+    for (int i = 0; i < WAYLAND_HEADER_BYTES; i += 1) {
+        int b = bytes[offset + i];
+        if (b < 0 || b > 255) { return wayland_bad_frame(); }
+    }
+    int object_id = wayland_u32_le(bytes, offset);
+    int packed = wayland_u32_le(bytes, offset + 4);
+    int size = (packed >>> 16) & 0xFFFF;
+    int opcode = packed & 0xFFFF;
+    if (object_id == 0) { return wayland_bad_frame(); }
+    if (size < WAYLAND_HEADER_BYTES || size > WAYLAND_MAX_FRAME_BYTES || size % 4 != 0) {
+        return wayland_bad_frame();
+    }
+    if (remaining < size) { return wayland_incomplete_frame(object_id, size, opcode); }
+    // Since remaining >= size, offset + size cannot exceed bytes.len().
+    return wayland_complete_frame(object_id, size, opcode, offset + size);
+}
