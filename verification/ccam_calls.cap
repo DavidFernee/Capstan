@@ -255,7 +255,9 @@ CCAMValidationResult ccam_validate_multi_function(
     for (int i = 0; i < functions.len(); i += 1) {
         CCAMFunction fn = functions[i];
         int name_bytes = fn.name.len();
-        if (name_bytes == 0) return ccam_validation_error("invalid_function_name");
+        if (name_bytes == 0) {
+            return ccam_validation_error("invalid_function_name");
+        }
         if (name_bytes > CCAM_MAX_FUNCTION_NAME_BYTES) {
             return ccam_validation_error("function_name_limit_exceeded");
         }
@@ -414,7 +416,11 @@ CCAMCallMachineCreateResult ccam_call_machine_create(
     }
     CCAMFunction entry = program[entry_function];
     CCAMRegisterFileResult registers = ccam_registers_create(entry.register_types);
-    assert(registers.ok);
+    if (!registers.ok) {
+        return new CCAMCallMachineCreateResult{
+            ok: false, machine: ccam_empty_call_machine(), error: registers.error
+        };
+    }
     List<List<int>> call_site_lookup = new List<List<int>>();
     for (int function_index = 0; function_index < program.len(); function_index += 1) {
         CCAMFunction fn = program[function_index];
