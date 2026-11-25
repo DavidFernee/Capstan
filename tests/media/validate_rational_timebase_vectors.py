@@ -189,7 +189,7 @@ def validate_seek(v):
         if stale:
             actual.update(error="stale_generation", state_unchanged=True)
     elif op == "presentation_trim":
-        present = v["frame_pts"] >= v["target_ticks"] if v["same_epoch"] else False
+        present = integer(v["frame_pts"], v["id"] + ".frame_pts") >= integer(v["target_ticks"], v["id"] + ".target_ticks") if v["same_epoch"] else False
         actual = {"present": present}
         if not present:
             actual["reason"] = "before_seek_target" if v["same_epoch"] else "epoch_mismatch"
@@ -207,6 +207,8 @@ def validate_clock(v):
         if mtb is None or ctb is None:
             fail(f"{v['id']}: invalid timebase")
         delta = bounded_i64(v["media_ticks"], v["id"] + ".media_ticks") - bounded_i64(v["media_anchor"], v["id"] + ".media_anchor")
+        if delta < I64_MIN or delta > I64_MAX:
+            fail("media delta subtraction overflow")
         anchor = bounded_i64(v["clock_anchor"], v["id"] + ".clock_anchor")
         projected = Fraction(anchor) + Fraction(delta) * mtb / ctb
         if projected.denominator != 1 or projected.numerator < I64_MIN or projected.numerator > I64_MAX:
