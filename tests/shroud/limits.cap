@@ -9,6 +9,37 @@ void limits_append_u16(List<int> bytes, int value) {
     bytes.push(value & 255);
 }
 
+void limits_append_u32(List<int> bytes, int value) {
+    limits_append_u16(bytes, (value >> 16) & 65535);
+    limits_append_u16(bytes, value & 65535);
+}
+
+FontReader directory_fixture(int mode) {
+    List<int> bytes = new List<int>();
+    limits_append_u32(bytes, 0x00010000);
+    limits_append_u16(bytes, 2);
+    limits_append_u16(bytes, 0);
+    limits_append_u16(bytes, 0);
+    limits_append_u16(bytes, 0);
+    limits_append_u32(bytes, tag_of("head"));
+    limits_append_u32(bytes, 0);
+    int first_offset = 44;
+    if (mode == 3) { first_offset = 0; }
+    if (mode == 4) { first_offset = 45; }
+    limits_append_u32(bytes, first_offset);
+    limits_append_u32(bytes, 4);
+    int second_tag = tag_of("maxp");
+    if (mode == 2) { second_tag = tag_of("head"); }
+    limits_append_u32(bytes, second_tag);
+    limits_append_u32(bytes, 0);
+    int second_offset = 48;
+    if (mode == 1) { second_offset = 44; }
+    limits_append_u32(bytes, second_offset);
+    limits_append_u32(bytes, 4);
+    for (int i = 0; i < 8; i += 1) { bytes.push(0); }
+    return new FontReader{b: bytes, ok: true};
+}
+
 Font composite_budget_fixture() {
     List<int> bytes = new List<int>();
     // Short loca entries for glyphs 0..3: 0, 0, 394, 434 bytes.
@@ -103,6 +134,11 @@ int main() {
     Font short_metrics = metrics_fixture(11);
     if (bearing_units(short_metrics, 3) != 0) { return 41; }
     if (advance_units(short_metrics, 2) != 2000) { return 42; }
+    if (!font_directory_valid(directory_fixture(0))) { return 43; }
+    if (font_directory_valid(directory_fixture(1))) { return 44; }
+    if (font_directory_valid(directory_fixture(2))) { return 45; }
+    if (font_directory_valid(directory_fixture(3))) { return 46; }
+    if (font_directory_valid(directory_fixture(4))) { return 47; }
     Font composite_font = composite_budget_fixture();
     Path leaf_path = new_path();
     if (glyph_outline(composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0) != true) { return 28; }
@@ -118,6 +154,6 @@ int main() {
             if (huge.w != 0 || huge.h != 0) { return 25; }
         } else { return 26; }
     } else { return 27; }
-    println("resource limits: 42 assertions and glyph cache exercised");
+    println("resource limits: 47 assertions and glyph cache exercised");
     return 0;
 }
