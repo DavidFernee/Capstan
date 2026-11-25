@@ -27,6 +27,33 @@ struct Inventory {
     int unreadable;
 }
 
+bool has_path_segment(string path, string wanted) {
+    int start = 0;
+    for (int i = 0; i <= path.len(); i += 1) {
+        if (i == path.len() || path.at(i) == '/') {
+            if (path.slice(start, i) == wanted) { return true; }
+            start = i + 1;
+        }
+    }
+    return false;
+}
+
+string classification_for_path(string path) {
+    if (has_path_segment(path, "generated")) { return "Generated"; }
+    if (has_path_segment(path, "vendor") ||
+        has_path_segment(path, "vendors") ||
+        has_path_segment(path, "third_party") ||
+        has_path_segment(path, "third-party") ||
+        has_path_segment(path, "node_modules")) { return "Vendored"; }
+    if (has_path_segment(path, "tests") ||
+        has_path_segment(path, "test") ||
+        has_path_segment(path, "testdata") ||
+        has_path_segment(path, "fixtures")) { return "Test"; }
+    if (has_path_segment(path, "docs") ||
+        has_path_segment(path, "documentation")) { return "Documentation"; }
+    return "Repository";
+}
+
 string language_for_path(string path) {
     int dot = -1;
     int slash = -1;
@@ -172,7 +199,7 @@ int main() {
         unreadable: 0
     };
     List<string> rows = new List<string>();
-    rows.push("path,language,lines,bytes,status");
+    rows.push("path,classification,language,lines,bytes,status");
 
     for (int p = 0; p < paths.len(); p += 1) {
         string path = paths[p];
@@ -181,15 +208,15 @@ int main() {
             int nbytes = source.len();
             if (contains_nul(source)) {
                 inv = record_file(inv, "Binary (NUL)", 0, nbytes);
-                rows.push(csv_cell(path) + "," + csv_cell("Binary (NUL)") + ",0," + int_to_str(nbytes) + ",nul_byte_detected");
+                rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell("Binary (NUL)") + ",0," + int_to_str(nbytes) + ",nul_byte_detected");
             } else {
                 int nlines = physical_lines(source);
                 inv = record_file(inv, language, nlines, nbytes);
-                rows.push(csv_cell(path) + "," + csv_cell(language) + "," + int_to_str(nlines) + "," + int_to_str(nbytes) + ",ok");
+                rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell(language) + "," + int_to_str(nlines) + "," + int_to_str(nbytes) + ",ok");
             }
         } else {
             inv.unreadable += 1;
-            rows.push(csv_cell(path) + "," + csv_cell(language) + ",0,0,unreadable_or_over_limit");
+            rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell(language) + ",0,0,unreadable_or_over_limit");
             println("cannot inventory: " + path + " (unreadable, non-regular, or exceeds 16 MiB)");
         }
     }
@@ -205,6 +232,18 @@ int main() {
     return 0;
 }
 
+
+test "inventory path classification" {
+    assert classification_for_path("compiler/main.cap") == "Repository";
+    assert classification_for_path("docs/SPEC.md") == "Documentation";
+    assert classification_for_path("tests/unit/check.py") == "Test";
+    assert classification_for_path("fixtures/input.bin") == "Test";
+    assert classification_for_path("third_party/lib/source.c") == "Vendored";
+    assert classification_for_path("vendor/source.c") == "Vendored";
+    assert classification_for_path("build/generated/parser.c") == "Generated";
+    assert classification_for_path("lib/generated/schema.cap") == "Generated";
+    assert !has_path_segment("mytests/helper.cap", "tests");
+}
 
 test "inventory language classification" {
     assert language_for_path("compiler/main.cap") == "Capstan";
