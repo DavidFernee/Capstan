@@ -67,12 +67,52 @@ CCAMJsonValue ccam_json_new(int kind) {
     };
 }
 
-Tainted ccam_json_join_parts(List<Tainted> parts, int lo, int hi) {
-    if (hi <= lo) { return taint(""); }
-    if (hi - lo == 1) { return parts[lo]; }
-    int mid = lo + (hi - lo) / 2;
-    return ccam_json_join_parts(parts, lo, mid) +
-        ccam_json_join_parts(parts, mid, hi);
+const int CCAM_JSON_JOIN_BATCH_PARTS = 4096;
+
+struct CCAMJsonStringBuilder {
+    List<Tainted> parts;
+    List<Tainted> chunks;
+    int output_bytes;
+}
+
+CCAMJsonStringBuilder ccam_json_string_builder() {
+    return new CCAMJsonStringBuilder{
+        parts: new List<Tainted>(),
+        chunks: new List<Tainted>(),
+        output_bytes: 0
+    };
+}
+
+bool ccam_json_string_builder_append(
+    CCAMJsonParser parser, CCAMJsonStringBuilder builder, Tainted piece
+) {
+    int length = piece.len();
+    if (length > CCAM_JSON_MAX_STRING_BYTES - builder.output_bytes) {
+        ccam_json_fail(parser, "decoded string exceeds byte limit");
+        return false;
+    }
+    if (parser.string_bytes > CCAM_JSON_MAX_TOTAL_STRING_BYTES ||
+        builder.output_bytes > CCAM_JSON_MAX_TOTAL_STRING_BYTES - parser.string_bytes ||
+        length > CCAM_JSON_MAX_TOTAL_STRING_BYTES -
+            parser.string_bytes - builder.output_bytes) {
+        ccam_json_fail(parser, "aggregate decoded strings exceed byte limit");
+        return false;
+    }
+    builder.output_bytes += length;
+    if (length > 0) { builder.parts.push(piece); }
+    if (builder.parts.len() >= CCAM_JSON_JOIN_BATCH_PARTS) {
+        builder.chunks.push(join(builder.parts, ""));
+        builder.parts = new List<Tainted>();
+    }
+    return true;
+}
+
+Tainted ccam_json_string_builder_finish(CCAMJsonStringBuilder builder) {
+    if (builder.parts.len() > 0) {
+        builder.chunks.push(join(builder.parts, ""));
+    }
+    if (builder.chunks.len() == 0) { return taint(""); }
+    return join(builder.chunks, "");
 }
 
 int ccam_json_ch(CCAMJsonParser p, int at) {
@@ -132,22 +172,20 @@ int ccam_json_utf8_length(Tainted s, int i) {
     return n;
 }
 
-void ccam_json_put_utf8(List<Tainted> parts, int cp) {
-    if (cp < 128) {
-        parts.push(taint_char(cp));
-    } else if (cp < 2048) {
-        parts.push(taint_char(192 + cp / 64));
-        parts.push(taint_char(128 + cp % 64));
-    } else if (cp < 65536) {
-        parts.push(taint_char(224 + cp / 4096));
-        parts.push(taint_char(128 + (cp / 64) % 64));
-        parts.push(taint_char(128 + cp % 64));
-    } else {
-        parts.push(taint_char(240 + cp / 262144));
-        parts.push(taint_char(128 + (cp / 4096) % 64));
-        parts.push(taint_char(128 + (cp / 64) % 64));
-        parts.push(taint_char(128 + cp % 64));
+Tainted ccam_json_encode_scalar(int cp) {
+    if (cp < 128) { return taint_char(cp); }
+    if (cp < 2048) {
+        return taint_char(192 + cp / 64) + taint_char(128 + cp % 64);
     }
+    if (cp < 65536) {
+        return taint_char(224 + cp / 4096) +
+            taint_char(128 + (cp / 64) % 64) +
+            taint_char(128 + cp % 64);
+    }
+    return taint_char(240 + cp / 262144) +
+        taint_char(128 + (cp / 4096) % 64) +
+        taint_char(128 + (cp / 64) % 64) +
+        taint_char(128 + cp % 64);
 }
 
 int ccam_json_hex4(CCAMJsonParser p) {
@@ -179,45 +217,44 @@ void ccam_json_ws(CCAMJsonParser p) {
 // before it is admitted to the JSON tree.
 Tainted ccam_json_read_string(CCAMJsonParser p) {
     p.position += 1;
-    List<Tainted> parts = new List<Tainted>();
+    CCAMJsonStringBuilder builder = ccam_json_string_builder();
     int run = p.position;
     while (p.error == "") {
         int c = ccam_json_ch(p, p.position);
         if (c < 0) {
             ccam_json_fail(p, "unterminated string");
         } else if (c == '"') {
-            parts.push(p.input.slice(run, p.position));
+            if (!ccam_json_string_builder_append(
+                p, builder, p.input.slice(run, p.position))) {
+                return taint("");
+            }
             p.position += 1;
-            Tainted decoded = ccam_json_join_parts(parts, 0, parts.len());
-            if (decoded.len() > CCAM_JSON_MAX_STRING_BYTES) {
-                ccam_json_fail(p, "decoded string exceeds byte limit");
-                return taint("");
-            }
-            if (decoded.len() > CCAM_JSON_MAX_TOTAL_STRING_BYTES -
-                p.string_bytes) {
-                ccam_json_fail(p, "aggregate decoded strings exceed byte limit");
-                return taint("");
-            }
-            p.string_bytes += decoded.len();
+            Tainted decoded = ccam_json_string_builder_finish(builder);
+            p.string_bytes += builder.output_bytes;
             return decoded;
         } else if (c < 32) {
             ccam_json_fail(p, "unescaped control byte in string");
         } else if (c == '\\') {
-            parts.push(p.input.slice(run, p.position));
+            if (!ccam_json_string_builder_append(
+                p, builder, p.input.slice(run, p.position))) {
+                return taint("");
+            }
             int escape = ccam_json_ch(p, p.position + 1);
             p.position += 2;
             if (escape == '"' || escape == '\\' || escape == '/') {
-                parts.push(p.input.slice(p.position - 1, p.position));
+                if (!ccam_json_string_builder_append(p, builder, taint_char(escape))) {
+                    return taint("");
+                }
             } else if (escape == 'n') {
-                parts.push(taint("\n"));
+                if (!ccam_json_string_builder_append(p, builder, taint_char(10))) { return taint(""); }
             } else if (escape == 'r') {
-                parts.push(taint("\r"));
+                if (!ccam_json_string_builder_append(p, builder, taint_char(13))) { return taint(""); }
             } else if (escape == 't') {
-                parts.push(taint("\t"));
+                if (!ccam_json_string_builder_append(p, builder, taint_char(9))) { return taint(""); }
             } else if (escape == 'b') {
-                parts.push(taint_char(8));
+                if (!ccam_json_string_builder_append(p, builder, taint_char(8))) { return taint(""); }
             } else if (escape == 'f') {
-                parts.push(taint_char(12));
+                if (!ccam_json_string_builder_append(p, builder, taint_char(12))) { return taint(""); }
             } else if (escape == 'u') {
                 int cp = ccam_json_hex4(p);
                 if (cp >= 55296 && cp <= 56319) {
@@ -229,15 +266,17 @@ Tainted ccam_json_read_string(CCAMJsonParser p) {
                         if (low < 56320 || low > 57343) {
                             ccam_json_fail(p, "invalid low surrogate");
                         } else {
-                            cp = 65536 + (cp - 55296) * 1024 +
-                                (low - 56320);
+                            cp = 65536 + (cp - 55296) * 1024 + (low - 56320);
                         }
                     }
                 } else if (cp >= 56320 && cp <= 57343) {
                     ccam_json_fail(p, "unpaired low surrogate");
                 }
                 if (p.error == "" && cp >= 0) {
-                    ccam_json_put_utf8(parts, cp);
+                    if (!ccam_json_string_builder_append(
+                        p, builder, ccam_json_encode_scalar(cp))) {
+                        return taint("");
+                    }
                 }
             } else {
                 ccam_json_fail(p, "invalid string escape");
@@ -862,6 +901,24 @@ CCAMCallMachineCreateResult ccam_json_machine_create(
 }
 
 // ---- conformance tests -------------------------------------------------------------
+
+test "CCAM JSON parser joins large strings in bounded linear batches" {
+    List<Tainted> plain_parts = new List<Tainted>();
+    for (int i = 0; i < 65536; i += 1) { plain_parts.push(taint("a")); }
+    Tainted plain_input = taint_char(34) + join(plain_parts, "") + taint_char(34);
+    CCAMJsonParseResult plain = ccam_json_parse(plain_input);
+    assert(plain.ok && plain.value.text.len() == 65536);
+    assert(plain.value.text.at(0) == 'a' && plain.value.text.at(65535) == 'a');
+
+    List<Tainted> escaped_parts = new List<Tainted>();
+    for (int i = 0; i < 8192; i += 1) {
+        escaped_parts.push(taint("\\u0041"));
+    }
+    Tainted escaped_input = taint_char(34) + join(escaped_parts, "") + taint_char(34);
+    CCAMJsonParseResult escaped = ccam_json_parse(escaped_input);
+    assert(escaped.ok && escaped.value.text.len() == 8192);
+    assert(escaped.value.text.at(0) == 'A' && escaped.value.text.at(8191) == 'A');
+}
 
 test "CCAM JSON parser accepts a minimal JSON object" {
     CCAMJsonParseResult parsed = ccam_json_parse(
