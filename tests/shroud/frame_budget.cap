@@ -30,6 +30,8 @@ int main() {
     string oversized = repeat_ascii(MAX_TEXT_BYTES) + "!";
     if (frame_text_budget_valid(text(oversized))) { return 13; }
     if (frame_text_budget_valid(text_field("value", taint(oversized), "hint"))) { return 14; }
+    if (frame_text_budget_valid(button(oversized, "action"))) { return 15; }
+    if (frame_text_budget_valid(text_field("value", taint(""), oversized))) { return 16; }
 
     // Two individually valid maximum-size values exactly fill the frame budget.
     string half = repeat_ascii(MAX_TEXT_BYTES);
@@ -63,6 +65,6 @@ int main() {
     cycle_a.add(cycle_b);
     if (frame_text_budget_valid(cycle_a)) { return 12; }
 
-    println("frame text budget: 14 assertions");
+    println("frame text budget: 16 assertions");
     return 0;
 }
