@@ -135,19 +135,21 @@ bool wayland_object_add_client(WaylandObjectTable table, int id, int interface_i
 }
 bool wayland_client_ids_can_allocate(WaylandObjectTable table, List<int> ids) {
     int next_id = table.next_client_id;
+    int new_slots_needed = 0;
     for (int i = 0; i < ids.len(); i += 1) {
         int id = ids[i];
         int existing = wayland_object_index(table, id);
         if (id == next_id) {
             if (existing >= 0 || next_id > WAYLAND_CLIENT_OBJECT_ID_MAX) { return false; }
             next_id += 1;
+            new_slots_needed += 1;
         } else {
             if (id > next_id || existing < 0 || table.slots[existing].state != 3
                 || table.slots[existing].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
         }
         for (int j = 0; j < i; j += 1) { if (ids[j] == id) { return false; } }
     }
-    return wayland_object_free_slots(table) >= ids.len();
+    return wayland_object_free_slots(table) >= new_slots_needed;
 }
 bool wayland_object_retire(WaylandObjectTable table, int id) {
     int i = wayland_object_index(table, id);
