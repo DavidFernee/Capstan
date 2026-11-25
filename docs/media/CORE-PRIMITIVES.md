@@ -280,13 +280,18 @@ factors before checked multiplication and supports explicit `Exact`, `TowardZero
 other modes apply their named rule, including ties-to-even. Invalid or non-normalised
 public timebase values are rejected.
 
-This is a first implementation, not a complete clock model. The conservative checked
-intermediate representation can reject a conversion when an intermediate product is
-outside signed-64 range even if a wider-arithmetic implementation could represent the
-final quotient. It does not yet model timestamp epochs, discontinuities, wrap domains,
-clock drift, resampling, A/V master-clock selection or seek/pause transitions. Those
-semantics remain required before media graph scheduling. The timebase structs are also
-publicly mutable; every conversion validates them, but this is not an opaque type boundary.
+The implementation is intentionally only the rational conversion primitive. Its
+conservative checked intermediate representation can reject a conversion when an
+intermediate product is outside signed-64 range even if a wider-arithmetic implementation
+could represent the final quotient. It does not itself implement stream/epoch identity,
+finite-width wrap extension, discontinuity transitions, VFR duration policy, seek
+generations, external-clock anchoring or rational drift correction. These semantics are
+specified separately in [RATIONAL-TIMEBASE-AND-CLOCK-CONTRACT.md](RATIONAL-TIMEBASE-AND-CLOCK-CONTRACT.md),
+with machine-readable vectors in
+[`tests/media/fixtures/rational_timebase_vectors.json`](../../tests/media/fixtures/rational_timebase_vectors.json).
+The vector oracle checks the normative expected results independently; it does not execute
+the Capstan runtime. The timebase structs remain publicly mutable, so per-operation
+validation is not an opaque type boundary.
 
 ## 8. Test obligations
 

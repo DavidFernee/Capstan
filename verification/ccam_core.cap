@@ -382,6 +382,8 @@ const int CCAM_OP_RET = 13;
 const int CCAM_OP_RET_VOID = 14;
 const int CCAM_OP_TRAP = 15;
 const int CCAM_OP_MOVE = 16;
+const int CCAM_OP_EMIT_BYTES = 18;
+const int CCAM_MAX_OUTPUT_BYTES = 1048576;
 
 struct CCAMInstruction {
     int op;
@@ -395,6 +397,7 @@ struct CCAMInstruction {
     int int_value;
     bool bool_value;
     string reason;
+    List<int> byte_data;
 }
 
 struct CCAMMachineState {
@@ -409,12 +412,22 @@ struct CCAMMachineState {
     bool halt_bool_value;
     string trap_code;
     string trap_detail;
+    List<int> output_bytes;
+    int max_output_bytes;
 }
 
 struct CCAMMachineCreateResult {
     bool ok;
     CCAMMachineState state;
     string error;
+}
+
+List<int> ccam_copy_byte_data(List<int> source) {
+    List<int> copied = new List<int>();
+    for (int i = 0; i < source.len(); i += 1) {
+        copied.push(source[i]);
+    }
+    return copied;
 }
 
 CCAMInstruction ccam_copy_instruction(CCAMInstruction source) {
@@ -429,15 +442,20 @@ CCAMInstruction ccam_copy_instruction(CCAMInstruction source) {
         if_false: source.if_false,
         int_value: source.int_value,
         bool_value: source.bool_value,
-        reason: source.reason
+        reason: source.reason,
+        byte_data: ccam_copy_byte_data(source.byte_data)
     };
 }
 
-CCAMMachineCreateResult ccam_machine_create(List<int> register_types,
-                                     List<CCAMInstruction> instructions,
-                                     int max_steps) {
+CCAMMachineCreateResult ccam_machine_create_with_output_budget(
+    List<int> register_types,
+    List<CCAMInstruction> instructions,
+    int max_steps,
+    int max_output_bytes
+) {
     CCAMRegisterFileResult created = ccam_registers_create(register_types);
-    if (!created.ok || max_steps < 0) {
+    if (!created.ok || max_steps < 0 || max_output_bytes < 0 ||
+        max_output_bytes > CCAM_MAX_OUTPUT_BYTES) {
         List<CCAMRegister> empty_registers = new List<CCAMRegister>();
         List<CCAMInstruction> empty_instructions = new List<CCAMInstruction>();
         CCAMMachineState empty_state = new CCAMMachineState{
@@ -451,11 +469,15 @@ CCAMMachineCreateResult ccam_machine_create(List<int> register_types,
             halt_value: 0,
             halt_bool_value: false,
             trap_code: "",
-            trap_detail: ""
+            trap_detail: "",
+            output_bytes: new List<int>(),
+            max_output_bytes: 0
         };
         string error = "invalid_step_limit";
         if (!created.ok) {
             error = created.error;
+        } else if (max_output_bytes < 0 || max_output_bytes > CCAM_MAX_OUTPUT_BYTES) {
+            error = "invalid_output_limit";
         }
         return new CCAMMachineCreateResult{
             ok: false, state: empty_state, error: error
@@ -478,9 +500,20 @@ CCAMMachineCreateResult ccam_machine_create(List<int> register_types,
         halt_value: 0,
         halt_bool_value: false,
         trap_code: "",
-        trap_detail: ""
+        trap_detail: "",
+        output_bytes: new List<int>(),
+        max_output_bytes: max_output_bytes
     };
     return new CCAMMachineCreateResult{ok: true, state: state, error: ""};
+}
+
+CCAMMachineCreateResult ccam_machine_create(
+    List<int> register_types,
+    List<CCAMInstruction> instructions,
+    int max_steps
+) {
+    return ccam_machine_create_with_output_budget(
+        register_types, instructions, max_steps, CCAM_MAX_OUTPUT_BYTES);
 }
 
 CCAMMachineState ccam_machine_create_valid(List<int> register_types,
@@ -522,6 +555,30 @@ void ccam_machine_step(CCAMMachineState state) {
 
     CCAMInstruction instruction = state.instructions[state.pc];
     state.steps += 1;
+
+    if (instruction.op == CCAM_OP_EMIT_BYTES) {
+        if (state.output_bytes.len() > state.max_output_bytes ||
+            instruction.byte_data.len() >
+                state.max_output_bytes - state.output_bytes.len()) {
+            ccam_machine_trap(state, "output_limit");
+            return;
+        }
+        // Validate the entire payload before appending any byte. This keeps
+        // malformed internal instructions atomic even if validation was
+        // accidentally bypassed by an internal caller.
+        for (int i = 0; i < instruction.byte_data.len(); i += 1) {
+            int value = instruction.byte_data[i];
+            if (value < 0 || value > 255) {
+                ccam_machine_trap(state, "invalid_instruction");
+                return;
+            }
+        }
+        for (int i = 0; i < instruction.byte_data.len(); i += 1) {
+            state.output_bytes.push(instruction.byte_data[i]);
+        }
+        ccam_machine_advance(state);
+        return;
+    }
 
     if (instruction.op == CCAM_OP_MOVE) {
         if (instruction.src < 0 || instruction.src >= state.registers.len() ||
@@ -754,7 +811,8 @@ CCAMInstruction ccam_instruction(int op) {
         if_false: 0,
         int_value: 0,
         bool_value: false,
-        reason: ""
+        reason: "",
+        byte_data: new List<int>()
     };
 }
 
@@ -1349,11 +1407,24 @@ CCAMValidationResult ccam_validate_single_frame(
         return ccam_validation_error("empty_instruction_sequence");
     }
 
+    // Bound aggregate literal storage before validating or copying instructions.
+    int total_output_literal_bytes = 0;
     // First validate every instruction, including unreachable instructions.
     // This pass is deliberately independent of control-flow reachability.
     for (int i = 0; i < instructions.len(); i += 1) {
         CCAMInstruction instruction = instructions[i];
-        if (instruction.op == CCAM_OP_CONST_I) {
+        if (instruction.op == CCAM_OP_EMIT_BYTES) {
+            if (instruction.byte_data.len() >
+                CCAM_MAX_OUTPUT_BYTES - total_output_literal_bytes) {
+                return ccam_validation_error("output_literal_limit_exceeded");
+            }
+            total_output_literal_bytes += instruction.byte_data.len();
+            for (int b = 0; b < instruction.byte_data.len(); b += 1) {
+                if (instruction.byte_data[b] < 0 || instruction.byte_data[b] > 255) {
+                    return ccam_validation_error("invalid_output_byte");
+                }
+            }
+        } else if (instruction.op == CCAM_OP_CONST_I) {
             if (!ccam_register_has_type(register_types, instruction.dst, CCAM_TYPE_INT)) {
                 return ccam_validation_error("invalid_or_mistyped_destination");
             }
@@ -1476,13 +1547,15 @@ CCAMValidationResult ccam_validate_single_frame(
 
 // Safe construction path: callers must supply the declared return type and
 // pass static validation before an executable state is created.
-CCAMMachineCreateResult ccam_machine_create_validated(
+CCAMMachineCreateResult ccam_machine_create_validated_with_output_budget(
     List<int> register_types,
     List<CCAMInstruction> instructions,
     int max_steps,
-    int return_type
+    int return_type,
+    int max_output_bytes
 ) {
-    if (max_steps < 0) {
+    if (max_steps < 0 || max_output_bytes < 0 ||
+        max_output_bytes > CCAM_MAX_OUTPUT_BYTES) {
         List<CCAMRegister> empty_registers = new List<CCAMRegister>();
         List<CCAMInstruction> empty_instructions = new List<CCAMInstruction>();
         CCAMMachineState empty_state = new CCAMMachineState{
@@ -1496,10 +1569,16 @@ CCAMMachineCreateResult ccam_machine_create_validated(
             halt_value: 0,
             halt_bool_value: false,
             trap_code: "",
-            trap_detail: ""
+            trap_detail: "",
+            output_bytes: new List<int>(),
+            max_output_bytes: 0
         };
+        string error = "invalid_step_limit";
+        if (max_output_bytes < 0 || max_output_bytes > CCAM_MAX_OUTPUT_BYTES) {
+            error = "invalid_output_limit";
+        }
         return new CCAMMachineCreateResult{
-            ok: false, state: empty_state, error: "invalid_step_limit"
+            ok: false, state: empty_state, error: error
         };
     }
     CCAMValidationResult validation = ccam_validate_single_frame(
@@ -1518,13 +1597,26 @@ CCAMMachineCreateResult ccam_machine_create_validated(
             halt_value: 0,
             halt_bool_value: false,
             trap_code: "",
-            trap_detail: ""
+            trap_detail: "",
+            output_bytes: new List<int>(),
+            max_output_bytes: 0
         };
         return new CCAMMachineCreateResult{
             ok: false, state: empty_state, error: validation.error
         };
     }
-    return ccam_machine_create(register_types, instructions, max_steps);
+    return ccam_machine_create_with_output_budget(
+        register_types, instructions, max_steps, max_output_bytes);
+}
+
+CCAMMachineCreateResult ccam_machine_create_validated(
+    List<int> register_types,
+    List<CCAMInstruction> instructions,
+    int max_steps,
+    int return_type
+) {
+    return ccam_machine_create_validated_with_output_budget(
+        register_types, instructions, max_steps, return_type, CCAM_MAX_OUTPUT_BYTES);
 }
 
 test "CCAM validator enforces register and instruction admission limits" {
@@ -1774,6 +1866,7 @@ test "CCAM validator enforces return contracts and terminal paths" {
     assert(result.ok);
 }
 
+
 test "CCAM evaluator returns zero for minimum remainder negative one" {
     List<int> types = new List<int>();
     types.push(CCAM_TYPE_INT);
@@ -1823,4 +1916,106 @@ test "CCAM validator accepts unreachable nonterminal final instruction" {
     CCAMValidationResult result = ccam_validate_single_frame(
         types, code, CCAM_RETURN_INT);
     assert(result.ok);
+}
+
+test "CCAM byte output appends exact bytes and counts one step" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction emit = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    emit.byte_data.push(65);
+    emit.byte_data.push(0);
+    emit.byte_data.push(255);
+    code.push(emit);
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+
+    CCAMMachineCreateResult created = ccam_machine_create_validated_with_output_budget(
+        no_registers, code, 10, CCAM_RETURN_VOID, 3);
+    assert(created.ok);
+    CCAMMachineState machine = created.state;
+    ccam_machine_step(machine);
+    assert(machine.steps == 1 && machine.pc == 1);
+    assert(machine.output_bytes.len() == 3);
+    assert(machine.output_bytes[0] == 65);
+    assert(machine.output_bytes[1] == 0);
+    assert(machine.output_bytes[2] == 255);
+    ccam_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "");
+}
+
+test "CCAM byte output enforces budget atomically" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction first = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    first.byte_data.push(65);
+    code.push(first);
+    CCAMInstruction second = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    second.byte_data.push(0);
+    second.byte_data.push(255);
+    code.push(second);
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+
+    CCAMMachineCreateResult created = ccam_machine_create_validated_with_output_budget(
+        no_registers, code, 10, CCAM_RETURN_VOID, 2);
+    assert(created.ok);
+    CCAMMachineState machine = created.state;
+    ccam_machine_step(machine);
+    assert(machine.steps == 1 && machine.output_bytes.len() == 1);
+    ccam_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "output_limit");
+    assert(machine.steps == 2);
+    assert(machine.output_bytes.len() == 1 && machine.output_bytes[0] == 65);
+}
+
+
+test "CCAM empty byte output consumes one step without output" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    code.push(ccam_instruction(CCAM_OP_EMIT_BYTES));
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMMachineCreateResult created = ccam_machine_create_validated_with_output_budget(
+        no_registers, code, 10, CCAM_RETURN_VOID, 0);
+    assert(created.ok);
+    CCAMMachineState machine = created.state;
+    ccam_machine_step(machine);
+    assert(machine.steps == 1 && machine.pc == 1);
+    assert(machine.output_bytes.len() == 0);
+}
+
+test "CCAM byte output rejects invalid byte values and output budgets" {
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction emit = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    emit.byte_data.push(256);
+    code.push(emit);
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMValidationResult invalid_byte = ccam_validate_single_frame(
+        no_registers, code, CCAM_RETURN_VOID);
+    assert(!invalid_byte.ok && invalid_byte.error == "invalid_output_byte");
+
+    code = new List<CCAMInstruction>();
+    code.push(ccam_instruction(CCAM_OP_EMIT_BYTES));
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMMachineCreateResult invalid_budget = ccam_machine_create_with_output_budget(
+        no_registers, code, 10, CCAM_MAX_OUTPUT_BYTES + 1);
+    assert(!invalid_budget.ok && invalid_budget.error == "invalid_output_limit");
+}
+
+
+test "CCAM validator bounds aggregate byte literals in a frame" {
+    List<int> payload = new List<int>();
+    for (int i = 0; i < CCAM_MAX_OUTPUT_BYTES / 2 + 1; i += 1) {
+        payload.push(65);
+    }
+    List<int> no_registers = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction first = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    first.byte_data = payload;
+    code.push(first);
+    CCAMInstruction second = ccam_instruction(CCAM_OP_EMIT_BYTES);
+    second.byte_data = payload;
+    code.push(second);
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    CCAMValidationResult result = ccam_validate_single_frame(
+        no_registers, code, CCAM_RETURN_VOID);
+    assert(!result.ok && result.error == "output_literal_limit_exceeded");
 }

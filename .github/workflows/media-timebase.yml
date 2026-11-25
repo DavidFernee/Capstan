@@ -1,0 +1,26 @@
+name: Halyard rational timebase vectors
+on:
+  pull_request:
+    paths:
+      - "tests/media/fixtures/rational_timebase_vectors.json"
+      - "tests/media/validate_rational_timebase_vectors.py"
+      - "docs/media/RATIONAL-TIMEBASE-AND-CLOCK-CONTRACT.md"
+      - ".github/workflows/media-timebase.yml"
+  push:
+    branches: [main]
+    paths:
+      - "tests/media/fixtures/rational_timebase_vectors.json"
+      - "tests/media/validate_rational_timebase_vectors.py"
+      - "docs/media/RATIONAL-TIMEBASE-AND-CLOCK-CONTRACT.md"
+      - ".github/workflows/media-timebase.yml"
+permissions:
+  contents: read
+jobs:
+  vectors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate rational timebase oracle vectors
+        run: python3 -I tests/media/validate_rational_timebase_vectors.py tests/media/fixtures/rational_timebase_vectors.json
