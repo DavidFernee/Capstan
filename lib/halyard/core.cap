@@ -1,0 +1,238 @@
+// Halyard Media Core — first Capstan-native vertical slice.
+// Bounded in-memory byte source and aggregate resource ledger.
+// All implementation code in this module is first-party Capstan.
+//
+// Status: prototype for MC1 review. The public struct representation means
+// callers must treat source.bytes and ledger fields as module-owned state;
+// an opaque/private type facility is a prerequisite for a stronger API seal.
+// This module performs no filesystem, network, device or codec operations.
+
+struct HalyardByteSource {
+    List<int> bytes;
+    int position;
+    int max_bytes;
+    bool closed;
+}
+
+struct HalyardByteSourceResult {
+    bool ok;
+    HalyardByteSource? source;
+    string error;
+}
+
+struct HalyardReadResult {
+    bool ok;
+    int value;
+    string error;
+}
+
+struct HalyardBytesResult {
+    bool ok;
+    List<int> bytes;
+    string error;
+}
+
+struct HalyardLedger {
+    int limit_input_bytes;
+    int limit_retained_bytes;
+    int limit_output_bytes;
+    int limit_decoded_units;
+    int limit_work_units;
+    int used_input_bytes;
+    int used_retained_bytes;
+    int used_output_bytes;
+    int used_decoded_units;
+    int used_work_units;
+}
+
+struct HalyardLedgerResult {
+    bool ok;
+    HalyardLedger? ledger;
+    string error;
+}
+
+struct HalyardBudgetCharge {
+    int input_bytes;
+    int retained_bytes;
+    int output_bytes;
+    int decoded_units;
+    int work_units;
+}
+
+// Construct a source from an already-owned in-memory list. The source takes a
+// defensive snapshot; it never exposes the caller's original list through its
+// read APIs. The caller must reserve aggregate input bytes before this copy.
+// This is deliberately not an ambient file/network source.
+HalyardByteSourceResult halyard_source_from_list(List<int> input, int max_bytes) {
+    if (max_bytes < 0) {
+        return new HalyardByteSourceResult{ok: false, source: none, error: "negative_limit"};
+    }
+    if (input.len() > max_bytes) {
+        return new HalyardByteSourceResult{ok: false, source: none, error: "input_limit"};
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        if (input[i] < 0 || input[i] > 255) {
+            return new HalyardByteSourceResult{ok: false, source: none, error: "invalid_byte"};
+        }
+    }
+    List<int> snapshot = new List<int>();
+    for (int j = 0; j < input.len(); j += 1) {
+        snapshot.push(input[j]);
+    }
+    HalyardByteSource source = new HalyardByteSource{
+        bytes: snapshot, position: 0, max_bytes: max_bytes, closed: false
+    };
+    return new HalyardByteSourceResult{ok: true, source: source, error: ""};
+}
+
+int halyard_source_remaining(HalyardByteSource source) {
+    if (source.closed || source.position < 0 || source.position > source.bytes.len()) {
+        return 0;
+    }
+    return source.bytes.len() - source.position;
+}
+
+bool halyard_source_close(HalyardByteSource source) {
+    if (source.closed) { return false; }
+    source.closed = true;
+    return true;
+}
+
+HalyardReadResult halyard_read_u8(HalyardByteSource source) {
+    if (source.closed) {
+        return new HalyardReadResult{ok: false, value: 0, error: "closed"};
+    }
+    if (source.position < 0 || source.position > source.bytes.len()) {
+        return new HalyardReadResult{ok: false, value: 0, error: "invalid_state"};
+    }
+    if (source.position == source.bytes.len()) {
+        return new HalyardReadResult{ok: false, value: 0, error: "eof"};
+    }
+    int value = source.bytes[source.position];
+    source.position += 1;
+    return new HalyardReadResult{ok: true, value: value, error: ""};
+}
+
+// Read exactly count bytes. On every failure the cursor is unchanged.
+// The subtraction-form range check avoids position+count overflow.
+HalyardBytesResult halyard_read_exact(HalyardByteSource source, int count) {
+    List<int> empty = new List<int>();
+    if (source.closed) {
+        return new HalyardBytesResult{ok: false, bytes: empty, error: "closed"};
+    }
+    if (count < 0) {
+        return new HalyardBytesResult{ok: false, bytes: empty, error: "negative_count"};
+    }
+    int length = source.bytes.len();
+    if (source.position < 0 || source.position > length) {
+        return new HalyardBytesResult{ok: false, bytes: empty, error: "invalid_state"};
+    }
+    if (count > length - source.position) {
+        return new HalyardBytesResult{ok: false, bytes: empty, error: "truncated"};
+    }
+    List<int> result = new List<int>();
+    for (int i = 0; i < count; i += 1) {
+        result.push(source.bytes[source.position + i]);
+    }
+    source.position += count;
+    return new HalyardBytesResult{ok: true, bytes: result, error: ""};
+}
+
+bool halyard_skip(HalyardByteSource source, int count) {
+    if (source.closed || count < 0) { return false; }
+    int length = source.bytes.len();
+    if (source.position < 0 || source.position > length) { return false; }
+    if (count > length - source.position) { return false; }
+    source.position += count;
+    return true;
+}
+
+HalyardReadResult halyard_read_u32_be(HalyardByteSource source) {
+    HalyardBytesResult read = halyard_read_exact(source, 4);
+    if (!read.ok) {
+        return new HalyardReadResult{ok: false, value: 0, error: read.error};
+    }
+    int value = (read.bytes[0] << 24) | (read.bytes[1] << 16) |
+                (read.bytes[2] << 8) | read.bytes[3];
+    return new HalyardReadResult{ok: true, value: value, error: ""};
+}
+
+HalyardLedgerResult halyard_ledger_create(int input_limit, int retained_limit,
+                                          int output_limit, int decoded_limit,
+                                          int work_limit) {
+    if (input_limit < 0 || retained_limit < 0 || output_limit < 0 ||
+        decoded_limit < 0 || work_limit < 0) {
+        return new HalyardLedgerResult{ok: false, ledger: none, error: "negative_limit"};
+    }
+    HalyardLedger ledger = new HalyardLedger{
+        limit_input_bytes: input_limit,
+        limit_retained_bytes: retained_limit,
+        limit_output_bytes: output_limit,
+        limit_decoded_units: decoded_limit,
+        limit_work_units: work_limit,
+        used_input_bytes: 0, used_retained_bytes: 0, used_output_bytes: 0,
+        used_decoded_units: 0, used_work_units: 0
+    };
+    return new HalyardLedgerResult{ok: true, ledger: ledger, error: ""};
+}
+
+bool halyard_ledger_state_valid(HalyardLedger ledger) {
+    return ledger.limit_input_bytes >= 0 &&
+        ledger.limit_retained_bytes >= 0 &&
+        ledger.limit_output_bytes >= 0 &&
+        ledger.limit_decoded_units >= 0 &&
+        ledger.limit_work_units >= 0 &&
+        ledger.used_input_bytes >= 0 &&
+        ledger.used_retained_bytes >= 0 &&
+        ledger.used_output_bytes >= 0 &&
+        ledger.used_decoded_units >= 0 &&
+        ledger.used_work_units >= 0 &&
+        ledger.used_input_bytes <= ledger.limit_input_bytes &&
+        ledger.used_retained_bytes <= ledger.limit_retained_bytes &&
+        ledger.used_output_bytes <= ledger.limit_output_bytes &&
+        ledger.used_decoded_units <= ledger.limit_decoded_units &&
+        ledger.used_work_units <= ledger.limit_work_units;
+}
+
+// Atomic admission: validate every dimension first, then mutate all counters.
+// All arithmetic uses non-negative subtraction-form checks.
+bool halyard_ledger_reserve(HalyardLedger ledger, HalyardBudgetCharge charge) {
+    if (!halyard_ledger_state_valid(ledger)) { return false; }
+    if (charge.input_bytes < 0 || charge.retained_bytes < 0 ||
+        charge.output_bytes < 0 || charge.decoded_units < 0 ||
+        charge.work_units < 0) { return false; }
+    if (charge.input_bytes > ledger.limit_input_bytes - ledger.used_input_bytes ||
+        charge.retained_bytes > ledger.limit_retained_bytes - ledger.used_retained_bytes ||
+        charge.output_bytes > ledger.limit_output_bytes - ledger.used_output_bytes ||
+        charge.decoded_units > ledger.limit_decoded_units - ledger.used_decoded_units ||
+        charge.work_units > ledger.limit_work_units - ledger.used_work_units) {
+        return false;
+    }
+    ledger.used_input_bytes += charge.input_bytes;
+    ledger.used_retained_bytes += charge.retained_bytes;
+    ledger.used_output_bytes += charge.output_bytes;
+    ledger.used_decoded_units += charge.decoded_units;
+    ledger.used_work_units += charge.work_units;
+    return true;
+}
+
+// Atomic release: reject underflow before changing any dimension.
+bool halyard_ledger_release(HalyardLedger ledger, HalyardBudgetCharge charge) {
+    if (!halyard_ledger_state_valid(ledger)) { return false; }
+    if (charge.input_bytes < 0 || charge.retained_bytes < 0 ||
+        charge.output_bytes < 0 || charge.decoded_units < 0 ||
+        charge.work_units < 0) { return false; }
+    if (charge.input_bytes > ledger.used_input_bytes ||
+        charge.retained_bytes > ledger.used_retained_bytes ||
+        charge.output_bytes > ledger.used_output_bytes ||
+        charge.decoded_units > ledger.used_decoded_units ||
+        charge.work_units > ledger.used_work_units) {
+        return false;
+    }
+    ledger.used_input_bytes -= charge.input_bytes;
+    ledger.used_retained_bytes -= charge.retained_bytes;
+    ledger.used_output_bytes -= charge.output_bytes;
+    ledger.used_decoded_units -= charge.decoded_units;
+    ledger.used_work_units -= charge.work_units;
+    return true;
+}
