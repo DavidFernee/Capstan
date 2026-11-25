@@ -2275,3 +2275,57 @@ test "Halyard managed source rejects zero allocation slots without mutation" {
         assert(ledger.used_allocation_units == 0);
     } else { assert(false); }
 }
+
+test "Halyard live lease release never refunds cumulative decode or work" {
+    HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
+        0, 100, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0
+    );
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(100, 100, 1, 1);
+    assert(ledger_result.ok);
+    assert(budget_result.ok);
+    if (let ledger = ledger_result.ledger) {
+        if (let budget = budget_result.budget) {
+            HalyardBudgetCharge live_charge = new HalyardBudgetCharge{
+                input_bytes: 0, retained_bytes: 10, output_bytes: 0,
+                decoded_units: 0, work_units: 0,
+                allocation_units: 1, metadata_entries: 0, queue_slots: 0,
+                worker_slots: 0, nesting_slots: 0, track_slots: 0, chunk_slots: 0
+            };
+            HalyardReservationResult lease_result =
+                halyard_ledger_acquire(ledger, live_charge);
+            assert(lease_result.ok);
+            if (let lease = lease_result.reservation) {
+                HalyardConsumptionCharge first_work = new HalyardConsumptionCharge{
+                    input_bytes: 10, output_bytes: 10, decoded_units: 1, work_units: 1
+                };
+                assert(halyard_consumption_budget_consume(budget, first_work));
+                assert(ledger.used_retained_bytes == 10);
+                assert(ledger.used_allocation_units == 1);
+                assert(budget.used_decoded_units == 1);
+                assert(budget.used_work_units == 1);
+
+                assert(halyard_reservation_release(ledger, lease));
+                assert(ledger.used_retained_bytes == 0);
+                assert(ledger.used_allocation_units == 0);
+
+                // A second decode attempt is rejected even though every live
+                // resource from the first attempt has been released.
+                HalyardConsumptionCharge second_work = new HalyardConsumptionCharge{
+                    input_bytes: 10, output_bytes: 10, decoded_units: 1, work_units: 1
+                };
+                assert(!halyard_consumption_budget_consume(budget, second_work));
+                assert(budget.used_input_bytes == 10);
+                assert(budget.used_output_bytes == 10);
+                assert(budget.used_decoded_units == 1);
+                assert(budget.used_work_units == 1);
+            } else {
+                assert(false);
+            }
+        } else {
+            assert(false);
+        }
+    } else {
+        assert(false);
+    }
+}
