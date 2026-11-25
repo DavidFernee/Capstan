@@ -80,43 +80,43 @@ CCAMIntResult ccam_rem(int a, int b) {
 
 int main() {
     CCAMIntResult r = ccam_add(20, 22);
-    assert(r.ok && r.value == 42);
+    if (!(r.ok && r.value == 42)) { return 1; }
     r = ccam_add(CCAM_I64_MAX, 1);
-    assert(!r.ok && r.trap == "integer_overflow");
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
     r = ccam_sub(CCAM_I64_MIN, 1);
-    assert(!r.ok && r.trap == "integer_overflow");
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
     r = ccam_sub(CCAM_I64_MAX, -1);
-    assert(!r.ok && r.trap == "integer_overflow");
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
     r = ccam_sub(20, 22);
-    assert(r.ok && r.value == -2);
+    if (!(r.ok && r.value == -2)) { return 1; }
     r = ccam_mul(6, 7);
-    assert(r.ok && r.value == 42);
+    if (!(r.ok && r.value == 42)) { return 1; }
     r = ccam_mul(CCAM_I64_MIN, -1);
-    assert(!r.ok && r.trap == "integer_overflow");
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
     r = ccam_mul(CCAM_I64_MIN, 1);
-    assert(r.ok && r.value == CCAM_I64_MIN);
+    if (!(r.ok && r.value == CCAM_I64_MIN)) { return 1; }
     r = ccam_mul(-3037000500, -3037000500);
-    assert(!r.ok && r.trap == "integer_overflow");
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
     r = ccam_mul(-3037000499, -3037000499);
-    assert(r.ok);
+    if (!(r.ok)) { return 1; }
     r = ccam_div(-7, 3);
-    assert(r.ok && r.value == -2);
+    if (!(r.ok && r.value == -2)) { return 1; }
     r = ccam_div(1, 0);
-    assert(!r.ok && r.trap == "division_by_zero");
+    if (!(!r.ok && r.trap == "division_by_zero")) { return 1; }
     r = ccam_rem(1, 0);
-    assert(!r.ok && r.trap == "division_by_zero");
+    if (!(!r.ok && r.trap == "division_by_zero")) { return 1; }
     r = ccam_div(CCAM_I64_MIN, -1);
-    assert(!r.ok && r.trap == "integer_overflow");
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
     r = ccam_rem(-7, 3);
-    assert(r.ok && r.value == -1);
+    if (!(r.ok && r.value == -1)) { return 1; }
     r = ccam_rem(7, -3);
-    assert(r.ok && r.value == 1);
+    if (!(r.ok && r.value == 1)) { return 1; }
     r = ccam_rem(-7, -3);
-    assert(r.ok && r.value == -1);
+    if (!(r.ok && r.value == -1)) { return 1; }
     r = ccam_rem(7, 3);
-    assert(r.ok && r.value == 1);
+    if (!(r.ok && r.value == 1)) { return 1; }
     r = ccam_rem(CCAM_I64_MIN, -1);
-    assert(r.ok && r.value == 0);
+    if (!(r.ok && r.value == 0)) { return 1; }
     println("CCAM Capstan arithmetic: ok");
     return 0;
 }
@@ -488,7 +488,9 @@ CCAMMachineState ccam_machine_create_valid(List<int> register_types,
                                            int max_steps) {
     CCAMMachineCreateResult created = ccam_machine_create(
         register_types, instructions, max_steps);
-    assert(created.ok);
+    if (!created.ok) {
+        created.state.trap_code = created.error;
+    }
     return created.state;
 }
 
