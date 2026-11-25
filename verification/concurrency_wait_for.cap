@@ -15,6 +15,8 @@ const int CWF_TASK_FAILED = 5;
 const int CWF_WAIT_NONE = 0;
 const int CWF_WAIT_JOIN = 1;
 const int CWF_WAIT_EVENT = 2;
+const int CWF_WAIT_CHANNEL_MESSAGE = 3;
+const int CWF_WAIT_CHANNEL_CAPACITY = 4;
 
 const int CWF_ENV_CLOSED = 0;
 const int CWF_ENV_LIVE = 1;
@@ -36,6 +38,8 @@ struct CWFState {
     int task_b_wait_kind;
     int task_a_wait_target;
     int task_b_wait_target;
+    int task_a_wait_channel;
+    int task_b_wait_channel;
     int environment;
     bool exploration_complete;
 }
@@ -60,24 +64,27 @@ bool cwf_status_valid(int status) {
 
 // A task is blocked iff it has exactly one typed wait. JOIN targets are
 // another task in this finite model; EVENT waits use target -1.
-bool cwf_task_valid(int task_id, int status, int wait_kind, int target) {
+bool cwf_task_valid(int task_id, int status, int wait_kind, int target, int channel) {
     if (status == CWF_TASK_BLOCKED) {
         if (wait_kind == CWF_WAIT_JOIN) {
-            return target >= 0 && target <= 1 && target != task_id;
+            return target >= 0 && target <= 1 && target != task_id && channel == -1;
         }
-        if (wait_kind == CWF_WAIT_EVENT) { return target == -1; }
+        if (wait_kind == CWF_WAIT_EVENT) { return target == -1 && channel == -1; }
+        if (wait_kind == CWF_WAIT_CHANNEL_MESSAGE || wait_kind == CWF_WAIT_CHANNEL_CAPACITY) {
+            return target >= 0 && target <= 1 && channel == 0;
+        }
         return false;
     }
-    return wait_kind == CWF_WAIT_NONE && target == -1;
+    return wait_kind == CWF_WAIT_NONE && target == -1 && channel == -1;
 }
 
 bool cwf_invariant(CWFState state) {
     if (!cwf_status_valid(state.task_a_status) ||
         !cwf_status_valid(state.task_b_status)) { return false; }
     if (!cwf_task_valid(0, state.task_a_status,
-        state.task_a_wait_kind, state.task_a_wait_target)) { return false; }
+        state.task_a_wait_kind, state.task_a_wait_target, state.task_a_wait_channel)) { return false; }
     if (!cwf_task_valid(1, state.task_b_status,
-        state.task_b_wait_kind, state.task_b_wait_target)) { return false; }
+        state.task_b_wait_kind, state.task_b_wait_target, state.task_b_wait_channel)) { return false; }
     if (state.environment != CWF_ENV_CLOSED &&
         state.environment != CWF_ENV_LIVE &&
         state.environment != CWF_ENV_UNKNOWN) { return false; }
@@ -87,14 +94,12 @@ bool cwf_invariant(CWFState state) {
 bool cwf_join_ready(CWFState state) {
     if (state.task_a_status == CWF_TASK_BLOCKED &&
         state.task_a_wait_kind == CWF_WAIT_JOIN &&
-        ((state.task_a_wait_target == 0 && cwf_terminal(state.task_a_status)) ||
-         (state.task_a_wait_target == 1 && cwf_terminal(state.task_b_status)))) {
+        state.task_a_wait_target == 1 && cwf_terminal(state.task_b_status)) {
         return true;
     }
     if (state.task_b_status == CWF_TASK_BLOCKED &&
         state.task_b_wait_kind == CWF_WAIT_JOIN &&
-        ((state.task_b_wait_target == 0 && cwf_terminal(state.task_a_status)) ||
-         (state.task_b_wait_target == 1 && cwf_terminal(state.task_b_status)))) {
+        state.task_b_wait_target == 0 && cwf_terminal(state.task_a_status)) {
         return true;
     }
     return false;
@@ -179,6 +184,8 @@ CWFState cwf_join_cycle() {
         task_b_wait_kind: CWF_WAIT_JOIN,
         task_a_wait_target: 1,
         task_b_wait_target: 0,
+        task_a_wait_channel: -1,
+        task_b_wait_channel: -1,
         environment: CWF_ENV_CLOSED,
         exploration_complete: true
     };
