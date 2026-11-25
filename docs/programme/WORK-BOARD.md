@@ -90,28 +90,29 @@ These are candidates for immediate pull after the worker checks current issue st
 
 ### Anchor — IDE and developer workflows
 
-No Anchor-labelled open issue appeared in the current open-issue snapshot. Do not infer that no Anchor work exists: inspect branches, docs and PRs before creating tickets.
+Anchor has an established A0 baseline on main: `docs/ANCHOR.md`, `docs/ANCHOR-COMPONENT-CATALOGUE.md`, `examples/anchor/main.cap`, `tests/anchor/check.py` and its smoke workflow. The original A0 PR #53 is closed; the `feature/anchor` branch also exists. A0 is a headless/static Shroud S0 shell, not a functioning desktop IDE. The architecture document is explicit that there is no native window embedder or child-process API, and prohibits shell/private-C-shim workarounds.
 
-**First pull card to create after the audit:** Anchor product baseline and vertical-slice contract. It should define the IDE boundary, canonical compiler-service protocol, workspace threat model and minimum workflow. Do not start a large editor implementation before this contract is accepted.
+**New pull-ready cards:**
+- [#279 — A1 bounded compiler-process adapter contract](https://github.com/DavidFernee/Capstan/issues/279): Ready for contract and mock-harness work; production process launch remains blocked on an agreed upstream process/host API.
+- [#280 — A2 confined workspace discovery and document loading](https://github.com/DavidFernee/Capstan/issues/280): Ready for bounded workspace-service implementation and adversarial tests.
+
+The next Anchor sequence is A1 contract/mock harness and A2 workspace confinement, followed by implementation only when the required host/process contracts exist. A3 build/test/format workflows must use explicit user actions and structured argv. A4 WYSIWYG design remains dependent on compiler-supported source maps/transformations and Shroud component metadata; do not start by inventing a parallel visual source format.
 
 ### Keel — 3D engine
 
-Open PRs #276 and #277 both describe the Keel K0 architecture/research programme. Resolve whether these are duplicate or complementary changes before another worker starts K0 documentation.
+Keel K0 is represented by the open [PR #277](https://github.com/DavidFernee/Capstan/pull/277), which contains the architecture, research programme, security assurance and K0 decisions. PR #276 was closed as a duplicate of #277; PR #275 is also closed. Do not reopen duplicate documentation work or begin renderer implementation before K0 decisions are reviewed and accepted.
 
-**First pull cards after PR reconciliation:**
-1. K0 architecture/contract review: ownership, Shroud dependency, scene/resource model, threat boundary and research questions.
-2. Minimal deterministic scene-core prototype: transforms, stable IDs, bounded entity count and deterministic update order; no GPU dependency.
-3. Hostile asset-ingestion contract and bounded parser harness.
-4. GPU resource ownership/lifetime design, explicitly separating engine guarantees from vendor driver trust.
-5. Reference-scene conformance harness and deterministic replay scope.
+**New pull-ready cards:**
+- [#281 — deterministic bounded scene-core reference model](https://github.com/DavidFernee/Capstan/issues/281): GPU-independent reference model; implementation is gated on accepted K0 decisions.
+- [#282 — hostile asset-ingestion limits and parser conformance corpus](https://github.com/DavidFernee/Capstan/issues/282): choose one initial format and establish the bounded parser/test boundary; implementation is gated on K0 format/ownership decisions.
 
-These are candidate decompositions, not claims that matching issues already exist.
+Next candidate slices after these: GPU resource lifetime/teardown contract; reference-scene renderer conformance harness; deterministic simulation/replay. These must be separate worker cards with explicit CPU/GPU/driver trust boundaries.
 
 ## In progress / integration watch
 
 The following open PRs must be reviewed and mapped to the cards before new implementation begins:
 
-- **Keel:** #276, #277 — K0 architecture/research programme overlap.
+- **Keel:** #277 is the sole open K0 architecture/research PR; #276 was closed as duplicate and #275 is closed.
 - **Shroud:** #274 — resize; #272 and #271 — PNG/font hardening overlap.
 - **CCAM/formal/native:** #216, #245, #246, #254, #255, #256, #258, #262, #266, #228.
 - **Research/assurance:** #238, #260.
@@ -120,7 +121,9 @@ The board snapshot also identified 36 open issues and 17 open PRs on 2026-11-25.
 
 ## Blocked / not yet Ready
 
-- Anchor implementation cards until its current docs, branches, PRs and intended vertical slice are audited.
+- Anchor native process execution until an approved process/host API exists; #279 is contract/mock work, not permission to use shell or private C shims.
+- Anchor native window/editor features until Shroud's public host/editor contracts exist; A0 remains headless.
+- Keel scene-core and asset parser implementation until K0 decisions in #277 are accepted; #281/#282 can prepare reference models and bounded contracts without a GPU backend.
 - Keel GPU implementation until the engine's resource/lifetime contract and trusted boundary are specified.
 - Full C-free release claims until compiler, runtime, standard library, bootstrap and platform dependencies are separately qualified.
 - End-to-end verified execution claims until the implementation/refinement chain is established.
@@ -173,7 +176,7 @@ Files changed, API/schema changes, migration notes, residual limitations.
 ## Next board-maintenance actions
 
 1. Reconcile the open PRs listed above, especially duplicate-looking Shroud and Keel work.
-2. Inspect Anchor docs/branches/PRs and create only non-duplicative worker issues.
-3. Convert candidate Keel slices into issues after K0 contract review.
+2. Review and assign Anchor cards #279/#280; preserve the process API blocker.
+3. Review and assign Keel cards #281/#282 after K0 decisions in PR #277 are accepted.
 4. Add labels consistently: `product:capstan`, `product:shroud`, `product:anchor`, `product:keel`, `type:implementation`, `type:research`, `type:assurance`, `stage:ready`, `stage:blocked`, `evidence-required`, `release-blocker`.
 5. Keep issue state as the live Kanban state; this document is the programme index and should be refreshed as work moves.
