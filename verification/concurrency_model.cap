@@ -343,6 +343,9 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             before.message_owner != CCM_OWNER_PRODUCER) {
             return ccm_reject(before, "invalid_send_ownership");
         }
+        if (before.consumer_status != CCM_TASK_RUNNABLE) {
+            return ccm_reject(before, "channel_has_no_live_receiver");
+        }
         if (before.channel_count >= before.channel_capacity) {
             return ccm_reject(before, "channel_full");
         }
@@ -1146,4 +1149,23 @@ test "CCM invariant rejects a state with missing lifecycle cleanup reservations"
     assert(!rejected.ok && rejected.error == "invalid_input_state");
     assert(rejected.state.producer_status == CCM_TASK_RUNNABLE);
     assert(rejected.state.cleanup_reserved == 4);
+}
+
+test "CCM producer cannot enqueue after the only consumer is cancelled" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
+    CCMTransition rejected = ccm_step(state, 1, CCM_ACT_SEND);
+    assert(!rejected.ok && rejected.error == "channel_has_no_live_receiver");
+    assert(rejected.state.message_live);
+    assert(rejected.state.message_owner == CCM_OWNER_PRODUCER);
+    assert(rejected.state.cleanup_reserved == state.cleanup_reserved);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state) && state.scope_closed);
 }
