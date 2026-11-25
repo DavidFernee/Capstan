@@ -2,37 +2,7 @@
 // Accepts only JSON integer lexemes representable as signed i64. Input remains
 // Tainted; the caller chooses the field type before invoking this routine.
 
-const int JSON_I64_MAX = 0x7FFFFFFFFFFFFFFF;
-const int JSON_I64_MIN = -0x7FFFFFFFFFFFFFFF - 1;
-
-int? ccam_json_parse_i64(Tainted token) {
-    int n = token.len();
-    if (n == 0 || n > 20) { return none; }
-    int pos = 0;
-    bool negative = false;
-    if (token.at(0) == '-') { negative = true; pos = 1; }
-    if (pos >= n) { return none; }
-    int first = token.at(pos);
-    if (first < '0' || first > '9') { return none; }
-    if (first == '0' && pos + 1 != n) { return none; }
-
-    int limit = -JSON_I64_MAX;
-    if (negative) { limit = JSON_I64_MIN; }
-    int multiply_limit = limit / 10;
-    int value = 0;
-    for (int i = pos; i < n; i += 1) {
-        int c = token.at(i);
-        if (c < '0' || c > '9') { return none; }
-        int digit = c - '0';
-        if (value < multiply_limit) { return none; }
-        value = value * 10;
-        if (value < limit + digit) { return none; }
-        value -= digit;
-    }
-    if (negative) { return value; }
-    return -value;
-}
-
+import "ccam_json_integer_core.cap";
 int main() {
     if (let v = ccam_json_parse_i64(taint("0"))) { if (v != 0) { return 1; } } else { return 1; }
     if (let v = ccam_json_parse_i64(taint("-0"))) { if (v != 0) { return 1; } } else { return 1; }
