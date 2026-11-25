@@ -82,7 +82,7 @@ channel layout, metadata and transformation history where required by the domain
 
 The working branch contains Capstan-native Core primitives in `lib/halyard/core.cap`:
 a bounded byte source, bounded in-memory sink, sequential five-dimensional ledger and
-rational timestamp rescaling, with 26 colocated regression tests. Shanty has its first
+rational timestamp rescaling, with 30 colocated regression tests and a separate monotonic consumption budget prototype. Shanty has its first
 offline RIFF/WAVE integer-PCM parser and decoder in `lib/halyard/shanty.cap`, with nine
 Capstan tests. The WAVE profile and explicit limitations are documented in
 [SHANTY-WAVE.md](SHANTY-WAVE.md).
