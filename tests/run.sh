@@ -215,7 +215,15 @@ if out="$($PY "$ROOT/tests/unit/escape_json_agree.py" 2>&1)"; then ok "$out"; el
 if out="$($PY "$ROOT/tests/unit/lint_table.py" 2>&1)"; then ok "$out"; else bad "lint table" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/grant_reference.py" 2>&1)"; then ok "$out"; else bad "grant reference semantics" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/assurance_freshness.py" 2>&1)"; then ok "$out"; else bad "assurance evidence freshness" "$out"; fi
-if out="$($PY "$ROOT/tests/unit/private_fields.py" "$C" "$CC" "$ROOT" 2>&1)"; then ok "$out"; else bad "private field encapsulation" "$out"; fi
+section "private struct fields: module boundary and factory invariants"
+if "$C" test -o "$tmp/private_fields.c" "$ROOT/tests/unit/private_fields/tests.cap" >"$tmp/log" 2>&1 \
+   && "$CC" $CFLAGS "$tmp/private_fields.c" -o "$tmp/private_fields" >>"$tmp/log" 2>&1 \
+   && "$tmp/private_fields" >"$tmp/private_fields.out" 2>&1 \
+   && grep -q "3 test(s), 0 failed" "$tmp/private_fields.out"; then
+  ok "private fields: defining-module construction/read/write and external public API"
+else
+  bad "private field encapsulation" "$(tail -8 "$tmp/log"; tail -8 "$tmp/private_fields.out" 2>/dev/null)"
+fi
 
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do
