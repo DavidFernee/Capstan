@@ -96,6 +96,29 @@ responsible for applying the appropriate typed validation at their own trust
 boundaries; Shroud must make unsafe implicit flows difficult or impossible through
 its API design.
 
+## 2B. Existing fail-closed blocker: byte-limit truncation
+
+The current `string_bytes()` and `tainted_bytes()` helpers cap input with
+`min(length, MAX_TEXT_BYTES)` and silently discard the suffix. This is not an
+acceptable security boundary: validation, display, accessibility and application
+logic can then operate on different effective values if another layer retains or
+processes the complete input. An attacker may place a delimiter, extension, control,
+or policy-relevant suffix beyond the cap.
+
+Until this is corrected, no caller may treat the returned prefix as the complete
+validated value. The required correction is an explicit bounded conversion result
+that distinguishes success from over-limit input; over-limit input must be rejected
+before layout, accessibility publication, editing, copying or other side effects.
+A truncated prefix is not a successful parse and must never be used for an
+identity/security decision. The rejection path must be atomic and tested at
+MAX_TEXT_BYTES-1, exactly MAX_TEXT_BYTES, and MAX_TEXT_BYTES+1, including hostile
+suffixes after the boundary.
+
+This is a known implementation gap, not a claim that the current code already
+satisfies the gate. It blocks declaring the Unicode input pipeline security-complete.
+The fix requires tracing every caller and defining a compatible error/abort path
+before changing these helpers; do not patch the helpers in isolation.
+
 ## 3. Text representations
 
 The implementation should keep three representations distinct.
