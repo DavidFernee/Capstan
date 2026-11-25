@@ -161,8 +161,37 @@ int main() {
     span = wayland_payload_array(wayland_test_bytes(empty_bytes), 0, 4);
     if (span.status != -1) { return 36; }
 
+
+    // Wayland strings are strict UTF-8: valid multibyte scalar values survive.
+    List<int> utf8_string = new List<int>();
+    utf8_string.push(3); utf8_string.push(0); utf8_string.push(0); utf8_string.push(0);
+    utf8_string.push(0xC3); utf8_string.push(0xA9); utf8_string.push(0); utf8_string.push(0);
+    span = wayland_payload_string(wayland_test_bytes(utf8_string), 0, 8);
+    if (span.status != 1 || span.length != 3) { return 37; }
+    List<int> utf8_four = new List<int>();
+    utf8_four.push(5); utf8_four.push(0); utf8_four.push(0); utf8_four.push(0);
+    utf8_four.push(0xF0); utf8_four.push(0x9F); utf8_four.push(0x98); utf8_four.push(0x80);
+    utf8_four.push(0); utf8_four.push(0); utf8_four.push(0); utf8_four.push(0);
+    span = wayland_payload_string(wayland_test_bytes(utf8_four), 0, 12);
+    if (span.status != 1 || span.length != 5) { return 38; }
+
+    // Reject overlong encodings, surrogate scalars, values above U+10FFFF,
+    // isolated continuation bytes and truncated multibyte sequences.
+    List<int> invalid_utf8 = new List<int>();
+    invalid_utf8.push(3); invalid_utf8.push(0); invalid_utf8.push(0); invalid_utf8.push(0);
+    invalid_utf8.push(0xC0); invalid_utf8.push(0xAF); invalid_utf8.push(0); invalid_utf8.push(0);
+    span = wayland_payload_string(wayland_test_bytes(invalid_utf8), 0, 8);
+    if (span.status != -1) { return 39; }
+    invalid_utf8[0] = 4; invalid_utf8[4] = 0xED; invalid_utf8[5] = 0xA0; invalid_utf8[6] = 0x80;
+    span = wayland_payload_string(wayland_test_bytes(invalid_utf8), 0, 8);
+    if (span.status != -1) { return 40; }
+    invalid_utf8[0] = 5; invalid_utf8[4] = 0xF4; invalid_utf8[5] = 0x90; invalid_utf8[6] = 0x80; invalid_utf8[7] = 0x80;
+    invalid_utf8.push(0); invalid_utf8.push(0); invalid_utf8.push(0); invalid_utf8.push(0);
+    span = wayland_payload_string(wayland_test_bytes(invalid_utf8), 0, 12);
+    if (span.status != -1) { return 41; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing and payload spans: 36 adversarial assertions passed");
+    println("Wayland framing and payload spans: 41 adversarial assertions passed");
     return 0;
 }
