@@ -51,6 +51,14 @@ test "owners can edit" { assert_granted CanEdit(owner, doc); }
 - `sensitive struct Record { ... }`: fields of a sensitive struct can only be read or changed
   in protected functions, policies and tests, so every path to the data needs a grant (CWE-862).
   Values can be created and passed around anywhere.
+- A struct field may be prefixed with `private`, for example
+  `struct Vault { private int key; int label; }`. A private field may be read, written or
+  initialised only by source code in the same defining file (module). Imported callers cannot
+  inspect it or supply it in a struct literal. The defining module can expose validated factory
+  functions and methods that return or operate on the opaque value. Fields remain public by
+  default for source compatibility; private methods and friend declarations are not supported.
+  This is module encapsulation, not ownership or lifetime safety: a module's own code remains
+  responsible for preserving its private invariants.
 - `enum Shape { Circle(int r), Empty }`; values are written `Shape.Circle(3)` and `Shape.Empty`.
   `match (s) { case Circle(r) { ... } case Empty { ... } }` must handle every variant or end with
   `else { ... }` (CWE-478). Enums without values can be compared with `==`.
