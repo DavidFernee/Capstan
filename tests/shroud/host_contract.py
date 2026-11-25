@@ -460,7 +460,7 @@ class ContractTests(unittest.TestCase):
             h.resize(1, 1)
         self.assertEqual(h.generation, generation)
         self.assertEqual(set(h.buffers), keys)
-        self.assertIsNone(h.rendered_generation)
+        self.assertEqual(h.rendered_generation, generation)
 
     def test_disconnect_invalidates_leases(self):
         h = self.ready()
