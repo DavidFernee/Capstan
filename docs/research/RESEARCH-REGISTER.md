@@ -212,9 +212,9 @@ implementation and proof fragments into tightly scoped, reproducible claims.
 The Halyard working branch now contains a first Capstan-native prototype in
 `lib/halyard/core.cap`: an in-memory bounded byte source, a five-dimensional sequential
 aggregate ledger, and rational timebase construction/timestamp rescaling with explicit
-rounding. Sixteen Capstan `test` declarations are colocated with the implementation,
+rounding. Seventeen Capstan `test` declarations are colocated with the implementation,
 including exhaustive small-state checks for exact-read boundaries, the 3^5 resource-
-admission state space, per-dimension release underflow, rational rescaling and rounding.
+admission state space, per-dimension release underflow, rational rescaling, rounding and signed multiplication boundaries.
 No Halyard-specific shell, Python, C, C++ or other-language test source is added. The
 detailed contract and limitations are recorded in `docs/media/CORE-PRIMITIVES.md`.
 
