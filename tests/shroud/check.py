@@ -531,6 +531,7 @@ def main():
         report.append("font table spans: " + check_table_span_rejection(vec, tmp))
         report.append("font fuzz: " + check_fuzz(vec, tmp))
         report.append("Wayland wire framing: " + check_wayland_wire(capstanc, cc, cflags, tmp))
+        report.append("Wayland protocol schema: " + check_wayland_protocol(capstanc, cc, cflags, tmp))
         report.append("pixmap limits: " + check_pixmap_limits(capstanc, cc, cflags, tmp))
         report.append("single-line filtering: " + check_single_line_budget(capstanc, cc, cflags, tmp))
         report.append("golden: " + check_golden(capstanc, cc, cflags, tmp, update))
