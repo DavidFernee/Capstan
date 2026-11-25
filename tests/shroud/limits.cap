@@ -112,7 +112,10 @@ Font truncated_composite_args_fixture() {
     bytes[22] = 0;
     bytes[23] = 0;
     FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
-    return new Font{r: r, num_glyphs: 3, loca_long: false, t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 16};
+    return new Font{
+        r: r, num_glyphs: 3, loca_long: false,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 16
+    };
 }
 
 Font truncated_simple_coords_fixture() {
@@ -127,7 +130,10 @@ Font truncated_simple_coords_fixture() {
     bytes[22] = 0;
     bytes[23] = 0;
     FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
-    return new Font{r: r, num_glyphs: 3, loca_long: false, t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 20};
+    return new Font{
+        r: r, num_glyphs: 3, loca_long: false,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 20
+    };
 }
 
 Font truncated_composite_transform_fixture() {
@@ -144,14 +150,17 @@ Font truncated_composite_transform_fixture() {
     bytes[22] = 0;
     bytes[23] = 0;
     FontReader r = new FontReader{b: limits_tainted(bytes), ok: true};
-    return new Font{r: r, num_glyphs: 3, loca_long: false, t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 18};
+    return new Font{
+        r: r, num_glyphs: 3, loca_long: false,
+        t_loca: 0, loca_len: 8, t_glyf: 8, glyf_len: 18
+    };
 }
 
 int main() {
     List<int> scaled_offset = component_offset(10, 20, 8192, 0, 0, 16384, true);
-    if (scaled_offset[0] != 5 || scaled_offset[1] != 20) { return 49; }
+    if (scaled_offset[0] != 5 || scaled_offset[1] != 20) { return 51; }
     List<int> unscaled_offset = component_offset(10, 20, 8192, 0, 0, 16384, false);
-    if (unscaled_offset[0] != 10 || unscaled_offset[1] != 20) { return 50; }
+    if (unscaled_offset[0] != 10 || unscaled_offset[1] != 20) { return 52; }
     if (pixmap_size_valid(1, 1) != true) { return 1; }
     if (pixmap_size_valid(4096, 4096) != true) { return 2; }
     if (pixmap_size_valid(16384, 1024) != true) { return 3; }
@@ -198,9 +207,15 @@ int main() {
     if (font_directory_valid(directory_fixture(4))) { return 47; }
     Font composite_font = composite_budget_fixture();
     Path leaf_path = new_path();
-    if (glyph_outline(composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0) != true) { return 28; }
+    bool leaf_ok = glyph_outline(
+        composite_font, 1, leaf_path, 1, 1, 0, 0, identity_transform(), 0
+    );
+    if (!leaf_ok) { return 28; }
     Path aggregate_path = new_path();
-    if (glyph_outline(composite_font, 2, aggregate_path, 1, 1, 0, 0, identity_transform(), 0) != false) { return 29; }
+    bool aggregate_ok = glyph_outline(
+        composite_font, 2, aggregate_path, 1, 1, 0, 0, identity_transform(), 0
+    );
+    if (aggregate_ok) { return 29; }
     if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
         if (let font = font_load(data)) {
             for (int cp = 33; cp < 127; cp += 1) {
@@ -214,15 +229,27 @@ int main() {
     Font truncated = truncated_composite_args_fixture();
     List<int> truncated_budget = new List<int>();
     Path truncated_path = new_path();
-    if (glyph_outline(truncated, 1, truncated_path, 16384, 1, 0, 0, identity_transform(), 0, truncated_budget)) { return 48; }
+    bool truncated_ok = glyph_outline(
+        truncated, 1, truncated_path, 16384, 1, 0, 0,
+        identity_transform(), 0, truncated_budget
+    );
+    if (truncated_ok) { return 48; }
     Font truncated_simple = truncated_simple_coords_fixture();
     List<int> simple_budget = new List<int>();
     Path simple_path = new_path();
-    if (glyph_outline(truncated_simple, 1, simple_path, 16384, 1, 0, 0, identity_transform(), 0, simple_budget)) { return 49; }
+    bool simple_ok = glyph_outline(
+        truncated_simple, 1, simple_path, 16384, 1, 0, 0,
+        identity_transform(), 0, simple_budget
+    );
+    if (simple_ok) { return 49; }
     Font truncated_transform = truncated_composite_transform_fixture();
     List<int> transform_budget = new List<int>();
     Path transform_path = new_path();
-    if (glyph_outline(truncated_transform, 1, transform_path, 16384, 1, 0, 0, identity_transform(), 0, transform_budget)) { return 50; }
+    bool transform_ok = glyph_outline(
+        truncated_transform, 1, transform_path, 16384, 1, 0, 0,
+        identity_transform(), 0, transform_budget
+    );
+    if (transform_ok) { return 50; }
     List<int> shear = compose_matrix(identity_transform(), 16384, 8192, 0, 16384);
     if (shear[0] != 16384 || shear[1] != 8192 || shear[2] != 0 || shear[3] != 16384) { return 51; }
     List<int> translated = identity_transform();
