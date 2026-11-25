@@ -542,4 +542,69 @@ theorem nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts
     refine ⟨nativeRegisterSetAt native index nativeReplacement, ?_⟩
     simp [nativeWriteRegister, hnativeSlot, hnativeType]
 
+
+/-- A successful native write has a corresponding successful abstract write,
+and the resulting register files remain related. The slot witnesses make the
+shared dynamic index premise explicit. -/
+theorem nativeWriteRegister_success_refines_runtime
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hrel : NativeRuntimeRegisterFileRelation native runtime)
+    (index : Nat)
+    (oldNative : NativeCCAMRegister) (oldRuntime : RuntimeRegister)
+    (nativeReplacement : NativeCCAMRegister)
+    (runtimeReplacement : RuntimeRegister)
+    (hnativeSlot : native[index]? = some oldNative)
+    (hruntimeSlot : runtime[index]? = some oldRuntime)
+    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement)
+    {nativeUpdated : List NativeCCAMRegister}
+    (hnativeWrite :
+      nativeWriteRegister native index nativeReplacement = .ok nativeUpdated) :
+    ∃ runtimeUpdated,
+      runtimeWriteRegister runtime index runtimeReplacement = .ok runtimeUpdated ∧
+      NativeRuntimeRegisterFileRelation nativeUpdated runtimeUpdated := by
+  have haccepted :=
+    (nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts
+      hrel index oldNative oldRuntime nativeReplacement runtimeReplacement
+      hnativeSlot hruntimeSlot hreplacement).mp
+      ⟨nativeUpdated, hnativeWrite⟩
+  rcases haccepted with ⟨runtimeUpdated, hruntimeWrite⟩
+  exact ⟨runtimeUpdated, hruntimeWrite,
+    nativeRuntimeRegisterFileRelation_write hrel index nativeReplacement
+      runtimeReplacement hreplacement hnativeWrite hruntimeWrite⟩
+
+/-- A successful native write refines the finite typed register update as well
+as the abstract runtime-list update. This removes the previous requirement
+that native and abstract writes be supplied as independently successful
+premises: abstract success is derived from the native write and paired slot
+witnesses. -/
+theorem nativeWriteRegister_refines_finite_relation
+    {n : Nat} {types : RegTypes n} {regs : Registers n}
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hnr : NativeRuntimeRegisterFileRelation native runtime)
+    (hrf : RuntimeRegisterFileRelation types regs runtime)
+    (index : Fin n)
+    (oldNative : NativeCCAMRegister) (oldRuntime : RuntimeRegister)
+    (hnativeSlot : native[index.val]? = some oldNative)
+    (hruntimeSlot : runtime[index.val]? = some oldRuntime)
+    (nativeReplacement : NativeCCAMRegister)
+    (runtimeReplacement : RuntimeRegister)
+    (hreplacement : NativeRegisterMatches nativeReplacement runtimeReplacement)
+    (hdecl : runtimeReplacement.declaredType = types index)
+    (hinit : runtimeReplacement.initialized = true)
+    {nativeUpdated : List NativeCCAMRegister}
+    (hnativeWrite :
+      nativeWriteRegister native index.val nativeReplacement = .ok nativeUpdated) :
+    ∃ runtimeUpdated,
+      runtimeWriteRegister runtime index.val runtimeReplacement = .ok runtimeUpdated ∧
+      NativeRuntimeRegisterFileRelation nativeUpdated runtimeUpdated ∧
+      RuntimeRegisterFileRelation types
+        (write regs index runtimeReplacement.asVal) runtimeUpdated := by
+  obtain ⟨runtimeUpdated, hruntimeWrite, hnrUpdated⟩ :=
+    nativeWriteRegister_success_refines_runtime hnr index.val
+      oldNative oldRuntime nativeReplacement runtimeReplacement
+      hnativeSlot hruntimeSlot hreplacement hnativeWrite
+  exact ⟨runtimeUpdated, hruntimeWrite, hnrUpdated,
+    runtimeWriteRegister_preserves_relation hrf index runtimeReplacement
+      hdecl hinit hruntimeWrite⟩
+
 end CapstanVerification
