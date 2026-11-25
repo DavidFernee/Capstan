@@ -144,3 +144,13 @@ In addition to the R5 graph corpus, require explicit checks that:
 - rejection leaves heap, slot table, generation state and resource ledger byte-for-byte/logically unchanged.
 
 Until internal edges are upgraded from naked IDs and the marker-construction theorem is checked in Lean, the current M2 result remains deliberately limited to the abstract stable-ID graph and certificate-conditional sweep safety.
+
+## R2a — Generation-checked internal references (formal model added; CI pending)
+
+A separate Lean module, `verification/lean/NativeHandleReachability.lean`, now models object fields as either scalars or opaque `ObjectHandle` values. The heap is a slot table of typed objects. A descriptor edge exists only when both source and target handles resolve through the same immutable slot-table snapshot and heap domain, and the source field offset is declared reference-bearing by the descriptor.
+
+This closes the specific authority mismatch in the earlier stable-ID abstraction at the model level: a stale, freed, reused, or cross-domain internal handle cannot resolve as a new occupant. Root frames also contain handles and the reachability relation requires each root to resolve. The certificate-conditional theorem is restated over handles.
+
+The CI workflow now explicitly compiles this module and audits its theorem axioms, and scans it for unfinished proofs/local axioms. The GitHub connector has not yet exposed a push-triggered run for the exact new head, so compilation and theorem checks are **pending**, not passed.
+
+This is not yet an end-to-end collector proof. In particular, it does not prove descriptor/layout correspondence (R1), root completeness from compiler liveness and the safepoint ABI (R2), or that a bounded executable marker constructs the certificate (R3). The old `NativeReachability.lean` remains as a stable-ID reference model and must not be cited as stale-edge-safe.
