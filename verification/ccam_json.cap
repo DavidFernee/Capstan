@@ -565,7 +565,6 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
     }
 
     List<CCAMFunction> functions = new List<CCAMFunction>();
-    List<string> names = new List<string>();
     Map<int> function_indices = new Map<int>();
     int total_instructions = 0;
     int total_registers = 0;
@@ -593,7 +592,6 @@ CCAMJsonProgramResult ccam_json_decode_program(Tainted raw) {
             return ccam_json_program_error("total_function_name_limit_exceeded");
         }
         total_name_bytes += name.len();
-        names.push(name);
         function_indices.set(name, fi);
 
         CCAMJsonValue registers_json = ccam_json_member(fn_json, "register_types");
@@ -927,6 +925,13 @@ test "CCAM JSON decoder rejects unknown and missing fields" {
     string missing = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\"}]}";
     assert(!ccam_json_decode_program(taint(unknown)).ok);
     assert(!ccam_json_decode_program(taint(missing)).ok);
+}
+
+test "CCAM v0.1 JSON decoder rejects unversioned v0.2 output opcodes and extra instruction fields" {
+    string output_extension = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[],\"parameter_count\":0,\"return_type\":\"void\",\"instructions\":[{\"op\":\"emit_bytes\",\"bytes\":[65]},{\"op\":\"ret_void\"}]}]}";
+    string extra = "{\"entry\":\"main\",\"functions\":[{\"name\":\"main\",\"register_types\":[\"int\"],\"parameter_count\":0,\"return_type\":\"int\",\"instructions\":[{\"op\":\"const_i\",\"dst\":0,\"value\":1,\"surprise\":true},{\"op\":\"ret\",\"src\":0}]}]}";
+    assert(!ccam_json_decode_program(taint(output_extension)).ok);
+    assert(!ccam_json_decode_program(taint(extra)).ok);
 }
 
 test "CCAM JSON decoder rejects duplicate function names and invalid entry signature" {
