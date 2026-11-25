@@ -129,6 +129,7 @@ bool deadeye_mp4_is_container(DeadeyeMp4Box box) {
         deadeye_mp4_box_type(box, 'e', 'd', 't', 's') ||
         deadeye_mp4_box_type(box, 'd', 'i', 'n', 'f') ||
         deadeye_mp4_box_type(box, 'u', 'd', 't', 'a') ||
+        deadeye_mp4_box_type(box, 'm', 'e', 't', 'a') ||
         deadeye_mp4_box_type(box, 's', 'i', 'n', 'f') ||
         deadeye_mp4_box_type(box, 's', 'c', 'h', 'i') ||
         deadeye_mp4_box_type(box, 'i', 'p', 'r', 'o');
@@ -254,6 +255,9 @@ DeadeyeMp4SummaryResult deadeye_mp4_inspect_internal(
         state.box_count += 1;
         if (state.box_count > DEADEYE_MP4_MAX_BOXES) {
             return deadeye_mp4_error("box_count_limit");
+        }
+        if (deadeye_mp4_is_encryption_marker(box)) {
+            return deadeye_mp4_error("encrypted_content_unsupported");
         }
         if (deadeye_mp4_box_type(box, 'f', 't', 'y', 'p')) {
             if (has_ftyp || box.end - box.payload_start < 8 ||
@@ -404,9 +408,9 @@ test "Deadeye MP4 rejects unsupported and encrypted profiles" {
 
     List<int> encrypted = deadeye_mp4_test_minimal_file();
     // Replace the trak's tkhd type with sinf; the walker must fail closed.
-    int at = 8 + 16 + 8 + 28 + 8;
-    encrypted[at + 4] = 's'; encrypted[at + 5] = 'i';
-    encrypted[at + 6] = 'n'; encrypted[at + 7] = 'f';
+    int tkhd_type_at = 68;
+    encrypted[tkhd_type_at] = 's'; encrypted[tkhd_type_at + 1] = 'i';
+    encrypted[tkhd_type_at + 2] = 'n'; encrypted[tkhd_type_at + 3] = 'f';
     HalyardByteSourceResult second = halyard_source_from_list(encrypted, 1024);
     assert(second.ok);
     if (let source2 = second.source) {
@@ -418,9 +422,9 @@ test "Deadeye MP4 rejects unsupported and encrypted profiles" {
 test "Deadeye MP4 rejects missing metadata and fragmented layouts" {
     List<int> missing = deadeye_mp4_test_minimal_file();
     // The moov box type becomes a free box, leaving no movie metadata.
-    int moov_at = 8 + 16;
-    missing[moov_at + 4] = 'f'; missing[moov_at + 5] = 'r';
-    missing[moov_at + 6] = 'e'; missing[moov_at + 7] = 'e';
+    int moov_type_at = 24;
+    missing[moov_type_at] = 'f'; missing[moov_type_at + 1] = 'r';
+    missing[moov_type_at + 2] = 'e'; missing[moov_type_at + 3] = 'e';
     HalyardByteSourceResult first = halyard_source_from_list(missing, 1024);
     assert(first.ok);
     if (let source = first.source) {
