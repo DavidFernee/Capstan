@@ -2,7 +2,7 @@
 
 **Status:** proposed contract delta for runtime review; not an approved public API and not an implementation  
 **Parent:** `docs/ANCHOR-A1-WORKSTREAMS.md`, `docs/ANCHOR-PROCESS-SUPERVISION.md`  
-**Related:** `docs/SHROUD-HOST.md`, `docs/proposals/SHROUD-LINUX-WAYLAND-PREREQUISITES.md`, `docs/architecture/C-FREE-RUNTIME-BOUNDARY-INVENTORY.md`, `docs/architecture/LANGUAGE-EXTENSIONS.md`, `docs/STDLIB-V06.md`
+**Related:** issues [#224](https://github.com/DavidFernee/Capstan/issues/224) (Shroud/T6 host substrate), [#222](https://github.com/DavidFernee/Capstan/issues/222) (capability/effect research); `docs/SHROUD-HOST.md`, `docs/proposals/SHROUD-LINUX-WAYLAND-PREREQUISITES.md`, `docs/architecture/C-FREE-RUNTIME-BOUNDARY-INVENTORY.md`, `docs/architecture/LANGUAGE-EXTENSIONS.md`, `docs/STDLIB-V06.md`
 
 ## 1. Decision sought
 
@@ -274,7 +274,7 @@ Every test report must identify exact source revision, target, ABI adapter revis
 
 ## 13. Sequencing and ownership
 
-1. **Runtime/T6 owner:** reconcile this delta with the actual syscall and platform-ABI implementation; publish the minimal operation inventory and capability/effect design.
+1. **Runtime/T6 owner (existing issue [#224](https://github.com/DavidFernee/Capstan/issues/224)):** reconcile this delta with the actual syscall and platform-ABI implementation; publish the minimal operation inventory and capability/effect design. This document is a cross-workstream requirements synthesis for that issue, not a duplicate implementation ticket.
 2. **Language/type-system owner:** approve capability value semantics, effects, `Result<T,E>`, ownership/borrowing and error representation. Do not create a temporary incompatible API.
 3. **Runtime/security owner:** approve rights attenuation, issuer policy, handle lifetime, budgets and revocation.
 4. **Shroud owner:** confirm the Wayland vertical slice against the socket, descriptor-transfer, shared-memory and clock requirements in sections 7–8.
