@@ -99,6 +99,13 @@ else
   bad "concurrency protocol refinement" "$out"
 fi
 
+section "Capstan-native verification: wait-for and deadlock classification"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_wait_for.cap" 2>&1)"; then
+  ok "typed join/event waits, terminal outcomes, environment quiescence and fail-closed deadlock classification"
+else
+  bad "wait-for and deadlock classification" "$out"
+fi
+
 section "Capstan-native verification: blocking receive and wakeup semantics"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_blocking.cap" 2>&1)"; then
   ok "blocked receive, atomic waiter registration/wakeup, close, cancellation and stale-wakeup semantics"
