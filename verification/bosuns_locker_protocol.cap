@@ -385,8 +385,11 @@ BLStorageTransition bl_storage_step(BLStorageState state, int action, int argume
 
     if (action == BL_STORAGE_FLUSH_PAGE) {
         if (argument <= 0 || argument > next.next_lsn ||
-            argument > next.durable_lsn || argument < next.page_lsn) {
+            argument > next.durable_lsn) {
             return bl_storage_reject(state, "write_ahead_log_order_violation");
+        }
+        if (argument < next.page_lsn) {
+            return bl_storage_reject(state, "page_lsn_regression");
         }
         next.page_lsn = argument;
         next.page_persisted = true;
@@ -540,7 +543,7 @@ test "Bosun WAL model rejects page-LSN regression and post-commit updates" {
     BLStorageState page = bl_storage_step(flushed, BL_STORAGE_FLUSH_PAGE, 1).state;
     BLStorageTransition stale = bl_storage_step(page, BL_STORAGE_FLUSH_PAGE, 0);
     assert(!stale.accepted);
-    assert(stale.error == "write_ahead_log_order_violation");
+    assert(stale.error == "page_lsn_regression");
     BLStorageTransition late_update = bl_storage_step(commit, BL_STORAGE_APPEND_UPDATE, 0);
     assert(!late_update.accepted);
 }
