@@ -48,13 +48,10 @@ Nine colocated Capstan test declarations cover:
 - rejection of forged PCM byte arrays and inconsistent byte rates;
 - rejection of a source mutated after construction.
 
-Run the module tests with:
-
-```sh
-bin/capstan test lib/halyard/shanty.cap
-```
-
-This command uses the repository's current Capstan bootstrap/toolchain. The Halyard/ Shanty implementation and test source itself is Capstan. Exact-head execution is still required; no test-pass or conformance claim is made until observed.
+Run the colocated test declarations using Capstan's test mode for this module. The
+current repository bootstrap/toolchain is still part of the execution TCB; the Shanty
+implementation and test source itself is Capstan. Exact-head execution is still required;
+no test-pass or conformance claim is made until observed.
 
 ## Release blockers
 
