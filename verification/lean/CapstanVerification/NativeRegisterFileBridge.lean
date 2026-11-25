@@ -413,10 +413,10 @@ theorem nativeRuntimeRegisterFileRelation_write
       exact hnewBound
     have hnativeUnchanged :=
       nativeWriteRegister_other_unchanged native nativeUpdated index other
-        nativeReplacement hnativeWrite hindexNative hotherNative (Ne.symm htarget)
+        nativeReplacement hnativeWrite hindexNative hotherNative htarget
     have hruntimeUnchanged :=
       runtimeWriteRegister_other_unchanged runtime runtimeUpdated index other
-        runtimeReplacement hruntimeWrite (Ne.symm htarget)
+        runtimeReplacement hruntimeWrite htarget
     rw [hnativeUnchanged] at hnativeAt
     rw [hruntimeUnchanged] at hruntimeAt
     exact hrel.matches_at other nativeReg runtimeReg hnativeAt hruntimeAt
