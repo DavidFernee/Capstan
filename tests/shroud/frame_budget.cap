@@ -26,6 +26,11 @@ int main() {
     string max_widget = repeat_ascii(MAX_TEXT_BYTES);
     if (!frame_text_budget_valid(text(max_widget))) { return 5; }
 
+    // Per-value text and Tainted field limits are rejected in preflight.
+    string oversized = repeat_ascii(MAX_TEXT_BYTES + 1);
+    if (frame_text_budget_valid(text(oversized))) { return 13; }
+    if (frame_text_budget_valid(text_field("value", taint(oversized), "hint"))) { return 14; }
+
     // Two individually valid maximum-size values exactly fill the frame budget.
     string half = repeat_ascii(MAX_TEXT_BYTES);
     View exact = column().add(text(half)).add(text(half));
@@ -58,6 +63,6 @@ int main() {
     cycle_a.add(cycle_b);
     if (frame_text_budget_valid(cycle_a)) { return 12; }
 
-    println("frame text budget: 12 assertions");
+    println("frame text budget: 14 assertions");
     return 0;
 }
