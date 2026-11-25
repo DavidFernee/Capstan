@@ -221,6 +221,13 @@ Shanty's first audio vertical slice is implemented in `lib/halyard/shanty.cap`: 
 RIFF/WAVE PCM parser and integer decoder for 8/16/24/32-bit samples, with nine colocated
 Capstan tests. The implementation has a strict 8 MiB/1,024-chunk profile and no device
 playback, capture, compressed codec or ledger-coupled sample allocation.
+
+Deadeye's first still-image vertical slice is implemented in `lib/halyard/deadeye.cap`:
+a strict uncompressed BMP decoder for 24-bit BGR and 32-bit BGRx, including top-down and
+bottom-up row order and checked row padding, with six colocated Capstan tests. The Shroud
+audit confirmed `lib/shroud/png.cap` is an encoder only; Python zlib in Shroud's tests is
+an isolated oracle, not a Halyard dependency. BMP was selected as the bounded first
+parser rather than prematurely adding a DEFLATE/PNG inflater.
 No Halyard-specific shell, Python, C, C++ or other-language test source is added. The
 detailed contract and limitations are recorded in `docs/media/CORE-PRIMITIVES.md`.
 
