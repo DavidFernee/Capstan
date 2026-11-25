@@ -8,7 +8,7 @@
 // decoder/schema implementation.
 //
 // Semantic authority: docs/architecture/CCAM.md.
-\nimport "ccam_core.cap";
+import "ccam_core.cap";
 
 const int CCAM_OP_CALL = 17;
 const int CCAM_MAX_FUNCTIONS = 4096;
