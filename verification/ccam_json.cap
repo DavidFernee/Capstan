@@ -969,6 +969,15 @@ test "CCAM JSON decoder resolves forward calls and validates signatures" {
     assert(decoded.ok);
     assert(decoded.functions[0].call_sites.len() == 1);
     assert(decoded.functions[0].call_sites[0].callee_index == 1);
+    CCAMCallMachineCreateResult machine = ccam_json_machine_create(
+        taint(source), 100, 8, CCAM_MAX_OUTPUT_BYTES);
+    assert(machine.ok);
+    for (int step = 0; step < 8 && !machine.machine.halted; step += 1) {
+        ccam_call_machine_step(machine.machine);
+    }
+    assert(machine.machine.halted);
+    assert(machine.machine.halt_has_value);
+    assert(machine.machine.halt_value == 42);
 }
 
 test "CCAM JSON decoder rejects bad call targets and arity" {
