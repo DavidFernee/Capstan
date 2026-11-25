@@ -372,6 +372,9 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                 if (cmd.x < -MAX_PIXMAP_SIDE || cmd.x > MAX_PIXMAP_SIDE ||
                     cmd.y < -MAX_PIXMAP_SIDE || cmd.y > MAX_PIXMAP_SIDE ||
                     cmd.mask_w > MAX_DISPLAY_SEGMENTS - payload || alpha.len() > MAX_DISPLAY_SEGMENTS - payload) { return false; }
+                for (int j = 0; j < alpha.len(); j += 1) {
+                    if (alpha[j] < 0 || alpha[j] > 255) { return false; }
+                }
                 payload += alpha.len();
             } else { return false; }
         } else { return false; }
