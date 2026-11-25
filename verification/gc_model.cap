@@ -290,7 +290,7 @@ GCObject gc_unallocated_object(int id, int kind) {
 
 GCSpec gc_empty_spec(int capacity) {
     List<GCObject> objects = new List<GCObject>();
-    List<int> roots = new List<int>();
+    List<GCRef> roots = new List<GCRef>();
     List<GCEdge> edges = new List<GCEdge>();
     return new GCSpec{
         objects: objects, roots: roots, edges: edges,
