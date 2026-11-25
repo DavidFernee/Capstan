@@ -1,0 +1,285 @@
+// Bounded reference model for a producer blocked by a full channel.
+//
+// This complementary slice isolates capacity backpressure: one committed
+// message fills the channel while the producer owns a second message. The
+// producer's send blocks and registers a capacity wait. A consumer dequeue
+// atomically releases the slot, removes the wait and makes the producer
+// runnable. The producer commits its second message only when rescheduled.
+
+const int CS_TASK_RUNNABLE = 1;
+const int CS_TASK_BLOCKED = 2;
+const int CS_TASK_DONE = 3;
+const int CS_TASK_CANCELLED = 4;
+
+const int CS_WAIT_NONE = 0;
+const int CS_WAIT_CHANNEL_CAPACITY = 1;
+
+const int CS_OWNER_NONE = 0;
+const int CS_OWNER_CHANNEL = 1;
+const int CS_OWNER_PRODUCER = 2;
+const int CS_OWNER_CONSUMER = 3;
+
+struct CSState {
+    int producer_status;
+    int producer_wait;
+    bool producer_wait_registered;
+    int consumer_status;
+    int channel_count;
+    int channel_capacity;
+    int first_message_owner;
+    int second_message_owner;
+    bool channel_closed;
+    int steps;
+}
+
+struct CSTransition {
+    bool ok;
+    CSState state;
+    string error;
+}
+
+CSState cs_initial() {
+    return new CSState{
+        producer_status: CS_TASK_RUNNABLE,
+        producer_wait: CS_WAIT_NONE,
+        producer_wait_registered: false,
+        consumer_status: CS_TASK_RUNNABLE,
+        channel_count: 1,
+        channel_capacity: 1,
+        first_message_owner: CS_OWNER_CHANNEL,
+        second_message_owner: CS_OWNER_PRODUCER,
+        channel_closed: false,
+        steps: 0
+    };
+}
+
+CSState cs_copy(CSState s) {
+    return new CSState{
+        producer_status: s.producer_status,
+        producer_wait: s.producer_wait,
+        producer_wait_registered: s.producer_wait_registered,
+        consumer_status: s.consumer_status,
+        channel_count: s.channel_count,
+        channel_capacity: s.channel_capacity,
+        first_message_owner: s.first_message_owner,
+        second_message_owner: s.second_message_owner,
+        channel_closed: s.channel_closed,
+        steps: s.steps
+    };
+}
+
+CSTransition cs_reject(CSState s, string error) {
+    return new CSTransition{ok: false, state: s, error: error};
+}
+
+CSTransition cs_accept(CSState s) {
+    s.steps += 1;
+    return new CSTransition{ok: true, state: s, error: ""};
+}
+
+bool cs_invariant(CSState s) {
+    if (s.channel_capacity != 1 || s.channel_count < 0 ||
+        s.channel_count > s.channel_capacity || s.steps < 0) { return false; }
+    if (s.producer_status != CS_TASK_RUNNABLE &&
+        s.producer_status != CS_TASK_BLOCKED &&
+        s.producer_status != CS_TASK_DONE &&
+        s.producer_status != CS_TASK_CANCELLED) { return false; }
+    if (s.consumer_status != CS_TASK_RUNNABLE &&
+        s.consumer_status != CS_TASK_DONE &&
+        s.consumer_status != CS_TASK_CANCELLED) { return false; }
+    if ((s.producer_status == CS_TASK_BLOCKED) !=
+        s.producer_wait_registered) { return false; }
+    if (s.producer_wait_registered !=
+        (s.producer_wait == CS_WAIT_CHANNEL_CAPACITY)) { return false; }
+    if (s.producer_status != CS_TASK_BLOCKED &&
+        s.producer_wait != CS_WAIT_NONE) { return false; }
+    if (s.producer_status == CS_TASK_BLOCKED && s.channel_count != 1) {
+        return false;
+    }
+    if (s.channel_count == 1) {
+        if (s.first_message_owner == CS_OWNER_CHANNEL &&
+            s.second_message_owner == CS_OWNER_CHANNEL) { return false; }
+        if (s.first_message_owner != CS_OWNER_CHANNEL &&
+            s.second_message_owner != CS_OWNER_CHANNEL) { return false; }
+    } else if (s.first_message_owner == CS_OWNER_CHANNEL ||
+        s.second_message_owner == CS_OWNER_CHANNEL) { return false; }
+    if (s.first_message_owner != CS_OWNER_NONE &&
+        s.first_message_owner != CS_OWNER_CHANNEL &&
+        s.first_message_owner != CS_OWNER_CONSUMER) { return false; }
+    if (s.second_message_owner != CS_OWNER_NONE &&
+        s.second_message_owner != CS_OWNER_CHANNEL &&
+        s.second_message_owner != CS_OWNER_PRODUCER &&
+        s.second_message_owner != CS_OWNER_CONSUMER) { return false; }
+    if (s.first_message_owner == CS_OWNER_CONSUMER &&
+        s.consumer_status != CS_TASK_RUNNABLE) { return false; }
+    if (s.second_message_owner == CS_OWNER_PRODUCER &&
+        s.producer_status != CS_TASK_RUNNABLE &&
+        s.producer_status != CS_TASK_BLOCKED) { return false; }
+    if (s.second_message_owner == CS_OWNER_CONSUMER &&
+        s.consumer_status != CS_TASK_RUNNABLE) { return false; }
+    if (s.producer_status == CS_TASK_DONE &&
+        s.second_message_owner != CS_OWNER_CHANNEL &&
+        s.second_message_owner != CS_OWNER_CONSUMER &&
+        s.second_message_owner != CS_OWNER_NONE) { return false; }
+    return true;
+}
+
+// The send is valid but disabled while the capacity-one channel is full.
+// It registers a capacity wait rather than rejecting the operation.
+CSTransition cs_send_second(CSState before) {
+    if (before.producer_status != CS_TASK_RUNNABLE ||
+        before.second_message_owner != CS_OWNER_PRODUCER) {
+        return cs_reject(before, "producer_not_send_eligible");
+    }
+    if (before.channel_closed) {
+        return cs_reject(before, "send_on_closed_channel");
+    }
+    CSState next = cs_copy(before);
+    if (next.channel_count == next.channel_capacity) {
+        next.producer_status = CS_TASK_BLOCKED;
+        next.producer_wait = CS_WAIT_CHANNEL_CAPACITY;
+        next.producer_wait_registered = true;
+        return cs_accept(next);
+    }
+    next.channel_count += 1;
+    next.second_message_owner = CS_OWNER_CHANNEL;
+    next.producer_status = CS_TASK_DONE;
+    return cs_accept(next);
+}
+
+// Dequeueing the first message frees one slot. The producer's wait removal
+// and runnable transition are atomic with that capacity release.
+CSTransition cs_receive_first(CSState before) {
+    if (before.consumer_status != CS_TASK_RUNNABLE ||
+        before.channel_count != 1 ||
+        before.first_message_owner != CS_OWNER_CHANNEL) {
+        return cs_reject(before, "first_message_not_receivable");
+    }
+    CSState next = cs_copy(before);
+    next.channel_count = 0;
+    next.first_message_owner = CS_OWNER_CONSUMER;
+    if (next.producer_wait_registered) {
+        next.producer_wait_registered = false;
+        next.producer_wait = CS_WAIT_NONE;
+        next.producer_status = CS_TASK_RUNNABLE;
+    }
+    return cs_accept(next);
+}
+
+CSTransition cs_release_first(CSState before) {
+    if (before.first_message_owner != CS_OWNER_CONSUMER) {
+        return cs_reject(before, "first_message_not_consumer_owned");
+    }
+    CSState next = cs_copy(before);
+    next.first_message_owner = CS_OWNER_NONE;
+    return cs_accept(next);
+}
+
+CSTransition cs_cancel_producer(CSState before) {
+    if (before.producer_status != CS_TASK_BLOCKED ||
+        !before.producer_wait_registered) {
+        return cs_reject(before, "producer_not_blocked");
+    }
+    CSState next = cs_copy(before);
+    next.producer_wait_registered = false;
+    next.producer_wait = CS_WAIT_NONE;
+    next.producer_status = CS_TASK_CANCELLED;
+    next.second_message_owner = CS_OWNER_NONE;
+    return cs_accept(next);
+}
+
+CSTransition cs_receive_second(CSState before) {
+    if (before.consumer_status != CS_TASK_RUNNABLE ||
+        before.channel_count != 1 ||
+        before.second_message_owner != CS_OWNER_CHANNEL) {
+        return cs_reject(before, "second_message_not_receivable");
+    }
+    CSState next = cs_copy(before);
+    next.channel_count = 0;
+    next.second_message_owner = CS_OWNER_CONSUMER;
+    return cs_accept(next);
+}
+
+test "CS send on full channel blocks and registers capacity wait" {
+    CSState before = cs_initial();
+    CSTransition blocked = cs_send_second(before);
+    assert(blocked.ok);
+    assert(blocked.state.producer_status == CS_TASK_BLOCKED);
+    assert(blocked.state.producer_wait_registered);
+    assert(blocked.state.producer_wait == CS_WAIT_CHANNEL_CAPACITY);
+    assert(blocked.state.channel_count == 1);
+    assert(blocked.state.second_message_owner == CS_OWNER_PRODUCER);
+    assert(cs_invariant(blocked.state));
+    assert(before.producer_status == CS_TASK_RUNNABLE);
+    assert(!before.producer_wait_registered);
+}
+
+test "CS dequeue atomically wakes blocked sender after capacity release" {
+    CSState blocked = cs_send_second(cs_initial()).state;
+    CSTransition received = cs_receive_first(blocked);
+    assert(received.ok);
+    assert(received.state.channel_count == 0);
+    assert(received.state.producer_status == CS_TASK_RUNNABLE);
+    assert(!received.state.producer_wait_registered);
+    assert(received.state.second_message_owner == CS_OWNER_PRODUCER);
+    assert(cs_invariant(received.state));
+}
+
+test "CS awakened sender commits second message only when rescheduled" {
+    CSState blocked = cs_send_second(cs_initial()).state;
+    CSState received = cs_receive_first(blocked).state;
+    assert(received.producer_status == CS_TASK_RUNNABLE);
+    assert(received.second_message_owner == CS_OWNER_PRODUCER);
+    CSTransition sent = cs_send_second(received);
+    assert(sent.ok);
+    assert(sent.state.producer_status == CS_TASK_DONE);
+    assert(sent.state.channel_count == 1);
+    assert(sent.state.second_message_owner == CS_OWNER_CHANNEL);
+    assert(cs_invariant(sent.state));
+}
+
+test "CS consumer can receive second message after producer wakeup and send" {
+    CSState blocked = cs_send_second(cs_initial()).state;
+    CSState first = cs_receive_first(blocked).state;
+    CSState released = cs_release_first(first).state;
+    CSState second_sent = cs_send_second(released).state;
+    CSTransition second = cs_receive_second(second_sent);
+    assert(second.ok);
+    assert(second.state.channel_count == 0);
+    assert(second.state.second_message_owner == CS_OWNER_CONSUMER);
+    assert(cs_invariant(second.state));
+}
+
+test "CS cancellation removes blocked sender and disposes its uncommitted message" {
+    CSState blocked = cs_send_second(cs_initial()).state;
+    CSTransition cancelled = cs_cancel_producer(blocked);
+    assert(cancelled.ok);
+    assert(cancelled.state.producer_status == CS_TASK_CANCELLED);
+    assert(!cancelled.state.producer_wait_registered);
+    assert(cancelled.state.producer_wait == CS_WAIT_NONE);
+    assert(cancelled.state.second_message_owner == CS_OWNER_NONE);
+    assert(cancelled.state.channel_count == 1);
+    assert(cancelled.state.first_message_owner == CS_OWNER_CHANNEL);
+    assert(cs_invariant(cancelled.state));
+}
+
+test "CS cancellation after capacity wakeup cannot consume a stale wait" {
+    CSState blocked = cs_send_second(cs_initial()).state;
+    CSState woken = cs_receive_first(blocked).state;
+    CSTransition cancelled = cs_cancel_producer(woken);
+    assert(!cancelled.ok);
+    assert(cancelled.error == "producer_not_blocked");
+    assert(cancelled.state.producer_status == CS_TASK_RUNNABLE);
+    assert(!cancelled.state.producer_wait_registered);
+    assert(cs_invariant(cancelled.state));
+}
+
+test "CS repeated blocked send is rejected without duplicate waiter" {
+    CSState blocked = cs_send_second(cs_initial()).state;
+    CSTransition repeated = cs_send_second(blocked);
+    assert(!repeated.ok);
+    assert(repeated.error == "producer_not_send_eligible");
+    assert(repeated.state.producer_wait_registered);
+    assert(repeated.state.steps == blocked.steps);
+    assert(cs_invariant(repeated.state));
+}
