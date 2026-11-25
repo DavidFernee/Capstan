@@ -136,11 +136,13 @@ theorem allocateSlot_success_resolves
       cases h
       rfl
   | free current =>
-      by_cases hbound : current ≤ maximumGeneration
-      · simp [allocateSlot, hbound] at h
-        cases h
-        simp [resolveSlot]
-      · simp [allocateSlot, hbound] at h
+      by_cases hpositive : 0 < current
+      · by_cases hbound : current ≤ maximumGeneration
+        · simp [allocateSlot, hpositive, hbound] at h
+          cases h
+          simp [resolveSlot]
+        · simp [allocateSlot, hpositive, hbound] at h
+      · simp [allocateSlot, hpositive] at h
   | occupied current previous =>
       simp [allocateSlot] at h
   | retired =>
@@ -256,9 +258,6 @@ theorem updateSlot_preserves_other
     updateSlot table slot replacement other = table other := by
   simp [updateSlot, h]
 
-end CapstanNativeMemory
-
-
 /-- Reusing a released slot advances the incarnation, so the old handle
 cannot resolve to the replacement object. This composes release, allocation
 and resolution rather than proving the steps only in isolation. -/
@@ -278,3 +277,6 @@ theorem reuse_rejects_previous_incarnation
   · have hbound : current + 1 ≤ maximumGeneration := by omega
     simp [allocateSlot, hbound]
   · simp [resolveSlot]
+
+
+end CapstanNativeMemory
