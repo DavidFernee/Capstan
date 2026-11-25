@@ -314,8 +314,9 @@ def check_table_span_rejection(exe, tmp):
 
     # Redirect a Unicode cmap record into another in-file table, whose first bytes
     # are made a minimal format-12 subtable. The file bounds remain valid.
+    required_tables = {b"head", b"hhea", b"maxp", b"cmap", b"loca", b"hmtx", b"glyf"}
     target = next(((tag, off) for tag, (off, length) in sorted(tables.items(), key=lambda x: x[1][0], reverse=True)
-                   if off > cmap_off and length >= 16 and off + 16 <= len(original)), None)
+                   if tag not in required_tables and off > cmap_off and length >= 16 and off + 16 <= len(original)), None)
     if target is None:
         sys.exit("font table-span tests: no later table for adjacent-table mutation")
     _, target_off = target
