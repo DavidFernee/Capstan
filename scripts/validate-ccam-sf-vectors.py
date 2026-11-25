@@ -101,6 +101,8 @@ def check_outcome(record, where: str) -> None:
     require(isinstance(kind, str) and kind in {"halt", "halt_void", "trap", "not_executed"},
             f"{where}: unsupported or missing outcome kind")
     if kind == "halt":
+        require(set(outcome) == {"kind", "value"},
+                f"{where}: halt has missing or unexpected fields")
         value = outcome.get("value")
         require(isinstance(value, dict) and set(value) == {"type", "value"}
                 and isinstance(value.get("type"), str)
@@ -114,11 +116,17 @@ def check_outcome(record, where: str) -> None:
             require(isinstance(value["value"], bool),
                     f"{where}: boolean halt payload must be boolean")
     elif kind == "trap":
+        require(set(outcome) in ({"kind", "code", "pc"},
+                                 {"kind", "code", "pc", "detail"}),
+                f"{where}: trap has missing or unexpected fields")
         require(isinstance(outcome.get("code"), str) and outcome["code"],
                 f"{where}: trap requires a non-empty code")
         require(isinstance(outcome.get("pc"), int) and not isinstance(outcome.get("pc"), bool)
                 and outcome["pc"] >= 0,
                 f"{where}: trap requires a non-negative PC")
+        if "detail" in outcome:
+            require(isinstance(outcome["detail"], str),
+                    f"{where}: trap detail must be a string")
     else:
         require(set(outcome) == {"kind"}, f"{where}: {kind} outcome has unexpected payload")
 
