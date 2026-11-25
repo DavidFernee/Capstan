@@ -84,7 +84,8 @@ DeadeyeMp4AvcConfig deadeye_mp4_parse_avcc(
     int compatibility = bytes[start + 2];
     int level = bytes[start + 3];
     int length_field = bytes[start + 4];
-    if (profile != 66 || (length_field & 252) != 252) {
+    if (profile != 66 || (compatibility & 3) != 0 ||
+        (length_field & 252) != 252 || (bytes[start + 5] & 224) != 224) {
         return deadeye_mp4_avcc_error("unsupported_avc_profile_or_reserved_bits");
     }
     int nal_length_bytes = (length_field & 3) + 1;
@@ -113,7 +114,7 @@ DeadeyeMp4AvcConfig deadeye_mp4_parse_avcc(
     if (at >= end) { return deadeye_mp4_avcc_error("missing_pps_count"); }
     int pps_count = bytes[at];
     at += 1;
-    if (pps_count < 1 || pps_count > 255) {
+    if (pps_count < 1) {
         return deadeye_mp4_avcc_error("invalid_pps_count");
     }
     for (int j = 0; j < pps_count; j += 1) {
@@ -136,7 +137,7 @@ DeadeyeMp4AvcConfig deadeye_mp4_parse_avcc(
     }
     // compatibility is retained in the source record; constraint-set syntax
     // is not interpreted here, so only the Baseline profile_idc is asserted.
-    if (level < 1 || level > 255) {
+    if (level < 1) {
         return deadeye_mp4_avcc_error("invalid_avc_constraints");
     }
     return new DeadeyeMp4AvcConfig{
@@ -160,7 +161,7 @@ DeadeyeMp4SampleEntry deadeye_mp4_parse_video_entry(
     int width = deadeye_mp4_se_u16(bytes, p + 24);
     int height = deadeye_mp4_se_u16(bytes, p + 26);
     if (width < 1 || width > 8192 || height < 1 || height > 8192 ||
-        width > 67108864 / height) {
+        width > 16777216 / height) {
         return deadeye_mp4_sample_entry_error("invalid_video_dimensions");
     }
     int child_at = p + 78;
@@ -400,4 +401,12 @@ test "Deadeye rejects avcC truncation, invalid NAL types and oversized declarati
     assert(!deadeye_mp4_parse_avcc(wrong_nal, 0, wrong_nal.len()).ok);
     List<int> oversized = [1,66,0,30,255,225,255,255];
     assert(!deadeye_mp4_parse_avcc(oversized, 0, oversized.len()).ok);
+    List<int> bad_reserved = [1,66,0,30,255,1, 0,2,103,128, 1,0,2,104,128];
+    assert(!deadeye_mp4_parse_avcc(
+        bad_reserved, 0, bad_reserved.len()
+    ).ok);
+    List<int> bad_compatibility = [1,66,3,30,255,225, 0,2,103,128, 1,0,2,104,128];
+    assert(!deadeye_mp4_parse_avcc(
+        bad_compatibility, 0, bad_compatibility.len()
+    ).ok);
 }
