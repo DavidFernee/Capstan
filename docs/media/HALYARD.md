@@ -30,9 +30,8 @@ schedulers. Neither depends on the other. The architecture is acyclic.
 
 - Capstan supplies the language, compiler and execution semantics.
 - Halyard supplies media semantics and processing.
-- Shroud consumes presentation surfaces and events; it does not duplicate codecs.
-- Keel may orchestrate media graphs and application lifecycles; it does not own codec
-  semantics.
+- Shroud core remains media-independent. An optional, separately versioned Halyard–Shroud adapter consumes media presentation APIs and Shroud rendering/input APIs; it is not a dependency of Shanty or Deadeye.
+- Keel may consume and orchestrate media graphs and application lifecycles; it does not own codec semantics.
 - Anchor and other applications consume the same stable, typed APIs.
 
 ## 3. Binding implementation principle
