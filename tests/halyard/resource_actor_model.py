@@ -93,9 +93,9 @@ def actor_process_one(state):
     elif request.op == "release":
         if request.target_id in leases:
             del leases[request.target_id]
-            outcomes[request.request_id] = "released"
+            outcomes[request.request_id] = "released:" + str(request.target_id)
         else:
-            outcomes[request.request_id] = "release_rejected"
+            outcomes[request.request_id] = "release_rejected:" + str(request.target_id)
     else:
         raise AssertionError("unknown operation")
 
@@ -117,16 +117,16 @@ def invariant(state):
                for i in range(DIMENSIONS))
     assert set(lease_map(state)).isdisjoint(
         {rid for rid, result in state.outcomes if result in
-         ("cancelled", "rejected", "release_rejected")})
+         ("cancelled", "rejected")})
     for request_id, result in state.outcomes:
         assert result in {"cancelled", "granted", "rejected",
                           "released", "release_rejected"}
         if result == "granted":
             assert request_id in lease_map(state) or any(
-                r.op == "release" and r.target_id == request_id
-                for r in state.queue)
-        if result == "released":
-            assert request_id not in lease_map(state)
+                outcome == "released:" + str(request_id)
+                for _, outcome in state.outcomes)
+        if result.startswith("released:"):
+            assert int(result.split(":", 1)[1]) not in lease_map(state)
 
 
 def actions(state):
@@ -177,10 +177,10 @@ def direct_regressions():
     release_req = Request("release", 2, target_id=0)
     queued_release = submit(granted, release_req)
     released = actor_process_one(queued_release)
-    assert outcome_map(released)[2] == "released"
+    assert outcome_map(released)[2] == "released:0"
     replay = submit(released, Request("release", 3, target_id=0))
     replayed = actor_process_one(replay)
-    assert outcome_map(replayed)[3] == "release_rejected"
+    assert outcome_map(replayed)[3] == "release_rejected:0"
     assert 0 not in lease_map(replayed)
 
 
