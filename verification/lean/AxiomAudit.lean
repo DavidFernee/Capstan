@@ -173,3 +173,6 @@ import CapstanVerification.ProgramValidator
 
 #print axioms CapstanVerification.nativeRegisterMatches_tag_eq_iff
 #print axioms CapstanVerification.nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts
+
+#print axioms CapstanVerification.nativeWriteRegister_success_refines_runtime
+#print axioms CapstanVerification.nativeWriteRegister_refines_finite_relation
