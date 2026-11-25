@@ -142,12 +142,19 @@ struct Canvas {
     }
 
     void fill_path(Path p, Paint paint, int rule) {
-        Segments s = flatten(p);
         if (self.recording) {
-            if (s.x0.len() > MAX_DISPLAY_SEGMENTS_PER_PATH) {
-                println("shroud: display list path segment budget exceeded");
+            int upper_bound = path_flatten_segment_bound(p);
+            if (self.budget.len() != 1 || self.budget[0] < 0 ||
+                self.budget[0] > MAX_DISPLAY_SEGMENTS || upper_bound < 0 ||
+                upper_bound > MAX_DISPLAY_SEGMENTS_PER_PATH ||
+                self.commands.len() >= MAX_DISPLAY_COMMANDS ||
+                upper_bound > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
+                println("shroud: display list path rejected by resource preflight");
                 exit(101);
             }
+        }
+        Segments s = flatten(p);
+        if (self.recording) {
             DisplayCommand cmd = new DisplayCommand{
                 kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0), clip: self.clip(),
                 paint: paint, rule: rule, segments: s, mask_alpha: none, mask_w: 0, mask_h: 0, x: 0, y: 0,
@@ -214,6 +221,13 @@ struct Canvas {
         if (x >= c.right() || y >= c.bottom() ||
             x < c.x - width || y < c.y - height) { return; }
         if (self.recording) {
+            if (self.budget.len() != 1 || self.budget[0] < 0 ||
+                self.budget[0] > MAX_DISPLAY_SEGMENTS ||
+                self.commands.len() >= MAX_DISPLAY_COMMANDS ||
+                alpha.len() > MAX_DISPLAY_SEGMENTS - self.budget[0]) {
+                println("shroud: display list mask rejected by resource preflight");
+                exit(101);
+            }
             // Snapshot cached glyph pixels into frame-owned storage. A later font
             // cache eviction/rebuild must not change an already-recorded frame.
             List<int> mask_copy = new List<int>();
@@ -367,7 +381,8 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
     if (!pixmap_size_valid(pm.w, pm.h) || pm.px.len() != pm.w * pm.h ||
         dl.width != pm.w || dl.height != pm.h || dl.commands.len() > MAX_DISPLAY_COMMANDS) { return false; }
     int payload = 0;
-    int work = 0;
+    // Charge the command walk itself as well as payload validation and replay.
+    int work = dl.commands.len();
     for (int i = 0; i < dl.commands.len(); i += 1) {
         DisplayCommand cmd = dl.commands[i];
         if (!display_clip_valid(cmd.clip, dl.width, dl.height) || cmd.opacity < 0 || cmd.opacity > 255 ||
@@ -416,9 +431,16 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                     int y0 = int_max(fx_floor(min_y), cmd.clip.y);
                     int y1 = int_min(fx_ceil(max_y), cmd.clip.bottom());
                     int rows = int_max(0, y1 - y0);
-                    // fill_segments scans n edges per row, sorts up to n crossings
-                    // for each sub-scanline, then visits every clipped output pixel.
-                    int per_row = width + n * (1 + SUBSAMPLES * display_sort_levels(n));
+                    // Charge validation and edge orientation, scratch-array setup,
+                    // every row's n-edge scan, all 16 crossing builds, merge-sort
+                    // comparisons AND copies, crossing traversal, and pixel blending.
+                    // display_sort_levels() is ceil(log2(n)) + 1, deliberately
+                    // conservative for the runtime's stable merge sort.
+                    int base = 2 * n + 2 * width;
+                    if (base > MAX_DISPLAY_WORK - work) { return false; }
+                    work += base;
+                    int row_factor = 1 + SUBSAMPLES * (3 + 2 * display_sort_levels(n));
+                    int per_row = width + SUBSAMPLES + 1 + n * row_factor;
                     if (rows > 0 && per_row > (MAX_DISPLAY_WORK - work) / rows) { return false; }
                     work += rows * per_row;
                 }
@@ -441,10 +463,12 @@ bool display_list_valid(DisplayList dl, Pixmap pm) {
                 if (cmd.x < -MAX_PIXMAP_SIDE || cmd.x > MAX_PIXMAP_SIDE ||
                     cmd.y < -MAX_PIXMAP_SIDE || cmd.y > MAX_PIXMAP_SIDE ||
                     cmd.mask_w > MAX_DISPLAY_SEGMENTS - payload || alpha.len() > MAX_DISPLAY_SEGMENTS - payload) { return false; }
-                if (alpha.len() > MAX_DISPLAY_WORK - work) { return false; }
+                // Validation scans every alpha byte; replay may visit every
+                // visible mask pixel (at most alpha.len()). Charge both passes.
+                if (alpha.len() > (MAX_DISPLAY_WORK - work) / 2) { return false; }
                 if (!display_mask_alpha_valid(alpha)) { return false; }
                 payload += alpha.len();
-                work += alpha.len();
+                work += 2 * alpha.len();
             } else { return false; }
         } else { return false; }
     }
