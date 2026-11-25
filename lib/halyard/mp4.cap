@@ -384,6 +384,20 @@ test "Deadeye MP4 accepts a minimal bounded unencrypted ISO BMFF layout" {
         bytes, DEADEYE_MP4_MAX_INPUT_BYTES
     );
     assert(source_result.ok);
+    DeadeyeMp4BoxResult first_box = deadeye_mp4_box_read(bytes, 0, bytes.len());
+    assert(first_box.ok && deadeye_mp4_box_type(first_box.box, 'f','t','y','p'));
+    DeadeyeMp4BoxResult movie_box = deadeye_mp4_box_read(
+        bytes, first_box.box.end, bytes.len()
+    );
+    assert(movie_box.ok && deadeye_mp4_box_type(movie_box.box, 'm','o','o','v'));
+    DeadeyeMp4ScanState scan = new DeadeyeMp4ScanState{
+        box_count: 0, track_count: 0, has_mvhd: false,
+        has_encryption_marker: false
+    };
+    assert(deadeye_mp4_scan_children(
+        bytes, movie_box.box.payload_start, movie_box.box.end, 1, scan
+    ));
+    assert(scan.has_mvhd && scan.track_count == 1);
     if (let source = source_result.source) {
         DeadeyeMp4SummaryResult result = deadeye_mp4_inspect(source);
         assert(result.ok);
