@@ -200,8 +200,28 @@ int main() {
     span = wayland_payload_string(wayland_test_bytes(invalid_utf8), 0, 8);
     if (span.status != -1) { return 43; }
 
+
+    // Wayland booleans accept only the canonical uint32 values 0 and 1.
+    word_bytes[0] = 0; word_bytes[1] = 0; word_bytes[2] = 0; word_bytes[3] = 0;
+    WaylandPayloadWord bool_word = wayland_payload_bool(wayland_test_bytes(word_bytes), 0, 4);
+    if (bool_word.status != 1 || bool_word.value != 0) { return 44; }
+    word_bytes[0] = 1;
+    bool_word = wayland_payload_bool(wayland_test_bytes(word_bytes), 0, 4);
+    if (bool_word.status != 1 || bool_word.value != 1) { return 45; }
+    word_bytes[0] = 2;
+    bool_word = wayland_payload_bool(wayland_test_bytes(word_bytes), 0, 4);
+    if (bool_word.status != -1) { return 46; }
+
+    // Wayland 24.8 fixed values share Shroud's signed FX representation.
+    signed_bytes[0] = 0; signed_bytes[1] = 255; signed_bytes[2] = 255; signed_bytes[3] = 255;
+    signed_word = wayland_payload_fixed(wayland_test_bytes(signed_bytes), 0, 4);
+    if (signed_word.status != 1 || signed_word.value != -256) { return 47; }
+    signed_bytes[0] = 128; signed_bytes[1] = 1; signed_bytes[2] = 0; signed_bytes[3] = 0;
+    signed_word = wayland_payload_fixed(wayland_test_bytes(signed_bytes), 0, 4);
+    if (signed_word.status != 1 || signed_word.value != 384) { return 48; }
+
     // The parser's input type is Tainted: network bytes are never trusted here.
     // Byte strings cannot contain an integer outside the octet range.
-    println("Wayland framing and payload spans: 43 adversarial assertions passed");
+    println("Wayland framing and payload spans: 48 adversarial assertions passed");
     return 0;
 }
