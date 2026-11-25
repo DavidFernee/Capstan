@@ -563,8 +563,10 @@ void test_scroll(Tally t, Ui ui) {
 }
 
 void test_ui_state_pruning(Tally t, Ui ui) {
+    View scroll_items = column();
+    for (int i = 0; i < 8; i += 1) { scroll_items.add(button($"item {i}", "item")); }
     View live = column()
-        .add(scroll(column().add(text("inside"))).height(40).key("live-scroll"))
+        .add(scroll(scroll_items).height(40).key("live-scroll"))
         .add(text_field("field", taint("abc"), "Name").key("live-field"));
     ui.render(live, 0);
     string scroll_id = laid_of(ui, "live-scroll").id;
