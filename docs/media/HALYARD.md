@@ -83,6 +83,7 @@ channel layout, metadata and transformation history where required by the domain
 | Document | Authority |
 |---|---|
 | [Architecture](ARCHITECTURE.md) | Detailed component boundaries, pipeline design, formats and staged implementation |
+| [Core primitives](CORE-PRIMITIVES.md) | MC1 byte-source and aggregate-ledger contracts, prototype status and release blockers |
 | [Design Charter](DESIGN-CHARTER.md) | Co-equal objectives, trade-off rules and component review checklist |
 | [Security Assurance](SECURITY-ASSURANCE.md) | Vulnerability accounting, threat catalogue, testing and release gates |
 | [Format Catalogue](FORMAT-CATALOGUE.md) | Target formats and per-feature compatibility status |
