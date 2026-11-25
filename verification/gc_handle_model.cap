@@ -752,7 +752,7 @@ test "GC allocation publishes a fresh generation with its descriptor" {
     assert(allocated.heap.slots[2].allocated);
     assert(allocated.heap.slots[2].descriptor_id == 7);
     assert(gch_resolve(allocated.heap, allocated.handle, 7).status == GCH_OK);
-    assert(gch_resolve(heap, allocated.handle, 0).status == GCH_UNALLOCATED);
+    assert(gch_resolve(heap, allocated.handle, 0).status == GCH_STALE_HANDLE);
 }
 
 test "GC allocation rejects unknown descriptors atomically" {
