@@ -25,6 +25,13 @@ const int CCM_OWNER_PRODUCER = 1;
 const int CCM_OWNER_CHANNEL = 2;
 const int CCM_OWNER_CONSUMER = 3;
 
+const int CCM_PROTO_EMPTY = 0;
+const int CCM_PROTO_PRODUCED = 1;
+const int CCM_PROTO_ENQUEUED = 2;
+const int CCM_PROTO_RECEIVED = 3;
+const int CCM_PROTO_RELEASED = 4;
+const int CCM_PROTO_ABORTED = 5;
+
 const int CCM_ACT_SPAWN_PRODUCER = 1;
 const int CCM_ACT_SPAWN_CONSUMER = 2;
 const int CCM_ACT_PRODUCE = 3;
@@ -56,6 +63,7 @@ struct CCMState {
     int max_buffered_bytes;
     bool message_live;
     int message_owner;
+    int protocol_phase;
     int message_bytes;
     int live_bytes;
     int max_live_bytes;
@@ -91,6 +99,7 @@ CCMState ccm_initial_state() {
         max_buffered_bytes: 1,
         message_live: false,
         message_owner: CCM_OWNER_NONE,
+        protocol_phase: CCM_PROTO_EMPTY,
         message_bytes: 1,
         live_bytes: 0,
         max_live_bytes: 1,
@@ -199,6 +208,8 @@ bool ccm_invariant(CCMState state) {
         if (state.message_owner == CCM_OWNER_CHANNEL) { return false; }
     }
 
+    if (state.protocol_phase < CCM_PROTO_EMPTY ||
+        state.protocol_phase > CCM_PROTO_ABORTED) { return false; }
     if (state.message_live) {
         if (state.live_bytes != state.message_bytes) { return false; }
         if (state.message_owner == CCM_OWNER_PRODUCER &&
@@ -211,6 +222,20 @@ bool ccm_invariant(CCMState state) {
     } else {
         if (state.live_bytes != 0 || state.message_owner != CCM_OWNER_NONE) { return false; }
     }
+
+    if (state.protocol_phase == CCM_PROTO_EMPTY &&
+        (state.message_live || state.channel_count != 0)) { return false; }
+    if (state.protocol_phase == CCM_PROTO_PRODUCED &&
+        (!state.message_live || state.message_owner != CCM_OWNER_PRODUCER || state.channel_count != 0)) { return false; }
+    if (state.protocol_phase == CCM_PROTO_ENQUEUED &&
+        (!state.message_live || state.message_owner != CCM_OWNER_CHANNEL || state.channel_count != 1)) { return false; }
+    if (state.protocol_phase == CCM_PROTO_RECEIVED &&
+        (!state.message_live || state.message_owner != CCM_OWNER_CONSUMER || state.channel_count != 0)) { return false; }
+    if (state.protocol_phase == CCM_PROTO_RELEASED &&
+        (state.message_live || state.channel_count != 0 ||
+         state.producer_status != CCM_TASK_DONE || state.consumer_status != CCM_TASK_DONE)) { return false; }
+    if (state.protocol_phase == CCM_PROTO_ABORTED &&
+        (state.message_live || state.channel_count != 0)) { return false; }
 
     if (state.producer_handle == CCM_HANDLE_CONSUMED &&
         !ccm_task_terminal(state.producer_status)) { return false; }
@@ -324,7 +349,8 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
 
     if (action == CCM_ACT_PRODUCE) {
         if (actor != 1 || before.producer_status != CCM_TASK_RUNNABLE ||
-            before.message_live || before.channel_closed) {
+            before.message_live || before.channel_closed ||
+            before.protocol_phase != CCM_PROTO_EMPTY) {
             return ccm_reject(before, "invalid_produce");
         }
         if (before.message_bytes <= 0 ||
@@ -333,6 +359,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         }
         next.message_live = true;
         next.message_owner = CCM_OWNER_PRODUCER;
+        next.protocol_phase = CCM_PROTO_PRODUCED;
         next.live_bytes = before.message_bytes;
         return ccm_accept(next);
     }
@@ -340,7 +367,8 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
     if (action == CCM_ACT_SEND) {
         if (actor != 1 || before.producer_status != CCM_TASK_RUNNABLE ||
             before.channel_closed || !before.message_live ||
-            before.message_owner != CCM_OWNER_PRODUCER) {
+            before.message_owner != CCM_OWNER_PRODUCER ||
+            before.protocol_phase != CCM_PROTO_PRODUCED) {
             return ccm_reject(before, "invalid_send_ownership");
         }
         if (before.consumer_status != CCM_TASK_RUNNABLE) {
@@ -357,6 +385,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         next.channel_count += 1;
         next.buffered_bytes += before.message_bytes;
         next.message_owner = CCM_OWNER_CHANNEL;
+        next.protocol_phase = CCM_PROTO_ENQUEUED;
         next.producer_status = CCM_TASK_DONE;
         next.cleanup_reserved -= 1;
         return ccm_accept(next);
@@ -365,24 +394,28 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
     if (action == CCM_ACT_RECEIVE) {
         if (actor != 2 || before.consumer_status != CCM_TASK_RUNNABLE ||
             before.channel_count != 1 ||
-            before.message_owner != CCM_OWNER_CHANNEL) {
+            before.message_owner != CCM_OWNER_CHANNEL ||
+            before.protocol_phase != CCM_PROTO_ENQUEUED) {
             return ccm_reject(before, "receive_without_message");
         }
         // Linearisation point: dequeue and ownership transfer are one transition.
         next.channel_count -= 1;
         next.buffered_bytes -= before.message_bytes;
         next.message_owner = CCM_OWNER_CONSUMER;
+        next.protocol_phase = CCM_PROTO_RECEIVED;
         return ccm_accept(next);
     }
 
     if (action == CCM_ACT_RELEASE) {
         if (actor != 2 || before.consumer_status != CCM_TASK_RUNNABLE ||
             !before.message_live ||
-            before.message_owner != CCM_OWNER_CONSUMER) {
+            before.message_owner != CCM_OWNER_CONSUMER ||
+            before.protocol_phase != CCM_PROTO_RECEIVED) {
             return ccm_reject(before, "invalid_release_ownership");
         }
         next.message_live = false;
         next.message_owner = CCM_OWNER_NONE;
+        next.protocol_phase = CCM_PROTO_RELEASED;
         next.live_bytes = 0;
         next.consumer_status = CCM_TASK_DONE;
         next.cleanup_reserved -= 1;
@@ -419,9 +452,13 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         // A message not yet committed to the channel remains producer-owned
         // and is released by the cancellation transition.
         if (before.message_owner == CCM_OWNER_PRODUCER) {
+            next.protocol_phase = CCM_PROTO_ABORTED;
             next.message_live = false;
             next.message_owner = CCM_OWNER_NONE;
             next.live_bytes = 0;
+        }
+        if (before.protocol_phase == CCM_PROTO_EMPTY) {
+            next.protocol_phase = CCM_PROTO_ABORTED;
         }
         next.producer_status = CCM_TASK_CANCELLED;
         return ccm_accept_cleanup(next, 1);
@@ -448,6 +485,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             before.message_owner == CCM_OWNER_CONSUMER) {
             next.message_live = false;
             next.message_owner = CCM_OWNER_NONE;
+            next.protocol_phase = CCM_PROTO_ABORTED;
             next.live_bytes = 0;
             next.channel_count = 0;
             next.buffered_bytes = 0;
@@ -474,6 +512,7 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             next.message_owner = CCM_OWNER_NONE;
             next.live_bytes = 0;
         }
+        next.protocol_phase = CCM_PROTO_ABORTED;
         next.producer_status = CCM_TASK_FAILED;
         next.scope_cancel_requested = true;
         next.scope_failed = true;
@@ -491,6 +530,11 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             next.live_bytes = 0;
             next.channel_count = 0;
             next.buffered_bytes = 0;
+        }
+        if (before.message_owner == CCM_OWNER_CHANNEL ||
+            before.message_owner == CCM_OWNER_CONSUMER ||
+            before.protocol_phase == CCM_PROTO_EMPTY) {
+            next.protocol_phase = CCM_PROTO_ABORTED;
         }
         next.consumer_status = CCM_TASK_FAILED;
         next.scope_cancel_requested = true;
@@ -564,6 +608,7 @@ bool ccm_same_state(CCMState a, CCMState b) {
         a.max_buffered_bytes == b.max_buffered_bytes &&
         a.message_live == b.message_live &&
         a.message_owner == b.message_owner &&
+        a.protocol_phase == b.protocol_phase &&
         a.message_bytes == b.message_bytes &&
         a.live_bytes == b.live_bytes &&
         a.max_live_bytes == b.max_live_bytes &&
@@ -1168,4 +1213,37 @@ test "CCM producer cannot enqueue after the only consumer is cancelled" {
     state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
     state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
     assert(ccm_invariant(state) && state.scope_closed);
+}
+
+
+test "CCM protocol typestate rejects receive before enqueue" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    CCMTransition rejected = ccm_step(state, 2, CCM_ACT_RECEIVE);
+    assert(!rejected.ok && rejected.error == "receive_without_message");
+    assert(rejected.state.protocol_phase == CCM_PROTO_EMPTY);
+    assert(rejected.state.steps == state.steps);
+}
+
+test "CCM protocol typestate rejects release before receive" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    CCMTransition rejected = ccm_step(state, 2, CCM_ACT_RELEASE);
+    assert(!rejected.ok && rejected.error == "invalid_release_ownership");
+    assert(rejected.state.protocol_phase == CCM_PROTO_PRODUCED);
+    assert(rejected.state.steps == state.steps);
+}
+
+test "CCM protocol typestate marks cancellation disposal as aborted" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 1, CCM_ACT_PRODUCE);
+    state = ccm_apply(state, 1, CCM_ACT_SEND);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
+    assert(state.protocol_phase == CCM_PROTO_ABORTED);
+    assert(ccm_invariant(state));
 }
