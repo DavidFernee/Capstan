@@ -27,10 +27,11 @@ if [[ "$cmd" == lsp ]]; then
   [[ -x "$ROOT/build/capstan-lsp" ]] || make -s -C "$ROOT" lsp >&2
   exec "$ROOT/build/capstan-lsp" "$@"
 fi
-files=(); flags=(); out=""; progargs=()
+files=(); flags=(); out=""; workspace_root=""; progargs=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
+    --root) workspace_root="$2"; shift 2 ;;
     --release|--strict|--keep-checks) flags+=("$1"); shift ;;
     --) shift; progargs=("$@"); break ;;
     *) files+=("$1"); shift ;;
@@ -69,7 +70,29 @@ case "$cmd" in
       "$ROOT/verification/ccam_native_x64.cap" \
       "$ROOT/tools/native_driver.cap"
     "$CC" $CFLAGS "$tmp/native-driver.c" -o "$tmp/native-driver"
-    "$tmp/native-driver" -o "$tmp/out.s" "${flags[@]}" "${files[@]}"
+    workspace_root="${workspace_root:-$(pwd -P)}"
+    workspace_root="$(cd "$workspace_root" 2>/dev/null && pwd -P)" || {
+      echo "capstan native: workspace root must be an existing directory" >&2
+      exit 2
+    }
+    native_files=()
+    for file in "${files[@]}"; do
+      if [[ "$file" == /* ]]; then
+        if [[ "$workspace_root" == "/" ]]; then
+          relative="${file#/}"
+        elif [[ "$file" == "$workspace_root/"* ]]; then
+          relative="${file#"$workspace_root"/}"
+        else
+          echo "capstan native: source file is outside the selected workspace" >&2
+          exit 2
+        fi
+      else
+        relative="$file"
+      fi
+      while [[ "$relative" == ./* ]]; do relative="${relative#./}"; done
+      native_files+=("$relative")
+    done
+    "$tmp/native-driver" --root "$workspace_root" -o "$tmp/out.s" "${flags[@]}" "${native_files[@]}"
     "${AS:-as}" --64 "$tmp/out.s" -o "$tmp/out.o"
     "${LD:-ld}" -o "$out" "$tmp/out.o"
     if readelf -l "$out" | grep -q "INTERP"; then
