@@ -512,6 +512,18 @@ test "Deadeye MP4 rejects missing metadata and fragmented layouts" {
 }
 
 
+List<int> deadeye_mp4_test_file_with_moov(List<int> moov_payload) {
+    List<int> file = new List<int>();
+    List<int> ftyp = new List<int>();
+    ftyp.push('i'); ftyp.push('s'); ftyp.push('o'); ftyp.push('m');
+    deadeye_mp4_test_push_u32(ftyp, 0);
+    ftyp.push('i'); ftyp.push('s'); ftyp.push('o'); ftyp.push('m');
+    deadeye_mp4_test_push_box(file, 'f', 't', 'y', 'p', ftyp);
+    deadeye_mp4_test_push_box(file, 'm', 'o', 'o', 'v', moov_payload);
+    deadeye_mp4_test_push_box(file, 'm', 'd', 'a', 't', new List<int>());
+    return file;
+}
+
 test "Deadeye MP4 box reader validates extended sizes and size-to-parent boxes" {
     List<int> extended = new List<int>();
     deadeye_mp4_test_push_u32(extended, 1);
@@ -535,6 +547,58 @@ test "Deadeye MP4 box reader validates extended sizes and size-to-parent boxes" 
     to_end.push(1); to_end.push(2); to_end.push(3);
     DeadeyeMp4BoxResult final_box = deadeye_mp4_box_read(to_end, 0, 11);
     assert(final_box.ok && final_box.box.size == 11);
+}
+
+test "Deadeye MP4 size-zero child cannot consume bytes beyond its parent" {
+    List<int> file = new List<int>();
+    List<int> child = new List<int>();
+    deadeye_mp4_test_push_u32(child, 0);
+    child.push('f'); child.push('r'); child.push('e'); child.push('e');
+    deadeye_mp4_test_push_box(file, 'm', 'o', 'o', 'v', child);
+    deadeye_mp4_test_push_box(file, 'm', 'd', 'a', 't', new List<int>());
+    DeadeyeMp4BoxResult parent = deadeye_mp4_box_read(file, 0, file.len());
+    assert(parent.ok);
+    DeadeyeMp4BoxResult nested = deadeye_mp4_box_read(file, parent.box.payload_start, parent.box.end);
+    assert(!nested.ok && nested.error == "zero_size_not_eof");
+}
+
+test "Deadeye MP4 rejects movie and track metadata hidden in nested boxes" {
+    List<int> mvhd_payload = new List<int>();
+    for (int i = 0; i < 20; i += 1) { mvhd_payload.push(0); }
+    mvhd_payload[14] = 3; mvhd_payload[15] = 232;
+    List<int> mvhd = new List<int>();
+    deadeye_mp4_test_push_box(mvhd, 'm', 'v', 'h', 'd', mvhd_payload);
+    List<int> nested_mvhd = new List<int>();
+    deadeye_mp4_test_push_box(nested_mvhd, 'u', 'd', 't', 'a', mvhd);
+    List<int> direct_trak = new List<int>();
+    deadeye_mp4_test_push_box(direct_trak, 't', 'r', 'a', 'k', new List<int>());
+    List<int> moov_without_direct_mvhd = new List<int>();
+    for (int i = 0; i < direct_trak.len(); i += 1) { moov_without_direct_mvhd.push(direct_trak[i]); }
+    for (int i = 0; i < nested_mvhd.len(); i += 1) { moov_without_direct_mvhd.push(nested_mvhd[i]); }
+    List<int> first_file = deadeye_mp4_test_file_with_moov(moov_without_direct_mvhd);
+    HalyardByteSourceResult first_source = halyard_source_from_list(first_file, 1024);
+    assert(first_source.ok);
+    if (let first_value = first_source.source) {
+        DeadeyeMp4SummaryResult first_result = deadeye_mp4_inspect(first_value);
+        assert(!first_result.ok && first_result.error == "invalid_moov_children");
+    } else { assert(false); }
+
+    List<int> nested_trak = new List<int>();
+    deadeye_mp4_test_push_box(nested_trak, 't', 'r', 'a', 'k', new List<int>());
+    List<int> nested_trak_container = new List<int>();
+    deadeye_mp4_test_push_box(nested_trak_container, 'u', 'd', 't', 'a', nested_trak);
+    List<int> direct_mvhd = new List<int>();
+    deadeye_mp4_test_push_box(direct_mvhd, 'm', 'v', 'h', 'd', mvhd_payload);
+    List<int> moov_without_direct_trak = new List<int>();
+    for (int i = 0; i < direct_mvhd.len(); i += 1) { moov_without_direct_trak.push(direct_mvhd[i]); }
+    for (int i = 0; i < nested_trak_container.len(); i += 1) { moov_without_direct_trak.push(nested_trak_container[i]); }
+    List<int> second_file = deadeye_mp4_test_file_with_moov(moov_without_direct_trak);
+    HalyardByteSourceResult second_source = halyard_source_from_list(second_file, 1024);
+    assert(second_source.ok);
+    if (let second_value = second_source.source) {
+        DeadeyeMp4SummaryResult second_result = deadeye_mp4_inspect(second_value);
+        assert(!second_result.ok && second_result.error == "invalid_moov_children");
+    } else { assert(false); }
 }
 
 test "Deadeye MP4 enforces the global box-count limit" {
