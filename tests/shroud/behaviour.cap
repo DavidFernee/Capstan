@@ -589,6 +589,44 @@ void test_raster(Tally t) {
     expect(t, ch_a(back) == 0x80 && int_abs(ch_r(back) - 0x33) <= 1 && int_abs(ch_g(back) - 0x66) <= 1 && int_abs(ch_b(back) - 0x99) <= 1, "colour: translucent colours survive within one step", $"{back}");
 }
 
+void test_display_list(Tally t) {
+    Pixmap direct = new_pixmap(48, 36);
+    Pixmap replayed = new_pixmap(48, 36);
+    direct.clear(0xFF182838);
+    replayed.clear(0xFF182838);
+    Canvas a = new_canvas(direct);
+    Canvas recorder = new_recording_canvas(replayed);
+
+    // Cover each current command family and capture nested clip state.
+    a.fill_rect(rect(fx(2) + FX_HALF, fx(3), fx(17), fx(9)),
+        linear_gradient(fx(2), 0, 0xC0FF4000, fx(20), 0, 0x804080FF));
+    recorder.fill_rect(rect(fx(2) + FX_HALF, fx(3), fx(17), fx(9)),
+        linear_gradient(fx(2), 0, 0xC0FF4000, fx(20), 0, 0x804080FF));
+    a.push_clip(rect_px(5, 4, 30, 24));
+    recorder.push_clip(rect_px(5, 4, 30, 24));
+    Path shape = path_round_rect_ring(rect_px(3, 2, 34, 27), fx(5), fx(3));
+    a.fill_path(shape, solid(0xA040C080), FILL_NONZERO);
+    recorder.fill_path(shape, solid(0xA040C080), FILL_NONZERO);
+    a.blend(8, 8, solid(0x80FFFFFF), 117);
+    recorder.blend(8, 8, solid(0x80FFFFFF), 117);
+    a.pop_clip();
+    recorder.pop_clip();
+    a.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
+    recorder.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
+
+    DisplayList frame = finish_display_list(recorder);
+    execute_display_list(frame, replayed);
+    bool same = direct.px.len() == replayed.px.len();
+    for (int i = 0; i < direct.px.len() && same; i += 1) {
+        if (direct.px[i] != replayed.px[i]) { same = false; }
+    }
+    expect(t, same, "display list: replay is byte-identical to immediate software rasterisation",
+        $"commands={frame.commands.len()}");
+    expect(t, frame.width == 48 && frame.height == 36 && frame.commands.len() >= 4,
+        "display list: frame dimensions and commands are retained",
+        $"{frame.width}x{frame.height}, {frame.commands.len()} commands");
+}
+
 void test_resize(Tally t, Font f, Font b) {
     Ui ui = new_ui(f, b, light_theme(), 640, 480, 256);
     View v = column()
@@ -674,6 +712,7 @@ int main() {
             test_a11y(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_display_list(t);
             test_resize(t, f, fb);
             test_scale(t, f, fb);
         }
