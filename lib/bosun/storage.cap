@@ -109,6 +109,7 @@ bool bosun_storage_state_valid(BosunStorage storage) {
         if (!region.active || region.owner != storage.owner ||
             region.generation <= 0 || region.capacity < 0 ||
             region.capacity > BOSUN_MAX_REGION_BYTES ||
+            region.bytes.len() != region.capacity ||
             region.used < 0 || region.used > region.capacity) {
             return false;
         }
@@ -232,9 +233,17 @@ BosunBytesResult bosun_storage_read(BosunStorage storage, BosunRef reference) {
         return new BosunBytesResult{ok: false, bytes: empty, error: "invalid_reference"};
     }
     BosunRegion region = storage.regions[reference.region_index];
-    List<int> copy = new List<int>();
     for (int i = 0; i < reference.length; i += 1) {
-        copy.push(region.bytes[reference.offset + i]);
+        int value = region.bytes[reference.offset + i];
+        if (value < 0 || value > 255) {
+            return new BosunBytesResult{
+                ok: false, bytes: empty, error: "invalid_byte_state"
+            };
+        }
+    }
+    List<int> copy = new List<int>();
+    for (int j = 0; j < reference.length; j += 1) {
+        copy.push(region.bytes[reference.offset + j]);
     }
     return new BosunBytesResult{ok: true, bytes: copy, error: ""};
 }
@@ -253,6 +262,14 @@ BosunI64Result bosun_storage_load_i64_le(BosunStorage storage, BosunRef referenc
         return new BosunI64Result{ok: false, value: 0, error: "invalid_i64_reference"};
     }
     BosunRegion region = storage.regions[reference.region_index];
+    for (int i = 0; i < 8; i += 1) {
+        int byte_value = region.bytes[reference.offset + i];
+        if (byte_value < 0 || byte_value > 255) {
+            return new BosunI64Result{
+                ok: false, value: 0, error: "invalid_byte_state"
+            };
+        }
+    }
     // Compose the low 56 bits without ever left-shifting the sign byte.
     // The final byte is interpreted as a signed two's-complement high byte.
     int value = 0;
@@ -443,6 +460,28 @@ test "Bosun boolean encoding is canonical and typed" {
             storage.regions[0] = region;
             BosunBoolResult malformed = bosun_storage_load_bool(storage, reference);
             assert(!malformed.ok && malformed.error == "noncanonical_bool");
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Bosun rejects corrupted backing shape and byte values" {
+    BosunStorageResult made = bosun_storage_create(52, 4);
+    assert(made.ok);
+    if (let storage = made.storage) {
+        assert(bosun_storage_add_region(storage, 4));
+        BosunRefResult allocated = bosun_storage_reserve(storage, 0, 2);
+        assert(allocated.ok);
+        if (let reference = allocated.reference) {
+            BosunRegion region = storage.regions[0];
+            region.bytes[reference.offset] = 300;
+            storage.regions[0] = region;
+            BosunBytesResult invalid = bosun_storage_read(storage, reference);
+            assert(!invalid.ok && invalid.error == "invalid_byte_state");
+            region = storage.regions[0];
+            region.bytes = new List<int>();
+            storage.regions[0] = region;
+            assert(bosun_storage_available(storage) == -1);
+            assert(!bosun_ref_valid(storage, reference));
         } else { assert(false); }
     } else { assert(false); }
 }
