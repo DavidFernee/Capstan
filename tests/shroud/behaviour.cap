@@ -581,7 +581,17 @@ void test_ui_state_pruning(Tally t, Ui ui) {
     expect_int(t, scroll_value, 17, "UI state: retained scroll offset is unchanged");
     expect_int(t, caret_value, 2, "UI state: retained caret is unchanged");
 
-    ui.render(text("replacement").key("replacement"), 2);
+    // Reusing the same key for a different widget kind must not preserve
+    // state whose semantics belong only to the former control kind.
+    ui.render(column()
+        .add(text("scroll replaced").key("live-scroll"))
+        .add(text("field replaced").key("live-field")), 2);
+    expect_int(t, ui.scroll.keys().len(), 0, "UI state: scroll state is pruned when node kind changes");
+    expect_int(t, ui.caret.keys().len(), 0, "UI state: caret state is pruned when node kind changes");
+
+    ui.scroll.set(scroll_id, 17);
+    ui.caret.set(field_id, 2);
+    ui.render(text("replacement").key("replacement"), 3);
     expect_int(t, ui.scroll.keys().len(), 0, "UI state: removed scroll node is pruned");
     expect_int(t, ui.caret.keys().len(), 0, "UI state: removed text field is pruned");
 
