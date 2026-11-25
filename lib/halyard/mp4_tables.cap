@@ -1,8 +1,8 @@
-// Deadeye bounded sample-table consistency and media-extent validation.
-// This module accepts already-decoded table values. It does not yet decode MP4
-// box payloads; that integration is a separate parser milestone.
+// Deadeye bounded sample-table decoding, consistency and media-extent validation.
+ // Payload decoders are separate from track-hierarchy integration and packet emission.
 // The constrained profile deliberately rejects ambiguous/non-monotonic layouts.
 import "core.cap";
+import "mp4.cap";
 
 const int DEADEYE_MP4_MAX_SAMPLES = 1048576;
 const int DEADEYE_MP4_MAX_CHUNKS = 65536;
@@ -582,4 +582,203 @@ test "Deadeye decodes strictly ordered stss sync sample indices" {
         duplicate, 0, duplicate.len(), 4
     );
     assert(!rejected.ok);
+}
+
+
+struct DeadeyeMp4StblResult {
+    bool ok;
+    List<int> stts;
+    List<int> stsc;
+    List<int> sample_sizes;
+    List<int> chunk_offsets;
+    List<int> ctts;
+    List<int> sync_samples;
+    bool has_ctts;
+    bool has_stss;
+    DeadeyeMp4TableValidation validation;
+    string error;
+}
+
+DeadeyeMp4StblResult deadeye_mp4_stbl_error(string error) {
+    return new DeadeyeMp4StblResult{
+        ok: false, stts: new List<int>(), stsc: new List<int>(),
+        sample_sizes: new List<int>(), chunk_offsets: new List<int>(),
+        ctts: new List<int>(), sync_samples: new List<int>(),
+        has_ctts: false, has_stss: false,
+        validation: deadeye_mp4_table_error(error), error: error
+    };
+}
+
+// Decode the immediate children of one stbl box. Duplicate required tables,
+// simultaneous stco+co64, malformed child boxes, and nested encryption markers
+// fail closed. The caller supplies top-level mdat payload intervals.
+DeadeyeMp4StblResult deadeye_mp4_decode_stbl(
+    List<int> bytes, int start, int end, List<int> mdat_ranges
+) {
+    if (start < 0 || end < start || end > bytes.len()) {
+        return deadeye_mp4_stbl_error("invalid_stbl_range");
+    }
+    int stts_start = 0; int stts_end = 0; bool has_stts = false;
+    int stsc_start = 0; int stsc_end = 0; bool has_stsc = false;
+    int stsz_start = 0; int stsz_end = 0; bool has_stsz = false;
+    int stco_start = 0; int stco_end = 0; bool has_stco = false;
+    int co64_start = 0; int co64_end = 0; bool has_co64 = false;
+    int ctts_start = 0; int ctts_end = 0; bool has_ctts = false;
+    int stss_start = 0; int stss_end = 0; bool has_stss = false;
+    int at = start;
+    int child_count = 0;
+    while (at < end) {
+        DeadeyeMp4BoxResult parsed = deadeye_mp4_box_read(bytes, at, end);
+        if (!parsed.ok) { return deadeye_mp4_stbl_error("malformed_stbl_child"); }
+        DeadeyeMp4Box box = parsed.box;
+        child_count += 1;
+        if (child_count > DEADEYE_MP4_MAX_BOXES ||
+            deadeye_mp4_is_encryption_marker(box)) {
+            return deadeye_mp4_stbl_error("unsupported_or_encrypted_stbl_child");
+        }
+        if (deadeye_mp4_box_type(box, 's','t','t','s')) {
+            if (has_stts) { return deadeye_mp4_stbl_error("duplicate_stts"); }
+            has_stts = true; stts_start = box.payload_start; stts_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 's','t','s','c')) {
+            if (has_stsc) { return deadeye_mp4_stbl_error("duplicate_stsc"); }
+            has_stsc = true; stsc_start = box.payload_start; stsc_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 's','t','s','z')) {
+            if (has_stsz) { return deadeye_mp4_stbl_error("duplicate_stsz"); }
+            has_stsz = true; stsz_start = box.payload_start; stsz_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 's','t','c','o')) {
+            if (has_stco || has_co64) {
+                return deadeye_mp4_stbl_error("duplicate_chunk_offsets");
+            }
+            has_stco = true; stco_start = box.payload_start; stco_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 'c','o','6','4')) {
+            if (has_stco || has_co64) {
+                return deadeye_mp4_stbl_error("duplicate_chunk_offsets");
+            }
+            has_co64 = true; co64_start = box.payload_start; co64_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 'c','t','t','s')) {
+            if (has_ctts) { return deadeye_mp4_stbl_error("duplicate_ctts"); }
+            has_ctts = true; ctts_start = box.payload_start; ctts_end = box.end;
+        } else if (deadeye_mp4_box_type(box, 's','t','s','s')) {
+            if (has_stss) { return deadeye_mp4_stbl_error("duplicate_stss"); }
+            has_stss = true; stss_start = box.payload_start; stss_end = box.end;
+        }
+        at = box.end;
+    }
+    if (at != end || !has_stts || !has_stsc || !has_stsz ||
+        (!has_stco && !has_co64)) {
+        return deadeye_mp4_stbl_error("incomplete_stbl");
+    }
+
+    DeadeyeMp4IntListResult time_values =
+        deadeye_mp4_decode_stts(bytes, stts_start, stts_end);
+    DeadeyeMp4IntListResult chunk_map =
+        deadeye_mp4_decode_stsc(bytes, stsc_start, stsc_end);
+    DeadeyeMp4IntListResult sizes =
+        deadeye_mp4_decode_stsz(bytes, stsz_start, stsz_end);
+    DeadeyeMp4IntListResult offsets;
+    if (has_stco) {
+        offsets = deadeye_mp4_decode_chunk_offsets(
+            bytes, stco_start, stco_end, false
+        );
+    } else {
+        offsets = deadeye_mp4_decode_chunk_offsets(
+            bytes, co64_start, co64_end, true
+        );
+    }
+    if (!time_values.ok || !chunk_map.ok || !sizes.ok || !offsets.ok) {
+        return deadeye_mp4_stbl_error("invalid_sample_table_payload");
+    }
+    List<int> composition = new List<int>();
+    if (has_ctts) {
+        DeadeyeMp4IntListResult parsed_ctts =
+            deadeye_mp4_decode_ctts(bytes, ctts_start, ctts_end);
+        if (!parsed_ctts.ok) {
+            return deadeye_mp4_stbl_error("invalid_ctts_payload");
+        }
+        composition = parsed_ctts.values;
+        int composition_samples = 0;
+        for (int i = 0; i < composition.len(); i += 2) {
+            if (composition[i] > sizes.values.len() - composition_samples) {
+                return deadeye_mp4_stbl_error("ctts_sample_count_overflow");
+            }
+            composition_samples += composition[i];
+        }
+        if (composition_samples != sizes.values.len()) {
+            return deadeye_mp4_stbl_error("ctts_sample_count_mismatch");
+        }
+    }
+    List<int> sync = new List<int>();
+    if (has_stss) {
+        DeadeyeMp4IntListResult parsed_stss = deadeye_mp4_decode_stss(
+            bytes, stss_start, stss_end, sizes.values.len()
+        );
+        if (!parsed_stss.ok) {
+            return deadeye_mp4_stbl_error("invalid_stss_payload");
+        }
+        sync = parsed_stss.values;
+    }
+    DeadeyeMp4TableValidation validated =
+        deadeye_mp4_validate_sample_tables(
+            time_values.values, chunk_map.values, sizes.values,
+            offsets.values, mdat_ranges
+        );
+    if (!validated.ok) {
+        return deadeye_mp4_stbl_error(validated.error);
+    }
+    return new DeadeyeMp4StblResult{
+        ok: true, stts: time_values.values, stsc: chunk_map.values,
+        sample_sizes: sizes.values, chunk_offsets: offsets.values,
+        ctts: composition, sync_samples: sync,
+        has_ctts: has_ctts, has_stss: has_stss,
+        validation: validated, error: ""
+    };
+}
+
+void deadeye_mp4_test_append_u32(List<int> bytes, int value) {
+    bytes.push((value >> 24) & 255);
+    bytes.push((value >> 16) & 255);
+    bytes.push((value >> 8) & 255);
+    bytes.push(value & 255);
+}
+
+void deadeye_mp4_test_append_box(
+    List<int> bytes, int a, int b, int c, int d, List<int> payload
+) {
+    deadeye_mp4_test_append_u32(bytes, payload.len() + 8);
+    bytes.push(a); bytes.push(b); bytes.push(c); bytes.push(d);
+    for (int i = 0; i < payload.len(); i += 1) { bytes.push(payload[i]); }
+}
+
+test "Deadeye decodes a complete stbl child set and validates media extents" {
+    List<int> stbl = new List<int>();
+    deadeye_mp4_test_append_box(stbl, 's','t','t','s',
+        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,40]);
+    deadeye_mp4_test_append_box(stbl, 's','t','s','c',
+        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
+    deadeye_mp4_test_append_box(stbl, 's','t','s','z',
+        [0,0,0,0, 0,0,0,10, 0,0,0,1]);
+    deadeye_mp4_test_append_box(stbl, 's','t','c','o',
+        [0,0,0,0, 0,0,0,1, 0,0,0,100]);
+    DeadeyeMp4StblResult decoded = deadeye_mp4_decode_stbl(
+        stbl, 0, stbl.len(), [100,110]
+    );
+    assert(decoded.ok && decoded.validation.sample_count == 1);
+    assert(decoded.sample_sizes[0] == 10 && decoded.chunk_offsets[0] == 100);
+}
+
+test "Deadeye rejects duplicate and malformed stbl child tables" {
+    List<int> duplicate = new List<int>();
+    deadeye_mp4_test_append_box(duplicate, 's','t','t','s',
+        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
+    deadeye_mp4_test_append_box(duplicate, 's','t','t','s',
+        [0,0,0,0, 0,0,0,1, 0,0,0,1, 0,0,0,1]);
+    DeadeyeMp4StblResult repeated = deadeye_mp4_decode_stbl(
+        duplicate, 0, duplicate.len(), [100,110]
+    );
+    assert(!repeated.ok && repeated.error == "duplicate_stts");
+    List<int> malformed = [0,0,0,7, 's','t','t','s'];
+    DeadeyeMp4StblResult truncated = deadeye_mp4_decode_stbl(
+        malformed, 0, malformed.len(), [100,110]
+    );
+    assert(!truncated.ok && truncated.error == "malformed_stbl_child");
 }
