@@ -164,6 +164,30 @@ there is no lifetime-bound reservation, and allocator exhaustion remains a termi
 runtime outcome rather than a recoverable sink error. It is a correctness prototype, not
 a hostile-input output boundary.
 
+## 5.0 Concurrency policy and executable reference model
+
+The selected policy for aggregate media-resource admission is **single-owner
+message passing**, not shared-ledger atomics. One ledger owner serialises admission
+and release requests; callers submit bounded requests through a FIFO queue. Enqueue
+is the ownership commit point. The owner validates and commits the complete
+multi-dimensional charge as one state transition. A rejected request retains its
+pre-commit ownership and changes no ledger dimension.
+
+The Capstan-native reference machine is
+`verification/halyard_resource_actor.cap`. It models two competing request
+identities, a bounded FIFO, serial processing, all-or-nothing admission and one-shot
+release. Its tests cover both enqueue orders, aggregate overcommit prevention,
+queue-full rejection, invalid/duplicate requests and repeated release. The standard
+test runner executes this model.
+
+This is a **policy model**, not a live concurrent actor implementation. It assumes
+the owner processes transitions serially; it does not itself establish that a
+multithreaded runtime enforces single ownership, that queue operations are race-free,
+or that cancellation/worker death always reaches the owner. The refinement target is
+the structured task/channel machine in `verification/concurrency_model.cap` and
+the language/runtime work in issues #229 and #249. Until that bridge is implemented
+and verified, Halyard APIs remain sequential and thread-confined.
+
 ## 5.1 Extended live-resource vector
 
 The bounded ledger now has an opt-in extended constructor,
