@@ -133,7 +133,7 @@ theorem allocateSlot_success_resolves
   cases slot with
   | neverUsed =>
       simp [allocateSlot] at h
-      injection h with hnext hgeneration
+      rcases h with ⟨hnext, hgeneration⟩
       subst next
       subst generation
       simp [resolveSlot]
@@ -141,7 +141,7 @@ theorem allocateSlot_success_resolves
       by_cases hpositive : 0 < current
       · by_cases hbound : current ≤ maximumGeneration
         · simp [allocateSlot, hpositive, hbound] at h
-          injection h with hnext hgeneration
+          rcases h with ⟨hnext, hgeneration⟩
           subst next
           subst generation
           simp [resolveSlot]
@@ -250,7 +250,6 @@ theorem releaseAt_rejection_is_atomic
         rfl
     | some replacement =>
         simp [hslot] at h
-        cases h
   · simp [hdomain] at h
     cases h
     rfl
