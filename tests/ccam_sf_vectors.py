@@ -25,6 +25,8 @@ FIELDS = {
     "const_b": {"op", "dst", "value"},
     "move": {"op", "dst", "src"},
     "add_i": {"op", "dst", "lhs", "rhs"},
+    "sub_i": {"op", "dst", "lhs", "rhs"},
+    "mul_i": {"op", "dst", "lhs", "rhs"},
     "div_i": {"op", "dst", "lhs", "rhs"},
     "rem_i": {"op", "dst", "lhs", "rhs"},
     "eq_i": {"op", "dst", "lhs", "rhs"},
@@ -101,10 +103,10 @@ def check_instruction(ins: object, pc: int, registers: list[str], count: int,
         src_ok = reg("src")
         if dst_ok and src_ok and registers[ins["dst"]] != registers[ins["src"]]:
             fail(where, "move source and destination register types must match")
-    elif op in {"add_i", "div_i", "rem_i", "eq_i", "lt_i"}:
+    elif op in {"add_i", "sub_i", "mul_i", "div_i", "rem_i", "eq_i", "lt_i"}:
         reg("lhs", "int")
         reg("rhs", "int")
-        reg("dst", "bool" if op == "eq_i" else "int" if op in {"add_i", "div_i", "rem_i"} else "bool")
+        reg("dst", "bool" if op in {"eq_i", "lt_i"} else "int")
     elif op == "not_b":
         reg("src", "bool")
         reg("dst", "bool")
