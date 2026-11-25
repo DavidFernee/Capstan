@@ -44,6 +44,26 @@ The target is a **precise shadow-root stack** with compiler-emitted safepoint ma
 
 A safepoint is a semantic boundary: collection may occur only where the compiler has published a complete root set. Until precise stack maps and reference spill/reload rules are implemented and tested, the collector must not reclaim objects based on an incomplete root set.
 
+### Logical frame-map contract (GC-R0 proposal)
+
+The contract is intentionally stated independently of a physical register/stack ABI. The compiler/backend owners must choose and document the concrete encoding before runtime implementation.
+
+A published frame record must identify:
+
+- a validated frame-layout descriptor and descriptor version;
+- the caller/previous-frame link, with an explicit root-chain termination value;
+- the active safepoint identifier;
+- the frame's root-slot storage extent;
+- an immutable map from that safepoint identifier to the exact set of managed-reference slot indices.
+
+The runtime accepts a collection entry only when the active chain is well-formed, bounded by a configured frame limit, contains no repeated frame identity, and every frame's descriptor and safepoint map are recognised. Each listed slot must be in bounds and contain a valid handle for the current heap instance. Unlisted slots are never interpreted as references. Duplicate root slots may be rejected or canonicalised, but cannot change reachability.
+
+The compiler-side proof obligation is stronger than map well-formedness: at every permitted safepoint, every reference live after the safepoint must either be in a listed root slot or be reachable through a listed object field. A reference held only in a register, spill temporary, outgoing argument area, closure environment or helper-local must be included according to its actual lifetime. The lowering must spill before publishing the safepoint and reload from the authoritative root slot after collection; stale pre-collection copies must not be used.
+
+Frame publication and withdrawal are ordered operations. A frame is fully initialised before it becomes reachable from the active chain. Normal return, trap, panic and unwind paths restore the previous chain exactly once. Any allocation-capable helper must publish its own live temporaries before it can trigger collection. If validation fails, collection aborts before sweep and leaves all object allocation states unchanged.
+
+These are semantic acceptance conditions, not a claim that the current native backend already emits such records. The contract does not prescribe raw stack offsets, register numbers, calling convention, frame-pointer use or a particular map encoding; those decisions require a joint compiler/runtime review and target-specific tests.
+
 The initial implementation is single-threaded. No threads, async callbacks, signal-time allocation or concurrent mutation are permitted. A future multi-threaded collector requires per-thread root chains, a stop-the-world/safepoint protocol and synchronization proofs; it is not silently included here.
 
 ## 4. Object model and pointer classification
@@ -178,6 +198,14 @@ The old C-backed mode remains explicitly labelled compatibility-only until the r
 
 **Critical dependency:** GC-R0 and the compiler/native backend's reference representation must be agreed before reclamation code is implemented. GC-R1 can proceed independently as a model. The existing CCAM register/heap semantics work (#255) and bounded region heap work (#246/#262) must be reviewed for compatibility, not assumed to settle the production object model.
 
-## 13. Current implementation progress\n\nThe first executable model slice is in `verification/gc_model.cap` and is wired into `tests/run.sh`. It is intentionally an abstract graph model: it does not allocate native heap memory, parse compiler-emitted frame maps, implement a page provider, or establish concrete object-layout correspondence. It validates dense object identities and generation-tagged references, requires pointer-free objects to have no outgoing edges, computes mark closure with a bounded worklist, and only constructs sweep output after the worklist is completely drained. Worklist exhaustion and malformed roots/edges return the original model object list without reclamation.\n\nAn independently structured fixed-point reachability oracle is included for differential checks. Tests cover cycles, transitive reachability, duplicate roots/edges, atomic/secret leaves, empty roots, invalid and stale-generation references, missing objects, secret-wipe state transitions, and bounded-worklist exhaustion. The new test is registered in the repository test harness. **No test execution or CI result is claimed yet**; the exact branch must compile and run this file before the model can be considered executable evidence.\n\nThe current model does not prove compiler root completeness. Its root list is an explicit premise. A root-omission negative control is now included: a complete-root oracle identifies both live objects, while a deliberately incomplete root set causes the collector model to reclaim the omitted object. This demonstrates the consequence of a missing root; it does not establish that compiler-generated roots are complete.\n\n## 14. Explicit non-claims
+## 13. Current implementation progress
+
+The first executable model slice is in `verification/gc_model.cap` and is wired into `tests/run.sh`. It is intentionally an abstract graph model: it does not allocate native heap memory, parse compiler-emitted frame maps, implement a page provider, or establish concrete object-layout correspondence. It validates dense object identities and generation-tagged references, requires pointer-free objects to have no outgoing edges, computes mark closure with a bounded worklist, and only constructs sweep output after the worklist is completely drained. Worklist exhaustion and malformed roots/edges return the original model object list without reclamation.
+
+An independently structured fixed-point reachability oracle is included for differential checks. Tests cover cycles, transitive reachability, duplicate roots/edges, atomic/secret leaves, empty roots, invalid and stale-generation references, missing objects, secret-wipe state transitions, and bounded-worklist exhaustion. The new test is registered in the repository test harness. **No test execution or CI result is claimed yet**; the exact branch must compile and run this file before the model can be considered executable evidence.
+
+The current model does not prove compiler root completeness. Its root list is an explicit premise. A root-omission negative control is now included: a complete-root oracle identifies both live objects, while a deliberately incomplete root set causes the collector model to reclaim the omitted object. This demonstrates the consequence of a missing root; it does not establish that compiler-generated roots are complete.
+
+## 14. Explicit non-claims
 
 This document does not claim that the collector is implemented, that any theorem applies to executable code, that all memory corruption is impossible, that process RSS is bounded, that secrets are erased at scope exit, that concurrent collection is supported, or that the C-free compiler/bootstrap is complete.
