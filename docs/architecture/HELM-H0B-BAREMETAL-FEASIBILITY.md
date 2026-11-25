@@ -83,6 +83,8 @@ The minimum safe extension should be a **bounded memory-view abstraction**:
 
 This should be specified as a separate CCAM/kernel ABI extension before any boot parser implementation. It is not a justification for general-purpose unsafe pointers.
 
+A second representation gap is equally important: CCAM v0.1 exposes signed Int64, while x86-64 canonical virtual addresses and Limine's U64 protocol fields require unsigned 64-bit bit-pattern semantics. Reinterpreting a high-half address as a signed integer and using signed comparisons is incorrect. The reference model added in `verification/helm_boot_memory_model.cap` represents U64 values as two checked U32 limbs, implements unsigned comparison/add/subtract, four-level canonicality and bounded range containment, and snapshots bounded byte views for little-endian decoding. This is a pure Capstan model over an owned byte list; it does not dereference physical memory and is not yet a machine-code backend feature.
+
 ## 5. Boot protocol choice: Limine for the first x86-64 slice
 
 The initial architecture record previously named Multiboot2 as the boot candidate. This audit recommends **Limine x86-64** for the first kernel image, with the exact bootloader release and protocol base revision pinned in the build manifest.
@@ -174,7 +176,13 @@ The work should be split into small independently testable changes:
 
 Do not add a generic `unsafe` escape hatch, arbitrary inline assembly, arbitrary I/O ports, raw user pointers or unconstrained memory intrinsics to make the demo work.
 
-## 9. H0-B acceptance checklist
+## 9. Capstan-native boot-memory reference model
+
+The initial executable model is in `verification/helm_boot_memory_model.cap` and is wired into `tests/run.sh`. It covers U64 limb arithmetic/carry/borrow/overflow, unsigned ordering across the signed bit, four-level x86-64 canonical-address checks, range containment and wrap rejection, bounded immutable byte snapshots, little-endian u8/u16/u32/u64 reads, and exact-end/truncated/invalid-byte cases.
+
+The model is intentionally not described as a kernel memory accessor. It uses ordinary Capstan lists and is intended to be an executable semantic reference for the later hardware adapter. Its test status remains UNKNOWN until the exact branch is run through CI or a local Capstan test runner.
+
+## 10. H0-B acceptance checklist
 
 | Requirement | Current result |
 |---|---|
@@ -190,7 +198,7 @@ Do not add a generic `unsafe` escape hatch, arbitrary inline assembly, arbitrary
 | Kernel code execution at ring 0 | NOT DEMONSTRATED |
 | Memory isolation/security proof | NOT CLAIMED |
 
-H0-B is complete as a source-level feasibility and dependency assessment. H0-C remains blocked on the target adapter, linker/image, pinned bootloader/emulator harness and memory-view specification. No implementation test or proof is implied by this report.
+H0-B is complete as a source-level feasibility and dependency assessment, with an initial Capstan reference model added for the unsigned-address and bounded-view semantics. The model has not yet been executed in this review. H0-C remains blocked on the target adapter, linker/image, pinned bootloader/emulator harness and a hardware-backed memory-view implementation. No implementation test or proof is implied by this report.
 
 ## 10. External protocol references
 
