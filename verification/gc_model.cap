@@ -91,9 +91,10 @@ bool gc_validate(GCSpec spec) {
     }
 
     for (int i = 0; i < spec.roots.len(); i += 1) {
-        int root_id = spec.roots[i];
-        int index = gc_find_object(spec.objects, root_id);
-        if (index < 0 || !spec.objects[index].allocated) { return false; }
+        GCRef root = spec.roots[i];
+        int index = gc_find_object(spec.objects, root.id);
+        if (index < 0 || !spec.objects[index].allocated ||
+            spec.objects[index].generation != root.generation) { return false; }
     }
 
     for (int i = 0; i < spec.edges.len(); i += 1) {
@@ -102,7 +103,9 @@ bool gc_validate(GCSpec spec) {
         int to_index = gc_find_object(spec.objects, edge.to_id);
         if (from_index < 0 || to_index < 0) { return false; }
         if (!spec.objects[from_index].allocated ||
-            !spec.objects[to_index].allocated) { return false; }
+            !spec.objects[to_index].allocated ||
+            spec.objects[from_index].generation != edge.from_generation ||
+            spec.objects[to_index].generation != edge.to_generation) { return false; }
         if (spec.objects[from_index].kind != GC_KIND_TRACED) {
             return false;
         }
@@ -134,7 +137,8 @@ GCResult gc_collect(GCSpec spec) {
 
     List<int> worklist = new List<int>();
     for (int i = 0; i < spec.roots.len(); i += 1) {
-        int root_id = spec.roots[i];
+        GCRef root = spec.roots[i];
+        int root_id = root.id;
         int root_index = gc_find_object(spec.objects, root_id);
         if (!marks[root_index]) {
             if (worklist.len() >= spec.worklist_capacity) {
@@ -219,8 +223,9 @@ GCOracleResult gc_oracle(GCSpec spec) {
     }
 
     for (int i = 0; i < spec.roots.len(); i += 1) {
-        if (!gc_id_in(reachable, spec.roots[i])) {
-            reachable.push(spec.roots[i]);
+        GCRef root = spec.roots[i];
+        if (!gc_id_in(reachable, root.id)) {
+            reachable.push(root.id);
         }
     }
 
@@ -320,7 +325,7 @@ test "GC atomic objects are leaves" {
     spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
     spec.objects.push(gc_object(2, GC_KIND_TRACED));
     spec.roots.push(gc_ref(0, 1));
-    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 1, to_generation: 1});
     GCResult result = gc_collect(spec);
     assert(result.status == GC_OK);
     assert(gc_id_in(result.marked_ids, 1));
@@ -332,7 +337,7 @@ test "GC duplicate roots do not duplicate work" {
     GCSpec spec = gc_empty_spec(2);
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
     spec.roots.push(gc_ref(0, 1));
-    spec.roots.push(0);
+    spec.roots.push(gc_ref(0, 1));
     GCResult result = gc_collect(spec);
     assert(result.status == GC_OK && result.work_items == 1);
     assert(result.marked_ids.len() == 1 && gc_id_in(result.marked_ids, 0));
@@ -343,11 +348,12 @@ test "GC duplicate graph edges do not duplicate work" {
     spec.objects.push(gc_object(0, GC_KIND_TRACED));
     spec.objects.push(gc_object(1, GC_KIND_ATOMIC));
     spec.roots.push(0);
-    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
-    spec.edges.push(new GCEdge{from_id: 0, to_id: 1});
+    spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 1, to_generation: 1});
+    spec.edges.push(new GCEdge{from_id: 0, from_generation: 1, to_id: 1, to_generation: 1});
     GCResult result = gc_collect(spec);
     assert(result.status == GC_OK && result.work_items == 2);
-    assert(result.marked_ids.len() == 2);\n    assert(gc_id_in(result.marked_ids, 0) && gc_id_in(result.marked_ids, 1));
+    assert(result.marked_ids.len() == 2);
+    assert(gc_id_in(result.marked_ids, 0) && gc_id_in(result.marked_ids, 1));
 }
 
 test "GC empty root set reclaims all unreachable objects" {
@@ -356,7 +362,8 @@ test "GC empty root set reclaims all unreachable objects" {
     spec.objects.push(gc_object(1, GC_KIND_SECRET));
     GCResult result = gc_collect(spec);
     assert(result.status == GC_OK);
-    assert(result.reclaimed_ids.len() == 2);\n    assert(gc_id_in(result.reclaimed_ids, 0) && gc_id_in(result.reclaimed_ids, 1));
+    assert(result.reclaimed_ids.len() == 2);
+    assert(gc_id_in(result.reclaimed_ids, 0) && gc_id_in(result.reclaimed_ids, 1));
     assert(result.objects[1].secret_wiped);
 }
 
