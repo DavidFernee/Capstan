@@ -5,8 +5,9 @@ import unittest
 from dataclasses import dataclass
 from enum import Enum, auto
 
-MAX_MESSAGE = 1 << 20
+MAX_MESSAGE = 65532  # Wayland's 16-bit size field, rounded down to 4-byte alignment
 MAX_BUFFERED = 4 << 20
+MAX_POOL_BYTES = 128 << 20
 MAX_DIMENSION = 8192
 MAX_BUFFER_BYTES = 64 << 20
 UINT32_MAX = (1 << 32) - 1
@@ -166,11 +167,17 @@ class HostModel:
         if self.state is not State.CONFIGURED or self.acked_serial != self.configure_serial:
             raise ProtocolError("resize before configure acknowledgement")
         size = self.buffer_size(width, height)
-        # Keep old buffers only while the compositor owns them.
-        self.buffers = {k: b for k, b in self.buffers.items() if b.state is BufferState.OWNED}
-        self.generation += 1
+        # Keep old buffers only while the compositor owns them. Account for
+        # retained generations before changing state; a rejected resize is atomic.
+        retained = {k: b for k, b in self.buffers.items() if b.state is BufferState.OWNED}
+        retained_bytes = sum(b.byte_length for b in retained.values())
+        if retained_bytes > MAX_POOL_BYTES - 2 * size:
+            raise ProtocolError("aggregate buffer-pool budget exceeded")
+        next_generation = self.generation + 1
         for index in range(2):
-            self.buffers[(self.generation, index)] = Buffer(self.generation, index, size)
+            retained[(next_generation, index)] = Buffer(next_generation, index, size)
+        self.buffers = retained
+        self.generation = next_generation
         self.rendered_generation = None
 
     def render(self):
@@ -331,6 +338,18 @@ class ContractTests(unittest.TestCase):
             h.release(lease)
         with self.assertRaisesRegex(ProtocolError, "released lease"):
             h.release(FrameLease(999, 0))
+
+    def test_pool_budget_rejects_resize_atomically(self):
+        h = self.ready(4096, 4096)
+        h.acquire()
+        h.acquire()
+        generation = h.generation
+        keys = set(h.buffers)
+        with self.assertRaisesRegex(ProtocolError, "aggregate buffer-pool"):
+            h.resize(1, 1)
+        self.assertEqual(h.generation, generation)
+        self.assertEqual(set(h.buffers), keys)
+        self.assertIsNone(h.rendered_generation)
 
     def test_disconnect_invalidates_leases(self):
         h = self.ready()
