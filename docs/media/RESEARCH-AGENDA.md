@@ -209,6 +209,46 @@ engineering cost. No composite score may conceal a severe regression in one dime
   57(12), 2025:
   https://doi.org/10.1145/3742472
 
+
+## R8.9 — Distributed media graphs and collaborative rendering (deferred)
+
+**Problem.** Moving DSP or media graph stages across devices, processes or cloud workers
+introduces transport latency, jitter, clock drift, state migration, partial failure,
+privacy exposure and non-comparable deadline measurements. Generic DAG schedulers do
+not necessarily preserve block-synchronous audio semantics.
+
+**Question.** Can Halyard represent a portable, bounded graph partition with explicit
+state, clock, latency and trust contracts, and decide when remote execution is useful
+without violating end-to-end deadlines or privacy constraints?
+
+**Candidate contribution.** A graph-partition contract with serialisable node state,
+bounded block transport, explicit clock mapping, capability-limited remote workers,
+deterministic fallback and end-to-end cost accounting. This is deferred until local
+Shanty scheduling and Media Core contracts are mature.
+
+**Experiment.** Compare local, edge and remote partitions under measured RTT, jitter,
+loss, bandwidth variation and worker failure. Report end-to-end latency distributions,
+deadline misses, state-transfer cost, energy, privacy exposure and recovery behaviour.
+Measure all latencies at the same pipeline boundaries.
+
+**H9.** A contract-aware partitioner can identify workloads where distributed execution
+improves throughput or collaboration without violating declared latency, resource and
+privacy constraints.
+
 These are entry points, not a complete review. R8 must extend into real-time audio,
-clock synchronisation, OS scheduling, colour science, scientific imaging, ownership
-and formal refinement.
+clock synchronisation, OS scheduling, colour science, scientific imaging, ownership,
+distributed DSP and formal refinement.
+
+Additional starting points:
+- O. Chaplia and H. Klym, “A Review of Cloud-Based Audio Processing Using Directed
+  Acyclic Signal-Processing Graphs in Microservice Architectures,” 2026:
+  https://publications.lnu.edu.ua/collections/index.php/electronics/article/view/5277
+  (use as an emerging survey; independently verify venue and methods during review).
+- “Multimedia group and inter-stream synchronization techniques: A comparative study”:
+  https://doi.org/10.1016/j.ipm.2008.05.003
+- “Consistency and Standardization of Color in Medical Imaging: a Consensus Report”:
+  https://doi.org/10.1007/s10278-014-9721-0
+- Ross Bencina, “Realtime audio programming 101”:
+  https://w2.mat.ucsb.edu/240/A/2017/05/17/realtime.html
+  (engineering guidance, not a formal worst-case execution proof).
+
