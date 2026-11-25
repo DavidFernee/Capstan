@@ -318,7 +318,8 @@ test "CCAM x86-64 backend emits freestanding checked native assembly" {
         lowered.functions, lowered.entry_function, 100, 16);
     assert(native.ok && native.error == "");
     assert(ccam_x64_contains(native.assembly, ".globl _start"));
-    assert(ccam_x64_contains(native.assembly, "call " + ccam_x64_function_label(lowered.entry_function)));\n    assert(ccam_x64_contains(native.assembly, "call cap_fn_0"));
+    assert(ccam_x64_contains(native.assembly, "call " + ccam_x64_function_label(lowered.entry_function)));
+    assert(ccam_x64_contains(native.assembly, "call cap_fn_0"));
     assert(ccam_x64_contains(native.assembly, "syscall"));
     assert(ccam_x64_contains(native.assembly, "cap_max_steps: .quad 100"));
     assert(ccam_x64_contains(native.assembly, "cap_max_depth: .quad 16"));
