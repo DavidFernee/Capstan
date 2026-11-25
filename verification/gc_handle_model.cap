@@ -17,7 +17,9 @@ const int GCH_MAX_SLOTS = 65536;
 const int GCH_MAX_FIELDS = 4096;
 const int GCH_MAX_GENERATION = 0x7FFFFFFFFFFFFFFF;
 const int GCH_NO_CAPACITY = 8;
-const int GCH_INVALID_DESCRIPTOR = 9;\nconst int GCH_INVALID_FIELD = 10;\nconst int GCH_FIELD_KIND_MISMATCH = 11;
+const int GCH_INVALID_DESCRIPTOR = 9;
+const int GCH_INVALID_FIELD = 10;
+const int GCH_FIELD_KIND_MISMATCH = 11;
 
 struct GCHLayout {
     int descriptor_id;
