@@ -1174,3 +1174,5 @@ The first language-semantics work package is tracked in [F1-LANGUAGE-CONTRACT.md
 with research status in the [research agenda](research/PROGRAMMING-LANGUAGE-RESEARCH-AGENDA.md)
 and [research register](research/RESEARCH-REGISTER.md). F1 is currently a syntax-neutral
 draft; it does not alter the normative source reference or authorise dependent API expansion.
+
+The F1 prior-art synthesis is in [F1-RELATED-WORK.md](F1-RELATED-WORK.md); it proposes a factored-but-mutually-checked guarantee calculus as the primary experiment, not a settled language design.
