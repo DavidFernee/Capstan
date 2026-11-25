@@ -57,6 +57,17 @@ bool deadeye_mp4_track_children_range(
     return start >= 0 && end >= start && end <= bytes.len();
 }
 
+bool deadeye_mp4_track_range_bytes_valid(
+    List<int> bytes, int start, int end
+) {
+    if (bytes.len() > DEADEYE_MP4_MAX_INPUT_BYTES ||
+        !deadeye_mp4_track_children_range(bytes,start,end)) { return false; }
+    for (int i = start; i < end; i += 1) {
+        if (bytes[i] < 0 || bytes[i] > 255) { return false; }
+    }
+    return true;
+}
+
 struct DeadeyeMp4TrackHeader {
     bool ok;
     int track_id;
@@ -66,7 +77,7 @@ struct DeadeyeMp4TrackHeader {
 DeadeyeMp4TrackHeader deadeye_mp4_parse_tkhd(
     List<int> bytes, int start, int end
 ) {
-    if (!deadeye_mp4_track_children_range(bytes, start, end) ||
+    if (!deadeye_mp4_track_range_bytes_valid(bytes, start, end) ||
         end - start < 20) {
         return new DeadeyeMp4TrackHeader{ok:false,track_id:0,error:"truncated_tkhd"};
     }
@@ -101,7 +112,7 @@ struct DeadeyeMp4MediaHeader {
 DeadeyeMp4MediaHeader deadeye_mp4_parse_mdhd(
     List<int> bytes, int start, int end
 ) {
-    if (!deadeye_mp4_track_children_range(bytes, start, end) ||
+    if (!deadeye_mp4_track_range_bytes_valid(bytes, start, end) ||
         end - start < 24) {
         return new DeadeyeMp4MediaHeader{ok:false,timescale:0,error:"truncated_mdhd"};
     }
@@ -135,7 +146,7 @@ struct DeadeyeMp4Handler {
 DeadeyeMp4Handler deadeye_mp4_parse_hdlr(
     List<int> bytes, int start, int end
 ) {
-    if (!deadeye_mp4_track_children_range(bytes, start, end) ||
+    if (!deadeye_mp4_track_range_bytes_valid(bytes, start, end) ||
         end - start < 24 || bytes[start] != 0 ||
         bytes[start + 1] != 0 || bytes[start + 2] != 0 ||
         bytes[start + 3] != 0) {
@@ -169,6 +180,7 @@ DeadeyeMp4Handler deadeye_mp4_parse_hdlr(
 bool deadeye_mp4_validate_dinf(
     List<int> bytes, int start, int end
 ) {
+    if (!deadeye_mp4_track_range_bytes_valid(bytes,start,end)) { return false; }
     int at = start;
     int dref_count = 0;
     bool valid_dref = false;
@@ -365,10 +377,18 @@ DeadeyeMp4TrackParts deadeye_mp4_find_track_parts(
 DeadeyeMp4TrackResult deadeye_mp4_parse_trak(
     List<int> bytes, DeadeyeMp4Box trak, List<int> mdat_ranges
 ) {
-    if (!deadeye_mp4_track_box(trak,'t','r','a','k') ||
-        !deadeye_mp4_track_children_range(bytes,trak.payload_start,trak.end)) {
+    if (!deadeye_mp4_track_range_bytes_valid(bytes,0,bytes.len()) ||
+        trak.start < 0 || trak.start >= bytes.len()) {
+        return deadeye_mp4_track_error("invalid_trak_input");
+    }
+    DeadeyeMp4BoxResult actual = deadeye_mp4_box_read(
+        bytes,trak.start,bytes.len()
+    );
+    if (!actual.ok || actual.box.end != trak.end ||
+        !deadeye_mp4_track_box(actual.box,'t','r','a','k')) {
         return deadeye_mp4_track_error("invalid_trak_box");
     }
+    trak = actual.box;
     DeadeyeMp4TrackParts parts = deadeye_mp4_find_track_parts(bytes,trak);
     if (!parts.ok) { return deadeye_mp4_track_error(parts.error); }
 
