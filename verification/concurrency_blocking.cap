@@ -261,6 +261,13 @@ test "CB receive blocks and registers exactly one wait without moving ownership"
 test "CB send atomically wakes blocked receiver and commits channel ownership" {
     CBState before = cb_initial();
     CBTransition blocked = cb_receive(before);
+    assert(blocked.ok);
+    assert(blocked.state.producer_status == CB_TASK_RUNNABLE);
+    assert(blocked.state.message_live);
+    assert(blocked.state.message_owner == CB_OWNER_PRODUCER);
+    assert(!blocked.state.channel_closed);
+    assert(blocked.state.channel_count == 0);
+    assert(blocked.state.channel_capacity == 1);
     CBTransition sent = cb_send(blocked.state);
     assert(sent.ok);
     assert(sent.state.consumer_status == CB_TASK_RUNNABLE);
