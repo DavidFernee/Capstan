@@ -342,6 +342,10 @@ int bearing_units(Font f, int g) {
 }
 
 // Start and end of glyph g's data in the 'glyf' table, relative to the table.
+bool glyph_span_fits(int glyph_at, int glyph_end, int at, int needed) {
+    return font_span_fits(glyph_at, glyph_end - glyph_at, at, needed);
+}
+
 int glyph_start(Font f, int g) {
     if (g < 0 || g > f.num_glyphs) { f.r.ok = false; return -1; }
     int entry_size = 2;
@@ -371,9 +375,12 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     if (!r.ok || start < 0 || end < start || end > f.glyf_len) { return false; }
     if (end == start) { return true; }       // empty glyph, such as a space
     int at = f.t_glyf + start;
+    if (!glyph_span_fits(at, f.t_glyf + end, at, 10)) { return false; }
     int contours = r.i16(at);
     if (contours < 0) { return composite_outline(f, at, end + f.t_glyf, p, num, den, ox, oy, m, depth, budget); }
     int ep = at + 10;
+    if (contours > (end - 10) / 2) { return false; }
+    if (!glyph_span_fits(at, f.t_glyf + end, ep, 2 * contours + 2)) { return false; }
     if (contours > MAX_GLYPH_POINTS || contours > (end - 10) / 2) { return false; }
     int npts = 0;
     List<int> ends = new List<int>();
@@ -386,13 +393,17 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     if (npts > MAX_GLYPH_POINTS || !glyph_points_fit(budget[0], npts)) { return false; }
     budget[0] -= npts;
     int ins = ep + 2 * contours;
-    int pos = ins + 2 + r.u16(ins);
+    int instruction_bytes = r.u16(ins);
+    if (!r.ok || instruction_bytes > end - (ins - at) - 2) { return false; }
+    int pos = ins + 2 + instruction_bytes;
     List<int> flags = new List<int>();
     while (flags.len() < npts) {
+        if (!glyph_span_fits(at, f.t_glyf + end, pos, 1)) { return false; }
         int fl = r.u8(pos);
         pos += 1;
         flags.push(fl);
         if ((fl & 8) != 0) {
+            if (!glyph_span_fits(at, f.t_glyf + end, pos, 1)) { return false; }
             int rep = r.u8(pos);
             pos += 1;
             for (int k = 0; k < rep && flags.len() < npts; k += 1) { flags.push(fl); }
@@ -404,10 +415,12 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     for (int i = 0; i < npts; i += 1) {
         int fx2 = flags[i];
         if ((fx2 & 2) != 0) {
+            if (!glyph_span_fits(at, f.t_glyf + end, pos, 1)) { return false; }
             int dx = r.u8(pos);
             pos += 1;
             if ((fx2 & 16) != 0) { x += dx; } else { x -= dx; }
         } else if ((fx2 & 16) == 0) {
+            if (!glyph_span_fits(at, f.t_glyf + end, pos, 2)) { return false; }
             x += r.i16(pos);
             pos += 2;
         }
@@ -418,10 +431,12 @@ bool glyph_outline_budgeted(Font f, int g, Path p, int num, int den, int ox, int
     for (int j = 0; j < npts; j += 1) {
         int fy = flags[j];
         if ((fy & 4) != 0) {
+            if (!glyph_span_fits(at, f.t_glyf + end, pos, 1)) { return false; }
             int dy = r.u8(pos);
             pos += 1;
             if ((fy & 32) != 0) { y += dy; } else { y -= dy; }
         } else if ((fy & 32) == 0) {
+            if (!glyph_span_fits(at, f.t_glyf + end, pos, 2)) { return false; }
             y += r.i16(pos);
             pos += 2;
         }
@@ -493,7 +508,7 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
     int parts = 0;
     bool more = true;
     while (more) {
-        if (parts >= MAX_COMPOSITE_PARTS || !glyph_component_available(budget[1]) || pos + 4 > limit) { return false; }
+        if (parts >= MAX_COMPOSITE_PARTS || !glyph_component_available(budget[1]) || pos > limit || 4 > limit - pos) { return false; }
         parts += 1;
         budget[1] -= 1;
         int flags = r.u16(pos);
@@ -502,10 +517,12 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
         int dx = 0;
         int dy = 0;
         if ((flags & 1) != 0) {
+            if (pos > limit || 4 > limit - pos) { return false; }
             dx = r.i16(pos);
             dy = r.i16(pos + 2);
             pos += 4;
         } else {
+            if (pos > limit || 2 > limit - pos) { return false; }
             dx = r.u8(pos);
             dy = r.u8(pos + 1);
             if (dx >= 128) { dx -= 256; }
@@ -519,14 +536,17 @@ bool composite_outline(Font f, int at, int limit, Path p, int num, int den, int 
         int c = 0;
         int d = 16384;
         if ((flags & 8) != 0) {
+            if ((flags & (64 | 128)) != 0 || pos > limit || 2 > limit - pos) { return false; }
             a = r.i16(pos);
             d = a;
             pos += 2;
         } else if ((flags & 64) != 0) {
+            if ((flags & 128) != 0 || pos > limit || 4 > limit - pos) { return false; }
             a = r.i16(pos);
             d = r.i16(pos + 2);
             pos += 4;
         } else if ((flags & 128) != 0) {
+            if (pos > limit || 8 > limit - pos) { return false; }
             a = r.i16(pos);
             b = r.i16(pos + 2);
             c = r.i16(pos + 4);
