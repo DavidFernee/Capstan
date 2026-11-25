@@ -689,17 +689,17 @@ test "Deadeye presentation queue schedules variable-rate frames against a ration
             ));
             assert(queue.retained_bytes == 12);
             DeadeyePresentationTakeResult early =
-                deadeye_presentation_queue_take_due(queue, 39);
+                deadeye_presentation_queue_take_due(queue, -1);
             assert(early.ok && !early.available && queue.retained_bytes == 12);
             DeadeyePresentationTakeResult due =
-                deadeye_presentation_queue_take_due(queue, 40);
+                deadeye_presentation_queue_take_due(queue, 0);
             assert(due.ok && due.available && queue.retained_bytes == 8);
             if (let entry = due.entry) {
                 assert(entry.pts == 0 && entry.duration == 40);
                 assert(entry.frame.rgba[0] == 10);
             } else { assert(false); }
             DeadeyePresentationTakeResult second =
-                deadeye_presentation_queue_take_due(queue, 57);
+                deadeye_presentation_queue_take_due(queue, 40);
             assert(second.ok && second.available && queue.retained_bytes == 4);
             if (let entry = second.entry) {
                 assert(entry.pts == 40 && entry.duration == 17);
