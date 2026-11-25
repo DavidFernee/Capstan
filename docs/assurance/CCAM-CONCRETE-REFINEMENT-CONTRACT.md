@@ -220,3 +220,19 @@ Required terminal obligations:
 The existing `budgetedMachineStep_consumes_one` theorem establishes abstract budget consumption when dispatch is permitted, and `budgetedMachineStep_exhausted_before_instruction` establishes abstract exhaustion before instruction execution. Neither theorem alone relates the concrete mutable `steps` field or terminal payloads to the abstract result. That bridge remains an explicit proof obligation.
 
 This section refines the proof plan only. It does not add a theorem, execute a new proof, or upgrade the evidence classification of the current Lean results.
+
+
+## Reachability invariants required by the concrete state relation
+
+Inspection of `ccam_machine_create` and `ccam_machine_step` in the pinned concrete evaluator identifies additional invariants that the simulation theorem must state explicitly. The validated constructor initializes `pc = 0`, `steps = 0`, both return slots to zero, `halted = false`, `halt_has_value = false`, and empty trap code/detail. The constructor snapshots the instruction list. The theorem's initial-state relation must include these facts and the validated-program precondition; it must not quantify over arbitrary mutable `CCAMMachineState` values.
+
+For states reachable by repeated calls to `ccam_machine_step` from that constructor, the proof must establish:
+
+- A non-halted state has no terminal trap code/detail and no return payload; the return slots remain their initialized neutral values until a successful `CCAM_OP_RET`.
+- A successful value return writes exactly one typed payload, clears the other typed payload, sets `halted` and `halt_has_value`, and leaves PC at the dispatched return instruction.
+- Void return sets `halted`, clears `halt_has_value`, and leaves the initialized return slots unchanged.
+- A dynamic trap uses `ccam_machine_trap`, which sets `halted`, clears `halt_has_value`, writes the trap code and clears `trap_detail`; it does not itself clear either return slot. Thus the “both return slots are neutral on trap” property follows only from the reachable-state invariant that no return can have occurred before a trap (a return halts execution), plus constructor initialization. It is not a local postcondition of the trap helper for arbitrary states.
+- An explicit trap sets `trap_code = "explicit_trap"` and preserves its validated reason in `trap_detail`; it likewise leaves return slots unchanged.
+- An already-halted state is inert. Step-limit exhaustion occurs before PC validation, fetch and increment; invalid-PC trapping also occurs before increment. All post-fetch instruction outcomes increment `steps` exactly once, including dynamic traps and terminal instructions.
+
+This exposes a useful proof boundary: prove the constructor/reachability invariant first, then prove the transition simulation only for states satisfying it. Do not state payload clearing as an unconditional property of `ccam_machine_trap`. External mutation of the returned concrete state is outside this transition-system theorem and must be excluded from the theorem's execution model or handled by a stronger encapsulation argument.
