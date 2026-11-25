@@ -299,8 +299,9 @@ test "CB close wakes blocked receiver which observes EOF on resumption" {
 }
 
 test "CB close preserves committed message for drain before EOF" {
-    CBState sent = cb_send(cb_initial()).state;
-    CBTransition closed = cb_close(sent);
+    CBTransition send_result = cb_send(cb_initial());
+    assert(send_result.ok);
+    CBTransition closed = cb_close(send_result.state);
     assert(closed.ok && closed.state.channel_count == 1);
     CBTransition received = cb_receive(closed.state);
     assert(received.ok && received.state.consumer_result == CB_RESULT_MESSAGE);
