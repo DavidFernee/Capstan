@@ -1,6 +1,6 @@
 # CCAM Native Backend: Linux x86-64
 
-**Status:** prototype implementation in PR #198; not yet integrated into the production compiler CLI  
+**Status:** prototype backend in PR #198 and experimental `capstan native` wrapper in PR #200; not yet integrated into the production compiler's default build path  
 **Input:** validated multi-function CCAM v0.1 scalar subset  
 **Target:** freestanding Linux x86-64 ELF, System V AMD64 calling convention, GNU assembler syntax
 
@@ -61,3 +61,8 @@ Next work:
 4. implement the minimum native runtime and output syscall interface for a C-free Hello World;
 5. wire a target-selecting native build command into the compiler CLI and keep generated-C as an explicit compatibility backend only;
 6. replace the C-dependent bootstrap and runtime, then demonstrate a reproducible self-hosting chain with no C compiler/runtime in the trusted path.
+
+
+## 6. User-facing prototype command
+
+PR #200 adds `bin/capstan native file.cap -o program` on Linux x86-64. The wrapper compiles a temporary Capstan driver through the existing C-dependent compiler/runtime; that driver loads and checks the source, lowers it, validates CCAM, and emits assembly. The wrapper then invokes GNU `as` and `ld` directly and audits the ELF for no interpreter and no undefined symbols. This removes the C compiler and C runtime from the target-program compilation/link/run path, but not from the compiler driver or bootstrap. The ordinary `build` and `run` commands still use the C backend.
