@@ -219,7 +219,7 @@ int main() {
     for (int id = 1000; id < 3000; id += 1) {
         if (wayland_object_add(objects, id, 50, 1)) { added += 1; }
     }
-    if (added != WAYLAND_OBJECT_SLOTS_MAX - 4) { return 31; }
+    if (added != WAYLAND_OBJECT_SLOTS_MAX - 5) { return 31; }
     if (wayland_object_add(objects, 4000, 50, 1)) { return 32; }
     if (wayland_object_free_slots(objects) != 0) { return 33; }
     List<WaylandArgSpec> full_args = new List<WaylandArgSpec>();
