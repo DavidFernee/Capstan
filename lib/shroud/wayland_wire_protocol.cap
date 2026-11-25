@@ -268,8 +268,9 @@ WaylandProtocolResult wayland_validate_message(Tainted bytes, WaylandFrameHeader
                         && referenced.interface_id != arg.interface_id)) { return wayland_protocol_error(); }
                 }
             } else {
-                if (word.value == 0 || arg.interface_id <= 0 || arg.version <= 0
-                    || wayland_object_index(objects, word.value) >= 0) { return wayland_protocol_error(); }
+                if (word.value == 0 || arg.interface_id <= 0 || arg.version <= 0) {
+                    return wayland_protocol_error();
+                }
                 for (int j = 0; j < pending_ids.len(); j += 1) {
                     if (pending_ids[j] == word.value) { return wayland_protocol_error(); }
                 }
