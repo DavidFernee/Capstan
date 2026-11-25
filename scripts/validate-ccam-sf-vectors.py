@@ -91,11 +91,12 @@ def check_outcome(record, where: str) -> None:
     outcome = record.get("outcome")
     require(isinstance(outcome, dict), f"{where}: outcome is required")
     kind = outcome.get("kind")
-    require(kind in {"halt", "halt_void", "trap", "not_executed"},
+    require(isinstance(kind, str) and kind in {"halt", "halt_void", "trap", "not_executed"},
             f"{where}: unsupported or missing outcome kind")
     if kind == "halt":
         value = outcome.get("value")
         require(isinstance(value, dict) and set(value) == {"type", "value"}
+                and isinstance(value.get("type"), str)
                 and value["type"] in {"int", "bool"},
                 f"{where}: halt requires a typed integer or boolean value")
         if value["type"] == "int":
@@ -258,9 +259,11 @@ def main() -> int:
 
                 for pc, instruction in enumerate(vector["instructions"]):
                     iw = f"{where}.instructions[{pc}]"
+                    expected_record = vector.get("expected")
                     normative_disposition = (
-                        vector["expected"].get("normative_validation")
-                        if group_name == "vectors" else "accept"
+                        expected_record.get("normative_validation")
+                        if group_name == "vectors" and isinstance(expected_record, dict)
+                        else ("accept" if group_name == "out_of_profile" else None)
                     )
                     check_instruction(
                         instruction, vector["register_types"], len(vector["instructions"]),
@@ -344,7 +347,8 @@ def main() -> int:
         walk(data)
         print(f"CCAM-SF-P corpus: {total} unique vectors; strict JSON, schema, trace and signed-64 checks passed")
         return 0
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError,
+            TypeError, KeyError, AttributeError) as exc:
         print(f"CCAM-SF-P corpus validation failed: {exc}", file=sys.stderr)
         return 1
 
