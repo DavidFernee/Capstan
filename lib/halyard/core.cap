@@ -852,3 +852,21 @@ test "Halyard checked multiplication rejects signed overflow in every sign quadr
     assert(!halyard_checked_mul(-HALYARD_I64_MAX, -2).ok);
     assert(!halyard_checked_mul(2, HALYARD_I64_MAX).ok);
 }
+
+
+test "Halyard checked multiplication covers signed boundary cases" {
+    HalyardCheckedIntResult max_times_one = halyard_checked_mul(HALYARD_I64_MAX, 1);
+    HalyardCheckedIntResult min_times_one = halyard_checked_mul(HALYARD_I64_MIN, 1);
+    HalyardCheckedIntResult max_times_two = halyard_checked_mul(HALYARD_I64_MAX, 2);
+    HalyardCheckedIntResult min_times_negative_one = halyard_checked_mul(HALYARD_I64_MIN, -1);
+    HalyardCheckedIntResult zero_times_min = halyard_checked_mul(0, HALYARD_I64_MIN);
+    HalyardCheckedIntResult near_square = halyard_checked_mul(-3037000499, -3037000499);
+    HalyardCheckedIntResult far_square = halyard_checked_mul(-3037000500, -3037000500);
+    assert(max_times_one.ok && max_times_one.value == HALYARD_I64_MAX);
+    assert(min_times_one.ok && min_times_one.value == HALYARD_I64_MIN);
+    assert(!max_times_two.ok && max_times_two.error == "overflow");
+    assert(!min_times_negative_one.ok && min_times_negative_one.error == "overflow");
+    assert(zero_times_min.ok && zero_times_min.value == 0);
+    assert(near_square.ok);
+    assert(!far_square.ok && far_square.error == "overflow");
+}
