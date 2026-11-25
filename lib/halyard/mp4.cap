@@ -368,8 +368,10 @@ List<int> deadeye_mp4_test_minimal_file() {
     mvhd_payload[14] = 3; mvhd_payload[15] = 232; // timescale = 1000, big-endian at payload offset 12
     List<int> mvhd = new List<int>();
     deadeye_mp4_test_push_box(mvhd, 'm', 'v', 'h', 'd', mvhd_payload);
+    List<int> trak_payload = new List<int>();
+    deadeye_mp4_test_push_box(trak_payload, 't', 'k', 'h', 'd', new List<int>());
     List<int> trak = new List<int>();
-    deadeye_mp4_test_push_box(trak, 't', 'k', 'h', 'd', new List<int>());
+    deadeye_mp4_test_push_box(trak, 't', 'r', 'a', 'k', trak_payload);
     List<int> moov_payload = new List<int>();
     for (int i = 0; i < mvhd.len(); i += 1) { moov_payload.push(mvhd[i]); }
     for (int i = 0; i < trak.len(); i += 1) { moov_payload.push(trak[i]); }
