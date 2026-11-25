@@ -10,6 +10,10 @@
 const int WAYLAND_HEADER_BYTES = 8;
 const int WAYLAND_MAX_FRAME_BYTES = 65532;
 
+bool wayland_frame_size_valid(int size) {
+    return size >= WAYLAND_HEADER_BYTES && size <= WAYLAND_MAX_FRAME_BYTES && size % 4 == 0;
+}
+
 int wayland_u32_le(List<int> bytes, int at) {
     return (bytes[at] & 0xFF) | ((bytes[at + 1] & 0xFF) << 8)
         | ((bytes[at + 2] & 0xFF) << 16) | ((bytes[at + 3] & 0xFF) << 24);
@@ -42,7 +46,7 @@ List<int> wayland_frame_header(List<int> bytes, int offset) {
     int size = (packed >>> 16) & 0xFFFF;
     int opcode = packed & 0xFFFF;
     if (object_id == 0) { return wayland_bad_frame(); }
-    if (size < WAYLAND_HEADER_BYTES || size > WAYLAND_MAX_FRAME_BYTES || size % 4 != 0) {
+    if (!wayland_frame_size_valid(size)) {
         return wayland_bad_frame();
     }
     if (remaining < size) { return wayland_incomplete_frame(object_id, size, opcode); }

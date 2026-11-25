@@ -61,6 +61,11 @@ int main() {
     non_octet[0] = 256;
     r = wayland_frame_header(non_octet, 0);
     if (r[0] != -1) { return 14; }
-    println("Wayland framing: 15 adversarial assertions passed");
+    // Exhaust the entire 16-bit declared-size domain against the size predicate.
+    for (int size = 0; size <= 65535; size += 1) {
+        bool want = size >= 8 && size <= 65532 && size % 4 == 0;
+        if (wayland_frame_size_valid(size) != want) { return 16; }
+    }
+    println("Wayland framing: 16 adversarial assertions passed");
     return 0;
 }
