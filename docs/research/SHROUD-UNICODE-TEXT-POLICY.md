@@ -104,7 +104,9 @@ fail-fast exit path (status 101). Frame preflight checks text, value, accessibil
 label and hint lengths, the aggregate frame budget, and the tighter 64 KiB initial
 text-field value limit, before code-point decoding or layout allocation. The shared `utf8_decode_into()` primitive also enforces the byte bound, so direct
 `List<int>` decoder callers cannot bypass it. The helpers retain independent defensive
-checks for callers outside layout. Regression coverage includes just below the limit, the exact limit,
+checks for callers outside layout. Text-field insertion uses subtraction-based admission
+rather than adding attacker-controlled event length to the existing value, avoiding signed
+integer overflow before the 64 KiB field cap is applied. Regression coverage includes just below the limit, the exact limit,
 and a hostile suffix one byte beyond it, for trusted and Tainted inputs, plus
 oversized per-view text, value, label and hint cases.
 
