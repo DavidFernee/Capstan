@@ -187,13 +187,13 @@ struct Ui {
         List<string> old_scroll_ids = self.scroll.keys();
         for (int i = 0; i < old_scroll_ids.len(); i += 1) {
             bool live = false;
-            if (let present = live_scroll_ids.get(old_scroll_ids[i])) { live = true; }
+            if (let present = live_scroll_ids.get(old_scroll_ids[i])) { live = present == 1; }
             if (!live) { self.scroll.remove(old_scroll_ids[i]); }
         }
         List<string> old_caret_ids = self.caret.keys();
         for (int i = 0; i < old_caret_ids.len(); i += 1) {
             bool live = false;
-            if (let present = live_caret_ids.get(old_caret_ids[i])) { live = true; }
+            if (let present = live_caret_ids.get(old_caret_ids[i])) { live = present == 1; }
             if (!live) { self.caret.remove(old_caret_ids[i]); }
         }
         if (!focus_alive) { self.focus = ""; }
