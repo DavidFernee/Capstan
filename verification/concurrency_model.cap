@@ -36,6 +36,7 @@ const int CCM_ACT_CANCEL_PRODUCER = 9;
 const int CCM_ACT_COMPLETE_SCOPE = 10;
 const int CCM_ACT_CLOSE_CHANNEL = 11;
 const int CCM_ACT_CANCEL_CONSUMER = 12;
+const int CCM_ACT_REQUEST_SCOPE_CANCEL = 13;
 
 struct CCMState {
     int root_status;
@@ -57,6 +58,7 @@ struct CCMState {
     int max_live_bytes;
     int steps;
     int max_steps;
+    bool scope_cancel_requested;
     bool scope_closed;
 }
 
@@ -87,6 +89,7 @@ CCMState ccm_initial_state() {
         max_live_bytes: 1,
         steps: 0,
         max_steps: 12,
+        scope_cancel_requested: false,
         scope_closed: false
     };
 }
@@ -109,7 +112,8 @@ bool ccm_task_terminal(int status) {
 // ownership, handle/task consistency, and scope closure.
 bool ccm_invariant(CCMState state) {
     if (state.root_status != CCM_TASK_RUNNABLE &&
-        state.root_status != CCM_TASK_DONE) { return false; }
+        state.root_status != CCM_TASK_DONE &&
+        state.root_status != CCM_TASK_CANCELLED) { return false; }
     if (state.producer_status != CCM_TASK_NEW &&
         state.producer_status != CCM_TASK_RUNNABLE &&
         state.producer_status != CCM_TASK_DONE &&
@@ -173,7 +177,9 @@ bool ccm_invariant(CCMState state) {
     if (state.consumer_handle == CCM_HANDLE_CONSUMED &&
         !ccm_task_terminal(state.consumer_status)) { return false; }
 
-    if (state.scope_closed != (state.root_status == CCM_TASK_DONE)) { return false; }
+    if (state.scope_closed != ccm_task_terminal(state.root_status)) { return false; }
+    if (state.root_status == CCM_TASK_DONE && state.scope_cancel_requested) { return false; }
+    if (state.root_status == CCM_TASK_CANCELLED && !state.scope_cancel_requested) { return false; }
     if (state.scope_closed) {
         if (!ccm_task_terminal(state.producer_status) ||
             !ccm_task_terminal(state.consumer_status)) { return false; }
@@ -354,6 +360,15 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
         return ccm_accept(next);
     }
 
+    if (action == CCM_ACT_REQUEST_SCOPE_CANCEL) {
+        if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE ||
+            before.scope_cancel_requested) {
+            return ccm_reject(before, "scope_cancellation_already_requested_or_invalid_actor");
+        }
+        next.scope_cancel_requested = true;
+        return ccm_accept(next);
+    }
+
     if (action == CCM_ACT_COMPLETE_SCOPE) {
         if (actor != 0 || before.root_status != CCM_TASK_RUNNABLE) {
             return ccm_reject(before, "invalid_scope_completion");
@@ -371,7 +386,8 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             before.live_bytes != 0 || before.buffered_bytes != 0) {
             return ccm_reject(before, "scope_has_live_resources");
         }
-        next.root_status = CCM_TASK_DONE;
+        next.root_status = before.scope_cancel_requested ?
+            CCM_TASK_CANCELLED : CCM_TASK_DONE;
         next.scope_closed = true;
         return ccm_accept(next);
     }
@@ -416,6 +432,7 @@ bool ccm_same_state(CCMState a, CCMState b) {
         a.max_live_bytes == b.max_live_bytes &&
         a.steps == b.steps &&
         a.max_steps == b.max_steps &&
+        a.scope_cancel_requested == b.scope_cancel_requested &&
         a.scope_closed == b.scope_closed;
 }
 
@@ -470,7 +487,7 @@ CCMExploreResult ccm_explore(int max_states) {
 
         for (int actor = 0; actor < 3; actor += 1) {
             for (int action = CCM_ACT_SPAWN_PRODUCER;
-                 action <= CCM_ACT_CANCEL_CONSUMER; action += 1) {
+                 action <= CCM_ACT_REQUEST_SCOPE_CANCEL; action += 1) {
                 CCMTransition transition = ccm_step(current, actor, action);
                 if (!transition.ok) { continue; }
 
@@ -783,7 +800,7 @@ test "CCM closed channel can drain an already committed message" {
     assert(ccm_invariant(state) && state.scope_closed);
 }
 
-test "CCM consumer cancellation drops channel-owned message and closes channel" {
+test "CCM consumer cancellation drops channel-owned message but leaves channel closure to its owner" {
     CCMState state = ccm_initial_state();
     state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
     state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
@@ -848,4 +865,40 @@ test "CCM structured scope refuses to complete with an open channel" {
     state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
     state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
     assert(ccm_invariant(state) && state.scope_closed);
+}
+
+
+test "CCM parent cancellation is a request, not premature scope destruction" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_REQUEST_SCOPE_CANCEL);
+    assert(state.scope_cancel_requested && !state.scope_closed);
+    assert(state.producer_status == CCM_TASK_RUNNABLE);
+    assert(state.consumer_status == CCM_TASK_RUNNABLE);
+
+    // Structured cancellation is cooperative: each child reaches its
+    // cancellation cleanup, and the owner closes the channel explicitly.
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state));
+    assert(state.root_status == CCM_TASK_CANCELLED && state.scope_closed);
+}
+
+test "CCM scope cancellation cannot complete while child handles remain live" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_REQUEST_SCOPE_CANCEL);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    CCMTransition premature = ccm_step(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(!premature.ok);
+    assert(premature.error == "scope_has_live_descendants_or_handles");
+    assert(!premature.state.scope_closed);
 }
