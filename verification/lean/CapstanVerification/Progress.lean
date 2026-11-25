@@ -50,7 +50,11 @@ inductive BoundedExecutionResult (n m : Nat) (types : RegTypes n) where
   | haltVoid
   | trap (reason : Trap)
 
-/-- Fuel-bounded evaluator; exhausting proof fuel is not a CCAM machine trap. -/
+/-- Meta-fuel-bounded evaluator used to make Lean execution structurally recursive.
+Exhausting this recursion fuel is not a CCAM machine trap. The separate
+`budgetedMachineStep` below models the normative instruction budget: it
+consumes one step before each instruction, traps before executing when the
+budget is exhausted, and charges a step to instructions that halt or trap. -/
 def runFuel {n m : Nat} {types : RegTypes n}
     (program : FiniteProgram n m types) :
     Nat → MachineState n m types → BoundedExecutionResult n m types
