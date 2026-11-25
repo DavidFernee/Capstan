@@ -562,9 +562,9 @@ void test_scroll(Tally t, Ui ui) {
     // The accessibility snapshot must mirror the same scroll clipping as the painter.
     if (let tree = a11y_tree(ui)) {
         string snapshot = a11y_json(tree);
-        expect(t, !contains(snapshot, "\\\"id\\\":\\\"item0\\\""),
+        expect(t, !contains(snapshot, "\"id\":\"item0\""),
             "scroll: fully clipped controls are absent from accessibility tree", snapshot);
-        expect(t, contains(snapshot, "\\\"id\\\":\\\"item39\\\""),
+        expect(t, contains(snapshot, "\"id\":\"item39\""),
             "scroll: visible controls remain in accessibility tree", snapshot);
     } else {
         expect(t, false, "scroll: accessibility tree exists after scrolling", "none");
