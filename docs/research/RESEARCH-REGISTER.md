@@ -209,13 +209,18 @@ implementation and proof fragments into tightly scoped, reproducible claims.
 
 #### R8 implementation note — Halyard MC1 prototype (2026-11-25)
 
-The Halyard working branch now contains a first Capstan-native prototype in
-`lib/halyard/core.cap`: an in-memory validated bounded byte source and copy-on-commit bounded sink,
-a five-dimensional sequential aggregate ledger, and rational timebase construction and
-timestamp rescaling with explicit rounding. Twenty-five Capstan `test` declarations are
-colocated with the implementation, including exhaustive small-state checks for exact-read
-boundaries, the 3^5 resource-admission state space, per-dimension release underflow, sink
-failure atomicity, rational rescaling, rounding and signed multiplication boundaries.
+The Halyard working branch now contains Capstan-native Core prototypes in
+`lib/halyard/core.cap`: a validated bounded byte source, copy-on-commit bounded sink,
+five-dimensional sequential aggregate ledger and rational timebase/timestamp rescaling
+with explicit rounding. Twenty-five Core `test` declarations are colocated with the
+implementation, including exhaustive small-state checks for exact-read boundaries, the
+3^5 resource-admission state space, per-dimension release underflow, sink failure
+atomicity, rational rescaling, rounding and signed multiplication boundaries.
+
+Shanty's first audio vertical slice is implemented in `lib/halyard/shanty.cap`: a bounded
+RIFF/WAVE PCM parser and integer decoder for 8/16/24/32-bit samples, with nine colocated
+Capstan tests. The implementation has a strict 8 MiB/1,024-chunk profile and no device
+playback, capture, compressed codec or ledger-coupled sample allocation.
 No Halyard-specific shell, Python, C, C++ or other-language test source is added. The
 detailed contract and limitations are recorded in `docs/media/CORE-PRIMITIVES.md`.
 
