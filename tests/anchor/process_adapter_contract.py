@@ -627,7 +627,7 @@ class ContractTests(unittest.TestCase):
 
     def test_json_nesting_is_bounded(self):
         body = b'{"jsonrpc":"2.0","method":"x","params":' + b'[' * (MAX_JSON_DEPTH + 1) + b'0' + b']' * (MAX_JSON_DEPTH + 1) + b'}'
-        raw = b"Content-Length: " + str(len(body)).encode("ascii") + b"\\r\\n\\r\\n" + body
+        raw = b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n\r\n" + body
         with self.assertRaises(ContractError):
             BoundedFrameDecoder().feed(raw)
 
