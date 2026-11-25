@@ -53,6 +53,16 @@ BLTxnState bl_txn_initial(int operation_budget) {
     };
 }
 
+BLTxnState bl_txn_copy_state(BLTxnState source) {
+    return new BLTxnState{
+        phase: source.phase,
+        remaining_operations: source.remaining_operations,
+        commit_record_durable: source.commit_record_durable,
+        writes_visible: source.writes_visible,
+        acknowledged: source.acknowledged
+    };
+}
+
 BLTxnTransition bl_txn_reject(BLTxnState state, string error) {
     return new BLTxnTransition{
         accepted: false,
@@ -72,85 +82,86 @@ BLTxnTransition bl_txn_accept(BLTxnState state) {
 // State transition checks are independent of callers. A rejected operation
 // returns the original state unchanged; callers cannot partially apply it.
 BLTxnTransition bl_txn_step(BLTxnState state, int action) {
+    BLTxnState next = bl_txn_copy_state(state);
     if (action == BL_ACTION_BEGIN) {
-        if (state.phase != BL_PHASE_NEW || state.remaining_operations < 0) {
+        if (next.phase != BL_PHASE_NEW || next.remaining_operations < 0) {
             return bl_txn_reject(state, "invalid_begin");
         }
-        state.phase = BL_PHASE_ACTIVE;
-        return bl_txn_accept(state);
+        next.phase = BL_PHASE_ACTIVE;
+        return bl_txn_accept(next);
     }
 
     if (action == BL_ACTION_OPERATION) {
-        if (state.phase != BL_PHASE_ACTIVE) {
+        if (next.phase != BL_PHASE_ACTIVE) {
             return bl_txn_reject(state, "operation_outside_active");
         }
-        if (state.remaining_operations <= 0) {
+        if (next.remaining_operations <= 0) {
             return bl_txn_reject(state, "transaction_budget_exhausted");
         }
-        state.remaining_operations -= 1;
-        return bl_txn_accept(state);
+        next.remaining_operations -= 1;
+        return bl_txn_accept(next);
     }
 
     if (action == BL_ACTION_PREPARE) {
-        if (state.phase != BL_PHASE_ACTIVE) {
+        if (next.phase != BL_PHASE_ACTIVE) {
             return bl_txn_reject(state, "prepare_outside_active");
         }
-        state.phase = BL_PHASE_PREPARING;
-        return bl_txn_accept(state);
+        next.phase = BL_PHASE_PREPARING;
+        return bl_txn_accept(next);
     }
 
     if (action == BL_ACTION_VALIDATION_FAIL) {
-        if (state.phase != BL_PHASE_PREPARING) {
+        if (next.phase != BL_PHASE_PREPARING) {
             return bl_txn_reject(state, "validation_outside_preparing");
         }
-        state.phase = BL_PHASE_ABORTING;
-        return bl_txn_accept(state);
+        next.phase = BL_PHASE_ABORTING;
+        return bl_txn_accept(next);
     }
 
     if (action == BL_ACTION_COMMIT_DECISION) {
-        if (state.phase != BL_PHASE_PREPARING ||
-            state.commit_record_durable || state.writes_visible) {
+        if (next.phase != BL_PHASE_PREPARING ||
+            next.commit_record_durable || next.writes_visible) {
             return bl_txn_reject(state, "invalid_commit_decision");
         }
-        state.phase = BL_PHASE_COMMIT_DECIDED;
-        return bl_txn_accept(state);
+        next.phase = BL_PHASE_COMMIT_DECIDED;
+        return bl_txn_accept(next);
     }
 
     if (action == BL_ACTION_DURABLE_COMMIT) {
-        if (state.phase != BL_PHASE_COMMIT_DECIDED) {
+        if (next.phase != BL_PHASE_COMMIT_DECIDED) {
             return bl_txn_reject(state, "durability_without_commit_decision");
         }
-        state.commit_record_durable = true;
-        state.writes_visible = true;
-        state.phase = BL_PHASE_DURABLE_COMMITTED;
-        return bl_txn_accept(state);
+        next.commit_record_durable = true;
+        next.writes_visible = true;
+        next.phase = BL_PHASE_DURABLE_COMMITTED;
+        return bl_txn_accept(next);
     }
 
     if (action == BL_ACTION_ACKNOWLEDGE) {
-        if (state.phase != BL_PHASE_DURABLE_COMMITTED ||
-            !state.commit_record_durable || !state.writes_visible) {
+        if (next.phase != BL_PHASE_DURABLE_COMMITTED ||
+            !next.commit_record_durable || !next.writes_visible) {
             return bl_txn_reject(state, "acknowledgement_before_durable_commit");
         }
-        state.acknowledged = true;
-        return bl_txn_accept(state);
+        next.acknowledged = true;
+        return bl_txn_accept(next);
     }
 
     if (action == BL_ACTION_REQUEST_ABORT) {
-        if (state.phase != BL_PHASE_ACTIVE &&
-            state.phase != BL_PHASE_PREPARING) {
+        if (next.phase != BL_PHASE_ACTIVE &&
+            next.phase != BL_PHASE_PREPARING) {
             return bl_txn_reject(state, "abort_after_commit_decision");
         }
-        state.phase = BL_PHASE_ABORTING;
-        return bl_txn_accept(state);
+        next.phase = BL_PHASE_ABORTING;
+        return bl_txn_accept(next);
     }
 
     if (action == BL_ACTION_FINISH_ABORT) {
-        if (state.phase != BL_PHASE_ABORTING || state.writes_visible ||
-            state.commit_record_durable) {
+        if (next.phase != BL_PHASE_ABORTING || next.writes_visible ||
+            next.commit_record_durable) {
             return bl_txn_reject(state, "invalid_abort_completion");
         }
-        state.phase = BL_PHASE_ABORTED;
-        return bl_txn_accept(state);
+        next.phase = BL_PHASE_ABORTED;
+        return bl_txn_accept(next);
     }
 
     return bl_txn_reject(state, "unknown_transaction_action");
@@ -272,6 +283,17 @@ bool bl_storage_invariant(BLStorageState state) {
     return true;
 }
 
+BLStorageState bl_storage_copy_state(BLStorageState source) {
+    return new BLStorageState{
+        next_lsn: source.next_lsn,
+        durable_lsn: source.durable_lsn,
+        page_lsn: source.page_lsn,
+        page_persisted: source.page_persisted,
+        commit_lsn: source.commit_lsn,
+        acknowledged: source.acknowledged
+    };
+}
+
 BLStorageTransition bl_storage_reject(BLStorageState state, string error) {
     return new BLStorageTransition{
         accepted: false,
@@ -292,49 +314,50 @@ BLStorageTransition bl_storage_step(BLStorageState state, int action, int argume
     if (!bl_storage_invariant(state)) {
         return bl_storage_reject(state, "invalid_prior_storage_state");
     }
+    BLStorageState next = bl_storage_copy_state(state);
 
     if (action == BL_STORAGE_APPEND_UPDATE) {
-        if (argument != 0 || state.acknowledged) {
+        if (argument != 0 || next.acknowledged) {
             return bl_storage_reject(state, "invalid_update_append");
         }
-        state.next_lsn += 1;
-        return bl_storage_accept(state);
+        next.next_lsn += 1;
+        return bl_storage_accept(next);
     }
 
     if (action == BL_STORAGE_APPEND_COMMIT) {
-        if (argument != 0 || state.commit_lsn != 0 || state.acknowledged) {
+        if (argument != 0 || next.commit_lsn != 0 || next.acknowledged) {
             return bl_storage_reject(state, "invalid_commit_append");
         }
-        state.next_lsn += 1;
-        state.commit_lsn = state.next_lsn;
-        return bl_storage_accept(state);
+        next.next_lsn += 1;
+        next.commit_lsn = next.next_lsn;
+        return bl_storage_accept(next);
     }
 
     if (action == BL_STORAGE_FLUSH_LOG) {
-        if (argument < state.durable_lsn || argument > state.next_lsn) {
+        if (argument < next.durable_lsn || argument > next.next_lsn) {
             return bl_storage_reject(state, "invalid_log_flush_target");
         }
-        state.durable_lsn = argument;
-        return bl_storage_accept(state);
+        next.durable_lsn = argument;
+        return bl_storage_accept(next);
     }
 
     if (action == BL_STORAGE_FLUSH_PAGE) {
-        if (argument <= 0 || argument > state.next_lsn ||
-            argument > state.durable_lsn) {
+        if (argument <= 0 || argument > next.next_lsn ||
+            argument > next.durable_lsn) {
             return bl_storage_reject(state, "write_ahead_log_order_violation");
         }
-        state.page_lsn = argument;
-        state.page_persisted = true;
-        return bl_storage_accept(state);
+        next.page_lsn = argument;
+        next.page_persisted = true;
+        return bl_storage_accept(next);
     }
 
     if (action == BL_STORAGE_ACK_COMMIT) {
-        if (state.commit_lsn <= 0 ||
-            state.durable_lsn < state.commit_lsn) {
+        if (next.commit_lsn <= 0 ||
+            next.durable_lsn < next.commit_lsn) {
             return bl_storage_reject(state, "acknowledgement_before_log_durable");
         }
-        state.acknowledged = true;
-        return bl_storage_accept(state);
+        next.acknowledged = true;
+        return bl_storage_accept(next);
     }
 
     return bl_storage_reject(state, "unknown_storage_action");
