@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+<title id="title">Capstan — provisional mark</title><desc id="desc">A swept course line crossing a fixed bearing, suggesting controlled motion and navigation.</desc>
+<g fill="none" stroke="#DCEAF2" stroke-width="13" stroke-linecap="square" stroke-linejoin="miter">
+<path d="M35 164 91 75 220 51 142 116 62 202"/>
+<path d="M91 75 126 111 220 51"/>
+</g><circle cx="126" cy="111" r="8" fill="#39BFE8"/>
+</svg>
