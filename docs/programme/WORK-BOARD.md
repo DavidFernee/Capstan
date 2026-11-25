@@ -54,7 +54,7 @@ These are candidates for immediate pull after the worker checks current issue st
 | Priority | Pull card | Existing issue | Acceptance focus | Dependencies / caution |
 |---|---|---|---|---|
 | P0 | Run canonical SF-P vectors against the Capstan evaluator | [#269](https://github.com/DavidFernee/Capstan/issues/269) | Same versioned corpus, deterministic outcomes, explicit expected traps and budgets | Coordinate with [#243](https://github.com/DavidFernee/Capstan/issues/243) and open PRs #245/#256/#258/#266; do not duplicate vector definitions |
-| P0 | Close implementation-linked CCAM proof obligations | [#235](https://github.com/DavidFernee/Capstan/issues/235) | Exact model/spec trace, named refinement relation, proof/test evidence and explicit unproved boundary | Coordinate with formal PRs #216/#255/#262; theorem claims limited to covered fragment |
+| P0 | Close implementation-linked CCAM proof obligations | [#235](https://github.com/DavidFernee/Capstan/issues/235) | Exact model/spec trace, named refinement relation, proof/test evidence and explicit unproved boundary | Coordinate with #255/#262; PR #216 is merged and contributes the mathematical native register-file bridge. Theorem claims remain limited to the covered fragment |
 | P0 | Rebuild machine-readable claims/evidence manifest | [#261](https://github.com/DavidFernee/Capstan/issues/261) | Machine-readable claim IDs, commit/evidence links, UNKNOWN handling, CI validation | Must align with [#252](https://github.com/DavidFernee/Capstan/issues/252) and V1 scorecard |
 | P0 | Establish safe-profile and release evidence gates | [#252](https://github.com/DavidFernee/Capstan/issues/252) | Gate definitions, platform/profile scope, evidence states, release-blocking UNKNOWN | Do not imply C-free end-to-end or full formal verification |
 | P1 | Model explicit-trap reason/detail without conflating machine traps | [#265](https://github.com/DavidFernee/Capstan/issues/265) | Normative trap taxonomy and exact evaluator/model correspondence | Must not silently change existing trap precedence or ABI |
@@ -63,7 +63,7 @@ These are candidates for immediate pull after the worker checks current issue st
 | P1 | Track HTML output context through statements/helpers | [#234](https://github.com/DavidFernee/Capstan/issues/234) | Context state propagation, joins/unknown state, adversarial tests | Depends on canonical sink semantics; coordinate #231/#250 |
 | P1 | Typed JSON fragments and output sink | [#250](https://github.com/DavidFernee/Capstan/issues/250) | No raw-string bypass for typed JSON output; parser/serializer round-trip tests | Coordinate with #231/#234 |
 | P1 | Sensitive-data authorisation completeness | [#233](https://github.com/DavidFernee/Capstan/issues/233) | Every sensitive operation has explicit principal, grant and denial tests | Coordinate with typed provenance #232 |
-| P1 | Deterministic structured concurrency core | [#229](https://github.com/DavidFernee/Capstan/issues/229) | Normative scheduling/cancellation/channel semantics and race-free invariants | Coordinate bounded reference machine PR #254; keep reference model distinct from production runtime |
+| P1 | Deterministic structured concurrency core | [#229](https://github.com/DavidFernee/Capstan/issues/229) | Normative scheduling/cancellation/channel semantics and race-free invariants | Bounded reference machine merged in PR #254; production scheduler/runtime semantics and implementation refinement remain separate work |
 | P1 | Allocator and GC correctness programme | [#137](https://github.com/DavidFernee/Capstan/issues/137) | Invariants, model, stress/failure tests and implementation-linked evidence | Runtime PR #143 is prior hardening, not proof of collector correctness |
 | P1 | Execute per-attempt CWE evidence records | [#236](https://github.com/DavidFernee/Capstan/issues/236) | Reproducible record schema, denominator, disposition and failed/unknown cases | Coordinate CVE benchmark #237 and claims manifest #261 |
 | P1 | Establish real-world CVE benchmark cases | [#237](https://github.com/DavidFernee/Capstan/issues/237) | Frozen sample, inclusion/exclusion rules, independent labels and reproducible analysis | Do not publish headline efficacy before independent relabelling |
@@ -78,13 +78,13 @@ These are candidates for immediate pull after the worker checks current issue st
 
 | Priority | Pull card | Existing issue | Acceptance focus | Dependencies / caution |
 |---|---|---|---|---|
-| P0 | Preserve UI state through validated resize | [#215](https://github.com/DavidFernee/Capstan/issues/215) | State-preserving resize contract, invalid input rejection, regression tests | Open PR #274; worker should review/integrate, not duplicate |
+| P0 | Preserve UI state through validated resize | [#215](https://github.com/DavidFernee/Capstan/issues/215) | State-preserving resize contract, invalid input rejection, regression tests | PR #274 merged; review the regression evidence and close the issue only after acceptance |
 | P0 | Enforce font table-local bounds | [#121](https://github.com/DavidFernee/Capstan/issues/121) | cmap/loca/hmtx offset/length checks, malformed corpus and fuzzing | Open PRs #272/#271 mention font parsing; reconcile overlap first |
 | P0 | Bound cumulative rendering/text work | [#101](https://github.com/DavidFernee/Capstan/issues/101), [#114](https://github.com/DavidFernee/Capstan/issues/114) | Aggregate budgets before allocation; overflow-safe accounting; adversarial tests | Distinguish frame budget from process-wide guarantee |
 | P1 | Specify minimal Wayland host capability/syscall surface | [#224](https://github.com/DavidFernee/Capstan/issues/224) | Threat model, syscall/capability allowlist, protocol parser boundaries | Coordinate current Wayland decoder integration |
 | P1 | Add pointer-cancel and native-focus-loss transitions | [#208](https://github.com/DavidFernee/Capstan/issues/208) | Explicit state machine and transition tests for cancellation/focus loss | Ensure host and widget semantics agree |
 | P1 | Preserve Unicode text integrity against deceptive rendering | [#95](https://github.com/DavidFernee/Capstan/issues/95) | Defined normalization/display policy and adversarial Unicode tests | Do not silently normalize source text |
-| P1 | Bound PNG export amplification and cumulative frame memory | [#82](https://github.com/DavidFernee/Capstan/issues/82) | Checked dimensions/stride/aggregate budget and failure atomicity | Reconcile merged PR #92 and open PR #272 |
+| P1 | Bound PNG export amplification and cumulative frame memory | [#82](https://github.com/DavidFernee/Capstan/issues/82) | Checked dimensions/stride/aggregate budget and failure atomicity | Reconcile merged PR #92 and open PR #272/#271; keep the parser and export work scoped to their actual coverage |
 | P2 | Define Shroud production-readiness/conformance programme | [#84](https://github.com/DavidFernee/Capstan/issues/84) | API compatibility, platform matrix, accessibility, resource and release gates | Use as Shroud-specific release plan |
 | P2 | Define public programming experience | [#88](https://github.com/DavidFernee/Capstan/issues/88) | Usability goals and tested developer tasks | Keep separate from language semantics |
 
@@ -164,8 +164,8 @@ The following open PRs must be reviewed and mapped to the cards before new imple
 
 - **Keel:** #277 is the sole open K0 architecture/research PR; #276 was closed as duplicate and #275 is closed.
 - **Media:** #291 is the proposed Media Core/Shanty/Deadeye architecture PR; issues #283–#290 and #292 are the existing media work packages. Do not create duplicates before review.
-- **Shroud:** #274 — resize; #272 and #271 — PNG/font hardening overlap.
-- **CCAM/formal/native:** #216, #245, #246, #254, #255, #256, #258, #262, #266, #228.
+- **Shroud:** #274 — resize (merged); #272 and #271 — PNG/font hardening overlap.
+- **CCAM/formal/native:** #245, #246, #255, #256, #258, #262, #266, #228. PR #216 (register-file bridge) and PR #254 (bounded concurrency reference machine) are merged.
 - **Research/assurance:** #238, #260.
 
 The board snapshot also identified 36 open issues and 17 open PRs on 2026-11-25. This is a snapshot, not a live status guarantee. Re-run the inventory before assigning workers.
