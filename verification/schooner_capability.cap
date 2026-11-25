@@ -366,6 +366,14 @@ test "SCM generation and epoch exhaustion fail closed without wrapping" {
     assert(!exhausted_slot.ok && exhausted_slot.error == "generation_exhausted");
     assert(scm_same_state(exhausted_slot.state, state));
     state = scm_initial();
+    SCMTransition parent = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(parent.ok);
+    state = parent.state;
+    state.child_generation = SCM_MAX_GENERATION;
+    SCMTransition exhausted_child = scm_attenuate(state, parent.handle, SCM_RIGHT_READ);
+    assert(!exhausted_child.ok && exhausted_child.error == "generation_exhausted");
+    assert(scm_same_state(exhausted_child.state, state));
+    state = scm_initial();
     SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
     assert(root.ok);
     state = root.state;
