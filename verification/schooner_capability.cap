@@ -87,6 +87,17 @@ SCMTransition scm_accept(SCMState after, SCMHandle handle) {
     };
 }
 
+bool scm_invariant(SCMState state) {
+    if (state.object_generation <= 0 || state.revocation_epoch <= 0 ||
+        state.root_generation < 0 || state.child_generation < 0) { return false; }
+    if (state.root_live && !scm_valid_rights(state.root_rights)) { return false; }
+    if (state.child_live && !scm_valid_rights(state.child_rights)) { return false; }
+    if (!state.root_live && state.root_rights != 0) { return false; }
+    if (!state.child_live && state.child_rights != 0) { return false; }
+    if (state.revoked && (state.root_live || state.child_live)) { return false; }
+    return true;
+}
+
 bool scm_valid_rights(int rights) {
     return rights > 0 && rights <= SCM_RIGHT_ALL &&
         (rights & SCM_RIGHT_ALL) == rights;
@@ -118,6 +129,7 @@ bool scm_resolves(SCMState state, SCMHandle handle, int required_rights) {
 // Trusted-issuer transition in this abstract model. Real issuance must be
 // backed by an unforgeable kernel/boot authority unavailable to callers.
 SCMTransition scm_issue_root(SCMState before, int rights) {
+    if (!scm_invariant(before)) { return scm_reject(before, "invalid_state"); }
     if (before.revoked) { return scm_reject(before, "object_revoked"); }
     if (!scm_valid_rights(rights)) { return scm_reject(before, "invalid_rights"); }
     if (before.root_live) { return scm_reject(before, "root_slot_occupied"); }
@@ -142,6 +154,7 @@ SCMTransition scm_issue_root(SCMState before, int rights) {
 // Attenuation only: requested rights must be a non-empty subset of the
 // currently held rights. No transition in this model can amplify rights.
 SCMTransition scm_attenuate(SCMState before, SCMHandle parent, int rights) {
+    if (!scm_invariant(before)) { return scm_reject(before, "invalid_state"); }
     if (!scm_resolves(before, parent, parent.rights)) {
         return scm_reject(before, "invalid_parent");
     }
@@ -171,6 +184,7 @@ SCMTransition scm_attenuate(SCMState before, SCMHandle parent, int rights) {
 // Revocation is object-wide. The epoch changes before the revoked state is
 // published; all previously issued handles fail the epoch comparison.
 SCMTransition scm_revoke(SCMState before, SCMHandle authority) {
+    if (!scm_invariant(before)) { return scm_reject(before, "invalid_state"); }
     if (!scm_resolves(before, authority, SCM_RIGHT_ADMIN)) {
         return scm_reject(before, "revoke_not_authorised");
     }
@@ -322,4 +336,21 @@ test "SCM failed issue and occupied slots are failure atomic" {
     SCMTransition duplicate_child = scm_attenuate(child.state, root.handle, SCM_RIGHT_READ);
     assert(!duplicate_child.ok && duplicate_child.error == "child_slot_occupied");
     assert(scm_same_state(duplicate_child.state, child.state));
+}
+
+test "SCM generation and epoch exhaustion fail closed without wrapping" {
+    SCMState state = scm_initial();
+    state.root_generation = SCM_MAX_GENERATION;
+    SCMTransition exhausted_slot = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(!exhausted_slot.ok && exhausted_slot.error == "generation_exhausted");
+    assert(scm_same_state(exhausted_slot.state, state));
+    state = scm_initial();
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(root.ok);
+    state = root.state;
+    state.revocation_epoch = SCM_MAX_GENERATION;
+    root.handle.revocation_epoch = SCM_MAX_GENERATION;
+    SCMTransition exhausted_epoch = scm_revoke(state, root.handle);
+    assert(!exhausted_epoch.ok && exhausted_epoch.error == "epoch_exhausted");
+    assert(scm_same_state(exhausted_epoch.state, state));
 }
