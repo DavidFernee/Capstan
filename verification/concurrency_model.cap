@@ -178,7 +178,8 @@ bool ccm_invariant(CCMState state) {
         if (!ccm_task_terminal(state.producer_status) ||
             !ccm_task_terminal(state.consumer_status)) { return false; }
         if (state.producer_handle != CCM_HANDLE_CONSUMED ||
-            state.consumer_handle != CCM_HANDLE_CONSUMED) { return false; }
+            state.consumer_handle != CCM_HANDLE_CONSUMED ||
+            !state.channel_closed) { return false; }
         if (state.message_live || state.channel_count != 0 ||
             state.live_bytes != 0 || state.buffered_bytes != 0) { return false; }
     }
@@ -363,6 +364,9 @@ CCMTransition ccm_step(CCMState before, int actor, int action) {
             before.producer_handle != CCM_HANDLE_CONSUMED ||
             before.consumer_handle != CCM_HANDLE_CONSUMED) {
             return ccm_reject(before, "scope_has_live_descendants_or_handles");
+        }
+        if (!before.channel_closed) {
+            return ccm_reject(before, "scope_has_open_channels");
         }
         if (before.message_live || before.channel_count != 0 ||
             before.live_bytes != 0 || before.buffered_bytes != 0) {
@@ -576,6 +580,7 @@ bool ccm_run_interleaving(List<int> schedule) {
         state = result.state;
         if (!ccm_invariant(state)) { return false; }
     }
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
     state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
     state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
     state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
@@ -669,6 +674,7 @@ test "CCM producer consumer handshake transfers ownership exactly once" {
     state = ccm_apply(state, 2, CCM_ACT_RELEASE);
     assert(ccm_invariant(state));
     assert(!state.message_live && state.live_bytes == 0);
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
     state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
     state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
     assert(ccm_invariant(state));
@@ -828,3 +834,18 @@ test "CCM producer cancellation after channel close releases producer-owned mess
     assert(ccm_invariant(state) && state.scope_closed);
 }
 
+
+test "CCM structured scope refuses to complete with an open channel" {
+    CCMState state = ccm_initial_state();
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_SPAWN_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_CANCEL_CONSUMER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_PRODUCER);
+    state = ccm_apply(state, 0, CCM_ACT_JOIN_CONSUMER);
+    CCMTransition premature = ccm_step(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(!premature.ok && premature.error == "scope_has_open_channels");
+    state = ccm_apply(state, 0, CCM_ACT_CLOSE_CHANNEL);
+    state = ccm_apply(state, 0, CCM_ACT_COMPLETE_SCOPE);
+    assert(ccm_invariant(state) && state.scope_closed);
+}
