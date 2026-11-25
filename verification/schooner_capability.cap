@@ -148,6 +148,7 @@ SCMTransition scm_issue_root(SCMState before, int rights) {
         rights: rights,
         revocation_epoch: after.revocation_epoch
     };
+    if (!scm_invariant(after)) { return scm_reject(before, "transition_invariant"); }
     return scm_accept(after, handle);
 }
 
@@ -178,7 +179,26 @@ SCMTransition scm_attenuate(SCMState before, SCMHandle parent, int rights) {
         rights: rights,
         revocation_epoch: after.revocation_epoch
     };
+    if (!scm_invariant(after)) { return scm_reject(before, "transition_invariant"); }
     return scm_accept(after, handle);
+}
+
+// Revoke one delegated slot without invalidating the parent's authority.
+// The next issuance increments the slot generation, so the old child handle
+// cannot resolve after slot reuse.
+SCMTransition scm_revoke_child(SCMState before, SCMHandle authority, SCMHandle target) {
+    if (!scm_invariant(before)) { return scm_reject(before, "invalid_state"); }
+    if (!scm_resolves(before, authority, SCM_RIGHT_ADMIN)) {
+        return scm_reject(before, "revoke_not_authorised");
+    }
+    if (target.slot != 1 || !scm_resolves(before, target, target.rights)) {
+        return scm_reject(before, "invalid_target");
+    }
+    SCMState after = scm_copy(before);
+    after.child_live = false;
+    after.child_rights = 0;
+    if (!scm_invariant(after)) { return scm_reject(before, "transition_invariant"); }
+    return scm_accept(after, scm_empty_handle());
 }
 
 // Revocation is object-wide. The epoch changes before the revoked state is
@@ -353,4 +373,20 @@ test "SCM generation and epoch exhaustion fail closed without wrapping" {
     SCMTransition exhausted_epoch = scm_revoke(state, root.handle);
     assert(!exhausted_epoch.ok && exhausted_epoch.error == "epoch_exhausted");
     assert(scm_same_state(exhausted_epoch.state, state));
+}
+
+test "SCM delegated slot revocation advances generation on reuse" {
+    SCMState state = scm_initial();
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(root.ok);
+    SCMTransition first = scm_attenuate(root.state, root.handle, SCM_RIGHT_READ);
+    assert(first.ok);
+    SCMTransition removed = scm_revoke_child(first.state, root.handle, first.handle);
+    assert(removed.ok);
+    assert(!scm_resolves(removed.state, first.handle, SCM_RIGHT_READ));
+    SCMTransition second = scm_attenuate(removed.state, root.handle, SCM_RIGHT_WRITE);
+    assert(second.ok);
+    assert(second.handle.slot_generation == first.handle.slot_generation + 1);
+    assert(!scm_resolves(second.state, first.handle, SCM_RIGHT_READ));
+    assert(scm_resolves(second.state, second.handle, SCM_RIGHT_WRITE));
 }
