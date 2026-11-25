@@ -333,7 +333,7 @@ def check_wayland_wire(capstanc, cc, cflags, tmp):
     expected = "Wayland framing: 14 adversarial assertions passed\\n"
     if r.returncode != 0 or r.stdout != expected:
         sys.exit(f"Wayland wire framing: exit {r.returncode}:\\n{r.stdout}{r.stderr}")
-    return "14 adversarial assertions: fragmented headers/bodies, offsets, invalid sizes, octets and 65,532-byte maximum"
+    return "15 adversarial assertions: fragmented headers/bodies, offsets, invalid sizes, octets and 65,532-byte maximum and rejection of 65,535"
 
 
 def check_pixmap_limits(capstanc, cc, cflags, tmp):

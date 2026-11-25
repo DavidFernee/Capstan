@@ -37,14 +37,18 @@ int main() {
     // Maximum aligned size: incomplete until all bytes are present.
     List<int> max_header = new List<int>();
     max_header.push(2); max_header.push(0); max_header.push(0); max_header.push(0);
-    max_header.push(0); max_header.push(0); max_header.push(255); max_header.push(255);
+    max_header.push(0); max_header.push(0); max_header.push(252); max_header.push(255);
     r = wayland_frame_header(max_header, 0);
     if (r[0] != 0 || r[2] != 65532) { return 9; }
     List<int> max_frame = new List<int>();
     for (int k = 0; k < 65532; k += 1) { max_frame.push(0); }
-    max_frame[0] = 2; max_frame[6] = 255; max_frame[7] = 255;
+    max_frame[0] = 2; max_frame[6] = 252; max_frame[7] = 255;
     r = wayland_frame_header(max_frame, 0);
     if (r[0] != 1 || r[2] != 65532 || r[4] != 65532) { return 10; }
+    // 65,535 is representable in the field but is not a valid aligned frame.
+    max_header[6] = 255; max_header[7] = 255;
+    r = wayland_frame_header(max_header, 0);
+    if (r[0] != -1) { return 15; }
     r = wayland_frame_header(b, -1);
     if (r[0] != -1) { return 11; }
     r = wayland_frame_header(b, b.len() + 1);
@@ -57,6 +61,6 @@ int main() {
     non_octet[0] = 256;
     r = wayland_frame_header(non_octet, 0);
     if (r[0] != -1) { return 14; }
-    println("Wayland framing: 14 adversarial assertions passed");
+    println("Wayland framing: 15 adversarial assertions passed");
     return 0;
 }
