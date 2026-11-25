@@ -92,14 +92,14 @@ CTGResult ctg_explore(CTGSpec spec) {
     List<int> reached = new List<int>();
     reached.push(spec.initial_state);
     int cursor = 0;
+    int first_deadlock = -1;
     while (cursor < reached.len()) {
         int current = reached[cursor];
-        if (!ctg_terminal(spec, current) && !ctg_has_outgoing(spec, current)) {
-            return new CTGResult{
-                valid: true, complete: true, classification: CTG_DEADLOCK,
-                explored_states: reached.len(), witness_state: current,
-                reason: "reachable_nonterminal_state_has_no_enabled_transition"
-            };
+        if (!ctg_terminal(spec, current) && !ctg_has_outgoing(spec, current) &&
+            first_deadlock == -1) {
+            // Retain the first BFS sink, but continue exploration: a deadlock
+            // witness does not make the rest of the reachable graph complete.
+            first_deadlock = current;
         }
         for (int i = 0; i < spec.transitions.len(); i += 1) {
             CTGEdge edge = spec.transitions[i];
@@ -116,6 +116,13 @@ CTGResult ctg_explore(CTGSpec spec) {
             }
         }
         cursor += 1;
+    }
+    if (first_deadlock != -1) {
+        return new CTGResult{
+            valid: true, complete: true, classification: CTG_DEADLOCK,
+            explored_states: reached.len(), witness_state: first_deadlock,
+            reason: "reachable_nonterminal_state_has_no_enabled_transition"
+        };
     }
     bool all_terminal = true;
     for (int i = 0; i < reached.len(); i += 1) {
@@ -203,4 +210,14 @@ test "CTG rejects outgoing transitions from terminal states" {
     spec.transitions.push(new CTGEdge{from_state: 2, to_state: 0, action: 3});
     CTGResult result = ctg_explore(spec);
     assert(!result.valid && result.classification == CTG_INVALID);
+}
+test "CTG a deadlock witness does not hide an incomplete reachable graph" {
+    CTGSpec spec = ctg_reachable_deadlock();
+    spec.state_count = 4;
+    spec.transitions.push(new CTGEdge{from_state: 0, to_state: 3, action: 2});
+    spec.state_limit = 2;
+    CTGResult result = ctg_explore(spec);
+    assert(result.valid && !result.complete);
+    assert(result.classification == CTG_UNKNOWN);
+    assert(result.witness_state == -1);
 }
