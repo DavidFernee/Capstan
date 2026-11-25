@@ -1212,6 +1212,10 @@ Type check_call(Checker c, Node e) {
 
 Type check_new(Checker c, Node e) {
     if (let st = c.structs.get(e.s)) {
+        bool opaque_external = st.s3 == "opaque" && e.file != st.file;
+        if (opaque_external) {
+            error_at(c.ctx, e, "CAP-PRIVATE", "opaque struct " + e.s + " may be constructed only within its defining module");
+        }
         Map<int> seen = new Map<int>();
         for (int i = 0; i < e.kids.len(); i += 1) {
             Node init = e.kids[i];
@@ -1220,29 +1224,33 @@ Type check_new(Checker c, Node e) {
                 error_at(c.ctx, init, "", "field '" + init.s + "' initialised twice");
             }
             seen.set(init.s, 1);
-            if (let fd = field_decl(c, e.s, init.s)) {
-                if (field_is_private(c, e.s, fd) && init.file != st.file) {
-                    error_at(c.ctx, init, "CAP-PRIVATE", "private field '" + init.s + "' of " + e.s + " may be initialised only within its defining module");
+            if (!opaque_external) {
+                if (let fd = field_decl(c, e.s, init.s)) {
+                    if (field_is_private(c, e.s, fd) && init.file != st.file) {
+                        error_at(c.ctx, init, "CAP-PRIVATE", "private field '" + init.s + "' of " + e.s + " may be initialised only within its defining module");
+                    } else {
+                        expect_type(c, init, vt, ty_of(fd), "field '" + init.s + "'");
+                    }
+                    check_hardcoded(c, init, init.s, init.kids[0]);
                 } else {
-                    expect_type(c, init, vt, ty_of(fd), "field '" + init.s + "'");
-                }
-                check_hardcoded(c, init, init.s, init.kids[0]);
-            } else {
-                error_at(c.ctx, init, "", "struct " + e.s + " has no field '" + init.s + "'");
-            }
-        }
-        bool missing_private = false;
-        for (int j = 0; j < st.kids.len(); j += 1) {
-            if (!seen.has(st.kids[j].s)) {
-                if (field_is_private(c, e.s, st.kids[j]) && e.file != st.file) {
-                    missing_private = true;
-                } else {
-                    error_at(c.ctx, e, "CWE-908", "field '" + st.kids[j].s + "' of " + e.s + " is not initialised");
+                    error_at(c.ctx, init, "", "struct " + e.s + " has no field '" + init.s + "'");
                 }
             }
         }
-        if (missing_private) {
-            error_at(c.ctx, e, "CAP-PRIVATE", "private state of " + e.s + " must be initialised by its defining module");
+        if (!opaque_external) {
+            bool missing_private = false;
+            for (int j = 0; j < st.kids.len(); j += 1) {
+                if (!seen.has(st.kids[j].s)) {
+                    if (field_is_private(c, e.s, st.kids[j]) && e.file != st.file) {
+                        missing_private = true;
+                    } else {
+                        error_at(c.ctx, e, "CWE-908", "field '" + st.kids[j].s + "' of " + e.s + " is not initialised");
+                    }
+                }
+            }
+            if (missing_private) {
+                error_at(c.ctx, e, "CAP-PRIVATE", "private state of " + e.s + " must be initialised by its defining module");
+            }
         }
         return mk_named(TY_STRUCT, e.s);
     }
