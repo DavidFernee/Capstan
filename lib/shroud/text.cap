@@ -35,13 +35,16 @@ struct Utf8Decoded {
 
 // Strict UTF-8 decoding with optional byte-end offsets. Invalid sequences use the
 // maximal-subpart replacement behaviour documented above.
-void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
-    // Guard the shared decoder itself so direct List<int> callers cannot bypass
-    // the string_bytes()/tainted_bytes() bounds.
+void require_utf8_byte_limit(List<int> b) {
     if (b.len() > MAX_TEXT_BYTES) {
         println("shroud: UTF-8 decoder byte limit exceeded");
         exit(101);
     }
+}
+
+void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
+    // Keep the core guard for direct callers; wrappers also check before allocating.
+    require_utf8_byte_limit(b);
     int i = 0;
     int n = b.len();
     while (i < n) {
@@ -107,6 +110,7 @@ void utf8_decode_into(List<int> b, List<int> out, List<int>? ends) {
 }
 
 Utf8Decoded utf8_decode_with_ends(List<int> b) {
+    require_utf8_byte_limit(b);
     List<int> out = new List<int>();
     List<int> ends = new List<int>();
     utf8_decode_into(b, out, ends);
@@ -114,6 +118,7 @@ Utf8Decoded utf8_decode_with_ends(List<int> b) {
 }
 
 List<int> utf8_decode(List<int> b) {
+    require_utf8_byte_limit(b);
     List<int> out = new List<int>();
     utf8_decode_into(b, out, none);
     return out;
