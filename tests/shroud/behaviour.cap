@@ -708,6 +708,15 @@ void test_display_work_budget(Tally t) {
     expect(t, display_list_valid(small_frame, target),
         "display work: a bounded tall path remains admissible", "small path rejected");
 
+    List<DisplayCommand> aggregate_commands = new List<DisplayCommand>();
+    for (int repeat = 0; repeat < 6; repeat += 1) { aggregate_commands.push(small_cmd); }
+    DisplayList aggregate_frame = new DisplayList{
+        width: 1, height: MAX_PIXMAP_SIDE, commands: aggregate_commands
+    };
+    expect(t, !display_list_valid(aggregate_frame, target),
+        "display work: individually valid paths cannot exceed the aggregate frame budget",
+        "aggregate work limit was not enforced");
+
     Segments adversarial = new_segments();
     for (int j = 0; j < 512; j += 1) {
         adversarial.add(0, 0, FX, fx(MAX_PIXMAP_SIDE));
