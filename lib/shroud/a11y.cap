@@ -22,7 +22,7 @@ struct A11yNode {
 
 // Convert already-sanitised code points back to UTF-8. The accessibility tree must
 // expose the same visible characters as the renderer, not the original Tainted bytes.
-string utf8_from_codepoints(List<int> cps) {
+Tainted utf8_from_codepoints(List<int> cps) {
     // Validate scalar values and the encoded-byte budget before allocating any
     // output fragments. The helper can also be called with a hand-built list.
     int byte_count = 0;
@@ -64,10 +64,10 @@ string utf8_from_codepoints(List<int> cps) {
         }
     }
     if (fragments.len() > 0) { chunks.push(join(fragments, "")); }
-    return join(chunks, "");
+    return taint(join(chunks, ""));
 }
 
-string visible_untrusted_text(Tainted value) {
+Tainted visible_untrusted_text(Tainted value) {
     return utf8_from_codepoints(untrusted_codepoints(value));
 }
 
