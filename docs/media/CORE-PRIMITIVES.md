@@ -6,11 +6,11 @@
 
 ## 1. Scope of the first vertical slice
 
-\`lib/halyard/core.cap\` currently provides:
+`lib/halyard/core.cap` currently provides:
 
-- construction of an in-memory byte source from a caller-owned \`List<int>\`;
-- byte-domain validation (\`0..255\`) and a defensive snapshot;
-- bounded \`u8\`, exact-byte, skip and big-endian \`u32\` reads;
+- construction of an in-memory byte source from a caller-owned `List<int>`;
+- byte-domain validation (`0..255`) and a defensive snapshot;
+- bounded `u8`, exact-byte, skip and big-endian `u32` reads;
 - explicit EOF, truncation, closed and invalid-state outcomes;
 - a five-dimensional aggregate ledger for input bytes, retained bytes, output bytes,
   decoded units and work units;
@@ -24,22 +24,22 @@ backpressure, cancellation tokens, deadlines, worker isolation or resource sched
 
 A conforming source must maintain:
 
-- \`0 <= position <= length\`;
+- `0 <= position <= length`;
 - a fixed source length for the lifetime of the source;
-- bytes in the closed interval \`0..255\`;
+- bytes in the closed interval `0..255`;
 - no ambient filesystem, network, device or process authority;
 - bounded construction and read operations;
 - explicit EOF, truncation, closed and invalid-state results.
 
-\`read_exact(n)\` has a transactional cursor contract: if \`n < 0\`, the source is closed,
-its state is invalid, or fewer than \`n\` bytes remain, the operation fails without
-advancing the cursor or returning a partial result. On success it returns exactly \`n\`
-bytes and advances by \`n\`. Range admission must use \`n <= length - position\` after
-validating the cursor, never unchecked \`position + n\`.
+`read_exact(n)` has a transactional cursor contract: if `n < 0`, the source is closed,
+its state is invalid, or fewer than `n` bytes remain, the operation fails without
+advancing the cursor or returning a partial result. On success it returns exactly `n`
+bytes and advances by `n`. Range admission must use `n <= length - position` after
+validating the cursor, never unchecked `position + n`.
 
 The initial implementation copies the input list. It does not yet provide a language-
 enforced immutable span or opaque source representation. The fields of Capstan structs
-are currently accessible to callers, so callers can mutate \`source.bytes\` or its cursor.
+are currently accessible to callers, so callers can mutate `source.bytes` or its cursor.
 The current API therefore relies on a module-ownership convention and is not suitable
 as a hostile-input trust boundary until encapsulation is enforced by the language or a
 runtime-validated opaque representation is introduced.
@@ -51,14 +51,14 @@ failure-atomic operation so the copy cannot occur before the charge is secured.
 ## 3. Required aggregate-ledger contract
 
 A ledger has a non-negative limit and used counter for every resource dimension.
-For each dimension \`d\`:
+For each dimension `d`:
 
-\`0 <= used[d] <= limit[d]\`
+`0 <= used[d] <= limit[d]`
 
-For a reservation request \`charge\`, admission succeeds only if every requested amount is
+For a reservation request `charge`, admission succeeds only if every requested amount is
 non-negative and:
 
-\`charge[d] <= limit[d] - used[d]\`
+`charge[d] <= limit[d] - used[d]`
 
 for every dimension. All dimensions are checked before any counter changes. If any
 dimension fails, every counter remains unchanged. Release follows the same pattern:
@@ -82,7 +82,7 @@ retained references and derived outputs remain charged for their actual lifetime
 - Validation must precede allocation and state mutation.
 - Failed reads and failed reservations preserve observable state.
 - Returned byte lists are independent copies, not borrowed views.
-- Closing is explicit and idempotence is observable (\`close\` succeeds once).
+- Closing is explicit and idempotence is observable (`close` succeeds once).
 - No partial bytes are returned for an exact read.
 - Errors are stable machine-readable categories; diagnostics must not echo attacker-
   controlled payloads or secrets.
@@ -93,8 +93,8 @@ or an RAII/linear ownership mechanism. Those are explicit follow-up requirements
 
 ## 5. Test obligations
 
-The current regression program is \`verification/halyard_core.cap\`. It is
-included in \`tests/run.sh\`. It covers:
+The current regression program is `verification/halyard_core.cap`. It is
+included in `tests/run.sh`. It covers:
 
 - defensive snapshot from the original input list;
 - invalid byte, negative limit and source over-limit rejection;
@@ -120,9 +120,9 @@ Still required before MC1 can pass:
 
 | Module | First-party source | Current status |
 |---|---|---|
-| Byte source | \`lib/halyard/core.cap\` | Prototype; public mutable representation |
-| Aggregate ledger | \`lib/halyard/core.cap\` | Sequential all-or-nothing prototype; not concurrency-safe |
-| Regression vectors | \`verification/halyard_core.cap\` | Added to normal test runner; exact-head CI pending |
+| Byte source | `lib/halyard/core.cap` | Prototype; public mutable representation |
+| Aggregate ledger | `lib/halyard/core.cap` | Sequential all-or-nothing prototype; not concurrency-safe |
+| Regression vectors | `verification/halyard_core.cap` | Added to normal test runner; exact-head CI pending |
 | Rational timebase | Not implemented | Contract and test vectors remain under MC1 / issue #286 |
 | Format registry | Not implemented | MC0 / issue #287 |
 | Bounded sink | Not implemented | Required before encoder/output work |
