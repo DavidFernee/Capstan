@@ -45,6 +45,10 @@ def literal(value) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, int):
+        if value == -(1 << 63):
+            return "CCAM_I64_MIN"
+        if value == (1 << 63) - 1:
+            return "CCAM_I64_MAX"
         return str(value)
     if isinstance(value, str):
         return json.dumps(value, ensure_ascii=True)
