@@ -330,7 +330,7 @@ def check_single_line_budget(capstanc, cc, cflags, tmp):
 def check_wayland_wire(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/wayland_wire.cap", "wayland-wire")
     r = run(exe, check=False)
-    expected = "Wayland framing: 14 adversarial assertions passed\\n"
+    expected = "Wayland framing: 15 adversarial assertions passed\\n"
     if r.returncode != 0 or r.stdout != expected:
         sys.exit(f"Wayland wire framing: exit {r.returncode}:\\n{r.stdout}{r.stderr}")
     return "15 adversarial assertions: fragmented headers/bodies, offsets, invalid sizes, octets and 65,532-byte maximum and rejection of 65,535"
