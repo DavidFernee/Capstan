@@ -66,6 +66,16 @@ struct GCHFieldCheckResult {
     int descriptor_id;
 }
 
+struct GCHStoredReference {
+    int field_offset;
+    GCHHandle target;
+}
+
+struct GCHTraceResult {
+    int status;
+    List<GCHHandle> targets;
+}
+
 GCHHandle gch_handle(int heap_token, int slot_id, int generation) {
     return new GCHHandle{
         heap_token: heap_token, slot_id: slot_id, generation: generation
@@ -262,6 +272,59 @@ GCHFieldCheckResult gch_check_reference_store(
     return field;
 }
 
+List<GCHHandle> gch_empty_handles() {
+    return new List<GCHHandle>();
+}
+
+// Enumerate the complete descriptor-declared reference field set for one
+// object. The supplied values model the object's reference-bearing payload
+// fields. Every declared offset must occur exactly once; each target is
+// validated before the result is published. Any error returns no partial edge
+// list, preventing malformed payload metadata from creating a partial trace.
+GCHTraceResult gch_trace_object(
+    GCHHeap heap, GCHHandle owner, List<GCHStoredReference> stored
+) {
+    GCHResolveResult resolved = gch_resolve(heap, owner, 0);
+    if (resolved.status != GCH_OK) {
+        return new GCHTraceResult{
+            status: resolved.status, targets: gch_empty_handles()
+        };
+    }
+    int layout_index = gch_find_layout(heap.layouts, resolved.descriptor_id);
+    GCHLayout layout = heap.layouts[layout_index];
+    if (stored.len() != layout.reference_offsets.len()) {
+        return new GCHTraceResult{
+            status: GCH_INVALID_FIELD, targets: gch_empty_handles()
+        };
+    }
+    for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
+        int count = 0;
+        for (int j = 0; j < stored.len(); j += 1) {
+            if (stored[j].field_offset == layout.reference_offsets[i]) {
+                count += 1;
+            }
+        }
+        if (count != 1) {
+            return new GCHTraceResult{
+                status: GCH_INVALID_FIELD, targets: gch_empty_handles()
+            };
+        }
+    }
+    List<GCHHandle> targets = new List<GCHHandle>();
+    for (int i = 0; i < stored.len(); i += 1) {
+        GCHFieldCheckResult checked = gch_check_reference_store(
+            heap, owner, stored[i].field_offset, stored[i].target
+        );
+        if (checked.status != GCH_OK) {
+            return new GCHTraceResult{
+                status: checked.status, targets: gch_empty_handles()
+            };
+        }
+        targets.push(stored[i].target);
+    }
+    return new GCHTraceResult{status: GCH_OK, targets: targets};
+}
+
 GCHHeap gch_fixture_heap() {
     List<int> offsets = new List<int>();
     offsets.push(1);
@@ -351,6 +414,95 @@ GCHTransitionResult gch_reclaim_slot(GCHHeap heap, GCHHandle handle) {
     return new GCHTransitionResult{
         status: GCH_OK, heap: published, handle: gch_handle(0, 0, 0)
     };
+}
+
+test "GC tracing enumerates all typed reference fields" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 3, target: gch_handle(91, 0, 3)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_OK);
+    assert(traced.targets.len() == 2);
+    assert(traced.targets[0].slot_id == 1);
+    assert(traced.targets[1].slot_id == 0);
+}
+
+test "GC tracing rejects a missing declared reference field" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_INVALID_FIELD);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC tracing rejects duplicate reference offsets" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_INVALID_FIELD);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC tracing rejects a scalar offset masquerading as a reference" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 2, target: gch_handle(91, 1, 1)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_INVALID_FIELD);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC tracing rejects stale target and publishes no partial edges" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 2)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 3, target: gch_handle(91, 0, 3)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_STALE_HANDLE);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC tracing rejects a live target of the wrong nominal descriptor" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 0, 3)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 3, target: gch_handle(91, 0, 3)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_LAYOUT_MISMATCH);
+    assert(traced.targets.len() == 0);
 }
 
 test "GC reference store rejects a live target of the wrong descriptor" {
