@@ -33,3 +33,13 @@ SealedVault update_sealed_vault(SealedVault value, int next_counter) {
     value.counter = next_counter;
     return value;
 }
+
+opaque struct EmptyCapability {}
+
+EmptyCapability make_empty_capability() {
+    return new EmptyCapability{};
+}
+
+bool empty_capability_is_issued(EmptyCapability value) {
+    return true;
+}
