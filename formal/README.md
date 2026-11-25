@@ -69,3 +69,8 @@ false positives cannot occur. GC-time reclamation is not deterministic resource 
 
 See [the assurance report](../docs/assurance/FORMAL-VERIFICATION.md) and
 [the obligation matrix](OBLIGATIONS.md).
+
+
+## Latest checked arithmetic increment
+
+At commit `254ccacaaf8f35fe946db9a62adf3083ef7bc2ac`, the exact-head formal workflow passed the Lean build, bundled leanchecker, axiom audit (107 declarations under the existing allowlist), independent Nanoda check (60,082 declarations, no errors), and negative control. Checked multiplication is proved at model-only level. The capacity-growth theorem covers a deliberately simplified direct-growth model, not the current C geometric-doubling helper; that obligation remains in progress. No implementation-refinement theorem is claimed.
