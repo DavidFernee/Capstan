@@ -323,7 +323,7 @@ def returnFromCallee (state : MultiFunctionState) (result : Option Val) :
                 })
             | .ok (some (destination, value)) =>
                 let resumedCaller := { caller with pc := continuation.resumePC }
-                match hupdate : updateFrameRegister resumedCaller destination value with
+                match updateFrameRegister resumedCaller destination value with
                 | .error reason => .error reason
                 | .ok updatedCaller =>
                     .ok (callee, {
