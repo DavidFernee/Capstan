@@ -117,6 +117,17 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     native_run ccam-native-x64-step-limit 73
     native_run ccam-native-x64-depth-limit 74
     native_run ccam-native-x64-uninitialised 75
+    if "$ROOT/bin/capstan" native "$ROOT/tests/fixtures/native_return_42.cap" -o "$tmp/capstan-native-cli"; then
+      "$tmp/capstan-native-cli"
+      cli_status=$?
+      if [[ $cli_status -eq 42 ]]; then
+        ok "capstan native CLI builds and runs source with no C runtime in target ELF"
+      else
+        bad "capstan native CLI exit status" "expected 42, got $cli_status"
+      fi
+    else
+      bad "capstan native CLI" "source-to-freestanding-ELF build failed"
+    fi
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
