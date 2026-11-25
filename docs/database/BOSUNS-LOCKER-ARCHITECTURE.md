@@ -25,6 +25,27 @@ The engineering objective is not merely high throughput. Bosun's Locker must pro
 No blanket claim of “bug-free”, “unhackable”, “zero data loss” or “formally verified database” is permitted. Each guarantee must identify its precise property, implementation revision, platform, assumptions, tests, proofs and residual trusted computing base.
 
 ## 2. Architectural principles
+## 2.1 Construction-enforced correctness
+
+Bosun's Locker inherits the repository-wide normative
+[construction-safety contract](../architecture/CONSTRUCTION-SAFETY-CONTRACT.md).
+This is a hard design gate, not a quality aspiration. The database's safe public
+API must not expose invalid transaction transitions, unowned cursors or page
+leases, ambient authority, unbounded resource growth or unchecked query plans.
+
+The current Capstan language does not yet provide all required affine/linear
+ownership, lifetime, typestate, capability/effect and compositional-budget
+mechanisms. Therefore the current reference state machines are specification
+and testing artifacts only. They are not permission to ship a public database
+API that simulates compile-time guarantees with booleans, comments or caller
+discipline. The required language and compiler mechanisms must land first,
+with negative compile tests demonstrating that prohibited programs are rejected.
+
+Dynamic checks remain necessary at unavoidable external boundaries (for
+example, storage flush outcomes and recovery input). Such checks must be
+failure-atomic, typed and explicit in the model; they do not weaken the
+construction rule for properties the compiler can establish.
+
 
 1. **Specify before optimising.** Transaction, storage and recovery semantics are normative contracts. An algorithm is replaceable only behind those contracts.
 2. **One semantic authority.** The executable reference model and transaction specification define allowed behaviour; tests do not infer semantics from the current implementation.

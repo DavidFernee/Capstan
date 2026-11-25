@@ -1139,3 +1139,13 @@ The initial target is single-node strict serializability and durable commit. The
 concurrency-control algorithm and physical index/storage layout remain open pending
 formal analysis and reproducible benchmarks. These documents are proposals, not claims
 of an implemented or verified database.
+
+
+## Construction-enforced correctness
+
+The normative cross-platform rule is [CONSTRUCTION-SAFETY-CONTRACT.md](architecture/CONSTRUCTION-SAFETY-CONTRACT.md).
+Safe Capstan programs must be unable to express prohibited states and operations.
+The contract specifies required ownership/lifetime, typestate, effects/capabilities,
+resource accounting, concurrency and trust-boundary mechanisms, plus the compiler
+negative-test and proof/refinement evidence required before first-party APIs may
+depend on them. Bosun's Locker adopts this as a hard prerequisite, not an aspiration.
