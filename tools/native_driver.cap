@@ -141,7 +141,6 @@ int main() {
                 }
                 for (int k = 0; k < part.len(); k += 1) {
                     Node declaration = part[k];
-                    declarations.push(declaration);
                     if (declaration.k == N_IMPORT) {
                         if (native_import_path_ok(declaration.s)) {
                             queue.push(native_dir_of(path) + declaration.s);
@@ -151,6 +150,8 @@ int main() {
                             error_at(context, declaration, "CWE-22",
                                 "import path must be a relative .cap path without absolute or dot-segment traversal");
                         }
+                    } else {
+                        declarations.push(declaration);
                     }
                 }
             }
