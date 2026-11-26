@@ -341,7 +341,7 @@ add(250, "Execution with unnecessary privileges", "na", note="Deployment concern
 add(256, "Plaintext storage of a password", "reject",
     'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }', "CWE-20")
 add(257, "Storing passwords in a recoverable format", "gap",
-    'int main() { if (let pw = read_line()) { bool ok = write_log_file("users.log", escape_log(pw)); } return 0; }',
+    'int main() { if (let x = read_line()) { bool ok = write_log_file("users.log", escape_log(x)); } return 0; }',
     note="Password provenance is not yet tracked: context-safe logging still stores a recoverable password. This is an explicit follow-up, not a compiler-prevented weakness.")
 add(259, "Use of hard-coded password", "reject", "int main() { string admin_password = \"letmein\"; return 0; }", "CWE-798")
 add(798, "Use of hard-coded credentials", "reject",
