@@ -338,15 +338,15 @@ add(335, "Incorrect usage of seeds in PRNG", "absent", "int main() { srand(42); 
 add(338, "Use of cryptographically weak PRNG", "reject", RANDOM, "CWE-338")
 add(916, "Use of password hash with insufficient computational effort", "reject",
     "int main() { if (let pw = read_line(65536)) { string stored = hash(pw); } return 0; }", "CWE-916")
-add(916, "Weak password hash (password in an innocuously named variable)", "gap",
-    "int main() { if (let x = read_line(65536)) { string stored = hash(x); } return 0; }",
-    note="Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap).")
-add(916, "Weak password hash (password passed through a method call)", "gap",
-    "int main() { if (let password = read_line(65536)) { string stored = hash(password.slice(0, password.len())); } return 0; }",
-    note="The password-name heuristic stops at N_METHOD nodes, so wrapping a password in a string method may evade the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted.")
-add(916, "Weak password hash (password passed through a helper call)", "gap",
-    "Tainted identity(Tainted value) { return value; }\nint main() { if (let password = read_line(65536)) { string stored = hash(identity(password)); } return 0; }",
-    note="The password-name heuristic stops at N_CALL nodes, so a helper that preserves Tainted can hide a password-like variable from the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted.")
+add(916, "Weak password hash (password in an innocuously named variable)", "reject",
+    "int main() { if (let x = read_line(65536)) { string stored = hash(x); } return 0; }", "CWE-916",
+    note="Tainted password provenance is preserved through innocuous variable names and rejected by the fast-hash checker.")
+add(916, "Weak password hash (password passed through a method call)", "reject",
+    "int main() { if (let password = read_line(65536)) { string stored = hash(password.slice(0, password.len())); } return 0; }", "CWE-916",
+    note="Password provenance survives string-slice method calls before the fast-hash check.")
+add(916, "Weak password hash (password passed through a helper call)", "reject",
+    "Tainted identity(Tainted value) { return value; }\nint main() { if (let password = read_line(65536)) { string stored = hash(identity(password)); } return 0; }", "CWE-916",
+    note="Password provenance survives helper calls that preserve Tainted values.")
 add(759, "Use of a one-way hash without a salt", "reject",
     "string store(Tainted password) { return hash(password); }" + MAIN, "CWE-916")
 add(760, "Use of a one-way hash with a predictable salt", "reject",
