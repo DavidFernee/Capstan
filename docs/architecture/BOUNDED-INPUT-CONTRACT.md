@@ -53,7 +53,21 @@ Each individual bound and each aggregate bound must be checked before the corres
 
 A raw-byte bound MUST NOT be presented as a proof of bounded parser work, decoded size, nesting, or live memory. Parser APIs that do not expose a suitable limit contract remain subject to explicit audit and migration; this document does not claim that every existing parser already satisfies this section.
 
-## 5. Assurance boundary
+## 5. Existing parser inventory (partial)
+
+The current repository already has several parser-specific controls. These controls are useful evidence, but they are not interchangeable and do not establish a universal parser contract.
+
+| Parser or decoder | Existing limits | Remaining audit item |
+|---|---|---|
+| Compiler source loader / lexer / recursive-descent parser | 16 MiB per source file; parser recursion depth 1,000; at most 50 syntax errors per file | The import graph has no aggregate source-byte, token or AST-node budget. A per-file cap does not bound total retained declarations across imports. |
+| LSP JSON-RPC decoder | 16 MiB per message; depth 64; 65,536 total values; 4,096 object members and 16,384 array elements per container; 8 MiB per encoded string and 12 MiB aggregate string bytes; 262,144 escape fragments per string; 128-byte number tokens; duplicate keys rejected | Verify all allocation/work counters under fuzzing and keep limits aligned with protocol/document-size requirements. |
+| TrueType font decoder | 32 MiB decoder input ceiling; 1,024 table entries; glyph point, composite depth/component, cache count and pixel budgets | Audit every table-specific count and offset for aggregate work and allocation; call sites may impose a stricter input byte cap. |
+| Shroud PNG encoder | 4 MiB raw scanline budget, validated dimensions and output sizing | Encoder, not an external-input parser. A bounded byte-sink remains needed to avoid string conversion amplification for larger output. |
+| CCAM JSON decoder | Design contract only; no implementation claim | Must not accept untrusted programs until the bounded scanner, duplicate-key handling, exact integer parsing and aggregate validation are implemented. |
+
+The inventory is intentionally explicit about what is not proved. In particular, the compiler import graph and CCAM JSON decoder remain open work; the LSP and font limits are implementation-specific, not defaults for other parsers.
+
+## 6. Assurance boundary
 
 The direct builtin signatures in section 2 are the first implementation increment for issue #444. Compiler/runtime/bootstrap wiring and direct API adversarial tests are implemented in [PR #449](https://github.com/DavidFernee/Capstan/pull/449).
 
