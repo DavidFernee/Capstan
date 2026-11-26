@@ -13,10 +13,12 @@ inductive Expr : Kind → Type where
   | alias {k : Kind} : Expr k → Expr k
 
 def credentialOrigin : {k : Kind} → Expr k → Bool
-  | .password, _ => true
-  | .verifier, _ => true
-  | .integrity, _ => false
-  | .digest, _ => false
+  | _, .ingress => true
+  | _, .artifact => false
+  | _, .kdf _ => true
+  | _, .decodeVerifier => true
+  | _, .fastHash _ => false
+  | _, .alias value => credentialOrigin value
 
 theorem integrity_excludes_credentials (e : Expr .integrity) :
     credentialOrigin e = false := rfl
