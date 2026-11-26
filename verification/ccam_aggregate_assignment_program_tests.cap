@@ -1,8 +1,9 @@
 import "ccam_aggregate_assignment_program.cap";
 test "assignment program updates and reads variables" {
     List<int> source=new List<int>();
-    int bytes[]={120,61,49,48,59,120,61,120,43,50,59,120,42,50,43,49};
-    for(int i=0;i<16;i+=1) { source.push(bytes[i]); }
+    source.push(120); source.push(61); source.push(49); source.push(48); source.push(59);
+    source.push(120); source.push(61); source.push(120); source.push(43); source.push(50); source.push(59);
+    source.push(120); source.push(42); source.push(50); source.push(43); source.push(49);
     AGProgramResult result=ag_compile_assignment_program(source);
     assert(result.ok && result.assignments==2 && result.value==25);
 }
