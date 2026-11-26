@@ -570,17 +570,17 @@ test "aggregate program validates before execution and runs record field transit
         field_ref_type_ids: new List<int>(), field_mutable: mutable_fields
     });
     List<int> registers = new List<int>();
-    registers.push(CCAM_PROGRAM_TYPE_REF);
     registers.push(CCAM_PROGRAM_TYPE_INT);
+    registers.push(CCAM_PROGRAM_TYPE_REF);
     registers.push(CCAM_PROGRAM_TYPE_INT);
     List<CCAMAggregateInstruction> code = new List<CCAMAggregateInstruction>();
     CCAMAggregateInstruction alloc = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_RECORD);
-    alloc.destination = 0; alloc.descriptor_id = 7301; code.push(alloc);
+    alloc.destination = 1; alloc.descriptor_id = 7301; code.push(alloc);
     CCAMAggregateInstruction store = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_SET);
-    store.left = 0; store.right = 1; store.descriptor_id = 7301;
+    store.left = 1; store.right = 0; store.descriptor_id = 7301;
     store.field_index = 0; code.push(store);
     CCAMAggregateInstruction load = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_GET);
-    load.destination = 2; load.left = 0; load.descriptor_id = 7301;
+    load.destination = 2; load.left = 1; load.descriptor_id = 7301;
     load.field_index = 0; code.push(load);
     CCAMAggregateProgram program = new CCAMAggregateProgram{
         version: CCAM_AGGREGATE_PROFILE_VERSION, register_types: registers,
