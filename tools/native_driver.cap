@@ -5,9 +5,6 @@
 // BENEATH, NO_SYMLINKS, NO_MAGICLINKS and NO_XDEV resolution. Unsupported
 // kernels fail closed; source paths remain workspace-relative.
 
-const int NATIVE_MAX_SOURCE_FILES = 256;
-const int NATIVE_MAX_TOTAL_SOURCE_BYTES = 67108864;
-
 bool native_import_path_ok(string spec) {
     if (spec.len() < 5 || spec.at(0) == '/') { return false; }
     if (spec.slice(spec.len() - 4, spec.len()) != ".cap") { return false; }
@@ -78,7 +75,7 @@ int main() {
             source_paths.push(arg);
         }
     }
-    if (source_paths.len() > NATIVE_MAX_SOURCE_FILES) {
+    if (source_paths.len() > MAX_IMPORT_FILES) {
         println("capstan native: source file count exceeds prototype limit");
         return 2;
     }
@@ -109,8 +106,9 @@ int main() {
         from_line.push(0);
     }
     int queue_index = 0;
-    int total_source_bytes = 0;
+    CompileBudget budget = new_compile_budget();
     while (queue_index < queue.len()) {
+        if (budget.exhausted) { break; }
         string path = queue[queue_index];
         int origin_file = from_file[queue_index];
         int origin_line = from_line[queue_index];
@@ -119,36 +117,36 @@ int main() {
         loaded.set(path, 1);
         int file_index = context.files.len();
         context.files.push(path);
-        if (let source = workspace_read_file(workspace, path, MAX_SOURCE_BYTES)) {
-            if (source.len() > NATIVE_MAX_TOTAL_SOURCE_BYTES - total_source_bytes) {
-                context.sources.push(taint(""));
-                if (origin_file >= 0) {
-                    report(context, origin_file, origin_line, true, "",
-                        "native aggregate source-byte budget exceeded");
-                } else {
-                    report(context, file_index, 0, true, "",
-                        "native aggregate source-byte budget exceeded");
-                }
-                continue;
-            }
-            total_source_bytes += source.len();
+        if (budget.files >= MAX_IMPORT_FILES) {
+            context.sources.push(taint(""));
+            budget.exhausted = true;
+            report(context, file_index, 0, true, "CWE-400",
+                "native import graph exceeds file-count limit (" + int_to_str(MAX_IMPORT_FILES) + ")");
+            break;
+        }
+        budget.files += 1;
+        int remaining = MAX_TOTAL_SOURCE_BYTES - budget.source_bytes;
+        int file_limit = MAX_SOURCE_BYTES;
+        if (remaining < file_limit) { file_limit = remaining; }
+        if (let source = workspace_read_file(workspace, path, file_limit)) {
+            budget.source_bytes += source.len();
             context.sources.push(source);
-            List<Token> tokens = lex(context, source, file_index);
-            if (error_count(context) == 0) {
+            List<Token> tokens = lex_bounded(context, source, file_index, budget);
+            if (error_count(context) == 0 && !budget.exhausted) {
                 List<Node> part = parse_program(context, tokens);
+                if (!charge_ast_nodes(budget, part)) {
+                    report(context, file_index, 0, true, "CWE-400",
+                        "native import graph exceeds AST-node limit (" + int_to_str(MAX_TOTAL_AST_NODES) + ")");
+                    break;
+                }
                 for (int k = 0; k < part.len(); k += 1) {
                     Node declaration = part[k];
                     declarations.push(declaration);
                     if (declaration.k == N_IMPORT) {
                         if (native_import_path_ok(declaration.s)) {
-                            if (queue.len() >= NATIVE_MAX_SOURCE_FILES) {
-                                error_at(context, declaration, "CWE-400",
-                                    "native import queue exceeds prototype file-count limit");
-                            } else {
-                                queue.push(native_dir_of(path) + declaration.s);
-                                from_file.push(file_index);
-                                from_line.push(declaration.line);
-                            }
+                            queue.push(native_dir_of(path) + declaration.s);
+                            from_file.push(file_index);
+                            from_line.push(declaration.line);
                         } else {
                             error_at(context, declaration, "CWE-22",
                                 "import path must be a relative .cap path without absolute or dot-segment traversal");
@@ -160,10 +158,10 @@ int main() {
             context.sources.push(taint(""));
             if (origin_file >= 0) {
                 report(context, origin_file, origin_line, true, "",
-                    "cannot read imported file '" + path + "'");
+                    "cannot read imported file '" + path + "' (missing, unreadable, symlinked, over 16 MiB, or aggregate source budget exceeded)");
             } else {
                 report(context, file_index, 0, true, "",
-                    "cannot read source file '" + path + "'");
+                    "cannot read source file '" + path + "' (missing, unreadable, symlinked, over 16 MiB, or aggregate source budget exceeded)");
             }
         }
     }
