@@ -2175,13 +2175,36 @@ Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, int seed, bool report)
     return f;
 }
 
+bool mentions_binding(Node n, int binding_id) {
+    if (n.k == N_VAR && n.binding_id == binding_id) { return true; }
+    for (int i = 0; i < n.kids.len(); i += 1) {
+        if (mentions_binding(n.kids[i], binding_id)) { return true; }
+    }
+    return false;
+}
+
+// Aggregate summaries only affect return and call/sink dependencies. Avoid a
+// full abstract-state run for aggregate parameters that cannot participate in
+// either relation; this is a conservative worklist prefilter, not an analysis
+// shortcut for any parameter that can affect a return or call.
+bool needs_aggregate_summary(Node n, int binding_id) {
+    if (n.k == N_RETURN && n.kids.len() > 0 && mentions_binding(n.kids[0], binding_id)) { return true; }
+    if (n.k == N_CALL && mentions_binding(n, binding_id)) { return true; }
+    for (int i = 0; i < n.kids.len(); i += 1) {
+        if (needs_aggregate_summary(n.kids[i], binding_id)) { return true; }
+    }
+    return false;
+}
+
 FlowSummary summarise(Map<FlowSummary> sums, Ctx ctx, Node fn) {
     Node body = fn.kids[fn.n];
     Flow base = flow_body(sums, ctx, body, 0, false);
     FlowSummary out = new FlowSummary{returns_derived: base.returns, param_to_return: new List<bool>(), param_to_sink: new List<bool>()};
     for (int i = 0; i < fn.n; i += 1) {
         Type pt = ty_of(fn.kids[i]);
-        if (pt.k == TY_INT || pt.k == TY_BOOL || pt.k == TY_STR || pt.k == TY_TAINT || aggregate_type(pt)) {
+        bool scalar_parameter = pt.k == TY_INT || pt.k == TY_BOOL || pt.k == TY_STR || pt.k == TY_TAINT;
+        bool aggregate_parameter = aggregate_type(pt) && needs_aggregate_summary(body, fn.kids[i].binding_id);
+        if (scalar_parameter || aggregate_parameter) {
             Flow pf = flow_body(sums, ctx, body, fn.kids[i].binding_id, false);
             out.param_to_return.push(pf.returns);
             out.param_to_sink.push(pf.sinks);
