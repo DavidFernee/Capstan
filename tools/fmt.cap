@@ -550,7 +550,7 @@ void usage() {
 }
 
 int main() {
-    List<string> a = args();
+    List<string> a = args(4096, 1048576, 16777216);
     bool check = false;
     List<string> files = new List<string>();
     for (int i = 0; i < a.len(); i += 1) {
