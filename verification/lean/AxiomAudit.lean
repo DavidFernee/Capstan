@@ -9,6 +9,7 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.F1Provenance
 import CapstanVerification.GenerationalHandles
 import CapstanVerification.CollectorSemantics
 import CapstanVerification.ReferenceSemantics
@@ -330,3 +331,11 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.gcSweep_preserves_reachable
 #print axioms CapstanVerification.gcSweep_no_new_objects
 #print axioms CapstanVerification.handleResolve_requires_current_generation
+
+-- F1 provenance access-path algebra: abstract-model theorem audit.
+#print axioms CapstanVerification.dynamic_write_marks_constant_read
+#print axioms CapstanVerification.binding_identity_separates_locals
+#print axioms CapstanVerification.map_key_value_paths_are_disjoint
+#print axioms CapstanVerification.descendant_fact_marks_aggregate
+#print axioms CapstanVerification.provenance_marking_monotone
+#print axioms CapstanVerification.provenance_fact_budget_fails_closed
