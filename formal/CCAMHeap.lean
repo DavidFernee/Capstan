@@ -220,7 +220,7 @@ theorem allocation_charges_exactly
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.usedBytes = s.usedBytes + charge := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
-    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary⟩
+    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
   rfl
 
@@ -233,7 +233,7 @@ theorem allocation_preserves_byte_bound
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.usedBytes ≤ after.maxBytes := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
-    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary⟩
+    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
   omega
 
@@ -245,7 +245,7 @@ theorem allocation_preserves_object_bound
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.objectCount ≤ after.maxObjects := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
-    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary⟩
+    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
   omega
 
@@ -256,7 +256,7 @@ theorem allocation_charges_exact_work
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.workUsed = s.workUsed + workCharge := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
-    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary⟩
+    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
   rfl
 
@@ -267,7 +267,7 @@ theorem allocation_bounds_temporary_peak
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.temporaryPeakBytes ≤ after.maxTemporaryBytes := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
-    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary⟩
+    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
   by_cases hOld : s.temporaryPeakBytes ≤ temporaryCharge
   · rw [max_eq_right hOld]
@@ -284,7 +284,7 @@ theorem allocation_preserves_work_bound
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.workUsed ≤ after.maxWork := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
-    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary⟩
+    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
   omega
 
