@@ -5,6 +5,7 @@ import CapstanVerification.NativeRegisterFileBridge
 import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
+import CapstanVerification.Visibility
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -178,3 +179,11 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.nativeWriteRegister_refines_finite_relation
 #print axioms CapstanVerification.nativeRuntimeRegisterFileRelation_slot_exists
 #print axioms CapstanVerification.nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts_of_in_bounds
+
+#print axioms CapstanVerification.field_operation_same_policy
+#print axioms CapstanVerification.private_field_denied_cross_module
+#print axioms CapstanVerification.opaque_field_denied_cross_module
+#print axioms CapstanVerification.public_field_permitted_cross_module
+#print axioms CapstanVerification.owner_can_access_private_field
+#print axioms CapstanVerification.opaque_construction_denied_cross_module
+#print axioms CapstanVerification.opaque_construction_permitted_owner
