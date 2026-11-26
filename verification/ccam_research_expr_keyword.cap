@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_keyword(List<int> b,int s,int e){return (e-s==5&&b[s]==119&&b[s+1]==104&&b[s+2]==105&&b[s+3]==108&&b[s+4]==101)||(e-s==6&&b[s]==114&&b[s+1]==101&&b[s+2]==116&&b[s+3]==117&&b[s+4]==114&&b[s+5]==110);}
