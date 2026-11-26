@@ -363,6 +363,107 @@ string ccam_aggregate_array_get(
     return ccam_aggregate_trap(machine, "invalid_reference");
 }
 
+string ccam_aggregate_array_set(
+    CCAMAggregateMachine machine,
+    int array_register,
+    int index,
+    int value_register,
+    int element_type
+) {
+    CCAMAggregateValueResult array_value = ccam_aggregate_read_ref(machine, array_register);
+    if (!array_value.ok) { return ccam_aggregate_trap(machine, array_value.trap); }
+    CCAMAggregateValueResult value = ccam_aggregate_read(machine, value_register, element_type);
+    if (!value.ok) { return ccam_aggregate_trap(machine, value.trap); }
+    if (let reference = array_value.value.reference) {
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        string result = ccam_heap_array_set(machine.heap, reference, element_type, index, value.value);
+        if (result != "") { return ccam_aggregate_trap(machine, result); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ccam_aggregate_array_len(
+    CCAMAggregateMachine machine, int destination, int array_register, int element_type
+) {
+    string check = ccam_aggregate_register_check(machine, destination, CCAM_AGG_TYPE_INT);
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    CCAMAggregateValueResult array_value = ccam_aggregate_read_ref(machine, array_register);
+    if (!array_value.ok) { return ccam_aggregate_trap(machine, array_value.trap); }
+    if (let reference = array_value.value.reference) {
+        check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapIntResult result = ccam_heap_array_len(machine.heap, reference, element_type);
+        if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+        string write_error = ccam_aggregate_write(machine, destination, ccam_heap_int(result.value));
+        if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ccam_aggregate_bytes_len(
+    CCAMAggregateMachine machine, int destination, int bytes_register
+) {
+    string check = ccam_aggregate_register_check(machine, destination, CCAM_AGG_TYPE_INT);
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    CCAMAggregateValueResult bytes_value = ccam_aggregate_read_ref(machine, bytes_register);
+    if (!bytes_value.ok) { return ccam_aggregate_trap(machine, bytes_value.trap); }
+    if (let reference = bytes_value.value.reference) {
+        check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapIntResult result = ccam_heap_bytes_len(machine.heap, reference);
+        if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+        string write_error = ccam_aggregate_write(machine, destination, ccam_heap_int(result.value));
+        if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ccam_aggregate_byte_get(
+    CCAMAggregateMachine machine, int destination, int bytes_register, int index
+) {
+    string check = ccam_aggregate_register_check(machine, destination, CCAM_AGG_TYPE_INT);
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    CCAMAggregateValueResult bytes_value = ccam_aggregate_read_ref(machine, bytes_register);
+    if (!bytes_value.ok) { return ccam_aggregate_trap(machine, bytes_value.trap); }
+    if (let reference = bytes_value.value.reference) {
+        check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapIntResult result = ccam_heap_byte_get(machine.heap, reference, index);
+        if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+        string write_error = ccam_aggregate_write(machine, destination, ccam_heap_int(result.value));
+        if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ccam_aggregate_bytes_concat(
+    CCAMAggregateMachine machine, int destination, int left_register, int right_register
+) {
+    string check = ccam_aggregate_register_check(machine, destination, CCAM_AGG_TYPE_REF);
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    CCAMAggregateValueResult left = ccam_aggregate_read_ref(machine, left_register);
+    if (!left.ok) { return ccam_aggregate_trap(machine, left.trap); }
+    CCAMAggregateValueResult right = ccam_aggregate_read_ref(machine, right_register);
+    if (!right.ok) { return ccam_aggregate_trap(machine, right.trap); }
+    if (let left_reference = left.value.reference) {
+        if (let right_reference = right.value.reference) {
+            check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult result = ccam_heap_bytes_concat(machine.heap, left_reference, right_reference);
+            if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+            string write_error = ccam_aggregate_write(machine, destination, ccam_heap_ref_value(result.reference));
+            if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+            return "";
+        }
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
 CCAMAggregateValueResult ccam_aggregate_register_value(
     CCAMAggregateMachine machine, int index, int expected_type
 ) {
@@ -479,6 +580,48 @@ test "aggregate CCAM rejects invalid register writes before mutation" {
     assert(ccam_aggregate_write(machine, 0, ccam_heap_bool(true)) == "register_type_mismatch");
     assert(ccam_aggregate_write(machine, 0, ccam_heap_ref_value(ccam_heap_invalid_ref())) == "invalid_reference");
     assert(!machine.registers[0].initialised);
+}
+
+test "aggregate CCAM arrays support typed update and length" {
+    List<int> types = new List<int>();
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_INT);
+    types.push(CCAM_AGG_TYPE_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(types, 4096, 16, 4096, 4096, 32);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_alloc_array(machine, 0, CCAM_AGG_TYPE_INT, 0, 3) == "");
+    assert(ccam_aggregate_write(machine, 1, ccam_heap_int(10)) == "");
+    assert(ccam_aggregate_array_append(machine, 0, 1, CCAM_AGG_TYPE_INT) == "");
+    assert(ccam_aggregate_write(machine, 1, ccam_heap_int(20)) == "");
+    assert(ccam_aggregate_array_set(machine, 0, 0, 1, CCAM_AGG_TYPE_INT) == "");
+    assert(ccam_aggregate_array_len(machine, 2, 0, CCAM_AGG_TYPE_INT) == "");
+    CCAMAggregateValueResult length = ccam_aggregate_register_value(machine, 2, CCAM_AGG_TYPE_INT);
+    assert(length.ok && length.value.int_value == 1);
+    assert(ccam_aggregate_array_get(machine, 1, 0, CCAM_AGG_TYPE_INT, 0) == "");
+    CCAMAggregateValueResult first = ccam_aggregate_register_value(machine, 1, CCAM_AGG_TYPE_INT);
+    assert(first.ok && first.value.int_value == 20);
+}
+
+test "aggregate CCAM byte strings preserve NUL and concatenate" {
+    List<int> types = new List<int>();
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_INT);
+    types.push(CCAM_AGG_TYPE_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(types, 4096, 16, 4096, 4096, 32);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_alloc_bytes(machine, 0, "A\0") == "");
+    assert(ccam_aggregate_alloc_bytes(machine, 1, "B") == "");
+    assert(ccam_aggregate_bytes_concat(machine, 2, 0, 1) == "");
+    assert(ccam_aggregate_bytes_len(machine, 3, 2) == "");
+    assert(ccam_aggregate_byte_get(machine, 4, 2, 1) == "");
+    CCAMAggregateValueResult length = ccam_aggregate_register_value(machine, 3, CCAM_AGG_TYPE_INT);
+    CCAMAggregateValueResult byte = ccam_aggregate_register_value(machine, 4, CCAM_AGG_TYPE_INT);
+    assert(length.ok && length.value.int_value == 3);
+    assert(byte.ok && byte.value.int_value == 0);
 }
 
 test "aggregate CCAM traps on wrong descriptor and preserves heap field" {
