@@ -1175,13 +1175,20 @@ concurrency-control algorithm and physical index/storage layout remain open pend
 formal analysis and reproducible benchmarks. These documents are proposals, not claims
 of an implemented or verified database.
 
+## Cross-project platform programme (2026-11-26)
 
-## Keel: 3D rendering, simulation and geometry
+The named application and systems programmes are defined in
+[`docs/architecture/PLATFORM-PROGRAMME.md`](architecture/PLATFORM-PROGRAMME.md).
+Their names and boundaries are:
 
-Keel's K0 architecture and K1 bounded geometry foundation are specified in
-[`docs/KEEL.md`](KEEL.md), with detailed design, security and research records under
-[`docs/keel/`](keel/RESEARCH-PROGRAMME.md). The current implementation is deliberately
-narrow: checked integer coordinate domains, exact bounded predicates, spatial primitives,
-simple-polygon validation and triangle-mesh input/topology checks. It is not a renderer,
-physics engine, asset pipeline or production 3D engine. Mutable input collections are not
-treated as persistent trusted assets.
+- **Helm** — operating-system kernel and its narrow architecture/platform interfaces.
+- **Bosun's Locker** — transactional database and storage engine.
+- **Topsail** — secure web application and service platform.
+- **Keel** — 3D engine and deterministic simulation.
+- **Halyard** — media architecture.
+- **Shroud** — GUI toolkit; **Anchor** — IDE built on Shroud.
+
+These are target programmes, not claims of completed implementations. They consume
+shared Capstan foundations rather than defining competing ownership, effect, resource,
+concurrency or security models. The programme records dependencies, staged acceptance
+gates, measurable evidence and explicit non-goals.
