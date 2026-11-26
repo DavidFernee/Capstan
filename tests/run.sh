@@ -450,6 +450,13 @@ elif grep -qi "opaque" <<<"$out"; then
 else
   bad "region heap reference opacity" "$out"
 fi
+if out="$("$C" build -o "$tmp/ccam_heap_ref_inspect_probe.c" "$ROOT/verification/ccam_heap_ref_inspect_probe.cap" 2>&1)"; then
+  bad "region heap reference representation privacy" "external module inspected a CCAMHeapRef field"
+elif grep -qF "private field 'object_id' of CCAMHeapRef" <<<"$out"; then
+  ok "region heap reference representation is inaccessible to importing modules"
+else
+  bad "region heap reference representation privacy" "$out"
+fi
 
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do
