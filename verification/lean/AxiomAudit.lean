@@ -370,3 +370,7 @@ import CapstanVerification.InjectionValue
 #print axioms CredentialConfinement.integrity_excludes_credentials
 #print axioms CredentialConfinement.fast_hash_excludes_credentials
 #print axioms CredentialConfinement.storage_has_verifier
+#print axioms CredentialConfinement.combine_rejects_left_credential
+#print axioms CredentialConfinement.combine_rejects_right_credential
+#print axioms CredentialConfinement.selection_rejects_credential_control
+#print axioms CredentialConfinement.selection_rejects_inherited_control

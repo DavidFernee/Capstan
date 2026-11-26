@@ -38,4 +38,43 @@ theorem storage_has_verifier (s : StorageEvent) :
   cases s with
   | persist v => exact ⟨v, rfl⟩
 
+
+-- Conservative provenance algebra for data and control dependencies.
+structure Provenance where
+  dataCredential : Bool
+  controlCredential : Bool
+  deriving DecidableEq
+
+def combine (a b : Provenance) : Provenance :=
+  ⟨a.dataCredential || b.dataCredential,
+   a.controlCredential || b.controlCredential⟩
+
+def select (condition yes no : Provenance) : Provenance :=
+  let branches := combine yes no
+  ⟨branches.dataCredential,
+   condition.dataCredential || condition.controlCredential || branches.controlCredential⟩
+
+def integrityAllowed (p : Provenance) : Bool :=
+  !p.dataCredential && !p.controlCredential
+
+theorem combine_rejects_left_credential (a b : Provenance)
+    (h : a.dataCredential = true) :
+    integrityAllowed (combine a b) = false := by
+  simp [integrityAllowed, combine, h]
+
+theorem combine_rejects_right_credential (a b : Provenance)
+    (h : b.dataCredential = true) :
+    integrityAllowed (combine a b) = false := by
+  simp [integrityAllowed, combine, h]
+
+theorem selection_rejects_credential_control (c a b : Provenance)
+    (h : c.dataCredential = true) :
+    integrityAllowed (select c a b) = false := by
+  simp [integrityAllowed, select, h]
+
+theorem selection_rejects_inherited_control (c a b : Provenance)
+    (h : c.controlCredential = true) :
+    integrityAllowed (select c a b) = false := by
+  simp [integrityAllowed, select, h]
+
 end CredentialConfinement
