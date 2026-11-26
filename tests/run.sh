@@ -255,6 +255,13 @@ else
   bad "CCAM source-to-IR lowering" "$out"
 fi
 
+section "Capstan-native verification: direct machine-code encoding"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/native_rel32.cap" "$ROOT/verification/native_register_encoding.cap" "$ROOT/verification/native_relocation.cap" "$ROOT/verification/native_binary_fields.cap" "$ROOT/verification/native_elf64.cap" "$ROOT/verification/native_exit_image.cap" "$ROOT/verification/native_link_model.cap" "$ROOT/verification/native_alu_encoding.cap" "$ROOT/verification/native_checked_alu.cap" "$ROOT/verification/native_mul_frame.cap" 2>&1)"; then
+  ok "direct native machine-code and ELF encoding regression tests"
+else
+  bad "direct native machine-code and ELF encoding regression tests" "$out"
+fi
+
 section "Capstan-native verification: freestanding Linux x86-64 native backend"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
   ok "CCAM emits freestanding x86-64 assembly without C runtime references"
