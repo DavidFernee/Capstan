@@ -1183,7 +1183,8 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_VOID);
     }
     if (f == "secret_env") {
-        want_args(c, e, 2, 2, f);
+        // Built-in calls have no receiver; require exactly two explicit arguments.
+        want_args(c, e, 0, 2, f);
         if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "secret_env() byte limit"); }
         if (n == 2) {
             if (!is_literal_str(e.kids[0])) {
