@@ -38,6 +38,7 @@ const int MAX_JSON_ARRAY_ELEMENTS = 16384;
 const int MAX_JSON_STRING_BYTES = 8388608;
 const int MAX_JSON_TOTAL_STRING_BYTES = 12582912;
 const int MAX_JSON_STRING_PARTS = 262144;
+const int MAX_JSON_TOTAL_STRING_PARTS = 524288;
 const int MAX_JSON_NUMBER_BYTES = 128;
 const int MAX_DOCS = 1000;
 const int MAX_DIAGS = 1000;
@@ -255,6 +256,7 @@ struct JParse {
     string err;
     int values;
     int string_bytes;
+    int string_parts;
 }
 
 Json j_new(int k) {
@@ -267,11 +269,12 @@ void j_fail(JParse p, string msg) {
 }
 
 bool j_string_add(JParse p, List<Tainted> parts, Tainted part) {
-    if (parts.len() >= MAX_JSON_STRING_PARTS) {
-        j_fail(p, "string has too many escape fragments (limit " + int_to_str(MAX_JSON_STRING_PARTS) + ") [CWE-400]");
+    if (parts.len() >= MAX_JSON_STRING_PARTS || p.string_parts >= MAX_JSON_TOTAL_STRING_PARTS) {
+        j_fail(p, "JSON string fragment budget exceeded [CWE-400]");
         return false;
     }
     parts.push(part);
+    p.string_parts += 1;
     return true;
 }
 
@@ -535,6 +538,7 @@ Json j_parse(Tainted s, JParse p) {
     p.err = "";
     p.values = 0;
     p.string_bytes = 0;
+    p.string_parts = 0;
     Json v = j_value(p, 0);
     j_ws(p);
     if (p.err == "" && p.pos < s.len()) { j_fail(p, "unexpected data after the JSON value"); }
@@ -1342,7 +1346,7 @@ void framing_error(string why) {
 }
 
 int main() {
-    Server srv = new Server{state: S_NEW, utf8: false, strict: false, release: false, root: taint(""), docs: new List<Doc>(), jp: new JParse{s: taint(""), pos: 0, err: "", values: 0, string_bytes: 0}};
+    Server srv = new Server{state: S_NEW, utf8: false, strict: false, release: false, root: taint(""), docs: new List<Doc>(), jp: new JParse{s: taint(""), pos: 0, err: "", values: 0, string_bytes: 0, string_parts: 0}};
     Reader r = new Reader{eof: false};
     Frame f = new Frame{length: -1, bad: false, lines: 0};
     while (true) {
