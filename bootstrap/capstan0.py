@@ -565,7 +565,7 @@ BUILTINS = {
 }
 
 PRELUDE = r'''
-import sys, re, hashlib, os, stat
+import sys, re, hashlib, os, stat, codecs
 sys.setrecursionlimit(200000)
 I64MIN, I64MAX = -(1 << 63), (1 << 63) - 1
 def _panic(msg, cwe):
