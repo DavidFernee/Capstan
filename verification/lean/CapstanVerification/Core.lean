@@ -28,7 +28,7 @@ inductive Ty where
 inductive Val where
   | int (value : Int)
   | bool (value : Bool)
-  deriving Repr
+  deriving DecidableEq, Repr
 
 def hasTypeB : Val → Ty → Bool
   | .int n, .int => inI64B n
