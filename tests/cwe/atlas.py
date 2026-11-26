@@ -600,41 +600,41 @@ add(1394, "Use of default cryptographic key", "reject", "int main() { string pri
 # Scalar metadata and conversion provenance must survive local variables and helper calls.
 add(20, "Improper input validation (laundering through Tainted length)", "reject",
     "int length_of(Tainted input) { return input.len(); }\n"
-    "int main() { if (let input = read_line()) { int n = length_of(input); char_str(n); } return 0; }",
+    "int main() { if (let input = read_line(1024)) { int n = length_of(input); char_str(n); } return 0; }",
     "CWE-20", "Length is derived metadata; helper summaries must preserve the Tainted parameter dependency.")
 
 add(20, "Improper input validation (laundering through Boolean comparison)", "gap",
-    "int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; string output = to_text(matched); bool ok = write_file(\"out.txt\", output); } return 0; }",
+    "int main() { if (let input = read_line(1024)) { bool matched = input.at(0) == 65; string output = to_text(matched); bool ok = write_file(\"out.txt\", output); } return 0; }",
     note="The current byte-reconstruction sink is not a general information-flow sink. Boolean comparison provenance is now tracked through locals, but the compiler does not yet define a policy for every control-flow observation.")
 
 add(20, "Improper input validation (laundering through a Boolean helper)", "reject",
     "bool identity_bool(bool value) { return value; }\n"
-    "int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; bool copied = identity_bool(matched); string key = to_text(copied); Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "int main() { if (let input = read_line(1024)) { bool matched = input.at(0) == 65; bool copied = identity_bool(matched); string key = to_text(copied); Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); if (let value = table.get(key)) { println(value); } } return 0; }",
     "CWE-20", "Boolean parameter-to-return summaries must preserve derived comparison results through helper calls.")
 
 add(20, "Improper input validation (laundering through to_text)", "reject",
-    "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); string key = to_text(input.at(0)); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "int main() { if (let input = read_line(1024)) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); string key = to_text(input.at(0)); if (let value = table.get(key)) { println(value); } } return 0; }",
     "CWE-20", "Numeric-to-text conversion must preserve provenance before a trusted map lookup.")
 
 add(20, "Improper input validation (laundering through join)", "reject",
-    "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); List<string> parts = new List<string>(); parts.push(to_text(input.at(0))); string key = join(parts, \"\"); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "int main() { if (let input = read_line(1024)) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); List<string> parts = new List<string>(); parts.push(to_text(input.at(0))); string key = join(parts, \"\"); if (let value = table.get(key)) { println(value); } } return 0; }",
     "CWE-20", "Collection aggregation must preserve element provenance before a trusted map lookup.")
 
 # A write through a dynamic list index may affect every element.
 add(20, "Improper input validation (laundering through a dynamic list index)", "reject",
-    "int main() { if (let input = read_line()) { List<int> bytes = new List<int>(); bytes.push(65); bytes.push(66); int index = 0; bytes[index] = input.at(0); println(char_str(bytes[1])); } return 0; }",
+    "int main() { if (let input = read_line(1024)) { List<int> bytes = new List<int>(); bytes.push(65); bytes.push(66); int index = 0; bytes[index] = input.at(0); println(char_str(bytes[1])); } return 0; }",
     "CWE-20", "A dynamic-index write widens to the whole element summary, so every possible element read remains derived.")
 
 # Reference-typed aggregates can be aliased. The current analysis does not yet
 # propagate a mutation through a second variable naming the same object.
 add(20, "Improper input validation (laundering through a reference alias)", "gap",
-    "int main() { List<int> original = new List<int>(); original.push(65); List<int> alias = original; if (let input = read_line()) { original[0] = input.at(0); } println(char_str(alias[0])); return 0; }",
+    "int main() { List<int> original = new List<int>(); original.push(65); List<int> alias = original; if (let input = read_line(1024)) { original[0] = input.at(0); } println(char_str(alias[0])); return 0; }",
     note="List and struct values are reference types. The current checker tracks access paths by the variable binding identity but does not yet compute may-alias sets or propagate heap writes across aliases.")
 
 # Aggregate parameter summaries must carry tainted element provenance to callee sinks.
 add(20, "Improper input validation (laundering through an aggregate helper)", "reject",
     "int consume_first(List<int> values) { println(char_str(values[0])); return 0; }\n"
-    "int main() { List<int> values = new List<int>(); values.push(65); if (let input = read_line()) { values[0] = input.at(0); } consume_first(values); return 0; }",
+    "int main() { List<int> values = new List<int>(); values.push(65); if (let input = read_line(1024)) { values[0] = input.at(0); } consume_first(values); return 0; }",
     "CWE-20", "The body-derived aggregate-parameter sink summary must preserve tainted element provenance across the call boundary.")
 
 # ---------------------------------------------------------------- harness
