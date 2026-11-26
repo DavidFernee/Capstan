@@ -1,0 +1,297 @@
+// Keel: bounded, validated triangle-mesh input checks.
+// This module deliberately does not retain caller-owned Lists. A successful
+// validation is a statement about the supplied values at validation time only;
+// callers must not treat mutable input Lists as a persistent trusted asset.
+//
+// K1 limits are intentionally conservative and explicit. They are independent
+// of byte budgets, which must also be enforced by the eventual owning asset
+// container before allocating these Lists.
+import "coordinates.cap";
+import "spatial.cap";
+
+const int KEEL_MESH3_MAX_VERTICES = 65536;
+const int KEEL_MESH3_MAX_INDICES = 393216;
+const int KEEL_MESH3_MAX_TRIANGLES = 131072;
+
+// Exact non-degeneracy test for a triangle in 3D. Each coordinate is first
+// validated against the 2^18-1 domain. Coordinate differences are < 2^19;
+// products and their differences fit signed int64. A triangle is non-degenerate
+// iff at least one component of (b-a) cross (c-a) is non-zero.
+bool? keel_triangle3_non_degenerate(KPoint3 a, KPoint3 b, KPoint3 c) {
+    if (!keel_coord3_in_domain(a.x) || !keel_coord3_in_domain(a.y) ||
+        !keel_coord3_in_domain(a.z) || !keel_coord3_in_domain(b.x) ||
+        !keel_coord3_in_domain(b.y) || !keel_coord3_in_domain(b.z) ||
+        !keel_coord3_in_domain(c.x) || !keel_coord3_in_domain(c.y) ||
+        !keel_coord3_in_domain(c.z)) { return none; }
+
+    int abx = b.x - a.x;
+    int aby = b.y - a.y;
+    int abz = b.z - a.z;
+    int acx = c.x - a.x;
+    int acy = c.y - a.y;
+    int acz = c.z - a.z;
+
+    int nx = aby * acz - abz * acy;
+    int ny = abz * acx - abx * acz;
+    int nz = abx * acy - aby * acx;
+    return nx != 0 || ny != 0 || nz != 0;
+}
+
+// Validate an indexed triangle mesh without mutating or retaining either List.
+// Empty meshes are not accepted as renderable geometry. Unreferenced vertices
+// are permitted: importers may preserve source vertex tables, but bounds include
+// all vertices and a later canonicalisation pass may remove unused entries.
+bool? keel_mesh3_valid(List<KPoint3> vertices, List<int> indices) {
+    int vertex_count = vertices.len();
+    int index_count = indices.len();
+
+    if (vertex_count < 3 || vertex_count > KEEL_MESH3_MAX_VERTICES) {
+        return false;
+    }
+    if (index_count < 3 || index_count > KEEL_MESH3_MAX_INDICES ||
+        index_count % 3 != 0 ||
+        index_count / 3 > KEEL_MESH3_MAX_TRIANGLES) {
+        return false;
+    }
+
+    for (int i = 0; i < vertex_count; i++) {
+        KPoint3 p = vertices[i];
+        if (!keel_coord3_in_domain(p.x) ||
+            !keel_coord3_in_domain(p.y) ||
+            !keel_coord3_in_domain(p.z)) { return none; }
+    }
+
+    for (int i = 0; i < index_count; i += 3) {
+        int ia = indices[i];
+        int ib = indices[i + 1];
+        int ic = indices[i + 2];
+        if (ia < 0 || ia >= vertex_count ||
+            ib < 0 || ib >= vertex_count ||
+            ic < 0 || ic >= vertex_count) { return false; }
+        if (ia == ib || ib == ic || ia == ic) { return false; }
+        bool? non_degenerate = keel_triangle3_non_degenerate(
+            vertices[ia], vertices[ib], vertices[ic]);
+        if (let triangle_ok = non_degenerate) {
+            if (!triangle_ok) { return false; }
+        } else {
+            return none;
+        }
+    }
+    return true;
+}
+
+// Compute a closed AABB over all vertices. This function validates the full
+// vertex domain and count independently; it does not assume mesh3_valid was
+// called earlier. It does not validate index topology.
+KBounds3? keel_mesh3_bounds(List<KPoint3> vertices) {
+    int count = vertices.len();
+    if (count < 1 || count > KEEL_MESH3_MAX_VERTICES) { return none; }
+
+    KPoint3 first = vertices[0];
+    if (!keel_coord3_in_domain(first.x) ||
+        !keel_coord3_in_domain(first.y) ||
+        !keel_coord3_in_domain(first.z)) { return none; }
+
+    int min_x = first.x;
+    int min_y = first.y;
+    int min_z = first.z;
+    int max_x = first.x;
+    int max_y = first.y;
+    int max_z = first.z;
+
+    for (int i = 1; i < count; i++) {
+        KPoint3 p = vertices[i];
+        if (!keel_coord3_in_domain(p.x) ||
+            !keel_coord3_in_domain(p.y) ||
+            !keel_coord3_in_domain(p.z)) { return none; }
+        if (p.x < min_x) { min_x = p.x; }
+        if (p.y < min_y) { min_y = p.y; }
+        if (p.z < min_z) { min_z = p.z; }
+        if (p.x > max_x) { max_x = p.x; }
+        if (p.y > max_y) { max_y = p.y; }
+        if (p.z > max_z) { max_z = p.z; }
+    }
+
+    return keel_bounds3_make(keel_point3(min_x, min_y, min_z),
+                             keel_point3(max_x, max_y, max_z));
+}
+
+
+// Topology incidence summary for a validated indexed triangle list.
+// This is a call-time report only: it retains no caller storage and makes no
+// manifoldness, connectedness, watertightness or self-intersection claim.
+struct KMesh3Topology {
+    int unique_edges;
+    int boundary_edges;
+    int two_face_edges;
+    int nonmanifold_edges;
+    int inconsistent_winding_edges;
+    int duplicate_faces;
+    int connected_components;
+    int referenced_vertices;
+    int isolated_vertices;
+}
+
+// Pack an undirected edge and its direction into a non-negative integer.
+// Vertex indices are at most 65535, so packed <= 2^32-1 and code < 2^33.
+int keel_mesh3_directed_edge_code(int a, int b) {
+    int lo = a;
+    int hi = b;
+    int direction = 0;
+    if (a > b) {
+        lo = b;
+        hi = a;
+        direction = 1;
+    }
+    return (lo * 65536 + hi) * 2 + direction;
+}
+
+// Canonicalise a face key by sorting its three distinct indices. The packed
+// 48-bit value is below 2^48, safely inside signed int64.
+int keel_mesh3_face_key(int a, int b, int c) {
+    int x = a;
+    int y = b;
+    int z = c;
+    if (x > y) { int t = x; x = y; y = t; }
+    if (y > z) { int t = y; y = z; z = t; }
+    if (x > y) { int t = x; x = y; y = t; }
+    return (x * 65536 + y) * 65536 + z;
+}
+
+// Iterative disjoint-set operations. Path halving bounds auxiliary stack use.
+int keel_mesh3_component_root(List<int> parent, int vertex) {
+    int current = vertex;
+    while (parent[current] != current) {
+        parent[current] = parent[parent[current]];
+        current = parent[current];
+    }
+    return current;
+}
+
+void keel_mesh3_component_union(List<int> parent, List<int> rank, int a, int b) {
+    int root_a = keel_mesh3_component_root(parent, a);
+    int root_b = keel_mesh3_component_root(parent, b);
+    if (root_a == root_b) { return; }
+    if (rank[root_a] < rank[root_b]) {
+        parent[root_a] = root_b;
+    } else if (rank[root_a] > rank[root_b]) {
+        parent[root_b] = root_a;
+    } else {
+        parent[root_b] = root_a;
+        rank[root_a] += 1;
+    }
+}
+
+// Return none for malformed/out-of-domain geometry. Duplicate faces are
+// counted independent of winding; an extra occurrence contributes one.
+// An edge with exactly two incident faces has inconsistent winding when both
+// faces traverse that undirected edge in the same direction.
+//
+// The implementation uses integer sort-and-scan rather than a hash table:
+// O(T log T) comparisons and O(T) bounded scratch entries, deterministic
+// independent of process hash seeds and map iteration behaviour.
+KMesh3Topology? keel_mesh3_topology(List<KPoint3> vertices, List<int> indices) {
+    if (let valid = keel_mesh3_valid(vertices, indices)) {
+        if (!valid) { return none; }
+    } else {
+        return none;
+    }
+
+    List<int> edges = new List<int>();
+    List<int> faces = new List<int>();
+    List<int> parent = new List<int>();
+    List<int> rank = new List<int>();
+    List<int> referenced = new List<int>();
+    for (int vertex = 0; vertex < vertices.len(); vertex += 1) {
+        parent.push(vertex);
+        rank.push(0);
+        referenced.push(0);
+    }
+    for (int i = 0; i < indices.len(); i += 3) {
+        int a = indices[i];
+        int b = indices[i + 1];
+        int c = indices[i + 2];
+        edges.push(keel_mesh3_directed_edge_code(a, b));
+        edges.push(keel_mesh3_directed_edge_code(b, c));
+        edges.push(keel_mesh3_directed_edge_code(c, a));
+        faces.push(keel_mesh3_face_key(a, b, c));
+        referenced[a] = 1;
+        referenced[b] = 1;
+        referenced[c] = 1;
+        keel_mesh3_component_union(parent, rank, a, b);
+        keel_mesh3_component_union(parent, rank, b, c);
+    }
+    edges.sort();
+    faces.sort();
+
+    int unique_edges = 0;
+    int boundary_edges = 0;
+    int two_face_edges = 0;
+    int nonmanifold_edges = 0;
+    int inconsistent_winding_edges = 0;
+    int edge_count = edges.len();
+    int i = 0;
+    while (i < edge_count) {
+        int packed = edges[i] / 2;
+        int incidence = 0;
+        int direction_sum = 0;
+        while (i < edge_count && edges[i] / 2 == packed) {
+            if (edges[i] % 2 == 0) {
+                direction_sum += 1;
+            } else {
+                direction_sum -= 1;
+            }
+            incidence += 1;
+            i += 1;
+        }
+        unique_edges += 1;
+        if (incidence == 1) {
+            boundary_edges += 1;
+        } else if (incidence == 2) {
+            two_face_edges += 1;
+            if (direction_sum == 2 || direction_sum == -2) {
+                inconsistent_winding_edges += 1;
+            }
+        } else if (incidence > 2) {
+            nonmanifold_edges += 1;
+        }
+    }
+
+    int duplicate_faces = 0;
+    i = 0;
+    while (i < faces.len()) {
+        int face = faces[i];
+        int occurrences = 0;
+        while (i < faces.len() && faces[i] == face) {
+            occurrences += 1;
+            i += 1;
+        }
+        if (occurrences > 1) { duplicate_faces += occurrences - 1; }
+    }
+
+    int connected_components = 0;
+    int referenced_vertices = 0;
+    int isolated_vertices = 0;
+    for (int vertex = 0; vertex < vertices.len(); vertex += 1) {
+        if (referenced[vertex] == 1) {
+            referenced_vertices += 1;
+            if (keel_mesh3_component_root(parent, vertex) == vertex) {
+                connected_components += 1;
+            }
+        } else {
+            isolated_vertices += 1;
+        }
+    }
+
+    return new KMesh3Topology{
+        unique_edges: unique_edges,
+        boundary_edges: boundary_edges,
+        two_face_edges: two_face_edges,
+        nonmanifold_edges: nonmanifold_edges,
+        inconsistent_winding_edges: inconsistent_winding_edges,
+        duplicate_faces: duplicate_faces,
+        connected_components: connected_components,
+        referenced_vertices: referenced_vertices,
+        isolated_vertices: isolated_vertices
+    };
+}
