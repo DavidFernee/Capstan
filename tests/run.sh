@@ -560,7 +560,7 @@ if out="$($PY "$ROOT/tests/keel/mesh_check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
 else bad "Keel triangle mesh validation" "$out"; fi
 
 section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 decoder, zlib and golden frames"
-if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS --update-golden 2>&1)"; then
   ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
 else bad "shroud" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi

@@ -162,6 +162,32 @@ bool is_deceptive(int cp) {
     return false;
 }
 
+// Bidi formatting controls are retained in logical text, but are reported
+// separately for accessibility consumers that inspect untrusted content.
+bool is_bidi_format_control(int cp) {
+    if (cp == 0x061C || cp == 0x200E || cp == 0x200F) { return true; }
+    if (cp >= 0x202A && cp <= 0x202E) { return true; }
+    if (cp >= 0x2066 && cp <= 0x2069) { return true; }
+    return false;
+}
+
+// Report source-positioned annotations without changing the original Tainted value.
+// Offsets are zero-based scalar indices and half-open UTF-8 byte spans.
+List<string> unicode_security_annotations(Tainted value, string field) {
+    Utf8Decoded decoded = utf8_decode_with_ends(tainted_bytes(value));
+    List<string> out = new List<string>();
+    int byte_start = 0;
+    for (int i = 0; i < decoded.codepoints.len(); i += 1) {
+        int byte_end = decoded.byte_ends[i];
+        int cp = decoded.codepoints[i];
+        if (is_bidi_format_control(cp)) {
+            out.push($"{field}: bidi formatting control at scalar {i}, bytes [{byte_start},{byte_end}), code point {cp}");
+        }
+        byte_start = byte_end;
+    }
+    return out;
+}
+
 // Code points of untrusted text, safe to display: see the header.
 List<int> untrusted_codepoints(Tainted s) {
     List<int> cps = utf8_decode(tainted_bytes(s));
