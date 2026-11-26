@@ -155,6 +155,12 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/schooner_budget.cap" 2>&
 else
   bad "Schooner resource-budget model" "$out"
 fi
+section "Schooner S1: concurrent revocation and in-flight access interleavings"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/schooner_concurrency.cap" 2>&1)"; then
+  ok "bounded schedules preserve admission, quiescence and reclamation invariants"
+else
+  bad "Schooner concurrency model" "$out"
+fi
 
 section "Capstan-native verification: finite protocol automata"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
