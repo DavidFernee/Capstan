@@ -139,6 +139,8 @@ explicitly. Their meaning therefore never depends on precedence.
 
 ## Built-in functions
 
+The direct input signatures and their native/stage-0 obligations are specified in [the mandatory bounded-input contract](architecture/BOUNDED-INPUT-CONTRACT.md). That contract also distinguishes per-operation bounds from the still-required compositional budgets for parsers and decoders.
+
 | Function | Notes |
 |---|---|
 | `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
