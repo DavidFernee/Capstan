@@ -50,7 +50,7 @@ operands are retained.
 def selectProvenance (selected selector : ProvenanceValue) : ProvenanceValue :=
   { dataSources := selected.dataSources
     selectionSources :=
-      selected.selectionSources ∪ selector.dataSources ∪ selector.selectionSources }
+      selected.selectionSources ∪ (selector.dataSources ∪ selector.selectionSources) }
 
 /-- A small expression language for the explicit-flow provenance fragment. -/
 inductive ProvenanceExpr where
@@ -116,10 +116,10 @@ theorem select_preserves_prior_selection
     selected.selectionSources ∪ selector.selectionSources ⊆
       (selectProvenance selected selector).selectionSources := by
   intro source hsource
-  simp [selectProvenance] at *
-  rcases hsource with hsource | hsource
-  · exact Or.inl hsource
-  · exact Or.inr (Or.inr hsource)
+  simp only [selectProvenance, Finset.mem_union]
+  rcases Finset.mem_union.mp hsource with hselected | hselector
+  · exact Or.inl hselected
+  · exact Or.inr (Or.inr hselector)
 
 /-- Literal evaluation introduces no external provenance. -/
 theorem literal_has_no_provenance :
