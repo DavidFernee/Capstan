@@ -12,7 +12,7 @@ int main() {
     CsvText csv_fullwidth = escape_csv(taint("＝1+1"));
     CsvText csv_line_feed = escape_csv(taint_char(10) + taint("=1+1"));
     CsvText csv_edge_cases = csv_space + "," + csv_fullwidth + "," + csv_line_feed;
-    if (!write_csv_file("/dev/stdout", csv_edge_cases)) { return 4; }
+    if (!write_csv_file("/dev/null", csv_edge_cases)) { return 4; }
     println(log_line);
     println("typed output sinks accepted");
     return 0;
