@@ -165,8 +165,11 @@ string ccam_aggregate_write(
     if (value.kind != expected_type) { return "register_type_mismatch"; }
     if (expected_type == CCAM_AGG_TYPE_REF) {
         if (let reference = value.reference) {
-            // The opaque reference can only be obtained from this heap's
-            // allocation or from a previously validated heap read.
+            // Reject sentinels and references issued by another arena before
+            // allowing them into this machine's register file.
+            if (ccam_heap_object_index(machine.heap, reference) < 0) {
+                return "invalid_reference";
+            }
         } else {
             return "invalid_reference";
         }
@@ -474,11 +477,8 @@ test "aggregate CCAM rejects invalid register writes before mutation" {
     assert(created.ok);
     CCAMAggregateMachine machine = created.machine;
     assert(ccam_aggregate_write(machine, 0, ccam_heap_bool(true)) == "register_type_mismatch");
-    assert(ccam_aggregate_write(machine, 0, ccam_heap_ref_value(ccam_heap_invalid_ref())) == "");
-    CCAMAggregateValueResult value = ccam_aggregate_register_value(
-        machine, 0, CCAM_AGG_TYPE_REF
-    );
-    assert(value.ok);
+    assert(ccam_aggregate_write(machine, 0, ccam_heap_ref_value(ccam_heap_invalid_ref())) == "invalid_reference");
+    assert(!machine.registers[0].initialised);
 }
 
 test "aggregate CCAM traps on wrong descriptor and preserves heap field" {
@@ -503,11 +503,15 @@ test "aggregate CCAM traps on wrong descriptor and preserves heap field" {
     assert(ccam_aggregate_alloc_record(machine, 0, layout) == "");
     assert(ccam_aggregate_write(machine, 1, ccam_heap_int(11)) == "");
     assert(ccam_aggregate_field_set(machine, 0, 9999, 0, 1, CCAM_AGG_TYPE_INT) == "object_type_mismatch");
-    CCAMAggregateValueResult still_empty = ccam_heap_field_get(
-        machine.heap,
-        machine.registers[0].value.reference.value,
-        4401,
-        0
+    CCAMAggregateValueResult object = ccam_aggregate_register_value(
+        machine, 0, CCAM_AGG_TYPE_REF
     );
-    assert(!still_empty.ok && still_empty.trap == "uninitialised_field");
+    if (let reference = object.value.reference) {
+        CCAMHeapValueResult still_empty = ccam_heap_field_get(
+            machine.heap, reference, 4401, 0
+        );
+        assert(!still_empty.ok && still_empty.trap == "uninitialised_field");
+    } else {
+        assert(false);
+    }
 }
