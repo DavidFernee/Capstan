@@ -1,0 +1,6 @@
+import "ccam_aggregate_statement.cap";
+struct AGDeclaration { string name; int result_kind; List<AGStatement> body; }
+bool ag_declaration_valid(AGDeclaration declaration,int count) {
+ if (declaration.name.len()==0 || declaration.body.len()!=1 || declaration.result_kind!=1) { return false; }
+ return ag_statement_valid(declaration.body[0],count);
+}
