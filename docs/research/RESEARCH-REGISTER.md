@@ -66,6 +66,8 @@ no Safe or Verified profile claim is authorised by the draft.
 | R5 | **Resource-Bounded Cryptographic Primitives in a Constrained Runtime** — how should work, allocation and intermediate state be bounded for password derivation? | PBKDF2 work/output/input bounds and HMAC-state reuse merged in PR #149. | Focused implementation contribution; broader novelty and performance/security comparison not established. | Likely a section or case study unless evaluation reveals a distinct contribution. |
 | R6 | **A C-Free Self-Hosting Compiler and Its Assurance Boundary** — what staged architecture and proof obligations are required to remove C from the compiler/runtime trusted base? | C-free bootstrap contract PR #172 draft; CCAM and lowering work; current design map and threat model explicitly identify remaining C/Python/toolchain trust. | Architecture and early implementation only; no C-free default pipeline or end-to-end proof. | Long-term flagship direction; not yet a results paper. |
 
+**R6 implementation note (2026-11-25):** The experimental region heap now has nominal record-reference fields and typed reference arrays, plus logical byte/object/work budgets and a separate temporary-allocation peak limit. A separate Lean allocation model in `formal/CCAMHeap.lean` specifies budget admission, failure atomicity, region authority and generational-handle properties. The model does not establish that the Capstan prototype or host allocator refines those transitions; the integer region token remains forgeable, and logical bytes/temporary estimates are not an RSS or machine-instruction bound. CI and refinement evidence remain required. This is research infrastructure, not evidence of a C-free compiler.
+
 ## 2. Evidence ledger
 
 The following is a starting point, not an independent audit of each PR's current CI.
@@ -274,3 +276,6 @@ resource-limit bypasses that per-buffer limits permit, without unacceptable thro
 latency or memory overhead?** Baselines must compare identical workloads and report
 rejection correctness, peak retained bytes, allocation count, CPU work, throughput and
 tail latency. The sequential prototype alone cannot answer this question.
+
+
+The formal transition model's rejected-allocation atomicity, successful-allocation identity, exact charging and invariant-preservation lemmas are being strengthened with explicit case splits over every admission guard. The previous proof scripts only split the outer authority test and left nested budget branches unresolved. The resulting proofs remain model-level; implementation refinement is still open.
