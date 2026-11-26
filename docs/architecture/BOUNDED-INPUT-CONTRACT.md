@@ -16,11 +16,15 @@ All bounds are nonnegative signed-64 integer expressions in the current language
 | Source form | Explicit unit(s) | Current hard ceiling | Over-limit behaviour |
 |---|---|---|---|
 | `args(max_count, max_arg_bytes, max_total_bytes)` | number of arguments; bytes in each argument; aggregate argument bytes | 4096; 1 MiB; 16 MiB | Trap with CWE-789. Count and every argument length are preflighted before the result list or managed strings are allocated. |
-| `read_file(path, max_bytes)` | bytes read from the opened file/stream | 1 GiB | Returns `none` for content exceeding the caller's bound; invalid bound traps. Reads are streamed rather than trusting a reported file size. |
+| `read_file(path, max_bytes)` | bytes read from the opened file/stream | 1 GiB | Returns `none` for content exceeding the caller's bound; invalid bound traps. Reads are streamed rather than trusting a reported file size. **This is a byte bound, not a deadline; a live FIFO/device/network filesystem may block while waiting for data.** |
 | `read_line(max_bytes)` | payload bytes, excluding newline | 1 MiB | Trap with CWE-789 before appending the first byte beyond the caller's bound. Exactly the bound is accepted with newline or EOF. |
 | `read_bytes(count)` | bytes requested from standard input | 1 GiB | Reads at most the explicit count; EOF may return fewer bytes. Invalid count traps. |
 | `secret_env("NAME", max_bytes)` | bytes in the environment value | 1 MiB | Trap with CWE-789 before allocating the managed Secret. Variable names remain string literals without embedded NUL. |
 | `workspace_read_file(root, relative, max_bytes)` | bytes read from the confined regular file | 1 GiB | Returns `none` for over-limit content; invalid bound traps. This remains a native-driver host operation, not a general unforgeable directory type. |
+
+
+
+Byte limits do not establish a wall-clock bound. In particular, the current `read_file` implementation opens with `O_NONBLOCK` but then clears that flag before reading; a FIFO with a writer that remains open and idle can therefore block indefinitely. The existing FIFO regression covers only the no-writer case and must not be described as proving non-blocking behaviour. A deadline/cancellation contract for live streams is still open under issue #444.
 
 Input-derived values retain their existing trust/provenance rules. In particular, file, line and byte-stream results remain `Tainted`; an explicit size bound does not validate their contents.
 
