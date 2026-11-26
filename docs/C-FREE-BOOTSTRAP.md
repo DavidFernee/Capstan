@@ -166,7 +166,7 @@ This sequence permits early progress without confusing a working scalar evaluato
 
 ## 10. Current status
 
-**Snapshot reviewed:** main at `4a2622e53b11bbe3c08bc7355c8fa9e477dee155` (2026-11-26).
+**Snapshot reviewed:** main at `92cc70cbb7c20f5903f415548367d7b76a7c648e` (2026-11-26).
 
 The production compiler still uses the Python-seeded bootstrap and generates C for GCC/Clang; its executable uses the Capstan C runtime. It is self-hosted, but it is not C-free under the definitions in this contract.
 
