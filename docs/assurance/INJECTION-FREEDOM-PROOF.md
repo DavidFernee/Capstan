@@ -40,13 +40,15 @@ The theorem assumes the sink adapter implements its stated contract. A model the
 
 ## 3. Provenance model
 
-The first Lean module is `verification/lean/CapstanVerification/InjectionProvenance.lean`. It defines a finite source-identity domain, separate direct-data and selection provenance sets, conservative union for expression composition, selection transfer that preserves the selected value's provenance and records the selector's provenance, a small expression grammar and abstract evaluator, and preservation lemmas including `expression_sources_preserved`.
+The initial Lean modules are `verification/lean/CapstanVerification/InjectionProvenance.lean` and `InjectionSinks.lean`. The provenance module defines a finite source-identity domain, separate direct-data and selection provenance sets, conservative union for expression composition, selection transfer that preserves the selected value's provenance and records the selector's provenance, a small expression grammar and abstract evaluator, and preservation lemmas including `expression_sources_preserved`.
 
 The key design distinction is selection dependence. Reading a trusted literal from a table using an attacker-controlled index is not independent of that index. The result may be a literal, but the selection event remains attacker-influenced.
 
-The module is imported into `CapstanVerification.lean` and its theorem dependencies are listed in `AxiomAudit.lean`.
+The sink module defines distinct protected contexts, a strict sink-admissibility predicate, and an encoder contract that must prove context-specific safety while preserving both data and selection provenance. It also makes cross-context certification an explicit proof obligation. These are abstract contracts: no production encoder or sink adapter has yet been shown to satisfy them.
 
-**Scope of this first theorem:** it proves a property of the small formal expression grammar only. It does not yet model Capstan's parser, checker, assignments, heap, aliases, aggregate operations, function calls, validators, output sinks, or generated code. It is not evidence that the current compiler enforces the model.
+Both modules are imported into `CapstanVerification.lean` and their theorem dependencies are listed in `AxiomAudit.lean`.
+
+**Scope of this first theorem:** it proves a property of the small formal expression grammar only. It does not yet model Capstan's parser, checker, assignments, heap, aliases, aggregate operations, function calls, validator correctness, concrete encoder implementations, external sink adapters, or generated code. It is not evidence that the current compiler enforces the model.
 
 ## 4. Required semantic layers
 
