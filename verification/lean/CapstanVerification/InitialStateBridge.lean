@@ -121,19 +121,6 @@ def runtimeInitialRegisterFileOf {n : Nat} (types : RegTypes n) :
     List RuntimeRegister :=
   runtimeInitialRegisterFile (List.ofFn types)
 
-/-- The abstract runtime initial file refines the finite machine's empty
-register vector: types agree at every index and every slot is uninitialised. -/
-theorem runtimeInitialRegisterFileOf_relation
-    {n : Nat} (types : RegTypes n) :
-    RuntimeRegisterFileRelation types (fun _ => none)
-      (runtimeInitialRegisterFileOf types) := by
-  constructor
-  · simp [runtimeInitialRegisterFileOf, runtimeInitialRegisterFile]
-  · intro index
-    simp [runtimeInitialRegisterFileOf, runtimeInitialRegisterFile,
-      runtimeTypeAt, runtimeValueAt, runtimeRegisterAt,
-      runtimeRegisterInitForType, runtimeRegisterInit, RuntimeRegister.value?]
-
 /-- Native-shaped initial records and abstract runtime records correspond
 for the same finite indexed CCAM type vector. -/
 theorem nativeInitialRegisterFileOf_relation
