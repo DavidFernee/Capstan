@@ -300,8 +300,23 @@ def protocol(exe):
           "an error in an imported file is shown on its import: %r" % d)
     s.notify("textDocument/didChange", {"textDocument": {"uri": uri, "version": 3}, "contentChanges": [{"text": 'import "nowhere.cap";\n'}]})
     d = publish_for(s, uri)["diagnostics"]
-    check(len(d) == 1 and d[0]["message"] == "cannot read imported file 'nowhere.cap' (missing, unreadable, a directory, or over 16 MiB)", "missing import: %r" % d)
+    check(len(d) == 1 and d[0]["message"] == "cannot read imported file 'nowhere.cap' (missing, unreadable, a directory, over 16 MiB, or aggregate source budget exceeded)", "missing import: %r" % d)
     finish(s, "imports")
+
+    # The LSP front end uses the same graph file ceiling as capstanc.
+    with tempfile.TemporaryDirectory(prefix="lsp-import-budget-", dir=ROOT) as td:
+        for i in range(256):
+            body = f'import "f{i + 1}.cap";\\n' if i < 255 else "void library() {}\\n"
+            with open(os.path.join(td, f"f{i}.cap"), "w", encoding="utf-8") as out:
+                out.write(body)
+        budget_uri = uri_of(os.path.join(td, "main.cap"))
+        sb, _ = session(exe)
+        sb.notify("textDocument/didOpen", {"textDocument": {"uri": budget_uri, "version": 1,
+                                                            "text": 'import "f0.cap";\\n'}})
+        bd = publish_for(sb, budget_uri)["diagnostics"]
+        check(len(bd) == 1 and "file-count limit (256)" in bd[0]["message"],
+              "LSP import graph file budget: %r" % bd)
+        finish(sb, "import budget")
 
     # --strict and --release through initializationOptions.
     src = "int main() { int unused = 1; return 0; }\n"
