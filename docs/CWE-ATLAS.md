@@ -13,13 +13,13 @@ Attempts are written from the CWE descriptions; this atlas is not an official MI
 
 | Outcome | Weaknesses |
 |---|---|
-| Prevented: rejected at compile time | 81 |
+| Prevented: rejected at compile time | 80 |
 | Prevented: stopped safely at run time | 25 |
 | Prevented: attempt compiles but has no effect | 16 |
 | Inexpressible: the construct does not exist | 71 |
 | Possible only through an audited escape hatch | 2 |
 | Logic or design decision: beyond any language | 22 |
-| **Gap: can be written** | 6 |
+| **Gap: can be written** | 7 |
 | Not applicable (yet) | 33 |
 
 ## Gaps: weaknesses that can still be written
@@ -29,6 +29,7 @@ closes a gap the test fails and the entry is reclassified.
 
 | CWE | Weakness | What was written | Why it compiles, and the plan |
 |---|---|---|---|
+| [257](https://cwe.mitre.org/data/definitions/257.html) | Storing passwords in a recoverable format | `int main() { if (let x = read_line()) { bool ok = write_log_file("users.log", escape_lo...` | Password provenance is not yet tracked: context-safe logging still stores a recoverable password. This is an explicit follow-up, not a compiler-prevented weakness. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | `int main() { string cell = escape_json(taint("=cmd\|' /C calc'!A0")); bool ok = write_...` | escape_json() still returns a plain string fragment for the LSP and Shroud serializers, so generic write_file() cannot distinguish it from trusted text. JSON typing is tracked in issue #250. |
 | [798](https://cwe.mitre.org/data/definitions/798.html) | Hard-coded password-like literal under an innocuous name | `int main() { string cfg = "Winter2026!"; sql_query("UPDATE settings SET v = ?", cfg); r...` | A short password-like literal under an ordinary name is indistinguishable from other text. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Password Secret passed through an innocuous alias to hash_verify | `int main() { if (let s = secret_env("PASSWORD")) { bool ok = hash_verify(s, hash("candi...` | hash_verify() permits generic Secret values for non-password credentials. Secret does not distinguish a human password from a token, and the innocuous alias hides the environment name. A first-class Password type and explicit token-verification contract are required. |
