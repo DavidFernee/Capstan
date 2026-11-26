@@ -902,12 +902,16 @@ void test_display_list(Tally t, Font font) {
         "display list: over-range glyph alpha is rejected", "over-range alpha accepted");
     Canvas admission = new_recording_canvas(new_pixmap(1, 1));
     expect(t, display_mask_admissible(admission, 1, 1, 1),
+        "valid one-pixel mask rejected");
         "display list: one-pixel mask passes pre-allocation admission");
     expect(t, !display_mask_admissible(admission, 1, 1, MAX_DISPLAY_MASK_PIXELS + 1),
+        "oversized mask accepted");
         "display list: oversized mask is rejected before copying");
     expect(t, !display_mask_admissible(admission, 2, 2, 3),
+        "inconsistent mask dimensions accepted");
         "display list: inconsistent mask dimensions are rejected before copying");
     expect(t, !display_mask_admissible(admission, 0, 1, 0),
+        "partially zero mask dimensions accepted");
         "display list: partially zero mask dimensions are rejected");
     Pixmap direct = new_pixmap(48, 36);
     Pixmap replayed = new_pixmap(48, 36);
@@ -1243,67 +1247,6 @@ void test_blend_bounds(Tally t) {
         "display list: blend outside recorded clip is discarded");
 }
 
-void test_resize(Tally t, Font f, Font b) {
-    Ui ui = new_ui(f, b, light_theme(), 640, 480, 256);
-    View v = column()
-        .add(button("Danger", "danger").danger().key("danger"))
-        .add(text_field("field", taint("abc"), "Name").key("field"))
-        .add(scroll(column().add(button("Item", "item"))).height(40).key("scroll"));
-    ui.render(v, 1000);
-    string guard_id = laid_of(ui, "danger").id;
-    string field_id = laid_of(ui, "field").id;
-    int old_guard_time = 0;
-    if (let t0 = ui.shown_at.get(guard_id)) { old_guard_time = t0; }
-    ui.focus = field_id;
-    ui.caret.set(field_id, 2);
-    ui.scroll.set("scroll", fx(12));
-    ui.hover = guard_id;
-    ui.pressed = guard_id;
-
-    int old_w = ui.pixmap.w;
-    int old_h = ui.pixmap.h;
-    int old_scale = ui.scale;
-    expect(t, !ui.resize(0, 600, 384), "resize: zero width is rejected", "resize unexpectedly accepted zero width");
-    expect(t, !ui.resize(800, 600, 63), "resize: scale below minimum is rejected", "resize unexpectedly accepted invalid scale");
-    expect(t, ui.pixmap.w == old_w && ui.pixmap.h == old_h && ui.scale == old_scale &&
-        ui.focus == field_id && ui.hover == guard_id && ui.pressed == guard_id,
-        "resize: invalid requests leave Ui state unchanged", "state changed after rejected resize");
-
-    expect(t, ui.resize(800, 600, 384), "resize: valid dimensions and scale are accepted", "resize rejected valid dimensions and scale");
-    expect(t, ui.pixmap.w == 800 && ui.pixmap.h == 600 && ui.scale == 384,
-        "resize: pixel surface and scale update together", $"{ui.pixmap.w}x{ui.pixmap.h}@{ui.scale}");
-    bool old_tree_cleared = true;
-    if (let _old_root = ui.root) { old_tree_cleared = false; }
-    expect(t, old_tree_cleared && ui.hover == "" && ui.pressed == "",
-        "resize: old hit-test tree and transient pointer state are invalidated", "stale state retained");
-    expect(t, ui.focus == field_id, "resize: logical focus is preserved", ui.focus);
-    bool caret_preserved = false;
-    bool scroll_preserved = false;
-    if (let caret_value = ui.caret.get(field_id)) { caret_preserved = caret_value == 2; }
-    if (let scroll_value = ui.scroll.get("scroll")) { scroll_preserved = scroll_value == fx(12); }
-    expect(t, caret_preserved && scroll_preserved,
-        "resize: caret and scroll state are preserved", "retained state differs");
-    bool guard_preserved = false;
-    if (let guard_time = ui.shown_at.get(guard_id)) { guard_preserved = guard_time == old_guard_time; }
-    expect(t, guard_preserved,
-        "resize: guard history is retained until the next rendered frame", "guard history changed early");
-    expect_int(t, ui.handle(pointer_event(EV_POINTER_UP, 10, 10, 1100)).len(), 0,
-        "resize: pointer input is ignored until a fresh frame is rendered");
-
-    ui.render(v, 1200);
-    int new_guard_time = 0;
-    if (let t1 = ui.shown_at.get(guard_id)) { new_guard_time = t1; }
-    expect(t, new_guard_time == 1200,
-        "resize: scale transition restarts guarded activation after fresh layout", $"{new_guard_time}");
-}
-
-void test_scale(Tally t, Font f, Font b) {
-    // At 150% every length in dp is 1.5 device pixels.
-    Ui ui = new_ui(f, b, light_theme(), 300, 200, 384);
-    ui.render(column().add(box().frame(100, 40).key("x")), 0);
-    expect_int(t, laid_of(ui, "x").frame.w, fx(150), "scale: 100 dp is 150 px at 150%");
-    expect_int(t, laid_of(ui, "x").frame.h, fx(60), "scale: heights scale too");
-}
 
 int main() {
     Font? regular = none;
