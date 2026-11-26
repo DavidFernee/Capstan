@@ -290,6 +290,13 @@ else
   bad "CCAM native x86-64 backend" "$out"
 fi
 
+section "Capstan-native repository inventory"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1)"; then
+  ok "inventory purpose/language classification, binary detection, physical-line counting and aggregate totals"
+else
+  bad "Capstan-native repository inventory" "$out"
+fi
+
 section "unit"
 for opt in 0 2 3; do
   if "$CC" "-O$opt" -std=gnu11 -w -I"$ROOT/runtime" "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit_o$opt" &&
