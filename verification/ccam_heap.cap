@@ -701,13 +701,14 @@ test "CCAM region heap composes work and temporary-allocation budgets" {
     int before_bytes = temp_heap.bytes_used;
     int before_id = temp_heap.next_id;
     int before_work = temp_heap.work_used;
+    int before_temporary = temp_heap.temporary_peak_bytes;
     CCAMHeapRefResult rejected_concat = ccam_heap_bytes_concat(
         temp_heap, left.heap_token, left.ref_id, right.heap_token, right.ref_id
     );
     assert(!rejected_concat.ok && rejected_concat.trap == "temporary_limit");
     assert(temp_heap.objects.len() == before_objects &&
         temp_heap.bytes_used == before_bytes && temp_heap.next_id == before_id &&
-        temp_heap.work_used == before_work && temp_heap.temporary_peak_bytes == 0);
+        temp_heap.work_used == before_work && temp_heap.temporary_peak_bytes == before_temporary);
 
     CCAMHeapCreateResult paired_temp_limited = ccam_heap_create_bounded(
         1096, 128, 4, 128, 3
@@ -719,6 +720,7 @@ test "CCAM region heap composes work and temporary-allocation budgets" {
     int pair_objects = paired_heap.objects.len();
     int pair_bytes = paired_heap.bytes_used;
     int pair_work = paired_heap.work_used;
+    int pair_temporary = paired_heap.temporary_peak_bytes;
     CCAMHeapRefResult pair_rejected = ccam_heap_bytes_concat(
         paired_heap, pair_left.heap_token, pair_left.ref_id,
         pair_right.heap_token, pair_right.ref_id
@@ -726,7 +728,7 @@ test "CCAM region heap composes work and temporary-allocation budgets" {
     assert(!pair_rejected.ok && pair_rejected.trap == "temporary_limit");
     assert(paired_heap.objects.len() == pair_objects &&
         paired_heap.bytes_used == pair_bytes && paired_heap.work_used == pair_work &&
-        paired_heap.temporary_peak_bytes == 0);
+        paired_heap.temporary_peak_bytes == pair_temporary);
 }
 
 test "CCAM region heap rejects malformed work and temporary budgets" {
