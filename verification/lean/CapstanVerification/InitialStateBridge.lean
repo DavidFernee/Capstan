@@ -72,7 +72,7 @@ theorem InitialRegisterListsMatch.toNativeRuntimeRegisterFileRelation
         simp at hnative
   | @cons native runtime nativeRest runtimeRest hhead htail ih =>
       constructor
-      · simp
+      · simp [ih.length_eq]
       · intro index nativeReg runtimeReg hnative hruntime
         cases index with
         | zero =>
