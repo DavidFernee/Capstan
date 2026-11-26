@@ -278,7 +278,7 @@ add(73, "External control of file name or path", "reject",
     "int main() { if (let p = read_line(1048576)) { bool ok = write_file(p, \"data\"); } return 0; }", "CWE-20")
 add(434, "Unrestricted upload of file with dangerous type", "na", note="No upload facility.")
 add(538, "Insertion of sensitive information into externally-accessible file", "reject",
-    'int main() { if (let key = secret_env("API_KEY")) { bool ok = write_file("public/config.txt", key); } return 0; }', "CWE-532")
+    'int main() { if (let key = secret_env("API_KEY", 1048576)) { bool ok = write_file("public/config.txt", key); } return 0; }', "CWE-532")
 add(552, "Files or directories accessible to external parties", "na", note="Deployment concern.")
 add(732, "Incorrect permission assignment for critical resource", "absent", CHMOD)
 add(276, "Incorrect default permissions", "na", note="Files are created with the process umask; a file API with explicit permissions is planned with capabilities.")
@@ -319,7 +319,7 @@ add(798, "Hard-coded password-like literal under an innocuous name", "gap",
 add(321, "Use of hard-coded cryptographic key", "reject", "int main() { string signing_secret = \"0123456789abcdef\"; return 0; }", "CWE-798")
 add(311, "Missing encryption of sensitive data", "na", note="No encryption API yet (seal()/open() planned for v0.6).")
 add(312, "Cleartext storage of sensitive information", "reject",
-    'int main() { if (let k = secret_env("DB_KEY")) { bool ok = write_file("cache.txt", k); } return 0; }', "CWE-532")
+    'int main() { if (let k = secret_env("DB_KEY", 1048576)) { bool ok = write_file("cache.txt", k); } return 0; }', "CWE-532")
 add(319, "Cleartext transmission of sensitive information", "absent", NET)
 add(326, "Inadequate encryption strength", "absent", ENCRYPT)
 add(327, "Use of a broken or risky cryptographic algorithm", "reject", "int main() { string h = sha1(\"x\"); return 0; }", "CWE-327")
@@ -402,7 +402,7 @@ add(307, "Improper restriction of excessive authentication attempts", "logic",
 add(308, "Use of single-factor authentication", "na", note="Design concern.")
 add(521, "Weak password requirements", "logic", "bool acceptable(Tainted pw) { return pw.len() >= 1; }" + MAIN, note="Password rules are policy.")
 add(522, "Insufficiently protected credentials", "reject",
-    'int main() { if (let token = secret_env("TOKEN")) { println("token loaded: " + token); } return 0; }', "CWE-200")
+    'int main() { if (let token = secret_env("TOKEN", 1048576)) { println("token loaded: " + token); } return 0; }', "CWE-200")
 add(620, "Unverified password change", "logic",
     'string change(Tainted new_pw) { return hash_password(new_pw); }' + MAIN, note="Workflow design.")
 add(640, "Weak password recovery mechanism", "na", note="Design concern.")
@@ -422,30 +422,30 @@ add(266, "Incorrect privilege assignment", "logic",
 
 # ---------------------------------------------------------------- information exposure
 add(200, "Exposure of sensitive information", "reject",
-    'int main() { if (let k = secret_env("KEY")) { string s = "k=" + k; } return 0; }', "CWE-200")
+    'int main() { if (let k = secret_env("KEY", 1048576)) { string s = "k=" + k; } return 0; }', "CWE-200")
 add(209, "Error message containing sensitive information", "reject",
-    'int main() { if (let k = secret_env("DB_PASSWORD")) { println("connection failed with " + k); } return 0; }', "CWE-200")
+    'int main() { if (let k = secret_env("DB_PASSWORD", 1048576)) { println("connection failed with " + k); } return 0; }', "CWE-200")
 add(210, "Self-generated error message with sensitive information", "neutral",
     'int main() { List<string> l = new List<string>(); println(l[3]); return 0; }', "",
     "Runtime stops report the file, line and check, never data values. The test expects the stop's stderr to be data-free.")
 add(215, "Insertion of sensitive information into debugging code", "reject",
-    'int main() { if (let k = secret_env("KEY")) { println(k); } return 0; }', "CWE-532")
+    'int main() { if (let k = secret_env("KEY", 1048576)) { println(k); } return 0; }', "CWE-532")
 add(532, "Insertion of sensitive information into log file", "reject",
-    'int main() { if (let k = secret_env("KEY")) { println(k); } return 0; }', "CWE-532")
+    'int main() { if (let k = secret_env("KEY", 1048576)) { println(k); } return 0; }', "CWE-532")
 add(359, "Exposure of private personal information", "reject",
     "sensitive struct Patient { string name; string diagnosis; }\nint main() { Patient p = new Patient{name: \"A\", diagnosis: \"x\"}; println(p.diagnosis); return 0; }",
     "CWE-862", "Personal data declared sensitive can only be read under a grant.")
 add(497, "Exposure of sensitive system information", "na", note="No system-information API.")
 add(214, "Invocation of process using visible sensitive information", "neutral",
-    'int main() { if (let k = secret_env("KEY")) { run("tool", "--"); } return 0; }', "[run] tool",
+    'int main() { if (let k = secret_env("KEY", 1048576)) { run("tool", "--"); } return 0; }', "[run] tool",
     "Secrets cannot be passed to run(); a separate test proves that (CWE-532).")
 add(214, "Sensitive information on a command line", "reject",
-    'int main() { if (let k = secret_env("KEY")) { run("tool", "--", k); } return 0; }', "CWE-532")
+    'int main() { if (let k = secret_env("KEY", 1048576)) { run("tool", "--", k); } return 0; }', "CWE-532")
 add(226, "Sensitive information in resource not removed before reuse", "neutral",
     'int main() { println("ok"); return 0; }', "ok",
     "Memory is zeroed when the collector reuses it and when it is allocated. Freed but not yet reused memory is not wiped; see CWE-244.")
 add(244, "Improper clearing of heap memory before release (heap inspection)", "neutral",
-    'int main() { if (let k = secret_env("KEY")) { } println("ok"); return 0; }', "ok",
+    'int main() { if (let k = secret_env("KEY", 1048576)) { } println("ok"); return 0; }', "ok",
     "Secrets live in their own memory class and are zeroed when collected; tests/unit proves it. Password-hashing scratch buffers are wiped too.")
 add(316, "Cleartext storage of sensitive information in memory", "na", note="As CWE-244.")
 
@@ -623,7 +623,7 @@ add(1007, "Insufficient visual distinction of homoglyphs and invisible character
     "int main() { bool admin = false; /* \u202e } \u2066if (admin)\u2069 \u2066 */ return 0; }", "CWE-1007",
     "Bidirectional controls and zero-width characters are rejected anywhere in source (CVE-2021-42574).")
 add(532, "Insertion of sensitive information into output (hash of a secret)", "reject",
-    'int main() { if (let s = secret_env("PIN")) { println(hash(s)); } return 0; }', "CWE-532",
+    'int main() { if (let s = secret_env("PIN", 1048576)) { println(hash(s)); } return 0; }', "CWE-532",
     "A fast hash of a short secret is reversed by trying every value.")
 add(367, "Time-of-check time-of-use (grant used after the checked data changed)", "runtime",
     "struct User { int id; }\nsensitive struct Doc { int owner; string body; }\npolicy CanRead(User u, Doc d, int to) { return u.id == d.owner && to >= 0; }\n"
