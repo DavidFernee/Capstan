@@ -6,6 +6,9 @@
 // removes that wait, and makes the consumer runnable atomically. The consumer
 // performs the receive only when it is scheduled again.
 
+// Longest one-message trace: wait, send, drain, wait, close, EOF.
+const int CB_MAX_STEPS = 6;
+
 const int CB_TASK_NEW = 0;
 const int CB_TASK_RUNNABLE = 1;
 const int CB_TASK_BLOCKED = 2;
@@ -96,7 +99,13 @@ bool cb_terminal(int status) {
 // is blocked on the channel-message condition. No terminal task may be queued.
 bool cb_invariant(CBState s) {
     if (s.channel_capacity != 1 || s.channel_count < 0 ||
-        s.channel_count > s.channel_capacity || s.steps < 0) { return false; }
+        s.channel_count > s.channel_capacity || s.steps < 0 ||
+        s.steps > CB_MAX_STEPS) { return false; }
+    if (s.consumer_result < CB_RESULT_PENDING ||
+        s.consumer_result > CB_RESULT_CANCELLED) { return false; }
+    if (!s.consumer_wait_registered && s.consumer_wait != CB_WAIT_NONE) {
+        return false;
+    }
     if (s.producer_status != CB_TASK_RUNNABLE &&
         s.producer_status != CB_TASK_DONE &&
         s.producer_status != CB_TASK_CANCELLED &&
@@ -155,6 +164,8 @@ bool cb_invariant(CBState s) {
 // A valid receive on an open empty channel blocks; it is not rejected.
 // Registration and suspension are one atomic state transition.
 CBTransition cb_receive(CBState before) {
+    if (!cb_invariant(before)) { return cb_reject(before, "invalid_state"); }
+    if (before.steps == CB_MAX_STEPS) { return cb_reject(before, "step_limit"); }
     if (before.consumer_status != CB_TASK_RUNNABLE ||
         before.consumer_wait_registered ||
         before.consumer_result == CB_RESULT_EOF ||
@@ -186,6 +197,8 @@ CBTransition cb_receive(CBState before) {
 // removing its wait registration and making it runnable are part of this
 // same transition. Message ownership remains with the channel until receive.
 CBTransition cb_send(CBState before) {
+    if (!cb_invariant(before)) { return cb_reject(before, "invalid_state"); }
+    if (before.steps == CB_MAX_STEPS) { return cb_reject(before, "step_limit"); }
     // Closed-channel rejection has precedence over producer ownership:
     // once closed, every send attempt is observably rejected as such.
     if (before.channel_closed) {
@@ -213,6 +226,8 @@ CBTransition cb_send(CBState before) {
 // Close resolves a blocked receiver only when no committed message remains.
 // A queued message is still drainable after close.
 CBTransition cb_close(CBState before) {
+    if (!cb_invariant(before)) { return cb_reject(before, "invalid_state"); }
+    if (before.steps == CB_MAX_STEPS) { return cb_reject(before, "step_limit"); }
     if (before.channel_closed) {
         return cb_reject(before, "channel_already_closed");
     }
@@ -232,6 +247,8 @@ CBTransition cb_close(CBState before) {
 // Cancellation wins by removing the wait registration and terminalising the
 // task atomically. A later send cannot wake this terminal consumer.
 CBTransition cb_cancel_consumer(CBState before) {
+    if (!cb_invariant(before)) { return cb_reject(before, "invalid_state"); }
+    if (before.steps == CB_MAX_STEPS) { return cb_reject(before, "step_limit"); }
     if (before.consumer_status != CB_TASK_BLOCKED ||
         !before.consumer_wait_registered) {
         return cb_reject(before, "consumer_not_blocked");
@@ -384,4 +401,56 @@ test "CB repeated close and send after close fail atomically" {
     assert(!send.ok && send.error == "send_on_closed_channel");
     assert(send.state.steps == closed.steps);
     assert(cb_invariant(send.state));
+}
+
+test "CB transitions reject malformed predecessor without mutation" {
+    CBState before = cb_initial();
+    before.channel_count = 2;
+    CBTransition received = cb_receive(before);
+    CBTransition sent = cb_send(before);
+    CBTransition closed = cb_close(before);
+    CBTransition cancelled = cb_cancel_consumer(before);
+    assert(!received.ok && received.error == "invalid_state");
+    assert(!sent.ok && sent.error == "invalid_state");
+    assert(!closed.ok && closed.error == "invalid_state");
+    assert(!cancelled.ok && cancelled.error == "invalid_state");
+    assert(before.channel_count == 2 && before.steps == 0);
+    assert(sent.state.message_owner == CB_OWNER_PRODUCER);
+    assert(!closed.state.channel_closed);
+}
+
+test "CB invalid tags and step counts fail closed" {
+    CBState before = cb_initial();
+    before.consumer_result = 99;
+    assert(!cb_invariant(before));
+    assert(cb_receive(before).error == "invalid_state");
+    before.consumer_result = CB_RESULT_PENDING;
+    before.consumer_wait = 99;
+    assert(!cb_invariant(before));
+    assert(cb_send(before).error == "invalid_state");
+    before.consumer_wait = CB_WAIT_NONE;
+    before.steps = 9223372036854775807;
+    assert(cb_send(before).error == "invalid_state");
+    before.steps = CB_MAX_STEPS;
+    CBTransition exhausted = cb_send(before);
+    assert(!exhausted.ok && exhausted.error == "step_limit");
+    assert(exhausted.state.steps == CB_MAX_STEPS);
+    assert(exhausted.state.message_owner == CB_OWNER_PRODUCER);
+}
+
+test "CB longest supported trace reaches exact step bound" {
+    CBTransition first_wait = cb_receive(cb_initial());
+    assert(first_wait.ok && first_wait.state.steps == 1);
+    CBTransition sent = cb_send(first_wait.state);
+    assert(sent.ok && sent.state.steps == 2);
+    CBTransition drained = cb_receive(sent.state);
+    assert(drained.ok && drained.state.steps == 3);
+    CBTransition second_wait = cb_receive(drained.state);
+    assert(second_wait.ok && second_wait.state.steps == 4);
+    CBTransition closed = cb_close(second_wait.state);
+    assert(closed.ok && closed.state.steps == 5);
+    CBTransition eof = cb_receive(closed.state);
+    assert(eof.ok && eof.state.steps == CB_MAX_STEPS);
+    assert(eof.state.consumer_result == CB_RESULT_EOF);
+    assert(cb_invariant(eof.state));
 }
