@@ -24,7 +24,6 @@ theorem integrity_excludes_credentials (e : Expr .integrity) :
     credentialOrigin e = false := by
   induction e with
   | artifact => rfl
-  | fastHash _ => rfl
   | alias value ih => exact ih
 
 theorem fast_hash_excludes_credentials (e : Expr .integrity) :
