@@ -1,0 +1,45 @@
+struct Vault {
+    private int secret;
+    int label;
+}
+
+Vault make_vault() {
+    return new Vault{secret: 41, label: 7};
+}
+
+bool vault_is_valid(Vault value) {
+    return value.secret == 41;
+}
+
+Vault update_private(Vault value, int next_secret) {
+    value.secret = next_secret;
+    return value;
+}
+
+opaque struct SealedVault {
+    int secret;
+    int counter;
+}
+
+SealedVault make_sealed_vault() {
+    return new SealedVault{secret: 73, counter: 0};
+}
+
+bool sealed_vault_is_valid(SealedVault value) {
+    return value.secret == 73;
+}
+
+SealedVault update_sealed_vault(SealedVault value, int next_counter) {
+    value.counter = next_counter;
+    return value;
+}
+
+opaque struct EmptyCapability {}
+
+EmptyCapability make_empty_capability() {
+    return new EmptyCapability{};
+}
+
+bool empty_capability_is_issued(EmptyCapability value) {
+    return true;
+}

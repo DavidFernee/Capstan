@@ -1,0 +1,8 @@
+// expect: private field 'secret' of SealedVault is accessible only within its defining module
+import "private_fields/record.cap";
+
+int main() {
+    SealedVault value = make_sealed_vault();
+    println(int_to_str(value.secret));
+    return 0;
+}

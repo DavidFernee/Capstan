@@ -1,0 +1,7 @@
+// expect: opaque struct SealedVault may be constructed only within its defining module
+import "private_fields/record.cap";
+
+int main() {
+    SealedVault value = new SealedVault{secret: 1, counter: 2};
+    return 0;
+}

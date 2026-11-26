@@ -12,7 +12,7 @@
   Java (`0xFFFFFFFFFFFFFFFF` is `-1`, `0x8000000000000000` is the smallest int).
 - Character literals: `'a'`, `'\n'`, `'\''`; they are `int` values 0–255.
 - String literals: `"..."` with escapes `\n \t \r \0 \\ \" \'`. Strings are byte sequences.
-- Keywords: `struct const if else while for return break continue true false none new let protected policy public test authorize assert_denied assert_granted`.
+- Keywords: `struct const if else while for return break continue true false none new let protected policy public private opaque test authorize assert_denied assert_granted`.
 
 ## Types
 
@@ -51,6 +51,22 @@ test "owners can edit" { assert_granted CanEdit(owner, doc); }
 - `sensitive struct Record { ... }`: fields of a sensitive struct can only be read or changed
   in protected functions, policies and tests, so every path to the data needs a grant (CWE-862).
   Values can be created and passed around anywhere.
+- `opaque struct Vault { int secret; }` makes every field private to the defining
+  source file. Only code in that module can read, write or initialise those fields; imported
+  callers must obtain values through module-defined factories and use exported operations.
+  Imported callers cannot use a struct literal to construct an opaque value, even when the
+  opaque struct has no fields.
+  `sensitive` and `opaque` may both modify a struct declaration, in either order. An opaque
+  struct is still a reference type; this modifier does not provide unique ownership, borrowing
+  or lifetime safety.
+- A struct field may be prefixed with `private`, for example
+  `struct Vault { private int key; int label; }`. A private field may be read, written or
+  initialised only by source code in the same defining file (module). Imported callers cannot
+  inspect it or supply it in a struct literal. The defining module can expose validated factory
+  functions and methods that return or operate on the opaque value. Fields remain public by
+  default for source compatibility; private methods and friend declarations are not supported.
+  This is module encapsulation, not ownership or lifetime safety: a module's own code remains
+  responsible for preserving its private invariants.
 - `enum Shape { Circle(int r), Empty }`; values are written `Shape.Circle(3)` and `Shape.Empty`.
   `match (s) { case Circle(r) { ... } case Empty { ... } }` must handle every variant or end with
   `else { ... }` (CWE-478). Enums without values can be compared with `==`.

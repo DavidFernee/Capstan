@@ -586,12 +586,14 @@ The closure algorithm must use resolved declaration identity, not short names, a
 
 ### 20.2 Separate type visibility from member visibility
 
-The proposal says struct-field visibility is a separate question and that existing field access rules remain unchanged unless specified. Under the current language, fields are accessed directly and there is no separate field-level visibility syntax. Therefore, for v0.5, either:
+The compiler's first member-visibility slice introduces `private` struct fields and `opaque struct` declarations (implementation proposed in [PR #360](https://github.com/DavidFernee/Capstan/pull/360)). Source-file identity is preserved on AST nodes through import loading and checked at every field read, write and struct-literal construction.
 
-1. Treat all fields and enum payload types of an exported nominal type as part of its externally visible API and require their types to be public; or
-2. Introduce explicit member visibility and fully define cross-module construction, field access, pattern matching and generated constructor behaviour.
+- A `private` field is accessible and initialisable only in the source file that declares its struct. Unmodified fields remain public for compatibility.
+- Every field of an `opaque struct` is private. A different source file cannot construct an opaque value with a struct literal, even if the type has zero fields; construction must pass through code in the defining module.
+- External diagnostics must not reveal private field names through suggestions or missing-field enumeration.
+- Private methods, friend declarations, top-level private declarations and enum-variant payload visibility are not implemented by this slice.
 
-Do not silently treat a private field as hidden when the language has no private-field mechanism. If member visibility is deferred, option 1 is the conservative rule. The same decision must cover methods declared inside structs, enum variants, and struct-literal construction.
+This is a representation boundary, not a complete ownership or refinement discipline. Opaque values remain reference types and may be aliased; code in the defining module remains responsible for preserving semantic invariants. Affine/linear ownership, borrowing/lifetimes, typestate, and proof that constructors preserve invariants remain separate requirements. For a public non-opaque struct, its public fields and their types remain part of the externally visible API; private fields are excluded from the caller-visible field set.
 
 ### 20.3 Generic inference must not bypass visibility
 

@@ -38,7 +38,7 @@ bool is_keyword(string w) {
     kws.push("while"); kws.push("for"); kws.push("return"); kws.push("break");
     kws.push("continue"); kws.push("true"); kws.push("false"); kws.push("none");
     kws.push("new"); kws.push("let"); kws.push("protected"); kws.push("policy");
-    kws.push("public"); kws.push("test"); kws.push("authorize");
+    kws.push("public"); kws.push("private"); kws.push("opaque"); kws.push("test"); kws.push("authorize");
     kws.push("assert_denied"); kws.push("assert_granted");
     kws.push("enum"); kws.push("match"); kws.push("case"); kws.push("import"); kws.push("sensitive");
     for (int i = 0; i < kws.len(); i += 1) {
