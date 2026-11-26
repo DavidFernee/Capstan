@@ -1019,7 +1019,9 @@ def _read_source_bounded(path, limit):
             fd = None
             data = source.read(limit + 1)
         if len(data) > limit:
-            raise SystemExit(f"{path}: source exceeds remaining import-graph byte budget ({limit}) [CWE-400]")
+            if limit < MAX_SOURCE_BYTES:
+                raise SystemExit(f"{path}: source exceeds remaining import-graph byte budget ({limit}) [CWE-400]")
+            raise SystemExit(f"{path}: source exceeds per-file byte limit ({MAX_SOURCE_BYTES}) [CWE-400]")
         return data.decode("latin-1")
     finally:
         if fd is not None:
