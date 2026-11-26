@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ast_capacity(int current,int add,int maximum){return current>=0&&add>=0&&maximum>=0&&current<=maximum&&add<=maximum-current;}
