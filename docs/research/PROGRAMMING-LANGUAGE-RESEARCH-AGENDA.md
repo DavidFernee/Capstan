@@ -102,9 +102,9 @@ Each area below is a standing research stream. It is not a mandate to implement 
 - Can the language express confidentiality and integrity constraints, including secret handling and taint propagation?
 - How are effects handled across native and hosted execution?
 
-**Candidate work:** capability types; effect systems and handlers; information-flow control; labelled data; secret lifecycle; sandbox boundaries; policy manifests; proof-carrying authority restrictions.
+**Candidate work:** capability types; effect systems and handlers; information-flow control; labelled data; secret lifecycle; sandbox boundaries; policy manifests; proof-carrying authority restrictions; executable CWE prevention specifications; adversarial source-level attack/bypass corpora; contextual output types; and real-world CVE benchmark studies.
 
-**Success evidence:** reference semantics, non-interference or confinement properties where feasible, hostile-host tests, capability-leak tests and explicit adapter/TCB analysis.
+**Success evidence:** reference semantics, non-interference or confinement properties where feasible, hostile-host tests, capability-leak tests and explicit adapter/TCB analysis. Security claims additionally require per-attempt enforcement mapping, positive and negative conformance tests, explicit residual gaps, independently reviewed CWE/CVE classifications and exact-revision reproducibility.
 
 ### AREA-05. Resource-bounded computation
 
@@ -438,6 +438,7 @@ Every major research stream maintains a register with the following fields. The 
 - **H5 — Semantic preservation:** a practical subset of source-to-CCAM-to-native compilation can be supported by a chain of conformance checks, certificates or refinement proofs.
 - **H6 — Practical usability:** evidence-aware diagnostics and tooling can make these guarantees usable without prohibitive developer effort.
 - **H7 — Measurable differentiation:** on selected workloads, Capstan can provide stronger assurance or resource predictability at a competitive and explicitly measured performance/productivity cost.
+- **H8 — Falsifiable vulnerability prevention:** Capstan's provenance-aware types, contextual output types and capability checks can prevent a measurable subset of real vulnerability patterns at the source boundary, with the prevention rate and residual bypasses reproducibly classified rather than inferred from feature presence.
 
 No hypothesis is accepted because it sounds plausible. Each requires a literature review and an experiment or proof capable of refuting it.
 
@@ -448,6 +449,9 @@ The first allocations should be small enough for one focused session and should 
 | Priority | Work package | Deliverable | Dependency |
 |---|---|---|---|
 | P0 | Guarantee/trusted-base inventory | Branch-pinned matrix of claims, code, tests, proofs, trust boundaries and known gaps | Current default branch |
+| P0 | Executable CWE prevention specification | Per-weakness property, enforcement point, attack/bypass fixture, residual scope and evidence level; link to `docs/assurance/VULNERABILITY-PREVENTION-PROGRAMME.md` | Guarantee/trusted-base inventory |
+| P0 | CWE atlas independent review | Review taxonomy mapping, weakest-outcome aggregation, attack realism and false-positive/false-negative risks | CWE prevention specification |
+| P1 | Close source-level output-context gaps | Migrate JSON consumers to a typed JSON fragment/document model; close the remaining HTML cross-statement context gap | CWE atlas independent review |
 | P0 | CCAM conformance closure plan | Exact gap list for JSON decoding, whole-program validation, duplicate keys, aggregate budgets, multi-function calls and vectors | CCAM v0.1 and current main |
 | P0 | Evidence architecture reconciliation | Obligation-by-obligation crosswalk of PR #214 against CCAM, evaluator, validator and source-lowering contracts; resolve issue #219 | CCAM conformance closure plan |
 | P0 | Concurrency proposal reconciliation | Compare PRs #239/#254/#248 and issues #229/#249; identify one normative model, prototype boundary and proof/test gaps | CCAM/resource contract inventory |
@@ -554,12 +558,11 @@ prototype must compare at least two viable models (combined judgement and factor
 state soundness conditions, construct counterexamples, and measure checker complexity and
 diagnostic quality. No syntax or implementation strategy is selected by this draft.
 
-The current CWE atlas records seven distinct open gaps (CWE-20, CWE-116, CWE-798, CWE-916,
-CWE-862, CWE-306 and CWE-79). F1 treats them as blockers for any Safe-profile claim and requires
+The current CWE atlas records seven distinct open gaps (CWE-20, CWE-116, CWE-798, CWE-916, CWE-862,
+CWE-306 and CWE-79). F1 treats them as blockers for any Safe-profile claim and requires
 positive controls and adversarial bypass coverage; it does not presume that a type-system
 change alone closes them. The current C-backed runtime, Python bootstrap, and model-to-
 implementation proof gaps remain part of the disclosed trusted-base boundary.
-
 
 
 ## F1 executable guarantee model and checker implementation boundary

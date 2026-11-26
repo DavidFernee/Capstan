@@ -6,6 +6,10 @@ Documents for organisations assessing Capstan, in particular government and defe
 | Document | What it covers |
 |---|---|
 | [EXECUTION-ASSURANCE-ARCHITECTURE.md](EXECUTION-ASSURANCE-ARCHITECTURE.md) | Current production and C-free execution paths, formal-model evidence rail, implementation-refinement gaps and machine-readable boundary register |
+| [VULNERABILITY-PREVENTION-PROGRAMME.md](VULNERABILITY-PREVENTION-PROGRAMME.md) | CWE prevention work packages, adversarial evidence requirements and real-world CVE benchmark programme |
+| [CWE-PREVENTION-SPEC.md](CWE-PREVENTION-SPEC.md) | Minimum evidence record and evidence ladder for vulnerability-prevention claims |
+| [OUTPUT-CONTEXT-SINKS.md](OUTPUT-CONTEXT-SINKS.md) | Proposed typed HTML, log and CSV output-context contracts and residual JSON gap |
+| [PASSWORD-PROVENANCE-DESIGN.md](PASSWORD-PROVENANCE-DESIGN.md) | Fail-closed password provenance design and trusted-base limitations |
 | [ASSURANCE-CASE.md](ASSURANCE-CASE.md) | Assurance-case structure, evidence classes, claim lifecycle and enforceable promotion requirements |
 | [MEMORY-SAFETY.md](MEMORY-SAFETY.md) | Capstan's guarantees mapped to the memory-safe language guidance of the Five Eyes cyber agencies, including ASD's ACSC, and what is not yet memory-safe |
 | [THREAT-MODEL.md](THREAT-MODEL.md) | What Capstan defends against, its assumptions, its trusted base today, what is out of scope and the residual risks |
