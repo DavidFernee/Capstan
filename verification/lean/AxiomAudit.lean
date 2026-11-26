@@ -184,3 +184,8 @@ import CapstanVerification.ExplicitTrap
 #print axioms CapstanVerification.explicitTrap_preserves_detail
 #print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
 #print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
+-- Explicit application-trap model: keep these proof dependencies visible.
+#print axioms CapstanVerification.explicitTrap_preserves_detail
+#print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
+#print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
