@@ -107,10 +107,10 @@ theorem rejected_allocation_preserves_state
       · by_cases hObjects : s.objectCount ≥ s.maxObjects
         · simp [hAuth, hInvalid, hCharge, hObjects] at h
           exact h.2.symm
-        · by_cases hBytes : charge > s.maxBytes - s.usedBytes
+        · by_cases hBytes : s.usedBytes + charge > s.maxBytes
           · simp [hAuth, hInvalid, hCharge, hObjects, hBytes] at h
             exact h.2.symm
-          · by_cases hWork : workCharge > s.maxWork - s.workUsed
+          · by_cases hWork : s.workUsed + workCharge > s.maxWork
             · simp [hAuth, hInvalid, hCharge, hObjects, hBytes, hWork] at h
               exact h.2.symm
             · by_cases hTemporary : temporaryCharge > s.maxTemporaryBytes
@@ -134,8 +134,8 @@ theorem allocation_success_facts
     object = s.nextObject ∧
     charge ≠ 0 ∧
     s.objectCount < s.maxObjects ∧
-    charge ≤ s.maxBytes - s.usedBytes ∧
-    workCharge ≤ s.maxWork - s.workUsed ∧
+    s.usedBytes + charge ≤ s.maxBytes ∧
+    s.workUsed + workCharge ≤ s.maxWork ∧
     temporaryCharge ≤ s.maxTemporaryBytes ∧
     s.temporaryPeakBytes ≤ s.maxTemporaryBytes := by
   unfold allocate at h
@@ -146,9 +146,9 @@ theorem allocation_success_facts
       · simp [hAuth, hInvalid, hCharge] at h
       · by_cases hObjects : s.objectCount ≥ s.maxObjects
         · simp [hAuth, hInvalid, hCharge, hObjects] at h
-        · by_cases hBytes : charge > s.maxBytes - s.usedBytes
+        · by_cases hBytes : s.usedBytes + charge > s.maxBytes
           · simp [hAuth, hInvalid, hCharge, hObjects, hBytes] at h
-          · by_cases hWork : workCharge > s.maxWork - s.workUsed
+          · by_cases hWork : s.workUsed + workCharge > s.maxWork
             · simp [hAuth, hInvalid, hCharge, hObjects, hBytes, hWork] at h
             · by_cases hTemporary : temporaryCharge > s.maxTemporaryBytes
               · simp [hAuth, hInvalid, hCharge, hObjects, hBytes, hWork, hTemporary] at h
@@ -168,9 +168,12 @@ theorem allocation_success_facts
                 constructor
                 · omega
                 · have hOldTemporary : s.temporaryPeakBytes ≤ s.maxTemporaryBytes := by
-                    by_contra hgt
-                    have hgt' : s.temporaryPeakBytes > s.maxTemporaryBytes := by omega
-                    simp [invalidHeapState, hgt'] at hInvalid
+                    by_cases hOld : s.temporaryPeakBytes ≤ s.maxTemporaryBytes
+                    · exact hOld
+                    · have hgt : s.temporaryPeakBytes > s.maxTemporaryBytes := by omega
+                      have hBad : invalidHeapState s = true := by
+                        simp [invalidHeapState, hgt]
+                      exact False.elim (hInvalid hBad)
   · simp [hAuth] at h
 
 /-- Successful allocation returns the previous next-object identity. -/
@@ -193,7 +196,7 @@ theorem allocate_success_preserves_heapInvariant
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
   have hPeak : max s.temporaryPeakBytes temporaryCharge ≤ s.maxTemporaryBytes :=
-    max_le hOldTemporary hTemporary
+    Nat.max_le.mpr ⟨hOldTemporary, hTemporary⟩
   unfold heapInvariant
   constructor
   · omega
