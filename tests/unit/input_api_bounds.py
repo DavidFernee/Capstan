@@ -37,7 +37,7 @@ def run(command, argv, secret, stdin):
 
 def check_engine(label, command):
     exact = run(command, ["abcd", "xy"], "abcd", b"abc")
-    if exact.returncode != 0 or exact.stdout != b"3\\n2\\n":
+    if exact.returncode != 0 or exact.stdout != b"3\n2\n":
         raise AssertionError(
             f"{label}: exact limits failed: exit={exact.returncode}, "
             f"out={exact.stdout!r}, err={exact.stderr!r}"
@@ -48,7 +48,7 @@ def check_engine(label, command):
         ("per-argument bytes", ["abcde"], "abcd", b"x"),
         ("aggregate argument bytes", ["abcd", "xyz"], "abcd", b"x"),
         ("environment bytes", ["a"], "abcde", b"x"),
-        ("line bytes", ["a"], "abcd", b"abcd\\n"),
+        ("line bytes", ["a"], "abcd", b"abcd\n"),
     ]
     for name, argv, secret, stdin in cases:
         result = run(command, argv, secret, stdin)
