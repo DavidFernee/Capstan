@@ -62,6 +62,8 @@ structure ContextEncoder (context : InjectionSink) where
   encode : SinkValue → SinkValue
   establishes_context :
     ∀ value, context ∈ (encode value).safeContexts
+  establishes_only_context :
+    ∀ value other, other ∈ (encode value).safeContexts → other = context
   preserves_data :
     ∀ value, (encode value).provenance.dataSources = value.provenance.dataSources
   preserves_selection :
@@ -92,16 +94,12 @@ theorem context_encoder_preserves_selection_provenance
       value.provenance.selectionSources :=
   encoder.preserves_selection value
 
-/-- A certificate for one context is not, by itself, a certificate for another. -/
-theorem context_certificate_not_transferred
+/-- An encoder contract cannot silently certify a different context. -/
+theorem context_encoder_rejects_other_context
     (first second : InjectionSink) (hneq : first ≠ second)
-    (value : SinkValue)
-    (hfirst : first ∈ value.safeContexts)
-    (hsecond : second ∉ value.safeContexts) :
-    ¬ strictSinkSafe second value := by
-  intro hsafe
-  rcases hsafe with ⟨_, _⟩ | hcontext
-  · exact hsecond hcontext
-  · exact hsecond hcontext
+    (encoder : ContextEncoder first) (value : SinkValue) :
+    second ∉ (encoder.encode value).safeContexts := by
+  intro hsecond
+  exact hneq (encoder.establishes_only_context value second hsecond)
 
 end CapstanVerification
