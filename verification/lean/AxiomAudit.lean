@@ -1,4 +1,6 @@
 import CapstanVerification.F1Provenance
+import CapstanVerification.CredentialConfinement
+import CapstanVerification.CredentialVerifierPolicy
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
