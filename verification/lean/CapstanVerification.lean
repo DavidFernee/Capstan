@@ -21,3 +21,7 @@ import CapstanVerification.GenerationalHandles
 import CapstanVerification.CollectorSemantics
 import CapstanVerification.ReferenceSemantics
 import CapstanVerification.NativeRegisterHeapBridge
+import NativeMemoryLifecycle
+import NativeReachability
+import NativeHandleReachability
+import NativeBoundedMarker
