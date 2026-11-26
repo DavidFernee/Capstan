@@ -1,0 +1,127 @@
+// Candidate cyclic CFG must-initialisation analysis.
+// Reachability and generation are solved before read checks, so transient
+// approximations cannot produce spurious acceptance.
+import "ccam_aggregate_cfg.cap";
+
+const int AG_FP_MAX_WORK = 16777216;
+
+bool ag_fp_target(int count, int target) {
+    return target >= 0 && target < count;
+}
+
+bool ag_fp_equal(List<bool> a, List<bool> b) {
+    if (a.len() != b.len()) { return false; }
+    for (int i = 0; i < a.len(); i += 1) {
+        if (a[i] != b[i]) { return false; }
+    }
+    return true;
+}
+
+// All input shapes are checked before the solver runs.
+bool ag_fp_validate(List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks) {
+    int count = blocks.len();
+    int width = kinds.len();
+    if (count <= 0 || count > AG_FLOW_MAX_BLOCKS || width > AG_SCHEMA_MAX_REGS ||
+        entry.len() != width || width > AG_CFG_MAX_CELLS / count) { return false; }
+    for (int r = 0; r < width; r += 1) {
+        if (!ag_schema_kind(kinds[r])) { return false; }
+    }
+    int total = 0;
+    List<AGCFGState> states = new List<AGCFGState>();
+    for (int i = 0; i < count; i += 1) {
+        AGCFGBlock block = blocks[i];
+        if (block.instructions.len() > AG_CFG_MAX_INSTRUCTIONS - total) { return false; }
+        total += block.instructions.len();
+        for (int j = 0; j < block.instructions.len(); j += 1) {
+            AGBlockInstruction ins = block.instructions[j];
+            if (!ag_schema_operands(kinds, ins.opcode, ins.kind, ins.operands)) { return false; }
+        }
+        if (block.terminator == 0) {
+            if (block.condition != -1 || block.yes != -1 || block.no != -1) { return false; }
+        } else if (block.terminator == 1) {
+            if (block.condition != -1 || block.no != -1 || !ag_fp_target(count, block.yes)) { return false; }
+        } else if (block.terminator == 2) {
+            if (!ag_schema_register(kinds, block.condition, AG_SCHEMA_BOOL) ||
+                !ag_fp_target(count, block.yes) || !ag_fp_target(count, block.no)) { return false; }
+        } else { return false; }
+        states.push(new AGCFGState{reached: false, ready: new List<bool>()});
+    }
+    states[0] = new AGCFGState{reached: true, ready: entry};
+    int work = AG_FP_MAX_WORK;
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (int i = 0; i < count; i += 1) {
+            AGCFGBlock block = blocks[i];
+            // Charge even unreachable visits and empty register files.
+            int cost = 1 + width * 4 + block.instructions.len();
+            if (cost > work) { return false; }
+            work -= cost;
+            AGCFGState state = states[i];
+            if (state.reached) {
+                List<bool> output = new List<bool>();
+                for (int r = 0; r < width; r += 1) { output.push(state.ready[r]); }
+                for (int j = 0; j < block.instructions.len(); j += 1) {
+                    AGBlockInstruction ins = block.instructions[j];
+                    if (ins.opcode != 2) { output[ins.operands[0]] = true; }
+                }
+                if (block.terminator != 0) {
+                    AGCFGState before = states[block.yes];
+                    if (!ag_cfg_propagate(states, block.yes, output)) { return false; }
+                    if (!before.reached || !ag_fp_equal(before.ready, states[block.yes].ready)) { changed = true; }
+                }
+                if (block.terminator == 2) {
+                    AGCFGState before_no = states[block.no];
+                    if (!ag_cfg_propagate(states, block.no, output)) { return false; }
+                    if (!before_no.reached || !ag_fp_equal(before_no.ready, states[block.no].ready)) { changed = true; }
+                }
+            }
+        }
+    }
+    // At convergence check every reachable read against its must-state.
+    for (int i = 0; i < count; i += 1) {
+        if (states[i].reached) {
+            List<bool> ready = new List<bool>();
+            for (int r = 0; r < width; r += 1) {
+                ready.push(states[i].ready[r]);
+            }
+            AGCFGBlock block = blocks[i];
+            for (int j = 0; j < block.instructions.len(); j += 1) {
+                AGBlockInstruction ins = block.instructions[j];
+                if (!ready[ins.operands[1]]) { return false; }
+                if (ins.opcode != 3 && !ready[ins.operands[2]]) { return false; }
+                if (ins.opcode == 2) {
+                    if (!ready[ins.operands[0]]) { return false; }
+                } else { ready[ins.operands[0]] = true; }
+            }
+            if (block.terminator == 2 && !ag_transfer_condition(kinds, ready, block.condition)) { return false; }
+        }
+    }
+    return true;
+}
+
+test "cyclic aggregate CFG does not bootstrap readiness from a backedge" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    List<bool> entry = new List<bool>();
+    entry.push(false);
+    entry.push(true);
+    List<int> get_ops = new List<int>();
+    get_ops.push(0);
+    get_ops.push(1);
+    get_ops.push(0);
+    List<int> len_ops = new List<int>();
+    len_ops.push(0);
+    len_ops.push(1);
+    List<AGBlockInstruction> reads = new List<AGBlockInstruction>();
+    reads.push(new AGBlockInstruction{opcode: 1, kind: AG_SCHEMA_INT, operands: get_ops});
+    List<AGBlockInstruction> writes = new List<AGBlockInstruction>();
+    writes.push(new AGBlockInstruction{opcode: 3, kind: AG_SCHEMA_INT, operands: len_ops});
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: reads, terminator: 1, condition: -1, yes: 1, no: -1});
+    blocks.push(new AGCFGBlock{instructions: writes, terminator: 1, condition: -1, yes: 0, no: -1});
+    assert(!ag_fp_validate(kinds, entry, blocks));
+    entry[0] = true;
+    assert(ag_fp_validate(kinds, entry, blocks));
+}
