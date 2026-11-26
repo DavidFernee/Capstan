@@ -177,18 +177,6 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
         if (!ccam_aggregate_register_is(types, op.destination, CCAM_AGG_TYPE_REF)) {
             return ccam_aggregate_validation_error("invalid_destination_register", pc);
         }
-        if (object_kinds[op.left] != 0 &&
-            object_kinds[op.left] != CCAM_HEAP_OBJECT_ARRAY) {
-            return ccam_aggregate_validation_error("object_kind_mismatch", pc);
-        }
-        if (array_element_types[op.left] != 0 &&
-            array_element_types[op.left] != op.element_type) {
-            return ccam_aggregate_validation_error("array_element_type_mismatch", pc);
-        }
-        if (array_element_ref_type_ids[op.left] != 0 &&
-            array_element_ref_type_ids[op.left] != op.element_ref_type_id) {
-            return ccam_aggregate_validation_error("array_reference_type_mismatch", pc);
-        }
         if (!ccam_aggregate_valid_value_type(op.element_type) ||
             op.element_ref_type_id < 0 ||
             (op.element_type != CCAM_AGG_TYPE_REF && op.element_ref_type_id != 0) ||
@@ -261,6 +249,18 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
             !initialized[op.left]) {
             return ccam_aggregate_validation_error("uninitialised_or_invalid_array_register", pc);
         }
+        if (object_kinds[op.left] != 0 &&
+            object_kinds[op.left] != CCAM_HEAP_OBJECT_ARRAY) {
+            return ccam_aggregate_validation_error("object_kind_mismatch", pc);
+        }
+        if (array_element_types[op.left] != 0 &&
+            array_element_types[op.left] != op.element_type) {
+            return ccam_aggregate_validation_error("array_element_type_mismatch", pc);
+        }
+        if (array_element_ref_type_ids[op.left] != 0 &&
+            array_element_ref_type_ids[op.left] != op.element_ref_type_id) {
+            return ccam_aggregate_validation_error("array_reference_type_mismatch", pc);
+        }
         if (!ccam_aggregate_valid_value_type(op.element_type) ||
             op.element_ref_type_id < 0 ||
             (op.element_type != CCAM_AGG_TYPE_REF && op.element_ref_type_id != 0)) {
@@ -307,6 +307,11 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
             array_element_types[op.left] != 0 &&
             array_element_types[op.left] != op.element_type) {
             return ccam_aggregate_validation_error("array_element_type_mismatch", pc);
+        }
+        if (op.op == CCAM_AGG_OP_ARRAY_LEN &&
+            array_element_ref_type_ids[op.left] != 0 &&
+            array_element_ref_type_ids[op.left] != op.element_ref_type_id) {
+            return ccam_aggregate_validation_error("array_reference_type_mismatch", pc);
         }
         if (op.op == CCAM_AGG_OP_ARRAY_LEN &&
             !ccam_aggregate_valid_value_type(op.element_type)) {
