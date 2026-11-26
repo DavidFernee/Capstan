@@ -1,0 +1,2 @@
+import "ccam_aggregate_byte_buffer.cap";
+bool ag_elf_ident(List<int> b){if(b.len()>AG_BYTE_LIMIT-16){return false;}b.push(127);b.push(69);b.push(76);b.push(70);b.push(2);b.push(1);b.push(1);for(int i=0;i<9;i+=1){b.push(0);}return true;}
