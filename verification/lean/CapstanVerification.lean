@@ -13,6 +13,9 @@ import CapstanVerification.SFVectors
 import CapstanVerification.Output
 import CapstanVerification.ExplicitTrap
 import CapstanVerification.InjectionChecker
-
 import CapstanVerification.InjectionSinks
 import CapstanVerification.InjectionValue
+import CapstanVerification.GenerationalHandles
+import CapstanVerification.CollectorSemantics
+import CapstanVerification.ReferenceSemantics
+import CapstanVerification.NativeRegisterHeapBridge
