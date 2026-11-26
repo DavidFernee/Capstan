@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_branch_target(int target,int block_count){return ag_ir_block_id_valid(target,block_count);}
