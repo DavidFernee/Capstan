@@ -1,7 +1,7 @@
 # Capstan threat model
 
 What Capstan defends against, what it assumes, what it trusts today, what is out of scope, and what
-risk remains. It describes the integrated repository state reviewed on 2026-11-24, and is the
+risk remains. It describes the integrated repository state reviewed on 2026-11-26 against mainline snapshot `8c3add03d55190fd0afe48b1b813621a90fcd797`, and is the
 maintained threat model called for in [DESIGN-MAP.md](../DESIGN-MAP.md). The default execution path
 is still generated C plus the C runtime; the C-free/CCAM programme is not yet the production path.
 Every claim refers to a document, implementation path or test in the repository.
@@ -141,6 +141,12 @@ are not evidence that the current C-backed runtime has become memory-safe.
   one can end the program (denial of service), but not corrupt it.
 - **Capstan Review (AI).** Planned, advisory and optional; not part of the compiler's verdict and not
   present today.
+
+## 6.1 Platform evidence boundary
+
+The CI workflow at the reviewed snapshot has three compiler/platform combinations: Ubuntu with GCC, Ubuntu with Clang, and macOS with Clang. These are the only combinations represented by the routine CI matrix. Windows and ARM64 are not in that matrix; this document makes no portability or support claim for them. A future support claim requires a defined support policy, an actual build/runtime test job on the target, and exact-commit evidence. The current POSIX-oriented runtime (including `unistd.h`, file-descriptor APIs and signal/stack handling) is an additional reason not to infer Windows support from source-level portability.
+
+The exact-head assurance recheck associated with issue #428 found the allocator/GC abstract-model job successful, while the formal language-verification package and the CI matrix were still queued at the time of inspection; CodeQL C++ analysis had completed while its other language jobs were still running/queued. No `tests/run.sh --full` run was obtained as part of that review. These workflow states are not full-suite passing evidence and must be superseded by completed exact-commit results before any assurance claim is promoted.
 
 ## 7. Residual risks
 
