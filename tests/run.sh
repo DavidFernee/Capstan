@@ -795,4 +795,8 @@ fi
 
 echo
 echo "$pass passed, $fail failed"
+if (( fail > 0 )); then
+  echo "Failure details (repeated at end for CI log visibility):"
+  cat "$FAILURE_LOG"
+fi
 [[ $fail -eq 0 ]]
