@@ -1,4 +1,5 @@
 import CapstanVerification.F1Provenance
+import CapstanVerification.CredentialConfinement
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
@@ -19,6 +20,23 @@ import CapstanVerification.NativeRegisterHeapBridge
 import CapstanVerification.InjectionChecker
 import CapstanVerification.InjectionSinks
 import CapstanVerification.InjectionValue
+
+
+#print axioms CredentialConfinement.integrity_excludes_credentials
+#print axioms CredentialConfinement.fast_hash_excludes_credentials
+#print axioms CredentialConfinement.storage_has_verifier
+#print axioms CredentialConfinement.combine_rejects_left_credential
+#print axioms CredentialConfinement.combine_rejects_right_credential
+#print axioms CredentialConfinement.selection_rejects_credential_control
+#print axioms CredentialConfinement.selection_rejects_inherited_control
+#print axioms CredentialConfinement.call_preserves_argument
+#print axioms CredentialConfinement.call_preserves_control
+#print axioms CredentialConfinement.projection_preserves_aggregate
+#print axioms CredentialConfinement.projection_preserves_field
+#print axioms CredentialConfinement.alias_observes_write
+#print axioms CredentialConfinement.unrelated_cell_preserved
+#print axioms CredentialConfinement.stored_credential_rejects_integrity
+#print axioms CredentialConfinement.stored_control_rejects_integrity
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
