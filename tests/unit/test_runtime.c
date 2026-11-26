@@ -520,6 +520,8 @@ static void test_files(void) {
     for (int i = 0; i < 256; i++) all[i] = (char)i;
     CapStr *p = cap_str_new(path, (int64_t)strlen(path));
     CHECK(cap_write_file(p, cap_str_new(all, 256)));
+    CHECK(str_is(cap_read_file_max(p, 256, 0), all, 256));
+    CHECK(cap_read_file_max(p, 255, 0) == NULL);
     CHECK(str_is(cap_read_file(p), all, 256));
     CHECK(cap_write_file(p, CAP_LIT("", 0)));
     CHECK(str_is(cap_read_file(p), "", 0));
@@ -562,6 +564,14 @@ static void test_files(void) {
     CHECK(str_is(cap_read_line(), "last", 4)); /* EOF without a trailing newline */
     CHECK(cap_read_line() == NULL);
     CHECK(cap_read_line() == NULL);
+
+    /* The source-level limit is passed through to the runtime. */
+    f = fopen(in, "wb");
+    fwrite("abc\\n", 1, 4, f);
+    fclose(f);
+    CHECK(freopen(in, "rb", stdin) != NULL);
+    CHECK(str_is(cap_read_line_max(3, 0), "abc", 3));
+    CHECK(cap_read_line_max(3, 0) == NULL);
 
     /* Exactly the configured maximum is accepted, and the next line remains intact. */
     f = fopen(in, "wb");
