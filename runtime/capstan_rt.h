@@ -813,7 +813,9 @@ static CapList *cap_args(int64_t max_count, int64_t max_each, int64_t max_total,
         cap_panic("args() bounds outside supported limits", "CWE-789", loc);
     int64_t count = cap_argc > 1 ? (int64_t)cap_argc - 1 : 0;
     if (CAP_UNLIKELY(count > max_count)) cap_panic("args() exceeds argument-count bound", "CWE-789", loc);
-    CapList *l = cap_list_new();
+
+    /* Preflight every argument before allocating the result list or copying any
+       attacker-controlled bytes. The second pass is therefore allocation-only. */
     int64_t total = 0;
     for (int i = 1; i < cap_argc; i++) {
         int64_t remain = max_total - total;
@@ -822,6 +824,11 @@ static CapList *cap_args(int64_t max_count, int64_t max_each, int64_t max_total,
         if (CAP_UNLIKELY(z > (size_t)max_each || z > (size_t)remain))
             cap_panic("args() exceeds byte bound", "CWE-789", loc);
         total += (int64_t)z;
+    }
+
+    CapList *l = cap_list_new();
+    for (int i = 1; i < cap_argc; i++) {
+        size_t z = strnlen(cap_argv[i], (size_t)max_each + 1);
         cap_list_push(l, cap_vp(cap_str_new(cap_argv[i], (int64_t)z)));
     }
     return l;
