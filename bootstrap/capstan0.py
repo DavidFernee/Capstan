@@ -645,16 +645,18 @@ def b_write_file(p, d):
     except OSError: return False
 def b_args(max_count, max_each, max_total):
     if max_count < 0 or max_count > 4096 or max_each < 0 or max_each > (1 << 20) or max_total < 0 or max_total > (1 << 24): _panic("args() bounds outside supported limits", "CWE-789")
-    values = sys.argv[1:]
-    if len(values) > max_count: _panic("args() exceeds argument-count bound", "CWE-789")
+    count = len(sys.argv) - 1
+    if count > max_count: _panic("args() exceeds argument-count bound", "CWE-789")
+    # Validate the count and every encoded byte length before allocating the
+    # returned list. os.fsencode measures the actual argv byte representation.
     total = 0
-    for value in values:
+    for i in range(1, len(sys.argv)):
         size = 0
-        for char in value:
+        for char in sys.argv[i]:
             size += len(os.fsencode(char))
             if size > max_each or size > max_total - total: _panic("args() exceeds byte bound", "CWE-789")
         total += size
-    return values
+    return [sys.argv[i] for i in range(1, len(sys.argv))]
 def b_exit(c): sys.stdout.flush(); sys.exit(c)
 def b_join(l, sep): return sep.join(l)
 def b_assert(c):
