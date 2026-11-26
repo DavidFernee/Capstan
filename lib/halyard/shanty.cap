@@ -576,7 +576,7 @@ test "Shanty budgeted parse and decode charge before materialising output" {
     List<int> bytes = shanty_test_stereo_wave();
     HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
     HalyardConsumptionBudgetResult budget_result =
-        halyard_consumption_budget_create(64, 16, 4, 128);
+        halyard_consumption_budget_create(64, 24, 4, 128);
     assert(made.ok && budget_result.ok);
     if (let source = made.source) {
         if (let budget = budget_result.budget) {
@@ -591,6 +591,38 @@ test "Shanty budgeted parse and decode charge before materialising output" {
                 assert(budget.used_decoded_units == 4);
                 assert(budget.used_output_bytes == 16);
                 assert(budget.used_work_units == 72);
+            } else { assert(false); }
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+bool shanty_test_decode_and_discard(ShantyWave wave, HalyardConsumptionBudget budget) {
+    ShantyPcmResult decoded = shanty_wave_decode_samples_budgeted(wave, budget);
+    return decoded.ok;
+}
+
+test "Shanty repeated decode-and-discard consumes cumulative allowance" {
+    List<int> bytes = shanty_test_stereo_wave();
+    HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(64, 24, 4, 128);
+    assert(made.ok && budget_result.ok);
+    if (let source = made.source) {
+        if (let budget = budget_result.budget) {
+            ShantyWaveResult parsed = shanty_wave_parse_budgeted(source, budget);
+            assert(parsed.ok);
+            if (let wave = parsed.wave) {
+                // The helper drops each decoded result on return. Cumulative
+                // decode allowance must not be refunded when output is discarded.
+                assert(shanty_test_decode_and_discard(wave, budget));
+                assert(budget.used_decoded_units == 4);
+                assert(budget.used_output_bytes == 16);
+                assert(budget.used_work_units == 72);
+
+                assert(!shanty_test_decode_and_discard(wave, budget));
+                assert(budget.used_decoded_units == 4);
+                assert(budget.used_output_bytes == 16);
+                assert(budget.used_work_units == 80);
             } else { assert(false); }
         } else { assert(false); }
     } else { assert(false); }
