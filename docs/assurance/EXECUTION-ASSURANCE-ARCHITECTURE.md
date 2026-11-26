@@ -87,7 +87,7 @@ whether the relation is adequate; that remains a substantive review task.
 
 | Boundary | Current evidence | Missing link |
 |---|---|---|
-| Source parser/checker → typed scalar source | Production checker enforces explicit finite bounds on direct input builtins; a restricted checked scalar lowering workstream exists | Formal source typing judgement, checker soundness, production CLI integration |
+| Source parser/checker → typed scalar source | Production checker enforces explicit finite bounds on direct input builtins and rejects `Tainted` values passed to fast `hash()`/`hash_verify()` (CWE-916); a restricted checked scalar lowering workstream exists | Formal source typing judgement, checker soundness, production CLI integration; broader password-provenance tracking beyond the current `Tainted` boundary |
 | Typed scalar source → CCAM | `verification/ccam_lowering.cap` implements a restricted subset and rejects unsupported constructs | Source-to-CCAM simulation and exact semantic preservation |
 | CCAM decoding / validation | Capstan-native in-memory validators exist for restricted subsets | Closed-schema JSON decoder, duplicate-key rejection, normative whole-program validator, validator soundness |
 | CCAM evaluator | Single-frame and bounded multi-function executable slices exist in Capstan | One integrated normative machine; whole-machine Lean semantics and evaluator refinement |
