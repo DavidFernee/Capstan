@@ -1,0 +1,330 @@
+// Halyard multi-dimensional live-resource admission reference machine.
+//
+// This model tests one-owner FIFO admission for a bounded resource vector.
+// It is an abstract policy model, not a concurrent runtime or proof of the
+// implementation's refinement. Cumulative work/output/decode quotas are
+// deliberately modelled elsewhere as monotonic, non-refundable counters.
+
+const int HRV_EMPTY = 0;
+const int HRV_PENDING = 1;
+const int HRV_ACCEPTED = 2;
+const int HRV_REJECTED = 3;
+const int HRV_RELEASED = 4;
+
+struct HRVState {
+    int capacity_retained;
+    int capacity_allocations;
+    int capacity_metadata;
+    int used_retained;
+    int used_allocations;
+    int used_metadata;
+    int queue_capacity;
+    int queued;
+    int next_sequence;
+    int a_status;
+    int a_retained;
+    int a_allocations;
+    int a_metadata;
+    int a_sequence;
+    int b_status;
+    int b_retained;
+    int b_allocations;
+    int b_metadata;
+    int b_sequence;
+}
+
+struct HRVTransition {
+    bool ok;
+    HRVState state;
+    string error;
+}
+
+HRVState hrv_initial(
+    int retained_capacity, int allocation_capacity,
+    int metadata_capacity, int queue_capacity
+) {
+    return new HRVState{
+        capacity_retained: retained_capacity,
+        capacity_allocations: allocation_capacity,
+        capacity_metadata: metadata_capacity,
+        used_retained: 0, used_allocations: 0, used_metadata: 0,
+        queue_capacity: queue_capacity, queued: 0, next_sequence: 1,
+        a_status: HRV_EMPTY, a_retained: 0, a_allocations: 0,
+        a_metadata: 0, a_sequence: 0,
+        b_status: HRV_EMPTY, b_retained: 0, b_allocations: 0,
+        b_metadata: 0, b_sequence: 0
+    };
+}
+
+HRVState hrv_copy(HRVState s) {
+    return new HRVState{
+        capacity_retained: s.capacity_retained,
+        capacity_allocations: s.capacity_allocations,
+        capacity_metadata: s.capacity_metadata,
+        used_retained: s.used_retained,
+        used_allocations: s.used_allocations,
+        used_metadata: s.used_metadata,
+        queue_capacity: s.queue_capacity, queued: s.queued,
+        next_sequence: s.next_sequence,
+        a_status: s.a_status, a_retained: s.a_retained,
+        a_allocations: s.a_allocations, a_metadata: s.a_metadata,
+        a_sequence: s.a_sequence,
+        b_status: s.b_status, b_retained: s.b_retained,
+        b_allocations: s.b_allocations, b_metadata: s.b_metadata,
+        b_sequence: s.b_sequence
+    };
+}
+
+HRVTransition hrv_reject(HRVState s, string error) {
+    return new HRVTransition{ok: false, state: s, error: error};
+}
+
+HRVTransition hrv_accept(HRVState s) {
+    return new HRVTransition{ok: true, state: s, error: ""};
+}
+
+bool hrv_invariant(HRVState s) {
+    if (s.capacity_retained < 0 || s.capacity_allocations < 0 ||
+        s.capacity_metadata < 0 || s.used_retained < 0 ||
+        s.used_allocations < 0 || s.used_metadata < 0 ||
+        s.used_retained > s.capacity_retained ||
+        s.used_allocations > s.capacity_allocations ||
+        s.used_metadata > s.capacity_metadata ||
+        s.queue_capacity < 0 || s.queued < 0 ||
+        s.queued > s.queue_capacity || s.next_sequence < 1 || s.next_sequence > 3) {
+        return false;
+    }
+    if (s.a_status < HRV_EMPTY || s.a_status > HRV_RELEASED ||
+        s.b_status < HRV_EMPTY || s.b_status > HRV_RELEASED) {
+        return false;
+    }
+    if (s.a_retained < 0 || s.a_allocations < 0 || s.a_metadata < 0 ||
+        s.b_retained < 0 || s.b_allocations < 0 || s.b_metadata < 0) {
+        return false;
+    }
+    int expected_queue = 0;
+    int expected_retained = 0;
+    int expected_allocations = 0;
+    int expected_metadata = 0;
+    if (s.a_status == HRV_PENDING) { expected_queue += 1; }
+    if (s.b_status == HRV_PENDING) { expected_queue += 1; }
+    if (s.a_status == HRV_ACCEPTED) {
+        expected_retained += s.a_retained;
+        expected_allocations += s.a_allocations;
+        expected_metadata += s.a_metadata;
+    }
+    if (s.b_status == HRV_ACCEPTED) {
+        expected_retained += s.b_retained;
+        expected_allocations += s.b_allocations;
+        expected_metadata += s.b_metadata;
+    }
+    if (s.queued != expected_queue ||
+        s.used_retained != expected_retained ||
+        s.used_allocations != expected_allocations ||
+        s.used_metadata != expected_metadata) {
+        return false;
+    }
+    if (s.a_status == HRV_EMPTY &&
+        (s.a_retained != 0 || s.a_allocations != 0 ||
+         s.a_metadata != 0 || s.a_sequence != 0)) { return false; }
+    if (s.b_status == HRV_EMPTY &&
+        (s.b_retained != 0 || s.b_allocations != 0 ||
+         s.b_metadata != 0 || s.b_sequence != 0)) { return false; }
+    if (s.a_status != HRV_EMPTY &&
+        (s.a_sequence < 1 || s.a_sequence >= s.next_sequence)) { return false; }
+    if (s.b_status != HRV_EMPTY &&
+        (s.b_sequence < 1 || s.b_sequence >= s.next_sequence)) { return false; }
+    if (s.a_status != HRV_EMPTY && s.b_status != HRV_EMPTY &&
+        s.a_sequence == s.b_sequence) { return false; }
+    return true;
+}
+
+// Enqueue is the ownership commit point. A request is either wholly queued
+// with one FIFO sequence or rejected without changing any state.
+HRVTransition hrv_enqueue(
+    HRVState before, int request_id,
+    int retained, int allocations, int metadata
+) {
+    if (!hrv_invariant(before)) { return hrv_reject(before, "invalid_state"); }
+    if (retained < 0 || allocations < 0 || metadata < 0) {
+        return hrv_reject(before, "negative_charge");
+    }
+    if (before.queued >= before.queue_capacity) {
+        return hrv_reject(before, "queue_full");
+    }
+    HRVState next = hrv_copy(before);
+    if (request_id == 1) {
+        if (before.a_status != HRV_EMPTY) {
+            return hrv_reject(before, "duplicate_request");
+        }
+        next.a_status = HRV_PENDING;
+        next.a_retained = retained;
+        next.a_allocations = allocations;
+        next.a_metadata = metadata;
+        next.a_sequence = before.next_sequence;
+    } else if (request_id == 2) {
+        if (before.b_status != HRV_EMPTY) {
+            return hrv_reject(before, "duplicate_request");
+        }
+        next.b_status = HRV_PENDING;
+        next.b_retained = retained;
+        next.b_allocations = allocations;
+        next.b_metadata = metadata;
+        next.b_sequence = before.next_sequence;
+    } else {
+        return hrv_reject(before, "unknown_request");
+    }
+    next.queued += 1;
+    next.next_sequence += 1;
+    return hrv_accept(next);
+}
+
+// The single owner preflights the entire vector using subtraction-form
+// checks before changing any used counter. No dimension can be partially
+// admitted when another dimension is exhausted.
+HRVTransition hrv_process_one(HRVState before) {
+    if (!hrv_invariant(before)) { return hrv_reject(before, "invalid_state"); }
+    if (before.queued == 0) { return hrv_reject(before, "queue_empty"); }
+    HRVState next = hrv_copy(before);
+    bool choose_a = before.a_status == HRV_PENDING &&
+        (before.b_status != HRV_PENDING ||
+         before.a_sequence < before.b_sequence);
+    int retained = before.b_retained;
+    int allocations = before.b_allocations;
+    int metadata = before.b_metadata;
+    if (choose_a) {
+        retained = before.a_retained;
+        allocations = before.a_allocations;
+        metadata = before.a_metadata;
+    }
+    bool fits = retained <= before.capacity_retained - before.used_retained &&
+        allocations <= before.capacity_allocations - before.used_allocations &&
+        metadata <= before.capacity_metadata - before.used_metadata;
+    next.queued -= 1;
+    if (choose_a) {
+        if (fits) { next.a_status = HRV_ACCEPTED; }
+        else { next.a_status = HRV_REJECTED; }
+    } else {
+        if (fits) { next.b_status = HRV_ACCEPTED; }
+        else { next.b_status = HRV_REJECTED; }
+    }
+    if (fits) {
+        next.used_retained += retained;
+        next.used_allocations += allocations;
+        next.used_metadata += metadata;
+    }
+    if (!hrv_invariant(next)) { return hrv_reject(before, "transition_invariant"); }
+    return hrv_accept(next);
+}
+
+HRVTransition hrv_release(HRVState before, int request_id) {
+    if (!hrv_invariant(before)) { return hrv_reject(before, "invalid_state"); }
+    HRVState next = hrv_copy(before);
+    if (request_id == 1) {
+        if (before.a_status != HRV_ACCEPTED) {
+            return hrv_reject(before, "lease_not_owned");
+        }
+        next.used_retained -= before.a_retained;
+        next.used_allocations -= before.a_allocations;
+        next.used_metadata -= before.a_metadata;
+        next.a_status = HRV_RELEASED;
+    } else if (request_id == 2) {
+        if (before.b_status != HRV_ACCEPTED) {
+            return hrv_reject(before, "lease_not_owned");
+        }
+        next.used_retained -= before.b_retained;
+        next.used_allocations -= before.b_allocations;
+        next.used_metadata -= before.b_metadata;
+        next.b_status = HRV_RELEASED;
+    } else {
+        return hrv_reject(before, "unknown_request");
+    }
+    if (!hrv_invariant(next)) { return hrv_reject(before, "transition_invariant"); }
+    return hrv_accept(next);
+}
+
+test "HRV FIFO admission never partially charges a multidimensional request" {
+    HRVState state = hrv_initial(10, 1, 1, 2);
+    HRVTransition first = hrv_enqueue(state, 1, 6, 1, 1);
+    assert(first.ok);
+    state = first.state;
+    HRVTransition second = hrv_enqueue(state, 2, 5, 1, 0);
+    assert(second.ok);
+    state = second.state;
+    HRVTransition accepted = hrv_process_one(state);
+    assert(accepted.ok);
+    state = accepted.state;
+    assert(state.a_status == HRV_ACCEPTED);
+    assert(state.used_retained == 6 && state.used_allocations == 1);
+    assert(state.used_metadata == 1);
+    HRVTransition rejected = hrv_process_one(state);
+    assert(rejected.ok);
+    state = rejected.state;
+    assert(state.b_status == HRV_REJECTED);
+    assert(state.used_retained == 6 && state.used_allocations == 1);
+    assert(state.used_metadata == 1);
+    assert(hrv_invariant(state));
+}
+
+test "HRV one exhausted dimension rejects the whole vector atomically" {
+    HRVState state = hrv_initial(20, 4, 1, 1);
+    HRVTransition queued = hrv_enqueue(state, 1, 1, 1, 2);
+    assert(queued.ok);
+    HRVTransition processed = hrv_process_one(queued.state);
+    assert(processed.ok);
+    assert(processed.state.a_status == HRV_REJECTED);
+    assert(processed.state.used_retained == 0);
+    assert(processed.state.used_allocations == 0);
+    assert(processed.state.used_metadata == 0);
+    assert(hrv_invariant(processed.state));
+}
+
+test "HRV exact boundaries admit and release every dimension once" {
+    HRVState state = hrv_initial(8, 2, 3, 1);
+    HRVTransition queued = hrv_enqueue(state, 1, 8, 2, 3);
+    assert(queued.ok);
+    HRVTransition admitted = hrv_process_one(queued.state);
+    assert(admitted.ok && admitted.state.a_status == HRV_ACCEPTED);
+    assert(admitted.state.used_retained == 8);
+    assert(admitted.state.used_allocations == 2);
+    assert(admitted.state.used_metadata == 3);
+    HRVTransition released = hrv_release(admitted.state, 1);
+    assert(released.ok);
+    assert(released.state.used_retained == 0);
+    assert(released.state.used_allocations == 0);
+    assert(released.state.used_metadata == 0);
+    HRVTransition twice = hrv_release(released.state, 1);
+    assert(!twice.ok && twice.error == "lease_not_owned");
+    assert(hrv_invariant(twice.state));
+}
+
+test "HRV queue rejection and negative vectors preserve prior state" {
+    HRVState state = hrv_initial(4, 2, 2, 1);
+    HRVTransition negative = hrv_enqueue(state, 1, -1, 0, 0);
+    assert(!negative.ok && negative.error == "negative_charge");
+    assert(negative.state.queued == 0 && negative.state.next_sequence == 1);
+    HRVTransition first = hrv_enqueue(state, 1, 1, 1, 1);
+    assert(first.ok);
+    HRVTransition full = hrv_enqueue(first.state, 2, 1, 1, 1);
+    assert(!full.ok && full.error == "queue_full");
+    assert(full.state.queued == 1 && full.state.b_status == HRV_EMPTY);
+    assert(hrv_invariant(full.state));
+}
+
+test "HRV corrupted state is rejected before vector admission" {
+    HRVState state = hrv_initial(4, 2, 2, 2);
+    state.used_retained = 5;
+    HRVTransition rejected = hrv_enqueue(state, 1, 1, 1, 1);
+    assert(!rejected.ok && rejected.error == "invalid_state");
+    assert(rejected.state.used_retained == 5);
+    assert(rejected.state.used_allocations == 0);
+    assert(rejected.state.used_metadata == 0);
+
+    HRVState exhausted_sequence = hrv_initial(4, 2, 2, 2);
+    exhausted_sequence.next_sequence = 4;
+    HRVTransition sequence_rejected = hrv_enqueue(
+        exhausted_sequence, 1, 1, 1, 1
+    );
+    assert(!sequence_rejected.ok && sequence_rejected.error == "invalid_state");
+    assert(sequence_rejected.state.next_sequence == 4);
+}

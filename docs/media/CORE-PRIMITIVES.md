@@ -171,10 +171,15 @@ pre-commit ownership and changes no ledger dimension.
 The Capstan-native reference machine is
 `verification/halyard_resource_actor.cap`. It models two competing request
 identities, a bounded FIFO, serial processing, all-or-nothing admission and one-shot
-release. Its tests cover both enqueue orders, aggregate overcommit prevention,
+release. The companion `verification/halyard_resource_vector_actor.cap` extends the
+admission transition to a three-dimensional live-resource vector (retained bytes,
+allocation slots and metadata entries), with all dimensions preflighted before any
+counter changes. Its tests cover both enqueue orders, aggregate overcommit prevention,
 queue-full rejection, invalid/duplicate requests, repeated release and rejection of
-corrupted resource/queue state before transition. The model now has seven Capstan
-test declarations; the standard test runner executes it.
+corrupted resource/queue state before transition. The scalar policy model has seven Capstan test declarations; the standard test runner
+executes it. The vector model adds five tests for FIFO aggregate admission, a single
+exhausted dimension, exact-boundary admission, one-shot release, queue/negative-charge
+rejection and corrupted-state rejection; it is also registered in the standard test runner.
 
 This is a **policy model**, not a live concurrent actor implementation. It assumes
 the owner processes transitions serially; it does not itself establish that a
@@ -358,3 +363,6 @@ trusted computing base until the C-free execution path is qualified.
 The cumulative consumption budget and live-resource lease ledger are independent state machines. Releasing a retained-byte/allocation lease must not refund input, output, decoded-unit or work consumption. The regression test `Halyard live lease release never refunds cumulative decode or work` in `lib/halyard/core.cap` exercises the actual lease acquisition/release API between two consumption attempts: the first attempt consumes the full decoded/work allowance, releases its retained-byte/allocation lease, and the second attempt is still rejected with all cumulative counters unchanged.
 
 This is a narrow sequential model regression. It does not establish that every parser/decoder operation charges every required work unit, that cumulative charges are coupled to every allocation/output path, or that a concurrent/cancelled worker cannot leak a lease. Those remain #303/#293 acceptance work.
+
+
+The vector actor is still an abstract single-owner policy model. It does not prove the runtime actually serialises requests, model every live-resource dimension, include cumulative consumption (which is intentionally non-refundable and tested separately), or establish cancellation/worker-death cleanup. Those remain explicit gates under #285, #293, #303, #229 and #249.

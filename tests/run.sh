@@ -92,6 +92,13 @@ else
   bad "Halyard resource actor model" "$out"
 fi
 
+section "Capstan-native verification: Halyard multidimensional resource admission"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/halyard_resource_vector_actor.cap" 2>&1)"; then
+  ok "FIFO all-or-nothing vector admission, exact boundaries, rejection and one-shot release"
+else
+  bad "Halyard multidimensional resource actor model" "$out"
+fi
+
 section "Capstan-native verification: finite protocol automata"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
   ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
