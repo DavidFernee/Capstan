@@ -1,0 +1,121 @@
+// A small Shroud application using the current public View / Msg API.
+// Build from the repository root:
+//   capstanc build -o console.c lib/shroud/*.cap examples/shroud/console.cap
+//   cc -O2 -Iruntime console.c -o console && ./console out-dir
+//
+// This is deliberately a current-API executable example. Typed View<M> is a
+// proposed future API and is not simulated with strings here.
+
+struct Model {
+    int page;
+    Tainted query;
+    int selected;
+    string status;
+}
+
+View nav_item(string title, string action, bool active, string key) {
+    View item = button(title, action).key(key);
+    if (active) { item = item.accent(); }
+    else { item = item.subtle(); }
+    return item;
+}
+
+View metric_card(string title, string value, string detail, string key) {
+    return box().padding(16).background(0xFFF4F6F8).corner_radius(8)
+        .add(text(title).font_size(12).foreground(0xFF52606D))
+        .add(text(value).font_size(24).bold())
+        .add(text(detail).font_size(12).foreground(0xFF52606D))
+        .key(key);
+}
+
+View record_row(string name, string owner, string state, string key) {
+    return row().spacing(12).padding_each(8, 6, 8, 6)
+        .add(text(name).grow(2))
+        .add(text(owner).grow(1))
+        .add(text(state).grow(1))
+        .add(button("Inspect", "inspect").subtle().key(key + "-inspect"));
+}
+
+View view_of(Model m) {
+    View header = row().spacing(8).align(ALIGN_CENTER, ALIGN_CENTER)
+        .add(text("Harbour Console").font_size(22).bold())
+        .add(spacer())
+        .add(text("Demo workspace").label("Current workspace"));
+
+    View navigation = row().spacing(6)
+        .add(nav_item("Overview", "overview", m.page == 0, "nav-overview"))
+        .add(nav_item("Records", "records", m.page == 1, "nav-records"))
+        .add(nav_item("Settings", "settings", m.page == 2, "nav-settings"));
+
+    View body = column().spacing(12);
+    if (m.page == 0) {
+        body.add(text("Overview").font_size(20).bold());
+        body.add(row().spacing(12)
+            .add(metric_card("Active records", "128", "+12 this week", "metric-active").grow(1))
+            .add(metric_card("Needs review", "7", "2 high priority", "metric-review").grow(1))
+            .add(metric_card("Availability", "99.9%", "Last 30 days", "metric-availability").grow(1)));
+        body.add(text("Recent activity").font_size(16).bold());
+        body.add(record_row("North berth", "Operations", "Healthy", "row-north"));
+        body.add(record_row("Cargo manifest", "Logistics", "Review", "row-cargo"));
+        body.add(record_row("Safety inspection", "Assurance", "Complete", "row-safety"));
+    } else if (m.page == 1) {
+        body.add(text("Records").font_size(20).bold());
+        body.add(text_field("query", m.query, "Filter records").key("records-query").label("Filter records"));
+        body.add(record_row("North berth", "Operations", "Healthy", "records-north"));
+        body.add(record_row("Cargo manifest", "Logistics", "Review", "records-cargo"));
+        body.add(record_row("Safety inspection", "Assurance", "Complete", "records-safety"));
+        body.add(text("Select Inspect to request a record detail.").font_size(12));
+    } else {
+        body.add(text("Settings").font_size(20).bold());
+        body.add(checkbox("Enable operational notifications", m.selected != 0, "notifications").key("notifications"));
+        body.add(text("Keyboard users can reach every navigation and form control.").label("Accessibility note"));
+    }
+    if (m.status != "") { body.add(text(m.status).label("Status")); }
+
+    return column().spacing(16).padding(24)
+        .add(header)
+        .add(navigation)
+        .add(divider())
+        .add(body);
+}
+
+void update(Model m, Msg msg) {
+    if (msg.action == "overview") { m.page = 0; }
+    if (msg.action == "records") { m.page = 1; }
+    if (msg.action == "settings") { m.page = 2; }
+    if (msg.action == "query") { m.query = msg.text; }
+    if (msg.action == "notifications") { m.selected = msg.value; }
+    if (msg.action == "inspect") { m.status = "Record inspection requested."; }
+}
+
+int main() {
+    List<string> args0 = args();
+    string dir = ".";
+    if (args0.len() > 0) { dir = args0[0]; }
+    Font? regular = none;
+    Font? bold = none;
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
+    if (let f = regular) {
+        if (let fb = bold) {
+            Model m = new Model{page: 0, query: taint(""), selected: 1, status: ""};
+            Ui ui = new_ui(f, fb, light_theme(), 960, 640, 256);
+            ui.render(view_of(m), 1000);
+            if (!png_write(dir + "/console-overview.png", ui.pixmap)) { return 1; }
+            m.page = 1;
+            ui.render(view_of(m), 1100);
+            if (!png_write(dir + "/console-records.png", ui.pixmap)) { return 1; }
+            m.page = 2;
+            ui.render(view_of(m), 1200);
+            if (!png_write(dir + "/console-settings.png", ui.pixmap)) { return 1; }
+            if (let tree = a11y_tree(ui)) {
+                if (!write_file(dir + "/console-a11y.json", a11y_json(tree) + "\n")) { return 1; }
+            }
+            List<string> problems = a11y_problems(ui);
+            for (int i = 0; i < problems.len(); i += 1) { println("accessibility: " + problems[i]); }
+            return 0;
+        }
+    }
+    println("could not load Shroud fonts; run from the repository root");
+    return 1;
+}
