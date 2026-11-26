@@ -29,7 +29,7 @@ A one-shot compiler process is a suitable first client: its tokens, AST, type an
 
 The experimental `verification/ccam_aggregate_machine.cap` now composes the opaque process-lifetime heap with typed integer, boolean and reference registers. It provides Capstan reference transitions for record/array/byte allocation, record field access, array append/read, arena provenance checks and pre-dispatch step limits. Its exact scope and limitations are recorded in [CCAM Aggregate Register/Heap Execution Bridge](CCAM-AGGREGATE-MACHINE-BRIDGE.md).
 
-This is an integration milestone only. It is not yet part of the canonical CCAM instruction schema, multi-frame evaluator, native backend or Lean refinement chain, and it does not yet execute the production lexer/parser through aggregate CCAM. Those remain explicit gates for #458/#481.
+This is an integration milestone only. It is not yet part of the canonical CCAM instruction schema, multi-frame evaluator, native backend or Lean refinement chain, and it does not yet execute the production lexer/parser through aggregate CCAM. Those remain explicit gates for #458/#481. A companion `verification/ccam_aggregate_program.cap` now defines a version-1 straight-line aggregate program representation and checks layout uniqueness/shape, nominal reference targets, operand register types, immutable-field stores, bounded literals and sequential definite initialisation. This is a closed schema/validator prototype, not yet a control-flow-aware whole-program validator: object-kind/descriptor flow through aliases, branches and frames, runtime dispatch, native conformance and Lean refinement remain unimplemented.
 
 ## 2. Why the compiler cannot self-compile today
 
