@@ -79,6 +79,21 @@ test "owners can edit" { assert_granted CanEdit(owner, doc); }
 - A non-void function must return on every path.
 - The program entry point is `int main()` or `void main()`.
 
+## Proposed reference values and object identity
+
+**Status:** research target semantics. These rules are not yet part of the supported language subset; they become normative only after the compiler, list/collection operations and runtime allocator/collector have a demonstrated implementation correspondence.
+
+Struct values are intended to be references to heap objects, not inline copies of their fields.
+
+- Each evaluation of `new S{...}` creates a fresh logical object identity. The identity is distinct from every other object identity, including identities whose storage has previously been reclaimed.
+- Assignment, parameter passing, return, field storage and collection storage copy the reference value. They do not clone the referenced object.
+- Field reads and writes operate on the object denoted by the reference. All aliases to the same identity observe the same field mutations. A method's `self` receiver is an alias to the receiver object.
+- Struct identity is not exposed as a general `==` or `!=` comparison; those operators remain unavailable for structs. Identity is used internally where the language contract requires it, including policy-grant role binding.
+- Object lifetime is managed by the runtime. Source programs do not explicitly free objects. An object reachable from a live variable, parameter, global, or another reachable object's fields or collection entries remains valid. Once unreachable, its storage may be reclaimed. Reuse of physical storage creates a new logical identity; it must never make an old reference denote a different object.
+- Safe source code cannot manufacture an object reference from an integer, perform pointer arithmetic, or dereference a reclaimed object. An invalid or stale reference is never a valid source-language value.
+
+These are language-level semantics. They do not prescribe a particular collector or object layout. A runtime implementation must preserve them across allocation, collection, compiler lowering and native execution.
+
 ## Statements
 
 `T name = expr;`, `target = expr;`, `target += expr;`, `target -= expr;`, `if (cond) {...} else {...}`,

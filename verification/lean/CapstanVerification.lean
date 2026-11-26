@@ -2,6 +2,11 @@ import CapstanVerification.Core
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge
+import CapstanVerification.NativeRegisterHeapBridge
+import CapstanVerification.ReferenceSemantics
 import CapstanVerification.Machine
 import CapstanVerification.Progress
 import CapstanVerification.ProgramValidator
+
+import CapstanVerification.CollectorSemantics
+import CapstanVerification.GenerationalHandles

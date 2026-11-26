@@ -23,6 +23,8 @@ A feature being accepted by the existing compiler does not mean it is supported 
 | Unary/binary arithmetic and comparisons | Includes checked arithmetic and bitwise/shift operations | Partial | Specify all operator rules and trap boundaries |
 | `wrapping_*` builtins | Explicit modulo-2^64 operations | Excluded | Add distinct wrapping instructions/semantics |
 | Structs and methods | Reference types, mutable fields, identity | Excluded | Heap, layout, aliasing and lifetime model |
+
+**CCAM register-file qualification:** `verification/ccam_core.cap` currently uses mutable `CCAMRegister` values obtained from a `List<CCAMRegister>`, including local copies followed by field mutation. That implementation therefore depends on reference identity and aliasing behaviour which this table explicitly classifies as excluded from the supported language subset. The register-file regression tests exercise the current implementation, but they do not establish a language-level reference-semantics guarantee. The Lean heap bridge is a proposed semantic model; it remains unconnected to a proved Capstan evaluation rule until struct allocation, field access/update, list storage and aliasing are specified and verified.
 | Enums and payloads | Tagged variants, exhaustive match | Excluded | Tagged value layout and safe payload access |
 | Optionals | `T?`, `none`, explicit unwrap/control flow | Excluded | Option representation and unwrap semantics |
 | Lists and maps | Mutable collections; checked indexing; insertion-order maps | Excluded | Aggregate state, bounds, mutation order, hashing/resource semantics |
@@ -48,6 +50,34 @@ The source reference promises left-to-right evaluation. The original field and i
 ### 3.3 `read_line()` bound
 
 The runtime caps the payload at 1,048,576 bytes, excluding the terminating newline. Exactly 1 MiB is accepted (including EOF immediately after that payload); the next non-newline byte traps with CWE-789. PR #124 adds the existing bound and over-limit outcome to the `docs/SPEC.md` row. The runtime unit suite tests exactly 1 MiB followed by newline and max-plus-one rejection. PR #124 adds `tests/unit/read_line_eof.py`, which exercises the public native API with exactly 1 MiB followed immediately by EOF; its exact-head CI is queued. Treat the limit as a compatibility fact, not as a new CCAM feature.
+
+
+## 3.4 Reference identity and mutable objects — proposed formal semantics
+
+The existing source language treats structs as reference types with mutable fields; `docs/SPEC.md` also states that structs and collections are bound by identity in policy grants. That behaviour must be specified independently of CCAM's initial scalar/register subset. The general reference model permits multiple references to the same object: the no-alias condition used by the CCAM register-file bridge is a stronger, constructor-specific invariant, not a global language rule.
+
+The first formal semantics increment defines an object identity as an opaque reference value and a heap as the authoritative mapping from identities to object records. Copying a reference copies its identity; it does not clone the object. Dereferencing an absent identity is invalid. A field mutation is modelled as an update to the heap cell named by the retained reference, leaving every other heap cell unchanged.
+
+Allocation uses a monotonically increasing identity frontier. Its freshness guarantee is conditional on a heap invariant: every identity at or beyond the frontier is unallocated. The allocator theorem establishes preservation of that invariant in the mathematical model; it is not yet evidence about the executable runtime allocator.
+
+The Lean module `CapstanVerification.ReferenceSemantics` currently models these laws using the CCAM register record as a first object payload. It proves identity-preserving reference copies, allocation at the frontier, preservation of other heap cells, the allocation-frontier invariant, write/readback, alias visibility, and generic object modification visible through copied aliases. The model is polymorphic in object payload; CCAM registers are one specialization. This is a proof model, not a proof of compiler or runtime implementation.
+
+**Current implementation facts relevant to that correspondence:** `compiler/codegen.cap` represents a struct type as a typed C pointer (`S_Name*`), lowers `new S{...}` to `cap_alloc(sizeof(S_Name))` followed by field initialisation, and emits struct fields using their corresponding generated C types. `runtime/capstan_rt.h` routes pointer-containing allocations through the collector. `runtime/capstan_gc.h` describes a non-moving conservative mark-sweep collector: it scans the machine stack, callee-saved registers, registered globals and object contents; it reuses freed small-object slots/pages and separately releases large objects. These are implementation facts, not proofs that every live Capstan reference is retained or that allocation/initialisation is failure-atomic.
+
+The formal `ObjectId` is therefore an abstract allocation-incarnation identity, not a raw C address. Physical addresses can be reused after collection. The implementation refinement must show that no still-usable language reference can denote a reclaimed incarnation, and that address reuse cannot make an invalid/stale reference denote a different live object. The GC's conservative roots and object graph are consequently part of the trusted implementation boundary until formally related to the language heap model.
+
+**Generational-handle alternative:** `CapstanVerification.GenerationalHandles` models a handle as a region, slot and allocation generation. Resolution requires the caller's expected region and checks slot generation too, preventing cross-region resolution. This aligns with the region-scoped identity contract in PR #262. The Lean model proves that releasing a slot invalidates its old handle and that reusing the same slot under a different generation cannot resurrect it. This is a candidate for the C-free runtime's explicit-root heap; it is not the current C backend representation. `boundedNextGeneration` now formalises strict generation growth below a configured maximum and refusal at the limit. The concrete slot-table retirement state machine remains unimplemented.
+
+**Abstract collector proof increment:** `CapstanVerification.CollectorSemantics` models reachability from explicit roots through object fields and a sweep operation driven by a Boolean mark set. It proves that a complete marker preserves all reachable objects, root objects, and reachable edge targets; that sweep invents no objects; and that collection preserves the monotone allocation frontier. The marker may conservatively retain unreachable objects. This is the required abstract sweep theorem, conditional on marker completeness—not a proof that the current conservative C collector computes a complete mark set.
+
+The implementation correspondence remains open and must establish, separately:
+1. the source type checker and compiler preserve reference identity through assignment, argument passing, return, and collection storage;
+2. runtime allocation returns fresh identities and handles exhaustion/failure without publishing a partially initialized object;
+3. field reads and writes dereference the same heap object, including through copied aliases;
+4. object lifetime, reachability, collection, and stale-reference prevention are defined (including whether generations are required to prevent identity reuse);
+5. lowering and backend execution preserve these rules under optimisation and concurrency.
+
+Until these obligations are discharged, reference-containing types remain outside the formally verified C-free subset. The current CCAM register tests are regression evidence only; they do not promote structs or mutable references into the supported CCAM v0.1 feature set.
 
 ## 4. Compatibility policy
 

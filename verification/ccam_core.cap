@@ -197,6 +197,16 @@ struct CCAMRegisterFileResult {
     string error;
 }
 
+
+CCAMRegister ccam_register_identity(CCAMRegister register_value) {
+    return register_value;
+}
+
+void ccam_register_set_through_parameter(CCAMRegister register_value, int value) {
+    register_value.int_value = value;
+    register_value.initialized = true;
+}
+
 CCAMRegisterResult ccam_register_error(string trap) {
     return new CCAMRegisterResult{ok: false, int_value: 0, bool_value: false, trap: trap};
 }
@@ -306,6 +316,53 @@ test "CCAM register files preserve declared types and uninitialised state" {
     CCAMRegisterResult read_bool = ccam_register_read_bool(registers, 1);
     assert(read_int.ok && read_int.int_value == 42);
     assert(read_bool.ok && read_bool.bool_value);
+}
+
+test "struct reference copies preserve identity and observe field mutation" {
+    CCAMRegister original = new CCAMRegister{declared_type: CCAM_TYPE_INT, initialized: false, int_value: 0, bool_value: false};
+    CCAMRegister alias = original;
+    alias.int_value = 41;
+    alias.initialized = true;
+    assert(original.int_value == 41);
+    assert(original.initialized);
+    assert(alias.int_value == 41);
+}
+
+test "struct references preserve identity across parameters and returns" {
+    CCAMRegister original = new CCAMRegister{declared_type: CCAM_TYPE_INT, initialized: false, int_value: 0, bool_value: false};
+    ccam_register_set_through_parameter(original, 29);
+    assert(original.initialized && original.int_value == 29);
+    CCAMRegister returned = ccam_register_identity(original);
+    returned.int_value = 41;
+    assert(original.int_value == 41);
+}
+
+test "separate struct allocations have distinct identities" {
+    CCAMRegister first = new CCAMRegister{declared_type: CCAM_TYPE_INT, initialized: false, int_value: 0, bool_value: false};
+    CCAMRegister second = new CCAMRegister{declared_type: CCAM_TYPE_INT, initialized: false, int_value: 0, bool_value: false};
+    first.int_value = 73;
+    first.initialized = true;
+    assert(second.int_value == 0);
+    assert(!second.initialized);
+}
+
+test "CCAM register constructor allocates distinct objects per slot" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    CCAMRegisterFileResult created = ccam_registers_create(types);
+    assert(created.ok);
+    List<CCAMRegister> registers = created.registers;
+    assert(ccam_register_write_int(registers, 0, 41) == "");
+    CCAMRegisterResult first = ccam_register_read_int(registers, 0);
+    CCAMRegisterResult second = ccam_register_read_int(registers, 1);
+    assert(first.ok && first.int_value == 41);
+    assert(!second.ok && second.trap == "uninitialised_register");
+    assert(ccam_register_write_int(registers, 1, 73) == "");
+    first = ccam_register_read_int(registers, 0);
+    second = ccam_register_read_int(registers, 1);
+    assert(first.ok && first.int_value == 41);
+    assert(second.ok && second.int_value == 73);
 }
 
 test "CCAM register files reject invalid indices and type confusion" {
