@@ -1,0 +1,6 @@
+// expect: read_line expects 1 argument(s), found 2
+// spec: builtins.io
+int main() {
+    if (let line = read_line(64, 1)) { return line.len(); }
+    return 0;
+}
