@@ -87,7 +87,7 @@ whether the relation is adequate; that remains a substantive review task.
 
 | Boundary | Current evidence | Missing link |
 |---|---|---|
-| Source parser/checker → typed scalar source | Production checker enforces explicit finite bounds on direct input builtins; a restricted checked scalar lowering workstream exists | Formal source typing judgement, checker soundness, production CLI integration |
+| Source parser/checker → typed scalar source | Production checker exists; the fast-hash checker rejects `Tainted` values passed to `hash()` or `hash_verify()` (CWE-916), while explicit `trust()` remains a reviewable declassification boundary; a restricted checked scalar lowering workstream exists | Formal source typing judgement, checker soundness, production CLI integration; broader password-provenance tracking beyond the current `Tainted` type boundary |
 | Typed scalar source → CCAM | `verification/ccam_lowering.cap` implements a restricted subset and rejects unsupported constructs | Source-to-CCAM simulation and exact semantic preservation |
 | CCAM decoding / validation | Capstan-native in-memory validators exist for restricted subsets | Closed-schema JSON decoder, duplicate-key rejection, normative whole-program validator, validator soundness |
 | CCAM evaluator | Single-frame and bounded multi-function executable slices exist in Capstan | One integrated normative machine; whole-machine Lean semantics and evaluator refinement |
@@ -95,24 +95,6 @@ whether the relation is adequate; that remains a substantive review task.
 | CCAM → native machine code | Linux x86-64 scalar emitter prototype | Full instruction/effect/resource coverage, differential conformance, machine-code simulation and supported ABI matrix |
 | Runtime → OS/platform | Existing C runtime and platform adapters are production dependencies | C-free runtime implementation, explicit host capability boundary and per-platform refinement/evidence |
 | Bootstrap/build → release artifact | Existing bootstrap, CI and supply-chain controls | Independently reproducible C-free bootstrap and complete provenance/TCB reduction |
-
-
-
-### Memory-lifetime profiles in the C-free programme
-
-The C-free compiler work now distinguishes two non-interchangeable prototype profiles: a process-lifetime typed compiler arena for tokens, ASTs, scopes and diagnostics, and frame-owned scratch regions for temporary byte/scalar workspaces. The integration review in [C-FREE-MEMORY-INTEGRATION-REVIEW.md](../architecture/C-FREE-MEMORY-INTEGRATION-REVIEW.md) records their separate lifetime, aliasing and validation obligations.
-
-Neither prototype is yet a production memory manager or a proved implementation refinement. The arena's integer identity tokens are not unforgeable, and its mutable aggregate aliasing semantics remain unresolved. Scratch generation/owner checks and call-frame unwinding remain prototype obligations. Logical byte/capacity accounting is not a host RSS, allocator-overhead, stack or wall-clock bound. Do not combine the two profiles into one capability or claim complete C-free compiler memory safety.
-
-### Compiler source/import graph budget
-
-The bounded-input work also makes the compiler's source/import graph finite across the Capstan CLI, experimental native driver, stage-0 bootstrap and LSP: 256 distinct files, 16 MiB per file, 32 MiB aggregate source, 500,000 lexer tokens and 150,000 AST nodes. Import directives are graph edges, not executable top-level declarations in the native lowering input. Exact-limit and one-over tests exercise the relevant paths. These are compiler-workload bounds, not a claim that arbitrary application parsers or OS reads have wall-clock deadlines.
-
-### Direct external-input contract
-
-The source/runtime boundary now requires an explicit finite caller-supplied bound for direct input operations, including \`args\`, \`read_file\`, \`read_line\`, \`read_bytes\`, \`secret_env\` and the workspace file reader. The checker enforces arity and bound types; generated runtime and stage-0 paths enforce the corresponding byte/count limits before allocation or consumption. The normative details and exact limits are in [the bounded-input contract](../architecture/BOUNDED-INPUT-CONTRACT.md).
-
-These are resource bounds, not timeouts. In particular, \`read_file\` may still block on a live FIFO or device; the contract does not claim a wall-clock bound or cancellation guarantee. Input remains \`Tainted\` unless separately validated. This work strengthens the existing C-backed production path; it does not establish a C-free runtime or formal source-checker proof.
 
 ## 4. Required proof composition
 
