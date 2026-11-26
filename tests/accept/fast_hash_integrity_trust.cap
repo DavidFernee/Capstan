@@ -1,3 +1,4 @@
+// Reviewed non-password artifact data may use fast hashing after an explicit audit decision.
 // spec: types.tainted builtins.crypto
 int main() {
     Tainted artifact = taint("non-password artifact bytes");
