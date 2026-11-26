@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_effect_valid(int effect){return effect>=0&&effect<=7;}
