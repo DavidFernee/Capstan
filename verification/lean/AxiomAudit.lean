@@ -5,6 +5,7 @@ import CapstanVerification.NativeRegisterFileBridge
 import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
+import CapstanVerification.ExplicitTrap
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
