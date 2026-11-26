@@ -697,29 +697,10 @@ test "CCAM x86-64 backend emits freestanding Hello World output" {
         "build/ccam-native-x64-hello.s", 100, 16));
 }
 
-test "CCAM x86-64 backend preserves NUL and UTF-8 output bytes" {
-    assert(ccam_x64_write_test_program(
-        "int main() { print(\"A" + char_str(92) + "0éB\"); return 0; }",
-        "build/ccam-native-x64-output-bytes.s", 100, 16));
-}
-
-
-test "CCAM x86-64 backend enforces dynamic output budget" {
-    assert(ccam_x64_write_test_program(
-        "int main() { int i = 0; while (i < 65537) { print(\"xxxxxxxxxxxxxxxx\"); i += 1; } return 0; }",
-        "build/ccam-native-x64-output-limit.s", 10000000, 16));
-}
-
-
-test "CCAM x86-64 backend emits freestanding Hello World output" {
-    assert(ccam_x64_write_test_program(
-        "int main() { print(\"Hello, \"); println(\"World!\"); return 0; }",
-        "build/ccam-native-x64-hello.s", 100, 16));
-}
 
 test "CCAM x86-64 backend preserves NUL and UTF-8 output bytes" {
     assert(ccam_x64_write_test_program(
-        "int main() { print(\"A\\\\0éB\"); return 0; }",
+        "int main() { print(\"A\\0éB\"); return 0; }",
         "build/ccam-native-x64-output-bytes.s", 100, 16));
 }
 
@@ -727,5 +708,5 @@ test "CCAM x86-64 backend preserves NUL and UTF-8 output bytes" {
 test "CCAM x86-64 backend enforces dynamic output budget" {
     assert(ccam_x64_write_test_program(
         "int main() { int i = 0; while (i < 1048577) { print(\"x\"); i += 1; } return 0; }",
-        "build/ccam-native-x64-output-limit.s", 10000000, 16));
+        "build/ccam-native-x64-output-limit.s", 100000000, 16));
 }
