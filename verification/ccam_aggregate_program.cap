@@ -656,6 +656,62 @@ test "aggregate program tracks allocated object kinds and array element descript
     assert(!element_result.ok && element_result.error == "array_element_type_mismatch");
 }
 
+test "aggregate program propagates nominal reference descriptors through field reads" {
+    List<int> child_fields = new List<int>();
+    child_fields.push(CCAM_PROGRAM_TYPE_INT);
+    List<bool> child_mutable = new List<bool>();
+    child_mutable.push(true);
+    CCAMHeapLayout child = new CCAMHeapLayout{
+        type_id: 7502, field_types: child_fields,
+        field_ref_type_ids: new List<int>(), field_mutable: child_mutable
+    };
+    List<int> parent_fields = new List<int>();
+    parent_fields.push(CCAM_PROGRAM_TYPE_REF);
+    List<int> parent_ref_types = new List<int>();
+    parent_ref_types.push(7502);
+    List<bool> parent_mutable = new List<bool>();
+    parent_mutable.push(true);
+    CCAMHeapLayout parent = new CCAMHeapLayout{
+        type_id: 7501, field_types: parent_fields,
+        field_ref_type_ids: parent_ref_types, field_mutable: parent_mutable
+    };
+    CCAMHeapLayout other = new CCAMHeapLayout{
+        type_id: 7503, field_types: child_fields,
+        field_ref_type_ids: new List<int>(), field_mutable: child_mutable
+    };
+    List<CCAMHeapLayout> layouts = new List<CCAMHeapLayout>();
+    layouts.push(child); layouts.push(parent); layouts.push(other);
+    List<int> registers = new List<int>();
+    registers.push(CCAM_PROGRAM_TYPE_INT);
+    registers.push(CCAM_PROGRAM_TYPE_REF);
+    registers.push(CCAM_PROGRAM_TYPE_REF);
+    registers.push(CCAM_PROGRAM_TYPE_REF);
+    registers.push(CCAM_PROGRAM_TYPE_INT);
+    List<CCAMAggregateInstruction> code = new List<CCAMAggregateInstruction>();
+    CCAMAggregateInstruction alloc_child = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_RECORD);
+    alloc_child.destination = 1; alloc_child.descriptor_id = 7502; code.push(alloc_child);
+    CCAMAggregateInstruction alloc_parent = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_RECORD);
+    alloc_parent.destination = 2; alloc_parent.descriptor_id = 7501; code.push(alloc_parent);
+    CCAMAggregateInstruction set_parent = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_SET);
+    set_parent.left = 2; set_parent.right = 1; set_parent.descriptor_id = 7501;
+    set_parent.field_index = 0; code.push(set_parent);
+    CCAMAggregateInstruction get_child = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_GET);
+    get_child.destination = 3; get_child.left = 2; get_child.descriptor_id = 7501;
+    get_child.field_index = 0; code.push(get_child);
+    CCAMAggregateInstruction wrong_child_layout = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_GET);
+    wrong_child_layout.destination = 4; wrong_child_layout.left = 3;
+    wrong_child_layout.descriptor_id = 7503; wrong_child_layout.field_index = 0;
+    code.push(wrong_child_layout);
+    CCAMAggregateProgram program = new CCAMAggregateProgram{
+        version: CCAM_AGGREGATE_PROFILE_VERSION, register_types: registers,
+        parameter_count: 1, layouts: layouts, instructions: code
+    };
+    // The first register is an integer parameter. It is unused in this
+    // static-only check; no execution is attempted.
+    CCAMAggregateValidationResult result = ccam_aggregate_validate_program(program);
+    assert(!result.ok && result.error == "object_descriptor_mismatch");
+}
+
 test "aggregate program validates forward nominal layouts and typed field operations" {
     List<int> field_types = new List<int>();
     field_types.push(CCAM_PROGRAM_TYPE_INT);
