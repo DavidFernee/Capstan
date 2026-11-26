@@ -43,3 +43,42 @@ bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int>
     }
     return false;
 }
+
+test "aggregate schema accepts typed dynamic indices" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT);
+    List<int> operands = new List<int>();
+    operands.push(0);
+    operands.push(1);
+    operands.push(2);
+    assert(ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    assert(ag_schema_operands(kinds, 2, AG_SCHEMA_INT, operands));
+    assert(ag_schema_operands(kinds, 4, AG_SCHEMA_INT, operands));
+    assert(!ag_schema_operands(kinds, 5, AG_SCHEMA_INT, operands));
+    assert(!ag_schema_operands(kinds, 4, AG_SCHEMA_BOOL, operands));
+    operands.push(0);
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+}
+
+test "aggregate schema rejects wrong kinds and register endpoints" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_BOOL);
+    List<int> operands = new List<int>();
+    operands.push(0);
+    operands.push(1);
+    assert(ag_schema_operands(kinds, 3, AG_SCHEMA_BOOL, operands));
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    operands.push(2);
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    operands[2] = 3;
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    operands[2] = -1;
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    operands[2] = 0;
+    assert(ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_BOOL, operands));
+}
