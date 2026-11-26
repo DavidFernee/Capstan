@@ -1,0 +1,93 @@
+// Static transfer, independent of a machine or heap.
+import "ccam_aggregate_flow.cap";
+
+struct AGTransferResult {
+    bool ok;
+    List<bool> ready;
+}
+
+// Check all reads against input before creating the successor state.
+// Never mutate a predecessor state, even on successful transfer.
+AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int kind, List<int> operands) {
+    List<bool> output = new List<bool>();
+    if (input.len() != kinds.len() || !ag_schema_operands(kinds, opcode, kind, operands)) {
+        return new AGTransferResult{ok: false, ready: output};
+    }
+    if (!input[operands[1]]) {
+        return new AGTransferResult{ok: false, ready: output};
+    }
+    if (opcode != 3) {
+        if (!input[operands[2]]) {
+            return new AGTransferResult{ok: false, ready: output};
+        }
+    }
+    if (opcode == 2 && !input[operands[0]]) {
+        return new AGTransferResult{ok: false, ready: output};
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        output.push(input[i] || (opcode != 2 && i == operands[0]));
+    }
+    return new AGTransferResult{ok: true, ready: output};
+}
+
+bool ag_transfer_condition(List<int> kinds, List<bool> input, int condition) {
+    if (input.len() != kinds.len() || !ag_schema_register(kinds, condition, AG_SCHEMA_BOOL)) {
+        return false;
+    }
+    return input[condition];
+}
+
+test "static aggregate transfer checks alias reads before writes" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    List<bool> input = new List<bool>();
+    input.push(false);
+    input.push(true);
+    List<int> ops = new List<int>();
+    ops.push(0);
+    ops.push(1);
+    ops.push(0);
+    assert(!ag_transfer(kinds, input, 1, AG_SCHEMA_INT, ops).ok);
+    assert(!ag_transfer(kinds, input, 2, AG_SCHEMA_INT, ops).ok);
+    assert(!input[0] && input[1]);
+    List<int> len_ops = new List<int>();
+    len_ops.push(0);
+    len_ops.push(1);
+    AGTransferResult length = ag_transfer(kinds, input, 3, AG_SCHEMA_INT, len_ops);
+    assert(length.ok && length.ready[0] && length.ready[1]);
+    assert(!input[0]);
+    assert(ag_transfer(kinds, length.ready, 1, AG_SCHEMA_INT, ops).ok);
+}
+
+test "static aggregate transfer rejects inconsistent states" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_BOOL);
+    List<bool> input = new List<bool>();
+    assert(!ag_transfer_condition(kinds, input, 0));
+    input.push(false);
+    assert(!ag_transfer_condition(kinds, input, 0));
+    input[0] = true;
+    assert(ag_transfer_condition(kinds, input, 0));
+    assert(!ag_transfer_condition(kinds, input, -1));
+    assert(!ag_transfer_condition(kinds, input, 1));
+}
+
+test "static aggregate transfer uses intersection at a join" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    List<bool> left = new List<bool>();
+    left.push(true);
+    left.push(true);
+    List<bool> right = new List<bool>();
+    right.push(false);
+    right.push(true);
+    AGFlowJoin joined = ag_flow_meet(left, right);
+    assert(joined.ok);
+    List<int> ops = new List<int>();
+    ops.push(0);
+    ops.push(1);
+    ops.push(0);
+    assert(!ag_transfer(kinds, joined.ready, 1, AG_SCHEMA_INT, ops).ok);
+}
