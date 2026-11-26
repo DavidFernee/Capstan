@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "7d9b264d8d5a988df1c4da4e0595223de8e55b4c"
+    "commit": "6caf6931352fa8b0c69a753250a0d6efe07f69f8"
   },
   "claims": [
     {
@@ -53,7 +53,7 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "fd705343c72eca501a00ab252d639520ce11b25b",
+          "revision": "6caf6931352fa8b0c69a753250a0d6efe07f69f8",
           "notes": "The memory/indexing regression fixtures remain present. This record does not assert a passing exact-head test run."
         }
       ],
@@ -92,7 +92,9 @@
         "verification/ccam_lowering.cap",
         "verification/ccam_native_x64.cap",
         "verification/lean/CapstanVerification/MultiFunction.lean",
-        "docs/architecture/LANGUAGE-COMPATIBILITY.md"
+        "docs/architecture/LANGUAGE-COMPATIBILITY.md",
+        "docs/architecture/C-FREE-COMPILER-FEATURE-CLOSURE.md",
+        "docs/architecture/CCAM-AGGREGATE-MACHINE-BRIDGE.md"
       ],
       "limitations": [
         "The Lean machine is a restricted single-frame model and does not yet formalise the executable multi-function call-frame evaluator.",
@@ -100,7 +102,8 @@
         "Source checker soundness and source-to-CCAM semantic preservation are not established.",
         "The native register bridge proves mathematical representation lemmas, not full concrete evaluator or native code refinement.",
         "Strings, heap, collections, optionals, taint, secrets, grants, IO, concurrency and FFI are outside this profile.",
-        "The proposed reference-identity, collector and generational-handle models added in #426 do not extend the supported C-free scalar profile and do not establish compiler/runtime refinement."
+        "The proposed reference-identity, collector and generational-handle models added in #426 do not extend the supported C-free scalar profile and do not establish compiler/runtime refinement.",
+        "The aggregate register/heap bridge introduced in #492 is an experimental reference transition model, not canonical CCAM, not in the supported scalar profile, and not a native-backend or production-front-end refinement proof."
       ],
       "evidence": [
         {
@@ -110,11 +113,13 @@
             "docs/assurance/C-FREE-TYPE-SAFETY.md",
             "docs/architecture/CCAM.md",
             "docs/architecture/COMPILER-CCAM-LOWERING.md",
-            "docs/architecture/LANGUAGE-COMPATIBILITY.md"
+            "docs/architecture/LANGUAGE-COMPATIBILITY.md",
+            "docs/architecture/C-FREE-COMPILER-FEATURE-CLOSURE.md",
+            "docs/architecture/CCAM-AGGREGATE-MACHINE-BRIDGE.md"
           ],
           "procedure": "Review the stated profile, proof ladder, exclusions and implementation correspondence boundaries.",
-          "revision": "7d9b264d8d5a988df1c4da4e0595223de8e55b4c",
-          "notes": "C-free assurance contract and explicit compatibility exclusions, including the proposed reference-semantics work; not a claim of completed end-to-end verification."
+          "revision": "6caf6931352fa8b0c69a753250a0d6efe07f69f8",
+          "notes": "C-free assurance contract and compatibility boundary, including the experimental aggregate bridge's explicit non-goals; not a claim of completed end-to-end verification."
         },
         {
           "kind": "mechanical-proof",
@@ -142,8 +147,8 @@
             "verification/ccam_core.cap"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "7d9b264d8d5a988df1c4da4e0595223de8e55b4c",
-          "notes": "Test plan includes the current CCAM core and source-lowering tests, including newly added reference-identity regression cases. These tests do not promote structs into the supported C-free scalar profile; no exact-head passing run is asserted."
+          "revision": "6caf6931352fa8b0c69a753250a0d6efe07f69f8",
+          "notes": "Test plan includes CCAM core, source lowering and the repository runner. The runner now also exercises the experimental aggregate bridge; that test does not promote aggregates into the scalar proof profile. No exact-head passing run is asserted."
         }
       ],
       "review": {

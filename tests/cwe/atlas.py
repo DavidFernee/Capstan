@@ -217,6 +217,7 @@ add(20, "Laundering untrusted bytes through control flow", "logic",
     note="Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision.")
 # Terminal output is a LogText sink; Html and CsvText require explicit escape_log() re-encoding.
 # The remaining reference-identity and allocator proofs are research models, not output-sink proofs.
+# The aggregate CCAM bridge is separately scoped and does not change these output-context verdicts.
 add(80, "Basic XSS (improper neutralization of script tags)", "neutral",
     'int main() { println(escape_log("<p>" + escape_html(taint("<script>x()</script>")) + "</p>")); return 0; }', "&lt;script&gt;")
 add(88, "Argument injection", "reject",
