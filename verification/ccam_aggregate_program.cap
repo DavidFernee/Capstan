@@ -1,0 +1,24 @@
+import "ccam_aggregate_stack.cap";
+import "ccam_aggregate_fixedpoint.cap";
+struct AGFunction { AGCallSignature signature; List<int> kinds; List<AGCFGBlock> blocks; List<int> returns; }
+bool ag_function_validate(AGFunction f) {
+    AGTransferResult entry = ag_call_entry(f.signature, f.kinds);
+    if (!entry.ok || f.returns.len() != f.blocks.len()) { return false; }
+    if (!ag_fp_validate(f.kinds, entry.ready, f.blocks)) { return false; }
+    for (int i = 0; i < f.blocks.len(); i += 1) {
+        if (f.blocks[i].terminator == 0) {
+            if (!ag_schema_register(f.kinds, f.returns[i], f.signature.result_kind)) { return false; }
+        } else if (f.returns[i] != -1) { return false; }
+    }
+    return true;
+}
+bool ag_program_validate(List<AGFunction> functions) {
+    if (functions.len() == 0 || functions.len() > 256) { return false; }
+    int total = 0;
+    for (int i = 0; i < functions.len(); i += 1) {
+        if (functions[i].blocks.len() > 65536 - total) { return false; }
+        total += functions[i].blocks.len();
+        if (!ag_function_validate(functions[i])) { return false; }
+    }
+    return true;
+}
