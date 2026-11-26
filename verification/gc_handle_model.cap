@@ -1,0 +1,828 @@
+// Capstan-native GC handle and immutable-layout reference model.
+//
+// This is a semantic model only. It uses dense logical slot IDs, not native
+// addresses, and does not implement physical allocation or object storage.
+// State is passed by value; operations return observations and do not mutate
+// the supplied heap.
+
+const int GCH_OK = 1;
+const int GCH_INVALID_HEAP = 2;
+const int GCH_FOREIGN_HEAP = 3;
+const int GCH_INVALID_HANDLE = 4;
+const int GCH_STALE_HANDLE = 5;
+const int GCH_UNALLOCATED = 6;
+const int GCH_LAYOUT_MISMATCH = 7;
+const int GCH_MAX_LAYOUTS = 4096;
+const int GCH_MAX_SLOTS = 65536;
+const int GCH_MAX_FIELDS = 4096;
+const int GCH_MAX_GENERATION = 0x7FFFFFFFFFFFFFFF;
+const int GCH_NO_CAPACITY = 8;
+const int GCH_INVALID_DESCRIPTOR = 9;
+const int GCH_INVALID_FIELD = 10;
+const int GCH_FIELD_KIND_MISMATCH = 11;
+
+struct GCHLayout {
+    int descriptor_id;
+    int field_count;
+    List<int> reference_offsets;
+    List<int> reference_target_descriptors;
+}
+
+struct GCHSlot {
+    int slot_id;
+    int generation;
+    bool allocated;
+    bool retired;
+    int descriptor_id;
+}
+
+struct GCHHandle {
+    int heap_token;
+    int slot_id;
+    int generation;
+}
+
+struct GCHHeap {
+    int heap_token;
+    List<GCHLayout> layouts;
+    List<GCHSlot> slots;
+}
+
+struct GCHTransitionResult {
+    int status;
+    GCHHeap heap;
+    GCHHandle handle;
+}
+
+struct GCHResolveResult {
+    int status;
+    int slot_index;
+    int descriptor_id;
+}
+
+struct GCHFieldCheckResult {
+    int status;
+    bool is_reference;
+    int descriptor_id;
+}
+
+struct GCHStoredReference {
+    int field_offset;
+    GCHHandle target;
+}
+
+struct GCHTraceResult {
+    int status;
+    List<GCHHandle> targets;
+}
+
+GCHHandle gch_handle(int heap_token, int slot_id, int generation) {
+    return new GCHHandle{
+        heap_token: heap_token, slot_id: slot_id, generation: generation
+    };
+}
+
+bool gch_layout_valid(GCHLayout layout) {
+    if (layout.descriptor_id <= 0 || layout.field_count < 0 ||
+        layout.field_count > GCH_MAX_FIELDS ||
+        layout.reference_offsets.len() > layout.field_count ||
+        layout.reference_target_descriptors.len() != layout.reference_offsets.len()) {
+        return false;
+    }
+    for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
+        int offset = layout.reference_offsets[i];
+        if (layout.reference_target_descriptors[i] <= 0) { return false; }
+        if (offset < 0 || offset >= layout.field_count) { return false; }
+        for (int j = i + 1; j < layout.reference_offsets.len(); j += 1) {
+            if (offset == layout.reference_offsets[j]) { return false; }
+        }
+    }
+    return true;
+}
+
+int gch_find_layout(List<GCHLayout> layouts, int descriptor_id) {
+    for (int i = 0; i < layouts.len(); i += 1) {
+        if (layouts[i].descriptor_id == descriptor_id) { return i; }
+    }
+    return -1;
+}
+
+bool gch_heap_valid(GCHHeap heap) {
+    if (heap.heap_token <= 0 || heap.layouts.len() > GCH_MAX_LAYOUTS ||
+        heap.slots.len() > GCH_MAX_SLOTS) { return false; }
+    for (int i = 0; i < heap.layouts.len(); i += 1) {
+        if (!gch_layout_valid(heap.layouts[i])) { return false; }
+        for (int j = i + 1; j < heap.layouts.len(); j += 1) {
+            if (heap.layouts[i].descriptor_id ==
+                heap.layouts[j].descriptor_id) { return false; }
+        }
+    }
+    for (int i = 0; i < heap.layouts.len(); i += 1) {
+        GCHLayout layout = heap.layouts[i];
+        for (int j = 0; j < layout.reference_target_descriptors.len(); j += 1) {
+            if (gch_find_layout(heap.layouts,
+                layout.reference_target_descriptors[j]) < 0) { return false; }
+        }
+    }
+    for (int i = 0; i < heap.slots.len(); i += 1) {
+        GCHSlot slot = heap.slots[i];
+        if (slot.slot_id != i || slot.generation <= 0) { return false; }
+        if (slot.retired && (slot.allocated ||
+            slot.generation != GCH_MAX_GENERATION || slot.descriptor_id != 0)) {
+            return false;
+        }
+        if (!slot.allocated && slot.generation == GCH_MAX_GENERATION &&
+            !slot.retired) { return false; }
+        if (slot.allocated &&
+            gch_find_layout(heap.layouts, slot.descriptor_id) < 0) {
+            return false;
+        }
+        if (!slot.allocated && slot.descriptor_id != 0) { return false; }
+    }
+    return true;
+}
+
+// expected_descriptor_id == 0 means any registered layout. No address or
+// integer-to-pointer conversion exists in this interface.
+GCHResolveResult gch_resolve(
+    GCHHeap heap, GCHHandle handle, int expected_descriptor_id
+) {
+    if (!gch_heap_valid(heap)) {
+        return new GCHResolveResult{
+            status: GCH_INVALID_HEAP, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (handle.heap_token != heap.heap_token) {
+        return new GCHResolveResult{
+            status: GCH_FOREIGN_HEAP, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (handle.slot_id < 0 || handle.slot_id >= heap.slots.len() ||
+        handle.generation <= 0 || expected_descriptor_id < 0) {
+        return new GCHResolveResult{
+            status: GCH_INVALID_HANDLE, slot_index: -1, descriptor_id: 0
+        };
+    }
+    GCHSlot slot = heap.slots[handle.slot_id];
+    if (slot.slot_id != handle.slot_id) {
+        return new GCHResolveResult{
+            status: GCH_INVALID_HANDLE, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (slot.generation != handle.generation) {
+        return new GCHResolveResult{
+            status: GCH_STALE_HANDLE, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (!slot.allocated) {
+        return new GCHResolveResult{
+            status: GCH_UNALLOCATED, slot_index: -1, descriptor_id: 0
+        };
+    }
+    if (expected_descriptor_id != 0 &&
+        slot.descriptor_id != expected_descriptor_id) {
+        return new GCHResolveResult{
+            status: GCH_LAYOUT_MISMATCH, slot_index: -1, descriptor_id: 0
+        };
+    }
+    return new GCHResolveResult{
+        status: GCH_OK, slot_index: handle.slot_id,
+        descriptor_id: slot.descriptor_id
+    };
+}
+
+bool gch_layout_has_reference(GCHLayout layout, int field_offset) {
+    for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
+        if (layout.reference_offsets[i] == field_offset) { return true; }
+    }
+    return false;
+}
+
+int gch_reference_target_descriptor(GCHLayout layout, int field_offset) {
+    for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
+        if (layout.reference_offsets[i] == field_offset) {
+            return layout.reference_target_descriptors[i];
+        }
+    }
+    return 0;
+}
+
+// Validate a field operation against the resolved object's immutable descriptor.
+// This checks field bounds and the declared scalar/reference kind before any
+// eventual payload access. It does not load or store physical payload bytes.
+GCHFieldCheckResult gch_check_field(
+    GCHHeap heap, GCHHandle handle, int field_offset, bool expect_reference
+) {
+    GCHResolveResult resolved = gch_resolve(heap, handle, 0);
+    if (resolved.status != GCH_OK) {
+        return new GCHFieldCheckResult{
+            status: resolved.status, is_reference: false, descriptor_id: 0
+        };
+    }
+    int layout_index = gch_find_layout(heap.layouts, resolved.descriptor_id);
+    GCHLayout layout = heap.layouts[layout_index];
+    if (field_offset < 0 || field_offset >= layout.field_count) {
+        return new GCHFieldCheckResult{
+            status: GCH_INVALID_FIELD, is_reference: false,
+            descriptor_id: resolved.descriptor_id
+        };
+    }
+    bool is_reference = gch_layout_has_reference(layout, field_offset);
+    if (is_reference != expect_reference) {
+        return new GCHFieldCheckResult{
+            status: GCH_FIELD_KIND_MISMATCH, is_reference: is_reference,
+            descriptor_id: resolved.descriptor_id
+        };
+    }
+    return new GCHFieldCheckResult{
+        status: GCH_OK, is_reference: is_reference,
+        descriptor_id: resolved.descriptor_id
+    };
+}
+
+// A reference store is admissible only when the owner field is declared
+// reference-bearing and the target is a live handle in the same heap.
+GCHFieldCheckResult gch_check_reference_store(
+    GCHHeap heap, GCHHandle owner, int field_offset, GCHHandle target
+) {
+    GCHFieldCheckResult field = gch_check_field(
+        heap, owner, field_offset, true
+    );
+    if (field.status != GCH_OK) { return field; }
+    GCHResolveResult resolved_target = gch_resolve(heap, target, 0);
+    if (resolved_target.status != GCH_OK) {
+        return new GCHFieldCheckResult{
+            status: resolved_target.status, is_reference: true,
+            descriptor_id: field.descriptor_id
+        };
+    }
+    int owner_layout_index = gch_find_layout(
+        heap.layouts, field.descriptor_id
+    );
+    GCHLayout owner_layout = heap.layouts[owner_layout_index];
+    int expected_target_descriptor = gch_reference_target_descriptor(
+        owner_layout, field_offset
+    );
+    if (resolved_target.descriptor_id != expected_target_descriptor) {
+        return new GCHFieldCheckResult{
+            status: GCH_LAYOUT_MISMATCH, is_reference: true,
+            descriptor_id: field.descriptor_id
+        };
+    }
+    return field;
+}
+
+List<GCHHandle> gch_empty_handles() {
+    return new List<GCHHandle>();
+}
+
+// Enumerate the complete descriptor-declared reference field set for one
+// object. The supplied values model the object's reference-bearing payload
+// fields. Every declared offset must occur exactly once; each target is
+// validated before the result is published. Any error returns no partial edge
+// list, preventing malformed payload metadata from creating a partial trace.
+GCHTraceResult gch_trace_object(
+    GCHHeap heap, GCHHandle owner, List<GCHStoredReference> stored
+) {
+    GCHResolveResult resolved = gch_resolve(heap, owner, 0);
+    if (resolved.status != GCH_OK) {
+        return new GCHTraceResult{
+            status: resolved.status, targets: gch_empty_handles()
+        };
+    }
+    int layout_index = gch_find_layout(heap.layouts, resolved.descriptor_id);
+    GCHLayout layout = heap.layouts[layout_index];
+    if (stored.len() != layout.reference_offsets.len()) {
+        return new GCHTraceResult{
+            status: GCH_INVALID_FIELD, targets: gch_empty_handles()
+        };
+    }
+    for (int i = 0; i < layout.reference_offsets.len(); i += 1) {
+        int count = 0;
+        for (int j = 0; j < stored.len(); j += 1) {
+            if (stored[j].field_offset == layout.reference_offsets[i]) {
+                count += 1;
+            }
+        }
+        if (count != 1) {
+            return new GCHTraceResult{
+                status: GCH_INVALID_FIELD, targets: gch_empty_handles()
+            };
+        }
+    }
+    List<GCHHandle> targets = new List<GCHHandle>();
+    for (int i = 0; i < stored.len(); i += 1) {
+        GCHFieldCheckResult checked = gch_check_reference_store(
+            heap, owner, stored[i].field_offset, stored[i].target
+        );
+        if (checked.status != GCH_OK) {
+            return new GCHTraceResult{
+                status: checked.status, targets: gch_empty_handles()
+            };
+        }
+        targets.push(stored[i].target);
+    }
+    return new GCHTraceResult{status: GCH_OK, targets: targets};
+}
+
+GCHHeap gch_fixture_heap() {
+    List<int> offsets = new List<int>();
+    offsets.push(1);
+    offsets.push(3);
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    List<int> reference_targets = new List<int>();
+    reference_targets.push(8);
+    reference_targets.push(7);
+    layouts.push(new GCHLayout{
+        descriptor_id: 7, field_count: 4, reference_offsets: offsets,
+        reference_target_descriptors: reference_targets
+    });
+    List<int> empty_offsets = new List<int>();
+    List<int> no_reference_targets = new List<int>();
+    layouts.push(new GCHLayout{
+        descriptor_id: 8, field_count: 0, reference_offsets: empty_offsets,
+        reference_target_descriptors: no_reference_targets
+    });
+    List<GCHSlot> slots = new List<GCHSlot>();
+    slots.push(new GCHSlot{
+        slot_id: 0, generation: 3, allocated: true, retired: false, descriptor_id: 7
+    });
+    slots.push(new GCHSlot{
+        slot_id: 1, generation: 1, allocated: true, retired: false, descriptor_id: 8
+    });
+    slots.push(new GCHSlot{
+        slot_id: 2, generation: 4, allocated: false, retired: false, descriptor_id: 0
+    });
+    return new GCHHeap{heap_token: 91, layouts: layouts, slots: slots};
+}
+
+GCHTransitionResult gch_allocate(GCHHeap heap, int descriptor_id) {
+    if (!gch_heap_valid(heap)) {
+        return new GCHTransitionResult{status: GCH_INVALID_HEAP, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    if (descriptor_id <= 0 || gch_find_layout(heap.layouts, descriptor_id) < 0) {
+        return new GCHTransitionResult{status: GCH_INVALID_DESCRIPTOR, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    int free_index = -1;
+    for (int i = 0; i < heap.slots.len(); i += 1) {
+        if (!heap.slots[i].allocated && !heap.slots[i].retired) {
+            free_index = i;
+            break;
+        }
+    }
+    if (free_index < 0) {
+        return new GCHTransitionResult{status: GCH_NO_CAPACITY, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    GCHSlot old_slot = heap.slots[free_index];
+    if (old_slot.generation >= GCH_MAX_GENERATION) {
+        return new GCHTransitionResult{status: GCH_NO_CAPACITY, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    int next_generation = old_slot.generation + 1;
+    List<GCHSlot> slots = new List<GCHSlot>();
+    for (int i = 0; i < heap.slots.len(); i += 1) {
+        if (i == free_index) {
+            slots.push(new GCHSlot{
+                slot_id: old_slot.slot_id, generation: next_generation,
+                allocated: true, retired: false, descriptor_id: descriptor_id
+            });
+        } else { slots.push(heap.slots[i]); }
+    }
+    GCHHeap published = new GCHHeap{heap_token: heap.heap_token, layouts: heap.layouts, slots: slots};
+    return new GCHTransitionResult{
+        status: GCH_OK, heap: published,
+        handle: gch_handle(heap.heap_token, old_slot.slot_id, next_generation)
+    };
+}
+
+GCHTransitionResult gch_reclaim_slot(GCHHeap heap, GCHHandle handle) {
+    GCHResolveResult resolved = gch_resolve(heap, handle, 0);
+    if (resolved.status != GCH_OK) {
+        return new GCHTransitionResult{status: resolved.status, heap: heap, handle: gch_handle(0, 0, 0)};
+    }
+    GCHSlot old_slot = heap.slots[resolved.slot_index];
+    bool retire = old_slot.generation == GCH_MAX_GENERATION;
+    List<GCHSlot> slots = new List<GCHSlot>();
+    for (int i = 0; i < heap.slots.len(); i += 1) {
+        if (i == resolved.slot_index) {
+            slots.push(new GCHSlot{
+                slot_id: old_slot.slot_id, generation: old_slot.generation,
+                allocated: false, retired: retire, descriptor_id: 0
+            });
+        } else { slots.push(heap.slots[i]); }
+    }
+    GCHHeap published = new GCHHeap{heap_token: heap.heap_token, layouts: heap.layouts, slots: slots};
+    return new GCHTransitionResult{
+        status: GCH_OK, heap: published, handle: gch_handle(0, 0, 0)
+    };
+}
+
+test "GC tracing enumerates all typed reference fields" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 3, target: gch_handle(91, 0, 3)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_OK);
+    assert(traced.targets.len() == 2);
+    assert(traced.targets[0].slot_id == 1);
+    assert(traced.targets[1].slot_id == 0);
+}
+
+test "GC tracing rejects a missing declared reference field" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_INVALID_FIELD);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC tracing rejects duplicate reference offsets" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_INVALID_FIELD);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC tracing rejects a scalar offset masquerading as a reference" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 1)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 2, target: gch_handle(91, 1, 1)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_INVALID_FIELD);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC tracing rejects stale target and publishes no partial edges" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 1, 2)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 3, target: gch_handle(91, 0, 3)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_STALE_HANDLE);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC tracing rejects a live target of the wrong nominal descriptor" {
+    List<GCHStoredReference> fields = new List<GCHStoredReference>();
+    fields.push(new GCHStoredReference{
+        field_offset: 1, target: gch_handle(91, 0, 3)
+    });
+    fields.push(new GCHStoredReference{
+        field_offset: 3, target: gch_handle(91, 0, 3)
+    });
+    GCHTraceResult traced = gch_trace_object(
+        gch_fixture_heap(), gch_handle(91, 0, 3), fields
+    );
+    assert(traced.status == GCH_LAYOUT_MISMATCH);
+    assert(traced.targets.len() == 0);
+}
+
+test "GC reference store rejects a live target of the wrong descriptor" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(91, 0, 3)
+    );
+    assert(result.status == GCH_LAYOUT_MISMATCH);
+}
+
+test "GC reference store accepts a live same-heap target" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(91, 1, 1)
+    );
+    assert(result.status == GCH_OK);
+}
+
+test "GC reference store rejects a foreign-heap target" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(92, 1, 1)
+    );
+    assert(result.status == GCH_FOREIGN_HEAP);
+}
+
+test "GC reference store rejects a stale target generation" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(91, 1, 2)
+    );
+    assert(result.status == GCH_STALE_HANDLE);
+}
+
+test "GC reference store rejects an unallocated target" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, gch_handle(91, 2, 4)
+    );
+    assert(result.status == GCH_UNALLOCATED);
+}
+
+test "GC reference store rejects a scalar owner field" {
+    GCHFieldCheckResult result = gch_check_reference_store(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 2, gch_handle(91, 1, 1)
+    );
+    assert(result.status == GCH_FIELD_KIND_MISMATCH);
+}
+
+test "GC field check accepts a declared reference offset" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 1, true
+    );
+    assert(result.status == GCH_OK);
+    assert(result.is_reference);
+    assert(result.descriptor_id == 7);
+}
+
+test "GC field check accepts a declared scalar offset" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 2, false
+    );
+    assert(result.status == GCH_OK);
+    assert(!result.is_reference);
+}
+
+test "GC field check rejects offsets outside descriptor extent" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 4, true
+    );
+    assert(result.status == GCH_INVALID_FIELD);
+}
+
+test "GC field check rejects scalar access to a reference field" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 3, false
+    );
+    assert(result.status == GCH_FIELD_KIND_MISMATCH);
+    assert(result.is_reference);
+}
+
+test "GC field check rejects reference access to a scalar field" {
+    GCHFieldCheckResult result = gch_check_field(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 0, true
+    );
+    assert(result.status == GCH_FIELD_KIND_MISMATCH);
+    assert(!result.is_reference);
+}
+
+test "GC handle resolves within its originating heap" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHResolveResult result = gch_resolve(heap, gch_handle(91, 0, 3), 0);
+    assert(result.status == GCH_OK);
+    assert(result.slot_index == 0);
+    assert(result.descriptor_id == 7);
+}
+
+test "GC handle rejects a foreign heap token" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(92, 0, 3), 0
+    );
+    assert(result.status == GCH_FOREIGN_HEAP);
+}
+
+test "GC handle rejects a stale generation" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 0, 2), 0
+    );
+    assert(result.status == GCH_STALE_HANDLE);
+}
+
+test "GC handle rejects an unallocated slot" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 2, 4), 0
+    );
+    assert(result.status == GCH_UNALLOCATED);
+}
+
+test "GC handle rejects an out-of-range slot" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 3, 1), 0
+    );
+    assert(result.status == GCH_INVALID_HANDLE);
+}
+
+test "GC handle enforces nominal descriptor identity" {
+    GCHResolveResult good = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 7
+    );
+    GCHResolveResult bad = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 0, 3), 8
+    );
+    assert(good.status == GCH_OK);
+    assert(bad.status == GCH_LAYOUT_MISMATCH);
+}
+
+test "GC layout rejects duplicate reference offsets" {
+    GCHHeap base = gch_fixture_heap();
+    List<int> duplicate_offsets = new List<int>();
+    duplicate_offsets.push(1);
+    duplicate_offsets.push(1);
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    List<int> duplicate_targets = new List<int>();
+    duplicate_targets.push(8);
+    duplicate_targets.push(7);
+    layouts.push(new GCHLayout{
+        descriptor_id: 9, field_count: 2,
+        reference_offsets: duplicate_offsets,
+        reference_target_descriptors: duplicate_targets
+    });
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
+}
+
+test "GC layout rejects out-of-range reference offsets" {
+    GCHHeap base = gch_fixture_heap();
+    List<int> invalid_offsets = new List<int>();
+    invalid_offsets.push(4);
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    List<int> invalid_targets = new List<int>();
+    invalid_targets.push(8);
+    layouts.push(new GCHLayout{
+        descriptor_id: 9, field_count: 4,
+        reference_offsets: invalid_offsets,
+        reference_target_descriptors: invalid_targets
+    });
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
+}
+
+test "GC layout rejects unregistered reference target descriptors" {
+    GCHHeap base = gch_fixture_heap();
+    List<int> offsets = new List<int>();
+    offsets.push(0);
+    List<int> targets = new List<int>();
+    targets.push(99);
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    layouts.push(new GCHLayout{
+        descriptor_id: 9, field_count: 1, reference_offsets: offsets,
+        reference_target_descriptors: targets
+    });
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
+}
+
+test "GC heap rejects allocated slots with unknown descriptors" {
+    GCHHeap base = gch_fixture_heap();
+    List<GCHSlot> slots = new List<GCHSlot>();
+    slots.push(base.slots[0]);
+    slots.push(base.slots[1]);
+    slots.push(base.slots[2]);
+    slots.push(new GCHSlot{
+        slot_id: 3, generation: 1, allocated: true, retired: false, descriptor_id: 99
+    });
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: base.layouts, slots: slots
+    };
+    assert(!gch_heap_valid(invalid));
+}
+
+test "GC heap rejects duplicate descriptor identities" {
+    GCHHeap base = gch_fixture_heap();
+    List<int> offsets = new List<int>();
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    layouts.push(new GCHLayout{
+        descriptor_id: 7, field_count: 0, reference_offsets: offsets,
+        reference_target_descriptors: new List<int>()
+    });
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
+}
+
+test "GC layout rejects excessive field count" {
+    GCHHeap base = gch_fixture_heap();
+    List<int> offsets = new List<int>();
+    List<GCHLayout> layouts = new List<GCHLayout>();
+    layouts.push(base.layouts[0]);
+    layouts.push(base.layouts[1]);
+    layouts.push(new GCHLayout{
+        descriptor_id: 10, field_count: 4097, reference_offsets: offsets,
+        reference_target_descriptors: new List<int>()
+    });
+    GCHHeap invalid = new GCHHeap{
+        heap_token: base.heap_token, layouts: layouts, slots: base.slots
+    };
+    assert(!gch_heap_valid(invalid));
+}
+
+test "GC allocation publishes a fresh generation with its descriptor" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult allocated = gch_allocate(heap, 7);
+    assert(allocated.status == GCH_OK);
+    assert(allocated.handle.heap_token == 91);
+    assert(allocated.handle.slot_id == 2);
+    assert(allocated.handle.generation == 5);
+    assert(allocated.heap.slots[2].allocated);
+    assert(allocated.heap.slots[2].descriptor_id == 7);
+    assert(gch_resolve(allocated.heap, allocated.handle, 7).status == GCH_OK);
+    assert(gch_resolve(heap, allocated.handle, 0).status == GCH_STALE_HANDLE);
+}
+
+test "GC allocation rejects unknown descriptors atomically" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult rejected = gch_allocate(heap, 99);
+    assert(rejected.status == GCH_INVALID_DESCRIPTOR);
+    assert(rejected.heap.slots[2].generation == heap.slots[2].generation);
+    assert(!rejected.heap.slots[2].allocated);
+    assert(rejected.handle.heap_token == 0);
+}
+
+test "GC reclamation invalidates the reclaimed handle" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult reclaimed = gch_reclaim_slot(heap, gch_handle(91, 0, 3));
+    assert(reclaimed.status == GCH_OK);
+    assert(!reclaimed.heap.slots[0].allocated);
+    assert(reclaimed.heap.slots[0].descriptor_id == 0);
+    assert(gch_resolve(reclaimed.heap, gch_handle(91, 0, 3), 0).status == GCH_UNALLOCATED);
+    assert(gch_resolve(heap, gch_handle(91, 0, 3), 0).status == GCH_OK);
+}
+
+test "GC slot reuse advances generation and rejects old handle" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult reclaimed = gch_reclaim_slot(heap, gch_handle(91, 2, 4));
+    GCHTransitionResult allocated = gch_allocate(reclaimed.heap, 8);
+    assert(allocated.status == GCH_OK);
+    assert(allocated.handle.slot_id == 2);
+    assert(allocated.handle.generation == 5);
+    assert(gch_resolve(allocated.heap, gch_handle(91, 2, 4), 0).status == GCH_STALE_HANDLE);
+}
+
+test "GC reclamation rejects stale handles atomically" {
+    GCHHeap heap = gch_fixture_heap();
+    GCHTransitionResult rejected = gch_reclaim_slot(heap, gch_handle(91, 0, 2));
+    assert(rejected.status == GCH_STALE_HANDLE);
+    assert(rejected.heap.slots[0].allocated);
+    assert(rejected.heap.slots[0].generation == 3);
+}
+
+test "GC maximum-generation release retires the slot" {
+    GCHHeap base = gch_fixture_heap();
+    List<GCHSlot> slots = new List<GCHSlot>();
+    slots.push(new GCHSlot{slot_id: 0, generation: GCH_MAX_GENERATION, allocated: true, retired: false, descriptor_id: 7});
+    slots.push(base.slots[1]);
+    slots.push(base.slots[2]);
+    GCHHeap heap = new GCHHeap{heap_token: base.heap_token, layouts: base.layouts, slots: slots};
+    GCHTransitionResult reclaimed = gch_reclaim_slot(heap, gch_handle(91, 0, GCH_MAX_GENERATION));
+    assert(reclaimed.status == GCH_OK);
+    assert(reclaimed.heap.slots[0].retired);
+    GCHTransitionResult allocated = gch_allocate(reclaimed.heap, 7);
+    assert(allocated.status == GCH_OK);
+    assert(allocated.handle.slot_id == 2);
+}
+
+test "GC allocation fails atomically when all free slots are retired" {
+    GCHHeap base = gch_fixture_heap();
+    List<GCHSlot> slots = new List<GCHSlot>();
+    slots.push(base.slots[0]);
+    slots.push(base.slots[1]);
+    slots.push(new GCHSlot{slot_id: 2, generation: GCH_MAX_GENERATION, allocated: false, retired: true, descriptor_id: 0});
+    GCHHeap full = new GCHHeap{heap_token: base.heap_token, layouts: base.layouts, slots: slots};
+    GCHTransitionResult rejected = gch_allocate(full, 7);
+    assert(rejected.status == GCH_NO_CAPACITY);
+    assert(rejected.heap.slots[2].retired);
+    assert(!rejected.heap.slots[2].allocated);
+}
+
+test "GC resolution rejects negative generations" {
+    GCHResolveResult result = gch_resolve(
+        gch_fixture_heap(), gch_handle(91, 0, -1), 0
+    );
+    assert(result.status == GCH_INVALID_HANDLE);
+}
