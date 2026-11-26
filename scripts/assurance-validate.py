@@ -16,7 +16,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def inside_repo(path):
-    if not isinstance(path, str) or not path or path.startswith("/"):
+    if (not isinstance(path, str) or not path or path.startswith("/")
+            or "\\" in path or re.match(r"^[A-Za-z]:", path)):
         return False
     parts = path.split("/")
     return all(p not in ("", ".", "..") for p in parts)
