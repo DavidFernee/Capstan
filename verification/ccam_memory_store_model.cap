@@ -1,0 +1,680 @@
+// CCAM v0.2 bounded multi-region + byte-store reference model.
+// Capstan-native prototype. This is not the v0.2 evaluator or a production
+// allocator. The backing byte vectors are explicit and bounded by constants.
+// CCAM v0.1 source and evaluator are intentionally untouched.
+
+import "ccam_core.cap";
+import "ccam_memory_reservation.cap";
+
+const int CCAM_MEM_MAX_REGIONS = 8;
+const int CCAM_MEM_MAX_BYTES = 4096;
+
+struct CCAMMemRegion {
+    bool open;
+    int identity;
+    int generation;
+    int owner_frame;
+    int capacity;
+    int used;
+    List<int> bytes;
+}
+
+struct CCAMMemManager {
+    List<CCAMMemRegion> regions;
+    int next_identity;
+    int live_regions;
+    int live_capacity;
+    int max_regions;
+    int max_capacity;
+}
+
+struct CCAMMemCreateResult {
+    bool ok;
+    CCAMMemManager manager;
+    int identity;
+    string error;
+}
+
+struct CCAMMemView {
+    int identity;
+    int generation;
+    int owner_frame;
+    int offset;
+    int count;
+    int element_size;
+    int alignment;
+}
+
+struct CCAMMemResult {
+    bool ok;
+    CCAMMemManager manager;
+    CCAMMemView view;
+    int int_value;
+    bool bool_value;
+    string error;
+}
+
+CCAMMemManager ccam_mem_manager(int max_regions, int max_capacity) {
+    List<CCAMMemRegion> regions = new List<CCAMMemRegion>();
+    return new CCAMMemManager{
+        regions: regions, next_identity: 1,
+        live_regions: 0, live_capacity: 0,
+        max_regions: max_regions, max_capacity: max_capacity
+    };
+}
+
+CCAMMemView ccam_mem_empty_view() {
+    return new CCAMMemView{
+        identity: 0, generation: 0, owner_frame: 0,
+        offset: 0, count: 0, element_size: 0, alignment: 0
+    };
+}
+
+CCAMMemResult ccam_mem_error(
+    CCAMMemManager manager, string error
+) {
+    return new CCAMMemResult{
+        ok: false, manager: manager, view: ccam_mem_empty_view(),
+        int_value: 0, bool_value: false, error: error
+    };
+}
+
+int ccam_mem_free_slot(CCAMMemManager manager) {
+    for (int i = 0; i < manager.regions.len(); i += 1) {
+        if (!manager.regions[i].open) { return i; }
+    }
+    return -1;
+}
+
+int ccam_mem_find(CCAMMemManager manager, int identity) {
+    for (int i = 0; i < manager.regions.len(); i += 1) {
+        if (manager.regions[i].identity == identity) { return i; }
+    }
+    return -1;
+}
+
+bool ccam_mem_manager_valid(CCAMMemManager manager) {
+    if (manager.max_regions < 0 || manager.max_regions > CCAM_MEM_MAX_REGIONS ||
+        manager.max_capacity < 0 || manager.max_capacity > CCAM_MEM_MAX_BYTES ||
+        manager.regions.len() > manager.max_regions ||
+        manager.live_regions < 0 || manager.live_regions > manager.max_regions ||
+        manager.live_capacity < 0 || manager.live_capacity > manager.max_capacity ||
+        manager.next_identity <= 0) { return false; }
+
+    int open_count = 0;
+    int open_capacity = 0;
+    int max_identity = 0;
+    for (int i = 0; i < manager.regions.len(); i += 1) {
+        CCAMMemRegion region = manager.regions[i];
+        if (region.identity <= 0 || region.owner_frame <= 0) { return false; }
+        if (region.identity > max_identity) { max_identity = region.identity; }
+        for (int j = 0; j < i; j += 1) {
+            if (manager.regions[j].identity == region.identity) { return false; }
+        }
+        if (region.open) {
+            if (region.generation <= 0 || region.capacity < 0 ||
+                region.capacity > manager.max_capacity ||
+                region.used < 0 || region.used > region.capacity ||
+                region.bytes.len() != region.capacity) { return false; }
+            open_count += 1;
+            CCAMIntResult sum = ccam_add(open_capacity, region.capacity);
+            if (!sum.ok) { return false; }
+            open_capacity = sum.value;
+        } else {
+            if (region.generation != 0 || region.capacity != 0 ||
+                region.used != 0 || region.bytes.len() > manager.max_capacity) {
+                return false;
+            }
+        }
+        for (int j = 0; j < region.bytes.len(); j += 1) {
+            if (region.bytes[j] < 0 || region.bytes[j] > 255) { return false; }
+            if (!region.open && region.bytes[j] != 0) { return false; }
+        }
+    }
+    return open_count == manager.live_regions &&
+        open_capacity == manager.live_capacity &&
+        manager.next_identity > max_identity;
+}
+
+CCAMMemCreateResult ccam_mem_create(
+    CCAMMemManager manager, int owner_frame, int capacity,
+    int fail_after_bytes
+) {
+    if (!ccam_mem_manager_valid(manager)) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "invalid_memory_manager"
+        };
+    }
+    if (owner_frame <= 0 || capacity < 0 ||
+        manager.max_regions < 0 || manager.max_regions > CCAM_MEM_MAX_REGIONS ||
+        manager.max_capacity < 0 || manager.max_capacity > CCAM_MEM_MAX_BYTES ||
+        fail_after_bytes < -1 || fail_after_bytes > capacity) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "invalid_region_request"
+        };
+    }
+    if (manager.live_regions >= manager.max_regions ||
+        manager.live_regions >= CCAM_MEM_MAX_REGIONS) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "region_limit_exceeded"
+        };
+    }
+    CCAMIntResult aggregate = ccam_add(manager.live_capacity, capacity);
+    if (!aggregate.ok) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "scratch_arithmetic_overflow"
+        };
+    }
+    if (aggregate.value > manager.max_capacity ||
+        aggregate.value > CCAM_MEM_MAX_BYTES) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "region_limit_exceeded"
+        };
+    }
+    if (manager.next_identity <= 0 ||
+        manager.next_identity == CCAM_I64_MAX) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "scratch_arithmetic_overflow"
+        };
+    }
+    // -1 disables injection. Otherwise fail at a deterministic boundary
+    // after exactly fail_after_bytes local byte initialisations. The manager
+    // is not mutated until the entire backing vector has been admitted.
+    List<int> bytes = new List<int>();
+    if (fail_after_bytes == 0) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "allocation_failed"
+        };
+    }
+    for (int i = 0; i < capacity; i += 1) {
+        if (i == fail_after_bytes) {
+            return new CCAMMemCreateResult{
+                ok: false, manager: manager, identity: 0,
+                error: "allocation_failed"
+            };
+        }
+        bytes.push(0);
+    }
+    if (fail_after_bytes == capacity && capacity > 0) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "allocation_failed"
+        };
+    }
+    CCAMMemRegion region = new CCAMMemRegion{
+        open: true, identity: manager.next_identity, generation: 1,
+        owner_frame: owner_frame, capacity: capacity, used: 0,
+        bytes: bytes
+    };
+    int free_slot = ccam_mem_free_slot(manager);
+    if (free_slot >= 0) {
+        manager.regions[free_slot] = region;
+    } else {
+        if (manager.regions.len() >= manager.max_regions) {
+            return new CCAMMemCreateResult{
+                ok: false, manager: manager, identity: 0,
+                error: "region_limit_exceeded"
+            };
+        }
+        manager.regions.push(region);
+    }
+    int identity = manager.next_identity;
+    manager.next_identity += 1;
+    manager.live_regions += 1;
+    manager.live_capacity = aggregate.value;
+    return new CCAMMemCreateResult{
+        ok: true, manager: manager, identity: identity, error: ""
+    };
+}
+
+CCAMMemResult ccam_mem_reserve(
+    CCAMMemManager manager, int identity, int caller_frame,
+    int count, int element_size, int alignment
+) {
+    if (!ccam_mem_manager_valid(manager)) {
+        return ccam_mem_error(manager, "invalid_memory_manager");
+    }
+    int slot = ccam_mem_find(manager, identity);
+    if (slot < 0) { return ccam_mem_error(manager, "stale_region_capability"); }
+    CCAMMemRegion region = manager.regions[slot];
+    if (!region.open) { return ccam_mem_error(manager, "region_closed"); }
+    if (caller_frame != region.owner_frame) {
+        return ccam_mem_error(manager, "wrong_region_owner");
+    }
+    CCAMScratchViewPlan plan = ccam_scratch_reservation_plan(
+        region.capacity, region.used, count, element_size, alignment
+    );
+    if (!plan.ok) { return ccam_mem_error(manager, plan.error); }
+    CCAMMemView view = new CCAMMemView{
+        identity: identity, generation: region.generation,
+        owner_frame: region.owner_frame, offset: plan.offset,
+        count: count, element_size: element_size, alignment: alignment
+    };
+    region.used = plan.new_used;
+    manager.regions[slot] = region;
+    return new CCAMMemResult{
+        ok: true, manager: manager, view: view,
+        int_value: 0, bool_value: false, error: ""
+    };
+}
+
+string ccam_mem_check(
+    CCAMMemManager manager, CCAMMemView view,
+    int caller_frame, int index
+) {
+    if (!ccam_mem_manager_valid(manager)) { return "invalid_memory_manager"; }
+    int slot = ccam_mem_find(manager, view.identity);
+    if (slot < 0) { return "stale_region_capability"; }
+    CCAMMemRegion region = manager.regions[slot];
+    if (view.generation != region.generation) {
+        return "stale_region_capability";
+    }
+    if (!region.open) { return "region_closed"; }
+    if (caller_frame != region.owner_frame ||
+        view.owner_frame != region.owner_frame) {
+        return "wrong_region_owner";
+    }
+    if (!((view.element_size == 1 && view.alignment == 1) ||
+          (view.element_size == 8 && view.alignment == 8))) {
+        return "scratch_type_mismatch";
+    }
+    if (index < 0 || index >= view.count) { return "scratch_range_error"; }
+    CCAMIntResult relative = ccam_mul(index, view.element_size);
+    if (!relative.ok) { return "scratch_arithmetic_overflow"; }
+    CCAMIntResult absolute = ccam_add(view.offset, relative.value);
+    if (!absolute.ok) { return "scratch_arithmetic_overflow"; }
+    CCAMIntResult end = ccam_add(absolute.value, view.element_size);
+    if (!end.ok) { return "scratch_arithmetic_overflow"; }
+    if (view.offset < 0 || end.value > region.used ||
+        end.value > region.capacity || end.value > region.bytes.len()) {
+        return "scratch_range_error";
+    }
+    if (view.offset % view.alignment != 0) {
+        return "scratch_type_mismatch";
+    }
+    return "";
+}
+
+CCAMMemResult ccam_mem_store_bool(
+    CCAMMemManager manager, CCAMMemView view,
+    int caller_frame, int index, bool value
+) {
+    string error = ccam_mem_check(manager, view, caller_frame, index);
+    if (error != "") { return ccam_mem_error(manager, error); }
+    if (view.element_size != 1) {
+        return ccam_mem_error(manager, "scratch_type_mismatch");
+    }
+    int slot = ccam_mem_find(manager, view.identity);
+    CCAMMemRegion region = manager.regions[slot];
+    int offset = view.offset + index;
+    if (value) { region.bytes[offset] = 1; }
+    else { region.bytes[offset] = 0; }
+    manager.regions[slot] = region;
+    return new CCAMMemResult{
+        ok: true, manager: manager, view: ccam_mem_empty_view(),
+        int_value: 0, bool_value: false, error: ""
+    };
+}
+
+CCAMMemResult ccam_mem_load_bool(
+    CCAMMemManager manager, CCAMMemView view,
+    int caller_frame, int index
+) {
+    string error = ccam_mem_check(manager, view, caller_frame, index);
+    if (error != "") { return ccam_mem_error(manager, error); }
+    if (view.element_size != 1) {
+        return ccam_mem_error(manager, "scratch_type_mismatch");
+    }
+    int slot = ccam_mem_find(manager, view.identity);
+    int byte_value = manager.regions[slot].bytes[view.offset + index];
+    if (byte_value != 0 && byte_value != 1) {
+        return ccam_mem_error(manager, "scratch_corrupt_bool");
+    }
+    return new CCAMMemResult{
+        ok: true, manager: manager, view: ccam_mem_empty_view(),
+        int_value: 0, bool_value: byte_value == 1, error: ""
+    };
+}
+
+CCAMMemResult ccam_mem_store_i64(
+    CCAMMemManager manager, CCAMMemView view,
+    int caller_frame, int index, int value
+) {
+    string error = ccam_mem_check(manager, view, caller_frame, index);
+    if (error != "") { return ccam_mem_error(manager, error); }
+    if (view.element_size != 8) {
+        return ccam_mem_error(manager, "scratch_type_mismatch");
+    }
+    int slot = ccam_mem_find(manager, view.identity);
+    CCAMMemRegion region = manager.regions[slot];
+    int offset = view.offset + index * 8;
+    int remaining = value;
+    if (value >= 0) {
+        for (int i = 0; i < 8; i += 1) {
+            region.bytes[offset + i] = remaining % 256;
+            remaining = remaining / 256;
+        }
+    } else {
+        // -(MIN + 1) is representable; complement bytes implement the
+        // two's-complement encoding without negating MIN.
+        remaining = -(value + 1);
+        for (int i = 0; i < 8; i += 1) {
+            region.bytes[offset + i] = 255 - (remaining % 256);
+            remaining = remaining / 256;
+        }
+    }
+    manager.regions[slot] = region;
+    return new CCAMMemResult{
+        ok: true, manager: manager, view: ccam_mem_empty_view(),
+        int_value: 0, bool_value: false, error: ""
+    };
+}
+
+CCAMMemResult ccam_mem_load_i64(
+    CCAMMemManager manager, CCAMMemView view,
+    int caller_frame, int index
+) {
+    string error = ccam_mem_check(manager, view, caller_frame, index);
+    if (error != "") { return ccam_mem_error(manager, error); }
+    if (view.element_size != 8) {
+        return ccam_mem_error(manager, "scratch_type_mismatch");
+    }
+    int slot = ccam_mem_find(manager, view.identity);
+    int offset = view.offset + index * 8;
+    int high = manager.regions[slot].bytes[offset + 7];
+    int accumulator = 0;
+    if (high < 128) {
+        for (int i = 7; i >= 0; i -= 1) {
+            accumulator = accumulator * 256 +
+                manager.regions[slot].bytes[offset + i];
+        }
+        return new CCAMMemResult{
+            ok: true, manager: manager, view: ccam_mem_empty_view(),
+            int_value: accumulator, bool_value: false, error: ""
+        };
+    }
+    // Decode the complement magnitude, whose maximum is INT64_MAX.
+    for (int i = 7; i >= 0; i -= 1) {
+        accumulator = accumulator * 256 +
+            (255 - manager.regions[slot].bytes[offset + i]);
+    }
+    return new CCAMMemResult{
+        ok: true, manager: manager, view: ccam_mem_empty_view(),
+        int_value: -accumulator - 1, bool_value: false, error: ""
+    };
+}
+
+CCAMMemResult ccam_mem_corrupt_byte(
+    CCAMMemManager manager, CCAMMemView view,
+    int caller_frame, int index, int byte_value
+) {
+    string error = ccam_mem_check(manager, view, caller_frame, index);
+    if (error != "") { return ccam_mem_error(manager, error); }
+    if (byte_value < 0 || byte_value > 255) {
+        return ccam_mem_error(manager, "scratch_range_error");
+    }
+    int slot = ccam_mem_find(manager, view.identity);
+    CCAMMemRegion region = manager.regions[slot];
+    region.bytes[view.offset + index] = byte_value;
+    manager.regions[slot] = region;
+    return new CCAMMemResult{
+        ok: true, manager: manager, view: ccam_mem_empty_view(),
+        int_value: 0, bool_value: false, error: ""
+    };
+}
+
+CCAMMemResult ccam_mem_reset(CCAMMemManager manager, int identity, int caller_frame) {
+    if (!ccam_mem_manager_valid(manager)) {
+        return ccam_mem_error(manager, "invalid_memory_manager");
+    }
+    int slot = ccam_mem_find(manager, identity);
+    if (slot < 0) { return ccam_mem_error(manager, "stale_region_capability"); }
+    CCAMMemRegion region = manager.regions[slot];
+    if (!region.open) { return ccam_mem_error(manager, "region_closed"); }
+    if (caller_frame != region.owner_frame) {
+        return ccam_mem_error(manager, "wrong_region_owner");
+    }
+    CCAMIntResult generation = ccam_add(region.generation, 1);
+    if (!generation.ok || generation.value <= 0) {
+        return ccam_mem_error(manager, "scratch_arithmetic_overflow");
+    }
+    region.generation = generation.value;
+    region.used = 0;
+    for (int i = 0; i < region.bytes.len(); i += 1) { region.bytes[i] = 0; }
+    manager.regions[slot] = region;
+    return new CCAMMemResult{
+        ok: true, manager: manager, view: ccam_mem_empty_view(),
+        int_value: 0, bool_value: false, error: ""
+    };
+}
+
+CCAMMemResult ccam_mem_close(CCAMMemManager manager, int identity, int caller_frame) {
+    if (!ccam_mem_manager_valid(manager)) {
+        return ccam_mem_error(manager, "invalid_memory_manager");
+    }
+    int slot = ccam_mem_find(manager, identity);
+    if (slot < 0) { return ccam_mem_error(manager, "stale_region_capability"); }
+    CCAMMemRegion region = manager.regions[slot];
+    if (!region.open) { return ccam_mem_error(manager, "region_closed"); }
+    if (caller_frame != region.owner_frame) {
+        return ccam_mem_error(manager, "wrong_region_owner");
+    }
+    int released_capacity = region.capacity;
+    // Wipe the complete backing capacity before releasing the slot. Clearing
+    // only the used prefix would leave stale bytes in unused padding/tail space.
+    for (int i = 0; i < region.bytes.len(); i += 1) {
+        region.bytes[i] = 0;
+    }
+    region.open = false;
+    region.used = 0;
+    region.generation = 0;
+    region.capacity = 0;
+    manager.regions[slot] = region;
+    manager.live_regions -= 1;
+    manager.live_capacity -= released_capacity;
+    return new CCAMMemResult{
+        ok: true, manager: manager, view: ccam_mem_empty_view(),
+        int_value: 0, bool_value: false, error: ""
+    };
+}
+
+test "multi-region aggregate capacity and table limits are failure atomic" {
+    CCAMMemManager m = ccam_mem_manager(2, 12);
+    CCAMMemCreateResult a = ccam_mem_create(m, 1, 8, -1);
+    CCAMMemCreateResult b = ccam_mem_create(a.manager, 2, 4, -1);
+    assert(a.ok && b.ok);
+    assert(b.manager.live_regions == 2 && b.manager.live_capacity == 12);
+    CCAMMemCreateResult table_full = ccam_mem_create(b.manager, 3, 0, -1);
+    assert(!table_full.ok && table_full.error == "region_limit_exceeded");
+    assert(table_full.manager.live_regions == 2);
+    assert(table_full.manager.live_capacity == 12);
+}
+
+
+test "forged aggregate ledger cannot bypass region or byte capacity" {
+    CCAMMemManager manager = ccam_mem_manager(2, 16);
+    CCAMMemCreateResult created = ccam_mem_create(manager, 1, 12, -1);
+    CCAMMemManager forged = created.manager;
+    forged.live_capacity = 0;
+    CCAMMemCreateResult denied = ccam_mem_create(forged, 2, 8, -1);
+    assert(created.ok && !denied.ok);
+    assert(denied.error == "invalid_memory_manager");
+    assert(denied.manager.live_capacity == 0);
+}
+
+test "forged region metadata is rejected before reservation" {
+    CCAMMemManager manager = ccam_mem_manager(1, 16);
+    CCAMMemCreateResult created = ccam_mem_create(manager, 1, 12, -1);
+    CCAMMemRegion corrupt = created.manager.regions[0];
+    corrupt.capacity = 0;
+    created.manager.regions[0] = corrupt;
+    CCAMMemResult denied = ccam_mem_reserve(
+        created.manager, created.identity, 1, 1, 1, 1);
+    assert(created.ok && !denied.ok);
+    assert(denied.error == "invalid_memory_manager");
+}
+
+test "aggregate budget rejects one byte over and preserves identity source" {
+    CCAMMemManager m = ccam_mem_manager(4, 10);
+    CCAMMemCreateResult a = ccam_mem_create(m, 1, 8, -1);
+    CCAMMemCreateResult denied = ccam_mem_create(a.manager, 2, 3, -1);
+    CCAMMemCreateResult next = ccam_mem_create(denied.manager, 2, 2, -1);
+    assert(a.ok && !denied.ok && denied.error == "region_limit_exceeded");
+    assert(next.ok && next.identity == 2);
+    assert(next.manager.live_capacity == 10);
+}
+
+test "allocation failure at every byte boundary preserves the manager" {
+    for (int fail_at = 0; fail_at <= 8; fail_at += 1) {
+        CCAMMemManager m = ccam_mem_manager(2, 16);
+        CCAMMemCreateResult failed = ccam_mem_create(m, 1, 8, fail_at);
+        assert(!failed.ok && failed.error == "allocation_failed");
+        assert(failed.manager.live_regions == 0);
+        assert(failed.manager.live_capacity == 0);
+        assert(failed.manager.next_identity == 1);
+        assert(failed.manager.regions.len() == 0);
+    }
+    CCAMMemManager m = ccam_mem_manager(1, 8);
+    CCAMMemCreateResult accepted = ccam_mem_create(m, 1, 8, -1);
+    assert(accepted.ok && accepted.manager.live_capacity == 8);
+}
+
+test "injected admission failure consumes no table slot capacity or identity" {
+    CCAMMemManager m = ccam_mem_manager(2, 16);
+    CCAMMemCreateResult denied = ccam_mem_create(m, 1, 8, 0);
+    // Capture the rejected transition before a later successful transition
+    // mutates the same in-place manager object.
+    int denied_regions = denied.manager.live_regions;
+    int denied_capacity = denied.manager.live_capacity;
+    int denied_next_identity = denied.manager.next_identity;
+    int denied_slots = denied.manager.regions.len();
+    CCAMMemCreateResult accepted = ccam_mem_create(denied.manager, 1, 8, -1);
+    assert(!denied.ok && denied.error == "allocation_failed");
+    assert(denied_regions == 0 && denied_capacity == 0);
+    assert(denied_next_identity == 1 && denied_slots == 0);
+    assert(accepted.ok && accepted.identity == 1);
+}
+
+test "byte store round trips signed i64 boundaries" {
+    CCAMMemManager m = ccam_mem_manager(2, 128);
+    CCAMMemCreateResult c = ccam_mem_create(m, 7, 64, -1);
+    CCAMMemResult r = ccam_mem_reserve(c.manager, c.identity, 7, 5, 8, 8);
+    assert(c.ok && r.ok);
+    List<int> values = new List<int>();
+    values.push(CCAM_I64_MIN);
+    values.push(-1);
+    values.push(0);
+    values.push(1);
+    values.push(CCAM_I64_MAX);
+    for (int i = 0; i < values.len(); i += 1) {
+        CCAMMemResult stored = ccam_mem_store_i64(r.manager, r.view, 7, i, values[i]);
+        assert(stored.ok);
+        CCAMMemResult loaded = ccam_mem_load_i64(stored.manager, r.view, 7, i);
+        assert(loaded.ok && loaded.int_value == values[i]);
+    }
+}
+
+test "byte store round trips canonical booleans and rejects corruption" {
+    CCAMMemManager m = ccam_mem_manager(1, 16);
+    CCAMMemCreateResult c = ccam_mem_create(m, 2, 8, -1);
+    CCAMMemResult r = ccam_mem_reserve(c.manager, c.identity, 2, 2, 1, 1);
+    CCAMMemResult s0 = ccam_mem_store_bool(r.manager, r.view, 2, 0, false);
+    CCAMMemResult s1 = ccam_mem_store_bool(s0.manager, r.view, 2, 1, true);
+    CCAMMemResult l0 = ccam_mem_load_bool(s1.manager, r.view, 2, 0);
+    CCAMMemResult l1 = ccam_mem_load_bool(s1.manager, r.view, 2, 1);
+    assert(r.ok && s0.ok && s1.ok);
+    assert(l0.ok && !l0.bool_value);
+    assert(l1.ok && l1.bool_value);
+    CCAMMemResult corrupt = ccam_mem_corrupt_byte(
+        s1.manager, r.view, 2, 0, 255
+    );
+    CCAMMemResult bad_load = ccam_mem_load_bool(corrupt.manager, r.view, 2, 0);
+    assert(corrupt.ok && !bad_load.ok);
+    assert(bad_load.error == "scratch_corrupt_bool");
+}
+
+test "view owner generation bounds and closed-state checks guard byte access" {
+    CCAMMemManager m = ccam_mem_manager(2, 64);
+    CCAMMemCreateResult c = ccam_mem_create(m, 5, 32, -1);
+    CCAMMemResult r = ccam_mem_reserve(c.manager, c.identity, 5, 1, 8, 8);
+    assert(r.ok);
+    assert(ccam_mem_check(r.manager, r.view, 6, 0) == "wrong_region_owner");
+    assert(ccam_mem_check(r.manager, r.view, 5, -1) == "scratch_range_error");
+    CCAMMemResult reset = ccam_mem_reset(r.manager, c.identity, 5);
+    assert(reset.ok);
+    assert(ccam_mem_check(reset.manager, r.view, 5, 0) ==
+           "stale_region_capability");
+    CCAMMemResult closed = ccam_mem_close(reset.manager, c.identity, 5);
+    assert(closed.ok);
+    assert(closed.manager.live_regions == 0);
+    assert(closed.manager.live_capacity == 0);
+}
+
+test "reservation failure does not alter bytes or used cursor" {
+    CCAMMemManager m = ccam_mem_manager(1, 8);
+    CCAMMemCreateResult c = ccam_mem_create(m, 1, 8, -1);
+    CCAMMemResult r = ccam_mem_reserve(c.manager, c.identity, 1, 1, 1, 1);
+    CCAMMemResult failed = ccam_mem_reserve(
+        r.manager, c.identity, 1, 8, 8, 8
+    );
+    assert(r.ok && !failed.ok && failed.error == "scratch_exhausted");
+    assert(failed.manager.regions[0].used == 1);
+    assert(failed.manager.regions[0].bytes[0] == 0);
+}
+
+test "reset zeroes backing storage and refreshes generation" {
+    CCAMMemManager m = ccam_mem_manager(1, 32);
+    CCAMMemCreateResult c = ccam_mem_create(m, 1, 16, -1);
+    CCAMMemResult r = ccam_mem_reserve(c.manager, c.identity, 1, 1, 8, 8);
+    CCAMMemResult s = ccam_mem_store_i64(r.manager, r.view, 1, 0, 99);
+    CCAMMemResult reset = ccam_mem_reset(s.manager, c.identity, 1);
+    assert(reset.ok && reset.manager.regions[0].used == 0);
+    assert(reset.manager.regions[0].bytes[0] == 0);
+    assert(reset.manager.regions[0].generation == 2);
+}
+
+test "wrong owner cannot close a region or release its budget" {
+    CCAMMemManager m = ccam_mem_manager(1, 16);
+    CCAMMemCreateResult c = ccam_mem_create(m, 4, 12, -1);
+    CCAMMemResult denied = ccam_mem_close(c.manager, c.identity, 5);
+    assert(!denied.ok && denied.error == "wrong_region_owner");
+    assert(denied.manager.live_regions == 1);
+    assert(denied.manager.live_capacity == 12);
+    assert(denied.manager.regions[0].open);
+}
+
+test "close wipes the complete backing capacity before releasing it" {
+    CCAMMemManager m = ccam_mem_manager(1, 16);
+    CCAMMemCreateResult c = ccam_mem_create(m, 3, 12, -1);
+    CCAMMemResult r = ccam_mem_reserve(c.manager, c.identity, 3, 1, 8, 8);
+    CCAMMemResult s = ccam_mem_store_i64(r.manager, r.view, 3, 0, 123456789);
+    assert(s.ok);
+    CCAMMemResult closed = ccam_mem_close(s.manager, c.identity, 3);
+    assert(closed.ok && !closed.manager.regions[0].open);
+    assert(closed.manager.regions[0].bytes.len() == 12);
+    for (int i = 0; i < 12; i += 1) {
+        assert(closed.manager.regions[0].bytes[i] == 0);
+    }
+    assert(closed.manager.live_capacity == 0);
+}
+
+test "close releases original capacity from aggregate ledger" {
+    CCAMMemManager m = ccam_mem_manager(2, 16);
+    CCAMMemCreateResult a = ccam_mem_create(m, 1, 12, -1);
+    CCAMMemResult close = ccam_mem_close(a.manager, a.identity, 1);
+    // The manager is an in-place state object, not a persistent snapshot.
+    int closed_capacity = close.manager.live_capacity;
+    int closed_regions = close.manager.live_regions;
+    CCAMMemCreateResult b = ccam_mem_create(close.manager, 2, 12, -1);
+    assert(close.ok && closed_capacity == 0 && closed_regions == 0);
+    assert(b.ok && b.manager.live_capacity == 12);
+    assert(b.identity == 2 && b.manager.regions.len() == 1);
+    assert(b.manager.regions[0].open && b.manager.regions[0].capacity == 12);
+}
