@@ -99,6 +99,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--schema", default="docs/assurance/assurance.schema.json")
     ap.add_argument("--manifest", default="docs/assurance/claims.json")
+    ap.add_argument("--boundaries", default="docs/assurance/execution-boundaries.json")
+    ap.add_argument("--boundary-schema", default="docs/assurance/execution-boundaries.schema.json")
     ap.add_argument("--require-fresh", action="store_true",
                     help=("fail if active or qualified claims lack fresh review, "
                           "passed exact-commit evidence, or independent review"))
@@ -116,24 +118,36 @@ def main():
     try:
         schema = load(args.schema)
         manifest = load(args.manifest)
+        boundary_schema = load(args.boundary_schema)
+        boundaries = load(args.boundaries)
         jsonschema.Draft202012Validator.check_schema(schema)
+        jsonschema.Draft202012Validator.check_schema(boundary_schema)
         validator = jsonschema.Draft202012Validator(
             schema, format_checker=jsonschema.FormatChecker())
         errors = sorted(validator.iter_errors(manifest),
                         key=lambda e: (list(map(str, e.absolute_path)), e.message))
+        boundary_validator = jsonschema.Draft202012Validator(
+            boundary_schema, format_checker=jsonschema.FormatChecker())
+        boundary_errors = sorted(
+            boundary_validator.iter_errors(boundaries),
+            key=lambda e: (list(map(str, e.absolute_path)), e.message))
     except (OSError, json.JSONDecodeError, jsonschema.SchemaError) as e:
         sys.exit("assurance-validate: " + str(e))
 
     failed = False
     for e in errors:
         where = "/" + "/".join(map(str, e.absolute_path))
-        print("  schema: %s: %s" % (where, e.message))
+        print("  claims schema: %s: %s" % (where, e.message))
+        failed = True
+    for e in boundary_errors:
+        where = "/" + "/".join(map(str, e.absolute_path))
+        print("  boundaries schema: %s: %s" % (where, e.message))
         failed = True
 
     # Never inspect nested manifest fields after schema failure. Malformed
     # structures must fail closed with diagnostics, not raise AttributeError
     # while freshness checks assume the schema's object/list shapes.
-    if errors:
+    if errors or boundary_errors:
         return 1
 
     head = git("rev-parse", "HEAD")
@@ -149,6 +163,48 @@ def main():
             changed_paths(snapshot, [])
         except ValueError as e:
             print("  snapshot: %s" % e)
+            failed = True
+
+    # Validate the architecture register independently from the claim register.
+    # A formal proof over a model is not an implementation proof unless the
+    # boundary explicitly records a reviewed refinement link.
+    boundary_ids = set()
+    boundary_paths = set()
+    for path in boundaries.get("production_path", []) + boundaries.get("target_path", []):
+        boundary_paths.add(path)
+    for index, boundary in enumerate(boundaries.get("boundaries", [])):
+        bid = boundary.get("id", "<missing>")
+        if bid in boundary_ids:
+            print("  boundary: duplicate identifier %s" % bid)
+            failed = True
+        boundary_ids.add(bid)
+        if boundary.get("formal") == "proved" and not boundary.get("implementation_refinement"):
+            print("  boundary %s: formal=proved requires implementation_refinement=true" % bid)
+            failed = True
+        if boundary.get("implementation_refinement") and boundary.get("formal") != "proved":
+            print("  boundary %s: implementation_refinement=true requires formal=proved" % bid)
+            failed = True
+        for path in boundary.get("artifacts", []):
+            boundary_paths.add(path)
+    for path in sorted(boundary_paths):
+        if not inside_repo(path):
+            print("  boundary: unsafe repository path %r" % path)
+            failed = True
+        elif not resolves_inside_repo(path):
+            print("  boundary: path resolves outside repository or across filesystem roots: %s" % path)
+            failed = True
+        elif not os.path.isfile(os.path.realpath(os.path.join(ROOT, path))):
+            print("  boundary: artifact does not exist: %s" % path)
+            failed = True
+    baseline = boundaries.get("baseline_commit", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", baseline):
+        print("  boundary: missing full baseline commit SHA")
+        failed = True
+    else:
+        try:
+            changed_paths(baseline, [])
+        except ValueError as e:
+            print("  boundary: baseline is not in current history: %s" % e)
             failed = True
 
     ids = set()
@@ -243,9 +299,9 @@ def main():
         failed = True
     if failed:
         return 1
-    print("assurance-validate: %d claim(s), schema valid, evidence paths resolve; HEAD %s; %d stale record(s), %d on active/qualified claims; %d promotion failure(s)" %
-          (len(manifest.get("claims", [])), head_sha, stale_count, gated_stale_count,
-           promotion_failure_count))
+    print("assurance-validate: %d claim(s), %d execution boundary(s), both schemas valid, evidence paths resolve; HEAD %s; %d stale record(s), %d on active/qualified claims; %d promotion failure(s)" %
+          (len(manifest.get("claims", [])), len(boundaries.get("boundaries", [])),
+           head_sha, stale_count, gated_stale_count, promotion_failure_count))
     return 0
 
 
