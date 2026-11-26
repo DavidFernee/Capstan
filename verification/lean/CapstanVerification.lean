@@ -5,6 +5,7 @@ import CapstanVerification.NativeRegisterFileBridge
 import CapstanVerification.InitialStateBridge
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
+import CapstanVerification.MultiFrame
 import CapstanVerification.Progress
 import CapstanVerification.ProgramValidator
 import CapstanVerification.SFVectors

@@ -1,5 +1,6 @@
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
+import CapstanVerification.MultiFrame
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge
@@ -207,3 +208,13 @@ import CapstanVerification.ExplicitTrap
 #print axioms CapstanVerification.nonvoid_function_requires_value
 
 #print axioms CapstanVerification.return_write_preserves_caller_well_typed
+
+-- Heterogeneous multi-frame call entry and atomic caller return commits.
+#print axioms CapstanVerification.makeTypedMultiFrame_registers_well_typed
+#print axioms CapstanVerification.makeTypedMultiFrame_identity_and_entry
+#print axioms CapstanVerification.writeTypedReturn
+#print axioms CapstanVerification.commitTypedReturnToCaller_preserves_well_typed
+#print axioms CapstanVerification.commitTypedVoidReturnToCaller_preserves_well_typed
+#print axioms CapstanVerification.pushTypedMultiFrame_active
+#print axioms CapstanVerification.pushTypedMultiFrame_depth
+#print axioms CapstanVerification.pushTypedMultiFrame_exhausted
