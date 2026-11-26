@@ -882,10 +882,13 @@ static CapBuf cap_buf_new(int64_t cap) {
 }
 
 /* File contents are untrusted input: returned as Tainted. Reads until end of file
-   rather than trusting the reported size, so pipes and /proc files work. Gives none
-   for a directory, an unreadable file, or a file longer than the caller-supplied max (hard ceiling 2^30), so /dev/zero
-   or an endless pipe cannot exhaust memory (CWE-400). Opening
-   never blocks: a FIFO with no writer reads as empty instead of hanging. */
+   rather than trusting the reported size, so regular files, pipes and /proc files are
+   supported. Gives none for a directory, an unreadable file, or a file longer than the
+   caller-supplied max (hard ceiling 2^30), so /dev/zero or an endless pipe cannot exhaust
+   memory (CWE-400). Opening is non-blocking: a FIFO with no writer reads as empty.
+   The implementation then clears O_NONBLOCK before reading, so a live FIFO with an idle
+   writer can still block indefinitely; finite byte bounds do not imply a deadline
+   (tracked in issue #473). */
 #define CAP_READ_FILE_MAX_BYTES ((int64_t)1 << 30)
 static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
     if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_MAX_BYTES)) cap_panic("read_file() limit outside 0..2^30", "CWE-789", loc);
