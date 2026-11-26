@@ -200,7 +200,12 @@ bool mentions_name(Node e, int kind) {
         if (kind == 1 && looks_secret(e.s)) { return true; }
         if (kind == 2 && (looks_password(e.s))) { return true; }
     }
-    if (e.k == N_CALL || e.k == N_METHOD) { return false; }
+    // Password provenance must survive helper calls and string methods
+    // before a fast-hash decision (CWE-916). Preserve the established
+    // credential-comparison boundary for kind 1: recursively treating every
+    // nested capability/token argument as a direct comparison operand causes
+    // false positives for opaque integer handles.
+    if (kind == 1 && (e.k == N_CALL || e.k == N_METHOD)) { return false; }
     for (int i = 0; i < e.kids.len(); i += 1) {
         if (mentions_name(e.kids[i], kind)) { return true; }
     }
@@ -1012,11 +1017,9 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_STR);
     }
     if (f == "read_file") {
-        want_args(c, e, 0, 2, f);
-        if (n == 2) {
-            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path");
-            expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "read_file() explicit byte limit");
-        }
+        if (n != 2) { want_args(c, e, 0, 1, f); }
+        if (n >= 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path"); }
+        if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "read_file() limit"); }
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "workspace_open") {
@@ -1039,8 +1042,7 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_VOID);
     }
     if (f == "read_line") {
-        want_args(c, e, 0, 1, f);
-        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "read_line() explicit byte limit"); }
+        want_args(c, e, 0, 0, f);
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "read_bytes") {
@@ -1067,15 +1069,7 @@ Type check_call(Checker c, Node e) {
         }
         return mk_type(TY_BOOL);
     }
-    if (f == "args") {
-        want_args(c, e, 0, 3, f);
-        if (n == 3) {
-            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "args() maximum argument count");
-            expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "args() maximum bytes per argument");
-            expect_type(c, e, ty_of(e.kids[2]), mk_type(TY_INT), "args() maximum aggregate bytes");
-        }
-        return mk_wrap(TY_LIST, mk_type(TY_STR));
-    }
+    if (f == "args") { want_args(c, e, 0, 0, f); return mk_wrap(TY_LIST, mk_type(TY_STR)); }
     if (f == "exit") {
         want_args(c, e, 0, 1, f);
         if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "exit()"); }
@@ -1185,14 +1179,13 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_VOID);
     }
     if (f == "secret_env") {
-        want_args(c, e, 0, 2, f);
-        if (n == 2) {
+        want_args(c, e, 0, 1, f);
+        if (n == 1) {
             if (!is_literal_str(e.kids[0])) {
                 error_at(c.ctx, e, "", "secret_env() takes the variable name as a string literal");
             } else if (literal_has_nul(e.kids[0])) {
                 error_at(c.ctx, e.kids[0], "CWE-158", "secret_env() variable name must not contain NUL");
             }
-            expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "secret_env() explicit byte limit");
         }
         return mk_wrap(TY_OPT, mk_type(TY_SECRET));
     }
@@ -1215,7 +1208,9 @@ Type check_call(Checker c, Node e) {
             if (f == "hash" && dt.k == TY_SECRET) {
                 error_at(c.ctx, e, "CWE-532", "hash() of a Secret gives printable text from which a short or guessable secret can be recovered by trying values offline; compare secrets with secret_eq() or hash_verify(), and store passwords with hash_password()");
             }
-            if ((f == "hash" || f == "hash_verify") && mentions_name(e.kids[0], 2)) {
+            if ((f == "hash" || f == "hash_verify") && dt.k == TY_TAINT) {
+                error_at(c.ctx, e, "CWE-916", f + "() rejects Tainted input because it may be a password; use hash_password()/verify_password(), or explicitly trust non-password data with a reviewable reason");
+            } else if ((f == "hash" || f == "hash_verify") && mentions_name(e.kids[0], 2)) {
                 error_at(c.ctx, e, "CWE-916", f + "() is a fast, unsalted hash and must not be used for passwords; use hash_password() and verify_password()");
             }
         }
