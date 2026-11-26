@@ -88,6 +88,7 @@ int main() {
         return 2;
     }
 
+    CompileBudget budget = new_compile_budget();
     List<Node> decls = new List<Node>();
     Map<int> loaded = new Map<int>();
     List<string> queue = new List<string>();
@@ -108,11 +109,25 @@ int main() {
         loaded.set(path, 1);
         int index = ctx.files.len();
         ctx.files.push(path);
-        if (let src = read_file(path, MAX_SOURCE_BYTES)) {
+        if (budget.files >= MAX_IMPORT_FILES) {
+            ctx.sources.push(taint(""));
+            report(ctx, index, 0, true, "CWE-400", "import graph exceeds file-count limit (" + int_to_str(MAX_IMPORT_FILES) + ")");
+            continue;
+        }
+        budget.files += 1;
+        int remaining = MAX_TOTAL_SOURCE_BYTES - budget.source_bytes;
+        int file_limit = MAX_SOURCE_BYTES;
+        if (remaining < file_limit) { file_limit = remaining; }
+        if (let src = read_file(path, file_limit)) {
+            budget.source_bytes += src.len();
             ctx.sources.push(src);
-            List<Token> toks = lex(ctx, src, index);
-            if (error_count(ctx) == 0) {
+            List<Token> toks = lex_bounded(ctx, src, index, budget);
+            if (error_count(ctx) == 0 && !budget.exhausted) {
                 List<Node> part = parse_program(ctx, toks);
+                if (!charge_ast_nodes(budget, part)) {
+                    report(ctx, index, 0, true, "CWE-400", "import graph exceeds AST-node limit (" + int_to_str(MAX_TOTAL_AST_NODES) + ")");
+                    continue;
+                }
                 for (int k = 0; k < part.len(); k += 1) {
                     Node d = part[k];
                     decls.push(d);
@@ -130,9 +145,9 @@ int main() {
         } else {
             ctx.sources.push(taint(""));
             if (ofile >= 0) {
-                report(ctx, ofile, oline, true, "", "cannot read imported file '" + path + "' (missing, unreadable, a directory, or over 16 MiB)");
+                report(ctx, ofile, oline, true, "", "cannot read imported file '" + path + "' (missing, unreadable, a directory, over 16 MiB, or aggregate source budget exceeded)");
             } else {
-                report(ctx, index, 0, true, "", "cannot read file (missing, unreadable, a directory, or over 16 MiB)");
+                report(ctx, index, 0, true, "", "cannot read file (missing, unreadable, a directory, over 16 MiB, or aggregate source budget exceeded)");
             }
         }
     }
