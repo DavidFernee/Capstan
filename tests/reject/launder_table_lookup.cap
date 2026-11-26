@@ -2,7 +2,7 @@
 // spec: types.tainted types.list
 // Looking up trusted characters by untrusted bytes rebuilds the input without its Tainted marking.
 int main() {
-    if (let t = read_line()) {
+    if (let t = read_line(1048576)) {
         List<string> table = new List<string>();
         for (int c = 0; c < 256; c += 1) { table.push(char_str(c)); }
         string out = "";
