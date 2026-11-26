@@ -87,13 +87,31 @@ Additional source-level gaps remain outside this fragment: aliases and heap iden
 
 Until those obligations are complete, the claim is limited to the model fragment and the source cases listed above. The source checker remains part of the trusted computing base.
 
-## 6. Next implementation increment
+## 6. Separate value-level reference domain
 
-The highest-value next change is the scalar value-provenance stage: track provenance for Boolean results and locals, comparisons, generic text conversions, joins and length/shape observations; add positive and negative regressions; and replace name-only monotone marks with per-value abstract facts so reassignment can be modelled precisely. Heap aliases and interprocedural aggregate effects remain a separate subsequent stage.
+`verification/lean/CapstanVerification/InjectionValue.lean` now defines a separate,
+value-sensitive reference domain. Unlike the current checker's monotone set of local
+names, it records provenance for the current value in each local and uses a strong
+assignment update: a clean reassignment clears the old mark. Its transfer relation
+conservatively propagates provenance through unary and binary operations,
+comparisons, text conversion, joins, length/shape observations, map operations,
+optional and enum payloads, aggregate construction/projection, indexed reads and
+control-dependent selection.
+
+The module proves local-update properties and representative transfer lemmas. It
+does **not** prove that `compiler/checker.cap` implements this domain, and it is
+not yet consumed by the production checker. The local-slot model does not preserve
+object identity or aliasing across aggregate references; the aggregate cases are
+coarse dependency summaries, not a heap semantics.
+
+The next increment is therefore not to invent another abstract domain. It is to
+define a serialisable checker-state/AST interface, connect the value-level domain
+to concrete source transfers, and then extend the relation with alias-preserving
+heap paths and interprocedural aggregate effects. Unsupported constructs must
+remain explicit gaps or be conservatively rejected.
 
 
-
-## 6. Fail-closed source identity gate
+## 7. Fail-closed source identity gate
 
 `verification/lean/check_injection_checker_source.py` compares the complete laundering-analysis
 section of `compiler/checker.cap` byte-for-byte with the reviewed fixture and checks that the expected checker transfer,
@@ -119,7 +137,7 @@ The next bridge must replace the section fixture with parser-produced
 AST/flow certificates and a Lean-checked translation relation.
 
 
-## 7. Protected-sink model
+## 8. Protected-sink model
 
 `verification/lean/CapstanVerification/InjectionSinks.lean` adds a separate
 Lean model for the four reconstruction sink shapes currently recognised by
