@@ -1,0 +1,38 @@
+import "native_rel32.cap";
+
+// One relocation, within an existing image. Validate before the first write.
+// Caller must provide the displacement field offset, not instruction start.
+bool native_patch_rel32(List<int> image, int field, int target) {
+    int size = image.len();
+    if (size > NATIVE_REL32_IMAGE_LIMIT || size < 4 ||
+        field < 0 || field > size - 4 || target < 0 || target >= size) {
+        return false;
+    }
+    NativeRel32Result encoded = native_rel32_encode(field + 4, target);
+    if (!encoded.ok) { return false; }
+    for (int i = 0; i < 4; i += 1) {
+        image[field + i] = encoded.bytes[i];
+    }
+    return true;
+}
+
+test "native relocation patches only displacement bytes" {
+    List<int> image = new List<int>();
+    image.push(233);
+    for (int i = 0; i < 4; i += 1) { image.push(0); }
+    image.push(195);
+    assert(native_patch_rel32(image, 1, 0));
+    assert(image[0] == 233 && image[5] == 195);
+    assert(image[1] == 251 && image[2] == 255);
+    assert(image[3] == 255 && image[4] == 255);
+}
+
+test "native relocation rejects invalid fields and targets without mutation" {
+    List<int> image = new List<int>();
+    for (int i = 0; i < 8; i += 1) { image.push(170); }
+    assert(!native_patch_rel32(image, -1, 0));
+    assert(!native_patch_rel32(image, 5, 0));
+    assert(!native_patch_rel32(image, 0, 8));
+    assert(!native_patch_rel32(image, 9223372036854775807, 0));
+    for (int i = 0; i < 8; i += 1) { assert(image[i] == 170); }
+}

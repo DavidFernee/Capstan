@@ -1,0 +1,32 @@
+import "native_elf64.cap";
+
+// Linux x86-64 exit syscall, no external assembler or linker.
+// Restrict status to the observable POSIX exit status range.
+NativeElfImage native_exit_image(int status) {
+    List<int> code = new List<int>();
+    if (status < 0 || status > 255) {
+        return new NativeElfImage{ok: false, bytes: code};
+    }
+    // mov eax,60; mov edi,status; syscall; ud2 (fail closed if syscall returns).
+    code.push(184); code.push(60);
+    code.push(0); code.push(0); code.push(0);
+    code.push(191); code.push(status);
+    code.push(0); code.push(0); code.push(0);
+    code.push(15); code.push(5);
+    code.push(15); code.push(11);
+    return native_elf64_image(code, 0);
+}
+test "direct native exit image has expected entry instructions" {
+    NativeElfImage image = native_exit_image(42);
+    assert(image.ok && image.bytes.len() == 134);
+    assert(image.bytes[120] == 184 && image.bytes[121] == 60);
+    assert(image.bytes[125] == 191 && image.bytes[126] == 42);
+    assert(image.bytes[130] == 15 && image.bytes[131] == 5);
+    assert(image.bytes[132] == 15 && image.bytes[133] == 11);
+}
+test "direct native exit image refuses invalid status" {
+    NativeElfImage a = native_exit_image(-1);
+    NativeElfImage b = native_exit_image(256);
+    assert(!a.ok && a.bytes.len() == 0);
+    assert(!b.ok && b.bytes.len() == 0);
+}

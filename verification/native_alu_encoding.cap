@@ -1,0 +1,66 @@
+import "native_rel32.cap";
+
+const int NATIVE_ALU_ADD = 0;
+const int NATIVE_ALU_SUB = 1;
+const int NATIVE_ALU_CMP = 2;
+const int NATIVE_ALU_XOR = 3;
+const int NATIVE_BRANCH_JMP = 0;
+const int NATIVE_BRANCH_CALL = 1;
+const int NATIVE_BRANCH_JE = 2;
+const int NATIVE_BRANCH_JNE = 3;
+
+NativeRel32Result native_alu64(int op, int destination, int source) {
+    List<int> bytes = new List<int>();
+    if (destination < 0 || destination > 15 || source < 0 || source > 15 ||
+        op < 0 || op > 3) {
+        return new NativeRel32Result{ok: false, bytes: bytes};
+    }
+    int opcode = 1;
+    if (op == NATIVE_ALU_SUB) { opcode = 41; }
+    if (op == NATIVE_ALU_CMP) { opcode = 57; }
+    if (op == NATIVE_ALU_XOR) { opcode = 49; }
+    bytes.push(72 + (source / 8) * 4 + destination / 8);
+    bytes.push(opcode);
+    bytes.push(192 + (source % 8) * 8 + destination % 8);
+    return new NativeRel32Result{ok: true, bytes: bytes};
+}
+
+// start is the offset of the opcode, not the displacement field.
+NativeRel32Result native_branch32(int op, int start, int target) {
+    List<int> bytes = new List<int>();
+    if (op < 0 || op > 3 || start < 0 || start > NATIVE_REL32_IMAGE_LIMIT - 6) {
+        return new NativeRel32Result{ok: false, bytes: bytes};
+    }
+    int length = 5;
+    if (op >= 2) { length = 6; }
+    NativeRel32Result displacement = native_rel32_encode(start + length, target);
+    if (!displacement.ok) { return displacement; }
+    if (op == NATIVE_BRANCH_JMP) { bytes.push(233); }
+    if (op == NATIVE_BRANCH_CALL) { bytes.push(232); }
+    if (op == NATIVE_BRANCH_JE) { bytes.push(15); bytes.push(132); }
+    if (op == NATIVE_BRANCH_JNE) { bytes.push(15); bytes.push(133); }
+    for (int i = 0; i < 4; i += 1) { bytes.push(displacement.bytes[i]); }
+    return new NativeRel32Result{ok: true, bytes: bytes};
+}
+test "native ALU encodes extended registers and rejects unknown opcodes" {
+    NativeRel32Result a = native_alu64(NATIVE_ALU_ADD, 8, 9);
+    assert(a.ok && a.bytes.len() == 3);
+    assert(a.bytes[0] == 77 && a.bytes[1] == 1 && a.bytes[2] == 200);
+    NativeRel32Result b = native_alu64(NATIVE_ALU_SUB, 0, 0);
+    NativeRel32Result c = native_alu64(NATIVE_ALU_CMP, 0, 0);
+    NativeRel32Result d = native_alu64(NATIVE_ALU_XOR, 0, 0);
+    assert(b.ok && b.bytes[1] == 41);
+    assert(c.ok && c.bytes[1] == 57);
+    assert(d.ok && d.bytes[1] == 49);
+    NativeRel32Result bad = native_alu64(4, 0, 0);
+    assert(!bad.ok && bad.bytes.len() == 0);
+}
+test "native control transfers account for opcode length" {
+    NativeRel32Result a = native_branch32(NATIVE_BRANCH_CALL, 0, 5);
+    assert(a.ok && a.bytes.len() == 5 && a.bytes[0] == 232 && a.bytes[1] == 0);
+    NativeRel32Result b = native_branch32(NATIVE_BRANCH_JE, 0, 0);
+    assert(b.ok && b.bytes.len() == 6 && b.bytes[0] == 15 && b.bytes[1] == 132);
+    assert(b.bytes[2] == 250 && b.bytes[5] == 255);
+    NativeRel32Result bad = native_branch32(NATIVE_BRANCH_JNE, 0, 4294967296);
+    assert(!bad.ok && bad.bytes.len() == 0);
+}

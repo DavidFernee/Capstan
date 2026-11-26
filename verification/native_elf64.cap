@@ -1,0 +1,80 @@
+import "native_binary_fields.cap";
+
+// Minimal static ET_EXEC for Linux x86-64, one read/execute PT_LOAD.
+// Payload is already encoded machine code, not untrusted executable input.
+struct NativeElfImage {
+    bool ok;
+    List<int> bytes;
+}
+void native_elf_field(List<int> output, int value, int width) {
+    NativeBinaryField field = native_binary_field(value, width);
+    assert(field.ok);
+    for (int i = 0; i < field.bytes.len(); i += 1) {
+        output.push(field.bytes[i]);
+    }
+}
+NativeElfImage native_elf64_image(List<int> code, int entry_offset) {
+    List<int> output = new List<int>();
+    int length = code.len();
+    if (length < 1 || length > 1048576 || entry_offset < 0 || entry_offset >= length) {
+        return new NativeElfImage{ok: false, bytes: output};
+    }
+    for (int i = 0; i < length; i += 1) {
+        if (code[i] < 0 || code[i] > 255) {
+            return new NativeElfImage{ok: false, bytes: output};
+        }
+    }
+    int base = 4194304;
+    int header_size = 120;
+    int file_size = header_size + length;
+    output.push(127); output.push(69); output.push(76); output.push(70);
+    output.push(2); output.push(1); output.push(1);
+    for (int i = 7; i < 16; i += 1) { output.push(0); }
+    native_elf_field(output, 2, 2);
+    native_elf_field(output, 62, 2);
+    native_elf_field(output, 1, 4);
+    native_elf_field(output, base + header_size + entry_offset, 8);
+    native_elf_field(output, 64, 8);
+    native_elf_field(output, 0, 8);
+    native_elf_field(output, 0, 4);
+    native_elf_field(output, 64, 2);
+    native_elf_field(output, 56, 2);
+    native_elf_field(output, 1, 2);
+    native_elf_field(output, 0, 2);
+    native_elf_field(output, 0, 2);
+    native_elf_field(output, 0, 2);
+    native_elf_field(output, 1, 4);
+    native_elf_field(output, 5, 4);
+    native_elf_field(output, 0, 8);
+    native_elf_field(output, base, 8);
+    native_elf_field(output, base, 8);
+    native_elf_field(output, file_size, 8);
+    native_elf_field(output, file_size, 8);
+    native_elf_field(output, 4096, 8);
+    assert(output.len() == header_size);
+    for (int i = 0; i < length; i += 1) { output.push(code[i]); }
+    return new NativeElfImage{ok: true, bytes: output};
+}
+test "native ELF64 emits exact header and RX segment" {
+    List<int> code = new List<int>();
+    code.push(195);
+    NativeElfImage image = native_elf64_image(code, 0);
+    assert(image.ok && image.bytes.len() == 121);
+    assert(image.bytes[0] == 127 && image.bytes[4] == 2);
+    assert(image.bytes[18] == 62 && image.bytes[24] == 120);
+    assert(image.bytes[26] == 64 && image.bytes[32] == 64);
+    assert(image.bytes[64] == 1 && image.bytes[68] == 5);
+    assert(image.bytes[96] == 121 && image.bytes[104] == 121);
+    assert(image.bytes[120] == 195);
+}
+test "native ELF64 rejects malformed payload before emission" {
+    List<int> code = new List<int>();
+    NativeElfImage empty = native_elf64_image(code, 0);
+    assert(!empty.ok && empty.bytes.len() == 0);
+    code.push(256);
+    NativeElfImage bad = native_elf64_image(code, 0);
+    assert(!bad.ok && bad.bytes.len() == 0);
+    code[0] = 195;
+    NativeElfImage bad_entry = native_elf64_image(code, 1);
+    assert(!bad_entry.ok && bad_entry.bytes.len() == 0);
+}

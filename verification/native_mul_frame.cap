@@ -1,0 +1,58 @@
+import "native_rel32.cap";
+import "native_binary_fields.cap";
+
+// Two-operand signed IMUL followed by JO to a nonreturning trap.
+NativeRel32Result native_checked_mul(int destination, int source, int start, int trap) {
+    List<int> bytes = new List<int>();
+    if (destination < 0 || destination > 15 || source < 0 || source > 15 ||
+        start < 0 || start > NATIVE_REL32_IMAGE_LIMIT - 10) {
+        return new NativeRel32Result{ok: false, bytes: bytes};
+    }
+    NativeRel32Result displacement = native_rel32_encode(start + 10, trap);
+    if (!displacement.ok) { return displacement; }
+    bytes.push(72 + (destination / 8) * 4 + source / 8);
+    bytes.push(15); bytes.push(175);
+    bytes.push(192 + (destination % 8) * 8 + source % 8);
+    bytes.push(15); bytes.push(128);
+    for (int i = 0; i < 4; i += 1) { bytes.push(displacement.bytes[i]); }
+    return new NativeRel32Result{ok: true, bytes: bytes};
+}
+
+// SysV function entry: caller supplies aligned stack, return address present.
+// This only encodes a frame; stack budget enforcement must precede allocation.
+NativeRel32Result native_frame_enter(int size) {
+    List<int> bytes = new List<int>();
+    if (size < 0 || size > 1048576 || size % 16 != 0) {
+        return new NativeRel32Result{ok: false, bytes: bytes};
+    }
+    NativeBinaryField width = native_binary_field(size, 4);
+    if (!width.ok) { return new NativeRel32Result{ok: false, bytes: bytes}; }
+    bytes.push(85); bytes.push(72); bytes.push(137); bytes.push(229);
+    bytes.push(72); bytes.push(129); bytes.push(236);
+    for (int i = 0; i < 4; i += 1) { bytes.push(width.bytes[i]); }
+    return new NativeRel32Result{ok: true, bytes: bytes};
+}
+NativeRel32Result native_frame_leave() {
+    List<int> bytes = new List<int>();
+    bytes.push(201); bytes.push(195);
+    return new NativeRel32Result{ok: true, bytes: bytes};
+}
+test "checked IMUL encodes extended registers and overflow branch" {
+    NativeRel32Result a = native_checked_mul(8, 9, 0, 10);
+    assert(a.ok && a.bytes.len() == 10);
+    assert(a.bytes[0] == 77 && a.bytes[1] == 15 && a.bytes[2] == 175);
+    assert(a.bytes[3] == 193 && a.bytes[4] == 15 && a.bytes[5] == 128);
+    assert(a.bytes[6] == 0 && a.bytes[9] == 0);
+    NativeRel32Result bad = native_checked_mul(0, 16, 0, 10);
+    assert(!bad.ok && bad.bytes.len() == 0);
+}
+test "native frame enforces size and alignment" {
+    NativeRel32Result a = native_frame_enter(32);
+    assert(a.ok && a.bytes.len() == 11 && a.bytes[7] == 32);
+    NativeRel32Result b = native_frame_enter(17);
+    NativeRel32Result c = native_frame_enter(1048592);
+    assert(!b.ok && b.bytes.len() == 0);
+    assert(!c.ok && c.bytes.len() == 0);
+    NativeRel32Result end = native_frame_leave();
+    assert(end.ok && end.bytes.len() == 2 && end.bytes[0] == 201 && end.bytes[1] == 195);
+}

@@ -1,0 +1,42 @@
+// Unsigned 8/16/32-bit fields and nonnegative 64-bit fields.
+struct NativeBinaryField {
+    bool ok;
+    List<int> bytes;
+}
+NativeBinaryField native_binary_field(int value, int width) {
+    List<int> bytes = new List<int>();
+    if (value < 0 || (width != 1 && width != 2 && width != 4 && width != 8)) {
+        return new NativeBinaryField{ok: false, bytes: bytes};
+    }
+    if ((width == 1 && value > 255) ||
+        (width == 2 && value > 65535) ||
+        (width == 4 && value > 4294967295)) {
+        return new NativeBinaryField{ok: false, bytes: bytes};
+    }
+    for (int i = 0; i < width; i += 1) {
+        bytes.push(value % 256);
+        value = value / 256;
+    }
+    return new NativeBinaryField{ok: true, bytes: bytes};
+}
+test "native binary fields encode ELF-sized little-endian values" {
+    NativeBinaryField word = native_binary_field(4660, 2);
+    assert(word.ok && word.bytes.len() == 2);
+    assert(word.bytes[0] == 52 && word.bytes[1] == 18);
+    NativeBinaryField wide = native_binary_field(9223372036854775807, 8);
+    assert(wide.ok && wide.bytes.len() == 8);
+    for (int i = 0; i < 7; i += 1) { assert(wide.bytes[i] == 255); }
+    assert(wide.bytes[7] == 127);
+}
+test "native binary fields reject truncation and invalid widths" {
+    NativeBinaryField a = native_binary_field(256, 1);
+    NativeBinaryField b = native_binary_field(65536, 2);
+    NativeBinaryField c = native_binary_field(4294967296, 4);
+    NativeBinaryField d = native_binary_field(-1, 8);
+    NativeBinaryField e = native_binary_field(0, 3);
+    assert(!a.ok && a.bytes.len() == 0);
+    assert(!b.ok && b.bytes.len() == 0);
+    assert(!c.ok && c.bytes.len() == 0);
+    assert(!d.ok && d.bytes.len() == 0);
+    assert(!e.ok && e.bytes.len() == 0);
+}
