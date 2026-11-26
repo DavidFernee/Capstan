@@ -1892,8 +1892,12 @@ struct FlowSummary {
     List<bool> param_to_sink;
 }
 
+const int MAX_FLOW_PATHS = 4096;
+
 struct Flow {
     Map<int> paths;                 // typed access-path key -> may-derived fact
+    int path_count;
+    bool exhausted;
     Map<FlowSummary> sums;
     bool changed;
     bool returns;
@@ -1986,15 +1990,29 @@ bool path_marked(Flow f, Node e) {
 bool aggregate_marked(Flow f, Node e) {
     string key = path_key(e);
     if (key == "") { return false; }
-    return path_marked(f, e)
+    if (path_marked(f, e)
         || f.paths.has(key + "[*]")
         || f.paths.has(key + "{key}")
-        || f.paths.has(key + "{value}");
+        || f.paths.has(key + "{value}")) { return true; }
+    // A nested child may be the only derived part of this aggregate.
+    List<string> keys = f.paths.keys();
+    for (int i = 0; i < keys.len(); i += 1) {
+        if (keys[i].len() > key.len() && keys[i].slice(0, key.len()) == key) {
+            int next = keys[i].at(key.len());
+            if (next == 46 || next == 91 || next == 123) { return true; }
+        }
+    }
+    return false;
 }
 
 void mark_key(Flow f, string key) {
     if (key != "" && !f.paths.has(key)) {
+        if (f.path_count >= MAX_FLOW_PATHS) {
+            f.exhausted = true;
+            return;
+        }
         f.paths.set(key, 1);
+        f.path_count += 1;
         f.changed = true;
     }
 }
@@ -2049,13 +2067,13 @@ void flow_walk(Flow f, Node n) {
     if (n.k == N_ASSIGN && (n.kids[0].k == N_INDEX || n.kids[0].k == N_GETF) && derived(f, n.kids[1])) {
         mark_path(f, n.kids[0]);
     }
-    if (n.k == N_METHOD && (n.s == "push" || n.s == "insert" || n.s == "set") && n.kids.len() > 1 && derived(f, n.kids[n.kids.len() - 1])) {
-        if (n.s == "set" && n.kids.len() > 2 && derived(f, n.kids[1])) {
-            mark_child(f, n.kids[0], "{key}");
+    if (n.k == N_METHOD && (n.s == "push" || n.s == "insert" || n.s == "set") && n.kids.len() > 1) {
+        if (n.s == "set" && n.kids.len() > 2) {
+            if (derived(f, n.kids[1])) { mark_child(f, n.kids[0], "{key}"); }
+            if (derived(f, n.kids[n.kids.len() - 1])) { mark_child(f, n.kids[0], "{value}"); }
+        } else if (derived(f, n.kids[n.kids.len() - 1]) || (n.s == "insert" && derived(f, n.kids[1]))) {
+            mark_child(f, n.kids[0], "[*]");
         }
-        string selector = "[*]";
-        if (n.s == "set") { selector = "{value}"; }
-        mark_child(f, n.kids[0], selector);
     }
     if (n.k == N_IF && n.n == 1 && derived(f, n.kids[0])) { mark_binding(f, n.binding_id); }
     if (n.k == N_RETURN && n.kids.len() == 1 && derived(f, n.kids[0])) { f.returns = true; }
@@ -2072,7 +2090,7 @@ void flow_walk(Flow f, Node n) {
 
 // Analyse one body until the set of derived locals stops growing.
 Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, int seed, bool report) {
-    Flow f = new Flow{paths: new Map<int>(), sums: sums, changed: true, returns: false, sinks: false, report: false, ctx: ctx};
+    Flow f = new Flow{paths: new Map<int>(), path_count: 0, exhausted: false, sums: sums, changed: true, returns: false, sinks: false, report: false, ctx: ctx};
     if (seed > 0) { mark_binding(f, seed); }
     int rounds = 0;
     while (f.changed && rounds < 100) {
@@ -2080,6 +2098,13 @@ Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, int seed, bool report)
         f.returns = false;
         f.sinks = false;
         flow_walk(f, body);
+        if (f.exhausted) {
+            if (error_count(ctx) == 0) {
+                error_at(ctx, body, "CWE-20",
+                    "provenance access-path budget exceeded (4096 facts); refusing to compile");
+            }
+            return f;
+        }
         rounds += 1;
     }
     // Never run sink diagnostics with a partial intraprocedural taint set.
