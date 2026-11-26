@@ -23,6 +23,12 @@ CCAMMemUnwindResult ccam_mem_unwind_frame(
             error: "invalid_frame_owner"
         };
     }
+    if (!ccam_mem_manager_valid(manager)) {
+        return new CCAMMemUnwindResult{
+            ok: false, manager: manager, closed_regions: 0,
+            error: "invalid_memory_manager"
+        };
+    }
 
     // Preflight all affected regions and accounting before mutating anything.
     int release_capacity = 0;
@@ -136,7 +142,7 @@ test "frame unwind rejects accounting underflow before wiping" {
     CCAMMemCreateResult a = ccam_mem_create(manager, 7, 16, -1);
     a.manager.live_capacity = 0;
     CCAMMemUnwindResult result = ccam_mem_unwind_frame(a.manager, 7);
-    assert(!result.ok && result.error == "region_accounting_corrupt");
+    assert(!result.ok && result.error == "invalid_memory_manager");
     assert(result.manager.regions[0].open);
     assert(result.manager.regions[0].bytes.len() == 16);
 }
