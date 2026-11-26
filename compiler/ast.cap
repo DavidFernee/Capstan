@@ -85,6 +85,7 @@ struct Node {
     string s2;          // if-let variable; protected policy name; field visibility
     string s3;          // additional declaration marker (e.g. opaque struct)
     int n;              // integer value, byte length of a string literal, flags
+    int binding_id;      // checker-assigned lexical identity; 0 means not a local binding
     int line;
     int col;
     int file;
@@ -195,7 +196,7 @@ Type mk_wrap(int k, Type inner) {
 }
 
 Node mk_node(int k, int file, int line) {
-    return new Node{k: k, s: "", s2: "", s3: "", n: 0, line: line, col: 0, file: file, kids: new List<Node>(), ty: none};
+    return new Node{k: k, s: "", s2: "", s3: "", n: 0, binding_id: 0, line: line, col: 0, file: file, kids: new List<Node>(), ty: none};
 }
 
 // Edit distance, for "did you mean" suggestions.

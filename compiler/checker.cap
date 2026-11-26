@@ -25,6 +25,7 @@ struct Checker {
     List<Map<Node>> decl_at;    // per scope: name -> declaring node
     Map<Node> enums;
     bool privileged;            // inside a protected function, policy or test
+    int next_binding_id;        // unique within this checked compilation
 }
 
 Type ty_of(Node n) {
@@ -98,6 +99,14 @@ void declare(Checker c, Node at, string name, Type t) {
         error_at(c.ctx, at, "CAP-SHADOW", "'" + name + "' would shadow the constant of the same name");
         return;
     }
+    // Assign a stable lexical identity to the declaration. Provenance analysis
+    // must never key facts by source spelling: sibling blocks may reuse names.
+    if (c.next_binding_id <= 0 || c.next_binding_id == 2147483647) {
+        error_at(c.ctx, at, "CWE-20", "binding identity space exhausted; refusing provenance analysis");
+        return;
+    }
+    at.binding_id = c.next_binding_id;
+    c.next_binding_id += 1;
     c.scopes[c.depth - 1].set(name, t);
     c.decl_at[c.depth - 1].set(name, at);
 }
@@ -360,7 +369,15 @@ Type check_expr(Checker c, Node e) {
     if (k == N_BOOL) { return typed(e, mk_type(TY_BOOL)); }
     if (k == N_NONE) { return typed(e, mk_type(TY_NONE)); }
     if (k == N_VAR) {
-        if (let lt = lookup_local(c, e.s)) { return typed(e, lt); }
+        if (let lt = lookup_local(c, e.s)) {
+            for (int bi = c.depth - 1; bi >= 0; bi -= 1) {
+                if (let declaration = c.decl_at[bi].get(e.s)) {
+                    e.binding_id = declaration.binding_id;
+                    break;
+                }
+            }
+            return typed(e, lt);
+        }
         if (let ct = c.const_types.get(e.s)) {
             e.n = 1;
             return typed(e, ct);
@@ -1634,7 +1651,7 @@ Checker new_checker(Ctx ctx) {
         policy_ids: new Map<int>(), consts: new Map<Node>(), const_types: new Map<Type>(),
         scopes: new List<Map<Type>>(), depth: 0, ret: mk_type(TY_VOID), loops: 0,
         in_test: false, in_policy: false, denials: new Map<int>(), asserts: 0,
-        used: new List<Map<int>>(), decl_at: new List<Map<Node>>(), enums: new Map<Node>(), privileged: false
+        used: new List<Map<int>>(), decl_at: new List<Map<Node>>(), enums: new Map<Node>(), privileged: false, next_binding_id: 1
     };
 }
 
@@ -1891,7 +1908,7 @@ bool is_arith(string op) {
 
 bool derived(Flow f, Node e) {
     if (e.k == N_METHOD && e.s == "at" && ty_of(e.kids[0]).k == TY_TAINT) { return true; }
-    if (e.k == N_VAR) { return f.vars.has(e.s) || ty_of(e).k == TY_TAINT; }
+    if (e.k == N_VAR) { return (e.binding_id > 0 && f.vars.has(int_to_str(e.binding_id))) || ty_of(e).k == TY_TAINT; }
     if (e.k == N_NEG || e.k == N_BNOT || e.k == N_NOT) { return derived(f, e.kids[0]); }
     // Comparisons and Boolean connectives produce values that depend on their operands.
     if (e.k == N_BIN && ty_of(e).k == TY_BOOL) {
@@ -1933,21 +1950,24 @@ bool derived(Flow f, Node e) {
 }
 
 bool base_marked(Flow f, Node e) {
-    if (e.k == N_VAR) { return f.vars.has(e.s); }
+    if (e.k == N_VAR) { return e.binding_id > 0 && f.vars.has(int_to_str(e.binding_id)); }
     if (e.k == N_GETF || e.k == N_INDEX) { return base_marked(f, e.kids[0]); }
     return false;
 }
 
-string base_name(Node e) {
-    if (e.k == N_VAR) { return e.s; }
-    if (e.k == N_GETF || e.k == N_INDEX) { return base_name(e.kids[0]); }
-    return "";
+int base_binding_id(Node e) {
+    if (e.k == N_VAR) { return e.binding_id; }
+    if (e.k == N_GETF || e.k == N_INDEX) { return base_binding_id(e.kids[0]); }
+    return 0;
 }
 
-void mark(Flow f, string name) {
-    if (!f.vars.has(name)) {
-        f.vars.set(name, 1);
-        f.changed = true;
+void mark(Flow f, int binding_id) {
+    if (binding_id > 0) {
+        string key = int_to_str(binding_id);
+        if (!f.vars.has(key)) {
+            f.vars.set(key, 1);
+            f.changed = true;
+        }
     }
 }
 
@@ -1970,8 +1990,8 @@ bool texty_type(Type t) {
 }
 
 void flow_walk(Flow f, Node n) {
-    if (n.k == N_DECL && (ty_of(n).k == TY_INT || ty_of(n).k == TY_STR || ty_of(n).k == TY_BOOL) && derived(f, n.kids[0])) { mark(f, n.s); }
-    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && (ty_of(n.kids[0]).k == TY_INT || ty_of(n.kids[0]).k == TY_STR || ty_of(n.kids[0]).k == TY_BOOL) && derived(f, n.kids[1])) { mark(f, n.kids[0].s); }
+    if (n.k == N_DECL && (ty_of(n).k == TY_INT || ty_of(n).k == TY_STR || ty_of(n).k == TY_BOOL) && derived(f, n.kids[0])) { mark(f, n.binding_id); }
+    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && (ty_of(n.kids[0]).k == TY_INT || ty_of(n.kids[0]).k == TY_STR || ty_of(n.kids[0]).k == TY_BOOL) && derived(f, n.kids[1])) { mark(f, n.kids[0].binding_id); }
     // Lookups of trusted text keyed by untrusted bytes.
     if (n.k == N_INDEX && texty_type(ty_of(n)) && derived(f, n.kids[1])) { lookup_sink(f, n); }
     if (n.k == N_METHOD && n.s == "get" && n.kids.len() > 1 && derived(f, n.kids[1])) {
@@ -1986,14 +2006,14 @@ void flow_walk(Flow f, Node n) {
         if (sliced_by_input) { lookup_sink(f, n); }
     }
     if (n.k == N_ASSIGN && (n.kids[0].k == N_INDEX || n.kids[0].k == N_GETF) && derived(f, n.kids[1])) {
-        string bn = base_name(n.kids[0]);
-        if (bn != "") { mark(f, bn); }
+        int bn = base_binding_id(n.kids[0]);
+        if (bn > 0) { mark(f, bn); }
     }
     if (n.k == N_METHOD && (n.s == "push" || n.s == "insert" || n.s == "set") && n.kids.len() > 1 && derived(f, n.kids[n.kids.len() - 1])) {
-        string bn2 = base_name(n.kids[0]);
-        if (bn2 != "") { mark(f, bn2); }
+        int bn2 = base_binding_id(n.kids[0]);
+        if (bn2 > 0) { mark(f, bn2); }
     }
-    if (n.k == N_IF && n.n == 1 && derived(f, n.kids[0])) { mark(f, n.s2); }
+    if (n.k == N_IF && n.n == 1 && derived(f, n.kids[0])) { mark(f, n.binding_id); }
     if (n.k == N_RETURN && n.kids.len() == 1 && derived(f, n.kids[0])) { f.returns = true; }
     if (n.k == N_CALL && n.s == "char_str" && n.kids.len() == 1 && derived(f, n.kids[0])) { sink(f, n); }
     if (n.k == N_CALL) {
@@ -2007,9 +2027,9 @@ void flow_walk(Flow f, Node n) {
 }
 
 // Analyse one body until the set of derived locals stops growing.
-Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, string seed, bool report) {
+Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, int seed, bool report) {
     Flow f = new Flow{vars: new Map<int>(), sums: sums, changed: true, returns: false, sinks: false, report: false, ctx: ctx};
-    if (seed != "") { f.vars.set(seed, 1); }
+    if (seed > 0) { f.vars.set(int_to_str(seed), 1); }
     int rounds = 0;
     while (f.changed && rounds < 100) {
         f.changed = false;
@@ -2036,12 +2056,12 @@ Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, string seed, bool repo
 
 FlowSummary summarise(Map<FlowSummary> sums, Ctx ctx, Node fn) {
     Node body = fn.kids[fn.n];
-    Flow base = flow_body(sums, ctx, body, "", false);
+    Flow base = flow_body(sums, ctx, body, 0, false);
     FlowSummary out = new FlowSummary{returns_derived: base.returns, param_to_return: new List<bool>(), param_to_sink: new List<bool>()};
     for (int i = 0; i < fn.n; i += 1) {
         Type pt = ty_of(fn.kids[i]);
         if (pt.k == TY_INT || pt.k == TY_BOOL || pt.k == TY_STR || pt.k == TY_TAINT) {
-            Flow pf = flow_body(sums, ctx, body, fn.kids[i].s, false);
+            Flow pf = flow_body(sums, ctx, body, fn.kids[i].binding_id, false);
             out.param_to_return.push(pf.returns);
             out.param_to_sink.push(pf.sinks);
         } else {
