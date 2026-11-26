@@ -211,6 +211,8 @@ import CapstanVerification.ExplicitTrap
 
 -- Heterogeneous multi-frame call entry and atomic caller return commits.
 #print axioms CapstanVerification.makeTypedMultiFrame_registers_well_typed
+#print axioms CapstanVerification.makeTypedMultiFrame_identity_and_entry
+#print axioms CapstanVerification.writeTypedReturn
 #print axioms CapstanVerification.commitTypedReturnToCaller_preserves_well_typed
 #print axioms CapstanVerification.commitTypedVoidReturnToCaller_preserves_well_typed
 #print axioms CapstanVerification.pushTypedMultiFrame_active
