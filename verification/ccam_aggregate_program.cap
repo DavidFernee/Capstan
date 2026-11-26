@@ -612,7 +612,7 @@ test "aggregate program rejects malformed programs before any heap step" {
         program, new List<CCAMHeapValue>(), 4096, 16, 4096, 4096, 16
     );
     assert(!rejected.ok && rejected.error == "validation:unsupported_aggregate_profile_version");
-    assert(rejected.machine.steps == 0 && rejected.machine.heap.objects.len() == 0);
+    assert(rejected.machine.steps == 0 && ccam_heap_object_count(rejected.machine.heap) == 0);
 }
 
 test "aggregate program tracks allocated object kinds and array element descriptors" {
