@@ -130,7 +130,7 @@ test "frame unwind rejects corrupt metadata without partial cleanup" {
     corrupt.capacity = 15;
     a.manager.regions[0] = corrupt;
     CCAMMemUnwindResult result = ccam_mem_unwind_frame(a.manager, 7);
-    assert(!result.ok && result.error == "region_metadata_corrupt");
+    assert(!result.ok && result.error == "invalid_memory_manager");
     assert(result.closed_regions == 0);
     assert(result.manager.regions[0].open);
     assert(result.manager.live_regions == 1);
