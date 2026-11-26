@@ -51,12 +51,16 @@ PY="python3 -I"
 SRC=$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen,main}.cap)
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 FAILURE_LOG="$tmp/failures.log"
+CI_FAILURE_LOG="$ROOT/tests/ci-failures/ci.log"
+mkdir -p "$ROOT/tests/ci-failures"
 : > "$FAILURE_LOG"
+: > "$CI_FAILURE_LOG"
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  pass  %s\n' "$1"; }
 bad() {
   fail=$((fail+1))
   printf '  FAIL  %s: %s\n' "$1" "$2" | tee -a "$FAILURE_LOG"
+  printf '  FAIL  %s: %s\n' "$1" "$2" >> "$CI_FAILURE_LOG"
   if [[ "$1" == shroud* ]]; then
     mkdir -p "$ROOT/tests/shroud/failures"
     printf '  FAIL  %s: %s\n' "$1" "$2" >> "$ROOT/tests/shroud/failures/ci.log"
