@@ -904,12 +904,12 @@ string name_dir(string name) {
 // The text of an imported file: an open document with that URI, or the file on
 // disk if the URI is inside the workspace root. Disk paths are relative to the
 // server's working directory, which editors set to the workspace root.
-Tainted? import_text(Server srv, Tainted uri) {
+Tainted? import_text(Server srv, Tainted uri, int max_bytes) {
     int di = doc_index(srv, uri);
     if (di >= 0) { return srv.docs[di].text; }
     if (srv.root.len() == 0 || uri.len() <= srv.root.len() || uri.slice(0, srv.root.len()) != srv.root) { return none; }
     if (let rel = uri_decode(uri.slice(srv.root.len(), uri.len()))) {
-        if (let path = validate_path(rel)) { return read_file(path, MAX_SOURCE_BYTES); }
+        if (let path = validate_path(rel)) { return read_file(path, max_bytes); }
     }
     return none;
 }
@@ -994,10 +994,12 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             at_line.push(at_line[ofile]);
             at_col.push(at_col[ofile]);
         }
+        int remaining = MAX_TOTAL_SOURCE_BYTES - budget.source_bytes;
+        int source_limit = MAX_SOURCE_BYTES;
+        if (remaining < source_limit) { source_limit = remaining; }
         Tainted? found = none;
-        if (index == 0) { found = doc.text; } else { found = import_text(srv, uri); }
+        if (index == 0) { found = doc.text; } else { found = import_text(srv, uri, source_limit); }
         if (let src = found) {
-            int remaining = MAX_TOTAL_SOURCE_BYTES - budget.source_bytes;
             if (src.len() > MAX_SOURCE_BYTES || src.len() > remaining) {
                 ctx.sources.push(taint(""));
                 budget.exhausted = true;
@@ -1031,7 +1033,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             }
         } else {
             ctx.sources.push(taint(""));
-            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "' (missing, unreadable, a directory, or over 16 MiB)");
+            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "' (missing, unreadable, a directory, over 16 MiB, or aggregate source budget exceeded)");
         }
     }
     if (error_count(ctx) == 0) {
