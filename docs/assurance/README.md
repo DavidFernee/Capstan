@@ -5,7 +5,7 @@ Documents for organisations assessing Capstan, in particular government and defe
 
 | Document | What it covers |
 |---|---|
-| [ASSURANCE-CASE.md](ASSURANCE-CASE.md) | Assurance-case structure, evidence classes, claim lifecycle and enforceable promotion requirements |
+| [EXECUTION-ASSURANCE-ARCHITECTURE.md](EXECUTION-ASSURANCE-ARCHITECTURE.md) | Current production and C-free execution paths, formal-model evidence rail, implementation-refinement gaps and machine-readable boundary register |\n| [ASSURANCE-CASE.md](ASSURANCE-CASE.md) | Assurance-case structure, evidence classes, claim lifecycle and enforceable promotion requirements |
 | [MEMORY-SAFETY.md](MEMORY-SAFETY.md) | Capstan's guarantees mapped to the memory-safe language guidance of the Five Eyes cyber agencies, including ASD's ACSC, and what is not yet memory-safe |
 | [THREAT-MODEL.md](THREAT-MODEL.md) | What Capstan defends against, its assumptions, its trusted base today, what is out of scope and the residual risks |
 | [GRANT-SECURITY.md](GRANT-SECURITY.md) | Reference semantics and claim-specific assurance for policy grants, including limits and differential verification plan |
