@@ -1,0 +1,27 @@
+import "ccam_aggregate_expression_variables.cap";
+test "expression compiler resolves bounded variable bindings" {
+    List<int> source=new List<int>();
+    source.push(120); source.push(42); source.push(50); source.push(43); source.push(49);
+    List<AGVariableBinding> bindings=new List<AGVariableBinding>();
+    List<int> name=new List<int>(); name.push(120);
+    assert(ag_variable_bind(bindings,name,10));
+    AGCheckedInt result=ag_compile_expression_with_bindings(source,bindings);
+    assert(result.ok && result.value==21);
+}
+test "expression compiler rejects unknown variable" {
+    List<int> source=new List<int>(); source.push(121);
+    List<AGVariableBinding> bindings=new List<AGVariableBinding>();
+    assert(!ag_compile_expression_with_bindings(source,bindings).ok);
+}
+test "expression compiler rejects duplicate bindings" {
+    List<AGVariableBinding> bindings=new List<AGVariableBinding>();
+    List<int> name=new List<int>(); name.push(97);
+    assert(ag_variable_bind(bindings,name,1));
+    assert(!ag_variable_bind(bindings,name,2));
+}
+test "expression compiler rejects oversized binding table" {
+    List<AGVariableBinding> bindings=new List<AGVariableBinding>();
+    List<int> name=new List<int>();
+    for(int i=0;i<129;i+=1) { name.push(97); }
+    assert(!ag_variable_bind(bindings,name,1));
+}
