@@ -168,9 +168,10 @@ theorem allocation_success_facts
                 constructor
                 · omega
                 · have hOldTemporary : s.temporaryPeakBytes ≤ s.maxTemporaryBytes := by
-                    have hValid := hInvalid
-                    simp [invalidHeapState] at hValid
-                    omega
+                    apply Nat.le_of_not_gt
+                    intro hgt
+                    apply hInvalid
+                    simp [invalidHeapState, hgt]
   · simp [hAuth] at h
 
 /-- Successful allocation returns the previous next-object identity. -/
@@ -193,18 +194,16 @@ theorem allocate_success_preserves_heapInvariant
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
-  have hPeak : max s.temporaryPeakBytes temporaryCharge ≤ s.maxTemporaryBytes :=
-    Nat.max_le.mpr ⟨hOldTemporary, hTemporary⟩
   unfold heapInvariant
   constructor
-  · omega
+  · exact hBytes
   constructor
-  · omega
+  · exact Nat.succ_le_of_lt hObjects
   constructor
-  · omega
+  · exact hWork
   constructor
-  · exact hPeak
-  · omega
+  · exact Nat.max_le.mpr ⟨hOldTemporary, hTemporary⟩
+  · simp [hOldCounter, Nat.add_assoc]
 
 /-- A successful allocation is charged exactly the admitted amount. -/
 theorem allocation_charges_exactly
@@ -222,25 +221,23 @@ theorem allocation_charges_exactly
 theorem allocation_preserves_byte_bound
     (cap : RegionCapability) (s : HeapState) (charge workCharge temporaryCharge : Nat)
     (after : HeapState) (object : ObjectId)
-    (hInv : s.usedBytes ≤ s.maxBytes)
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.usedBytes ≤ after.maxBytes := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
-  omega
+  exact hBytes
 
 /-- Successful allocation preserves the object-count budget. -/
 theorem allocation_preserves_object_bound
     (cap : RegionCapability) (s : HeapState) (charge workCharge temporaryCharge : Nat)
     (after : HeapState) (object : ObjectId)
-    (hInv : s.objectCount ≤ s.maxObjects)
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.objectCount ≤ after.maxObjects := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
-  omega
+  exact Nat.succ_le_of_lt hObjects
 
 /-- Successful allocation charges exactly the admitted work units. -/
 theorem allocation_charges_exact_work
@@ -268,13 +265,12 @@ theorem allocation_bounds_temporary_peak
 theorem allocation_preserves_work_bound
     (cap : RegionCapability) (s : HeapState) (charge workCharge temporaryCharge : Nat)
     (after : HeapState) (object : ObjectId)
-    (hInv : s.workUsed ≤ s.maxWork)
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.workUsed ≤ after.maxWork := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
-  omega
+  exact hWork
 
 /-- Region authority is checked independently of object identity. -/
 theorem authority_mismatch_rejected
