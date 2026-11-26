@@ -757,7 +757,12 @@ test "CCAM region heap enforces nominal record-reference array element types" {
         "value_type_mismatch");
     CCAMHeapValueResult loaded = ccam_heap_array_get(
         heap, array.reference, CCAM_HEAP_VALUE_REF, 0);
-    assert(loaded.ok && loaded.value.reference.object_id == correct.reference.object_id);
+    assert(loaded.ok);
+    if (let loaded_reference = loaded.value.reference) {
+        assert(loaded_reference.object_id == correct.reference.object_id);
+    } else {
+        assert(false);
+    }
     assert(ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_INT, 42, 1).trap ==
         "invalid_array_layout");
 }
@@ -814,7 +819,12 @@ test "CCAM region heap rejects references to unallocated objects" {
     assert(ccam_heap_field_set(heap, allocated.reference, 21, 0,
         ccam_heap_ref_value(target.reference)) == "");
     CCAMHeapValueResult loaded = ccam_heap_field_get(heap, allocated.reference, 21, 0);
-    assert(loaded.ok && loaded.value.kind == CCAM_HEAP_VALUE_REF && loaded.value.reference.object_id == target.reference.object_id);
+    assert(loaded.ok && loaded.value.kind == CCAM_HEAP_VALUE_REF);
+    if (let loaded_reference = loaded.value.reference) {
+        assert(loaded_reference.object_id == target.reference.object_id);
+    } else {
+        assert(false);
+    }
 
     CCAMHeapCreateResult foreign_created = ccam_heap_create( 128, 4);
     CCAMHeap foreign_heap = foreign_created.heap;
