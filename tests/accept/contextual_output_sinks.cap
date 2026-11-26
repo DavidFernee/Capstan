@@ -1,0 +1,10 @@
+int main() {
+    Html html = "<p>" + escape_html(taint("safe & sound")) + "</p>";
+    LogText log = "login: " + escape_log(taint("alice\nINFO forged"));
+    CsvText csv = escape_csv(taint("=SUM(A1)")) + "," + escape_csv(taint("ordinary"));
+    bool h = write_html_file("contextual-output.html", html);
+    bool l = write_log_file("contextual-output.log", log);
+    bool c = write_csv_file("contextual-output.csv", csv);
+    println("typed sinks exercised");
+    return 0;
+}
