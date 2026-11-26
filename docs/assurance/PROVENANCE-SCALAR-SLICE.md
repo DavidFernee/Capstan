@@ -29,7 +29,7 @@ This change does not establish:
 - Correct contracts for every builtin, encoder, validator or output sink.
 - Compiler, runtime, generated-code or host safety as a whole.
 
-The existing name-rooted aggregate marking remains coarse: reassignment can over-retain facts, aliases are not resolved, and weak/strong update semantics are not formalised. The Boolean and metadata rules are a targeted improvement, not closure of the TYPE finding set.
+The first follow-on implementation now uses checker-assigned binding identities and typed field/index/map access-path keys, with dynamic indices widened and a 4096-fact fail-closed budget. The analysis remains monotone and may-based: reassignment can over-retain facts, aliases/escapes are not resolved, and weak/strong update semantics are not formalised. The Boolean and metadata rules are a targeted improvement, not closure of the TYPE finding set.
 
 ## Validation required
 

@@ -1,6 +1,6 @@
 # F1 source-derived abstract-state design
 
-**Status:** Research design; non-normative and not implemented  
+**Status:** Research design with a first compiler implementation slice; non-normative  
 **Target:** Replace the scalar-slice variable-name may-analysis in `compiler/checker.cap`  
 **Related:** [F1 executable model](F1-EXECUTABLE-MODEL.md), [provenance semantics](../assurance/PROVENANCE-SEMANTICS.md), [scalar slice](../assurance/PROVENANCE-SCALAR-SLICE.md)
 
@@ -218,3 +218,19 @@ The experiment must compare the factored-judgement and product-domain formulatio
 ## 9. Non-claims
 
 This document is not a compiler implementation, formal proof, language guarantee, or claim that all known vulnerabilities are inexpressible. It does not settle Capstan ownership semantics, control dependence, complete sink policy, or backend refinement. The current scalar-slice checker remains the only implementation experiment until the staged gates above are completed.
+
+
+## 11. Implementation progress (2026-11-26)
+
+The first compiler slice now assigns a stable `binding_id` to each lexical declaration and propagates that identity to variable-reference AST nodes during name resolution. Provenance facts no longer use source spelling as the identity key, preventing unrelated locals in disjoint scopes from contaminating one another.
+
+The flow domain now stores bounded typed access-path facts rooted at those binding identities:
+
+- struct fields use distinct `.field` selectors;
+- constant list indices use distinct `[index]` selectors;
+- dynamic list indices widen to `[*]`;
+- map key and value summaries use distinct `{key}` and `{value}` selectors;
+- nested descendants contribute conservatively to aggregate observations;
+- the domain is capped at 4096 facts and refuses compilation if the cap is exceeded.
+
+This is still a monotone, syntax-directed may-analysis. It does not yet have a control-flow graph or explicit branch/loop state joins; it does not track reference aliases or escaped heap locations; and it does not perform strong updates. Aggregate and dynamic selectors are intentionally conservative. The next gates are explicit branch/loop joins, an alias/escape model with bounded abstract locations, strong-update proof conditions, and adversarial positive/negative tests for each transfer rule. These additions must be checked against the normative provenance semantics before any stronger guarantee is claimed.

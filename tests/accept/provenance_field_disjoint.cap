@@ -1,0 +1,13 @@
+struct Pair {
+    int tainted;
+    int clean;
+}
+
+int main() {
+    Pair pair = new Pair{tainted: 65, clean: 65};
+    if (let input = read_line()) {
+        pair.tainted = input.at(0);
+    }
+    println(char_str(pair.clean));
+    return 0;
+}
