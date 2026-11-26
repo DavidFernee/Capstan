@@ -449,6 +449,9 @@ The first allocations should be small enough for one focused session and should 
 | Priority | Work package | Deliverable | Dependency |
 |---|---|---|---|
 | P0 | Guarantee/trusted-base inventory | Branch-pinned matrix of claims, code, tests, proofs, trust boundaries and known gaps | Current default branch |
+| P0 | Executable CWE prevention specification | Per-weakness property, enforcement point, attack/bypass fixture, residual scope and evidence level; link to `docs/assurance/VULNERABILITY-PREVENTION-PROGRAMME.md` | Guarantee/trusted-base inventory |
+| P0 | CWE atlas independent review | Review taxonomy mapping, weakest-outcome aggregation, attack realism and false-positive/false-negative risks | CWE prevention specification |
+| P1 | Close source-level output-context gaps | Migrate JSON consumers to a typed JSON fragment/document model; close the remaining HTML cross-statement context gap | CWE atlas independent review |
 | P0 | CCAM conformance closure plan | Exact gap list for JSON decoding, whole-program validation, duplicate keys, aggregate budgets, multi-function calls and vectors | CCAM v0.1 and current main |
 | P0 | Evidence architecture reconciliation | Obligation-by-obligation crosswalk of PR #214 against CCAM, evaluator, validator and source-lowering contracts; resolve issue #219 | CCAM conformance closure plan |
 | P0 | Concurrency proposal reconciliation | Compare PRs #239/#254/#248 and issues #229/#249; identify one normative model, prototype boundary and proof/test gaps | CCAM/resource contract inventory |
