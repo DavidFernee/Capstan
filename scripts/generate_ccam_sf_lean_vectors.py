@@ -8,6 +8,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CORPUS = ROOT / "verification" / "ccam_sf_vectors.json"
 OUTPUT = ROOT / "verification" / "lean" / "CapstanVerification" / "SFVectors.lean"
+MAX_VECTORS = 64
+MAX_REGISTERS = 256
+MAX_INSTRUCTIONS = 256
+MAX_STEPS = 4096
 
 
 def unique_object(pairs):
@@ -125,8 +129,8 @@ def render_expected_run(vector, program_name):
 
 def generate(data):
     vectors = data.get("vectors")
-    if not isinstance(vectors, list) or not vectors:
-        raise ValueError("corpus vectors must be a non-empty array")
+    if not isinstance(vectors, list) or not vectors or len(vectors) > MAX_VECTORS:
+        raise ValueError(f"corpus vectors must contain 1..{MAX_VECTORS} entries")
     lines = [
         "-- Generated from verification/ccam_sf_vectors.json.",
         "-- Regenerate with scripts/generate_ccam_sf_lean_vectors.py.",
@@ -196,14 +200,21 @@ def generate(data):
         program_name = f"sfPProgram_{suffix}"
         register_types = vector["register_types"]
         instructions = vector["instructions"]
-        if not isinstance(register_types, list) or not isinstance(instructions, list) or not instructions:
-            raise ValueError(f"{vector_id}: invalid register/instruction arrays")
+        if (not isinstance(register_types, list) or len(register_types) > MAX_REGISTERS
+                or not isinstance(instructions, list) or not instructions
+                or len(instructions) > MAX_INSTRUCTIONS):
+            raise ValueError(f"{vector_id}: register/instruction arrays exceed Lean adapter bounds")
         if any(ty not in ("int", "bool") for ty in register_types):
             raise ValueError(f"{vector_id}: unsupported register type")
         return_type = vector["return_type"]
         if return_type not in ("int", "bool", "void"):
             raise ValueError(f"{vector_id}: unsupported return type")
         entry = require_int(vector["profile_entry"], f"{vector_id}.profile_entry")
+        if entry < 0:
+            raise ValueError(f"{vector_id}: profile entry must be non-negative")
+        max_steps = require_int(vector["max_steps"], f"{vector_id}.max_steps")
+        if max_steps < 0 or max_steps > MAX_STEPS:
+            raise ValueError(f"{vector_id}: max_steps exceeds Lean adapter bound {MAX_STEPS}")
         expected = vector["expected"]["profile_validation"]
         if expected not in ("accept", "reject"):
             raise ValueError(f"{vector_id}: invalid profile expectation")
