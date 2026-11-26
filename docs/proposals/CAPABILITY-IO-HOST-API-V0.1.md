@@ -302,6 +302,7 @@ A MockHost instance contains:
 - a finite table of opaque endpoint, connection, shared-memory and mapping identities;
 - a scripted peer byte stream and receive-queue;
 - a scripted ancillary-descriptor queue with descriptor kinds and ownership;
+- a MockWaylandPeer that can emit valid, fragmented, coalesced and malformed protocol messages with descriptors associated to selected byte offsets;
 - per-operation resource ceilings and live/cumulative counters;
 - a deterministic readiness schedule;
 - an operation trace with sequence number, operation, capability identity, input length, result/progress and resource delta.
@@ -339,6 +340,12 @@ Each injection is deterministic by operation sequence number, not random wall-cl
 | MOCK-12 | Failure cleanup | Every injected failure restores live counters or records an explicit poisoned resource |
 | MOCK-13 | Ambient authority | No operation reads cwd, environment or arbitrary paths without a DirectoryRoot |
 | MOCK-14 | Trace determinism | Identical script/inputs produce byte-identical operation traces and outcomes |
+| MOCK-15 | Wayland header framing | Reject message sizes below 8 bytes, non-four-byte-aligned sizes, oversized frames and invalid object IDs/opcodes before allocation/dispatch |
+| MOCK-16 | Fragmented/coalesced protocol stream | Correctly reassemble split headers/payloads and process multiple frames without losing byte or descriptor offsets |
+| MOCK-17 | Descriptor-to-frame association | A descriptor delivered at a frame boundary is attached to that frame only; malformed/ambiguous association fails closed and closes the descriptor |
+| MOCK-18 | Protocol object lifecycle | Reject unknown object IDs, illegal object transitions, duplicate IDs and unsupported interface versions |
+| MOCK-19 | Protocol argument bounds | Reject oversized arrays/strings, invalid enums, malformed strings and aggregate queue/message limits before allocation |
+| MOCK-20 | Malformed-frame cleanup | A malformed frame closes every unclaimed descriptor, releases temporary buffers and leaves no partially published object state |
 
 ### 8.4 What the mock does not prove
 
