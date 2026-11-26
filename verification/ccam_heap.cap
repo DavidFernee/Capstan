@@ -165,6 +165,9 @@ CCAMHeapCreateResult ccam_heap_create_bounded(
 
 CCAMHeapCreateResult ccam_heap_create(int max_bytes, int max_objects) { return ccam_heap_create_bounded(max_bytes, max_objects, 134217728, CCAM_HEAP_MAX_BYTES); }
 
+// Read-only allocation count; never exposes opaque heap storage.
+int ccam_heap_object_count(CCAMHeap heap) { return heap.objects.len(); }
+
 bool ccam_heap_valid_value_type(int value_type) {
     return value_type == CCAM_HEAP_VALUE_INT ||
         value_type == CCAM_HEAP_VALUE_BOOL ||

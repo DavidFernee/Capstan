@@ -1,7 +1,7 @@
 # CCAM Aggregate Register/Heap Execution Bridge
 
 **Status:** experimental Capstan reference transition model; not normative CCAM v0.1  
-**Implementation:** `verification/ccam_aggregate_machine.cap`  
+**Implementation:** `verification/ccam_aggregate_machine.cap` and `verification/ccam_aggregate_program.cap`  
 **Depends on:** `verification/ccam_heap.cap`  
 **Programme:** C-free compiler integration #458 and compiler-front-end workload #481
 
@@ -38,7 +38,7 @@ This is a Capstan-written executable reference bridge, not yet the canonical CCA
 5. establish Lean preservation/refinement from aggregate instructions to heap transitions;
 6. demonstrate that the production lexer/parser execute through aggregate CCAM.
 
-The bridge tests are regression tests for this transition model only. They are not evidence of native-backend conformance, source-to-native type preservation, or C-free self-hosting.
+The companion `ccam_aggregate_program.cap` defines a separately versioned, closed straight-line aggregate instruction record, nominal layout table checks, operand typing, resource ceilings and sequential definite-initialisation validation. It now dispatches validated straight-line programs through the reference bridge, including record allocate/store/load, arrays and immutable byte operations. It is still not a complete executable aggregate machine: it has no branch/call graph, tracks object-kind, record descriptor and array element type for straight-line allocation results, but does not propagate these facts through reference aliases or dynamic control flow, and has no native backend or Lean refinement. The bridge and validator tests are regression evidence for their stated models only. They are not evidence of native-backend conformance, source-to-native type preservation, or C-free self-hosting.
 
 ## Next integration gates
 

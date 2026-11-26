@@ -1,0 +1,35 @@
+// Register-direct x86-64 MOV r64,r64 encoding; no memory operands.
+struct NativeRegisterEncoding {
+    bool ok;
+    List<int> bytes;
+}
+NativeRegisterEncoding native_mov64_encode(int destination, int source) {
+    List<int> bytes = new List<int>();
+    if (destination < 0 || destination > 15 || source < 0 || source > 15) {
+        return new NativeRegisterEncoding{ok: false, bytes: bytes};
+    }
+    // REX.W, REX.R for source, REX.B for destination.
+    bytes.push(72 + (source / 8) * 4 + destination / 8);
+    bytes.push(137);
+    bytes.push(192 + (source % 8) * 8 + destination % 8);
+    return new NativeRegisterEncoding{ok: true, bytes: bytes};
+}
+test "native mov64 encodes all register pairs" {
+    for (int d = 0; d < 16; d += 1) {
+        for (int s = 0; s < 16; s += 1) {
+            NativeRegisterEncoding encoded = native_mov64_encode(d, s);
+            assert(encoded.ok && encoded.bytes.len() == 3);
+            assert(encoded.bytes[1] == 137);
+            int rex = encoded.bytes[0] - 72;
+            int modrm = encoded.bytes[2] - 192;
+            assert((rex % 2) * 8 + modrm % 8 == d);
+            assert((rex / 4) * 8 + modrm / 8 == s);
+        }
+    }
+}
+test "native mov64 rejects invalid register identifiers" {
+    NativeRegisterEncoding bad = native_mov64_encode(16, 0);
+    assert(!bad.ok && bad.bytes.len() == 0);
+    NativeRegisterEncoding negative = native_mov64_encode(0, -1);
+    assert(!negative.ok && negative.bytes.len() == 0);
+}

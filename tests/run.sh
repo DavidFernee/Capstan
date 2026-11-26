@@ -80,6 +80,20 @@ else
   bad "aggregate CCAM register/heap execution bridge" "$out"
 fi
 
+section "Capstan-native verification: closed aggregate CCAM program profile"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_program.cap" 2>&1)"; then
+  ok "versioned aggregate opcode schema, nominal layout validation, operand typing and definite initialisation"
+else
+  bad "aggregate CCAM program validator" "$out"
+fi
+
+section "Capstan-native verification: aggregate CCAM register/heap execution bridge"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_machine.cap" 2>&1)"; then
+  ok "typed aggregate registers, opaque arena references, records, arrays, field operations and step limits"
+else
+  bad "aggregate CCAM register/heap execution bridge" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
@@ -253,6 +267,13 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
   ok "checked scalar source lowers to validated CCAM and executes in the Capstan evaluator"
 else
   bad "CCAM source-to-IR lowering" "$out"
+fi
+
+section "Capstan-native verification: direct machine-code encoding"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/native_rel32.cap" "$ROOT/verification/native_register_encoding.cap" "$ROOT/verification/native_relocation.cap" "$ROOT/verification/native_binary_fields.cap" "$ROOT/verification/native_elf64.cap" "$ROOT/verification/native_exit_image.cap" "$ROOT/verification/native_link_model.cap" "$ROOT/verification/native_alu_encoding.cap" "$ROOT/verification/native_checked_alu.cap" "$ROOT/verification/native_mul_frame.cap" 2>&1)"; then
+  ok "direct native machine-code and ELF encoding regression tests"
+else
+  bad "direct native machine-code and ELF encoding regression tests" "$out"
 fi
 
 section "Capstan-native verification: freestanding Linux x86-64 native backend"
