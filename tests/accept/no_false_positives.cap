@@ -64,7 +64,7 @@ int main() {
     LogText note = escape_log("a");
     note += escape_log("b");
     println(note);
-    if (!write_file("/dev/null", page)) { return fail("cannot write"); }
+    if (!write_html_file("/dev/null", page)) { return fail("cannot write"); }
     Color favourite = Color.Blue;
     if (favourite == Color.Blue) { println("blue"); }
     println(int_to_str(local_named_like_enum()));

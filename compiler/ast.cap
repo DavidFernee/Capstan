@@ -44,6 +44,7 @@ const int TY_ERR = 13;
 const int TY_ENUM = 14;
 const int TY_HTML = 15;      // text escaped for HTML; usable only where HTML is expected
 const int TY_LOG = 16;       // text escaped for logs and terminals
+const int TY_CSV = 17;       // text encoded as CSV fields/rows
 
 struct Type {
     int k;
@@ -296,6 +297,7 @@ string type_str(Type t) {
     if (t.k == TY_SECRET) { return "Secret"; }
     if (t.k == TY_HTML) { return "Html"; }
     if (t.k == TY_LOG) { return "LogText"; }
+    if (t.k == TY_CSV) { return "CsvText"; }
     if (t.k == TY_STRUCT || t.k == TY_ENUM) { return t.name; }
     if (t.k == TY_LIST) { return "List<" + type_str(t.args[0]) + ">"; }
     if (t.k == TY_MAP) { return "Map<" + type_str(t.args[0]) + ">"; }
@@ -320,9 +322,12 @@ bool is_stringish(Type t) {
     return t.k == TY_STR || t.k == TY_TAINT;
 }
 
+// Encoded text is valid only at a sink for its exact output grammar.
+bool is_contextual_text(Type t) { return t.k == TY_HTML || t.k == TY_LOG || t.k == TY_CSV; }
+
 // Any text value, whatever its trust level or escaping context.
 bool is_texty(Type t) {
-    return t.k == TY_STR || t.k == TY_TAINT || t.k == TY_HTML || t.k == TY_LOG;
+    return t.k == TY_STR || t.k == TY_TAINT || is_contextual_text(t);
 }
 
 string lower(string s) {

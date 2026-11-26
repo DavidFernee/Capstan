@@ -1,0 +1,6 @@
+// expect: CWE-116
+int main() {
+    CsvText csv = escape_csv(taint("cell"));
+    println(csv);
+    return 0;
+}

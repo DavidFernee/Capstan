@@ -9,7 +9,7 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**255 weaknesses, 293 attempts.** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 301 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
@@ -29,7 +29,7 @@ closes a gap the test fails and the entry is reclassified.
 
 | CWE | Weakness | What was written | Why it compiles, and the plan |
 |---|---|---|---|
-| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: HTML-escaped text written into a CSV file | `int main() { Html cell = escape_html(taint("=cmd\|' /C calc'!A0")) + ",1"; bool ok = wr...` | write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | `int main() { string cell = escape_json(taint("=cmd\|' /C calc'!A0")); bool ok = write_f...` | escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250. |
 | [798](https://cwe.mitre.org/data/definitions/798.html) | Hard-coded password-like literal under an innocuous name | `int main() { string cfg = "Winter2026!"; sql_query("UPDATE settings SET v = ?", cfg); r...` | A short password-like literal under an ordinary name is indistinguishable from other text. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | `int main() { if (let x = read_line(65536)) { string stored = hash(x); } return 0; }` | Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap). |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a method call) | `int main() { if (let password = read_line(65536)) { string stored = hash(password.slice...` | The password-name heuristic stops at N_METHOD nodes, so wrapping a password in a string method may evade the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted. |
@@ -117,8 +117,16 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [99](https://cwe.mitre.org/data/definitions/99.html) | Resource injection | Prevented: rejected at compile time | `CWE-20`. |
 | [113](https://cwe.mitre.org/data/definitions/113.html) | HTTP response splitting | Not applicable (yet) | No HTTP facility yet; header output would follow the CWE-93 rule. |
 | [114](https://cwe.mitre.org/data/definitions/114.html) | Process control | Inexpressible: the construct does not exist |  |
-| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: HTML-escaped text written into a CSV file | **Gap: can be written** | write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | **Gap: can be written** | escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding or escaping of output | Prevented: rejected at compile time | `CWE-116`. Escaped text is typed by its context (Html, LogText) and cannot pass as a plain string. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | HTML context passed to CSV sink | Prevented: rejected at compile time | `CWE-116`. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | CSV context passed to HTML sink | Prevented: rejected at compile time | `CWE-116`. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | CSV context passed to terminal output | Prevented: rejected at compile time | `CWE-116`. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | Plain string passed to CSV sink | Prevented: rejected at compile time | `CWE-116`. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | HTML context passed to format-agnostic file sink | Prevented: rejected at compile time | `CWE-116`. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | Mixed CSV and HTML contexts concatenated | Prevented: rejected at compile time | `CWE-116`. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | CSV context erased by assignment to string | Prevented: rejected at compile time | `CWE-116`. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | Tainted value concatenated into CSV context | Prevented: rejected at compile time | `CWE-116`. |
 | [117](https://cwe.mitre.org/data/definitions/117.html) | Log injection (attempt after escape_log) | Prevented: attempt compiles but has no effect |  |
 | [117](https://cwe.mitre.org/data/definitions/117.html) | Improper output neutralization for logs | Prevented: rejected at compile time | `CWE-117`. |
 | [119](https://cwe.mitre.org/data/definitions/119.html) | Improper restriction of operations within memory buffer bounds | Prevented: stopped safely at run time | `CWE-787`. |
@@ -165,7 +173,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [250](https://cwe.mitre.org/data/definitions/250.html) | Execution with unnecessary privileges | Not applicable (yet) | Deployment concern; capability-based I/O (v0.6) limits what code can touch. |
 | [252](https://cwe.mitre.org/data/definitions/252.html) | Unchecked return value | Prevented: rejected at compile time | `CWE-252`. Warning; an error with --strict (tested that way). |
 | [253](https://cwe.mitre.org/data/definitions/253.html) | Incorrect check of function return value | Prevented: rejected at compile time | `type mismatch`. |
-| [256](https://cwe.mitre.org/data/definitions/256.html) | Plaintext storage of a password | Prevented: rejected at compile time | `CWE-20`. |
+| [256](https://cwe.mitre.org/data/definitions/256.html) | Plaintext storage of a password | Prevented: rejected at compile time | `CWE-256`. |
 | [257](https://cwe.mitre.org/data/definitions/257.html) | Storing passwords in a recoverable format | Prevented: rejected at compile time | `CWE-256`. |
 | [259](https://cwe.mitre.org/data/definitions/259.html) | Use of hard-coded password | Prevented: rejected at compile time | `CWE-798`. |
 | [266](https://cwe.mitre.org/data/definitions/266.html) | Incorrect privilege assignment | Logic or design decision: beyond any language | Default roles are policy. |

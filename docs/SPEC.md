@@ -23,8 +23,9 @@
 | `string` | immutable, trusted byte string |
 | `Tainted` | immutable byte string from an untrusted source |
 | `Secret` | a credential; cannot be printed, concatenated, compared with `==` or read |
-| `Html` | text escaped for HTML (from `escape_html()`); joins only with `Html` and trusted `string`, never passes as a plain `string` |
-| `LogText` | text escaped for logs and terminals (from `escape_log()`): printable ASCII and valid UTF-8 text are kept; control bytes, invalid UTF-8, C1 controls, bidirectional controls, line and paragraph separators and the byte-order mark become `\xNN`. Same rules as `Html` |
+| `Html` | text escaped for HTML (from `escape_html()`); joins only with `Html` and trusted `string`, and is accepted directly only by `write_html_file()` |
+| `LogText` | text escaped for logs and terminals (from `escape_log()`): printable ASCII and valid UTF-8 text are kept; control bytes, invalid UTF-8, C1 controls, bidirectional controls, line and paragraph separators and the byte-order mark become `\xNN`. accepted by terminal output and `write_log_file()` |
+| `CsvText` | CSV field/row text from `escape_csv()`; formula-leading values are neutralised and the value is accepted directly only by `write_csv_file()` |
 | `S` | a `struct` (reference type) |
 | `List<T>` | growable, bounds-checked list |
 | `Map<T>` | map from `string` keys to `T`, iterated in insertion order. Keys are hashed with SipHash-1-3 under a random per-process key, so chosen keys cannot be made to collide (CWE-407) |
@@ -139,7 +140,7 @@ explicitly. Their meaning therefore never depends on precedence.
 - `$"Hello {name}, {count} new"` is an interpolated string: it means `"Hello " + to_text(name) + ", " + to_text(count) + " new"`,
   so every rule for `+` applies (interpolating `Tainted` yields `Tainted`, interpolating into `Html` stays `Html`, a `Secret`
   cannot be interpolated). `int` and `bool` are converted to text; `{{` and `}}` are literal braces.
-- `+` adds `int`s or concatenates strings. If either string operand is `Tainted`, the result is `Tainted`.
+- `+` adds `int`s or concatenates strings. If either string operand is `Tainted`, the result is `Tainted`. A contextual value (`Html`, `LogText`, `CsvText`) joined with trusted `string` or the same context preserves its context; mixed contexts and unescaped `Tainted` concatenation are rejected (CWE-116).
 - `==` and `!=` compare `int`, `bool` and strings. Structs and optionals cannot be compared.
 - `/` truncates toward zero. Division by zero stops the program (CWE-369).
 - **Evaluation is strictly left to right**, including function arguments.
@@ -156,7 +157,7 @@ explicitly. Their meaning therefore never depends on precedence.
 
 | Function | Notes |
 |---|---|
-| `print(s)`, `println(s)` | `string` only. `Tainted` → CWE-117, `Secret` → CWE-532 |
+| `print(s)`, `println(s)` | `string` or `LogText`. Direct `Html`/`CsvText` output is rejected (CWE-116); explicitly re-encode with `escape_log()`. `Tainted` → CWE-117, `Secret` → CWE-532 |
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
 | `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input. Its payload is limited to 1,048,576 bytes, excluding the terminating newline: exactly 1 MiB is accepted whether followed by newline or EOF; the next non-newline byte traps with CWE-789 before it is appended |
@@ -164,14 +165,17 @@ explicitly. Their meaning therefore never depends on precedence.
 | `workspace_read_file(root, relative, max)` → `Tainted?` | Linux-only source-loader operation. Reads a regular file relative to the pinned root with `openat2` beneath/no-symlink/no-magic-link/no-mount-crossing resolution. Relative dot segments and absolute paths are rejected; unsupported kernels fail closed. This is not an unforgeable language-level sandbox type. |
 | `workspace_close(root)` | Closes the process directory descriptor returned by `workspace_open`. Trusted host code must close it when finished. |
 | `read_bytes(n)` → `Tainted?`, `flush()` | `read_bytes` reads exactly `n` bytes of standard input (fewer only if the input ends first), every byte kept, or gives `none` at end of input; `read_bytes(0)` is `""`. `n` outside 0..2^30 stops the program (CWE-789); memory grows with the bytes read, not with `n`. `flush()` writes out everything printed so far, for programs that converse over a pipe (a language server, say) |
-| `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
+| `write_file(path, data)` → `bool` | format-agnostic sink; accepts trusted `string` only. Rejects `Tainted` and context-encoded values (CWE-20/CWE-116); password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
+| `write_html_file(path, data)` → `bool` | accepts `Html` only |
+| `write_log_file(path, data)` → `bool` | accepts `LogText` only |
+| `write_csv_file(path, data)` → `bool` | accepts `CsvText` only |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | `List<string>` joins to `string`; `List<Tainted>` joins to `Tainted` and preserves untrusted provenance. The runtime computes the output size and allocates the result once. |
 | `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
-| `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers. `escape_html()` output is safe in element text and in a quoted attribute value; joined to literal HTML in the same expression, it is an error (CWE-79) inside a tag outside a quoted value, in an event-handler (`on…`) or URL or style attribute (`href`, `src`, `action`, `style` and others), or inside `<script>`, `<style>` or a comment |
+| `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers. `escape_log()` may explicitly re-encode an existing contextual value (`Html`, `CsvText` or `LogText`) for terminal/log output. `escape_html()` output is safe in element text and in a quoted attribute value; joined to literal HTML in the same expression, it is an error (CWE-79) inside a tag outside a quoted value, in an event-handler (`on…`) or URL or style attribute (`href`, `src`, `action`, `style` and others), or inside `<script>`, `<style>` or a comment |
 | `trust(t, "justification")` → `string` | explicit escape hatch; always reported as an AUDIT warning |
 | `validate_path(t)` → `string?` | a relative path with no `.` or `..` segments (CWE-22) that does not begin with `-` (CWE-88) |
 | `validate_range(t, min, max)` → `int?` | an integer within bounds (CWE-1284) |
-| `escape_csv(t)` → `string` | one quoted CSV field, with leading `= + - @` neutralised (CWE-1236) |
+| `escape_csv(t)` → `CsvText` | one quoted CSV field, with formula leaders (including leading whitespace and supported full-width variants) neutralised (CWE-1236) |
 | `escape_json(t)` → `string` | the contents of a JSON string literal, without the quotes (CWE-116): `"` and `\` escaped; controls, DEL, `<`, `>`, `&`, U+2028 and U+2029 as `\uXXXX`, so the text is safe inside an HTML `<script>` too (CWE-79); valid UTF-8 kept; each invalid byte becomes U+FFFD, so the result is always valid JSON |
 | `taint_char(c)` → `Tainted` | the one-byte text with byte value `c` (0..255, otherwise the program stops with CWE-704), still untrusted: for decoding escapes (`%41`, `\u0041`) in untrusted text without laundering it. `char_str()` of a byte of untrusted text is rejected (CWE-20) |
 | `taint(s)` → `Tainted` | marks a value as untrusted (useful in tests) |
@@ -347,7 +351,7 @@ When the language gains a feature, add its area here and its tests together.
 | `types.string` | immutable byte strings, `len`, `at`, `slice`, concatenation |
 | `types.tainted` | untrusted input and where it may flow |
 | `types.secret` | secrets and hard-coded credential detection |
-| `types.html` | context-typed escaped text (`Html`, `LogText`) |
+| `types.html` | context-typed escaped text (`Html`, `LogText`, `CsvText`) |
 | `types.optional` | `T?`, `none`, `if (let ...)` |
 | `types.list` | lists, indexing, list operations, packed `List<bool>` |
 | `types.map` | insertion-ordered maps and their operations |

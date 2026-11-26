@@ -164,7 +164,7 @@ section "Capstan-native verification: Bosun bounded transaction-history oracle"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/bosuns_locker_history.cap" 2>&1)"; then
   ok "serial-order witnesses, real-time constraints, write-skew rejection and bounded inconclusive results"
 else
-  bad "Bosun transaction-history oracle" "$out"
+  bad "Bosun bounded transaction-history oracle" "$out"
 fi
 
 section "Capstan-native verification: bounded concurrency reference machine"
@@ -449,8 +449,25 @@ else
 fi
 
 section "Capstan-native repository inventory"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1)"; then
-  ok "inventory purpose/language classification, binary detection, physical-line counting and aggregate totals"
+inventory_report="$tmp/capstan-inventory.csv"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1 &&
+             "$ROOT/bin/capstan" run "$ROOT/tools/inventory.cap" -- --output "$inventory_report" "$ROOT/tools/inventory.cap" 2>&1)"; then
+  if [[ -s "$inventory_report" ]] &&
+      grep -Fq '"path","classification","language","lines","bytes","status"' "$inventory_report" &&
+      grep -Fq '"SUMMARY"' "$inventory_report"; then
+    ok "inventory purpose/language classification, binary detection, physical-line counting, summary and typed CSV output"
+  else
+    diagnostic="program ran but typed CSV report was absent or malformed"
+    if [[ ! -e "$inventory_report" ]]; then
+      diagnostic="$diagnostic: output file missing"
+    elif [[ ! -s "$inventory_report" ]]; then
+      diagnostic="$diagnostic: output file empty"
+    else
+      diagnostic="$diagnostic: first three lines and byte count:"
+      diagnostic="$diagnostic $(wc -c < "$inventory_report") $(head -n 3 "$inventory_report")"
+    fi
+    bad "Capstan-native repository inventory" "$diagnostic; program output: $out"
+  fi
 else
   bad "Capstan-native repository inventory" "$out"
 fi

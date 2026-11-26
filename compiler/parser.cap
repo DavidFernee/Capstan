@@ -158,7 +158,7 @@ Node tok_node(int k, string s, Token t) {
 // ---- types ----------------------------------------------------------------
 
 bool is_type_word(string s) {
-    return s == "int" || s == "bool" || s == "string" || s == "void" || s == "Tainted" || s == "Secret" || s == "Html" || s == "LogText";
+    return s == "int" || s == "bool" || s == "string" || s == "void" || s == "Tainted" || s == "Secret" || s == "Html" || s == "LogText" || s == "CsvText";
 }
 
 bool is_generic_word(string s) {
@@ -176,6 +176,7 @@ Type parse_type(Parser p) {
     else if (name == "Secret") { t = mk_type(TY_SECRET); }
     else if (name == "Html") { t = mk_type(TY_HTML); }
     else if (name == "LogText") { t = mk_type(TY_LOG); }
+    else if (name == "CsvText") { t = mk_type(TY_CSV); }
     else if (name == "List" || name == "Map") {
         expect(p, "<");
         Type inner = parse_type(p);

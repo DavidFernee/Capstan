@@ -1,0 +1,5 @@
+// expect: CWE-116
+int main() {
+    string raw = escape_csv(taint("cell"));
+    return 0;
+}
