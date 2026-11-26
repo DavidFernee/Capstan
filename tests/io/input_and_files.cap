@@ -21,13 +21,13 @@ int main() {
     string all = join(bytes, "");
     string path = dir + "/all.bin";
     println("write: " + to_text(write_file(path, all)));
-    if (let back = read_file(path, 1073741824)) {
+    if (let back = read_file(path, 1024)) {
         println($"read back {back.len()} bytes, identical: {back == all}");
     } else {
         println("read back: none");
     }
     println("empty write: " + to_text(write_file(path, "")));
-    if (let empty = read_file(path, 1073741824)) { println($"empty read: {empty.len()} bytes"); }
+    if (let empty = read_file(path, 1024)) { println($"empty read: {empty.len()} bytes"); }
     List<string> bad = new List<string>();
     bad.push(dir);
     bad.push(dir + "/missing.txt");
@@ -35,7 +35,7 @@ int main() {
     bad.push(dir + "\0/all.bin");
     for (int j = 0; j < bad.len(); j += 1) {
         bool found = false;
-        if (let _x = read_file(bad[j], 1073741824)) { found = true; }
+        if (let _x = read_file(bad[j], 1024)) { found = true; }
         println($"bad path {j}: read gives {found}, write gives {write_file(bad[j], "x")}");
     }
     return 0;
