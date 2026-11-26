@@ -74,13 +74,27 @@ bool hra_invariant(HRAState state) {
     int expected_used = 0;
     if (state.a_status == HRA_PENDING) { expected_queued += 1; }
     if (state.b_status == HRA_PENDING) { expected_queued += 1; }
-    if (state.a_status == HRA_ACCEPTED) { expected_used += state.a_amount; }
-    if (state.b_status == HRA_ACCEPTED) { expected_used += state.b_amount; }
+    // A malformed state must be rejected, not trap while summing its charges.
+    // The invariant itself uses the same subtraction-form admission bound.
+    if (state.a_status == HRA_ACCEPTED) {
+        if (state.a_amount > state.capacity - expected_used) { return false; }
+        expected_used += state.a_amount;
+    }
+    if (state.b_status == HRA_ACCEPTED) {
+        if (state.b_amount > state.capacity - expected_used) { return false; }
+        expected_used += state.b_amount;
+    }
     if (state.queued != expected_queued || state.used != expected_used) { return false; }
     if (state.a_status == HRA_EMPTY &&
         (state.a_amount != 0 || state.a_sequence != 0)) { return false; }
     if (state.b_status == HRA_EMPTY &&
         (state.b_amount != 0 || state.b_sequence != 0)) { return false; }
+    // Each of the two one-shot request slots can acquire exactly one sequence.
+    // An impossible counter must fail before enqueue can increment it.
+    int expected_sequence = 1;
+    if (state.a_status != HRA_EMPTY) { expected_sequence += 1; }
+    if (state.b_status != HRA_EMPTY) { expected_sequence += 1; }
+    if (state.next_sequence != expected_sequence) { return false; }
     if (state.a_status != HRA_EMPTY &&
         (state.a_sequence < 1 || state.a_sequence >= state.next_sequence)) { return false; }
     if (state.b_status != HRA_EMPTY &&
@@ -292,4 +306,47 @@ test "HRA corrupted resource and queue state is rejected before transition" {
     assert(!inconsistent_queue.ok && inconsistent_queue.error == "invalid_state");
     assert(inconsistent_queue.state.queued == 1);
     assert(inconsistent_queue.state.used == 0);
+}
+
+test "HRA invariant rejects corrupted admitted charges without overflow" {
+    HRAState state = hra_initial(9223372036854775807, 2);
+    state.a_status = HRA_ACCEPTED;
+    state.a_sequence = 1;
+    state.a_amount = 4611686018427387904;
+    state.b_status = HRA_ACCEPTED;
+    state.b_sequence = 2;
+    state.b_amount = 4611686018427387904;
+    state.next_sequence = 3;
+    assert(!hra_invariant(state));
+    HRATransition rejected = hra_release(state, 1);
+    assert(!rejected.ok && rejected.error == "invalid_state");
+    assert(rejected.state.a_status == HRA_ACCEPTED);
+    assert(rejected.state.b_status == HRA_ACCEPTED);
+    assert(rejected.state.used == 0);
+}
+
+test "HRA impossible sequence counters are rejected without increment" {
+    HRAState state = hra_initial(2, 2);
+    state.next_sequence = 9223372036854775807;
+    HRATransition rejected = hra_enqueue(state, 1, 1);
+    assert(!rejected.ok && rejected.error == "invalid_state");
+    assert(rejected.state.next_sequence == state.next_sequence);
+    assert(rejected.state.queued == 0 && rejected.state.a_status == HRA_EMPTY);
+    state = hra_initial(2, 2);
+    state.next_sequence = 2;
+    assert(!hra_invariant(state));
+}
+
+test "HRA accepts exact maximum capacity and rejects one more" {
+    HRAState state = hra_initial(9223372036854775807, 2);
+    HRATransition ea = hra_enqueue(state, 1, 9223372036854775807);
+    assert(ea.ok);
+    HRATransition eb = hra_enqueue(ea.state, 2, 1);
+    assert(eb.ok);
+    HRATransition pa = hra_process_one(eb.state);
+    assert(pa.ok && pa.state.used == 9223372036854775807);
+    HRATransition pb = hra_process_one(pa.state);
+    assert(pb.ok && pb.state.b_status == HRA_REJECTED);
+    assert(pb.state.used == 9223372036854775807);
+    assert(hra_invariant(pb.state));
 }
