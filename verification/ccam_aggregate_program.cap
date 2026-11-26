@@ -592,6 +592,51 @@ test "aggregate program rejects malformed programs before any heap step" {
     assert(rejected.machine.steps == 0 && rejected.machine.heap.objects.len() == 0);
 }
 
+test "aggregate program tracks allocated object kinds and array element descriptors" {
+    List<int> registers = new List<int>();
+    registers.push(CCAM_PROGRAM_TYPE_REF);
+    registers.push(CCAM_PROGRAM_TYPE_INT);
+    registers.push(CCAM_PROGRAM_TYPE_BOOL);
+    List<CCAMAggregateInstruction> bytes_code = new List<CCAMAggregateInstruction>();
+    CCAMAggregateInstruction bytes = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_BYTES);
+    bytes.destination = 0; bytes.literal_bytes = "abc"; bytes_code.push(bytes);
+    CCAMAggregateInstruction field = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_GET);
+    field.destination = 1; field.left = 0; field.descriptor_id = 7401;
+    field.field_index = 0; bytes_code.push(field);
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_PROGRAM_TYPE_INT);
+    List<bool> mutable_fields = new List<bool>();
+    mutable_fields.push(true);
+    List<CCAMHeapLayout> layouts = new List<CCAMHeapLayout>();
+    layouts.push(new CCAMHeapLayout{
+        type_id: 7401, field_types: field_types,
+        field_ref_type_ids: new List<int>(), field_mutable: mutable_fields
+    });
+    CCAMAggregateProgram wrong_kind = new CCAMAggregateProgram{
+        version: CCAM_AGGREGATE_PROFILE_VERSION, register_types: registers,
+        parameter_count: 0, layouts: layouts, instructions: bytes_code
+    };
+    CCAMAggregateValidationResult kind_result =
+        ccam_aggregate_validate_program(wrong_kind);
+    assert(!kind_result.ok && kind_result.error == "object_kind_mismatch");
+
+    List<CCAMAggregateInstruction> array_code = new List<CCAMAggregateInstruction>();
+    CCAMAggregateInstruction array = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_ARRAY);
+    array.destination = 0; array.element_type = CCAM_PROGRAM_TYPE_INT;
+    array.capacity = 4; array_code.push(array);
+    CCAMAggregateInstruction read = ccam_aggregate_instruction(CCAM_AGG_OP_ARRAY_GET);
+    read.destination = 2; read.left = 0; read.element_type = CCAM_PROGRAM_TYPE_BOOL;
+    read.immediate = 0; array_code.push(read);
+    CCAMAggregateProgram wrong_element = new CCAMAggregateProgram{
+        version: CCAM_AGGREGATE_PROFILE_VERSION, register_types: registers,
+        parameter_count: 0, layouts: new List<CCAMHeapLayout>(),
+        instructions: array_code
+    };
+    CCAMAggregateValidationResult element_result =
+        ccam_aggregate_validate_program(wrong_element);
+    assert(!element_result.ok && element_result.error == "array_element_type_mismatch");
+}
+
 test "aggregate program validates forward nominal layouts and typed field operations" {
     List<int> field_types = new List<int>();
     field_types.push(CCAM_PROGRAM_TYPE_INT);
