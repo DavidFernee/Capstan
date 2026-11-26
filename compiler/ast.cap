@@ -12,7 +12,7 @@ const int MAX_SOURCE_BYTES = 16777216;
 const int MAX_IMPORT_FILES = 256;
 const int MAX_TOTAL_SOURCE_BYTES = 33554432;
 const int MAX_TOTAL_TOKENS = 500000;
-const int MAX_TOTAL_AST_NODES = 100000;
+const int MAX_TOTAL_AST_NODES = 200000;
 
 // One monotonic budget is shared by every source in a compilation/import graph.
 // It is also shared by interpolated-string sub-lexers.
@@ -127,7 +127,6 @@ bool charge_ast_nodes(CompileBudget budget, List<Node> roots) {
     }
     return true;
 }
-
 
 // ---- diagnostics ----------------------------------------------------------
 
