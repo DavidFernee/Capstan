@@ -1,0 +1,2 @@
+struct AGRuntimeBudget { int remaining; }
+bool ag_budget_take(AGRuntimeBudget b,int cost){if(cost<0||b.remaining<cost){return false;}b.remaining-=cost;return true;}
