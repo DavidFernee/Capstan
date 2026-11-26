@@ -136,7 +136,8 @@ theorem allocation_success_facts
     s.objectCount < s.maxObjects ∧
     charge ≤ s.maxBytes - s.usedBytes ∧
     workCharge ≤ s.maxWork - s.workUsed ∧
-    temporaryCharge ≤ s.maxTemporaryBytes := by
+    temporaryCharge ≤ s.maxTemporaryBytes ∧
+    s.temporaryPeakBytes ≤ s.maxTemporaryBytes := by
   unfold allocate at h
   by_cases hAuth : capabilityRegion cap = s.region
   · by_cases hInvalid : invalidHeapState s
@@ -153,9 +154,9 @@ theorem allocation_success_facts
               · simp [hAuth, hInvalid, hCharge, hObjects, hBytes, hWork, hTemporary] at h
               · simp [hAuth, hInvalid, hCharge, hObjects, hBytes, hWork, hTemporary] at h
                 constructor
-                · assumption
+                · exact h.1.symm
                 constructor
-                · assumption
+                · exact h.2.symm
                 constructor
                 · exact hCharge
                 constructor
@@ -164,7 +165,15 @@ theorem allocation_success_facts
                 · omega
                 constructor
                 · omega
-                · omega
+                constructor
+                · exact hTemporary
+                · have hOldTemporary : s.temporaryPeakBytes ≤ s.maxTemporaryBytes := by
+                    by_contra hBad
+                    have hgt : s.temporaryPeakBytes > s.maxTemporaryBytes := by omega
+                    have hInvalid' : invalidHeapState s = true := by
+                      simp [invalidHeapState, hgt]
+                    exact hInvalid hInvalid'
+                  exact hOldTemporary
   · simp [hAuth] at h
 
 /-- Successful allocation returns the previous next-object identity. -/
@@ -184,10 +193,25 @@ theorem allocate_success_preserves_heapInvariant
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     heapInvariant after := by
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
-    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary⟩
+    ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
-  simp [heapInvariant, max_le_iff] at *
-  omega
+  have hPeak : max s.temporaryPeakBytes temporaryCharge ≤ s.maxTemporaryBytes := by
+    by_cases hOld : s.temporaryPeakBytes ≤ temporaryCharge
+    · rw [max_eq_right hOld]
+      exact hTemporary
+    · have hTempOld : temporaryCharge ≤ s.temporaryPeakBytes := by omega
+      rw [max_eq_left hTempOld]
+      exact hOldTemporary
+  unfold heapInvariant
+  constructor
+  · omega
+  constructor
+  · omega
+  constructor
+  · omega
+  constructor
+  · exact hPeak
+  · omega
 
 /-- A successful allocation is charged exactly the admitted amount. -/
 theorem allocation_charges_exactly
@@ -245,8 +269,12 @@ theorem allocation_bounds_temporary_peak
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary⟩
   subst after
-  simp [max_le_iff]
-  omega
+  by_cases hOld : s.temporaryPeakBytes ≤ temporaryCharge
+  · rw [max_eq_right hOld]
+    exact hTemporary
+  · have hTempOld : temporaryCharge ≤ s.temporaryPeakBytes := by omega
+    rw [max_eq_left hTempOld]
+    exact hOldTemporary
 
 /-- Successful allocation preserves the cumulative work budget. -/
 theorem allocation_preserves_work_bound
