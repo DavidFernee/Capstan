@@ -5,7 +5,7 @@ namespace CapstanVerification
 /-!
 # Value-level provenance domain
 
-Unlike the legacy checker model's monotone set of local names, this model
+Unlike the legacy checker's monotone set of local names, this model
 associates provenance with the current value stored in each local. Assignment
 is a strong update: writing a clean value clears the previous value's mark.
 The expression transfer is deliberately conservative and propagates provenance
@@ -14,7 +14,8 @@ and control-dependent selection.
 
 This is a formal reference domain, not yet a refinement theorem for
 compiler/checker.cap. Heap aliasing and concrete AST correspondence remain
-separate obligations.
+separate obligations. Aggregate construction consumes already-computed field
+provenance bits; it is not a heap or alias model.
 -/
 
 /-- A local environment records provenance for the value currently in a slot. -/
@@ -33,7 +34,7 @@ theorem valueWrite_read_same (store : ValueStore) (slot : Nat) (derived : Bool) 
 theorem valueWrite_read_other (store : ValueStore) (slot other : Nat)
     (derived : Bool) (h : other ≠ slot) :
     valueWrite store slot derived other = store other := by
-  simp [valueWrite, Ne.symm h]
+  simp [valueWrite, h]
 
 /-- Provenance-bearing expression fragment for the value-level reference semantics. -/
 inductive ValueExpr where
@@ -52,7 +53,7 @@ inductive ValueExpr where
   | mapRemove (map key : ValueExpr)
   | optionalPayload (value : ValueExpr)
   | enumPayload (value : ValueExpr)
-  | aggregateBuild (fields : List ValueExpr)
+  | aggregateBuild (fieldMarks : List Bool)
   | aggregateField (aggregate : ValueExpr)
   | indexedRead (aggregate selector : ValueExpr)
   | select (condition whenTrue whenFalse : ValueExpr)
@@ -76,7 +77,7 @@ def valueDerived (store : ValueStore) : ValueExpr → Bool
   | .mapRemove map key => valueDerived store map || valueDerived store key
   | .optionalPayload value => valueDerived store value
   | .enumPayload value => valueDerived store value
-  | .aggregateBuild fields => fields.any (valueDerived store)
+  | .aggregateBuild fieldMarks => fieldMarks.any id
   | .aggregateField aggregate => valueDerived store aggregate
   | .indexedRead aggregate selector =>
       valueDerived store aggregate || valueDerived store selector
@@ -103,55 +104,63 @@ theorem attacker_assignment_marks_local (store : ValueStore) (slot : Nat) :
 theorem valueAssign_preserves_other (store : ValueStore) (slot other : Nat)
     (rhs : ValueExpr) (h : other ≠ slot) :
     valueAssign store slot rhs other = store other := by
-  simp [valueAssign, valueWrite, Ne.symm h]
+  simp [valueAssign, valueWrite, h]
 
 /-- Comparison results retain dependency on either operand. -/
 theorem comparison_preserves_left (store : ValueStore) (left right : ValueExpr)
     (h : valueDerived store left = true) :
     valueDerived store (.compare left right) = true := by
-  simp [valueDerived, h]
+  change (valueDerived store left || valueDerived store right) = true
+  simp [h]
 
 theorem comparison_preserves_right (store : ValueStore) (left right : ValueExpr)
     (h : valueDerived store right = true) :
     valueDerived store (.compare left right) = true := by
-  simp [valueDerived, h, Bool.or_true]
+  change (valueDerived store left || valueDerived store right) = true
+  simp [h]
 
 /-- Generic text conversion and collection joining preserve provenance. -/
 theorem text_conversion_preserves (store : ValueStore) (value : ValueExpr)
     (h : valueDerived store value = true) :
     valueDerived store (.convertText value) = true := by
+  change valueDerived store value = true
   exact h
 
 theorem join_preserves_collection (store : ValueStore) (collection separator : ValueExpr)
     (h : valueDerived store collection = true) :
     valueDerived store (.join collection separator) = true := by
-  simp [valueDerived, h]
+  change (valueDerived store collection || valueDerived store separator) = true
+  simp [h]
 
 /-- Shape/length observations retain provenance. -/
 theorem length_preserves (store : ValueStore) (value : ValueExpr)
     (h : valueDerived store value = true) :
     valueDerived store (.length value) = true := by
+  change valueDerived store value = true
   exact h
 
-/-- Aggregate construction is marked if any stored field is marked. -/
+/-- Aggregate construction is marked if any evaluated field is marked. -/
 theorem aggregate_build_preserves_field (store : ValueStore)
-    (fields : List ValueExpr) (field : ValueExpr)
-    (hmem : field ∈ fields) (hderived : valueDerived store field = true) :
-    valueDerived store (.aggregateBuild fields) = true := by
+    (fieldMarks : List Bool) (fieldMark : Bool)
+    (hmem : fieldMark ∈ fieldMarks) (hderived : fieldMark = true) :
+    valueDerived store (.aggregateBuild fieldMarks) = true := by
   simp [valueDerived, List.any_eq_true]
-  exact ⟨field, hmem, hderived⟩
+  exact ⟨fieldMark, hmem, hderived⟩
 
 /-- A selected value is marked if its controlling condition is marked. -/
 theorem selection_preserves_control (store : ValueStore)
     (condition yes no : ValueExpr)
     (h : valueDerived store condition = true) :
     valueDerived store (.select condition yes no) = true := by
-  simp [valueDerived, h]
+  change (valueDerived store condition || valueDerived store yes ||
+    valueDerived store no) = true
+  simp [h]
 
 /-- A lookup result is marked if its selector is attacker-influenced. -/
 theorem map_lookup_preserves_key (store : ValueStore) (map key : ValueExpr)
     (h : valueDerived store key = true) :
     valueDerived store (.mapLookup map key) = true := by
-  simp [valueDerived, h]
+  change (valueDerived store map || valueDerived store key) = true
+  simp [h]
 
 end CapstanVerification
