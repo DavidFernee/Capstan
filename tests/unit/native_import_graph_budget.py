@@ -43,7 +43,7 @@ def write_chain(directory: pathlib.Path, imported_files: int) -> pathlib.Path:
     directory.mkdir()
     (directory / "main.cap").write_text('import "f0.cap";\n')
     for i in range(imported_files):
-        body = f'import "f{i + 1}.cap";\n' if i + 1 < imported_files else "void main() {}\n"
+        body = f'import "f{i + 1}.cap";\n' if i + 1 < imported_files else "int main() { return 0; }\n"
         (directory / f"f{i}.cap").write_text(body)
     return directory / "main.cap"
 
