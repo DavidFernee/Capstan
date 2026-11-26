@@ -507,7 +507,7 @@ CCAMCallMachineCreateResult ccam_call_machine_create(
         functions, entry_function, max_steps, max_depth, CCAM_MAX_OUTPUT_BYTES);
 }
 
-void ccam_call_machine_trap(
+CCAMCallMachine ccam_call_machine_trap(
     CCAMCallMachine machine,
     string code,
     string function_name,
@@ -540,6 +540,7 @@ void ccam_call_machine_trap(
     machine.trap_function = function_name;
     machine.trap_pc = pc;
     machine.trap_detail = detail;
+    return machine;
 }
 
 void ccam_call_machine_step(CCAMCallMachine machine) {
@@ -548,19 +549,19 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
     }
     if (machine.frame_depth <= 0 ||
         machine.frame_depth > machine.frames.len()) {
-        ccam_call_machine_trap(
+        machine = ccam_call_machine_trap(
             machine, "invalid_call_stack", "", 0, "");
         return;
     }
     CCAMFrame active = machine.frames[machine.frame_depth - 1];
     CCAMFunction fn = machine.functions[active.function_index];
     if (machine.steps >= machine.max_steps) {
-        ccam_call_machine_trap(
+        machine = ccam_call_machine_trap(
             machine, "step_limit_exceeded", fn.name, active.pc, "");
         return;
     }
     if (active.pc < 0 || active.pc >= fn.instructions.len()) {
-        ccam_call_machine_trap(
+        machine = ccam_call_machine_trap(
             machine, "invalid_program_counter", fn.name, active.pc, "");
         return;
     }
@@ -573,7 +574,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
         int call_site_index = machine.call_site_lookup[
             active.function_index][executing_pc];
         if (call_site_index < 0) {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, "invalid_call_site", fn.name, executing_pc, "");
             return;
         }
@@ -593,7 +594,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
                 value = ccam_register_read_bool(active.registers, source_index);
             }
             if (!value.ok) {
-                ccam_call_machine_trap(
+                machine = ccam_call_machine_trap(
                     machine, value.trap, fn.name, executing_pc, "");
                 return;
             }
@@ -606,7 +607,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
         }
 
         if (machine.frame_depth >= machine.max_depth) {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, "call_depth_exceeded", fn.name, executing_pc, "");
             return;
         }
@@ -614,7 +615,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
         CCAMRegisterFileResult callee_registers = ccam_registers_create(
             callee.register_types);
         if (!callee_registers.ok) {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, callee_registers.error, fn.name, executing_pc, "");
             return;
         }
@@ -630,7 +631,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
                     new_registers, i, value.bool_value);
             }
             if (write_error != "") {
-                ccam_call_machine_trap(
+                machine = ccam_call_machine_trap(
                     machine, write_error, fn.name, executing_pc, "");
                 return;
             }
@@ -640,7 +641,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
         machine.frames[machine.frame_depth - 1] = active;
         if (machine.next_frame_id <= 0 ||
             machine.next_frame_id == CCAM_I64_MAX) {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, "frame_identity_exhausted", fn.name, executing_pc, "");
             return;
         }
@@ -674,7 +675,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
                 CCAMRegisterResult value = ccam_register_read_int(
                     active.registers, instruction.lhs);
                 if (!value.ok) {
-                    ccam_call_machine_trap(
+                    machine = ccam_call_machine_trap(
                         machine, value.trap, fn.name, executing_pc, "");
                     return;
                 }
@@ -684,18 +685,18 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
                 CCAMRegisterResult value = ccam_register_read_bool(
                     active.registers, instruction.lhs);
                 if (!value.ok) {
-                    ccam_call_machine_trap(
+                    machine = ccam_call_machine_trap(
                         machine, value.trap, fn.name, executing_pc, "");
                     return;
                 }
                 bool_value = value.bool_value;
             } else {
-                ccam_call_machine_trap(
+                machine = ccam_call_machine_trap(
                     machine, "return_type_mismatch", fn.name, executing_pc, "");
                 return;
             }
         } else if (fn.return_type != CCAM_RETURN_VOID) {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, "return_type_mismatch", fn.name, executing_pc, "");
             return;
         }
@@ -705,7 +706,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
         CCAMMemUnwindResult cleanup = ccam_mem_unwind_frame(
             machine.memory, active.frame_id);
         if (!cleanup.ok) {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, "frame_cleanup_integrity_failure",
                 fn.name, executing_pc, cleanup.error);
             return;
@@ -726,18 +727,18 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
             if (!active.caller_has_destination ||
                 active.caller_destination < 0 ||
                 active.caller_destination >= caller.registers.len()) {
-                ccam_call_machine_trap(
+                machine = ccam_call_machine_trap(
                     machine, "invalid_call_destination", fn.name, executing_pc, "");
                 return;
             }
             int expected_type = caller.registers[active.caller_destination].declared_type;
             if (expected_type != value_type) {
-                ccam_call_machine_trap(
+                machine = ccam_call_machine_trap(
                     machine, "call_destination_type_mismatch", fn.name, executing_pc, "");
                 return;
             }
         } else if (active.caller_has_destination) {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, "void_call_has_destination", fn.name, executing_pc, "");
             return;
         }
@@ -755,7 +756,7 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
                     caller.registers, active.caller_destination, bool_value);
             }
             if (write_error != "") {
-                ccam_call_machine_trap(
+                machine = ccam_call_machine_trap(
                     machine, write_error, fn.name, executing_pc, "");
                 return;
             }
@@ -790,10 +791,10 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
     machine.frames[machine.frame_depth - 1] = active;
     if (frame_state.halted) {
         if (frame_state.trap_code == "") {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, "invalid_instruction", fn.name, executing_pc, "");
         } else {
-            ccam_call_machine_trap(
+            machine = ccam_call_machine_trap(
                 machine, frame_state.trap_code, fn.name, executing_pc,
                 frame_state.trap_detail);
         }
@@ -1639,7 +1640,7 @@ test "CCAM corrupted frame depth cannot amplify trap cleanup work" {
     assert(region.ok);
     machine.memory = region.manager;
     machine.frame_depth = CCAM_I64_MAX;
-    ccam_call_machine_trap(
+    machine = ccam_call_machine_trap(
         machine, "injected_stack_corruption", "main", 0, "");
     assert(machine.halted && machine.trap_code == "invalid_call_stack");
     assert(machine.frame_depth == 0);
@@ -1778,7 +1779,7 @@ test "CCAM direct machine trap transition unwinds frame-owned memory" {
     assert(view.ok && stored.ok);
     machine.memory = stored.manager;
     assert(ccam_mem_manager_valid(machine.memory));
-    ccam_call_machine_trap(machine, "explicit_trap", "main", 0, "");
+    machine = ccam_call_machine_trap(machine, "explicit_trap", "main", 0, "");
     assert(machine.halted && machine.trap_code == "explicit_trap");
     assert(machine.frame_depth == 0);
     assert(machine.memory.live_regions == 0);
