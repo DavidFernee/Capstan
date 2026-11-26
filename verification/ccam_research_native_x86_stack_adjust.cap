@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_x86_stack_adjust(List<int> b,int bytes){if(bytes<0||bytes>1048576||bytes%16!=0){return false;}if(bytes==0){return true;}if(bytes<=127){b.push(72);b.push(131);b.push(236);b.push(bytes);return true;}b.push(72);b.push(129);b.push(236);return ag_u32(b,bytes);}
