@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_phi_arity(int incoming,int predecessors){return incoming>=1&&incoming==predecessors&&incoming<=1024;}
