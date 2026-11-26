@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "03d92fd33ca04624651f659d2d4f98d2e9e6a27b",
+  "baseline_commit": "33aff6f22b955533662ef5a3a38fc791deca7d06",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -17,7 +17,9 @@
     "verification/ccam_core.cap",
     "verification/ccam_calls.cap",
     "verification/ccam_native_x64.cap",
-    "docs/assurance/EXECUTION-ASSURANCE-ARCHITECTURE.md"
+    "docs/assurance/EXECUTION-ASSURANCE-ARCHITECTURE.md",
+    "docs/assurance/PROVENANCE-SCALAR-SLICE.md",
+    "verification/f1_guarantee_model.cap"
   ],
   "boundaries": [
     {
@@ -166,6 +168,27 @@
         "Specify every bootstrap stage and its trust assumptions.",
         "Produce independently reproducible C-free compiler/runtime artifacts.",
         "Bind source, toolchain, dependencies, build flags, SBOM and signatures to the release provenance."
+      ]
+    },
+    {
+      "id": "F1-PROVENANCE",
+      "from": "Capstan source values and aggregate access paths",
+      "to": "provenance-aware output and lookup sinks",
+      "implementation": "restricted",
+      "formal": "unproved",
+      "implementation_refinement": false,
+      "artifacts": [
+        "compiler/checker.cap",
+        "verification/f1_guarantee_model.cap",
+        "docs/assurance/PROVENANCE-SCALAR-SLICE.md",
+        "tests/cwe/atlas.py"
+      ],
+      "open": [
+        "Update the Lean injection-checker model to cover lexical binding identities and typed access-path transfer rules; the current source/model pin correctly rejects the changed checker section.",
+        "Prove source-checker acceptance/refusal correspondence for the new access-path analysis and its fail-closed resource bounds.",
+        "Specify and test may-alias propagation for reference aggregates; binding-identity paths alone do not establish heap alias soundness.",
+        "Complete the policy for Boolean and control-flow observations before claiming general information-flow noninterference.",
+        "Retain the documented distinction between executable F1 model coverage and a machine-checked implementation refinement theorem."
       ]
     }
   ]
