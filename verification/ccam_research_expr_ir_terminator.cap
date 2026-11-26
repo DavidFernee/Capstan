@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_terminator_valid(int op){return op==0||op==1||op==2;}
