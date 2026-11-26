@@ -104,7 +104,6 @@ The API uses a closed sum type called HostError. Final source syntax may use the
 | interrupted | Operation interrupted before progress | Retry only under the operation-specific deadline policy |
 | timed_out | Absolute monotonic deadline expired | No, unless caller supplies a new deadline |
 | cancelled | Owning task/operation was cancelled | No; cleanup is still required |
-| end_of_stream | Peer performed an orderly shutdown on a read side | Not an error for stream consumers; terminal unless protocol reconnects |
 | peer_closed | Peer closed/reset or hangup makes further I/O unavailable | No on this connection |
 | protocol_violation | Truncated, malformed or unexpected data/ancillary descriptor | No; close invalid resources and fail the connection if required |
 | unsupported | Operation not provided by this target/profile | No |
@@ -129,6 +128,7 @@ Conceptual records:
 - ReceiveBatch { bytes: ByteString, handles: List<ReceivedHandle>, handles_offset: Nat }
 - ReadResult ::= Data(ByteString) | EndOfStream
 - ReceiveResult ::= Batch(ReceiveBatch) | EndOfStream | Pending
+- WriteResult ::= Complete(IoProgress) | Pending(IoProgress) | Failed(HostError, IoProgress)
 
 The handles_offset in ReceiveBatch is a zero-based offset within the returned bytes slice at which the ancillary descriptor set is associated. It is not an OS descriptor or pointer.
 
@@ -194,7 +194,7 @@ This stateful contract avoids duplicate descriptor transfer after a short send o
 
 ### 6.3 Receiving bytes and descriptors
 
-receive_batch(connection: DisplayConnection, max_bytes: Nat, max_handles: Nat, deadline: Deadline) -> ReceiveResult or HostError
+receive_batch(connection: DisplayConnection, max_bytes: Nat, max_handles: Nat, deadline: Deadline) -> Outcome<ReceiveResult, HostError>
 
 Rules:
 - The operation uses close-on-exec semantics for every received descriptor.
@@ -226,9 +226,9 @@ create_shared_memory(authority: SharedMemoryAuthority, byte_length: Nat) -> Outc
 - The object has no filesystem path and cannot be reopened by name.
 - The authority determines the maximum size and whether descriptor transfer is permitted.
 
-write_at(object: SharedMemoryObject, offset: Nat, bytes: ByteString, deadline: Deadline) -> Outcome<IoProgress, HostError>
+write_at(object: SharedMemoryObject, offset: Nat, bytes: ByteString, deadline: Deadline) -> WriteResult
 
-read_at(object: SharedMemoryObject, offset: Nat, max_bytes: Nat, deadline: Deadline) -> ReadResult or HostError
+read_at(object: SharedMemoryObject, offset: Nat, max_bytes: Nat, deadline: Deadline) -> Outcome<ReadResult, HostError>
 
 - offset + length is checked before kernel entry.
 - Access outside the exact declared object size is rejected.
