@@ -79,6 +79,21 @@ test "owners can edit" { assert_granted CanEdit(owner, doc); }
 - A non-void function must return on every path.
 - The program entry point is `int main()` or `void main()`.
 
+## Proposed reference values and object identity
+
+**Status:** research target semantics. These rules are not yet part of the supported language subset; they become normative only after the compiler, list/collection operations and runtime allocator/collector have a demonstrated implementation correspondence.
+
+Struct values are intended to be references to heap objects, not inline copies of their fields.
+
+- Each evaluation of `new S{...}` creates a fresh logical object identity. The identity is distinct from every other object identity, including identities whose storage has previously been reclaimed.
+- Assignment, parameter passing, return, field storage and collection storage copy the reference value. They do not clone the referenced object.
+- Field reads and writes operate on the object denoted by the reference. All aliases to the same identity observe the same field mutations. A method's `self` receiver is an alias to the receiver object.
+- Struct identity is not exposed as a general `==` or `!=` comparison; those operators remain unavailable for structs. Identity is used internally where the language contract requires it, including policy-grant role binding.
+- Object lifetime is managed by the runtime. Source programs do not explicitly free objects. An object reachable from a live variable, parameter, global, or another reachable object's fields or collection entries remains valid. Once unreachable, its storage may be reclaimed. Reuse of physical storage creates a new logical identity; it must never make an old reference denote a different object.
+- Safe source code cannot manufacture an object reference from an integer, perform pointer arithmetic, or dereference a reclaimed object. An invalid or stale reference is never a valid source-language value.
+
+These are language-level semantics. They do not prescribe a particular collector or object layout. A runtime implementation must preserve them across allocation, collection, compiler lowering and native execution.
+
 ## Statements
 
 `T name = expr;`, `target = expr;`, `target += expr;`, `target -= expr;`, `if (cond) {...} else {...}`,
@@ -145,9 +160,6 @@ explicitly. Their meaning therefore never depends on precedence.
 | `int_to_str(i)`, `char_str(c)` | |
 | `args()` → `List<string>` | command-line arguments (supplied by the operator) |
 | `read_file(path)`, `read_file(path, max)` → `Tainted?`, `read_line()` → `Tainted?` | untrusted input sources. `read_file` reads to the end of the file (pipes and `/proc` files included) and gives `none` for a directory, an unreadable file, a path containing a NUL byte (CWE-158), or a file longer than `max` bytes (default 2^30), so an endless file such as `/dev/zero` cannot exhaust memory (CWE-400). Opening never blocks: a FIFO with no writer reads as empty. `max` outside 0..2^30 stops the program (CWE-789). The compiler and its tools read source files of at most 16 MiB. `read_line` gives one line without its `\n`, every byte kept (NUL included), or `none` at end of input. Its payload is limited to 1,048,576 bytes, excluding the terminating newline: exactly 1 MiB is accepted whether followed by newline or EOF; the next non-newline byte traps with CWE-789 before it is appended |
-| `workspace_open(root)` → `int` | Linux native-driver host capability. Opens an absolute, symlink-free directory root; returns a process directory descriptor or -1. |
-| `workspace_read_file(root, relative, max)` → `Tainted?` | Linux-only source-loader operation. Reads a regular file relative to the pinned root with `openat2` beneath/no-symlink/no-magic-link/no-mount-crossing resolution. Relative dot segments and absolute paths are rejected; unsupported kernels fail closed. This is not an unforgeable language-level sandbox type. |
-| `workspace_close(root)` | Closes the process directory descriptor returned by `workspace_open`. Trusted host code must close it when finished. |
 | `read_bytes(n)` → `Tainted?`, `flush()` | `read_bytes` reads exactly `n` bytes of standard input (fewer only if the input ends first), every byte kept, or gives `none` at end of input; `read_bytes(0)` is `""`. `n` outside 0..2^30 stops the program (CWE-789); memory grows with the bytes read, not with `n`. `flush()` writes out everything printed so far, for programs that converse over a pipe (a language server, say) |
 | `write_file(path, data)` → `bool` | data must be `string`, `Html` or `LogText`: untrusted input must be escaped or validated first; password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | `List<string>` joins to `string`; `List<Tainted>` joins to `Tainted` and preserves untrusted provenance. The runtime computes the output size and allocates the result once. |
