@@ -602,7 +602,7 @@ test "view validator bounds view register count and validates indices" {
     code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
     assert(!ccam_validate_region_lifecycle(code, 0, 33).ok);
     CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_VIEW_USE);
-    i.view_register = 0;
+    i.view_register = 1;
     code[0] = i;
     assert(ccam_validate_region_lifecycle(code, 0, 1).error == "invalid_view_register");
 }
