@@ -40,7 +40,7 @@
             "docs/assurance/MEMORY-SAFETY.md"
           ],
           "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
-          "revision": "75d03db1a146f664b352b044f4ab70ce46caaa33",
+          "revision": "6604a3db57b9875ceafd0af2f4cc7cfc175344b0",
           "notes": "Documents the intended language guarantee and the memory-safety boundary."
         },
         {
@@ -53,13 +53,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "75d03db1a146f664b352b044f4ab70ce46caaa33",
+          "revision": "6604a3db57b9875ceafd0af2f4cc7cfc175344b0",
           "notes": "Fixtures are present in this snapshot. No passing run is asserted by this record."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "75d03db1a146f664b352b044f4ab70ce46caaa33"
+        "reviewed_commit": "6604a3db57b9875ceafd0af2f4cc7cfc175344b0"
       },
       "covers": [
         "compiler/main.cap",
@@ -110,7 +110,7 @@
             "docs/architecture/COMPILER-CCAM-LOWERING.md"
           ],
           "procedure": "Review the stated profile, proof ladder, exclusions and implementation correspondence boundaries.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
+          "revision": "248a00a6e56a37c2b002a27f93261dbd5149348a",
           "notes": "C-free assurance contract; proposed, not a claim of completed end-to-end verification."
         },
         {
@@ -125,7 +125,7 @@
             "verification/lean/CapstanVerification/MultiFunction.lean"
           ],
           "procedure": "Build the pinned Lean verification package and inspect the axiom audit. Treat the results only as the restricted mathematical model documented in C-FREE-TYPE-SAFETY.md.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
+          "revision": "248a00a6e56a37c2b002a27f93261dbd5149348a",
           "tool": "Lean 4.19.0",
           "notes": "Restricted scalar CCAM proofs, including the typed call-frame protocol model; aggregate-heap model work is separately scoped and does not establish implementation correspondence."
         },
@@ -138,13 +138,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
+          "revision": "248a00a6e56a37c2b002a27f93261dbd5149348a",
           "notes": "This record does not assert a passing run for this assurance profile."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "db912986be48897fc37f83c7cc8df8552b3fe8ef"
+        "reviewed_commit": "248a00a6e56a37c2b002a27f93261dbd5149348a"
       },
       "covers": [
         "verification/lean/CapstanVerification/Core.lean",
