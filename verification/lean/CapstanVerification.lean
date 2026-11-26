@@ -6,6 +6,7 @@ import CapstanVerification.InitialStateBridge
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
+import CapstanVerification.AggregateHeap
 import CapstanVerification.Progress
 import CapstanVerification.ProgramValidator
 import CapstanVerification.SFVectors
