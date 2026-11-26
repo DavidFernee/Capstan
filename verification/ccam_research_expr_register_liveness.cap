@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_register_live(List<bool> live,int r){return r>=0&&r<live.len()&&live[r];}
