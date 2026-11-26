@@ -13,7 +13,7 @@ string repeat_ascii(int n) {
 
 int main() {
     if (MAX_FRAME_LINES != 131072) { return 1; }
-    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) {
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
         if (let font = font_load(data)) {
             Ui ui = new_ui(font, font, light_theme(), 64, 64, 256);
 
@@ -42,7 +42,7 @@ int main() {
 
             // A full-size untrusted file is decoded, but max_lines stops wrapping
             // after the first visual line instead of building a million line pairs.
-            if (let payload = read_file("tests/shroud/.frame_line_payload.tmp", 16777216)) {
+            if (let payload = read_file("tests/shroud/.frame_line_payload.tmp")) {
                 Laid e = layout_root(ui, user_text(payload).max_lines(1), fx(1), fx(64));
                 if (e.lines.len() / 2 != 1) { return 7; }
             } else { return 8; }

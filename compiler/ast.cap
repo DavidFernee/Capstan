@@ -9,24 +9,6 @@
 // The largest source file the compiler and its tools read: a bigger one, or an
 // endless one such as /dev/zero, is refused rather than read into memory (CWE-400).
 const int MAX_SOURCE_BYTES = 16777216;
-const int MAX_IMPORT_FILES = 256;
-const int MAX_TOTAL_SOURCE_BYTES = 33554432;
-const int MAX_TOTAL_TOKENS = 500000;
-const int MAX_TOTAL_AST_NODES = 150000;
-
-// One monotonic budget is shared by every source in a compilation/import graph.
-// It is also shared by interpolated-string sub-lexers.
-struct CompileBudget {
-    int source_bytes;
-    int tokens;
-    int ast_nodes;
-    int files;
-    bool exhausted;
-}
-
-CompileBudget new_compile_budget() {
-    return new CompileBudget{source_bytes: 0, tokens: 0, ast_nodes: 0, files: 0, exhausted: false};
-}
 
 const int TY_INT = 1;
 const int TY_BOOL = 2;
@@ -108,24 +90,6 @@ struct Node {
     int file;
     List<Node> kids;
     Type? ty;           // declared type (declarations) or computed type (expressions)
-}
-
-// Count a parsed tree iteratively so malformed or adversarial trees cannot make
-// the budget accounting itself recurse on the compiler stack.
-bool charge_ast_nodes(CompileBudget budget, List<Node> roots) {
-    List<Node> pending = new List<Node>();
-    for (int i = 0; i < roots.len(); i += 1) { pending.push(roots[i]); }
-    while (pending.len() > 0) {
-        Node node = pending[pending.len() - 1];
-        pending.pop();
-        if (budget.ast_nodes >= MAX_TOTAL_AST_NODES) {
-            budget.exhausted = true;
-            return false;
-        }
-        budget.ast_nodes += 1;
-        for (int k = 0; k < node.kids.len(); k += 1) { pending.push(node.kids[k]); }
-    }
-    return true;
 }
 
 // ---- diagnostics ----------------------------------------------------------

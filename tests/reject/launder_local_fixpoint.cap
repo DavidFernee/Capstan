@@ -3,7 +3,7 @@
 // A reverse dependency chain exceeds the intraprocedural 100-round budget.
 // The analysis must reject an incomplete local taint fixpoint before sink checks.
 int main() {
-    if (let input = read_line(1048576)) {
+    if (let input = read_line()) {
         int v0 = 0;
         int v1 = 0;
         int v2 = 0;

@@ -55,7 +55,7 @@ a model is not proof that the Capstan implementation refines that model. The CWE
 | 21 | 476 | Null dereference | **Prevented** | No null; optionals must be unwrapped |
 | 22 | 798 | Hard-coded credentials | Partial | Secrets only come from `secret_env()`, and literals assigned to credential-named variables or fields are rejected. *Gap:* a literal under an innocuous name isn't detected |
 | 23 | 190 | Integer overflow | **Prevented** | All arithmetic is checked, except where the compiler proves the result fits; overflowing literals don't compile |
-| 24 | 400 | Uncontrolled resource consumption | Partial | Direct external-input APIs require explicit finite bounds: `args(max_count,max_arg_bytes,max_total_bytes)`, `read_file(path,max)`, `read_line(max)`, `read_bytes(n)`, `secret_env(name,max_bytes)` and `workspace_read_file(root,relative,max)`. Runtime preflights count/aggregate limits before allocating. *Gaps:* CPU deadlines, loop bounds, and compositional parser budgets are not yet universal. |
+| 24 | 400 | Uncontrolled resource consumption | Partial | A heap limit stops runaway allocation safely; `validate_range()` bounds input. *Gap:* CPU time and loop bounds |
 | 25 | 306 | Missing authentication for a critical function | Partial | As CWE-862 |
 
 ## Other weaknesses addressed

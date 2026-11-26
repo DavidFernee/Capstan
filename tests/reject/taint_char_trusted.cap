@@ -3,7 +3,7 @@
 // A byte decoded from untrusted text with taint_char() is still untrusted.
 string greet(string name) { return "Hello " + name; }
 int main() {
-    if (let line = read_line(1048576)) {
+    if (let line = read_line()) {
         if (line.len() > 0) { println(greet(taint_char(line.at(0)))); }
     }
     return 0;

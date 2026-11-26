@@ -35,8 +35,8 @@ struct WaylandObject {
 }
 struct WaylandObjectTable {
     List<WaylandObject> slots;
-    List<int> next_client_id;
-    List<int> next_server_id;
+    int next_client_id;
+    int next_server_id;
 }
 struct WaylandArgSpec {
     int kind;
@@ -69,10 +69,8 @@ WaylandObjectTable wayland_object_table() {
     // while partially applying a set of new object IDs.
     List<WaylandObject> slots = new List<WaylandObject>();
     for (int i = 0; i < WAYLAND_OBJECT_SLOTS_MAX; i += 1) { slots.push(wayland_empty_object()); }
-    List<int> next_client_id = new List<int>(); next_client_id.push(WAYLAND_CLIENT_OBJECT_ID_MIN);
-    List<int> next_server_id = new List<int>(); next_server_id.push(WAYLAND_SERVER_OBJECT_ID_MIN);
-    return new WaylandObjectTable{slots: slots, next_client_id: next_client_id,
-        next_server_id: next_server_id};
+    return new WaylandObjectTable{slots: slots, next_client_id: WAYLAND_CLIENT_OBJECT_ID_MIN,
+        next_server_id: WAYLAND_SERVER_OBJECT_ID_MIN};
 }
 WaylandProtocolResult wayland_protocol_result(int status, int next_offset, int fd_count,
     List<int> created_ids, int retired_id) {
@@ -121,8 +119,8 @@ bool wayland_object_add_client(WaylandObjectTable table, int id, int interface_i
     if (id < WAYLAND_CLIENT_OBJECT_ID_MIN || id > WAYLAND_CLIENT_OBJECT_ID_MAX
         || interface_id <= 0 || version <= 0) { return false; }
     int existing = wayland_object_index(table, id);
-    if (id == table.next_client_id[0]) {
-        if (existing >= 0 || table.next_client_id[0] > WAYLAND_CLIENT_OBJECT_ID_MAX
+    if (id == table.next_client_id) {
+        if (existing >= 0 || table.next_client_id > WAYLAND_CLIENT_OBJECT_ID_MAX
             || wayland_object_free_slots(table) <= 0) { return false; }
         int slot = -1;
         for (int i = 0; i < table.slots.len(); i += 1) {
@@ -131,17 +129,17 @@ bool wayland_object_add_client(WaylandObjectTable table, int id, int interface_i
         if (slot < 0) { return false; }
         table.slots[slot] = new WaylandObject{id: id, interface_id: interface_id, version: version,
             state: 1, owner: WAYLAND_OBJECT_OWNER_CLIENT};
-        table.next_client_id[0] += 1;
+        table.next_client_id += 1;
         return true;
     }
-    if (id > table.next_client_id[0] || existing < 0 || table.slots[existing].state != 3
+    if (id > table.next_client_id || existing < 0 || table.slots[existing].state != 3
         || table.slots[existing].owner != WAYLAND_OBJECT_OWNER_CLIENT) { return false; }
     table.slots[existing] = new WaylandObject{id: id, interface_id: interface_id, version: version,
         state: 1, owner: WAYLAND_OBJECT_OWNER_CLIENT};
     return true;
 }
 bool wayland_object_add_server(WaylandObjectTable table, int id, int interface_id, int version) {
-    if (id != table.next_server_id[0] || id < WAYLAND_SERVER_OBJECT_ID_MIN
+    if (id != table.next_server_id || id < WAYLAND_SERVER_OBJECT_ID_MIN
         || id > WAYLAND_SERVER_OBJECT_ID_MAX || interface_id <= 0 || version <= 0
         || wayland_object_index(table, id) >= 0 || wayland_object_free_slots(table) <= 0) { return false; }
     int slot = -1;
@@ -151,11 +149,11 @@ bool wayland_object_add_server(WaylandObjectTable table, int id, int interface_i
     if (slot < 0) { return false; }
     table.slots[slot] = new WaylandObject{id: id, interface_id: interface_id, version: version,
         state: 1, owner: WAYLAND_OBJECT_OWNER_SERVER};
-    table.next_server_id[0] += 1;
+    table.next_server_id += 1;
     return true;
 }
 bool wayland_server_ids_can_allocate(WaylandObjectTable table, List<int> ids) {
-    int next_id = table.next_server_id[0];
+    int next_id = table.next_server_id;
     for (int i = 0; i < ids.len(); i += 1) {
         if (ids[i] != next_id || next_id > WAYLAND_SERVER_OBJECT_ID_MAX
             || wayland_object_index(table, ids[i]) >= 0) { return false; }
@@ -173,7 +171,7 @@ bool wayland_object_destroy_server(WaylandObjectTable table, int id) {
 }
 
 bool wayland_client_ids_can_allocate(WaylandObjectTable table, List<int> ids) {
-    int next_id = table.next_client_id[0];
+    int next_id = table.next_client_id;
     int new_slots_needed = 0;
     for (int i = 0; i < ids.len(); i += 1) {
         int id = ids[i];

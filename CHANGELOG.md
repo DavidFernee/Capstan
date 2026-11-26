@@ -5,9 +5,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
-- Require explicit finite source-level bounds for command-line arguments, file reads, standard-input lines and environment secrets; runtime checks preflight limits before allocating or copying input.
 - Shroud: retain and enforce sfnt table-local spans for cmap subtables, loca entries and hmtx metrics; reject in-file adjacent-table borrowing with deterministic regression fixtures
-- CCAM research prototype: add a bounded process-lifetime region-heap model with nominal record/array references, array bounds/initialisation, opaque validated references, byte/object/work budgets and temporary-allocation peak limits; not yet integrated into normative CCAM or native code generation
 - Security assurance: make v1.0 a C-free, evidence-gated release on Linux, macOS and Windows; add mandatory CWE/security acceptance criteria, explicit unknown/residual evidence states and a per-release assurance scorecard. Current C-backend status remains explicit; this is a release requirement, not a claim of implementation.
 - Security: password verifier accepts only the canonical 123-byte, 600,000-iteration PBKDF2-SHA256 record profile and caps password inputs at 256 bytes; malformed, noncanonical, oversized and legacy-cost records are rejected before KDF work. The format is unreleased in 0.4.0, so no legacy-record compatibility is promised; development credentials using older profiles must be recreated before upgrade.
 - Anchor A0: headless IDE workbench prototype using Shroud S0; static navigation and read-only preview only, with no live compiler connection or project commands executed

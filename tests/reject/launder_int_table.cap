@@ -2,7 +2,7 @@
 // spec: types.tainted types.list
 // A table of integers indexed by untrusted bytes yields untrusted integers.
 int main() {
-    if (let t = read_line(1048576)) {
+    if (let t = read_line()) {
         List<int> ids = new List<int>();
         for (int c = 0; c < 256; c += 1) { ids.push(c); }
         string out = "";

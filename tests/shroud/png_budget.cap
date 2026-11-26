@@ -3,7 +3,7 @@
 // fail without creating output. The Python harness independently decodes the file.
 
 int main() {
-    List<string> arguments = args(16, 4096, 65536);
+    List<string> arguments = args();
     // A separate small mode exercises repeated real encodes with collection on
     // every allocation; keep the large boundary workload out of this stress run.
     if (arguments.len() > 0 && arguments[0] == "--gc-stress") {

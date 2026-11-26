@@ -2,7 +2,7 @@
 // spec: types.tainted types.list
 // Bytes of untrusted input pushed into a list and popped back out are still untrusted.
 int main() {
-    if (let t = read_line(1048576)) {
+    if (let t = read_line()) {
         List<int> bytes = new List<int>();
         for (int i = 0; i < t.len(); i += 1) { bytes.push(t.at(i)); }
         string rebuilt = "";

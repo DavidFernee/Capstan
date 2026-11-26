@@ -2,7 +2,7 @@
 // spec: types.html builtins.escapers
 // escape_html() leaves spaces and '=' alone, so an unquoted attribute value can add an event handler.
 int main() {
-    if (let t = read_line(1048576)) {
+    if (let t = read_line()) {
         bool ok = write_file("p.html", "<img src=" + escape_html(t) + ">");
         if (!ok) { println("write failed"); }
     }

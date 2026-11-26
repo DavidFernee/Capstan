@@ -7,7 +7,7 @@ string repeat_ascii(int n) {
 }
 
 int main() {
-    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) {
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
         if (let font = font_load(data)) {
             Ui ui = new_ui(font, font, light_theme(), 64, 64, 256);
             string half = repeat_ascii(MAX_TEXT_BYTES);

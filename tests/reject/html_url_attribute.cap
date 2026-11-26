@@ -2,7 +2,7 @@
 // spec: types.html
 // A quoted href still runs javascript: URLs; HTML escaping cannot make a URL safe.
 int main() {
-    if (let t = read_line(1048576)) {
+    if (let t = read_line()) {
         bool ok = write_file("p.html", "<a href=\"" + escape_html(t) + "\">link</a>");
         if (!ok) { println("write failed"); }
     }

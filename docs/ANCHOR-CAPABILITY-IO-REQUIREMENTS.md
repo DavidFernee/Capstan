@@ -1,7 +1,6 @@
 # Anchor A1 capability-I/O contract requirements
 
 **Status:** proposed contract delta for runtime review; not an approved public API and not an implementation  
-**Shroud API candidate:** [Capability-I/O host API v0.1](proposals/CAPABILITY-IO-HOST-API-V0.1.md) defines the first Linux/Wayland host profile. It does not complete Anchor filesystem/process operations or replace this shared A1 requirements review.  
 **Parent:** `docs/ANCHOR-A1-WORKSTREAMS.md`, `docs/ANCHOR-PROCESS-SUPERVISION.md`  
 **Related:** issues [#224](https://github.com/DavidFernee/Capstan/issues/224) (Shroud/T6 host substrate), [#222](https://github.com/DavidFernee/Capstan/issues/222) (capability/effect research); `docs/SHROUD-HOST.md`, `docs/proposals/SHROUD-LINUX-WAYLAND-PREREQUISITES.md`, `docs/architecture/C-FREE-RUNTIME-BOUNDARY-INVENTORY.md`, `docs/architecture/LANGUAGE-EXTENSIONS.md`, `docs/STDLIB-V06.md`
 

@@ -228,7 +228,7 @@ int main() {
         composite_font, 2, aggregate_path, 1, 1, 0, 0, identity_transform(), 0
     );
     if (aggregate_ok) { return 29; }
-    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) {
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
         if (let font = font_load(data)) {
             for (int cp = 33; cp < 127; cp += 1) {
                 GlyphMask _cached = glyph_mask(font, glyph_index(font, cp), fx(256), 0);

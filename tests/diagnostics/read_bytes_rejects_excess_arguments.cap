@@ -1,6 +1,0 @@
-// expect: read_bytes expects 1 argument(s), found 2
-// spec: builtins.io
-int main() {
-    if (let data = read_bytes(64, 1)) { return data.len(); }
-    return 0;
-}

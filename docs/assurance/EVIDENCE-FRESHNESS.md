@@ -14,12 +14,6 @@ marks the corresponding evidence stale. A revision that is not an ancestor of
 `HEAD` is also stale; this prevents silently accepting evidence from an unrelated
 history. The check uses Git's path-aware diff, not timestamps or branch names.
 
-Before checking existence or freshness, every covered path and evidence artifact is
-resolved through symlinks and required to remain beneath the repository root.
-A symlink that escapes the checkout, or a resolved path on another filesystem
-root/Windows drive, is rejected as an unsafe path. A cross-root containment
-comparison is treated as failure rather than an uncaught platform exception.
-
 Stale records are always reported. The `--require-fresh` gate fails when a claim in
 `active` or `qualified` state has a stale review or evidence item. Proposed claims
 are not presented as current assurance and may retain stale exploratory evidence;

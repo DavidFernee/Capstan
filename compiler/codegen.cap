@@ -342,15 +342,15 @@ string builtin_c(string f) {
     if (f == "println") { return "cap_println"; }
     if (f == "int_to_str") { return "cap_int_to_str"; }
     if (f == "char_str") { return "cap_char_str"; }
-    if (f == "read_file") { return "cap_read_file_max"; }
+    if (f == "read_file") { return "cap_read_file"; }
     if (f == "workspace_open") { return "cap_workspace_open"; }
     if (f == "workspace_read_file") { return "cap_workspace_read_file"; }
     if (f == "workspace_close") { return "cap_workspace_close"; }
-    if (f == "read_line") { return "cap_read_line_max"; }
+    if (f == "read_line") { return "cap_read_line"; }
     if (f == "read_bytes") { return "cap_read_bytes"; }
     if (f == "flush") { return "cap_flush"; }
     if (f == "write_file") { return "cap_write_file"; }
-    if (f == "args") { return "cap_args_bounded"; }
+    if (f == "args") { return "cap_args"; }
     if (f == "exit") { return "cap_exit"; }
     if (f == "join") { return "cap_join"; }
     if (f == "assert") { return "cap_assert"; }
@@ -364,7 +364,7 @@ string builtin_c(string f) {
     if (f == "taint_char") { return "cap_taint_char"; }
     if (f == "validate_path") { return "cap_validate_path"; }
     if (f == "validate_range") { return "cap_validate_range"; }
-    if (f == "secret_env") { return "cap_secret_env_bounded"; }
+    if (f == "secret_env") { return "cap_secret_env"; }
     if (f == "secret_eq") { return "cap_secret_eq"; }
     if (f == "hash") { return "cap_hash"; }
     if (f == "hash_verify") { return "cap_hash_verify"; }
@@ -379,7 +379,7 @@ string builtin_c(string f) {
 }
 
 bool builtin_needs_loc(string f) {
-    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes" || f == "taint_char" || f == "workspace_read_file" || f == "read_file" || f == "read_line" || f == "args" || f == "secret_env";
+    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes" || f == "taint_char" || f == "workspace_read_file";
 }
 
 string gen_call(Gen g, Node e) {
@@ -427,6 +427,10 @@ string gen_call(Gen g, Node e) {
     string extra = "";
     string cf = builtin_c(f);
     if (builtin_needs_loc(f)) { extra = loc(e); }
+    if (f == "read_file" && e.kids.len() == 2) {
+        cf = "cap_read_file_max";
+        extra = loc(e);
+    }
     return wrap(s2, cf + "(" + call_list(s2.names, 0, extra) + ")");
 }
 

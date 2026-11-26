@@ -121,13 +121,13 @@ void run(Ui ui, string dir, string tag) {
 }
 
 int main() {
-    List<string> a = args(1, 4096, 4096);
+    List<string> a = args();
     string dir = ".";
     if (a.len() > 0) { dir = a[0]; }
     Font? regular = none;
     Font? bold = none;
-    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) { regular = font_load(r); }
-    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf", 16777216)) { bold = font_load(b); }
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
     if (let f = regular) {
         if (let fb = bold) {
             run(new_ui(f, fb, light_theme(), 560, 520, 256), dir, "light");

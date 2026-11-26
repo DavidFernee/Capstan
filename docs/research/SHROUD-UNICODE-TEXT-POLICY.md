@@ -283,21 +283,12 @@ The test programme is staged. Do not mark a stage complete from a few hand-picke
 
 ## 9. Current status and non-claims
 
-The first accessibility-preservation increment exposes the exact logical Tainted name/value for
-ordinary text and non-secure text fields. The accessibility JSON carries a separate
-`security_annotations` array for bidi formatting controls, including scalar indices and original
-UTF-8 byte spans. JSON escaping and output-budget preflight cover annotation strings as well as
-logical fields. Secure fields still expose only their documented protected length, never the
-secret value.
+The current S0 implementation provides bounded UTF-8 decoding and a conservative visible-character
+transformation for untrusted text. It does **not** provide full UAX #9 bidi resolution, UAX #14 line
+breaking, UAX #29 grapheme segmentation, or general OpenType shaping. The current global
+sanitisation policy can replace semantically meaningful joiners and line-breaking characters.
+Accessibility currently follows the sanitised visible representation, not a separate logical-value
+plus security-annotation model.
 
-This is deliberately a narrow step. The visual renderer still uses the conservative
-`untrusted_codepoints()` transformation, so ordinary visual presentation can still replace
-joiners, variation selectors, soft hyphens, word joiners and emoji tag characters. The annotation
-set currently covers bidi formatting controls only; it is not a complete Unicode security-property
-classifier. No UAX #9 bidi resolution, UAX #14 line breaking, UAX #29 grapheme segmentation or
-general OpenType shaping conformance is claimed. The JSON annotation field also requires the
-platform embedder to expose those annotations to assistive technology; JSON presence alone does
-not prove screen-reader behaviour.
-
-This document records the implemented first increment and its limits. It is not evidence that
-the remaining Unicode algorithms or conformance suites have been implemented or passed.
+This document defines a migration target and test programme. It is not evidence that any of those
+algorithms or conformance suites have been implemented or passed.

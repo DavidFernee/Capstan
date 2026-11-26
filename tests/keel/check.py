@@ -655,92 +655,33 @@ source.append("    return 0;")
 source.append("}")
 source_text = "\n".join(source) + "\n"
 
-# The compiler's source-graph AST budget is intentionally finite.  Keep the
-# differential corpus intact, but compile bounded groups of generated test
-# functions independently so the test harness itself does not exceed it.
-first_run = next(i for i, line in enumerate(source) if line.startswith("void run_"))
-main_start = next(i for i, line in enumerate(source) if line == "int main() {")
-header = source[:first_run]
-function_lines = source[first_run:main_start]
-starts = [i for i, line in enumerate(function_lines) if line.startswith("void run_")]
-blocks = []
-for position, start in enumerate(starts):
-    end = starts[position + 1] if position + 1 < len(starts) else len(function_lines)
-    block = function_lines[start:end]
-    name = block[0].split("(", 1)[0].split()[-1]
-    outputs = sum(line.count("show_sign(") + line.count("show_vec3(") +
-                  line.count("show_bool(") + line.count("show_bounds(")
-                  for line in block)
-    blocks.append((name, block, outputs))
-
-main_calls = []
-for line in source[main_start + 1:]:
-    stripped = line.strip()
-    if stripped.endswith("();"):
-        main_calls.append(stripped[:-3])
-
-if [name for name, _, _ in blocks] != main_calls:
-    raise SystemExit("generated Keel test functions and main-call order diverged")
-
 with tempfile.TemporaryDirectory(prefix="capstan-keel-predicates-") as tmp:
-    expected_offset = 0
-    total_batches = (len(blocks) + 15) // 16
-    for batch_number, batch_start in enumerate(range(0, len(blocks), 16)):
-        batch = blocks[batch_start:batch_start + 16]
-        names = [name for name, _, _ in batch]
-        batch_expected_count = sum(outputs for _, _, outputs in batch)
-        program = (header +
-                   [line for _, block, _ in batch for line in block] +
-                   ["int main() {"] +
-                   [f"    {name}();" for name in names] +
-                   ["    return 0;", "}"])
-        main = os.path.join(tmp, f"generated-{batch_number}.cap")
-        cfile = os.path.join(tmp, f"predicates-{batch_number}.c")
-        exe = os.path.join(tmp, f"predicates-{batch_number}")
-        with open(main, "w", encoding="utf-8") as f:
-            f.write("\n".join(program) + "\n")
-        build = subprocess.run(
-            [CAPSTANC, "build", "--strict", "-o", cfile,
-             os.path.join(ROOT, "lib/keel/predicates.cap"),
-             os.path.join(ROOT, "lib/keel/spatial.cap"),
-             os.path.join(ROOT, "lib/keel/polygon.cap"), main],
-            cwd=ROOT, capture_output=True, text=True)
-        if build.returncode:
-            sys.exit(
-                f"Keel predicate batch {batch_number + 1}/{total_batches} "
-                "did not compile:\n" + build.stdout + build.stderr)
-        compile_result = subprocess.run(
-            [CC, *CFLAGS, cfile, "-o", exe],
-            cwd=ROOT, capture_output=True, text=True)
-        if compile_result.returncode:
-            sys.exit(
-                f"Keel predicate C batch {batch_number + 1}/{total_batches} "
-                "did not compile:\n" + compile_result.stdout + compile_result.stderr)
-        run = subprocess.run([exe], cwd=ROOT, capture_output=True, text=True)
-        if run.returncode:
-            sys.exit(
-                f"Keel predicate batch {batch_number + 1}/{total_batches} "
-                f"exited {run.returncode}:\n{run.stdout}{run.stderr}")
-        actual = run.stdout.splitlines()
-        wanted = expected[expected_offset:expected_offset + batch_expected_count]
-        if actual != wanted:
-            for index, (got, want) in enumerate(zip(actual, wanted)):
-                if got != want:
-                    sys.exit(
-                        f"predicate case {expected_offset + index}: "
-                        f"expected {want}, got {got}")
-            sys.exit(
-                f"predicate output length in batch {batch_number + 1}: "
-                f"expected {len(wanted)}, got {len(actual)}")
-        expected_offset += batch_expected_count
+    main = os.path.join(tmp, "generated.cap")
+    cfile = os.path.join(tmp, "predicates.c")
+    exe = os.path.join(tmp, "predicates")
+    with open(main, "w", encoding="utf-8") as f:
+        f.write(source_text)
+    build = subprocess.run(
+        [CAPSTANC, "build", "--strict", "-o", cfile,
+         os.path.join(ROOT, "lib/keel/predicates.cap"),
+         os.path.join(ROOT, "lib/keel/spatial.cap"),
+         os.path.join(ROOT, "lib/keel/polygon.cap"), main],
+        cwd=ROOT, capture_output=True, text=True)
+    if build.returncode:
+        sys.exit("Keel predicate program did not compile:\n" + build.stdout + build.stderr)
+    compile_result = subprocess.run(
+        [CC, *CFLAGS, cfile, "-o", exe],
+        cwd=ROOT, capture_output=True, text=True)
+    if compile_result.returncode:
+        sys.exit("Keel predicate C did not compile:\n" + compile_result.stdout + compile_result.stderr)
+    run = subprocess.run([exe], cwd=ROOT, capture_output=True, text=True)
+    if run.returncode:
+        sys.exit(f"Keel predicate executable exited {run.returncode}:\n{run.stdout}{run.stderr}")
+    actual = run.stdout.splitlines()
+    if actual != expected:
+        for i, (got, want) in enumerate(zip(actual, expected)):
+            if got != want:
+                sys.exit(f"predicate case {i}: expected {want}, got {got}")
+        sys.exit(f"predicate output length: expected {len(expected)}, got {len(actual)}")
 
-if expected_offset != len(expected):
-    raise SystemExit(
-        f"Keel predicate corpus accounting mismatch: "
-        f"checked {expected_offset}, expected {len(expected)}")
-
-print(f"{len(polygon_cases)} polygon, {len(cases2)} 2D, {len(cases3)} 3D, "
-      f"{len(cases_seg)} segment, {len(cases_tet)} tetrahedron, "
-      f"{sum(map(len, vec_cases.values()))} vector and "
-      f"{sum(map(len, box_cases.values()))} bounds cases match independent oracles "
-      f"across {total_batches} bounded compiler batches")
+print(f"{len(polygon_cases)} polygon, {len(cases2)} 2D, {len(cases3)} 3D, {len(cases_seg)} segment, {len(cases_tet)} tetrahedron, {sum(map(len, vec_cases.values()))} vector and {sum(map(len, box_cases.values()))} bounds cases match independent oracles")

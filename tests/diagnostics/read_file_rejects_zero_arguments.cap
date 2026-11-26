@@ -1,6 +1,0 @@
-// expect: read_file expects 2 argument(s), found 0
-// spec: builtins.io
-int main() {
-    if (let data = read_file()) { return data.len(); }
-    return 0;
-}

@@ -2,7 +2,7 @@
 // spec: types.tainted types.string
 // Slicing a trusted alphabet at positions taken from untrusted bytes is the same laundering.
 int main() {
-    if (let t = read_line(1048576)) {
+    if (let t = read_line()) {
         string abc = "abcdefghijklmnopqrstuvwxyz";
         string out = "";
         for (int i = 0; i < t.len(); i += 1) {

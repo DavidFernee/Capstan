@@ -2,7 +2,7 @@
 // spec: types.tainted types.list
 // remove_at() on a list of untrusted bytes yields an untrusted byte.
 int main() {
-    if (let t = read_line(1048576)) {
+    if (let t = read_line()) {
         List<int> bytes = new List<int>();
         bytes.insert(0, t.at(0));
         println(char_str(bytes.remove_at(0)));

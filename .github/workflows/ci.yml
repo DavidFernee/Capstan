@@ -83,8 +83,6 @@ jobs:
       - name: Validate machine-readable assurance claims
         run: |
           "${RUNNER_TEMP}/sbom-venv/bin/python" -I scripts/assurance-validate.py --require-fresh
-      - name: Test assurance freshness and promotion policy
-        run: python3 -I tests/unit/assurance_freshness.py
       - name: Validate CWE per-attempt evidence records
         run: |
           "${RUNNER_TEMP}/sbom-venv/bin/python" -I tests/cwe/attempt_records.py --check
