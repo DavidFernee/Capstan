@@ -458,6 +458,19 @@ else
   bad "region heap reference representation privacy" "$out"
 fi
 
+section "experimental region heap: cross-arena reference rejection"
+if "$C" build -o "$tmp/ccam_heap_cross_arena.c" "$ROOT/verification/ccam_heap_cross_arena.cap" >"$tmp/log" 2>&1 &&
+   "$CC" $WFLAGS "$tmp/ccam_heap_cross_arena.c" -o "$tmp/ccam_heap_cross_arena" 2>>"$tmp/log"; then
+  err="$("$tmp/ccam_heap_cross_arena" 2>&1)"; code=$?
+  if [[ $code -eq 101 ]] && grep -qF "CWE-639" <<<"$err"; then
+    ok "region heap rejects a reference issued by another arena"
+  else
+    bad "region heap cross-arena reference" "exit $code: $err"
+  fi
+else
+  bad "region heap cross-arena build" "$(head -3 "$tmp/log")"
+fi
+
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do
     local n="$1/$(basename "$f")" want flags out code
