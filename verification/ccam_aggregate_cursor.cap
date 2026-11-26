@@ -1,0 +1,11 @@
+import "ccam_aggregate_program.cap";
+struct AGCursor { int function_id; int block; int instruction; }
+bool ag_cursor_valid(List<AGFunction> functions, AGCursor cursor) {
+    if (cursor.function_id < 0 || cursor.function_id >= functions.len()) { return false; }
+    AGFunction f = functions[cursor.function_id];
+    if (cursor.block < 0 || cursor.block >= f.blocks.len()) { return false; }
+    return cursor.instruction >= 0 && cursor.instruction <= f.blocks[cursor.block].instructions.len();
+}
+AGCursor ag_cursor_entry(int function_id) {
+    return new AGCursor{function_id: function_id, block: 0, instruction: 0};
+}
