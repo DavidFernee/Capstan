@@ -5,6 +5,7 @@ import CapstanVerification.NativeRegisterFileBridge
 import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
+import CapstanVerification.TransactionTypestate
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -178,3 +179,9 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.nativeWriteRegister_refines_finite_relation
 #print axioms CapstanVerification.nativeRuntimeRegisterFileRelation_slot_exists
 #print axioms CapstanVerification.nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts_of_in_bounds
+
+#print axioms CapstanVerification.txOwnerIds_update_preserved
+#print axioms CapstanVerification.update_preserves_linear_context
+#print axioms CapstanVerification.advance_preserves_linear_context
+#print axioms CapstanVerification.tx_transition_rejects_after_commit
+#print axioms CapstanVerification.tx_transition_rejects_abort_after_decision
