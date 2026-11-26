@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_expr_node_bounds(int left,int right,int count){return count>=0&&left>=-1&&right>=-1&&left<count&&right<count;}
