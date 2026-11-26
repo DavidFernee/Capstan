@@ -66,6 +66,13 @@ if out="$($PY "$ROOT/tests/k0/check.py" 2>&1)"; then ok "$out"; else bad "K0 stu
 section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
+section "Capstan-native verification: experimental bounded region heap model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_heap.cap" 2>&1)"; then
+  ok "CCAM region heap model: typed records, arrays, allocation limits and atomic rejection"
+else
+  bad "CCAM region heap model" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
@@ -426,6 +433,15 @@ if "$C" test -o "$tmp/private_fields.c" "$ROOT/tests/unit/private_fields/tests.c
   ok "private fields: defining-module construction/read/write and external public API"
 else
   bad "private field encapsulation" "$(tail -8 "$tmp/log"; tail -8 "$tmp/private_fields.out" 2>/dev/null)"
+fi
+
+section "experimental region heap: opaque state boundary"
+if out="$("$C" build -o "$tmp/ccam_heap_opaque_probe.c" "$ROOT/verification/ccam_heap_opaque_probe.cap" 2>&1)"; then
+  bad "region heap opacity" "external module read a private heap field"
+elif grep -qF "private field 'heap_token' of CCAMHeap" <<<"$out"; then
+  ok "region heap state is inaccessible to importing modules"
+else
+  bad "region heap opacity" "$out"
 fi
 
 expect_reject() {   # dir label
