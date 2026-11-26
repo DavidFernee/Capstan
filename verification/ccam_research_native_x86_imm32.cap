@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_x86_imm32(List<int> b,int value){if(value<0||value>2147483647||b.len()>AG_BYTE_LIMIT-4){return false;}return ag_u32(b,value);}
