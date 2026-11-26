@@ -114,7 +114,7 @@ theorem allocate_success_preserves_heapInvariant
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     heapInvariant after := by
   unfold allocate at h
-  repeat' split at h <;> simp_all [heapInvariant] <;> omega
+  repeat' split at h <;> simp_all [heapInvariant, max_le_iff] <;> omega
 
 /-- A successful allocation charges exactly the admitted amount. -/
 theorem allocation_charges_exactly
@@ -163,8 +163,7 @@ theorem allocation_bounds_temporary_peak
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.temporaryPeakBytes ≤ after.maxTemporaryBytes := by
   unfold allocate at h
-  repeat' split at h <;> simp_all
-  omega
+  repeat' split at h <;> simp_all [max_le_iff] <;> omega
 
 /-- Successful allocation preserves the cumulative work budget. -/
 theorem allocation_preserves_work_bound
