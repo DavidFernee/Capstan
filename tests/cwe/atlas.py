@@ -324,7 +324,7 @@ add(250, "Execution with unnecessary privileges", "na", note="Deployment concern
 
 # ---------------------------------------------------------------- cryptography and randomness
 add(256, "Plaintext storage of a password", "reject",
-    'int main() { if (let pw = read_line(65536)) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }', "CWE-20")
+    'int main() { if (let pw = read_line(65536)) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }', "CWE-256")
 add(257, "Storing passwords in a recoverable format", "reject",
     'int main() { if (let pw = read_line(65536)) { bool ok = write_file("users.db", escape_html(pw)); } return 0; }', "CWE-256")
 add(259, "Use of hard-coded password", "reject", "int main() { string admin_password = \"letmein\"; return 0; }", "CWE-798")
