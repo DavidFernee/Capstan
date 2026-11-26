@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "compiler" / "checker.cap"
 MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "InjectionChecker.lean"
 SINK_MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "InjectionSinks.lean"
+VALUE_MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "InjectionValue.lean"
 BASELINE = ROOT / "verification" / "lean" / "fixtures" / "injection_checker_laundering_source.cap"
 SOURCE_MARKER = "// ---- laundering analysis (CWE-20)"
 
@@ -43,6 +44,16 @@ REQUIRED_MODEL_FRAGMENTS = (
     "theorem struct_constructor_not_derived",
 )
 
+REQUIRED_VALUE_MODEL_FRAGMENTS = (
+    "abbrev ValueStore",
+    "def valueWrite",
+    "def valueDerived",
+    "theorem clean_reassignment_clears_mark",
+    "theorem comparison_preserves_left",
+    "theorem aggregate_build_preserves_field",
+    "theorem selection_preserves_control",
+)
+
 REQUIRED_SINK_MODEL_FRAGMENTS = (
     "def checkerRejectsSink",
     "theorem char_string_derived_is_rejected",
@@ -58,12 +69,13 @@ def fail(message: str) -> None:
 
 
 def main() -> None:
-    if not SOURCE.is_file() or not MODEL.is_file() or not SINK_MODEL.is_file():
+    if not SOURCE.is_file() or not MODEL.is_file() or not SINK_MODEL.is_file() or not VALUE_MODEL.is_file():
         fail("run from a complete Capstan checkout; required source/model file missing")
 
     source = SOURCE.read_text(encoding="utf-8")
     model = MODEL.read_text(encoding="utf-8")
     sink_model = SINK_MODEL.read_text(encoding="utf-8")
+    value_model = VALUE_MODEL.read_text(encoding="utf-8")
     baseline = BASELINE.read_text(encoding="utf-8")
     if SOURCE_MARKER not in source:
         fail("checker laundering-analysis section marker is missing")
@@ -77,16 +89,19 @@ def main() -> None:
     missing_source = [fragment for fragment in REQUIRED_SOURCE_FRAGMENTS if fragment not in source]
     missing_model = [fragment for fragment in REQUIRED_MODEL_FRAGMENTS if fragment not in model]
     missing_sink_model = [fragment for fragment in REQUIRED_SINK_MODEL_FRAGMENTS if fragment not in sink_model]
+    missing_value_model = [fragment for fragment in REQUIRED_VALUE_MODEL_FRAGMENTS if fragment not in value_model]
     if missing_source:
         fail("expected checker transfer/sink/fixpoint fragment missing: " + repr(missing_source))
     if missing_model:
         fail("expected Lean model declaration missing: " + repr(missing_model))
     if missing_sink_model:
         fail("expected Lean protected-sink theorem missing: " + repr(missing_sink_model))
+    if missing_value_model:
+        fail("expected Lean value-provenance theorem missing: " + repr(missing_value_model))
 
     print(
         "injection checker source bridge: PASS "
-        "(checker laundering-analysis section matches fixture; transfer and sink model declarations present)"
+        "(checker laundering-analysis section matches fixture; transfer, sink and value-provenance declarations present)"
     )
     print(
         "LIMIT: source identity and declaration-presence checks only; "
