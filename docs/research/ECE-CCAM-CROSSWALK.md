@@ -2,7 +2,7 @@
 
 **Status:** implementation-aware research crosswalk; no end-to-end ECE or evaluator-refinement claim  
 **Issue:** [#219](https://github.com/DavidFernee/Capstan/issues/219)  
-**Snapshot:** main at commit \`635eaf5d2e319bf4835c7ecae1ab316cd94b8ef2\` (2026-11-26)  
+**Snapshot:** main at commit `635eaf5d2e319bf4835c7ecae1ab316cd94b8ef2` (2026-11-26)  
 **Normative authority:** [CCAM v0.1](../architecture/CCAM.md)  
 **ECE proposal:** [Evidence-Carrying Execution](EVIDENCE-CARRYING-EXECUTION.md)  
 **Obligation ledger:** [ECE proof and implementation obligations](EVIDENCE-CARRYING-EXECUTION-OBLIGATIONS.md)
@@ -26,18 +26,18 @@ The following PRs are merged and are part of the implementation history:
 
 | PR | Integrated increment | Merge commit |
 |---|---|---|
-| #142 | Capstan-native single-frame evaluator | \`992b5b017c56045ac1391aa68fd95deba18b407c\` |
-| #151 | Lean single-frame validation model/proofs | \`360043c8704546857caa4c82f2978c7709399016\` |
-| #163 | Bounded typed in-memory structural validator | \`294d34361c31dc768e60a017a3fd0718f7a00313\` |
-| #207 | Bounded multi-function call-frame evaluator | \`d7a1196370d3afd3e8ee1230b886929f4e306f28\` |
-| #210 | Checked scalar source-to-CCAM lowering | \`d635940c209d28b569f4776b3e443ab9632bf7f1\` |
-| #212 | Experimental freestanding Linux x86-64 backend | \`2b3f0cebea767837dd5e56a6afe69355ad4db62e\` |
+| #142 | Capstan-native single-frame evaluator | `992b5b017c56045ac1391aa68fd95deba18b407c` |
+| #151 | Lean single-frame validation model/proofs | `360043c8704546857caa4c82f2978c7709399016` |
+| #163 | Bounded typed in-memory structural validator | `294d34361c31dc768e60a017a3fd0718f7a00313` |
+| #207 | Bounded multi-function call-frame evaluator | `d7a1196370d3afd3e8ee1230b886929f4e306f28` |
+| #210 | Checked scalar source-to-CCAM lowering | `d635940c209d28b569f4776b3e443ab9632bf7f1` |
+| #212 | Experimental freestanding Linux x86-64 backend | `2b3f0cebea767837dd5e56a6afe69355ad4db62e` |
 
 The current implementation is in Capstan source:
-- \`verification/ccam_core.cap\`: single-frame arithmetic, typed registers, instruction execution, step budget, in-memory validation, byte-output extension and associated tests.
-- \`verification/ccam_calls.cap\`: multi-function frames, call-site side tables, signatures, recursive calls, shared step/depth limits, aggregate admission and associated tests.
-- \`verification/ccam_lowering.cap\`: checked scalar source lowering, loops, direct calls, literal print lowering and associated tests.
-- \`verification/ccam_native_x64.cap\` and \`tools/native_driver.cap\`: experimental native path.
+- `verification/ccam_core.cap`: single-frame arithmetic, typed registers, instruction execution, step budget, in-memory validation, byte-output extension and associated tests.
+- `verification/ccam_calls.cap`: multi-function frames, call-site side tables, signatures, recursive calls, shared step/depth limits, aggregate admission and associated tests.
+- `verification/ccam_lowering.cap`: checked scalar source lowering, loops, direct calls, literal print lowering and associated tests.
+- `verification/ccam_native_x64.cap` and `tools/native_driver.cap`: experimental native path.
 
 The executable implementation is materially ahead of the Lean whole-machine model, but it remains transitional relative to the normative JSON CCAM contract.
 
@@ -56,18 +56,18 @@ This is explicit in the control-flow paragraph of [CCAM.md](../architecture/CCAM
 
 ### 2.2 Executable validator rule
 
-The current Capstan single-frame validator in \`verification/ccam_core.cap\` uses a worklist over reachable instructions and implements that rule. It includes tests named:
-- \`CCAM validator rejects invalid branch targets and reachable fallthrough\`;
-- \`CCAM validator permits unreachable fallthrough but validates unreachable instructions\`;
-- \`CCAM validator accepts unreachable nonterminal final instruction\`.
+The current Capstan single-frame validator in `verification/ccam_core.cap` uses a worklist over reachable instructions and implements that rule. It includes tests named:
+- `CCAM validator rejects invalid branch targets and reachable fallthrough`;
+- `CCAM validator permits unreachable fallthrough but validates unreachable instructions`;
+- `CCAM validator accepts unreachable nonterminal final instruction`.
 
-The multi-function validator in \`verification/ccam_calls.cap\` also has a reachability worklist in \`ccam_validate_function_control_flow\`, with terminal cases for return/void-return/explicit-trap and successor checks for reachable nonterminal instructions.
+The multi-function validator in `verification/ccam_calls.cap` also has a reachability worklist in `ccam_validate_function_control_flow`, with terminal cases for return/void-return/explicit-trap and successor checks for reachable nonterminal instructions.
 
 ### 2.3 Lean proof-profile rule
 
-The Lean model in \`verification/lean/CapstanVerification/Machine.lean\` defines \`FiniteProgram\` with a proof field requiring the final instruction to satisfy \`machineInstrIsTerminal\`. \`ProgramValidator.lean\` carries this through \`validateSingleFrameProgram\`. Its comments explicitly state that this is stronger than normative CCAM v0.1: it rejects an unreachable nonterminal final instruction even where no reachable path falls off the function.
+The Lean model in `verification/lean/CapstanVerification/Machine.lean` defines `FiniteProgram` with a proof field requiring the final instruction to satisfy `machineInstrIsTerminal`. `ProgramValidator.lean` carries this through `validateSingleFrameProgram`. Its comments explicitly state that this is stronger than normative CCAM v0.1: it rejects an unreachable nonterminal final instruction even where no reachable path falls off the function.
 
-The model also has a deliberately restricted \`validateSingleFrameProfile\` that requires entry PC zero, matching the concrete single-frame evaluator's start-at-zero behaviour.
+The model also has a deliberately restricted `validateSingleFrameProfile` that requires entry PC zero, matching the concrete single-frame evaluator's start-at-zero behaviour.
 
 ### 2.4 Resolution for the first ECE target
 
@@ -78,26 +78,26 @@ Freeze the initial proof/certificate target as **CCAM-SF-P** (single-frame proof
 - no byte-output extension;
 - only the instruction constructors represented by the Lean single-frame model;
 - all register, operand, target and return-type checks are satisfied;
-- the final instruction has an explicit control effect, as required by the current Lean \`FiniteProgram\` representation;
+- the final instruction has an explicit control effect, as required by the current Lean `FiniteProgram` representation;
 - the shared instruction budget is enforced.
 
 This resolves the mismatch for the first certificate target without changing normative CCAM semantics: every CCAM-SF-P program is intended to be a valid CCAM v0.1 program, but some valid normative programs are deliberately excluded. In particular, the current executable validator accepts the unreachable-nonterminal-final test vector while CCAM-SF-P rejects it. The certificate checker must expose that conservative rejection; it must not claim to implement the full normative acceptance predicate.
 
-For a later profile that aims to cover the full normative single-frame subset, replace the unconditional \`last_is_terminal\` premise with a formal reachability/no-reachable-fall-through predicate and prove it sound. Do not weaken the normative contract to fit the current Lean representation.
+For a later profile that aims to cover the full normative single-frame subset, replace the unconditional `last_is_terminal` premise with a formal reachability/no-reachable-fall-through predicate and prove it sound. Do not weaken the normative contract to fit the current Lean representation.
 
 ## 3. Additional semantic and representation mismatches
 
 ### 3.1 Internal byte-output opcode is not normative CCAM v0.1
 
-The current executable evaluator defines \`CCAM_OP_EMIT_BYTES\` (opcode value 18), stores byte payloads in \`CCAMInstruction.byte_data\`, appends to an in-memory output buffer and enforces \`max_output_bytes\` (default ceiling 1 MiB). Tests cover exact append, one-step charging, empty output, invalid byte values, atomic budget rejection and aggregate literal limits across functions.
+The current executable evaluator defines `CCAM_OP_EMIT_BYTES` (opcode value 18), stores byte payloads in `CCAMInstruction.byte_data`, appends to an in-memory output buffer and enforces `max_output_bytes` (default ceiling 1 MiB). Tests cover exact append, one-step charging, empty output, invalid byte values, atomic budget rejection and aggregate literal limits across functions.
 
-The source lowerer emits this instruction for literal \`print\`/\`println\` calls. The normative CCAM v0.1 instruction table in \`docs/architecture/CCAM.md\` does not include \`emit_bytes\`; its JSON decoder proposal likewise has no normative output opcode. The current output operation is therefore an implementation extension, not part of the versioned v0.1 instruction set.
+The source lowerer emits this instruction for literal `print`/`println` calls. The normative CCAM v0.1 instruction table in `docs/architecture/CCAM.md` does not include `emit_bytes`; its JSON decoder proposal likewise has no normative output opcode. The current output operation is therefore an implementation extension, not part of the versioned v0.1 instruction set.
 
-**Resolution:** exclude \`emit_bytes\` from CCAM-SF-P and from any v0.1 certificate. Keep the current source-lowering/output tests as evidence for an experimental extension only. If output is to become normative, specify its effect, output byte unit, accounting point, atomicity, trap outcome and host/adapter boundary in a new CCAM version before treating it as part of ECE.
+**Resolution:** exclude `emit_bytes` from CCAM-SF-P and from any v0.1 certificate. Keep the current source-lowering/output tests as evidence for an experimental extension only. If output is to become normative, specify its effect, output byte unit, accounting point, atomicity, trap outcome and host/adapter boundary in a new CCAM version before treating it as part of ECE.
 
 ### 3.2 Multi-function calls use transitional side tables
 
-Normative CCAM represents a call as a closed instruction object containing the callee function name, argument-register list and nullable destination. The current \`ccam_calls.cap\` representation stores a \`CCAMCallSite\` side-table record containing instruction index, callee function-table index, argument registers and destination metadata. \`CCAMInstruction\` itself does not carry the normative named-call JSON object.
+Normative CCAM represents a call as a closed instruction object containing the callee function name, argument-register list and nullable destination. The current `ccam_calls.cap` representation stores a `CCAMCallSite` side-table record containing instruction index, callee function-table index, argument registers and destination metadata. `CCAMInstruction` itself does not carry the normative named-call JSON object.
 
 The multi-function validator checks function names, signatures, call-site indices and aggregate bounds in this in-memory representation. The evaluator uses a lookup table from instruction index to side-table entry. This is a real executable call-frame increment, but it is not the normative external program representation or a completed decoder.
 
@@ -105,15 +105,15 @@ The multi-function validator checks function names, signatures, call-site indice
 
 ### 3.3 JSON decoder remains a proposal
 
-\`docs/architecture/CCAM-JSON-DECODER.md\` explicitly labels itself an implementation-contract proposal, not yet implemented or normative CCAM v0.1. It specifies iterative bounded parsing, duplicate-key detection after escape decoding, exact integer parsing, closed objects, bounded strings/containers and whole-program validation before executable-state construction.
+`docs/architecture/CCAM-JSON-DECODER.md` explicitly labels itself an implementation-contract proposal, not yet implemented or normative CCAM v0.1. It specifies iterative bounded parsing, duplicate-key detection after escape decoding, exact integer parsing, closed objects, bounded strings/containers and whole-program validation before executable-state construction.
 
-Current \`ccam_core.cap\` and \`ccam_calls.cap\` validate already-decoded in-memory Capstan values. They do not parse untrusted JSON, detect duplicate JSON keys, validate raw UTF-8/escapes or prove exact JSON number handling.
+Current `ccam_core.cap` and `ccam_calls.cap` validate already-decoded in-memory Capstan values. They do not parse untrusted JSON, detect duplicate JSON keys, validate raw UTF-8/escapes or prove exact JSON number handling.
 
 **Resolution:** no certificate may be described as validating arbitrary CCAM JSON until the bounded decoder is implemented and its raw-input-to-typed-program relation is proved or independently validated. The first profile should use a precisely frozen, bounded encoding and reject unsupported fields/opcodes.
 
 ### 3.4 Native backend status metadata
 
-The opening status paragraph of \`docs/architecture/CCAM.md\` described the freestanding Linux x86-64 backend as "proposed in PR #212". PR #212 is merged (merge commit above). The correct status is that an experimental Linux x86-64 backend is integrated; it does not establish a CCAM-to-native refinement theorem or a complete source-to-platform correctness chain.
+The opening status paragraph of `docs/architecture/CCAM.md` described the freestanding Linux x86-64 backend as "proposed in PR #212". PR #212 is merged (merge commit above). The correct status is that an experimental Linux x86-64 backend is integrated; it does not establish a CCAM-to-native refinement theorem or a complete source-to-platform correctness chain.
 
 The metadata correction is included with this crosswalk. No CCAM instruction semantics are changed.
 
@@ -123,14 +123,14 @@ The metadata correction is included with this crosswalk. No CCAM instruction sem
 
 | Layer | Main source | Current integrated behaviour | Representative tests | Boundary |
 |---|---|---|---|---|
-| Arithmetic | \`verification/ccam_core.cap\` | Checked signed-64 add/sub/mul/div/rem; zero division and overflow traps; truncation toward zero | overflow, MIN/-1, remainder sign and divide-by-zero tests | Tests exercise Capstan implementation; no full evaluator refinement theorem |
-| Registers | \`verification/ccam_core.cap\` | Typed int/bool registers, initialisation state, invalid-index/type rejection | register type, uninitialised state and constructor rejection | Formal runtime-register bridge is a model, not whole evaluator simulation |
-| Single-frame execution | \`verification/ccam_core.cap\` | Arithmetic, moves, comparisons, branches/jumps, returns, explicit traps, shared step counter | checked arithmetic, branch arms, trap precedence, void halt, invalid PC/opcode and step-boundary tests | In-memory instruction sequence; no JSON decoder |
-| Single-frame validation | \`verification/ccam_core.cap\` | Register/opcode/target/type/return checks; reachability worklist; bounded instruction/register and byte-literal admission | reachable fall-through, unreachable final instruction, backward CFG, return contracts, malformed program | Not full normative JSON/whole-program validation |
-| Multi-function execution | \`verification/ccam_calls.cap\` | Function frames, argument transfer, direct/recursive calls, continuations, atomic return preflight, shared steps/depth | int/bool/void calls, recursion, depth boundary, argument order, return failure atomicity | Internal call-site side tables, not normative named-call JSON |
-| Multi-function validation | \`verification/ccam_calls.cap\` | Function uniqueness/signatures, call-site mapping, control flow, aggregate functions/registers/instructions/args/name bytes | signature mismatch, count/aggregate limits, invalid names and call-site bounds | In-memory data only; no raw decoder |
-| Source lowering | \`verification/ccam_lowering.cap\` | Checked scalar locals/arithmetic, while/for, break/continue, direct calls/recursion, literal output | source subset, loop patching, recursive calls, void/bool calls, print literal and unsupported construct tests | Tests only; no formal source-to-CCAM simulation |
-| Native backend | \`verification/ccam_native_x64.cap\`, \`tools/native_driver.cap\` | Experimental Linux x86-64 freestanding emission/driver path integrated by #212 | Native backend fixtures/CI in the backend workstream | No proof that generated native code simulates all CCAM outcomes/effects/resources |
+| Arithmetic | `verification/ccam_core.cap` | Checked signed-64 add/sub/mul/div/rem; zero division and overflow traps; truncation toward zero | overflow, MIN/-1, remainder sign and divide-by-zero tests | Tests exercise Capstan implementation; no full evaluator refinement theorem |
+| Registers | `verification/ccam_core.cap` | Typed int/bool registers, initialisation state, invalid-index/type rejection | register type, uninitialised state and constructor rejection | Formal runtime-register bridge is a model, not whole evaluator simulation |
+| Single-frame execution | `verification/ccam_core.cap` | Arithmetic, moves, comparisons, branches/jumps, returns, explicit traps, shared step counter | checked arithmetic, branch arms, trap precedence, void halt, invalid PC/opcode and step-boundary tests | In-memory instruction sequence; no JSON decoder |
+| Single-frame validation | `verification/ccam_core.cap` | Register/opcode/target/type/return checks; reachability worklist; bounded instruction/register and byte-literal admission | reachable fall-through, unreachable final instruction, backward CFG, return contracts, malformed program | Not full normative JSON/whole-program validation |
+| Multi-function execution | `verification/ccam_calls.cap` | Function frames, argument transfer, direct/recursive calls, continuations, atomic return preflight, shared steps/depth | int/bool/void calls, recursion, depth boundary, argument order, return failure atomicity | Internal call-site side tables, not normative named-call JSON |
+| Multi-function validation | `verification/ccam_calls.cap` | Function uniqueness/signatures, call-site mapping, control flow, aggregate functions/registers/instructions/args/name bytes | signature mismatch, count/aggregate limits, invalid names and call-site bounds | In-memory data only; no raw decoder |
+| Source lowering | `verification/ccam_lowering.cap` | Checked scalar locals/arithmetic, while/for, break/continue, direct calls/recursion, literal output | source subset, loop patching, recursive calls, void/bool calls, print literal and unsupported construct tests | Tests only; no formal source-to-CCAM simulation |
+| Native backend | `verification/ccam_native_x64.cap`, `tools/native_driver.cap` | Experimental Linux x86-64 freestanding emission/driver path integrated by #212 | Native backend fixtures/CI in the backend workstream | No proof that generated native code simulates all CCAM outcomes/effects/resources |
 
 The tests are declared in Capstan source and run through the repository test harness. They are executable evidence for the tested cases, not proofs of all executions.
 
@@ -138,24 +138,24 @@ The tests are declared in Capstan source and run through the repository test har
 
 | Lean module | Existing formal object/result | What it proves | What it does not prove |
 |---|---|---|---|
-| \`Machine.lean\` | Typed single-frame \`MachineInstr\`, \`FiniteProgram\`, \`MachineState\`, \`machineStep\`, budgeted step | Typed register/PC invariants; step counter increment/limit; call-stack push/pop lemmas over a generic frame type | No call instruction or integrated multi-function machine; no concrete evaluator simulation |
-| \`Progress.lean\` | \`machineStep_progress_or_explicit_outcome\`, determinism, bounded \`runFuel\` residual-state typing | Functional one-step outcome classification/determinism for the current single-frame model | Not whole-program multi-function progress; meta-fuel exhaustion is not CCAM \`step_limit_exceeded\` |
-| \`ProgramValidator.lean\` | Raw single-frame instruction validation and \`validateSingleFrameProfile\` | Bounded indices, typed instructions, return-contract rejection, entry-zero profile, conservative final-terminal condition | Not full JSON/whole-program validator soundness; profile is stricter than normative reachability acceptance |
-| \`Validator.lean\` | Single decoded-instruction conversion to intrinsically typed syntax | Successful raw instruction conversion produces typed machine syntax and bounded targets | Not a JSON decoder, whole-program validation or implementation refinement |
-| \`RuntimeBridge.lean\` | \`RuntimeRegisterFileRelation\`, read/write preservation/correspondence | Representation-level register read/write properties under an explicit relation | Does not prove the concrete CCAM evaluator establishes/preserves that relation at every machine step |
-| \`NativeRegisterBridge.lean\` | Native-style register model and type/read/write correspondence | Model-level native register representation and operation lemmas | Not a whole native backend refinement theorem |
-| \`ExplicitTrap.lean\` | Explicit-trap reason byte model and dispatch | Detail preservation and model-level step/exhaustion behaviour | Not proof that the executable evaluator/decoder matches the model |
+| `Machine.lean` | Typed single-frame `MachineInstr`, `FiniteProgram`, `MachineState`, `machineStep`, budgeted step | Typed register/PC invariants; step counter increment/limit; call-stack push/pop lemmas over a generic frame type | No call instruction or integrated multi-function machine; no concrete evaluator simulation |
+| `Progress.lean` | `machineStep_progress_or_explicit_outcome`, determinism, bounded `runFuel` residual-state typing | Functional one-step outcome classification/determinism for the current single-frame model | Not whole-program multi-function progress; meta-fuel exhaustion is not CCAM `step_limit_exceeded` |
+| `ProgramValidator.lean` | Raw single-frame instruction validation and `validateSingleFrameProfile` | Bounded indices, typed instructions, return-contract rejection, entry-zero profile, conservative final-terminal condition | Not full JSON/whole-program validator soundness; profile is stricter than normative reachability acceptance |
+| `Validator.lean` | Single decoded-instruction conversion to intrinsically typed syntax | Successful raw instruction conversion produces typed machine syntax and bounded targets | Not a JSON decoder, whole-program validation or implementation refinement |
+| `RuntimeBridge.lean` | `RuntimeRegisterFileRelation`, read/write preservation/correspondence | Representation-level register read/write properties under an explicit relation | Does not prove the concrete CCAM evaluator establishes/preserves that relation at every machine step |
+| `NativeRegisterBridge.lean` | Native-style register model and type/read/write correspondence | Model-level native register representation and operation lemmas | Not a whole native backend refinement theorem |
+| `ExplicitTrap.lean` | Explicit-trap reason byte model and dispatch | Detail preservation and model-level step/exhaustion behaviour | Not proof that the executable evaluator/decoder matches the model |
 
 Key theorem names currently present include:
-- \`machineStep_preserves_well_typed\`, \`machineState_pc_is_in_range\`;
-- \`consumeStep_increments\`, \`consumeStep_within_limit\`, \`consumeStep_exhausted_traps\`;
-- \`pushCallFrame_top\`, \`pushCallFrame_increments_depth\`, \`pushCallFrame_within_limit\`, \`popNestedCallFrame_restores_caller\`;
-- \`machineStep_progress_or_explicit_outcome\`, \`machineStep_deterministic\`;
-- \`validateMachineInstr\`-related return/index/type results and \`validateSingleFrameProfile_entry_zero\`;
-- \`runtimeWriteRegister_preserves_relation\`, \`runtimeReadInt_corresponds\`, \`runtimeReadBool_corresponds\`;
-- \`explicitTrap_preserves_detail\`, \`explicitTrap_dispatch_consumes_one\`.
+- `machineStep_preserves_well_typed`, `machineState_pc_is_in_range`;
+- `consumeStep_increments`, `consumeStep_within_limit`, `consumeStep_exhausted_traps`;
+- `pushCallFrame_top`, `pushCallFrame_increments_depth`, `pushCallFrame_within_limit`, `popNestedCallFrame_restores_caller`;
+- `machineStep_progress_or_explicit_outcome`, `machineStep_deterministic`;
+- `validateMachineInstr`-related return/index/type results and `validateSingleFrameProfile_entry_zero`;
+- `runtimeWriteRegister_preserves_relation`, `runtimeReadInt_corresponds`, `runtimeReadBool_corresponds`;
+- `explicitTrap_preserves_detail`, `explicitTrap_dispatch_consumes_one`.
 
-The call-stack lemmas in \`Machine.lean\` are generic list/stack lemmas. They are not yet integrated into \`MachineInstr\`, \`machineStep\`, or a whole-program multi-frame state theorem.
+The call-stack lemmas in `Machine.lean` are generic list/stack lemmas. They are not yet integrated into `MachineInstr`, `machineStep`, or a whole-program multi-frame state theorem.
 
 ## 5. ECE obligation crosswalk
 
@@ -170,7 +170,7 @@ The ECE obligation identifiers below retain their ledger status: **all theorem/i
 | ECE-003 binding | ECE proposal specifies digest, semantics, limits and capability manifest conceptually | No evidence bundle or mutation suite | No binding theorem | Bind exact canonical bytes, semantics/profile, resource limits, grants and checker identity; add stale/mutated-field tests |
 | ECE-004 acceptance predicate | CCAM.md gives normative structural and dynamic preconditions | Partial single-/multi-function validators implement subsets | Lean raw instruction/profile predicates only | Define formal accepted-program predicate for the exact certificate profile; include decoder and aggregate limits |
 | ECE-005 checker soundness | Required by ECE proposal | No independent certificate checker | Instruction-level validator lemmas only | Prove acceptance implies the exact formal predicate; no producer trust |
-| ECE-006 completeness/conservatism | Normative v0.1 defines broader acceptance than current Lean proof profile | Runtime validator accepts unreachable nonterminal final instruction; Lean profile rejects it | \`validateSingleFrameProfile\` is deliberately conservative | Name/profile the accepted subset and classify rejected valid-v0.1 programs as unsupported, not invalid |
+| ECE-006 completeness/conservatism | Normative v0.1 defines broader acceptance than current Lean proof profile | Runtime validator accepts unreachable nonterminal final instruction; Lean profile rejects it | `validateSingleFrameProfile` is deliberately conservative | Name/profile the accepted subset and classify rejected valid-v0.1 programs as unsupported, not invalid |
 
 ### B. Execution correspondence
 
@@ -284,24 +284,24 @@ No individual owner is inferred here. Work-package roles must be assigned explic
 
 ## 9. Snapshot and reproduction references
 
-All statements in this crosswalk are pinned to main commit \`635eaf5d2e319bf4835c7ecae1ab316cd94b8ef2\`. The primary source files and proof modules inspected are:
+All statements in this crosswalk are pinned to main commit `635eaf5d2e319bf4835c7ecae1ab316cd94b8ef2`. The primary source files and proof modules inspected are:
 
-- \`docs/architecture/CCAM.md\`
-- \`docs/architecture/CCAM-JSON-DECODER.md\`
-- \`docs/architecture/CCAM-PROGRESS-RESULT.md\`
-- \`verification/ccam_core.cap\`
-- \`verification/ccam_calls.cap\`
-- \`verification/ccam_lowering.cap\`
-- \`verification/ccam_native_x64.cap\`
-- \`tools/native_driver.cap\`
-- \`verification/lean/CapstanVerification/Machine.lean\`
-- \`verification/lean/CapstanVerification/Progress.lean\`
-- \`verification/lean/CapstanVerification/Validator.lean\`
-- \`verification/lean/CapstanVerification/ProgramValidator.lean\`
-- \`verification/lean/CapstanVerification/RuntimeBridge.lean\`
-- \`verification/lean/CapstanVerification/NativeRegisterBridge.lean\`
-- \`verification/lean/CapstanVerification/ExplicitTrap.lean\`
-- \`verification/README.md\`
-- \`tests/run.sh\`
+- `docs/architecture/CCAM.md`
+- `docs/architecture/CCAM-JSON-DECODER.md`
+- `docs/architecture/CCAM-PROGRESS-RESULT.md`
+- `verification/ccam_core.cap`
+- `verification/ccam_calls.cap`
+- `verification/ccam_lowering.cap`
+- `verification/ccam_native_x64.cap`
+- `tools/native_driver.cap`
+- `verification/lean/CapstanVerification/Machine.lean`
+- `verification/lean/CapstanVerification/Progress.lean`
+- `verification/lean/CapstanVerification/Validator.lean`
+- `verification/lean/CapstanVerification/ProgramValidator.lean`
+- `verification/lean/CapstanVerification/RuntimeBridge.lean`
+- `verification/lean/CapstanVerification/NativeRegisterBridge.lean`
+- `verification/lean/CapstanVerification/ExplicitTrap.lean`
+- `verification/README.md`
+- `tests/run.sh`
 
 The exact test/proof command and passing run identifiers must be attached to any future obligation closure. This document does not claim to have rerun the full test suite or formal build locally.
