@@ -218,24 +218,13 @@ int draw_glyphs(Canvas cv, Font f, int size, List<int> cps, int from, int to, in
     int pen = x;
     int by = fx_round(baseline);
     Paint paint = solid(color);
-    Rect clip = cv.clip();
     for (int i = from; i < to; i += 1) {
         int g = glyph_for(f, cps[i]);
         int phase = (pen & 255) >> 6;
         GlyphMask m = glyph_mask(f, g, size, phase);
         int gx = (pen >> 8) + m.left;
         int gy = by + m.top;
-        int x0 = int_max(gx, clip.x);
-        int x1 = int_min(gx + m.w, clip.right());
-        int y0 = int_max(gy, clip.y);
-        int y1 = int_min(gy + m.h, clip.bottom());
-        for (int yy = y0; yy < y1; yy += 1) {
-            int row = (yy - gy) * m.w;
-            for (int xx = x0; xx < x1; xx += 1) {
-                int a = m.alpha[row + xx - gx];
-                if (a > 0) { cv.blend(xx, yy, paint, a); }
-            }
-        }
+        cv.draw_mask(m.alpha, m.w, m.h, gx, gy, paint);
         pen += glyph_advance(f, g, size);
     }
     return pen;

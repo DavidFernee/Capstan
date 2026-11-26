@@ -46,6 +46,7 @@ jobs:
           path: |
             tests/fuzz/failures/
             tests/fmt/failures/
+            tests/shroud/failures/
           if-no-files-found: ignore
 
   # The release pipeline's evidence, checked on every change: the workflows lint clean, and the

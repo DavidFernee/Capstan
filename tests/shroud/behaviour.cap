@@ -1173,6 +1173,389 @@ void test_checked_geometry_small_domain(Tally t) {
     expect_geometry(t, fx_ok, "geometry mul_div: negative half tie rounds away from zero");
 }
 
+void test_display_list(Tally t, Font font) {
+    // Empty clips outside the viewport are valid no-op state. Recording must
+    // canonicalise their origin so the published command remains in-surface.
+    Pixmap empty_target = new_pixmap(4, 4);
+    Canvas empty_recorder = new_recording_canvas(empty_target);
+    empty_recorder.push_clip(rect_px(8, 8, 2, 2));
+    empty_recorder.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFFFFFF));
+    DisplayList empty_frame = finish_display_list(empty_recorder);
+    expect(t, display_list_valid(empty_frame, empty_target),
+        "display list: fully clipped command publishes a canonical empty clip",
+        "empty clip outside viewport rejected");
+    execute_display_list(empty_frame, empty_target);
+    expect_int(t, empty_target.get(0, 0), 0,
+        "display list: canonical empty clip remains a no-op");
+    List<int> canonical_alpha = new List<int>();
+    canonical_alpha.push(0);
+    canonical_alpha.push(128);
+    canonical_alpha.push(255);
+    expect(t, display_mask_alpha_valid(canonical_alpha),
+        "display list: canonical glyph alpha is accepted", "valid alpha rejected");
+    List<int> invalid_alpha_values = new List<int>();
+    invalid_alpha_values.push(-1);
+    expect(t, !display_mask_alpha_valid(invalid_alpha_values),
+        "display list: negative glyph alpha is rejected", "negative alpha accepted");
+    invalid_alpha_values[0] = 256;
+    expect(t, !display_mask_alpha_valid(invalid_alpha_values),
+        "display list: over-range glyph alpha is rejected", "over-range alpha accepted");
+    Canvas admission = new_recording_canvas(new_pixmap(1, 1));
+    expect(t, display_mask_admissible(admission, 1, 1, 1),
+        "display list: one-pixel mask passes pre-allocation admission", "valid one-pixel mask rejected");
+    expect(t, !display_mask_admissible(admission, 1, 1, MAX_DISPLAY_MASK_PIXELS + 1),
+        "display list: oversized mask is rejected before copying", "oversized mask accepted");
+    expect(t, !display_mask_admissible(admission, 2, 2, 3),
+        "display list: inconsistent mask dimensions are rejected before copying", "inconsistent mask dimensions accepted");
+    expect(t, !display_mask_admissible(admission, 0, 1, 0),
+        "display list: partially zero mask dimensions are rejected", "partially zero mask dimensions accepted");
+    Pixmap direct = new_pixmap(48, 36);
+    Pixmap replayed = new_pixmap(48, 36);
+    direct.clear(0xFF182838);
+    replayed.clear(0xFF182838);
+    Canvas a = new_canvas(direct);
+    Canvas recorder = new_recording_canvas(replayed);
+
+    // Cover each current command family and capture nested clip state.
+    a.fill_rect(rect(fx(2) + FX_HALF, fx(3), fx(17), fx(9)),
+        linear_gradient(fx(2), 0, 0xC0FF4000, fx(20), 0, 0x804080FF));
+    recorder.fill_rect(rect(fx(2) + FX_HALF, fx(3), fx(17), fx(9)),
+        linear_gradient(fx(2), 0, 0xC0FF4000, fx(20), 0, 0x804080FF));
+    a.push_clip(rect_px(5, 4, 30, 24));
+    recorder.push_clip(rect_px(5, 4, 30, 24));
+    Path shape = path_round_rect_ring(rect_px(3, 2, 34, 27), fx(5), fx(3));
+    a.fill_path(shape, solid(0xA040C080), FILL_NONZERO);
+    recorder.fill_path(shape, solid(0xA040C080), FILL_NONZERO);
+    a.blend(8, 8, solid(0x80FFFFFF), 117);
+    recorder.blend(8, 8, solid(0x80FFFFFF), 117);
+    a.pop_clip();
+    recorder.pop_clip();
+    List<int> glyphs = text_codepoints("G P U");
+    int _direct_pen = draw_glyphs(a, font, fx(11), glyphs, 0, glyphs.len(), fx(2), fx(33), 0xFFE0F0FF);
+    int _recorded_pen = draw_glyphs(recorder, font, fx(11), glyphs, 0, glyphs.len(), fx(2), fx(33), 0xFFE0F0FF);
+    expect_int(t, _recorded_pen, _direct_pen, "display list: glyph advances are unchanged");
+    a.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
+    recorder.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFF00FF));
+
+    // A recorded mask owns its pixels; mutating the font-side source afterwards
+    // must not change the already-recorded frame.
+    List<int> mask = new List<int>();
+    mask.push(255);
+    a.draw_mask(mask, 1, 1, 40, 30, solid(0xFFFFFF00));
+    recorder.draw_mask(mask, 1, 1, 40, 30, solid(0xFFFFFF00));
+    mask[0] = 0;
+
+    DisplayList frame = finish_display_list(recorder);
+    int published_commands = frame.commands.len();
+    int published_path_x = 0;
+    int published_mask_alpha = 0;
+    if (let frame_segments = frame.commands[1].segments) {
+        published_path_x = frame_segments.x0[0];
+    }
+    if (let frame_alpha = frame.commands[frame.commands.len() - 1].mask_alpha) {
+        published_mask_alpha = frame_alpha[0];
+    }
+    // Mutating nested recorder payloads after publication must not mutate the
+    // published frame. A shallow command-struct copy would fail both checks.
+    if (let recorder_segments = recorder.commands[1].segments) {
+        recorder_segments.x0[0] = fx(47);
+    }
+    if (let recorder_alpha = recorder.commands[recorder.commands.len() - 1].mask_alpha) {
+        recorder_alpha[0] = 0;
+    }
+    bool nested_snapshot = false;
+    if (let frame_segments_after = frame.commands[1].segments) {
+        if (let frame_alpha_after = frame.commands[frame.commands.len() - 1].mask_alpha) {
+            nested_snapshot = frame_segments_after.x0[0] == published_path_x &&
+                frame_alpha_after[0] == published_mask_alpha && published_mask_alpha == 255;
+        }
+    }
+    expect(t, nested_snapshot,
+        "display list: path and mask payloads are deep-snapshotted",
+        "recorder mutation changed a published nested payload");
+
+    // Snapshot admission recomputes bounds instead of trusting the recorder's
+    // mutable cached budget, and rejects malformed parallel path arrays.
+    Canvas malformed_recorder = new_recording_canvas(new_pixmap(1, 1));
+    DisplayCommand malformed_snapshot = frame.commands[1];
+    Segments mismatched_segments = new_segments();
+    mismatched_segments.x0.push(0);
+    malformed_snapshot.segments = mismatched_segments;
+    malformed_recorder.commands.push(malformed_snapshot);
+    expect(t, !display_snapshot_fits(malformed_recorder),
+        "display list: malformed recorder geometry is rejected before snapshot",
+        "mismatched segment arrays admitted");
+
+    // Validate each published command independently so a rejected frame reports
+    // the exact command that violates the public replay contract.
+    for (int check = 0; check < frame.commands.len(); check += 1) {
+        List<DisplayCommand> isolated_commands = new List<DisplayCommand>();
+        isolated_commands.push(frame.commands[check]);
+        DisplayList isolated_frame = new DisplayList{
+            width: frame.width, height: frame.height, commands: isolated_commands
+        };
+        expect(t, display_list_valid(isolated_frame, replayed),
+            $"display list: command {check} is independently valid",
+            $"kind={frame.commands[check].kind}, clip={frame.commands[check].clip.x},{frame.commands[check].clip.y},{frame.commands[check].clip.w},{frame.commands[check].clip.h}");
+    }
+
+    // Appending to the recorder after publication must not mutate the frame.
+    recorder.fill_rect(rect_px(45, 33, 1, 1), solid(0xFFFF0000));
+    execute_display_list(frame, replayed);
+    bool same = direct.px.len() == replayed.px.len();
+    for (int i = 0; i < direct.px.len() && same; i += 1) {
+        if (direct.px[i] != replayed.px[i]) { same = false; }
+    }
+    expect(t, same, "display list: replay is byte-identical to immediate software rasterisation",
+        $"commands={frame.commands.len()}");
+    expect(t, frame.width == 48 && frame.height == 36 && frame.commands.len() >= 5,
+        "display list: frame dimensions and commands are retained",
+        $"{frame.width}x{frame.height}, {frame.commands.len()} commands");
+    expect_int(t, frame.commands.len(), published_commands,
+        "display list: published command sequence is isolated from later recording");
+    expect_int(t, ch_r(replayed.get(40, 30)), 255,
+        "display list: glyph mask pixels are snapshotted at record time");
+
+    // The executor accepts public DisplayList values, not just recorder output.
+    // Invalid metadata must be rejected before any destination pixel is touched.
+    Pixmap guarded = new_pixmap(48, 36);
+    guarded.clear(0xFF123456);
+    int before = guarded.get(0, 0);
+    DisplayCommand bad_clip = frame.commands[0];
+    bad_clip.clip = rect(-1, 0, 2, 2);
+    List<DisplayCommand> bad_clip_commands = new List<DisplayCommand>();
+    bad_clip_commands.push(bad_clip);
+    DisplayList bad_clip_frame = new DisplayList{width: 48, height: 36, commands: bad_clip_commands};
+    expect(t, !display_list_valid(bad_clip_frame, guarded),
+        "display list: out-of-surface clip is rejected", "invalid clip accepted");
+    expect_int(t, guarded.get(0, 0), before,
+        "display list: validation does not mutate the target");
+
+    DisplayCommand bad_opacity = frame.commands[0];
+    bad_opacity.opacity = 256;
+    List<DisplayCommand> bad_opacity_commands = new List<DisplayCommand>();
+    bad_opacity_commands.push(bad_opacity);
+    DisplayList bad_opacity_frame = new DisplayList{width: 48, height: 36, commands: bad_opacity_commands};
+    expect(t, !display_list_valid(bad_opacity_frame, guarded),
+        "display list: out-of-range opacity is rejected", "invalid opacity accepted");
+
+    // Variable-sized payloads on the wrong command kind must not evade the
+    // aggregate geometry/mask accounting merely because the executor ignores them.
+    List<int> hidden_payload = new List<int>();
+    hidden_payload.push(255);
+    DisplayCommand bad_rect_payload = frame.commands[0];
+    bad_rect_payload.mask_alpha = hidden_payload;
+    List<DisplayCommand> bad_rect_payload_commands = new List<DisplayCommand>();
+    bad_rect_payload_commands.push(bad_rect_payload);
+    DisplayList bad_rect_payload_frame = new DisplayList{
+        width: 48, height: 36, commands: bad_rect_payload_commands
+    };
+    expect(t, !display_list_valid(bad_rect_payload_frame, guarded),
+        "display list: rectangle cannot smuggle an unaccounted mask payload",
+        "hidden rectangle payload accepted");
+
+    DisplayCommand bad_path_payload = frame.commands[1];
+    bad_path_payload.mask_alpha = hidden_payload;
+    List<DisplayCommand> bad_path_payload_commands = new List<DisplayCommand>();
+    bad_path_payload_commands.push(bad_path_payload);
+    DisplayList bad_path_payload_frame = new DisplayList{
+        width: 48, height: 36, commands: bad_path_payload_commands
+    };
+    expect(t, !display_list_valid(bad_path_payload_frame, guarded),
+        "display list: path cannot smuggle an unaccounted mask payload",
+        "hidden path payload accepted");
+
+    List<int> invalid_alpha = new List<int>();
+    invalid_alpha.push(256);
+    DisplayCommand bad_mask = frame.commands[0];
+    bad_mask.kind = DISPLAY_MASK;
+    bad_mask.segments = none;
+    bad_mask.mask_alpha = invalid_alpha;
+    bad_mask.mask_w = 1;
+    bad_mask.mask_h = 1;
+    bad_mask.x = 0;
+    bad_mask.y = 0;
+    List<DisplayCommand> bad_mask_commands = new List<DisplayCommand>();
+    bad_mask_commands.push(bad_mask);
+    DisplayList bad_mask_frame = new DisplayList{width: 48, height: 36, commands: bad_mask_commands};
+    expect(t, !display_list_valid(bad_mask_frame, guarded),
+        "display list: noncanonical mask alpha is rejected", "invalid alpha accepted");
+    expect_int(t, guarded.get(0, 0), before,
+        "display list: malformed mask validation is non-mutating");
+
+    // Bound work, not just storage: many long paths on a tall viewport would
+    // otherwise multiply segment scans and per-scanline sorting without limit.
+    Segments expensive = new_segments();
+    for (int i = 0; i < 12000; i += 1) {
+        expensive.add(0, 0, fx(48), fx(36));
+    }
+    DisplayCommand expensive_path = frame.commands[1];
+    expensive_path.segments = expensive;
+    List<DisplayCommand> expensive_commands = new List<DisplayCommand>();
+    expensive_commands.push(expensive_path);
+    DisplayList expensive_frame = new DisplayList{width: 48, height: 36, commands: expensive_commands};
+    expect(t, !display_list_valid(expensive_frame, guarded),
+        "display list: aggregate path raster work is bounded", "expensive path accepted");
+    expect_int(t, guarded.get(0, 0), before,
+        "display list: over-budget frame is rejected before execution");
+}
+
+void test_path_flatten_preflight(Tally t) {
+    Path small = new_path().move_to(0, 0).line_to(fx(1), 0).close();
+    expect_int(t, path_flatten_segment_bound(small), 2,
+        "path preflight: line and close have a bounded cost");
+
+    Path curves = new_path().move_to(0, 0);
+    for (int i = 0; i < 1000; i += 1) {
+        curves.cubic_to(fx(i + 1), fx(1), fx(i + 2), fx(1), fx(i + 3), 0);
+    }
+    curves.close();
+    expect(t, path_flatten_segment_bound(curves) >= 0,
+        "path preflight: accepts a path whose worst-case subdivision fits", "");
+
+    Path excessive = new_path().move_to(0, 0);
+    for (int j = 0; j < 1024; j += 1) {
+        excessive.cubic_to(fx(j + 1), fx(1), fx(j + 2), fx(1), fx(j + 3), 0);
+    }
+    excessive.close();
+    expect_int(t, path_flatten_segment_bound(excessive), -1,
+        "path preflight: rejects excessive worst-case curve expansion");
+
+    Path malformed = new_path();
+    malformed.verbs.push(VERB_LINE);
+    malformed.pts.push(0);
+    malformed.pts.push(0);
+    expect_int(t, path_flatten_segment_bound(malformed), -1,
+        "path preflight: rejects a line without a move");
+
+    Path trailing = new_path().move_to(0, 0);
+    trailing.pts.push(7);
+    expect_int(t, path_flatten_segment_bound(trailing), -1,
+        "path preflight: rejects unconsumed point data");
+
+    Path extreme = new_path().move_to(2147483647, 0).line_to(0, 0);
+    expect_int(t, path_flatten_segment_bound(extreme), -1,
+        "path preflight: rejects coordinates outside the safe curve-arithmetic domain");
+}
+
+void test_display_payload_byte_budget(Tally t) {
+    Pixmap target = new_pixmap(1, 1);
+    Canvas recorder = new_recording_canvas(target);
+    expect(t, display_list_payload_fits(recorder, 1, 32),
+        "display bytes: one segment reserves four integer arrays", "small segment rejected");
+    expect(t, display_mask_admissible(recorder, 1, 1, 1),
+        "display bytes: one mask pixel reserves one integer", "small mask rejected");
+    expect(t, display_list_payload_fits(recorder, 1, MAX_DISPLAY_PAYLOAD_BYTES - DISPLAY_COMMAND_BUDGET_BYTES),
+        "display bytes: exact aggregate byte boundary is admitted", "exact boundary rejected");
+    expect(t, !display_list_payload_fits(recorder, 1, MAX_DISPLAY_PAYLOAD_BYTES),
+        "display bytes: command metadata cannot overflow aggregate byte budget",
+        "over-budget command admitted");
+
+    DisplayCommand command = new DisplayCommand{
+        kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: rect_px(0, 0, 1, 1),
+        paint: solid(0xFFFFFFFF), rule: FILL_NONZERO, segments: none, mask_alpha: none,
+        mask_w: 0, mask_h: 0, x: 0, y: 0, coverage: 255, opacity: 255
+    };
+    display_list_append(recorder, command, 0, 0);
+    expect(t, display_snapshot_fits(recorder),
+        "display bytes: snapshot verifies cached byte counters", "valid counters rejected");
+    recorder.budget[1] -= 1;
+    expect(t, !display_snapshot_fits(recorder),
+        "display bytes: forged byte counter is rejected", "forged counter accepted");
+}
+
+void test_display_work_budget(Tally t) {
+    Pixmap target = new_pixmap(1, MAX_PIXMAP_SIDE);
+    Segments small = new_segments();
+    for (int i = 0; i < 8; i += 1) {
+        small.add(0, 0, FX, fx(MAX_PIXMAP_SIDE));
+    }
+    DisplayCommand small_cmd = new DisplayCommand{
+        kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0),
+        clip: rect_px(0, 0, 1, MAX_PIXMAP_SIDE),
+        paint: solid(0xFFFFFFFF), rule: FILL_NONZERO,
+        segments: small, mask_alpha: none, mask_w: 0, mask_h: 0,
+        x: 0, y: 0, coverage: 0, opacity: 255
+    };
+    List<DisplayCommand> small_commands = new List<DisplayCommand>();
+    small_commands.push(small_cmd);
+    DisplayList small_frame = new DisplayList{
+        width: 1, height: MAX_PIXMAP_SIDE, commands: small_commands
+    };
+    expect(t, display_list_valid(small_frame, target),
+        "display work: a bounded tall path remains admissible", "small path rejected");
+
+    List<DisplayCommand> aggregate_commands = new List<DisplayCommand>();
+    for (int repeat = 0; repeat < 3; repeat += 1) { aggregate_commands.push(small_cmd); }
+    DisplayList aggregate_frame = new DisplayList{
+        width: 1, height: MAX_PIXMAP_SIDE, commands: aggregate_commands
+    };
+    expect(t, !display_list_valid(aggregate_frame, target),
+        "display work: individually valid paths cannot exceed the aggregate frame budget",
+        "aggregate work limit was not enforced");
+
+    Segments adversarial = new_segments();
+    for (int j = 0; j < 512; j += 1) {
+        adversarial.add(0, 0, FX, fx(MAX_PIXMAP_SIDE));
+    }
+    DisplayCommand adversarial_cmd = new DisplayCommand{
+        kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0),
+        clip: rect_px(0, 0, 1, MAX_PIXMAP_SIDE),
+        paint: solid(0xFFFFFFFF), rule: FILL_NONZERO,
+        segments: adversarial, mask_alpha: none, mask_w: 0, mask_h: 0,
+        x: 0, y: 0, coverage: 0, opacity: 255
+    };
+    List<DisplayCommand> adversarial_commands = new List<DisplayCommand>();
+    adversarial_commands.push(adversarial_cmd);
+    DisplayList adversarial_frame = new DisplayList{
+        width: 1, height: MAX_PIXMAP_SIDE, commands: adversarial_commands
+    };
+    expect(t, !display_list_valid(adversarial_frame, target),
+        "display work: segment-by-row amplification is rejected before replay",
+        "high-work path accepted");
+}
+
+void test_blend_bounds(Tally t) {
+    Pixmap pm = new_pixmap(2, 2);
+    Canvas cv = new_canvas(pm);
+    // Out-of-surface and out-of-clip writes must be harmless.
+    cv.blend(-1, 0, solid(0xFFFF0000), 255);
+    cv.blend(2, 0, solid(0xFFFF0000), 255);
+    cv.blend(0, -1, solid(0xFFFF0000), 255);
+    cv.blend(0, 2, solid(0xFFFF0000), 255);
+    cv.push_clip(rect_px(0, 0, 1, 1));
+    cv.blend(1, 0, solid(0xFFFF0000), 255);
+    cv.blend(0, 1, solid(0xFFFF0000), 255);
+    cv.blend(0, 0, solid(0xFFFF0000), -1);
+    expect_int(t, pm.px[0], 0, "raster: invalid coverage is clamped to no-op");
+    expect_int(t, pm.px[1], 0, "raster: direct blend respects right clip edge");
+    expect_int(t, pm.px[2], 0, "raster: direct blend respects bottom clip edge");
+    expect_int(t, pm.px[3], 0, "raster: out-of-surface blend is ignored");
+
+    cv.blend(0, 0, solid(0xFFFF0000), 300);
+    expect_int(t, pm.px[0], premultiply(0xFFFF0000),
+        "raster: coverage above 255 is safely clamped");
+
+    List<int> one_pixel = new List<int>();
+    one_pixel.push(255);
+    cv.draw_mask(one_pixel, 1, 1, 2147483647, 0, solid(0xFFFFFFFF));
+    cv.draw_mask(one_pixel, 1, 1, -2147483647, 0, solid(0xFFFFFFFF));
+    expect_int(t, pm.px[0], premultiply(0xFFFF0000),
+        "raster: extreme glyph-mask coordinates are rejected safely");
+
+    Pixmap recorded = new_pixmap(2, 2);
+    Canvas recorder = new_recording_canvas(recorded);
+    recorder.push_clip(rect_px(0, 0, 1, 1));
+    recorder.blend(1, 0, solid(0xFF00FF00), 255);
+    recorder.blend(0, 0, solid(0xFF00FF00), 255);
+    DisplayList frame = finish_display_list(recorder);
+    execute_display_list(frame, recorded);
+    expect_int(t, recorded.px[0], premultiply(0xFF00FF00),
+        "display list: valid direct blend replays");
+    expect_int(t, recorded.px[1], 0,
+        "display list: blend outside recorded clip is discarded");
+}
+
 int main() {
     Font? regular = none;
     Font? bold = none;
@@ -1203,6 +1586,11 @@ int main() {
             test_a11y_untrusted(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_a11y_json_escaping(t);
             test_scroll(t, new_ui(f, fb, light_theme(), 640, 480, 256));
+            test_display_list(t, f);
+            test_path_flatten_preflight(t);
+            test_display_payload_byte_budget(t);
+            test_display_work_budget(t);
+            test_blend_bounds(t);
             test_ui_state_pruning(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_resize(t, f, fb);
             test_scale(t, f, fb);

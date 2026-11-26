@@ -50,12 +50,43 @@ export ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=0
 PY="python3 -I"
 SRC=$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen,main}.cap)
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+FAILURE_LOG="$tmp/failures.log"
+: > "$FAILURE_LOG"
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  pass  %s\n' "$1"; }
-bad() { fail=$((fail+1)); printf '  FAIL  %s: %s\n' "$1" "$2"; }
+bad() {
+  fail=$((fail+1))
+  printf '  FAIL  %s: %s\n' "$1" "$2" | tee -a "$FAILURE_LOG"
+  if [[ "$1" == shroud* ]]; then
+    mkdir -p "$ROOT/tests/shroud/failures"
+    printf '  FAIL  %s: %s\n' "$1" "$2" >> "$ROOT/tests/shroud/failures/ci.log"
+  fi
+}
 section() { echo; echo "== $1"; }
 
 [[ -x "$C" ]] || make -s -C "$ROOT" bootstrap
+
+section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 decoder, zlib and golden frames"
+if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS --update-golden 2>&1)"; then
+  ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
+else bad "shroud" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_text_byte_limit.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud text byte limit" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_a11y_utf8_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud accessibility UTF-8 budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud PNG export budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/gpu_backend_model.py" 2>&1)"; then ok "$out"; else bad "shroud GPU backend contract model" "$out"; fi
+printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
+if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
+  if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud under ASan+UBSan, damaged fonts included: no reports"; else bad "shroud (sanitizers)" "$out"; fi
+  if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame text budget under ASan+UBSan: $out"; else bad "shroud frame text budget (sanitizers)" "$out"; fi
+  if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame line budget under ASan+UBSan: $out"; else bad "shroud frame line budget (sanitizers)" "$out"; fi
+  if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud PNG export budget under ASan+UBSan: $out"; else bad "shroud PNG export budget (sanitizers)" "$out"; fi
+else
+  echo "  skip  sanitizers not available for $CC"
+fi
+
+
 
 section "agent instructions: AGENTS.md (Codex) and CLAUDE.md (Claude) are identical"
 if cmp -s "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md"; then ok "AGENTS.md and CLAUDE.md match"; else bad "AGENTS.md and CLAUDE.md differ; change both together" "$(diff "$ROOT/AGENTS.md" "$ROOT/CLAUDE.md" | head -20)"; fi
@@ -616,25 +647,6 @@ if out="$($PY "$ROOT/tests/keel/mesh_check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
   ok "$out"
 else bad "Keel triangle mesh validation" "$out"; fi
 
-section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 decoder, zlib and golden frames"
-if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS --update-golden 2>&1)"; then
-  ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
-else bad "shroud" "$out"; fi
-if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
-if out="$($PY "$ROOT/tests/shroud/check_text_byte_limit.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud text byte limit" "$out"; fi
-if out="$($PY "$ROOT/tests/shroud/check_a11y_utf8_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud accessibility UTF-8 budget" "$out"; fi
-if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
-if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud PNG export budget" "$out"; fi
-printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
-if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
-  if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud under ASan+UBSan, damaged fonts included: no reports"; else bad "shroud (sanitizers)" "$out"; fi
-  if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame text budget under ASan+UBSan: $out"; else bad "shroud frame text budget (sanitizers)" "$out"; fi
-  if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud frame line budget under ASan+UBSan: $out"; else bad "shroud frame line budget (sanitizers)" "$out"; fi
-  if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud PNG export budget under ASan+UBSan: $out"; else bad "shroud PNG export budget (sanitizers)" "$out"; fi
-else
-  echo "  skip  sanitizers not available for $CC"
-fi
-
 section "halyard: Capstan-native Media Core, Shanty and Deadeye"
 for media_file in "$ROOT/lib/halyard/core.cap" "$ROOT/lib/halyard/shanty.cap" "$ROOT/lib/halyard/deadeye.cap" "$ROOT/lib/halyard/mp4.cap" "$ROOT/lib/halyard/mp4_tables.cap" "$ROOT/lib/halyard/mp4_sample_entries.cap" "$ROOT/lib/halyard/mp4_tracks.cap"; do
   media_name="${media_file#$ROOT/}"
@@ -808,4 +820,8 @@ fi
 
 echo
 echo "$pass passed, $fail failed"
+if (( fail > 0 )); then
+  echo "Failure details (repeated at end for CI log visibility):"
+  cat "$FAILURE_LOG"
+fi
 [[ $fail -eq 0 ]]

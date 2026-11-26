@@ -198,8 +198,10 @@ struct Ui {
         }
         if (!focus_alive) { self.focus = ""; }
         self.pixmap.clear(self.theme.window);
-        Canvas cv = new_canvas(self.pixmap);
-        paint_tree(self, cv, l);
+        Canvas recorder = new_recording_canvas(self.pixmap);
+        paint_tree(self, recorder, l);
+        DisplayList frame = finish_display_list(recorder);
+        execute_display_list(frame, self.pixmap);
     }
 
     // Handles one input event and returns the messages it produces.
