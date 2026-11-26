@@ -40,8 +40,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 C="$ROOT/build/capstanc"
 CC="${CC:-cc}"
 FULL=0; [[ "${1:-}" == "--full" ]] && FULL=1
-HARDEN_FLAGS="-fstack-protector-strong -fPIE -pie"
-if [[ "$(uname -s)" == "Linux" ]]; then HARDEN_FLAGS="$HARDEN_FLAGS -D_FORTIFY_SOURCE=2"; fi
+HARDEN_FLAGS="-fstack-protector-strong -fPIE"
+if [[ "$(uname -s)" == "Linux" ]]; then HARDEN_FLAGS="$HARDEN_FLAGS -pie -D_FORTIFY_SOURCE=2"; fi
 CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime $HARDEN_FLAGS"
 WFLAGS="-O2 -std=gnu11 $HARDEN_FLAGS -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -I$ROOT/runtime"
 [[ "$($CC --version 2>&1)" == *clang* ]] && WFLAGS="$WFLAGS -Wno-parentheses-equality -Wno-gnu-statement-expression -Wno-gnu-auto-type"
