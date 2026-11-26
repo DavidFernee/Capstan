@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "5aa39cfea995b52f186dfeab792c9da06f56f479",
+  "baseline_commit": "09256617b61f3b3032e78a7641424592f68bcf4a",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -19,7 +19,10 @@
     "verification/ccam_native_x64.cap",
     "docs/assurance/EXECUTION-ASSURANCE-ARCHITECTURE.md",
     "docs/assurance/PROVENANCE-SCALAR-SLICE.md",
-    "verification/f1_guarantee_model.cap"
+    "verification/f1_guarantee_model.cap",
+    "verification/lean/CapstanVerification/F1Provenance.lean",
+    "verification/lean/check_injection_checker_source.py",
+    "verification/lean/fixtures/injection_checker_laundering_source.cap"
   ],
   "boundaries": [
     {
@@ -181,13 +184,16 @@
         "compiler/checker.cap",
         "verification/f1_guarantee_model.cap",
         "docs/assurance/PROVENANCE-SCALAR-SLICE.md",
-        "tests/cwe/atlas.py"
+        "tests/cwe/atlas.py",
+        "verification/lean/CapstanVerification/F1Provenance.lean",
+        "verification/lean/check_injection_checker_source.py",
+        "verification/lean/fixtures/injection_checker_laundering_source.cap"
       ],
       "open": [
-        "Update the Lean injection-checker model to cover lexical binding identities and typed access-path transfer rules; the current source/model pin correctly rejects the changed checker section.",
-        "Prove source-checker acceptance/refusal correspondence for the new access-path analysis and its fail-closed resource bounds.",
+        "Prove source-checker acceptance/refusal correspondence for the new access-path analysis with an AST-level translation validator; the current source pin and abstract path algebra are not a semantic refinement theorem.",
         "Specify and test may-alias propagation for reference aggregates; binding-identity paths alone do not establish heap alias soundness.",
         "Complete the policy for Boolean and control-flow observations before claiming general information-flow noninterference.",
+        "Prove that the concrete string-key encoding and path-budget exhaustion behavior refine the abstract access-path model.",
         "Retain the documented distinction between executable F1 model coverage and a machine-checked implementation refinement theorem."
       ]
     }
