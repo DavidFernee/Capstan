@@ -1,3 +1,7 @@
+## Unreleased
+
+- Require explicit finite source-level bounds for command-line arguments, file reads, standard-input lines and environment secrets; runtime checks preflight limits before allocating or copying input.
+
 # Changelog
 
 Every release is gated by `scripts/release-check.sh` and the full test suite
