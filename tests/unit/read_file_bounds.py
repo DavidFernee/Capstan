@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""read_file(path, max) cannot be made to hang or exhaust memory, natively and under stage 0:
+"""Byte-boundary behaviour of read_file(path, max), natively and under stage 0.
 
     read_file_bounds.py CAPSTANC CC [CFLAGS...]
 
-A FIFO with no writer reads as empty instead of blocking; /dev/zero and a file over
-the limit give none; a file exactly at the limit is read whole; a directory gives
-none; a limit outside 0..2^30 stops the program (CWE-789). The compiler, given an
-endless or blocking source file, reports an error promptly instead of hanging.
+This covers a FIFO with no writer, /dev/zero, exact/over-limit regular files,
+directories and invalid limits. It does NOT establish a time bound for a live
+stream: the runtime clears O_NONBLOCK before reading, so a FIFO with a writer
+that remains open but supplies no data can block indefinitely. See issue #444;
+do not describe a byte ceiling as a deadline or a bound on elapsed time.
 """
 import os, subprocess, sys, tempfile
 
