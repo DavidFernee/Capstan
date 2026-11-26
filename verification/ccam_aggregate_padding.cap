@@ -1,0 +1,2 @@
+import "ccam_aggregate_byte_buffer.cap";
+bool ag_pad(List<int> b,int target){if(target<b.len()||target>AG_BYTE_LIMIT){return false;}while(b.len()<target){b.push(0);}return true;}
