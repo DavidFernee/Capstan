@@ -117,3 +117,29 @@ a matching section fixture is evidence that the analysed transfer region has not
 it is not evidence that the Lean definitions correctly implement that source.
 The next bridge must replace the section fixture with parser-produced
 AST/flow certificates and a Lean-checked translation relation.
+
+
+## 7. Protected-sink model
+
+`verification/lean/CapstanVerification/InjectionSinks.lean` adds a separate
+Lean model for the four reconstruction sink shapes currently recognised by
+`flow_walk`:
+
+- `char_str(derived_integer)`;
+- indexing string/HTML/log text with a derived selector;
+- retrieving optional string/HTML/log values from a map with a derived key;
+- slicing a non-`Tainted` text receiver using a derived selector.
+
+For these shapes, the model proves that a derived argument causes rejection.
+It also proves the relevant guard exclusions: slicing a `Tainted` receiver is
+not classified as trusted-text lookup, and non-text result types are not
+classified as text lookup sinks. The theorem dependencies are included in
+`AxiomAudit.lean`.
+
+This closes a model-level omission in the first increment: sink recognition is
+now stated and proved alongside the expression transfer model. It still does
+not establish that the concrete `Node` visitor refines `ProtectedSink`, nor
+does it prove the correctness of a database, process, HTML renderer, or other
+external adapter. The checker currently has the CWE-20 reconstruction sinks
+listed above; the broader protected-sink policy in
+`INJECTION-FREEDOM-PROOF.md` remains a design target, not current coverage.
