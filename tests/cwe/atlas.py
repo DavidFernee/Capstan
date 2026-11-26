@@ -625,6 +625,12 @@ add(20, "Improper input validation (laundering through a dynamic list index)", "
     "int main() { if (let input = read_line()) { List<int> bytes = new List<int>(); bytes.push(65); bytes.push(66); int index = 0; bytes[index] = input.at(0); println(char_str(bytes[1])); } return 0; }",
     "CWE-20", "A dynamic-index write widens to the whole element summary, so every possible element read remains derived.")
 
+# Reference-typed aggregates can be aliased. The current analysis does not yet
+# propagate a mutation through a second variable naming the same object.
+add(20, "Improper input validation (laundering through a reference alias)", "gap",
+    "int main() { List<int> original = new List<int>(); original.push(65); List<int> alias = original; if (let input = read_line()) { original[0] = input.at(0); } println(char_str(alias[0])); return 0; }",
+    note="List and struct values are reference types. The current checker tracks access paths by the variable binding identity but does not yet compute may-alias sets or propagate heap writes across aliases.")
+
 # ---------------------------------------------------------------- harness
 
 # ---- found in the November 2026 attack review --------------------------------------------------

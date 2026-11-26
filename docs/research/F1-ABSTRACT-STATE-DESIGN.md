@@ -234,3 +234,6 @@ The flow domain now stores bounded typed access-path facts rooted at those bindi
 - the domain is capped at 4096 facts and refuses compilation if the cap is exceeded.
 
 This is still a monotone, syntax-directed may-analysis. It does not yet have a control-flow graph or explicit branch/loop state joins; it does not track reference aliases or escaped heap locations; and it does not perform strong updates. Aggregate and dynamic selectors are intentionally conservative. The next gates are explicit branch/loop joins, an alias/escape model with bounded abstract locations, strong-update proof conditions, and adversarial positive/negative tests for each transfer rule. These additions must be checked against the normative provenance semantics before any stronger guarantee is claimed.
+
+
+The checker now also computes limited return/sink summaries for aggregate parameters. This does not model mutation effects or alias sets: the alias-laundering case is deliberately retained as an executable CWE-20 gap until heap/alias propagation is implemented.

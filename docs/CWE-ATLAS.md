@@ -9,7 +9,7 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**255 weaknesses, 299 attempts.** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 300 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
@@ -29,6 +29,7 @@ closes a gap the test fails and the entry is reclassified.
 
 | CWE | Weakness | What was written | Why it compiles, and the plan |
 |---|---|---|---|
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a reference alias) | `int main() { List<int> original = new List<int>(); original.push(65); List<int> alias = original; if (let input = read_line()) { original[0] = input.at(0); } println(char_str(alias[0])); return 0; }` | List and struct values are reference types. The current checker tracks access paths by the variable binding identity but does not yet compute may-alias sets or propagate heap writes across aliases. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: HTML-escaped text written into a CSV file | `int main() { Html cell = escape_html(taint("=cmd\|' /C calc'!A0")) + ",1"; bool ok = wr...` | write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap. |
 | [798](https://cwe.mitre.org/data/definitions/798.html) | Hard-coded password-like literal under an innocuous name | `int main() { string cfg = "Winter2026!"; sql_query("UPDATE settings SET v = ?", cfg); r...` | A short password-like literal under an ordinary name is indistinguishable from other text. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | `int main() { if (let x = read_line()) { string stored = hash(x); } return 0; }` | Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap). |
@@ -76,6 +77,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 |---|---|---|---|
 | [15](https://cwe.mitre.org/data/definitions/15.html) | External control of system or configuration setting | Inexpressible: the construct does not exist |  |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through Boolean comparison) | **Gap: can be written** | The current byte-reconstruction sink is not a general information-flow sink. Boolean comparison provenance is now tracked through locals, but the compiler does not yet define a policy for every control-flow observation. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a reference alias) | **Gap: can be written** | List and struct values are reference types. The current checker tracks access paths by the variable binding identity but does not yet compute may-alias sets or propagate heap writes across aliases. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through control flow | Logic or design decision: beyond any language | Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a bit mask | Prevented: rejected at compile time | `CWE-20`. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation | Prevented: rejected at compile time | `CWE-20`. |

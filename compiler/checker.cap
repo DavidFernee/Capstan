@@ -1906,13 +1906,24 @@ struct Flow {
     Ctx ctx;
 }
 
+bool aggregate_type(Type t) {
+    if (t.k == TY_STRUCT || t.k == TY_LIST || t.k == TY_MAP) { return true; }
+    if (t.k == TY_OPT && t.args.len() > 0) { return aggregate_type(t.args[0]); }
+    return false;
+}
+
 bool is_arith(string op) {
     return op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || is_bitwise(op);
 }
 
 bool derived(Flow f, Node e) {
     if (e.k == N_METHOD && e.s == "at" && ty_of(e.kids[0]).k == TY_TAINT) { return true; }
-    if (e.k == N_VAR) { return aggregate_marked(f, e) || ty_of(e).k == TY_TAINT; }
+    if (e.k == N_VAR) {
+        Type vt = ty_of(e);
+        if (vt.k == TY_TAINT) { return true; }
+        if (aggregate_type(vt)) { return aggregate_marked(f, e); }
+        return path_marked(f, e);
+    }
     if (e.k == N_NEG || e.k == N_BNOT || e.k == N_NOT) { return derived(f, e.kids[0]); }
     // Comparisons and Boolean connectives produce values that depend on their operands.
     if (e.k == N_BIN && ty_of(e).k == TY_BOOL) {
@@ -1923,9 +1934,13 @@ bool derived(Flow f, Node e) {
         return ty_of(e.kids[0]).k == TY_TAINT || aggregate_marked(f, e.kids[0]);
     }
     // A collection or struct that ever held a derived integer yields derived integers.
-    if (e.k == N_GETF) { return path_marked(f, e); }
+    if (e.k == N_GETF) { return aggregate_type(ty_of(e)) ? aggregate_marked(f, e) : path_marked(f, e); }
     // Indexing with a derived integer selects by untrusted data: the result is derived too.
-    if (e.k == N_INDEX) { return aggregate_marked(f, e) || derived(f, e.kids[1]); }
+    if (e.k == N_INDEX) {
+        bool selected = derived(f, e.kids[1]);
+        if (aggregate_type(ty_of(e))) { return aggregate_marked(f, e) || selected; }
+        return path_marked(f, e) || selected;
+    }
     if (e.k == N_METHOD && e.s == "get" && e.kids.len() > 1 && (derived(f, e.kids[1]) || aggregate_marked(f, e.kids[0]))) { return true; }
     // Decimal digits of an untrusted byte, and text joined to them, are derived strings.
     if (e.k == N_CALL && (e.s == "int_to_str" || e.s == "to_text") && e.kids.len() == 1 && derived(f, e.kids[0])) { return true; }
@@ -2163,7 +2178,7 @@ FlowSummary summarise(Map<FlowSummary> sums, Ctx ctx, Node fn) {
     FlowSummary out = new FlowSummary{returns_derived: base.returns, param_to_return: new List<bool>(), param_to_sink: new List<bool>()};
     for (int i = 0; i < fn.n; i += 1) {
         Type pt = ty_of(fn.kids[i]);
-        if (pt.k == TY_INT || pt.k == TY_BOOL || pt.k == TY_STR || pt.k == TY_TAINT) {
+        if (pt.k == TY_INT || pt.k == TY_BOOL || pt.k == TY_STR || pt.k == TY_TAINT || aggregate_type(pt)) {
             Flow pf = flow_body(sums, ctx, body, fn.kids[i].binding_id, false);
             out.param_to_return.push(pf.returns);
             out.param_to_sink.push(pf.sinks);
