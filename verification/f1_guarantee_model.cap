@@ -1,0 +1,542 @@
+// F1 executable guarantee model, written entirely in Capstan.
+// This is a finite abstract reference model, not the production type checker.
+// It deliberately models independent dimensions and fails closed on unknown
+// summaries and unbounded/overflowing resource composition.
+//
+// Semantic note: source masks are finite test identities. A production analysis
+// must use a sound widening/top element and stable identities, not these masks.
+
+const int F1_CONF_PUBLIC = 0;
+const int F1_CONF_SECRET = 1;
+const int F1_CONF_UNKNOWN = 2;
+
+const int F1_CTX_NONE = 0;
+const int F1_CTX_HTML = 1;
+const int F1_CTX_LOG = 2;
+const int F1_CTX_CSV = 4;
+const int F1_CTX_JSON = 8;
+const int F1_CTX_ALL = 15;
+
+const int F1_AUTH_FS_READ = 1;
+const int F1_AUTH_FS_WRITE = 2;
+const int F1_AUTH_NET = 4;
+const int F1_AUTH_SECRET = 8;
+const int F1_AUTH_ALL = 15;
+
+const int F1_EFFECT_IO = 1;
+const int F1_EFFECT_ALLOC = 2;
+const int F1_EFFECT_CRYPTO = 4;
+const int F1_EFFECT_SPAWN = 8;
+const int F1_EFFECT_ALL = 15;
+
+const int F1_I64_MAX = 0x7FFFFFFFFFFFFFFF;
+
+struct F1Value {
+    int data_sources;
+    bool data_top;
+    int selection_sources;
+    bool selection_top;
+    int control_sources;
+    bool control_top;
+    int confidentiality;
+    int contexts;
+}
+
+struct F1Summary {
+    bool complete;
+    bool data_depends;
+    bool selection_depends;
+    bool control_depends;
+    bool preserves_context;
+    F1Value constant_result;
+}
+
+struct F1Contract {
+    int required_authority;
+    int effects;
+    int fuel;
+    int memory;
+    bool valid;
+    bool bounded;
+}
+
+struct F1ContractResult {
+    bool ok;
+    F1Contract contract;
+    string error;
+}
+
+int f1_max(int a, int b) {
+    if (a > b) { return a; }
+    return b;
+}
+
+F1Value f1_make(int data_sources, bool data_top,
+                int selection_sources, bool selection_top,
+                int control_sources, bool control_top,
+                int confidentiality, int contexts) {
+    return new F1Value{
+        data_sources: data_sources,
+        data_top: data_top,
+        selection_sources: selection_sources,
+        selection_top: selection_top,
+        control_sources: control_sources,
+        control_top: control_top,
+        confidentiality: confidentiality,
+        contexts: contexts
+    };
+}
+
+// The empty string is context-neutral; this is not a claim about arbitrary literals.
+F1Value f1_empty_constant() {
+    return f1_make(0, false, 0, false, 0, false, F1_CONF_PUBLIC,
+                   F1_CTX_HTML | F1_CTX_LOG | F1_CTX_CSV | F1_CTX_JSON);
+}
+
+F1Value f1_source(int identity_bit, bool is_secret) {
+    if (identity_bit <= 0 || (identity_bit & (identity_bit - 1)) != 0) {
+        return f1_unknown();
+    }
+    int confidentiality = F1_CONF_PUBLIC;
+    if (is_secret) { confidentiality = F1_CONF_SECRET; }
+    return f1_make(identity_bit, false, 0, false, 0, false, confidentiality, F1_CTX_NONE);
+}
+
+F1Value f1_unknown() {
+    return f1_make(0, true, 0, true, 0, true, F1_CONF_UNKNOWN, F1_CTX_NONE);
+}
+
+F1Value f1_derive(F1Value left, F1Value right) {
+    return f1_make(
+        left.data_sources | right.data_sources,
+        left.data_top || right.data_top,
+        left.selection_sources | right.selection_sources,
+        left.selection_top || right.selection_top,
+        left.control_sources | right.control_sources,
+        left.control_top || right.control_top,
+        f1_max(left.confidentiality, right.confidentiality),
+        left.contexts & right.contexts
+    );
+}
+
+// Selection is a separate dependency: the selected value and the selector
+// both influence the observed result, even if the selector is not returned.
+F1Value f1_select(F1Value container, F1Value selector, F1Value selected) {
+    F1Value out = f1_derive(selected, selector);
+    out.selection_sources = out.selection_sources | selector.data_sources | container.data_sources;
+    out.selection_top = out.selection_top || selector.data_top || container.data_top;
+    out.confidentiality = f1_max(out.confidentiality, container.confidentiality);
+    out.contexts = selected.contexts;
+    return out;
+}
+
+// A branch result depends on its predicate even when both arms return constants.
+// This dependency is tracked separately so sink policy can distinguish integrity
+// validation from secret-dependent observable behaviour.
+F1Value f1_branch(F1Value condition, F1Value when_true, F1Value when_false) {
+    F1Value out = f1_derive(when_true, when_false);
+    out.control_sources = out.control_sources | condition.data_sources
+                          | condition.selection_sources | condition.control_sources;
+    out.control_top = out.control_top || condition.data_top
+                      || condition.selection_top || condition.control_top;
+    out.confidentiality = f1_max(out.confidentiality, condition.confidentiality);
+    out.contexts = when_true.contexts & when_false.contexts;
+    return out;
+}
+
+F1Value f1_with_context(F1Value input, int contexts) {
+    return f1_make(
+        input.data_sources, input.data_top,
+        input.selection_sources, input.selection_top,
+        input.control_sources, input.control_top,
+        input.confidentiality, contexts
+    );
+}
+
+F1Value f1_encode_html(F1Value input) {
+    return f1_with_context(input, F1_CTX_HTML);
+}
+
+F1Value f1_encode_log(F1Value input) {
+    return f1_with_context(input, F1_CTX_LOG);
+}
+
+F1Value f1_encode_csv(F1Value input) {
+    return f1_with_context(input, F1_CTX_CSV);
+}
+
+F1Value f1_encode_json(F1Value input) {
+    return f1_with_context(input, F1_CTX_JSON);
+}
+
+// Concatenation is safe only in contexts safe for every component.
+// The intersection prevents an HTML guarantee being reused as CSV or LogText.
+F1Value f1_concat(F1Value left, F1Value right) {
+    return f1_derive(left, right);
+}
+
+bool f1_context_sink_allowed(F1Value value, int required_context) {
+    if (required_context <= 0 || (required_context & F1_CTX_ALL) != required_context) {
+        return false;
+    }
+    return (value.contexts & required_context) == required_context;
+}
+
+bool f1_public_sink_allowed(F1Value value) {
+    return value.confidentiality == F1_CONF_PUBLIC;
+}
+
+F1Summary f1_identity_summary() {
+    return new F1Summary{
+        complete: true,
+        data_depends: true,
+        selection_depends: false,
+        control_depends: false,
+        preserves_context: true,
+        constant_result: f1_empty_constant()
+    };
+}
+
+F1Summary f1_byte_rebuild_summary() {
+    return new F1Summary{
+        complete: true,
+        data_depends: true,
+        selection_depends: false,
+        control_depends: false,
+        preserves_context: false,
+        constant_result: f1_empty_constant()
+    };
+}
+
+F1Summary f1_unknown_summary() {
+    return new F1Summary{
+        complete: false,
+        data_depends: false,
+        selection_depends: false,
+        control_depends: false,
+        preserves_context: false,
+        constant_result: f1_empty_constant()
+    };
+}
+
+F1Summary f1_selection_summary() {
+    return new F1Summary{
+        complete: true,
+        data_depends: false,
+        selection_depends: true,
+        control_depends: false,
+        preserves_context: false,
+        constant_result: f1_empty_constant()
+    };
+}
+
+F1Summary f1_branch_summary() {
+    return new F1Summary{
+        complete: true,
+        data_depends: false,
+        selection_depends: false,
+        control_depends: true,
+        preserves_context: false,
+        constant_result: f1_empty_constant()
+    };
+}
+
+// Interprocedural composition: a helper cannot erase its argument's provenance
+// or confidentiality. Context preservation is an explicit summary property.
+F1Value f1_apply_summary(F1Summary summary, F1Value argument) {
+    if (!summary.complete) { return f1_unknown(); }
+    F1Value result = summary.constant_result;
+    if (summary.data_depends) {
+        result.data_sources = result.data_sources | argument.data_sources;
+        result.data_top = result.data_top || argument.data_top;
+        if (summary.preserves_context) {
+            result.contexts = result.contexts & argument.contexts;
+        } else {
+            result.contexts = F1_CTX_NONE;
+        }
+    }
+    if (summary.selection_depends) {
+        result.selection_sources = result.selection_sources
+                                   | argument.selection_sources | argument.data_sources;
+        result.selection_top = result.selection_top
+                               || argument.selection_top || argument.data_top;
+    }
+    if (summary.control_depends) {
+        result.control_sources = result.control_sources | argument.data_sources
+                                 | argument.selection_sources | argument.control_sources;
+        result.control_top = result.control_top || argument.data_top
+                             || argument.selection_top || argument.control_top;
+    }
+    if (summary.data_depends || summary.selection_depends || summary.control_depends) {
+        result.confidentiality = f1_max(result.confidentiality, argument.confidentiality);
+    }
+    return result;
+}
+
+bool f1_authority_valid(int authority) {
+    return authority >= 0 && (authority & F1_AUTH_ALL) == authority;
+}
+
+bool f1_effects_valid(int effects) {
+    return effects >= 0 && (effects & F1_EFFECT_ALL) == effects;
+}
+
+bool f1_has_all(int available, int required) {
+    if (!f1_authority_valid(available) || !f1_authority_valid(required)) { return false; }
+    return (available & required) == required;
+}
+
+int f1_attenuate(int parent_authority, int requested_authority) {
+    if (!f1_authority_valid(parent_authority)
+        || !f1_authority_valid(requested_authority)) { return -1; }
+    return parent_authority & requested_authority;
+}
+
+F1Contract f1_contract(int authority, int effects, int fuel, int memory) {
+    return new F1Contract{
+        required_authority: authority,
+        effects: effects,
+        fuel: fuel,
+        memory: memory,
+        valid: f1_authority_valid(authority) && f1_effects_valid(effects),
+        bounded: fuel >= 0 && memory >= 0
+    };
+}
+
+F1ContractResult f1_contract_error(string error) {
+    F1Contract empty = f1_contract(0, 0, 0, 0);
+    empty.valid = false;
+    empty.bounded = false;
+    return new F1ContractResult{ok: false, contract: empty, error: error};
+}
+
+// Sequential composition uses sum for both resources. This is conservative for
+// memory because no lifetime/disjointness proof is assumed. Unknown bounds and
+// overflow are errors, never silently wrapped or interpreted as small budgets.
+F1ContractResult f1_compose_contract(F1Contract first, F1Contract second) {
+    if (!first.valid || !second.valid) {
+        return f1_contract_error("invalid_effect_or_authority_set");
+    }
+    if (!first.bounded || !second.bounded) {
+        return f1_contract_error("unknown_resource_bound");
+    }
+    if (first.fuel > F1_I64_MAX - second.fuel) {
+        return f1_contract_error("fuel_bound_overflow");
+    }
+    if (first.memory > F1_I64_MAX - second.memory) {
+        return f1_contract_error("memory_bound_overflow");
+    }
+    F1Contract combined = f1_contract(
+        first.required_authority | second.required_authority,
+        first.effects | second.effects,
+        first.fuel + second.fuel,
+        first.memory + second.memory
+    );
+    return new F1ContractResult{ok: true, contract: combined, error: ""};
+}
+
+bool f1_budget_admits(F1Contract declared, int fuel_budget, int memory_budget) {
+    if (!declared.valid || !declared.bounded || fuel_budget < 0 || memory_budget < 0) { return false; }
+    return declared.fuel <= fuel_budget && declared.memory <= memory_budget;
+}
+
+int main() {
+    F1Value untrusted = f1_source(1, false);
+    F1Value secret = f1_source(2, true);
+    F1Value public_value = f1_empty_constant();
+
+    F1Value through_helper = f1_apply_summary(f1_identity_summary(), untrusted);
+    through_helper = f1_apply_summary(f1_identity_summary(), through_helper);
+    if (!(through_helper.data_sources == 1 && !through_helper.data_top)) { return 1; }
+
+    F1Value rebuilt = f1_apply_summary(f1_byte_rebuild_summary(), untrusted);
+    if (!(rebuilt.data_sources == 1 && rebuilt.contexts == F1_CTX_NONE)) { return 1; }
+
+    F1Value secret_predicate = f1_derive(secret, public_value);
+    if (f1_public_sink_allowed(secret_predicate)) { return 1; }
+    F1Value branch_result = f1_apply_summary(f1_branch_summary(), secret);
+    if (branch_result.control_sources != 2 || f1_public_sink_allowed(branch_result)) { return 1; }
+
+    F1Value html = f1_encode_html(untrusted);
+    F1Value csv = f1_encode_csv(untrusted);
+    if (!f1_context_sink_allowed(html, F1_CTX_HTML)) { return 1; }
+    if (f1_context_sink_allowed(html, F1_CTX_CSV)) { return 1; }
+    if (f1_context_sink_allowed(csv, F1_CTX_HTML)) { return 1; }
+    if (f1_context_sink_allowed(html, 0)) { return 1; }
+    if (f1_context_sink_allowed(html, 16)) { return 1; }
+    F1Value mixed = f1_concat(html, csv);
+    if (mixed.contexts != F1_CTX_NONE) { return 1; }
+
+    int parent = F1_AUTH_FS_READ | F1_AUTH_FS_WRITE | F1_AUTH_NET;
+    int child = f1_attenuate(parent, F1_AUTH_FS_READ | F1_AUTH_SECRET);
+    if (child != F1_AUTH_FS_READ) { return 1; }
+    if (f1_has_all(child, F1_AUTH_FS_WRITE)) { return 1; }
+    if (f1_attenuate(parent, 16) != -1) { return 1; }
+
+    F1Contract a = f1_contract(F1_AUTH_FS_READ, F1_EFFECT_IO, 10, 20);
+    F1Contract b = f1_contract(F1_AUTH_NET, F1_EFFECT_ALLOC, 15, 30);
+    F1ContractResult combined = f1_compose_contract(a, b);
+    if (!combined.ok) { return 1; }
+    if (!(combined.contract.required_authority == (F1_AUTH_FS_READ | F1_AUTH_NET))) { return 1; }
+    if (!(combined.contract.effects == (F1_EFFECT_IO | F1_EFFECT_ALLOC))) { return 1; }
+    if (!(combined.contract.fuel == 25 && combined.contract.memory == 50)) { return 1; }
+    if (f1_budget_admits(combined.contract, 24, 50)) { return 1; }
+    if (!f1_budget_admits(combined.contract, 25, 50)) { return 1; }
+
+    F1Contract too_large = f1_contract(0, 0, F1_I64_MAX, 1);
+    F1ContractResult overflow = f1_compose_contract(too_large, b);
+    if (overflow.ok || overflow.error != "fuel_bound_overflow") { return 1; }
+
+    F1Contract invalid_authority = f1_contract(16, 0, 1, 1);
+    F1ContractResult bad_authority = f1_compose_contract(invalid_authority, b);
+    if (bad_authority.ok || bad_authority.error != "invalid_effect_or_authority_set") { return 1; }
+    F1Contract invalid_effects = f1_contract(0, 16, 1, 1);
+    F1ContractResult bad_effects = f1_compose_contract(invalid_effects, b);
+    if (bad_effects.ok || bad_effects.error != "invalid_effect_or_authority_set") { return 1; }
+
+    F1Contract unknown = f1_contract(0, 0, 0, 0);
+    unknown.bounded = false;
+    F1ContractResult unknown_result = f1_compose_contract(a, unknown);
+    if (unknown_result.ok) { return 1; }
+
+    F1Contract memory_large = f1_contract(0, 0, 1, F1_I64_MAX);
+    F1ContractResult memory_overflow = f1_compose_contract(memory_large, b);
+    if (memory_overflow.ok || memory_overflow.error != "memory_bound_overflow") { return 1; }
+
+    F1Value invalid_source = f1_source(3, false);
+    if (!invalid_source.data_top) { return 1; }
+
+    F1Value unknown_value = f1_apply_summary(f1_unknown_summary(), untrusted);
+    if (!unknown_value.data_top || !unknown_value.selection_top) { return 1; }
+    if (f1_public_sink_allowed(unknown_value)) { return 1; }
+
+    F1Value container = f1_source(4, false);
+    F1Value selector = f1_source(8, false);
+    F1Value selected = f1_source(16, false);
+    F1Value observed = f1_select(container, selector, selected);
+    if (observed.data_sources != 24) { return 1; }
+    if (observed.selection_sources != 12) { return 1; }
+
+    println("F1 executable guarantee model: ok");
+    return 0;
+}
+
+test "interprocedural summaries preserve provenance across helper chains" {
+    F1Value source = f1_source(1, false);
+    F1Value once = f1_apply_summary(f1_identity_summary(), source);
+    F1Value twice = f1_apply_summary(f1_identity_summary(), once);
+    assert(twice.data_sources == 1 && !twice.data_top);
+}
+
+test "byte reconstruction preserves provenance but drops unrelated context guarantees" {
+    F1Value source = f1_source(1, false);
+    F1Value rebuilt = f1_apply_summary(f1_byte_rebuild_summary(), source);
+    assert(rebuilt.data_sources == 1);
+    assert(rebuilt.contexts == F1_CTX_NONE);
+}
+
+test "secret-derived predicates remain confidential" {
+    F1Value secret = f1_source(2, true);
+    F1Value predicate = f1_derive(secret, f1_empty_constant());
+    assert(!f1_public_sink_allowed(predicate));
+}
+
+test "interprocedural selection summaries preserve selector provenance" {
+    F1Value selector = f1_source(8, false);
+    F1Value result = f1_apply_summary(f1_selection_summary(), selector);
+    assert(result.selection_sources == 8);
+}
+
+test "secret-dependent branches preserve control dependence" {
+    F1Value secret_condition = f1_source(2, true);
+    F1Value result = f1_apply_summary(f1_branch_summary(), secret_condition);
+    F1Value direct = f1_branch(secret_condition, f1_empty_constant(), f1_empty_constant());
+    assert(result.control_sources == 2);
+    assert(direct.control_sources == 2);
+    assert(!f1_public_sink_allowed(result));
+    assert(!f1_public_sink_allowed(direct));
+}
+
+test "encoding guarantees are context-specific and non-substitutable" {
+    F1Value source = f1_source(1, false);
+    F1Value html = f1_encode_html(source);
+    F1Value csv = f1_encode_csv(source);
+    assert(source.contexts == F1_CTX_NONE);
+    assert(html.contexts == F1_CTX_HTML);
+    assert(csv.contexts == F1_CTX_CSV);
+    assert(f1_context_sink_allowed(html, F1_CTX_HTML));
+    assert(!f1_context_sink_allowed(html, F1_CTX_CSV));
+    assert(!f1_context_sink_allowed(csv, F1_CTX_HTML));
+    assert(!f1_context_sink_allowed(html, 0));
+    assert(!f1_context_sink_allowed(html, 16));
+    assert(f1_concat(html, csv).contexts == F1_CTX_NONE);
+}
+
+test "capability attenuation cannot amplify authority" {
+    int parent = F1_AUTH_FS_READ | F1_AUTH_FS_WRITE;
+    int child = f1_attenuate(parent, F1_AUTH_FS_READ | F1_AUTH_NET);
+    assert(child == F1_AUTH_FS_READ);
+    assert(!f1_has_all(child, F1_AUTH_FS_WRITE));
+    assert(f1_attenuate(parent, 16) == -1);
+}
+
+test "effect and authority summaries compose independently" {
+    F1Contract a = f1_contract(F1_AUTH_FS_READ, F1_EFFECT_IO, 10, 20);
+    F1Contract b = f1_contract(F1_AUTH_NET, F1_EFFECT_ALLOC, 15, 30);
+    F1ContractResult result = f1_compose_contract(a, b);
+    assert(result.ok);
+    assert(result.contract.required_authority == (F1_AUTH_FS_READ | F1_AUTH_NET));
+    assert(result.contract.effects == (F1_EFFECT_IO | F1_EFFECT_ALLOC));
+}
+
+test "invalid authority and effect sets fail closed" {
+    F1Contract bad_authority = f1_contract(16, 0, 1, 1);
+    F1Contract bad_effects = f1_contract(0, 16, 1, 1);
+    F1Contract valid = f1_contract(0, 0, 1, 1);
+    assert(!f1_compose_contract(bad_authority, valid).ok);
+    assert(!f1_compose_contract(bad_effects, valid).ok);
+}
+
+test "resource composition is conservative and budget admission is exact" {
+    F1Contract a = f1_contract(0, 0, 10, 20);
+    F1Contract b = f1_contract(0, 0, 15, 30);
+    F1ContractResult result = f1_compose_contract(a, b);
+    assert(result.ok && result.contract.fuel == 25 && result.contract.memory == 50);
+    assert(!f1_budget_admits(result.contract, 24, 50));
+    assert(f1_budget_admits(result.contract, 25, 50));
+}
+
+test "resource overflow fails closed rather than wrapping" {
+    F1Contract a = f1_contract(0, 0, F1_I64_MAX, 1);
+    F1Contract b = f1_contract(0, 0, 1, 1);
+    F1ContractResult result = f1_compose_contract(a, b);
+    assert(!result.ok && result.error == "fuel_bound_overflow");
+}
+
+test "invalid source identities widen instead of aliasing" {
+    F1Value invalid = f1_source(3, false);
+    assert(invalid.data_top && invalid.selection_top);
+}
+
+test "memory-bound overflow fails closed" {
+    F1Contract a = f1_contract(0, 0, 1, F1_I64_MAX);
+    F1Contract b = f1_contract(0, 0, 1, 1);
+    F1ContractResult result = f1_compose_contract(a, b);
+    assert(!result.ok && result.error == "memory_bound_overflow");
+}
+
+test "unknown summaries widen provenance and confidentiality" {
+    F1Value source = f1_source(1, false);
+    F1Value result = f1_apply_summary(f1_unknown_summary(), source);
+    assert(result.data_top && result.selection_top);
+    assert(!f1_public_sink_allowed(result));
+}
+
+test "selection dependencies are not discarded with selected payload" {
+    F1Value container = f1_source(4, false);
+    F1Value selector = f1_source(8, false);
+    F1Value selected = f1_source(16, false);
+    F1Value result = f1_select(container, selector, selected);
+    assert(result.data_sources == 24);
+    assert(result.selection_sources == 12);
+}
