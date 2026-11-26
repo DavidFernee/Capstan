@@ -435,13 +435,40 @@ else
   bad "private field encapsulation" "$(tail -8 "$tmp/log"; tail -8 "$tmp/private_fields.out" 2>/dev/null)"
 fi
 
-section "experimental region heap: opaque state boundary"
+section "experimental region heap: opaque state and reference boundaries"
 if out="$("$C" build -o "$tmp/ccam_heap_opaque_probe.c" "$ROOT/verification/ccam_heap_opaque_probe.cap" 2>&1)"; then
-  bad "region heap opacity" "external module read a private heap field"
-elif grep -qF "private field 'heap_token' of CCAMHeap" <<<"$out"; then
-  ok "region heap state is inaccessible to importing modules"
+  bad "region heap state opacity" "external module read the private arena identity"
+elif grep -qF "private field 'identity' of CCAMHeap" <<<"$out"; then
+  ok "region heap identity is inaccessible to importing modules"
 else
-  bad "region heap opacity" "$out"
+  bad "region heap state opacity" "$out"
+fi
+if out="$("$C" build -o "$tmp/ccam_heap_ref_opaque_probe.c" "$ROOT/verification/ccam_heap_ref_opaque_probe.cap" 2>&1)"; then
+  bad "region heap reference opacity" "external module constructed a CCAMHeapRef"
+elif grep -qi "opaque" <<<"$out"; then
+  ok "region heap references cannot be constructed by importing modules"
+else
+  bad "region heap reference opacity" "$out"
+fi
+if out="$("$C" build -o "$tmp/ccam_heap_ref_inspect_probe.c" "$ROOT/verification/ccam_heap_ref_inspect_probe.cap" 2>&1)"; then
+  bad "region heap reference representation privacy" "external module inspected a CCAMHeapRef field"
+elif grep -qF "private field 'object_id' of CCAMHeapRef" <<<"$out"; then
+  ok "region heap reference representation is inaccessible to importing modules"
+else
+  bad "region heap reference representation privacy" "$out"
+fi
+
+section "experimental region heap: cross-arena reference rejection"
+if "$C" build -o "$tmp/ccam_heap_cross_arena.c" "$ROOT/verification/ccam_heap_cross_arena.cap" >"$tmp/log" 2>&1 &&
+   "$CC" $WFLAGS "$tmp/ccam_heap_cross_arena.c" -o "$tmp/ccam_heap_cross_arena" 2>>"$tmp/log"; then
+  err="$("$tmp/ccam_heap_cross_arena" 2>&1)"; code=$?
+  if [[ $code -eq 101 ]] && grep -qF "CWE-639" <<<"$err"; then
+    ok "region heap rejects a reference issued by another arena"
+  else
+    bad "region heap cross-arena reference" "exit $code: $err"
+  fi
+else
+  bad "region heap cross-arena build" "$(head -3 "$tmp/log")"
 fi
 
 expect_reject() {   # dir label

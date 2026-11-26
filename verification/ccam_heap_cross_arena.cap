@@ -1,0 +1,19 @@
+// Cross-arena references must be rejected before an object index is resolved.
+// Kept beside ccam_heap.cap so the import remains confined without '..'.
+import "ccam_heap.cap";
+
+int main() {
+    List<int> field_types = new List<int>();
+    List<bool> field_mutable = new List<bool>();
+    CCAMHeapLayout layout = new CCAMHeapLayout{
+        type_id: 9001, field_types: field_types,
+        field_ref_type_ids: new List<int>(), field_mutable: field_mutable
+    };
+    CCAMHeapCreateResult first = ccam_heap_create(128, 4);
+    CCAMHeapCreateResult second = ccam_heap_create(128, 4);
+    CCAMHeapRefResult first_ref = ccam_heap_alloc_record(first.heap, layout);
+    CCAMHeapRefResult second_ref = ccam_heap_alloc_record(second.heap, layout);
+    if (!first.ok || !second.ok || !first_ref.ok || !second_ref.ok) { return 1; }
+    ccam_heap_field_get(first.heap, second_ref.reference, 9001, 0);
+    return 0;
+}
