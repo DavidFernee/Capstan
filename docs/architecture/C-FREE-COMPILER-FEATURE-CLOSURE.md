@@ -25,6 +25,12 @@ This proposal investigates a process-lifetime region/arena as the first memory p
 
 A one-shot compiler process is a suitable first client: its tokens, AST, type and flow objects become unreachable together when compilation exits. This is not a proposal to replace the existing v0.6 collector for ordinary long-running programs.
 
+### 1.1 First aggregate execution bridge
+
+The experimental `verification/ccam_aggregate_machine.cap` now composes the opaque process-lifetime heap with typed integer, boolean and reference registers. It provides Capstan reference transitions for record/array/byte allocation, record field access, array append/read, arena provenance checks and pre-dispatch step limits. Its exact scope and limitations are recorded in [CCAM Aggregate Register/Heap Execution Bridge](CCAM-AGGREGATE-MACHINE-BRIDGE.md).
+
+This is an integration milestone only. It is not yet part of the canonical CCAM instruction schema, multi-frame evaluator, native backend or Lean refinement chain, and it does not yet execute the production lexer/parser through aggregate CCAM. Those remain explicit gates for #458/#481.
+
 ## 2. Why the compiler cannot self-compile today
 
 At the inspected revision, the C-free path has a Capstan-native single-frame evaluator and validator (#142/#163), bounded multi-function calls (#207), checked scalar source-to-CCAM lowering (#210), and a freestanding Linux x86-64 backend/CLI under review (#212/#213).

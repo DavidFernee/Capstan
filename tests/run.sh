@@ -73,6 +73,13 @@ else
   bad "CCAM region heap model" "$out"
 fi
 
+section "Capstan-native verification: aggregate CCAM register/heap execution bridge"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_machine.cap" 2>&1)"; then
+  ok "typed aggregate registers, opaque arena references, records, arrays, field operations and step limits"
+else
+  bad "aggregate CCAM register/heap execution bridge" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
