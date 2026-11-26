@@ -55,6 +55,8 @@ A bound on the raw input bytes is necessary but not sufficient for a parser that
 
 Each individual bound and each aggregate bound must be checked before the corresponding allocation or access. Derived sizes and offsets use checked arithmetic. Cumulative work/decoded-byte charges are monotonic across nested calls; they are not reset when a child parser returns. Live temporary storage uses a separate peak/lease budget and is released only through a verified lifecycle transition. Failure must not publish a partially decoded result.
 
+The Capstan LSP JSON-RPC decoder is one concrete implementation of these compositional limits. Its current limits are: 16 MiB framed message bytes; nesting depth 64; 65,536 JSON values; 4,096 members per object; 16,384 elements per array; 8 MiB per raw string; 12 MiB aggregate raw string bytes; 262,144 fragments per string; 524,288 aggregate string fragments; and 128 bytes per number token. Duplicate object keys are rejected. Exact-limit and one-over-limit protocol cases are exercised in `tests/lsp/sessions.py`. These values and tests establish only the LSP parser's stated profile; they are not defaults for other JSON, media, image, font or database decoders.
+
 A raw-byte bound MUST NOT be presented as a proof of bounded parser work, decoded size, nesting, or live memory. Parser APIs that do not expose a suitable limit contract remain subject to explicit audit and migration; this document does not claim that every existing parser already satisfies this section.
 
 ## 5. Assurance boundary
