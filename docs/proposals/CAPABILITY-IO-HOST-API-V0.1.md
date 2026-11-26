@@ -115,10 +115,10 @@ Every byte-stream send/receive result reports exact positive progress. A zero-by
 
 Conceptual records:
 - IoProgress { bytes: Nat }
-- SendProgress { bytes: Nat, descriptors_sent: Bool }
+- SendProgress { bytes: Nat, descriptors_committed: Bool }
 - ReceiveBatch { bytes: ByteString, handles: List<ReceivedHandle>, handles_offset: Nat }
 
-The offset in ReceiveBatch identifies the first byte in the returned byte slice to which the ancillary descriptor set is associated. It is a stream-relative offset, not an OS descriptor or pointer.
+The handles_offset in ReceiveBatch is a zero-based offset within the returned bytes slice at which the ancillary descriptor set is associated. It is not an OS descriptor or pointer.
 
 ### 5.2 Absolute deadlines
 
@@ -170,9 +170,9 @@ SendResult ::= Complete | Pending(PendingSend)
 PendingSend is an opaque, owned continuation containing the remaining bytes, exact byte offset, descriptor-transfer state and connection generation. It can be resumed only on the same connection.
 
 Rules:
-- The first successful sendmsg that transfers ancillary descriptors marks descriptors_sent exactly once.
+- The first successful sendmsg that transfers ancillary descriptors marks descriptors_committed exactly once. This means the local kernel accepted the descriptor control message for transmission; it does not prove that the peer application has received or accepted the descriptors.
 - If the first send makes no progress and transfers no descriptors, a retry may still include them.
-- Once descriptors_sent is true, every retry sends remaining bytes without reattaching descriptors.
+- Once descriptors_committed is true, every retry sends remaining bytes without reattaching descriptors.
 - Partial bytes are never resent.
 - Sender ownership of each original handle remains unchanged; SCM_RIGHTS creates receiver-side descriptor ownership.
 - A PendingSend cannot be cloned, replayed on another connection or resumed after connection close.
@@ -233,7 +233,7 @@ unmap_region(region: MappedRegion) -> Outcome<Unit, HostError>
 - offset and length are nonzero/range checked; offset alignment is checked against the target page size.
 - offset + length must fit inside the object's declared size and the caller's mapping-byte budget.
 - Execute permission is never available; W+X is forbidden.
-- The region is opaque. Ordinary code receives bounded copy/read/write operations, not a raw pointer or integer address.
+- The region is opaque. Ordinary code receives bounded copy_from/copy_to operations, not a raw pointer or integer address.
 - A mapping retains the backing object until successful unmap.
 - A mapping cannot outlive its backing capability; close of a mapped backing object is rejected or deferred until all mappings are released.
 - unmap consumes the mapping on success. On failure, the runtime returns the still-owned mapping with the error, or moves it to a documented poisoned terminal state; it must never silently mark a still-live mapping as released.
@@ -281,9 +281,13 @@ The ABI module contains only kernel entry, argument/result marshalling and nativ
 | pwrite | write_at | Checked offset/length; short writes/EINTR; no implicit extension |
 | pread | read_at | Checked range; short reads/EOF semantics |
 | fstat | validate shared object | Metadata treated as untrusted and compared to declared limits |
+| openat2 | open_relative | Handle-relative path resolution beneath DirectoryRoot; CLOEXEC; RESOLVE_BENEATH/NO_MAGICLINKS/NO_SYMLINKS where supported; no ambient cwd |
+| read / write | bounded file/stream operations | Explicit partial progress, EOF, EINTR and error mapping; no unbounded buffers |
 | mmap / munmap | map_region / unmap_region | Page alignment; range/protection checks; no executable or W+X mapping; exact ownership |
 | clock_gettime(CLOCK_MONOTONIC) | monotonic_now | Nonnegative normalized value; overflow/regression checks |
 | close | close_handle | Exactly-once logical close; terminal ambiguity documented |
+
+The Linux profile must record its minimum kernel version and exact feature availability. A fallback to openat or another ABI is permitted only if it preserves the same handle-relative confinement and symlink semantics and is separately versioned/tested.
 
 Not in the v0.1 Shroud host profile: epoll, eventfd, timerfd, ioctl, process creation, arbitrary filesystem open, arbitrary signals or raw memory-address conversion. Those require separate contracts and evidence.
 
