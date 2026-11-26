@@ -1163,6 +1163,17 @@ Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vu
 
 The governing programme is specified in [CAPSTAN-ONLY-FOUNDATION.md](CAPSTAN-ONLY-FOUNDATION.md). The F1 language contract is [F1-LANGUAGE-CONTRACT.md](F1-LANGUAGE-CONTRACT.md), and its prior-art synthesis is [F1-RELATED-WORK.md](F1-RELATED-WORK.md). These are research drafts, not claims that the target guarantees are implemented. F1 proposes a factored-but-mutually-checked guarantee calculus as an experiment, not a settled language design.
 
+## Bosun's Locker database programme
+
+Bosun's Locker is the Capstan-native transactional database and storage engine. Its
+architecture and research programme are specified in
+[`docs/database/BOSUNS-LOCKER-ARCHITECTURE.md`](database/BOSUNS-LOCKER-ARCHITECTURE.md),
+with the candidate transaction-history contract in
+[`docs/database/TRANSACTION-HISTORY-SEMANTICS.md`](database/TRANSACTION-HISTORY-SEMANTICS.md).
+The initial target is single-node strict serializability and durable commit. The selected
+concurrency-control algorithm and physical index/storage layout remain open pending
+formal analysis and reproducible benchmarks. These documents are proposals, not claims
+of an implemented or verified database.
 ## Cross-project platform programme (2026-11-26)
 
 The named application and systems programmes are defined in
