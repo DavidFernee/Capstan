@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""read_file(, 1048576) cannot be made to hang or exhaust memory, natively and under stage 0:
+"""read_file(path, max) cannot be made to hang or exhaust memory, natively and under stage 0:
 
     read_file_bounds.py CAPSTANC CC [CFLAGS...]
 
@@ -22,7 +22,7 @@ int main() {
     show("exact", read_file(d + "/ten", 10));
     show("over", read_file(d + "/ten", 9));
     show("empty limit", read_file(d + "/empty", 0));
-    show("default", read_file(d + "/ten", 1048576));
+    show("explicit limit", read_file(d + "/ten", 1048576));
     show("directory", read_file(d, 1048576));
     show("bad limit", read_file(d + "/ten", -1));
     return 0;
@@ -33,7 +33,7 @@ zero: none
 exact: 10 bytes
 over: none
 empty limit: 0 bytes
-default: 10 bytes
+explicit limit: 10 bytes
 directory: none
 """
 
