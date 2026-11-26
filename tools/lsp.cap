@@ -18,8 +18,10 @@
 //
 // Limits (CWE-400): a message body is at most MAX_MESSAGE bytes, a header line
 // MAX_HEADER_LINE bytes, a header block MAX_HEADERS lines, JSON nesting
-// MAX_JSON_DEPTH levels; at most MAX_DOCS documents are open and MAX_DIAGS
-// diagnostics are published per document. Malformed framing, malformed JSON and
+// MAX_JSON_DEPTH levels, MAX_JSON_VALUES values, bounded object/array sizes,
+// bounded per-string and aggregate string bytes, escape fragments and number tokens;
+// at most MAX_DOCS documents are open and MAX_DIAGS diagnostics are published per
+// document. Malformed framing, malformed JSON and
 // unknown methods get JSON-RPC errors; nothing a client sends stops the server
 // except the exit notification or the end of its input.
 //
