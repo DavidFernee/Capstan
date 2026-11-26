@@ -78,7 +78,7 @@ def check(name, text, errors):
             if ref.startswith("actions/checkout@"):
                 block = []
                 for l2 in lines[i + 1:]:
-                    if len(l2) - len(l2.lstrip()) <= indent or l2.strip().startswith("- "):
+                    if len(l2) - len(l2.lstrip()) < indent or (len(l2) - len(l2.lstrip()) == indent and l2.strip().startswith("- ")):
                         break
                     block.append(l2.strip())
                 if "persist-credentials: false" not in block:

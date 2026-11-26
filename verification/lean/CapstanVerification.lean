@@ -6,3 +6,7 @@ import CapstanVerification.Machine
 import CapstanVerification.Progress
 import CapstanVerification.ProgramValidator
 import CapstanVerification.SFVectors
+import NativeMemoryLifecycle
+import NativeReachability
+import NativeHandleReachability
+import NativeBoundedMarker
