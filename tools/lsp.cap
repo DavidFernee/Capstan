@@ -42,7 +42,6 @@ const int MAX_JSON_TOTAL_STRING_PARTS = 524288;
 const int MAX_JSON_NUMBER_BYTES = 128;
 const int MAX_DOCS = 1000;
 const int MAX_DIAGS = 1000;
-const int MAX_IMPORTS = 256;
 const int MAX_TOTAL_TEXT = 268435456;   // all open documents together
 const int MAX_EDIT_WORK = 67108864;     // bytes copied while applying one didChange
 
