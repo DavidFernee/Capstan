@@ -189,3 +189,35 @@ collections, taint, secrets, grants, and IO.
 ## 11. Compiler memory profile integration
 
 The compiler's memory requirements and the separate frame-scoped scratch-memory work are reconciled in [C-Free compiler memory integration review](C-FREE-MEMORY-INTEGRATION-REVIEW.md). The review distinguishes a process-lifetime typed compiler arena from frame-owned scratch regions; neither is promoted to normative CCAM semantics by that document.
+
+
+## 12. Strict all-in-Capstan requirement
+
+The project requirement is stronger than merely removing generated C. **All repository-owned implementation and tool logic in the supported compiler toolchain must be written in Capstan.** This includes:
+
+- compiler front end, typed IR, validators, optimisers and code generators;
+- runtime, allocator/collector, strings, collections and standard library;
+- assembler, object-file writer, linker, executable/loader support and debug metadata;
+- build graph evaluator, dependency scanner, package/module manager and command-line tools;
+- test runner, test generators, fuzzers, property-test engine, benchmark harness and release packager;
+- bootstrap compiler source and every compiler stage.
+
+The final supported path must not invoke or require C, C++, Python, Rust, Go, Java, JavaScript, shell scripts, Make, or another implementation language for any of those functions. In particular, replace the current assembler/linker subprocess path with Capstan-written machine-code, object and executable emission. Do not use FFI to conceal a foreign-language implementation. Operating-system syscalls and hardware interfaces are external platform boundaries, not permission to delegate compiler or runtime logic.
+
+CI may provide scheduling, isolation and artifact storage, but the repository's build/test/release decisions and executable logic must live in Capstan programs. Workflow configuration is only a thin invocation layer.
+
+### Bootstrap trust anchor
+
+A language cannot execute its first compiler without some pre-existing executable seed. The migration may therefore use a previously built Capstan compiler binary as a bootstrap trust anchor. That is not an exemption for a foreign-language stage: the seed's implementation source must be Capstan, its provenance and digest must be recorded, and the seed must rebuild the compiler through successive Capstan stages. The chain must compare reproducible outputs and demonstrate that later stages can rebuild without relying on the original seed. A C/Python-built translator or compiler is not an acceptable final stage or continuing bootstrap dependency.
+
+### Strict exit gate
+
+A clean, isolated machine with no foreign compiler/interpreter, assembler, linker, build utility or shell-based project tooling installed must be able to:
+
+1. start from the documented Capstan seed artifact;
+2. build the complete compiler, runtime, standard library and tool suite using Capstan source only;
+3. compile, assemble and link representative Capstan programs without subprocess toolchain delegation;
+4. run the Capstan-native test/fuzz/conformance suite;
+5. rebuild the compiler and tool suite reproducibly and report exact artifact digests.
+
+The gate fails if any repository-owned compiler/build/test/release path emits or compiles C, invokes a foreign-language helper, delegates code generation to an external assembler/linker, or silently omits a source module. External CI orchestration and the target OS/hardware are recorded trust boundaries, not counted as Capstan implementations.
