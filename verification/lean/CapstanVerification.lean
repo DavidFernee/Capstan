@@ -6,3 +6,4 @@ import CapstanVerification.Machine
 import CapstanVerification.Progress
 import CapstanVerification.ProgramValidator
 import CapstanVerification.SFVectors
+import CapstanVerification.ExplicitTrap
