@@ -12,8 +12,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAPSTANC="$ROOT/build/capstanc"
 CC="${CC:-cc}"
 CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime"
-HARDEN_FLAGS="-fstack-protector-strong -fPIE -pie"
-if [[ "$(uname -s)" == "Linux" ]]; then HARDEN_FLAGS="$HARDEN_FLAGS -D_FORTIFY_SOURCE=2"; fi
+HARDEN_FLAGS="-fstack-protector-strong -fPIE"
+if [[ "$(uname -s)" == "Linux" ]]; then HARDEN_FLAGS="$HARDEN_FLAGS -pie -D_FORTIFY_SOURCE=2"; fi
 
 if [[ ! -x "$CAPSTANC" ]]; then
   echo "capstan: bootstrapping the compiler (first run)..." >&2
