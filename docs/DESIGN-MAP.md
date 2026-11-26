@@ -1162,3 +1162,25 @@ Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vu
 ## Capstan-only language and library foundation
 
 The governing programme is specified in [CAPSTAN-ONLY-FOUNDATION.md](CAPSTAN-ONLY-FOUNDATION.md). The F1 language contract is [F1-LANGUAGE-CONTRACT.md](F1-LANGUAGE-CONTRACT.md), and its prior-art synthesis is [F1-RELATED-WORK.md](F1-RELATED-WORK.md). These are research drafts, not claims that the target guarantees are implemented. F1 proposes a factored-but-mutually-checked guarantee calculus as an experiment, not a settled language design.
+
+## Cross-project platform programme (2026-11-26)
+
+The named application and systems programmes are defined in
+[`docs/architecture/PLATFORM-PROGRAMME.md`](architecture/PLATFORM-PROGRAMME.md).
+Their names and boundaries are:
+
+- **Helm** — operating-system kernel and its narrow architecture/platform interfaces.
+- **Bosun's Locker** — transactional database and storage engine.
+- **Topsail** — secure web application and service platform.
+- **Keel** — 3D engine and deterministic simulation.
+- **Halyard** — media architecture.
+- **Shroud** — GUI toolkit; **Anchor** — IDE built on Shroud.
+
+These are target programmes, not claims of completed implementations. They consume
+shared Capstan foundations rather than defining competing ownership, effect, resource,
+concurrency or security models. The platform programme records dependencies, staged
+acceptance gates, measurable evidence and explicit non-goals. The first implementation
+sequence is CCAM end-to-end conformance, compositional resource/authority contracts,
+concurrency semantics, a minimal Helm boot path, and then the Bosun's Locker storage and
+transaction vertical slice. Topsail follows the same contracts and must not introduce a
+separate security model.
