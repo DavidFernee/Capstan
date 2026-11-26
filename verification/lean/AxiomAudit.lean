@@ -9,6 +9,7 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.Visibility
 import CapstanVerification.TransactionTypestate
 import CapstanVerification.GenerationalHandles
 import CapstanVerification.CollectorSemantics
@@ -346,3 +347,12 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.advance_preserves_owner_ids
 #print axioms CapstanVerification.canonical_commit_path
 #print axioms CapstanVerification.abort_before_commit_decision
+
+-- Module visibility policy model: theorem audit.
+#print axioms CapstanVerification.field_operation_same_policy
+#print axioms CapstanVerification.private_field_denied_cross_module
+#print axioms CapstanVerification.opaque_field_denied_cross_module
+#print axioms CapstanVerification.public_field_permitted_cross_module
+#print axioms CapstanVerification.owner_can_access_private_field
+#print axioms CapstanVerification.opaque_construction_denied_cross_module
+#print axioms CapstanVerification.opaque_construction_permitted_owner
