@@ -343,7 +343,22 @@ def protocol(exe):
     aggregate_strings = b"[" + b",".join(
         b'"' + b"a" * (7 * 1024 * 1024) + b'"' for _ in range(2)
     ) + b"]"
+    exact_nested = b"[" + b",".join([b"null"] * 15) + b"]"
+    exact_values = b"[" + b",".join([exact_nested] * 4095 + [b"null"] * 15) + b"]"
+    exact_members = b"{" + b",".join(b'"k%d":null' % i for i in range(4096)) + b"}"
+    exact_elements = b"[" + b",".join([b"null"] * 16384) + b"]"
+    exact_string = b'"' + b"a" * (8 * 1024 * 1024) + b'"'
+    exact_aggregate_strings = b'["' + b"a" * (6 * 1024 * 1024) + b'","' + b"a" * (6 * 1024 * 1024) + b'"]'
+    exact_fragments = b'"' + b"\\n" * 131069 + b"\\uD83D\\uDE00" + b'"'
+    exact_number = b"1" * 128
     bad_bodies.extend([
+        (exact_values, -32600, "exact JSON value budget"),
+        (exact_members, -32600, "exact JSON object member budget"),
+        (exact_elements, -32600, "exact JSON array element budget"),
+        (exact_string, -32600, "exact JSON per-string byte budget"),
+        (exact_aggregate_strings, -32600, "exact JSON aggregate string byte budget"),
+        (exact_fragments, -32600, "exact JSON string fragment budget"),
+        (exact_number, -32600, "exact JSON number token budget"),
         (b'{"jsonrpc":"2.0","jsonrpc":"2.0","id":1,"method":"x"}', -32700, "duplicate object key"),
         (value_fanout, -32700, "aggregate JSON value budget"),
         (too_many_members, -32700, "JSON object member budget"),
