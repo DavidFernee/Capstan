@@ -1,0 +1,2 @@
+import "ccam_aggregate_byte_buffer.cap";
+bool ag_syscall(List<int> b){if(b.len()>AG_BYTE_LIMIT-2){return false;}b.push(15);b.push(5);return true;}
