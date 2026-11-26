@@ -75,11 +75,16 @@ with tempfile.TemporaryDirectory(prefix="capstan-ccam-memory-oracle-") as tmp:
         with open(os.path.join(ROOT, relative), "r", encoding="utf-8") as source_file:
             content = source_file.read()
         if name == "ccam_core.cap":
-            if content.count("int main() {") != 1:
-                sys.exit("CCAM core oracle entry-point shape changed")
-            content = content.replace(
-                "int main() {", "int ccam_core_self_test_main() {", 1
-            )
+            entry_points = content.count("int main() {")
+            # The mainline CCAM core is also used as an imported library and
+            # no longer needs a standalone entry point. Older bases still
+            # contain exactly one self-test main; tolerate either shape.
+            if entry_points > 1:
+                sys.exit("CCAM core has multiple oracle entry points")
+            if entry_points == 1:
+                content = content.replace(
+                    "int main() {", "int ccam_core_self_test_main() {", 1
+                )
         with open(os.path.join(tmp, name), "w", encoding="utf-8") as target_file:
             target_file.write(content)
     model = os.path.join(tmp, "ccam_memory_store_model.cap")
