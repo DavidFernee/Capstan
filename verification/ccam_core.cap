@@ -1977,3 +1977,6 @@ test "CCAM validator bounds aggregate byte literals in a frame" {
         no_registers, code, CCAM_RETURN_VOID);
     assert(!result.ok && result.error == "output_literal_limit_exceeded");
 }
+
+
+}
