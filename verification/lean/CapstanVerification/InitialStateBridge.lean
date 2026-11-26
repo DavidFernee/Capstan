@@ -58,6 +58,40 @@ theorem initialRegisterFiles_correspond (types : List Ty) :
       exact InitialRegisterListsMatch.cons
         (nativeRegisterInitForType_matches ty) ih
 
+/-- Convert the inductive pairwise initialisation proof to the reusable
+native/runtime register-file relation used by the write/read simulation lemmas. -/
+theorem InitialRegisterListsMatch.toNativeRuntimeRegisterFileRelation
+    {native : List NativeCCAMRegister} {runtime : List RuntimeRegister}
+    (hmatch : InitialRegisterListsMatch native runtime) :
+    NativeRuntimeRegisterFileRelation native runtime := by
+  induction hmatch with
+  | nil =>
+      constructor
+      · rfl
+      · intro index nativeReg runtimeReg hnative hruntime
+        simp at hnative
+  | @cons native runtime nativeRest runtimeRest hhead htail ih =>
+      constructor
+      · simp
+      · intro index nativeReg runtimeReg hnative hruntime
+        cases index with
+        | zero =>
+            simp at hnative hruntime
+            cases hnative
+            cases hruntime
+            exact hhead
+        | succ index =>
+            simp at hnative hruntime
+            exact ih.matches_at index nativeReg runtimeReg hnative hruntime
+
+/-- The initial native and abstract lists satisfy the established reusable
+register-file relation, not merely a bespoke pairwise list predicate. -/
+theorem initialRegisterFiles_nativeRuntimeRelation (types : List Ty) :
+    NativeRuntimeRegisterFileRelation
+      (nativeInitialRegisterFile types) (runtimeInitialRegisterFile types) :=
+  InitialRegisterListsMatch.toNativeRuntimeRegisterFileRelation
+    (initialRegisterFiles_correspond types)
+
 /-- Every native register starts uninitialised, independently of its type. -/
 theorem nativeInitialRegisterFile_uninitialised (types : List Ty) :
     ∀ register ∈ nativeInitialRegisterFile types,
