@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_utf8_validate(List<int> b){int i=0;while(i<b.len()){int w=ag_utf8_width(b[i]);if(w==0||i+w>b.len()){return false;}for(int j=1;j<w;j+=1){if(!ag_utf8_cont(b[i+j])){return false;}}i+=w;}return true;}
