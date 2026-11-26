@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "f84bec48aa24f3a1548a7904d29ae90790929c97",
+  "baseline_commit": "35f7ce57132f235adbb8e60b00a4f27f3a87d9eb",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
