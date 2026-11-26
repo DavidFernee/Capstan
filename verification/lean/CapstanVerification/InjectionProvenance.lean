@@ -159,8 +159,14 @@ theorem expression_sources_preserved (expr : ProvenanceExpr) :
       simp only [representedSources, evalProvenance, combineProvenance,
         Finset.mem_union]
       rcases hsource with hleft | hright
-      · exact Or.inl (ihLeft hleft)
-      · exact Or.inl (ihRight hright)
+      · have hrepresented := ihLeft hleft
+        rcases Finset.mem_union.mp hrepresented with hdata | hselection
+        · exact Or.inl (Or.inl hdata)
+        · exact Or.inr hselection
+      · have hrepresented := ihRight hright
+        rcases Finset.mem_union.mp hrepresented with hdata | hselection
+        · exact Or.inl (Or.inr hdata)
+        · exact Or.inr hselection
   | select selected selector ihSelected ihSelector =>
       intro source hsource
       simp only [expressionSources, Finset.mem_union] at hsource
