@@ -1551,3 +1551,49 @@ test "CCAM validator bounds aggregate output literals across functions" {
     CCAMValidationResult result = ccam_validate_multi_function(functions, 0);
     assert(!result.ok && result.error == "output_literal_limit_exceeded");
 }
+
+
+test "CCAM call-machine constructor establishes the complete entry state" {
+    List<int> register_types = new List<int>();
+    register_types.push(CCAM_TYPE_INT);
+    register_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> instructions = new List<CCAMInstruction>();
+    instructions.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMCallSite> call_sites = new List<CCAMCallSite>();
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main",
+        register_types: register_types,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_VOID,
+        instructions: instructions,
+        call_sites: call_sites
+    });
+
+    CCAMCallMachineCreateResult created =
+        ccam_call_machine_create_with_output_budget(functions, 0, 17, 3, 29);
+    assert(created.ok && created.error == "");
+    CCAMCallMachine machine = created.machine;
+    assert(machine.functions.len() == 1);
+    assert(machine.frames.len() == 1);
+    assert(machine.call_site_lookup.len() == 1);
+    assert(machine.frame_depth == 1);
+    CCAMFrame entry = machine.frames[0];
+    assert(entry.function_index == 0 && entry.pc == 0);
+    assert(entry.caller_destination == 0 && !entry.caller_has_destination);
+    assert(entry.registers.len() == 2);
+    assert(entry.registers[0].declared_type == CCAM_TYPE_INT);
+    assert(entry.registers[1].declared_type == CCAM_TYPE_BOOL);
+    for (int i = 0; i < entry.registers.len(); i += 1) {
+        assert(!entry.registers[i].initialized);
+        assert(entry.registers[i].int_value == 0);
+        assert(!entry.registers[i].bool_value);
+    }
+    assert(machine.steps == 0 && machine.max_steps == 17);
+    assert(machine.max_depth == 3 && machine.max_output_bytes == 29);
+    assert(!machine.halted && !machine.halt_has_value);
+    assert(machine.halt_value == 0 && !machine.halt_bool_value);
+    assert(machine.trap_code == "" && machine.trap_function == "");
+    assert(machine.trap_pc == 0 && machine.trap_detail == "");
+    assert(machine.output_bytes.len() == 0);
+}
