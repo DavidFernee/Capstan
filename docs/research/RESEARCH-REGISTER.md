@@ -275,3 +275,11 @@ resource-limit bypasses that per-buffer limits permit, without unacceptable thro
 latency or memory overhead?** Baselines must compare identical workloads and report
 rejection correctness, peak retained bytes, allocation count, CPU work, throughput and
 tail latency. The sequential prototype alone cannot answer this question.
+
+## Native reference, heap and collector proof increments
+
+PR #255 (draft) adds `ReferenceSemantics.lean`, a payload-polymorphic object heap model for shallow reference copies, alias-visible mutation, fresh allocation identities and non-reuse of live logical identities. It adds `NativeRegisterHeapBridge.lean`, `CollectorSemantics.lean` and `GenerationalHandles.lean`, plus executable aliasing and distinct-register-slot regressions.
+
+The collector theorem is conditional on marker completeness: it proves abstract sweep preservation of reachable objects, roots and reachable edges, and a collect-then-allocate composition property. The generation-checked handle model proves stale and cross-region rejection and bounded counter refusal rather than wraparound.
+
+**Evidence boundary:** these are mathematical models and source-level regression tests. They do not yet prove that compiler lowering, Capstan list/collection operations, generated C pointers, the concrete allocator, or the current C collector implement the models. Root completeness, allocation failure atomicity, address-incarnation refinement and runtime correspondence remain open. Keep the PR a draft until exact-head Lean, pinned-checker, axiom-audit and platform checks pass.
