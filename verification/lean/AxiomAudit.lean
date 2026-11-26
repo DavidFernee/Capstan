@@ -7,6 +7,7 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.InjectionProvenance
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -207,3 +208,13 @@ import CapstanVerification.ExplicitTrap
 #print axioms CapstanVerification.nonvoid_function_requires_value
 
 #print axioms CapstanVerification.return_write_preserves_caller_well_typed
+
+-- Injection-freedom provenance foundation.
+#print axioms CapstanVerification.input_source_is_data_provenance
+#print axioms CapstanVerification.combine_preserves_left_data
+#print axioms CapstanVerification.combine_preserves_right_data
+#print axioms CapstanVerification.combine_preserves_selection
+#print axioms CapstanVerification.select_preserves_selector_data
+#print axioms CapstanVerification.select_preserves_selected_data
+#print axioms CapstanVerification.select_preserves_prior_selection
+#print axioms CapstanVerification.expression_sources_preserved
