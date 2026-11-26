@@ -50,9 +50,14 @@ export ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=0
 PY="python3 -I"
 SRC=$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen,main}.cap)
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+FAILURE_LOG="$tmp/failures.log"
+: > "$FAILURE_LOG"
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  pass  %s\n' "$1"; }
-bad() { fail=$((fail+1)); printf '  FAIL  %s: %s\n' "$1" "$2"; }
+bad() {
+  fail=$((fail+1))
+  printf '  FAIL  %s: %s\n' "$1" "$2" | tee -a "$FAILURE_LOG"
+}
 section() { echo; echo "== $1"; }
 
 [[ -x "$C" ]] || make -s -C "$ROOT" bootstrap
