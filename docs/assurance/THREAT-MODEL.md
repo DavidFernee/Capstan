@@ -1,7 +1,7 @@
 # Capstan threat model
 
 What Capstan defends against, what it assumes, what it trusts today, what is out of scope, and what
-risk remains. It describes the integrated repository state reviewed on 2026-11-24, and is the
+risk remains. It describes the integrated repository state reviewed on 2026-11-26 against mainline snapshot `fa7cbc216c2f91aac64503aeeaefa86c831e5a43`, and is the
 maintained threat model called for in [DESIGN-MAP.md](../DESIGN-MAP.md). The default execution path
 is still generated C plus the C runtime; the C-free/CCAM programme is not yet the production path.
 Every claim refers to a document, implementation path or test in the repository.
@@ -142,6 +142,12 @@ are not evidence that the current C-backed runtime has become memory-safe.
 - **Capstan Review (AI).** Planned, advisory and optional; not part of the compiler's verdict and not
   present today.
 
+## 6.1 Platform evidence boundary
+
+The CI workflow at the reviewed snapshot has three compiler/platform combinations: Ubuntu with GCC, Ubuntu with Clang, and macOS with Clang. These are the only combinations represented by the routine CI matrix. Windows and ARM64 are not in that matrix; this document makes no portability or support claim for them. A future support claim requires a defined support policy, an actual build/runtime test job on the target, and exact-commit evidence. The current POSIX-oriented runtime (including `unistd.h`, file-descriptor APIs and signal/stack handling) is an additional reason not to infer Windows support from source-level portability.
+
+The exact-head assurance recheck associated with issue #428 found the allocator/GC abstract-model job successful, while the formal language-verification package and the CI matrix were still queued at the time of inspection; CodeQL C++ analysis had completed while its other language jobs were still running/queued. No `tests/run.sh --full` run was obtained as part of that review. These workflow states are not full-suite passing evidence and must be superseded by completed exact-commit results before any assurance claim is promoted.
+
 ## 7. Residual risks
 
 1. **Atlas gaps that can still be written** ([CWE-ATLAS.md](../CWE-ATLAS.md)): HTML-escaped text
@@ -164,10 +170,14 @@ are not evidence that the current C-backed runtime has become memory-safe.
    that must still stop, differential fuzzing against stage 0, and `--keep-checks`.
 6. **Conservative garbage collection.** A value that looks like a pointer keeps memory alive. This can
    retain memory, so it is an availability risk, not a memory-safety one.
-7. **Missing exploit mitigations in generated binaries.** `bin/capstan` compiles generated C with
-   `-O2 -std=gnu11 -w` and does not explicitly enable stack protectors, control-flow integrity,
-   position-independent executables or `_FORTIFY_SOURCE`; only the platform compiler's defaults apply.
-   These would limit the impact of a trusted-base bug (DESIGN-MAP section 6, "Defence in depth").
+7. **Exploit-mitigation coverage is defence in depth, not a memory-safety proof.** The standard
+   generated-C build paths in `bin/capstan`, the Makefile and the test harness explicitly enable
+   stack canaries (`-fstack-protector-strong`) and position-independent executables
+   (`-fPIE -pie`). Linux builds also enable glibc fortification (`-D_FORTIFY_SOURCE=2`) at
+   optimisation level `-O2`. Control-flow integrity is not enabled: a portable configuration
+   across the supported GCC/Clang and Linux/macOS matrix has not been established. These
+   mitigations reduce exploitability of some trusted-base defects; they do not make the C runtime
+   memory-safe or replace bounds checks, sanitizers, review or formal refinement evidence.
 8. **Release integrity.** Releases are signed (keyless Sigstore), carry SBOMs and GitHub artifact
    attestations, and the workflows pin actions by commit. They are still built only on GitHub's
    runners: there is no independent rebuild elsewhere, and the build is not SLSA Build Level 3

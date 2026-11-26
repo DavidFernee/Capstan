@@ -36,14 +36,16 @@
 #   mutation     (--full) injected compiler bugs must be caught by the suite
 #   bench        (--full) speed against hand-written C, with a regression limit
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 C="$ROOT/build/capstanc"
 CC="${CC:-cc}"
 FULL=0; [[ "${1:-}" == "--full" ]] && FULL=1
-CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime"
-WFLAGS="-O2 -std=gnu11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -I$ROOT/runtime"
+HARDEN_FLAGS="-fstack-protector-strong -fPIE"
+if [[ "$(uname -s)" == "Linux" ]]; then HARDEN_FLAGS="$HARDEN_FLAGS -pie -D_FORTIFY_SOURCE=2"; fi
+CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime $HARDEN_FLAGS"
+WFLAGS="-O2 -std=gnu11 $HARDEN_FLAGS -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -I$ROOT/runtime"
 [[ "$($CC --version 2>&1)" == *clang* ]] && WFLAGS="$WFLAGS -Wno-parentheses-equality -Wno-gnu-statement-expression -Wno-gnu-auto-type"
-SAN="-O1 -g -std=gnu11 -w -fsanitize=address,undefined -fno-sanitize-recover=all -I$ROOT/runtime"
+SAN="-O1 -g -std=gnu11 $HARDEN_FLAGS -w -fsanitize=address,undefined -fno-sanitize-recover=all -I$ROOT/runtime"
 export ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=0
 PY="python3 -I"
 SRC=$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen,main}.cap)
@@ -71,8 +73,15 @@ else
   bad "F1 compositional guarantee model" "$out"
 fi
 
+section "Capstan-native verification: experimental bounded region heap model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_heap.cap" 2>&1)"; then
+  ok "CCAM region heap model: typed records, arrays, allocation limits and atomic rejection"
+else
+  bad "CCAM region heap model" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
 else
   bad "CCAM Capstan arithmetic, register validation and evaluator" "$out"
@@ -92,11 +101,40 @@ else
   bad "GC handles and immutable object layouts" "$out"
 fi
 
+section "CCAM-SF-P generated Lean adapter freshness"
+if out="$($PY "$ROOT/scripts/generate_ccam_sf_lean_vectors.py" --check 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM-SF-P generated Lean adapter freshness" "$out"
+fi
+
+section "CCAM-SF-P corpus schema negative controls"
+if out="$($PY "$ROOT/tests/test_ccam_sf_vector_schema.py" 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM-SF-P corpus schema negative controls" "$out"
+fi
+
+section "CCAM-SF-P canonical vectors: strict corpus validation and concrete evaluator traces"
+if out="$($PY "$ROOT/scripts/run-ccam-sf-vectors.py" 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM-SF-P canonical vector conformance" "$out"
+fi
+
+
 section "Capstan-native verification: CCAM multi-function calls and frames"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
 else
   bad "CCAM multi-function evaluator" "$out"
+fi
+
+section "Capstan-native verification: Bosun bounded storage kernel"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/lib/bosun/storage.cap" 2>&1)"; then
+  ok "bounded regions, aggregate admission, independent flat oracle, typed bytes and reset semantics"
+else
+  bad "Bosun bounded storage kernel" "$out"
 fi
 
 section "Capstan-native verification: bounded concurrency reference machine"
@@ -118,6 +156,26 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/halyard_resource_vector_
   ok "FIFO all-or-nothing vector admission, exact boundaries, rejection and one-shot release"
 else
   bad "Halyard multidimensional resource actor model" "$out"
+fi
+
+section "Schooner S1: bounded capability revocation reference model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/schooner_capability.cap" 2>&1)"; then
+  ok "capability identity, rights attenuation, revocation epochs, generation checks and failure atomicity"
+else
+  bad "Schooner capability revocation model" "$out"
+fi
+
+section "Schooner S1: compositional resource-budget reference model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/schooner_budget.cap" 2>&1)"; then
+  ok "nested budget conservation, generation-bound leases, one-shot return and failure atomicity"
+else
+  bad "Schooner resource-budget model" "$out"
+fi
+section "Schooner S1: concurrent revocation and in-flight access interleavings"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/schooner_concurrency.cap" 2>&1)"; then
+  ok "bounded schedules preserve admission, quiescence and reclamation invariants"
+else
+  bad "Schooner concurrency model" "$out"
 fi
 
 section "Capstan-native verification: finite protocol automata"
@@ -177,14 +235,14 @@ else
 fi
 
 section "Capstan-native verification: checked source to CCAM lowering"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
   ok "checked scalar source lowers to validated CCAM and executes in the Capstan evaluator"
 else
   bad "CCAM source-to-IR lowering" "$out"
 fi
 
 section "Capstan-native verification: freestanding Linux x86-64 native backend"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" "$ROOT/verification/ccam_lowering.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
   ok "CCAM emits freestanding x86-64 assembly without C runtime references"
   if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
     native_run() {
@@ -290,11 +348,69 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
       fi
     }
     native_run_output_limit ccam-native-x64-output-limit 76
+    if "$ROOT/bin/capstan" native --root "$ROOT" "$ROOT/tests/fixtures/native_return_42.cap" -o "$tmp/capstan-native-cli"; then
+      "$tmp/capstan-native-cli"
+      cli_status=$?
+      if [[ $cli_status -eq 42 ]]; then
+        ok "capstan native CLI builds and runs source with no C runtime in target ELF"
+      else
+        bad "capstan native CLI exit status" "expected 42, got $cli_status"
+      fi
+    else
+      bad "capstan native CLI" "source-to-freestanding-ELF build failed"
+    fi
+
+    if "$ROOT/bin/capstan" native --root "$ROOT" "$ROOT/tests/fixtures/native_reject_parent_import.cap" -o "$tmp/rejected-native" >"$tmp/native-import.out" 2>&1; then
+      bad "native CLI import confinement" "parent-directory import was accepted"
+    elif grep -q "relative .cap path without absolute or dot-segment traversal" "$tmp/native-import.out"; then
+      ok "native CLI rejects lexical parent-directory import traversal"
+    else
+      bad "native CLI import confinement" "$(cat "$tmp/native-import.out")"
+    fi
+
+    native_workspace="$tmp/native-workspace"
+    native_outside="$tmp/native-outside"
+    mkdir -p "$native_workspace" "$native_outside"
+    printf 'fn secret() -> int { return 42; }\n' > "$native_outside/secret.cap"
+    printf 'import "linked/secret.cap";\nfn main() -> int { return 0; }\n' > "$native_workspace/main.cap"
+    ln -s "$native_outside" "$native_workspace/linked"
+    if "$ROOT/bin/capstan" native --root "$native_workspace" main.cap -o "$tmp/rejected-symlink-native" >"$tmp/native-symlink.out" 2>&1; then
+      bad "native CLI symlink confinement" "import through a workspace symlink was accepted"
+    elif grep -q "cannot read imported file" "$tmp/native-symlink.out"; then
+      ok "native CLI rejects symlinked import components"
+    else
+      bad "native CLI symlink confinement" "$(cat "$tmp/native-symlink.out")"
+    fi
+
+    ln -s "$native_outside/secret.cap" "$native_workspace/file-link.cap"
+    printf 'import "file-link.cap";\nfn main() -> int { return 0; }\n' > "$native_workspace/main-file-link.cap"
+    if "$ROOT/bin/capstan" native --root "$native_workspace" main-file-link.cap -o "$tmp/rejected-file-symlink-native" >"$tmp/native-file-symlink.out" 2>&1; then
+      bad "native CLI final-component symlink confinement" "import through a file symlink was accepted"
+    elif grep -q "cannot read imported file" "$tmp/native-file-symlink.out"; then
+      ok "native CLI rejects final-component symlinks"
+    else
+      bad "native CLI final-component symlink confinement" "$(cat "$tmp/native-file-symlink.out")"
+    fi
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
 else
   bad "CCAM native x86-64 backend" "$out"
+fi
+
+section "Capstan-native repository inventory"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1)"; then
+  ok "inventory purpose/language classification, binary detection, physical-line counting and aggregate totals"
+else
+  bad "Capstan-native repository inventory" "$out"
+fi
+
+if "$ROOT/bin/capstan" build --root "$ROOT" "$ROOT/tests/fixtures/native_return_42.cap" -o "$tmp/invalid-root-build" >"$tmp/native-root-command.out" 2>&1; then
+  bad "native workspace option scope" "--root was accepted by the ordinary build command"
+elif grep -q -- "--root is supported only by the native command" "$tmp/native-root-command.out"; then
+  ok "native workspace root option is confined to the native CLI"
+else
+  bad "native workspace option scope" "$(cat "$tmp/native-root-command.out")"
 fi
 
 section "unit"
@@ -315,6 +431,7 @@ if out="$($PY "$ROOT/tests/unit/escape_json_agree.py" 2>&1)"; then ok "$out"; el
 if out="$($PY "$ROOT/tests/unit/lint_table.py" 2>&1)"; then ok "$out"; else bad "lint table" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/grant_reference.py" 2>&1)"; then ok "$out"; else bad "grant reference semantics" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/assurance_freshness.py" 2>&1)"; then ok "$out"; else bad "assurance evidence freshness" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/cwe_attempt_records.py" 2>&1)"; then ok "$out"; else bad "CWE attempt-record JSON output" "$out"; fi
 section "private struct fields: module boundary and factory invariants"
 if "$C" test -o "$tmp/private_fields.c" "$ROOT/tests/unit/private_fields/tests.cap" >"$tmp/log" 2>&1 \
    && "$CC" $CFLAGS "$tmp/private_fields.c" -o "$tmp/private_fields" >>"$tmp/log" 2>&1 \
@@ -323,6 +440,15 @@ if "$C" test -o "$tmp/private_fields.c" "$ROOT/tests/unit/private_fields/tests.c
   ok "private fields: defining-module construction/read/write and external public API"
 else
   bad "private field encapsulation" "$(tail -8 "$tmp/log"; tail -8 "$tmp/private_fields.out" 2>/dev/null)"
+fi
+
+section "experimental region heap: opaque state boundary"
+if out="$("$C" build -o "$tmp/ccam_heap_opaque_probe.c" "$ROOT/verification/ccam_heap_opaque_probe.cap" 2>&1)"; then
+  bad "region heap opacity" "external module read a private heap field"
+elif grep -qF "private field 'heap_token' of CCAMHeap" <<<"$out"; then
+  ok "region heap state is inaccessible to importing modules"
+else
+  bad "region heap opacity" "$out"
 fi
 
 expect_reject() {   # dir label
@@ -430,11 +556,23 @@ if out="$($PY "$ROOT/tests/unit/read_line_eof.py" "$C" "$CC" $WFLAGS 2>&1)"; the
 section "crypto: lib/crypto.cap against hashlib, the published vectors and the runtime"
 if out="$($PY "$ROOT/tests/crypto/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "crypto" "$out"; fi
 
+section "Keel: bounded exact geometry predicates against Python arbitrary-precision integers"
+if out="$($PY "$ROOT/tests/keel/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else bad "Keel exact geometry predicates" "$out"; fi
+
+section "Keel: bounded exact triangle-mesh validation and topology incidence"
+if out="$($PY "$ROOT/tests/keel/mesh_check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else bad "Keel triangle mesh validation" "$out"; fi
+
 section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 decoder, zlib and golden frames"
 if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
   ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
 else bad "shroud" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame text budget" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_text_byte_limit.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud text byte limit" "$out"; fi
+if out="$($PY "$ROOT/tests/shroud/check_a11y_utf8_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud accessibility UTF-8 budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud PNG export budget" "$out"; fi
 printf 'int main(void) { return 0; }\n' > "$tmp/san.c"

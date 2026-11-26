@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://capstan.dev/schemas/cwe-attempt-records-1.0.0.schema.json",
+  "title": "Capstan CWE per-attempt evidence records",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "id",
+      "cwe",
+      "name",
+      "verdict",
+      "fixture",
+      "expected_outcome",
+      "positive_control",
+      "known_bypasses",
+      "enforcement_point",
+      "assumptions"
+    ],
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^CWE-[0-9]+-[a-z0-9]+(?:-[a-z0-9]+)*(?:-[a-f0-9]{12})$"
+      },
+      "cwe": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "verdict": {
+        "enum": [
+          "reject",
+          "runtime",
+          "neutral",
+          "absent",
+          "audited",
+          "logic",
+          "gap",
+          "na"
+        ]
+      },
+      "fixture": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source",
+          "code"
+        ],
+        "properties": {
+          "source": {
+            "const": "tests/cwe/atlas.py"
+          },
+          "code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "expected_outcome": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "verdict",
+          "match"
+        ],
+        "properties": {
+          "verdict": {
+            "enum": [
+              "reject",
+              "runtime",
+              "neutral",
+              "absent",
+              "audited",
+              "logic",
+              "gap",
+              "na"
+            ]
+          },
+          "match": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "positive_control": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "source"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "mapped",
+              "pending",
+              "not-applicable"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "known_bypasses": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "items"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "mapped",
+              "pending",
+              "none-identified"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "enforcement_point": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "value"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "mapped",
+              "pending"
+            ]
+          },
+          "value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "assumptions": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

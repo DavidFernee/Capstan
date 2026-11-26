@@ -80,7 +80,7 @@ For a terminal instruction:
 - the final PC convention agrees (the terminal instruction's own PC for return/trap; selected target for branch/jump);
 - register state is unchanged unless the instruction semantics explicitly writes one.
 
-The proof must cover all 17 opcode constructors. It must not prove only arithmetic and infer control-flow correctness.
+For the current CCAM-SF-P simulation theorem, the proof must cover all 16 in-profile `MachineInstr` constructors. The `.explicitTrap` constructor is deliberately excluded because the concrete evaluator preserves an arbitrary reason string in `trap_detail`, while the current Lean `Trap` domain does not represent that payload. Keep the `TRAP` row in this inventory as an explicit out-of-profile obligation; do not count it as proved or silently map it to a finite trap. The proof must not prove only arithmetic and infer control-flow correctness.
 
 ## Fuel correspondence
 
@@ -251,3 +251,14 @@ The theorem must partition these cases rather than silently treating the finite 
 5. **Step exhaustion:** concrete `step_limit_exceeded` must map to Lean `.instructionLimit`, but it occurs before dispatch and consumes no step. This is distinct from every post-fetch dynamic trap.
 
 A theorem advertised as full concrete trap equivalence is premature until these partitions are either mapped or explicitly excluded in its hypotheses. In particular, a one-way theorem for the validated SF-P profile is acceptable as a first milestone; it must not be described as equivalence of the entire concrete API.
+
+
+## Shared SF-P corpus checks (mainline continuation PR #391)
+
+The canonical `verification/ccam_sf_vectors.json` corpus now feeds three paths:
+
+1. `scripts/validate-ccam-sf-vectors.py` performs strict corpus/schema/resource validation.
+2. `scripts/run-ccam-sf-vectors.py` executes 17 admitted and 4 normative-invalid in-profile vectors against the concrete Capstan evaluator, comparing exact PC traces, step counts, terminal PC and trap/return projections. It also asserts that SF-019 is normatively accepted and constructs no profile machine; SF-020 remains Lean/profile-only and SF-X01 remains out-of-profile.
+3. `scripts/generate_ccam_sf_lean_vectors.py` generates Lean `RawSingleFrameProgram` definitions from the same JSON. The default Lean build checks 23 profile-admission theorems and 23 machine execution/non-execution theorems. Accepted vectors run through `budgetedMachineStep` from uninitialised registers under the vector's instruction budget; the theorems compare exact model outcome/trap, return value, PC, step count and dispatched-PC trace. Rejected profile vectors prove no executable profile program is produced.
+
+This is stronger than profile-only validation: the same corpus now checks both concrete and Lean machine behavior. It remains **test-level cross-model evidence, not a refinement proof**. The concrete and Lean evaluators are separately implemented; no initial-state relation, one-step simulation theorem or exact concrete/abstract budget correspondence has yet been proved. In particular, the current `MachineOutcome` terminal cases still omit concrete post-state fields, and the runtime/native bridge proofs cover selected register representation rather than whole-evaluator refinement.

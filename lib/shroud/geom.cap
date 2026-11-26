@@ -160,3 +160,229 @@ int sub_bound(int bound, int d) {
 
 Constraints tight(int w, int h) { return new Constraints{min_w: w, min_h: h, max_w: w, max_h: h}; }
 Constraints loose(int w, int h) { return new Constraints{min_w: 0, min_h: 0, max_w: w, max_h: h}; }
+
+// ---- checked arithmetic for public geometry boundaries ------------------------------
+// Optional results let callers reject invalid geometry without triggering the
+// compiler's ordinary arithmetic-overflow stop. These helpers are additive: legacy
+// convenience functions above retain their existing signatures during migration.
+
+const int SHROUD_INT_MAX = 0x7FFFFFFFFFFFFFFF;
+const int SHROUD_INT_MIN = -0x7FFFFFFFFFFFFFFF - 1;
+
+int? checked_add(int a, int b) {
+    if (b > 0 && a > SHROUD_INT_MAX - b) { return none; }
+    if (b < 0 && a < SHROUD_INT_MIN - b) { return none; }
+    return a + b;
+}
+
+int? checked_sub(int a, int b) {
+    if (b > 0 && a < SHROUD_INT_MIN + b) { return none; }
+    if (b < 0 && a > SHROUD_INT_MAX + b) { return none; }
+    return a - b;
+}
+
+int? checked_mul(int a, int b) {
+    if (a == 0 || b == 0) { return 0; }
+    if ((a == -1 && b == SHROUD_INT_MIN) ||
+        (b == -1 && a == SHROUD_INT_MIN)) { return none; }
+    if (a > 0) {
+        if (b > 0 && a > SHROUD_INT_MAX / b) { return none; }
+        if (b < 0 && b < SHROUD_INT_MIN / a) { return none; }
+    } else {
+        if (b > 0 && a < SHROUD_INT_MIN / b) { return none; }
+        if (b < 0 && a < SHROUD_INT_MAX / b) { return none; }
+    }
+    return a * b;
+}
+
+int? checked_abs(int v) {
+    if (v == SHROUD_INT_MIN) { return none; }
+    if (v < 0) { return -v; }
+    return v;
+}
+
+// Signed division rounded to nearest, with exact ties away from zero.
+// The denominator may have either sign but must not be zero.
+int? checked_round_div(int numerator, int denominator) {
+    if (denominator == 0) { return none; }
+    if (numerator == SHROUD_INT_MIN && denominator == -1) { return none; }
+    int q = numerator / denominator;
+    int r = numerator % denominator;
+    if (r == 0) { return q; }
+    int halfway = 0;
+    if (denominator == SHROUD_INT_MIN) {
+        // abs(INT_MIN) is 2^63, which is not representable as a signed int;
+        // its nearest-rounding threshold is exactly 2^62.
+        halfway = 0x4000000000000000;
+    } else {
+        int denominator_magnitude = denominator;
+        if (denominator_magnitude < 0) { denominator_magnitude = -denominator_magnitude; }
+        halfway = denominator_magnitude / 2 + denominator_magnitude % 2;
+    }
+    int remainder_magnitude = r;
+    if (remainder_magnitude < 0) { remainder_magnitude = -remainder_magnitude; }
+    if (remainder_magnitude >= halfway) {
+        if ((numerator < 0) == (denominator < 0)) { return q + 1; }
+        return q - 1;
+    }
+    return q;
+}
+
+int? checked_fx(int pixels) {
+    if (let scaled = checked_mul(pixels, FX)) { return scaled; }
+    return none;
+}
+
+int? checked_fx_mul(int a, int b) {
+    if (let product = checked_mul(a, b)) {
+        return checked_round_div(product, FX);
+    }
+    return none;
+}
+
+int? checked_fx_div(int a, int b) {
+    if (b == 0) { return none; }
+    if (let numerator = checked_mul(a, FX)) {
+        return checked_round_div(numerator, b);
+    }
+    return none;
+}
+
+// v * numerator / denominator, rounded to nearest, ties away from zero.
+// A positive denominator is required to keep the public contract unambiguous.
+int? checked_mul_div(int v, int numerator, int denominator) {
+    if (denominator <= 0) { return none; }
+    if (let product = checked_mul(v, numerator)) {
+        return checked_round_div(product, denominator);
+    }
+    return none;
+}
+
+// Checked rectangle and constraint operations. These are the migration targets for
+// callers currently using the legacy total-looking methods above.
+bool checked_rect_valid(Rect r) {
+    if (r.w < 0 || r.h < 0) { return false; }
+    if (let _right = checked_add(r.x, r.w)) {
+        if (let _bottom = checked_add(r.y, r.h)) { return true; }
+    }
+    return false;
+}
+
+int? checked_rect_right(Rect r) {
+    if (r.w < 0) { return none; }
+    return checked_add(r.x, r.w);
+}
+
+int? checked_rect_bottom(Rect r) {
+    if (r.h < 0) { return none; }
+    return checked_add(r.y, r.h);
+}
+
+Rect? checked_rect_offset(Rect r, int dx, int dy) {
+    if (!checked_rect_valid(r)) { return none; }
+    if (let x = checked_add(r.x, dx)) {
+        if (let y = checked_add(r.y, dy)) {
+            Rect moved = rect(x, y, r.w, r.h);
+            if (checked_rect_valid(moved)) { return moved; }
+        }
+    }
+    return none;
+}
+
+Rect? checked_rect_intersect(Rect a, Rect b) {
+    if (!checked_rect_valid(a) || !checked_rect_valid(b)) { return none; }
+    int ax1 = 0;
+    int ay1 = 0;
+    int bx1 = 0;
+    int by1 = 0;
+    if (let edge = checked_rect_right(a)) { ax1 = edge; } else { return none; }
+    if (let edge = checked_rect_bottom(a)) { ay1 = edge; } else { return none; }
+    if (let edge = checked_rect_right(b)) { bx1 = edge; } else { return none; }
+    if (let edge = checked_rect_bottom(b)) { by1 = edge; } else { return none; }
+    int x0 = int_max(a.x, b.x);
+    int y0 = int_max(a.y, b.y);
+    int x1 = int_min(ax1, bx1);
+    int y1 = int_min(ay1, by1);
+    if (x1 <= x0 || y1 <= y0) { return rect(x0, y0, 0, 0); }
+    if (let w = checked_sub(x1, x0)) {
+        if (let h = checked_sub(y1, y0)) { return rect(x0, y0, w, h); }
+    }
+    return none;
+}
+
+Rect? checked_rect_inset(Rect r, Insets i) {
+    if (!checked_rect_valid(r) || i.left < 0 || i.top < 0 ||
+        i.right < 0 || i.bottom < 0) { return none; }
+    int right = 0;
+    int bottom = 0;
+    if (let edge = checked_rect_right(r)) { right = edge; } else { return none; }
+    if (let edge = checked_rect_bottom(r)) { bottom = edge; } else { return none; }
+    if (let x1 = checked_add(r.x, i.left)) {
+        if (let y1 = checked_add(r.y, i.top)) {
+            if (let dx = checked_add(i.left, i.right)) {
+                if (let dy = checked_add(i.top, i.bottom)) {
+                    int x = int_min(x1, right);
+                    int y = int_min(y1, bottom);
+                    int w = 0;
+                    int h = 0;
+                    if (dx < r.w) { w = r.w - dx; }
+                    if (dy < r.h) { h = r.h - dy; }
+                    return rect(x, y, w, h);
+                }
+            }
+        }
+    }
+    return none;
+}
+
+Rect? checked_rect_grow(Rect r, int d) {
+    if (!checked_rect_valid(r)) { return none; }
+    if (let twice = checked_mul(d, 2)) {
+        if (let x = checked_sub(r.x, d)) {
+            if (let y = checked_sub(r.y, d)) {
+                if (let w = checked_add(r.w, twice)) {
+                    if (let h = checked_add(r.h, twice)) {
+                        if (w < 0 || h < 0) { return none; }
+                        Rect grown = rect(x, y, w, h);
+                        if (checked_rect_valid(grown)) { return grown; }
+                    }
+                }
+            }
+        }
+    }
+    return none;
+}
+
+bool checked_constraints_valid(Constraints c) {
+    if (c.min_w < 0 || c.min_h < 0 || c.max_w < c.min_w || c.max_h < c.min_h) { return false; }
+    if (c.max_w > UNBOUNDED || c.max_h > UNBOUNDED) { return false; }
+    return true;
+}
+
+Constraints? checked_constraints_deflate(Constraints c, Insets i) {
+    if (!checked_constraints_valid(c) || i.left < 0 || i.top < 0 ||
+        i.right < 0 || i.bottom < 0) { return none; }
+    if (let dw = checked_add(i.left, i.right)) {
+        if (let dh = checked_add(i.top, i.bottom)) {
+            int min_w = 0;
+            int min_h = 0;
+            int max_w = UNBOUNDED;
+            int max_h = UNBOUNDED;
+            if (dw < c.min_w) { min_w = c.min_w - dw; }
+            if (dh < c.min_h) { min_h = c.min_h - dh; }
+            if (c.max_w != UNBOUNDED) {
+                max_w = 0;
+                if (dw < c.max_w) { max_w = c.max_w - dw; }
+            }
+            if (c.max_h != UNBOUNDED) {
+                max_h = 0;
+                if (dh < c.max_h) { max_h = c.max_h - dh; }
+            }
+            if (max_w < min_w) { max_w = min_w; }
+            if (max_h < min_h) { max_h = min_h; }
+            Constraints result = new Constraints{min_w: min_w, min_h: min_h, max_w: max_w, max_h: max_h};
+            if (checked_constraints_valid(result)) { return result; }
+        }
+    }
+    return none;
+}

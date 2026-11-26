@@ -74,6 +74,17 @@ jobs:
           nanoda: "false"
           axiom-audit: "true"
           axiom-audit-root: "CapstanFormal"
+      - name: Independently build and audit the CCAM heap model
+        uses: leanprover/lean-action@ba3fdfe5c4476c925da13bf11a005ddb47e47aee # v1
+        with:
+          lake-package-directory: formal
+          use-mathlib-cache: "false"
+          build: true
+          build-args: CCAMHeap --wfail
+          leanchecker: "true"
+          nanoda: "false"
+          axiom-audit: "true"
+          axiom-audit-root: "CCAMHeap"
       - name: Install pinned Rust toolchain for Nanoda
         shell: bash
         run: |
@@ -118,6 +129,21 @@ jobs:
           }
           EOF
           _nanoda_lib/target/release/nanoda_bin "$RUNNER_TEMP/capstan-nanoda.json"
+
+          lake env _lean4export/.lake/build/bin/lean4export CCAMHeap > "$RUNNER_TEMP/ccam-heap-export.txt"
+          cat > "$RUNNER_TEMP/ccam-heap-nanoda.json" <<EOF
+          {
+            "export_file_path": "$RUNNER_TEMP/ccam-heap-export.txt",
+            "use_stdin": false,
+            "permitted_axioms": ["propext", "Classical.choice", "Quot.sound", "Lean.trustCompiler"],
+            "unpermitted_axiom_hard_error": false,
+            "nat_extension": true,
+            "string_extension": true,
+            "print_success_message": true,
+            "print_axioms": false
+          }
+          EOF
+          _nanoda_lib/target/release/nanoda_bin "$RUNNER_TEMP/ccam-heap-nanoda.json"
       - name: Negative control — reject an invalid theorem
         working-directory: formal
         shell: bash

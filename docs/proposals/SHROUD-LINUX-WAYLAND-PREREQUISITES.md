@@ -1,6 +1,7 @@
 # Shroud S1 Linux/Wayland prerequisites
 
-**Status:** proposed subsystem RFC; no API or implementation is shipped by this document.  
+**Status:** proposed subsystem RFC; no Wayland API or implementation is shipped by this document.  
+**Shared API contract candidate:** [Capability-I/O host API v0.1](CAPABILITY-IO-HOST-API-V0.1.md) defines the abstract handles, errors, ownership and mock-host semantics; this RFC supplies the Linux/Wayland-specific protocol requirements.  
 **Parent work:** Shroud S1 host contract, T6 system-call layer and v0.6 capability-I/O work.  
 **Target:** Linux/Wayland, initially x86-64 and AArch64 little-endian.  
 **Purpose:** define the smallest host substrate that can support a real Shroud window without putting toolkit semantics in C or granting ambient authority.

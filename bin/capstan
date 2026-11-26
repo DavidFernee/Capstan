@@ -2,6 +2,7 @@
 # capstan: front end for the Capstan compiler.
 #   capstan run   file.cap... [-- program args]
 #   capstan build file.cap... -o program [--release] [--strict]
+#   capstan native [--root DIR] file.cap... -o program [--release] [--strict] (Linux x86-64 prototype)
 #   capstan test  file.cap...           [--strict]
 #   capstan check file.cap...           [--release] [--strict]
 #   capstan fmt   file.cap...           [--check]
@@ -11,6 +12,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAPSTANC="$ROOT/build/capstanc"
 CC="${CC:-cc}"
 CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime"
+HARDEN_FLAGS="-fstack-protector-strong -fPIE"
+if [[ "$(uname -s)" == "Linux" ]]; then HARDEN_FLAGS="$HARDEN_FLAGS -pie -D_FORTIFY_SOURCE=2"; fi
 
 if [[ ! -x "$CAPSTANC" ]]; then
   echo "capstan: bootstrapping the compiler (first run)..." >&2
@@ -26,15 +29,21 @@ if [[ "$cmd" == lsp ]]; then
   [[ -x "$ROOT/build/capstan-lsp" ]] || make -s -C "$ROOT" lsp >&2
   exec "$ROOT/build/capstan-lsp" "$@"
 fi
-files=(); flags=(); out=""; progargs=()
+files=(); flags=(); out=""; workspace_root=""; progargs=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
+    --root) workspace_root="$2"; shift 2 ;;
     --release|--strict|--keep-checks) flags+=("$1"); shift ;;
     --) shift; progargs=("$@"); break ;;
     *) files+=("$1"); shift ;;
   esac
 done
+
+if [[ -n "$workspace_root" && "$cmd" != "native" ]]; then
+  echo "capstan: --root is supported only by the native command" >&2
+  exit 2
+fi
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 case "$cmd" in
@@ -42,14 +51,65 @@ case "$cmd" in
   build)
     [[ -n "$out" ]] || { echo "capstan build: needs -o program" >&2; exit 2; }
     "$CAPSTANC" build -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
-    "$CC" $CFLAGS "$tmp/out.c" -o "$out" ;;
+    "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/out.c" -o "$out" ;;
   run)
     "$CAPSTANC" build -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
-    "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/prog"
+    "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/out.c" -o "$tmp/prog"
     "$tmp/prog" "${progargs[@]}" ;;
   test)
     "$CAPSTANC" test -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
-    "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/tests"
+    "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/out.c" -o "$tmp/tests"
     "$tmp/tests" ;;
-  *) echo "usage: capstan (run|build|test|check|fmt|lsp) file.cap... [-o program] [--release] [--strict] [--check]" >&2; exit 2 ;;
+  native)
+    [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]] || {
+      echo "capstan native: this prototype currently targets Linux x86-64 only" >&2
+      exit 2
+    }
+    [[ -n "$out" ]] || { echo "capstan native: needs -o program" >&2; exit 2; }
+    "$CAPSTANC" build -o "$tmp/native-driver.c" \
+      "$ROOT/compiler/ast.cap" \
+      "$ROOT/compiler/lexer.cap" \
+      "$ROOT/compiler/parser.cap" \
+      "$ROOT/compiler/checker.cap" \
+      "$ROOT/verification/ccam_core.cap" \
+      "$ROOT/verification/ccam_calls.cap" \
+      "$ROOT/verification/ccam_lowering.cap" \
+      "$ROOT/verification/ccam_native_x64.cap" \
+      "$ROOT/tools/native_driver.cap"
+    "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/native-driver.c" -o "$tmp/native-driver"
+    workspace_root="${workspace_root:-$(pwd -P)}"
+    workspace_root="$(cd "$workspace_root" 2>/dev/null && pwd -P)" || {
+      echo "capstan native: workspace root must be an existing directory" >&2
+      exit 2
+    }
+    native_files=()
+    for file in "${files[@]}"; do
+      if [[ "$file" == /* ]]; then
+        if [[ "$workspace_root" == "/" ]]; then
+          relative="${file#/}"
+        elif [[ "$file" == "$workspace_root/"* ]]; then
+          relative="${file#"$workspace_root"/}"
+        else
+          echo "capstan native: source file is outside the selected workspace" >&2
+          exit 2
+        fi
+      else
+        relative="$file"
+      fi
+      while [[ "$relative" == ./* ]]; do relative="${relative#./}"; done
+      native_files+=("$relative")
+    done
+    "$tmp/native-driver" --root "$workspace_root" -o "$tmp/out.s" "${flags[@]}" "${native_files[@]}"
+    "${AS:-as}" --64 "$tmp/out.s" -o "$tmp/out.o"
+    "${LD:-ld}" -o "$out" "$tmp/out.o"
+    if readelf -l "$out" | grep -q "INTERP"; then
+      echo "capstan native: linked ELF unexpectedly has a dynamic interpreter" >&2
+      exit 1
+    fi
+    if [[ -n "$(nm -u "$out")" ]]; then
+      echo "capstan native: linked ELF has undefined external symbols" >&2
+      exit 1
+    fi
+    ;;
+  *) echo "usage: capstan (run|build|test|check|native|fmt|lsp) file.cap... [-o program] [--release] [--strict] [--check]" >&2; exit 2 ;;
 esac

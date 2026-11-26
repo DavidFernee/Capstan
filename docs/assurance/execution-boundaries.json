@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.0.0",
+  "repository": "DavidFernee/Capstan",
+  "baseline_commit": "e3ade35ee1fe7e3ad2c80daf9550d3e5e77a8200",
+  "production_path": [
+    "compiler/main.cap",
+    "compiler/checker.cap",
+    "compiler/codegen.cap",
+    "runtime/capstan_rt.h",
+    "runtime/capstan_gc.h",
+    "Makefile"
+  ],
+  "target_path": [
+    "docs/assurance/C-FREE-TYPE-SAFETY.md",
+    "docs/architecture/CCAM.md",
+    "verification/ccam_lowering.cap",
+    "verification/ccam_core.cap",
+    "verification/ccam_calls.cap",
+    "verification/ccam_native_x64.cap",
+    "docs/assurance/EXECUTION-ASSURANCE-ARCHITECTURE.md"
+  ],
+  "boundaries": [
+    {
+      "id": "SRC-CHECK",
+      "from": "Capstan source",
+      "to": "checked scalar source",
+      "implementation": "restricted",
+      "formal": "unproved",
+      "implementation_refinement": false,
+      "artifacts": [
+        "compiler/checker.cap",
+        "docs/assurance/C-FREE-TYPE-SAFETY.md"
+      ],
+      "open": [
+        "Define the formal scalar source typing judgement.",
+        "Prove checker acceptance implies the formal typing judgement.",
+        "Integrate the restricted C-free path into the production CLI without using generated C as semantic authority."
+      ]
+    },
+    {
+      "id": "SOURCE-LOWER",
+      "from": "checked scalar source",
+      "to": "CCAM program",
+      "implementation": "restricted",
+      "formal": "unproved",
+      "implementation_refinement": false,
+      "artifacts": [
+        "verification/ccam_lowering.cap",
+        "docs/architecture/COMPILER-CCAM-LOWERING.md"
+      ],
+      "open": [
+        "Prove source-to-CCAM semantic preservation for values, traps, evaluation order and control flow.",
+        "Generate deterministic, schema-conforming CCAM vectors from the accepted source subset.",
+        "Prove unsupported syntax is rejected before emission."
+      ]
+    },
+    {
+      "id": "CCAM-DECODE",
+      "from": "encoded CCAM",
+      "to": "validated CCAM",
+      "implementation": "prototype",
+      "formal": "partial",
+      "implementation_refinement": false,
+      "artifacts": [
+        "docs/architecture/CCAM.md",
+        "docs/architecture/ccam-v0.1.schema.json",
+        "verification/ccam_core.cap",
+        "verification/ccam_calls.cap"
+      ],
+      "open": [
+        "Implement bounded closed-schema decoding and duplicate-key rejection.",
+        "Prove whole-program validator soundness against the exact typed program consumed by execution.",
+        "Reconcile the SF-P proof profile with normative entry, terminality and explicit-trap semantics."
+      ]
+    },
+    {
+      "id": "CCAM-EXEC",
+      "from": "validated CCAM",
+      "to": "abstract machine execution",
+      "implementation": "restricted",
+      "formal": "partial",
+      "implementation_refinement": false,
+      "artifacts": [
+        "verification/ccam_core.cap",
+        "verification/ccam_calls.cap",
+        "verification/lean/CapstanVerification/Core.lean",
+        "verification/lean/CapstanVerification/Machine.lean",
+        "verification/lean/CapstanVerification/ProgramValidator.lean",
+        "docs/assurance/CCAM-CONCRETE-REFINEMENT-CONTRACT.md"
+      ],
+      "open": [
+        "Prove initial-state correspondence for the validated SF-P subset.",
+        "Prove one-step simulation for every in-profile instruction, including trap precedence, failure atomicity, PC and fuel.",
+        "Integrate call frames into the formal machine and prove whole-machine preservation and progress-or-trap."
+      ]
+    },
+    {
+      "id": "REGISTER-BRIDGE",
+      "from": "Lean register model",
+      "to": "concrete Capstan register representation",
+      "implementation": "prototype",
+      "formal": "partial",
+      "implementation_refinement": false,
+      "artifacts": [
+        "verification/lean/CapstanVerification/RuntimeBridge.lean",
+        "verification/lean/CapstanVerification/NativeRegisterBridge.lean",
+        "verification/lean/CapstanVerification/NativeRegisterFileBridge.lean",
+        "verification/ccam_core.cap"
+      ],
+      "open": [
+        "Show the concrete evaluator establishes the register relation at validated construction.",
+        "Show every concrete instruction preserves the relation or produces the corresponding trap without partial mutation.",
+        "Do not generalise representation lemmas into a whole-evaluator theorem."
+      ]
+    },
+    {
+      "id": "NATIVE-CODE",
+      "from": "CCAM program",
+      "to": "native machine code",
+      "implementation": "prototype",
+      "formal": "unproved",
+      "implementation_refinement": false,
+      "artifacts": [
+        "verification/ccam_native_x64.cap",
+        "docs/architecture/CCAM-NATIVE-BACKEND.md",
+        "tools/native_driver.cap"
+      ],
+      "open": [
+        "Cover every admitted opcode and observable effect in the backend.",
+        "Establish differential conformance against the reference machine for adversarial vectors.",
+        "Prove or translation-validate machine-code simulation, including ABI, traps and resource limits.",
+        "Add separately tested supported target and platform rows."
+      ]
+    },
+    {
+      "id": "RUNTIME-OS",
+      "from": "C-free runtime",
+      "to": "OS and platform interface",
+      "implementation": "absent",
+      "formal": "unproved",
+      "implementation_refinement": false,
+      "artifacts": [
+        "runtime/capstan_rt.h",
+        "runtime/capstan_gc.h",
+        "docs/architecture/C-FREE-EXECUTION.md"
+      ],
+      "open": [
+        "Specify a narrow host interface with explicit authority and failure contracts.",
+        "Implement required runtime services without generated C or a C runtime dependency.",
+        "Establish per-platform memory, ABI, stack, syscall and resource evidence."
+      ]
+    },
+    {
+      "id": "BOOTSTRAP",
+      "from": "compiler and toolchain",
+      "to": "release executable",
+      "implementation": "prototype",
+      "formal": "unproved",
+      "implementation_refinement": false,
+      "artifacts": [
+        "bootstrap/capstan0.py",
+        "Makefile",
+        ".github/workflows/ci.yml"
+      ],
+      "open": [
+        "Specify every bootstrap stage and its trust assumptions.",
+        "Produce independently reproducible C-free compiler/runtime artifacts.",
+        "Bind source, toolchain, dependencies, build flags, SBOM and signatures to the release provenance."
+      ]
+    }
+  ]
+}

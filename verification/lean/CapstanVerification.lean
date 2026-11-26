@@ -2,6 +2,11 @@ import CapstanVerification.Core
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge
+import CapstanVerification.InitialStateBridge
 import CapstanVerification.Machine
+import CapstanVerification.MultiFunction
 import CapstanVerification.Progress
 import CapstanVerification.ProgramValidator
+import CapstanVerification.SFVectors
+import CapstanVerification.Output
+import CapstanVerification.ExplicitTrap

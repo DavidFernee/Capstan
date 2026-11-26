@@ -5,6 +5,12 @@
 
 A row is complete only when its predicate, artefact, assumptions, exact revision and reproduction procedure are recorded. Tests do not discharge theorem obligations; model theorems do not discharge implementation-refinement obligations.
 
+## Current mainline crosswalk
+
+See [ECE / CCAM contract crosswalk](ECE-CCAM-CROSSWALK.md), pinned to main commit `635eaf5d2e319bf4835c7ecae1ab316cd94b8ef2`. It maps every ECE-001..045 obligation to the normative CCAM contract, current Capstan implementation and tests, available Lean models/theorems, missing refinement links and responsible work-package roles. The crosswalk records partial implementation evidence only: **all obligations remain open** until their specified proof/implementation artefact, assumptions, exact revision and reproduction procedure are complete.
+
+The first proposed certificate target is the conservative `CCAM-SF-P` single-frame profile. It deliberately excludes multi-function calls, the internal `emit_bytes` extension, I/O, capabilities and native refinement; it does not claim full normative CCAM v0.1 acceptance.
+
 ## A. Semantic identity and certificate format
 
 | ID | Obligation | Required evidence | Status |

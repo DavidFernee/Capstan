@@ -1,0 +1,200 @@
+// C-hosted driver for the experimental freestanding Linux x86-64 target.
+// The target program is emitted as assembly and linked directly with ld;
+// this driver itself still runs through the existing C-dependent bootstrap.
+// Workspace reads use a pinned directory descriptor and Linux openat2 with
+// BENEATH, NO_SYMLINKS, NO_MAGICLINKS and NO_XDEV resolution. Unsupported
+// kernels fail closed; source paths remain workspace-relative.
+
+const int NATIVE_MAX_SOURCE_FILES = 256;
+const int NATIVE_MAX_TOTAL_SOURCE_BYTES = 67108864;
+
+bool native_import_path_ok(string spec) {
+    if (spec.len() < 5 || spec.at(0) == '/') { return false; }
+    if (spec.slice(spec.len() - 4, spec.len()) != ".cap") { return false; }
+    int seg_start = 0;
+    for (int i = 0; i <= spec.len(); i += 1) {
+        if (i == spec.len() || spec.at(i) == '/') {
+            string seg = spec.slice(seg_start, i);
+            if (seg == "" || seg == "." || seg == "..") { return false; }
+            seg_start = i + 1;
+        } else {
+            int ch = spec.at(i);
+            bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.';
+            if (!ok) { return false; }
+        }
+    }
+    return true;
+}
+
+string native_dir_of(string path) {
+    int cut = 0;
+    for (int i = 0; i < path.len(); i += 1) {
+        if (path.at(i) == '/') { cut = i + 1; }
+    }
+    return path.slice(0, cut);
+}
+
+void native_usage() {
+    println("usage: capstan-native --root /workspace -o out.s [--strict] [--release] [--keep-checks] file.cap...");
+}
+
+int main() {
+    List<string> arguments = args();
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    string output_path = "";
+    string workspace_root = "";
+    List<string> source_paths = new List<string>();
+    for (int i = 0; i < arguments.len(); i += 1) {
+        string arg = arguments[i];
+        if (arg == "--strict") {
+            context.strict = true;
+        } else if (arg == "--release") {
+            context.release = true;
+        } else if (arg == "--keep-checks") {
+            context.keep_checks = true;
+        } else if (arg == "--root") {
+            if (i + 1 >= arguments.len()) {
+                native_usage();
+                return 2;
+            }
+            workspace_root = arguments[i + 1];
+            i += 1;
+        } else if (arg == "-o") {
+            if (i + 1 >= arguments.len()) {
+                native_usage();
+                return 2;
+            }
+            output_path = arguments[i + 1];
+            i += 1;
+        } else {
+            source_paths.push(arg);
+        }
+    }
+    if (source_paths.len() > NATIVE_MAX_SOURCE_FILES) {
+        println("capstan native: source file count exceeds prototype limit");
+        return 2;
+    }
+    if (output_path == "" || workspace_root == "" || source_paths.len() == 0) {
+        native_usage();
+        return 2;
+    }
+    for (int i = 0; i < source_paths.len(); i += 1) {
+        if (!native_import_path_ok(source_paths[i])) {
+            println("capstan native: source path must be a relative .cap path inside the workspace");
+            return 2;
+        }
+    }
+    int workspace = workspace_open(workspace_root);
+    if (workspace < 0) {
+        println("capstan native: cannot open a symlink-free workspace root or kernel lacks openat2");
+        return 2;
+    }
+
+    List<Node> declarations = new List<Node>();
+    Map<int> loaded = new Map<int>();
+    List<string> queue = new List<string>();
+    List<int> from_file = new List<int>();
+    List<int> from_line = new List<int>();
+    for (int q = 0; q < source_paths.len(); q += 1) {
+        queue.push(source_paths[q]);
+        from_file.push(-1);
+        from_line.push(0);
+    }
+    int queue_index = 0;
+    int total_source_bytes = 0;
+    while (queue_index < queue.len()) {
+        string path = queue[queue_index];
+        int origin_file = from_file[queue_index];
+        int origin_line = from_line[queue_index];
+        queue_index += 1;
+        if (loaded.has(path)) { continue; }
+        loaded.set(path, 1);
+        int file_index = context.files.len();
+        context.files.push(path);
+        if (let source = workspace_read_file(workspace, path, MAX_SOURCE_BYTES)) {
+            if (source.len() > NATIVE_MAX_TOTAL_SOURCE_BYTES - total_source_bytes) {
+                context.sources.push(taint(""));
+                if (origin_file >= 0) {
+                    report(context, origin_file, origin_line, true, "",
+                        "native aggregate source-byte budget exceeded");
+                } else {
+                    report(context, file_index, 0, true, "",
+                        "native aggregate source-byte budget exceeded");
+                }
+                continue;
+            }
+            total_source_bytes += source.len();
+            context.sources.push(source);
+            List<Token> tokens = lex(context, source, file_index);
+            if (error_count(context) == 0) {
+                List<Node> part = parse_program(context, tokens);
+                for (int k = 0; k < part.len(); k += 1) {
+                    Node declaration = part[k];
+                    declarations.push(declaration);
+                    if (declaration.k == N_IMPORT) {
+                        if (native_import_path_ok(declaration.s)) {
+                            if (queue.len() >= NATIVE_MAX_SOURCE_FILES) {
+                                error_at(context, declaration, "CWE-400",
+                                    "native import queue exceeds prototype file-count limit");
+                            } else {
+                                queue.push(native_dir_of(path) + declaration.s);
+                                from_file.push(file_index);
+                                from_line.push(declaration.line);
+                            }
+                        } else {
+                            error_at(context, declaration, "CWE-22",
+                                "import path must be a relative .cap path without absolute or dot-segment traversal");
+                        }
+                    }
+                }
+            }
+        } else {
+            context.sources.push(taint(""));
+            if (origin_file >= 0) {
+                report(context, origin_file, origin_line, true, "",
+                    "cannot read imported file '" + path + "'");
+            } else {
+                report(context, file_index, 0, true, "",
+                    "cannot read source file '" + path + "'");
+            }
+        }
+    }
+    workspace_close(workspace);
+    if (error_count(context) > 0) {
+        print_diags(context);
+        return 1;
+    }
+
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    print_diags(context);
+    if (error_count(context) > 0) {
+        println("capstan native: source checking failed; no assembly generated");
+        return 1;
+    }
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    if (!lowered.ok) {
+        println("capstan native: lowering failed: " + lowered.error);
+        return 1;
+    }
+    CCAMNativeResult native = ccam_x64_emit_linux_elf(
+        lowered.functions, lowered.entry_function, 1000000, 256);
+    if (!native.ok) {
+        println("capstan native: backend rejected program: " + native.error);
+        return 1;
+    }
+    if (!write_file(output_path, native.assembly)) {
+        println("capstan native: cannot write assembly file '" + output_path + "'");
+        return 1;
+    }
+    return 0;
+}

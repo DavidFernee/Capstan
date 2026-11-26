@@ -1,10 +1,12 @@
 import CapstanVerification.Machine
+import CapstanVerification.MultiFunction
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge
 import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
+import CapstanVerification.ExplicitTrap
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -178,3 +180,30 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.nativeWriteRegister_refines_finite_relation
 #print axioms CapstanVerification.nativeRuntimeRegisterFileRelation_slot_exists
 #print axioms CapstanVerification.nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts_of_in_bounds
+
+#print axioms CapstanVerification.validExplicitReasonBytes
+#print axioms CapstanVerification.explicitTrap_preserves_detail
+#print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
+#print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
+-- Explicit application-trap model: keep these proof dependencies visible.
+#print axioms CapstanVerification.explicitTrap_preserves_detail
+#print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
+#print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
+-- C-free multi-function call boundary: parameter and return type invariants.
+#print axioms CapstanVerification.initialFrameRegisters_parameter_value
+#print axioms CapstanVerification.initialFrameRegisters_locals_uninitialised
+#print axioms CapstanVerification.initialFrameRegisters_well_typed
+#print axioms CapstanVerification.return_destination_has_exact_type
+#print axioms CapstanVerification.void_return_has_no_destination
+#print axioms CapstanVerification.nonvoid_return_requires_destination
+
+-- Typed multi-function frame construction and return-value contracts.
+#print axioms CapstanVerification.enterTypedFunction
+#print axioms CapstanVerification.enterTypedFunction_signature
+#print axioms CapstanVerification.returned_value_has_declared_type
+#print axioms CapstanVerification.void_function_returns_no_value
+#print axioms CapstanVerification.nonvoid_function_requires_value
+
+#print axioms CapstanVerification.return_write_preserves_caller_well_typed

@@ -1,6 +1,7 @@
 # Concurrency guarantee calculus and research integration
 
 **Status:** research proposal; no implementation, theorem, or complete vulnerability elimination is claimed  
+**General sequential calculus:** [Minimal compositional guarantee calculus](COMPOSITIONAL-GUARANTEE-CALCULUS.md); this document focuses on its concurrency-specific extension and theorem ladder.  
 **Target:** v0.7+ concurrency, CCAM and formal-assurance programme  
 **Coordinates:** [concurrency core #229](https://github.com/DavidFernee/Capstan/issues/229), [resource analysis #221](https://github.com/DavidFernee/Capstan/issues/221), [capability/effect/information-flow survey #222](https://github.com/DavidFernee/Capstan/issues/222), [compositional guarantee calculus #227](https://github.com/DavidFernee/Capstan/issues/227), [CVE benchmark #237](https://github.com/DavidFernee/Capstan/issues/237), [allocator/GC verification #137](https://github.com/DavidFernee/Capstan/issues/137), [CCAM](../architecture/CCAM.md), [research register](RESEARCH-REGISTER.md)
 

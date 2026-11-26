@@ -536,28 +536,6 @@ The ultimate goal is not merely to make Capstan another attractive systems langu
 
 **The standard is not that Capstan claims to do what other languages cannot. The standard is that Capstan demonstrates, with independently checkable evidence, a coherent set of guarantees that users cannot obtain as an equally integrated and practical property from the conventional alternatives.**
 
-## F1 execution milestone: executable compositional guarantee model
-
-The first Capstan-native F1 research artefact is [F1-EXECUTABLE-MODEL.md](F1-EXECUTABLE-MODEL.md), implemented in `verification/f1_guarantee_model.cap` and invoked by `tests/run.sh`.
-
-This is a finite abstract reference model, not a production checker or proof. It tests independent transfer of data, selection and control provenance; confidentiality; context-specific output guarantees; authority; effects; and resource bounds. Unknown summaries and resource overflow fail closed. Its finite source masks, abstract context tags, simple capability sets and additive resource model are intentionally limited.
-
-The next experiments are to (1) compare factored judgements with a unified product domain, (2) derive summaries from actual Capstan function bodies, (3) reconcile the prototype's stricter confidentiality control-dependence rule with the existing proposed provenance semantics, (4) replace abstract output-context tags with parser-aware context state, and (5) compare conservative resource composition with region/lifetime and amortised analyses. Unsupported syntax and analysis exhaustion must widen or reject; they must never be treated as proof of safety.
-
-The artefact must pass the exact-head standard suite and receive independent semantic review before any language guarantee is claimed. Passing it alone establishes neither soundness nor the absence of vulnerabilities in the compiler, runtime, generated code, host or ecosystem.
-
-
-### F1 implementation experiment: scalar and metadata provenance
-
-The first checker implementation slice is documented in [PROVENANCE-SCALAR-SLICE.md](../assurance/PROVENANCE-SCALAR-SLICE.md). It extends the existing Capstan checker analysis to preserve Boolean expression/local dependencies, Tainted length metadata, scalar parameter summaries, `to_text`, and `join` propagation. The analysis remains a coarse variable-name may-analysis; this does not implement the proposed abstract heap or complete sink semantics.
-
-The CWE atlas now includes a helper-mediated Tainted-length reconstruction probe expected to be rejected, and an explicitly retained Boolean-to-text output gap. Exact-head CI and semantic review are required before treating this as integrated. This experiment must not be described as closing the wider TYPE finding set.
-
-
-### F1 implementation design: source-derived abstract state
-
-The next checker architecture is specified in [F1-ABSTRACT-STATE-DESIGN.md](F1-ABSTRACT-STATE-DESIGN.md). It defines a bounded provenance lattice, typed access paths, explicit locals/reference/heap state, conservative alias and escape handling, strong-versus-weak update conditions, and source-derived interprocedural summaries. It is a research design, not an implementation. The staged gates begin with an AST/runtime semantic inventory and scalar reassignment/flow joins before aggregate heap and alias support. Unknown effects, unsupported nodes and exhausted analysis budgets must widen or reject; they must never be interpreted as purity or absence of provenance.
-
 
 ## 13.1 F1 execution: language contract
 
@@ -582,3 +560,10 @@ positive controls and adversarial bypass coverage; it does not presume that a ty
 change alone closes them. The current C-backed runtime, Python bootstrap, and model-to-
 implementation proof gaps remain part of the disclosed trusted-base boundary.
 
+
+
+## F1 executable guarantee model and checker implementation boundary
+
+The first Capstan-native executable reference model is [F1-EXECUTABLE-MODEL.md](F1-EXECUTABLE-MODEL.md), implemented in `verification/f1_guarantee_model.cap`. It separates data, selection and control provenance; confidentiality; context guarantees; authority; effects; and bounded resource composition. It is a finite research model, not a production checker or soundness proof.
+
+The checker experiment is documented in [PROVENANCE-SCALAR-SLICE.md](../assurance/PROVENANCE-SCALAR-SLICE.md). The current AST-walking implementation remains a coarse variable-name may-analysis. [F1-ABSTRACT-STATE-DESIGN.md](F1-ABSTRACT-STATE-DESIGN.md) specifies the next implementation direction: typed access paths, explicit locals/references/heap state, alias and escape handling, strong/weak updates, monotone joins and body-derived summaries. These are design constraints, not implemented capabilities. The Boolean-to-text output-flow policy remains an explicit open gap.

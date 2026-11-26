@@ -1,0 +1,1016 @@
+{
+  "format": "capstan-ccam-sf-vectors/1",
+  "profile": "CCAM-SF-P",
+  "normative_specification": "docs/architecture/CCAM.md (v0.1)",
+  "profile_specification": "docs/research/CCAM-SINGLE-FRAME-PROOF-PROFILE.md",
+  "oracle_policy": "Expected outcomes and traces are authored independently of both executors. trace_pcs lists the PC fetched for each executed instruction. A pre-dispatch instruction-limit trap adds no trace entry and consumes no step.",
+  "vectors": [
+    {
+      "id": "SF-001",
+      "name": "checked addition and integer return",
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 19
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 23
+        },
+        {
+          "op": "add_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 42
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "steps": 4
+      }
+    },
+    {
+      "id": "SF-002",
+      "name": "addition overflow traps at the arithmetic instruction",
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 9223372036854775807
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 1
+        },
+        {
+          "op": "add_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "trap",
+          "code": "integer_overflow",
+          "pc": 2
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2
+        ],
+        "steps": 3
+      }
+    },
+    {
+      "id": "SF-003",
+      "name": "minimum divided by negative one overflows",
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": -9223372036854775808
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": -1
+        },
+        {
+          "op": "div_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "trap",
+          "code": "integer_overflow",
+          "pc": 2
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2
+        ],
+        "steps": 3
+      }
+    },
+    {
+      "id": "SF-004",
+      "name": "minimum remainder by negative one is zero",
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": -9223372036854775808
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": -1
+        },
+        {
+          "op": "rem_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 0
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "steps": 4
+      }
+    },
+    {
+      "id": "SF-005",
+      "name": "division by zero is a dynamic trap",
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 7
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 0
+        },
+        {
+          "op": "div_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "trap",
+          "code": "division_by_zero",
+          "pc": 2
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2
+        ],
+        "steps": 3
+      }
+    },
+    {
+      "id": "SF-006",
+      "name": "conditional branch takes true arm",
+      "register_types": [
+        "bool",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 6,
+      "instructions": [
+        {
+          "op": "const_b",
+          "dst": 0,
+          "value": true
+        },
+        {
+          "op": "branch",
+          "cond": 0,
+          "if_true": 2,
+          "if_false": 4
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 42
+        },
+        {
+          "op": "jump",
+          "target": 5
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 99
+        },
+        {
+          "op": "ret",
+          "src": 1
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 42
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3,
+          5
+        ],
+        "steps": 5
+      }
+    },
+    {
+      "id": "SF-007",
+      "name": "conditional branch takes false arm",
+      "register_types": [
+        "bool",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 6,
+      "instructions": [
+        {
+          "op": "const_b",
+          "dst": 0,
+          "value": false
+        },
+        {
+          "op": "branch",
+          "cond": 0,
+          "if_true": 2,
+          "if_false": 4
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 42
+        },
+        {
+          "op": "jump",
+          "target": 5
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 99
+        },
+        {
+          "op": "ret",
+          "src": 1
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 99
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          4,
+          5
+        ],
+        "steps": 4
+      }
+    },
+    {
+      "id": "SF-008",
+      "name": "typed move and boolean negation",
+      "register_types": [
+        "bool",
+        "bool",
+        "bool"
+      ],
+      "return_type": "bool",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "instructions": [
+        {
+          "op": "const_b",
+          "dst": 0,
+          "value": true
+        },
+        {
+          "op": "move",
+          "dst": 1,
+          "src": 0
+        },
+        {
+          "op": "not_b",
+          "dst": 2,
+          "src": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "bool",
+            "value": false
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "steps": 4
+      }
+    },
+    {
+      "id": "SF-009",
+      "name": "integer equality and less-than plus boolean negation",
+      "register_types": [
+        "int",
+        "int",
+        "bool",
+        "bool",
+        "bool"
+      ],
+      "return_type": "bool",
+      "profile_entry": 0,
+      "max_steps": 6,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 5
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 8
+        },
+        {
+          "op": "eq_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 0
+        },
+        {
+          "op": "lt_i",
+          "dst": 3,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "not_b",
+          "dst": 4,
+          "src": 3
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "bool",
+            "value": true
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "steps": 6
+      }
+    },
+    {
+      "id": "SF-010",
+      "name": "void return consumes one instruction",
+      "register_types": [],
+      "return_type": "void",
+      "profile_entry": 0,
+      "max_steps": 1,
+      "instructions": [
+        {
+          "op": "ret_void"
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt_void"
+        },
+        "trace_pcs": [
+          0
+        ],
+        "steps": 1
+      }
+    },
+    {
+      "id": "SF-011",
+      "name": "uninitialised typed return source traps",
+      "register_types": [
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 1,
+      "instructions": [
+        {
+          "op": "ret",
+          "src": 0
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "trap",
+          "code": "uninitialised_register",
+          "pc": 0
+        },
+        "trace_pcs": [
+          0
+        ],
+        "steps": 1
+      }
+    },
+    {
+      "id": "SF-012",
+      "name": "zero instruction budget traps before dispatch",
+      "register_types": [],
+      "return_type": "void",
+      "profile_entry": 0,
+      "max_steps": 0,
+      "instructions": [
+        {
+          "op": "ret_void"
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "trap",
+          "code": "step_limit_exceeded",
+          "pc": 0
+        },
+        "trace_pcs": [],
+        "steps": 0
+      }
+    },
+    {
+      "id": "SF-013",
+      "name": "exact instruction budget permits final return",
+      "register_types": [
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 2,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 42
+        },
+        {
+          "op": "ret",
+          "src": 0
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 42
+          }
+        },
+        "trace_pcs": [
+          0,
+          1
+        ],
+        "steps": 2
+      }
+    },
+    {
+      "id": "SF-014",
+      "name": "exhausted budget prevents the next return",
+      "register_types": [
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 1,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 42
+        },
+        {
+          "op": "ret",
+          "src": 0
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "trap",
+          "code": "step_limit_exceeded",
+          "pc": 1
+        },
+        "trace_pcs": [
+          0
+        ],
+        "steps": 1
+      }
+    },
+    {
+      "id": "SF-015",
+      "name": "out-of-range destination rejected before execution",
+      "register_types": [
+        "int"
+      ],
+      "return_type": "void",
+      "profile_entry": 0,
+      "max_steps": 2,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 7
+        },
+        {
+          "op": "ret_void"
+        }
+      ],
+      "expected": {
+        "profile_validation": "reject",
+        "normative_validation": "reject",
+        "outcome": {
+          "kind": "not_executed"
+        },
+        "trace_pcs": [],
+        "steps": 0
+      }
+    },
+    {
+      "id": "SF-016",
+      "name": "statically mismatched constant destination rejected",
+      "register_types": [
+        "bool"
+      ],
+      "return_type": "void",
+      "profile_entry": 0,
+      "max_steps": 2,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 7
+        },
+        {
+          "op": "ret_void"
+        }
+      ],
+      "expected": {
+        "profile_validation": "reject",
+        "normative_validation": "reject",
+        "outcome": {
+          "kind": "not_executed"
+        },
+        "trace_pcs": [],
+        "steps": 0
+      }
+    },
+    {
+      "id": "SF-017",
+      "name": "out-of-range branch target rejected before execution",
+      "register_types": [
+        "bool"
+      ],
+      "return_type": "void",
+      "profile_entry": 0,
+      "max_steps": 2,
+      "instructions": [
+        {
+          "op": "const_b",
+          "dst": 0,
+          "value": true
+        },
+        {
+          "op": "branch",
+          "cond": 0,
+          "if_true": 2,
+          "if_false": 99
+        },
+        {
+          "op": "ret_void"
+        }
+      ],
+      "expected": {
+        "profile_validation": "reject",
+        "normative_validation": "reject",
+        "outcome": {
+          "kind": "not_executed"
+        },
+        "trace_pcs": [],
+        "steps": 0
+      }
+    },
+    {
+      "id": "SF-018",
+      "name": "reachable final fall-through rejected",
+      "register_types": [
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 2,
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 7
+        }
+      ],
+      "expected": {
+        "profile_validation": "reject",
+        "normative_validation": "reject",
+        "outcome": {
+          "kind": "not_executed"
+        },
+        "trace_pcs": [],
+        "steps": 0
+      }
+    },
+    {
+      "id": "SF-019",
+      "name": "unreachable final fall-through distinguishes normative CCAM from SF-P",
+      "register_types": [
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 3,
+      "instructions": [
+        {
+          "op": "jump",
+          "target": 0
+        },
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 7
+        }
+      ],
+      "expected": {
+        "profile_validation": "reject",
+        "normative_validation": "accept",
+        "profile_execution": {
+          "kind": "not_run"
+        },
+        "normative_execution": {
+          "outcome": {
+            "kind": "trap",
+            "code": "step_limit_exceeded",
+            "pc": 0
+          },
+          "trace_pcs": [
+            0,
+            0,
+            0
+          ],
+          "steps": 3
+        }
+      }
+    },
+    {
+      "id": "SF-020",
+      "name": "nonzero abstract entry rejected by implementation-alignment profile",
+      "register_types": [],
+      "return_type": "void",
+      "profile_entry": 1,
+      "max_steps": 2,
+      "instructions": [
+        {
+          "op": "jump",
+          "target": 0
+        },
+        {
+          "op": "ret_void"
+        }
+      ],
+      "expected": {
+        "profile_validation": "reject",
+        "normative_validation": "not_applicable",
+        "outcome": {
+          "kind": "not_executed"
+        },
+        "trace_pcs": [],
+        "steps": 0
+      },
+      "notes": "profile_entry belongs to RawSingleFrameProgram in the Lean proof harness; normative CCAM invocation begins at instruction zero and has no user-supplied per-function entry field."
+    },
+    {
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "id": "SF-021",
+      "name": "checked subtraction returns the expected signed result",
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 50
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 8
+        },
+        {
+          "op": "sub_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 42
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "steps": 4
+      }
+    },
+    {
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "id": "SF-022",
+      "name": "checked multiplication returns the expected signed result",
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 6
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 7
+        },
+        {
+          "op": "mul_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "halt",
+          "value": {
+            "type": "int",
+            "value": 42
+          }
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "steps": 4
+      }
+    },
+    {
+      "register_types": [
+        "int",
+        "int",
+        "int"
+      ],
+      "return_type": "int",
+      "profile_entry": 0,
+      "max_steps": 4,
+      "id": "SF-023",
+      "name": "multiplication overflow traps at the arithmetic instruction",
+      "instructions": [
+        {
+          "op": "const_i",
+          "dst": 0,
+          "value": 4611686018427387904
+        },
+        {
+          "op": "const_i",
+          "dst": 1,
+          "value": 2
+        },
+        {
+          "op": "mul_i",
+          "dst": 2,
+          "lhs": 0,
+          "rhs": 1
+        },
+        {
+          "op": "ret",
+          "src": 2
+        }
+      ],
+      "expected": {
+        "profile_validation": "accept",
+        "normative_validation": "accept",
+        "outcome": {
+          "kind": "trap",
+          "code": "integer_overflow",
+          "pc": 2
+        },
+        "trace_pcs": [
+          0,
+          1,
+          2
+        ],
+        "steps": 3
+      }
+    }
+  ],
+  "out_of_profile": [
+    {
+      "id": "SF-X01",
+      "name": "application-defined explicit trap detail",
+      "classification": "concrete CCAM v0.1 accepts; excluded from CCAM-SF-P dual execution",
+      "register_types": [],
+      "return_type": "void",
+      "max_steps": 1,
+      "instructions": [
+        {
+          "op": "trap",
+          "reason": "deliberate_stop"
+        }
+      ],
+      "expected_concrete": {
+        "outcome": {
+          "kind": "trap",
+          "code": "explicit_trap",
+          "pc": 0,
+          "detail": "deliberate_stop"
+        },
+        "trace_pcs": [
+          0
+        ],
+        "steps": 1
+      },
+      "reason": "Lean MachineInstr.explicitTrap carries the finite machine Trap enumeration; it does not preserve the CCAM trap opcode's application-defined reason string and explicit_trap detail."
+    }
+  ]
+}
