@@ -70,3 +70,17 @@ No `sorry`, `admit`, custom axiom or hidden trusted assumption is acceptable. Te
 6. Mechanise checker-to-Lean correspondence and fixed-point equivalence.
 7. Connect source semantics to CCAM and the selected production execution path.
 
+
+## 7. Value-level reference domain (2026-11-26)
+
+`verification/lean/CapstanVerification/InjectionValue.lean` adds a value-sensitive reference domain alongside the model of the existing checker:
+
+- the store maps each local slot to the provenance of its current value;
+- assignment is a strong update, so assigning a clean literal clears a stale mark;
+- writes preserve facts for every other local;
+- comparison, generic text conversion, join, length, map operations, optional/enum payloads, aggregate construction/projection, indexed reads and control-dependent selection propagate provenance conservatively;
+- theorem statements cover strong-update correctness, scalar transfer, aggregate field propagation and control dependence.
+
+This closes a modelling weakness in the earlier *name-mark* abstraction, not an implementation gap in `checker.cap`. The production checker still uses its existing analysis until a separately reviewed compiler change replaces it. In particular, this reference domain currently models aggregates structurally and does not yet model heap identities, alias sets, mutation through references, call effects, or loop fixed points. The theorem remains a component theorem, not the end-to-end injection-freedom claim.
+
+The next proof obligations are (i) prove the production checker refines this value domain or replace it with a checker generated from the verified transfer semantics; (ii) add alias-aware heap provenance and interprocedural effect summaries; and (iii) prove source checking and each concrete protected sink adapter preserve the sink-safety judgement.
