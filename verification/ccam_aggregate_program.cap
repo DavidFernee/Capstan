@@ -317,6 +317,131 @@ CCAMAggregateValidationResult ccam_aggregate_validate_program(
     return ccam_aggregate_validation_ok();
 }
 
+struct CCAMAggregateExecutionResult {
+    bool ok;
+    CCAMAggregateMachine machine;
+    string error;
+    int failed_instruction;
+}
+
+CCAMAggregateExecutionResult ccam_aggregate_execution_error(
+    CCAMAggregateMachine machine, string error, int pc
+) {
+    return new CCAMAggregateExecutionResult{
+        ok: false, machine: machine, error: error, failed_instruction: pc
+    };
+}
+
+// Execute only after complete static validation. The program is straight-line;
+// every operation uses the same reference bridge and consumes its shared step
+// budget before the heap transition. No partial execution occurs on validation
+// failure. Runtime failure preserves the bridge's first trap and its state.
+CCAMAggregateExecutionResult ccam_aggregate_execute_program(
+    CCAMAggregateProgram program,
+    List<CCAMHeapValue> arguments,
+    int max_heap_bytes,
+    int max_heap_objects,
+    int max_heap_work,
+    int max_temporary_bytes,
+    int max_steps
+) {
+    CCAMAggregateValidationResult validation =
+        ccam_aggregate_validate_program(program);
+    CCAMAggregateMachine empty = ccam_aggregate_empty_machine();
+    if (!validation.ok) {
+        return ccam_aggregate_execution_error(
+            empty, "validation:" + validation.error, validation.instruction_index
+        );
+    }
+    if (arguments.len() != program.parameter_count) {
+        return ccam_aggregate_execution_error(empty, "argument_count_mismatch", -1);
+    }
+    CCAMAggregateCreateResult created = ccam_aggregate_create(
+        program.register_types, max_heap_bytes, max_heap_objects,
+        max_heap_work, max_temporary_bytes, max_steps
+    );
+    if (!created.ok) {
+        return ccam_aggregate_execution_error(empty, created.error, -1);
+    }
+    CCAMAggregateMachine machine = created.machine;
+    for (int i = 0; i < arguments.len(); i += 1) {
+        string write_error = ccam_aggregate_write(machine, i, arguments[i]);
+        if (write_error != "") {
+            ccam_aggregate_trap(machine, write_error);
+            return ccam_aggregate_execution_error(machine, write_error, -1);
+        }
+    }
+
+    for (int pc = 0; pc < program.instructions.len(); pc += 1) {
+        CCAMAggregateInstruction instruction = program.instructions[pc];
+        string error = "";
+        if (instruction.op == CCAM_AGG_OP_ALLOC_RECORD) {
+            int li = ccam_aggregate_layout_index(program.layouts, instruction.descriptor_id);
+            error = ccam_aggregate_alloc_record(machine, instruction.destination, program.layouts[li]);
+        } else if (instruction.op == CCAM_AGG_OP_ALLOC_ARRAY) {
+            error = ccam_aggregate_alloc_array(
+                machine, instruction.destination, instruction.element_type,
+                instruction.element_ref_type_id, instruction.capacity
+            );
+        } else if (instruction.op == CCAM_AGG_OP_ALLOC_BYTES) {
+            error = ccam_aggregate_alloc_bytes(
+                machine, instruction.destination, instruction.literal_bytes
+            );
+        } else if (instruction.op == CCAM_AGG_OP_FIELD_GET ||
+                   instruction.op == CCAM_AGG_OP_FIELD_SET) {
+            int li = ccam_aggregate_layout_index(program.layouts, instruction.descriptor_id);
+            int field_type = program.layouts[li].field_types[instruction.field_index];
+            if (instruction.op == CCAM_AGG_OP_FIELD_GET) {
+                error = ccam_aggregate_field_get(
+                    machine, instruction.destination, instruction.left,
+                    instruction.descriptor_id, instruction.field_index, field_type
+                );
+            } else {
+                error = ccam_aggregate_field_set(
+                    machine, instruction.left, instruction.descriptor_id,
+                    instruction.field_index, instruction.right, field_type
+                );
+            }
+        } else if (instruction.op == CCAM_AGG_OP_ARRAY_APPEND) {
+            error = ccam_aggregate_array_append(
+                machine, instruction.left, instruction.right, instruction.element_type
+            );
+        } else if (instruction.op == CCAM_AGG_OP_ARRAY_GET) {
+            error = ccam_aggregate_array_get(
+                machine, instruction.destination, instruction.left,
+                instruction.element_type, instruction.immediate
+            );
+        } else if (instruction.op == CCAM_AGG_OP_ARRAY_SET) {
+            error = ccam_aggregate_array_set(
+                machine, instruction.left, instruction.immediate,
+                instruction.right, instruction.element_type
+            );
+        } else if (instruction.op == CCAM_AGG_OP_ARRAY_LEN) {
+            error = ccam_aggregate_array_len(
+                machine, instruction.destination, instruction.left, instruction.element_type
+            );
+        } else if (instruction.op == CCAM_AGG_OP_BYTES_LEN) {
+            error = ccam_aggregate_bytes_len(
+                machine, instruction.destination, instruction.left
+            );
+        } else if (instruction.op == CCAM_AGG_OP_BYTE_GET) {
+            error = ccam_aggregate_byte_get(
+                machine, instruction.destination, instruction.left, instruction.immediate
+            );
+        } else if (instruction.op == CCAM_AGG_OP_BYTES_CONCAT) {
+            error = ccam_aggregate_bytes_concat(
+                machine, instruction.destination, instruction.left, instruction.right
+            );
+        }
+        if (error != "") {
+            return ccam_aggregate_execution_error(machine, error, pc);
+        }
+    }
+    return new CCAMAggregateExecutionResult{
+        ok: true, machine: machine, error: "", failed_instruction: -1
+    };
+}
+
 // Canonical constructors keep unused operand fields at their neutral value.
 CCAMAggregateInstruction ccam_aggregate_instruction(int opcode) {
     return new CCAMAggregateInstruction{
@@ -325,6 +450,58 @@ CCAMAggregateInstruction ccam_aggregate_instruction(int opcode) {
         element_type: 0, element_ref_type_id: 0, capacity: 0,
         literal_bytes: ""
     };
+}
+
+test "aggregate program validates before execution and runs record field transitions" {
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_AGG_TYPE_INT);
+    List<bool> mutable_fields = new List<bool>();
+    mutable_fields.push(true);
+    List<CCAMHeapLayout> layouts = new List<CCAMHeapLayout>();
+    layouts.push(new CCAMHeapLayout{
+        type_id: 7301, field_types: field_types,
+        field_ref_type_ids: new List<int>(), field_mutable: mutable_fields
+    });
+    List<int> registers = new List<int>();
+    registers.push(CCAM_AGG_TYPE_REF);
+    registers.push(CCAM_AGG_TYPE_INT);
+    registers.push(CCAM_AGG_TYPE_INT);
+    List<CCAMAggregateInstruction> code = new List<CCAMAggregateInstruction>();
+    CCAMAggregateInstruction alloc = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_RECORD);
+    alloc.destination = 0; alloc.descriptor_id = 7301; code.push(alloc);
+    CCAMAggregateInstruction store = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_SET);
+    store.left = 0; store.right = 1; store.descriptor_id = 7301;
+    store.field_index = 0; code.push(store);
+    CCAMAggregateInstruction load = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_GET);
+    load.destination = 2; load.left = 0; load.descriptor_id = 7301;
+    load.field_index = 0; code.push(load);
+    CCAMAggregateProgram program = new CCAMAggregateProgram{
+        version: CCAM_AGGREGATE_PROFILE_VERSION, register_types: registers,
+        parameter_count: 1, layouts: layouts, instructions: code
+    };
+    List<CCAMHeapValue> arguments = new List<CCAMHeapValue>();
+    arguments.push(ccam_heap_int(73));
+    CCAMAggregateExecutionResult executed = ccam_aggregate_execute_program(
+        program, arguments, 4096, 16, 4096, 4096, 16
+    );
+    assert(executed.ok && executed.machine.steps == 3);
+    CCAMAggregateValueResult value = ccam_aggregate_register_value(
+        executed.machine, 2, CCAM_AGG_TYPE_INT
+    );
+    assert(value.ok && value.value.int_value == 73);
+}
+
+test "aggregate program rejects malformed programs before any heap step" {
+    CCAMAggregateProgram program = new CCAMAggregateProgram{
+        version: 99, register_types: new List<int>(), parameter_count: 0,
+        layouts: new List<CCAMHeapLayout>(),
+        instructions: new List<CCAMAggregateInstruction>()
+    };
+    CCAMAggregateExecutionResult rejected = ccam_aggregate_execute_program(
+        program, new List<CCAMHeapValue>(), 4096, 16, 4096, 4096, 16
+    );
+    assert(!rejected.ok && rejected.error == "validation:unsupported_aggregate_profile_version");
+    assert(rejected.machine.steps == 0 && rejected.machine.heap.objects.len() == 0);
 }
 
 test "aggregate program validates forward nominal layouts and typed field operations" {
