@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "03d92fd33ca04624651f659d2d4f98d2e9e6a27b"
+    "commit": "f7340f0a08d69f2e9d6aa98dc397ce029af01e49"
   },
   "claims": [
     {
@@ -53,7 +53,7 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "23f49330b47883effbf337b99dda19986ea69d11",
+          "revision": "aae1fcd9530fa2a80c9f02843005a1a2e14366c4",
           "notes": "Fixtures remain present in the current integrated test runner. This record does not assert a passing run."
         }
       ],
@@ -138,7 +138,7 @@
             "tests/run.sh"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "23f49330b47883effbf337b99dda19986ea69d11",
+          "revision": "aae1fcd9530fa2a80c9f02843005a1a2e14366c4",
           "notes": "Integration tests remain planned; the current runner includes the additional Shroud backend model test. No passing result is asserted here."
         }
       ],
