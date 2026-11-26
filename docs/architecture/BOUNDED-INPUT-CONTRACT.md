@@ -59,13 +59,13 @@ The current repository already has several parser-specific controls. These contr
 
 | Parser or decoder | Existing limits | Remaining audit item |
 |---|---|---|
-| Compiler source loader / lexer / recursive-descent parser | 16 MiB per source file; parser recursion depth 1,000; at most 50 syntax errors per file | The import graph has no aggregate source-byte, token or AST-node budget. A per-file cap does not bound total retained declarations across imports. |
+| Compiler source loader / lexer / recursive-descent parser | 16 MiB per source file; 256 files per import graph; 32 MiB aggregate source bytes; 500,000 aggregate lexer tokens; 100,000 aggregate AST nodes; parser recursion depth 1,000; at most 50 syntax errors per file | AST nodes are charged after parsing a bounded token stream, so transient AST allocation is additionally capped by the token ceiling. Keep import traversal, native and LSP budgets in lockstep; test exact/one-over behaviour and graph cycles. |
 | LSP JSON-RPC decoder | 16 MiB per message; depth 64; 65,536 total values; 4,096 object members and 16,384 array elements per container; 8 MiB per encoded string and 12 MiB aggregate string bytes; 262,144 escape fragments per string and 524,288 aggregate; 128-byte number tokens; duplicate keys rejected | Verify all allocation/work counters under fuzzing and keep limits aligned with protocol/document-size requirements. |
 | TrueType font decoder | 32 MiB decoder input ceiling; 1,024 table entries; glyph point, composite depth/component, cache count and pixel budgets | Audit every table-specific count and offset for aggregate work and allocation; call sites may impose a stricter input byte cap. |
 | Shroud PNG encoder | 4 MiB raw scanline budget, validated dimensions and output sizing | Encoder, not an external-input parser. A bounded byte-sink remains needed to avoid string conversion amplification for larger output. |
 | CCAM JSON decoder | Design contract only; no implementation claim | Must not accept untrusted programs until the bounded scanner, duplicate-key handling, exact integer parsing and aggregate validation are implemented. |
 
-The inventory is intentionally explicit about what is not proved. In particular, the compiler import graph and CCAM JSON decoder remain open work; the LSP and font limits are implementation-specific, not defaults for other parsers.
+The inventory is intentionally explicit about what is not proved. The compiler and LSP import graph now share source-byte, token and AST-node budgets; CCAM JSON and other format decoders remain open work. These limits are implementation-specific, not defaults for other parsers.
 
 ## 6. Assurance boundary
 
