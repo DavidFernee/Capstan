@@ -351,6 +351,7 @@ def protocol(exe):
     exact_aggregate_strings = b'["' + b"a" * (6 * 1024 * 1024) + b'","' + b"a" * (6 * 1024 * 1024) + b'"]'
     exact_fragments = b'"' + b"\\n" * 131069 + b"\\uD83D\\uDE00" + b'"'
     exact_number = b"1" * 128
+    aggregate_parts = b"[" + b",".join([exact_fragments] * 3) + b"]"
     bad_bodies.extend([
         (exact_values, -32600, "exact JSON value budget"),
         (exact_members, -32600, "exact JSON object member budget"),
@@ -366,6 +367,7 @@ def protocol(exe):
         (long_string, -32700, "JSON per-string byte budget"),
         (escape_fragments, -32700, "JSON string fragment budget"),
         (aggregate_strings, -32700, "JSON aggregate string byte budget"),
+        (aggregate_parts, -32700, "JSON aggregate string fragment budget"),
         (b"1" * 129, -32700, "JSON number token byte budget"),
     ])
     for body, code, name in bad_bodies:
