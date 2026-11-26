@@ -244,6 +244,16 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
                 return ccam_aggregate_validation_error("field_destination_type_mismatch", pc);
             }
             initialized[op.destination] = true;
+            object_kinds[op.destination] = 0;
+            object_descriptors[op.destination] = 0;
+            array_element_types[op.destination] = 0;
+            array_element_ref_type_ids[op.destination] = 0;
+            if (field_type == CCAM_PROGRAM_TYPE_REF &&
+                layout.field_ref_type_ids.len() == layout.field_types.len() &&
+                layout.field_ref_type_ids[op.field_index] > 0) {
+                object_kinds[op.destination] = CCAM_PROGRAM_OBJECT_RECORD;
+                object_descriptors[op.destination] = layout.field_ref_type_ids[op.field_index];
+            }
         } else {
             if (!ccam_aggregate_register_is(types, op.right, field_type) ||
                 !initialized[op.right]) {
@@ -293,6 +303,15 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
                 return ccam_aggregate_validation_error("array_destination_type_mismatch", pc);
             }
             initialized[op.destination] = true;
+            object_kinds[op.destination] = 0;
+            object_descriptors[op.destination] = 0;
+            array_element_types[op.destination] = 0;
+            array_element_ref_type_ids[op.destination] = 0;
+            if (op.element_type == CCAM_PROGRAM_TYPE_REF &&
+                op.element_ref_type_id > 0) {
+                object_kinds[op.destination] = CCAM_PROGRAM_OBJECT_RECORD;
+                object_descriptors[op.destination] = op.element_ref_type_id;
+            }
         }
     } else if (op.op == CCAM_AGG_OP_ARRAY_LEN ||
                op.op == CCAM_AGG_OP_BYTES_LEN ||
