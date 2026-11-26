@@ -1,0 +1,9 @@
+import "ccam_aggregate_token.cap";
+struct AGParseCursor { List<AGToken> tokens; int position; }
+bool ag_parse_has(AGParseCursor cursor, int kind) {
+ return cursor.position >= 0 && cursor.position < cursor.tokens.len() && cursor.tokens[cursor.position].kind == kind;
+}
+bool ag_parse_take(AGParseCursor cursor, int kind) {
+ if (!ag_parse_has(cursor,kind)) { return false; }
+ cursor.position += 1; return true;
+}
