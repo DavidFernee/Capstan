@@ -375,6 +375,78 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     else
       bad "native CLI final-component symlink confinement" "$(cat "$tmp/native-file-symlink.out")"
     fi
+    native_run_output() {
+      local name="$1" expected="$2" expected_bytes="$3" status
+      if ! grep -Fq 'cmpq $-4, %rax' "$ROOT/build/$name.s" ||
+         ! grep -Fq 'cmpq $64, %r8' "$ROOT/build/$name.s" ||
+         ! grep -Fq 'cap_sigpipe_action' "$ROOT/build/$name.s" ||
+         ! grep -Fq 'movq $13, %rax' "$ROOT/build/$name.s" ||
+         ! grep -Fq 'cap_output_count' "$ROOT/build/$name.s"; then
+        bad "freestanding $name adapter audit" "partial-write, bounded-EINTR, SIGPIPE or output-budget logic is missing"
+        return
+      fi
+      if ! as --64 "$ROOT/build/$name.s" -o "$tmp/$name.o" ||
+         ! ld -o "$tmp/$name" "$tmp/$name.o"; then
+        bad "freestanding $name assembly/link" "GNU as or ld rejected generated assembly"
+        return
+      fi
+      if readelf -l "$tmp/$name" | grep -q "INTERP"; then
+        bad "freestanding $name runtime audit" "ELF unexpectedly has an interpreter"
+        return
+      fi
+      if [[ -n "$(nm -u "$tmp/$name")" ]]; then
+        bad "freestanding $name runtime audit" "ELF has undefined external symbols"
+        return
+      fi
+      if "$tmp/$name" > "$tmp/$name.stdout"; then
+        status=0
+      else
+        status=$?
+      fi
+      printf '%b' "$expected_bytes" > "$tmp/$name.expected"
+      if [[ $status -eq $expected ]] && cmp -s "$tmp/$name.expected" "$tmp/$name.stdout"; then
+        ok "freestanding $name emits exact bytes and exits $expected"
+      else
+        bad "freestanding $name output" "expected exit $expected and exact output bytes; got exit $status"
+      fi
+    }
+    native_run_output ccam-native-x64-hello 0 'Hello, World!\n'
+    native_run_output ccam-native-x64-output-bytes 0 'A\0\303\251B'
+    native_run_output_limit() {
+      local name="$1" expected="$2" status bytes pipe_status
+      if ! as --64 "$ROOT/build/$name.s" -o "$tmp/$name.o" ||
+         ! ld -o "$tmp/$name" "$tmp/$name.o"; then
+        bad "freestanding $name assembly/link" "GNU as or ld rejected generated assembly"
+        return
+      fi
+      if readelf -l "$tmp/$name" | grep -q "INTERP" ||
+         [[ -n "$(nm -u "$tmp/$name")" ]]; then
+        bad "freestanding $name runtime audit" "ELF interpreter or undefined symbol found"
+        return
+      fi
+      if "$tmp/$name" > "$tmp/$name.stdout"; then
+        status=0
+      else
+        status=$?
+      fi
+      bytes="$(wc -c < "$tmp/$name.stdout" | tr -d '[:space:]')"
+      if [[ $status -eq $expected && "$bytes" == "1048576" ]]; then
+        ok "freestanding $name stops at the exact 1 MiB output budget"
+      else
+        bad "freestanding $name output budget" "expected exit $expected and 1048576 bytes; got exit $status and $bytes bytes"
+      fi
+      if (set -o pipefail; "$tmp/$name" | head -c 0 >/dev/null); then
+        pipe_status=0
+      else
+        pipe_status=$?
+      fi
+      if [[ $pipe_status -eq 77 ]]; then
+        ok "freestanding $name converts broken stdout pipe into output-failure status"
+      else
+        bad "freestanding $name broken pipe" "expected output-failure status 77, got $pipe_status"
+      fi
+    }
+    native_run_output_limit ccam-native-x64-output-limit 76
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
