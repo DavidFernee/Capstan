@@ -51,6 +51,13 @@ class FreshnessTests(unittest.TestCase):
         self.assertFalse(MODULE.requires_freshness("proposed"))
         self.assertFalse(MODULE.requires_freshness("withdrawn"))
 
+    def test_repository_paths_use_portable_relative_posix_syntax(self):
+        self.assertTrue(MODULE.inside_repo("src/covered.c"))
+        for path in ("", "/etc/passwd", "../outside", "src\\\\outside",
+                     "C:/outside", "C:outside", "\\\\\\\\server\\\\share"):
+            with self.subTest(path=path):
+                self.assertFalse(MODULE.inside_repo(path))
+
     def test_schema_rejects_empty_claim_inventory(self):
         import json
         schema_path = os.path.join(ROOT, "docs", "assurance", "assurance.schema.json")
