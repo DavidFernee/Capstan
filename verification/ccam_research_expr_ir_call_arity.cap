@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_call_arity(int actual,int expected){return actual>=0&&actual==expected&&actual<=256;}
