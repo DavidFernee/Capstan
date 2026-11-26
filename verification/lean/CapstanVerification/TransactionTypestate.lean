@@ -105,6 +105,7 @@ theorem advance_preserves_linear_context (context next : TxContext)
     (hlinear : LinearTxContext context)
     (hstep : advanceTxContext context resource operation = some next) :
     LinearTxContext next := by
+  classical
   unfold advanceTxContext at hstep
   simp only [if_pos hlinear] at hstep
   cases hfind : context.find? (fun owner => owner.1 == resource) with
@@ -150,12 +151,14 @@ theorem aliased_transaction_cannot_advance (resource : Nat) :
     advanceTxContext
       [(resource, TxPhase.open), (resource, TxPhase.open)]
       resource .prepare = none := by
+  classical
   simp [advanceTxContext, LinearTxContext, txOwnerIds]
 
 /-- An unknown resource identity cannot be advanced. -/
 theorem unknown_transaction_cannot_advance
     (resource missing : Nat) (hDifferent : resource ≠ missing) :
     advanceTxContext [(resource, TxPhase.open)] missing .prepare = none := by
+  classical
   simp [advanceTxContext, LinearTxContext, txOwnerIds, hDifferent]
 
 /-- An accepted transition changes the phase but not the owner identity list. -/
