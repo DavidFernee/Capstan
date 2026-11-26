@@ -1,6 +1,6 @@
 # Capstan execution assurance architecture
 
-**Baseline:** mainline `c22d72a1f60a4d110f30a421d577aeaaf339f8fb` (26 November 2026)  
+**Baseline:** 26 November 2026 source snapshot; exact freshness baseline is recorded in `execution-boundaries.json`  
 **Disposition:** architecture and obligation map; not a system-level verification claim.
 
 This is the operational view of the assurance boundary. The machine-readable
@@ -95,6 +95,14 @@ whether the relation is adequate; that remains a substantive review task.
 | CCAM → native machine code | Linux x86-64 scalar emitter prototype | Full instruction/effect/resource coverage, differential conformance, machine-code simulation and supported ABI matrix |
 | Runtime → OS/platform | Existing C runtime and platform adapters are production dependencies | C-free runtime implementation, explicit host capability boundary and per-platform refinement/evidence |
 | Bootstrap/build → release artifact | Existing bootstrap, CI and supply-chain controls | Independently reproducible C-free bootstrap and complete provenance/TCB reduction |
+
+
+
+### Memory-lifetime profiles in the C-free programme
+
+The C-free compiler work now distinguishes two non-interchangeable prototype profiles: a process-lifetime typed compiler arena for tokens, ASTs, scopes and diagnostics, and frame-owned scratch regions for temporary byte/scalar workspaces. The integration review in [C-FREE-MEMORY-INTEGRATION-REVIEW.md](../architecture/C-FREE-MEMORY-INTEGRATION-REVIEW.md) records their separate lifetime, aliasing and validation obligations.
+
+Neither prototype is yet a production memory manager or a proved implementation refinement. The arena's integer identity tokens are not unforgeable, and its mutable aggregate aliasing semantics remain unresolved. Scratch generation/owner checks and call-frame unwinding remain prototype obligations. Logical byte/capacity accounting is not a host RSS, allocator-overhead, stack or wall-clock bound. Do not combine the two profiles into one capability or claim complete C-free compiler memory safety.
 
 ## 4. Required proof composition
 
