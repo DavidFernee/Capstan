@@ -129,7 +129,7 @@ void fuzz(List<string> paths) {
     int loaded = 0;
     int refused = 0;
     for (int i = 1; i < paths.len(); i += 1) {
-        if (let data = read_file(paths[i], 1073741824)) {
+        if (let data = read_file(paths[i], 16777216)) {
             if (let f = font_load(data)) {
                 loaded += 1;
                 Pixmap pm = new_pixmap(64, 64);
@@ -165,7 +165,7 @@ int main() {
     }
     if (a.len() < 2) { return 2; }
     if (mode == "png") {
-        if (let fd = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 1073741824)) {
+        if (let fd = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) {
             if (let f = font_load(fd)) {
                 if (a.len() > 2) { png(a[1], a[2], f); }
                 return 0;
@@ -173,7 +173,7 @@ int main() {
         }
         return 1;
     }
-    if (let data = read_file(a[1], 1073741824)) {
+    if (let data = read_file(a[1], 16777216)) {
         if (mode == "raster") { raster(data); }
         if (mode == "font") { font_report(data); }
         if (mode == "utf8") { utf8(data); }
