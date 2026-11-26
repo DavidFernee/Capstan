@@ -6,6 +6,7 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.Visibility
+import CapstanVerification.ExplicitTrap
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -179,6 +180,16 @@ import CapstanVerification.Visibility
 #print axioms CapstanVerification.nativeWriteRegister_refines_finite_relation
 #print axioms CapstanVerification.nativeRuntimeRegisterFileRelation_slot_exists
 #print axioms CapstanVerification.nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts_of_in_bounds
+
+#print axioms CapstanVerification.validExplicitReasonBytes
+#print axioms CapstanVerification.explicitTrap_preserves_detail
+#print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
+#print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
+-- Explicit application-trap model: keep these proof dependencies visible.
+#print axioms CapstanVerification.explicitTrap_preserves_detail
+#print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
+#print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
 
 #print axioms CapstanVerification.field_operation_same_policy
 #print axioms CapstanVerification.private_field_denied_cross_module
