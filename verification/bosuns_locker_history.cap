@@ -1,0 +1,429 @@
+// Bosun's Locker BL-001/BL-002 executable reference model.
+// This is a bounded, point-key transaction-history oracle, not the database
+// engine and not a proof of implementation refinement.
+//
+// Contract: docs/database/TRANSACTION-HISTORY-SEMANTICS.md
+// Research programme: docs/database/BOSUNS-LOCKER-ARCHITECTURE.md
+//
+// The checker enumerates serial orders directly. It checks observed reads by
+// replaying each committed transaction atomically against a candidate serial
+// prefix, and enforces real-time precedence. This avoids confusing
+// conflict-serializability with strict serializability for this bounded model.
+// Range predicates, incomplete histories and durable recovery are separate
+// extensions and are not silently claimed here.
+
+const int BL_OP_READ = 1;
+const int BL_OP_WRITE = 2;
+
+const int BL_CHECK_ACCEPT = 0;
+const int BL_CHECK_REJECT = 1;
+const int BL_CHECK_INCONCLUSIVE = 2;
+const int BL_CHECK_INVALID = 3;
+
+const int BL_MAX_TRANSACTIONS = 8;
+const int BL_MAX_KEYS = 16;
+const int BL_MAX_OPERATIONS = 32;
+const int BL_DEFAULT_NODE_BUDGET = 100000;
+
+struct BLOperation {
+    int kind;
+    int key;
+    int value;
+    bool observed_present;
+}
+
+struct BLTransaction {
+    int id;
+    int invoke;
+    int response;
+    bool committed;
+    List<BLOperation> operations;
+}
+
+struct BLSearch {
+    int nodes;
+    int max_nodes;
+    bool found;
+    bool exhausted;
+    List<int> witness;
+}
+
+struct BLCheckResult {
+    int status;
+    int explored_nodes;
+    List<int> serial_order;
+    string error;
+}
+
+List<int> bl_copy_ints(List<int> source) {
+    List<int> result = new List<int>();
+    for (int i = 0; i < source.len(); i += 1) {
+        result.push(source[i]);
+    }
+    return result;
+}
+
+List<bool> bl_copy_bools(List<bool> source) {
+    List<bool> result = new List<bool>();
+    for (int i = 0; i < source.len(); i += 1) {
+        result.push(source[i]);
+    }
+    return result;
+}
+
+List<int> bl_copy_order(List<int> source) {
+    return bl_copy_ints(source);
+}
+
+bool bl_valid_history(List<BLTransaction> txs, int key_count) {
+    if (txs.len() < 1 || txs.len() > BL_MAX_TRANSACTIONS) { return false; }
+    if (key_count < 1 || key_count > BL_MAX_KEYS) { return false; }
+
+    for (int i = 0; i < txs.len(); i += 1) {
+        BLTransaction tx = txs[i];
+        if (tx.id < 0 || tx.invoke < 0 || tx.response <= tx.invoke) {
+            return false;
+        }
+        for (int j = 0; j < i; j += 1) {
+            if (txs[j].id == tx.id) { return false; }
+        }
+        if (!tx.committed || tx.operations.len() > BL_MAX_OPERATIONS) {
+            // This first checker accepts completed committed histories only.
+            // Abort and incomplete-history completion rules are a later model.
+            return false;
+        }
+        for (int k = 0; k < tx.operations.len(); k += 1) {
+            BLOperation op = tx.operations[k];
+            if ((op.kind != BL_OP_READ && op.kind != BL_OP_WRITE) ||
+                op.key < 0 || op.key >= key_count) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool bl_apply_transaction(
+    BLTransaction tx,
+    List<int> values,
+    List<bool> present
+) {
+    for (int i = 0; i < tx.operations.len(); i += 1) {
+        BLOperation op = tx.operations[i];
+        if (op.kind == BL_OP_READ) {
+            if (present[op.key] != op.observed_present) { return false; }
+            if (op.observed_present && values[op.key] != op.value) {
+                return false;
+            }
+        } else if (op.kind == BL_OP_WRITE) {
+            values[op.key] = op.value;
+            present[op.key] = true;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+// A candidate can be next only when every committed transaction that
+// completed before its invocation is already in the serial prefix.
+bool bl_respects_realtime(
+    List<BLTransaction> txs,
+    List<bool> used,
+    int candidate
+) {
+    BLTransaction next = txs[candidate];
+    for (int i = 0; i < txs.len(); i += 1) {
+        if (i == candidate || used[i] || !txs[i].committed) { continue; }
+        if (txs[i].response < next.invoke) { return false; }
+    }
+    return true;
+}
+
+void bl_search_orders(
+    List<BLTransaction> txs,
+    List<bool> used,
+    int selected,
+    List<int> values,
+    List<bool> present,
+    List<int> order,
+    BLSearch search
+) {
+    if (search.found || search.exhausted) { return; }
+    if (selected == txs.len()) {
+        search.found = true;
+        search.witness = bl_copy_order(order);
+        return;
+    }
+
+    for (int i = 0; i < txs.len(); i += 1) {
+        if (search.found || search.exhausted) { return; }
+        if (used[i]) { continue; }
+
+        if (search.nodes >= search.max_nodes) {
+            search.exhausted = true;
+            return;
+        }
+        search.nodes += 1;
+
+        BLTransaction tx = txs[i];
+        if (!bl_respects_realtime(txs, used, i)) { continue; }
+
+        List<int> next_values = bl_copy_ints(values);
+        List<bool> next_present = bl_copy_bools(present);
+        if (!bl_apply_transaction(tx, next_values, next_present)) {
+            continue;
+        }
+        List<bool> next_used = bl_copy_bools(used);
+        next_used[i] = true;
+        List<int> next_order = bl_copy_order(order);
+        next_order.push(tx.id);
+
+        bl_search_orders(
+            txs, next_used, selected + 1,
+            next_values, next_present, next_order, search
+        );
+    }
+}
+
+BLCheckResult bl_check_history(
+    List<BLTransaction> txs,
+    int key_count,
+    List<int> initial_values,
+    List<bool> initial_present,
+    int node_budget
+) {
+    List<int> empty_order = new List<int>();
+    if (!bl_valid_history(txs, key_count) ||
+        initial_values.len() != key_count ||
+        initial_present.len() != key_count ||
+        node_budget < 1) {
+        return new BLCheckResult{
+            status: BL_CHECK_INVALID,
+            explored_nodes: 0,
+            serial_order: empty_order,
+            error: "invalid_history_or_bounds"
+        };
+    }
+
+    List<bool> used = new List<bool>();
+    for (int i = 0; i < txs.len(); i += 1) {
+        used.push(false);
+    }
+
+    BLSearch search = new BLSearch{
+        nodes: 0,
+        max_nodes: node_budget,
+        found: false,
+        exhausted: false,
+        witness: empty_order
+    };
+    bl_search_orders(
+        txs, used, 0,
+        bl_copy_ints(initial_values),
+        bl_copy_bools(initial_present),
+        empty_order, search
+    );
+
+    if (search.found) {
+        return new BLCheckResult{
+            status: BL_CHECK_ACCEPT,
+            explored_nodes: search.nodes,
+            serial_order: search.witness,
+            error: ""
+        };
+    }
+    if (search.exhausted) {
+        return new BLCheckResult{
+            status: BL_CHECK_INCONCLUSIVE,
+            explored_nodes: search.nodes,
+            serial_order: empty_order,
+            error: "search_budget_exhausted"
+        };
+    }
+    return new BLCheckResult{
+        status: BL_CHECK_REJECT,
+        explored_nodes: search.nodes,
+        serial_order: empty_order,
+        error: "no_strict_serial_order"
+    };
+}
+
+BLOperation bl_read(int key, int value, bool present) {
+    return new BLOperation{
+        kind: BL_OP_READ,
+        key: key,
+        value: value,
+        observed_present: present
+    };
+}
+
+BLOperation bl_write(int key, int value) {
+    return new BLOperation{
+        kind: BL_OP_WRITE,
+        key: key,
+        value: value,
+        observed_present: true
+    };
+}
+
+BLTransaction bl_transaction(
+    int id,
+    int invoke,
+    int response,
+    List<BLOperation> operations
+) {
+    return new BLTransaction{
+        id: id,
+        invoke: invoke,
+        response: response,
+        committed: true,
+        operations: operations
+    };
+}
+
+List<int> bl_empty_values(int count) {
+    List<int> values = new List<int>();
+    for (int i = 0; i < count; i += 1) { values.push(0); }
+    return values;
+}
+
+List<bool> bl_empty_presence(int count) {
+    List<bool> present = new List<bool>();
+    for (int i = 0; i < count; i += 1) { present.push(false); }
+    return present;
+}
+
+test "Bosun history checker accepts a real-time ordered committed history" {
+    List<BLOperation> first_ops = new List<BLOperation>();
+    first_ops.push(bl_write(0, 41));
+    List<BLOperation> second_ops = new List<BLOperation>();
+    second_ops.push(bl_read(0, 41, true));
+
+    List<BLTransaction> txs = new List<BLTransaction>();
+    txs.push(bl_transaction(10, 1, 2, first_ops));
+    txs.push(bl_transaction(11, 3, 4, second_ops));
+
+    BLCheckResult result = bl_check_history(
+        txs, 1, bl_empty_values(1), bl_empty_presence(1),
+        BL_DEFAULT_NODE_BUDGET
+    );
+    assert(result.status == BL_CHECK_ACCEPT);
+    assert(result.serial_order.len() == 2);
+    assert(result.serial_order[0] == 10);
+    assert(result.serial_order[1] == 11);
+}
+
+test "Bosun history checker rejects a real-time order violation" {
+    List<BLOperation> first_ops = new List<BLOperation>();
+    first_ops.push(bl_write(0, 41));
+    List<BLOperation> second_ops = new List<BLOperation>();
+    second_ops.push(bl_read(0, 0, false));
+
+    List<BLTransaction> txs = new List<BLTransaction>();
+    txs.push(bl_transaction(10, 1, 2, first_ops));
+    txs.push(bl_transaction(11, 3, 4, second_ops));
+
+    BLCheckResult result = bl_check_history(
+        txs, 1, bl_empty_values(1), bl_empty_presence(1),
+        BL_DEFAULT_NODE_BUDGET
+    );
+    assert(result.status == BL_CHECK_REJECT);
+    assert(result.error == "no_strict_serial_order");
+}
+
+test "Bosun history checker rejects write skew" {
+    // T1 reads x=0 then writes y=1. T2 reads y=0 then writes x=1.
+    // Neither serial order can explain both reads.
+    List<BLOperation> t1_ops = new List<BLOperation>();
+    t1_ops.push(bl_read(0, 0, true));
+    t1_ops.push(bl_write(1, 1));
+    List<BLOperation> t2_ops = new List<BLOperation>();
+    t2_ops.push(bl_read(1, 0, true));
+    t2_ops.push(bl_write(0, 1));
+
+    List<BLTransaction> txs = new List<BLTransaction>();
+    txs.push(bl_transaction(1, 1, 5, t1_ops));
+    txs.push(bl_transaction(2, 2, 6, t2_ops));
+
+    List<int> initial_values = new List<int>();
+    initial_values.push(0);
+    initial_values.push(0);
+    List<bool> initial_present = new List<bool>();
+    initial_present.push(true);
+    initial_present.push(true);
+
+    BLCheckResult result = bl_check_history(
+        txs, 2, initial_values, initial_present,
+        BL_DEFAULT_NODE_BUDGET
+    );
+    assert(result.status == BL_CHECK_REJECT);
+}
+
+test "Bosun history checker reports inconclusive on exhausted search budget" {
+    List<BLOperation> ops_a = new List<BLOperation>();
+    List<BLOperation> ops_b = new List<BLOperation>();
+    List<BLTransaction> txs = new List<BLTransaction>();
+    txs.push(bl_transaction(1, 1, 10, ops_a));
+    txs.push(bl_transaction(2, 1, 10, ops_b));
+
+    BLCheckResult result = bl_check_history(
+        txs, 1, bl_empty_values(1), bl_empty_presence(1), 1
+    );
+    assert(result.status == BL_CHECK_INCONCLUSIVE);
+    assert(result.error == "search_budget_exhausted");
+}
+
+test "Bosun history checker rejects malformed keys and duplicate identifiers" {
+    List<BLOperation> bad_ops = new List<BLOperation>();
+    bad_ops.push(bl_read(2, 0, false));
+    List<BLTransaction> bad_key = new List<BLTransaction>();
+    bad_key.push(bl_transaction(1, 1, 2, bad_ops));
+    BLCheckResult key_result = bl_check_history(
+        bad_key, 1, bl_empty_values(1), bl_empty_presence(1), 100
+    );
+    assert(key_result.status == BL_CHECK_INVALID);
+
+    List<BLOperation> empty_a = new List<BLOperation>();
+    List<BLOperation> empty_b = new List<BLOperation>();
+    List<BLTransaction> duplicate = new List<BLTransaction>();
+    duplicate.push(bl_transaction(7, 1, 2, empty_a));
+    duplicate.push(bl_transaction(7, 3, 4, empty_b));
+    BLCheckResult duplicate_result = bl_check_history(
+        duplicate, 1, bl_empty_values(1), bl_empty_presence(1), 100
+    );
+    assert(duplicate_result.status == BL_CHECK_INVALID);
+}
+
+test "Bosun history checker preserves transaction program order and read-your-writes" {
+    List<BLOperation> ops = new List<BLOperation>();
+    ops.push(bl_write(0, 73));
+    ops.push(bl_read(0, 73, true));
+    List<BLTransaction> txs = new List<BLTransaction>();
+    txs.push(bl_transaction(55, 1, 9, ops));
+
+    BLCheckResult result = bl_check_history(
+        txs, 1, bl_empty_values(1), bl_empty_presence(1),
+        BL_DEFAULT_NODE_BUDGET
+    );
+    assert(result.status == BL_CHECK_ACCEPT);
+    assert(result.serial_order.len() == 1);
+    assert(result.serial_order[0] == 55);
+}
+
+test "Bosun history checker rejects incomplete and aborted history entries" {
+    List<BLOperation> ops = new List<BLOperation>();
+    BLTransaction aborted = new BLTransaction{
+        id: 9,
+        invoke: 1,
+        response: 2,
+        committed: false,
+        operations: ops
+    };
+    List<BLTransaction> txs = new List<BLTransaction>();
+    txs.push(aborted);
+    BLCheckResult result = bl_check_history(
+        txs, 1, bl_empty_values(1), bl_empty_presence(1), 100
+    );
+    assert(result.status == BL_CHECK_INVALID);
+}
