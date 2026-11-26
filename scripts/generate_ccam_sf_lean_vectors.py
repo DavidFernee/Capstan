@@ -29,6 +29,11 @@ def require_int(value, where):
     return value
 
 
+def lean_integer(value, where):
+    number = require_int(value, where)
+    return f"({number})" if number < 0 else str(number)
+
+
 def render_instruction(instruction, return_type, where):
     op = instruction["op"]
 
@@ -36,7 +41,7 @@ def render_instruction(instruction, return_type, where):
         return require_int(instruction[key], f"{where}.{key}")
 
     if op == "const_i":
-        return f'.constInt {number("dst")} {number("value")}'
+        return f'.constInt {number("dst")} {lean_integer(instruction["value"], where + ".value")}'
     if op == "const_b":
         if type(instruction["value"]) is not bool:
             raise ValueError(f"{where}.value: expected boolean")
@@ -93,7 +98,7 @@ def render_expected_run(vector, program_name):
     if kind == "halt":
         value = outcome["value"]
         if value["type"] == "int":
-            val = f'.int {require_int(value["value"], vector_id + ".outcome.value")}'
+            val = f'.int {lean_integer(value["value"], vector_id + ".outcome.value")}'
         elif value["type"] == "bool" and type(value["value"]) is bool:
             val = f'.bool {"true" if value["value"] else "false"}'
         else:
