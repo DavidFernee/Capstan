@@ -23,6 +23,23 @@ def inside_repo(path):
     return all(p not in ("", ".", "..") for p in parts)
 
 
+def resolves_inside_repo(path):
+    """Resolve a validated repository-relative path without following it outside ROOT.
+
+    realpath may produce a path on another filesystem/drive (notably through a
+    symlink on Windows); commonpath raises ValueError for different roots. Both
+    cases are a failed containment check, never an uncaught validator exception.
+    """
+    if not inside_repo(path):
+        return False
+    root_real = os.path.normcase(os.path.realpath(ROOT))
+    full = os.path.normcase(os.path.realpath(os.path.join(ROOT, path)))
+    try:
+        return os.path.commonpath((root_real, full)) == root_real
+    except ValueError:
+        return False
+
+
 def requires_freshness(state):
     """Only claims presented as live assurance must have current evidence."""
     return state in ("active", "qualified")
@@ -126,9 +143,8 @@ def main():
                 failed = True
                 continue
             full = os.path.realpath(os.path.join(ROOT, path))
-            root_real = os.path.realpath(ROOT)
-            if os.path.commonpath((root_real, full)) != root_real:
-                print("  %s: covered path resolves outside repository: %s" % (cid, path))
+            if not resolves_inside_repo(path):
+                print("  %s: covered path resolves outside repository or across filesystem roots: %s" % (cid, path))
                 failed = True
             elif not os.path.exists(full):
                 print("  %s: covered path does not exist: %s" % (cid, path))
@@ -152,9 +168,8 @@ def main():
                     safe_artifacts = False
                     continue
                 full = os.path.realpath(os.path.join(ROOT, path))
-                root_real = os.path.realpath(ROOT)
-                if os.path.commonpath((root_real, full)) != root_real:
-                    print("  %s evidence[%d]: artifact resolves outside repository: %s" % (cid, ei, path))
+                if not resolves_inside_repo(path):
+                    print("  %s evidence[%d]: artifact resolves outside repository or across filesystem roots: %s" % (cid, ei, path))
                     failed = True
                     safe_artifacts = False
                     continue
