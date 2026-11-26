@@ -1,0 +1,2 @@
+struct AGRuntimeRegion { int capacity; int used; }
+int ag_region_reserve(AGRuntimeRegion region,int bytes){if(bytes<0||region.used<0||region.capacity<region.used||bytes>region.capacity-region.used){return -1;}int offset=region.used;region.used+=bytes;return offset;}
