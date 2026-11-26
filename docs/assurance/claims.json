@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "48d59e406c204a582a01e77824def845dab8b32f"
+    "commit": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd"
   },
   "claims": [
     {
@@ -66,6 +66,96 @@
         "compiler/checker.cap",
         "compiler/codegen.cap",
         "runtime/capstan_rt.h"
+      ]
+    },
+    {
+      "id": "CFT-001",
+      "title": "C-free scalar type-safety proof profile",
+      "statement": "For the explicitly scoped C-free scalar profile, Capstan is developing a compositional type-safety argument from checked source through CCAM validation and execution to native code; current machine-checked evidence covers only a restricted typed CCAM model, not the complete implementation pipeline.",
+      "scope": [
+        "C-free scalar source subset: int, bool, locals, expressions, structured control flow, direct calls and returns",
+        "CCAM typed machine, validator, Capstan-native evaluator and experimental native backend"
+      ],
+      "state": "proposed",
+      "assumptions": [
+        "The formal models are not treated as implementation proofs without explicit refinement theorems.",
+        "The legacy generated-C backend is excluded from the proof target and used only as a temporary differential comparator."
+      ],
+      "dependencies": [
+        "docs/assurance/C-FREE-TYPE-SAFETY.md",
+        "docs/architecture/CCAM.md",
+        "docs/architecture/COMPILER-CCAM-LOWERING.md",
+        "verification/lean/CapstanVerification/Core.lean",
+        "verification/lean/CapstanVerification/Machine.lean",
+        "verification/lean/CapstanVerification/ProgramValidator.lean",
+        "verification/ccam_calls.cap",
+        "verification/ccam_lowering.cap",
+        "verification/ccam_native_x64.cap",
+        "verification/lean/CapstanVerification/MultiFunction.lean"
+      ],
+      "limitations": [
+        "The Lean machine is a restricted single-frame model and does not yet formalise the executable multi-function call-frame evaluator.",
+        "The formal validator is a conservative in-memory single-frame proof profile, not the complete normative CCAM validator or JSON decoder.",
+        "Source checker soundness and source-to-CCAM semantic preservation are not established.",
+        "The native register bridge proves mathematical representation lemmas, not full concrete evaluator or native code refinement.",
+        "Strings, heap, collections, optionals, taint, secrets, grants, IO, concurrency and FFI are outside this profile."
+      ],
+      "evidence": [
+        {
+          "kind": "specification",
+          "result": "available",
+          "artifacts": [
+            "docs/assurance/C-FREE-TYPE-SAFETY.md",
+            "docs/architecture/CCAM.md",
+            "docs/architecture/COMPILER-CCAM-LOWERING.md"
+          ],
+          "procedure": "Review the stated profile, proof ladder, exclusions and implementation correspondence boundaries.",
+          "revision": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd",
+          "notes": "C-free assurance contract; proposed, not a claim of completed end-to-end verification."
+        },
+        {
+          "kind": "mechanical-proof",
+          "result": "available",
+          "artifacts": [
+            "verification/lean/CapstanVerification/Core.lean",
+            "verification/lean/CapstanVerification/Machine.lean",
+            "verification/lean/CapstanVerification/ProgramValidator.lean",
+            "verification/lean/CapstanVerification/NativeRegisterBridge.lean",
+            "verification/lean/CapstanVerification/NativeRegisterFileBridge.lean",
+            "verification/lean/CapstanVerification/MultiFunction.lean"
+          ],
+          "procedure": "Build the pinned Lean verification package and inspect the axiom audit. Treat the results only as the restricted mathematical model documented in C-FREE-TYPE-SAFETY.md.",
+          "revision": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd",
+          "tool": "Lean 4.19.0",
+          "notes": "Existing scalar CCAM proofs plus the new typed function-entry/return contract model. The new module's exact-head CI is pending; none of this establishes correspondence to the executable multi-function evaluator."
+        },
+        {
+          "kind": "test",
+          "result": "planned",
+          "artifacts": [
+            "verification/ccam_core_tests.cap",
+            "verification/ccam_lowering.cap",
+            "tests/run.sh"
+          ],
+          "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
+          "revision": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd",
+          "notes": "This record does not assert a passing run for this assurance profile."
+        }
+      ],
+      "review": {
+        "reviewed_at": "2026-11-26",
+        "reviewed_commit": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd"
+      },
+      "covers": [
+        "verification/lean/CapstanVerification/Core.lean",
+        "verification/lean/CapstanVerification/Machine.lean",
+        "verification/lean/CapstanVerification/ProgramValidator.lean",
+        "verification/lean/CapstanVerification/NativeRegisterBridge.lean",
+        "verification/lean/CapstanVerification/NativeRegisterFileBridge.lean",
+        "verification/ccam_calls.cap",
+        "verification/ccam_lowering.cap",
+        "verification/ccam_native_x64.cap",
+        "verification/lean/CapstanVerification/MultiFunction.lean"
       ]
     }
   ]

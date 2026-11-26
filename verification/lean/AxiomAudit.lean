@@ -1,4 +1,5 @@
 import CapstanVerification.Machine
+import CapstanVerification.MultiFunction
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge
@@ -189,3 +190,20 @@ import CapstanVerification.ExplicitTrap
 #print axioms CapstanVerification.explicitTrap_preserves_detail
 #print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
 #print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
+-- C-free multi-function call boundary: parameter and return type invariants.
+#print axioms CapstanVerification.initialFrameRegisters_parameter_value
+#print axioms CapstanVerification.initialFrameRegisters_locals_uninitialised
+#print axioms CapstanVerification.initialFrameRegisters_well_typed
+#print axioms CapstanVerification.return_destination_has_exact_type
+#print axioms CapstanVerification.void_return_has_no_destination
+#print axioms CapstanVerification.nonvoid_return_requires_destination
+
+-- Typed multi-function frame construction and return-value contracts.
+#print axioms CapstanVerification.enterTypedFunction
+#print axioms CapstanVerification.enterTypedFunction_signature
+#print axioms CapstanVerification.returned_value_has_declared_type
+#print axioms CapstanVerification.void_function_returns_no_value
+#print axioms CapstanVerification.nonvoid_function_requires_value
+
+#print axioms CapstanVerification.return_write_preserves_caller_well_typed
