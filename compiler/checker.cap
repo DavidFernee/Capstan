@@ -1074,12 +1074,12 @@ Type check_call(Checker c, Node e) {
             if (f == "write_html_file") { expected = mk_type(TY_HTML); }
             if (f == "write_log_file") { expected = mk_type(TY_LOG); }
             if (f == "write_csv_file") { expected = mk_type(TY_CSV); }
-            if (f == "write_file" && is_contextual_text(wt)) {
+            if (mentions_deep(e.kids[1], 2)) {
+                error_at(c.ctx, e.kids[1], "CWE-256", "passwords must never be written out; store hash_password() of it instead");
+            } else if (f == "write_file" && is_contextual_text(wt)) {
                 error_at(c.ctx, e.kids[1], "CWE-116", "context-encoded " + type_str(wt) + " cannot pass through format-agnostic write_file(); use the matching typed sink");
             } else if (wt.k == TY_TAINT) {
-                error_at(c.ctx, e.kids[1], "CWE-20", "untrusted input written to a file unchanged; escape it for the file's format first or validate it");
-            } else if (mentions_deep(e.kids[1], 2)) {
-                error_at(c.ctx, e.kids[1], "CWE-256", "passwords must never be written out; store hash_password() of it instead");
+                error_at(c.ctx, e.kids[1], "CWE-20", "untrusted input written to a file unchanged; use escape_csv() with write_csv_file(), escape_html() with write_html_file(), or the matching context escaper");
             } else if (wt.k == TY_SECRET) {
                 error_at(c.ctx, e.kids[1], "CWE-532", "a Secret cannot be written by " + f + "()");
             } else {
@@ -1139,7 +1139,10 @@ Type check_call(Checker c, Node e) {
     }
     if (f == "escape_c" || f == "escape_html" || f == "escape_log" || f == "escape_csv" || f == "escape_json") {
         want_args(c, e, 0, 1, f);
-        if (n == 1 && !is_stringish(ty_of(e.kids[0]))) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()"); }
+        if (n == 1 && !is_stringish(ty_of(e.kids[0])) &&
+            !(f == "escape_log" && is_contextual_text(ty_of(e.kids[0])))) {
+            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()");
+        }
         if (f == "escape_html") { return mk_type(TY_HTML); }
         if (f == "escape_log") { return mk_type(TY_LOG); }
         if (f == "escape_csv") { return mk_type(TY_CSV); }
