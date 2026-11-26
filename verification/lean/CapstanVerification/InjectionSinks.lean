@@ -30,6 +30,7 @@ def InjectionTextKind.isText : InjectionTextKind → Bool
   | .csv => true
   | .other => false
 
+/-- These are provenance-reconstruction sinks; typed write_* output-file sinks are a separate contract. -/
 inductive ProtectedSink where
   | charString (argument : FlowExpr)
   | textIndex (resultKind : InjectionTextKind) (selector : FlowExpr)
