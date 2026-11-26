@@ -319,13 +319,13 @@ Tainted j_string(JParse p) {
         if (c < 0) {
             j_fail(p, "unterminated string");
         } else if (c == '"') {
-            int raw = p.pos - start;
-            if (raw > MAX_JSON_STRING_BYTES || raw > MAX_JSON_TOTAL_STRING_BYTES - p.string_bytes) {
+            int raw_end = p.pos - start;
+            if (raw_end > MAX_JSON_STRING_BYTES || raw_end > MAX_JSON_TOTAL_STRING_BYTES - p.string_bytes) {
                 j_fail(p, "JSON string byte budget exceeded [CWE-400]");
                 break;
             }
             if (!j_string_add(p, parts, p.s.slice(run, p.pos))) { break; }
-            p.string_bytes += raw;
+            p.string_bytes += raw_end;
             p.pos += 1;
             return lsp_join(parts);
         } else if (c < 32) {
