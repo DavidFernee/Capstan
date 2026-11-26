@@ -11,6 +11,9 @@ const int CS_TASK_BLOCKED = 2;
 const int CS_TASK_DONE = 3;
 const int CS_TASK_CANCELLED = 4;
 
+// At most one blocking send, one committed send, two receives and one release.
+const int CS_MAX_STEPS = 5;
+
 const int CS_WAIT_NONE = 0;
 const int CS_WAIT_CHANNEL_CAPACITY = 1;
 
@@ -79,7 +82,8 @@ CSTransition cs_accept(CSState s) {
 
 bool cs_invariant(CSState s) {
     if (s.channel_capacity != 1 || s.channel_count < 0 ||
-        s.channel_count > s.channel_capacity || s.steps < 0) { return false; }
+        s.channel_count > s.channel_capacity || s.steps < 0 ||
+        s.steps > CS_MAX_STEPS) { return false; }
     if (s.producer_status != CS_TASK_RUNNABLE &&
         s.producer_status != CS_TASK_BLOCKED &&
         s.producer_status != CS_TASK_DONE &&
@@ -127,6 +131,8 @@ bool cs_invariant(CSState s) {
 // The send is valid but disabled while the capacity-one channel is full.
 // It registers a capacity wait rather than rejecting the operation.
 CSTransition cs_send_second(CSState before) {
+    if (!cs_invariant(before)) { return cs_reject(before, "invalid_state"); }
+    if (before.steps == CS_MAX_STEPS) { return cs_reject(before, "step_limit"); }
     if (before.producer_status != CS_TASK_RUNNABLE ||
         before.second_message_owner != CS_OWNER_PRODUCER) {
         return cs_reject(before, "producer_not_send_eligible");
@@ -150,6 +156,8 @@ CSTransition cs_send_second(CSState before) {
 // Dequeueing the first message frees one slot. The producer's wait removal
 // and runnable transition are atomic with that capacity release.
 CSTransition cs_receive_first(CSState before) {
+    if (!cs_invariant(before)) { return cs_reject(before, "invalid_state"); }
+    if (before.steps == CS_MAX_STEPS) { return cs_reject(before, "step_limit"); }
     if (before.consumer_status != CS_TASK_RUNNABLE ||
         before.channel_count != 1 ||
         before.first_message_owner != CS_OWNER_CHANNEL) {
@@ -167,6 +175,8 @@ CSTransition cs_receive_first(CSState before) {
 }
 
 CSTransition cs_release_first(CSState before) {
+    if (!cs_invariant(before)) { return cs_reject(before, "invalid_state"); }
+    if (before.steps == CS_MAX_STEPS) { return cs_reject(before, "step_limit"); }
     if (before.first_message_owner != CS_OWNER_CONSUMER) {
         return cs_reject(before, "first_message_not_consumer_owned");
     }
@@ -176,6 +186,8 @@ CSTransition cs_release_first(CSState before) {
 }
 
 CSTransition cs_cancel_producer(CSState before) {
+    if (!cs_invariant(before)) { return cs_reject(before, "invalid_state"); }
+    if (before.steps == CS_MAX_STEPS) { return cs_reject(before, "step_limit"); }
     if (before.producer_status != CS_TASK_BLOCKED ||
         !before.producer_wait_registered) {
         return cs_reject(before, "producer_not_blocked");
@@ -189,6 +201,8 @@ CSTransition cs_cancel_producer(CSState before) {
 }
 
 CSTransition cs_receive_second(CSState before) {
+    if (!cs_invariant(before)) { return cs_reject(before, "invalid_state"); }
+    if (before.steps == CS_MAX_STEPS) { return cs_reject(before, "step_limit"); }
     if (before.consumer_status != CS_TASK_RUNNABLE ||
         before.channel_count != 1 ||
         before.second_message_owner != CS_OWNER_CHANNEL) {
@@ -282,4 +296,52 @@ test "CS repeated blocked send is rejected without duplicate waiter" {
     assert(repeated.state.producer_wait_registered);
     assert(repeated.state.steps == blocked.steps);
     assert(cs_invariant(repeated.state));
+}
+
+test "CS all transitions reject malformed predecessor state before mutation" {
+    CSState before = cs_initial();
+    before.channel_count = 2;
+    CSTransition sent = cs_send_second(before);
+    CSTransition first = cs_receive_first(before);
+    CSTransition released = cs_release_first(before);
+    CSTransition cancelled = cs_cancel_producer(before);
+    CSTransition second = cs_receive_second(before);
+    assert(!sent.ok && sent.error == "invalid_state");
+    assert(!first.ok && first.error == "invalid_state");
+    assert(!released.ok && released.error == "invalid_state");
+    assert(!cancelled.ok && cancelled.error == "invalid_state");
+    assert(!second.ok && second.error == "invalid_state");
+    assert(before.channel_count == 2 && before.steps == 0);
+    assert(sent.state.second_message_owner == CS_OWNER_PRODUCER);
+    assert(first.state.first_message_owner == CS_OWNER_CHANNEL);
+}
+
+test "CS impossible and exhausted step counts reject before increment" {
+    CSState before = cs_initial();
+    before.steps = 9223372036854775807;
+    CSTransition invalid = cs_send_second(before);
+    assert(!invalid.ok && invalid.error == "invalid_state");
+    assert(invalid.state.steps == before.steps);
+    before.steps = CS_MAX_STEPS;
+    CSTransition exhausted = cs_send_second(before);
+    assert(!exhausted.ok && exhausted.error == "step_limit");
+    assert(exhausted.state.steps == CS_MAX_STEPS);
+    assert(exhausted.state.second_message_owner == CS_OWNER_PRODUCER);
+    assert(!exhausted.state.producer_wait_registered);
+}
+
+test "CS longest supported execution reaches exact step bound" {
+    CSTransition blocked = cs_send_second(cs_initial());
+    assert(blocked.ok && blocked.state.steps == 1);
+    CSTransition first = cs_receive_first(blocked.state);
+    assert(first.ok && first.state.steps == 2);
+    CSTransition released = cs_release_first(first.state);
+    assert(released.ok && released.state.steps == 3);
+    CSTransition sent = cs_send_second(released.state);
+    assert(sent.ok && sent.state.steps == 4);
+    CSTransition second = cs_receive_second(sent.state);
+    assert(second.ok && second.state.steps == CS_MAX_STEPS);
+    assert(cs_invariant(second.state));
+    assert(second.state.second_message_owner == CS_OWNER_CONSUMER);
+    assert(second.state.channel_count == 0);
 }
