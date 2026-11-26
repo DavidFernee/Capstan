@@ -46,7 +46,7 @@ def main():
         subprocess.run([cc, *flags, str(generated), "-o", str(executable)], check=True)
 
         exact = run(executable, ["abcd", "xy"], "abcd", b"abc")
-        if exact.returncode != 0 or exact.stdout != b"3\\n2\\n":
+        if exact.returncode != 0 or exact.stdout != b"3\n2\n":
             raise SystemExit(f"exact bounds failed: exit={exact.returncode}, out={exact.stdout!r}, err={exact.stderr!r}")
 
         cases = [
@@ -54,7 +54,7 @@ def main():
             ("per-argument bytes", ["abcde"], "abcd", b"x"),
             ("aggregate argument bytes", ["abcd", "xyz"], "abcd", b"x"),
             ("environment bytes", ["a"], "abcde", b"x"),
-            ("line bytes", ["a"], "abcd", b"abcd\\n"),
+            ("line bytes", ["a"], "abcd", b"abcd\n"),
         ]
         for label, argv, secret, stdin in cases:
             result = run(executable, argv, secret, stdin)
