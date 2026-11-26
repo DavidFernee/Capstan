@@ -170,6 +170,8 @@ explicitly. Their meaning therefore never depends on precedence.
 | `hash(x)`, `hash_verify(x, h)` | integrity hashing; output tagged `cap1$sha256$…`; not for passwords (CWE-916); `hash()` of a `Secret` is an error (CWE-532), `hash_verify()` of one is allowed |
 | `hash_password(p)`, `verify_password(p, h)`, `needs_rehash(h)` | PBKDF2-SHA256 with 600,000 iterations; output carries its algorithm and cost |
 
+The mandatory direct-input bounds and parser-composition obligations are specified in [the bounded-input contract](architecture/BOUNDED-INPUT-CONTRACT.md). A raw byte limit is not, by itself, a bound on decoded size, nesting or parser work.
+
 In v0.1, `sql_query` and `run` are demonstration sinks: they print what they would execute.
 
 
