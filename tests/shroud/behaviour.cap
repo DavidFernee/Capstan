@@ -886,7 +886,6 @@ void test_ui_state_pruning(Tally t, Ui ui) {
     expect_int(t, ui.caret.keys().len(), 0, "UI state: caret map stays bounded across 1000 generations");
 }
 
-
 void test_display_list(Tally t, Font font) {
     List<int> canonical_alpha = new List<int>();
     canonical_alpha.push(0);
