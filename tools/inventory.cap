@@ -144,31 +144,56 @@ Inventory record_file(Inventory inv, string language, int line_count, int byte_c
     return inv;
 }
 
-string csv_cell(string value) {
+CsvText csv_cell(string value) {
     return escape_csv(taint(value));
 }
 
-string inventory_report(Inventory inv, List<string> rows) {
-    rows.push("");
-    rows.push("SUMMARY");
-    rows.push("language,files,lines,bytes");
-    for (int i = 0; i < inv.languages.len(); i += 1) {
-        rows.push(csv_cell(inv.languages[i]) + "," + int_to_str(inv.files[i]) + "," + int_to_str(inv.lines[i]) + "," + int_to_str(inv.bytes[i]));
+// Escape each cell independently; concatenate only CSV-context values and trusted delimiters.
+CsvText csv_row(List<string> cells) {
+    if (cells.len() == 0) { return csv_cell(""); }
+    CsvText row = csv_cell(cells[0]);
+    for (int i = 1; i < cells.len(); i += 1) {
+        row = row + "," + csv_cell(cells[i]);
     }
-    rows.push("TOTAL," + int_to_str(inv.total_files) + "," + int_to_str(inv.total_lines) + "," + int_to_str(inv.total_bytes));
-    rows.push("UNREADABLE," + int_to_str(inv.unreadable) + ",0,0");
-    return join(rows, "\n") + "\n";
+    return row + "\n";
+}
+
+CsvText inventory_summary(Inventory inv) {
+    List<string> cells = new List<string>();
+    cells.push("SUMMARY");
+    CsvText report = csv_row(cells);
+    cells = new List<string>();
+    cells.push("language"); cells.push("files"); cells.push("lines"); cells.push("bytes");
+    report = report + csv_row(cells);
+    for (int i = 0; i < inv.languages.len(); i += 1) {
+        cells = new List<string>();
+        cells.push(inv.languages[i]);
+        cells.push(int_to_str(inv.files[i]));
+        cells.push(int_to_str(inv.lines[i]));
+        cells.push(int_to_str(inv.bytes[i]));
+        report = report + csv_row(cells);
+    }
+    cells = new List<string>();
+    cells.push("TOTAL"); cells.push(int_to_str(inv.total_files));
+    cells.push(int_to_str(inv.total_lines)); cells.push(int_to_str(inv.total_bytes));
+    report = report + csv_row(cells);
+    cells = new List<string>();
+    cells.push("UNREADABLE"); cells.push(int_to_str(inv.unreadable));
+    cells.push("0"); cells.push("0");
+    return report + csv_row(cells);
 }
 
 void usage() {
     println("Capstan repository inventory");
     println("usage: capstan-inventory [--output report.csv] file...");
+    println("default output: inventory.csv (CSV is written through the typed CSV sink)");
     println("Input must be a complete, explicit list of tracked files (for example, from git ls-files).");
 }
 
 int main() {
     List<string> argv = args(4096, 4096, 16777216);
-    string output_path = "";
+    string output_path = "inventory.csv";
+    bool output_specified = false;
     List<string> paths = new List<string>();
     bool options = true;
     for (int i = 0; i < argv.len(); i += 1) {
@@ -176,11 +201,12 @@ int main() {
         if (options && arg == "--") {
             options = false;
         } else if (options && arg == "--output") {
-            if (i + 1 >= argv.len() || output_path != "") {
+            if (i + 1 >= argv.len() || output_specified) {
                 usage();
                 return 2;
             }
             output_path = argv[i + 1];
+            output_specified = true;
             i += 1;
         } else if (options && arg == "--help") {
             usage();
@@ -216,8 +242,10 @@ int main() {
         total_bytes: 0,
         unreadable: 0
     };
-    List<string> rows = new List<string>();
-    rows.push("path,classification,language,lines,bytes,status");
+    List<string> cells = new List<string>();
+    cells.push("path"); cells.push("classification"); cells.push("language");
+    cells.push("lines"); cells.push("bytes"); cells.push("status");
+    CsvText report = csv_row(cells);
 
     for (int p = 0; p < paths.len(); p += 1) {
         string path = paths[p];
@@ -227,24 +255,31 @@ int main() {
             int nbytes = source.len();
             if (contains_nul(source)) {
                 inv = record_file(inv, "Binary (NUL)", 0, nbytes);
-                rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell("Binary (NUL)") + ",0," + int_to_str(nbytes) + ",nul_byte_detected");
+                cells = new List<string>();
+                cells.push(path); cells.push(classification); cells.push("Binary (NUL)");
+                cells.push("0"); cells.push(int_to_str(nbytes)); cells.push("nul_byte_detected");
+                report = report + csv_row(cells);
             } else {
                 int nlines = physical_lines(source);
                 inv = record_file(inv, language, nlines, nbytes);
-                rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell(language) + "," + int_to_str(nlines) + "," + int_to_str(nbytes) + ",ok");
+                cells = new List<string>();
+                cells.push(path); cells.push(classification); cells.push(language);
+                cells.push(int_to_str(nlines)); cells.push(int_to_str(nbytes)); cells.push("ok");
+                report = report + csv_row(cells);
             }
         } else {
             inv.unreadable += 1;
-            rows.push(csv_cell(path) + "," + csv_cell(classification) + "," + csv_cell(language) + ",0,0,unreadable_or_over_limit");
+            cells = new List<string>();
+            cells.push(path); cells.push(classification); cells.push(language);
+            cells.push("0"); cells.push("0"); cells.push("unreadable_or_over_limit");
+            report = report + csv_row(cells);
             println("cannot inventory: " + path + " (unreadable, non-regular, or exceeds 16 MiB)");
         }
     }
 
-    string report = inventory_report(inv, rows);
-    if (output_path == "") {
-        print(report);
-    } else if (!write_file(output_path, report)) {
-        println("cannot write report: " + output_path);
+    report = report + inventory_summary(inv);
+    if (!write_csv_file(output_path, report)) {
+        println("cannot write CSV report: " + output_path);
         return 2;
     }
     if (inv.unreadable > 0) { return 1; }
