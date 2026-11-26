@@ -42,7 +42,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Check out isolated research branch
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2\n        with:\n          persist-credentials: false
       - name: Run bounded ELF inspection fixture
         run: |
           chmod +x research/native-bootstrap/check-elf.sh
