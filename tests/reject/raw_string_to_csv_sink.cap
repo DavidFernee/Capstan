@@ -1,0 +1,6 @@
+// expect: CWE-116
+int main() {
+    string raw = "cell";
+    bool ok = write_csv_file("out.csv", raw);
+    return 0;
+}

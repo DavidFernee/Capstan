@@ -1,0 +1,7 @@
+// expect: CWE-116
+int main() {
+    CsvText csv = escape_csv(taint("cell"));
+    Html html = escape_html(taint("markup"));
+    CsvText invalid = csv + html;
+    return 0;
+}

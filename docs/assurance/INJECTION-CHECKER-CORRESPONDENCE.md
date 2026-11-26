@@ -1,7 +1,7 @@
 # Injection provenance: current checker correspondence
 
 **Status:** model of a restricted checker fragment; source correspondence is reviewed, not mechanised.
-**Source baseline:** `main` at `db912986be48897fc37f83c7cc8df8552b3fe8ef` (2026-11-26).
+**Source baseline:** checker laundering-analysis section reviewed at `07cff7b45c92610c201f048bb7c7b4fadb21cced` (2026-11-26).
 **Source file:** `compiler/checker.cap`; the exact laundering-analysis section is pinned in `verification/lean/fixtures/injection_checker_laundering_source.cap`.
 **Lean module:** `verification/lean/CapstanVerification/InjectionChecker.lean`.
 
@@ -30,6 +30,7 @@ The relevant implementation is the `FlowSummary` / `Flow` / `derived` / `base_ma
 | `int_to_str` | Propagate derived integer | `intToStr` |
 | String `+` | Propagate either derived operand | `stringConcat` |
 | `.pop()`, `.get()`, `.remove_at()` | Propagate marked base | `collectionRead` / `mapGet` |
+| `texty_type` | Treat `string`, `Html`, `LogText` and `CsvText` as text lookup results | `InjectionTextKind` including `.csv` |
 | Integer arithmetic | Propagate either derived operand | `arithmetic` |
 | Wrapping arithmetic | Propagate any inspected argument | `wrapping` (two-operand fragment) |
 | Direct optional unwrap `if (let ...)` | Mark bound local if condition is derived | `checkerOptionalBranch` |
@@ -46,13 +47,14 @@ The Lean module proves:
 
 - Derived source bytes are recognised.
 - Unary/arithmetic/string-concatenation transfers preserve derivation for the represented cases.
-- Derived selectors and marked aggregate roots propagate through the represented index/field/map-read cases.
+- Derived selectors and marked aggregate roots propagate through the represented index/field/map-read cases, including `CsvText` lookup results.
 - `int_to_str` preserves derivation.
 - The current local-mark update is monotone and marks derived int/string writes.
 - Boolean locals are not marked by the ordinary write transfer.
 - Reassignment with a literal does not clear a prior mark.
 - Direct optional-unwrapping conditions can mark the bound local.
 - Parameter-to-return and parameter-to-sink summary dependencies propagate to derived actual arguments; only integer parameter seeds are admitted by the current summary model.
+- Derived selectors are rejected for `CsvText` indexing and optional CSV-text map lookups, matching the source `texty_type` classification.
 
 These are model-level transfer lemmas. The transfer-agreement theorem is conditional on the expression belonging to `SupportedFlowExpr`; the excluded cases are not covered. They are not a proof that the source checker code has the same behaviour, and they are not a concrete execution theorem.
 
@@ -73,7 +75,7 @@ The model explicitly includes expression constructors that the current `derived`
 | Enum payload | `enum_payload_not_derived` | TYPE-17 |
 | Struct constructor field | `struct_constructor_not_derived` | TYPE-14 |
 
-Additional source-level gaps remain outside this fragment: aliases and heap identity, interprocedural aggregate parameters and heap writes, non-integer parameter summaries, map key/value/shape separation, receiver paths, policy parameter summaries, policy purity/effects, and a formal sink contract for `char_str` and other output contexts. See `PROVENANCE-CONFORMANCE.md` and `PROVENANCE-SEMANTICS.md`.
+Additional source-level gaps remain outside this fragment: aliases and heap identity, interprocedural aggregate parameters and heap writes, non-integer parameter summaries, map key/value/shape separation, receiver paths, policy parameter summaries, policy purity/effects, and a formal sink contract for `char_str` and a formal model of the separate typed output-file sinks. See `PROVENANCE-CONFORMANCE.md` and `PROVENANCE-SEMANTICS.md`.
 
 ## 5. What is needed to prove the implementation
 

@@ -9,7 +9,7 @@ int main() {
     println($"");
     Tainted comment = taint("<script>x()</script>");
     Html page = $"<p>{escape_html(comment)}</p>";
-    println(page);
+    println(escape_log(page));
     LogText line = $"login failed for {escape_log(taint("bob\nadmin"))}";
     println(line);
     return 0;
