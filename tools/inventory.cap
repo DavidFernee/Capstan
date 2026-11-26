@@ -186,13 +186,13 @@ CsvText inventory_summary(Inventory inv) {
 void usage() {
     println("Capstan repository inventory");
     println("usage: capstan-inventory [--output report.csv] file...");
-    println("default output: inventory.csv (CSV is written through the typed CSV sink)");
+    println("default output: /tmp/capstan-inventory.csv (CSV is written through the typed CSV sink)");
     println("Input must be a complete, explicit list of tracked files (for example, from git ls-files).");
 }
 
 int main() {
     List<string> argv = args(4096, 4096, 16777216);
-    string output_path = "inventory.csv";
+    string output_path = "/tmp/capstan-inventory.csv";
     bool output_specified = false;
     List<string> paths = new List<string>();
     bool options = true;
