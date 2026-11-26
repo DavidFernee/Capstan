@@ -89,6 +89,21 @@ theorem nativeCCAMMachineInitial_matches
   simp [NativeCCAMMachineStateMatches, nativeCCAMMachineInitial,
     initialMachineState, hentry, hnr, hrf]
 
+/-- The concrete evaluator's ordinary fall-through PC increment. -/
+def nativePCAdvance (pc : Int) : Int := pc + 1
+
+/-- At every non-final PC, the concrete integer increment agrees with the
+Lean machine's sequential successor. The premise is essential: the final
+instruction in CCAM-SF-P has an explicit control effect and must not fall
+through. -/
+theorem nativePCAdvance_corresponds
+    {m : Nat} (pc : Fin (m + 1)) (hbeforeLast : pc.val < m) :
+    nativePCAdvance (Int.ofNat pc.val) =
+      Int.ofNat (sequentialPC pc).val := by
+  rw [sequentialPC_increments_before_last pc hbeforeLast]
+  simp [nativePCAdvance]
+  omega
+
 /-- The native evaluator's pre-dispatch fuel gate, projected to signed integers.
 A validated machine state has nonnegative counters, so the relation below
 compares it to the Nat-valued Lean budget without an unchecked conversion. -/
