@@ -17,7 +17,7 @@ MAX_SOURCE_BYTES = 16 * 1024 * 1024
 MAX_IMPORT_FILES = 256
 MAX_TOTAL_SOURCE_BYTES = 32 * 1024 * 1024
 MAX_TOTAL_TOKENS = 500_000
-MAX_TOTAL_AST_NODES = 100_000
+MAX_TOTAL_AST_NODES = 200_000
 
 KEYWORDS = {
     "struct", "const", "if", "else", "while", "for", "return", "break", "continue",
