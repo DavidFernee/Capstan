@@ -12,6 +12,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CAPSTANC="$ROOT/build/capstanc"
 CC="${CC:-cc}"
 CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime"
+HARDEN_FLAGS="-fstack-protector-strong -fPIE -pie"
+if [[ "$(uname -s)" == "Linux" ]]; then HARDEN_FLAGS="$HARDEN_FLAGS -D_FORTIFY_SOURCE=2"; fi
 
 if [[ ! -x "$CAPSTANC" ]]; then
   echo "capstan: bootstrapping the compiler (first run)..." >&2
@@ -49,14 +51,14 @@ case "$cmd" in
   build)
     [[ -n "$out" ]] || { echo "capstan build: needs -o program" >&2; exit 2; }
     "$CAPSTANC" build -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
-    "$CC" $CFLAGS "$tmp/out.c" -o "$out" ;;
+    "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/out.c" -o "$out" ;;
   run)
     "$CAPSTANC" build -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
-    "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/prog"
+    "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/out.c" -o "$tmp/prog"
     "$tmp/prog" "${progargs[@]}" ;;
   test)
     "$CAPSTANC" test -o "$tmp/out.c" "${flags[@]}" "${files[@]}"
-    "$CC" $CFLAGS "$tmp/out.c" -o "$tmp/tests"
+    "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/out.c" -o "$tmp/tests"
     "$tmp/tests" ;;
   native)
     [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]] || {
@@ -74,7 +76,7 @@ case "$cmd" in
       "$ROOT/verification/ccam_lowering.cap" \
       "$ROOT/verification/ccam_native_x64.cap" \
       "$ROOT/tools/native_driver.cap"
-    "$CC" $CFLAGS "$tmp/native-driver.c" -o "$tmp/native-driver"
+    "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/native-driver.c" -o "$tmp/native-driver"
     workspace_root="${workspace_root:-$(pwd -P)}"
     workspace_root="$(cd "$workspace_root" 2>/dev/null && pwd -P)" || {
       echo "capstan native: workspace root must be an existing directory" >&2
