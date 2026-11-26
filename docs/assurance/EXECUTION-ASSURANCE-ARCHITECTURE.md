@@ -112,7 +112,7 @@ The bounded-input work also makes the compiler's source/import graph finite acro
 
 The source/runtime boundary now requires an explicit finite caller-supplied bound for direct input operations, including \`args\`, \`read_file\`, \`read_line\`, \`read_bytes\`, \`secret_env\` and the workspace file reader. The checker enforces arity and bound types; generated runtime and stage-0 paths enforce the corresponding byte/count limits before allocation or consumption. The normative details and exact limits are in [the bounded-input contract](../architecture/BOUNDED-INPUT-CONTRACT.md).
 
-These are resource bounds, not timeouts. In particular, \`read_file\` may still block on a live FIFO or device; the contract does not claim a wall-clock bound or cancellation guarantee. Input remains \`Tainted\` unless separately validated. This work strengthens the existing C-backed production path; it does not establish a C-free runtime or formal source-checker proof.
+These are resource bounds, not timeouts. `read_file(path, max)` now accepts regular files only: both the native runtime and stage-0 bootstrap open non-blocking and reject FIFOs, sockets, devices and directories before reading. This prevents an idle live FIFO from blocking the bounded read, but does not provide a deadline for slow or stalled host filesystems. Synchronous stdin operations such as `read_line` and `read_bytes` may still wait indefinitely; issue #473 remains open for deadline/cancellation semantics or an explicit host/profile policy. Input remains `Tainted` unless separately validated. This work strengthens the existing C-backed production path; it does not establish a C-free runtime or formal source-checker proof.
 
 ## 4. Required proof composition
 
