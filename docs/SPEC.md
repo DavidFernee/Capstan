@@ -24,7 +24,7 @@
 | `Tainted` | immutable byte string from an untrusted source |
 | `Secret` | a credential; cannot be printed, concatenated, compared with `==` or read |
 | `Html` | text escaped for HTML (from `escape_html()`); joins only with `Html` and trusted `string`, and is accepted only by `write_html_file()` |
-| `LogText` | text escaped for logs and terminals (from `escape_log()`): printable ASCII and valid UTF-8 text are kept; control bytes, invalid UTF-8, C1 controls, bidirectional controls, line and paragraph separators and the byte-order mark become `\xNN`. Same rules as `Html` |
+| `LogText` | text escaped for logs and terminals (from `escape_log()`): printable ASCII and valid UTF-8 text are kept; control bytes, invalid UTF-8, C1 controls, bidirectional controls, line and paragraph separators and the byte-order mark become `\\xNN`; accepted by terminal output and `write_log_file()` |
 | `S` | a `struct` (reference type) |
 | `List<T>` | growable, bounds-checked list |
 | `Map<T>` | map from `string` keys to `T`, iterated in insertion order. Keys are hashed with SipHash-1-3 under a random per-process key, so chosen keys cannot be made to collide (CWE-407) |
@@ -151,7 +151,10 @@ explicitly. Their meaning therefore never depends on precedence.
 | `workspace_read_file(root, relative, max)` → `Tainted?` | Linux-only source-loader operation. Reads a regular file relative to the pinned root with `openat2` beneath/no-symlink/no-magic-link/no-mount-crossing resolution. Relative dot segments and absolute paths are rejected; unsupported kernels fail closed. This is not an unforgeable language-level sandbox type. |
 | `workspace_close(root)` | Closes the process directory descriptor returned by `workspace_open`. Trusted host code must close it when finished. |
 | `read_bytes(n)` → `Tainted?`, `flush()` | `read_bytes` reads exactly `n` bytes of standard input (fewer only if the input ends first), every byte kept, or gives `none` at end of input; `read_bytes(0)` is `""`. `n` outside 0..2^30 stops the program (CWE-789); memory grows with the bytes read, not with `n`. Like `read_line`, this synchronous host-stdin operation may wait indefinitely; the byte count is not a deadline. `flush()` writes out everything printed so far, for programs that converse over a pipe (a language server, say) |
-| `write_file(path, data)` → `bool` | format-agnostic sink; accepts trusted `string` only. Rejects `Tainted` and context-encoded values (CWE-20/CWE-116); password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |\n| `write_html_file(path, data)` → `bool` | accepts `Html` only |\n| `write_log_file(path, data)` → `bool` | accepts `LogText` only |\n| `write_csv_file(path, data)` → `bool` | accepts `CsvText` only |
+| `write_file(path, data)` → `bool` | format-agnostic sink; accepts trusted `string` only. Rejects `Tainted` and context-encoded values (CWE-20/CWE-116); password-named data is rejected (CWE-256); ignoring the result is warning CWE-252; a path containing a NUL byte gives `false` |
+| `write_html_file(path, data)` → `bool` | accepts `Html` only |
+| `write_log_file(path, data)` → `bool` | accepts `LogText` only |
+| `write_csv_file(path, data)` → `bool` | accepts `CsvText` only |
 | `join(list, sep)`, `exit(code)`, `assert(cond)` | `List<string>` joins to `string`; `List<Tainted>` joins to `Tainted` and preserves untrusted provenance. The runtime computes the output size and allocates the result once. |
 | `validate_ident(t)` → `string?`, `validate_int(t)` → `int?` | validators: the safe ways out of `Tainted` |
 | `escape_html(t)` → `Html`, `escape_log(t)` → `LogText`, `escape_c(t)` → `string` | escapers. `escape_log()` may explicitly re-encode an existing contextual value (`Html`, `CsvText` or `LogText`) for terminal/log output. `escape_html()` output is safe in element text and in a quoted attribute value; joined to literal HTML in the same expression, it is an error (CWE-79) inside a tag outside a quoted value, in an event-handler (`on…`) or URL or style attribute (`href`, `src`, `action`, `style` and others), or inside `<script>`, `<style>` or a comment |
