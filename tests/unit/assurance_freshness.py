@@ -183,8 +183,13 @@ class FreshnessTests(unittest.TestCase):
     def test_malformed_manifest_shape_fails_closed_after_schema_error(self):
         schema_path = os.path.join(self.repo, "schema.json")
         manifest_path = os.path.join(self.repo, "manifest.json")
-        with open(schema_path, "w", encoding="utf-8") as f:
-            f.write("{}")
+        boundary_schema_path = os.path.join(self.repo, "boundary-schema.json")
+        boundaries_path = os.path.join(self.repo, "boundaries.json")
+        for path in (schema_path, boundary_schema_path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{}")
+        with open(boundaries_path, "w", encoding="utf-8") as f:
+            f.write('{"baseline_commit": "%s", "production_path": [], "target_path": [], "boundaries": []}' % self.baseline)
         with open(manifest_path, "w", encoding="utf-8") as f:
             f.write('{"snapshot": [], "claims": []}')
 
@@ -208,7 +213,8 @@ class FreshnessTests(unittest.TestCase):
         previous_argv = sys.argv
         sys.modules["jsonschema"] = fake
         sys.argv = ["assurance-validate.py", "--schema", "schema.json",
-                    "--manifest", "manifest.json"]
+                    "--manifest", "manifest.json", "--boundary-schema",
+                    "boundary-schema.json", "--boundaries", "boundaries.json"]
         output = io.StringIO()
         try:
             with contextlib.redirect_stdout(output):
@@ -230,8 +236,13 @@ class FreshnessTests(unittest.TestCase):
 
         schema_path = os.path.join(self.repo, "schema.json")
         manifest_path = os.path.join(self.repo, "manifest.json")
-        with open(schema_path, "w", encoding="utf-8") as f:
-            f.write("{}")
+        boundary_schema_path = os.path.join(self.repo, "boundary-schema.json")
+        boundaries_path = os.path.join(self.repo, "boundaries.json")
+        for path in (schema_path, boundary_schema_path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{}")
+        with open(boundaries_path, "w", encoding="utf-8") as f:
+            f.write('{"baseline_commit": "%s", "production_path": [], "target_path": [], "boundaries": []}' % self.baseline)
         manifest = {
             "snapshot": {"commit": self.baseline},
             "claims": [{
@@ -267,7 +278,9 @@ class FreshnessTests(unittest.TestCase):
         previous_argv = sys.argv
         sys.modules["jsonschema"] = fake
         sys.argv = ["assurance-validate.py", "--schema", "schema.json",
-                    "--manifest", "manifest.json", "--require-fresh"]
+                    "--manifest", "manifest.json", "--boundary-schema",
+                    "boundary-schema.json", "--boundaries", "boundaries.json",
+                    "--require-fresh"]
         output = io.StringIO()
         try:
             with contextlib.redirect_stdout(output):
