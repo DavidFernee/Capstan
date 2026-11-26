@@ -33,8 +33,8 @@ def provenanceWildcardSelector : ProvenanceSelector → ProvenanceSelector
 def provenanceWildcardPath (path : ProvenancePath) : ProvenancePath :=
   { path with selectors := path.selectors.map provenanceWildcardSelector }
 
-def provenancePrefix (prefix path : ProvenancePath) : Prop :=
-  prefix.root = path.root ∧ ∃ suffix, prefix.selectors ++ suffix = path.selectors
+def provenancePrefix (ancestor path : ProvenancePath) : Prop :=
+  ancestor.root = path.root ∧ ∃ suffix, ancestor.selectors ++ suffix = path.selectors
 
 /-- A conservative may-derived relation: exact, wildcard, ancestor or descendant facts. -/
 def provenancePathMarked (facts : List ProvenancePath) (path : ProvenancePath) : Prop :=
@@ -118,7 +118,7 @@ theorem provenance_fact_budget_fails_closed (facts : List ProvenancePath)
     (path : ProvenancePath) (hfull : provenancePathLimit ≤ facts.length)
     (hnew : path ∉ facts) :
     addProvenanceFactBounded provenancePathLimit facts path = none := by
-  simp [addProvenanceFactBounded, provenancePathLimit, hnew,
-    Nat.not_lt.mpr hfull]
+  have hnot : ¬ facts.length < provenancePathLimit := Nat.not_lt.mpr hfull
+  simp [addProvenanceFactBounded, hnew, hnot]
 
 end CapstanVerification
