@@ -29,6 +29,7 @@ struct Lexer {
     int tok_start;
     int file;
     Ctx ctx;
+    CompileBudget budget;
     List<Token> toks;
 }
 
@@ -86,6 +87,13 @@ int peek_ch(Lexer lx, int ahead) {
 }
 
 void add_tok(Lexer lx, int k, string s, int n) {
+    if (lx.budget.exhausted) { return; }
+    if (lx.budget.tokens >= MAX_TOTAL_TOKENS) {
+        lx.budget.exhausted = true;
+        report_at(lx.ctx, lx.file, lx.line, lx.tok_start - lx.line_start + 1, true, "CWE-400", "import graph exceeds total token budget (limit " + int_to_str(MAX_TOTAL_TOKENS) + ")");
+        return;
+    }
+    lx.budget.tokens += 1;
     lx.toks.push(new Token{k: k, s: s, n: n, line: lx.line, col: lx.tok_start - lx.line_start + 1, file: lx.file});
 }
 
@@ -227,7 +235,7 @@ void lex_interp(Lexer lx) {
             add_tok(lx, T_OP, "+", 0);
             add_tok(lx, T_ID, "to_text", 0);
             add_tok(lx, T_OP, "(", 0);
-            Lexer sub = new Lexer{src: lx.src, pos: lx.pos + 1, end: j, line: lx.line, line_start: lx.line_start, tok_start: lx.pos + 1, file: lx.file, ctx: lx.ctx, toks: lx.toks};
+            Lexer sub = new Lexer{src: lx.src, pos: lx.pos + 1, end: j, line: lx.line, line_start: lx.line_start, tok_start: lx.pos + 1, file: lx.file, ctx: lx.ctx, budget: lx.budget, toks: lx.toks};
             lex_run(sub);
             lx.tok_start = j;
             add_tok(lx, T_OP, ")", 0);
@@ -347,8 +355,8 @@ void check_invisible(Lexer lx) {
     }
 }
 
-List<Token> lex(Ctx ctx, Tainted src, int file) {
-    Lexer lx = new Lexer{src: src, pos: 0, end: src.len(), line: 1, line_start: 0, tok_start: 0, file: file, ctx: ctx, toks: new List<Token>()};
+List<Token> lex_bounded(Ctx ctx, Tainted src, int file, CompileBudget budget) {
+    Lexer lx = new Lexer{src: src, pos: 0, end: src.len(), line: 1, line_start: 0, tok_start: 0, file: file, ctx: ctx, budget: budget, toks: new List<Token>()};
     check_invisible(lx);
     lex_run(lx);
     lx.tok_start = lx.pos;
@@ -356,10 +364,14 @@ List<Token> lex(Ctx ctx, Tainted src, int file) {
     return lx.toks;
 }
 
+List<Token> lex(Ctx ctx, Tainted src, int file) {
+    return lex_bounded(ctx, src, file, new_compile_budget());
+}
+
 // Tokenise src[pos, end), appending to lx.toks.
 void lex_run(Lexer lx) {
     Tainted src = lx.src;
-    while (lx.pos < lx.end) {
+    while (lx.pos < lx.end && !lx.budget.exhausted) {
         int c = peek_ch(lx, 0);
         lx.tok_start = lx.pos;
         if (c == '\n') {
