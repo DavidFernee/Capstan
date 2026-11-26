@@ -121,6 +121,20 @@ else
   bad "Bosun bounded storage kernel" "$out"
 fi
 
+section "Capstan-native verification: Bosun transaction lifecycle and WAL model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/bosuns_locker_protocol.cap" 2>&1)"; then
+  ok "transaction typestate, cancellation boundary, recovery idempotence and WAL durability ordering"
+else
+  bad "Bosun transaction lifecycle and WAL model" "$out"
+fi
+
+section "Capstan-native verification: Bosun bounded transaction-history oracle"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/bosuns_locker_history.cap" 2>&1)"; then
+  ok "serial-order witnesses, real-time constraints, write-skew rejection and bounded inconclusive results"
+else
+  bad "Bosun transaction-history oracle" "$out"
+fi
+
 section "Capstan-native verification: bounded concurrency reference machine"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
   ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"
