@@ -1,0 +1,556 @@
+// Bosun's Locker BL-003/BL-004 bounded transaction and persistence models.
+//
+// These are executable reference state machines. They do not implement the
+// database, filesystem adapter, WAL writer or recovery engine. Their purpose
+// is to make lifecycle and WAL ordering obligations executable before selecting
+// a concrete storage/concurrency algorithm.
+
+const int BL_PHASE_NEW = 0;
+const int BL_PHASE_ACTIVE = 1;
+const int BL_PHASE_PREPARING = 2;
+const int BL_PHASE_COMMIT_DECIDED = 3;
+const int BL_PHASE_DURABLE_COMMITTED = 4;
+const int BL_PHASE_ABORTING = 5;
+const int BL_PHASE_ABORTED = 6;
+
+const int BL_ACTION_BEGIN = 1;
+const int BL_ACTION_OPERATION = 2;
+const int BL_ACTION_PREPARE = 3;
+const int BL_ACTION_VALIDATION_FAIL = 4;
+const int BL_ACTION_COMMIT_DECISION = 5;
+const int BL_ACTION_DURABLE_COMMIT = 6;
+const int BL_ACTION_ACKNOWLEDGE = 7;
+const int BL_ACTION_REQUEST_ABORT = 8;
+const int BL_ACTION_FINISH_ABORT = 9;
+
+struct BLTxnState {
+    int phase;
+    int remaining_operations;
+    bool commit_record_durable;
+    bool writes_visible;
+    bool acknowledged;
+}
+
+struct BLTxnTransition {
+    bool accepted;
+    BLTxnState state;
+    string error;
+}
+
+struct BLRecoveryResult {
+    bool valid;
+    BLTxnState state;
+    string error;
+}
+
+BLTxnState bl_txn_initial(int operation_budget) {
+    return new BLTxnState{
+        phase: BL_PHASE_NEW,
+        remaining_operations: operation_budget,
+        commit_record_durable: false,
+        writes_visible: false,
+        acknowledged: false
+    };
+}
+
+BLTxnState bl_txn_copy_state(BLTxnState source) {
+    return new BLTxnState{
+        phase: source.phase,
+        remaining_operations: source.remaining_operations,
+        commit_record_durable: source.commit_record_durable,
+        writes_visible: source.writes_visible,
+        acknowledged: source.acknowledged
+    };
+}
+
+bool bl_txn_invariant(BLTxnState state) {
+    if (state.phase < BL_PHASE_NEW || state.phase > BL_PHASE_ABORTED ||
+        state.remaining_operations < 0) {
+        return false;
+    }
+    if (state.commit_record_durable &&
+        state.phase != BL_PHASE_DURABLE_COMMITTED) {
+        return false;
+    }
+    if (state.writes_visible &&
+        (state.phase != BL_PHASE_DURABLE_COMMITTED ||
+         !state.commit_record_durable)) {
+        return false;
+    }
+    if (state.acknowledged &&
+        (state.phase != BL_PHASE_DURABLE_COMMITTED ||
+         !state.commit_record_durable || !state.writes_visible)) {
+        return false;
+    }
+    if ((state.phase == BL_PHASE_NEW || state.phase == BL_PHASE_ACTIVE ||
+         state.phase == BL_PHASE_PREPARING || state.phase == BL_PHASE_ABORTING ||
+         state.phase == BL_PHASE_ABORTED || state.phase == BL_PHASE_COMMIT_DECIDED) &&
+        (state.commit_record_durable || state.writes_visible || state.acknowledged)) {
+        return false;
+    }
+    if (state.phase == BL_PHASE_DURABLE_COMMITTED &&
+        (!state.commit_record_durable || !state.writes_visible)) {
+        return false;
+    }
+    return true;
+}
+
+BLTxnTransition bl_txn_reject(BLTxnState state, string error) {
+    return new BLTxnTransition{
+        accepted: false,
+        state: state,
+        error: error
+    };
+}
+
+BLTxnTransition bl_txn_accept(BLTxnState state) {
+    return new BLTxnTransition{
+        accepted: true,
+        state: state,
+        error: ""
+    };
+}
+
+// State transition checks are independent of callers. A rejected operation
+// returns the original state unchanged; callers cannot partially apply it.
+BLTxnTransition bl_txn_step(BLTxnState state, int action) {
+    if (!bl_txn_invariant(state)) {
+        return bl_txn_reject(state, "invalid_prior_transaction_state");
+    }
+    BLTxnState next = bl_txn_copy_state(state);
+    if (action == BL_ACTION_BEGIN) {
+        if (next.phase != BL_PHASE_NEW || next.remaining_operations < 0) {
+            return bl_txn_reject(state, "invalid_begin");
+        }
+        next.phase = BL_PHASE_ACTIVE;
+        return bl_txn_accept(next);
+    }
+
+    if (action == BL_ACTION_OPERATION) {
+        if (next.phase != BL_PHASE_ACTIVE) {
+            return bl_txn_reject(state, "operation_outside_active");
+        }
+        if (next.remaining_operations <= 0) {
+            return bl_txn_reject(state, "transaction_budget_exhausted");
+        }
+        next.remaining_operations -= 1;
+        return bl_txn_accept(next);
+    }
+
+    if (action == BL_ACTION_PREPARE) {
+        if (next.phase != BL_PHASE_ACTIVE) {
+            return bl_txn_reject(state, "prepare_outside_active");
+        }
+        next.phase = BL_PHASE_PREPARING;
+        return bl_txn_accept(next);
+    }
+
+    if (action == BL_ACTION_VALIDATION_FAIL) {
+        if (next.phase != BL_PHASE_PREPARING) {
+            return bl_txn_reject(state, "validation_outside_preparing");
+        }
+        next.phase = BL_PHASE_ABORTING;
+        return bl_txn_accept(next);
+    }
+
+    if (action == BL_ACTION_COMMIT_DECISION) {
+        if (next.phase != BL_PHASE_PREPARING ||
+            next.commit_record_durable || next.writes_visible) {
+            return bl_txn_reject(state, "invalid_commit_decision");
+        }
+        next.phase = BL_PHASE_COMMIT_DECIDED;
+        return bl_txn_accept(next);
+    }
+
+    if (action == BL_ACTION_DURABLE_COMMIT) {
+        if (next.phase != BL_PHASE_COMMIT_DECIDED) {
+            return bl_txn_reject(state, "durability_without_commit_decision");
+        }
+        next.commit_record_durable = true;
+        next.writes_visible = true;
+        next.phase = BL_PHASE_DURABLE_COMMITTED;
+        return bl_txn_accept(next);
+    }
+
+    if (action == BL_ACTION_ACKNOWLEDGE) {
+        if (next.phase != BL_PHASE_DURABLE_COMMITTED ||
+            !next.commit_record_durable || !next.writes_visible) {
+            return bl_txn_reject(state, "acknowledgement_before_durable_commit");
+        }
+        next.acknowledged = true;
+        return bl_txn_accept(next);
+    }
+
+    if (action == BL_ACTION_REQUEST_ABORT) {
+        if (next.phase != BL_PHASE_ACTIVE &&
+            next.phase != BL_PHASE_PREPARING) {
+            return bl_txn_reject(state, "abort_after_commit_decision");
+        }
+        next.phase = BL_PHASE_ABORTING;
+        return bl_txn_accept(next);
+    }
+
+    if (action == BL_ACTION_FINISH_ABORT) {
+        if (next.phase != BL_PHASE_ABORTING || next.writes_visible ||
+            next.commit_record_durable) {
+            return bl_txn_reject(state, "invalid_abort_completion");
+        }
+        next.phase = BL_PHASE_ABORTED;
+        return bl_txn_accept(next);
+    }
+
+    return bl_txn_reject(state, "unknown_transaction_action");
+}
+
+// Recovery trusts only the durable commit record discovered by the storage
+// recovery scan. A non-durable decision is not a committed transaction.
+// Recovery is deterministic and idempotent for a fixed durable-log outcome.
+BLRecoveryResult bl_recover(BLTxnState before, bool durable_commit_found) {
+    if (before.phase == BL_PHASE_NEW) {
+        return new BLRecoveryResult{
+            valid: false,
+            state: before,
+            error: "cannot_recover_unstarted_transaction"
+        };
+    }
+
+    if (before.phase == BL_PHASE_DURABLE_COMMITTED) {
+        if (!durable_commit_found || !before.commit_record_durable ||
+            !before.writes_visible) {
+            return new BLRecoveryResult{
+                valid: false,
+                state: before,
+                error: "durable_state_disagrees_with_log"
+            };
+        }
+        return new BLRecoveryResult{valid: true, state: before, error: ""};
+    }
+
+    if (before.phase == BL_PHASE_COMMIT_DECIDED && durable_commit_found) {
+        BLTxnState committed = new BLTxnState{
+            phase: BL_PHASE_DURABLE_COMMITTED,
+            remaining_operations: before.remaining_operations,
+            commit_record_durable: true,
+            writes_visible: true,
+            acknowledged: false
+        };
+        return new BLRecoveryResult{valid: true, state: committed, error: ""};
+    }
+
+    if (before.phase == BL_PHASE_COMMIT_DECIDED && !durable_commit_found) {
+        BLTxnState aborted = new BLTxnState{
+            phase: BL_PHASE_ABORTED,
+            remaining_operations: before.remaining_operations,
+            commit_record_durable: false,
+            writes_visible: false,
+            acknowledged: false
+        };
+        return new BLRecoveryResult{valid: true, state: aborted, error: ""};
+    }
+
+    if (before.phase == BL_PHASE_ACTIVE ||
+        before.phase == BL_PHASE_PREPARING ||
+        before.phase == BL_PHASE_ABORTING ||
+        before.phase == BL_PHASE_ABORTED) {
+        if (durable_commit_found) {
+            return new BLRecoveryResult{
+                valid: false,
+                state: before,
+                error: "commit_record_found_without_commit_decision"
+            };
+        }
+        BLTxnState aborted = new BLTxnState{
+            phase: BL_PHASE_ABORTED,
+            remaining_operations: before.remaining_operations,
+            commit_record_durable: false,
+            writes_visible: false,
+            acknowledged: false
+        };
+        return new BLRecoveryResult{valid: true, state: aborted, error: ""};
+    }
+
+    return new BLRecoveryResult{
+        valid: false,
+        state: before,
+        error: "unknown_recovery_state"
+    };
+}
+
+const int BL_STORAGE_APPEND_UPDATE = 1;
+const int BL_STORAGE_APPEND_COMMIT = 2;
+const int BL_STORAGE_FLUSH_LOG = 3;
+const int BL_STORAGE_FLUSH_PAGE = 4;
+const int BL_STORAGE_ACK_COMMIT = 5;
+
+struct BLStorageState {
+    int next_lsn;
+    int durable_lsn;
+    int page_lsn;
+    bool page_persisted;
+    int commit_lsn;
+    bool acknowledged;
+}
+
+struct BLStorageTransition {
+    bool accepted;
+    BLStorageState state;
+    string error;
+}
+
+BLStorageState bl_storage_initial() {
+    return new BLStorageState{
+        next_lsn: 0,
+        durable_lsn: 0,
+        page_lsn: 0,
+        page_persisted: false,
+        commit_lsn: 0,
+        acknowledged: false
+    };
+}
+
+bool bl_storage_invariant(BLStorageState state) {
+    if (state.next_lsn < 0 || state.durable_lsn < 0 ||
+        state.durable_lsn > state.next_lsn ||
+        state.page_lsn < 0 || state.page_lsn > state.next_lsn ||
+        state.commit_lsn < 0 || state.commit_lsn > state.next_lsn) {
+        return false;
+    }
+    if (state.page_persisted && state.page_lsn > state.durable_lsn) {
+        return false;
+    }
+    if (state.acknowledged &&
+        (state.commit_lsn <= 0 || state.durable_lsn < state.commit_lsn)) {
+        return false;
+    }
+    return true;
+}
+
+BLStorageState bl_storage_copy_state(BLStorageState source) {
+    return new BLStorageState{
+        next_lsn: source.next_lsn,
+        durable_lsn: source.durable_lsn,
+        page_lsn: source.page_lsn,
+        page_persisted: source.page_persisted,
+        commit_lsn: source.commit_lsn,
+        acknowledged: source.acknowledged
+    };
+}
+
+BLStorageTransition bl_storage_reject(BLStorageState state, string error) {
+    return new BLStorageTransition{
+        accepted: false,
+        state: state,
+        error: error
+    };
+}
+
+BLStorageTransition bl_storage_accept(BLStorageState state) {
+    return new BLStorageTransition{
+        accepted: true,
+        state: state,
+        error: ""
+    };
+}
+
+BLStorageTransition bl_storage_step(BLStorageState state, int action, int argument) {
+    if (!bl_storage_invariant(state)) {
+        return bl_storage_reject(state, "invalid_prior_storage_state");
+    }
+    BLStorageState next = bl_storage_copy_state(state);
+
+    if (action == BL_STORAGE_APPEND_UPDATE) {
+        if (argument != 0 || next.acknowledged || next.commit_lsn != 0) {
+            return bl_storage_reject(state, "invalid_update_append");
+        }
+        next.next_lsn += 1;
+        return bl_storage_accept(next);
+    }
+
+    if (action == BL_STORAGE_APPEND_COMMIT) {
+        if (argument != 0 || next.commit_lsn != 0 || next.acknowledged) {
+            return bl_storage_reject(state, "invalid_commit_append");
+        }
+        next.next_lsn += 1;
+        next.commit_lsn = next.next_lsn;
+        return bl_storage_accept(next);
+    }
+
+    if (action == BL_STORAGE_FLUSH_LOG) {
+        if (argument < next.durable_lsn || argument > next.next_lsn) {
+            return bl_storage_reject(state, "invalid_log_flush_target");
+        }
+        next.durable_lsn = argument;
+        return bl_storage_accept(next);
+    }
+
+    if (action == BL_STORAGE_FLUSH_PAGE) {
+        if (argument <= 0 || argument > next.next_lsn ||
+            argument > next.durable_lsn) {
+            return bl_storage_reject(state, "write_ahead_log_order_violation");
+        }
+        if (argument < next.page_lsn) {
+            return bl_storage_reject(state, "page_lsn_regression");
+        }
+        next.page_lsn = argument;
+        next.page_persisted = true;
+        return bl_storage_accept(next);
+    }
+
+    if (action == BL_STORAGE_ACK_COMMIT) {
+        if (next.commit_lsn <= 0 ||
+            next.durable_lsn < next.commit_lsn) {
+            return bl_storage_reject(state, "acknowledgement_before_log_durable");
+        }
+        next.acknowledged = true;
+        return bl_storage_accept(next);
+    }
+
+    return bl_storage_reject(state, "unknown_storage_action");
+}
+
+bool bl_storage_commit_survives_crash(BLStorageState state) {
+    return state.commit_lsn > 0 && state.durable_lsn >= state.commit_lsn;
+}
+
+test "Bosun transaction state machine rejects operations outside active state" {
+    BLTxnState initial = bl_txn_initial(2);
+    BLTxnTransition before_begin = bl_txn_step(initial, BL_ACTION_OPERATION);
+    assert(!before_begin.accepted);
+    assert(before_begin.state.phase == BL_PHASE_NEW);
+
+    BLTxnTransition begun = bl_txn_step(initial, BL_ACTION_BEGIN);
+    assert(begun.accepted && begun.state.phase == BL_PHASE_ACTIVE);
+    BLTxnTransition prepared = bl_txn_step(begun.state, BL_ACTION_PREPARE);
+    assert(prepared.accepted && prepared.state.phase == BL_PHASE_PREPARING);
+    BLTxnTransition late_operation = bl_txn_step(prepared.state, BL_ACTION_OPERATION);
+    assert(!late_operation.accepted);
+    assert(late_operation.state.phase == BL_PHASE_PREPARING);
+}
+
+test "Bosun transaction budget is enforced and rejection is failure-atomic" {
+    BLTxnState initial = bl_txn_initial(1);
+    BLTxnState active = bl_txn_step(initial, BL_ACTION_BEGIN).state;
+    BLTxnState once = bl_txn_step(active, BL_ACTION_OPERATION).state;
+    assert(once.remaining_operations == 0);
+    BLTxnTransition exhausted = bl_txn_step(once, BL_ACTION_OPERATION);
+    assert(!exhausted.accepted);
+    assert(exhausted.error == "transaction_budget_exhausted");
+    assert(exhausted.state.remaining_operations == 0);
+    assert(exhausted.state.phase == BL_PHASE_ACTIVE);
+}
+
+test "Bosun cannot acknowledge a commit before durable persistence" {
+    BLTxnState active = bl_txn_step(bl_txn_initial(4), BL_ACTION_BEGIN).state;
+    BLTxnState preparing = bl_txn_step(active, BL_ACTION_PREPARE).state;
+    BLTxnState decided = bl_txn_step(preparing, BL_ACTION_COMMIT_DECISION).state;
+    BLTxnTransition premature = bl_txn_step(decided, BL_ACTION_ACKNOWLEDGE);
+    assert(!premature.accepted);
+    assert(premature.error == "acknowledgement_before_durable_commit");
+    BLTxnState durable = bl_txn_step(decided, BL_ACTION_DURABLE_COMMIT).state;
+    BLTxnState acknowledged = bl_txn_step(durable, BL_ACTION_ACKNOWLEDGE).state;
+    assert(acknowledged.acknowledged);
+    assert(acknowledged.writes_visible && acknowledged.commit_record_durable);
+}
+
+test "Bosun cannot abort after the commit decision" {
+    BLTxnState active = bl_txn_step(bl_txn_initial(4), BL_ACTION_BEGIN).state;
+    BLTxnState preparing = bl_txn_step(active, BL_ACTION_PREPARE).state;
+    BLTxnState decided = bl_txn_step(preparing, BL_ACTION_COMMIT_DECISION).state;
+    BLTxnTransition aborting = bl_txn_step(decided, BL_ACTION_REQUEST_ABORT);
+    assert(!aborting.accepted);
+    assert(aborting.error == "abort_after_commit_decision");
+    assert(aborting.state.phase == BL_PHASE_COMMIT_DECIDED);
+}
+
+test "Bosun recovery resolves uncertain commit and is idempotent" {
+    BLTxnState active = bl_txn_step(bl_txn_initial(4), BL_ACTION_BEGIN).state;
+    BLTxnState preparing = bl_txn_step(active, BL_ACTION_PREPARE).state;
+    BLTxnState decided = bl_txn_step(preparing, BL_ACTION_COMMIT_DECISION).state;
+
+    BLRecoveryResult absent = bl_recover(decided, false);
+    assert(absent.valid && absent.state.phase == BL_PHASE_ABORTED);
+    assert(!absent.state.writes_visible);
+
+    BLRecoveryResult present = bl_recover(decided, true);
+    assert(present.valid && present.state.phase == BL_PHASE_DURABLE_COMMITTED);
+    assert(present.state.writes_visible && present.state.commit_record_durable);
+    BLRecoveryResult repeated = bl_recover(present.state, true);
+    assert(repeated.valid);
+    assert(repeated.state.phase == present.state.phase);
+    assert(repeated.state.writes_visible == present.state.writes_visible);
+}
+
+test "Bosun WAL ordering rejects page flush before the log record" {
+    BLStorageState initial = bl_storage_initial();
+    BLStorageState update = bl_storage_step(initial, BL_STORAGE_APPEND_UPDATE, 0).state;
+    BLStorageTransition page_early = bl_storage_step(update, BL_STORAGE_FLUSH_PAGE, 1);
+    assert(!page_early.accepted);
+    assert(page_early.error == "write_ahead_log_order_violation");
+    assert(!page_early.state.page_persisted);
+}
+
+test "Bosun WAL commit acknowledgement requires durable commit LSN" {
+    BLStorageState initial = bl_storage_initial();
+    BLStorageState update = bl_storage_step(initial, BL_STORAGE_APPEND_UPDATE, 0).state;
+    BLStorageState commit = bl_storage_step(update, BL_STORAGE_APPEND_COMMIT, 0).state;
+    BLStorageTransition early_ack = bl_storage_step(commit, BL_STORAGE_ACK_COMMIT, 0);
+    assert(!early_ack.accepted);
+    assert(!early_ack.state.acknowledged);
+
+    BLStorageState flushed = bl_storage_step(commit, BL_STORAGE_FLUSH_LOG, commit.commit_lsn).state;
+    BLStorageState page = bl_storage_step(flushed, BL_STORAGE_FLUSH_PAGE, 1).state;
+    BLStorageState ack = bl_storage_step(page, BL_STORAGE_ACK_COMMIT, 0).state;
+    assert(ack.acknowledged);
+    assert(bl_storage_invariant(ack));
+    assert(bl_storage_commit_survives_crash(ack));
+}
+
+test "Bosun unflushed commit does not survive the declared crash model" {
+    BLStorageState initial = bl_storage_initial();
+    BLStorageState update = bl_storage_step(initial, BL_STORAGE_APPEND_UPDATE, 0).state;
+    BLStorageState commit = bl_storage_step(update, BL_STORAGE_APPEND_COMMIT, 0).state;
+    assert(!bl_storage_commit_survives_crash(commit));
+}
+
+test "Bosun transaction transitions preserve predecessor snapshots" {
+    BLTxnState initial = bl_txn_initial(3);
+    BLTxnState active = bl_txn_step(initial, BL_ACTION_BEGIN).state;
+    assert(initial.phase == BL_PHASE_NEW);
+    assert(active.phase == BL_PHASE_ACTIVE);
+    BLTxnState preparing = bl_txn_step(active, BL_ACTION_PREPARE).state;
+    assert(active.phase == BL_PHASE_ACTIVE);
+    assert(preparing.phase == BL_PHASE_PREPARING);
+    assert(bl_txn_invariant(initial));
+    assert(bl_txn_invariant(active));
+    assert(bl_txn_invariant(preparing));
+}
+
+test "Bosun transaction state invariant rejects forged durability flags" {
+    BLTxnState forged = bl_txn_initial(2);
+    forged.writes_visible = true;
+    assert(!bl_txn_invariant(forged));
+    BLTxnTransition rejected = bl_txn_step(forged, BL_ACTION_ACKNOWLEDGE);
+    assert(!rejected.accepted);
+    assert(rejected.error == "invalid_prior_transaction_state");
+}
+
+
+test "Bosun WAL model rejects page-LSN regression and post-commit updates" {
+    BLStorageState initial = bl_storage_initial();
+    BLStorageState update = bl_storage_step(initial, BL_STORAGE_APPEND_UPDATE, 0).state;
+    BLStorageState commit = bl_storage_step(update, BL_STORAGE_APPEND_COMMIT, 0).state;
+    BLStorageState flushed = bl_storage_step(commit, BL_STORAGE_FLUSH_LOG, commit.commit_lsn).state;
+    BLStorageState page = bl_storage_step(flushed, BL_STORAGE_FLUSH_PAGE, 2).state;
+    BLStorageTransition stale = bl_storage_step(page, BL_STORAGE_FLUSH_PAGE, 1);
+    assert(!stale.accepted);
+    assert(stale.error == "page_lsn_regression");
+    BLStorageTransition late_update = bl_storage_step(commit, BL_STORAGE_APPEND_UPDATE, 0);
+    assert(!late_update.accepted);
+}
+
+test "Bosun recovery rejects a commit record without a commit decision" {
+    BLTxnState active = bl_txn_step(bl_txn_initial(2), BL_ACTION_BEGIN).state;
+    BLRecoveryResult inconsistent = bl_recover(active, true);
+    assert(!inconsistent.valid);
+    assert(inconsistent.error == "commit_record_found_without_commit_decision");
+}
