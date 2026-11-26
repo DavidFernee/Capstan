@@ -1,0 +1,124 @@
+import CapstanVerification.NativeRegisterFileBridge
+import CapstanVerification.Machine
+
+namespace CapstanVerification
+
+/-!
+The first CCAM-SF-P whole-state bridge, deliberately restricted to the
+constructor state and the instruction-fuel admission guard.
+
+The source `CCAMMachineState` also carries output-byte state. That state is
+outside CCAM-SF-P and is intentionally absent here. This Lean record mirrors
+the remaining concrete fields; it is not generated from Capstan source and
+does not prove object identity, source execution, or opcode dispatch refinement.
+
+The register relation composes the native-field/list bridge with the existing
+typed RuntimeBridge. The program-entry premise is the SF-P restriction to PC 0.
+-/
+
+/-- SF-P projection of the concrete CCAM machine fields. -/
+structure NativeCCAMMachineState where
+  registers : List NativeCCAMRegister
+  instructionCount : Nat
+  pc : Int
+  steps : Int
+  maxSteps : Int
+  halted : Bool
+  haltHasValue : Bool
+  haltIntValue : Int
+  haltBoolValue : Bool
+  trapCode : String
+  trapDetail : String
+
+/-- Relation from the concrete-shaped state projection to the budgeted Lean
+machine and its two-layer native/runtime register representation. -/
+def NativeCCAMMachineStateMatches
+    {n m : Nat} {types : RegTypes n}
+    (native : NativeCCAMMachineState)
+    (runtimeRegisters : List RuntimeRegister)
+    (abstract : BudgetedMachineState n m types) : Prop :=
+  native.instructionCount = m + 1 ∧
+  native.pc = Int.ofNat abstract.machine.pc.val ∧
+  native.steps = Int.ofNat abstract.budget.used ∧
+  native.maxSteps = Int.ofNat abstract.budget.limit ∧
+  native.halted = false ∧
+  native.haltHasValue = false ∧
+  native.haltIntValue = 0 ∧
+  native.haltBoolValue = false ∧
+  native.trapCode = "" ∧
+  native.trapDetail = "" ∧
+  NativeRuntimeRegisterFileRelation native.registers runtimeRegisters ∧
+  RuntimeRegisterFileRelation types abstract.machine.registers runtimeRegisters
+
+/-- The field values installed by the successful concrete machine constructor.
+The source constructor separately validates nonnegative max_steps and creates
+an empty output buffer; the latter is outside this profile. -/
+def nativeCCAMMachineInitial
+    (registers : List NativeCCAMRegister)
+    (instructionCount maxSteps : Nat) : NativeCCAMMachineState :=
+  { registers := registers
+    instructionCount := instructionCount
+    pc := 0
+    steps := 0
+    maxSteps := Int.ofNat maxSteps
+    halted := false
+    haltHasValue := false
+    haltIntValue := 0
+    haltBoolValue := false
+    trapCode := ""
+    trapDetail := "" }
+
+/-- With the SF-P entry fixed at zero, the constructor's initial state agrees
+with the Lean initial state, assuming the already-proved register bridges. -/
+theorem nativeCCAMMachineInitial_matches
+    {n m : Nat} {types : RegTypes n}
+    (program : FiniteProgram n m types)
+    (hentry : program.entry.val = 0)
+    (nativeRegisters : List NativeCCAMRegister)
+    (runtimeRegisters : List RuntimeRegister)
+    (abstractRegisters : Registers n)
+    (maxSteps : Nat)
+    (hnr : NativeRuntimeRegisterFileRelation nativeRegisters runtimeRegisters)
+    (hrf : RuntimeRegisterFileRelation types abstractRegisters runtimeRegisters)
+    (hwellTyped : WellTyped types abstractRegisters) :
+    NativeCCAMMachineStateMatches
+      (nativeCCAMMachineInitial nativeRegisters (m + 1) maxSteps)
+      runtimeRegisters
+      { machine := initialMachineState program abstractRegisters hwellTyped
+        budget := { limit := maxSteps, used := 0, within_limit := Nat.zero_le maxSteps } } := by
+  simp [NativeCCAMMachineStateMatches, nativeCCAMMachineInitial,
+    initialMachineState, hentry, hnr, hrf]
+
+/-- The native evaluator's pre-dispatch fuel gate, projected to signed integers.
+A validated machine state has nonnegative counters, so the relation below
+compares it to the Nat-valued Lean budget without an unchecked conversion. -/
+def nativeStepAdmission (steps maxSteps : Int) : Except Trap Int :=
+  if steps >= maxSteps then
+    .error .instructionLimit
+  else
+    .ok (steps + 1)
+
+/-- The concrete-shaped signed-integer fuel guard agrees exactly with
+`consumeStep` on every well-formed Lean budget. A successful guard increments
+once; exhaustion traps before instruction execution. -/
+theorem nativeStepAdmission_corresponds (budget : StepBudget) :
+    nativeStepAdmission (Int.ofNat budget.used) (Int.ofNat budget.limit) =
+      (consumeStep budget).map (fun next => Int.ofNat next.used) := by
+  unfold nativeStepAdmission consumeStep
+  by_cases h : budget.used < budget.limit
+  · have hlt : Int.ofNat budget.used < Int.ofNat budget.limit := by
+      exact_mod_cast h
+    simp [h, hlt]
+    congr 1
+    omega
+  · have hge : Int.ofNat budget.limit ≤ Int.ofNat budget.used := by
+      exact_mod_cast (Nat.le_of_not_gt h)
+    simp [h, hge]
+
+/-- An exhausted budget is rejected before the native-shaped dispatch step. -/
+theorem nativeStepAdmission_exhausted
+    (steps maxSteps : Int) (hexhausted : steps >= maxSteps) :
+    nativeStepAdmission steps maxSteps = .error .instructionLimit := by
+  simp [nativeStepAdmission, hexhausted]
+
+end CapstanVerification
