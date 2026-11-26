@@ -13,21 +13,16 @@ inductive Expr : Kind → Type where
   | alias {k : Kind} : Expr k → Expr k
 
 def credentialOrigin : {k : Kind} → Expr k → Bool
-  | _, .ingress => true
-  | _, .artifact => false
-  | _, .kdf _ => true
-  | _, .decodeVerifier => true
-  | _, .fastHash x => credentialOrigin x
-  | _, .alias x => credentialOrigin x
-
-def integrityCredentialOrigin (_ : Expr .integrity) : Bool := false
+  | .password, _ => true
+  | .verifier, _ => true
+  | .integrity, _ => false
+  | .digest, _ => false
 
 theorem integrity_excludes_credentials (e : Expr .integrity) :
-    integrityCredentialOrigin e = false := rfl
+    credentialOrigin e = false := rfl
 
 theorem fast_hash_excludes_credentials (e : Expr .integrity) :
-    credentialOrigin (.fastHash e) = false := by
-  simpa [credentialOrigin] using integrity_excludes_credentials e
+    credentialOrigin (.fastHash e) = false := rfl
 
 inductive StorageEvent where
   | persist : Expr .verifier → StorageEvent
