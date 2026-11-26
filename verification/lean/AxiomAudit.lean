@@ -9,6 +9,7 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.TransactionTypestate
 import CapstanVerification.InjectionChecker
 import CapstanVerification.InjectionSinks
 import CapstanVerification.InjectionValue
@@ -317,3 +318,10 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.aggregate_build_preserves_field
 #print axioms CapstanVerification.selection_preserves_control
 #print axioms CapstanVerification.map_lookup_preserves_key
+
+-- Transaction typestate policy model: retain the theorem audit.
+#print axioms CapstanVerification.txOwnerIds_update_preserved
+#print axioms CapstanVerification.update_preserves_linear_context
+#print axioms CapstanVerification.advance_preserves_linear_context
+#print axioms CapstanVerification.tx_transition_rejects_after_commit
+#print axioms CapstanVerification.tx_transition_rejects_abort_after_decision
