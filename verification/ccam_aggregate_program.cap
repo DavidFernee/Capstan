@@ -16,6 +16,17 @@ const int CCAM_AGGREGATE_MAX_INSTRUCTIONS = 1000000;
 const int CCAM_AGGREGATE_MAX_REGISTERS = 262144;
 const int CCAM_AGGREGATE_MAX_LITERAL_BYTES = 1048576;
 
+// These tags mirror the closed enums in ccam_heap.cap. They are local because
+// the heap module intentionally does not export its representation constants.
+const int CCAM_PROGRAM_TYPE_INT = 1;
+const int CCAM_PROGRAM_TYPE_BOOL = 2;
+const int CCAM_PROGRAM_TYPE_REF = 3;
+const int CCAM_PROGRAM_OBJECT_RECORD = 1;
+const int CCAM_PROGRAM_OBJECT_ARRAY = 2;
+const int CCAM_PROGRAM_OBJECT_BYTES = 3;
+const int CCAM_PROGRAM_MAX_FIELDS = 4096;
+const int CCAM_PROGRAM_MAX_ARRAY_CAPACITY = 65536;
+
 const int CCAM_AGG_OP_ALLOC_RECORD = 1;
 const int CCAM_AGG_OP_ALLOC_ARRAY = 2;
 const int CCAM_AGG_OP_ALLOC_BYTES = 3;
@@ -72,9 +83,9 @@ CCAMAggregateValidationResult ccam_aggregate_validation_error(
 }
 
 bool ccam_aggregate_valid_value_type(int kind) {
-    return kind == CCAM_AGG_TYPE_INT ||
-        kind == CCAM_AGG_TYPE_BOOL ||
-        kind == CCAM_AGG_TYPE_REF;
+    return kind == CCAM_PROGRAM_TYPE_INT ||
+        kind == CCAM_PROGRAM_TYPE_BOOL ||
+        kind == CCAM_PROGRAM_TYPE_REF;
 }
 
 int ccam_aggregate_layout_index(List<CCAMHeapLayout> layouts, int type_id) {
@@ -94,7 +105,7 @@ CCAMAggregateValidationResult ccam_aggregate_validate_layouts(
     for (int i = 0; i < layouts.len(); i += 1) {
         CCAMHeapLayout layout = layouts[i];
         int fields = layout.field_types.len();
-        if (layout.type_id <= 0 || fields > CCAM_HEAP_MAX_FIELDS ||
+        if (layout.type_id <= 0 || fields > CCAM_PROGRAM_MAX_FIELDS ||
             layout.field_mutable.len() != fields ||
             (layout.field_ref_type_ids.len() != 0 &&
              layout.field_ref_type_ids.len() != fields)) {
@@ -114,7 +125,7 @@ CCAMAggregateValidationResult ccam_aggregate_validate_layouts(
             if (layout.field_ref_type_ids.len() == fields) {
                 reference_type = layout.field_ref_type_ids[f];
             }
-            if (kind == CCAM_AGG_TYPE_REF) {
+            if (kind == CCAM_PROGRAM_TYPE_REF) {
                 has_reference = true;
                 if (layout.field_ref_type_ids.len() != fields ||
                     reference_type < 0) {
@@ -133,7 +144,7 @@ CCAMAggregateValidationResult ccam_aggregate_validate_layouts(
     for (int i = 0; i < layouts.len(); i += 1) {
         CCAMHeapLayout layout = layouts[i];
         for (int f = 0; f < layout.field_types.len(); f += 1) {
-            if (layout.field_types[f] == CCAM_AGG_TYPE_REF &&
+            if (layout.field_types[f] == CCAM_PROGRAM_TYPE_REF &&
                 layout.field_ref_type_ids[f] > 0 &&
                 ccam_aggregate_layout_index(layouts, layout.field_ref_type_ids[f]) < 0) {
                 return ccam_aggregate_validation_error("unknown_reference_layout", -1);
@@ -162,57 +173,57 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
     CCAMAggregateInstruction op = program.instructions[pc];
     List<int> types = program.register_types;
     if (op.op == CCAM_AGG_OP_ALLOC_RECORD) {
-        if (!ccam_aggregate_register_is(types, op.destination, CCAM_AGG_TYPE_REF)) {
+        if (!ccam_aggregate_register_is(types, op.destination, CCAM_PROGRAM_TYPE_REF)) {
             return ccam_aggregate_validation_error("invalid_destination_register", pc);
         }
         if (ccam_aggregate_layout_index(program.layouts, op.descriptor_id) < 0) {
             return ccam_aggregate_validation_error("unknown_record_layout", pc);
         }
         initialized[op.destination] = true;
-        object_kinds[op.destination] = CCAM_HEAP_OBJECT_RECORD;
+        object_kinds[op.destination] = CCAM_PROGRAM_OBJECT_RECORD;
         object_descriptors[op.destination] = op.descriptor_id;
         array_element_types[op.destination] = 0;
         array_element_ref_type_ids[op.destination] = 0;
     } else if (op.op == CCAM_AGG_OP_ALLOC_ARRAY) {
-        if (!ccam_aggregate_register_is(types, op.destination, CCAM_AGG_TYPE_REF)) {
+        if (!ccam_aggregate_register_is(types, op.destination, CCAM_PROGRAM_TYPE_REF)) {
             return ccam_aggregate_validation_error("invalid_destination_register", pc);
         }
         if (!ccam_aggregate_valid_value_type(op.element_type) ||
             op.element_ref_type_id < 0 ||
-            (op.element_type != CCAM_AGG_TYPE_REF && op.element_ref_type_id != 0) ||
-            op.capacity < 0 || op.capacity > CCAM_HEAP_MAX_ARRAY_CAPACITY) {
+            (op.element_type != CCAM_PROGRAM_TYPE_REF && op.element_ref_type_id != 0) ||
+            op.capacity < 0 || op.capacity > CCAM_PROGRAM_MAX_ARRAY_CAPACITY) {
             return ccam_aggregate_validation_error("invalid_array_layout", pc);
         }
-        if (op.element_type == CCAM_AGG_TYPE_REF &&
+        if (op.element_type == CCAM_PROGRAM_TYPE_REF &&
             op.element_ref_type_id > 0 &&
             ccam_aggregate_layout_index(program.layouts, op.element_ref_type_id) < 0) {
             return ccam_aggregate_validation_error("unknown_array_reference_layout", pc);
         }
         initialized[op.destination] = true;
-        object_kinds[op.destination] = CCAM_HEAP_OBJECT_ARRAY;
+        object_kinds[op.destination] = CCAM_PROGRAM_OBJECT_ARRAY;
         object_descriptors[op.destination] = 0;
         array_element_types[op.destination] = op.element_type;
         array_element_ref_type_ids[op.destination] = op.element_ref_type_id;
     } else if (op.op == CCAM_AGG_OP_ALLOC_BYTES) {
-        if (!ccam_aggregate_register_is(types, op.destination, CCAM_AGG_TYPE_REF)) {
+        if (!ccam_aggregate_register_is(types, op.destination, CCAM_PROGRAM_TYPE_REF)) {
             return ccam_aggregate_validation_error("invalid_destination_register", pc);
         }
         if (op.literal_bytes.len() > CCAM_AGGREGATE_MAX_LITERAL_BYTES) {
             return ccam_aggregate_validation_error("literal_byte_limit_exceeded", pc);
         }
         initialized[op.destination] = true;
-        object_kinds[op.destination] = CCAM_HEAP_OBJECT_BYTES;
+        object_kinds[op.destination] = CCAM_PROGRAM_OBJECT_BYTES;
         object_descriptors[op.destination] = 0;
         array_element_types[op.destination] = 0;
         array_element_ref_type_ids[op.destination] = 0;
     } else if (op.op == CCAM_AGG_OP_FIELD_GET ||
                op.op == CCAM_AGG_OP_FIELD_SET) {
-        if (!ccam_aggregate_register_is(types, op.left, CCAM_AGG_TYPE_REF) ||
+        if (!ccam_aggregate_register_is(types, op.left, CCAM_PROGRAM_TYPE_REF) ||
             !initialized[op.left]) {
             return ccam_aggregate_validation_error("uninitialised_or_invalid_object_register", pc);
         }
         if (object_kinds[op.left] != 0 &&
-            object_kinds[op.left] != CCAM_HEAP_OBJECT_RECORD) {
+            object_kinds[op.left] != CCAM_PROGRAM_OBJECT_RECORD) {
             return ccam_aggregate_validation_error("object_kind_mismatch", pc);
         }
         if (object_descriptors[op.left] != 0 &&
@@ -245,12 +256,12 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
     } else if (op.op == CCAM_AGG_OP_ARRAY_APPEND ||
                op.op == CCAM_AGG_OP_ARRAY_GET ||
                op.op == CCAM_AGG_OP_ARRAY_SET) {
-        if (!ccam_aggregate_register_is(types, op.left, CCAM_AGG_TYPE_REF) ||
+        if (!ccam_aggregate_register_is(types, op.left, CCAM_PROGRAM_TYPE_REF) ||
             !initialized[op.left]) {
             return ccam_aggregate_validation_error("uninitialised_or_invalid_array_register", pc);
         }
         if (object_kinds[op.left] != 0 &&
-            object_kinds[op.left] != CCAM_HEAP_OBJECT_ARRAY) {
+            object_kinds[op.left] != CCAM_PROGRAM_OBJECT_ARRAY) {
             return ccam_aggregate_validation_error("object_kind_mismatch", pc);
         }
         if (array_element_types[op.left] != 0 &&
@@ -263,10 +274,10 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
         }
         if (!ccam_aggregate_valid_value_type(op.element_type) ||
             op.element_ref_type_id < 0 ||
-            (op.element_type != CCAM_AGG_TYPE_REF && op.element_ref_type_id != 0)) {
+            (op.element_type != CCAM_PROGRAM_TYPE_REF && op.element_ref_type_id != 0)) {
             return ccam_aggregate_validation_error("invalid_array_element_type", pc);
         }
-        if (op.element_type == CCAM_AGG_TYPE_REF &&
+        if (op.element_type == CCAM_PROGRAM_TYPE_REF &&
             op.element_ref_type_id > 0 &&
             ccam_aggregate_layout_index(program.layouts, op.element_ref_type_id) < 0) {
             return ccam_aggregate_validation_error("unknown_array_reference_layout", pc);
@@ -286,21 +297,21 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
     } else if (op.op == CCAM_AGG_OP_ARRAY_LEN ||
                op.op == CCAM_AGG_OP_BYTES_LEN ||
                op.op == CCAM_AGG_OP_BYTE_GET) {
-        if (!ccam_aggregate_register_is(types, op.destination, CCAM_AGG_TYPE_INT)) {
+        if (!ccam_aggregate_register_is(types, op.destination, CCAM_PROGRAM_TYPE_INT)) {
             return ccam_aggregate_validation_error("invalid_integer_destination", pc);
         }
-        if (!ccam_aggregate_register_is(types, op.left, CCAM_AGG_TYPE_REF) ||
+        if (!ccam_aggregate_register_is(types, op.left, CCAM_PROGRAM_TYPE_REF) ||
             !initialized[op.left]) {
             return ccam_aggregate_validation_error("uninitialised_or_invalid_reference_register", pc);
         }
         if (op.op == CCAM_AGG_OP_ARRAY_LEN &&
             object_kinds[op.left] != 0 &&
-            object_kinds[op.left] != CCAM_HEAP_OBJECT_ARRAY) {
+            object_kinds[op.left] != CCAM_PROGRAM_OBJECT_ARRAY) {
             return ccam_aggregate_validation_error("object_kind_mismatch", pc);
         }
         if ((op.op == CCAM_AGG_OP_BYTES_LEN || op.op == CCAM_AGG_OP_BYTE_GET) &&
             object_kinds[op.left] != 0 &&
-            object_kinds[op.left] != CCAM_HEAP_OBJECT_BYTES) {
+            object_kinds[op.left] != CCAM_PROGRAM_OBJECT_BYTES) {
             return ccam_aggregate_validation_error("object_kind_mismatch", pc);
         }
         if (op.op == CCAM_AGG_OP_ARRAY_LEN &&
@@ -319,18 +330,18 @@ CCAMAggregateValidationResult ccam_aggregate_validate_instruction(
         }
         initialized[op.destination] = true;
     } else if (op.op == CCAM_AGG_OP_BYTES_CONCAT) {
-        if (!ccam_aggregate_register_is(types, op.destination, CCAM_AGG_TYPE_REF) ||
-            !ccam_aggregate_register_is(types, op.left, CCAM_AGG_TYPE_REF) ||
-            !ccam_aggregate_register_is(types, op.right, CCAM_AGG_TYPE_REF) ||
+        if (!ccam_aggregate_register_is(types, op.destination, CCAM_PROGRAM_TYPE_REF) ||
+            !ccam_aggregate_register_is(types, op.left, CCAM_PROGRAM_TYPE_REF) ||
+            !ccam_aggregate_register_is(types, op.right, CCAM_PROGRAM_TYPE_REF) ||
             !initialized[op.left] || !initialized[op.right]) {
             return ccam_aggregate_validation_error("bytes_concat_register_type_or_initialisation", pc);
         }
-        if ((object_kinds[op.left] != 0 && object_kinds[op.left] != CCAM_HEAP_OBJECT_BYTES) ||
-            (object_kinds[op.right] != 0 && object_kinds[op.right] != CCAM_HEAP_OBJECT_BYTES)) {
+        if ((object_kinds[op.left] != 0 && object_kinds[op.left] != CCAM_PROGRAM_OBJECT_BYTES) ||
+            (object_kinds[op.right] != 0 && object_kinds[op.right] != CCAM_PROGRAM_OBJECT_BYTES)) {
             return ccam_aggregate_validation_error("object_kind_mismatch", pc);
         }
         initialized[op.destination] = true;
-        object_kinds[op.destination] = CCAM_HEAP_OBJECT_BYTES;
+        object_kinds[op.destination] = CCAM_PROGRAM_OBJECT_BYTES;
         object_descriptors[op.destination] = 0;
         array_element_types[op.destination] = 0;
         array_element_ref_type_ids[op.destination] = 0;
@@ -531,7 +542,7 @@ CCAMAggregateInstruction ccam_aggregate_instruction(int opcode) {
 
 test "aggregate program validates before execution and runs record field transitions" {
     List<int> field_types = new List<int>();
-    field_types.push(CCAM_AGG_TYPE_INT);
+    field_types.push(CCAM_PROGRAM_TYPE_INT);
     List<bool> mutable_fields = new List<bool>();
     mutable_fields.push(true);
     List<CCAMHeapLayout> layouts = new List<CCAMHeapLayout>();
@@ -540,9 +551,9 @@ test "aggregate program validates before execution and runs record field transit
         field_ref_type_ids: new List<int>(), field_mutable: mutable_fields
     });
     List<int> registers = new List<int>();
-    registers.push(CCAM_AGG_TYPE_REF);
-    registers.push(CCAM_AGG_TYPE_INT);
-    registers.push(CCAM_AGG_TYPE_INT);
+    registers.push(CCAM_PROGRAM_TYPE_REF);
+    registers.push(CCAM_PROGRAM_TYPE_INT);
+    registers.push(CCAM_PROGRAM_TYPE_INT);
     List<CCAMAggregateInstruction> code = new List<CCAMAggregateInstruction>();
     CCAMAggregateInstruction alloc = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_RECORD);
     alloc.destination = 0; alloc.descriptor_id = 7301; code.push(alloc);
@@ -563,7 +574,7 @@ test "aggregate program validates before execution and runs record field transit
     );
     assert(executed.ok && executed.machine.steps == 3);
     CCAMAggregateValueResult value = ccam_aggregate_register_value(
-        executed.machine, 2, CCAM_AGG_TYPE_INT
+        executed.machine, 2, CCAM_PROGRAM_TYPE_INT
     );
     assert(value.ok && value.value.int_value == 73);
 }
@@ -583,7 +594,7 @@ test "aggregate program rejects malformed programs before any heap step" {
 
 test "aggregate program validates forward nominal layouts and typed field operations" {
     List<int> field_types = new List<int>();
-    field_types.push(CCAM_AGG_TYPE_INT);
+    field_types.push(CCAM_PROGRAM_TYPE_INT);
     List<int> ref_types = new List<int>();
     List<bool> mutability = new List<bool>();
     mutability.push(true);
@@ -593,8 +604,8 @@ test "aggregate program validates forward nominal layouts and typed field operat
         field_ref_type_ids: ref_types, field_mutable: mutability
     });
     List<int> registers = new List<int>();
-    registers.push(CCAM_AGG_TYPE_REF);
-    registers.push(CCAM_AGG_TYPE_INT);
+    registers.push(CCAM_PROGRAM_TYPE_REF);
+    registers.push(CCAM_PROGRAM_TYPE_INT);
     List<CCAMAggregateInstruction> code = new List<CCAMAggregateInstruction>();
     CCAMAggregateInstruction alloc = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_RECORD);
     alloc.destination = 0; alloc.descriptor_id = 7101;
@@ -611,8 +622,8 @@ test "aggregate program validates forward nominal layouts and typed field operat
 
 test "aggregate program rejects uninitialised aggregate reads before execution" {
     List<int> registers = new List<int>();
-    registers.push(CCAM_AGG_TYPE_REF);
-    registers.push(CCAM_AGG_TYPE_INT);
+    registers.push(CCAM_PROGRAM_TYPE_REF);
+    registers.push(CCAM_PROGRAM_TYPE_INT);
     List<CCAMAggregateInstruction> code = new List<CCAMAggregateInstruction>();
     CCAMAggregateInstruction get = ccam_aggregate_instruction(CCAM_AGG_OP_FIELD_GET);
     get.destination = 1; get.left = 0; get.descriptor_id = 1; get.field_index = 0;
@@ -629,7 +640,7 @@ test "aggregate program rejects uninitialised aggregate reads before execution" 
 
 test "aggregate program rejects unknown opcodes, invalid layouts and immutable stores" {
     List<int> field_types = new List<int>();
-    field_types.push(CCAM_AGG_TYPE_INT);
+    field_types.push(CCAM_PROGRAM_TYPE_INT);
     List<bool> immutable = new List<bool>();
     immutable.push(false);
     List<CCAMHeapLayout> layouts = new List<CCAMHeapLayout>();
@@ -638,8 +649,8 @@ test "aggregate program rejects unknown opcodes, invalid layouts and immutable s
         field_ref_type_ids: new List<int>(), field_mutable: immutable
     });
     List<int> registers = new List<int>();
-    registers.push(CCAM_AGG_TYPE_REF);
-    registers.push(CCAM_AGG_TYPE_INT);
+    registers.push(CCAM_PROGRAM_TYPE_REF);
+    registers.push(CCAM_PROGRAM_TYPE_INT);
     List<CCAMAggregateInstruction> code = new List<CCAMAggregateInstruction>();
     CCAMAggregateInstruction alloc = ccam_aggregate_instruction(CCAM_AGG_OP_ALLOC_RECORD);
     alloc.destination = 0; alloc.descriptor_id = 7201; code.push(alloc);
