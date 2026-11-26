@@ -98,7 +98,7 @@ def main():
                 return 1
         if args.json:
             json.dump(records, sys.stdout, ensure_ascii=False, indent=2)
-            sys.stdout.write("\\n")
+            sys.stdout.write("\n")
         else:
             pending = sum(
                 r["positive_control"]["status"] == "pending"
