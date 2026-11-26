@@ -92,8 +92,8 @@ with tempfile.TemporaryDirectory(prefix="capstan-import-budget-") as td:
     graph = base / "ast-exact"
     graph.mkdir()
     declarations = "".join(f"const int value{i} = 0;\n" for i in range(50_000))
-    (graph / "main.cap").write_text(declarations + ";")
-    expect_reaches_parser(graph / "main.cap", "AST-node limit", "exact AST-node budget")
+    (graph / "main.cap").write_text(declarations)
+    expect_success(graph / "main.cap", "exact AST-node budget")
 
     graph = base / "ast-over"
     graph.mkdir()
