@@ -98,12 +98,11 @@ def writeTypedReturn (caller : TypedMultiFrame) (continuation : Nat)
 the callee signature, the caller destination exists, and its declared type
 matches exactly. Every rejection happens before a caller frame is returned. -/
 def commitTypedReturnToCaller (callee caller : TypedMultiFrame)
-    (value : Val) : Except Trap TypedMultiFrame := by
-  classical
-  exact match callee.signature.returnType with
+    (value : Val) : Except Trap TypedMultiFrame :=
+  match callee.signature.returnType with
   | none => .error .typeMismatch
   | some resultType =>
-      if hvalue : hasType value resultType then
+      if hvalue : hasTypeB value resultType = true then
         match callee.callerDestination with
         | none => .error .invalidControlFlow
         | some rawDestination =>
@@ -134,7 +133,7 @@ theorem commitTypedReturnToCaller_preserves_well_typed
       simp [hreturn] at hcommit
   | some resultType =>
       simp only [hreturn] at hcommit
-      by_cases hvalue : hasType value resultType
+      by_cases hvalue : hasTypeB value resultType = true
       · simp only [dif_pos hvalue] at hcommit
         cases hdestination : callee.callerDestination with
         | none =>
@@ -147,11 +146,11 @@ theorem commitTypedReturnToCaller_preserves_well_typed
                 ⟨rawDestination, hbound⟩
               by_cases hdestinationType :
                   caller.signature.registerTypes destination = resultType
-              · simp only [dif_pos hdestinationType] at hcommit
+              · simp [destination, hdestinationType] at hcommit
                 cases hcommit
                 exact (writeTypedReturn caller callee.callerContinuation
                   destination resultType value hvalue hdestinationType).registers_well_typed
-              · simp [hdestinationType] at hcommit
+              · simp [destination, hdestinationType] at hcommit
             · simp [hbound] at hcommit
       · simp [hvalue] at hcommit
 
