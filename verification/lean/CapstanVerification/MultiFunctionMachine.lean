@@ -337,7 +337,7 @@ def returnFromCallee (state : MultiFunctionState) (result : Option Val) :
                 })
             | .ok (some (destination, value)) =>
                 let resumedCaller := { caller with pc := continuation.resumePC }
-                match updateFrameRegister resumedCaller destination value with
+                match hupdate : updateFrameRegister resumedCaller destination value with
                 | .error reason => .error reason
                 | .ok updatedCaller =>
                     .ok (callee, {
@@ -397,23 +397,13 @@ theorem returnFromCallee_restores_continuation
                       simp
                   | some pair =>
                       rcases pair with ⟨destination, value⟩
-                      cases hupdate : updateFrameRegister
-                          { caller with pc := continuation.resumePC } destination value with
-                      | error reason =>
-                          simp [hvalid, hupdate] at h
+                      cases hreplace : replaceRegister caller.registers destination value with
+                      | none =>
+                          simp [hvalid, updateFrameRegister, hreplace] at h
+                      | some registers =>
+                          simp [hvalid, updateFrameRegister, hreplace] at h
                           cases h
-                      | ok updatedCaller =>
-                          simp [hvalid, hupdate] at h
-                          cases h
-                          have hfields :
-                              updatedCaller.functionIndex = caller.functionIndex ∧
-                              updatedCaller.pc = continuation.resumePC := by
-                            have hpreserved := updateFrameRegister_preserves_control_fields
-                              { caller with pc := continuation.resumePC }
-                              updatedCaller destination value hupdate
-                            exact ⟨hpreserved.1, hpreserved.2⟩
-                          rcases hfields with ⟨hfunction, hpc⟩
-                          simp [hfunction, hpc]
+                          simp
 
 end CapstanVerification
 
