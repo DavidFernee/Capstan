@@ -1,0 +1,7 @@
+// expect: CWE-116
+// HTML escaping does not make a value safe for CSV.
+int main() {
+    Html html = escape_html(taint("=1+1"));
+    bool ok = write_csv_file("out.csv", html);
+    return 0;
+}

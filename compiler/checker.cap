@@ -122,7 +122,7 @@ List<string> type_names(Checker c) {
     List<string> out = c.structs.keys();
     List<string> en = c.enums.keys();
     for (int i = 0; i < en.len(); i += 1) { out.push(en[i]); }
-    out.push("int"); out.push("bool"); out.push("string"); out.push("Tainted"); out.push("Secret");
+    out.push("int"); out.push("bool"); out.push("string"); out.push("Tainted"); out.push("Secret"); out.push("Html"); out.push("LogText"); out.push("CsvText");
     return out;
 }
 
@@ -165,10 +165,18 @@ bool contains_grant(Type t) {
 }
 
 void mismatch(Checker c, Node at, Type from, Type to, string where) {
-    if (from.k == TY_TAINT && to.k == TY_STR) {
+    if (from.k == TY_TAINT && is_contextual_text(to)) {
+        string escaper = "the context-specific escaper";
+        if (to.k == TY_HTML) { escaper = "escape_html()"; }
+        if (to.k == TY_LOG) { escaper = "escape_log()"; }
+        if (to.k == TY_CSV) { escaper = "escape_csv()"; }
+        error_at(c.ctx, at, "CWE-20", "untrusted input must pass through " + escaper + " before " + where);
+    } else if (from.k == TY_TAINT && to.k == TY_STR) {
         error_at(c.ctx, at, "CWE-20", "untrusted input (Tainted) used as a trusted string in " + where + "; pass it through a validator or escaper first");
-    } else if ((from.k == TY_HTML || from.k == TY_LOG) && to.k == TY_STR) {
-        error_at(c.ctx, at, "CWE-116", "text escaped as " + type_str(from) + " is only safe where " + type_str(from) + " is expected, not as a plain string in " + where);
+    } else if (is_contextual_text(from) && (to.k == TY_STR || is_contextual_text(to))) {
+        error_at(c.ctx, at, "CWE-116", "text encoded for " + type_str(from) + " is only safe at a matching " + type_str(from) + " sink, not in " + where + " (expected " + type_str(to) + ")");
+    } else if (from.k == TY_STR && is_contextual_text(to)) {
+        error_at(c.ctx, at, "CWE-116", "plain string is not encoded for the " + type_str(to) + " context required by " + where + "; use the context-specific escaper");
     } else if (from.k == TY_SECRET) {
         error_at(c.ctx, at, "CWE-200", "a Secret cannot be used as " + type_str(to) + " in " + where);
     } else if (from.k == TY_OPT && type_eq(from.args[0], to)) {
@@ -200,7 +208,6 @@ bool mentions_name(Node e, int kind) {
         if (kind == 1 && looks_secret(e.s)) { return true; }
         if (kind == 2 && (looks_password(e.s))) { return true; }
     }
-    if (e.k == N_CALL || e.k == N_METHOD) { return false; }
     for (int i = 0; i < e.kids.len(); i += 1) {
         if (mentions_name(e.kids[i], kind)) { return true; }
     }
@@ -681,15 +688,21 @@ Type check_binary(Checker c, Node e) {
         if (a.k != TY_INT || b.k != TY_INT) { error_at(c.ctx, e, "", "'" + op + "' needs int operands"); }
         return mk_type(TY_BOOL);
     }
-    if (op == "+" && is_texty(a) && is_texty(b) && (a.k == TY_HTML || b.k == TY_HTML || a.k == TY_LOG || b.k == TY_LOG)) {
-        int ctx_k = TY_HTML;
-        string ctx_name = "Html";
-        string esc = "escape_html()";
-        if (a.k == TY_LOG || b.k == TY_LOG) { ctx_k = TY_LOG; ctx_name = "LogText"; esc = "escape_log()"; }
-        if ((a.k == TY_HTML && b.k == TY_LOG) || (a.k == TY_LOG && b.k == TY_HTML)) {
-            error_at(c.ctx, e, "CWE-116", "text escaped for HTML and text escaped for logs cannot be combined");
-            return mk_type(TY_ERR);
+    if (op == "+" && is_texty(a) && is_texty(b) && (is_contextual_text(a) || is_contextual_text(b))) {
+        int ctx_k = TY_STR;
+        if (is_contextual_text(a)) { ctx_k = a.k; }
+        if (is_contextual_text(b)) {
+            if (ctx_k != TY_STR && ctx_k != b.k) {
+                error_at(c.ctx, e, "CWE-116", "text encoded for " + type_str(mk_type(ctx_k)) + " cannot be combined with text encoded for " + type_str(b));
+                return mk_type(TY_ERR);
+            }
+            ctx_k = b.k;
         }
+        string ctx_name = type_str(mk_type(ctx_k));
+        string esc = "the matching context escaper";
+        if (ctx_k == TY_HTML) { esc = "escape_html()"; }
+        if (ctx_k == TY_LOG) { esc = "escape_log()"; }
+        if (ctx_k == TY_CSV) { esc = "escape_csv()"; }
         if (a.k == TY_TAINT || b.k == TY_TAINT) {
             error_at(c.ctx, e, "CWE-116", "untrusted input cannot be joined to " + ctx_name + " unescaped; wrap it in " + esc);
             return mk_type(TY_ERR);
@@ -879,7 +892,7 @@ void check_args(Checker c, Node e, Node callee, int first, string what) {
 List<string> builtin_names() {
     List<string> b = new List<string>();
     b.push("print"); b.push("println"); b.push("int_to_str"); b.push("char_str"); b.push("read_file");
-    b.push("read_line"); b.push("write_file"); b.push("args"); b.push("exit"); b.push("join"); b.push("assert");
+    b.push("read_line"); b.push("write_file"); b.push("write_html_file"); b.push("write_log_file"); b.push("write_csv_file"); b.push("args"); b.push("exit"); b.push("join"); b.push("assert");
     b.push("validate_ident"); b.push("validate_int"); b.push("escape_c"); b.push("escape_html"); b.push("escape_log");
     b.push("trust"); b.push("taint"); b.push("sql_query"); b.push("run"); b.push("secret_env"); b.push("secret_eq");
     b.push("hash"); b.push("hash_verify"); b.push("hash_password"); b.push("verify_password"); b.push("needs_rehash");
@@ -941,6 +954,10 @@ void sink_string(Checker c, Node arg, string what, bool allow_tainted) {
     Type t = ty_of(arg);
     if (t.k == TY_TAINT && !allow_tainted) {
         error_at(c.ctx, arg, "CWE-117", "untrusted input passed to " + what + " can forge output or log lines; wrap it in escape_log()");
+        return;
+    }
+    if (is_contextual_text(t) && t.k != TY_LOG) {
+        error_at(c.ctx, arg, "CWE-116", "text encoded for " + type_str(t) + " cannot be written to terminal/log output; use escape_log() or the matching file sink");
         return;
     }
     if (t.k == TY_SECRET) {
@@ -1029,17 +1046,25 @@ Type check_call(Checker c, Node e) {
         want_args(c, e, 0, 0, f);
         return mk_type(TY_VOID);
     }
-    if (f == "write_file") {
+    if (f == "write_file" || f == "write_html_file" || f == "write_log_file" || f == "write_csv_file") {
         want_args(c, e, 0, 2, f);
         if (n == 2) {
-            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "write_file() path");
+            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), f + "() path");
             Type wt = ty_of(e.kids[1]);
-            if (wt.k == TY_TAINT) {
-                error_at(c.ctx, e.kids[1], "CWE-20", "untrusted input written to a file unchanged; escape it for the file's format first (escape_csv() for spreadsheets, escape_html() for web pages) or validate it");
+            Type expected = mk_type(TY_STR);
+            if (f == "write_html_file") { expected = mk_type(TY_HTML); }
+            if (f == "write_log_file") { expected = mk_type(TY_LOG); }
+            if (f == "write_csv_file") { expected = mk_type(TY_CSV); }
+            if (f == "write_file" && is_contextual_text(wt)) {
+                error_at(c.ctx, e.kids[1], "CWE-116", "context-encoded " + type_str(wt) + " cannot be written through format-agnostic write_file(); use the matching write_html_file(), write_log_file() or write_csv_file() sink");
+            } else if (wt.k == TY_TAINT) {
+                error_at(c.ctx, e.kids[1], "CWE-20", "untrusted input written to a file unchanged; escape it for the file's format first or validate it");
             } else if (mentions_deep(e.kids[1], 2)) {
                 error_at(c.ctx, e.kids[1], "CWE-256", "passwords must never be written out; store hash_password() of it instead");
+            } else if (wt.k == TY_SECRET) {
+                error_at(c.ctx, e.kids[1], "CWE-532", "a Secret cannot be written by " + f + "()");
             } else {
-                sink_string(c, e.kids[1], "write_file()", true);
+                expect_type(c, e.kids[1], wt, expected, f + "() data");
             }
         }
         return mk_type(TY_BOOL);
@@ -1090,6 +1115,7 @@ Type check_call(Checker c, Node e) {
         if (n == 1 && !is_stringish(ty_of(e.kids[0]))) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_TAINT), f + "()"); }
         if (f == "escape_html") { return mk_type(TY_HTML); }
         if (f == "escape_log") { return mk_type(TY_LOG); }
+        if (f == "escape_csv") { return mk_type(TY_CSV); }
         return mk_type(TY_STR);
     }
     if (f == "validate_path") {
@@ -1183,7 +1209,9 @@ Type check_call(Checker c, Node e) {
             if (f == "hash" && dt.k == TY_SECRET) {
                 error_at(c.ctx, e, "CWE-532", "hash() of a Secret gives printable text from which a short or guessable secret can be recovered by trying values offline; compare secrets with secret_eq() or hash_verify(), and store passwords with hash_password()");
             }
-            if ((f == "hash" || f == "hash_verify") && mentions_name(e.kids[0], 2)) {
+            if ((f == "hash" || f == "hash_verify") && dt.k == TY_TAINT) {
+                error_at(c.ctx, e, "CWE-916", f + "() rejects Tainted input because it may be a password; use hash_password()/verify_password(), or explicitly trust non-password data with a reviewable reason");
+            } else if ((f == "hash" || f == "hash_verify") && mentions_name(e.kids[0], 2)) {
                 error_at(c.ctx, e, "CWE-916", f + "() is a fast, unsalted hash and must not be used for passwords; use hash_password() and verify_password()");
             }
         }
@@ -1355,8 +1383,8 @@ void check_stmt(Checker c, Node s) {
         if (ex.k != N_CALL && ex.k != N_METHOD && et.k != TY_ERR) {
             error_at(c.ctx, s, "", "expression result is unused");
         }
-        if (ex.k == N_CALL && ex.s == "write_file") {
-            warn_at(c.ctx, s, "CWE-252", "result of write_file() is ignored; check whether the write succeeded");
+        if (ex.k == N_CALL && (ex.s == "write_file" || ex.s == "write_html_file" || ex.s == "write_log_file" || ex.s == "write_csv_file")) {
+            warn_at(c.ctx, s, "CWE-252", "result of " + ex.s + "() is ignored; check whether the write succeeded");
         }
         return;
     }

@@ -1,3 +1,4 @@
 {"path": "file://home/a b\"\u003cscript\u003e\n"}
 {"text": "tab\there, quote \" backslash \\ é €\u2028"}
 {"bad": "\ufffd\u0000\u007f"}
+{"terminal_controls": "\u009b\u202e"}

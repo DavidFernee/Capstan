@@ -1,0 +1,23 @@
+// expect-runtime: CWE-125
+// spec: types.list runtime.checks
+// Heartbleed semantic kernel: declared payload length exceeds bytes present after the 3-byte header.
+// This is a bounds-check analogue, not an OpenSSL/TLS reproducer.
+int heartbeat_payload_sum(List<int> record, int declared_len) {
+    int checksum = 0;
+    for (int i = 0; i < declared_len; i += 1) {
+        checksum += record[3 + i];
+    }
+    return checksum;
+}
+
+int main() {
+    List<int> packet = new List<int>();
+    packet.push(1);   // heartbeat request type
+    packet.push(0);   // declared length, high byte
+    packet.push(64);  // declared length, low byte: 64 bytes
+    packet.push(65);
+    packet.push(66);
+    packet.push(67);  // only three payload bytes are actually present
+    int declared_len = packet[1] * 256 + packet[2];
+    return heartbeat_payload_sum(packet, declared_len);
+}

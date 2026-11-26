@@ -32,5 +32,9 @@ int main() {
     println("{\"path\": \"" + escape_json(path) + "\"}");
     println("{\"text\": \"" + escape_json(taint("tab\there, quote \" backslash \\ é €") + taint_char(226) + taint_char(128) + taint_char(168)) + "\"}");
     println("{\"bad\": \"" + escape_json(taint_char(255) + taint_char(0) + taint_char(127)) + "\"}");
+    Tainted c1_control = taint_char(194) + taint_char(155);
+    Tainted bidi_control = taint_char(226) + taint_char(128) + taint_char(174);
+    Tainted terminal_controls = c1_control + bidi_control;
+    println("{\"terminal_controls\": \"" + escape_json(terminal_controls) + "\"}");
     return 0;
 }

@@ -21,7 +21,7 @@ KEYWORDS = {
 PUNCT = ["&&", "||", "==", "!=", "<=", ">=", "+=", "-=", "++", "--", "<<",
          "{", "}", "(", ")", "[", "]", ";", ",", ".", ":", "?", "<", ">", "=",
          "+", "-", "*", "/", "%", "!", "&", "|", "^", "~"]
-TYPE_WORDS = {"int", "bool", "string", "void", "Tainted", "Secret"}
+TYPE_WORDS = {"int", "bool", "string", "void", "Tainted", "Secret", "Html", "LogText", "CsvText"}
 GENERIC_WORDS = {"List", "Map", "Grant"}
 
 
@@ -526,6 +526,7 @@ class Parser:
 
 BUILTINS = {
     "print", "println", "int_to_str", "char_str", "read_file", "read_line", "write_file",
+    "write_html_file", "write_log_file", "write_csv_file",
     "args", "exit", "join", "assert", "validate_ident", "validate_int", "escape_c",
     "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
     "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
@@ -639,6 +640,9 @@ def b_write_file(p, d):
         with open(p, "wb") as f: f.write(d.encode("latin-1"))
         return True
     except OSError: return False
+def b_write_html_file(p, d): return b_write_file(p, d)
+def b_write_log_file(p, d): return b_write_file(p, d)
+def b_write_csv_file(p, d): return b_write_file(p, d)
 def b_args(): return list(sys.argv[1:])
 def b_exit(c): sys.stdout.flush(); sys.exit(c)
 def b_join(l, sep): return sep.join(l)
@@ -698,7 +702,7 @@ def b_escape_json(t):
         n, cp = _utf8_seq(b, i)
         if not n:
             out.append("\\ufffd"); i += 1; continue
-        out.append("\\u%04x" % cp if cp in (0x2028, 0x2029) else bytes(b[i:i + n]).decode("latin-1")); i += n
+        out.append("\\u%04x" % cp if _log_hostile(cp) else bytes(b[i:i + n]).decode("latin-1")); i += n
     return "".join(out)
 def b_taint_char(c):
     if c < 0 or c > 255: _panic("taint_char() byte outside 0..255", "CWE-704")

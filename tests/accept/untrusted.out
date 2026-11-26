@@ -1,5 +1,4 @@
-html: &lt;b&gt;Bob&lt;/b&gt;
-admin
+HTML sink accepted
 log: <b>Bob</b>\x0aadmin
 ident: user_42
 rejected bad ident

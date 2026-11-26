@@ -1,0 +1,8 @@
+// spec: types.html builtins.io
+// expect: CWE-20
+// Tainted input must be escaped before reaching the HTML sink.
+int main() {
+    Tainted input = taint("<script>x()</script>");
+    bool ok = write_html_file("out.html", input);
+    return 0;
+}

@@ -1,0 +1,4 @@
+"' =1+1","'＝1+1","'
+=1+1"
+input: =1+1, <script>x()</script>
+typed output sinks accepted

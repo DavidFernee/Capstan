@@ -1,0 +1,22 @@
+// spec: types.list runtime.checks
+// Positive control: the same parser kernel accepts a correctly sized heartbeat payload.
+int heartbeat_payload_sum(List<int> record, int declared_len) {
+    int checksum = 0;
+    for (int i = 0; i < declared_len; i += 1) {
+        checksum += record[3 + i];
+    }
+    return checksum;
+}
+
+int main() {
+    List<int> packet = new List<int>();
+    packet.push(1);
+    packet.push(0);
+    packet.push(3);
+    packet.push(65);
+    packet.push(66);
+    packet.push(67);
+    int declared_len = packet[1] * 256 + packet[2];
+    println(int_to_str(heartbeat_payload_sum(packet, declared_len)));
+    return 0;
+}
