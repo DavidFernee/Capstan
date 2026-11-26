@@ -567,7 +567,7 @@ static void test_files(void) {
 
     /* The source-level limit is passed through to the runtime. */
     f = fopen(in, "wb");
-    fwrite("abc\\n", 1, 4, f);
+    fwrite("abc\n", 1, 4, f);
     fclose(f);
     CHECK(freopen(in, "rb", stdin) != NULL);
     CHECK(str_is(cap_read_line_max(3, 0), "abc", 3));
