@@ -364,7 +364,7 @@ def protocol(exe):
     exact_elements = b"[" + b",".join([b"null"] * 16384) + b"]"
     exact_string = b'"' + b"a" * (8 * 1024 * 1024) + b'"'
     exact_aggregate_strings = b'["' + b"a" * (6 * 1024 * 1024) + b'","' + b"a" * (6 * 1024 * 1024) + b'"]'
-    exact_fragments = b'"' + b"\n" * 131069 + b"\\uD83D\\uDE00" + b'"'
+    exact_fragments = b'"' + b"\\\\n" * 131069 + b"\\uD83D\\uDE00" + b'"'
     exact_number = b"1" * 128
     exact_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments]) + b"]"
     over_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments, b'""']) + b"]"
