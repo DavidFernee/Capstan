@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_alignment(int alignment){return alignment>0&&alignment<=4096&&(alignment&(alignment-1))==0;}
