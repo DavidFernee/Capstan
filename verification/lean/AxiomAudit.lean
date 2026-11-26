@@ -1,7 +1,4 @@
-import NativeMemoryLifecycle
-import NativeReachability
-import NativeHandleReachability
-import NativeBoundedMarker
+import CapstanVerification.F1Provenance
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
@@ -22,6 +19,10 @@ import CapstanVerification.NativeRegisterHeapBridge
 import CapstanVerification.InjectionChecker
 import CapstanVerification.InjectionSinks
 import CapstanVerification.InjectionValue
+import NativeMemoryLifecycle
+import NativeReachability
+import NativeHandleReachability
+import NativeBoundedMarker
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -361,6 +362,14 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.opaque_construction_denied_cross_module
 #print axioms CapstanVerification.opaque_construction_permitted_owner
 
+-- F1 provenance access-path algebra: abstract-model theorem audit.
+#print axioms CapstanVerification.dynamic_write_marks_constant_read
+#print axioms CapstanVerification.binding_identity_separates_locals
+#print axioms CapstanVerification.map_key_value_paths_are_disjoint
+#print axioms CapstanVerification.descendant_fact_marks_aggregate
+#print axioms CapstanVerification.provenance_marking_monotone
+#print axioms CapstanVerification.provenance_fact_budget_fails_closed
+
 -- Native object lifecycle and handle authority.
 #print axioms CapstanNativeMemory.allocateSlot_success_resolves
 #print axioms CapstanNativeMemory.allocateSlot_rejects_invalid_free_generation
@@ -370,20 +379,17 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanNativeMemory.allocateAt_rejection_is_atomic
 #print axioms CapstanNativeMemory.releaseAt_rejection_is_atomic
 #print axioms CapstanNativeMemory.reuse_rejects_previous_incarnation
-
 -- Explicit-root and descriptor-guided reachability.
 #print axioms CapstanNativeReachability.reachable_is_marked
 #print axioms CapstanNativeReachability.sweep_preserves_reachable
 #print axioms CapstanNativeReachability.sweep_does_not_create_objects
 #print axioms CapstanNativeReachability.root_frame_entries_are_resolved
-
 -- Generation-checked internal references.
 #print axioms CapstanNativeHandleReachability.handle_reachable_is_marked
 #print axioms CapstanNativeHandleReachability.stale_internal_handle_rejected
 #print axioms CapstanNativeHandleReachability.cross_domain_internal_handle_rejected
 #print axioms CapstanNativeHandleReachability.no_descriptor_edge_to_stale_handle
 #print axioms CapstanNativeHandleReachability.stale_handle_not_reachable_from_root
-
 -- Bounded marker result/certificate contract.
 #print axioms CapstanNativeBoundedMarker.certificateCheck_sound
 #print axioms CapstanNativeBoundedMarker.complete_result_is_certificate
