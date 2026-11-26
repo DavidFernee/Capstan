@@ -645,9 +645,8 @@ def b_read_file(p, mx):
         fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK | os.O_NOCTTY | os.O_CLOEXEC)
     except OSError: return None
     try:
-        os.set_blocking(fd, True)
         with os.fdopen(fd, "rb") as f:
-            if stat.S_ISDIR(os.fstat(f.fileno()).st_mode): return None
+            if not stat.S_ISREG(os.fstat(f.fileno()).st_mode): return None
             data = f.read(mx + 1)
             return None if len(data) > mx else data.decode("latin-1")
     except OSError: return None
