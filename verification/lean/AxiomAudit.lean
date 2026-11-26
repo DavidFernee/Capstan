@@ -388,3 +388,7 @@ import CapstanVerification.InjectionValue
 #print axioms CredentialVerifierPolicy.rejects_other_algorithm
 #print axioms CredentialVerifierPolicy.rejects_short_salt
 #print axioms CredentialVerifierPolicy.rejects_wrong_digest
+#print axioms CredentialVerifierPolicy.rejects_excessive_salt
+#print axioms CredentialVerifierPolicy.rejects_inconsistent_cost_policy
+#print axioms CredentialVerifierPolicy.rejects_inconsistent_salt_policy
+#print axioms CredentialVerifierPolicy.accepts_policy_boundary

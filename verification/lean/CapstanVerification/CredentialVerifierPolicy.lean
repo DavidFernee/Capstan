@@ -45,4 +45,26 @@ theorem rejects_wrong_digest (p : Policy) (h : Header)
   intro accepted
   exact wrong accepted.2.2.2.2.2
 
+
+theorem rejects_excessive_salt (p : Policy) (h : Header)
+    (large : p.maxSaltBytes < h.saltBytes) : ¬ Accepts p h := by
+  intro accepted
+  exact (Nat.not_lt_of_ge accepted.2.2.2.2.1) large
+
+theorem rejects_inconsistent_cost_policy (p : Policy) (h : Header)
+    (bad : p.maxCost < p.minCost) : ¬ Accepts p h := by
+  intro accepted
+  exact (Nat.not_lt_of_ge (Nat.le_trans accepted.2.1 accepted.2.2.1)) bad
+
+theorem rejects_inconsistent_salt_policy (p : Policy) (h : Header)
+    (bad : p.maxSaltBytes < p.minSaltBytes) : ¬ Accepts p h := by
+  intro accepted
+  exact (Nat.not_lt_of_ge (Nat.le_trans accepted.2.2.2.1 accepted.2.2.2.2.1)) bad
+
+theorem accepts_policy_boundary (p : Policy)
+    (costOK : p.minCost ≤ p.maxCost)
+    (saltOK : p.minSaltBytes ≤ p.maxSaltBytes) :
+    Accepts p ⟨p.algorithm, p.minCost, p.minSaltBytes, p.digestBytes⟩ := by
+  exact ⟨rfl, Nat.le_refl _, costOK, Nat.le_refl _, saltOK, rfl⟩
+
 end CredentialVerifierPolicy
