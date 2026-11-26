@@ -9,7 +9,7 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**255 weaknesses, 293 attempts.** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 298 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
@@ -29,7 +29,7 @@ closes a gap the test fails and the entry is reclassified.
 
 | CWE | Weakness | What was written | Why it compiles, and the plan |
 |---|---|---|---|
-| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: HTML-escaped text written into a CSV file | `int main() { Html cell = escape_html(taint("=cmd\|' /C calc'!A0")) + ",1"; bool ok = wr...` | write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap. |
+| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | `escape_json(taint(...))` passed to `write_file()` | `escape_json()` still returns an untyped string fragment; typed JSON fragments and sinks are tracked in #250. |
 | [798](https://cwe.mitre.org/data/definitions/798.html) | Hard-coded password-like literal under an innocuous name | `int main() { string cfg = "Winter2026!"; sql_query("UPDATE settings SET v = ?", cfg); r...` | A short password-like literal under an ordinary name is indistinguishable from other text. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | `int main() { if (let x = read_line(65536)) { string stored = hash(x); } return 0; }` | Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap). |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a method call) | `int main() { if (let password = read_line(65536)) { string stored = hash(password.slice...` | The password-name heuristic stops at N_METHOD nodes, so wrapping a password in a string method may evade the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted. |
