@@ -597,6 +597,29 @@ add(1393, "Use of default password", "reject", "int main() { string password = \
 add(1394, "Use of default cryptographic key", "reject", "int main() { string private_key = \"-----BEGIN KEY-----\"; return 0; }", "CWE-798")
 
 
+# Scalar metadata and conversion provenance must survive local variables and helper calls.
+add(20, "Improper input validation (laundering through Tainted length)", "reject",
+    "int length_of(Tainted input) { return input.len(); }\n"
+    "int main() { if (let input = read_line()) { int n = length_of(input); char_str(n); } return 0; }",
+    "CWE-20", "Length is derived metadata; helper summaries must preserve the Tainted parameter dependency.")
+
+add(20, "Improper input validation (laundering through Boolean comparison)", "gap",
+    "int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; string output = to_text(matched); bool ok = write_file(\"out.txt\", output); } return 0; }",
+    note="The current byte-reconstruction sink is not a general information-flow sink. Boolean comparison provenance is now tracked through locals, but the compiler does not yet define a policy for every control-flow observation.")
+
+add(20, "Improper input validation (laundering through a Boolean helper)", "reject",
+    "bool identity_bool(bool value) { return value; }\n"
+    "int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; bool copied = identity_bool(matched); string key = to_text(copied); Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "CWE-20", "Boolean parameter-to-return summaries must preserve derived comparison results through helper calls.")
+
+add(20, "Improper input validation (laundering through to_text)", "reject",
+    "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); string key = to_text(input.at(0)); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "CWE-20", "Numeric-to-text conversion must preserve provenance before a trusted map lookup.")
+
+add(20, "Improper input validation (laundering through join)", "reject",
+    "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); List<string> parts = new List<string>(); parts.push(to_text(input.at(0))); string key = join(parts, \"\"); if (let value = table.get(key)) { println(value); } } return 0; }",
+    "CWE-20", "Collection aggregation must preserve element provenance before a trusted map lookup.")
+
 # ---------------------------------------------------------------- harness
 
 # ---- found in the November 2026 attack review --------------------------------------------------
