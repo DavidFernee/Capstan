@@ -1,0 +1,2 @@
+import "ccam_aggregate_expression.cap";
+bool ag_expr_reduce(List<AGExpression> nodes,List<int> values,int op){if(values.len()<2||nodes.len()>=65536||ag_precedence(op)==0){return false;}int n=values.len();int left=values[n-2];int right=values[n-1];AGExpression node=new AGExpression{kind:2,value:op,left:left,right:right};if(!ag_expression_node_valid(node,nodes.len())){return false;}nodes.push(node);values[n-2]=nodes.len()-1;return true;}
