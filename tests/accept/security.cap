@@ -17,7 +17,7 @@ int main() {
     File f = new File{owner: 1, body: "secret plans"};
     println(attempt(owner, f) + " | " + attempt(other, f) + " | " + attempt(root, f));
     if (let g = authorize Anyone(other)) { println(motd(g)); }
-    if (let missing = secret_env("CAPSTAN_TEST_UNSET_VARIABLE")) { println("unexpected"); } else { println("no secret"); }
+    if (let missing = secret_env("CAPSTAN_TEST_UNSET_VARIABLE", 1048576)) { println("unexpected"); } else { println("no secret"); }
     return 0;
 }
 test "owner reads" { assert_granted Read(new User{id: 1, admin: false}, new File{owner: 1, body: ""}); }
