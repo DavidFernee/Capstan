@@ -1977,6 +1977,24 @@ string path_key(Node e) {
     return "";
 }
 
+// Replace every list index selector with the conservative wildcard. This also
+// matches nested writes such as items[i].field against a later items[0].field read.
+string wildcard_path_key(Node e) {
+    if (e.k == N_VAR) { return binding_path(e.binding_id); }
+    if (e.k == N_GETF) {
+        string parent = wildcard_path_key(e.kids[0]);
+        if (parent == "") { return ""; }
+        return parent + "." + e.s;
+    }
+    if (e.k == N_INDEX) {
+        string parent = wildcard_path_key(e.kids[0]);
+        if (parent == "") { return ""; }
+        if (ty_of(e.kids[0]).k == TY_MAP) { return parent + "{value}"; }
+        return parent + "[*]";
+    }
+    return "";
+}
+
 bool has_path_prefix(Flow f, string prefix) {
     List<string> keys = f.paths.keys();
     for (int i = 0; i < keys.len(); i += 1) {
@@ -1989,6 +2007,8 @@ bool path_marked(Flow f, Node e) {
     string key = path_key(e);
     if (key == "") { return false; }
     if (f.paths.has(key)) { return true; }
+    string wildcard = wildcard_path_key(e);
+    if (wildcard != "" && f.paths.has(wildcard)) { return true; }
     if (e.k == N_INDEX) {
         string parent = path_key(e.kids[0]);
         if (parent != "" && ty_of(e.kids[0]).k != TY_MAP) {
