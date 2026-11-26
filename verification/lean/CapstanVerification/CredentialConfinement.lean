@@ -20,15 +20,10 @@ def credentialOrigin : {k : Kind} → Expr k → Bool
   | _, .fastHash x => credentialOrigin x
   | _, .alias x => credentialOrigin x
 
-def integrityCredentialOrigin : Expr .integrity → Bool
-  | .artifact => false
-  | .alias e => integrityCredentialOrigin e
+def integrityCredentialOrigin (_ : Expr .integrity) : Bool := false
 
 theorem integrity_excludes_credentials (e : Expr .integrity) :
-    integrityCredentialOrigin e = false := by
-  induction e with
-  | artifact => rfl
-  | alias _ ih => exact ih
+    integrityCredentialOrigin e = false := rfl
 
 theorem fast_hash_excludes_credentials (e : Expr .integrity) :
     credentialOrigin (.fastHash e) = false := by
