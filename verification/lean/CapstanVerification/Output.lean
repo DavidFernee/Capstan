@@ -44,7 +44,9 @@ def appendOutputBytes (trace : ByteTrace) (payload : List UInt8) :
   else
     .error .outputLimit
 
-/-- Successful output appends precisely the supplied bytes in order. -/
+/-- Successful output appends precisely the supplied bytes in order.
+    This transition is intentionally byte-level: decoding and source-literal
+    canonicalisation are verified at the CCAM frontend boundary instead. -/
 theorem appendOutputBytes_exact
     (trace : ByteTrace) (payload : List UInt8) (next : ByteTrace)
     (h : appendOutputBytes trace payload = .ok next) :
