@@ -11,7 +11,13 @@ itself, and this file can be thrown away.
 
 Usage:  python3 capstan0.py out.py file1.cap [file2.cap ...]
 """
-import os, sys
+import os, sys, stat
+
+MAX_SOURCE_BYTES = 16 * 1024 * 1024
+MAX_IMPORT_FILES = 256
+MAX_TOTAL_SOURCE_BYTES = 32 * 1024 * 1024
+MAX_TOTAL_TOKENS = 500_000
+MAX_TOTAL_AST_NODES = 100_000
 
 KEYWORDS = {
     "struct", "const", "if", "else", "while", "for", "return", "break", "continue",
@@ -51,8 +57,33 @@ def decode_escapes(raw, where):
     return "".join(out)
 
 
-def lex(src, file):
-    toks, i, line, n = [], 0, 1, len(src)
+class _BudgetedTokens(list):
+    """Count emitted tokens once, including tokens from interpolated sub-lexers."""
+    def __init__(self, budget, account):
+        super().__init__()
+        self.budget = budget
+        self.account = account
+
+    def append(self, token):
+        if self.account and token.kind != "eof":
+            if self.budget["tokens"] >= MAX_TOTAL_TOKENS:
+                raise SystemExit(
+                    f"{token.file}:{token.line}: import graph exceeds total token budget "
+                    f"(limit {MAX_TOTAL_TOKENS}) [CWE-400]"
+                )
+            self.budget["tokens"] += 1
+        super().append(token)
+
+    def __iadd__(self, items):
+        for item in items:
+            self.append(item)
+        return self
+
+
+def lex(src, file, budget=None, account=True):
+    if budget is None:
+        budget = {"tokens": 0}
+    toks, i, line, n = _BudgetedTokens(budget, account), 0, 1, len(src)
     while i < n:
         c = src[i]
         if c == "\n":
@@ -126,7 +157,7 @@ def lex(src, file):
                         elif src[e] == "}": depth -= 1
                         e += 1 if depth else 0
                     toks += [Tok("op", "+", line, file), Tok("id", "to_text", line, file), Tok("op", "(", line, file)]
-                    toks += lex(src[j + 1:e], file)[:-1]
+                    toks += lex(src[j + 1:e], file, budget, False)[:-1]
                     toks.append(Tok("op", ")", line, file))
                     j = e + 1; k = j; continue
                 j += 1
@@ -975,21 +1006,87 @@ class Gen:
         return "\n".join(self.out) + "\n"
 
 
+def _read_source_bounded(path, limit):
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise SystemExit(f"{path}: cannot open source: {exc}")
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise SystemExit(f"{path}: stage-0 source must be a regular file [CWE-400]")
+        with os.fdopen(fd, "rb") as source:
+            fd = None
+            data = source.read(limit + 1)
+        if len(data) > limit:
+            raise SystemExit(f"{path}: source exceeds remaining import-graph byte budget ({limit}) [CWE-400]")
+        return data.decode("latin-1")
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def _import_path_ok(spec):
+    if len(spec) < 5 or spec.startswith("/") or not spec.endswith(".cap"):
+        return False
+    for segment in spec.split("/"):
+        if segment in ("", ".", ".."):
+            return False
+        if any(not (ch.isascii() and (ch.isalnum() or ch in "_-.")) for ch in segment):
+            return False
+    return True
+
+
+def _charge_ast_nodes(roots, budget, path):
+    stack = list(roots)
+    while stack:
+        value = stack.pop()
+        if isinstance(value, list):
+            stack.extend(value)
+        elif isinstance(value, tuple):
+            if value and isinstance(value[0], str):
+                budget["ast_nodes"] += 1
+                if budget["ast_nodes"] > MAX_TOTAL_AST_NODES:
+                    raise SystemExit(
+                        f"{path}: import graph exceeds AST-node limit "
+                        f"({MAX_TOTAL_AST_NODES}) [CWE-400]"
+                    )
+                stack.extend(value[1:])
+            else:
+                stack.extend(value)
+
+
 def main():
     if len(sys.argv) < 3:
         raise SystemExit("usage: capstan0.py out.py file.cap [file.cap ...]")
     decls, queue, loaded = [], list(sys.argv[2:]), set()
+    budget = {"source_bytes": 0, "tokens": 0, "ast_nodes": 0}
     while queue:
-        path = queue.pop(0)
+        path = os.path.realpath(queue.pop(0))
         if path in loaded:
             continue
+        if len(loaded) >= MAX_IMPORT_FILES:
+            raise SystemExit(
+                f"{path}: import graph exceeds file-count limit ({MAX_IMPORT_FILES}) [CWE-400]"
+            )
         loaded.add(path)
-        with open(path, "rb") as f:
-            src = f.read().decode("latin-1")
-        for d in Parser(lex(src, path)).program():
-            decls.append(d)
-            if d[0] == "import":
-                queue.append(os.path.join(os.path.dirname(path), d[1]) if os.path.dirname(path) else d[1])
+        remaining = MAX_TOTAL_SOURCE_BYTES - budget["source_bytes"]
+        file_limit = min(MAX_SOURCE_BYTES, remaining)
+        src = _read_source_bounded(path, file_limit)
+        budget["source_bytes"] += len(src)
+        parsed = Parser(lex(src, path, budget)).program()
+        _charge_ast_nodes(parsed, budget, path)
+        for declaration in parsed:
+            decls.append(declaration)
+            if declaration[0] == "import":
+                spec = declaration[1]
+                if not _import_path_ok(spec):
+                    raise SystemExit(
+                        f"{path}: import path must be a relative .cap path inside the project "
+                        "[CWE-22]"
+                    )
+                imported = os.path.join(os.path.dirname(path), spec)
+                queue.append(imported)
     with open(sys.argv[1], "w", encoding="latin-1") as f:
         f.write(Gen().program(decls))
 
