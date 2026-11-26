@@ -168,13 +168,9 @@ theorem allocation_success_facts
                 constructor
                 · omega
                 · have hOldTemporary : s.temporaryPeakBytes ≤ s.maxTemporaryBytes := by
-                    by_cases hOld : s.temporaryPeakBytes ≤ s.maxTemporaryBytes
-                    · exact hOld
-                    · have hgt : s.temporaryPeakBytes > s.maxTemporaryBytes := by omega
-                      have hBad : invalidHeapState s = true := by
-                        simp [invalidHeapState, hgt]
-                      exact False.elim (hInvalid hBad)
-                    exact hOldTemporary
+                    have hValid := hInvalid
+                    simp [invalidHeapState] at hValid
+                    omega
   · simp [hAuth] at h
 
 /-- Successful allocation returns the previous next-object identity. -/
@@ -193,6 +189,7 @@ theorem allocate_success_preserves_heapInvariant
     (hInv : heapInvariant s)
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     heapInvariant after := by
+  rcases hInv with ⟨hOldBytes, hOldObjects, hOldWork, hOldPeak, hOldCounter⟩
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
