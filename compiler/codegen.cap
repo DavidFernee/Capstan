@@ -48,7 +48,7 @@ string ctype(Type t) {
     int k = t.k;
     if (k == TY_INT) { return "int64_t"; }
     if (k == TY_BOOL) { return "bool"; }
-    if (k == TY_STR || k == TY_TAINT || k == TY_SECRET || k == TY_HTML || k == TY_LOG) { return "CapStr*"; }
+    if (k == TY_STR || k == TY_TAINT || k == TY_SECRET || k == TY_HTML || k == TY_LOG || k == TY_CSV) { return "CapStr*"; }
     if (k == TY_STRUCT) { return "S_" + t.name + "*"; }
     if (k == TY_ENUM) { return "E_" + t.name + "*"; }
     if (k == TY_LIST) {
@@ -349,7 +349,7 @@ string builtin_c(string f) {
     if (f == "read_line") { return "cap_read_line_max"; }
     if (f == "read_bytes") { return "cap_read_bytes"; }
     if (f == "flush") { return "cap_flush"; }
-    if (f == "write_file") { return "cap_write_file"; }
+    if (f == "write_file" || f == "write_html_file" || f == "write_log_file" || f == "write_csv_file") { return "cap_write_file"; }
     if (f == "args") { return "cap_args_bounded"; }
     if (f == "exit") { return "cap_exit"; }
     if (f == "join") { return "cap_join"; }
@@ -753,7 +753,7 @@ string grant_value_equal(Gen g, Type t, string x, string y) {
         if (is_scalar(inner)) { ix = "(*" + x + ")"; iy = "(*" + y + ")"; }
         return "((" + x + " == NULL && " + y + " == NULL) || (" + x + " != NULL && " + y + " != NULL && " + grant_value_equal(g, inner, ix, iy) + "))";
     }
-    if (t.k == TY_STR || t.k == TY_TAINT || t.k == TY_HTML || t.k == TY_LOG) {
+    if (t.k == TY_STR || t.k == TY_TAINT || t.k == TY_HTML || t.k == TY_LOG || t.k == TY_CSV) {
         return "cap_str_eq(" + x + ", " + y + ")";
     }
     // Secret values are opaque capabilities; compare their identity, never their contents.
