@@ -340,6 +340,7 @@ add(250, "Execution with unnecessary privileges", "na", note="Deployment concern
 # ---------------------------------------------------------------- cryptography and randomness
 add(256, "Plaintext storage of a password", "reject",
     'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }', "CWE-20")
+# An innocuous alias exposes the provenance gap; name-based heuristics are not provenance tracking.
 add(257, "Storing passwords in a recoverable format", "gap",
     'int main() { if (let x = read_line()) { bool ok = write_log_file("users.log", escape_log(x)); } return 0; }',
     note="Password provenance is not yet tracked: context-safe logging still stores a recoverable password. This is an explicit follow-up, not a compiler-prevented weakness.")
