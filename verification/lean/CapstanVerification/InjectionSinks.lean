@@ -100,6 +100,6 @@ theorem context_encoder_rejects_other_context
     (encoder : ContextEncoder first) (value : SinkValue) :
     second ∉ (encoder.encode value).safeContexts := by
   intro hsecond
-  exact hneq (encoder.establishes_only_context value second hsecond)
+  exact hneq (Eq.symm (encoder.establishes_only_context value second hsecond))
 
 end CapstanVerification
