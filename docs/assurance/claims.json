@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd"
+    "commit": "85268b1ef0acbd01a39fe3e1bfa0fa43b8c68de9"
   },
   "claims": [
     {
@@ -110,7 +110,7 @@
             "docs/architecture/COMPILER-CCAM-LOWERING.md"
           ],
           "procedure": "Review the stated profile, proof ladder, exclusions and implementation correspondence boundaries.",
-          "revision": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd",
+          "revision": "85268b1ef0acbd01a39fe3e1bfa0fa43b8c68de9",
           "notes": "C-free assurance contract; proposed, not a claim of completed end-to-end verification."
         },
         {
@@ -125,7 +125,7 @@
             "verification/lean/CapstanVerification/MultiFunction.lean"
           ],
           "procedure": "Build the pinned Lean verification package and inspect the axiom audit. Treat the results only as the restricted mathematical model documented in C-FREE-TYPE-SAFETY.md.",
-          "revision": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd",
+          "revision": "85268b1ef0acbd01a39fe3e1bfa0fa43b8c68de9",
           "tool": "Lean 4.19.0",
           "notes": "Existing scalar CCAM proofs plus the new typed function-entry/return contract model. The new module's exact-head CI is pending; none of this establishes correspondence to the executable multi-function evaluator."
         },
@@ -138,13 +138,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd",
+          "revision": "85268b1ef0acbd01a39fe3e1bfa0fa43b8c68de9",
           "notes": "This record does not assert a passing run for this assurance profile."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "b1b85a69775a9cf5d51ac12fda20a89897a3fdbd"
+        "reviewed_commit": "85268b1ef0acbd01a39fe3e1bfa0fa43b8c68de9"
       },
       "covers": [
         "verification/lean/CapstanVerification/Core.lean",
