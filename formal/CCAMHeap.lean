@@ -94,7 +94,7 @@ theorem rejected_allocation_preserves_state
     (h : allocate cap s charge workCharge temporaryCharge = .rejected error after) :
     after = s := by
   unfold allocate at h
-  repeat' split at h <;> simp_all
+  split_ifs at h <;> cases h <;> rfl
 
 /-- Successful allocation returns the previous next-object identity. -/
 theorem allocation_returns_previous_counter
@@ -103,7 +103,7 @@ theorem allocation_returns_previous_counter
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     object = s.nextObject := by
   unfold allocate at h
-  repeat' split at h <;> simp_all
+  split_ifs at h <;> cases h <;> rfl
 
 /-- Successful allocation preserves every conjunct of the heap invariant. -/
 theorem allocate_success_preserves_heapInvariant
@@ -114,7 +114,9 @@ theorem allocate_success_preserves_heapInvariant
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     heapInvariant after := by
   unfold allocate at h
-  repeat' split at h <;> simp_all [heapInvariant, max_le_iff] <;> omega
+  split_ifs at h <;> try cases h
+  simp_all [heapInvariant, max_le_iff]
+  omega
 
 /-- A successful allocation charges exactly the admitted amount. -/
 theorem allocation_charges_exactly
@@ -123,7 +125,7 @@ theorem allocation_charges_exactly
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.usedBytes = s.usedBytes + charge := by
   unfold allocate at h
-  repeat' split at h <;> simp_all
+  split_ifs at h <;> cases h <;> rfl
 
 /-- Successful allocation preserves the logical byte budget, provided the
     input state is within budget. -/
@@ -134,7 +136,9 @@ theorem allocation_preserves_byte_bound
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.usedBytes ≤ after.maxBytes := by
   unfold allocate at h
-  repeat' split at h <;> simp_all <;> omega
+  split_ifs at h <;> try cases h
+  simp_all
+  omega
 
 /-- Successful allocation preserves the object-count budget. -/
 theorem allocation_preserves_object_bound
@@ -144,7 +148,8 @@ theorem allocation_preserves_object_bound
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.objectCount ≤ after.maxObjects := by
   unfold allocate at h
-  repeat' split at h <;> simp_all
+  split_ifs at h <;> try cases h
+  simp_all
   omega
 
 /-- Successful allocation charges exactly the admitted work units. -/
@@ -154,7 +159,7 @@ theorem allocation_charges_exact_work
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.workUsed = s.workUsed + workCharge := by
   unfold allocate at h
-  repeat' split at h <;> simp_all
+  split_ifs at h <;> cases h <;> rfl
 
 /-- Successful allocation never reports a temporary peak above the admitted charge. -/
 theorem allocation_bounds_temporary_peak
@@ -163,7 +168,9 @@ theorem allocation_bounds_temporary_peak
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.temporaryPeakBytes ≤ after.maxTemporaryBytes := by
   unfold allocate at h
-  repeat' split at h <;> simp_all [max_le_iff] <;> omega
+  split_ifs at h <;> try cases h
+  simp_all [max_le_iff]
+  omega
 
 /-- Successful allocation preserves the cumulative work budget. -/
 theorem allocation_preserves_work_bound
@@ -173,7 +180,8 @@ theorem allocation_preserves_work_bound
     (h : allocate cap s charge workCharge temporaryCharge = .allocated after object) :
     after.workUsed ≤ after.maxWork := by
   unfold allocate at h
-  repeat' split at h <;> simp_all
+  split_ifs at h <;> try cases h
+  simp_all
   omega
 
 /-- Region authority is checked independently of object identity. -/
