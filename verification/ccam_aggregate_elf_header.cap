@@ -1,0 +1,5 @@
+import "ccam_aggregate_elf_ident.cap";
+import "ccam_aggregate_u16.cap";
+import "ccam_aggregate_u32.cap";
+import "ccam_aggregate_u64.cap";
+bool ag_elf_header(List<int> b,int entry){if(b.len()!=0||entry<0){return false;}return ag_elf_ident(b)&&ag_u16(b,2)&&ag_u16(b,62)&&ag_u32(b,1)&&ag_u64(b,entry)&&ag_u64(b,64)&&ag_u64(b,0)&&ag_u32(b,0)&&ag_u16(b,64)&&ag_u16(b,56)&&ag_u16(b,1)&&ag_u16(b,0)&&ag_u16(b,0)&&ag_u16(b,0);}
