@@ -300,8 +300,23 @@ def protocol(exe):
           "an error in an imported file is shown on its import: %r" % d)
     s.notify("textDocument/didChange", {"textDocument": {"uri": uri, "version": 3}, "contentChanges": [{"text": 'import "nowhere.cap";\n'}]})
     d = publish_for(s, uri)["diagnostics"]
-    check(len(d) == 1 and d[0]["message"] == "cannot read imported file 'nowhere.cap' (missing, unreadable, a directory, or over 16 MiB)", "missing import: %r" % d)
+    check(len(d) == 1 and d[0]["message"] == "cannot read imported file 'nowhere.cap' (missing, unreadable, a directory, over 16 MiB, or aggregate source budget exceeded)", "missing import: %r" % d)
     finish(s, "imports")
+
+    # The LSP front end uses the same graph file ceiling as capstanc.
+    with tempfile.TemporaryDirectory(prefix="lsp-import-budget-", dir=ROOT) as td:
+        for i in range(256):
+            body = f'import "f{i + 1}.cap";\n' if i < 255 else "void library() {}\n"
+            with open(os.path.join(td, f"f{i}.cap"), "w", encoding="utf-8") as out:
+                out.write(body)
+        budget_uri = uri_of(os.path.join(td, "main.cap"))
+        sb, _ = session(exe)
+        sb.notify("textDocument/didOpen", {"textDocument": {"uri": budget_uri, "version": 1,
+                                                            "text": 'import "f0.cap";\n'}})
+        bd = publish_for(sb, budget_uri)["diagnostics"]
+        check(len(bd) == 1 and "file-count limit (256)" in bd[0]["message"],
+              "LSP import graph file budget: %r" % bd)
+        finish(sb, "import budget")
 
     # --strict and --release through initializationOptions.
     src = "int main() { int unused = 1; return 0; }\n"
@@ -329,6 +344,56 @@ def protocol(exe):
         (b"[" * 100000 + b"]" * 100000, -32700, "deep nesting"),
         (b'{"jsonrpc": "2.0", "method": "x", "id": 1e999999999999999999}', None, None),
     ]
+    # The JSON parser bounds aggregate values, members, elements, string bytes,
+    # escape-fragment amplification and number-token length independently.
+    value_fanout = b"[" + b",".join(
+        b"[" + b",".join([b"null"] * 16) + b"]" for _ in range(4096)
+    ) + b"]"
+    too_many_members = b"{" + b",".join(
+        b'"k%d":null' % i for i in range(4097)
+    ) + b"}"
+    too_many_elements = b"[" + b",".join([b"null"] * 16385) + b"]"
+    long_string = b'{"s":"' + b"a" * (8 * 1024 * 1024 + 1) + b'"}'
+    escape_fragments = b'"' + b"\n" * 131072 + b'"'
+    aggregate_strings = b"[" + b",".join(
+        b'"' + b"a" * (7 * 1024 * 1024) + b'"' for _ in range(2)
+    ) + b"]"
+    exact_nested = b"[" + b",".join([b"null"] * 15) + b"]"
+    exact_values = b"[" + b",".join([exact_nested] * 4095 + [b"null"] * 15) + b"]"
+    exact_members = b"{" + b",".join(b'"k%d":null' % i for i in range(4096)) + b"}"
+    exact_elements = b"[" + b",".join([b"null"] * 16384) + b"]"
+    exact_string = b'"' + b"a" * (8 * 1024 * 1024) + b'"'
+    exact_aggregate_strings = b'["' + b"a" * (6 * 1024 * 1024) + b'","' + b"a" * (6 * 1024 * 1024) + b'"]'
+    exact_fragments = b'"' + b"\n" * 131069 + b"\\uD83D\\uDE00" + b'"'
+    exact_number = b"1" * 128
+    exact_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments]) + b"]"
+    over_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments, b'""']) + b"]"
+    boundary_cases = [
+        (exact_number, -32600, "exact JSON number token budget"),
+        (b'{"jsonrpc":"2.0","jsonrpc":"2.0","id":1,"method":"x"}', -32700, "duplicate object key"),
+        (b"1" * 129, -32700, "JSON number token byte budget"),
+    ]
+    # Large aggregate vectors run in the normal session. The separate GC-stress
+    # pass focuses on collection safety; replaying hundreds of thousands of
+    # parser allocations under forced collection adds minutes without new coverage.
+    if not os.environ.get("CAPSTAN_GC_STRESS"):
+        boundary_cases.extend([
+            (exact_values, -32600, "exact JSON value budget"),
+            (exact_members, -32600, "exact JSON object member budget"),
+            (exact_elements, -32600, "exact JSON array element budget"),
+            (exact_string, -32600, "exact JSON per-string byte budget"),
+            (exact_aggregate_strings, -32600, "exact JSON aggregate string byte budget"),
+            (exact_fragments, -32600, "exact JSON string fragment budget"),
+            (exact_aggregate_parts, -32600, "exact JSON aggregate string fragment budget"),
+            (value_fanout, -32700, "aggregate JSON value budget"),
+            (too_many_members, -32700, "JSON object member budget"),
+            (too_many_elements, -32700, "JSON array element budget"),
+            (long_string, -32700, "JSON per-string byte budget"),
+            (escape_fragments, -32700, "JSON string fragment budget"),
+            (aggregate_strings, -32700, "JSON aggregate string byte budget"),
+            (over_aggregate_parts, -32700, "JSON aggregate string fragment budget"),
+        ])
+    bad_bodies.extend(boundary_cases)
     for body, code, name in bad_bodies:
         s.send(b"Content-Length: %d\r\n\r\n" % len(body) + body)
         if code is None:
