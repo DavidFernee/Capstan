@@ -2,7 +2,7 @@ bool choose_provenance_branch() { return true; }
 
 int main() {
     if (choose_provenance_branch()) {
-        if (let input = read_line()) {
+        if (let input = read_line(1024)) {
             int item = input.at(0);
             if (item == 0) { println("input"); }
         }
