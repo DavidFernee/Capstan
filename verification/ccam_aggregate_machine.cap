@@ -1,0 +1,513 @@
+// Experimental CCAM aggregate execution bridge for the C-free compiler.
+//
+// This is a separately versioned execution profile layered over normative
+// scalar CCAM v0.1. It composes the opaque, instance-bound region heap with
+// typed machine registers. It is an executable Capstan reference transition
+// model, not yet the canonical CCAM validator or native-backend implementation.
+//
+// The compiler arena is process-lifetime and distinct from frame-scoped
+// scratch memory. References remain opaque handles; no native address is
+// represented in a register.
+
+import "ccam_heap.cap";
+
+const int CCAM_AGG_TYPE_INT = CCAM_HEAP_VALUE_INT;
+const int CCAM_AGG_TYPE_BOOL = CCAM_HEAP_VALUE_BOOL;
+const int CCAM_AGG_TYPE_REF = CCAM_HEAP_VALUE_REF;
+const int CCAM_AGG_MAX_STEPS = 10000000;
+
+struct CCAMAggregateRegister {
+    int declared_type;
+    bool initialised;
+    CCAMHeapValue value;
+}
+
+struct CCAMAggregateMachine {
+    CCAMHeap heap;
+    List<CCAMAggregateRegister> registers;
+    int steps;
+    int max_steps;
+    string trap_code;
+}
+
+struct CCAMAggregateCreateResult {
+    bool ok;
+    CCAMAggregateMachine machine;
+    string error;
+}
+
+struct CCAMAggregateValueResult {
+    bool ok;
+    CCAMHeapValue value;
+    string trap;
+}
+
+CCAMAggregateMachine ccam_aggregate_empty_machine() {
+    return new CCAMAggregateMachine{
+        heap: ccam_heap_create(0, 0).heap,
+        registers: new List<CCAMAggregateRegister>(),
+        steps: 0,
+        max_steps: 0,
+        trap_code: ""
+    };
+}
+
+CCAMAggregateCreateResult ccam_aggregate_create(
+    List<int> register_types,
+    int max_heap_bytes,
+    int max_heap_objects,
+    int max_heap_work,
+    int max_temporary_bytes,
+    int max_steps
+) {
+    CCAMAggregateMachine empty = ccam_aggregate_empty_machine();
+    if (register_types.len() > 262144 ||
+        max_steps < 0 || max_steps > CCAM_AGG_MAX_STEPS) {
+        return new CCAMAggregateCreateResult{
+            ok: false, machine: empty, error: "invalid_machine_limits"
+        };
+    }
+    for (int i = 0; i < register_types.len(); i += 1) {
+        int kind = register_types[i];
+        if (kind != CCAM_AGG_TYPE_INT &&
+            kind != CCAM_AGG_TYPE_BOOL &&
+            kind != CCAM_AGG_TYPE_REF) {
+            return new CCAMAggregateCreateResult{
+                ok: false, machine: empty, error: "invalid_register_type"
+            };
+        }
+    }
+    CCAMHeapCreateResult created = ccam_heap_create_bounded(
+        max_heap_bytes, max_heap_objects, max_heap_work, max_temporary_bytes
+    );
+    if (!created.ok) {
+        return new CCAMAggregateCreateResult{
+            ok: false, machine: empty, error: created.error
+        };
+    }
+    List<CCAMAggregateRegister> registers = new List<CCAMAggregateRegister>();
+    for (int i = 0; i < register_types.len(); i += 1) {
+        registers.push(new CCAMAggregateRegister{
+            declared_type: register_types[i],
+            initialised: false,
+            value: ccam_heap_int(0)
+        });
+    }
+    return new CCAMAggregateCreateResult{
+        ok: true,
+        machine: new CCAMAggregateMachine{
+            heap: created.heap,
+            registers: registers,
+            steps: 0,
+            max_steps: max_steps,
+            trap_code: ""
+        },
+        error: ""
+    };
+}
+
+// A dispatched operation consumes one step. An exhausted budget traps before
+// the operation and leaves the heap and register file unchanged.
+string ccam_aggregate_begin_step(CCAMAggregateMachine machine) {
+    if (machine.trap_code != "") { return machine.trap_code; }
+    if (machine.steps >= machine.max_steps) {
+        machine.trap_code = "step_limit";
+        return machine.trap_code;
+    }
+    machine.steps += 1;
+    return "";
+}
+
+string ccam_aggregate_register_check(
+    CCAMAggregateMachine machine, int index, int expected_type
+) {
+    if (index < 0 || index >= machine.registers.len()) {
+        return "invalid_register";
+    }
+    if (machine.registers[index].declared_type != expected_type) {
+        return "register_type_mismatch";
+    }
+    return "";
+}
+
+CCAMAggregateValueResult ccam_aggregate_read(
+    CCAMAggregateMachine machine, int index, int expected_type
+) {
+    string check = ccam_aggregate_register_check(machine, index, expected_type);
+    if (check != "") {
+        return new CCAMAggregateValueResult{
+            ok: false, value: ccam_heap_int(0), trap: check
+        };
+    }
+    CCAMAggregateRegister register_value = machine.registers[index];
+    if (!register_value.initialised) {
+        return new CCAMAggregateValueResult{
+            ok: false, value: ccam_heap_int(0), trap: "uninitialised_register"
+        };
+    }
+    if (register_value.value.kind != expected_type) {
+        return new CCAMAggregateValueResult{
+            ok: false, value: ccam_heap_int(0), trap: "invalid_register_value"
+        };
+    }
+    return new CCAMAggregateValueResult{
+        ok: true, value: register_value.value, trap: ""
+    };
+}
+
+string ccam_aggregate_write(
+    CCAMAggregateMachine machine, int index, CCAMHeapValue value
+) {
+    if (index < 0 || index >= machine.registers.len()) {
+        return "invalid_register";
+    }
+    int expected_type = machine.registers[index].declared_type;
+    if (value.kind != expected_type) { return "register_type_mismatch"; }
+    if (expected_type == CCAM_AGG_TYPE_REF) {
+        if (let reference = value.reference) {
+            // The opaque reference can only be obtained from this heap's
+            // allocation or from a previously validated heap read.
+        } else {
+            return "invalid_reference";
+        }
+    }
+    machine.registers[index].value = value;
+    machine.registers[index].initialised = true;
+    return "";
+}
+
+CCAMAggregateValueResult ccam_aggregate_read_ref(
+    CCAMAggregateMachine machine, int index
+) {
+    return ccam_aggregate_read(machine, index, CCAM_AGG_TYPE_REF);
+}
+
+string ccam_aggregate_trap(CCAMAggregateMachine machine, string trap) {
+    if (machine.trap_code == "") { machine.trap_code = trap; }
+    return machine.trap_code;
+}
+
+string ccam_aggregate_alloc_record(
+    CCAMAggregateMachine machine, int destination, CCAMHeapLayout layout
+) {
+    string check = ccam_aggregate_register_check(
+        machine, destination, CCAM_AGG_TYPE_REF
+    );
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    check = ccam_aggregate_begin_step(machine);
+    if (check != "") { return check; }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_record(machine.heap, layout);
+    if (!allocated.ok) { return ccam_aggregate_trap(machine, allocated.trap); }
+    string write_error = ccam_aggregate_write(
+        machine, destination, ccam_heap_ref_value(allocated.reference)
+    );
+    if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+    return "";
+}
+
+string ccam_aggregate_alloc_array(
+    CCAMAggregateMachine machine,
+    int destination,
+    int element_type,
+    int element_ref_type_id,
+    int capacity
+) {
+    string check = ccam_aggregate_register_check(
+        machine, destination, CCAM_AGG_TYPE_REF
+    );
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    check = ccam_aggregate_begin_step(machine);
+    if (check != "") { return check; }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_typed_array(
+        machine.heap, element_type, element_ref_type_id, capacity
+    );
+    if (!allocated.ok) { return ccam_aggregate_trap(machine, allocated.trap); }
+    string write_error = ccam_aggregate_write(
+        machine, destination, ccam_heap_ref_value(allocated.reference)
+    );
+    if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+    return "";
+}
+
+string ccam_aggregate_alloc_bytes(
+    CCAMAggregateMachine machine, int destination, string data
+) {
+    string check = ccam_aggregate_register_check(
+        machine, destination, CCAM_AGG_TYPE_REF
+    );
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    check = ccam_aggregate_begin_step(machine);
+    if (check != "") { return check; }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_bytes(machine.heap, data);
+    if (!allocated.ok) { return ccam_aggregate_trap(machine, allocated.trap); }
+    string write_error = ccam_aggregate_write(
+        machine, destination, ccam_heap_ref_value(allocated.reference)
+    );
+    if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+    return "";
+}
+
+string ccam_aggregate_field_set(
+    CCAMAggregateMachine machine,
+    int object_register,
+    int descriptor_id,
+    int field_index,
+    int value_register,
+    int value_type
+) {
+    CCAMAggregateValueResult object = ccam_aggregate_read_ref(
+        machine, object_register
+    );
+    if (!object.ok) { return ccam_aggregate_trap(machine, object.trap); }
+    CCAMAggregateValueResult value = ccam_aggregate_read(
+        machine, value_register, value_type
+    );
+    if (!value.ok) { return ccam_aggregate_trap(machine, value.trap); }
+    if (let reference = object.value.reference) {
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        string result = ccam_heap_field_set(
+            machine.heap, reference, descriptor_id, field_index, value.value
+        );
+        if (result != "") { return ccam_aggregate_trap(machine, result); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ccam_aggregate_field_get(
+    CCAMAggregateMachine machine,
+    int destination,
+    int object_register,
+    int descriptor_id,
+    int field_index,
+    int value_type
+) {
+    string check = ccam_aggregate_register_check(
+        machine, destination, value_type
+    );
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    CCAMAggregateValueResult object = ccam_aggregate_read_ref(
+        machine, object_register
+    );
+    if (!object.ok) { return ccam_aggregate_trap(machine, object.trap); }
+    if (let reference = object.value.reference) {
+        check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapValueResult result = ccam_heap_field_get(
+            machine.heap, reference, descriptor_id, field_index
+        );
+        if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+        string write_error = ccam_aggregate_write(machine, destination, result.value);
+        if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ccam_aggregate_array_append(
+    CCAMAggregateMachine machine,
+    int array_register,
+    int value_register,
+    int element_type
+) {
+    CCAMAggregateValueResult array_value = ccam_aggregate_read_ref(
+        machine, array_register
+    );
+    if (!array_value.ok) { return ccam_aggregate_trap(machine, array_value.trap); }
+    CCAMAggregateValueResult value = ccam_aggregate_read(
+        machine, value_register, element_type
+    );
+    if (!value.ok) { return ccam_aggregate_trap(machine, value.trap); }
+    if (let reference = array_value.value.reference) {
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        string result = ccam_heap_array_append(
+            machine.heap, reference, element_type, value.value
+        );
+        if (result != "") { return ccam_aggregate_trap(machine, result); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ccam_aggregate_array_get(
+    CCAMAggregateMachine machine,
+    int destination,
+    int array_register,
+    int element_type,
+    int index
+) {
+    string check = ccam_aggregate_register_check(
+        machine, destination, element_type
+    );
+    if (check != "") { return ccam_aggregate_trap(machine, check); }
+    CCAMAggregateValueResult array_value = ccam_aggregate_read_ref(
+        machine, array_register
+    );
+    if (!array_value.ok) { return ccam_aggregate_trap(machine, array_value.trap); }
+    if (let reference = array_value.value.reference) {
+        check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapValueResult result = ccam_heap_array_get(
+            machine.heap, reference, element_type, index
+        );
+        if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+        string write_error = ccam_aggregate_write(machine, destination, result.value);
+        if (write_error != "") { return ccam_aggregate_trap(machine, write_error); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+CCAMAggregateValueResult ccam_aggregate_register_value(
+    CCAMAggregateMachine machine, int index, int expected_type
+) {
+    return ccam_aggregate_read(machine, index, expected_type);
+}
+
+// Executable bridge regressions. These exercise real heap objects through
+// typed machine registers, not standalone heap calls.
+test "aggregate CCAM registers allocate records and round-trip typed fields" {
+    List<int> types = new List<int>();
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_INT);
+    types.push(CCAM_AGG_TYPE_BOOL);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(
+        types, 4096, 16, 4096, 4096, 32
+    );
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_AGG_TYPE_INT);
+    List<bool> mutable_fields = new List<bool>();
+    mutable_fields.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{
+        type_id: 4101,
+        field_types: field_types,
+        field_ref_type_ids: new List<int>(),
+        field_mutable: mutable_fields
+    };
+    assert(ccam_aggregate_alloc_record(machine, 0, layout) == "");
+    assert(ccam_aggregate_write(machine, 1, ccam_heap_int(42)) == "");
+    assert(ccam_aggregate_field_set(machine, 0, 4101, 0, 1, CCAM_AGG_TYPE_INT) == "");
+    assert(ccam_aggregate_field_get(machine, 1, 0, 4101, 0, CCAM_AGG_TYPE_INT) == "");
+    CCAMAggregateValueResult loaded = ccam_aggregate_register_value(
+        machine, 1, CCAM_AGG_TYPE_INT
+    );
+    assert(loaded.ok && loaded.value.int_value == 42);
+    assert(machine.steps == 3);
+}
+
+test "aggregate CCAM arrays preserve opaque reference identity" {
+    List<int> types = new List<int>();
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(
+        types, 4096, 16, 4096, 4096, 32
+    );
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_AGG_TYPE_INT);
+    List<bool> mutable_fields = new List<bool>();
+    mutable_fields.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{
+        type_id: 4201,
+        field_types: field_types,
+        field_ref_type_ids: new List<int>(),
+        field_mutable: mutable_fields
+    };
+    assert(ccam_aggregate_alloc_record(machine, 0, layout) == "");
+    assert(ccam_aggregate_write(machine, 2, ccam_heap_int(73)) == "");
+    assert(ccam_aggregate_field_set(machine, 0, 4201, 0, 2, CCAM_AGG_TYPE_INT) == "");
+    assert(ccam_aggregate_alloc_array(
+        machine, 1, CCAM_AGG_TYPE_REF, 4201, 2
+    ) == "");
+    assert(ccam_aggregate_array_append(
+        machine, 1, 0, CCAM_AGG_TYPE_REF
+    ) == "");
+    assert(ccam_aggregate_array_get(
+        machine, 0, 1, CCAM_AGG_TYPE_REF, 0
+    ) == "");
+    assert(ccam_aggregate_field_get(
+        machine, 2, 0, 4201, 0, CCAM_AGG_TYPE_INT
+    ) == "");
+    CCAMAggregateValueResult loaded = ccam_aggregate_register_value(
+        machine, 2, CCAM_AGG_TYPE_INT
+    );
+    assert(loaded.ok && loaded.value.int_value == 73);
+}
+
+test "aggregate CCAM step exhaustion occurs before heap allocation" {
+    List<int> types = new List<int>();
+    types.push(CCAM_AGG_TYPE_REF);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(
+        types, 4096, 16, 4096, 4096, 0
+    );
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    List<int> field_types = new List<int>();
+    List<bool> mutable_fields = new List<bool>();
+    CCAMHeapLayout layout = new CCAMHeapLayout{
+        type_id: 4301,
+        field_types: field_types,
+        field_ref_type_ids: new List<int>(),
+        field_mutable: mutable_fields
+    };
+    assert(ccam_aggregate_alloc_record(machine, 0, layout) == "step_limit");
+    assert(machine.steps == 0);
+    // The operation did not allocate: the first direct allocation still gets
+    // the first object identity in this arena.
+    CCAMHeapRefResult allocated = ccam_heap_alloc_record(machine.heap, layout);
+    assert(allocated.ok && allocated.reference.object_id == 1);
+}
+
+test "aggregate CCAM rejects invalid register writes before mutation" {
+    List<int> types = new List<int>();
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(
+        types, 4096, 16, 4096, 4096, 8
+    );
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_write(machine, 0, ccam_heap_bool(true)) == "register_type_mismatch");
+    assert(ccam_aggregate_write(machine, 0, ccam_heap_ref_value(ccam_heap_invalid_ref())) == "");
+    CCAMAggregateValueResult value = ccam_aggregate_register_value(
+        machine, 0, CCAM_AGG_TYPE_REF
+    );
+    assert(value.ok);
+}
+
+test "aggregate CCAM traps on wrong descriptor and preserves heap field" {
+    List<int> types = new List<int>();
+    types.push(CCAM_AGG_TYPE_REF);
+    types.push(CCAM_AGG_TYPE_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(
+        types, 4096, 16, 4096, 4096, 8
+    );
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_AGG_TYPE_INT);
+    List<bool> mutable_fields = new List<bool>();
+    mutable_fields.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{
+        type_id: 4401,
+        field_types: field_types,
+        field_ref_type_ids: new List<int>(),
+        field_mutable: mutable_fields
+    };
+    assert(ccam_aggregate_alloc_record(machine, 0, layout) == "");
+    assert(ccam_aggregate_write(machine, 1, ccam_heap_int(11)) == "");
+    assert(ccam_aggregate_field_set(machine, 0, 9999, 0, 1, CCAM_AGG_TYPE_INT) == "object_type_mismatch");
+    CCAMAggregateValueResult still_empty = ccam_heap_field_get(
+        machine.heap,
+        machine.registers[0].value.reference.value,
+        4401,
+        0
+    );
+    assert(!still_empty.ok && still_empty.trap == "uninitialised_field");
+}
