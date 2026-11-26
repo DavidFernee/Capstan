@@ -407,10 +407,10 @@ DisplayList finish_display_list(Canvas cv) {
         Segments? owned_segments = none;
         List<int>? owned_alpha = none;
         if (let segments = cmd.segments) {
-            owned_segments = some(display_segments_copy(segments));
+            owned_segments = display_segments_copy(segments);
         }
         if (let alpha = cmd.mask_alpha) {
-            owned_alpha = some(display_alpha_copy(alpha));
+            owned_alpha = display_alpha_copy(alpha);
         }
         // Construct a fresh command rather than assigning nested option fields
         // on a copied command value. This makes ownership transfer explicit.
