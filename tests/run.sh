@@ -92,6 +92,13 @@ else
   bad "CCAM multi-function evaluator" "$out"
 fi
 
+section "Capstan-native verification: Bosun bounded storage kernel"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/lib/bosun/storage.cap" 2>&1)"; then
+  ok "bounded regions, aggregate admission, independent flat oracle, typed bytes and reset semantics"
+else
+  bad "Bosun bounded storage kernel" "$out"
+fi
+
 section "Capstan-native verification: bounded concurrency reference machine"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
   ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"
