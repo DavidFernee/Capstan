@@ -405,8 +405,15 @@ else
 fi
 
 section "Capstan-native repository inventory"
+rm -f /tmp/capstan-inventory.csv
 if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1)"; then
-  ok "inventory purpose/language classification, binary detection, physical-line counting and aggregate totals"
+  if [[ -s /tmp/capstan-inventory.csv ]] &&
+      grep -Fq '"path","classification","language","lines","bytes","status"' /tmp/capstan-inventory.csv &&
+      grep -Fq '"SUMMARY"' /tmp/capstan-inventory.csv; then
+    ok "inventory purpose/language classification, binary detection, physical-line counting, summary and typed CSV output"
+  else
+    bad "Capstan-native repository inventory" "program ran but typed CSV report was absent or malformed"
+  fi
 else
   bad "Capstan-native repository inventory" "$out"
 fi
