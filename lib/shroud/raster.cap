@@ -135,7 +135,16 @@ struct Canvas {
         int y0 = fx_floor(r.y);
         int x1 = fx_ceil(r.right());
         int y1 = fx_ceil(r.bottom());
-        self.clips.push(self.clip().intersect(rect(x0, y0, x1 - x0, y1 - y0)));
+        Rect parent = self.clip();
+        Rect clipped = parent.intersect(rect(x0, y0, x1 - x0, y1 - y0));
+        // Canonicalise empty intersections. A disjoint child can otherwise
+        // retain an origin beyond the parent surface, which is invalid metadata
+        // for a published display-list command even though it draws no pixels.
+        int left = clamp(clipped.x, parent.x, parent.right());
+        int top = clamp(clipped.y, parent.y, parent.bottom());
+        int right = clamp(clipped.right(), parent.x, parent.right());
+        int bottom = clamp(clipped.bottom(), parent.y, parent.bottom());
+        self.clips.push(rect(left, top, int_max(0, right - left), int_max(0, bottom - top)));
     }
 
     void pop_clip() {
