@@ -31,7 +31,7 @@ The API does not expose raw descriptors, descriptor integers, raw pointers, arbi
 
 ## 2. Versioning and compatibility
 
-The contract identifier is capstan-host-io/0.1. The Linux binding profile is linux-unix/0.1.
+The contract identifier is capstan-host-io/0.1. The Linux binding profile is linux-unix/0.1. Its DirectoryRoot/openat2 operation requires Linux 5.6 or later; an older-kernel fallback is a separately versioned binding and must prove equivalent confinement.
 
 A conforming implementation records:
 - contract ID and revision;
@@ -303,7 +303,7 @@ The ABI module contains only kernel entry, argument/result marshalling and nativ
 | pwrite | write_at | Checked offset/length; short writes/EINTR; no implicit extension |
 | pread | read_at | Checked range; short reads/EOF semantics |
 | fstat | validate shared object | Metadata treated as untrusted and compared to declared limits |
-| openat2 | open_relative | Handle-relative path resolution beneath DirectoryRoot; CLOEXEC; RESOLVE_BENEATH/NO_MAGICLINKS/NO_SYMLINKS where supported; no ambient cwd |
+| openat2 (Linux 5.6+) | open_relative | Handle-relative path resolution beneath DirectoryRoot; CLOEXEC; RESOLVE_BENEATH/NO_MAGICLINKS/NO_SYMLINKS; no ambient cwd |
 | read / write | bounded file/stream operations | Explicit partial progress, EOF, EINTR and error mapping; no unbounded buffers |
 | mmap / munmap | map_region / unmap_region | Page alignment; range/protection checks; no executable or W+X mapping; exact ownership |
 | clock_gettime(CLOCK_MONOTONIC) | monotonic_now | Nonnegative normalized value; overflow/regression checks |
