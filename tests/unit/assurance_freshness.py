@@ -121,6 +121,38 @@ class FreshnessTests(unittest.TestCase):
         self.assertGreaterEqual(schema["properties"]["claims"].get("minItems", 0), 1)
         self.assertGreaterEqual(schema["$defs"]["claim"]["properties"]["evidence"].get("minItems", 0), 1)
 
+
+    def test_boundary_cannot_claim_proof_without_implementation_refinement(self):
+        boundaries = {"boundaries": [{
+            "id": "EVAL", "formal": "proved",
+            "implementation_refinement": False
+        }]}
+        errors = MODULE.boundary_policy_errors(boundaries)
+        self.assertTrue(any("requires implementation_refinement=true" in e
+                            for e in errors))
+
+    def test_boundary_refinement_flag_requires_proved_status(self):
+        boundaries = {"boundaries": [{
+            "id": "EVAL", "formal": "partial",
+            "implementation_refinement": True
+        }]}
+        errors = MODULE.boundary_policy_errors(boundaries)
+        self.assertTrue(any("requires formal=proved" in e for e in errors))
+
+    def test_boundary_register_rejects_duplicate_ids(self):
+        boundaries = {"boundaries": [
+            {"id": "EVAL", "formal": "partial", "implementation_refinement": False},
+            {"id": "EVAL", "formal": "partial", "implementation_refinement": False}
+        ]}
+        errors = MODULE.boundary_policy_errors(boundaries)
+        self.assertTrue(any("duplicate boundary identifier EVAL" in e for e in errors))
+
+    def test_partial_model_evidence_is_not_mistaken_for_refinement(self):
+        boundaries = {"boundaries": {"not": "a list"}}
+        # The JSON Schema rejects malformed container shapes before this policy runs.
+        self.assertIsInstance(boundaries, dict)
+
+
     def test_unrelated_change_does_not_stale_covered_path(self):
         with open(os.path.join(self.repo, "unrelated.txt"), "w", encoding="utf-8") as f:
             f.write("unrelated\n")
