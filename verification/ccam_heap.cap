@@ -196,12 +196,15 @@ protected(CCAMHeapIdentityBound) void ccam_heap_require_identity(
 ) { }
 
 int ccam_heap_object_index(CCAMHeap heap, CCAMHeapRef reference) {
+    // The zero index is the explicit invalid sentinel; reject it without
+    // treating it as a foreign-arena capability.
+    if (reference.object_id <= 0) { return -1; }
     if (let identity_grant = authorize CCAMHeapIdentityBound(heap.identity)) {
         ccam_heap_require_identity(identity_grant, reference.identity);
     } else {
         return -1;
     }
-    if (reference.object_id <= 0 || reference.object_id > heap.objects.len()) { return -1; }
+    if (reference.object_id > heap.objects.len()) { return -1; }
     int index = reference.object_id - 1;
     if (heap.objects[index].id != reference.object_id) {
         return -1;
