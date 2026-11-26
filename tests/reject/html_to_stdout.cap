@@ -1,0 +1,6 @@
+// expect: CWE-116
+int main() {
+    Html html = escape_html(taint("cell"));
+    println(html);
+    return 0;
+}
