@@ -313,6 +313,14 @@ else
   bad "CCAM native x86-64 backend" "$out"
 fi
 
+if "$ROOT/bin/capstan" build --root "$ROOT" "$ROOT/tests/fixtures/native_return_42.cap" -o "$tmp/invalid-root-build" >"$tmp/native-root-command.out" 2>&1; then
+  bad "native workspace option scope" "--root was accepted by the ordinary build command"
+elif grep -q -- "--root is supported only by the native command" "$tmp/native-root-command.out"; then
+  ok "native workspace root option is confined to the native CLI"
+else
+  bad "native workspace option scope" "$(cat "$tmp/native-root-command.out")"
+fi
+
 section "unit"
 for opt in 0 2 3; do
   if "$CC" "-O$opt" -std=gnu11 -w -I"$ROOT/runtime" "$ROOT/tests/unit/test_runtime.c" -o "$tmp/unit_o$opt" &&
