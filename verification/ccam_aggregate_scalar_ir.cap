@@ -1,0 +1,6 @@
+struct AGScalarInstruction { int opcode; int dest; int left; int right; int immediate; }
+bool ag_scalar_shape(AGScalarInstruction ins,int count) {
+ if (ins.dest<0 || ins.dest>=count) { return false; }
+ if (ins.opcode==1) { return ins.left==-1 && ins.right==-1; }
+ return ins.opcode>=2 && ins.opcode<=5 && ins.left>=0 && ins.left<count && ins.right>=0 && ins.right<count;
+}

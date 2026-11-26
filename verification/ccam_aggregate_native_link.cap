@@ -1,0 +1,10 @@
+import "ccam_aggregate_native_reloc.cap";
+bool ag_native_link(List<int> bytes,List<AGRelocation> relocations){
+ if(bytes.len()>1048576||relocations.len()>4096){return false;}
+ for(int i=0;i<relocations.len();i+=1){
+  AGRelocation r=relocations[i];if(!ag_reloc_valid(r,bytes.len())){return false;}
+  for(int j=0;j<i;j+=1){int p=relocations[j].patch;if(r.patch<p+4&&p<r.patch+4){return false;}}
+ }
+ for(int i=0;i<relocations.len();i+=1){AGRelocation r=relocations[i];if(!ag_rel32(bytes,r.patch,r.target)){return false;}}
+ return true;
+}

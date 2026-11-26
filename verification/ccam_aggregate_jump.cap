@@ -1,0 +1,2 @@
+import "ccam_aggregate_u32.cap";
+int ag_jump_placeholder(List<int> b,int op){if((op!=233&&op!=232)||b.len()>AG_BYTE_LIMIT-5){return -1;}b.push(op);int p=b.len();if(!ag_u32(b,0)){return -1;}return p;}

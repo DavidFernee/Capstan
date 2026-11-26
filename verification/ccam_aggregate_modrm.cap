@@ -1,0 +1,2 @@
+import "ccam_aggregate_native_reg.cap";
+int ag_modrm(int r,int rm){if(!ag_native_reg(r)||!ag_native_reg(rm)){return -1;}return 192+(r%8)*8+rm%8;}

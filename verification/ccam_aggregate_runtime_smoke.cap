@@ -1,0 +1,3 @@
+import "ccam_aggregate_runtime_region.cap";
+import "ccam_aggregate_runtime_zero.cap";
+test "runtime bounds reject oversized reserve and zero" {AGRuntimeRegion r=new AGRuntimeRegion{capacity:8,used:0};assert(ag_region_reserve(r,8)==0);assert(ag_region_reserve(r,1)==-1&&r.used==8);List<int> b=new List<int>();b.push(42);assert(!ag_byte_zero(b,0,2)&&b[0]==42);}

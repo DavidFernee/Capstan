@@ -1,0 +1,7 @@
+import "ccam_aggregate_parse_cursor.cap";
+import "ccam_aggregate_precedence.cap";
+struct AGExpression { int kind; int value; int left; int right; }
+bool ag_expression_node_valid(AGExpression node,int index) {
+ if (node.kind==1) { return node.left == -1 && node.right == -1; }
+ return node.kind==2 && ag_precedence(node.value)>0 && node.left>=0 && node.left<index && node.right>=0 && node.right<index;
+}

@@ -1,0 +1,2 @@
+import "ccam_aggregate_u32.cap";
+bool ag_patch32(List<int> b,int p,int v) { if(p<0 || p>b.len()-4 || v<0 || v>4294967295){return false;} for(int i=0;i<4;i+=1){b[p+i]=v%256;v=v/256;} return true; }

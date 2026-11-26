@@ -1,0 +1,2 @@
+import "ccam_aggregate_native_driver.cap";
+test "literal source to ELF candidate" {List<int> source=new List<int>();source.push(52);source.push(50);AGImage image=ag_compile_exit_image(source);assert(image.ok&&image.bytes[4098]==42);}

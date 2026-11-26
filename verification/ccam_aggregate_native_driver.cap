@@ -1,0 +1,4 @@
+import "ccam_aggregate_driver.cap";
+import "ccam_aggregate_elf_image.cap";
+import "ccam_aggregate_exit_code.cap";
+AGImage ag_compile_exit_image(List<int> source){AGScalarResult result=ag_compile_literal(source);List<int> code=new List<int>();if(!result.ok||!ag_exit_code(code,result.value)){return new AGImage{ok:false,bytes:code};}return ag_elf_image(code);}

@@ -1,0 +1,2 @@
+import "ccam_aggregate_precedence.cap";
+bool ag_operator_push(List<int> ops,int op){if(ops.len()>=65536||ag_precedence(op)==0){return false;}ops.push(op);return true;}

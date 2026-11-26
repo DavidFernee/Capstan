@@ -1,0 +1,2 @@
+import "ccam_aggregate_elf_header.cap";
+bool ag_elf_segment(List<int> b,int size){if(b.len()!=64||size<120||size>1048576){return false;}return ag_u32(b,1)&&ag_u32(b,5)&&ag_u64(b,0)&&ag_u64(b,4194304)&&ag_u64(b,4194304)&&ag_u64(b,size)&&ag_u64(b,size)&&ag_u64(b,4096);}

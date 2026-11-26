@@ -1,0 +1,35 @@
+import "ccam_aggregate_branch.cap";
+struct AGExecutionResult { bool ok; CCAMHeapValue value; string error; }
+AGExecutionResult ag_execute_function(CCAMAggregateMachine machine, List<AGFunction> functions, int id) {
+    if (id < 0 || id >= functions.len() || !ag_program_validate(functions)) {
+        return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: "invalid_program"};
+    }
+    AGFunction f = functions[id];
+    if (machine.registers.len() != f.kinds.len()) {
+        return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: "invalid_frame"};
+    }
+    for (int i = 0; i < f.kinds.len(); i += 1) {
+        if (machine.registers[i].declared_type != f.kinds[i]) {
+            return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: "invalid_frame"};
+        }
+    }
+    int block_id = 0;
+    while (machine.trap_code == "") {
+        AGCFGBlock block = f.blocks[block_id];
+        for (int j = 0; j < block.instructions.len(); j += 1) {
+            AGBlockInstruction ins = block.instructions[j];
+            string error = ag_dispatch(machine, ins.opcode, ins.kind, ins.operands);
+            if (error != "") { return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: error}; }
+        }
+        if (block.terminator == 0) {
+            string error = ccam_aggregate_begin_step(machine);
+            if (error != "") { return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: error}; }
+            CCAMAggregateValueResult result = ccam_aggregate_read(machine, f.returns[block_id], f.signature.result_kind);
+            return new AGExecutionResult{ok: result.ok, value: result.value, error: result.trap};
+        }
+        AGBranchResult branch = ag_branch_select(machine, block, f.blocks.len());
+        if (!branch.ok) { return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: branch.error}; }
+        block_id = branch.target;
+    }
+    return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: machine.trap_code};
+}

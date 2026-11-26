@@ -1,0 +1,2 @@
+import "ccam_aggregate_byte_buffer.cap";
+bool ag_native_ret(List<int> b){return ag_byte_append(b,195);}

@@ -1,0 +1,73 @@
+// Candidate forward-only control flow primitives. Backedges and calls
+// require a separate fixed-point analysis, not silent acceptance.
+import "ccam_aggregate_schema.cap";
+
+const int AG_FLOW_MAX_BLOCKS = 65536;
+
+bool ag_flow_edge(int count, int source, int target) {
+    return count > 0 && count <= AG_FLOW_MAX_BLOCKS &&
+        source >= 0 && source < count && target > source && target < count;
+}
+
+struct AGFlowJoin {
+    bool ok;
+    List<bool> ready;
+}
+
+// Intersection is the definite-initialisation meet: every reachable
+// incoming path must initialise a register before its next read.
+// Return a separate list, preserving both predecessor states.
+AGFlowJoin ag_flow_meet(List<bool> left, List<bool> right) {
+    List<bool> result = new List<bool>();
+    if (left.len() != right.len() || left.len() > AG_SCHEMA_MAX_REGS) {
+        return new AGFlowJoin{ok: false, ready: result};
+    }
+    for (int i = 0; i < left.len(); i += 1) {
+        result.push(left[i] && right[i]);
+    }
+    return new AGFlowJoin{ok: true, ready: result};
+}
+
+// A conditional edge has a boolean condition and two valid successors.
+// Duplicate successors are harmless and intentionally permitted.
+bool ag_flow_branch(List<int> kinds, int condition, int count, int source, int yes, int no) {
+    return ag_schema_register(kinds, condition, AG_SCHEMA_BOOL) &&
+        ag_flow_edge(count, source, yes) && ag_flow_edge(count, source, no);
+}
+
+test "aggregate forward edges reject cycles and endpoints" {
+    assert(ag_flow_edge(3, 0, 2));
+    assert(!ag_flow_edge(3, 1, 1));
+    assert(!ag_flow_edge(3, 2, 0));
+    assert(!ag_flow_edge(3, 0, 3));
+    assert(!ag_flow_edge(3, -1, 1));
+    assert(!ag_flow_edge(65537, 0, 1));
+}
+
+test "aggregate flow join requires readiness on both paths" {
+    List<bool> left = new List<bool>();
+    left.push(true);
+    left.push(true);
+    left.push(false);
+    List<bool> right = new List<bool>();
+    right.push(true);
+    right.push(false);
+    right.push(true);
+    AGFlowJoin joined = ag_flow_meet(left, right);
+    assert(joined.ok && joined.ready.len() == 3);
+    assert(joined.ready[0] && !joined.ready[1] && !joined.ready[2]);
+    joined.ready[0] = false;
+    assert(left[0] && right[0]);
+    right.push(true);
+    assert(!ag_flow_meet(left, right).ok);
+}
+
+test "aggregate conditional edges require boolean registers" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_BOOL);
+    kinds.push(AG_SCHEMA_INT);
+    assert(ag_flow_branch(kinds, 0, 3, 0, 1, 2));
+    assert(!ag_flow_branch(kinds, 1, 3, 0, 1, 2));
+    assert(!ag_flow_branch(kinds, 0, 3, 1, 1, 2));
+    assert(!ag_flow_branch(kinds, -1, 3, 0, 1, 2));
+}

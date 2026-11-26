@@ -1,0 +1,13 @@
+import "ccam_aggregate_character.cap";
+int ag_scan_identifier(List<int> bytes, int start) {
+ if (start < 0 || start >= bytes.len() || !ag_letter(bytes[start])) { return -1; }
+ int end = start + 1;
+ while (end < bytes.len() && (ag_letter(bytes[end]) || ag_digit(bytes[end]))) { end += 1; }
+ return end;
+}
+int ag_scan_number(List<int> bytes, int start) {
+ if (start < 0 || start >= bytes.len() || !ag_digit(bytes[start])) { return -1; }
+ int end = start + 1;
+ while (end < bytes.len() && ag_digit(bytes[end])) { end += 1; }
+ return end;
+}

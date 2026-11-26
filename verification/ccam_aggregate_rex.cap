@@ -1,0 +1,2 @@
+import "ccam_aggregate_native_reg.cap";
+int ag_rex(int r,int rm){if(!ag_native_reg(r)||!ag_native_reg(rm)){return -1;}return 72+(r/8)*4+rm/8;}

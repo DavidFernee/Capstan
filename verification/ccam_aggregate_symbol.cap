@@ -1,0 +1,9 @@
+struct AGSymbol { string name; int kind; int register_id; }
+int ag_symbol_lookup(List<AGSymbol> symbols,string name) {
+ for (int i=0;i<symbols.len();i+=1) { if (symbols[i].name==name) { return i; } }
+ return -1;
+}
+bool ag_symbol_insert(List<AGSymbol> symbols,AGSymbol symbol) {
+ if (symbols.len()>=65536 || symbol.name.len()==0 || ag_symbol_lookup(symbols,symbol.name)>=0) { return false; }
+ symbols.push(symbol); return true;
+}

@@ -1,0 +1,10 @@
+import "ccam_aggregate_lower_register.cap";
+struct AGLowerInstruction { bool ok; AGBlockInstruction instruction; }
+AGLowerInstruction ag_lower_operand(List<int> kinds, int opcode, int kind, int dest, int object, int index) {
+    List<int> operands = new List<int>();
+    operands.push(dest);
+    operands.push(object);
+    if (opcode != 3) { operands.push(index); }
+    return new AGLowerInstruction{ok: ag_schema_operands(kinds, opcode, kind, operands),
+        instruction: new AGBlockInstruction{opcode: opcode, kind: kind, operands: operands}};
+}

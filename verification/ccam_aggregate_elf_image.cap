@@ -1,0 +1,4 @@
+import "ccam_aggregate_elf_segment.cap";
+import "ccam_aggregate_padding.cap";
+struct AGImage { bool ok; List<int> bytes; }
+AGImage ag_elf_image(List<int> code){List<int> b=new List<int>();if(code.len()==0||code.len()>1048576-4096){return new AGImage{ok:false,bytes:b};}for(int i=0;i<code.len();i+=1){if(code[i]<0||code[i]>255){return new AGImage{ok:false,bytes:b};}}if(!ag_elf_header(b,4198400)||!ag_elf_segment(b,4096+code.len())||!ag_pad(b,4096)){return new AGImage{ok:false,bytes:b};}for(int i=0;i<code.len();i+=1){b.push(code[i]);}return new AGImage{ok:true,bytes:b};}

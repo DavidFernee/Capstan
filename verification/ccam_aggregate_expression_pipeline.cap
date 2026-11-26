@@ -1,0 +1,61 @@
+import "ccam_aggregate_lex.cap";
+import "ccam_aggregate_expression_parse.cap";
+import "ccam_aggregate_scalar_lower.cap";
+import "ccam_aggregate_scalar_machine.cap";
+import "ccam_aggregate_native_driver.cap";
+
+AGCheckedInt ag_compile_expression(List<int> bytes) {
+    AGLexResult lex = ag_lex_bytes(bytes);
+    List<AGExpression> nodes = new List<AGExpression>();
+    List<int> values = new List<int>();
+    List<int> operators = new List<int>();
+    int nv = 0; int no = 0;
+    bool expect_value = true;
+    AGCheckedInt failure = new AGCheckedInt{ok:false,value:0};
+    if (!lex.ok || lex.tokens.len()>65536) { return failure; }
+    for (int i=0;i<lex.tokens.len();i+=1) {
+        AGToken t=lex.tokens[i];
+        if (t.kind==2 && expect_value) {
+            AGExpressionResult literal=ag_parse_literal(bytes,t);
+            if (!literal.ok) { return failure; }
+            nodes.push(literal.nodes[0]);
+            if (nv==values.len()) { values.push(nodes.len()-1); } else { values[nv]=nodes.len()-1; }
+            nv+=1; expect_value=false; continue;
+        }
+        int op=0;
+        if (t.kind==3) { op=bytes[t.start]; }
+        if (op==40 && expect_value) {
+            if (no==operators.len()) { operators.push(op); } else { operators[no]=op; }
+            no+=1; continue;
+        }
+        if (expect_value || (t.kind!=0 && op!=41 && ag_precedence(op)==0)) { return failure; }
+        while(no>0 && operators[no-1]!=40 && (t.kind==0 || op==41 || ag_precedence(operators[no-1])>=ag_precedence(op))) {
+            if(nv<2) { return failure; }
+            nodes.push(new AGExpression{kind:2,value:operators[no-1],left:values[nv-2],right:values[nv-1]});
+            no-=1;nv-=1;values[nv-1]=nodes.len()-1;
+        }
+        if(t.kind==0) {
+            if(no!=0 || nv!=1) { return failure; }
+            AGScalarLower lowered=ag_scalar_lower(nodes);
+            if(!lowered.ok) { return failure; }
+            return ag_scalar_machine(lowered.instructions);
+        }
+        if(op==41) { if(no==0 || operators[no-1]!=40) { return failure; } no-=1; continue; }
+        if(no==operators.len()) { operators.push(op); } else { operators[no]=op; }
+        no+=1;expect_value=true;
+    }
+    return failure;
+}
+AGImage ag_compile_expression_image(List<int> source) {
+    AGCheckedInt result=ag_compile_expression(source);
+    List<int> code=new List<int>();
+    if(!result.ok || !ag_exit_code(code,result.value)) { return new AGImage{ok:false,bytes:code}; }
+    return ag_elf_image(code);
+}
+test "expression precedence and malformed input" {
+    List<int> bytes=new List<int>();
+    bytes.push(50);bytes.push(43);bytes.push(51);bytes.push(42);bytes.push(52);
+    AGCheckedInt result=ag_compile_expression(bytes);
+    assert(result.ok && result.value==14);
+    bytes.push(43);assert(!ag_compile_expression(bytes).ok);
+}

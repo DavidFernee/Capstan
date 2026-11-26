@@ -1,0 +1,8 @@
+import "ccam_aggregate_lower_block.cap";
+AGFunction ag_lower_leaf(AGCallSignature signature, List<int> kinds, List<AGBlockInstruction> instructions, int source) {
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(ag_lower_exit(instructions));
+    List<int> returns = new List<int>();
+    returns.push(source);
+    return new AGFunction{signature: signature, kinds: kinds, blocks: blocks, returns: returns};
+}

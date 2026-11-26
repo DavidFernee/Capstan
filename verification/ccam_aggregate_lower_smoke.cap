@@ -1,0 +1,19 @@
+import "ccam_aggregate_lower_function.cap";
+import "ccam_aggregate_executor.cap";
+test "lowered array length leaf executes through aggregate dispatch" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT);
+    List<int> params = new List<int>();
+    params.push(AG_SCHEMA_REF);
+    AGCallSignature signature = new AGCallSignature{parameters: params, result_kind: AG_SCHEMA_INT};
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    assert(ag_lower_append(instructions, ag_lower_operand(kinds, 3, AG_SCHEMA_INT, 1, 0, -1), 1));
+    List<AGFunction> functions = new List<AGFunction>();
+    functions.push(ag_lower_leaf(signature, kinds, instructions, 1));
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(created.ok);
+    assert(ccam_aggregate_alloc_array(created.machine, 0, AG_SCHEMA_INT, 0, 2) == "");
+    AGExecutionResult result = ag_execute_function(created.machine, functions, 0);
+    assert(result.ok && result.value.int_value == 0);
+}

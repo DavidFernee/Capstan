@@ -1,0 +1,15 @@
+import "ccam_aggregate_cursor.cap";
+struct AGBranchResult { bool ok; int target; string error; }
+AGBranchResult ag_branch_select(CCAMAggregateMachine machine, AGCFGBlock block, int count) {
+    int target = block.yes;
+    if (block.terminator == 2) {
+        CCAMAggregateValueResult condition = ccam_aggregate_read(machine, block.condition, AG_SCHEMA_BOOL);
+        if (!condition.ok) { return new AGBranchResult{ok: false, target: -1, error: condition.trap}; }
+        if (!condition.value.bool_value) { target = block.no; }
+    } else if (block.terminator != 1) {
+        return new AGBranchResult{ok: false, target: -1, error: "invalid_branch"};
+    }
+    if (!ag_fp_target(count, target)) { return new AGBranchResult{ok: false, target: -1, error: "invalid_branch"}; }
+    string error = ccam_aggregate_begin_step(machine);
+    return new AGBranchResult{ok: error == "", target: target, error: error};
+}

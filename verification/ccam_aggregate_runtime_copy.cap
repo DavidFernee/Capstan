@@ -1,0 +1,2 @@
+import "ccam_aggregate_runtime_span.cap";
+bool ag_byte_copy(List<int> dst,int offset,List<int> src){if(!ag_span_valid(dst.len(),offset,src.len())||src.len()>1048576){return false;}List<int> snapshot=new List<int>();for(int i=0;i<src.len();i+=1){if(src[i]<0||src[i]>255){return false;}snapshot.push(src[i]);}for(int i=0;i<snapshot.len();i+=1){dst[offset+i]=snapshot[i];}return true;}

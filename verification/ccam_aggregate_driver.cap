@@ -1,0 +1,13 @@
+import "ccam_aggregate_lex.cap";
+import "ccam_aggregate_expression_parse.cap";
+import "ccam_aggregate_scalar_lower.cap";
+import "ccam_aggregate_scalar_eval.cap";
+AGScalarResult ag_compile_literal(List<int> bytes) {
+ AGLexResult lex=ag_lex_bytes(bytes);
+ if (!lex.ok || lex.tokens.len()!=2) { return new AGScalarResult{ok:false,value:0}; }
+ AGExpressionResult parsed=ag_parse_literal(bytes,lex.tokens[0]);
+ if (!parsed.ok) { return new AGScalarResult{ok:false,value:0}; }
+ AGScalarLower lowered=ag_scalar_lower(parsed.nodes);
+ if (!lowered.ok) { return new AGScalarResult{ok:false,value:0}; }
+ return ag_scalar_eval_literals(lowered.instructions);
+}

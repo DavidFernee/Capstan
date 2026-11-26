@@ -1,0 +1,4 @@
+struct AGToken { int kind; string spelling; int start; int end; }
+bool ag_token_valid(AGToken token, int length) {
+ return token.kind >= 0 && token.kind <= 5 && token.start >= 0 && token.end >= token.start && token.end <= length;
+}

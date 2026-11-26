@@ -1,0 +1,4 @@
+struct AGStatement { int kind; int expression; }
+bool ag_statement_valid(AGStatement statement,int count) {
+ return statement.kind==1 && statement.expression>=0 && statement.expression<count;
+}

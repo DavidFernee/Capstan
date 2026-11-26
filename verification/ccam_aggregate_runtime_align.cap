@@ -1,0 +1,1 @@
+int ag_align_up(int value,int alignment){if(value<0||value>1073741824||alignment<=0||alignment>4096){return -1;}int rest=value%alignment;if(rest==0){return value;}return value+alignment-rest;}

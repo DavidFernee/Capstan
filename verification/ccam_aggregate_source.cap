@@ -1,0 +1,2 @@
+const int AG_SOURCE_LIMIT = 1048576;
+bool ag_source_valid(string source) { return source.len() <= AG_SOURCE_LIMIT; }

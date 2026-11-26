@@ -1,0 +1,14 @@
+import "ccam_aggregate_program.cap";
+struct AGLowerRegisters { List<int> kinds; int limit; }
+int ag_lower_register(AGLowerRegisters table, int kind) {
+    if (!ag_schema_kind(kind) || table.limit < 0 || table.limit > AG_SCHEMA_MAX_REGS ||
+        table.kinds.len() >= table.limit) { return -1; }
+    int id = table.kinds.len();
+    table.kinds.push(kind);
+    return id;
+}
+test "lowering register allocation is bounded" {
+    AGLowerRegisters table = new AGLowerRegisters{kinds: new List<int>(), limit: 1};
+    assert(ag_lower_register(table, AG_SCHEMA_INT) == 0);
+    assert(ag_lower_register(table, AG_SCHEMA_REF) == -1);
+}

@@ -1,0 +1,2 @@
+import "ccam_aggregate_byte_buffer.cap";
+bool ag_u64(List<int> b,int v) { if(v<0 || b.len()>AG_BYTE_LIMIT-8){return false;} for(int i=0;i<8;i+=1){b.push(v%256);v=v/256;} return true; }

@@ -1,0 +1,2 @@
+const int AG_BYTE_LIMIT = 1048576;
+bool ag_byte_append(List<int> bytes,int value) { if (bytes.len()>=AG_BYTE_LIMIT || value<0 || value>255) { return false; } bytes.push(value); return true; }

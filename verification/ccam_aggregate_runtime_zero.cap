@@ -1,0 +1,2 @@
+import "ccam_aggregate_runtime_span.cap";
+bool ag_byte_zero(List<int> dst,int offset,int length){if(length>1048576||!ag_span_valid(dst.len(),offset,length)){return false;}for(int i=0;i<length;i+=1){dst[offset+i]=0;}return true;}

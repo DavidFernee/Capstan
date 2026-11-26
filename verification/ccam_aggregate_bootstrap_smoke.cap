@@ -1,0 +1,7 @@
+import "ccam_aggregate_driver.cap";
+test "candidate source byte pipeline evaluates a literal" {
+ List<int> bytes=new List<int>(); bytes.push(52); bytes.push(50);
+ AGScalarResult result=ag_compile_literal(bytes);
+ assert(result.ok && result.value==42);
+ bytes.push(43); assert(!ag_compile_literal(bytes).ok);
+}

@@ -1,0 +1,6 @@
+import "ccam_aggregate_expression.cap";
+bool ag_typecheck_expression(List<AGExpression> nodes) {
+ if (nodes.len()==0 || nodes.len()>65536) { return false; }
+ for (int i=0;i<nodes.len();i+=1) { if (!ag_expression_node_valid(nodes[i],i)) { return false; } }
+ return true;
+}

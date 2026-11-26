@@ -1,0 +1,84 @@
+// Candidate aggregate operand schema, independent of scalar CCAM v0.1.
+// Structural checks only: no layout, control-flow or provenance theorem.
+const int AG_SCHEMA_MAX_REGS = 262144;
+const int AG_SCHEMA_INT = 1;
+const int AG_SCHEMA_BOOL = 2;
+const int AG_SCHEMA_REF = 3;
+
+bool ag_schema_kind(int kind) {
+    return kind == AG_SCHEMA_INT || kind == AG_SCHEMA_BOOL || kind == AG_SCHEMA_REF;
+}
+
+bool ag_schema_register(List<int> kinds, int index, int expected) {
+    if (kinds.len() > AG_SCHEMA_MAX_REGS || index < 0 || index >= kinds.len()) {
+        return false;
+    }
+    return ag_schema_kind(expected) && kinds[index] == expected;
+}
+
+// Closed opcode set for a first dynamic-index aggregate slice.
+// 1: array_get, 2: array_set, 3: array_len, 4: byte_get.
+// Operands are exactly [destination/element, object, index] for
+// get/set, [destination, object] for len. No ignored trailing operands.
+bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (kinds.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(element_kind)) {
+        return false;
+    }
+    if (opcode == 1 || opcode == 2) {
+        if (operands.len() != 3) { return false; }
+        return ag_schema_register(kinds, operands[0], element_kind) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[2], AG_SCHEMA_INT);
+    }
+    if (opcode == 3) {
+        if (operands.len() != 2) { return false; }
+        return ag_schema_register(kinds, operands[0], AG_SCHEMA_INT) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+    }
+    if (opcode == 4) {
+        if (operands.len() != 3 || element_kind != AG_SCHEMA_INT) { return false; }
+        return ag_schema_register(kinds, operands[0], AG_SCHEMA_INT) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[2], AG_SCHEMA_INT);
+    }
+    return false;
+}
+
+test "aggregate schema accepts typed dynamic indices" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT);
+    List<int> operands = new List<int>();
+    operands.push(0);
+    operands.push(1);
+    operands.push(2);
+    assert(ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    assert(ag_schema_operands(kinds, 2, AG_SCHEMA_INT, operands));
+    assert(ag_schema_operands(kinds, 4, AG_SCHEMA_INT, operands));
+    assert(!ag_schema_operands(kinds, 5, AG_SCHEMA_INT, operands));
+    assert(!ag_schema_operands(kinds, 4, AG_SCHEMA_BOOL, operands));
+    operands.push(0);
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+}
+
+test "aggregate schema rejects wrong kinds and register endpoints" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_BOOL);
+    List<int> operands = new List<int>();
+    operands.push(0);
+    operands.push(1);
+    assert(ag_schema_operands(kinds, 3, AG_SCHEMA_BOOL, operands));
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    operands.push(2);
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    operands[2] = 3;
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    operands[2] = -1;
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    operands[2] = 0;
+    assert(ag_schema_operands(kinds, 1, AG_SCHEMA_INT, operands));
+    assert(!ag_schema_operands(kinds, 1, AG_SCHEMA_BOOL, operands));
+}

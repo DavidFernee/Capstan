@@ -1,0 +1,4 @@
+import "ccam_aggregate_rex.cap";
+import "ccam_aggregate_modrm.cap";
+import "ccam_aggregate_byte_buffer.cap";
+bool ag_alu(List<int> b,int op,int dst,int src){if((op!=1&&op!=41&&op!=57)||!ag_native_reg(dst)||!ag_native_reg(src)||b.len()>AG_BYTE_LIMIT-3){return false;}b.push(ag_rex(src,dst));b.push(op);b.push(ag_modrm(src,dst));return true;}

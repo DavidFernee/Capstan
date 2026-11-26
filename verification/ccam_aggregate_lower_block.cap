@@ -1,0 +1,9 @@
+import "ccam_aggregate_lower_operand.cap";
+bool ag_lower_append(List<AGBlockInstruction> instructions, AGLowerInstruction candidate, int limit) {
+    if (!candidate.ok || limit < 0 || limit > 65536 || instructions.len() >= limit) { return false; }
+    instructions.push(candidate.instruction);
+    return true;
+}
+AGCFGBlock ag_lower_exit(List<AGBlockInstruction> instructions) {
+    return new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1};
+}

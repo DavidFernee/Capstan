@@ -1,0 +1,1 @@
+bool ag_span_valid(int size,int offset,int length){return size>=0&&offset>=0&&offset<=size&&length>=0&&length<=size-offset;}

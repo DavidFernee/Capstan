@@ -1,0 +1,144 @@
+// Straight-line candidate aggregate blocks. No control-flow or call semantics.
+import "ccam_aggregate_dispatch.cap";
+
+const int AG_BLOCK_MAX = 65536;
+
+struct AGBlockInstruction {
+    int opcode;
+    int kind;
+    List<int> operands;
+}
+
+bool ag_block_validate(CCAMAggregateMachine machine, List<AGBlockInstruction> instructions) {
+    if (instructions.len() > AG_BLOCK_MAX) { return false; }
+    for (int i = 0; i < instructions.len(); i += 1) {
+        AGBlockInstruction instruction = instructions[i];
+        if (!ag_dispatch_shape(machine, instruction.opcode, instruction.kind, instruction.operands)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Definite initialisation for a straight-line block. All reads are checked
+// before recording writes, including destination/index aliasing.
+bool ag_block_initialised(CCAMAggregateMachine machine, List<AGBlockInstruction> instructions) {
+    if (!ag_block_validate(machine, instructions)) { return false; }
+    List<bool> ready = new List<bool>();
+    for (int i = 0; i < machine.registers.len(); i += 1) {
+        ready.push(machine.registers[i].initialised);
+    }
+    for (int i = 0; i < instructions.len(); i += 1) {
+        AGBlockInstruction instruction = instructions[i];
+        List<int> operands = instruction.operands;
+        if (!ready[operands[1]]) { return false; }
+        if (instruction.opcode != 3) {
+            if (!ready[operands[2]]) { return false; }
+        }
+        if (instruction.opcode == 2) {
+            if (!ready[operands[0]]) { return false; }
+        } else {
+            ready[operands[0]] = true;
+        }
+    }
+    return true;
+}
+
+// Reject malformed blocks before executing any instruction. Runtime traps
+// preserve prior successful instructions; a block is not a transaction.
+string ag_block_execute(CCAMAggregateMachine machine, List<AGBlockInstruction> instructions) {
+    if (machine.trap_code != "") { return machine.trap_code; }
+    if (!ag_block_validate(machine, instructions)) {
+        return ccam_aggregate_trap(machine, "invalid_aggregate_block");
+    }
+    if (!ag_block_initialised(machine, instructions)) {
+        return ccam_aggregate_trap(machine, "uninitialised_aggregate_operand");
+    }
+    for (int i = 0; i < instructions.len(); i += 1) {
+        AGBlockInstruction instruction = instructions[i];
+        string result = ag_dispatch(machine, instruction.opcode, instruction.kind, instruction.operands);
+        if (result != "") { return result; }
+    }
+    return "";
+}
+
+test "aggregate block rejects malformed suffix before executing prefix" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_INT, 0, 2) == "");
+    List<int> operands = new List<int>();
+    operands.push(0);
+    operands.push(1);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{opcode: 3, kind: AG_SCHEMA_INT, operands: operands});
+    instructions.push(new AGBlockInstruction{opcode: 99, kind: AG_SCHEMA_INT, operands: operands});
+    assert(ag_block_execute(machine, instructions) == "invalid_aggregate_block");
+    assert(machine.steps == 1 && !machine.registers[0].initialised);
+}
+
+test "aggregate block respects runtime step exhaustion" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 2);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_INT, 0, 2) == "");
+    List<int> operands = new List<int>();
+    operands.push(0);
+    operands.push(1);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{opcode: 3, kind: AG_SCHEMA_INT, operands: operands});
+    instructions.push(new AGBlockInstruction{opcode: 3, kind: AG_SCHEMA_INT, operands: operands});
+    assert(ag_block_execute(machine, instructions) == "step_limit");
+    assert(machine.steps == 2 && machine.registers[0].initialised);
+}
+
+test "aggregate block rejects uninitialised suffix before prefix" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_INT, 0, 2) == "");
+    List<int> length_operands = new List<int>();
+    length_operands.push(0);
+    length_operands.push(1);
+    List<int> get_operands = new List<int>();
+    get_operands.push(0);
+    get_operands.push(1);
+    get_operands.push(2);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{opcode: 3, kind: AG_SCHEMA_INT, operands: length_operands});
+    instructions.push(new AGBlockInstruction{opcode: 1, kind: AG_SCHEMA_INT, operands: get_operands});
+    assert(ag_block_execute(machine, instructions) == "uninitialised_aggregate_operand");
+    assert(machine.steps == 1 && !machine.registers[0].initialised);
+}
+
+test "aggregate block tracks preceding writes as later reads" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_INT, 0, 2) == "");
+    List<int> length_operands = new List<int>();
+    length_operands.push(0);
+    length_operands.push(1);
+    List<int> get_operands = new List<int>();
+    get_operands.push(0);
+    get_operands.push(1);
+    get_operands.push(0);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{opcode: 3, kind: AG_SCHEMA_INT, operands: length_operands});
+    instructions.push(new AGBlockInstruction{opcode: 1, kind: AG_SCHEMA_INT, operands: get_operands});
+    assert(ag_block_initialised(machine, instructions));
+    assert(machine.steps == 1 && !machine.registers[0].initialised);
+}
