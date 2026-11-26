@@ -285,7 +285,7 @@ add(276, "Incorrect default permissions", "na", note="Files are created with the
 add(377, "Insecure temporary file", "na", note="No temporary-file API.")
 add(367, "Time-of-check time-of-use race", "absent",
     "int main() { if (file_exists(\"x\")) { if (let d = read_file(\"x\", 4096)) { } } return 0; }",
-    note="There is no separate existence check; read_file(, 4096) returns the contents or none in one step.")
+    note="There is no separate existence check; read_file(path, 4096) returns the contents or none in one step.")
 
 # ---------------------------------------------------------------- environment and execution
 add(15, "External control of system or configuration setting", "absent", SETENV)
