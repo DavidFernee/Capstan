@@ -172,6 +172,7 @@ theorem allocation_success_facts
                     intro hgt
                     apply hInvalid
                     simp [invalidHeapState, hgt]
+                  exact hOldTemporary
   · simp [hAuth] at h
 
 /-- Successful allocation returns the previous next-object identity. -/
