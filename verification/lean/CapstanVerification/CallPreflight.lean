@@ -146,7 +146,7 @@ theorem preflightCall_destination
             simp [hargs, hdest] at h
         | ok result =>
             cases result
-            simpa using hdest
+            simp [hdest]
       exact validateCallDestination_success _ _ hdestOk
 
 /-- A void callee can only be admitted with no return destination. -/
