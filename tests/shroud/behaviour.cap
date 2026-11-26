@@ -902,17 +902,13 @@ void test_display_list(Tally t, Font font) {
         "display list: over-range glyph alpha is rejected", "over-range alpha accepted");
     Canvas admission = new_recording_canvas(new_pixmap(1, 1));
     expect(t, display_mask_admissible(admission, 1, 1, 1),
-        "valid one-pixel mask rejected");
-        "display list: one-pixel mask passes pre-allocation admission");
+        "display list: one-pixel mask passes pre-allocation admission", "valid one-pixel mask rejected");
     expect(t, !display_mask_admissible(admission, 1, 1, MAX_DISPLAY_MASK_PIXELS + 1),
-        "oversized mask accepted");
-        "display list: oversized mask is rejected before copying");
+        "display list: oversized mask is rejected before copying", "oversized mask accepted");
     expect(t, !display_mask_admissible(admission, 2, 2, 3),
-        "inconsistent mask dimensions accepted");
-        "display list: inconsistent mask dimensions are rejected before copying");
+        "display list: inconsistent mask dimensions are rejected before copying", "inconsistent mask dimensions accepted");
     expect(t, !display_mask_admissible(admission, 0, 1, 0),
-        "partially zero mask dimensions accepted");
-        "display list: partially zero mask dimensions are rejected");
+        "display list: partially zero mask dimensions are rejected", "partially zero mask dimensions accepted");
     Pixmap direct = new_pixmap(48, 36);
     Pixmap replayed = new_pixmap(48, 36);
     direct.clear(0xFF182838);
