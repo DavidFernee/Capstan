@@ -384,6 +384,9 @@ The active dependencies are:
 - **Formal correspondence:** connect named Lean properties to executable evaluator,
   validator, lowering and backend boundaries. A model theorem alone is not an
   implementation theorem.
+- **Reference and heap semantics (in progress, PRs #216/#255):** Lean models object identities, shallow reference copies, heap reads/writes, alias-visible mutation and a monotone allocation frontier. The CCAM register bridge adds a constructor-specific no-alias relation. These are mathematical models, not proofs of compiler lowering, runtime allocation or collector correctness.
+- **Generation-checked handles (research direction):** `GenerationalHandles.lean` specifies region/slot/generation references and proves stale handles fail after release and slot reuse under a different generation, and rejects resolution in a different region. Bounded generations must refuse allocation at the limit and retire slots rather than wrap. The executable slot table remains unimplemented.
+- **GC correspondence (in progress):** `CollectorSemantics.lean` models heap reachability from explicit roots and proves that a complete marker's sweep preserves reachable objects, reachable edge targets and the allocation frontier. A collect-then-allocate composition theorem preserves previously reachable objects. This is conditional on marker completeness; current C collector root scanning, address-incarnation refinement, allocation failure and implementation correspondence remain open.
 - **Native execution:** establish executable Linux x86-64 conformance, including traps,
   calls, resource limits and failure behaviour, before expanding the supported subset.
 - **Bootstrap/runtime:** keep native execution, C-free compiler bootstrap, runtime and
@@ -1162,15 +1165,3 @@ Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vu
 ## Capstan-only language and library foundation
 
 The governing programme is specified in [CAPSTAN-ONLY-FOUNDATION.md](CAPSTAN-ONLY-FOUNDATION.md). The F1 language contract is [F1-LANGUAGE-CONTRACT.md](F1-LANGUAGE-CONTRACT.md), and its prior-art synthesis is [F1-RELATED-WORK.md](F1-RELATED-WORK.md). These are research drafts, not claims that the target guarantees are implemented. F1 proposes a factored-but-mutually-checked guarantee calculus as an experiment, not a settled language design.
-
-## Bosun's Locker database programme
-
-Bosun's Locker is the Capstan-native transactional database and storage engine. Its
-architecture and research programme are specified in
-[`docs/database/BOSUNS-LOCKER-ARCHITECTURE.md`](database/BOSUNS-LOCKER-ARCHITECTURE.md),
-with the candidate transaction-history contract in
-[`docs/database/TRANSACTION-HISTORY-SEMANTICS.md`](database/TRANSACTION-HISTORY-SEMANTICS.md).
-The initial target is single-node strict serializability and durable commit. The selected
-concurrency-control algorithm and physical index/storage layout remain open pending
-formal analysis and reproducible benchmarks. These documents are proposals, not claims
-of an implemented or verified database.
