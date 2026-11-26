@@ -306,13 +306,13 @@ def protocol(exe):
     # The LSP front end uses the same graph file ceiling as capstanc.
     with tempfile.TemporaryDirectory(prefix="lsp-import-budget-", dir=ROOT) as td:
         for i in range(256):
-            body = f'import "f{i + 1}.cap";\\n' if i < 255 else "void library() {}\\n"
+            body = f'import "f{i + 1}.cap";\n' if i < 255 else "void library() {}\n"
             with open(os.path.join(td, f"f{i}.cap"), "w", encoding="utf-8") as out:
                 out.write(body)
         budget_uri = uri_of(os.path.join(td, "main.cap"))
         sb, _ = session(exe)
         sb.notify("textDocument/didOpen", {"textDocument": {"uri": budget_uri, "version": 1,
-                                                            "text": 'import "f0.cap";\\n'}})
+                                                            "text": 'import "f0.cap";\n'}})
         bd = publish_for(sb, budget_uri)["diagnostics"]
         check(len(bd) == 1 and "file-count limit (256)" in bd[0]["message"],
               "LSP import graph file budget: %r" % bd)
@@ -354,7 +354,7 @@ def protocol(exe):
     ) + b"}"
     too_many_elements = b"[" + b",".join([b"null"] * 16385) + b"]"
     long_string = b'{"s":"' + b"a" * (8 * 1024 * 1024 + 1) + b'"}'
-    escape_fragments = b'"' + b"\\n" * 131072 + b'"'
+    escape_fragments = b'"' + b"\n" * 131072 + b'"'
     aggregate_strings = b"[" + b",".join(
         b'"' + b"a" * (7 * 1024 * 1024) + b'"' for _ in range(2)
     ) + b"]"
@@ -364,7 +364,7 @@ def protocol(exe):
     exact_elements = b"[" + b",".join([b"null"] * 16384) + b"]"
     exact_string = b'"' + b"a" * (8 * 1024 * 1024) + b'"'
     exact_aggregate_strings = b'["' + b"a" * (6 * 1024 * 1024) + b'","' + b"a" * (6 * 1024 * 1024) + b'"]'
-    exact_fragments = b'"' + b"\\n" * 131069 + b"\\uD83D\\uDE00" + b'"'
+    exact_fragments = b'"' + b"\n" * 131069 + b"\\uD83D\\uDE00" + b'"'
     exact_number = b"1" * 128
     exact_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments]) + b"]"
     over_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments, b'""']) + b"]"
