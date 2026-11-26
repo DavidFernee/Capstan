@@ -886,6 +886,283 @@ void test_ui_state_pruning(Tally t, Ui ui) {
     expect_int(t, ui.caret.keys().len(), 0, "UI state: caret map stays bounded across 1000 generations");
 }
 
+void expect_geometry(Tally t, bool cond, string name) {
+    expect(t, cond, name, "checked geometry assertion failed");
+}
+
+void test_checked_geometry_arithmetic(Tally t) {
+    bool rejected = false;
+    if (let _ignored = checked_add(SHROUD_INT_MAX, 1)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry checked add: INT_MAX + 1 is rejected");
+    rejected = false;
+    if (let _ignored = checked_add(SHROUD_INT_MIN, -1)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry checked add: INT_MIN - 1 is rejected");
+    int got = 0;
+    bool present = false;
+    if (let value = checked_add(SHROUD_INT_MAX, -1)) { got = value; present = true; }
+    expect_geometry(t, present && got == SHROUD_INT_MAX - 1, "geometry checked add: representable boundary succeeds");
+
+    rejected = false;
+    if (let _ignored = checked_sub(SHROUD_INT_MIN, 1)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry checked subtract: INT_MIN - 1 is rejected");
+    rejected = false;
+    if (let _ignored = checked_sub(SHROUD_INT_MAX, -1)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry checked subtract: INT_MAX - (-1) is rejected");
+
+    rejected = false;
+    if (let _ignored = checked_mul(SHROUD_INT_MAX, 2)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry checked multiply: positive overflow is rejected");
+    rejected = false;
+    if (let _ignored = checked_mul(SHROUD_INT_MIN, -1)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry checked multiply: INT_MIN * -1 is rejected");
+    present = false;
+    if (let value = checked_mul(SHROUD_INT_MIN, 1)) { got = value; present = true; }
+    expect_geometry(t, present && got == SHROUD_INT_MIN, "geometry checked multiply: INT_MIN * 1 succeeds");
+
+    rejected = false;
+    if (let _ignored = checked_mul(SHROUD_INT_MIN, 2)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry checked multiply: negative overflow is rejected");
+    present = false;
+    if (let value = checked_mul(SHROUD_INT_MAX, 1)) { got = value; present = true; }
+    expect_geometry(t, present && got == SHROUD_INT_MAX, "geometry checked multiply: INT_MAX * 1 succeeds");
+    present = false;
+    if (let value = checked_mul(SHROUD_INT_MIN, 0)) { got = value; present = true; }
+    expect_geometry(t, present && got == 0, "geometry checked multiply: INT_MIN * 0 succeeds");
+
+    rejected = false;
+    if (let _ignored = checked_abs(SHROUD_INT_MIN)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry checked abs: INT_MIN is rejected");
+    present = false;
+    if (let value = checked_abs(-17)) { got = value; present = true; }
+    expect_geometry(t, present && got == 17, "geometry checked abs: negative ordinary value succeeds");
+
+    present = false;
+    if (let value = checked_round_div(5, 2)) { got = value; present = true; }
+    expect_geometry(t, present && got == 3, "geometry rounding: positive half rounds away from zero");
+    present = false;
+    if (let value = checked_round_div(-5, 2)) { got = value; present = true; }
+    expect_geometry(t, present && got == -3, "geometry rounding: negative half rounds away from zero");
+    present = false;
+    if (let value = checked_round_div(4, 3)) { got = value; present = true; }
+    expect_geometry(t, present && got == 1, "geometry rounding: positive non-tie rounds to nearest");
+    present = false;
+    if (let value = checked_round_div(-4, 3)) { got = value; present = true; }
+    expect_geometry(t, present && got == -1, "geometry rounding: negative non-tie rounds to nearest");
+    rejected = false;
+    if (let _ignored = checked_round_div(1, 0)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry rounding: zero denominator is rejected");
+    rejected = false;
+    if (let _ignored = checked_round_div(SHROUD_INT_MIN, -1)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry rounding: INT_MIN / -1 is rejected");
+
+    present = false;
+    if (let value = checked_round_div(0x3FFFFFFFFFFFFFFF, SHROUD_INT_MIN)) {
+        got = value;
+        present = true;
+    }
+    expect_geometry(t, present && got == 0, "geometry rounding: INT_MIN denominator just below half rounds to zero");
+    present = false;
+    if (let value = checked_round_div(0x4000000000000000, SHROUD_INT_MIN)) {
+        got = value;
+        present = true;
+    }
+    expect_geometry(t, present && got == -1, "geometry rounding: INT_MIN denominator exact negative half rounds away from zero");
+    present = false;
+    if (let value = checked_round_div(-0x4000000000000000, SHROUD_INT_MIN)) {
+        got = value;
+        present = true;
+    }
+    expect_geometry(t, present && got == 1, "geometry rounding: INT_MIN denominator exact positive half rounds away from zero");
+
+    present = false;
+    if (let value = checked_round_div(SHROUD_INT_MAX, SHROUD_INT_MIN)) {
+        got = value;
+        present = true;
+    }
+    expect_geometry(t, present && got == -1, "geometry rounding: near-unit ratio over INT_MIN rounds away from zero");
+    present = false;
+    if (let value = checked_round_div(SHROUD_INT_MIN, SHROUD_INT_MIN)) {
+        got = value;
+        present = true;
+    }
+    expect_geometry(t, present && got == 1, "geometry rounding: INT_MIN divided by itself succeeds");
+
+    present = false;
+    if (let value = checked_fx(SHROUD_INT_MAX / FX)) { got = value; present = true; }
+    expect_geometry(t, present, "geometry fixed point: largest whole-pixel input that fits succeeds");
+    rejected = false;
+    if (let _ignored = checked_fx(SHROUD_INT_MAX / FX + 1)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry fixed point: first overflowing whole-pixel input is rejected");
+
+    present = false;
+    if (let value = checked_round_div(FX_HALF, FX)) { got = value; present = true; }
+    expect_geometry(t, present && got == 1, "geometry fixed point: positive half-pixel tie rounds away from zero");
+    present = false;
+    if (let value = checked_round_div(-FX_HALF, FX)) { got = value; present = true; }
+    expect_geometry(t, present && got == -1, "geometry fixed point: negative half-pixel tie rounds away from zero");
+
+    rejected = false;
+    if (let _ignored = checked_fx_div(FX, 0)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry fixed point division: zero divisor is rejected");
+    rejected = false;
+    if (let _ignored = checked_mul_div(1, 1, 0)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry mul_div: zero denominator is rejected");
+    rejected = false;
+    if (let _ignored = checked_mul_div(1, 1, -1)) { rejected = false; } else { rejected = true; }
+    expect_geometry(t, rejected, "geometry mul_div: negative denominator is rejected");
+}
+
+bool rect_optional_none(Rect? value) {
+    if (let _present = value) { return false; }
+    return true;
+}
+
+bool constraints_optional_none(Constraints? value) {
+    if (let _present = value) { return false; }
+    return true;
+}
+
+void test_checked_rectangles_and_constraints(Tally t) {
+    Rect edge_overflow = rect(SHROUD_INT_MAX, 0, 1, 1);
+    expect_geometry(t, !checked_rect_valid(edge_overflow),
+        "geometry checked rect: overflowing right edge is invalid");
+    expect_geometry(t, !checked_rect_valid(rect(0, 0, -1, 1)),
+        "geometry checked rect: negative width is invalid");
+    expect_geometry(t, !checked_rect_valid(rect(0, 0, 1, -1)),
+        "geometry checked rect: negative height is invalid");
+
+    Rect? moved = checked_rect_offset(rect(2, 3, 4, 5), 7, -1);
+    bool moved_ok = false;
+    if (let r = moved) { moved_ok = r.x == 9 && r.y == 2 && r.w == 4 && r.h == 5; }
+    expect_geometry(t, moved_ok, "geometry checked rect: representable offset succeeds");
+    moved = checked_rect_offset(rect(SHROUD_INT_MAX, 0, 0, 1), 1, 0);
+    expect_geometry(t, rect_optional_none(moved), "geometry checked rect: overflowing offset is rejected");
+
+    Rect? overlap = checked_rect_intersect(rect(0, 0, 10, 10), rect(5, 4, 10, 10));
+    bool overlap_ok = false;
+    if (let r = overlap) { overlap_ok = r.x == 5 && r.y == 4 && r.w == 5 && r.h == 6; }
+    expect_geometry(t, overlap_ok, "geometry checked rect: intersection has exact half-open bounds");
+    Rect? disjoint = checked_rect_intersect(rect(0, 0, 2, 2), rect(5, 5, 2, 2));
+    bool disjoint_ok = false;
+    if (let r = disjoint) { disjoint_ok = r.w == 0 && r.h == 0; }
+    expect_geometry(t, disjoint_ok, "geometry checked rect: disjoint intersection is empty");
+    expect_geometry(t, rect_optional_none(checked_rect_intersect(edge_overflow, rect(0, 0, 1, 1))),
+        "geometry checked rect: invalid input is rejected before intersection");
+
+    Rect? inset = checked_rect_inset(rect(0, 0, 10, 10), insets_all(20));
+    bool inset_ok = false;
+    if (let r = inset) { inset_ok = r.x == 10 && r.y == 10 && r.w == 0 && r.h == 0; }
+    expect_geometry(t, inset_ok, "geometry checked rect: over-inset clamps to an empty edge");
+    expect_geometry(t, rect_optional_none(checked_rect_inset(rect(0, 0, 10, 10),
+        new Insets{left: -1, top: 0, right: 0, bottom: 0})),
+        "geometry checked rect: negative inset is rejected");
+
+    expect_geometry(t, rect_optional_none(checked_rect_grow(rect(SHROUD_INT_MIN, 0, 1, 1), 1)),
+        "geometry checked rect: grow rejects origin underflow");
+    Rect? shrunk = checked_rect_grow(rect(0, 0, 10, 10), -5);
+    bool shrunk_ok = false;
+    if (let r = shrunk) { shrunk_ok = r.x == 5 && r.y == 5 && r.w == 0 && r.h == 0; }
+    expect_geometry(t, shrunk_ok, "geometry checked rect: negative grow may shrink to empty");
+
+    Constraints finite = new Constraints{min_w: 10, min_h: 20, max_w: 100, max_h: 200};
+    Constraints? deflated = checked_constraints_deflate(finite, insets_all(5));
+    bool finite_ok = false;
+    if (let c = deflated) {
+        finite_ok = c.min_w == 0 && c.min_h == 10 && c.max_w == 90 && c.max_h == 190;
+    }
+    expect_geometry(t, finite_ok, "geometry checked constraints: finite bounds deflate exactly");
+
+    Constraints unbounded = new Constraints{min_w: 10, min_h: 20, max_w: UNBOUNDED, max_h: UNBOUNDED};
+    Constraints? unbounded_result = checked_constraints_deflate(unbounded, insets_all(5));
+    bool unbounded_ok = false;
+    if (let c = unbounded_result) {
+        unbounded_ok = c.min_w == 0 && c.min_h == 10 &&
+            c.max_w == UNBOUNDED && c.max_h == UNBOUNDED;
+    }
+    expect_geometry(t, unbounded_ok, "geometry checked constraints: UNBOUNDED sentinel is preserved");
+
+    Constraints? exhausted = checked_constraints_deflate(
+        new Constraints{min_w: 0, min_h: 0, max_w: 5, max_h: 5}, insets_all(10));
+    bool exhausted_ok = false;
+    if (let c = exhausted) { exhausted_ok = c.max_w == 0 && c.max_h == 0; }
+    expect_geometry(t, exhausted_ok, "geometry checked constraints: finite maxima clamp to zero");
+
+    expect_geometry(t, constraints_optional_none(checked_constraints_deflate(finite,
+        new Insets{left: SHROUD_INT_MAX, top: 0, right: 1, bottom: 0})),
+        "geometry checked constraints: inset-sum overflow is rejected");
+    expect_geometry(t, constraints_optional_none(checked_constraints_deflate(
+        new Constraints{min_w: 10, min_h: 0, max_w: 5, max_h: 10}, insets_all(1))),
+        "geometry checked constraints: reversed bounds are rejected");
+}
+
+void test_checked_geometry_small_domain(Tally t) {
+    int a = -32;
+    while (a <= 32) {
+        int b = -32;
+        while (b <= 32) {
+            bool add_ok = false;
+            if (let value = checked_add(a, b)) { add_ok = value == a + b; }
+            expect_geometry(t, add_ok, "geometry exhaustive: checked_add matches signed reference");
+
+            bool sub_ok = false;
+            if (let value = checked_sub(a, b)) { sub_ok = value == a - b; }
+            expect_geometry(t, sub_ok, "geometry exhaustive: checked_sub matches signed reference");
+
+            bool mul_ok = false;
+            if (let value = checked_mul(a, b)) { mul_ok = value == a * b; }
+            expect_geometry(t, mul_ok, "geometry exhaustive: checked_mul matches signed reference");
+            b += 1;
+        }
+        a += 1;
+    }
+
+    a = -32;
+    while (a <= 32) {
+        int b = -8;
+        while (b <= 8) {
+            if (b != 0) {
+                int q = a / b;
+                int rem = int_abs(a % b);
+                int den = int_abs(b);
+                if (rem * 2 >= den) {
+                    if ((a < 0) == (b < 0)) { q += 1; } else { q -= 1; }
+                }
+                bool div_ok = false;
+                if (let value = checked_round_div(a, b)) { div_ok = value == q; }
+                expect_geometry(t, div_ok, "geometry exhaustive: checked_round_div matches nearest ties-away reference");
+            }
+            b += 1;
+        }
+        a += 1;
+    }
+
+    bool tie_ok = false;
+    if (let value = checked_round_div(5, -2)) { tie_ok = value == -3; }
+    expect_geometry(t, tie_ok, "geometry rounding: positive numerator negative denominator tie");
+    tie_ok = false;
+    if (let value = checked_round_div(-5, -2)) { tie_ok = value == 3; }
+    expect_geometry(t, tie_ok, "geometry rounding: two negative operands tie");
+    tie_ok = false;
+    if (let value = checked_round_div(4, -3)) { tie_ok = value == -1; }
+    expect_geometry(t, tie_ok, "geometry rounding: odd denominator rounds below half");
+    tie_ok = false;
+    if (let value = checked_round_div(5, -3)) { tie_ok = value == -2; }
+    expect_geometry(t, tie_ok, "geometry rounding: odd denominator rounds above half");
+
+    bool fx_ok = false;
+    if (let value = checked_fx_mul(FX_HALF, FX)) { fx_ok = value == FX_HALF; }
+    expect_geometry(t, fx_ok, "geometry fixed point: checked multiply preserves half-pixel");
+    fx_ok = false;
+    if (let value = checked_fx_mul(-FX_HALF, FX)) { fx_ok = value == -FX_HALF; }
+    expect_geometry(t, fx_ok, "geometry fixed point: checked negative multiply preserves half-pixel");
+    fx_ok = false;
+    if (let value = checked_fx_div(FX, 2)) { fx_ok = value == FX * FX / 2; }
+    expect_geometry(t, fx_ok, "geometry fixed point: checked division matches exact scale");
+    fx_ok = false;
+    if (let value = checked_mul_div(-5, 1, 2)) { fx_ok = value == -3; }
+    expect_geometry(t, fx_ok, "geometry mul_div: negative half tie rounds away from zero");
+}
+
 int main() {
     Font? regular = none;
     Font? bold = none;
@@ -894,6 +1171,9 @@ int main() {
     Tally t = new Tally{failed: 0, passed: 0};
     if (let f = regular) {
         if (let fb = bold) {
+            test_checked_geometry_arithmetic(t);
+            test_checked_geometry_small_domain(t);
+            test_checked_rectangles_and_constraints(t);
             test_layout(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_buttons_and_guard(t, new_ui(f, fb, light_theme(), 640, 480, 256));
             test_duplicate_keys(t, new_ui(f, fb, light_theme(), 640, 480, 256));
