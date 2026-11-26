@@ -1,5 +1,6 @@
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
+import CapstanVerification.MultiFrame
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge
