@@ -1,6 +1,6 @@
 # Capstan execution assurance architecture
 
-**Baseline:** mainline `fa7cbc216c2f91aac64503aeeaefa86c831e5a43` (26 November 2026)  
+**Baseline:** mainline `c22d72a1f60a4d110f30a421d577aeaaf339f8fb` (26 November 2026)  
 **Disposition:** architecture and obligation map; not a system-level verification claim.
 
 This is the operational view of the assurance boundary. The machine-readable
