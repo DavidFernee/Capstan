@@ -1,0 +1,2 @@
+import "ccam_aggregate_patch32.cap";
+bool ag_rel32(List<int> b,int p,int target) { if(p<0 || p>b.len()-4 || target<0 || target>b.len()){return false;} int d=target-p-4; if(d<0){d+=4294967296;} return ag_patch32(b,p,d); }
