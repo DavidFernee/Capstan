@@ -90,7 +90,7 @@ theorem descendant_fact_marks_aggregate (bindingId : Nat)
   right
   refine ⟨{ root := bindingId, selectors := [selector] }, by simp, ?_⟩
   left
-  exact ⟨rfl, [selector], by simp⟩
+  exact ⟨rfl, [selector], by simp [localProvenancePath]⟩
 
 /-- Adding facts never removes an existing may-derived result. -/
 theorem provenance_marking_monotone (facts : List ProvenancePath)
