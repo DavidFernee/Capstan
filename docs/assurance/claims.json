@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "91b4ec379ee62d822ee354411bf0db06c8c695bc"
+    "commit": "308874c6dc43942504a47560c4e0a8c9d155ee82"
   },
   "claims": [
     {
@@ -40,8 +40,8 @@
             "docs/assurance/MEMORY-SAFETY.md"
           ],
           "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
-          "revision": "91b4ec379ee62d822ee354411bf0db06c8c695bc",
-          "notes": "Reviewed at this snapshot; the contextual-output checker/runtime changes do not alter the indexing bounds contract. Exact-head platform validation remains pending."
+          "revision": "308874c6dc43942504a47560c4e0a8c9d155ee82",
+          "notes": "Reviewed at this source snapshot. The output-context checker changes do not alter the memory/indexing bounds contract; exact-head platform validation remains pending."
         },
         {
           "kind": "test",
@@ -53,13 +53,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "91b4ec379ee62d822ee354411bf0db06c8c695bc",
-          "notes": "Regression fixtures remain present. No passing run is asserted until the current exact-head CI completes."
+          "revision": "308874c6dc43942504a47560c4e0a8c9d155ee82",
+          "notes": "The memory/indexing regression fixtures remain present. This record does not assert a passing exact-head test run."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "91b4ec379ee62d822ee354411bf0db06c8c695bc"
+        "reviewed_commit": "308874c6dc43942504a47560c4e0a8c9d155ee82"
       },
       "covers": [
         "compiler/main.cap",
