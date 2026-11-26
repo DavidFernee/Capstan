@@ -1,7 +1,24 @@
 import "ccam_aggregate_driver.cap";
+import "ccam_aggregate_native_driver.cap";
+
 test "candidate source byte pipeline evaluates a literal" {
  List<int> bytes=new List<int>(); bytes.push(52); bytes.push(50);
  AGScalarResult result=ag_compile_literal(bytes);
  assert(result.ok && result.value==42);
  bytes.push(43); assert(!ag_compile_literal(bytes).ok);
+}
+
+test "candidate source-to-ELF pipeline emits an executable exit image" {
+ List<int> source=new List<int>(); source.push(52); source.push(50);
+ AGImage image=ag_compile_exit_image(source);
+ assert(image.ok && image.bytes.len()==4118);
+ assert(image.bytes[0]==127 && image.bytes[1]==69 && image.bytes[2]==76 && image.bytes[3]==70);
+ assert(image.bytes[4096]==72 && image.bytes[4117]==5);
+}
+
+test "candidate source-to-ELF pipeline rejects unsupported source" {
+ List<int> source=new List<int>(); source.push(52); source.push(50);
+ source.push(43);
+ AGImage image=ag_compile_exit_image(source);
+ assert(!image.ok);
 }
