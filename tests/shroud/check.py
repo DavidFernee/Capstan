@@ -523,8 +523,16 @@ def main():
         vec = build(capstanc, cc, cflags, tmp, "tests/shroud/vectors.cap", "vectors")
         report.append("raster: " + check_raster(vec, tmp))
         if update:
-            with open(EXPECTED_FONTS, "w") as f:
-                f.write(font_reference())
+            # Generate the reference before opening the file: opening with "w"
+            # first would truncate the checked-in golden if fontTools is absent.
+            try:
+                fresh_fonts = font_reference()
+            except ImportError:
+                if not os.path.isfile(EXPECTED_FONTS) or os.path.getsize(EXPECTED_FONTS) == 0:
+                    sys.exit("fonts: fontTools is required to create the initial reference; install fontTools or restore tests/shroud/fonts.expected")
+            else:
+                with open(EXPECTED_FONTS, "w") as f:
+                    f.write(fresh_fonts)
         report.append("fonts: " + check_fonts(vec))
         report.append("utf-8: " + check_utf8(vec, tmp))
         report.append("png: " + check_png(vec, tmp))
