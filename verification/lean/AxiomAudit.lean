@@ -378,3 +378,7 @@ import CapstanVerification.InjectionValue
 #print axioms CredentialConfinement.call_preserves_control
 #print axioms CredentialConfinement.projection_preserves_aggregate
 #print axioms CredentialConfinement.projection_preserves_field
+#print axioms CredentialConfinement.alias_observes_write
+#print axioms CredentialConfinement.unrelated_cell_preserved
+#print axioms CredentialConfinement.stored_credential_rejects_integrity
+#print axioms CredentialConfinement.stored_control_rejects_integrity

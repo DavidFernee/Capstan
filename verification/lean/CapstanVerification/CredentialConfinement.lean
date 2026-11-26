@@ -106,4 +106,32 @@ theorem projection_preserves_field (aggregate field : Provenance)
     integrityAllowed (projectField aggregate field) = false := by
   exact combine_rejects_right_credential aggregate field h
 
+
+-- Addresses identify storage, not variable names. Aliases use the same address.
+def Heap := Nat → Provenance
+
+def writeCell (heap : Heap) (addr : Nat) (value pc : Provenance) : Heap :=
+  fun query => if query = addr then combine value pc else heap query
+
+theorem alias_observes_write (heap : Heap) (addr aliasAddr : Nat)
+    (value pc : Provenance) (h : aliasAddr = addr) :
+    writeCell heap addr value pc aliasAddr = combine value pc := by
+  simp [writeCell, h]
+
+theorem unrelated_cell_preserved (heap : Heap) (addr other : Nat)
+    (value pc : Provenance) (h : other ≠ addr) :
+    writeCell heap addr value pc other = heap other := by
+  simp [writeCell, h]
+
+theorem stored_credential_rejects_integrity (heap : Heap) (addr : Nat)
+    (value pc : Provenance) (h : value.dataCredential = true) :
+    integrityAllowed (writeCell heap addr value pc addr) = false := by
+  simp [writeCell]
+  exact combine_rejects_left_credential value pc h
+
+theorem stored_control_rejects_integrity (heap : Heap) (addr : Nat)
+    (value pc : Provenance) (h : pc.controlCredential = true) :
+    integrityAllowed (writeCell heap addr value pc addr) = false := by
+  simp [writeCell, integrityAllowed, combine, h]
+
 end CredentialConfinement
