@@ -1,6 +1,9 @@
 name = "capstanFormal"
 version = "0.1.0"
-defaultTargets = ["CapstanFormal"]
+defaultTargets = ["CapstanFormal", "CCAMHeap"]
 
 [[lean_lib]]
 name = "CapstanFormal"
+
+[[lean_lib]]
+name = "CCAMHeap"
