@@ -65,8 +65,8 @@ int main() {
 
     Font? regular = none;
     Font? bold = none;
-    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 1073741824)) { regular = font_load(r); }
-    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf", 1073741824)) { bold = font_load(b); }
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf", 16777216)) { bold = font_load(b); }
     if (let f = regular) {
         if (let fb = bold) {
             Model m = new Model{project: "Capstan", file: "examples/patient_records.cap", status: "A0 prototype · headless PNG · static navigation · no commands executed"};
