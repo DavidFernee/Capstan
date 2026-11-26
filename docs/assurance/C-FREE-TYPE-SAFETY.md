@@ -4,7 +4,10 @@
 **Implementation work:** issue [#451](https://github.com/DavidFernee/Capstan/issues/451)  
 **Status:** proposed assurance profile; existing CCAM scalar model is machine-checked, but end-to-end implementation correspondence is not established.
 
-## Claim boundary\n\nSee the [execution assurance architecture](EXECUTION-ASSURANCE-ARCHITECTURE.md) and its [machine-readable boundary register](execution-boundaries.json) for the end-to-end path, current implementation dispositions and explicit unproved links. The register is schema-validated and checked in CI; a model-level theorem cannot be promoted to implementation proof without an explicit refinement flag and review.\n
+## Claim boundary
+
+See the [execution assurance architecture](EXECUTION-ASSURANCE-ARCHITECTURE.md) and its [machine-readable boundary register](execution-boundaries.json) for the end-to-end path, current implementation dispositions and explicit unproved links. The register is schema-validated and checked in CI; a model-level theorem cannot be promoted to implementation proof without an explicit refinement flag and review.
+
 
 The intended proof path is:
 
