@@ -240,9 +240,19 @@ add(113, "HTTP response splitting", "na", note="No HTTP facility yet; header out
 add(116, "Improper encoding or escaping of output", "reject",
     'int main() { string csv = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", csv); return 0; }', "CWE-116",
     "Escaped text is typed by its context (Html, LogText) and cannot pass as a plain string.")
-add(116, "Improper encoding: HTML-escaped text written into a CSV file", "gap",
-    'int main() { Html cell = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", cell); return 0; }',
-    note="write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap.")
+add(116, "Improper encoding: JSON-escaped fragment written into a CSV file", "gap",
+    'int main() { string cell = escape_json(taint("=cmd|\\' /C calc\\'!A0")); bool ok = write_file("out.csv", cell); return 0; }',
+    note="escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250.")
+add(116, "HTML context passed to CSV sink", "reject",
+    'int main() { Html cell = escape_html(taint("=1+1")); bool ok = write_csv_file("out.csv", cell); return 0; }', "CWE-116")
+add(116, "CSV context passed to HTML sink", "reject",
+    'int main() { CsvText cell = escape_csv(taint("=1+1")); bool ok = write_html_file("out.html", cell); return 0; }', "CWE-116")
+add(116, "CSV context passed to terminal output", "reject",
+    'int main() { CsvText cell = escape_csv(taint("=1+1")); println(cell); return 0; }', "CWE-116")
+add(116, "Plain string passed to CSV sink", "reject",
+    'int main() { string cell = "ordinary"; bool ok = write_csv_file("out.csv", cell); return 0; }', "CWE-116")
+add(116, "HTML context passed to format-agnostic file sink", "reject",
+    'int main() { Html cell = escape_html(taint("x")); bool ok = write_file("out.html", cell); return 0; }', "CWE-116")
 add(117, "Improper output neutralization for logs", "reject",
     'int main() { println("login failed: " + taint("bob\\nINFO admin ok")); return 0; }', "CWE-117")
 add(117, "Log injection (attempt after escape_log)", "neutral",
