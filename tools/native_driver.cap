@@ -40,7 +40,7 @@ void native_usage() {
 }
 
 int main() {
-    List<string> arguments = args(4096, 1048576, 16777216);
+    List<string> arguments = args(4096, 4096, 16777216);
     Ctx context = new Ctx{
         files: new List<string>(),
         sources: new List<Tainted>(),
