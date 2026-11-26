@@ -1,0 +1,8 @@
+// expect: private field 'object_id' of CCAMHeapRef is accessible only within its defining module
+import "ccam_heap.cap";
+
+int main() {
+    CCAMHeapCreateResult created = ccam_heap_create(128, 4);
+    CCAMHeapRefResult allocated = ccam_heap_alloc_bytes(created.heap, "x");
+    return allocated.reference.object_id;
+}
