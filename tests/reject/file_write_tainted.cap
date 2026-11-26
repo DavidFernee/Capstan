@@ -1,3 +1,3 @@
 // expect: CWE-20
 // spec: builtins.io types.tainted
-int main() { if (let l = read_line()) { bool ok = write_file("out.txt", l); } return 0; }
+int main() { if (let l = read_line(1048576)) { bool ok = write_file("out.txt", l); } return 0; }
