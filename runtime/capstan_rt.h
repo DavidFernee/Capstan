@@ -819,15 +819,16 @@ static CapList *cap_args_bounded(int64_t max_count, int64_t max_arg_bytes,
        list or any managed strings. */
     int64_t total = 0;
     for (int i = 1; i < cap_argc; i++) {
-        size_t n = strlen(cap_argv[i]);
-        if (CAP_UNLIKELY(n > (size_t)max_arg_bytes ||
-                         n > (size_t)(max_total_bytes - total)))
+        int64_t remaining = max_total_bytes - total;
+        int64_t per_limit = max_arg_bytes < remaining ? max_arg_bytes : remaining;
+        size_t n = strnlen(cap_argv[i], (size_t)per_limit + 1);
+        if (CAP_UNLIKELY(n > (size_t)per_limit))
             cap_panic("command-line argument bytes exceed explicit bound", "CWE-789", loc);
         total += (int64_t)n;
     }
     CapList *l = cap_list_new();
     for (int i = 1; i < cap_argc; i++) {
-        size_t n = strlen(cap_argv[i]);
+        size_t n = strnlen(cap_argv[i], (size_t)max_arg_bytes + 1);
         cap_list_push(l, cap_vp(cap_str_new(cap_argv[i], (int64_t)n)));
     }
     return l;
@@ -903,8 +904,13 @@ static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
     size_t got;
     int64_t total = 0;
     bool too_long = false;
-    while ((got = fread(chunk, 1, sizeof chunk, f)) > 0) {
-        if ((int64_t)got > max - total) { too_long = true; break; }
+    while (total <= max) {
+        int64_t remaining = max - total;
+        size_t want = sizeof chunk;
+        if (remaining < (int64_t)want) want = (size_t)remaining + 1;
+        got = fread(chunk, 1, want, f);
+        if (got == 0) break;
+        if ((int64_t)got > remaining) { too_long = true; break; }
         cap_buf_put(&b, chunk, (int64_t)got);
         total += (int64_t)got;
     }
@@ -1343,7 +1349,7 @@ static CapStr *cap_secret_env_bounded(CapStr *name, int64_t max, int64_t loc) {
         cap_panic("secret_env() limit outside 0..1 MiB", "CWE-789", loc);
     const char *v = getenv(name->data);
     if (!v) return NULL;
-    size_t value_len = strlen(v);
+    size_t value_len = strnlen(v, (size_t)max + 1);
     if (value_len > (size_t)max)
         cap_panic("secret environment value exceeds explicit byte limit", "CWE-789", loc);
     if (value_len > INT64_MAX)
