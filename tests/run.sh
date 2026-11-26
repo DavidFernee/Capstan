@@ -57,6 +57,10 @@ ok()  { pass=$((pass+1)); printf '  pass  %s\n' "$1"; }
 bad() {
   fail=$((fail+1))
   printf '  FAIL  %s: %s\n' "$1" "$2" | tee -a "$FAILURE_LOG"
+  if [[ "$1" == shroud* ]]; then
+    mkdir -p "$ROOT/tests/shroud/failures"
+    printf '  FAIL  %s: %s\n' "$1" "$2" >> "$ROOT/tests/shroud/failures/ci.log"
+  fi
 }
 section() { echo; echo "== $1"; }
 
