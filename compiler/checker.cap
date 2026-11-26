@@ -1934,7 +1934,10 @@ bool derived(Flow f, Node e) {
         return ty_of(e.kids[0]).k == TY_TAINT || aggregate_marked(f, e.kids[0]);
     }
     // A collection or struct that ever held a derived integer yields derived integers.
-    if (e.k == N_GETF) { return aggregate_type(ty_of(e)) ? aggregate_marked(f, e) : path_marked(f, e); }
+    if (e.k == N_GETF) {
+        if (aggregate_type(ty_of(e))) { return aggregate_marked(f, e); }
+        return path_marked(f, e);
+    }
     // Indexing with a derived integer selects by untrusted data: the result is derived too.
     if (e.k == N_INDEX) {
         bool selected = derived(f, e.kids[1]);
