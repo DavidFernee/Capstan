@@ -240,8 +240,9 @@ int main() {
 
     // The next sequential client ID is accepted.
     List<int> sequential_bind_payload = new List<int>();
-    wayland_registry_push_u32(sequential_bind_payload, 55);
-    wayland_registry_push_string(sequential_bind_payload, "wl_compositor");
+    // Global 55 was deliberately removed above; use the still-live wl_shm global.
+    wayland_registry_push_u32(sequential_bind_payload, 57);
+    wayland_registry_push_string(sequential_bind_payload, "wl_shm");
     wayland_registry_push_u32(sequential_bind_payload, 1);
     wayland_registry_push_u32(sequential_bind_payload, 3);
     Tainted sequential_bind = wayland_registry_frame(1, 0, sequential_bind_payload);
