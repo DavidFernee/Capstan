@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_expr_tree_order(List<AGExpression> n){if(n.len()==0||n.len()>65536){return false;}for(int i=0;i<n.len();i+=1){if(!ag_expr_node_valid(n[i],i)){return false;}}return true;}
