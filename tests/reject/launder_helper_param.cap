@@ -4,6 +4,6 @@
 string as_text(int c) { return char_str(c); }
 
 int main() {
-    if (let t = read_line()) { println(as_text(t.at(0))); }
+    if (let t = read_line(1048576)) { println(as_text(t.at(0))); }
     return 0;
 }
