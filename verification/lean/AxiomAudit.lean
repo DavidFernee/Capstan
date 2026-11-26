@@ -323,5 +323,5 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.txOwnerIds_update_preserved
 #print axioms CapstanVerification.update_preserves_linear_context
 #print axioms CapstanVerification.advance_preserves_linear_context
-#print axioms CapstanVerification.tx_transition_rejects_after_commit
-#print axioms CapstanVerification.tx_transition_rejects_abort_after_decision
+#print axioms CapstanVerification.duplicate_commit_rejected
+#print axioms CapstanVerification.abort_after_commit_decision_rejected
