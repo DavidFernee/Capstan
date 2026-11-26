@@ -1,0 +1,2 @@
+struct AGCheckedInt { bool ok; int value; }
+AGCheckedInt ag_checked_add(int a,int b){if(a>1000000000||a< -1000000000||b>1000000000||b< -1000000000){return new AGCheckedInt{ok:false,value:0};}return new AGCheckedInt{ok:true,value:a+b};}
