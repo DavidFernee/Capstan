@@ -13,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "compiler" / "checker.cap"
 MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "InjectionChecker.lean"
+SINK_MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "InjectionSinks.lean"
 BASELINE = ROOT / "verification" / "lean" / "fixtures" / "injection_checker_laundering_source.cap"
 SOURCE_MARKER = "// ---- laundering analysis (CWE-20)"
 
@@ -42,6 +43,14 @@ REQUIRED_MODEL_FRAGMENTS = (
     "theorem struct_constructor_not_derived",
 )
 
+REQUIRED_SINK_MODEL_FRAGMENTS = (
+    "def checkerRejectsSink",
+    "theorem char_string_derived_is_rejected",
+    "theorem text_index_derived_selector_is_rejected",
+    "theorem optional_text_map_get_derived_key_is_rejected",
+    "theorem trusted_slice_derived_selector_is_rejected",
+)
+
 
 def fail(message: str) -> None:
     print(f"injection checker source bridge: FAIL: {message}", file=sys.stderr)
@@ -49,11 +58,12 @@ def fail(message: str) -> None:
 
 
 def main() -> None:
-    if not SOURCE.is_file() or not MODEL.is_file():
+    if not SOURCE.is_file() or not MODEL.is_file() or not SINK_MODEL.is_file():
         fail("run from a complete Capstan checkout; required source/model file missing")
 
     source = SOURCE.read_text(encoding="utf-8")
     model = MODEL.read_text(encoding="utf-8")
+    sink_model = SINK_MODEL.read_text(encoding="utf-8")
     baseline = BASELINE.read_text(encoding="utf-8")
     if SOURCE_MARKER not in source:
         fail("checker laundering-analysis section marker is missing")
@@ -66,14 +76,17 @@ def main() -> None:
         )
     missing_source = [fragment for fragment in REQUIRED_SOURCE_FRAGMENTS if fragment not in source]
     missing_model = [fragment for fragment in REQUIRED_MODEL_FRAGMENTS if fragment not in model]
+    missing_sink_model = [fragment for fragment in REQUIRED_SINK_MODEL_FRAGMENTS if fragment not in sink_model]
     if missing_source:
         fail("expected checker transfer/sink/fixpoint fragment missing: " + repr(missing_source))
     if missing_model:
         fail("expected Lean model declaration missing: " + repr(missing_model))
+    if missing_sink_model:
+        fail("expected Lean protected-sink theorem missing: " + repr(missing_sink_model))
 
     print(
         "injection checker source bridge: PASS "
-        "(checker laundering-analysis section exactly matches reviewed fixture; model declarations present)"
+        "(checker laundering-analysis section matches fixture; transfer and sink model declarations present)"
     )
     print(
         "LIMIT: source identity and declaration-presence checks only; "
