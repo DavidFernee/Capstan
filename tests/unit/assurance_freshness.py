@@ -199,6 +199,30 @@ class FreshnessTests(unittest.TestCase):
         self.assertIn("STALE MEM-001", output.getvalue())
         self.assertIn("active/qualified claims", output.getvalue())
 
+    def test_symlink_paths_must_resolve_inside_repository(self):
+        external = tempfile.TemporaryDirectory()
+        try:
+            external_file = os.path.join(external.name, "outside.txt")
+            with open(external_file, "w", encoding="utf-8") as f:
+                f.write("outside\\n")
+            internal_link = os.path.join(self.repo, "src", "internal-link")
+            external_link = os.path.join(self.repo, "src", "external-link")
+            try:
+                os.symlink(os.path.join(self.repo, "src", "covered.c"), internal_link)
+                os.symlink(external_file, external_link)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest("symlink creation unavailable: %s" % exc)
+            self.assertTrue(MODULE.resolves_inside_repo("src/internal-link"))
+            self.assertFalse(MODULE.resolves_inside_repo("src/external-link"))
+        finally:
+            external.cleanup()
+
+    def test_cross_volume_commonpath_error_fails_closed(self):
+        from unittest import mock
+        with mock.patch.object(MODULE.os.path, "commonpath", side_effect=ValueError("different drives")):
+            self.assertFalse(MODULE.resolves_inside_repo("src/covered.c"))
+
+
     def test_unrelated_revision_is_rejected(self):
         with self.assertRaises(ValueError):
             MODULE.changed_paths("0" * 40, ["src/covered.c"])
