@@ -166,7 +166,7 @@ theorem allocation_success_facts
                 constructor
                 · omega
                 constructor
-                · exact hTemporary
+                · omega
                 · have hOldTemporary : s.temporaryPeakBytes ≤ s.maxTemporaryBytes := by
                     by_cases hOldPeak : s.temporaryPeakBytes ≤ s.maxTemporaryBytes
                   · exact hOldPeak
