@@ -420,7 +420,7 @@ DisplayList finish_display_list(Canvas cv) {
             segments: owned_segments, mask_alpha: owned_alpha,
             mask_w: cmd.mask_w, mask_h: cmd.mask_h, x: cmd.x, y: cmd.y,
             coverage: cmd.coverage, opacity: cmd.opacity
-        });
+            });
     }
     return new DisplayList{width: cv.pm.w, height: cv.pm.h, commands: commands};
 }
