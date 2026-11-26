@@ -12,3 +12,4 @@ import CapstanVerification.Output
 import CapstanVerification.ExplicitTrap
 import CapstanVerification.InjectionProvenance
 import CapstanVerification.InjectionSinks
+import CapstanVerification.InjectionEnvironment
