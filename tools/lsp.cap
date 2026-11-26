@@ -142,7 +142,7 @@ int lsp_find_last(Tainted s, string needle) {
 // ---- input --------------------------------------------------------------------------
 //
 // Header lines are read a byte at a time with read_bytes(1), so a line without a line
-// break can never grow beyond MAX_HEADER_LINE bytes in memory (read_line() would keep
+// break can never grow beyond MAX_HEADER_LINE bytes in memory (read_line(1048576) would keep
 // all of it); bodies are read whole with read_bytes(n), and oversized ones are skipped
 // in 1 MiB pieces without being stored.
 
