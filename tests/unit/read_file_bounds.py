@@ -15,7 +15,7 @@ PROGRAM = """void show(string label, Tainted? t) {
     if (let s = t) { println(label + ": " + int_to_str(s.len()) + " bytes"); } else { println(label + ": none"); }
 }
 int main() {
-    List<string> a = args();
+    List<string> a = args(4096, 1048576, 16777216);
     string d = a[0];
     show("fifo", read_file(d + "/fifo"));
     show("zero", read_file("/dev/zero", 100000));
