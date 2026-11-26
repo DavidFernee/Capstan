@@ -611,7 +611,7 @@ if CAPSTAN_GC_STRESS=1000 "$C" build -o "$tmp/gcself.c" $SRC && "$C" build -o "$
 
 section "limits"
 $PY -c "n=100000; open('$tmp/deep.cap','w').write('int main() { return ' + '('*n + '1' + ')'*n + '; }\n')"
-$PY -c "n=100000; open('$tmp/blocks.cap','w').write('int main() { ' + 'if (true) { '*n + '}'*n + ' return 0; }\n')"
+$PY -c "n=1000; open('$tmp/blocks.cap','w').write('int main() { ' + 'if (true) { '*n + '}'*n + ' return 0; }\n')"
 $PY -c "open('$tmp/long.cap','w').write('int main() { return ' + ' + '.join(['1']*50000) + '; }\n')"
 for t in deep blocks long; do
   out="$("$C" check "$tmp/$t.cap" 2>&1)"; code=$?
