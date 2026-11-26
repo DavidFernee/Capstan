@@ -338,7 +338,7 @@ Capstan's defensible path is to define these dimensions precisely, combine stati
 6. Martin Avanzini and Ugo Dal Lago. **Automated Sized-Type Inference and Complexity Analysis.** PACMPL ICFP (2017). [Paper](https://doi.org/10.1145/3110287); [preprint](https://arxiv.org/abs/1704.05585).
 7. Mads Tofte and Jean-Pierre Talpin. **Region-Based Memory Management.** Information and Computation 132(2) (1997), pp. 109–176. [Paper](https://ropas.snu.ac.kr/lib/dock/ToTa1997.pdf).
 8. Mads Tofte, Lars Birkedal, Martin Elsman and Niels Hallenberg. **A Retrospective on Region-Based Memory Management.** Higher-Order and Symbolic Computation 17 (2004), pp. 245–265. [Paper](https://doi.org/10.1023/B:LISP.0000029446.78563.a4).
-9. Per Stenström et al. **The Worst-Case Execution Time Problem—Overview of Methods and Survey of Tools.** ACM Transactions on Embedded Computing Systems (2008). [Publication DOI](https://doi.org/10.1145/1347375.1347389).
+9. Reinhard Wilhelm et al. **The Worst-Case Execution Time Problem—Overview of Methods and Survey of Tools.** ACM Transactions on Embedded Computing Systems 7(3), Article 36 (2008), 36:1–36:53. [Publication DOI](https://doi.org/10.1145/1347375.1347389).
 10. Jean Souyris et al. **Computing the Worst Case Execution Time of an Avionics Program by Abstract Interpretation.** WCET Workshop / OASIcs (2008). [Paper](https://doi.org/10.4230/OASIcs.WCET.2005.810).
 11. Ankush Das, Jan Hoffmann and Frank Pfenning. **Work Analysis with Resource-Aware Session Types.** LICS (2018), pp. 305–314. [Paper](https://doi.org/10.1145/3209108.3209146).
 12. Ankush Das, Di Wang and Jan Hoffmann. **Probabilistic Resource-Aware Session Types.** PACMPL POPL (2023). [Paper](https://doi.org/10.1145/3571259).
