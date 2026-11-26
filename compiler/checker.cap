@@ -1871,15 +1871,25 @@ bool is_arith(string op) {
 
 bool derived(Flow f, Node e) {
     if (e.k == N_METHOD && e.s == "at" && ty_of(e.kids[0]).k == TY_TAINT) { return true; }
-    if (e.k == N_VAR) { return f.vars.has(e.s); }
-    if (e.k == N_NEG || e.k == N_BNOT) { return derived(f, e.kids[0]); }
+    if (e.k == N_VAR) { return f.vars.has(e.s) || ty_of(e).k == TY_TAINT; }
+    if (e.k == N_NEG || e.k == N_BNOT || e.k == N_NOT) { return derived(f, e.kids[0]); }
+    // Comparisons and Boolean connectives produce values that depend on their operands.
+    if (e.k == N_BIN && ty_of(e).k == TY_BOOL) {
+        return derived(f, e.kids[0]) || derived(f, e.kids[1]);
+    }
+    // Length reveals input-dependent metadata even though the result is an integer.
+    if (e.k == N_METHOD && e.s == "len") {
+        return ty_of(e.kids[0]).k == TY_TAINT || base_marked(f, e.kids[0]);
+    }
     // A collection or struct that ever held a derived integer yields derived integers.
     if (e.k == N_GETF) { return base_marked(f, e.kids[0]); }
     // Indexing with a derived integer selects by untrusted data: the result is derived too.
     if (e.k == N_INDEX) { return base_marked(f, e.kids[0]) || derived(f, e.kids[1]); }
     if (e.k == N_METHOD && e.s == "get" && e.kids.len() > 1 && derived(f, e.kids[1])) { return true; }
     // Decimal digits of an untrusted byte, and text joined to them, are derived strings.
-    if (e.k == N_CALL && e.s == "int_to_str" && e.kids.len() == 1 && derived(f, e.kids[0])) { return true; }
+    if (e.k == N_CALL && (e.s == "int_to_str" || e.s == "to_text") && e.kids.len() == 1 && derived(f, e.kids[0])) { return true; }
+    // join(List<Tainted>, separator) retains the list's input provenance.
+    if (e.k == N_CALL && e.s == "join" && e.kids.len() == 2 && derived(f, e.kids[0])) { return true; }
     if (e.k == N_BIN && e.s == "+" && ty_of(e).k == TY_STR) { return derived(f, e.kids[0]) || derived(f, e.kids[1]); }
     if (e.k == N_METHOD && (e.s == "pop" || e.s == "get" || e.s == "remove_at")) { return base_marked(f, e.kids[0]); }
     if (e.k == N_BIN && is_arith(e.s) && ty_of(e).k == TY_INT) {
@@ -1940,8 +1950,8 @@ bool texty_type(Type t) {
 }
 
 void flow_walk(Flow f, Node n) {
-    if (n.k == N_DECL && (ty_of(n).k == TY_INT || ty_of(n).k == TY_STR) && derived(f, n.kids[0])) { mark(f, n.s); }
-    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && (ty_of(n.kids[0]).k == TY_INT || ty_of(n.kids[0]).k == TY_STR) && derived(f, n.kids[1])) { mark(f, n.kids[0].s); }
+    if (n.k == N_DECL && (ty_of(n).k == TY_INT || ty_of(n).k == TY_STR || ty_of(n).k == TY_BOOL) && derived(f, n.kids[0])) { mark(f, n.s); }
+    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && (ty_of(n.kids[0]).k == TY_INT || ty_of(n.kids[0]).k == TY_STR || ty_of(n.kids[0]).k == TY_BOOL) && derived(f, n.kids[1])) { mark(f, n.kids[0].s); }
     // Lookups of trusted text keyed by untrusted bytes.
     if (n.k == N_INDEX && texty_type(ty_of(n)) && derived(f, n.kids[1])) { lookup_sink(f, n); }
     if (n.k == N_METHOD && n.s == "get" && n.kids.len() > 1 && derived(f, n.kids[1])) {
@@ -2009,7 +2019,8 @@ FlowSummary summarise(Map<FlowSummary> sums, Ctx ctx, Node fn) {
     Flow base = flow_body(sums, ctx, body, "", false);
     FlowSummary out = new FlowSummary{returns_derived: base.returns, param_to_return: new List<bool>(), param_to_sink: new List<bool>()};
     for (int i = 0; i < fn.n; i += 1) {
-        if (ty_of(fn.kids[i]).k == TY_INT) {
+        Type pt = ty_of(fn.kids[i]);
+        if (pt.k == TY_INT || pt.k == TY_BOOL || pt.k == TY_STR || pt.k == TY_TAINT) {
             Flow pf = flow_body(sums, ctx, body, fn.kids[i].s, false);
             out.param_to_return.push(pf.returns);
             out.param_to_sink.push(pf.sinks);
