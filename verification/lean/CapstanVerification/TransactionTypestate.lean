@@ -88,7 +88,7 @@ theorem txOwnerIds_update_preserved (context : TxContext)
   intro owner _
   cases owner with
   | mk id phase =>
-    simp [Prod.fst]
+    cases h : id = resource <;> simp [h]
 
 /-- Updating a resource's phase cannot introduce a second owner. -/
 theorem update_preserves_linear_context (context : TxContext)
