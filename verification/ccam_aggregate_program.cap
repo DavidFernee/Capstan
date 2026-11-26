@@ -395,8 +395,12 @@ CCAMAggregateValidationResult ccam_aggregate_validate_program(
         if (!ccam_aggregate_valid_value_type(program.register_types[i])) {
             return ccam_aggregate_validation_error("invalid_register_type", -1);
         }
-        // Parameters are initialised at machine entry. Runtime construction
-        // must still validate every supplied value, especially reference provenance.
+        if (i < program.parameter_count &&
+            program.register_types[i] == CCAM_PROGRAM_TYPE_REF) {
+            return ccam_aggregate_validation_error("reference_parameters_not_supported", -1);
+        }
+        // Parameters are scalar values supplied at machine entry. References
+        // are created inside this machine so provenance is never caller-forgeable.
         initialized.push(i < program.parameter_count);
         object_kinds.push(0); // Reference parameters have runtime-checked dynamic kind.
         object_descriptors.push(0);
