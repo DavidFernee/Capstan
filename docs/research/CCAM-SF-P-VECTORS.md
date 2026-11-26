@@ -6,6 +6,8 @@
 **Proof profile:** `docs/research/CCAM-SINGLE-FRAME-PROOF-PROFILE.md`  
 **Machine-readable corpus:** `verification/ccam_sf_vectors.json`
 
+The repository test runner invokes the strict schema validator, checks that the generated Lean adapter is current, and executes the corpus against the concrete evaluator. These are executable conformance checks; they do not substitute for a theorem connecting the concrete evaluator to the Lean model.
+
 ## Oracle conventions
 
 - Each vector has an explicit ID, register types, return contract, initial profile entry, instruction budget, and instruction sequence using the normative v0.1 instruction field names.
