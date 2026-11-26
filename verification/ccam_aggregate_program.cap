@@ -100,10 +100,10 @@ CCAMAggregateValidationResult ccam_aggregate_validate_layouts(
              layout.field_ref_type_ids.len() != fields)) {
             return ccam_aggregate_validation_error("invalid_record_layout", -1);
         }
-        if (identifiers.has(layout.type_id)) {
+        if (identifiers.has(int_to_str(layout.type_id))) {
             return ccam_aggregate_validation_error("duplicate_layout_id", -1);
         }
-        identifiers.set(layout.type_id, 1);
+        identifiers.set(int_to_str(layout.type_id), 1);
         bool has_reference = false;
         for (int f = 0; f < fields; f += 1) {
             int kind = layout.field_types[f];
@@ -394,7 +394,7 @@ test "aggregate program rejects unknown opcodes, invalid layouts and immutable s
     code.push(store);
     CCAMAggregateProgram program = new CCAMAggregateProgram{
         version: CCAM_AGGREGATE_PROFILE_VERSION, register_types: registers,
-        parameter_count: 0, layouts: layouts, instructions: code
+        parameter_count: 2, layouts: layouts, instructions: code
     };
     CCAMAggregateValidationResult immutable_result = ccam_aggregate_validate_program(program);
     assert(!immutable_result.ok && immutable_result.error == "field_value_type_or_initialisation");
