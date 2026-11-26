@@ -55,7 +55,7 @@ struct CCAMHeapObject {
     string byte_data;
 }
 
-struct CCAMHeap {
+opaque struct CCAMHeap {
     List<CCAMHeapObject> objects;
     int heap_token;
     int max_bytes;
