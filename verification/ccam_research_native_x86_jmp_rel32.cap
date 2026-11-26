@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+int ag_x86_jmp_rel32(List<int> b){if(b.len()>AG_BYTE_LIMIT-5){return -1;}b.push(233);int p=b.len();if(!ag_u32(b,0)){return -1;}return p;}
