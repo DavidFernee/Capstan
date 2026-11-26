@@ -1,0 +1,7 @@
+// Imported modules cannot construct opaque heap references.
+import "ccam_heap.cap";
+
+int main() {
+    CCAMHeapRef forged = new CCAMHeapRef{};
+    return 0;
+}
