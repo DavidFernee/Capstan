@@ -126,16 +126,56 @@ theorem literal_has_no_provenance :
     evalProvenance .literal = emptyProvenanceValue := by
   rfl
 
+/-- All source identities syntactically introduced by an expression. -/
+def expressionSources : ProvenanceExpr → Provenance
+  | .literal => ∅
+  | .input source => {source}
+  | .combine left right => expressionSources left ∪ expressionSources right
+  | .select selected selector =>
+      expressionSources selected ∪ expressionSources selector
+
+/-- Sources represented in either direct-data or selection provenance. -/
+def representedSources (value : ProvenanceValue) : Provenance :=
+  value.dataSources ∪ value.selectionSources
+
 /--
-The model's main foundational guarantee: every direct source introduced by an
-expression remains represented in its abstract value under the constructors
-modelled here. This is a fragment theorem, not yet a theorem about Capstan
-source programs or compiled executions.
+Every input source syntactically introduced by an expression remains present
+in either its direct-data or selection provenance. In particular, selecting
+trusted-looking data with an input-derived selector does not erase the input's
+influence.
 -/
-theorem expression_data_provenance_sound (expr : ProvenanceExpr) :
-    ∀ source, source ∈ (evalProvenance expr).dataSources →
-      source ∈ (evalProvenance expr).dataSources := by
-  intro source hsource
-  exact hsource
+theorem expression_sources_preserved (expr : ProvenanceExpr) :
+    expressionSources expr ⊆ representedSources (evalProvenance expr) := by
+  induction expr with
+  | literal =>
+      simp [expressionSources, representedSources, evalProvenance,
+        emptyProvenanceValue]
+  | input source =>
+      simp [expressionSources, representedSources, evalProvenance,
+        inputProvenanceValue]
+  | combine left right ihLeft ihRight =>
+      intro source hsource
+      simp only [expressionSources, Finset.mem_union] at hsource
+      simp only [representedSources, evalProvenance, combineProvenance,
+        Finset.mem_union]
+      rcases hsource with hleft | hright
+      · exact Or.inl (ihLeft hleft)
+      · exact Or.inl (ihRight hright)
+  | select selected selector ihSelected ihSelector =>
+      intro source hsource
+      simp only [expressionSources, Finset.mem_union] at hsource
+      simp only [representedSources, evalProvenance, selectProvenance,
+        Finset.mem_union]
+      rcases hsource with hselected | hselector
+      · have hrepresented := ihSelected hselected
+        simp only [representedSources, Finset.mem_union] at hrepresented
+        rcases hrepresented with hdata | hselection
+        · exact Or.inl hdata
+        · exact Or.inr (Or.inl hselection)
+      · have hrepresented := ihSelector hselector
+        simp only [representedSources, Finset.mem_union] at hrepresented
+        rcases hrepresented with hdata | hselection
+        · exact Or.inr (Or.inr (Or.inl hdata))
+        · exact Or.inr (Or.inr (Or.inr hselection))
 
 end CapstanVerification
