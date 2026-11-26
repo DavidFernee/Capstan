@@ -34,3 +34,11 @@ All account balances are non-negative, all leases have consistent live state, an
 | Kernel enforces these properties | Not established | Kernel implementation and target-platform evidence |
 
 No vulnerability-free, formally verified, production-ready or kernel-enforced claim is made. A green test run will establish only that these bounded tests pass for the checked revision.
+
+
+## Concurrent revocation extension
+
+`verification/schooner_concurrency.cap` explores bounded interleavings of access admission,
+in-flight use, revocation commit and quiescent return. It assumes the admission pin and
+revocation commit are atomic transitions. This is a candidate abstract contract, not
+evidence that the runtime or kernel implements those atomic operations.
