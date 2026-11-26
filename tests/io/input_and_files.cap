@@ -8,7 +8,7 @@ int main() {
     string dir = a[0];
     int n = 0;
     while (true) {
-        if (let line = read_line()) {
+        if (let line = read_line(1048576)) {
             n += 1;
             println($"line {n}: {line.len()} bytes: " + escape_log(line));
         } else {
