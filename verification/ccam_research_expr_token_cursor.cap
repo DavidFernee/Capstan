@@ -1,0 +1,4 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+struct AGExprTokenCursor { int position; int count; }
+bool ag_expr_cursor_valid(AGExprTokenCursor c){return c.position>=0&&c.count>=0&&c.position<=c.count;}
+bool ag_expr_cursor_advance(AGExprTokenCursor c){if(!ag_expr_cursor_valid(c)||c.position>=c.count){return false;}c.position+=1;return true;}
