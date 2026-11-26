@@ -264,7 +264,7 @@ add(185, "Incorrect regular expression", "absent", REGEX)
 add(22, "Path traversal", "reject",
     "int main() { Tainted name = taint(\"../../etc/passwd\"); if (let f = read_file(name, 4096)) { } return 0; }", "CWE-20")
 add(22, "Path traversal (via an audited trust())", "audited",
-    'int main() { Tainted name = taint("../../etc/passwd"); if (let f = read_file(trust(name, "file name from form"))) { } return 0; }',
+    'int main() { Tainted name = taint("../../etc/passwd"); if (let f = read_file(trust(name, "file name from form"), 4096)) { } return 0; }',
     note="Possible only through trust(), which needs a written justification and is reported in every build. validate_path() is the safe route.")
 add(22, "Path traversal (attempt through validate_path)", "neutral",
     'int main() { if (let p = validate_path(taint("../../etc/passwd"))) { println("accepted"); } else { println("rejected"); } return 0; }', "rejected")
