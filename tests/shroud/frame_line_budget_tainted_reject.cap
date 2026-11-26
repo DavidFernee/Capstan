@@ -3,9 +3,9 @@
 // both trusted and Tainted rejection executables run.
 
 int main() {
-    if (let font_data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 1073741824)) {
+    if (let font_data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) {
         if (let font = font_load(font_data)) {
-            if (let payload = read_file("tests/shroud/.frame_line_payload.tmp", 1073741824)) {
+            if (let payload = read_file("tests/shroud/.frame_line_payload.tmp", 16777216)) {
                 Ui ui = new_ui(font, font, light_theme(), 64, 64, 256);
                 layout_root(ui, user_text(payload), fx(1), fx(64));
                 println("unexpectedly accepted over-budget Tainted text");
