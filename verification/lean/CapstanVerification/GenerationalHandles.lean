@@ -163,4 +163,46 @@ theorem handleResolve_requires_current_generation
       { region := region, slot := slot, generation := generation } = none := by
   simp [handleResolve, hslot, hne]
 
+/-- Persistent high-water generation state, kept separately from occupancy.
+Releasing a slot must not erase this table: it records the last issued
+incarnation even while the corresponding heap slot is empty. -/
+abbrev HandleGenerationTable := Nat → Nat → Nat
+
+/-- Allocate the next incarnation of a slot. The generation table is updated
+atomically with the heap result; at the configured limit allocation fails
+instead of wrapping. Callers retain the table across handleReleaseAt. -/
+def handleAllocateNext {Object : Type}
+    (maximum : Nat) (heap : HandleHeap Object)
+    (generations : HandleGenerationTable)
+    (region slot : Nat) (object : Object) :
+    Option (HandleHeap Object × HandleGenerationTable × ObjectHandle) :=
+  match boundedNextGeneration maximum (generations region slot) with
+  | none => none
+  | some generation =>
+      some
+        ( handleAllocateAt heap region slot generation object
+        , fun candidateRegion candidateSlot =>
+            if candidateRegion = region && candidateSlot = slot then generation
+            else generations candidateRegion candidateSlot
+        , { region := region, slot := slot, generation := generation } )
+
+/-- Reusing a slot through the persistent generation allocator cannot revive
+a handle from its previously issued generation. This is the key property that
+the caller-supplied handleAllocateAt primitive alone does not establish. -/
+theorem handleAllocateNext_rejects_previous_generation
+    {Object : Type} (maximum : Nat) (heap : HandleHeap Object)
+    (generations : HandleGenerationTable)
+    (region slot : Nat) (object : Object) (next : Nat)
+    (hnext : boundedNextGeneration maximum (generations region slot) = some next) :
+    (handleAllocateNext maximum heap generations region slot object).map
+      (fun allocation =>
+        handleResolve allocation.1 region
+          { region := region, slot := slot,
+            generation := generations region slot }) = some none := by
+  have hne : next ≠ generations region slot := by
+    have hlt := boundedNextGeneration_strict maximum
+      (generations region slot) next hnext
+    omega
+  simp [handleAllocateNext, hnext, handleResolve, handleAllocateAt, hne]
+
 end CapstanVerification
