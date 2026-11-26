@@ -34,10 +34,10 @@ def expect_failure(root: pathlib.Path, needle: str, label: str) -> None:
         raise SystemExit(f"{label}: expected {needle!r}; exit={result.returncode}\\n{result.stdout[-4000:]}")
 
 
-def expect_no_budget_failure(root: pathlib.Path, needle: str, label: str) -> None:
+def expect_reaches_parser(root: pathlib.Path, needle: str, label: str) -> None:
     result = run(root)
-    if needle in result.stdout:
-        raise SystemExit(f"{label}: unexpected {needle!r}\\n{result.stdout[-4000:]}")
+    if result.returncode == 0 or needle in result.stdout:
+        raise SystemExit(f"{label}: expected a parser diagnostic, not {needle!r}; exit={result.returncode}\\n{result.stdout[-4000:]}")
 
 
 def write_chain(directory: pathlib.Path, imported_files: int) -> pathlib.Path:
@@ -81,7 +81,7 @@ with tempfile.TemporaryDirectory(prefix="capstan-import-budget-") as td:
     graph = base / "tokens-exact"
     graph.mkdir()
     (graph / "main.cap").write_text(";" * 500_000)
-    expect_no_budget_failure(graph / "main.cap", "total token budget", "exact token budget")
+    expect_reaches_parser(graph / "main.cap", "total token budget", "exact token budget")
 
     graph = base / "tokens-over"
     graph.mkdir()
