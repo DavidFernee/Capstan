@@ -80,6 +80,13 @@ else
   bad "aggregate CCAM register/heap execution bridge" "$out"
 fi
 
+section "Capstan-native verification: closed aggregate CCAM program profile"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_program.cap" 2>&1)"; then
+  ok "versioned aggregate opcode schema, nominal layout validation, operand typing and definite initialisation"
+else
+  bad "aggregate CCAM program validator" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
