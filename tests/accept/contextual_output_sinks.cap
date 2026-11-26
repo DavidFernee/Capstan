@@ -1,0 +1,19 @@
+// spec: types.html builtins.escapers builtins.io
+// Each context-encoded value reaches only its matching file sink.
+int main() {
+    Tainted input = taint("=1+1, <script>x()</script>");
+    Html html = "<p>" + escape_html(input) + "</p>";
+    LogText log_line = "input: " + escape_log(input);
+    CsvText csv_row = escape_csv(input) + "," + escape_csv(taint("a,b"));
+    if (!write_html_file("/dev/null", html)) { return 1; }
+    if (!write_log_file("/dev/null", log_line)) { return 2; }
+    if (!write_csv_file("/dev/null", csv_row)) { return 3; }
+    CsvText csv_space = escape_csv(taint(" =1+1"));
+    CsvText csv_fullwidth = escape_csv(taint("＝1+1"));
+    CsvText csv_line_feed = escape_csv(taint_char(10) + taint("=1+1"));
+    CsvText csv_edge_cases = csv_space + "," + csv_fullwidth + "," + csv_line_feed;
+    if (!write_csv_file("/dev/stdout", csv_edge_cases)) { return 4; }
+    println(log_line);
+    println("typed output sinks accepted");
+    return 0;
+}

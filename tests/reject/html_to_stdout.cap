@@ -1,0 +1,8 @@
+// spec: types.html builtins.io
+// expect: CWE-116
+// HTML-encoded text is not safe for terminal/log output.
+int main() {
+    Html html = escape_html(taint("<img src=x>"));
+    println(html);
+    return 0;
+}

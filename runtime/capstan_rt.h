@@ -1023,12 +1023,27 @@ static int64_t *cap_validate_range(CapStr *t, int64_t lo, int64_t hi) {
 
 /* One CSV field: always quoted, quotes doubled, and a leading = + - @ tab or CR
    neutralised with an apostrophe so spreadsheets do not run it (CWE-1236). */
+static bool cap_csv_formula_prefix(const unsigned char *data, int64_t len) {
+    if (len <= 0) return false;
+    int64_t i = 0;
+    /* Defensively inspect past leading ASCII spaces before testing formula leaders. */
+    while (i < len && data[i] == ' ') i++;
+    if (i >= len) return false;
+    unsigned char c = data[i];
+    if (c == '=' || c == '+' || c == '-' || c == '@' ||
+        c == '\t' || c == '\r' || c == '\n' || c == '\v' || c == '\f') return true;
+    /* Full-width formula leaders recognised by some spreadsheet locales. */
+    return len - i >= 3 && data[i] == 0xEF && data[i + 1] == 0xBC &&
+        (data[i + 2] == 0x9D || data[i + 2] == 0x8B ||
+         data[i + 2] == 0x8D || data[i + 2] == 0xA0);
+}
+
 static CapStr *cap_escape_csv(CapStr *t) {
     if (!t) cap_panic("null string passed to cap_escape_csv", "CWE-476", 0);
     CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 2, 4, 0));
     char *w = r->data;
     *w++ = '"';
-    if (t->len > 0 && t->data[0] != 0 && strchr("=+-@\t\r", t->data[0])) *w++ = '\'';
+    if (cap_csv_formula_prefix((const unsigned char *)t->data, t->len)) *w++ = '\'';
     for (int64_t i = 0; i < t->len; i++) {
         if (t->data[i] == '"') *w++ = '"';
         *w++ = t->data[i];
@@ -1101,8 +1116,8 @@ static CapStr *cap_escape_log(CapStr *t) {
 /* The contents of a JSON string literal (without the quotes) for any bytes
    (CWE-116): '"' and '\\' are escaped; controls, DEL, '<', '>', '&' and the line
    separators U+2028/U+2029 become \uXXXX (safe inside an HTML <script> too, CWE-79);
-   valid UTF-8 is kept; each invalid byte becomes U+FFFD, so the output is always
-   valid JSON. */
+   valid UTF-8 is kept except terminal-hostile Unicode (C1 and bidi controls),
+   which is escaped too; each invalid byte becomes U+FFFD, so the output is valid JSON. */
 static CapStr *cap_escape_json(CapStr *t) {
     if (!t) cap_panic("null string passed to cap_escape_json", "CWE-476", 0);
     CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 6, 1, 0));
@@ -1120,7 +1135,9 @@ static CapStr *cap_escape_json(CapStr *t) {
         uint32_t cp = 0;
         int len = cap_utf8_seq(s + i, t->len - i, &cp);
         if (len == 0) { memcpy(w, "\\ufffd", 6); w += 6; i++; continue; }
-        if (cp == 0x2028 || cp == 0x2029) { w += sprintf(w, "\\u%04x", (unsigned)cp); i += len; continue; }
+        // JSON permits these valid UTF-8 code points, but terminal output does not:
+        // escape the same hostile Unicode set as escape_log() (CWE-117).
+        if (cap_log_hostile(cp)) { w += sprintf(w, "\\u%04x", (unsigned)cp); i += len; continue; }
         memcpy(w, s + i, (size_t)len);
         w += len;
         i += len;

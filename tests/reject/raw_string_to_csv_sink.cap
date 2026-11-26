@@ -1,0 +1,7 @@
+// expect: CWE-116
+// A plain trusted string has no CSV encoding guarantee.
+int main() {
+    string raw = "ordinary, text";
+    bool ok = write_csv_file("out.csv", raw);
+    return 0;
+}

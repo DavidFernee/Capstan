@@ -1,7 +1,7 @@
 # Capstan threat model
 
 What Capstan defends against, what it assumes, what it trusts today, what is out of scope, and what
-risk remains. It describes the integrated repository state reviewed on 2026-11-24, and is the
+risk remains. It describes the integrated repository state reviewed on 2026-11-25, and is the
 maintained threat model called for in [DESIGN-MAP.md](../DESIGN-MAP.md). The default execution path
 is still generated C plus the C runtime; the C-free/CCAM programme is not yet the production path.
 Every claim refers to a document, implementation path or test in the repository.
@@ -57,10 +57,12 @@ checks do not cover memory-safety defects inside the C runtime or other trusted-
 No pointers, manual memory management, null, `eval`, shell, format strings, object deserialisation
 or weak random number generator. Capstan has no threads, so data races cannot be written.
 
-The CWE atlas counts the outcome for 254 code-level weaknesses ([CWE-ATLAS.md](../CWE-ATLAS.md)):
-80 rejected, 23 stopped, 16 neutralised, 73 inexpressible, 2 possible only through an audited escape
-hatch, 22 logic or design decisions, 5 gaps, 33 not applicable yet. Every verdict is re-checked on
-each test run.
+The CWE atlas counts 255 weaknesses across 305 attempts ([CWE-ATLAS.md](../CWE-ATLAS.md)):
+81 rejected at compile time, 25 stopped safely at runtime, 16 neutralised, 71 inexpressible by
+absence, 2 possible only through an audited escape hatch, 22 logic or design decisions, 6 gaps,
+and 33 not applicable yet. Each weakness is counted once by its weakest attempt. These are atlas
+classifications, not a count of vulnerabilities prevented or a formal proof. The atlas is re-checked
+by the test suite; a fixture's presence is not evidence that the test passed on a particular commit.
 
 ## 4. Assumptions
 
@@ -144,12 +146,12 @@ are not evidence that the current C-backed runtime has become memory-safe.
 
 ## 7. Residual risks
 
-1. **Atlas gaps that can still be written** ([CWE-ATLAS.md](../CWE-ATLAS.md)): HTML-escaped text
-   written into a CSV file (CWE-116); a password-like literal under an innocuous name (CWE-798); a
-   password hashed with `hash()` when held in an innocuously named variable (CWE-916); data whose type
-   was not declared `sensitive` (CWE-862); a critical operation not declared `protected` (CWE-306);
-   escaped text placed into HTML that was assembled in separate statements, whose context the
-   compiler does not follow (CWE-79).
+1. **Atlas gaps that can still be written** ([CWE-ATLAS.md](../CWE-ATLAS.md)): JSON-escaped text fragments written through generic write_file() into a CSV file (CWE-116); a password-like literal under an innocuous name (CWE-798);
+   password hashing with `hash()` when password provenance is hidden by an innocuous variable, a
+   string method or a helper call (three attempts under CWE-916); data whose type was not declared
+   `sensitive` (CWE-862); a critical operation not declared `protected` (CWE-306); and escaped text
+   placed into HTML assembled across separate statements, whose context the compiler does not follow
+   (CWE-79). These are six distinct CWE gap entries and eight concrete gap attempts.
 2. **Laundering through control flow.** Rebuilding untrusted text by branching on each byte is how a
    validator is written, so the compiler cannot reject it (atlas, CWE-20). Laundering through helper
    functions, lists, struct fields, and lookups of trusted text by untrusted bytes (list indexes,
