@@ -101,6 +101,7 @@ int main() {
     }
     int qi = 0;
     while (qi < queue.len()) {
+        if (budget.exhausted) { break; }
         string path = queue[qi];
         int ofile = from_file[qi];
         int oline = from_line[qi];
@@ -111,8 +112,9 @@ int main() {
         ctx.files.push(path);
         if (budget.files >= MAX_IMPORT_FILES) {
             ctx.sources.push(taint(""));
+            budget.exhausted = true;
             report(ctx, index, 0, true, "CWE-400", "import graph exceeds file-count limit (" + int_to_str(MAX_IMPORT_FILES) + ")");
-            continue;
+            break;
         }
         budget.files += 1;
         int remaining = MAX_TOTAL_SOURCE_BYTES - budget.source_bytes;
@@ -126,7 +128,7 @@ int main() {
                 List<Node> part = parse_program(ctx, toks);
                 if (!charge_ast_nodes(budget, part)) {
                     report(ctx, index, 0, true, "CWE-400", "import graph exceeds AST-node limit (" + int_to_str(MAX_TOTAL_AST_NODES) + ")");
-                    continue;
+                    break;
                 }
                 for (int k = 0; k < part.len(); k += 1) {
                     Node d = part[k];
