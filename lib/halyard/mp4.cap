@@ -413,6 +413,50 @@ List<int> deadeye_mp4_test_minimal_file() {
     return file;
 }
 
+test "Deadeye MP4 enforces the 16-track ceiling at the boundary" {
+    List<int> base = deadeye_mp4_test_minimal_file();
+    DeadeyeMp4BoxResult ftyp = deadeye_mp4_box_read(base,0,base.len());
+    DeadeyeMp4BoxResult moov = deadeye_mp4_box_read(
+        base,ftyp.box.end,base.len()
+    );
+    DeadeyeMp4BoxResult mvhd = deadeye_mp4_box_read(
+        base,moov.box.payload_start,moov.box.end
+    );
+    DeadeyeMp4BoxResult trak = deadeye_mp4_box_read(
+        base,mvhd.box.end,moov.box.end
+    );
+    assert(ftyp.ok && moov.ok && mvhd.ok && trak.ok);
+
+    for (int requested_tracks = 16; requested_tracks <= 17;
+         requested_tracks += 1) {
+        List<int> payload = new List<int>();
+        for (int i = mvhd.box.start; i < mvhd.box.end; i += 1) {
+            payload.push(base[i]);
+        }
+        for (int track = 0; track < requested_tracks; track += 1) {
+            for (int i = trak.box.start; i < trak.box.end; i += 1) {
+                payload.push(base[i]);
+            }
+        }
+        List<int> candidate = new List<int>();
+        deadeye_mp4_test_push_box(
+            candidate,'m','o','o','v',payload
+        );
+        DeadeyeMp4ScanState scan = new DeadeyeMp4ScanState{
+            box_count: 0, track_count: 0, has_mvhd: false,
+            has_encryption_marker: false
+        };
+        bool accepted = deadeye_mp4_scan_children(
+            candidate,8,candidate.len(),1,true,scan
+        );
+        if (requested_tracks == DEADEYE_MP4_MAX_TRACKS) {
+            assert(accepted && scan.track_count == DEADEYE_MP4_MAX_TRACKS);
+        } else {
+            assert(!accepted && scan.track_count == DEADEYE_MP4_MAX_TRACKS + 1);
+        }
+    }
+}
+
 test "Deadeye MP4 accepts a minimal bounded unencrypted ISO BMFF layout" {
     List<int> bytes = deadeye_mp4_test_minimal_file();
     HalyardByteSourceResult source_result = halyard_source_from_list(
