@@ -124,7 +124,7 @@ fi
 
 
 section "Capstan-native verification: CCAM multi-function calls and frames"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" "$ROOT/verification/ccam_initial_state_tests.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
 else
   bad "CCAM multi-function evaluator" "$out"
