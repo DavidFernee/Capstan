@@ -1,0 +1,209 @@
+// Shroud: bounded wl_registry global tracking and dynamic bind validation.
+// Interface IDs are assigned by the trusted generated protocol catalogue;
+// interface names arriving from the compositor are always treated as tainted.
+const int WAYLAND_GLOBAL_SLOTS_MAX = 256;
+const int WAYLAND_REGISTRY_GLOBAL_OPCODE = 0;
+const int WAYLAND_REGISTRY_REMOVE_OPCODE = 1;
+
+struct WaylandInterfaceSpec {
+    int interface_id;
+    string name;
+    int max_version;
+}
+struct WaylandGlobal {
+    int name;
+    int interface_id; // zero means valid but unsupported interface
+    int advertised_version;
+    int state;
+}
+struct WaylandGlobalTable { List<WaylandGlobal> slots; }
+struct WaylandRegistryResult {
+    int status;
+    int global_name;
+    int interface_id;
+    int version;
+    int object_id;
+}
+
+WaylandGlobal wayland_empty_global() {
+    return new WaylandGlobal{name: 0, interface_id: 0, advertised_version: 0, state: 0};
+}
+WaylandGlobalTable wayland_global_table() {
+    List<WaylandGlobal> slots = new List<WaylandGlobal>();
+    for (int i = 0; i < WAYLAND_GLOBAL_SLOTS_MAX; i += 1) {
+        slots.push(wayland_empty_global());
+    }
+    return new WaylandGlobalTable{slots: slots};
+}
+WaylandRegistryResult wayland_registry_result(int status, int global_name, int interface_id,
+    int version, int object_id) {
+    return new WaylandRegistryResult{status: status, global_name: global_name,
+        interface_id: interface_id, version: version, object_id: object_id};
+}
+WaylandRegistryResult wayland_registry_error() {
+    return wayland_registry_result(-1, 0, 0, 0, 0);
+}
+WaylandRegistryResult wayland_registry_incomplete() {
+    return wayland_registry_result(0, 0, 0, 0, 0);
+}
+int wayland_global_index(WaylandGlobalTable globals, int name) {
+    for (int i = 0; i < globals.slots.len(); i += 1) {
+        if (globals.slots[i].state == 1 && globals.slots[i].name == name) { return i; }
+    }
+    return -1;
+}
+int wayland_interface_index(List<WaylandInterfaceSpec> interfaces, int interface_id) {
+    for (int i = 0; i < interfaces.len(); i += 1) {
+        if (interfaces[i].interface_id == interface_id) { return i; }
+    }
+    return -1;
+}
+bool wayland_interface_catalog_valid(List<WaylandInterfaceSpec> interfaces) {
+    if (interfaces.len() > WAYLAND_OBJECT_SLOTS_MAX) { return false; }
+    for (int i = 0; i < interfaces.len(); i += 1) {
+        if (interfaces[i].interface_id <= 0 || interfaces[i].name.len() == 0
+            || interfaces[i].max_version <= 0) { return false; }
+        for (int j = 0; j < i; j += 1) {
+            if (interfaces[j].interface_id == interfaces[i].interface_id
+                || interfaces[j].name == interfaces[i].name) { return false; }
+        }
+    }
+    return true;
+}
+bool wayland_wire_name_matches(Tainted bytes, WaylandPayloadSpan span, string expected) {
+    if (span.status != 1 || span.length != expected.len() + 1) { return false; }
+    for (int i = 0; i < expected.len(); i += 1) {
+        if (bytes.at(span.data_offset + i) != expected.at(i)) { return false; }
+    }
+    return bytes.at(span.data_offset + expected.len()) == 0;
+}
+int wayland_wire_name_interface(Tainted bytes, WaylandPayloadSpan span,
+    List<WaylandInterfaceSpec> interfaces) {
+    int found = 0;
+    for (int i = 0; i < interfaces.len(); i += 1) {
+        if (wayland_wire_name_matches(bytes, span, interfaces[i].name)) {
+            if (found != 0) { return -1; }
+            found = interfaces[i].interface_id;
+        }
+    }
+    return found;
+}
+int wayland_global_free_slots(WaylandGlobalTable globals) {
+    int free = 0;
+    for (int i = 0; i < globals.slots.len(); i += 1) {
+        if (globals.slots[i].state == 0) { free += 1; }
+    }
+    return free;
+}
+bool wayland_global_add(WaylandGlobalTable globals, int name, int interface_id, int version) {
+    if (name <= 0 || version <= 0 || interface_id < 0
+        || wayland_global_index(globals, name) >= 0 || wayland_global_free_slots(globals) == 0) {
+        return false;
+    }
+    WaylandGlobal value = new WaylandGlobal{name: name, interface_id: interface_id,
+        advertised_version: version, state: 1};
+    for (int i = 0; i < globals.slots.len(); i += 1) {
+        if (globals.slots[i].state == 0) { globals.slots[i] = value; return true; }
+    }
+    return false;
+}
+bool wayland_global_remove(WaylandGlobalTable globals, int name) {
+    int i = wayland_global_index(globals, name);
+    if (i < 0) { return false; }
+    globals.slots[i] = wayland_empty_global();
+    return true;
+}
+
+// Process wl_registry.global (event opcode 0, signature "usu").
+// Unknown interfaces are retained with interface_id=0 so their global names
+// remain reserved and duplicate announcements cannot alias supported globals.
+WaylandRegistryResult wayland_registry_global(Tainted bytes, WaylandFrameHeader frame,
+    WaylandObjectTable objects, int registry_object_id, int registry_interface_id,
+    WaylandGlobalTable globals, List<WaylandInterfaceSpec> interfaces) {
+    if (frame.status == 0) { return wayland_registry_incomplete(); }
+    if (!wayland_protocol_frame_valid(bytes, frame) || !wayland_interface_catalog_valid(interfaces)) {
+        return wayland_registry_error();
+    }
+    WaylandObject registry = wayland_object_get(objects, registry_object_id);
+    if (frame.object_id != registry_object_id || registry.state != 1
+        || registry.interface_id != registry_interface_id || frame.opcode != WAYLAND_REGISTRY_GLOBAL_OPCODE) {
+        return wayland_registry_error();
+    }
+    int cursor = frame.end_offset - frame.size + WAYLAND_HEADER_BYTES;
+    WaylandPayloadWord name = wayland_payload_word(bytes, cursor, frame.end_offset);
+    if (name.status != 1 || name.value == 0) { return wayland_registry_error(); }
+    WaylandPayloadSpan interface_name = wayland_frame_string(bytes, frame, name.end_offset);
+    if (interface_name.status != 1 || interface_name.length <= 1) { return wayland_registry_error(); }
+    WaylandPayloadWord version = wayland_payload_word(bytes, interface_name.end_offset, frame.end_offset);
+    if (version.status != 1 || version.value == 0 || version.end_offset != frame.end_offset) {
+        return wayland_registry_error();
+    }
+    int interface_id = wayland_wire_name_interface(bytes, interface_name, interfaces);
+    if (interface_id < 0 || !wayland_global_add(globals, name.value, interface_id, version.value)) {
+        return wayland_registry_error();
+    }
+    return wayland_registry_result(1, name.value, interface_id, version.value, 0);
+}
+
+// Process wl_registry.global_remove (event opcode 1, signature "u").
+WaylandRegistryResult wayland_registry_global_remove(Tainted bytes, WaylandFrameHeader frame,
+    WaylandObjectTable objects, int registry_object_id, int registry_interface_id,
+    WaylandGlobalTable globals) {
+    if (frame.status == 0) { return wayland_registry_incomplete(); }
+    if (!wayland_protocol_frame_valid(bytes, frame)) { return wayland_registry_error(); }
+    WaylandObject registry = wayland_object_get(objects, registry_object_id);
+    if (frame.object_id != registry_object_id || registry.state != 1
+        || registry.interface_id != registry_interface_id || frame.opcode != WAYLAND_REGISTRY_REMOVE_OPCODE) {
+        return wayland_registry_error();
+    }
+    int cursor = frame.end_offset - frame.size + WAYLAND_HEADER_BYTES;
+    WaylandPayloadWord name = wayland_payload_word(bytes, cursor, frame.end_offset);
+    if (name.status != 1 || name.value == 0 || name.end_offset != frame.end_offset
+        || !wayland_global_remove(globals, name.value)) { return wayland_registry_error(); }
+    return wayland_registry_result(1, name.value, 0, 0, 0);
+}
+
+// Process wl_registry.bind (request opcode 0, signature "usun").
+// The interface string must identify the exact interface advertised by this
+// global; the selected version is bounded by both the global and local catalog.
+WaylandRegistryResult wayland_registry_bind(Tainted bytes, WaylandFrameHeader frame,
+    WaylandObjectTable objects, int registry_object_id, int registry_interface_id,
+    WaylandGlobalTable globals, List<WaylandInterfaceSpec> interfaces) {
+    if (frame.status == 0) { return wayland_registry_incomplete(); }
+    if (!wayland_protocol_frame_valid(bytes, frame) || !wayland_interface_catalog_valid(interfaces)) {
+        return wayland_registry_error();
+    }
+    WaylandObject registry = wayland_object_get(objects, registry_object_id);
+    if (frame.object_id != registry_object_id || registry.state != 1
+        || registry.interface_id != registry_interface_id || frame.opcode != WAYLAND_REGISTRY_GLOBAL_OPCODE) {
+        return wayland_registry_error();
+    }
+    int cursor = frame.end_offset - frame.size + WAYLAND_HEADER_BYTES;
+    WaylandPayloadWord name = wayland_payload_word(bytes, cursor, frame.end_offset);
+    if (name.status != 1 || name.value == 0) { return wayland_registry_error(); }
+    WaylandPayloadSpan interface_name = wayland_frame_string(bytes, frame, name.end_offset);
+    if (interface_name.status != 1 || interface_name.length <= 1) { return wayland_registry_error(); }
+    WaylandPayloadWord requested_version = wayland_payload_word(bytes, interface_name.end_offset, frame.end_offset);
+    if (requested_version.status != 1 || requested_version.value == 0) { return wayland_registry_error(); }
+    WaylandPayloadWord new_id = wayland_payload_word(bytes, requested_version.end_offset, frame.end_offset);
+    if (new_id.status != 1 || new_id.value == 0 || new_id.end_offset != frame.end_offset) {
+        return wayland_registry_error();
+    }
+    int global_index = wayland_global_index(globals, name.value);
+    if (global_index < 0) { return wayland_registry_error(); }
+    WaylandGlobal global = globals.slots[global_index];
+    int interface_id = wayland_wire_name_interface(bytes, interface_name, interfaces);
+    if (interface_id <= 0 || interface_id != global.interface_id) { return wayland_registry_error(); }
+    int interface_index = wayland_interface_index(interfaces, interface_id);
+    List<int> pending_client_ids = new List<int>();
+    pending_client_ids.push(new_id.value);
+    if (interface_index < 0 || requested_version.value > global.advertised_version
+        || requested_version.value > interfaces[interface_index].max_version
+        || !wayland_client_ids_can_allocate(objects, pending_client_ids)) {
+        return wayland_registry_error();
+    }
+    if (!wayland_object_add_client(objects, new_id.value, interface_id, requested_version.value)) {
+        return wayland_registry_error();
+    }
+    return wayland_registry_result(1, name.value, interface_id, requested_version.value, new_id.value);
+}
