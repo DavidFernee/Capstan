@@ -7,3 +7,4 @@ import CapstanVerification.Progress
 import CapstanVerification.ProgramValidator
 import CapstanVerification.Visibility
 import CapstanVerification.SFVectors
+import CapstanVerification.ExplicitTrap
