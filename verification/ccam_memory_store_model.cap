@@ -466,9 +466,16 @@ test "allocation failure at every byte boundary preserves the manager" {
 test "injected admission failure consumes no table slot capacity or identity" {
     CCAMMemManager m = ccam_mem_manager(2, 16);
     CCAMMemCreateResult denied = ccam_mem_create(m, 1, 8, 0);
+    // Capture the rejected transition before a later successful transition
+    // mutates the same in-place manager object.
+    int denied_regions = denied.manager.live_regions;
+    int denied_capacity = denied.manager.live_capacity;
+    int denied_next_identity = denied.manager.next_identity;
+    int denied_slots = denied.manager.regions.len();
     CCAMMemCreateResult accepted = ccam_mem_create(denied.manager, 1, 8, -1);
     assert(!denied.ok && denied.error == "allocation_failed");
-    assert(denied.manager.live_regions == 0 && denied.manager.live_capacity == 0);
+    assert(denied_regions == 0 && denied_capacity == 0);
+    assert(denied_next_identity == 1 && denied_slots == 0);
     assert(accepted.ok && accepted.identity == 1);
 }
 
@@ -579,8 +586,11 @@ test "close releases original capacity from aggregate ledger" {
     CCAMMemManager m = ccam_mem_manager(2, 16);
     CCAMMemCreateResult a = ccam_mem_create(m, 1, 12, -1);
     CCAMMemResult close = ccam_mem_close(a.manager, a.identity, 1);
+    // The manager is an in-place state object, not a persistent snapshot.
+    int closed_capacity = close.manager.live_capacity;
+    int closed_regions = close.manager.live_regions;
     CCAMMemCreateResult b = ccam_mem_create(close.manager, 2, 12, -1);
-    assert(close.ok && close.manager.live_capacity == 0);
+    assert(close.ok && closed_capacity == 0 && closed_regions == 0);
     assert(b.ok && b.manager.live_capacity == 12);
     assert(b.identity == 2 && b.manager.regions.len() == 1);
     assert(b.manager.regions[0].open && b.manager.regions[0].capacity == 12);
