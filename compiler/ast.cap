@@ -28,7 +28,6 @@ CompileBudget new_compile_budget() {
     return new CompileBudget{source_bytes: 0, tokens: 0, ast_nodes: 0, files: 0, exhausted: false};
 }
 
-
 const int TY_INT = 1;
 const int TY_BOOL = 2;
 const int TY_STR = 3;
