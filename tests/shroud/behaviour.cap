@@ -889,8 +889,8 @@ void test_ui_state_pruning(Tally t, Ui ui) {
 int main() {
     Font? regular = none;
     Font? bold = none;
-    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 1073741824)) { regular = font_load(r); }
-    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf", 1073741824)) { bold = font_load(b); }
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf", 16777216)) { bold = font_load(b); }
     Tally t = new Tally{failed: 0, passed: 0};
     if (let f = regular) {
         if (let fb = bold) {
