@@ -315,3 +315,7 @@ Additional starting points:
   https://w2.mat.ucsb.edu/240/A/2017/05/17/realtime.html
   (engineering guidance, not a formal worst-case execution proof).
 
+
+## Literature review and experimental baseline protocol
+
+The first bounded cross-workstream review is in [RESEARCH-REVIEW-AND-BASELINES.md](RESEARCH-REVIEW-AND-BASELINES.md). It records the 2026-11-26 search protocol, primary literature and standards, mature-system baselines, H1–H6 falsifiable experiments, corpus/metric requirements, confounders and negative-result policy. It is a targeted review, not a systematic review or a claim of novelty or experimental validation.
