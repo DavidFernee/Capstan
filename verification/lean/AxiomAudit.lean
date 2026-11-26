@@ -10,6 +10,7 @@ import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
 import CapstanVerification.InjectionChecker
+import CapstanVerification.InjectionSinks
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -288,3 +289,15 @@ import CapstanVerification.InjectionChecker
 #print axioms CapstanVerification.summary_sink_propagates
 #print axioms CapstanVerification.summary_seed_ignores_boolean
 #print axioms CapstanVerification.summary_seed_includes_integer
+
+-- Protected reconstruction sinks: model-level sink rejection theorems.
+#print axioms CapstanVerification.char_string_derived_is_rejected
+#print axioms CapstanVerification.text_index_derived_selector_is_rejected
+#print axioms CapstanVerification.html_index_derived_selector_is_rejected
+#print axioms CapstanVerification.log_index_derived_selector_is_rejected
+#print axioms CapstanVerification.optional_text_map_get_derived_key_is_rejected
+#print axioms CapstanVerification.trusted_slice_derived_selector_is_rejected
+#print axioms CapstanVerification.accepted_char_string_has_no_derived_argument
+#print axioms CapstanVerification.tainted_receiver_slice_is_not_lookup_sink
+#print axioms CapstanVerification.non_text_index_is_not_lookup_sink
+#print axioms CapstanVerification.non_text_optional_map_get_is_not_lookup_sink
