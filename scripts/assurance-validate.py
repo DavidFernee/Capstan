@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Validate claim-scoped assurance records and enforce freshness for live claims.
+"""Validate claim-scoped assurance records and enforce promotion requirements.
 
 Freshness is computed against the checked-out HEAD using Git history. Proposed and
-withdrawn claims remain visible with stale-record diagnostics, but only active or
-qualified claims are release-gated on fresh review and evidence.
+withdrawn claims remain visible with stale-record diagnostics. Active and qualified
+claims are release-gated on fresh review, passed exact-commit evidence and independent
+review evidence; a green test alone cannot promote a claim.
 """
 import argparse
 import json
@@ -45,6 +46,36 @@ def requires_freshness(state):
     return state in ("active", "qualified")
 
 
+def promotion_errors(claim):
+    """Return missing evidence required before a claim can be presented as live.
+
+    A live claim needs at least one passed, exact-commit verification and a passed
+    independent review tied to the same reviewed source revision. This checks the
+    presence and identity of evidence records; it does not judge their substance.
+    """
+    if not requires_freshness(claim.get("state")):
+        return []
+    cid = claim.get("id", "<missing>")
+    evidence = claim.get("evidence", [])
+    passed = [item for item in evidence if item.get("result") == "passed"]
+    errors = []
+    if not passed:
+        errors.append(
+            "%s: live claim requires at least one passed evidence record" % cid)
+    review_revision = claim.get("review", {}).get("reviewed_commit", "")
+    independent = [
+        item for item in passed
+        if item.get("kind") == "independent-review"
+        and item.get("revision") == review_revision
+        and item.get("verification", {}).get("commit") == review_revision
+    ]
+    if not independent:
+        errors.append(
+            "%s: live claim requires passed independent-review evidence "
+            "at the reviewed commit" % cid)
+    return errors
+
+
 def git(*args):
     return subprocess.run(
         ["git", *args], cwd=ROOT, text=True, stdout=subprocess.PIPE,
@@ -69,7 +100,8 @@ def main():
     ap.add_argument("--schema", default="docs/assurance/assurance.schema.json")
     ap.add_argument("--manifest", default="docs/assurance/claims.json")
     ap.add_argument("--require-fresh", action="store_true",
-                    help="fail if an active or qualified claim has stale review or evidence")
+                    help=("fail if active or qualified claims lack fresh review, "
+                          "passed exact-commit evidence, or independent review"))
     args = ap.parse_args()
     try:
         import jsonschema
@@ -122,6 +154,7 @@ def main():
     ids = set()
     stale_count = 0
     gated_stale_count = 0
+    promotion_failure_count = 0
 
     def record_stale(claim, description):
         nonlocal stale_count, gated_stale_count
@@ -136,6 +169,10 @@ def main():
             print("  claim: duplicate identifier %s" % cid)
             failed = True
         ids.add(cid)
+        if args.require_fresh:
+            for error in promotion_errors(claim):
+                print("  PROMOTION BLOCKED " + error)
+                promotion_failure_count += 1
         coverage = claim.get("covers", [])
         for path in coverage:
             if not inside_repo(path):
@@ -200,13 +237,15 @@ def main():
                     print("  %s evidence[%d]: passed evidence needs a GitHub run/review URL" % (cid, ei))
                     failed = True
 
-    if gated_stale_count and args.require_fresh:
-        print("assurance-validate: %d stale record(s) on active/qualified claims" % gated_stale_count)
+    if args.require_fresh and (gated_stale_count or promotion_failure_count):
+        print("assurance-validate: %d stale record(s) and %d promotion failure(s) on active/qualified claims" %
+              (gated_stale_count, promotion_failure_count))
         failed = True
     if failed:
         return 1
-    print("assurance-validate: %d claim(s), schema valid, evidence paths resolve; HEAD %s; %d stale record(s), %d on active/qualified claims" %
-          (len(manifest.get("claims", [])), head_sha, stale_count, gated_stale_count))
+    print("assurance-validate: %d claim(s), schema valid, evidence paths resolve; HEAD %s; %d stale record(s), %d on active/qualified claims; %d promotion failure(s)" %
+          (len(manifest.get("claims", [])), head_sha, stale_count, gated_stale_count,
+           promotion_failure_count))
     return 0
 
 
