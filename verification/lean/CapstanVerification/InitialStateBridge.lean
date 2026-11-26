@@ -54,19 +54,17 @@ theorem nativeInitialRegisterFile_uninitialised (types : List Ty) :
     ∀ register ∈ nativeInitialRegisterFile types,
       register.initialized = false := by
   intro register hmember
-  simp [nativeInitialRegisterFile, nativeRegisterInitForType,
-    nativeRegisterInit] at hmember
-  subst register
-  rfl
+  rcases List.mem_map.mp hmember with ⟨ty, _hty, hregister⟩
+  rw [← hregister]
+  cases ty <;> rfl
 
 /-- Every abstract runtime register starts uninitialised, independently of its type. -/
 theorem runtimeInitialRegisterFile_uninitialised (types : List Ty) :
     ∀ register ∈ runtimeInitialRegisterFile types,
       register.initialized = false := by
   intro register hmember
-  simp [runtimeInitialRegisterFile, runtimeRegisterInitForType,
-    runtimeRegisterInit] at hmember
-  subst register
-  rfl
+  rcases List.mem_map.mp hmember with ⟨ty, _hty, hregister⟩
+  rw [← hregister]
+  cases ty <;> rfl
 
 end CapstanVerification
