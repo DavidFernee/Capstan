@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Adversarial aggregate-budget tests for compiler import graphs."""
+"""Exact and adversarial aggregate-budget tests for compiler import graphs."""
 from __future__ import annotations
 
 import pathlib
@@ -10,8 +10,8 @@ import tempfile
 COMPILER = pathlib.Path(sys.argv[1]).resolve()
 
 
-def run_case(root: pathlib.Path, expected: str, label: str) -> None:
-    result = subprocess.run(
+def run(root: pathlib.Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
         [str(COMPILER), "check", str(root)],
         cwd=root.parent,
         text=True,
@@ -20,45 +20,85 @@ def run_case(root: pathlib.Path, expected: str, label: str) -> None:
         timeout=120,
         check=False,
     )
-    if result.returncode == 0 or expected not in result.stdout:
-        raise SystemExit(
-            f"{label}: expected diagnostic containing {expected!r}; "
-            f"exit={result.returncode}\n{result.stdout[-4000:]}"
-        )
+
+
+def expect_success(root: pathlib.Path, label: str) -> None:
+    result = run(root)
+    if result.returncode != 0:
+        raise SystemExit(f"{label}: expected success; exit={result.returncode}\\n{result.stdout[-4000:]}")
+
+
+def expect_failure(root: pathlib.Path, needle: str, label: str) -> None:
+    result = run(root)
+    if result.returncode == 0 or needle not in result.stdout:
+        raise SystemExit(f"{label}: expected {needle!r}; exit={result.returncode}\\n{result.stdout[-4000:]}")
+
+
+def expect_no_budget_failure(root: pathlib.Path, needle: str, label: str) -> None:
+    result = run(root)
+    if needle in result.stdout:
+        raise SystemExit(f"{label}: unexpected {needle!r}\\n{result.stdout[-4000:]}")
+
+
+def write_chain(directory: pathlib.Path, imported_files: int) -> pathlib.Path:
+    directory.mkdir()
+    (directory / "main.cap").write_text('import "f0.cap";\\n')
+    for i in range(imported_files):
+        body = f'import "f{i + 1}.cap";\\n' if i + 1 < imported_files else "void main() {}\\n"
+        (directory / f"f{i}.cap").write_text(body)
+    return directory / "main.cap"
+
+
+def padded(prefix: str, size: int) -> str:
+    marker = "//"
+    return prefix + marker + ("x" * (size - len(prefix) - len(marker) - 1)) + "\\n"
 
 
 with tempfile.TemporaryDirectory(prefix="capstan-import-budget-") as td:
     base = pathlib.Path(td)
 
-    # 257 distinct files (root plus 256 imports) exceed the graph file ceiling.
-    graph = base / "file-count"
-    graph.mkdir()
-    (graph / "main.cap").write_text('import "f0.cap";\n')
-    for i in range(256):
-        body = f'import "f{i + 1}.cap";\n' if i < 255 else "void main() {}\n"
-        (graph / f"f{i}.cap").write_text(body)
-    run_case(graph / "main.cap", "file-count limit", "file-count budget")
+    # Root plus 255 imports is exactly 256 distinct files.
+    expect_success(write_chain(base / "file-count-exact", 255), "exact file-count budget")
+    expect_failure(write_chain(base / "file-count-over", 256), "file-count limit", "file-count budget")
 
-    # Every file is below 16 MiB, but their combined source exceeds 32 MiB.
-    graph = base / "source-bytes"
+    # Each file is below 16 MiB; exactly 32 MiB is accepted, one byte more is not.
+    mib = 1024 * 1024
+    graph = base / "source-bytes-exact"
     graph.mkdir()
-    padding = "//" + ("x" * (11 * 1024 * 1024 - 4)) + "\n"
-    (graph / "main.cap").write_text('import "f0.cap";\n' + padding)
-    (graph / "f0.cap").write_text('import "f1.cap";\n' + padding)
-    (graph / "f1.cap").write_text("void main() {}\n" + padding)
-    run_case(graph / "main.cap", "source budget", "aggregate source-byte budget")
+    (graph / "main.cap").write_text(padded('import "f0.cap";\\n', 11 * mib))
+    (graph / "f0.cap").write_text(padded('import "f1.cap";\\n', 11 * mib))
+    (graph / "f1.cap").write_text(padded("void main() {}\\n", 10 * mib))
+    expect_success(graph / "main.cap", "exact aggregate source-byte budget")
 
-    # A token flood is stopped by the lexer before it allocates token 500,001.
-    graph = base / "tokens"
+    graph = base / "source-bytes-over"
+    graph.mkdir()
+    (graph / "main.cap").write_text(padded('import "f0.cap";\\n', 11 * mib))
+    (graph / "f0.cap").write_text(padded('import "f1.cap";\\n', 11 * mib))
+    (graph / "f1.cap").write_text(padded("void main() {}\\n", 10 * mib + 1))
+    expect_failure(graph / "main.cap", "source budget", "aggregate source-byte budget")
+
+    # EOF is not a token: 500,000 tokens reach the parser, 500,001 are refused.
+    graph = base / "tokens-exact"
+    graph.mkdir()
+    (graph / "main.cap").write_text(";" * 500_000)
+    expect_no_budget_failure(graph / "main.cap", "total token budget", "exact token budget")
+
+    graph = base / "tokens-over"
     graph.mkdir()
     (graph / "main.cap").write_text(";" * 500_001)
-    run_case(graph / "main.cap", "total token budget", "aggregate token budget")
+    expect_failure(graph / "main.cap", "total token budget", "aggregate token budget")
 
-    # Many small declarations stay below the token ceiling but exceed the AST cap.
-    graph = base / "ast"
+    # A constant contributes its declaration and literal expression nodes.
+    graph = base / "ast-exact"
     graph.mkdir()
-    declarations = "".join(f"const int value{i} = 0;\n" for i in range(60_000))
+    declarations = "".join(f"const int value{i} = 0;\\n" for i in range(50_000))
     (graph / "main.cap").write_text(declarations)
-    run_case(graph / "main.cap", "AST-node limit", "aggregate AST-node budget")
+    expect_success(graph / "main.cap", "exact AST-node budget")
 
-print("compiler import graph: file, source-byte, token and AST budgets reject over-limit graphs")
+    graph = base / "ast-over"
+    graph.mkdir()
+    declarations = "".join(f"const int value{i} = 0;\\n" for i in range(50_001))
+    (graph / "main.cap").write_text(declarations)
+    expect_failure(graph / "main.cap", "AST-node limit", "aggregate AST-node budget")
+
+print("compiler import graph: exact and over-limit file, byte, token and AST budgets")
