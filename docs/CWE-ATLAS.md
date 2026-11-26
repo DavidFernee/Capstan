@@ -9,7 +9,7 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**255 weaknesses, 293 attempts.** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 294 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
@@ -332,10 +332,10 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [909](https://cwe.mitre.org/data/definitions/909.html) | Missing initialization of resource | Prevented: rejected at compile time | `CWE-908`. |
 | [912](https://cwe.mitre.org/data/definitions/912.html) | Hidden functionality | Logic or design decision: beyond any language | A deliberate backdoor written as ordinary logic is indistinguishable from intended logic. Code review and Capstan Review (AI) are the defences. |
 | [915](https://cwe.mitre.org/data/definitions/915.html) | Improperly controlled modification of dynamically-determined object attributes | Inexpressible: the construct does not exist |  |
+| [916](https://cwe.mitre.org/data/definitions/916.html) | Use of password hash with insufficient computational effort | Prevented: rejected at compile time | `CWE-916`. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | Prevented: rejected at compile time | `CWE-916`. Tainted password provenance is preserved through innocuous variable names and rejected by the fast-hash checker. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a method call) | Prevented: rejected at compile time | `CWE-916`. Password provenance survives string-slice method calls before the fast-hash check. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a helper call) | Prevented: rejected at compile time | `CWE-916`. Password provenance survives helper calls that preserve Tainted values. |
-| [916](https://cwe.mitre.org/data/definitions/916.html) | Use of password hash with insufficient computational effort | Prevented: rejected at compile time | `CWE-916`. |
 | [917](https://cwe.mitre.org/data/definitions/917.html) | Expression language injection | Inexpressible: the construct does not exist |  |
 | [918](https://cwe.mitre.org/data/definitions/918.html) | Server-side request forgery | Inexpressible: the construct does not exist |  |
 | [1007](https://cwe.mitre.org/data/definitions/1007.html) | Insufficient visual distinction of homoglyphs and invisible characters (Trojan Source) | Prevented: rejected at compile time | `CWE-1007`. Bidirectional controls and zero-width characters are rejected anywhere in source (CVE-2021-42574). |
