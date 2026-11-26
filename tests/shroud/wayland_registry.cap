@@ -58,7 +58,10 @@ int main() {
     // A second bind cannot reuse an existing object identifier.
     result = wayland_registry_bind(bind_bytes, wayland_frame_header(bind_bytes, 0),
         objects, 1, 100, globals, interfaces);
-    if (result.status != -1 || wayland_object_get(objects, 9).state != 0) { return 5; }
+    if (result.status != -1 || wayland_object_get(objects, 2).state != 1
+        || wayland_object_get(objects, 2).interface_id != 200
+        || wayland_object_get(objects, 2).version != 3
+        || wayland_object_get(objects, 9).state != 0) { return 5; }
 
     // Version cannot exceed either compositor advertisement or local implementation.
     List<int> too_new_payload = new List<int>();
