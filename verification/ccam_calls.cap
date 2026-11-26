@@ -1521,6 +1521,7 @@ test "CCAM call machine unwinds all active frame regions on trap" {
     assert(view.ok && stored.ok);
     machine.memory = stored.manager;
     ccam_call_machine_step(machine);
+    println($"DEBUG single trap code={machine.trap_code} detail={machine.trap_detail} regions={machine.memory.live_regions} capacity={machine.memory.live_capacity}");
     assert(machine.halted && machine.trap_code == "explicit_trap");
     assert(machine.frame_depth == 0);
     assert(machine.memory.live_regions == 0);
@@ -1605,6 +1606,7 @@ test "CCAM trap unwinds nested caller and callee frame regions" {
     assert(callee_region.ok);
     machine.memory = callee_region.manager;
     ccam_call_machine_step(machine);
+    println($"DEBUG nested trap code={machine.trap_code} detail={machine.trap_detail} regions={machine.memory.live_regions} capacity={machine.memory.live_capacity}");
     assert(machine.halted && machine.trap_code == "explicit_trap");
     assert(machine.frame_depth == 0);
     assert(machine.memory.live_regions == 0);
