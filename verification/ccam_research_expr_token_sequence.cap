@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_token_sequence(List<AGToken> t,int n){int p=0;if(t.len()==0||t.len()>65536){return false;}for(int i=0;i<t.len();i+=1){if(!ag_token_span(t[i],n)||t[i].start<p){return false;}p=t[i].end;}return t[t.len()-1].kind==0;}
