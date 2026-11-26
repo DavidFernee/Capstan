@@ -1406,12 +1406,24 @@ static void cap_sha256_block(CapSha256 *s, const unsigned char *p) {
         uint32_t s0 = CAP_ROR(w[i-15], 7) ^ CAP_ROR(w[i-15], 18) ^ (w[i-15] >> 3);
         uint32_t s1 = CAP_ROR(w[i-2], 17) ^ CAP_ROR(w[i-2], 19) ^ (w[i-2] >> 10);
         w[i] = w[i-16] + s0 + w[i-7] + s1;
+        cap_wipe(&s0, sizeof s0);
+        cap_wipe(&s1, sizeof s1);
+#ifdef CAP_SHA256_SCALAR_WIPE_TEST_HOOK
+        cap_sha256_scalar_wipe_test_observe((const volatile unsigned char *)&s0, sizeof s0);
+        cap_sha256_scalar_wipe_test_observe((const volatile unsigned char *)&s1, sizeof s1);
+#endif
     }
     a = s->h[0]; b = s->h[1]; c = s->h[2]; d = s->h[3]; e = s->h[4]; f = s->h[5]; g = s->h[6]; h = s->h[7];
     for (int i = 0; i < 64; i++) {
         uint32_t t1 = h + (CAP_ROR(e, 6) ^ CAP_ROR(e, 11) ^ CAP_ROR(e, 25)) + ((e & f) ^ (~e & g)) + cap_k256[i] + w[i];
         uint32_t t2 = (CAP_ROR(a, 2) ^ CAP_ROR(a, 13) ^ CAP_ROR(a, 22)) + ((a & b) ^ (a & c) ^ (b & c));
         h = g; g = f; f = e; e = d + t1; d = c; c = b; b = a; a = t1 + t2;
+        cap_wipe(&t1, sizeof t1);
+        cap_wipe(&t2, sizeof t2);
+#ifdef CAP_SHA256_SCALAR_WIPE_TEST_HOOK
+        cap_sha256_scalar_wipe_test_observe((const volatile unsigned char *)&t1, sizeof t1);
+        cap_sha256_scalar_wipe_test_observe((const volatile unsigned char *)&t2, sizeof t2);
+#endif
     }
     s->h[0] += a; s->h[1] += b; s->h[2] += c; s->h[3] += d; s->h[4] += e; s->h[5] += f; s->h[6] += g; s->h[7] += h;
     /* The message schedule and working state contain password-derived material. */
