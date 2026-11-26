@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "f7340f0a08d69f2e9d6aa98dc397ce029af01e49"
+    "commit": "fd705343c72eca501a00ab252d639520ce11b25b"
   },
   "claims": [
     {
@@ -40,7 +40,7 @@
             "docs/assurance/MEMORY-SAFETY.md"
           ],
           "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
-          "revision": "f7340f0a08d69f2e9d6aa98dc397ce029af01e49",
+          "revision": "fd705343c72eca501a00ab252d639520ce11b25b",
           "notes": "Reviewed at this source snapshot. The output-context checker changes do not alter the memory/indexing bounds contract; exact-head platform validation remains pending."
         },
         {
@@ -53,13 +53,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "f7340f0a08d69f2e9d6aa98dc397ce029af01e49",
+          "revision": "fd705343c72eca501a00ab252d639520ce11b25b",
           "notes": "The memory/indexing regression fixtures remain present. This record does not assert a passing exact-head test run."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "f7340f0a08d69f2e9d6aa98dc397ce029af01e49"
+        "reviewed_commit": "fd705343c72eca501a00ab252d639520ce11b25b"
       },
       "covers": [
         "compiler/main.cap",
@@ -138,7 +138,7 @@
             "tests/run.sh"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "f7340f0a08d69f2e9d6aa98dc397ce029af01e49",
+          "revision": "fd705343c72eca501a00ab252d639520ce11b25b",
           "notes": "Test plan refreshed against mainline, including the current repository test runner. This record does not assert a passing exact-head run."
         }
       ],
