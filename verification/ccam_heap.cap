@@ -99,6 +99,11 @@ struct CCAMHeapStringResult {
     string trap;
 }
 
+int ccam_heap_max_int(int a, int b) {
+    if (a > b) { return a; }
+    return b;
+}
+
 CCAMHeapValue ccam_heap_int(int value) {
     return new CCAMHeapValue{kind: CCAM_HEAP_VALUE_INT, int_value: value, bool_value: false, ref_id: 0, ref_heap_token: 0};
 }
