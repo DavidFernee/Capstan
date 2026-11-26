@@ -174,6 +174,7 @@ theorem allocation_success_facts
                       have hBad : invalidHeapState s = true := by
                         simp [invalidHeapState, hgt]
                       exact False.elim (hInvalid hBad)
+                    exact hOldTemporary
   · simp [hAuth] at h
 
 /-- Successful allocation returns the previous next-object identity. -/
@@ -264,7 +265,7 @@ theorem allocation_bounds_temporary_peak
   rcases allocation_success_facts cap s charge workCharge temporaryCharge after object h with
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
-  exact max_le hOldTemporary hTemporary
+  exact Nat.max_le.mpr ⟨hOldTemporary, hTemporary⟩
 
 /-- Successful allocation preserves the cumulative work budget. -/
 theorem allocation_preserves_work_bound
