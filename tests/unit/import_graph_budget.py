@@ -64,12 +64,12 @@ with tempfile.TemporaryDirectory(prefix="capstan-import-budget-") as td:
     # A single source is limited to 16 MiB, independently of the graph total.
     graph = base / "source-file-exact"
     graph.mkdir()
-    (graph / "main.cap").write_text(padded("void main() {}\\n", 16 * 1024 * 1024))
+    (graph / "main.cap").write_text(padded("void main() {}\n", 16 * 1024 * 1024))
     expect_success(graph / "main.cap", "exact per-file source-byte budget")
 
     graph = base / "source-file-over"
     graph.mkdir()
-    (graph / "main.cap").write_text(padded("void main() {}\\n", 16 * 1024 * 1024 + 1))
+    (graph / "main.cap").write_text(padded("void main() {}\n", 16 * 1024 * 1024 + 1))
     expect_failure(graph / "main.cap", "over 16 MiB", "per-file source-byte budget")
 
     # Each file is below 16 MiB; exactly 32 MiB is accepted, one byte more is not.
