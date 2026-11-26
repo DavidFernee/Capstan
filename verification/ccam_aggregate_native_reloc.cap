@@ -1,0 +1,3 @@
+import "ccam_aggregate_rel32.cap";
+struct AGRelocation { int patch; int target; }
+bool ag_reloc_valid(AGRelocation r,int length){return r.patch>=0&&r.patch<=length-4&&r.target>=0&&r.target<length;}
