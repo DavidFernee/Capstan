@@ -1893,7 +1893,7 @@ struct FlowSummary {
 }
 
 struct Flow {
-    Map<int> vars;
+    Map<int> paths;                 // typed access-path key -> may-derived fact
     Map<FlowSummary> sums;
     bool changed;
     bool returns;
@@ -1908,7 +1908,7 @@ bool is_arith(string op) {
 
 bool derived(Flow f, Node e) {
     if (e.k == N_METHOD && e.s == "at" && ty_of(e.kids[0]).k == TY_TAINT) { return true; }
-    if (e.k == N_VAR) { return (e.binding_id > 0 && f.vars.has(int_to_str(e.binding_id))) || ty_of(e).k == TY_TAINT; }
+    if (e.k == N_VAR) { return aggregate_marked(f, e) || ty_of(e).k == TY_TAINT; }
     if (e.k == N_NEG || e.k == N_BNOT || e.k == N_NOT) { return derived(f, e.kids[0]); }
     // Comparisons and Boolean connectives produce values that depend on their operands.
     if (e.k == N_BIN && ty_of(e).k == TY_BOOL) {
@@ -1916,19 +1916,19 @@ bool derived(Flow f, Node e) {
     }
     // Length reveals input-dependent metadata even though the result is an integer.
     if (e.k == N_METHOD && e.s == "len") {
-        return ty_of(e.kids[0]).k == TY_TAINT || base_marked(f, e.kids[0]);
+        return ty_of(e.kids[0]).k == TY_TAINT || aggregate_marked(f, e.kids[0]);
     }
     // A collection or struct that ever held a derived integer yields derived integers.
-    if (e.k == N_GETF) { return base_marked(f, e.kids[0]); }
+    if (e.k == N_GETF) { return path_marked(f, e); }
     // Indexing with a derived integer selects by untrusted data: the result is derived too.
-    if (e.k == N_INDEX) { return base_marked(f, e.kids[0]) || derived(f, e.kids[1]); }
-    if (e.k == N_METHOD && e.s == "get" && e.kids.len() > 1 && derived(f, e.kids[1])) { return true; }
+    if (e.k == N_INDEX) { return aggregate_marked(f, e) || derived(f, e.kids[1]); }
+    if (e.k == N_METHOD && e.s == "get" && e.kids.len() > 1 && (derived(f, e.kids[1]) || aggregate_marked(f, e.kids[0]))) { return true; }
     // Decimal digits of an untrusted byte, and text joined to them, are derived strings.
     if (e.k == N_CALL && (e.s == "int_to_str" || e.s == "to_text") && e.kids.len() == 1 && derived(f, e.kids[0])) { return true; }
     // join(List<Tainted>, separator) retains the list's input provenance.
     if (e.k == N_CALL && e.s == "join" && e.kids.len() == 2 && derived(f, e.kids[0])) { return true; }
     if (e.k == N_BIN && e.s == "+" && ty_of(e).k == TY_STR) { return derived(f, e.kids[0]) || derived(f, e.kids[1]); }
-    if (e.k == N_METHOD && (e.s == "pop" || e.s == "get" || e.s == "remove_at")) { return base_marked(f, e.kids[0]); }
+    if (e.k == N_METHOD && (e.s == "pop" || e.s == "get" || e.s == "remove_at")) { return aggregate_marked(f, e.kids[0]); }
     if (e.k == N_BIN && is_arith(e.s) && ty_of(e).k == TY_INT) {
         return derived(f, e.kids[0]) || derived(f, e.kids[1]);
     }
@@ -1949,26 +1949,67 @@ bool derived(Flow f, Node e) {
     return false;
 }
 
-bool base_marked(Flow f, Node e) {
-    if (e.k == N_VAR) { return e.binding_id > 0 && f.vars.has(int_to_str(e.binding_id)); }
-    if (e.k == N_GETF || e.k == N_INDEX) { return base_marked(f, e.kids[0]); }
+string binding_path(int binding_id) {
+    if (binding_id <= 0) { return ""; }
+    return int_to_str(binding_id);
+}
+
+// Access paths use resolved binding identity plus typed selectors. Dynamic list
+// indices widen to [*]; map keys and values are distinct abstract locations.
+string path_key(Node e) {
+    if (e.k == N_VAR) { return binding_path(e.binding_id); }
+    if (e.k == N_GETF) {
+        string parent = path_key(e.kids[0]);
+        if (parent == "") { return ""; }
+        return parent + "." + e.s;
+    }
+    if (e.k == N_INDEX) {
+        string parent = path_key(e.kids[0]);
+        if (parent == "") { return ""; }
+        if (ty_of(e.kids[0]).k == TY_MAP) { return parent + "{value}"; }
+        if (e.kids[1].k == N_INT) { return parent + "[" + int_to_str(e.kids[1].n) + "]"; }
+        return parent + "[*]";
+    }
+    return "";
+}
+
+bool path_marked(Flow f, Node e) {
+    string key = path_key(e);
+    if (key == "") { return false; }
+    if (f.paths.has(key)) { return true; }
+    if (e.k == N_GETF || e.k == N_INDEX) { return path_marked(f, e.kids[0]); }
     return false;
 }
 
-int base_binding_id(Node e) {
-    if (e.k == N_VAR) { return e.binding_id; }
-    if (e.k == N_GETF || e.k == N_INDEX) { return base_binding_id(e.kids[0]); }
-    return 0;
+// Aggregate operations observe a child summary. This deliberately over-approximates
+// element/field presence until a fully flow-sensitive heap and alias domain exists.
+bool aggregate_marked(Flow f, Node e) {
+    string key = path_key(e);
+    if (key == "") { return false; }
+    return path_marked(f, e)
+        || f.paths.has(key + "[*]")
+        || f.paths.has(key + "{key}")
+        || f.paths.has(key + "{value}");
 }
 
-void mark(Flow f, int binding_id) {
-    if (binding_id > 0) {
-        string key = int_to_str(binding_id);
-        if (!f.vars.has(key)) {
-            f.vars.set(key, 1);
-            f.changed = true;
-        }
+void mark_key(Flow f, string key) {
+    if (key != "" && !f.paths.has(key)) {
+        f.paths.set(key, 1);
+        f.changed = true;
     }
+}
+
+void mark_binding(Flow f, int binding_id) {
+    mark_key(f, binding_path(binding_id));
+}
+
+void mark_path(Flow f, Node target) {
+    mark_key(f, path_key(target));
+}
+
+void mark_child(Flow f, Node base, string selector) {
+    string parent = path_key(base);
+    if (parent != "") { mark_key(f, parent + selector); }
 }
 
 void sink(Flow f, Node at) {
@@ -1990,8 +2031,8 @@ bool texty_type(Type t) {
 }
 
 void flow_walk(Flow f, Node n) {
-    if (n.k == N_DECL && (ty_of(n).k == TY_INT || ty_of(n).k == TY_STR || ty_of(n).k == TY_BOOL) && derived(f, n.kids[0])) { mark(f, n.binding_id); }
-    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && (ty_of(n.kids[0]).k == TY_INT || ty_of(n.kids[0]).k == TY_STR || ty_of(n.kids[0]).k == TY_BOOL) && derived(f, n.kids[1])) { mark(f, n.kids[0].binding_id); }
+    if (n.k == N_DECL && (ty_of(n).k == TY_INT || ty_of(n).k == TY_STR || ty_of(n).k == TY_BOOL) && derived(f, n.kids[0])) { mark_binding(f, n.binding_id); }
+    if (n.k == N_ASSIGN && n.kids[0].k == N_VAR && (ty_of(n.kids[0]).k == TY_INT || ty_of(n.kids[0]).k == TY_STR || ty_of(n.kids[0]).k == TY_BOOL) && derived(f, n.kids[1])) { mark_path(f, n.kids[0]); }
     // Lookups of trusted text keyed by untrusted bytes.
     if (n.k == N_INDEX && texty_type(ty_of(n)) && derived(f, n.kids[1])) { lookup_sink(f, n); }
     if (n.k == N_METHOD && n.s == "get" && n.kids.len() > 1 && derived(f, n.kids[1])) {
@@ -2006,14 +2047,17 @@ void flow_walk(Flow f, Node n) {
         if (sliced_by_input) { lookup_sink(f, n); }
     }
     if (n.k == N_ASSIGN && (n.kids[0].k == N_INDEX || n.kids[0].k == N_GETF) && derived(f, n.kids[1])) {
-        int bn = base_binding_id(n.kids[0]);
-        if (bn > 0) { mark(f, bn); }
+        mark_path(f, n.kids[0]);
     }
     if (n.k == N_METHOD && (n.s == "push" || n.s == "insert" || n.s == "set") && n.kids.len() > 1 && derived(f, n.kids[n.kids.len() - 1])) {
-        int bn2 = base_binding_id(n.kids[0]);
-        if (bn2 > 0) { mark(f, bn2); }
+        if (n.s == "set" && n.kids.len() > 2 && derived(f, n.kids[1])) {
+            mark_child(f, n.kids[0], "{key}");
+        }
+        string selector = "[*]";
+        if (n.s == "set") { selector = "{value}"; }
+        mark_child(f, n.kids[0], selector);
     }
-    if (n.k == N_IF && n.n == 1 && derived(f, n.kids[0])) { mark(f, n.binding_id); }
+    if (n.k == N_IF && n.n == 1 && derived(f, n.kids[0])) { mark_binding(f, n.binding_id); }
     if (n.k == N_RETURN && n.kids.len() == 1 && derived(f, n.kids[0])) { f.returns = true; }
     if (n.k == N_CALL && n.s == "char_str" && n.kids.len() == 1 && derived(f, n.kids[0])) { sink(f, n); }
     if (n.k == N_CALL) {
@@ -2028,8 +2072,8 @@ void flow_walk(Flow f, Node n) {
 
 // Analyse one body until the set of derived locals stops growing.
 Flow flow_body(Map<FlowSummary> sums, Ctx ctx, Node body, int seed, bool report) {
-    Flow f = new Flow{vars: new Map<int>(), sums: sums, changed: true, returns: false, sinks: false, report: false, ctx: ctx};
-    if (seed > 0) { f.vars.set(int_to_str(seed), 1); }
+    Flow f = new Flow{paths: new Map<int>(), sums: sums, changed: true, returns: false, sinks: false, report: false, ctx: ctx};
+    if (seed > 0) { mark_binding(f, seed); }
     int rounds = 0;
     while (f.changed && rounds < 100) {
         f.changed = false;
