@@ -53,7 +53,7 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "6508f6d4819796f789f4b6e576949e3ed8b1861c",
+          "revision": "29460fb2cf3af46b7f282a961d66ba58a6e5e13e",
           "notes": "Fixtures remain present in the current integrated test runner. This record does not assert a passing run."
         }
       ],
@@ -138,7 +138,7 @@
             "tests/run.sh"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "6508f6d4819796f789f4b6e576949e3ed8b1861c",
+          "revision": "29460fb2cf3af46b7f282a961d66ba58a6e5e13e",
           "notes": "Integration tests remain planned; the current runner includes the additional Shroud backend model test. No passing result is asserted here."
         }
       ],
