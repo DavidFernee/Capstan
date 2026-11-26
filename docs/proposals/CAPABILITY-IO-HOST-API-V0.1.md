@@ -420,3 +420,20 @@ The v0.1 candidate is ready for approval only after:
 8. the C-free trusted-base inventory records every temporary platform boundary.
 
 Until that gate is met, this is a reviewed contract candidate, not an approved shipped API or implementation.
+
+
+## 12. Primary ABI and protocol references
+
+The API contract is a Capstan design choice; the following primary references ground the Linux and Wayland behaviour that the binding must implement and test.
+
+1. Linux man-pages, **unix(7): sockets for local interprocess communication**, including ancillary data and SCM_RIGHTS: https://man7.org/linux/man-pages/man7/unix.7.html
+2. Linux man-pages, **sendmsg(2)** and **recvmsg(2)**: https://man7.org/linux/man-pages/man2/sendmsg.2.html and https://man7.org/linux/man-pages/man2/recvmsg.2.html
+3. Linux man-pages, **poll(2)** and **ppoll(2)**: https://man7.org/linux/man-pages/man2/poll.2.html
+4. Linux man-pages, **memfd_create(2)**, **ftruncate(2)**, **pread(2)** and **pwrite(2)**: https://man7.org/linux/man-pages/man2/memfd_create.2.html, https://man7.org/linux/man-pages/man2/ftruncate.2.html, https://man7.org/linux/man-pages/man2/pread.2.html and https://man7.org/linux/man-pages/man2/pwrite.2.html
+5. Linux man-pages, **mmap(2)** and **munmap(2)**: https://man7.org/linux/man-pages/man2/mmap.2.html
+6. Linux man-pages, **openat2(2)**: https://man7.org/linux/man-pages/man2/openat2.2.html
+7. Linux man-pages, **clock_gettime(2)**: https://man7.org/linux/man-pages/man2/clock_gettime.2.html
+8. Wayland core protocol XML, including wl_display, wl_shm, wl_shm_pool and wl_buffer: https://gitlab.freedesktop.org/wayland/wayland/-/blob/main/protocol/wayland.xml
+9. Wayland protocol documentation: https://wayland.freedesktop.org/docs/html/
+
+The Linux ABI adapter must pin the man-pages/kernel profile used for implementation and tests. The Wayland parser must pin the protocol XML revision and interface versions used for its generated or hand-authored message metadata.
