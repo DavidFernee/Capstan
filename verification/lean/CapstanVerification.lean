@@ -1,4 +1,5 @@
 import CapstanVerification.Core
+import CapstanVerification.SourceCore
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge

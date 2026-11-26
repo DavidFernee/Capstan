@@ -1,4 +1,5 @@
 import CapstanVerification.Machine
+import CapstanVerification.SourceCore
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge
@@ -189,3 +190,8 @@ import CapstanVerification.ExplicitTrap
 #print axioms CapstanVerification.explicitTrap_preserves_detail
 #print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
 #print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
+-- Source-language core: expose the proof dependencies to the axiom audit.
+#print axioms CapstanVerification.SourceCore.step_preserves_typing
+#print axioms CapstanVerification.SourceCore.progress
+#print axioms CapstanVerification.SourceCore.step_deterministic
