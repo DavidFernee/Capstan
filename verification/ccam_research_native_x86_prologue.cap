@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_x86_prologue(List<int> b){if(b.len()>AG_BYTE_LIMIT-4){return false;}b.push(85);b.push(72);b.push(137);b.push(229);return true;}
