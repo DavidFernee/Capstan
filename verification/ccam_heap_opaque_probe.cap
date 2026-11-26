@@ -1,7 +1,8 @@
-// expect: private field 'heap_token' of CCAMHeap is accessible only within its defining module
+// expect: private field 'identity' of CCAMHeap is accessible only within its defining module
 import "ccam_heap.cap";
 
 int main() {
-    CCAMHeapCreateResult created = ccam_heap_create(71001, 128, 4);
-    return created.heap.heap_token;
+    CCAMHeapCreateResult created = ccam_heap_create(128, 4);
+    CCAMHeapIdentity identity = created.heap.identity;
+    return 0;
 }
