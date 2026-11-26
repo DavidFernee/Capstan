@@ -1,0 +1,74 @@
+// Direct executable conformance checks for the C-free CCAM constructors.
+import "ccam_calls.cap";
+
+test "CCAM register constructor establishes exact initial payload fields" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL);
+    types.push(CCAM_TYPE_INT);
+    CCAMRegisterFileResult created = ccam_registers_create(types);
+    assert(created.ok && created.error == "");
+    assert(created.registers.len() == 3);
+    for (int i = 0; i < created.registers.len(); i += 1) {
+        CCAMRegister reg = created.registers[i];
+        assert(!reg.initialized);
+        assert(reg.int_value == 0);
+        assert(!reg.bool_value);
+        if (i == 1) {
+            assert(reg.declared_type == CCAM_TYPE_BOOL);
+        } else {
+            assert(reg.declared_type == CCAM_TYPE_INT);
+        }
+    }
+
+    List<int> empty_types = new List<int>();
+    CCAMRegisterFileResult empty = ccam_registers_create(empty_types);
+    assert(empty.ok && empty.registers.len() == 0);
+}
+
+test "CCAM call-machine constructor establishes the complete entry state" {
+    List<int> register_types = new List<int>();
+    register_types.push(CCAM_TYPE_INT);
+    register_types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> instructions = new List<CCAMInstruction>();
+    instructions.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMCallSite> call_sites = new List<CCAMCallSite>();
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main",
+        register_types: register_types,
+        parameter_count: 0,
+        return_type: CCAM_RETURN_VOID,
+        instructions: instructions,
+        call_sites: call_sites
+    });
+
+    CCAMCallMachineCreateResult created =
+        ccam_call_machine_create_with_output_budget(functions, 0, 17, 3, 29);
+    assert(created.ok && created.error == "");
+    CCAMCallMachine machine = created.machine;
+    assert(machine.functions.len() == 1);
+    assert(machine.frames.len() == 1);
+    assert(machine.call_site_lookup.len() == 1);
+    assert(machine.call_site_lookup[0].len() == 1);
+    assert(machine.call_site_lookup[0][0] == -1);
+    assert(machine.frame_depth == 1);
+    CCAMFrame entry = machine.frames[0];
+    assert(entry.function_index == 0 && entry.pc == 0);
+    assert(entry.caller_destination == 0 && !entry.caller_has_destination);
+    assert(entry.registers.len() == 2);
+    assert(entry.registers[0].declared_type == CCAM_TYPE_INT);
+    assert(entry.registers[1].declared_type == CCAM_TYPE_BOOL);
+    for (int i = 0; i < entry.registers.len(); i += 1) {
+        assert(!entry.registers[i].initialized);
+        assert(entry.registers[i].int_value == 0);
+        assert(!entry.registers[i].bool_value);
+    }
+    assert(machine.steps == 0 && machine.max_steps == 17);
+    assert(machine.max_depth == 3 && machine.max_output_bytes == 29);
+    assert(!machine.halted && !machine.halt_has_value);
+    assert(machine.halt_value == 0 && !machine.halt_bool_value);
+    assert(machine.trap_code == "" && machine.trap_function == "");
+    assert(machine.trap_pc == 0 && machine.trap_detail == "");
+    assert(machine.output_bytes.len() == 0);
+}
