@@ -106,8 +106,8 @@ def sfPTypes_SF003 : RegTypes 3 := fun i =>
 def sfPProgram_SF003 : RawSingleFrameProgram 3 3 sfPTypes_SF003 where
   code := fun pc =>
     match pc.val with
-    | 0 => .constInt 0 -9223372036854775808
-    | 1 => .constInt 1 -1
+    | 0 => .constInt 0 (-9223372036854775808)
+    | 1 => .constInt 1 (-1)
     | 2 => .div 2 0 1
     | 3 => .retInt 2
     | _ => .retVoid
@@ -130,8 +130,8 @@ def sfPTypes_SF004 : RegTypes 3 := fun i =>
 def sfPProgram_SF004 : RawSingleFrameProgram 3 3 sfPTypes_SF004 where
   code := fun pc =>
     match pc.val with
-    | 0 => .constInt 0 -9223372036854775808
-    | 1 => .constInt 1 -1
+    | 0 => .constInt 0 (-9223372036854775808)
+    | 1 => .constInt 1 (-1)
     | 2 => .rem 2 0 1
     | 3 => .retInt 2
     | _ => .retVoid
