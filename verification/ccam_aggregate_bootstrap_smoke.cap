@@ -49,6 +49,18 @@ test "candidate source-to-ELF pipeline rejects unsupported source" {
  assert(!image.ok);
 }
 
+test "candidate expression pipeline rejects arithmetic outside bounded scalar domain" {
+ List<int> addition=new List<int>();
+ addition.push(49); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48);
+ addition.push(43); addition.push(49);
+ assert(!ag_compile_expression(addition).ok);
+ List<int> multiplication=new List<int>();
+ multiplication.push(49); multiplication.push(48); multiplication.push(48); multiplication.push(48); multiplication.push(48); multiplication.push(48);
+ multiplication.push(42);
+ multiplication.push(49); multiplication.push(48); multiplication.push(48); multiplication.push(48); multiplication.push(48); multiplication.push(48);
+ assert(!ag_compile_expression(multiplication).ok);
+}
+
 test "candidate expression pipeline rejects divide by zero and malformed grouping" {
  List<int> division=new List<int>();
  division.push(52); division.push(47); division.push(48);
