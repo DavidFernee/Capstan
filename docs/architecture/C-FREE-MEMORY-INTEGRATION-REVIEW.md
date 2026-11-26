@@ -1,7 +1,7 @@
 # C-Free compiler memory: integration decision
 
 **Status:** integration review and proposed sequencing; not normative CCAM semantics.  
-**Baseline:** `main` at `c22d72a1f60a4d110f30a421d577aeaaf339f8fb` (2026-11-26).  
+**Baseline:** `main` at `35f7ce57132f235adbb8e60b00a4f27f3a87d9eb` (2026-11-26).  
 **Reviewed work:** draft PR #246 (process-lifetime region heap), draft PR #463 (CCAM v0.2 scratch-memory models), issues #451 and #458, and the C-free bootstrap contract.  
 **Purpose:** prevent two different memory-lifetime models from being conflated while moving the compiler off the generated-C path.
 
@@ -31,7 +31,7 @@ Keep normative CCAM v0.1 unchanged. Keep the existing scratch-memory proposal se
 It is explicitly a reference model, not part of the executable CCAM machine, source lowering, native backend or compiler CLI. Its own formal contract identifies two blockers that must remain blockers:
 
 - **Aliasing semantics:** the API mutates `CCAMHeap` fields and nested `List` values. The supported scalar CCAM subset does not establish the struct/reference/collection aliasing semantics this implementation relies on. Either prove the concrete source/runtime semantics and their correspondence, or redesign operations as explicit state-in/state-out transitions over supported values.
-- **Reference authenticity:** `heap_token` and `ref_id` are integers carried in values. The current token is an identity convention, not an unforgeable capability. Nominal descriptor checks do not prevent a caller from manufacturing or guessing a token. A runtime-owned handle table or another proved issuance mechanism is required before making a capability-security claim.
+- **Reference authenticity (resolved at the Capstan module boundary):** PR #482 replaced caller-selected integer tokens and constructible `(token, id)` pairs with opaque `CCAMHeapIdentity` and `CCAMHeapRef` values. Importers cannot construct or inspect either representation; resolution checks identity before object lookup. This closes the original forgeable-token API defect in the reference model. It does not yet prove that the language/runtime identity primitive is unforgeable under every execution context, nor does it connect references to CCAM registers, a validator, evaluator or native handle table. Those remain integration and formal-correspondence obligations.
 
 Its logical heap charge is not a bound on host allocator overhead, RSS, list capacity, string copies, stack use or total process memory. The work and temporary counters are abstract budgets, not wall-clock or host-allocation proofs.
 
@@ -56,7 +56,7 @@ There is useful executable integration in the prototype call machine: `CCAMCallM
 | Lifetime | Whole compiler process | Creating call frame |
 | Contents | Typed records, arrays, immutable bytes | Fixed byte storage and scalar views |
 | Mutation | Typed field/element updates | Bounded byte/scalar stores |
-| Reference model | Object IDs plus heap identity (currently forgeable integer tokens) | Region/view identity plus generation and owner frame (prototype abstraction) |
+| Reference model | Opaque arena identity plus opaque object references; importers cannot construct or inspect them; resolver checks arena identity | Region/view identity plus generation and owner frame (prototype abstraction) |
 | Function return | Objects remain live | Owned regions are invalidated and wiped |
 | Primary client | AST, tokens, scopes, types, diagnostics | Temporary algorithm workspaces |
 | Reclamation | Whole arena at process exit | Every frame exit / explicit close |
@@ -75,7 +75,7 @@ Using frame-scoped scratch storage for AST nodes would invalidate objects as par
 
 ### B. Make object identity real
 
-For the compiler arena, replace caller-supplied integer heap tokens with machine-issued identities whose uniqueness and non-reuse are enforced by the trusted runtime. A source integer must never be accepted as a reference. Cross-machine and stale-handle rejection must be tested. Module/type descriptor identity must be canonical across separately compiled modules, not a local integer convention.
+For the compiler arena, preserve #482's opaque identity/reference API when introducing CCAM register values. The machine must issue and resolve handles; source integers must never be accepted as references. Prove or explicitly bound the identity primitive's issuance and non-reuse assumptions, retain cross-arena rejection, and define stale-handle behaviour. Module/type descriptor identity must be canonical across separately compiled modules, not a local integer convention.
 
 For scratch regions, prove generation advancement cannot wrap or be reused while a stale view can exist. The validator's abstract generation state and runtime table generation must correspond.
 
@@ -126,7 +126,7 @@ The compiler arena must support the actual operations those modules use. A small
 ## 4. Recommended implementation order
 
 1. **Contract split:** approve the separate lifetime profiles and their common/non-common invariants. No CCAM v0.1 semantic change.
-2. **Arena model hardening:** resolve aliasing, identity issuance, descriptor canonicalisation, accounting and failure atomicity in #246. Prefer state-in/state-out semantics until concrete reference semantics are proved.
+2. **Arena model hardening:** retain #482's opaque instance-bound references; resolve aliasing, descriptor canonicalisation, accounting and failure atomicity in #246. Prefer explicit state-in/state-out transitions until concrete reference semantics are proved. #482 closes the public integer-token/ID construction flaw, not the evaluator/native capability bridge.
 3. **Scratch lifecycle hardening:** complete #463's region/view ownership, generation, CFG join, return/trap/unwind and failure-path tests. Keep its no-escape/no-parameter restrictions until a borrow model exists.
 4. **Formal bridge:** prove abstract invariants first, then connect the Lean state to the Capstan implementation's concrete representation. A model-only theorem must not be promoted as implementation refinement.
 5. **Evaluator integration:** add versioned typed values and opcodes, whole-program validation and execution. Preserve v0.1 as a separate accepted profile.
@@ -154,3 +154,14 @@ A C compiler may remain installed on a developer's machine as an unrelated tool;
 ## 6. Explicit non-claims
 
 This review does not claim that either prototype is a conforming machine, that their current tests prove implementation safety, that the native backend is complete, or that the compiler is self-hosting without C/Python. It recommends a clean separation of memory lifetimes and a dependency-ordered integration plan. All implementation and proof claims remain tied to exact source revisions and passing exact-head evidence.
+
+
+## 10. Post-merge status (2026-11-26)
+
+PR #482 is merged. It closes #480's public integer-token/object-ID construction flaw in the Capstan heap module: references and arena identities are opaque to importers, and cross-arena resolution is rejected. Exact-head CodeQL, static-analysis, supply-chain, Linux Clang/GCC, macOS Clang, allocator/GC abstract-model and existing language-verification checks passed.
+
+PR #483 is also merged. It adds a Lean protocol model for heterogeneous typed frames, bounded frame pushes and typed non-void/void caller-return commits. It does not establish correspondence with `verification/ccam_calls.cap`.
+
+**#481 / #458 remain open.** The process-lifetime heap remains a Capstan reference model, not an aggregate CCAM profile, validator, evaluator, source lowerer or native backend. The immediate unresolved gate is alias-preserving, failure-atomic aggregate state transitions. Keep compiler-arena objects distinct from #463 frame-scoped scratch regions.
+
+These merged increments narrow the next engineering work; they do not satisfy aggregate-memory integration or the C-free self-hosting acceptance criteria.
