@@ -107,6 +107,46 @@ else
 fi
 
 
+section "Capstan-native verification: CCAM v0.2 scratch reservation arithmetic prototype"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_reservation.cap" 2>&1)"; then
+  ok "CCAM scratch reservation arithmetic, alignment, capacity and failure atomicity"
+else
+  bad "CCAM scratch reservation arithmetic prototype" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 scratch region lifecycle model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_region_model.cap" 2>&1)"; then
+  ok "CCAM region admission, ownership, generation invalidation, bounded views and failure atomicity"
+else
+  bad "CCAM scratch region lifecycle model" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 bounded multi-region byte store"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_store_model.cap" 2>&1)"; then
+  ok "CCAM bounded region table, aggregate admission, byte storage, typed scalar access and lifecycle"
+else
+  bad "CCAM multi-region byte store model" "$out"
+fi
+if out="$($PY "$ROOT/tests/keel/ccam_memory_oracle.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM independent byte-store oracle" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 region-capability CFG lifecycle validator"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_flow_validator.cap" 2>&1)"; then
+  ok "CCAM bounded region lifecycle dataflow, linear overwrite, CFG joins and return checks"
+else
+  bad "CCAM region-capability CFG lifecycle validator" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 frame-unwind cleanup model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_unwind_model.cap" 2>&1)"; then
+  ok "CCAM frame-exit cleanup, full-capacity wiping, owner isolation and failure-atomic accounting"
+else
+  bad "CCAM frame-unwind cleanup model" "$out"
+fi
+
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
