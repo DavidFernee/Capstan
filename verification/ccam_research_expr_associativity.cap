@@ -1,0 +1,3 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_operator_right_associative(int op){return op==61||op==94;}
+bool ag_should_reduce(int top,int incoming){int a=ag_operator_class(top);int b=ag_operator_class(incoming);return a>b||(a==b&&!ag_operator_right_associative(incoming));}
