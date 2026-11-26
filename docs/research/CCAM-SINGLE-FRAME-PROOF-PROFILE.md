@@ -22,10 +22,10 @@ CCAM-SF-P covers only the single-frame instruction fragment represented by `Mach
 - boolean negation;
 - bounded unconditional and conditional branch targets;
 - typed integer, boolean and void returns;
-- explicit traps;
+- dynamic machine traps represented by the finite model (arithmetic overflow, division by zero, uninitialised register and instruction-budget exhaustion);
 - a single entry frame, starting at instruction index zero.
 
-It excludes calls, function tables, caller continuations, multi-frame execution, JSON decoding, duplicate-key detection, whole-program function validation, source lowering, native code generation, host effects and runtime services. The formal `Trap` type is a finite enumeration: arbitrary application-defined explicit-trap reason strings and their detail payloads are not represented by the current Lean `MachineInstr.explicitTrap` constructor. Such payload cases are outside the initial profile until a distinct bounded reason type is added.
+It excludes the CCAM `trap` instruction, calls, function tables, caller continuations, multi-frame execution, JSON decoding, duplicate-key detection, whole-program function validation, source lowering, native code generation, host effects and runtime services. This exclusion is stronger than merely excluding arbitrary reason strings: the concrete CCAM `trap` opcode produces `Trap(explicit_trap, function, pc, reason)` with the validated application reason in its detail field, while Lean's `MachineInstr.explicitTrap` constructor takes the finite machine `Trap` enumeration. No constructor currently represents the same opcode, code and detail tuple. Do not map an application reason to a similarly named built-in trap. The initial profile therefore excludes the entire CCAM `trap` opcode. Dynamic machine traps produced by the in-profile arithmetic, register-read and budget semantics remain included. A later increment may add a distinct bounded explicit-reason type and prove detail preservation.
 
 The profile's admission predicate is `validateSingleFrameProfile`: it wraps the lower-level typed conversion, requires the entry index to be exactly zero (the concrete Capstan evaluator's initial PC), checks every instruction including unreachable instructions, and validates finite control-flow targets. The lower-level `validateSingleFrameProgram` remains a conversion helper and by itself permits any in-range entry; it is not the implementation-alignment profile predicate.
 
@@ -89,7 +89,7 @@ The tests are implementation evidence. The Lean theorems are model evidence. The
 
 The next increment should be narrow and reviewable:
 
-1. Define a canonical finite corpus for CCAM-SF-P, including arithmetic, branches, returns, finite-enum traps, uninitialised reads and exact step-limit boundaries; explicitly exclude arbitrary explicit-trap reason payloads.
+1. Define a canonical finite corpus for CCAM-SF-P, including arithmetic, branches, returns, dynamic machine traps, uninitialised reads and exact step-limit boundaries; exclude the entire CCAM `trap` opcode until its explicit reason/detail representation is modelled exactly.
 2. Give each vector an independently specified expected validation result and execution trace/outcome.
 3. Exercise the same vectors in the Capstan-native evaluator and a Lean executable model. Where the Lean model cannot represent a vector, mark it out of profile rather than silently skipping it.
 4. Define a representation relation from Capstan register/program state to the Lean state; prove read/write correspondence and then one-step simulation for each instruction constructor.
