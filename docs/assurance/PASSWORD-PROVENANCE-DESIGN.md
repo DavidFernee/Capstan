@@ -1,6 +1,6 @@
 # Password provenance design
 
-> Status: first fail-closed increment implemented on PR #238; exact-head CI pending. First-class Password remains a proposed follow-up for issue #232.
+> Status: first fail-closed increment proposed on PR #238 and extracted into PR #477; neither implementation PR is merged yet. First-class Password remains a proposed follow-up for issue #232.
 > This document separates properties Capstan can enforce from the application decision that identifies a value as a password.
 
 ## 1. Current weakness
@@ -15,11 +15,11 @@ The compiler cannot infer from arbitrary bytes whether an application considers 
 
 ### A. Fail-closed fast-hash boundary
 
-Implemented in the current research branch: `hash()` and `hash_verify()` reject `Tainted` inputs independent of variable names. The diagnostic directs password data to `hash_password()` / `verify_password()`.
+Proposed in PR #238 and isolated for validation in PR #477: `hash()` and `hash_verify()` reject `Tainted` inputs independent of variable names. The diagnostic directs password data to `hash_password()` / `verify_password()`.
 
 If a program genuinely needs a fast digest of non-password untrusted data (for example, a file checksum), it must make an explicit audited declassification using the existing `trust(value, reason)` escape hatch. This is deliberately stricter than treating all untrusted strings as safe for integrity hashing.
 
-Implemented as defence in depth: password-name analysis traverses method receivers and helper-call arguments. Name scanning remains a heuristic for already-trusted strings; it is not the primary provenance guarantee.
+Proposed as defence in depth in PR #238 / #477: password-name analysis traverses method receivers and helper-call arguments. Name scanning remains a heuristic for already-trusted strings; it is not the primary provenance guarantee.
 
 ### B. First-class `Password` type
 

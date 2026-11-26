@@ -1,6 +1,6 @@
 # Output-context types and sink contracts
 
-> Status: implementation increment on `research/vulnerability-prevention-programme`; exact-head test/CI validation pending.
+> Status: implementation proposed on draft PR #238 and not yet merged to `main`; exact-head test/CI validation pending.
 > Scope: HTML, log and CSV output contexts. JSON migration is deliberately separate.
 
 ## Contract
@@ -29,7 +29,7 @@ The three typed file sinks currently lower to the same bounded-path-checked runt
 
 ## Evidence
 
-The implementation adds positive conformance coverage for all three matching sinks and negative tests for:
+The draft implementation on PR #238 adds positive conformance coverage for all three matching sinks and negative tests for:
 - HTML-encoded data passed to the generic file sink (CWE-116 atlas regression);
 - untrusted input passed directly to a typed HTML sink (CWE-20);
 - HTML data passed to the CSV sink;
@@ -41,4 +41,4 @@ The implementation adds positive conformance coverage for all three matching sin
 - plain trusted strings passed to a typed CSV sink;
 - Secret values passed to a file sink.
 
-The standard suite also compiles the compiler and programs through the stage-0 bootstrap and checks generated C warning-free. Those results must be recorded against the exact PR head after CI completes. No universal proof is claimed by this document.
+The fixtures and implementation described here remain on the unmerged PR #238 branch. The standard suite must compile the compiler and programs through the stage-0 bootstrap and check generated C warning-free; results must be recorded against the exact implementation PR head after CI completes. No universal proof is claimed by this document.
