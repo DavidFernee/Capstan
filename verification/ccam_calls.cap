@@ -1752,3 +1752,31 @@ test "CCAM validator bounds aggregate output literals across functions" {
     CCAMValidationResult result = ccam_validate_multi_function(functions, 0);
     assert(!result.ok && result.error == "output_literal_limit_exceeded");
 }
+
+
+test "CCAM direct machine trap transition unwinds frame-owned memory" {
+    List<int> types = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: types, parameter_count: 0,
+        return_type: CCAM_RETURN_VOID, instructions: code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 4, 2);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    CCAMMemCreateResult region = ccam_mem_create(
+        machine.memory, machine.frames[0].frame_id, 16, -1);
+    assert(region.ok);
+    machine.memory = region.manager;
+    assert(ccam_mem_manager_valid(machine.memory));
+    ccam_call_machine_trap(machine, "explicit_trap", "main", 0, "");
+    assert(machine.halted && machine.trap_code == "explicit_trap");
+    assert(machine.frame_depth == 0);
+    assert(machine.memory.live_regions == 0);
+    assert(machine.memory.live_capacity == 0);
+    assert(!machine.memory.regions[0].open);
+}
