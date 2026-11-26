@@ -1276,6 +1276,19 @@ void test_display_list(Tally t, Font font) {
         "display list: malformed recorder geometry is rejected before snapshot",
         "mismatched segment arrays admitted");
 
+    // Validate each published command independently so a rejected frame reports
+    // the exact command that violates the public replay contract.
+    for (int check = 0; check < frame.commands.len(); check += 1) {
+        List<DisplayCommand> isolated_commands = new List<DisplayCommand>();
+        isolated_commands.push(frame.commands[check]);
+        DisplayList isolated_frame = new DisplayList{
+            width: frame.width, height: frame.height, commands: isolated_commands
+        };
+        expect(t, display_list_valid(isolated_frame, replayed),
+            $"display list: command {check} is independently valid",
+            $"kind={frame.commands[check].kind}, clip={frame.commands[check].clip.x},{frame.commands[check].clip.y},{frame.commands[check].clip.w},{frame.commands[check].clip.h}");
+    }
+
     // Appending to the recorder after publication must not mutate the frame.
     recorder.fill_rect(rect_px(45, 33, 1, 1), solid(0xFFFF0000));
     execute_display_list(frame, replayed);
