@@ -177,3 +177,14 @@ Do not treat the current scalar native CLI as a self-hosting compiler. It cannot
 - Portable object format versus per-target assembler/linker adapters for the first bootstrap.
 
 These choices require evidence from compiler source closure, resource/capability surveys, formal bridge and native backend. This document does not change normative CCAM v0.1 and does not claim an implemented heap, C-free compiler or completed proof.
+
+
+## 10. Opaque process-arena references (experimental implementation)
+
+The experimental process-lifetime heap now uses two module-private opaque reference types:
+- `CCAMHeapIdentity` is a fresh reference-identity object allocated for each arena instance.
+- `CCAMHeapRef` contains that identity and an object index; importing modules can neither construct nor inspect the representation.
+
+The heap factory no longer accepts a caller-selected identity token. Allocation returns an authentic `CCAMHeapRef`, and every field, array, byte-string and reference-value operation accepts that opaque value. Resolution uses Capstan's identity-bound grant mechanism to require that the reference's opaque identity is the arena's identity before using the object index. A cross-arena substitution is rejected as CWE-639; it is not converted into an ordinary invalid-index result. Distinct arenas with identical limits and identical first object indices therefore remain disjoint; copying an arena handle preserves its identity because Capstan structs are reference-bound. Scalar heap values use an absent optional reference, so they do not allocate dummy identity objects.
+
+This is still an experimental Capstan-level model, not a connected CCAM evaluator/native implementation or a formal heap theorem. The compiler integration milestone remains tracked separately in #481; the integer-handle flaw is tracked by #480.
