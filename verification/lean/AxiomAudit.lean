@@ -8,6 +8,7 @@ import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
 import CapstanVerification.InjectionProvenance
+import CapstanVerification.InjectionSinks
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -218,3 +219,10 @@ import CapstanVerification.InjectionProvenance
 #print axioms CapstanVerification.select_preserves_selected_data
 #print axioms CapstanVerification.select_preserves_prior_selection
 #print axioms CapstanVerification.expression_sources_preserved
+
+-- Typed injection sink contracts.
+#print axioms CapstanVerification.raw_input_rejected_at_sink
+#print axioms CapstanVerification.context_encoder_output_is_sink_safe
+#print axioms CapstanVerification.context_encoder_preserves_data_provenance
+#print axioms CapstanVerification.context_encoder_preserves_selection_provenance
+#print axioms CapstanVerification.context_encoder_rejects_other_context
