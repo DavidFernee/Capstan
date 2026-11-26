@@ -1,7 +1,7 @@
 # Injection provenance: current checker correspondence
 
 **Status:** model of a restricted checker fragment; source correspondence is reviewed, not mechanised.
-**Source baseline:** `main` at `943e6bad014888bd64117f1417752375008796f2` (2026-11-26).
+**Source baseline:** `main` at `db912986be48897fc37f83c7cc8df8552b3fe8ef` (2026-11-26).
 **Source file:** `compiler/checker.cap`; the exact laundering-analysis section is pinned in `verification/lean/fixtures/injection_checker_laundering_source.cap`.
 **Lean module:** `verification/lean/CapstanVerification/InjectionChecker.lean`.
 
