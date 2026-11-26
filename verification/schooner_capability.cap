@@ -1,0 +1,420 @@
+// Schooner S1: bounded capability revocation reference model.
+//
+// This is an executable Capstan transition model, not a kernel capability
+// implementation. CapHandle is an ordinary transparent model value here;
+// this file does not establish unforgeable representation, issuer isolation,
+// concurrent linearizability, or refinement to a runtime/CPU boundary.
+//
+// The model fixes one object and two slots so every state space is finite.
+// Revocation is object-wide and linearizes at the epoch increment. Slot reuse
+// advances a generation; object identity includes an object generation.
+
+const int SCM_RIGHT_READ = 1;
+const int SCM_RIGHT_WRITE = 2;
+const int SCM_RIGHT_ADMIN = 4;
+const int SCM_RIGHT_ALL = 7;
+const int SCM_MAX_GENERATION = 0x7FFFFFFFFFFFFFFF;
+
+struct SCMState {
+    int object_id;
+    int object_generation;
+    int revocation_epoch;
+    bool revoked;
+    int root_generation;
+    bool root_live;
+    int root_rights;
+    int child_generation;
+    bool child_live;
+    int child_rights;
+}
+
+struct SCMHandle {
+    int object_id;
+    int object_generation;
+    int slot;
+    int slot_generation;
+    int rights;
+    int revocation_epoch;
+}
+
+struct SCMTransition {
+    bool ok;
+    SCMState state;
+    SCMHandle handle;
+    string error;
+}
+
+SCMHandle scm_empty_handle() {
+    return new SCMHandle{
+        object_id: 0, object_generation: 0, slot: -1,
+        slot_generation: 0, rights: 0, revocation_epoch: 0
+    };
+}
+
+SCMState scm_initial() {
+    return new SCMState{
+        object_id: 41, object_generation: 1, revocation_epoch: 1,
+        revoked: false, root_generation: 0, root_live: false,
+        root_rights: 0, child_generation: 0, child_live: false,
+        child_rights: 0
+    };
+}
+
+SCMState scm_copy(SCMState source) {
+    return new SCMState{
+        object_id: source.object_id,
+        object_generation: source.object_generation,
+        revocation_epoch: source.revocation_epoch,
+        revoked: source.revoked,
+        root_generation: source.root_generation,
+        root_live: source.root_live,
+        root_rights: source.root_rights,
+        child_generation: source.child_generation,
+        child_live: source.child_live,
+        child_rights: source.child_rights
+    };
+}
+
+SCMTransition scm_reject(SCMState before, string error) {
+    return new SCMTransition{
+        ok: false, state: before, handle: scm_empty_handle(), error: error
+    };
+}
+
+SCMTransition scm_accept(SCMState after, SCMHandle handle) {
+    return new SCMTransition{
+        ok: true, state: after, handle: handle, error: ""
+    };
+}
+
+bool scm_valid_rights(int rights) {
+    return rights > 0 && rights <= SCM_RIGHT_ALL &&
+        (rights & SCM_RIGHT_ALL) == rights;
+}
+
+bool scm_invariant(SCMState state) {
+    if (state.object_generation <= 0 || state.revocation_epoch <= 0 ||
+        state.root_generation < 0 || state.child_generation < 0) { return false; }
+    if (state.root_live && !scm_valid_rights(state.root_rights)) { return false; }
+    if (state.child_live && !scm_valid_rights(state.child_rights)) { return false; }
+    if (!state.root_live && state.root_rights != 0) { return false; }
+    if (!state.child_live && state.child_rights != 0) { return false; }
+    if (state.revoked && (state.root_live || state.child_live)) { return false; }
+    return true;
+}
+
+// This predicate validates the complete model handle against the current
+// object and slot record. It is deliberately not an unforgeability primitive.
+bool scm_resolves(SCMState state, SCMHandle handle, int required_rights) {
+    if (state.revoked || required_rights <= 0 ||
+        !scm_valid_rights(required_rights)) { return false; }
+    if (handle.object_id != state.object_id ||
+        handle.object_generation != state.object_generation ||
+        handle.revocation_epoch != state.revocation_epoch) { return false; }
+    if (!scm_valid_rights(handle.rights) ||
+        (handle.rights & required_rights) != required_rights) { return false; }
+    if (handle.slot == 0) {
+        return state.root_live &&
+            handle.slot_generation == state.root_generation &&
+            handle.rights == state.root_rights;
+    }
+    if (handle.slot == 1) {
+        return state.child_live &&
+            handle.slot_generation == state.child_generation &&
+            handle.rights == state.child_rights;
+    }
+    return false;
+}
+
+// Trusted-issuer transition in this abstract model. Real issuance must be
+// backed by an unforgeable kernel/boot authority unavailable to callers.
+SCMTransition scm_issue_root(SCMState before, int rights) {
+    if (!scm_invariant(before)) { return scm_reject(before, "invalid_state"); }
+    if (before.revoked) { return scm_reject(before, "object_revoked"); }
+    if (!scm_valid_rights(rights)) { return scm_reject(before, "invalid_rights"); }
+    if (before.root_live) { return scm_reject(before, "root_slot_occupied"); }
+    if (before.root_generation == SCM_MAX_GENERATION) {
+        return scm_reject(before, "generation_exhausted");
+    }
+    SCMState after = scm_copy(before);
+    after.root_generation += 1;
+    after.root_live = true;
+    after.root_rights = rights;
+    SCMHandle handle = new SCMHandle{
+        object_id: after.object_id,
+        object_generation: after.object_generation,
+        slot: 0,
+        slot_generation: after.root_generation,
+        rights: rights,
+        revocation_epoch: after.revocation_epoch
+    };
+    if (!scm_invariant(after)) { return scm_reject(before, "transition_invariant"); }
+    return scm_accept(after, handle);
+}
+
+// Attenuation only: requested rights must be a non-empty subset of the
+// currently held rights. No transition in this model can amplify rights.
+SCMTransition scm_attenuate(SCMState before, SCMHandle parent, int rights) {
+    if (!scm_invariant(before)) { return scm_reject(before, "invalid_state"); }
+    if (!scm_resolves(before, parent, parent.rights)) {
+        return scm_reject(before, "invalid_parent");
+    }
+    if (!scm_valid_rights(rights)) { return scm_reject(before, "invalid_rights"); }
+    if ((rights & parent.rights) != rights) {
+        return scm_reject(before, "rights_amplification");
+    }
+    if (before.child_live) { return scm_reject(before, "child_slot_occupied"); }
+    if (before.child_generation == SCM_MAX_GENERATION) {
+        return scm_reject(before, "generation_exhausted");
+    }
+    SCMState after = scm_copy(before);
+    after.child_generation += 1;
+    after.child_live = true;
+    after.child_rights = rights;
+    SCMHandle handle = new SCMHandle{
+        object_id: after.object_id,
+        object_generation: after.object_generation,
+        slot: 1,
+        slot_generation: after.child_generation,
+        rights: rights,
+        revocation_epoch: after.revocation_epoch
+    };
+    if (!scm_invariant(after)) { return scm_reject(before, "transition_invariant"); }
+    return scm_accept(after, handle);
+}
+
+// Revoke one delegated slot without invalidating the parent's authority.
+// The next issuance increments the slot generation, so the old child handle
+// cannot resolve after slot reuse.
+SCMTransition scm_revoke_child(SCMState before, SCMHandle authority, SCMHandle target) {
+    if (!scm_invariant(before)) { return scm_reject(before, "invalid_state"); }
+    if (!scm_resolves(before, authority, SCM_RIGHT_ADMIN)) {
+        return scm_reject(before, "revoke_not_authorised");
+    }
+    if (target.slot != 1 || !scm_resolves(before, target, target.rights)) {
+        return scm_reject(before, "invalid_target");
+    }
+    SCMState after = scm_copy(before);
+    after.child_live = false;
+    after.child_rights = 0;
+    if (!scm_invariant(after)) { return scm_reject(before, "transition_invariant"); }
+    return scm_accept(after, scm_empty_handle());
+}
+
+// Revocation is object-wide. The epoch changes before the revoked state is
+// published; all previously issued handles fail the epoch comparison.
+SCMTransition scm_revoke(SCMState before, SCMHandle authority) {
+    if (!scm_invariant(before)) { return scm_reject(before, "invalid_state"); }
+    if (!scm_resolves(before, authority, SCM_RIGHT_ADMIN)) {
+        return scm_reject(before, "revoke_not_authorised");
+    }
+    if (before.revocation_epoch == SCM_MAX_GENERATION) {
+        return scm_reject(before, "epoch_exhausted");
+    }
+    SCMState after = scm_copy(before);
+    after.revocation_epoch += 1;
+    after.revoked = true;
+    after.root_live = false;
+    after.root_rights = 0;
+    after.child_live = false;
+    after.child_rights = 0;
+    if (!scm_invariant(after)) { return scm_reject(before, "transition_invariant"); }
+    return scm_accept(after, scm_empty_handle());
+}
+
+bool scm_same_state(SCMState a, SCMState b) {
+    return a.object_id == b.object_id &&
+        a.object_generation == b.object_generation &&
+        a.revocation_epoch == b.revocation_epoch &&
+        a.revoked == b.revoked &&
+        a.root_generation == b.root_generation &&
+        a.root_live == b.root_live && a.root_rights == b.root_rights &&
+        a.child_generation == b.child_generation &&
+        a.child_live == b.child_live && a.child_rights == b.child_rights;
+}
+
+test "SCM root issuance creates only the requested authority" {
+    SCMState state = scm_initial();
+    SCMTransition issued = scm_issue_root(state, SCM_RIGHT_READ | SCM_RIGHT_ADMIN);
+    assert(issued.ok);
+    assert(issued.handle.slot == 0);
+    assert(issued.handle.rights == (SCM_RIGHT_READ | SCM_RIGHT_ADMIN));
+    assert(scm_resolves(issued.state, issued.handle, SCM_RIGHT_READ));
+    assert(scm_resolves(issued.state, issued.handle, SCM_RIGHT_ADMIN));
+    assert(!scm_resolves(issued.state, issued.handle, SCM_RIGHT_WRITE));
+}
+
+test "SCM attenuation cannot amplify rights" {
+    SCMState state = scm_initial();
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(root.ok);
+    SCMTransition child = scm_attenuate(root.state, root.handle, SCM_RIGHT_READ);
+    assert(child.ok && child.handle.rights == SCM_RIGHT_READ);
+    assert(scm_resolves(child.state, child.handle, SCM_RIGHT_READ));
+    assert(!scm_resolves(child.state, child.handle, SCM_RIGHT_WRITE));
+    SCMTransition amplify = scm_attenuate(child.state, child.handle, SCM_RIGHT_ADMIN);
+    assert(!amplify.ok && amplify.error == "rights_amplification");
+    assert(scm_same_state(amplify.state, child.state));
+}
+
+test "SCM rejects wrong object slot generation epoch and rights" {
+    SCMState state = scm_initial();
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_READ | SCM_RIGHT_ADMIN);
+    assert(root.ok);
+    SCMHandle forged = new SCMHandle{
+        object_id: root.handle.object_id + 1,
+        object_generation: root.handle.object_generation,
+        slot: root.handle.slot,
+        slot_generation: root.handle.slot_generation,
+        rights: root.handle.rights,
+        revocation_epoch: root.handle.revocation_epoch
+    };
+    assert(!scm_resolves(root.state, forged, SCM_RIGHT_READ));
+    forged = new SCMHandle{
+        object_id: root.handle.object_id,
+        object_generation: root.handle.object_generation + 1,
+        slot: root.handle.slot,
+        slot_generation: root.handle.slot_generation,
+        rights: root.handle.rights,
+        revocation_epoch: root.handle.revocation_epoch
+    };
+    assert(!scm_resolves(root.state, forged, SCM_RIGHT_READ));
+    forged = new SCMHandle{
+        object_id: root.handle.object_id,
+        object_generation: root.handle.object_generation,
+        slot: 1,
+        slot_generation: root.handle.slot_generation,
+        rights: root.handle.rights,
+        revocation_epoch: root.handle.revocation_epoch
+    };
+    assert(!scm_resolves(root.state, forged, SCM_RIGHT_READ));
+    forged = new SCMHandle{
+        object_id: root.handle.object_id,
+        object_generation: root.handle.object_generation,
+        slot: 0,
+        slot_generation: root.handle.slot_generation + 1,
+        rights: root.handle.rights,
+        revocation_epoch: root.handle.revocation_epoch
+    };
+    assert(!scm_resolves(root.state, forged, SCM_RIGHT_READ));
+    forged = new SCMHandle{
+        object_id: root.handle.object_id,
+        object_generation: root.handle.object_generation,
+        slot: 0,
+        slot_generation: root.handle.slot_generation,
+        rights: root.handle.rights,
+        revocation_epoch: root.handle.revocation_epoch + 1
+    };
+    assert(!scm_resolves(root.state, forged, SCM_RIGHT_READ));
+    forged = new SCMHandle{
+        object_id: root.handle.object_id,
+        object_generation: root.handle.object_generation,
+        slot: 0,
+        slot_generation: root.handle.slot_generation,
+        rights: SCM_RIGHT_ALL,
+        revocation_epoch: root.handle.revocation_epoch
+    };
+    assert(!scm_resolves(root.state, forged, SCM_RIGHT_WRITE));
+}
+
+test "SCM revocation invalidates root and delegated handles" {
+    SCMState state = scm_initial();
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(root.ok);
+    SCMTransition child = scm_attenuate(root.state, root.handle, SCM_RIGHT_READ);
+    assert(child.ok);
+    SCMTransition revoked = scm_revoke(child.state, root.handle);
+    assert(revoked.ok && revoked.state.revoked);
+    assert(revoked.state.revocation_epoch == child.state.revocation_epoch + 1);
+    assert(!scm_resolves(revoked.state, root.handle, SCM_RIGHT_READ));
+    assert(!scm_resolves(revoked.state, child.handle, SCM_RIGHT_READ));
+    SCMTransition stale = scm_attenuate(revoked.state, child.handle, SCM_RIGHT_READ);
+    assert(!stale.ok && stale.error == "invalid_parent");
+}
+
+test "SCM non-admin child cannot revoke the object" {
+    SCMState state = scm_initial();
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(root.ok);
+    SCMTransition child = scm_attenuate(root.state, root.handle, SCM_RIGHT_READ);
+    assert(child.ok);
+    SCMTransition rejected = scm_revoke(child.state, child.handle);
+    assert(!rejected.ok && rejected.error == "revoke_not_authorised");
+    assert(scm_same_state(rejected.state, child.state));
+}
+
+test "SCM failed issue and occupied slots are failure atomic" {
+    SCMState state = scm_initial();
+    SCMTransition bad = scm_issue_root(state, 0);
+    assert(!bad.ok && scm_same_state(bad.state, state));
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(root.ok);
+    SCMTransition duplicate = scm_issue_root(root.state, SCM_RIGHT_READ);
+    assert(!duplicate.ok && duplicate.error == "root_slot_occupied");
+    assert(scm_same_state(duplicate.state, root.state));
+    SCMTransition child = scm_attenuate(root.state, root.handle, SCM_RIGHT_READ);
+    assert(child.ok);
+    SCMTransition duplicate_child = scm_attenuate(child.state, root.handle, SCM_RIGHT_READ);
+    assert(!duplicate_child.ok && duplicate_child.error == "child_slot_occupied");
+    assert(scm_same_state(duplicate_child.state, child.state));
+}
+
+test "SCM generation and epoch exhaustion fail closed without wrapping" {
+    SCMState state = scm_initial();
+    state.root_generation = SCM_MAX_GENERATION;
+    SCMTransition exhausted_slot = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(!exhausted_slot.ok && exhausted_slot.error == "generation_exhausted");
+    assert(scm_same_state(exhausted_slot.state, state));
+    state = scm_initial();
+    SCMTransition parent = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(parent.ok);
+    state = parent.state;
+    state.child_generation = SCM_MAX_GENERATION;
+    SCMTransition exhausted_child = scm_attenuate(state, parent.handle, SCM_RIGHT_READ);
+    assert(!exhausted_child.ok && exhausted_child.error == "generation_exhausted");
+    assert(scm_same_state(exhausted_child.state, state));
+    state = scm_initial();
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(root.ok);
+    state = root.state;
+    state.revocation_epoch = SCM_MAX_GENERATION;
+    root.handle.revocation_epoch = SCM_MAX_GENERATION;
+    SCMTransition exhausted_epoch = scm_revoke(state, root.handle);
+    assert(!exhausted_epoch.ok && exhausted_epoch.error == "epoch_exhausted");
+    assert(scm_same_state(exhausted_epoch.state, state));
+}
+
+test "SCM delegated slot revocation advances generation on reuse" {
+    SCMState state = scm_initial();
+    SCMTransition root = scm_issue_root(state, SCM_RIGHT_ALL);
+    assert(root.ok);
+    SCMTransition first = scm_attenuate(root.state, root.handle, SCM_RIGHT_READ);
+    assert(first.ok);
+    SCMTransition removed = scm_revoke_child(first.state, root.handle, first.handle);
+    assert(removed.ok);
+    assert(!scm_resolves(removed.state, first.handle, SCM_RIGHT_READ));
+    SCMTransition second = scm_attenuate(removed.state, root.handle, SCM_RIGHT_WRITE);
+    assert(second.ok);
+    assert(second.handle.slot_generation == first.handle.slot_generation + 1);
+    assert(!scm_resolves(second.state, first.handle, SCM_RIGHT_READ));
+    assert(scm_resolves(second.state, second.handle, SCM_RIGHT_WRITE));
+}
+
+test "SCM exhaustively checks every non-empty rights subset in the bounded domain" {
+    for (int parent_rights = 1; parent_rights <= SCM_RIGHT_ALL; parent_rights += 1) {
+        for (int requested = 1; requested <= SCM_RIGHT_ALL; requested += 1) {
+            SCMState state = scm_initial();
+            SCMTransition root = scm_issue_root(state, parent_rights);
+            assert(root.ok);
+            SCMTransition child = scm_attenuate(root.state, root.handle, requested);
+            bool subset = (requested & parent_rights) == requested;
+            assert(child.ok == subset);
+            if (subset) {
+                assert(scm_invariant(child.state));
+                assert(scm_resolves(child.state, child.handle, requested));
+            } else {
+                assert(scm_same_state(child.state, root.state));
+            }
+        }
+    }
+}
