@@ -80,7 +80,7 @@ For a terminal instruction:
 - the final PC convention agrees (the terminal instruction's own PC for return/trap; selected target for branch/jump);
 - register state is unchanged unless the instruction semantics explicitly writes one.
 
-The proof must cover all 17 opcode constructors. It must not prove only arithmetic and infer control-flow correctness.
+For the current CCAM-SF-P simulation theorem, the proof must cover all 16 in-profile `MachineInstr` constructors. The `.explicitTrap` constructor is deliberately excluded because the concrete evaluator preserves an arbitrary reason string in `trap_detail`, while the current Lean `Trap` domain does not represent that payload. Keep the `TRAP` row in this inventory as an explicit out-of-profile obligation; do not count it as proved or silently map it to a finite trap. The proof must not prove only arithmetic and infer control-flow correctness.
 
 ## Fuel correspondence
 
