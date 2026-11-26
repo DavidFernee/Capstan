@@ -90,10 +90,9 @@ def valueAssign (store : ValueStore) (slot : Nat) (rhs : ValueExpr) : ValueStore
   valueWrite store slot (valueDerived store rhs)
 
 /-- Clean reassignment clears stale provenance from that local. -/
-theorem clean_reassignment_clears_mark (store : ValueStore) (slot : Nat)
-    (hclean : valueDerived store .literal = false) :
+theorem clean_reassignment_clears_mark (store : ValueStore) (slot : Nat) :
     valueAssign store slot .literal slot = false := by
-  simp [valueAssign, valueWrite, valueDerived, hclean]
+  simp [valueAssign, valueWrite, valueDerived]
 
 /-- Attacker input assigned to a local remains marked at that local. -/
 theorem attacker_assignment_marks_local (store : ValueStore) (slot : Nat) :
@@ -144,8 +143,9 @@ theorem aggregate_build_preserves_field (store : ValueStore)
     (fieldMarks : List Bool) (fieldMark : Bool)
     (hmem : fieldMark ∈ fieldMarks) (hderived : fieldMark = true) :
     valueDerived store (.aggregateBuild fieldMarks) = true := by
-  simp [valueDerived, List.any_eq_true]
-  exact ⟨fieldMark, hmem, hderived⟩
+  have hmemTrue : true ∈ fieldMarks := by
+    simpa [hderived] using hmem
+  simpa [valueDerived, List.any_eq_true] using hmemTrue
 
 /-- A selected value is marked if its controlling condition is marked. -/
 theorem selection_preserves_control (store : ValueStore)
