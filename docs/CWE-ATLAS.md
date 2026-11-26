@@ -9,7 +9,7 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**255 weaknesses, 300 attempts.** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 301 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
@@ -88,6 +88,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through to_text) | Prevented: rejected at compile time | `CWE-20`. Numeric-to-text conversion must preserve provenance before a trusted map lookup. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through join) | Prevented: rejected at compile time | `CWE-20`. Collection aggregation must preserve element provenance before a trusted map lookup. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a dynamic list index) | Prevented: rejected at compile time | `CWE-20`. A dynamic-index write widens to the whole element summary, so every possible element read remains derived. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through an aggregate helper) | Prevented: rejected at compile time | The body-derived aggregate-parameter sink summary must preserve tainted element provenance across the call boundary. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a lookup table) | Prevented: rejected at compile time | `CWE-20`. Bytes of untrusted input are tainted integers: selecting trusted text with them (list index, slice, map key) is rejected. |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal (via an audited trust()) | Possible only through an audited escape hatch | Possible only through trust(), which needs a written justification and is reported in every build. validate_path() is the safe route. |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal (attempt through validate_path) | Prevented: attempt compiles but has no effect |  |

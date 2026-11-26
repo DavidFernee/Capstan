@@ -237,3 +237,5 @@ This is still a monotone, syntax-directed may-analysis. It does not yet have a c
 
 
 The checker now also computes limited return/sink summaries for aggregate parameters. This does not model mutation effects or alias sets: the alias-laundering case is deliberately retained as an executable CWE-20 gap until heap/alias propagation is implemented.
+
+The CWE atlas now includes a direct regression for the aggregate-parameter sink summary: a tainted list element passed to a helper that reconstructs it with `char_str` must be rejected at the call boundary. The separate reference-alias mutation remains an expected gap.

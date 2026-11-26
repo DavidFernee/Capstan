@@ -15,7 +15,7 @@ The laundering analysis is now a syntax-directed, binding-identity may-analysis 
 5. **Parameter summaries:** summary seeding includes `bool`, `string`, `Tainted`, and aggregate parameters (`struct`, `List`, `Map`, and optional wrappers) in addition to `int`. These are limited Boolean `param_to_return` / `param_to_sink` summaries, not heap-effect summaries or path-sensitive interprocedural analysis.
 6. **Conversions and joins:** `to_text(x)` preserves derivation from x, and `join(xs, sep)` preserves derivation from a marked input list. Existing `int_to_str` and string-concatenation transfers remain.
 
-The CWE atlas now covers helper-derived length, dynamic list-index widening, and reference-alias laundering. The dynamic-index attempt is rejected; the alias attempt deliberately remains a gap because writes are not propagated through may-alias sets. The Boolean-to-text/write-file probe also remains a gap: Boolean provenance is tracked, but a complete policy for every output sink is not yet implemented.
+The CWE atlas now covers helper-derived length, dynamic list-index widening, and aggregate-parameter sink summaries. The dynamic-index and aggregate-helper attempts are rejected. Reference-alias laundering deliberately remains a gap because writes are not propagated through may-alias sets. The Boolean-to-text/write-file probe also remains a gap: Boolean provenance is tracked, but a complete policy for every output sink is not yet implemented.
 
 ## Deliberate non-claims
 
@@ -36,7 +36,7 @@ The first follow-on implementation now uses checker-assigned binding identities 
 Before this slice can be treated as integrated:
 
 1. The exact PR head must pass the CWE atlas and the complete compiler test matrix.
-2. The new length-helper fixture must be shown to fail for the intended CWE-20 diagnostic, not a syntax or type error.
+2. The length-helper, dynamic-index and aggregate-helper fixtures must fail for the intended CWE-20 diagnostic, not a syntax or type error; the reference-alias fixture must remain explicitly classified as a gap.
 3. Existing positive tests must show no unintended regressions.
 4. The implementation must be compared against the transfer rules in `PROVENANCE-SEMANTICS.md`.
 5. An independent review must inspect the summary fixed point and all new transfer cases.

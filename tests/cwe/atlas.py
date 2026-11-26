@@ -631,6 +631,12 @@ add(20, "Improper input validation (laundering through a reference alias)", "gap
     "int main() { List<int> original = new List<int>(); original.push(65); List<int> alias = original; if (let input = read_line()) { original[0] = input.at(0); } println(char_str(alias[0])); return 0; }",
     note="List and struct values are reference types. The current checker tracks access paths by the variable binding identity but does not yet compute may-alias sets or propagate heap writes across aliases.")
 
+# Aggregate parameter summaries must carry tainted element provenance to callee sinks.
+add(20, "Improper input validation (laundering through an aggregate helper)", "reject",
+    "int consume_first(List<int> values) { println(char_str(values[0])); return 0; }\n"
+    "int main() { List<int> values = new List<int>(); values.push(65); if (let input = read_line()) { values[0] = input.at(0); } consume_first(values); return 0; }",
+    "CWE-20", "The body-derived aggregate-parameter sink summary must preserve tainted element provenance across the call boundary.")
+
 # ---------------------------------------------------------------- harness
 
 # ---- found in the November 2026 attack review --------------------------------------------------
