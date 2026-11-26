@@ -360,7 +360,7 @@ List<Token> lex_bounded(Ctx ctx, Tainted src, int file, CompileBudget budget) {
     check_invisible(lx);
     lex_run(lx);
     lx.tok_start = lx.pos;
-    add_tok(lx, T_EOF, "", 0);
+    lx.toks.push(new Token{k: T_EOF, s: "", n: 0, line: lx.line, col: lx.pos - lx.line_start + 1, file: file});
     return lx.toks;
 }
 
