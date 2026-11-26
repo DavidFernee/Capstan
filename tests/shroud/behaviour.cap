@@ -844,7 +844,8 @@ void test_a11y_json_escaping(Tally t) {
     string expected = "{\"id\":\"" + escape_json(taint(hostile.id)) +
         "\",\"role\":\"" + escape_json(taint(hostile.role)) +
         "\",\"name\":\"" + escape_json(hostile.name) +
-        "\",\"states\":[\"" + escape_json(taint(states[0])) +
+        "\",\"security_annotations\":" + a11y_security_annotations_json(hostile.name, hostile.value) +
+        ",\"states\":[\"" + escape_json(taint(states[0])) +
         "\"],\"bounds\":[0,0,1,1]}";
     expect(t, json == expected,
         "a11y JSON: every public string field is escaped exactly once", json);
