@@ -2,7 +2,7 @@
 
 This statement maps Capstan's guarantees to the memory-safety guidance published by the Five Eyes
 cyber security agencies, including the Australian Signals Directorate's Australian Cyber Security
-Centre (ASD's ACSC). It describes the integrated repository state reviewed on 2026-11-24. The current compiler still emits C and uses the C runtime; the C-free/CCAM work is in progress. Each claim
+Centre (ASD's ACSC). It describes the integrated repository state reviewed on 2026-11-25. The current compiler still emits C and uses the C runtime; the C-free/CCAM work is in progress. Each claim
 names the test or document that demonstrates it; where something is not yet done, it says so.
 
 ## The guidance
@@ -41,9 +41,9 @@ sheet.
 | Stack exhaustion (CWE-674) | Runaway recursion stops safely through a stack guard | `tests/runtime/stack_overflow.cap` |
 | Data races (CWE-362) | Capstan has no threads or shared memory yet, so a data race cannot be written. Safe concurrency is planned for v0.7 | [DESIGN-MAP.md](../DESIGN-MAP.md), section 4, v0.7 |
 
-The CWE atlas ([CWE-ATLAS.md](../CWE-ATLAS.md)) attempts each of about 250 code-level weaknesses and
-re-checks every verdict on each test run (`tests/cwe/atlas.py`). None of its five remaining gaps is a
-memory-safety weakness.
+The CWE atlas ([CWE-ATLAS.md](../CWE-ATLAS.md)) currently records 255 weaknesses across 305
+attempts and re-checks verdicts through `tests/cwe/atlas.py`. Six distinct CWE entries remain gaps;
+none is classified as a memory-safety weakness. See the atlas for exact attempts and outcomes.
 
 **No unsafe subset.** The guidance warns that memory-safe languages lose their guarantee where
 developers use unsafe features (for example Rust's `unsafe`). Capstan has no unsafe code construct.

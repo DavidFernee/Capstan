@@ -1,0 +1,9 @@
+// Reviewed non-password artifact data may use fast hashing after an explicit audit decision.
+// spec: types.tainted builtins.crypto
+int main() {
+    Tainted artifact = taint("non-password artifact bytes");
+    string reviewed = trust(artifact, "integrity digest for non-password artifact");
+    string tag = hash(reviewed);
+    if (hash_verify(reviewed, tag)) { println("verified"); } else { println("mismatch"); }
+    return 0;
+}

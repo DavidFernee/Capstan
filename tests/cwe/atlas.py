@@ -216,7 +216,8 @@ add(20, "Laundering untrusted bytes through control flow", "logic",
     'string launder(Tainted t) { string out = ""; for (int i = 0; i < t.len(); i += 1) { if (t.at(i) == 60) { out += "<"; } else { out += "a"; } } return out; }' + MAIN,
     note="Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision.")
 add(80, "Basic XSS (improper neutralization of script tags)", "neutral",
-    'int main() { println("<p>" + escape_html(taint("<script>x()</script>")) + "</p>"); return 0; }', "&lt;script&gt;")
+    'int main() { Html page = "<p>" + escape_html(taint("<script>x()</script>")) + "</p>"; if (!write_html_file("/dev/null", page)) { return 1; } println("neutralised"); return 0; }', "neutralised",
+    "The escaped value is accepted only by the matching HTML sink; the script markup is stored as text, not executable markup.")
 add(88, "Argument injection", "reject",
     'int main() { run("git", "clone", taint("--upload-pack=touch /tmp/pwned")); return 0; }', "CWE-88")
 add(89, "SQL injection", "reject",
@@ -239,24 +240,58 @@ add(99, "Resource injection", "reject",
 add(113, "HTTP response splitting", "na", note="No HTTP facility yet; header output would follow the CWE-93 rule.")
 add(116, "Improper encoding or escaping of output", "reject",
     'int main() { string csv = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", csv); return 0; }', "CWE-116",
-    "Escaped text is typed by its context (Html, LogText) and cannot pass as a plain string.")
-add(116, "Improper encoding: HTML-escaped text written into a CSV file", "gap",
-    'int main() { Html cell = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", cell); return 0; }',
-    note="write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap.")
+    "Escaped text is typed by its context (Html, LogText, CsvText); matching file sinks and the terminal LogText sink enforce the output context.")
+add(116, "Improper encoding: HTML-escaped text written into a CSV file", "reject",
+    'int main() { Html cell = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", cell); return 0; }', "CWE-116",
+    note="format-agnostic write_file() rejects context-encoded Html, LogText and CsvText; JSON fragments remain untyped and are recorded as a separate CWE-116 gap.")
+add(116, "Improper encoding: JSON-escaped fragment written into a CSV file", "gap",
+    'int main() { string cell = escape_json(taint("=cmd|\' /C calc\'!A0")); bool ok = write_file("out.csv", cell); return 0; }',
+    note="escape_json() still returns a plain string fragment for the LSP and Shroud serializers, so the format-agnostic write_file() cannot distinguish it from trusted text. JSON fragment typing and a typed JSON sink are tracked in issue #250.")
 add(117, "Improper output neutralization for logs", "reject",
     'int main() { println("login failed: " + taint("bob\\nINFO admin ok")); return 0; }', "CWE-117")
 add(117, "Log injection (attempt after escape_log)", "neutral",
     'int main() { println("login failed: " + escape_log(taint("bob\\nINFO admin ok"))); return 0; }', "bob\\x0aINFO")
+add(117, "Log injection via JSON-escaped C1 control", "neutral",
+    'int main() { Tainted c1 = taint_char(194) + taint_char(155); println(escape_json(c1)); return 0; }', r"\u009b",
+    "escape_json() escapes terminal-hostile Unicode (C1 and bidi controls) as JSON Unicode escapes, so no terminal control byte reaches println().")
 add(643, "XPath injection", "na", note="No XPath facility.")
 add(652, "XQuery injection", "na", note="No XQuery facility.")
 add(611, "XML external entity reference (XXE)", "absent", XML)
 add(776, "XML entity expansion (billion laughs)", "absent", XML)
 add(917, "Expression language injection", "absent", EVAL)
 add(1236, "CSV formula injection", "reject",
-    'int main() { Tainted cell = taint("=HYPERLINK(\\"http://evil\\")"); bool ok = write_file("export.csv", "name\\n" + cell); return 0; }', "escape_csv",
-    "Untrusted text cannot be written to a file unchanged.")
+    'int main() { Tainted cell = taint("=HYPERLINK(\\"http://evil\\")"); bool ok = write_csv_file("export.csv", cell); return 0; }', "CWE-20",
+    "The typed CSV sink rejects untrusted cells until they are converted with escape_csv().")
 add(1236, "CSV formula injection (attempt after escape_csv)", "neutral",
-    'int main() { println(escape_csv(taint("=HYPERLINK(1)"))); return 0; }', "\"'=HYPERLINK(1)\"")
+    'int main() { if (!write_csv_file("/dev/stdout", escape_csv(taint("=HYPERLINK(1)")))) { return 1; } return 0; }', "\"'=HYPERLINK(1)\"",
+    "The matching CSV sink emits a quoted field with an apostrophe prefix for the ASCII formula leader; spreadsheet-client behaviour requires separate validation.")
+add(1236, "CSV formula injection hidden by leading spaces", "neutral",
+    'int main() { if (!write_csv_file("/dev/stdout", escape_csv(taint(" =1+1")))) { return 1; } return 0; }', "\"' =1+1\"",
+    "Formula detection scans past leading ASCII spaces and prefixes the whole CSV field.")
+add(1236, "CSV formula injection via full-width leaders", "neutral",
+    'int main() { CsvText row = escape_csv(taint("＝1+1")) + "," + escape_csv(taint("＋1+1")) + "," + escape_csv(taint("－1+1")) + "," + escape_csv(taint("＠SUM(1,1)")); if (!write_csv_file("/dev/stdout", row)) { return 1; } return 0; }',
+    "\"'＝1+1\",\"'＋1+1\",\"'－1+1\",\"'＠SUM(1,1)\"",
+    "All four full-width formula leaders are prefixed in emitted CSV bytes; client interpretation still requires validation.")
+add(1236, "CSV formula injection via leading line feed", "neutral",
+    'int main() { if (!write_csv_file("/dev/stdout", escape_csv(taint_char(10) + taint("=1+1")))) { return 1; } return 0; }', "\"'\n=1+1\"",
+    "A leading line feed is a formula-triggering control and is prefixed before the field contents.")
+add(1236, "CSV formula injection via plus, minus and at leaders", "neutral",
+    'int main() { CsvText row = escape_csv(taint("+1+1")) + "," + escape_csv(taint("-1+1")) + "," + escape_csv(taint("@SUM(1,1)")); if (!write_csv_file("/dev/stdout", row)) { return 1; } return 0; }',
+    "\"'+1+1\",\"'-1+1\",\"'@SUM(1,1)\"",
+    "ASCII plus, minus and at-sign formula leaders are prefixed in emitted CSV bytes.")
+add(1236, "CSV formula injection via leading tab and carriage return", "neutral",
+    'int main() { CsvText row = escape_csv(taint_char(9) + taint("=1+1")) + "," + escape_csv(taint_char(13) + taint("=1+1")); if (!write_csv_file("/dev/stdout", row)) { return 1; } return 0; }',
+    "\"'\t=1+1\",\"'\r=1+1\"",
+    "Leading tab and carriage-return formula triggers are prefixed before the field contents.")
+add(20, "Untrusted input passed directly to a typed HTML file sink", "reject",
+    'int main() { Tainted input = taint("<script>x()</script>"); bool ok = write_html_file("out.html", input); return 0; }', "CWE-20",
+    note="Typed output sinks require context-encoded values; untrusted input must pass through the matching escaper.")
+add(116, "Improper encoding: HTML-encoded text sent to terminal output", "reject",
+    'int main() { Html html = escape_html(taint("<img src=x>")); println(html); return 0; }', "CWE-116",
+    note="Terminal output is a log context; only LogText is accepted by print()/println().")
+add(116, "Improper encoding: CSV-encoded text sent to terminal output", "reject",
+    'int main() { CsvText csv = escape_csv(taint("=1+1")); println(csv); return 0; }', "CWE-116",
+    note="CSV encoding is not log encoding; only LogText is accepted by print()/println().")
 add(1333, "Inefficient regular expression complexity (ReDoS)", "absent", REGEX)
 add(185, "Incorrect regular expression", "absent", REGEX)
 
@@ -305,8 +340,10 @@ add(250, "Execution with unnecessary privileges", "na", note="Deployment concern
 # ---------------------------------------------------------------- cryptography and randomness
 add(256, "Plaintext storage of a password", "reject",
     'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }', "CWE-20")
-add(257, "Storing passwords in a recoverable format", "reject",
-    'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", escape_html(pw)); } return 0; }', "CWE-256")
+# An innocuous alias exposes the provenance gap; name-based heuristics are not provenance tracking.
+add(257, "Storing passwords in a recoverable format", "gap",
+    'int main() { if (let x = read_line()) { bool ok = write_log_file("users.log", escape_log(x)); } return 0; }',
+    note="Password provenance is not yet tracked: context-safe logging still stores a recoverable password. This is an explicit follow-up, not a compiler-prevented weakness.")
 add(259, "Use of hard-coded password", "reject", "int main() { string admin_password = \"letmein\"; return 0; }", "CWE-798")
 add(798, "Use of hard-coded credentials", "reject",
     "struct Client { string api_key; }\nint main() { Client c = new Client{api_key: \"sk_live_42\"}; return 0; }", "CWE-798")
@@ -338,15 +375,21 @@ add(335, "Incorrect usage of seeds in PRNG", "absent", "int main() { srand(42); 
 add(338, "Use of cryptographically weak PRNG", "reject", RANDOM, "CWE-338")
 add(916, "Use of password hash with insufficient computational effort", "reject",
     "int main() { if (let pw = read_line()) { string stored = hash(pw); } return 0; }", "CWE-916")
-add(916, "Weak password hash (password in an innocuously named variable)", "gap",
-    "int main() { if (let x = read_line()) { string stored = hash(x); } return 0; }",
-    note="Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap).")
-add(916, "Weak password hash (password passed through a method call)", "gap",
-    "int main() { if (let password = read_line()) { string stored = hash(password.slice(0, password.len())); } return 0; }",
-    note="The password-name heuristic stops at N_METHOD nodes, so wrapping a password in a string method may evade the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted.")
-add(916, "Weak password hash (password passed through a helper call)", "gap",
-    "Tainted identity(Tainted value) { return value; }\nint main() { if (let password = read_line()) { string stored = hash(identity(password)); } return 0; }",
-    note="The password-name heuristic stops at N_CALL nodes, so a helper that preserves Tainted can hide a password-like variable from the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted.")
+add(916, "Weak password hash (password in an innocuously named variable)", "reject",
+    "int main() { if (let x = read_line()) { string stored = hash(x); } return 0; }", "CWE-916",
+    note="hash() and hash_verify() reject Tainted input regardless of variable name; explicit trust is reserved for reviewed non-password integrity data.")
+add(916, "Weak password hash (password passed through a method call)", "reject",
+    "int main() { if (let password = read_line()) { string stored = hash(password.slice(0, password.len())); } return 0; }", "CWE-916",
+    note="Password-name inspection now traverses method receivers and arguments; the method-wrapped password is rejected.")
+add(916, "Weak password hash (password passed through a helper call)", "reject",
+    "Tainted identity(Tainted value) { return value; }\nint main() { if (let password = read_line()) { string stored = hash(identity(password)); } return 0; }", "CWE-916",
+    note="Tainted provenance is preserved through this helper call and rejected at the fast-hash sink.")
+add(916, "Fast hash verification of Tainted input", "reject",
+    'int main() { if (let input = read_line()) { bool ok = hash_verify(input, hash("expected")); } return 0; }', "CWE-916",
+    note="hash_verify() is also a fast unsalted operation and rejects Tainted input; use verify_password() for passwords.")
+add(916, "Password Secret passed through an innocuous alias to hash_verify", "gap",
+    'int main() { if (let s = secret_env("PASSWORD")) { bool ok = hash_verify(s, hash("candidate")); } return 0; }',
+    note="hash_verify() permits generic Secret values for non-password credentials. Secret does not distinguish a human password from a token, and the innocuous alias hides the environment name. A first-class Password type and explicit token-verification contract are required.")
 add(759, "Use of a one-way hash without a salt", "reject",
     "string store(Tainted password) { return hash(password); }" + MAIN, "CWE-916")
 add(760, "Use of a one-way hash with a predictable salt", "reject",
@@ -616,9 +659,9 @@ add(79, "Cross-site scripting (escaped text in a URL attribute)", "reject",
     'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<a href=\\"" + escape_html(t) + "\\">x</a>"); } return 0; }', "CWE-79")
 add(79, "Cross-site scripting (escaped text in a script block)", "reject",
     'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<script>var n = \'" + escape_html(t) + "\';</script>"); } return 0; }', "CWE-79")
-add(79, "Cross-site scripting (Html assembled across separate statements)", "gap",
-    'int main() { if (let t = read_line()) { Html v = escape_html(t); Html page = "<img src=" + v + ">"; bool ok = write_file("p.html", page); } return 0; }',
-    note="The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap.")
+add(79, "Cross-site scripting (Html assembled across separate statements)", "reject",
+    'int main() { if (let t = read_line()) { Html v = escape_html(t); Html page = "<img src=" + v + ">"; bool ok = write_file("p.html", page); } return 0; }', "CWE-116",
+    "The generic file sink rejects context-encoded Html. Context-aware templates across statements remain unsupported, but this attempted path fails closed.")
 add(1007, "Insufficient visual distinction of homoglyphs and invisible characters (Trojan Source)", "reject",
     "int main() { bool admin = false; /* \u202e } \u2066if (admin)\u2069 \u2066 */ return 0; }", "CWE-1007",
     "Bidirectional controls and zero-width characters are rejected anywhere in source (CVE-2021-42574).")

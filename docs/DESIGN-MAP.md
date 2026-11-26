@@ -969,6 +969,11 @@ Standing commitments, every release:
   No release is published otherwise.
 - **CWE tracking:** when MITRE publishes a new CWE version or Top 25 list, new code-level
   entries are added to the atlas with an attack attempt and a verdict before the next release.
+- **Executable vulnerability-prevention research:** the programme at
+  [assurance/VULNERABILITY-PREVENTION-PROGRAMME.md](assurance/VULNERABILITY-PREVENTION-PROGRAMME.md)
+  defines per-CWE properties, adversarial bypass tests, an evidence ladder and a real-world
+  CVE benchmark. PR #238 is a draft research increment: its 255-weakness / 304-attempt atlas
+  and typed-output changes are not release-validated until exact-head CI and independent review.
 - **Gap burn-down:** every remaining gap in the atlas has an owner milestone; a release
   may not add a new gap without recording it.
 - **Vulnerability reporting:** a published disclosure policy (`SECURITY.md`), private
@@ -1063,6 +1068,17 @@ classes are costly and assurance must be demonstrated. Work needed for that audi
 | AI review non-determinism | advisory by default; cached and recorded verdicts in gate mode |
 | Scope | ship each version usable on its own; never break self-hosting |
 | Kernel work outgrows the project | measure first (K0); port only a few high-CVE subsystems (K2); a microkernel rather than a Linux rewrite (K3) |
+
+### Vulnerability-prevention research programme
+
+The security claims are being converted into a reproducible research programme with four
+workstreams: a per-attempt CWE evidence specification, closure of known type/provenance
+gaps, proofs connected to implementation boundaries, and real-world CVE case studies.
+The programme and its evidence gates are defined in
+[assurance/VULNERABILITY-PREVENTION-PROGRAMME.md](assurance/VULNERABILITY-PREVENTION-PROGRAMME.md),
+with the normative [CWE prevention specification](assurance/CWE-PREVENTION-SPEC.md)
+and [CVE benchmark protocol](research/CVE-BENCHMARK.md). Current atlas verdicts remain
+unchanged until implementation and test evidence justify a reclassification.
 
 ## 12. Shroud: cross-platform GUI
 
