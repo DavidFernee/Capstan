@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "4c9a95b6a961cc06ec1f51966e73524b2dce8f7e"
+    "commit": "7d9b264d8d5a988df1c4da4e0595223de8e55b4c"
   },
   "claims": [
     {
@@ -40,8 +40,8 @@
             "docs/assurance/MEMORY-SAFETY.md"
           ],
           "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
-          "revision": "75d03db1a146f664b352b044f4ab70ce46caaa33",
-          "notes": "Documents the intended language guarantee and the memory-safety boundary."
+          "revision": "7d9b264d8d5a988df1c4da4e0595223de8e55b4c",
+          "notes": "Reviewed at this source snapshot. The output-context checker changes do not alter the memory/indexing bounds contract; exact-head platform validation remains pending."
         },
         {
           "kind": "test",
@@ -53,13 +53,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "75d03db1a146f664b352b044f4ab70ce46caaa33",
-          "notes": "Fixtures are present in this snapshot. No passing run is asserted by this record."
+          "revision": "fd705343c72eca501a00ab252d639520ce11b25b",
+          "notes": "The memory/indexing regression fixtures remain present. This record does not assert a passing exact-head test run."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "75d03db1a146f664b352b044f4ab70ce46caaa33"
+        "reviewed_commit": "fd705343c72eca501a00ab252d639520ce11b25b"
       },
       "covers": [
         "compiler/main.cap",
@@ -91,14 +91,16 @@
         "verification/ccam_calls.cap",
         "verification/ccam_lowering.cap",
         "verification/ccam_native_x64.cap",
-        "verification/lean/CapstanVerification/MultiFunction.lean"
+        "verification/lean/CapstanVerification/MultiFunction.lean",
+        "docs/architecture/LANGUAGE-COMPATIBILITY.md"
       ],
       "limitations": [
         "The Lean machine is a restricted single-frame model and does not yet formalise the executable multi-function call-frame evaluator.",
         "The formal validator is a conservative in-memory single-frame proof profile, not the complete normative CCAM validator or JSON decoder.",
         "Source checker soundness and source-to-CCAM semantic preservation are not established.",
         "The native register bridge proves mathematical representation lemmas, not full concrete evaluator or native code refinement.",
-        "Strings, heap, collections, optionals, taint, secrets, grants, IO, concurrency and FFI are outside this profile."
+        "Strings, heap, collections, optionals, taint, secrets, grants, IO, concurrency and FFI are outside this profile.",
+        "The proposed reference-identity, collector and generational-handle models added in #426 do not extend the supported C-free scalar profile and do not establish compiler/runtime refinement."
       ],
       "evidence": [
         {
@@ -107,11 +109,12 @@
           "artifacts": [
             "docs/assurance/C-FREE-TYPE-SAFETY.md",
             "docs/architecture/CCAM.md",
-            "docs/architecture/COMPILER-CCAM-LOWERING.md"
+            "docs/architecture/COMPILER-CCAM-LOWERING.md",
+            "docs/architecture/LANGUAGE-COMPATIBILITY.md"
           ],
           "procedure": "Review the stated profile, proof ladder, exclusions and implementation correspondence boundaries.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
-          "notes": "C-free assurance contract; proposed, not a claim of completed end-to-end verification."
+          "revision": "7d9b264d8d5a988df1c4da4e0595223de8e55b4c",
+          "notes": "C-free assurance contract and explicit compatibility exclusions, including the proposed reference-semantics work; not a claim of completed end-to-end verification."
         },
         {
           "kind": "mechanical-proof",
@@ -135,11 +138,12 @@
           "artifacts": [
             "verification/ccam_core_tests.cap",
             "verification/ccam_lowering.cap",
-            "tests/run.sh"
+            "tests/run.sh",
+            "verification/ccam_core.cap"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
-          "notes": "This record does not assert a passing run for this assurance profile."
+          "revision": "7d9b264d8d5a988df1c4da4e0595223de8e55b4c",
+          "notes": "Test plan includes the current CCAM core and source-lowering tests, including newly added reference-identity regression cases. These tests do not promote structs into the supported C-free scalar profile; no exact-head passing run is asserted."
         }
       ],
       "review": {

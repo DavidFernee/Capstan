@@ -148,7 +148,7 @@ section "Capstan-native verification: Bosun bounded transaction-history oracle"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/bosuns_locker_history.cap" 2>&1)"; then
   ok "serial-order witnesses, real-time constraints, write-skew rejection and bounded inconclusive results"
 else
-  bad "Bosun transaction-history oracle" "$out"
+  bad "Bosun bounded transaction-history oracle" "$out"
 fi
 
 section "Capstan-native verification: bounded concurrency reference machine"
@@ -426,8 +426,15 @@ else
 fi
 
 section "Capstan-native repository inventory"
+rm -f /tmp/capstan-inventory.csv
 if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1)"; then
-  ok "inventory purpose/language classification, binary detection, physical-line counting and aggregate totals"
+  if [[ -s /tmp/capstan-inventory.csv ]] &&
+      grep -Fq '"path","classification","language","lines","bytes","status"' /tmp/capstan-inventory.csv &&
+      grep -Fq '"SUMMARY"' /tmp/capstan-inventory.csv; then
+    ok "inventory purpose/language classification, binary detection, physical-line counting, summary and typed CSV output"
+  else
+    bad "Capstan-native repository inventory" "program ran but typed CSV report was absent or malformed"
+  fi
 else
   bad "Capstan-native repository inventory" "$out"
 fi

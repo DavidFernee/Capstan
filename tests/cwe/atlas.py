@@ -215,8 +215,10 @@ add(20, "Laundering untrusted bytes through a struct field", "reject",
 add(20, "Laundering untrusted bytes through control flow", "logic",
     'string launder(Tainted t) { string out = ""; for (int i = 0; i < t.len(); i += 1) { if (t.at(i) == 60) { out += "<"; } else { out += "a"; } } return out; }' + MAIN,
     note="Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision.")
+# Terminal output is a LogText sink; Html and CsvText require explicit escape_log() re-encoding.
+# The remaining reference-identity and allocator proofs are research models, not output-sink proofs.
 add(80, "Basic XSS (improper neutralization of script tags)", "neutral",
-    'int main() { println("<p>" + escape_html(taint("<script>x()</script>")) + "</p>"); return 0; }', "&lt;script&gt;")
+    'int main() { println(escape_log("<p>" + escape_html(taint("<script>x()</script>")) + "</p>")); return 0; }', "&lt;script&gt;")
 add(88, "Argument injection", "reject",
     'int main() { run("git", "clone", taint("--upload-pack=touch /tmp/pwned")); return 0; }', "CWE-88")
 add(89, "SQL injection", "reject",
@@ -240,9 +242,26 @@ add(113, "HTTP response splitting", "na", note="No HTTP facility yet; header out
 add(116, "Improper encoding or escaping of output", "reject",
     'int main() { string csv = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", csv); return 0; }', "CWE-116",
     "Escaped text is typed by its context (Html, LogText) and cannot pass as a plain string.")
-add(116, "Improper encoding: HTML-escaped text written into a CSV file", "gap",
-    'int main() { Html cell = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", cell); return 0; }',
-    note="write_file() accepts Html because web pages are files too, and the compiler cannot know the file's format. Typed file writers (CSV, HTML, JSON) are on the roadmap.")
+add(116, "Improper encoding: JSON-escaped fragment written into a CSV file", "gap",
+    'int main() { string cell = escape_json(taint("=cmd|\' /C calc\'!A0")); bool ok = write_file("out.csv", cell); return 0; }',
+    note="escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250.")
+# Typed CSV-context regressions: matching sink, cross-context use, and taint preservation.
+add(116, "HTML context passed to CSV sink", "reject",
+    'int main() { Html cell = escape_html(taint("=1+1")); bool ok = write_csv_file("out.csv", cell); return 0; }', "CWE-116")
+add(116, "CSV context passed to HTML sink", "reject",
+    'int main() { CsvText cell = escape_csv(taint("=1+1")); bool ok = write_html_file("out.html", cell); return 0; }', "CWE-116")
+add(116, "CSV context passed to terminal output", "reject",
+    'int main() { CsvText cell = escape_csv(taint("=1+1")); println(cell); return 0; }', "CWE-116")
+add(116, "Plain string passed to CSV sink", "reject",
+    'int main() { string cell = "ordinary"; bool ok = write_csv_file("out.csv", cell); return 0; }', "CWE-116")
+add(116, "HTML context passed to format-agnostic file sink", "reject",
+    'int main() { Html cell = escape_html(taint("x")); bool ok = write_file("out.html", cell); return 0; }', "CWE-116")
+add(116, "Mixed CSV and HTML contexts concatenated", "reject",
+    'int main() { CsvText csv = escape_csv(taint("cell")); Html html = escape_html(taint("markup")); CsvText invalid = csv + html; return 0; }', "CWE-116")
+add(116, "CSV context erased by assignment to string", "reject",
+    'int main() { string raw = escape_csv(taint("cell")); return 0; }', "CWE-116")
+add(116, "Tainted value concatenated into CSV context", "reject",
+    'int main() { CsvText csv = escape_csv(taint("cell")); CsvText invalid = csv + taint("untrusted"); return 0; }', "CWE-116")
 add(117, "Improper output neutralization for logs", "reject",
     'int main() { println("login failed: " + taint("bob\\nINFO admin ok")); return 0; }', "CWE-117")
 add(117, "Log injection (attempt after escape_log)", "neutral",
@@ -253,10 +272,10 @@ add(611, "XML external entity reference (XXE)", "absent", XML)
 add(776, "XML entity expansion (billion laughs)", "absent", XML)
 add(917, "Expression language injection", "absent", EVAL)
 add(1236, "CSV formula injection", "reject",
-    'int main() { Tainted cell = taint("=HYPERLINK(\\"http://evil\\")"); bool ok = write_file("export.csv", "name\\n" + cell); return 0; }', "escape_csv",
+    'int main() { Tainted cell = taint("=HYPERLINK(\\\"http://evil\\\")"); bool ok = write_csv_file("export.csv", cell); return 0; }', "escape_csv",
     "Untrusted text cannot be written to a file unchanged.")
 add(1236, "CSV formula injection (attempt after escape_csv)", "neutral",
-    'int main() { println(escape_csv(taint("=HYPERLINK(1)"))); return 0; }', "\"'=HYPERLINK(1)\"")
+    'int main() { CsvText csv = escape_csv(taint("=HYPERLINK(1)")); bool ok = write_csv_file("/tmp/capstan-cwe1236.csv", csv); println(escape_log(csv)); return 0; }', "\"'=HYPERLINK(1)\"")
 add(1333, "Inefficient regular expression complexity (ReDoS)", "absent", REGEX)
 add(185, "Incorrect regular expression", "absent", REGEX)
 
@@ -617,7 +636,7 @@ add(79, "Cross-site scripting (escaped text in a URL attribute)", "reject",
 add(79, "Cross-site scripting (escaped text in a script block)", "reject",
     'int main() { if (let t = read_line(65536)) { bool ok = write_file("p.html", "<script>var n = \'" + escape_html(t) + "\';</script>"); } return 0; }', "CWE-79")
 add(79, "Cross-site scripting (Html assembled across separate statements)", "gap",
-    'int main() { if (let t = read_line(65536)) { Html v = escape_html(t); Html page = "<img src=" + v + ">"; bool ok = write_file("p.html", page); } return 0; }',
+    'int main() { if (let t = read_line(65536)) { Html v = escape_html(t); Html page = "<img src=" + v + ">"; bool ok = write_html_file("p.html", page); } return 0; }',
     note="The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap.")
 add(1007, "Insufficient visual distinction of homoglyphs and invisible characters (Trojan Source)", "reject",
     "int main() { bool admin = false; /* \u202e } \u2066if (admin)\u2069 \u2066 */ return 0; }", "CWE-1007",
