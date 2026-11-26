@@ -1174,3 +1174,12 @@ The initial target is single-node strict serializability and durable commit. The
 concurrency-control algorithm and physical index/storage layout remain open pending
 formal analysis and reproducible benchmarks. These documents are proposals, not claims
 of an implemented or verified database.
+
+
+## Construction-enforced correctness
+
+The cross-platform construction-safety acceptance contract is
+[`docs/architecture/CONSTRUCTION-SAFETY-CONTRACT.md`](architecture/CONSTRUCTION-SAFETY-CONTRACT.md).
+It distinguishes unrepresentable states, uncallable operations, compiler-proved obligations
+and unavoidable runtime guards. It is a normative design constraint; implementation and
+evidence remain staged and must not be inferred from the contract itself.
