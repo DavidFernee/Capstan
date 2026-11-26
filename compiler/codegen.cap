@@ -343,6 +343,9 @@ string builtin_c(string f) {
     if (f == "int_to_str") { return "cap_int_to_str"; }
     if (f == "char_str") { return "cap_char_str"; }
     if (f == "read_file") { return "cap_read_file"; }
+    if (f == "workspace_open") { return "cap_workspace_open"; }
+    if (f == "workspace_read_file") { return "cap_workspace_read_file"; }
+    if (f == "workspace_close") { return "cap_workspace_close"; }
     if (f == "read_line") { return "cap_read_line"; }
     if (f == "read_bytes") { return "cap_read_bytes"; }
     if (f == "flush") { return "cap_flush"; }
@@ -376,7 +379,7 @@ string builtin_c(string f) {
 }
 
 bool builtin_needs_loc(string f) {
-    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes" || f == "taint_char";
+    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes" || f == "taint_char" || f == "workspace_read_file";
 }
 
 string gen_call(Gen g, Node e) {
