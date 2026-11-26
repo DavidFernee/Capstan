@@ -278,6 +278,20 @@ theorem updateFrameRegister_preserves_length
       cases h
       exact replaceRegister_preserves_length _ _ _ _ hreplace
 
+/-- Successful frame-register updates preserve control-flow identity. -/
+theorem updateFrameRegister_preserves_control_fields
+    (frame next : CCAMFrame) (index : Nat) (value : Val)
+    (h : updateFrameRegister frame index value = .ok next) :
+    next.functionIndex = frame.functionIndex ∧ next.pc = frame.pc := by
+  unfold updateFrameRegister at h
+  cases hreplace : replaceRegister frame.registers index value with
+  | none =>
+      simp [hreplace] at h
+  | some registers =>
+      simp [hreplace] at h
+      cases h
+      exact ⟨rfl, rfl⟩
+
 /-- Validate the callee's result against the caller's saved return contract. -/
 def validateFrameReturn (continuation : CallerContinuation)
     (result : Option Val) : Except Trap (Option (Nat × Val)) :=
@@ -393,16 +407,10 @@ theorem returnFromCallee_restores_continuation
                           have hfields :
                               updatedCaller.functionIndex = caller.functionIndex ∧
                               updatedCaller.pc = continuation.resumePC := by
-                            unfold updateFrameRegister at hupdate
-                            cases hregisters : replaceRegister
-                                ({ caller with pc := continuation.resumePC }).registers
-                                destination value with
-                            | none =>
-                                simp [hregisters] at hupdate
-                            | some registers =>
-                                simp [hregisters] at hupdate
-                                cases hupdate
-                                simp
+                            have hpreserved := updateFrameRegister_preserves_control_fields
+                              { caller with pc := continuation.resumePC }
+                              updatedCaller destination value hupdate
+                            exact ⟨hpreserved.1, hpreserved.2⟩
                           rcases hfields with ⟨hfunction, hpc⟩
                           simp [hfunction, hpc]
 
