@@ -1,0 +1,15 @@
+bool choose_provenance_branch() { return true; }
+
+int main() {
+    if (choose_provenance_branch()) {
+        if (let input = read_line()) {
+            int item = input.at(0);
+            if (item == 0) { println("input"); }
+        }
+    }
+    if (choose_provenance_branch()) {
+        int item = 65;
+        println(char_str(item));
+    }
+    return 0;
+}
