@@ -1,0 +1,942 @@
+// Experimental CCAM region-heap reference model.
+// This is a Capstan-written prototype, not part of normative CCAM v0.1 and
+// not yet connected to the executable machine, source lowerer or native backend.
+// It deliberately models a process-lifetime arena: no individual free or GC.
+
+const int CCAM_HEAP_VALUE_INT = 1;
+const int CCAM_HEAP_VALUE_BOOL = 2;
+const int CCAM_HEAP_VALUE_REF = 3;
+
+const int CCAM_HEAP_OBJECT_RECORD = 1;
+const int CCAM_HEAP_OBJECT_ARRAY = 2;
+const int CCAM_HEAP_OBJECT_BYTES = 3;
+
+const int CCAM_HEAP_RECORD_HEADER_BYTES = 16;
+const int CCAM_HEAP_ARRAY_HEADER_BYTES = 24;
+const int CCAM_HEAP_BYTES_HEADER_BYTES = 8;
+const int CCAM_HEAP_SLOT_BYTES = 16;
+const int CCAM_HEAP_MAX_BYTES = 67108864;
+const int CCAM_HEAP_MAX_OBJECTS = 65536;
+const int CCAM_HEAP_MAX_FIELDS = 4096;
+const int CCAM_HEAP_MAX_ARRAY_CAPACITY = 65536;
+
+struct CCAMHeapValue {
+    int kind;
+    int int_value;
+    bool bool_value;
+    int ref_id;
+    int ref_heap_token;
+}
+
+struct CCAMHeapLayout {
+    int type_id;
+    List<int> field_types;
+    // Zero permits any live heap object; positive IDs require that record descriptor.
+    List<int> field_ref_type_ids;
+    List<bool> field_mutable;
+}
+
+struct CCAMHeapObject {
+    int id;
+    int kind;
+    int descriptor_id;
+    List<int> field_types;
+    List<int> field_ref_type_ids;
+    List<bool> field_mutable;
+    List<CCAMHeapValue> fields;
+    List<bool> field_initialised;
+    int element_type;
+    // Zero permits any live heap object; positive IDs require that record descriptor.
+    int element_ref_type_id;
+    int capacity;
+    int length;
+    List<CCAMHeapValue> elements;
+    List<bool> element_initialised;
+    string byte_data;
+}
+
+opaque struct CCAMHeap {
+    List<CCAMHeapObject> objects;
+    int heap_token;
+    int max_bytes;
+    int max_objects;
+    int bytes_used;
+    int max_work;
+    int work_used;
+    int max_temporary_bytes;
+    int temporary_peak_bytes;
+    int next_id;
+}
+
+struct CCAMHeapCreateResult {
+    bool ok;
+    CCAMHeap heap;
+    string error;
+}
+
+struct CCAMHeapRefResult {
+    bool ok;
+    int ref_id;
+    int heap_token;
+    string trap;
+}
+
+struct CCAMHeapValueResult {
+    bool ok;
+    CCAMHeapValue value;
+    string trap;
+}
+
+struct CCAMHeapIntResult {
+    bool ok;
+    int value;
+    string trap;
+}
+
+struct CCAMHeapStringResult {
+    bool ok;
+    string value;
+    string trap;
+}
+
+int ccam_heap_max_int(int a, int b) {
+    if (a > b) { return a; }
+    return b;
+}
+
+CCAMHeapValue ccam_heap_int(int value) {
+    return new CCAMHeapValue{kind: CCAM_HEAP_VALUE_INT, int_value: value, bool_value: false, ref_id: 0, ref_heap_token: 0};
+}
+
+CCAMHeapValue ccam_heap_bool(bool value) {
+    return new CCAMHeapValue{kind: CCAM_HEAP_VALUE_BOOL, int_value: 0, bool_value: value, ref_id: 0, ref_heap_token: 0};
+}
+
+CCAMHeapValue ccam_heap_ref(int heap_token, int ref_id) {
+    return new CCAMHeapValue{kind: CCAM_HEAP_VALUE_REF, int_value: 0, bool_value: false, ref_id: ref_id, ref_heap_token: heap_token};
+}
+
+CCAMHeapValueResult ccam_heap_value_error(string trap) {
+    return new CCAMHeapValueResult{ok: false, value: ccam_heap_int(0), trap: trap};
+}
+
+CCAMHeapValueResult ccam_heap_value_ok(CCAMHeapValue value) {
+    return new CCAMHeapValueResult{ok: true, value: value, trap: ""};
+}
+
+CCAMHeapIntResult ccam_heap_int_error(string trap) {
+    return new CCAMHeapIntResult{ok: false, value: 0, trap: trap};
+}
+
+CCAMHeapIntResult ccam_heap_int_ok(int value) {
+    return new CCAMHeapIntResult{ok: true, value: value, trap: ""};
+}
+
+CCAMHeapStringResult ccam_heap_string_error(string trap) {
+    return new CCAMHeapStringResult{ok: false, value: "", trap: trap};
+}
+
+CCAMHeapStringResult ccam_heap_string_ok(string value) {
+    return new CCAMHeapStringResult{ok: true, value: value, trap: ""};
+}
+
+CCAMHeapRefResult ccam_heap_ref_error(string trap) {
+    return new CCAMHeapRefResult{ok: false, ref_id: 0, heap_token: 0, trap: trap};
+}
+
+CCAMHeapRefResult ccam_heap_ref_ok(int heap_token, int ref_id) {
+    return new CCAMHeapRefResult{ok: true, ref_id: ref_id, heap_token: heap_token, trap: ""};
+}
+
+CCAMHeapCreateResult ccam_heap_create_bounded(
+    int heap_token, int max_bytes, int max_objects,
+    int max_work, int max_temporary_bytes
+) {
+    if (heap_token <= 0 || max_bytes < 0 || max_bytes > CCAM_HEAP_MAX_BYTES ||
+        max_objects < 0 || max_objects > CCAM_HEAP_MAX_OBJECTS ||
+        max_work < 0 || max_work > 134217728 ||
+        max_temporary_bytes < 0 || max_temporary_bytes > CCAM_HEAP_MAX_BYTES) {
+        return new CCAMHeapCreateResult{
+            ok: false,
+            heap: new CCAMHeap{
+                objects: new List<CCAMHeapObject>(), heap_token: 0,
+                max_bytes: 0, max_objects: 0, bytes_used: 0,
+                max_work: 0, work_used: 0,
+                max_temporary_bytes: 0, temporary_peak_bytes: 0, next_id: 1
+            },
+            error: "invalid_heap_limits"
+        };
+    }
+    return new CCAMHeapCreateResult{
+        ok: true,
+        heap: new CCAMHeap{
+            objects: new List<CCAMHeapObject>(),
+            heap_token: heap_token,
+            max_bytes: max_bytes,
+            max_objects: max_objects,
+            bytes_used: 0,
+            max_work: max_work,
+            work_used: 0,
+            max_temporary_bytes: max_temporary_bytes,
+            temporary_peak_bytes: 0,
+            next_id: 1
+        },
+        error: ""
+    };
+}
+
+CCAMHeapCreateResult ccam_heap_create(int heap_token, int max_bytes, int max_objects) {
+    return ccam_heap_create_bounded(
+        heap_token, max_bytes, max_objects, 134217728, CCAM_HEAP_MAX_BYTES
+    );
+}
+
+bool ccam_heap_valid_value_type(int value_type) {
+    return value_type == CCAM_HEAP_VALUE_INT ||
+        value_type == CCAM_HEAP_VALUE_BOOL ||
+        value_type == CCAM_HEAP_VALUE_REF;
+}
+
+bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_type, int expected_ref_type_id) {
+    if (value.kind != expected_type) {
+        return false;
+    }
+    if (expected_type == CCAM_HEAP_VALUE_REF) {
+        int index = ccam_heap_object_index(heap, value.ref_heap_token, value.ref_id);
+        if (index < 0) { return false; }
+        if (expected_ref_type_id == 0) { return true; }
+        CCAMHeapObject target = heap.objects[index];
+        return target.kind == CCAM_HEAP_OBJECT_RECORD &&
+            target.descriptor_id == expected_ref_type_id;
+    }
+    return expected_ref_type_id == 0;
+}
+
+int ccam_heap_object_index(CCAMHeap heap, int heap_token, int ref_id) {
+    if (heap_token != heap.heap_token || ref_id <= 0 || ref_id > heap.objects.len()) {
+        return -1;
+    }
+    int index = ref_id - 1;
+    if (heap.objects[index].id != ref_id) {
+        return -1;
+    }
+    return index;
+}
+
+string ccam_heap_allocation_check(
+    CCAMHeap heap, int charge, int work_charge, int temporary_charge
+) {
+    if (charge < 0 || work_charge < 0 || temporary_charge < 0 ||
+        heap.bytes_used < 0 || heap.bytes_used > heap.max_bytes ||
+        heap.work_used < 0 || heap.work_used > heap.max_work ||
+        heap.temporary_peak_bytes < 0 ||
+        heap.temporary_peak_bytes > heap.max_temporary_bytes) {
+        return "invalid_heap_accounting";
+    }
+    if (heap.objects.len() >= heap.max_objects) {
+        return "object_limit";
+    }
+    if (charge > heap.max_bytes - heap.bytes_used) {
+        return "heap_limit";
+    }
+    if (work_charge > heap.max_work - heap.work_used) {
+        return "work_limit";
+    }
+    if (temporary_charge > heap.max_temporary_bytes) {
+        return "temporary_limit";
+    }
+    if (heap.next_id <= 0 || heap.next_id == 0x7FFFFFFFFFFFFFFF) {
+        return "object_id_limit";
+    }
+    return "";
+}
+
+CCAMHeapRefResult ccam_heap_alloc_record(CCAMHeap heap, CCAMHeapLayout layout) {
+    int count = layout.field_types.len();
+    if (layout.type_id <= 0 || count > CCAM_HEAP_MAX_FIELDS ||
+        layout.field_mutable.len() != count ||
+        (layout.field_ref_type_ids.len() != 0 && layout.field_ref_type_ids.len() != count)) {
+        return ccam_heap_ref_error("invalid_record_layout");
+    }
+    for (int i = 0; i < count; i += 1) {
+        if (!ccam_heap_valid_value_type(layout.field_types[i])) {
+            return ccam_heap_ref_error("invalid_record_field_type");
+        }
+        if (layout.field_types[i] == CCAM_HEAP_VALUE_REF) {
+            if (layout.field_ref_type_ids.len() != count ||
+                layout.field_ref_type_ids[i] < 0) {
+                return ccam_heap_ref_error("invalid_record_reference_type");
+            }
+        } else if (layout.field_ref_type_ids.len() == count &&
+            layout.field_ref_type_ids[i] != 0) {
+            return ccam_heap_ref_error("invalid_record_reference_type");
+        }
+    }
+    int charge = CCAM_HEAP_RECORD_HEADER_BYTES + count * CCAM_HEAP_SLOT_BYTES;
+    string admission = ccam_heap_allocation_check(
+        heap, charge, count + 1, count * CCAM_HEAP_SLOT_BYTES
+    );
+    if (admission != "") {
+        return ccam_heap_ref_error(admission);
+    }
+
+    List<int> field_types = new List<int>();
+    List<int> field_ref_type_ids = new List<int>();
+    List<bool> field_mutable = new List<bool>();
+    List<CCAMHeapValue> fields = new List<CCAMHeapValue>();
+    List<bool> field_initialised = new List<bool>();
+    for (int j = 0; j < count; j += 1) {
+        field_types.push(layout.field_types[j]);
+        int ref_type_id = 0;
+        if (layout.field_ref_type_ids.len() == count) {
+            ref_type_id = layout.field_ref_type_ids[j];
+        }
+        field_ref_type_ids.push(ref_type_id);
+        field_mutable.push(layout.field_mutable[j]);
+        fields.push(ccam_heap_int(0));
+        field_initialised.push(false);
+    }
+    int id = heap.next_id;
+    CCAMHeapObject object = new CCAMHeapObject{
+        id: id,
+        kind: CCAM_HEAP_OBJECT_RECORD,
+        descriptor_id: layout.type_id,
+        field_types: field_types,
+        field_ref_type_ids: field_ref_type_ids,
+        field_mutable: field_mutable,
+        fields: fields,
+        field_initialised: field_initialised,
+        element_type: 0,
+        element_ref_type_id: 0,
+        capacity: 0,
+        length: 0,
+        elements: new List<CCAMHeapValue>(),
+        element_initialised: new List<bool>(),
+        byte_data: ""
+    };
+    heap.objects.push(object);
+    heap.bytes_used += charge;
+    heap.work_used += count + 1;
+    heap.temporary_peak_bytes = ccam_heap_max_int(
+        count * CCAM_HEAP_SLOT_BYTES, heap.temporary_peak_bytes
+    );
+    heap.next_id += 1;
+    return ccam_heap_ref_ok(heap.heap_token, id);
+}
+
+CCAMHeapRefResult ccam_heap_alloc_typed_array(
+    CCAMHeap heap, int element_type, int element_ref_type_id, int capacity
+) {
+    if (!ccam_heap_valid_value_type(element_type) ||
+        element_ref_type_id < 0 ||
+        (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0) ||
+        capacity < 0 || capacity > CCAM_HEAP_MAX_ARRAY_CAPACITY) {
+        return ccam_heap_ref_error("invalid_array_layout");
+    }
+    int charge = CCAM_HEAP_ARRAY_HEADER_BYTES + capacity * CCAM_HEAP_SLOT_BYTES;
+    string admission = ccam_heap_allocation_check(
+        heap, charge, capacity + 1, capacity * CCAM_HEAP_SLOT_BYTES
+    );
+    if (admission != "") {
+        return ccam_heap_ref_error(admission);
+    }
+
+    List<CCAMHeapValue> elements = new List<CCAMHeapValue>();
+    List<bool> element_initialised = new List<bool>();
+    for (int i = 0; i < capacity; i += 1) {
+        elements.push(ccam_heap_int(0));
+        element_initialised.push(false);
+    }
+    int id = heap.next_id;
+    CCAMHeapObject object = new CCAMHeapObject{
+        id: id,
+        kind: CCAM_HEAP_OBJECT_ARRAY,
+        descriptor_id: 0,
+        field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(),
+        field_mutable: new List<bool>(),
+        fields: new List<CCAMHeapValue>(),
+        field_initialised: new List<bool>(),
+        element_type: element_type,
+        element_ref_type_id: element_ref_type_id,
+        capacity: capacity,
+        length: 0,
+        elements: elements,
+        element_initialised: element_initialised,
+        byte_data: ""
+    };
+    heap.objects.push(object);
+    heap.bytes_used += charge;
+    heap.work_used += capacity + 1;
+    heap.temporary_peak_bytes = ccam_heap_max_int(
+        capacity * CCAM_HEAP_SLOT_BYTES, heap.temporary_peak_bytes
+    );
+    heap.next_id += 1;
+    return ccam_heap_ref_ok(heap.heap_token, id);
+}
+
+CCAMHeapRefResult ccam_heap_alloc_array(CCAMHeap heap, int element_type, int capacity) {
+    return ccam_heap_alloc_typed_array(heap, element_type, 0, capacity);
+}
+
+CCAMHeapRefResult ccam_heap_alloc_bytes(CCAMHeap heap, string data) {
+    int length = data.len();
+    if (length < 0 || length > CCAM_HEAP_MAX_BYTES - CCAM_HEAP_BYTES_HEADER_BYTES) {
+        return ccam_heap_ref_error("invalid_bytes_size");
+    }
+    int charge = CCAM_HEAP_BYTES_HEADER_BYTES + length;
+    string admission = ccam_heap_allocation_check(
+        heap, charge, length, length
+    );
+    if (admission != "") {
+        return ccam_heap_ref_error(admission);
+    }
+    int id = heap.next_id;
+    CCAMHeapObject object = new CCAMHeapObject{
+        id: id,
+        kind: CCAM_HEAP_OBJECT_BYTES,
+        descriptor_id: 0,
+        field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(),
+        field_mutable: new List<bool>(),
+        fields: new List<CCAMHeapValue>(),
+        field_initialised: new List<bool>(),
+        element_type: 0,
+        element_ref_type_id: 0,
+        capacity: 0,
+        length: length,
+        elements: new List<CCAMHeapValue>(),
+        element_initialised: new List<bool>(),
+        byte_data: data
+    };
+    heap.objects.push(object);
+    heap.bytes_used += charge;
+    heap.work_used += length;
+    heap.temporary_peak_bytes = ccam_heap_max_int(length, heap.temporary_peak_bytes);
+    heap.next_id += 1;
+    return ccam_heap_ref_ok(heap.heap_token, id);
+}
+
+CCAMHeapRefResult ccam_heap_bytes_concat(CCAMHeap heap, int left_token, int left_id, int right_token, int right_id) {
+    int left_index = ccam_heap_object_index(heap, left_token, left_id);
+    int right_index = ccam_heap_object_index(heap, right_token, right_id);
+    if (left_index < 0 || right_index < 0) {
+        return ccam_heap_ref_error("invalid_reference");
+    }
+    CCAMHeapObject left = heap.objects[left_index];
+    CCAMHeapObject right = heap.objects[right_index];
+    if (left.kind != CCAM_HEAP_OBJECT_BYTES || right.kind != CCAM_HEAP_OBJECT_BYTES) {
+        return ccam_heap_ref_error("object_type_mismatch");
+    }
+    int left_length = left.byte_data.len();
+    int right_length = right.byte_data.len();
+    if (right_length > CCAM_HEAP_MAX_BYTES - CCAM_HEAP_BYTES_HEADER_BYTES ||
+        left_length > CCAM_HEAP_MAX_BYTES - CCAM_HEAP_BYTES_HEADER_BYTES - right_length) {
+        return ccam_heap_ref_error("invalid_bytes_size");
+    }
+    int combined_length = left_length + right_length;
+    if (combined_length > CCAM_HEAP_MAX_BYTES / 2) {
+        return ccam_heap_ref_error("temporary_limit");
+    }
+    int charge = CCAM_HEAP_BYTES_HEADER_BYTES + combined_length;
+    // Conservatively account for both the joined intermediate and the
+    // destination byte-object copy. This is a logical request bound, not an
+    // assertion about the host string implementation's physical allocation.
+    int temporary_charge = combined_length * 2;
+    string admission = ccam_heap_allocation_check(
+        heap, charge, combined_length, temporary_charge
+    );
+    if (admission != "") {
+        return ccam_heap_ref_error(admission);
+    }
+    string joined = left.byte_data + right.byte_data;
+    CCAMHeapRefResult allocated = ccam_heap_alloc_bytes(heap, joined);
+    if (allocated.ok) {
+        heap.temporary_peak_bytes = ccam_heap_max_int(
+            temporary_charge, heap.temporary_peak_bytes
+        );
+    }
+    return allocated;
+}
+
+CCAMHeapIntResult ccam_heap_bytes_len(CCAMHeap heap, int heap_token, int ref_id) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return ccam_heap_int_error("invalid_reference");
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_BYTES) {
+        return ccam_heap_int_error("object_type_mismatch");
+    }
+    return ccam_heap_int_ok(object.byte_data.len());
+}
+
+CCAMHeapIntResult ccam_heap_byte_get(CCAMHeap heap, int heap_token, int ref_id, int index) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return ccam_heap_int_error("invalid_reference");
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_BYTES) {
+        return ccam_heap_int_error("object_type_mismatch");
+    }
+    if (index < 0 || index >= object.byte_data.len()) {
+        return ccam_heap_int_error("byte_bounds");
+    }
+    return ccam_heap_int_ok(object.byte_data.at(index));
+}
+
+CCAMHeapStringResult ccam_heap_bytes_slice(CCAMHeap heap, int heap_token, int ref_id, int start, int end) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return ccam_heap_string_error("invalid_reference");
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_BYTES) {
+        return ccam_heap_string_error("object_type_mismatch");
+    }
+    if (start < 0 || end < start || end > object.byte_data.len()) {
+        return ccam_heap_string_error("byte_bounds");
+    }
+    return ccam_heap_string_ok(object.byte_data.slice(start, end));
+}
+
+CCAMHeapValueResult ccam_heap_field_get(CCAMHeap heap, int heap_token, int ref_id, int expected_type_id, int field_index) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return ccam_heap_value_error("invalid_reference");
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_RECORD || object.descriptor_id != expected_type_id) {
+        return ccam_heap_value_error("object_type_mismatch");
+    }
+    if (field_index < 0 || field_index >= object.fields.len()) {
+        return ccam_heap_value_error("invalid_field_index");
+    }
+    if (!object.field_initialised[field_index]) {
+        return ccam_heap_value_error("uninitialised_field");
+    }
+    return ccam_heap_value_ok(object.fields[field_index]);
+}
+
+string ccam_heap_field_set(CCAMHeap heap, int heap_token, int ref_id, int expected_type_id, int field_index, CCAMHeapValue value) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return "invalid_reference";
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_RECORD || object.descriptor_id != expected_type_id) {
+        return "object_type_mismatch";
+    }
+    if (field_index < 0 || field_index >= object.fields.len()) {
+        return "invalid_field_index";
+    }
+    if (!object.field_mutable[field_index] && object.field_initialised[field_index]) {
+        return "immutable_field";
+    }
+    if (!ccam_heap_value_has_type(heap, value, object.field_types[field_index],
+        object.field_ref_type_ids[field_index])) {
+        return "value_type_mismatch";
+    }
+    object.fields[field_index] = value;
+    object.field_initialised[field_index] = true;
+    heap.objects[object_index] = object;
+    return "";
+}
+
+CCAMHeapValueResult ccam_heap_array_get(CCAMHeap heap, int heap_token, int ref_id, int expected_element_type, int index) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return ccam_heap_value_error("invalid_reference");
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_ARRAY || object.element_type != expected_element_type) {
+        return ccam_heap_value_error("object_type_mismatch");
+    }
+    if (index < 0 || index >= object.length) {
+        return ccam_heap_value_error("array_bounds");
+    }
+    if (!object.element_initialised[index]) {
+        return ccam_heap_value_error("uninitialised_element");
+    }
+    if (!ccam_heap_value_has_type(heap, object.elements[index],
+        object.element_type, object.element_ref_type_id)) {
+        return ccam_heap_value_error("invalid_array_element");
+    }
+    return ccam_heap_value_ok(object.elements[index]);
+}
+
+string ccam_heap_array_set(CCAMHeap heap, int heap_token, int ref_id, int expected_element_type, int index, CCAMHeapValue value) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return "invalid_reference";
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_ARRAY || object.element_type != expected_element_type) {
+        return "object_type_mismatch";
+    }
+    if (index < 0 || index >= object.length) {
+        return "array_bounds";
+    }
+    if (!ccam_heap_value_has_type(heap, value, object.element_type,
+        object.element_ref_type_id)) {
+        return "value_type_mismatch";
+    }
+    object.elements[index] = value;
+    object.element_initialised[index] = true;
+    heap.objects[object_index] = object;
+    return "";
+}
+
+string ccam_heap_array_append(CCAMHeap heap, int heap_token, int ref_id, int expected_element_type, CCAMHeapValue value) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return "invalid_reference";
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_ARRAY || object.element_type != expected_element_type) {
+        return "object_type_mismatch";
+    }
+    if (object.length >= object.capacity) {
+        return "array_capacity";
+    }
+    if (!ccam_heap_value_has_type(heap, value, object.element_type,
+        object.element_ref_type_id)) {
+        return "value_type_mismatch";
+    }
+    object.elements[object.length] = value;
+    object.element_initialised[object.length] = true;
+    object.length += 1;
+    heap.objects[object_index] = object;
+    return "";
+}
+
+CCAMHeapIntResult ccam_heap_array_len(CCAMHeap heap, int heap_token, int ref_id, int expected_element_type) {
+    int object_index = ccam_heap_object_index(heap, heap_token, ref_id);
+    if (object_index < 0) {
+        return ccam_heap_int_error("invalid_reference");
+    }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_ARRAY || object.element_type != expected_element_type) {
+        return ccam_heap_int_error("object_type_mismatch");
+    }
+    return ccam_heap_int_ok(object.length);
+}
+
+bool ccam_heap_ref_equal(int left_token, int left_id, int right_token, int right_id) {
+    return left_token == right_token && left_id == right_id;
+}
+
+test "CCAM region heap allocates typed records and checks initialisation" {
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_HEAP_VALUE_INT);
+    field_types.push(CCAM_HEAP_VALUE_BOOL);
+    List<bool> field_mutable = new List<bool>();
+    field_mutable.push(true);
+    field_mutable.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 7, field_types: field_types, field_ref_type_ids: new List<int>(), field_mutable: field_mutable};
+    CCAMHeapCreateResult created = ccam_heap_create(1001, 1024, 8);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult allocated = ccam_heap_alloc_record(heap, layout);
+    assert(allocated.ok && allocated.ref_id == 1);
+    CCAMHeapValueResult before = ccam_heap_field_get(heap, allocated.heap_token, allocated.ref_id, 7, 0);
+    assert(!before.ok && before.trap == "uninitialised_field");
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 7, 0, ccam_heap_int(42)) == "");
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 7, 1, ccam_heap_bool(true)) == "");
+    CCAMHeapValueResult read_int = ccam_heap_field_get(heap, allocated.heap_token, allocated.ref_id, 7, 0);
+    CCAMHeapValueResult read_bool = ccam_heap_field_get(heap, allocated.heap_token, allocated.ref_id, 7, 1);
+    assert(read_int.ok && read_int.value.int_value == 42);
+    assert(read_bool.ok && read_bool.value.bool_value);
+}
+
+test "CCAM region heap rejects forged handles, wrong descriptors and field writes" {
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_HEAP_VALUE_INT);
+    field_types.push(CCAM_HEAP_VALUE_BOOL);
+    List<bool> field_mutable = new List<bool>();
+    field_mutable.push(true);
+    field_mutable.push(false);
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 11, field_types: field_types, field_ref_type_ids: new List<int>(), field_mutable: field_mutable};
+    CCAMHeapCreateResult created = ccam_heap_create(1002, 128, 4);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult allocated = ccam_heap_alloc_record(heap, layout);
+    assert(allocated.ok);
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 12, 0, ccam_heap_int(1)) == "object_type_mismatch");
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 11, 0, ccam_heap_bool(true)) == "value_type_mismatch");
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 11, 1, ccam_heap_bool(true)) == "");
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 11, 1, ccam_heap_bool(false)) == "immutable_field");
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 11, 0, ccam_heap_int(1)) == "");
+    CCAMHeapValueResult bad_ref = ccam_heap_field_get(heap, heap.heap_token, 999, 11, 0);
+    CCAMHeapValueResult bad_field = ccam_heap_field_get(heap, allocated.heap_token, allocated.ref_id, 11, -1);
+    assert(!bad_ref.ok && bad_ref.trap == "invalid_reference");
+    assert(!bad_field.ok && bad_field.trap == "invalid_field_index");
+}
+
+test "CCAM region heap composes work and temporary-allocation budgets" {
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_HEAP_VALUE_INT);
+    List<bool> field_mutable = new List<bool>();
+    field_mutable.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{
+        type_id: 91, field_types: field_types,
+        field_ref_type_ids: new List<int>(), field_mutable: field_mutable
+    };
+
+    CCAMHeapCreateResult work_limited = ccam_heap_create_bounded(1091, 128, 4, 2, 128);
+    CCAMHeap work_heap = work_limited.heap;
+    CCAMHeapRefResult first_work = ccam_heap_alloc_record(work_heap, layout);
+    assert(first_work.ok && work_heap.work_used == 2);
+    CCAMHeapRefResult work_rejected = ccam_heap_alloc_record(work_heap, layout);
+    assert(!work_rejected.ok && work_rejected.trap == "work_limit");
+    assert(work_heap.objects.len() == 1 && work_heap.bytes_used == 32 &&
+        work_heap.next_id == 2 && work_heap.work_used == 2);
+
+    CCAMHeapCreateResult temp_limited = ccam_heap_create_bounded(1092, 128, 4, 128, 1);
+    CCAMHeap temp_heap = temp_limited.heap;
+    CCAMHeapRefResult left = ccam_heap_alloc_bytes(temp_heap, "A");
+    CCAMHeapRefResult right = ccam_heap_alloc_bytes(temp_heap, "B");
+    assert(left.ok && right.ok);
+    int before_objects = temp_heap.objects.len();
+    int before_bytes = temp_heap.bytes_used;
+    int before_id = temp_heap.next_id;
+    int before_work = temp_heap.work_used;
+    int before_temporary = temp_heap.temporary_peak_bytes;
+    CCAMHeapRefResult rejected_concat = ccam_heap_bytes_concat(
+        temp_heap, left.heap_token, left.ref_id, right.heap_token, right.ref_id
+    );
+    assert(!rejected_concat.ok && rejected_concat.trap == "temporary_limit");
+    assert(temp_heap.objects.len() == before_objects &&
+        temp_heap.bytes_used == before_bytes && temp_heap.next_id == before_id &&
+        temp_heap.work_used == before_work && temp_heap.temporary_peak_bytes == before_temporary);
+
+    CCAMHeapCreateResult paired_temp_limited = ccam_heap_create_bounded(
+        1096, 128, 4, 128, 3
+    );
+    CCAMHeap paired_heap = paired_temp_limited.heap;
+    CCAMHeapRefResult pair_left = ccam_heap_alloc_bytes(paired_heap, "A");
+    CCAMHeapRefResult pair_right = ccam_heap_alloc_bytes(paired_heap, "B");
+    assert(pair_left.ok && pair_right.ok);
+    int pair_objects = paired_heap.objects.len();
+    int pair_bytes = paired_heap.bytes_used;
+    int pair_work = paired_heap.work_used;
+    int pair_temporary = paired_heap.temporary_peak_bytes;
+    CCAMHeapRefResult pair_rejected = ccam_heap_bytes_concat(
+        paired_heap, pair_left.heap_token, pair_left.ref_id,
+        pair_right.heap_token, pair_right.ref_id
+    );
+    assert(!pair_rejected.ok && pair_rejected.trap == "temporary_limit");
+    assert(paired_heap.objects.len() == pair_objects &&
+        paired_heap.bytes_used == pair_bytes && paired_heap.work_used == pair_work &&
+        paired_heap.temporary_peak_bytes == pair_temporary);
+}
+
+test "CCAM region heap rejects malformed work and temporary budgets" {
+    CCAMHeapCreateResult negative_work = ccam_heap_create_bounded(1093, 128, 4, -1, 16);
+    CCAMHeapCreateResult excessive_work = ccam_heap_create_bounded(1094, 128, 4, 134217729, 16);
+    CCAMHeapCreateResult excessive_temporary = ccam_heap_create_bounded(
+        1095, 128, 4, 16, CCAM_HEAP_MAX_BYTES + 1
+    );
+    assert(!negative_work.ok && negative_work.error == "invalid_heap_limits");
+    assert(!excessive_work.ok && excessive_work.error == "invalid_heap_limits");
+    assert(!excessive_temporary.ok && excessive_temporary.error == "invalid_heap_limits");
+}
+
+test "CCAM region heap enforces nominal record-reference array element types" {
+    CCAMHeapCreateResult created = ccam_heap_create(1022, 512, 8);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult array = ccam_heap_alloc_typed_array(
+        heap, CCAM_HEAP_VALUE_REF, 42, 2);
+    assert(array.ok);
+    CCAMHeapLayout empty_layout = new CCAMHeapLayout{
+        type_id: 42, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()
+    };
+    CCAMHeapLayout wrong_layout = new CCAMHeapLayout{
+        type_id: 43, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()
+    };
+    CCAMHeapRefResult correct = ccam_heap_alloc_record(heap, empty_layout);
+    CCAMHeapRefResult wrong = ccam_heap_alloc_record(heap, wrong_layout);
+    assert(correct.ok && wrong.ok);
+    assert(ccam_heap_array_append(heap, array.heap_token, array.ref_id,
+        CCAM_HEAP_VALUE_REF, ccam_heap_ref(wrong.heap_token, wrong.ref_id)) ==
+        "value_type_mismatch");
+    assert(ccam_heap_array_append(heap, array.heap_token, array.ref_id,
+        CCAM_HEAP_VALUE_REF, ccam_heap_ref(correct.heap_token, correct.ref_id)) == "");
+    assert(ccam_heap_array_set(heap, array.heap_token, array.ref_id,
+        CCAM_HEAP_VALUE_REF, 0, ccam_heap_ref(wrong.heap_token, wrong.ref_id)) ==
+        "value_type_mismatch");
+    CCAMHeapValueResult loaded = ccam_heap_array_get(
+        heap, array.heap_token, array.ref_id, CCAM_HEAP_VALUE_REF, 0);
+    assert(loaded.ok && loaded.value.ref_id == correct.ref_id);
+    assert(ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_INT, 42, 1).trap ==
+        "invalid_array_layout");
+}
+
+test "CCAM region heap enforces exact byte and object budgets atomically" {
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_HEAP_VALUE_INT);
+    List<bool> field_mutable = new List<bool>();
+    field_mutable.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 3, field_types: field_types, field_ref_type_ids: new List<int>(), field_mutable: field_mutable};
+
+    CCAMHeapCreateResult exact = ccam_heap_create(1003, 32, 2);
+    assert(exact.ok);
+    CCAMHeap heap = exact.heap;
+    CCAMHeapRefResult first = ccam_heap_alloc_record(heap, layout);
+    assert(first.ok && heap.bytes_used == 32 && heap.next_id == 2);
+    CCAMHeapRefResult over = ccam_heap_alloc_record(heap, layout);
+    assert(!over.ok && over.trap == "heap_limit");
+    assert(heap.objects.len() == 1 && heap.bytes_used == 32 && heap.next_id == 2);
+
+    CCAMHeapCreateResult object_limited = ccam_heap_create(1004, 128, 1);
+    CCAMHeap object_heap = object_limited.heap;
+    CCAMHeapRefResult only = ccam_heap_alloc_record(object_heap, layout);
+    CCAMHeapRefResult second = ccam_heap_alloc_record(object_heap, layout);
+    assert(only.ok && !second.ok && second.trap == "object_limit");
+    assert(object_heap.objects.len() == 1 && object_heap.next_id == 2);
+}
+
+test "CCAM region heap rejects references to unallocated objects" {
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_HEAP_VALUE_REF);
+    List<bool> field_mutable = new List<bool>();
+    field_mutable.push(true);
+    List<int> field_ref_type_ids = new List<int>();
+    field_ref_type_ids.push(22);
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 21, field_types: field_types, field_ref_type_ids: field_ref_type_ids, field_mutable: field_mutable};
+    CCAMHeapCreateResult created = ccam_heap_create(1006, 128, 4);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult allocated = ccam_heap_alloc_record(heap, layout);
+    assert(allocated.ok);
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 21, 0, ccam_heap_ref(heap.heap_token, 999)) == "value_type_mismatch");
+    List<int> target_types = new List<int>();
+    List<bool> target_mutable = new List<bool>();
+    CCAMHeapLayout target_layout = new CCAMHeapLayout{
+        type_id: 22, field_types: target_types,
+        field_ref_type_ids: new List<int>(), field_mutable: target_mutable
+    };
+    CCAMHeapRefResult wrong_target = ccam_heap_alloc_record(heap, layout);
+    assert(wrong_target.ok);
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 21, 0,
+        ccam_heap_ref(wrong_target.heap_token, wrong_target.ref_id)) == "value_type_mismatch");
+    CCAMHeapRefResult target = ccam_heap_alloc_record(heap, target_layout);
+    assert(target.ok);
+    assert(ccam_heap_field_set(heap, allocated.heap_token, allocated.ref_id, 21, 0,
+        ccam_heap_ref(target.heap_token, target.ref_id)) == "");
+    CCAMHeapValueResult loaded = ccam_heap_field_get(heap, allocated.heap_token, allocated.ref_id, 21, 0);
+    assert(loaded.ok && loaded.value.kind == CCAM_HEAP_VALUE_REF && loaded.value.ref_id == target.ref_id);
+
+    CCAMHeapCreateResult foreign_created = ccam_heap_create(2001, 128, 4);
+    CCAMHeap foreign_heap = foreign_created.heap;
+    CCAMHeapRefResult foreign_object = ccam_heap_alloc_record(foreign_heap, layout);
+    assert(foreign_object.ok && foreign_object.ref_id == 1);
+    CCAMHeapValueResult foreign_read = ccam_heap_field_get(foreign_heap, allocated.heap_token, allocated.ref_id, 21, 0);
+    assert(!foreign_read.ok && foreign_read.trap == "invalid_reference");
+    assert(!ccam_heap_ref_equal(heap.heap_token, allocated.ref_id, foreign_heap.heap_token, foreign_object.ref_id));
+}
+
+test "CCAM region heap preserves immutable byte strings including NUL" {
+    CCAMHeapCreateResult created = ccam_heap_create(1011, 1024, 8);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult allocated = ccam_heap_alloc_bytes(heap, "A\0B");
+    assert(allocated.ok);
+    CCAMHeapIntResult length = ccam_heap_bytes_len(heap, allocated.heap_token, allocated.ref_id);
+    CCAMHeapIntResult first = ccam_heap_byte_get(heap, allocated.heap_token, allocated.ref_id, 0);
+    CCAMHeapIntResult nul = ccam_heap_byte_get(heap, allocated.heap_token, allocated.ref_id, 1);
+    CCAMHeapIntResult last = ccam_heap_byte_get(heap, allocated.heap_token, allocated.ref_id, 2);
+    assert(length.ok && length.value == 3);
+    assert(first.ok && first.value == 65);
+    assert(nul.ok && nul.value == 0);
+    assert(last.ok && last.value == 66);
+    CCAMHeapStringResult slice = ccam_heap_bytes_slice(heap, allocated.heap_token, allocated.ref_id, 1, 3);
+    assert(slice.ok && slice.value == "\0B");
+    assert(!ccam_heap_byte_get(heap, allocated.heap_token, allocated.ref_id, 3).ok);
+    assert(ccam_heap_bytes_slice(heap, allocated.heap_token, allocated.ref_id, 2, 1).trap == "byte_bounds");
+}
+
+test "CCAM region heap concatenates byte strings without UTF-8 reinterpretation" {
+    CCAMHeapCreateResult created = ccam_heap_create(1013, 1024, 8);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult left = ccam_heap_alloc_bytes(heap, "A\0");
+    CCAMHeapRefResult right = ccam_heap_alloc_bytes(heap, "B");
+    assert(left.ok && right.ok);
+    CCAMHeapRefResult joined = ccam_heap_bytes_concat(heap, left.heap_token, left.ref_id, right.heap_token, right.ref_id);
+    assert(joined.ok);
+    CCAMHeapIntResult length = ccam_heap_bytes_len(heap, joined.heap_token, joined.ref_id);
+    CCAMHeapIntResult nul = ccam_heap_byte_get(heap, joined.heap_token, joined.ref_id, 1);
+    CCAMHeapStringResult slice = ccam_heap_bytes_slice(heap, joined.heap_token, joined.ref_id, 0, 3);
+    assert(length.ok && length.value == 3);
+    assert(nul.ok && nul.value == 0);
+    assert(slice.ok && slice.value == "A\0B");
+}
+
+test "CCAM region heap rejects over-budget concatenation before heap mutation" {
+    CCAMHeapCreateResult created = ccam_heap_create(1014, 27, 4);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult left = ccam_heap_alloc_bytes(heap, "A");
+    CCAMHeapRefResult right = ccam_heap_alloc_bytes(heap, "B");
+    assert(left.ok && right.ok);
+    CCAMHeapRefResult joined = ccam_heap_bytes_concat(heap, left.heap_token, left.ref_id, right.heap_token, right.ref_id);
+    assert(!joined.ok && joined.trap == "heap_limit");
+    assert(heap.objects.len() == 2 && heap.bytes_used == 18 && heap.next_id == 3);
+}
+
+test "CCAM region heap byte allocations obey the exact heap budget" {
+    CCAMHeapCreateResult created = ccam_heap_create(1012, 10, 2);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult exact = ccam_heap_alloc_bytes(heap, "ab");
+    assert(exact.ok && heap.bytes_used == 10 && heap.next_id == 2);
+    CCAMHeapRefResult over = ccam_heap_alloc_bytes(heap, "");
+    assert(!over.ok && over.trap == "heap_limit");
+    assert(heap.objects.len() == 1 && heap.bytes_used == 10 && heap.next_id == 2);
+}
+
+test "CCAM region heap arrays enforce type, logical length and capacity" {
+    CCAMHeapCreateResult created = ccam_heap_create(1010, 1024, 8);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult allocated = ccam_heap_alloc_array(heap, CCAM_HEAP_VALUE_INT, 2);
+    assert(allocated.ok);
+    CCAMHeapIntResult empty_length = ccam_heap_array_len(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT);
+    assert(empty_length.ok && empty_length.value == 0);
+    CCAMHeapIntResult wrong_type_length = ccam_heap_array_len(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_BOOL);
+    CCAMHeapIntResult invalid_length = ccam_heap_array_len(heap, allocated.heap_token, 999, CCAM_HEAP_VALUE_INT);
+    assert(!wrong_type_length.ok && wrong_type_length.trap == "object_type_mismatch");
+    assert(!invalid_length.ok && invalid_length.trap == "invalid_reference");
+    assert(ccam_heap_array_get(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, 0).trap == "array_bounds");
+    assert(ccam_heap_array_append(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, ccam_heap_int(19)) == "");
+    assert(ccam_heap_array_append(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, ccam_heap_bool(true)) == "value_type_mismatch");
+    assert(ccam_heap_array_append(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, ccam_heap_int(23)) == "");
+    assert(ccam_heap_array_append(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, ccam_heap_int(42)) == "array_capacity");
+    CCAMHeapIntResult full_length = ccam_heap_array_len(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT);
+    assert(full_length.ok && full_length.value == 2);
+    CCAMHeapValueResult left = ccam_heap_array_get(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, 0);
+    CCAMHeapValueResult right = ccam_heap_array_get(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, 1);
+    assert(left.ok && left.value.int_value == 19);
+    assert(right.ok && right.value.int_value == 23);
+    assert(ccam_heap_array_set(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, 1, ccam_heap_int(24)) == "");
+    right = ccam_heap_array_get(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, 1);
+    assert(right.ok && right.value.int_value == 24);
+    assert(ccam_heap_array_set(heap, allocated.heap_token, allocated.ref_id, CCAM_HEAP_VALUE_INT, 2, ccam_heap_int(9)) == "array_bounds");
+}
+
+test "CCAM region heap rejects malformed layouts and invalid budgets" {
+    CCAMHeapCreateResult zero_identity = ccam_heap_create(0, 1024, 2);
+    CCAMHeapCreateResult negative = ccam_heap_create(1007, -1, 2);
+    CCAMHeapCreateResult excessive = ccam_heap_create(1008, CCAM_HEAP_MAX_BYTES + 1, 2);
+    CCAMHeapCreateResult too_many = ccam_heap_create(1009, 1024, CCAM_HEAP_MAX_OBJECTS + 1);
+    assert(!zero_identity.ok && zero_identity.error == "invalid_heap_limits");
+    assert(!negative.ok && negative.error == "invalid_heap_limits");
+    assert(!excessive.ok && excessive.error == "invalid_heap_limits");
+    assert(!too_many.ok && too_many.error == "invalid_heap_limits");
+
+    List<int> field_types = new List<int>();
+    field_types.push(99);
+    List<bool> field_mutable = new List<bool>();
+    field_mutable.push(true);
+    CCAMHeapLayout bad = new CCAMHeapLayout{type_id: 1, field_types: field_types, field_ref_type_ids: new List<int>(), field_mutable: field_mutable};
+    CCAMHeapCreateResult created = ccam_heap_create(1005, 1024, 4);
+    CCAMHeapRefResult rejected = ccam_heap_alloc_record(created.heap, bad);
+    assert(!rejected.ok && rejected.trap == "invalid_record_field_type");
+}
