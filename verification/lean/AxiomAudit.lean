@@ -11,6 +11,7 @@ import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
 import CapstanVerification.InjectionChecker
 import CapstanVerification.InjectionSinks
+import CapstanVerification.InjectionValue
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -301,3 +302,18 @@ import CapstanVerification.InjectionSinks
 #print axioms CapstanVerification.tainted_receiver_slice_is_not_lookup_sink
 #print axioms CapstanVerification.non_text_index_is_not_lookup_sink
 #print axioms CapstanVerification.non_text_optional_map_get_is_not_lookup_sink
+
+-- Value-level provenance: strong updates and conservative transfer rules.
+#print axioms CapstanVerification.valueWrite_read_same
+#print axioms CapstanVerification.valueWrite_read_other
+#print axioms CapstanVerification.clean_reassignment_clears_mark
+#print axioms CapstanVerification.attacker_assignment_marks_local
+#print axioms CapstanVerification.valueAssign_preserves_other
+#print axioms CapstanVerification.comparison_preserves_left
+#print axioms CapstanVerification.comparison_preserves_right
+#print axioms CapstanVerification.text_conversion_preserves
+#print axioms CapstanVerification.join_preserves_collection
+#print axioms CapstanVerification.length_preserves
+#print axioms CapstanVerification.aggregate_build_preserves_field
+#print axioms CapstanVerification.selection_preserves_control
+#print axioms CapstanVerification.map_lookup_preserves_key
