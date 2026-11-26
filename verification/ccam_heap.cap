@@ -940,3 +940,78 @@ test "CCAM region heap rejects malformed layouts and invalid budgets" {
     CCAMHeapRefResult rejected = ccam_heap_alloc_record(created.heap, bad);
     assert(!rejected.ok && rejected.trap == "invalid_record_field_type");
 }
+
+test "CCAM region heap rejected mutations preserve complete observable state" {
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_HEAP_VALUE_INT);
+    List<bool> field_mutable = new List<bool>();
+    field_mutable.push(false);
+    CCAMHeapLayout record_layout = new CCAMHeapLayout{
+        type_id: 811, field_types: field_types,
+        field_ref_type_ids: new List<int>(), field_mutable: field_mutable
+    };
+    CCAMHeapCreateResult created = ccam_heap_create_bounded(
+        1811, 512, 8, 512, 512
+    );
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult record = ccam_heap_alloc_record(heap, record_layout);
+    CCAMHeapRefResult array = ccam_heap_alloc_array(
+        heap, CCAM_HEAP_VALUE_INT, 1
+    );
+    assert(record.ok && array.ok);
+    assert(ccam_heap_field_set(heap, record.heap_token, record.ref_id,
+        811, 0, ccam_heap_int(73)) == "");
+    assert(ccam_heap_array_append(heap, array.heap_token, array.ref_id,
+        CCAM_HEAP_VALUE_INT, ccam_heap_int(19)) == "");
+
+    int before_objects = heap.objects.len();
+    int before_bytes = heap.bytes_used;
+    int before_work = heap.work_used;
+    int before_temporary = heap.temporary_peak_bytes;
+    int before_next_id = heap.next_id;
+    int before_record_value = heap.objects[record.ref_id - 1].fields[0].int_value;
+    int before_array_value = heap.objects[array.ref_id - 1].elements[0].int_value;
+    int before_array_length = heap.objects[array.ref_id - 1].length;
+
+    assert(ccam_heap_field_set(heap, record.heap_token, record.ref_id,
+        811, 0, ccam_heap_bool(true)) == "immutable_field");
+    assert(ccam_heap_field_set(heap, record.heap_token, record.ref_id,
+        811, 1, ccam_heap_int(99)) == "invalid_field_index");
+    assert(ccam_heap_field_set(heap, record.heap_token, 999,
+        811, 0, ccam_heap_int(99)) == "invalid_reference");
+    assert(ccam_heap_array_append(heap, array.heap_token, array.ref_id,
+        CCAM_HEAP_VALUE_INT, ccam_heap_int(99)) == "array_capacity");
+    assert(ccam_heap_array_set(heap, array.heap_token, array.ref_id,
+        CCAM_HEAP_VALUE_INT, -1, ccam_heap_int(99)) == "array_bounds");
+    assert(ccam_heap_array_set(heap, array.heap_token, array.ref_id,
+        CCAM_HEAP_VALUE_INT, 0, ccam_heap_bool(true)) == "value_type_mismatch");
+    assert(ccam_heap_array_set(heap, array.heap_token, 999,
+        CCAM_HEAP_VALUE_INT, 0, ccam_heap_int(99)) == "invalid_reference");
+
+    List<int> bad_field_types = new List<int>();
+    bad_field_types.push(99);
+    List<bool> bad_field_mutable = new List<bool>();
+    bad_field_mutable.push(true);
+    CCAMHeapLayout bad_layout = new CCAMHeapLayout{
+        type_id: 812, field_types: bad_field_types,
+        field_ref_type_ids: new List<int>(),
+        field_mutable: bad_field_mutable
+    };
+    CCAMHeapRefResult bad_allocation = ccam_heap_alloc_record(heap, bad_layout);
+    assert(!bad_allocation.ok &&
+        bad_allocation.trap == "invalid_record_field_type");
+
+    assert(heap.objects.len() == before_objects);
+    assert(heap.bytes_used == before_bytes);
+    assert(heap.work_used == before_work);
+    assert(heap.temporary_peak_bytes == before_temporary);
+    assert(heap.next_id == before_next_id);
+    assert(heap.objects[record.ref_id - 1].fields[0].int_value ==
+        before_record_value);
+    assert(heap.objects[record.ref_id - 1].field_initialised[0]);
+    assert(heap.objects[array.ref_id - 1].elements[0].int_value ==
+        before_array_value);
+    assert(heap.objects[array.ref_id - 1].element_initialised[0]);
+    assert(heap.objects[array.ref_id - 1].length == before_array_length);
+}
