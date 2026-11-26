@@ -113,6 +113,20 @@ else
   bad "Halyard multidimensional resource actor model" "$out"
 fi
 
+section "Schooner S1: bounded capability revocation reference model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/schooner_capability.cap" 2>&1)"; then
+  ok "capability identity, rights attenuation, revocation epochs, generation checks and failure atomicity"
+else
+  bad "Schooner capability revocation model" "$out"
+fi
+
+section "Schooner S1: compositional resource-budget reference model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/schooner_budget.cap" 2>&1)"; then
+  ok "nested budget conservation, generation-bound leases, one-shot return and failure atomicity"
+else
+  bad "Schooner resource-budget model" "$out"
+fi
+
 section "Capstan-native verification: finite protocol automata"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/protocol_automata.cap" 2>&1)"; then
   ok "finite protocol validation, deterministic transitions, reachability and acyclicity"
