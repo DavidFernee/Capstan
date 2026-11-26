@@ -975,7 +975,7 @@ Type check_call(Checker c, Node e) {
     for (int i = 0; i < e.kids.len(); i += 1) { check_expr(c, e.kids[i]); }
     int n = e.kids.len();
     if (f == "print" || f == "println") {
-        want_args(c, e, 1, 1, f);
+        want_args(c, e, 0, 1, f);
         if (n == 1) { sink_string(c, e.kids[0], f + "()", false); }
         return mk_type(TY_VOID);
     }
@@ -996,7 +996,7 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_ERR);
     }
     if (f == "wrapping_add" || f == "wrapping_sub" || f == "wrapping_mul" || f == "wrapping_shl") {
-        want_args(c, e, 2, 2, f);
+        want_args(c, e, 0, 2, f);
         if (n == 2) {
             expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), f + "()");
             expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), f + "()");
@@ -1012,7 +1012,7 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_STR);
     }
     if (f == "read_file") {
-        want_args(c, e, 0, 2, f);
+        want_args(c, e, 2, 2, f);
         if (n == 2) {
             expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path");
             expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "read_file() explicit byte limit");
@@ -1039,12 +1039,12 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_VOID);
     }
     if (f == "read_line") {
-        want_args(c, e, 0, 1, f);
+        want_args(c, e, 1, 1, f);
         if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "read_line() explicit byte limit"); }
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "read_bytes") {
-        want_args(c, e, 0, 1, f);
+        want_args(c, e, 1, 1, f);
         if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "read_bytes() count"); }
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
