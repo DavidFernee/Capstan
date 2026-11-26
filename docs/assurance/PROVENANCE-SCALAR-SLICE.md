@@ -1,7 +1,7 @@
 # Provenance scalar-transfer implementation slice
 
 **Status:** initial compiler implementation under review in PR #410  
-**Scope:** scalar and metadata transfer rules in `compiler/checker.cap`  
+**Scope:** scalar, aggregate access-path, and metadata transfer rules in `compiler/ast.cap` and `compiler/checker.cap`  
 **Normative authority:** none; the proposal in `PROVENANCE-SEMANTICS.md` remains the target contract.
 
 ## Changes in this slice
@@ -12,10 +12,10 @@ The laundering analysis is now a syntax-directed, binding-identity may-analysis 
 2. **Boolean locals:** declarations and simple assignments of derived Boolean values mark the local, so a subsequent read does not discard the fact.
 3. **Tainted length:** `Tainted.len()` is treated as derived metadata. The integer result is therefore still derived even though its type is `int`.
 4. **Aggregate length:** `.len()` on a list or other receiver whose root has been marked by a derived aggregate write is treated as derived.
-5. **Parameter summaries:** summary seeding now includes `bool`, `string` and `Tainted` in addition to `int`. Actual argument substitution remains the existing Boolean `param_to_return` / `param_to_sink` mechanism; this is not yet path-sensitive.
+5. **Parameter summaries:** summary seeding includes `bool`, `string`, `Tainted`, and aggregate parameters (`struct`, `List`, `Map`, and optional wrappers) in addition to `int`. These are limited Boolean `param_to_return` / `param_to_sink` summaries, not heap-effect summaries or path-sensitive interprocedural analysis.
 6. **Conversions and joins:** `to_text(x)` preserves derivation from x, and `join(xs, sep)` preserves derivation from a marked input list. Existing `int_to_str` and string-concatenation transfers remain.
 
-The new CWE-atlas regression sends a tainted string through a helper that returns its length, stores that integer, and attempts `char_str` reconstruction. The expected outcome is compile-time rejection. A separate Boolean-to-text/write-file probe remains explicitly classified as a gap in the atlas: this slice propagates the Boolean fact, but does not yet define and enforce a complete sink policy for every output operation.
+The CWE atlas now covers helper-derived length, dynamic list-index widening, and reference-alias laundering. The dynamic-index attempt is rejected; the alias attempt deliberately remains a gap because writes are not propagated through may-alias sets. The Boolean-to-text/write-file probe also remains a gap: Boolean provenance is tracked, but a complete policy for every output sink is not yet implemented.
 
 ## Deliberate non-claims
 
@@ -23,13 +23,13 @@ This change does not establish:
 
 - A sound general information-flow analysis or noninterference theorem.
 - Control-dependence propagation into branch-selected constants, loop termination or timing.
-- A path-sensitive per-value domain, structured source paths, aliases or abstract heap.
-- Provenance for all aggregate constructors, enum/optional payloads, map key/value/shape paths, or mutations through helper calls.
+- A path-sensitive per-value domain, abstract heap, may-alias sets or escape analysis.
+- Provenance for all aggregate constructors, enum payloads, map shape mutations, or heap mutations through helper calls.
 - Complete interprocedural summaries for every type, receiver, policy, or external function.
 - Correct contracts for every builtin, encoder, validator or output sink.
 - Compiler, runtime, generated-code or host safety as a whole.
 
-The first follow-on implementation now uses checker-assigned binding identities and typed field/index/map access-path keys, with dynamic indices widened and a 4096-fact fail-closed budget. The analysis remains monotone and may-based: reassignment can over-retain facts, aliases/escapes are not resolved, and weak/strong update semantics are not formalised. The Boolean and metadata rules are a targeted improvement, not closure of the TYPE finding set.
+The first follow-on implementation now uses checker-assigned binding identities and typed field/index/map access-path keys, with dynamic indices widened and a 4096-fact fail-closed budget. Aggregate parameter return/sink summaries are included, but mutation effects are not. The analysis remains monotone and may-based: reassignment can over-retain facts, aliases/escapes are not resolved, and weak/strong update semantics are not formalised. The Boolean and metadata rules are a targeted improvement, not closure of the TYPE finding set.
 
 ## Validation required
 
