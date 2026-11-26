@@ -40,10 +40,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 C="$ROOT/build/capstanc"
 CC="${CC:-cc}"
 FULL=0; [[ "${1:-}" == "--full" ]] && FULL=1
-CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime"
-WFLAGS="-O2 -std=gnu11 -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -I$ROOT/runtime"
+HARDEN_FLAGS="-fstack-protector-strong -fPIE -pie"
+if [[ "$(uname -s)" == "Linux" ]]; then HARDEN_FLAGS="$HARDEN_FLAGS -D_FORTIFY_SOURCE=2"; fi
+CFLAGS="-O2 -std=gnu11 -w -I$ROOT/runtime $HARDEN_FLAGS"
+WFLAGS="-O2 -std=gnu11 $HARDEN_FLAGS -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -I$ROOT/runtime"
 [[ "$($CC --version 2>&1)" == *clang* ]] && WFLAGS="$WFLAGS -Wno-parentheses-equality -Wno-gnu-statement-expression -Wno-gnu-auto-type"
-SAN="-O1 -g -std=gnu11 -w -fsanitize=address,undefined -fno-sanitize-recover=all -I$ROOT/runtime"
+SAN="-O1 -g -std=gnu11 $HARDEN_FLAGS -w -fsanitize=address,undefined -fno-sanitize-recover=all -I$ROOT/runtime"
 export ASAN_OPTIONS=detect_leaks=0:detect_stack_use_after_return=0
 PY="python3 -I"
 SRC=$(ls "$ROOT"/compiler/{ast,lexer,parser,checker,ranges,codegen,main}.cap)
