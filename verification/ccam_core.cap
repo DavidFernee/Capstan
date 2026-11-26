@@ -1977,3 +1977,29 @@ test "CCAM validator bounds aggregate byte literals in a frame" {
         no_registers, code, CCAM_RETURN_VOID);
     assert(!result.ok && result.error == "output_literal_limit_exceeded");
 }
+
+
+test "CCAM register constructor establishes exact initial payload fields" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL);
+    types.push(CCAM_TYPE_INT);
+    CCAMRegisterFileResult created = ccam_registers_create(types);
+    assert(created.ok && created.error == "");
+    assert(created.registers.len() == 3);
+    for (int i = 0; i < created.registers.len(); i += 1) {
+        CCAMRegister reg = created.registers[i];
+        assert(!reg.initialized);
+        assert(reg.int_value == 0);
+        assert(!reg.bool_value);
+        if (i == 1) {
+            assert(reg.declared_type == CCAM_TYPE_BOOL);
+        } else {
+            assert(reg.declared_type == CCAM_TYPE_INT);
+        }
+    }
+
+    List<int> empty_types = new List<int>();
+    CCAMRegisterFileResult empty = ccam_registers_create(empty_types);
+    assert(empty.ok && empty.registers.len() == 0);
+}
