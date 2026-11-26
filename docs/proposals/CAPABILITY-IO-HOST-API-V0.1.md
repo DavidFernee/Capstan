@@ -181,6 +181,8 @@ SendResult ::= Complete(SendReceipt) | Pending(PendingSend, SendReceipt) | Faile
 
 PendingSend is an opaque, owned continuation containing the remaining bytes, exact byte offset, descriptor-transfer state and connection generation. It can be resumed only on the same connection.
 
+resume_send(pending: PendingSend, deadline: Deadline) -> SendResult
+
 Rules:
 - The first successful sendmsg that transfers ancillary descriptors marks descriptors_committed exactly once. This means the local kernel accepted the descriptor control message for transmission; it does not prove that the peer application has received or accepted the descriptors.
 - If the first send makes no progress and transfers no descriptors, a retry may still include them.
@@ -239,6 +241,10 @@ read_at(object: SharedMemoryObject, offset: Nat, max_bytes: Nat, deadline: Deadl
 ### 6.6 Checked mapping
 
 map_region(object: SharedMemoryObject, offset: Nat, length: Nat, access: ReadOnly | ReadWrite) -> Outcome<MappedRegion, HostError>
+
+copy_from(region: MappedRegion, offset: Nat, max_bytes: Nat) -> Outcome<ReadResult, HostError>
+
+copy_to(region: MappedRegion, offset: Nat, bytes: ByteString) -> WriteResult
 
 unmap_region(region: MappedRegion) -> UnmapOutcome
 
