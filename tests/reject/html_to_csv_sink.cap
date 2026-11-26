@@ -1,0 +1,6 @@
+// expect: CWE-116
+int main() {
+    Html html = escape_html(taint("cell"));
+    bool ok = write_csv_file("out.csv", html);
+    return 0;
+}
