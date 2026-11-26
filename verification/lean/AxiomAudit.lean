@@ -2,6 +2,7 @@ import NativeMemoryLifecycle
 import NativeReachability
 import NativeHandleReachability
 import NativeBoundedMarker
+import CapstanVerification.F1Provenance
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
@@ -360,6 +361,14 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.owner_can_access_private_field
 #print axioms CapstanVerification.opaque_construction_denied_cross_module
 #print axioms CapstanVerification.opaque_construction_permitted_owner
+
+-- F1 provenance access-path algebra: abstract-model theorem audit.
+#print axioms CapstanVerification.dynamic_write_marks_constant_read
+#print axioms CapstanVerification.binding_identity_separates_locals
+#print axioms CapstanVerification.map_key_value_paths_are_disjoint
+#print axioms CapstanVerification.descendant_fact_marks_aggregate
+#print axioms CapstanVerification.provenance_marking_monotone
+#print axioms CapstanVerification.provenance_fact_budget_fails_closed
 
 -- Native object lifecycle and handle authority.
 #print axioms CapstanNativeMemory.allocateSlot_success_resolves
