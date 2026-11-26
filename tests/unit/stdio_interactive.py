@@ -13,7 +13,7 @@ import os, select, subprocess, sys, tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROGRAM = """int main() {
     while (true) {
-        if (let header = read_line()) {
+        if (let header = read_line(1048576)) {
             if (let n = validate_range(header, 0, 100000)) {
                 if (let body = read_bytes(n)) {
                     println($"got {body.len()} bytes: " + escape_log(body));
