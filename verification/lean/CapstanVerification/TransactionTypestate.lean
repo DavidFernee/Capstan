@@ -87,9 +87,9 @@ theorem txOwnerIds_update_preserved (context : TxContext)
   | cons owner rest ih =>
     cases owner with
     | mk id phase =>
-      by_cases h : id = resource
-      · simp [txOwnerIds, updateTxPhase, h, ih]
-      · simp [txOwnerIds, updateTxPhase, h, ih]
+      simp [txOwnerIds, updateTxPhase, ih]
+      intro a b hab
+      cases ha : a = resource <;> simp [ha]
 
 /-- Updating a resource's phase cannot introduce a second owner. -/
 theorem update_preserves_linear_context (context : TxContext)
