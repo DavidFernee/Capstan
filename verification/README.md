@@ -35,3 +35,11 @@ Do not add a Python interpreter, C interpreter, or C runtime for CCAM. Do not
 make the prototype part of the production runtime or trusted computing base.
 Do not extend the machine to heap/GC, taint, secrets, grants, or IO until the
 first slice is implemented and tested in Capstan.
+
+
+## Bosun's Locker transaction assurance models
+
+- `bosuns_locker_history.cap` is a bounded strict-serializability oracle for completed committed point-key histories. It returns an explicit serial-order witness, rejection, invalid-input result or budget-exhausted inconclusive result.
+- `bosuns_locker_protocol.cap` models transaction lifecycle, recovery idempotence and WAL/page persistence ordering.
+
+These are executable reference models, not an implemented database, durable WAL, recovery engine or implementation-refinement proof. Bounds and unsupported history classes are documented in the source and Bosun semantics contract.
