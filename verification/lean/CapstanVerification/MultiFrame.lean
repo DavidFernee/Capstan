@@ -68,8 +68,11 @@ theorem makeTypedMultiFrame_registers_well_typed {p n : Nat}
     (signature : FunctionSignature p n)
     (arguments : Fin p → Val)
     (harguments : ArgumentsWellTyped signature arguments) :
-    (makeTypedMultiFrame functionIndex entryPC continuation destination
-      signature arguments harguments).registers_well_typed := by
+    WellTyped
+      (makeTypedMultiFrame functionIndex entryPC continuation destination
+        signature arguments harguments).signature.registerTypes
+      (makeTypedMultiFrame functionIndex entryPC continuation destination
+        signature arguments harguments).registers := by
   exact (enterTypedFunction signature arguments harguments).registers_well_typed
 
 /-- A successful caller-result commit changes only the continuation PC and
@@ -94,8 +97,9 @@ def writeTypedReturn (caller : TypedMultiFrame) (continuation : Nat)
 the callee signature, the caller destination exists, and its declared type
 matches exactly. Every rejection happens before a caller frame is returned. -/
 def commitTypedReturnToCaller (callee caller : TypedMultiFrame)
-    (value : Val) : Except Trap TypedMultiFrame :=
-  match callee.signature.returnType with
+    (value : Val) : Except Trap TypedMultiFrame := by
+  classical
+  exact match callee.signature.returnType with
   | none => .error .typeMismatch
   | some resultType =>
       if hvalue : hasType value resultType then
@@ -122,7 +126,7 @@ theorem commitTypedReturnToCaller_preserves_well_typed
     (callee caller : TypedMultiFrame) (value : Val)
     (next : TypedMultiFrame)
     (hcommit : commitTypedReturnToCaller callee caller value = .ok next) :
-    next.registers_well_typed := by
+    WellTyped next.signature.registerTypes next.registers := by
   unfold commitTypedReturnToCaller at hcommit
   cases hreturn : callee.signature.returnType with
   | none =>
@@ -165,7 +169,7 @@ def commitTypedVoidReturnToCaller (callee caller : TypedMultiFrame) :
 theorem commitTypedVoidReturnToCaller_preserves_well_typed
     (callee caller next : TypedMultiFrame)
     (hcommit : commitTypedVoidReturnToCaller callee caller = .ok next) :
-    next.registers_well_typed := by
+    WellTyped next.signature.registerTypes next.registers := by
   cases hreturn : callee.signature.returnType with
   | some resultType =>
       simp [commitTypedVoidReturnToCaller, hreturn] at hcommit
