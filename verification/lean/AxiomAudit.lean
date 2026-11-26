@@ -9,6 +9,9 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.InjectionChecker
+import CapstanVerification.InjectionSinks
+import CapstanVerification.InjectionValue
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -233,3 +236,84 @@ import CapstanVerification.ExplicitTrap
 #print axioms CapstanVerification.writeAggregateRecordField
 #print axioms CapstanVerification.writeAggregateRecordField_preserves_well_typed
 #print axioms CapstanVerification.writeAggregateRecordField_failure_has_no_new_state
+
+-- Current Capstan source-checker provenance fragment and explicit gap witnesses.
+#print axioms CapstanVerification.checkerDerived_agrees_on_supported
+#print axioms CapstanVerification.checkerWrite_monotone
+#print axioms CapstanVerification.checkerWrite_marks_derived
+#print axioms CapstanVerification.checkerWrite_omits_boolean
+#print axioms CapstanVerification.checkerWrite_retains_old_mark
+#print axioms CapstanVerification.input_byte_is_derived
+#print axioms CapstanVerification.arithmetic_preserves_left
+#print axioms CapstanVerification.arithmetic_preserves_right
+#print axioms CapstanVerification.concat_preserves_left
+#print axioms CapstanVerification.index_preserves_selector
+#print axioms CapstanVerification.field_preserves_root_mark
+#print axioms CapstanVerification.int_to_str_preserves
+#print axioms CapstanVerification.map_get_preserves_key
+#print axioms CapstanVerification.comparison_result_not_derived
+#print axioms CapstanVerification.to_text_result_not_derived
+#print axioms CapstanVerification.join_result_not_derived
+#print axioms CapstanVerification.length_result_not_derived
+#print axioms CapstanVerification.map_has_result_not_derived
+#print axioms CapstanVerification.map_keys_gap
+#print axioms CapstanVerification.map_remove_gap
+#print axioms CapstanVerification.optional_payload_not_derived
+#print axioms CapstanVerification.enum_payload_not_derived
+#print axioms CapstanVerification.struct_constructor_not_derived
+
+
+-- Source-checker laundering analysis: restricted transfer model and known gaps.
+#print axioms CapstanVerification.checkerWrite_monotone
+#print axioms CapstanVerification.checkerWrite_marks_derived
+#print axioms CapstanVerification.checkerWrite_omits_boolean
+#print axioms CapstanVerification.checkerWrite_retains_old_mark
+#print axioms CapstanVerification.checkerOptionalBranch_marks_derived_condition
+#print axioms CapstanVerification.input_byte_is_derived
+#print axioms CapstanVerification.arithmetic_preserves_left
+#print axioms CapstanVerification.arithmetic_preserves_right
+#print axioms CapstanVerification.concat_preserves_left
+#print axioms CapstanVerification.index_preserves_selector
+#print axioms CapstanVerification.field_preserves_root_mark
+#print axioms CapstanVerification.int_to_str_preserves
+#print axioms CapstanVerification.map_get_preserves_key
+#print axioms CapstanVerification.comparison_result_not_derived
+#print axioms CapstanVerification.to_text_result_not_derived
+#print axioms CapstanVerification.join_result_not_derived
+#print axioms CapstanVerification.length_result_not_derived
+#print axioms CapstanVerification.map_has_result_not_derived
+#print axioms CapstanVerification.optional_payload_not_derived
+#print axioms CapstanVerification.enum_payload_not_derived
+#print axioms CapstanVerification.struct_constructor_not_derived
+
+#print axioms CapstanVerification.summary_return_propagates
+#print axioms CapstanVerification.summary_sink_propagates
+#print axioms CapstanVerification.summary_seed_ignores_boolean
+#print axioms CapstanVerification.summary_seed_includes_integer
+
+-- Protected reconstruction sinks: model-level sink rejection theorems.
+#print axioms CapstanVerification.char_string_derived_is_rejected
+#print axioms CapstanVerification.text_index_derived_selector_is_rejected
+#print axioms CapstanVerification.html_index_derived_selector_is_rejected
+#print axioms CapstanVerification.log_index_derived_selector_is_rejected
+#print axioms CapstanVerification.optional_text_map_get_derived_key_is_rejected
+#print axioms CapstanVerification.trusted_slice_derived_selector_is_rejected
+#print axioms CapstanVerification.accepted_char_string_has_no_derived_argument
+#print axioms CapstanVerification.tainted_receiver_slice_is_not_lookup_sink
+#print axioms CapstanVerification.non_text_index_is_not_lookup_sink
+#print axioms CapstanVerification.non_text_optional_map_get_is_not_lookup_sink
+
+-- Value-level provenance: strong updates and conservative transfer rules.
+#print axioms CapstanVerification.valueWrite_read_same
+#print axioms CapstanVerification.valueWrite_read_other
+#print axioms CapstanVerification.clean_reassignment_clears_mark
+#print axioms CapstanVerification.attacker_assignment_marks_local
+#print axioms CapstanVerification.valueAssign_preserves_other
+#print axioms CapstanVerification.comparison_preserves_left
+#print axioms CapstanVerification.comparison_preserves_right
+#print axioms CapstanVerification.text_conversion_preserves
+#print axioms CapstanVerification.join_preserves_collection
+#print axioms CapstanVerification.length_preserves
+#print axioms CapstanVerification.aggregate_build_preserves_field
+#print axioms CapstanVerification.selection_preserves_control
+#print axioms CapstanVerification.map_lookup_preserves_key
