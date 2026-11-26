@@ -252,36 +252,36 @@ int main() {
 }
 
 test "inventory input bounds" {
-    assert inventory_path_allowed("src/main.cap");
-    assert !inventory_path_allowed("");
-    assert inventory_path_length_allowed(1);
-    assert inventory_path_length_allowed(MAX_INVENTORY_PATH_BYTES);
-    assert !inventory_path_length_allowed(MAX_INVENTORY_PATH_BYTES + 1);
-    assert !inventory_path_length_allowed(0);
+    assert(inventory_path_allowed("src/main.cap"));
+    assert(!inventory_path_allowed(""));
+    assert(inventory_path_length_allowed(1));
+    assert(inventory_path_length_allowed(MAX_INVENTORY_PATH_BYTES));
+    assert(!inventory_path_length_allowed(MAX_INVENTORY_PATH_BYTES + 1));
+    assert(!inventory_path_length_allowed(0));
 }
 
 test "inventory path classification" {
-    assert classification_for_path("compiler/main.cap") == "Repository";
-    assert classification_for_path("docs/SPEC.md") == "Documentation";
-    assert classification_for_path("tests/unit/check.py") == "Test";
-    assert classification_for_path("fixtures/input.bin") == "Test";
-    assert classification_for_path("third_party/lib/source.c") == "Vendored";
-    assert classification_for_path("vendor/source.c") == "Vendored";
-    assert classification_for_path("build/generated/parser.c") == "Generated";
-    assert classification_for_path("lib/generated/schema.cap") == "Generated";
-    assert !has_path_segment("mytests/helper.cap", "tests");
+    assert(classification_for_path("compiler/main.cap") == "Repository");
+    assert(classification_for_path("docs/SPEC.md") == "Documentation");
+    assert(classification_for_path("tests/unit/check.py") == "Test");
+    assert(classification_for_path("fixtures/input.bin") == "Test");
+    assert(classification_for_path("third_party/lib/source.c") == "Vendored");
+    assert(classification_for_path("vendor/source.c") == "Vendored");
+    assert(classification_for_path("build/generated/parser.c") == "Generated");
+    assert(classification_for_path("lib/generated/schema.cap") == "Generated");
+    assert(!has_path_segment("mytests/helper.cap", "tests"));
 }
 
 test "inventory language classification" {
-    assert language_for_path("compiler/main.cap") == "Capstan";
-    assert language_for_path("bootstrap/capstan0.py") == "Python";
-    assert language_for_path("runtime/capstan_rt.h") == "C/C++";
-    assert language_for_path("tests/run.sh") == "Shell";
-    assert language_for_path("verification/proof.lean") == "Lean";
-    assert language_for_path("docs/README.md") == "Markdown";
-    assert language_for_path("unknown.blarg") == "other";
-    assert language_for_path("build/Makefile") == "Make";
-    assert language_for_path("build/GNUmakefile") == "Make";
+    assert(language_for_path("compiler/main.cap") == "Capstan");
+    assert(language_for_path("bootstrap/capstan0.py") == "Python");
+    assert(language_for_path("runtime/capstan_rt.h") == "C/C++");
+    assert(language_for_path("tests/run.sh") == "Shell");
+    assert(language_for_path("verification/proof.lean") == "Lean");
+    assert(language_for_path("docs/README.md") == "Markdown");
+    assert(language_for_path("unknown.blarg") == "other");
+    assert(language_for_path("build/Makefile") == "Make");
+    assert(language_for_path("build/GNUmakefile") == "Make");
 }
 
 test "inventory aggregate totals" {
@@ -298,28 +298,28 @@ test "inventory aggregate totals" {
     inv = record_file(inv, "Capstan", 3, 30);
     inv = record_file(inv, "Python", 2, 20);
     inv = record_file(inv, "Capstan", 4, 40);
-    assert inv.total_files == 3;
-    assert inv.total_lines == 9;
-    assert inv.total_bytes == 90;
-    assert inv.files[0] == 2;
-    assert inv.lines[0] == 7;
-    assert inv.bytes[0] == 70;
-    assert inv.files[1] == 1;
-    assert inv.lines[1] == 2;
-    assert inv.bytes[1] == 20;
+    assert(inv.total_files == 3);
+    assert(inv.total_lines == 9);
+    assert(inv.total_bytes == 90);
+    assert(inv.files[0] == 2);
+    assert(inv.lines[0] == 7);
+    assert(inv.bytes[0] == 70);
+    assert(inv.files[1] == 1);
+    assert(inv.lines[1] == 2);
+    assert(inv.bytes[1] == 20);
 }
 
 test "inventory NUL-byte detection" {
-    assert !contains_nul(taint(""));
-    assert !contains_nul(taint("ordinary text"));
-    assert contains_nul(taint("prefix\0suffix"));
+    assert(!contains_nul(taint("")));
+    assert(!contains_nul(taint("ordinary text")));
+    assert(contains_nul(taint("prefix\0suffix")));
 }
 
 test "inventory physical line counting" {
-    assert physical_lines(taint("")) == 0;
-    assert physical_lines(taint("one")) == 1;
-    assert physical_lines(taint("one\n")) == 1;
-    assert physical_lines(taint("one\ntwo")) == 2;
-    assert physical_lines(taint("one\n\n")) == 2;
-    assert physical_lines(taint("one\r\ntwo\r\n")) == 2;
+    assert(physical_lines(taint("")) == 0);
+    assert(physical_lines(taint("one")) == 1);
+    assert(physical_lines(taint("one\n")) == 1);
+    assert(physical_lines(taint("one\ntwo")) == 2);
+    assert(physical_lines(taint("one\n\n")) == 2);
+    assert(physical_lines(taint("one\r\ntwo\r\n")) == 2);
 }
