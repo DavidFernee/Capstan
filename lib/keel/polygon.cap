@@ -1,0 +1,103 @@
+// Keel: bounded, exact 2D simple-polygon validation and point classification.
+import "coordinates.cap";
+import "predicates.cap";
+
+// The quadratic validator is deliberately bounded. The cap limits both work
+// and the amount of caller-controlled collection state examined per request.
+const int KEEL_POLYGON2_MAX_VERTICES = 256;
+
+// A ring is an implicit closed sequence: the final vertex is joined to vertex 0.
+// Consecutive duplicate vertices, repeated/non-adjacent contacts, self-crossings,
+// overlaps, degenerate rings and out-of-domain coordinates are rejected.
+bool? keel_polygon2_valid(List<KPoint2> vertices) {
+    int n = vertices.len();
+    if (n < 3 || n > KEEL_POLYGON2_MAX_VERTICES) { return false; }
+
+    for (int i = 0; i < n; i++) {
+        KPoint2 a = vertices[i];
+        KPoint2 b = vertices[(i + 1) % n];
+        if (!keel_coord_in_domain(a.x) || !keel_coord_in_domain(a.y)) {
+            return none;
+        }
+        if (a.x == b.x && a.y == b.y) { return false; }
+    }
+    KPoint2 final_point = vertices[n - 1];
+    if (!keel_coord_in_domain(final_point.x) ||
+        !keel_coord_in_domain(final_point.y)) { return none; }
+
+    // A non-collinear triple is necessary for a two-dimensional polygon.
+    KPoint2 first = vertices[0];
+    KPoint2 second = vertices[1];
+    bool non_collinear = false;
+    for (int k = 2; k < n; k++) {
+        int? orientation = keel_orient2d_sign(first, second, vertices[k]);
+        if (let side = orientation) {
+            if (side != 0) {
+                non_collinear = true;
+                break;
+            }
+        } else {
+            return none;
+        }
+    }
+    if (!non_collinear) { return false; }
+
+    // Every pair of edges must be disjoint unless they are consecutive and
+    // meet at their one shared endpoint. Positive-length overlap is invalid.
+    for (int i = 0; i < n; i++) {
+        KPoint2 a = vertices[i];
+        KPoint2 b = vertices[(i + 1) % n];
+        for (int j = i + 1; j < n; j++) {
+            KPoint2 c = vertices[j];
+            KPoint2 d = vertices[(j + 1) % n];
+            int? relation = keel_segment_relation2d(a, b, c, d);
+            if (let r = relation) {
+                bool adjacent = (j == i + 1) || (i == 0 && j == n - 1);
+                if (adjacent) {
+                    if (r != 0) { return false; }
+                } else {
+                    if (r != -1) { return false; }
+                }
+            } else {
+                return none;
+            }
+        }
+    }
+    return true;
+}
+
+// Return -1 outside, 0 on the boundary, +1 strictly inside. Invalid,
+// non-simple, degenerate, oversized or out-of-domain rings return none.
+// Winding-number crossings use exact orientation signs; no division,
+// epsilon, floating-point conversion or constructed intersection is used.
+int? keel_point_in_polygon2d(List<KPoint2> vertices, KPoint2 point) {
+    if (!keel_coord_in_domain(point.x) || !keel_coord_in_domain(point.y)) {
+        return none;
+    }
+    bool? valid = keel_polygon2_valid(vertices);
+    if (let is_valid = valid) {
+        if (!is_valid) { return none; }
+    } else {
+        return none;
+    }
+
+    int winding = 0;
+    int n = vertices.len();
+    for (int i = 0; i < n; i++) {
+        KPoint2 a = vertices[i];
+        KPoint2 b = vertices[(i + 1) % n];
+        int? orientation = keel_orient2d_sign(a, b, point);
+        if (let side = orientation) {
+            if (side == 0 && keel_on_segment2(a, b, point)) { return 0; }
+            if (a.y <= point.y) {
+                if (b.y > point.y && side > 0) { winding++; }
+            } else {
+                if (b.y <= point.y && side < 0) { winding--; }
+            }
+        } else {
+            return none;
+        }
+    }
+    if (winding == 0) { return -1; }
+    return 1;
+}
