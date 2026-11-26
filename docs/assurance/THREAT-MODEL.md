@@ -164,10 +164,14 @@ are not evidence that the current C-backed runtime has become memory-safe.
    that must still stop, differential fuzzing against stage 0, and `--keep-checks`.
 6. **Conservative garbage collection.** A value that looks like a pointer keeps memory alive. This can
    retain memory, so it is an availability risk, not a memory-safety one.
-7. **Missing exploit mitigations in generated binaries.** `bin/capstan` compiles generated C with
-   `-O2 -std=gnu11 -w` and does not explicitly enable stack protectors, control-flow integrity,
-   position-independent executables or `_FORTIFY_SOURCE`; only the platform compiler's defaults apply.
-   These would limit the impact of a trusted-base bug (DESIGN-MAP section 6, "Defence in depth").
+7. **Exploit-mitigation coverage is defence in depth, not a memory-safety proof.** The standard
+   generated-C build paths in `bin/capstan`, the Makefile and the test harness explicitly enable
+   stack canaries (`-fstack-protector-strong`) and position-independent executables
+   (`-fPIE -pie`). Linux builds also enable glibc fortification (`-D_FORTIFY_SOURCE=2`) at
+   optimisation level `-O2`. Control-flow integrity is not enabled: a portable configuration
+   across the supported GCC/Clang and Linux/macOS matrix has not been established. These
+   mitigations reduce exploitability of some trusted-base defects; they do not make the C runtime
+   memory-safe or replace bounds checks, sanitizers, review or formal refinement evidence.
 8. **Release integrity.** Releases are signed (keyless Sigstore), carry SBOMs and GitHub artifact
    attestations, and the workflows pin actions by commit. They are still built only on GitHub's
    runners: there is no independent rebuild elsewhere, and the build is not SLSA Build Level 3
