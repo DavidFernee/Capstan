@@ -39,14 +39,23 @@ def nativeInitialRegisterFile (types : List Ty) : List NativeCCAMRegister :=
 def runtimeInitialRegisterFile (types : List Ty) : List RuntimeRegister :=
   types.map runtimeRegisterInitForType
 
+/-- Pairwise relation between native-shaped and abstract initial register lists. -/
+inductive InitialRegisterListsMatch :
+    List NativeCCAMRegister → List RuntimeRegister → Prop
+  | nil : InitialRegisterListsMatch [] []
+  | cons {native runtime nativeRest runtimeRest}
+      (head : NativeRegisterMatches native runtime)
+      (tail : InitialRegisterListsMatch nativeRest runtimeRest) :
+      InitialRegisterListsMatch (native :: nativeRest) (runtime :: runtimeRest)
+
 /-- Initial native and abstract files have the same length and pairwise fields. -/
 theorem initialRegisterFiles_correspond (types : List Ty) :
-    List.Forall₂ NativeRegisterMatches
+    InitialRegisterListsMatch
       (nativeInitialRegisterFile types) (runtimeInitialRegisterFile types) := by
   induction types with
-  | nil => exact List.Forall₂.nil
+  | nil => exact InitialRegisterListsMatch.nil
   | cons ty rest ih =>
-      exact List.Forall₂.cons
+      exact InitialRegisterListsMatch.cons
         (nativeRegisterInitForType_matches ty) ih
 
 /-- Every native register starts uninitialised, independently of its type. -/
