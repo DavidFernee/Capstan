@@ -404,13 +404,23 @@ DisplayList finish_display_list(Canvas cv) {
     List<DisplayCommand> commands = new List<DisplayCommand>();
     for (int i = 0; i < cv.commands.len(); i += 1) {
         DisplayCommand cmd = cv.commands[i];
+        Segments? owned_segments = none;
+        List<int>? owned_alpha = none;
         if (let segments = cmd.segments) {
-            cmd.segments = display_segments_copy(segments);
+            owned_segments = some(display_segments_copy(segments));
         }
         if (let alpha = cmd.mask_alpha) {
-            cmd.mask_alpha = display_alpha_copy(alpha);
+            owned_alpha = some(display_alpha_copy(alpha));
         }
-        commands.push(cmd);
+        // Construct a fresh command rather than assigning nested option fields
+        // on a copied command value. This makes ownership transfer explicit.
+        commands.push(new DisplayCommand{
+            kind: cmd.kind, bounds: cmd.bounds, clip: cmd.clip,
+            paint: cmd.paint, rule: cmd.rule,
+            segments: owned_segments, mask_alpha: owned_alpha,
+            mask_w: cmd.mask_w, mask_h: cmd.mask_h, x: cmd.x, y: cmd.y,
+            coverage: cmd.coverage, opacity: cmd.opacity
+        });
     }
     return new DisplayList{width: cv.pm.w, height: cv.pm.h, commands: commands};
 }
