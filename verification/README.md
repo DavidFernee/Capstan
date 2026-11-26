@@ -35,3 +35,16 @@ Do not add a Python interpreter, C interpreter, or C runtime for CCAM. Do not
 make the prototype part of the production runtime or trusted computing base.
 Do not extend the machine to heap/GC, taint, secrets, grants, or IO until the
 first slice is implemented and tested in Capstan.
+
+
+## Proposed CCAM v0.2 memory work
+
+The v0.2 scratch-memory extension is specified separately in
+[`CCAM-MEMORY-EXTENSION.md`](../docs/architecture/CCAM-MEMORY-EXTENSION.md), with its
+security acceptance contract in
+[`CCAM-MEMORY-SECURITY-CONTRACT.md`](../docs/architecture/CCAM-MEMORY-SECURITY-CONTRACT.md).
+The executable artifacts cover reservation arithmetic, region lifecycle, bounded byte
+storage, CFG lifecycle validation, frame-unwind cleanup and an independent byte-store
+oracle. They are reference models/prototypes, not a conforming v0.2 evaluator, opaque
+runtime capability implementation or proof of memory safety. CCAM v0.1 remains normative
+and unchanged.
