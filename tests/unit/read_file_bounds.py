@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""read_file() cannot be made to hang or exhaust memory, natively and under stage 0:
+"""read_file(, 1073741824) cannot be made to hang or exhaust memory, natively and under stage 0:
 
     read_file_bounds.py CAPSTANC CC [CFLAGS...]
 
@@ -17,13 +17,13 @@ PROGRAM = """void show(string label, Tainted? t) {
 int main() {
     List<string> a = args(4096, 1048576, 16777216);
     string d = a[0];
-    show("fifo", read_file(d + "/fifo"));
+    show("fifo", read_file(d + "/fifo", 1073741824));
     show("zero", read_file("/dev/zero", 100000));
     show("exact", read_file(d + "/ten", 10));
     show("over", read_file(d + "/ten", 9));
     show("empty limit", read_file(d + "/empty", 0));
-    show("default", read_file(d + "/ten"));
-    show("directory", read_file(d));
+    show("default", read_file(d + "/ten", 1073741824));
+    show("directory", read_file(d, 1073741824));
     show("bad limit", read_file(d + "/ten", -1));
     return 0;
 }
