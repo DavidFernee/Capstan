@@ -197,4 +197,5 @@ import CapstanVerification.ProgramValidator
 #print axioms CapstanVerification.gcSweep_preserves_frontier
 #print axioms CapstanVerification.handleResolve_requires_current_generation
 #print axioms CapstanVerification.handleRelease_then_reuse_rejects_stale
+#print axioms CapstanVerification.handleAllocateNext_rejects_previous_generation
 #print axioms CapstanVerification.boundedNextGeneration_no_wrap
