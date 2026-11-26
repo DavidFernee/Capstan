@@ -93,10 +93,59 @@ int ccam_mem_find(CCAMMemManager manager, int identity) {
     return -1;
 }
 
+bool ccam_mem_manager_valid(CCAMMemManager manager) {
+    if (manager.max_regions < 0 || manager.max_regions > CCAM_MEM_MAX_REGIONS ||
+        manager.max_capacity < 0 || manager.max_capacity > CCAM_MEM_MAX_BYTES ||
+        manager.regions.len() > manager.max_regions ||
+        manager.live_regions < 0 || manager.live_regions > manager.max_regions ||
+        manager.live_capacity < 0 || manager.live_capacity > manager.max_capacity ||
+        manager.next_identity <= 0) { return false; }
+
+    int open_count = 0;
+    int open_capacity = 0;
+    int max_identity = 0;
+    for (int i = 0; i < manager.regions.len(); i += 1) {
+        CCAMMemRegion region = manager.regions[i];
+        if (region.identity <= 0 || region.owner_frame <= 0) { return false; }
+        if (region.identity > max_identity) { max_identity = region.identity; }
+        for (int j = 0; j < i; j += 1) {
+            if (manager.regions[j].identity == region.identity) { return false; }
+        }
+        if (region.open) {
+            if (region.generation <= 0 || region.capacity < 0 ||
+                region.capacity > manager.max_capacity ||
+                region.used < 0 || region.used > region.capacity ||
+                region.bytes.len() != region.capacity) { return false; }
+            open_count += 1;
+            CCAMIntResult sum = ccam_add(open_capacity, region.capacity);
+            if (!sum.ok) { return false; }
+            open_capacity = sum.value;
+        } else {
+            if (region.generation != 0 || region.capacity != 0 ||
+                region.used != 0 || region.bytes.len() > manager.max_capacity) {
+                return false;
+            }
+        }
+        for (int j = 0; j < region.bytes.len(); j += 1) {
+            if (region.bytes[j] < 0 || region.bytes[j] > 255) { return false; }
+            if (!region.open && region.bytes[j] != 0) { return false; }
+        }
+    }
+    return open_count == manager.live_regions &&
+        open_capacity == manager.live_capacity &&
+        manager.next_identity > max_identity;
+}
+
 CCAMMemCreateResult ccam_mem_create(
     CCAMMemManager manager, int owner_frame, int capacity,
     int fail_after_bytes
 ) {
+    if (!ccam_mem_manager_valid(manager)) {
+        return new CCAMMemCreateResult{
+            ok: false, manager: manager, identity: 0,
+            error: "invalid_memory_manager"
+        };
+    }
     if (owner_frame <= 0 || capacity < 0 ||
         manager.max_regions < 0 || manager.max_regions > CCAM_MEM_MAX_REGIONS ||
         manager.max_capacity < 0 || manager.max_capacity > CCAM_MEM_MAX_BYTES ||
@@ -189,6 +238,9 @@ CCAMMemResult ccam_mem_reserve(
     CCAMMemManager manager, int identity, int caller_frame,
     int count, int element_size, int alignment
 ) {
+    if (!ccam_mem_manager_valid(manager)) {
+        return ccam_mem_error(manager, "invalid_memory_manager");
+    }
     int slot = ccam_mem_find(manager, identity);
     if (slot < 0) { return ccam_mem_error(manager, "stale_region_capability"); }
     CCAMMemRegion region = manager.regions[slot];
@@ -217,6 +269,7 @@ string ccam_mem_check(
     CCAMMemManager manager, CCAMMemView view,
     int caller_frame, int index
 ) {
+    if (!ccam_mem_manager_valid(manager)) { return "invalid_memory_manager"; }
     int slot = ccam_mem_find(manager, view.identity);
     if (slot < 0) { return "stale_region_capability"; }
     CCAMMemRegion region = manager.regions[slot];
@@ -378,6 +431,9 @@ CCAMMemResult ccam_mem_corrupt_byte(
 }
 
 CCAMMemResult ccam_mem_reset(CCAMMemManager manager, int identity, int caller_frame) {
+    if (!ccam_mem_manager_valid(manager)) {
+        return ccam_mem_error(manager, "invalid_memory_manager");
+    }
     int slot = ccam_mem_find(manager, identity);
     if (slot < 0) { return ccam_mem_error(manager, "stale_region_capability"); }
     CCAMMemRegion region = manager.regions[slot];
@@ -400,6 +456,9 @@ CCAMMemResult ccam_mem_reset(CCAMMemManager manager, int identity, int caller_fr
 }
 
 CCAMMemResult ccam_mem_close(CCAMMemManager manager, int identity, int caller_frame) {
+    if (!ccam_mem_manager_valid(manager)) {
+        return ccam_mem_error(manager, "invalid_memory_manager");
+    }
     int slot = ccam_mem_find(manager, identity);
     if (slot < 0) { return ccam_mem_error(manager, "stale_region_capability"); }
     CCAMMemRegion region = manager.regions[slot];
@@ -436,6 +495,30 @@ test "multi-region aggregate capacity and table limits are failure atomic" {
     assert(!table_full.ok && table_full.error == "region_limit_exceeded");
     assert(table_full.manager.live_regions == 2);
     assert(table_full.manager.live_capacity == 12);
+}
+
+
+test "forged aggregate ledger cannot bypass region or byte capacity" {
+    CCAMMemManager manager = ccam_mem_manager(2, 16);
+    CCAMMemCreateResult created = ccam_mem_create(manager, 1, 12, -1);
+    CCAMMemManager forged = created.manager;
+    forged.live_capacity = 0;
+    CCAMMemCreateResult denied = ccam_mem_create(forged, 2, 8, -1);
+    assert(created.ok && !denied.ok);
+    assert(denied.error == "invalid_memory_manager");
+    assert(denied.manager.live_capacity == 0);
+}
+
+test "forged region metadata is rejected before reservation" {
+    CCAMMemManager manager = ccam_mem_manager(1, 16);
+    CCAMMemCreateResult created = ccam_mem_create(manager, 1, 12, -1);
+    CCAMMemRegion corrupt = created.manager.regions[0];
+    corrupt.capacity = 0;
+    created.manager.regions[0] = corrupt;
+    CCAMMemResult denied = ccam_mem_reserve(
+        created.manager, created.identity, 1, 1, 1, 1);
+    assert(created.ok && !denied.ok);
+    assert(denied.error == "invalid_memory_manager");
 }
 
 test "aggregate budget rejects one byte over and preserves identity source" {
