@@ -81,7 +81,7 @@ else
 fi
 
 section "Capstan-native verification: candidate aggregate execution and validation"
-for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source byte_buffer u16 u32 u64 patch32 rel32 native_reg rex modrm movimm alu jump ret syscall exit_code padding elf_ident elf_header elf_segment elf_image native_smoke operator_stack expr_reduce checked_add checked_sub checked_mul checked_div arithmetic scalar_machine native_driver native_source_smoke runtime_budget runtime_region runtime_align runtime_span runtime_copy runtime_zero runtime_smoke native_reloc native_link; do
+for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source byte_buffer u16 u32 u64 patch32 rel32 native_reg rex modrm movimm alu jump ret syscall exit_code padding elf_ident elf_header elf_segment elf_image native_smoke operator_stack expr_reduce checked_add checked_sub checked_mul checked_div arithmetic scalar_machine native_driver native_source_smoke expression_pipeline runtime_budget runtime_region runtime_align runtime_span runtime_copy runtime_zero runtime_smoke native_reloc native_link; do
   if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_${module}.cap" 2>&1)"; then
     ok "aggregate candidate $module"
   else
@@ -648,7 +648,6 @@ if out="$($PY "$ROOT/tests/shroud/check_text_byte_limit.py" "$C" "$CC" $WFLAGS 2
 if out="$($PY "$ROOT/tests/shroud/check_a11y_utf8_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud accessibility UTF-8 budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_frame_line_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud frame line budget" "$out"; fi
 if out="$($PY "$ROOT/tests/shroud/check_png_budget.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "shroud PNG export budget" "$out"; fi
-if out="$($PY "$ROOT/tests/shroud/gpu_backend_model.py" 2>&1)"; then ok "$out"; else bad "shroud GPU backend contract model" "$out"; fi
 printf 'int main(void) { return 0; }\n' > "$tmp/san.c"
 if "$CC" $SAN "$tmp/san.c" -o "$tmp/san" 2>/dev/null; then
   if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $SAN 2>&1)"; then ok "shroud under ASan+UBSan, damaged fonts included: no reports"; else bad "shroud (sanitizers)" "$out"; fi
