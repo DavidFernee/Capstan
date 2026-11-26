@@ -1098,7 +1098,7 @@ void test_path_flatten_preflight(Tally t) {
     }
     curves.close();
     expect(t, path_flatten_segment_bound(curves) >= 0,
-        "path preflight: accepts a path whose worst-case subdivision fits");
+        "path preflight: accepts a path whose worst-case subdivision fits", "");
 
     Path excessive = new_path().move_to(0, 0);
     for (int j = 0; j < 1024; j += 1) {
