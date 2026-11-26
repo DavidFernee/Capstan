@@ -803,9 +803,28 @@ static void cap_println(CapStr *s) { cap_print(s); fputc('\n', stdout); }
 
 __attribute__((noreturn)) static void cap_exit(int64_t code) { fflush(stdout); exit((int)code); }
 
-static CapList *cap_args(void) {
+#define CAP_ARGS_MAX_COUNT 4096
+#define CAP_ARGS_MAX_ARG_BYTES ((int64_t)1 << 20)
+#define CAP_ARGS_MAX_TOTAL_BYTES ((int64_t)1 << 24)
+static CapList *cap_args_bounded(int64_t max_count, int64_t max_arg_bytes,
+                                 int64_t max_total_bytes, int64_t loc) {
+    if (CAP_UNLIKELY(max_count < 0 || max_count > CAP_ARGS_MAX_COUNT ||
+                     max_arg_bytes < 0 || max_arg_bytes > CAP_ARGS_MAX_ARG_BYTES ||
+                     max_total_bytes < 0 || max_total_bytes > CAP_ARGS_MAX_TOTAL_BYTES))
+        cap_panic("args() bounds outside supported limits", "CWE-789", loc);
+    int64_t count = cap_argc > 0 ? (int64_t)cap_argc - 1 : 0;
+    if (CAP_UNLIKELY(count > max_count))
+        cap_panic("command-line argument count exceeds explicit bound", "CWE-789", loc);
     CapList *l = cap_list_new();
-    for (int i = 1; i < cap_argc; i++) cap_list_push(l, cap_vp(cap_str_new(cap_argv[i], (int64_t)strlen(cap_argv[i]))));
+    int64_t total = 0;
+    for (int i = 1; i < cap_argc; i++) {
+        size_t n = strlen(cap_argv[i]);
+        if (CAP_UNLIKELY(n > (size_t)max_arg_bytes ||
+                         n > (size_t)(max_total_bytes - total)))
+            cap_panic("command-line argument bytes exceed explicit bound", "CWE-789", loc);
+        total += (int64_t)n;
+        cap_list_push(l, cap_vp(cap_str_new(cap_argv[i], (int64_t)n)));
+    }
     return l;
 }
 
@@ -888,8 +907,7 @@ static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
     fclose(f);
     return failed || too_long ? NULL : b.s;
 }
-static CapStr *cap_read_file(CapStr *path) { return cap_read_file_max(path, CAP_READ_FILE_DEFAULT, 0); }
-
+ 
 /*
  * Workspace-scoped source loading for the experimental native compiler.
  * The root is opened once; all child files are resolved relative to that
@@ -1009,17 +1027,19 @@ static void cap_workspace_close(int64_t root_fd) {
     if (root_fd >= 0 && root_fd <= INT_MAX) (void)close((int)root_fd);
 }
 
-/* One line of standard input without its newline, or none at end of input. Every
-   byte is kept, including NUL bytes. Lines are capped at 1 MiB (CWE-789). */
+/* One line of standard input without its newline, or none at end of input.
+   The caller supplies the payload limit; the implementation ceiling is explicit. */
 #define CAP_READ_LINE_MAX ((int64_t)1 << 20)
-static CapStr *cap_read_line(void) {
+static CapStr *cap_read_line_max(int64_t max, int64_t loc) {
+    if (CAP_UNLIKELY(max < 0 || max > CAP_READ_LINE_MAX))
+        cap_panic("read_line() limit outside 0..1 MiB", "CWE-789", loc);
     CapBuf b = cap_buf_new(128);
     int c, got = 0;
     while ((c = getc(stdin)) != EOF) {
         got = 1;
         if (c == '\n') break;
-        if (b.s->len >= CAP_READ_LINE_MAX)
-            cap_panic("read_line() input exceeds 1 MiB", "CWE-789", 0);
+        if (b.s->len >= max)
+            cap_panic("read_line() input exceeds explicit byte limit", "CWE-789", loc);
         char ch = (char)c;
         cap_buf_put(&b, &ch, 1);
     }
@@ -1300,16 +1320,21 @@ static void cap_run(CapStr *prog, CapList *argv) {
 /* Secrets (CWE-798, CWE-208, CWE-532)                                 */
 /* ------------------------------------------------------------------ */
 
-static CapStr *cap_secret_env(CapStr *name) {
+#define CAP_SECRET_ENV_MAX_BYTES ((int64_t)1 << 20)
+static CapStr *cap_secret_env_bounded(CapStr *name, int64_t max, int64_t loc) {
     /* getenv() accepts a NUL-terminated name, while CapStr is length-delimited.
        Reject embedded NULs rather than silently resolving a truncated name. */
     if (!name || name->len < 0 ||
         memchr(name->data, '\0', (size_t)name->len) != NULL) return NULL;
+    if (CAP_UNLIKELY(max < 0 || max > CAP_SECRET_ENV_MAX_BYTES))
+        cap_panic("secret_env() limit outside 0..1 MiB", "CWE-789", loc);
     const char *v = getenv(name->data);
     if (!v) return NULL;
     size_t value_len = strlen(v);
+    if (value_len > (size_t)max)
+        cap_panic("secret environment value exceeds explicit byte limit", "CWE-789", loc);
     if (value_len > INT64_MAX)
-        cap_panic("secret environment value exceeds string length range", "CWE-789", 0);
+        cap_panic("secret environment value exceeds string length range", "CWE-789", loc);
     int64_t n = (int64_t)value_len;
     CapStr *r = (CapStr *)cap_alloc_secret(cap_rt_checked_string_bytes(n, 1, 1, 0));
     r->len = n;
