@@ -5,7 +5,7 @@
 int main() {
     int frames = 0;
     while (true) {
-        if (let header = read_line()) {
+        if (let header = read_line(1048576)) {
             if (let n = validate_range(header, 0, 1000)) {
                 if (let body = read_bytes(n)) {
                     frames += 1;
