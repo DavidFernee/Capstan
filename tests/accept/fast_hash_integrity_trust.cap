@@ -3,6 +3,6 @@ int main() {
     Tainted artifact = taint("non-password artifact bytes");
     string reviewed = trust(artifact, "integrity digest for non-password artifact");
     string tag = hash(reviewed);
-    println(bool_text(hash_verify(reviewed, tag)));
+    if (hash_verify(reviewed, tag)) { println("verified"); } else { println("mismatch"); }
     return 0;
 }
