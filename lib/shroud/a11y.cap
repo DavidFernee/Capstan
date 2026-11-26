@@ -20,8 +20,9 @@ struct A11yNode {
     List<A11yNode> kids;
 }
 
-// Convert already-sanitised code points back to UTF-8. The accessibility tree must
-// expose the same visible characters as the renderer, not the original Tainted bytes.
+// Accessibility exposes the exact logical value. Security-sensitive formatting
+// is reported separately in JSON annotations; it is never substituted into or
+// deleted from the accessible name/value.
 Tainted utf8_from_codepoints(List<int> cps) {
     // Validate scalar values and the encoded-byte budget before allocating any
     // output fragments. The helper can also be called with a hand-built list.
@@ -68,7 +69,22 @@ Tainted utf8_from_codepoints(List<int> cps) {
 }
 
 Tainted visible_untrusted_text(Tainted value) {
-    return utf8_from_codepoints(untrusted_codepoints(value));
+    // Kept as a compatibility-named helper; this is the logical value, not a
+    // sanitised reconstruction of the visual presentation.
+    return value;
+}
+
+string a11y_security_annotations_json(Tainted name, Tainted value) {
+    List<string> parts = new List<string>();
+    List<string> name_annotations = unicode_security_annotations(name, "name");
+    for (int i = 0; i < name_annotations.len(); i += 1) {
+        parts.push("\"" + escape_json(taint(name_annotations[i])) + "\"");
+    }
+    List<string> value_annotations = unicode_security_annotations(value, "value");
+    for (int i = 0; i < value_annotations.len(); i += 1) {
+        parts.push("\"" + escape_json(taint(value_annotations[i])) + "\"");
+    }
+    return "[" + join(parts, ",") + "]";
 }
 
 string role_of(View v) {
@@ -133,7 +149,17 @@ bool a11y_json_preflight(A11yNode n, List<int> budget, int depth) {
     if (!a11y_json_field_budget(budget, n.role.len())) { return false; }
     if (!a11y_json_field_budget(budget, n.name.len())) { return false; }
     if (!a11y_json_field_budget(budget, n.value.len())) { return false; }
-    if (!a11y_json_budget_add(budget, 128)) { return false; }
+    if (!a11y_json_budget_add(budget, 160)) { return false; }
+    List<string> name_annotations = unicode_security_annotations(n.name, "name");
+    for (int i = 0; i < name_annotations.len(); i += 1) {
+        if (!a11y_json_field_budget(budget, name_annotations[i].len())) { return false; }
+        if (!a11y_json_budget_add(budget, 4)) { return false; }
+    }
+    List<string> value_annotations = unicode_security_annotations(n.value, "value");
+    for (int i = 0; i < value_annotations.len(); i += 1) {
+        if (!a11y_json_field_budget(budget, value_annotations[i].len())) { return false; }
+        if (!a11y_json_budget_add(budget, 4)) { return false; }
+    }
     for (int i = 0; i < n.states.len(); i += 1) {
         if (!a11y_json_field_budget(budget, n.states[i].len())) { return false; }
         if (!a11y_json_budget_add(budget, 16)) { return false; }
@@ -158,6 +184,8 @@ void a11y_json_append(A11yNode n, List<List<string>> batches) {
     a11y_json_push(batches, "\",\"name\":\"");
     a11y_json_push(batches, escape_json(n.name));
     a11y_json_push(batches, "\"");
+    a11y_json_push(batches, ",\"security_annotations\":");
+    a11y_json_push(batches, a11y_security_annotations_json(n.name, n.value));
     if (n.value.len() > 0) {
         a11y_json_push(batches, ",\"value\":\"");
         a11y_json_push(batches, escape_json(n.value));
