@@ -102,7 +102,6 @@ theorem nativePCAdvance_corresponds
       Int.ofNat (sequentialPC pc).val := by
   rw [sequentialPC_increments_before_last pc hbeforeLast]
   simp [nativePCAdvance]
-  omega
 
 /-- The native evaluator's pre-dispatch fuel gate, projected to signed integers.
 A validated machine state has nonnegative counters, so the relation below
@@ -122,12 +121,10 @@ theorem nativeStepAdmission_corresponds (budget : StepBudget) :
   unfold nativeStepAdmission consumeStep
   by_cases h : budget.used < budget.limit
   · have hlt : Int.ofNat budget.used < Int.ofNat budget.limit := by
-      exact_mod_cast h
+      exact Int.ofNat_lt.mpr h
     simp [h, hlt]
-    congr 1
-    omega
   · have hge : Int.ofNat budget.limit ≤ Int.ofNat budget.used := by
-      exact_mod_cast (Nat.le_of_not_gt h)
+      exact Int.ofNat_le.mpr (Nat.le_of_not_gt h)
     simp [h, hge]
 
 /-- An exhausted budget is rejected before the native-shaped dispatch step. -/
