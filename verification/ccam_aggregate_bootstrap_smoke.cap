@@ -1,7 +1,71 @@
 import "ccam_aggregate_driver.cap";
+import "ccam_aggregate_native_driver.cap";
+import "ccam_aggregate_expression_pipeline.cap";
+
 test "candidate source byte pipeline evaluates a literal" {
  List<int> bytes=new List<int>(); bytes.push(52); bytes.push(50);
  AGScalarResult result=ag_compile_literal(bytes);
  assert(result.ok && result.value==42);
  bytes.push(43); assert(!ag_compile_literal(bytes).ok);
+}
+
+test "candidate source-to-ELF pipeline emits an executable exit image" {
+ List<int> source=new List<int>(); source.push(52); source.push(50);
+ AGImage image=ag_compile_exit_image(source);
+ assert(image.ok && image.bytes.len()==4118);
+ assert(image.bytes[0]==127 && image.bytes[1]==69 && image.bytes[2]==76 && image.bytes[3]==70);
+ assert(image.bytes[4096]==72 && image.bytes[4097]==191 && image.bytes[4098]==42);
+}
+
+test "candidate expression parser respects precedence and emits native exit image" {
+ // 2 + 3 * 4 = 14; source is ASCII bytes.
+ List<int> source=new List<int>();
+ source.push(50); source.push(43); source.push(51); source.push(42); source.push(52);
+ AGCheckedInt result=ag_compile_expression(source);
+ assert(result.ok && result.value==14);
+ AGImage image=ag_compile_expression_image(source);
+ assert(image.ok && image.bytes.len()==4118);
+ assert(image.bytes[4096]==72 && image.bytes[4097]==191 && image.bytes[4098]==14);
+}
+
+test "candidate expression pipeline handles grouping and division" {
+ // 2 * (3 + 4) = 14.
+ List<int> grouped=new List<int>();
+ grouped.push(50); grouped.push(42); grouped.push(40); grouped.push(51);
+ grouped.push(43); grouped.push(52); grouped.push(41);
+ AGCheckedInt grouped_result=ag_compile_expression(grouped);
+ assert(grouped_result.ok && grouped_result.value==14);
+ // 8 / 2 = 4.
+ List<int> divided=new List<int>();
+ divided.push(56); divided.push(47); divided.push(50);
+ AGCheckedInt divided_result=ag_compile_expression(divided);
+ assert(divided_result.ok && divided_result.value==4);
+}
+
+test "candidate source-to-ELF pipeline rejects unsupported source" {
+ List<int> source=new List<int>(); source.push(52); source.push(50);
+ source.push(43);
+ AGImage image=ag_compile_exit_image(source);
+ assert(!image.ok);
+}
+
+test "candidate expression pipeline rejects arithmetic outside bounded scalar domain" {
+ List<int> addition=new List<int>();
+ addition.push(49); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48); addition.push(48);
+ addition.push(43); addition.push(49);
+ assert(!ag_compile_expression(addition).ok);
+ List<int> multiplication=new List<int>();
+ multiplication.push(49); multiplication.push(48); multiplication.push(48); multiplication.push(48); multiplication.push(48); multiplication.push(48);
+ multiplication.push(42);
+ multiplication.push(49); multiplication.push(48); multiplication.push(48); multiplication.push(48); multiplication.push(48); multiplication.push(48);
+ assert(!ag_compile_expression(multiplication).ok);
+}
+
+test "candidate expression pipeline rejects divide by zero and malformed grouping" {
+ List<int> division=new List<int>();
+ division.push(52); division.push(47); division.push(48);
+ assert(!ag_compile_expression(division).ok);
+ List<int> grouping=new List<int>();
+ grouping.push(40); grouping.push(50); grouping.push(43); grouping.push(51);
+ assert(!ag_compile_expression(grouping).ok);
 }
