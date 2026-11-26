@@ -1,0 +1,53 @@
+import "ccam_aggregate_expression_variables.cap";
+
+struct AGProgramResult { bool ok; int value; int assignments; }
+bool ag_variable_assign(List<AGVariableBinding> bindings,List<int> name,int value) {
+    if(name.len()==0 || name.len()>128 || bindings.len()>4096) { return false; }
+    for(int i=0;i<bindings.len();i+=1) {
+        if(bindings[i].name.len()==name.len()) {
+            bool same=true;
+            for(int j=0;j<name.len();j+=1) { if(bindings[i].name[j]!=name[j]) { same=false; } }
+            if(same) { bindings[i].value=value; return true; }
+        }
+    }
+    if(bindings.len()>=4096) { return false; }
+    bindings.push(new AGVariableBinding{name:name,value:value});
+    return true;
+}
+List<int> ag_source_slice(List<int> source,int start,int end) {
+    List<int> result=new List<int>();
+    if(start<0 || end<start || end>source.len() || end-start>1048576) { return result; }
+    for(int i=start;i<end;i+=1) { result.push(source[i]); }
+    return result;
+}
+AGProgramResult ag_compile_assignment_program(List<int> source) {
+    AGLexResult lex=ag_lex_bytes(source);
+    List<AGVariableBinding> bindings=new List<AGVariableBinding>();
+    int position=0; int assignments=0;
+    if(!lex.ok || lex.tokens.len()>65536) { return new AGProgramResult{ok:false,value:0,assignments:0}; }
+    while(position<lex.tokens.len() && lex.tokens[position].kind!=0) {
+        AGToken first=lex.tokens[position];
+        if(first.kind!=1 || position+1>=lex.tokens.len() || lex.tokens[position+1].kind!=3 || source[lex.tokens[position+1].start]!=61) { break; }
+        int rhs=position+2;
+        if(rhs>=lex.tokens.len() || lex.tokens[rhs].kind==0) { return new AGProgramResult{ok:false,value:0,assignments:assignments}; }
+        int finish=rhs;
+        while(finish<lex.tokens.len() && lex.tokens[finish].kind!=0 && !(lex.tokens[finish].kind==3 && source[lex.tokens[finish].start]==59)) { finish+=1; }
+        if(finish==rhs) { return new AGProgramResult{ok:false,value:0,assignments:assignments}; }
+        int start_byte=lex.tokens[rhs].start;
+        int end_byte=lex.tokens[finish-1].end;
+        List<int> rhs_source=ag_source_slice(source,start_byte,end_byte);
+        AGCheckedInt value=ag_compile_expression_with_bindings(rhs_source,bindings);
+        if(!value.ok) { return new AGProgramResult{ok:false,value:0,assignments:assignments}; }
+        List<int> name=ag_source_slice(source,first.start,first.end);
+        if(!ag_variable_assign(bindings,name,value.value)) { return new AGProgramResult{ok:false,value:0,assignments:assignments}; }
+        assignments+=1;
+        if(finish<lex.tokens.len() && lex.tokens[finish].kind==3 && source[lex.tokens[finish].start]==59) { position=finish+1; }
+        else { position=finish; }
+    }
+    if(position>=lex.tokens.len() || lex.tokens[position].kind==0) { return new AGProgramResult{ok:false,value:0,assignments:assignments}; }
+    int final_start=lex.tokens[position].start;
+    List<int> final_source=ag_source_slice(source,final_start,source.len());
+    AGCheckedInt final_value=ag_compile_expression_with_bindings(final_source,bindings);
+    if(!final_value.ok) { return new AGProgramResult{ok:false,value:0,assignments:assignments}; }
+    return new AGProgramResult{ok:true,value:final_value.value,assignments:assignments};
+}
