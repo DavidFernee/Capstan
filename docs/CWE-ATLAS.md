@@ -19,7 +19,7 @@ Attempts are written from the CWE descriptions; this atlas is not an official MI
 | Inexpressible: the construct does not exist | 71 |
 | Possible only through an audited escape hatch | 2 |
 | Logic or design decision: beyond any language | 22 |
-| **Gap: can be written** | 7 |
+| **Gap: can be written** | 6 |
 | Not applicable (yet) | 33 |
 
 ## Gaps: weaknesses that can still be written
@@ -29,13 +29,12 @@ closes a gap the test fails and the entry is reclassified.
 
 | CWE | Weakness | What was written | Why it compiles, and the plan |
 |---|---|---|---|
+| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | `int main() { string cell = escape_json(taint("=cmd\|' /C calc'!A0")); bool ok = write_...` | escape_json() still returns a plain string fragment for the LSP and Shroud serializers, so the format-agnostic write_file() cannot distinguish it from trusted text. JSON fragment typing and a typed JSON sink are tracked in issue #250. |
 | [257](https://cwe.mitre.org/data/definitions/257.html) | Storing passwords in a recoverable format | `int main() { if (let x = read_line()) { bool ok = write_log_file("users.log", escape_lo...` | Password provenance is not yet tracked: context-safe logging still stores a recoverable password. This is an explicit follow-up, not a compiler-prevented weakness. |
-| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | `int main() { string cell = escape_json(taint("=cmd\|' /C calc'!A0")); bool ok = write_...` | escape_json() still returns a plain string fragment for the LSP and Shroud serializers, so generic write_file() cannot distinguish it from trusted text. JSON typing is tracked in issue #250. |
 | [798](https://cwe.mitre.org/data/definitions/798.html) | Hard-coded password-like literal under an innocuous name | `int main() { string cfg = "Winter2026!"; sql_query("UPDATE settings SET v = ?", cfg); r...` | A short password-like literal under an ordinary name is indistinguishable from other text. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Password Secret passed through an innocuous alias to hash_verify | `int main() { if (let s = secret_env("PASSWORD")) { bool ok = hash_verify(s, hash("candi...` | hash_verify() permits generic Secret values for non-password credentials. Secret does not distinguish a human password from a token, and the innocuous alias hides the environment name. A first-class Password type and explicit token-verification contract are required. |
 | [862](https://cwe.mitre.org/data/definitions/862.html) | Missing authorization (data type not declared sensitive) | `string read_any(Record r) { return r.body; }` | Protection starts when the type is declared sensitive. It is declared once per type, not per function, but it can still be forgotten. |
 | [306](https://cwe.mitre.org/data/definitions/306.html) | Missing authentication for critical function | `void delete_all_records() { }` | An operation that touches no sensitive data value cannot be recognised as critical; it must be declared protected. |
-| [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (Html assembled across separate statements) | `int main() { if (let t = read_line()) { Html v = escape_html(t); Html page = "<img src=...` | The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap. |
 
 ## Beyond any language: logic and design decisions
 
@@ -78,8 +77,8 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation | Prevented: rejected at compile time | `CWE-20`. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a list | Prevented: rejected at compile time | `CWE-20`. Collections and structs that hold bytes of untrusted input are tracked too. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a struct field | Prevented: rejected at compile time | `CWE-20`. |
-| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a lookup table) | Prevented: rejected at compile time | `CWE-20`. Bytes of untrusted input are tainted integers: selecting trusted text with them (list index, slice, map key) is rejected. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Untrusted input passed directly to a typed HTML file sink | Prevented: rejected at compile time | `CWE-20`. Typed output sinks require context-encoded values; untrusted input must pass through the matching escaper. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a lookup table) | Prevented: rejected at compile time | `CWE-20`. Bytes of untrusted input are tainted integers: selecting trusted text with them (list index, slice, map key) is rejected. |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal (via an audited trust()) | Possible only through an audited escape hatch | Possible only through trust(), which needs a written justification and is reported in every build. validate_path() is the safe route. |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal (attempt through validate_path) | Prevented: attempt compiles but has no effect |  |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal | Prevented: rejected at compile time | `CWE-20`. |
