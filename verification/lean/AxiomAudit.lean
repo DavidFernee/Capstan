@@ -9,6 +9,7 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.Visibility
 import CapstanVerification.GenerationalHandles
 import CapstanVerification.CollectorSemantics
 import CapstanVerification.ReferenceSemantics
@@ -330,3 +331,12 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.gcSweep_preserves_reachable
 #print axioms CapstanVerification.gcSweep_no_new_objects
 #print axioms CapstanVerification.handleResolve_requires_current_generation
+
+-- Module visibility policy model: theorem audit.
+#print axioms CapstanVerification.field_operation_same_policy
+#print axioms CapstanVerification.private_field_denied_cross_module
+#print axioms CapstanVerification.opaque_field_denied_cross_module
+#print axioms CapstanVerification.public_field_permitted_cross_module
+#print axioms CapstanVerification.owner_can_access_private_field
+#print axioms CapstanVerification.opaque_construction_denied_cross_module
+#print axioms CapstanVerification.opaque_construction_permitted_owner
