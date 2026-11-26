@@ -29,7 +29,7 @@ quarterly, and of the SSDF.
 ## Reviewed implementation boundary
 
 This assurance-pack baseline is anchored to mainline commit
-`fa7cbc216c2f91aac64503aeeaefa86c831e5a43` (2026-11-26). The production compiler
+`35f7ce57132f235adbb8e60b00a4f27f3a87d9eb` (2026-11-26). The production compiler
 execution path remains generated C followed by GCC/Clang and the Capstan C runtime.
 Mainline includes restricted Capstan-native CCAM evaluation and validation, bounded
 multi-function execution, checked scalar source lowering and selected Lean representation
