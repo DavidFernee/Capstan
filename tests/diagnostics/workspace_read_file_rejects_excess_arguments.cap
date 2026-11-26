@@ -1,0 +1,6 @@
+// expect: workspace_read_file expects 3 argument(s), found 4
+// spec: builtins.io
+int main() {
+    if (let data = workspace_read_file(1, "main.cap", 64, 1)) { return data.len(); }
+    return 0;
+}

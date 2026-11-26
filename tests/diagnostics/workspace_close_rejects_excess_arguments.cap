@@ -1,0 +1,6 @@
+// expect: workspace_close expects 1 argument(s), found 2
+// spec: builtins.io
+int main() {
+    workspace_close(1, 2);
+    return 0;
+}

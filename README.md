@@ -106,7 +106,7 @@ See [the specification](docs/SPEC.md#language-server) for what it supports.
 | `account.owner` where `account` may be none | `error[CWE-476]` unwrap it with `if (let …)` |
 | `int total;` | `error[CWE-457]` must be initialised |
 | `new Config{port: 80}` missing a field | `error[CWE-908]` field not initialised |
-| `string db_password = "hunter2";` | `error[CWE-798]` use `secret_env("NAME")` |
+| `string db_password = "hunter2";` | `error[CWE-798]` use `secret_env("NAME", 65536)` |
 | `md5(…)`, `sha1(…)` | `error[CWE-327]` use `hash()` / `hash_password()` |
 | `flags & 1 == 0` | `error[CWE-783]` bitwise operators need parentheses when mixed with others |
 | `1 << 64`, `admin & owner` on bools | `error[CWE-1335]`, `error[CWE-480]` |

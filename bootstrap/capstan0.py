@@ -11,7 +11,13 @@ itself, and this file can be thrown away.
 
 Usage:  python3 capstan0.py out.py file1.cap [file2.cap ...]
 """
-import os, sys
+import os, sys, stat, codecs
+
+MAX_SOURCE_BYTES = 16 * 1024 * 1024
+MAX_IMPORT_FILES = 256
+MAX_TOTAL_SOURCE_BYTES = 32 * 1024 * 1024
+MAX_TOTAL_TOKENS = 500_000
+MAX_TOTAL_AST_NODES = 150_000
 
 KEYWORDS = {
     "struct", "const", "if", "else", "while", "for", "return", "break", "continue",
@@ -51,8 +57,33 @@ def decode_escapes(raw, where):
     return "".join(out)
 
 
-def lex(src, file):
-    toks, i, line, n = [], 0, 1, len(src)
+class _BudgetedTokens(list):
+    """Count emitted tokens once, including tokens from interpolated sub-lexers."""
+    def __init__(self, budget, account):
+        super().__init__()
+        self.budget = budget
+        self.account = account
+
+    def append(self, token):
+        if self.account and token.kind != "eof":
+            if self.budget["tokens"] >= MAX_TOTAL_TOKENS:
+                raise SystemExit(
+                    f"{token.file}:{token.line}: import graph exceeds total token budget "
+                    f"(limit {MAX_TOTAL_TOKENS}) [CWE-400]"
+                )
+            self.budget["tokens"] += 1
+        super().append(token)
+
+    def __iadd__(self, items):
+        for item in items:
+            self.append(item)
+        return self
+
+
+def lex(src, file, budget=None, account=True):
+    if budget is None:
+        budget = {"tokens": 0}
+    toks, i, line, n = _BudgetedTokens(budget, account), 0, 1, len(src)
     while i < n:
         c = src[i]
         if c == "\n":
@@ -126,7 +157,7 @@ def lex(src, file):
                         elif src[e] == "}": depth -= 1
                         e += 1 if depth else 0
                     toks += [Tok("op", "+", line, file), Tok("id", "to_text", line, file), Tok("op", "(", line, file)]
-                    toks += lex(src[j + 1:e], file)[:-1]
+                    toks += lex(src[j + 1:e], file, budget, False)[:-1]
                     toks.append(Tok("op", ")", line, file))
                     j = e + 1; k = j; continue
                 j += 1
@@ -534,7 +565,7 @@ BUILTINS = {
 }
 
 PRELUDE = r'''
-import sys, re, hashlib, os, stat
+import sys, re, hashlib, os, stat, codecs
 sys.setrecursionlimit(200000)
 I64MIN, I64MAX = -(1 << 63), (1 << 63) - 1
 def _panic(msg, cwe):
@@ -607,7 +638,7 @@ def b_int_to_str(i): return str(i)
 def b_char_str(c):
     if c < 0 or c > 255: _panic("char_str out of range", "CWE-704")
     return chr(c)
-def b_read_file(p, mx=1 << 30):
+def b_read_file(p, mx):
     if mx < 0 or mx > (1 << 30): _panic("read_file() limit outside 0..2^30", "CWE-789")
     if p == "" or "\0" in p: return None
     try:
@@ -620,18 +651,25 @@ def b_read_file(p, mx=1 << 30):
             data = f.read(mx + 1)
             return None if len(data) > mx else data.decode("latin-1")
     except OSError: return None
-def b_read_line():
-    l = sys.stdin.buffer.readline()
-    return None if not l else l.decode("latin-1").rstrip("\n")
+def b_read_line(mx):
+    if mx < 0 or mx > (1 << 20): _panic("read_line() limit outside 0..1 MiB", "CWE-789")
+    out = bytearray()
+    while True:
+        ch = sys.stdin.buffer.read(1)
+        if not ch: break
+        if ch == b"\n": break
+        if len(out) >= mx: _panic("read_line() input exceeds explicit byte limit", "CWE-789")
+        out.extend(ch)
+    return None if not out and not ch else bytes(out).decode("latin-1")
 def b_read_bytes(n):
     if n < 0 or n > (1 << 30): _panic("read_bytes() count outside 0..2^30", "CWE-789")
     if n == 0: return ""
-    out = b""
+    out = bytearray()
     while len(out) < n:
         got = sys.stdin.buffer.read1(min(n - len(out), 65536))
         if not got: break
-        out += got
-    return None if not out else out.decode("latin-1")
+        out.extend(got)
+    return None if not out else bytes(out).decode("latin-1")
 def b_flush(): sys.stdout.flush()
 def b_write_file(p, d):
     if p == "" or "\0" in p: return False
@@ -639,7 +677,31 @@ def b_write_file(p, d):
         with open(p, "wb") as f: f.write(d.encode("latin-1"))
         return True
     except OSError: return False
-def b_args(): return list(sys.argv[1:])
+def _filesystem_bytes_len(value):
+    # Count host argv/environment bytes incrementally; do not make a second
+    # unbounded copy of a potentially oversized secret or command-line value.
+    encoder = codecs.getincrementalencoder(sys.getfilesystemencoding())(
+        errors=sys.getfilesystemencodeerrors()
+    )
+    total = 0
+    for start in range(0, len(value), 4096):
+        total += len(encoder.encode(value[start:start + 4096], final=False))
+    total += len(encoder.encode("", final=True))
+    return total
+
+
+def b_args(max_count, max_arg_bytes, max_total_bytes):
+    if not 0 <= max_count <= 4096 or not 0 <= max_arg_bytes <= (1 << 20) or not 0 <= max_total_bytes <= (1 << 24):
+        _panic("args() bounds outside supported limits", "CWE-789")
+    values = sys.argv[1:]
+    if len(values) > max_count: _panic("command-line argument count exceeds explicit bound", "CWE-789")
+    total = 0
+    for value in values:
+        size = _filesystem_bytes_len(value)
+        if size > max_arg_bytes or size > max_total_bytes - total:
+            _panic("command-line argument bytes exceed explicit bound", "CWE-789")
+        total += size
+    return list(values)
 def b_exit(c): sys.stdout.flush(); sys.exit(c)
 def b_join(l, sep): return sep.join(l)
 def b_assert(c):
@@ -720,7 +782,12 @@ def b_validate_range(t, lo, hi):
 def b_taint(s): return s
 def b_sql_query(tmpl, *a): b_println("[sql] " + tmpl + "".join(" $%d=%s" % (i + 1, b_escape_log(x)) for i, x in enumerate(a)))
 def b_run(prog, *a): b_println("[run] " + prog + "".join(" argv[%d]=%s" % (i + 1, b_escape_log(x)) for i, x in enumerate(a)))
-def b_secret_env(n): return os.environ.get(n)
+def b_secret_env(n, mx):
+    if mx < 0 or mx > (1 << 20): _panic("secret_env() limit outside 0..1 MiB", "CWE-789")
+    value = os.environ.get(n)
+    if value is not None and _filesystem_bytes_len(value) > mx:
+        _panic("secret environment value exceeds explicit byte limit", "CWE-789")
+    return value
 def b_secret_eq(a, b):
     import hmac; return hmac.compare_digest(a.encode("latin-1"), b.encode("latin-1"))
 def b_hash(d): return "cap1$sha256$" + hashlib.sha256(d.encode("latin-1")).hexdigest()
@@ -952,21 +1019,89 @@ class Gen:
         return "\n".join(self.out) + "\n"
 
 
+def _read_source_bounded(path, limit):
+    flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise SystemExit(f"{path}: cannot open source: {exc}")
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise SystemExit(f"{path}: stage-0 source must be a regular file [CWE-400]")
+        with os.fdopen(fd, "rb") as source:
+            fd = None
+            data = source.read(limit + 1)
+        if len(data) > limit:
+            if limit < MAX_SOURCE_BYTES:
+                raise SystemExit(f"{path}: source exceeds remaining import-graph byte budget ({limit}) [CWE-400]")
+            raise SystemExit(f"{path}: source exceeds per-file byte limit ({MAX_SOURCE_BYTES}) [CWE-400]")
+        return data.decode("latin-1")
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
+def _import_path_ok(spec):
+    if len(spec) < 5 or spec.startswith("/") or not spec.endswith(".cap"):
+        return False
+    for segment in spec.split("/"):
+        if segment in ("", ".", ".."):
+            return False
+        if any(not (ch.isascii() and (ch.isalnum() or ch in "_-.")) for ch in segment):
+            return False
+    return True
+
+
+def _charge_ast_nodes(roots, budget, path):
+    stack = list(roots)
+    while stack:
+        value = stack.pop()
+        if isinstance(value, list):
+            stack.extend(value)
+        elif isinstance(value, tuple):
+            if value and isinstance(value[0], str):
+                budget["ast_nodes"] += 1
+                if budget["ast_nodes"] > MAX_TOTAL_AST_NODES:
+                    raise SystemExit(
+                        f"{path}: import graph exceeds AST-node limit "
+                        f"({MAX_TOTAL_AST_NODES}) [CWE-400]"
+                    )
+                stack.extend(value[1:])
+            else:
+                stack.extend(value)
+
+
 def main():
     if len(sys.argv) < 3:
         raise SystemExit("usage: capstan0.py out.py file.cap [file.cap ...]")
     decls, queue, loaded = [], list(sys.argv[2:]), set()
+    budget = {"source_bytes": 0, "tokens": 0, "ast_nodes": 0}
     while queue:
-        path = queue.pop(0)
+        path = os.path.realpath(queue.pop(0))
         if path in loaded:
             continue
+        if len(loaded) >= MAX_IMPORT_FILES:
+            raise SystemExit(
+                f"{path}: import graph exceeds file-count limit ({MAX_IMPORT_FILES}) [CWE-400]"
+            )
         loaded.add(path)
-        with open(path, "rb") as f:
-            src = f.read().decode("latin-1")
-        for d in Parser(lex(src, path)).program():
-            decls.append(d)
-            if d[0] == "import":
-                queue.append(os.path.join(os.path.dirname(path), d[1]) if os.path.dirname(path) else d[1])
+        remaining = MAX_TOTAL_SOURCE_BYTES - budget["source_bytes"]
+        file_limit = min(MAX_SOURCE_BYTES, remaining)
+        src = _read_source_bounded(path, file_limit)
+        budget["source_bytes"] += len(src)
+        parsed = Parser(lex(src, path, budget)).program()
+        _charge_ast_nodes(parsed, budget, path)
+        for declaration in parsed:
+            decls.append(declaration)
+            if declaration[0] == "import":
+                spec = declaration[1]
+                if not _import_path_ok(spec):
+                    raise SystemExit(
+                        f"{path}: import path must be a relative .cap path inside the project "
+                        "[CWE-22]"
+                    )
+                imported = os.path.join(os.path.dirname(path), spec)
+                queue.append(imported)
     with open(sys.argv[1], "w", encoding="latin-1") as f:
         f.write(Gen().program(decls))
 
