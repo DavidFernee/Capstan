@@ -8,9 +8,9 @@ Capstan's source-language soundness argument. This is a *model*, not yet a
 formalisation of the production parser/checker/code generator.
 
 The fragment contains integer and boolean literals and conditionals whose
-condition is a boolean literal. It excludes variables, functions, mutation,
-collections, qualifiers, grants, IO and machine integer arithmetic. Those
-exclusions are explicit; no whole-language theorem is claimed here.
+condition is represented as a boolean literal. It excludes variables, functions,
+mutation, collections, qualifiers, grants, IO and machine integer arithmetic.
+Those exclusions are explicit; no whole-language theorem is claimed here.
 -/
 
 namespace CapstanVerification.SourceCore
@@ -49,18 +49,8 @@ theorem step_preserves_typing {e e' : Expr} {ty : Ty}
   cases ht with
   | intLit n => simp [step] at hs
   | boolLit b => simp [step] at hs
-  | ifThenElse ht hf =>
-      cases e' with
-      | intLit n =>
-          simp [step] at hs
-          cases hs
-          exact ht
-      | boolLit b =>
-          simp [step] at hs
-          cases hs
-          exact ht
-      | ifThenElse condition yes no =>
-          simp [step] at hs
+  | @ifThenElse condition yes no ty ht hf =>
+      cases condition <;> simp [step] at hs <;> cases hs <;> assumption
 
 /-- A well-typed closed expression is a value or can take a step. -/
 theorem progress {e : Expr} {ty : Ty} (ht : HasType e ty) :
@@ -68,14 +58,10 @@ theorem progress {e : Expr} {ty : Ty} (ht : HasType e ty) :
   cases ht with
   | intLit n => exact Or.inl rfl
   | boolLit b => exact Or.inl rfl
-  | ifThenElse ht hf =>
-      cases e with
-      | intLit n => cases ht
-      | boolLit b => cases ht
-      | ifThenElse condition yes no =>
-          cases condition
-          · exact Or.inr ⟨yes, rfl⟩
-          · exact Or.inr ⟨no, rfl⟩
+  | @ifThenElse condition yes no ty ht hf =>
+      cases condition
+      · exact Or.inr ⟨yes, rfl⟩
+      · exact Or.inr ⟨no, rfl⟩
 
 /-- The one-step semantics is deterministic. -/
 theorem step_deterministic {e a b : Expr}
