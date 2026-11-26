@@ -951,6 +951,7 @@ void w_diag(List<string> out, Server srv, Tainted text, List<int> starts, Diag d
 // Check one document with the compiler's front end, as `capstanc check` would.
 Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<int> at_col) {
     Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: srv.release, strict: srv.strict, keep_checks: false};
+    CompileBudget budget = new_compile_budget();
     List<Node> decls = new List<Node>();
     List<Tainted> loaded = new List<Tainted>();
     List<Tainted> queue = new List<Tainted>();
@@ -981,6 +982,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             break;
         }
         loaded.push(uri);
+        budget.files += 1;
         int index = ctx.files.len();
         ctx.files.push(name);
         names.push(name);
@@ -995,10 +997,22 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
         Tainted? found = none;
         if (index == 0) { found = doc.text; } else { found = import_text(srv, uri); }
         if (let src = found) {
+            int remaining = MAX_TOTAL_SOURCE_BYTES - budget.source_bytes;
+            if (src.len() > MAX_SOURCE_BYTES || src.len() > remaining) {
+                ctx.sources.push(taint(""));
+                budget.exhausted = true;
+                report_at(ctx, ofile, oline, ocol, true, "CWE-400", "import graph exceeds source-byte budget (" + int_to_str(MAX_TOTAL_SOURCE_BYTES) + " total; " + int_to_str(MAX_SOURCE_BYTES) + " per file)");
+                break;
+            }
+            budget.source_bytes += src.len();
             ctx.sources.push(src);
-            List<Token> toks = lex(ctx, src, index);
-            if (error_count(ctx) == 0) {
+            List<Token> toks = lex_bounded(ctx, src, index, budget);
+            if (error_count(ctx) == 0 && !budget.exhausted) {
                 List<Node> part = parse_program(ctx, toks);
+                if (!charge_ast_nodes(budget, part)) {
+                    report(ctx, index, 0, true, "CWE-400", "import graph exceeds AST-node limit (" + int_to_str(MAX_TOTAL_AST_NODES) + ")");
+                    break;
+                }
                 for (int k = 0; k < part.len(); k += 1) {
                     Node d = part[k];
                     decls.push(d);
