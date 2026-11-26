@@ -1,0 +1,111 @@
+// Candidate single-result call signature contract. Reference kinds are
+// coarse tags only; descriptor identity and heap provenance remain required.
+import "ccam_aggregate_transfer.cap";
+
+const int AG_CALL_MAX_ARGS = 256;
+
+struct AGCallSignature {
+    List<int> parameters;
+    int result_kind;
+}
+
+bool ag_call_signature(AGCallSignature signature) {
+    if (signature.parameters.len() > AG_CALL_MAX_ARGS ||
+        !ag_schema_kind(signature.result_kind)) { return false; }
+    for (int i = 0; i < signature.parameters.len(); i += 1) {
+        if (!ag_schema_kind(signature.parameters[i])) { return false; }
+    }
+    return true;
+}
+
+bool ag_call_admit(AGCallSignature signature, List<int> kinds, List<bool> ready,
+    List<int> arguments, int destination) {
+    if (!ag_call_signature(signature) || ready.len() != kinds.len() ||
+        arguments.len() != signature.parameters.len() ||
+        !ag_schema_register(kinds, destination, signature.result_kind)) { return false; }
+    for (int i = 0; i < arguments.len(); i += 1) {
+        int source = arguments[i];
+        if (!ag_schema_register(kinds, source, signature.parameters[i])) { return false; }
+        if (!ready[source]) { return false; }
+    }
+    return true;
+}
+
+// Callee parameter registers occupy the signature prefix; all other
+// registers must begin uninitialised. No inherited caller locals.
+AGTransferResult ag_call_entry(AGCallSignature signature, List<int> kinds) {
+    List<bool> ready = new List<bool>();
+    if (!ag_call_signature(signature) || kinds.len() > AG_SCHEMA_MAX_REGS ||
+        kinds.len() < signature.parameters.len()) {
+        return new AGTransferResult{ok: false, ready: ready};
+    }
+    for (int i = 0; i < kinds.len(); i += 1) {
+        if (!ag_schema_kind(kinds[i])) { return new AGTransferResult{ok: false, ready: new List<bool>()}; }
+        if (i < signature.parameters.len() && kinds[i] != signature.parameters[i]) {
+            return new AGTransferResult{ok: false, ready: new List<bool>()};
+        }
+        ready.push(i < signature.parameters.len());
+    }
+    return new AGTransferResult{ok: true, ready: ready};
+}
+
+bool ag_call_return(AGCallSignature signature, List<int> kinds, List<bool> ready, int source) {
+    if (!ag_call_signature(signature) || ready.len() != kinds.len() ||
+        !ag_schema_register(kinds, source, signature.result_kind)) { return false; }
+    return ready[source];
+}
+
+// Apply only on the normal-return edge, never on a trapped call.
+AGTransferResult ag_call_normal_successor(AGCallSignature signature, List<int> kinds,
+    List<bool> ready, List<int> arguments, int destination) {
+    List<bool> result = new List<bool>();
+    if (!ag_call_admit(signature, kinds, ready, arguments, destination)) {
+        return new AGTransferResult{ok: false, ready: result};
+    }
+    for (int i = 0; i < ready.len(); i += 1) {
+        result.push(ready[i] || i == destination);
+    }
+    return new AGTransferResult{ok: true, ready: result};
+}
+
+test "aggregate calls check arguments before destination alias writes" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT);
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_REF);
+    AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_REF};
+    List<bool> ready = new List<bool>();
+    ready.push(false);
+    ready.push(true);
+    List<int> arguments = new List<int>();
+    arguments.push(0);
+    assert(!ag_call_admit(signature, kinds, ready, arguments, 0));
+    ready[0] = true;
+    assert(ag_call_admit(signature, kinds, ready, arguments, 0));
+    assert(!ag_call_admit(signature, kinds, ready, arguments, 1));
+    arguments[0] = 1;
+    assert(!ag_call_admit(signature, kinds, ready, arguments, 0));
+    arguments[0] = -1;
+    assert(!ag_call_admit(signature, kinds, ready, arguments, 0));
+}
+
+test "aggregate calls isolate locals and validate returns" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT);
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_REF);
+    AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    AGTransferResult entry = ag_call_entry(signature, kinds);
+    assert(entry.ok && entry.ready[0] && !entry.ready[1]);
+    assert(!ag_call_return(signature, kinds, entry.ready, 1));
+    List<int> arguments = new List<int>();
+    arguments.push(0);
+    AGTransferResult successor = ag_call_normal_successor(signature, kinds, entry.ready, arguments, 1);
+    assert(successor.ok && successor.ready[1] && !entry.ready[1]);
+    assert(ag_call_return(signature, kinds, successor.ready, 1));
+    assert(!ag_call_return(signature, kinds, successor.ready, 0));
+    kinds[0] = AG_SCHEMA_BOOL;
+    assert(!ag_call_entry(signature, kinds).ok);
+}
