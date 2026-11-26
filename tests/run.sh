@@ -110,6 +110,13 @@ else
   bad "CCAM expression variable bindings" "$out"
 fi
 
+section "Capstan-native verification: assignment-program execution"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_assignment_program_tests.cap" 2>&1)"; then
+  ok "assignment updates, variable reads, malformed assignment and final expression"
+else
+  bad "CCAM assignment-program execution" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
