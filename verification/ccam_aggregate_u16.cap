@@ -1,0 +1,2 @@
+import "ccam_aggregate_byte_buffer.cap";
+bool ag_u16(List<int> b,int v) { if(v<0 || v>65535 || b.len()>AG_BYTE_LIMIT-2){return false;} b.push(v%256); b.push(v/256); return true; }
