@@ -354,7 +354,7 @@ def protocol(exe):
     ) + b"}"
     too_many_elements = b"[" + b",".join([b"null"] * 16385) + b"]"
     long_string = b'{"s":"' + b"a" * (8 * 1024 * 1024 + 1) + b'"}'
-    escape_fragments = b'"' + b"\n" * 131072 + b'"'
+    escape_fragments = b'"' + b"\\n" * 131072 + b'"'
     aggregate_strings = b"[" + b",".join(
         b'"' + b"a" * (7 * 1024 * 1024) + b'"' for _ in range(2)
     ) + b"]"
