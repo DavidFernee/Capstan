@@ -96,6 +96,13 @@ for module in schema dispatch block flow transfer cfg fixedpoint calls frames st
   fi
 done
 
+section "Capstan-native verification: arithmetic expression compilation pipeline"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_expression_tests.cap" 2>&1)"; then
+  ok "expression precedence, parentheses, division-by-zero and malformed-input rejection"
+else
+  bad "CCAM aggregate expression compilation pipeline" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
