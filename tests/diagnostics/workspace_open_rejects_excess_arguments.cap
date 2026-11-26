@@ -1,0 +1,5 @@
+// expect: workspace_open expects 1 argument(s), found 2
+// spec: builtins.io
+int main() {
+    return workspace_open("/workspace", "/other");
+}

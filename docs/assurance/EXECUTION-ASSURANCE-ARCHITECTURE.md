@@ -1,6 +1,6 @@
 # Capstan execution assurance architecture
 
-**Baseline:** mainline `c22d72a1f60a4d110f30a421d577aeaaf339f8fb` (26 November 2026)  
+**Baseline:** 26 November 2026 source snapshot; exact freshness baseline is recorded in `execution-boundaries.json`  
 **Disposition:** architecture and obligation map; not a system-level verification claim.
 
 This is the operational view of the assurance boundary. The machine-readable
@@ -87,7 +87,7 @@ whether the relation is adequate; that remains a substantive review task.
 
 | Boundary | Current evidence | Missing link |
 |---|---|---|
-| Source parser/checker → typed scalar source | Production checker exists; a restricted checked scalar lowering workstream exists | Formal source typing judgement, checker soundness, production CLI integration |
+| Source parser/checker → typed scalar source | Production checker enforces explicit finite bounds on direct input builtins; a restricted checked scalar lowering workstream exists | Formal source typing judgement, checker soundness, production CLI integration |
 | Typed scalar source → CCAM | `verification/ccam_lowering.cap` implements a restricted subset and rejects unsupported constructs | Source-to-CCAM simulation and exact semantic preservation |
 | CCAM decoding / validation | Capstan-native in-memory validators exist for restricted subsets | Closed-schema JSON decoder, duplicate-key rejection, normative whole-program validator, validator soundness |
 | CCAM evaluator | Single-frame and bounded multi-function executable slices exist in Capstan | One integrated normative machine; whole-machine Lean semantics and evaluator refinement |
@@ -95,6 +95,14 @@ whether the relation is adequate; that remains a substantive review task.
 | CCAM → native machine code | Linux x86-64 scalar emitter prototype | Full instruction/effect/resource coverage, differential conformance, machine-code simulation and supported ABI matrix |
 | Runtime → OS/platform | Existing C runtime and platform adapters are production dependencies | C-free runtime implementation, explicit host capability boundary and per-platform refinement/evidence |
 | Bootstrap/build → release artifact | Existing bootstrap, CI and supply-chain controls | Independently reproducible C-free bootstrap and complete provenance/TCB reduction |
+
+
+
+### Direct external-input contract
+
+The source/runtime boundary now requires an explicit finite caller-supplied bound for direct input operations, including \`args\`, \`read_file\`, \`read_line\`, \`read_bytes\`, \`secret_env\` and the workspace file reader. The checker enforces arity and bound types; generated runtime and stage-0 paths enforce the corresponding byte/count limits before allocation or consumption. The normative details and exact limits are in [the bounded-input contract](../architecture/BOUNDED-INPUT-CONTRACT.md).
+
+These are resource bounds, not timeouts. In particular, \`read_file\` may still block on a live FIFO or device; the contract does not claim a wall-clock bound or cancellation guarantee. Input remains \`Tainted\` unless separately validated. This work strengthens the existing C-backed production path; it does not establish a C-free runtime or formal source-checker proof.
 
 ## 4. Required proof composition
 

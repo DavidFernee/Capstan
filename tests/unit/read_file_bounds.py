@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""read_file() cannot be made to hang or exhaust memory, natively and under stage 0:
+"""Byte-boundary behaviour of read_file(path, max), natively and under stage 0.
 
     read_file_bounds.py CAPSTANC CC [CFLAGS...]
 
-A FIFO with no writer reads as empty instead of blocking; /dev/zero and a file over
-the limit give none; a file exactly at the limit is read whole; a directory gives
-none; a limit outside 0..2^30 stops the program (CWE-789). The compiler, given an
-endless or blocking source file, reports an error promptly instead of hanging.
+This covers a FIFO with no writer, /dev/zero, exact/over-limit regular files,
+directories and invalid limits. It does NOT establish a time bound for a live
+stream: the runtime clears O_NONBLOCK before reading, so a FIFO with a writer
+that remains open but supplies no data can block indefinitely. See issue #444;
+do not describe a byte ceiling as a deadline or a bound on elapsed time.
 """
 import os, subprocess, sys, tempfile
 
@@ -15,15 +16,15 @@ PROGRAM = """void show(string label, Tainted? t) {
     if (let s = t) { println(label + ": " + int_to_str(s.len()) + " bytes"); } else { println(label + ": none"); }
 }
 int main() {
-    List<string> a = args();
+    List<string> a = args(1, 4096, 4096);
     string d = a[0];
-    show("fifo", read_file(d + "/fifo"));
+    show("fifo", read_file(d + "/fifo", 1048576));
     show("zero", read_file("/dev/zero", 100000));
     show("exact", read_file(d + "/ten", 10));
     show("over", read_file(d + "/ten", 9));
     show("empty limit", read_file(d + "/empty", 0));
-    show("default", read_file(d + "/ten"));
-    show("directory", read_file(d));
+    show("explicit limit", read_file(d + "/ten", 1048576));
+    show("directory", read_file(d, 1048576));
     show("bad limit", read_file(d + "/ten", -1));
     return 0;
 }
@@ -33,7 +34,7 @@ zero: none
 exact: 10 bytes
 over: none
 empty limit: 0 bytes
-default: 10 bytes
+explicit limit: 10 bytes
 directory: none
 """
 

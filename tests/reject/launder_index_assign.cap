@@ -2,7 +2,7 @@
 // spec: types.tainted types.list
 // Storing an untrusted byte into a list element taints the list.
 int main() {
-    if (let t = read_line()) {
+    if (let t = read_line(1048576)) {
         List<int> bytes = new List<int>();
         bytes.push(0);
         bytes[0] = t.at(0);

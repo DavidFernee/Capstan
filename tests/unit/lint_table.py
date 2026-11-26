@@ -56,7 +56,7 @@ ROWS.append(("comment: security note without a marker", "// passwords are hashed
 for expr in ["b + 0", "b - 0", "b * 1", "b / 1", "b % 256", "b & 255", "b | 0", "b ^ 0", "b << 0", "b >> 0", "b >>> 0",
              "~(~b)", "wrapping_add(b, 0)", "wrapping_sub(b, 0)", "wrapping_mul(b, 1)", "wrapping_shl(b, 0)"]:
     ROWS.append((f"laundering through {expr}",
-                 f"int main() {{ if (let t = read_line()) {{ int b = t.at(0); println(char_str({expr})); }} return 0; }}", "CWE-20"))
+                 f"int main() {{ if (let t = read_line(1048576)) {{ int b = t.at(0); println(char_str({expr})); }} return 0; }}", "CWE-20"))
 ROWS.append(("trusted bytes through the same operators",
              "int main() { int b = 72; println(char_str((b + 0) & 255) + char_str(wrapping_add(b, 1))); return 0; }", None))
 
