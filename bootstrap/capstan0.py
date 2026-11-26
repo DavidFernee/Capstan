@@ -653,7 +653,7 @@ def b_args(max_count, max_arg_bytes, max_total_bytes):
     if len(values) > max_count: _panic("command-line argument count exceeds explicit bound", "CWE-789")
     total = 0
     for value in values:
-        size = len(value.encode("latin-1"))
+        size = len(os.fsencode(value))
         if size > max_arg_bytes or size > max_total_bytes - total:
             _panic("command-line argument bytes exceed explicit bound", "CWE-789")
         total += size
@@ -741,7 +741,7 @@ def b_run(prog, *a): b_println("[run] " + prog + "".join(" argv[%d]=%s" % (i + 1
 def b_secret_env(n, mx):
     if mx < 0 or mx > (1 << 20): _panic("secret_env() limit outside 0..1 MiB", "CWE-789")
     value = os.environ.get(n)
-    if value is not None and len(value.encode("latin-1")) > mx:
+    if value is not None and len(os.fsencode(value)) > mx:
         _panic("secret environment value exceeds explicit byte limit", "CWE-789")
     return value
 def b_secret_eq(a, b):
