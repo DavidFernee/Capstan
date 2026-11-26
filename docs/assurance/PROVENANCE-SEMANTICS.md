@@ -687,3 +687,8 @@ The redesign is ready for implementation review when:
 ## 18. Abstract-domain formalisation companion
 
 The concrete path, symbolic-origin, dependency-kind, lattice, and summary-substitution definitions are refined in [PROVENANCE-ABSTRACT-DOMAIN.md](PROVENANCE-ABSTRACT-DOMAIN.md). That addendum is part of this proposal and should be reviewed together with this document. In particular, the dependency lattice is a may-analysis, while validation and context certificates are must-facts; their join operators therefore have opposite polarity.
+
+
+## Formalisation status
+
+The initial mechanised fragment is in `verification/lean/CapstanVerification/InjectionProvenance.lean`, with its theorems imported by `CapstanVerification.lean` and listed in `AxiomAudit.lean`. It currently models a small expression grammar with separate data and selection provenance and proves source preservation for those constructors. It does not yet formalise the full transfer semantics in this document, nor establish that the production compiler implements them. See [INJECTION-FREEDOM-PROOF.md](INJECTION-FREEDOM-PROOF.md) for the theorem statement, composition obligations and current implementation boundary.
