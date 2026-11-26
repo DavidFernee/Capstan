@@ -505,7 +505,7 @@ static void test_csv(void) {
     const char fullwidth_plus[] = "\xEF\xBC\x8B" "1";
     fw = cap_escape_csv(cap_str_new(fullwidth_plus, (int64_t)(sizeof fullwidth_plus - 1)));
     CHECK(fw->data[1] == '\'');
-    CHECK(str_is(cap_escape_csv(CAP_LIT("\n=1", 3)), "\"'\\n=1\"", 6));
+    CHECK(str_is(cap_escape_csv(CAP_LIT("\n=1", 3)), "\"'\n=1\"", 6));
 
 }
 
