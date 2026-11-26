@@ -1,6 +1,7 @@
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
+import CapstanVerification.AggregateHeap
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
 import CapstanVerification.NativeRegisterFileBridge
@@ -218,3 +219,17 @@ import CapstanVerification.ExplicitTrap
 #print axioms CapstanVerification.pushTypedMultiFrame_active
 #print axioms CapstanVerification.pushTypedMultiFrame_depth
 #print axioms CapstanVerification.pushTypedMultiFrame_exhausted
+
+
+-- Process-lifetime aggregate arena: state-in/state-out allocation and typed records.
+#print axioms CapstanVerification.emptyAggregateHeap
+#print axioms CapstanVerification.allocateAggregateObject
+#print axioms CapstanVerification.allocateAggregateObject_failure_atomic
+#print axioms CapstanVerification.allocateAggregateObject_returns_fresh_id
+#print axioms CapstanVerification.allocateAggregateObject_accounting
+#print axioms CapstanVerification.resolveAggregateReference
+#print axioms CapstanVerification.resolveAggregateReference_rejects_cross_arena
+#print axioms CapstanVerification.allocateAggregateObject_reference_resolves
+#print axioms CapstanVerification.writeAggregateRecordField
+#print axioms CapstanVerification.writeAggregateRecordField_preserves_well_typed
+#print axioms CapstanVerification.writeAggregateRecordField_failure_has_no_new_state
