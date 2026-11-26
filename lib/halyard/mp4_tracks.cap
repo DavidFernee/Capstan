@@ -616,7 +616,7 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks_internal(
         has_encryption_marker: false
     };
     if (!deadeye_mp4_scan_children(
-        bytes,moov.payload_start,moov.end,1,scan
+        bytes,moov.payload_start,moov.end,1,true,scan
     ) || scan.has_encryption_marker || !scan.has_mvhd || scan.track_count < 1) {
         return deadeye_mp4_movie_error("invalid_or_encrypted_moov_tree");
     }
