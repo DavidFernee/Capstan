@@ -4,6 +4,8 @@
 
 ![The Capstan Ecosystem — Capstan, Shroud and Anchor](assets/branding/capstan-ecosystem-brand-board.png)
 
+![The Capstan Ecosystem](assets/branding/Capstan-Ecosystem-Blueprint-Poster.png)
+
 ```java
 policy ReadRecord(User u, Record r) {
     if (u.role == ROLE_CLINICIAN && u.id == r.treating_clinician) { return true; }
