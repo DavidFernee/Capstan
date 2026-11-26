@@ -200,7 +200,12 @@ bool mentions_name(Node e, int kind) {
         if (kind == 1 && looks_secret(e.s)) { return true; }
         if (kind == 2 && (looks_password(e.s))) { return true; }
     }
-    if (e.k == N_CALL || e.k == N_METHOD) { return false; }
+    // Password provenance must survive helper calls and string methods
+    // before a fast-hash decision (CWE-916). Preserve the established
+    // credential-comparison boundary for kind 1: recursively treating every
+    // nested capability/token argument as a direct comparison operand causes
+    // false positives for opaque integer handles.
+    if (kind == 1 && (e.k == N_CALL || e.k == N_METHOD)) { return false; }
     for (int i = 0; i < e.kids.len(); i += 1) {
         if (mentions_name(e.kids[i], kind)) { return true; }
     }
@@ -1215,7 +1220,9 @@ Type check_call(Checker c, Node e) {
             if (f == "hash" && dt.k == TY_SECRET) {
                 error_at(c.ctx, e, "CWE-532", "hash() of a Secret gives printable text from which a short or guessable secret can be recovered by trying values offline; compare secrets with secret_eq() or hash_verify(), and store passwords with hash_password()");
             }
-            if ((f == "hash" || f == "hash_verify") && mentions_name(e.kids[0], 2)) {
+            if ((f == "hash" || f == "hash_verify") && dt.k == TY_TAINT) {
+                error_at(c.ctx, e, "CWE-916", f + "() rejects Tainted input because it may be a password; use hash_password()/verify_password(), or explicitly trust non-password data with a reviewable reason");
+            } else if ((f == "hash" || f == "hash_verify") && mentions_name(e.kids[0], 2)) {
                 error_at(c.ctx, e, "CWE-916", f + "() is a fast, unsalted hash and must not be used for passwords; use hash_password() and verify_password()");
             }
         }
