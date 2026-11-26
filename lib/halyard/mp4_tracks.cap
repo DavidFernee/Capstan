@@ -689,7 +689,7 @@ DeadeyeMp4MovieTracksResult deadeye_mp4_parse_moov_tracks(
         decoded_units: 0, work_units: 0,
         allocation_units: 64, metadata_entries: 4096,
         queue_slots: 0, worker_slots: 0, nesting_slots: 8,
-        track_slots: 0, chunk_slots: 32768
+        track_slots: DEADEYE_MP4_MAX_TRACKS, chunk_slots: 32768
     };
     HalyardReservationResult temporary =
         halyard_ledger_acquire(ledger,temporary_charge);
@@ -912,7 +912,7 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
     // mdat begins after moov; absolute payload range is the final 4 bytes.
     HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
         67108864, 67108864, 0, 0, 400000000,
-        128, 8192, 0, 0, 16, 32, 32768
+        128, 8192, 0, 0, 16, 16, 32768
     );
     HalyardConsumptionBudgetResult budget_result =
         halyard_consumption_budget_create(67108864,8192,0,400000000);
@@ -925,6 +925,7 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
             assert(parsed.ok);
             assert(ledger.used_retained_bytes == 0);
             assert(ledger.used_chunk_slots == 0);
+            assert(ledger.used_track_slots == 0);
             assert(ledger.used_metadata_entries == 0);
             assert(budget.used_output_bytes == 8192);
             if (let movie = parsed.movie) {
@@ -941,6 +942,35 @@ test "Deadeye connects trak handler, sample entry, tables and self-contained dat
             assert(!forged.ok);
             assert(ledger.used_retained_bytes == 0);
             assert(ledger.used_chunk_slots == 0);
+        } else { assert(false); }
+    } else { assert(false); }
+}
+
+test "Deadeye refuses MP4 parsing before work when track-slot capacity is below the 16-track reservation" {
+    List<int> file = deadeye_mp4_test_minimal_file();
+    DeadeyeMp4BoxResult first = deadeye_mp4_box_read(file,0,file.len());
+    DeadeyeMp4BoxResult movie_box = deadeye_mp4_box_read(
+        file,first.box.end,file.len()
+    );
+    // All other dimensions are sufficient; only track capacity is one slot
+    // below the parser's fixed 16-track admission reservation.
+    HalyardLedgerResult ledger_result = halyard_ledger_create_bounded(
+        67108864, 33554432, 0, 0, 400000000,
+        128, 8192, 0, 0, 16, 15, 32768
+    );
+    HalyardConsumptionBudgetResult budget_result =
+        halyard_consumption_budget_create(67108864,8192,0,400000000);
+    assert(ledger_result.ok && budget_result.ok);
+    if (let ledger = ledger_result.ledger) {
+        if (let budget = budget_result.budget) {
+            DeadeyeMp4MovieTracksResult rejected =
+                deadeye_mp4_parse_moov_tracks(file,movie_box.box,ledger,budget);
+            assert(!rejected.ok &&
+                rejected.error == "temporary_resource_reservation_failed");
+            assert(ledger.used_track_slots == 0);
+            assert(ledger.used_retained_bytes == 0);
+            assert(budget.used_input_bytes == 0);
+            assert(budget.used_work_units == 0);
         } else { assert(false); }
     } else { assert(false); }
 }
