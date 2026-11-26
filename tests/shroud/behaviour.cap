@@ -1277,7 +1277,13 @@ void test_display_list(Tally t, Font font) {
     // Snapshot admission recomputes bounds instead of trusting the recorder's
     // mutable cached budget, and rejects malformed parallel path arrays.
     Canvas malformed_recorder = new_recording_canvas(new_pixmap(1, 1));
-    DisplayCommand malformed_snapshot = frame.commands[1];
+    DisplayCommand malformed_snapshot_source = frame.commands[1];
+    DisplayCommand malformed_snapshot = new DisplayCommand{
+        kind: malformed_snapshot_source.kind, bounds: malformed_snapshot_source.bounds, clip: malformed_snapshot_source.clip,
+        paint: malformed_snapshot_source.paint, rule: malformed_snapshot_source.rule, segments: malformed_snapshot_source.segments,
+        mask_alpha: malformed_snapshot_source.mask_alpha, mask_w: malformed_snapshot_source.mask_w, mask_h: malformed_snapshot_source.mask_h,
+        x: malformed_snapshot_source.x, y: malformed_snapshot_source.y, coverage: malformed_snapshot_source.coverage, opacity: malformed_snapshot_source.opacity
+    };
     Segments mismatched_segments = new_segments();
     mismatched_segments.x0.push(0);
     malformed_snapshot.segments = mismatched_segments;
@@ -1351,7 +1357,13 @@ void test_display_list(Tally t, Font font) {
     Pixmap guarded = new_pixmap(48, 36);
     guarded.clear(0xFF123456);
     int before = guarded.get(0, 0);
-    DisplayCommand bad_clip = frame.commands[0];
+    DisplayCommand bad_clip_source = frame.commands[0];
+    DisplayCommand bad_clip = new DisplayCommand{
+        kind: bad_clip_source.kind, bounds: bad_clip_source.bounds, clip: bad_clip_source.clip,
+        paint: bad_clip_source.paint, rule: bad_clip_source.rule, segments: bad_clip_source.segments,
+        mask_alpha: bad_clip_source.mask_alpha, mask_w: bad_clip_source.mask_w, mask_h: bad_clip_source.mask_h,
+        x: bad_clip_source.x, y: bad_clip_source.y, coverage: bad_clip_source.coverage, opacity: bad_clip_source.opacity
+    };
     bad_clip.clip = rect(-1, 0, 2, 2);
     List<DisplayCommand> bad_clip_commands = new List<DisplayCommand>();
     bad_clip_commands.push(bad_clip);
@@ -1361,7 +1373,13 @@ void test_display_list(Tally t, Font font) {
     expect_int(t, guarded.get(0, 0), before,
         "display list: validation does not mutate the target");
 
-    DisplayCommand bad_opacity = frame.commands[0];
+    DisplayCommand bad_opacity_source = frame.commands[0];
+    DisplayCommand bad_opacity = new DisplayCommand{
+        kind: bad_opacity_source.kind, bounds: bad_opacity_source.bounds, clip: bad_opacity_source.clip,
+        paint: bad_opacity_source.paint, rule: bad_opacity_source.rule, segments: bad_opacity_source.segments,
+        mask_alpha: bad_opacity_source.mask_alpha, mask_w: bad_opacity_source.mask_w, mask_h: bad_opacity_source.mask_h,
+        x: bad_opacity_source.x, y: bad_opacity_source.y, coverage: bad_opacity_source.coverage, opacity: bad_opacity_source.opacity
+    };
     bad_opacity.opacity = 256;
     List<DisplayCommand> bad_opacity_commands = new List<DisplayCommand>();
     bad_opacity_commands.push(bad_opacity);
@@ -1373,7 +1391,13 @@ void test_display_list(Tally t, Font font) {
     // aggregate geometry/mask accounting merely because the executor ignores them.
     List<int> hidden_payload = new List<int>();
     hidden_payload.push(255);
-    DisplayCommand bad_rect_payload = frame.commands[0];
+    DisplayCommand bad_rect_payload_source = frame.commands[0];
+    DisplayCommand bad_rect_payload = new DisplayCommand{
+        kind: bad_rect_payload_source.kind, bounds: bad_rect_payload_source.bounds, clip: bad_rect_payload_source.clip,
+        paint: bad_rect_payload_source.paint, rule: bad_rect_payload_source.rule, segments: bad_rect_payload_source.segments,
+        mask_alpha: bad_rect_payload_source.mask_alpha, mask_w: bad_rect_payload_source.mask_w, mask_h: bad_rect_payload_source.mask_h,
+        x: bad_rect_payload_source.x, y: bad_rect_payload_source.y, coverage: bad_rect_payload_source.coverage, opacity: bad_rect_payload_source.opacity
+    };
     bad_rect_payload.mask_alpha = hidden_payload;
     List<DisplayCommand> bad_rect_payload_commands = new List<DisplayCommand>();
     bad_rect_payload_commands.push(bad_rect_payload);
@@ -1384,7 +1408,13 @@ void test_display_list(Tally t, Font font) {
         "display list: rectangle cannot smuggle an unaccounted mask payload",
         "hidden rectangle payload accepted");
 
-    DisplayCommand bad_path_payload = frame.commands[1];
+    DisplayCommand bad_path_payload_source = frame.commands[1];
+    DisplayCommand bad_path_payload = new DisplayCommand{
+        kind: bad_path_payload_source.kind, bounds: bad_path_payload_source.bounds, clip: bad_path_payload_source.clip,
+        paint: bad_path_payload_source.paint, rule: bad_path_payload_source.rule, segments: bad_path_payload_source.segments,
+        mask_alpha: bad_path_payload_source.mask_alpha, mask_w: bad_path_payload_source.mask_w, mask_h: bad_path_payload_source.mask_h,
+        x: bad_path_payload_source.x, y: bad_path_payload_source.y, coverage: bad_path_payload_source.coverage, opacity: bad_path_payload_source.opacity
+    };
     bad_path_payload.mask_alpha = hidden_payload;
     List<DisplayCommand> bad_path_payload_commands = new List<DisplayCommand>();
     bad_path_payload_commands.push(bad_path_payload);
@@ -1397,7 +1427,13 @@ void test_display_list(Tally t, Font font) {
 
     List<int> invalid_alpha = new List<int>();
     invalid_alpha.push(256);
-    DisplayCommand bad_mask = frame.commands[0];
+    DisplayCommand bad_mask_source = frame.commands[0];
+    DisplayCommand bad_mask = new DisplayCommand{
+        kind: bad_mask_source.kind, bounds: bad_mask_source.bounds, clip: bad_mask_source.clip,
+        paint: bad_mask_source.paint, rule: bad_mask_source.rule, segments: bad_mask_source.segments,
+        mask_alpha: bad_mask_source.mask_alpha, mask_w: bad_mask_source.mask_w, mask_h: bad_mask_source.mask_h,
+        x: bad_mask_source.x, y: bad_mask_source.y, coverage: bad_mask_source.coverage, opacity: bad_mask_source.opacity
+    };
     bad_mask.kind = DISPLAY_MASK;
     bad_mask.segments = none;
     bad_mask.mask_alpha = invalid_alpha;
@@ -1419,7 +1455,13 @@ void test_display_list(Tally t, Font font) {
     for (int i = 0; i < 12000; i += 1) {
         expensive.add(0, 0, fx(48), fx(36));
     }
-    DisplayCommand expensive_path = frame.commands[1];
+    DisplayCommand expensive_path_source = frame.commands[1];
+    DisplayCommand expensive_path = new DisplayCommand{
+        kind: expensive_path_source.kind, bounds: expensive_path_source.bounds, clip: expensive_path_source.clip,
+        paint: expensive_path_source.paint, rule: expensive_path_source.rule, segments: expensive_path_source.segments,
+        mask_alpha: expensive_path_source.mask_alpha, mask_w: expensive_path_source.mask_w, mask_h: expensive_path_source.mask_h,
+        x: expensive_path_source.x, y: expensive_path_source.y, coverage: expensive_path_source.coverage, opacity: expensive_path_source.opacity
+    };
     expensive_path.segments = expensive;
     List<DisplayCommand> expensive_commands = new List<DisplayCommand>();
     expensive_commands.push(expensive_path);
