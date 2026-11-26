@@ -29,7 +29,6 @@ closes a gap the test fails and the entry is reclassified.
 
 | CWE | Weakness | What was written | Why it compiles, and the plan |
 |---|---|---|---|
-| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | `escape_json(taint(...))` passed to `write_file()` | `escape_json()` still returns an untyped string fragment; typed JSON fragments and sinks are tracked in #250. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | `'int main() { string cell = escape_json(taint("=cmd\|\' /C calc\'!A0")); bool ok = writ...` | escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250. |
 | [798](https://cwe.mitre.org/data/definitions/798.html) | Hard-coded password-like literal under an innocuous name | `int main() { string cfg = "Winter2026!"; sql_query("UPDATE settings SET v = ?", cfg); r...` | A short password-like literal under an ordinary name is indistinguishable from other text. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | `int main() { if (let x = read_line(65536)) { string stored = hash(x); } return 0; }` | Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap). |
@@ -119,6 +118,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [113](https://cwe.mitre.org/data/definitions/113.html) | HTTP response splitting | Not applicable (yet) | No HTTP facility yet; header output would follow the CWE-93 rule. |
 | [114](https://cwe.mitre.org/data/definitions/114.html) | Process control | Inexpressible: the construct does not exist |  |
 
+| [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | **Gap: can be written** | escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding or escaping of output | Prevented: rejected at compile time | `CWE-116`. Escaped text is typed by its context (Html, LogText) and cannot pass as a plain string. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | HTML context passed to CSV sink | Prevented: rejected at compile time | `CWE-116`. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | CSV context passed to HTML sink | Prevented: rejected at compile time | `CWE-116`. |
