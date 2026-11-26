@@ -1192,3 +1192,11 @@ These are target programmes, not claims of completed implementations. They consu
 shared Capstan foundations rather than defining competing ownership, effect, resource,
 concurrency or security models. The programme records dependencies, staged acceptance
 gates, measurable evidence and explicit non-goals.
+
+## Construction-enforced correctness
+
+The cross-platform construction-safety acceptance contract is
+[`docs/architecture/CONSTRUCTION-SAFETY-CONTRACT.md`](architecture/CONSTRUCTION-SAFETY-CONTRACT.md).
+It distinguishes unrepresentable states, uncallable operations, compiler-proved obligations
+and unavoidable runtime guards. It is a normative design constraint; implementation and
+evidence remain staged and must not be inferred from the contract itself.
