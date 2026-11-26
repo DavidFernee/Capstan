@@ -1,0 +1,8 @@
+int main() {
+    CsvText csv = escape_csv(taint("first"));
+    csv += ",";
+    csv += escape_csv(taint("second"));
+    bool ok = write_csv_file("/tmp/capstan-csv-compound.csv", csv);
+    println("CSV compound assignment exercised");
+    return 0;
+}
