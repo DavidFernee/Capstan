@@ -1,6 +1,6 @@
 # Output-context types and sink contracts
 
-> Status: implementation landed on the rebased draft PR #238 branch; exact-head test/CI validation pending.
+> Status: implementation landed on the rebased draft PR #491 branch; exact-head test/CI validation pending.
 > Scope: HTML, log and CSV output contexts. JSON migration is deliberately separate.
 
 ## Contract
@@ -29,13 +29,14 @@ The three typed file sinks currently lower to the same bounded-path-checked runt
 
 ## Evidence
 
-The implementation on PR #238 adds positive conformance coverage for all three matching sinks and negative tests for:
+The implementation on PR #491 adds positive conformance coverage for all three matching sinks and negative tests for:
 - HTML-encoded data passed to the generic file sink (CWE-116 atlas regression);
 - untrusted input passed directly to a typed HTML sink (CWE-20);
 - HTML data passed to the CSV sink;
 - HTML or CSV data passed to terminal/log output;
 - `LogText` passed to terminal output (positive control);
 - CSV formula leaders (`=`, `+`, `-`, `@`, tab, CR and LF), full-width variants and leading ASCII spaces before a leader are prefixed before the field content (CWE-1236 regressions);
+- CSV context preservation through `+=`, with mixed-context concatenation, unescaped tainted concatenation and assignment to plain `string` rejected (CWE-116);
 - JSON fragments containing C1/bidi terminal controls are neutralised by `escape_json()` (CWE-117 atlas regression);
 - CSV data passed to the HTML sink;
 - plain trusted strings passed to a typed CSV sink;
