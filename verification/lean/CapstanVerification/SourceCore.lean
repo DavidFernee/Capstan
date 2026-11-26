@@ -60,8 +60,8 @@ theorem progress {e : Expr} {ty : Ty} (ht : HasType e ty) :
   | boolLit b => exact Or.inl rfl
   | @ifThenElse condition yes no ty ht hf =>
       cases condition
-      · exact Or.inr ⟨yes, rfl⟩
       · exact Or.inr ⟨no, rfl⟩
+      · exact Or.inr ⟨yes, rfl⟩
 
 /-- The one-step semantics is deterministic. -/
 theorem step_deterministic {e a b : Expr}
