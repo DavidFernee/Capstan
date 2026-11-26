@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "4c9a95b6a961cc06ec1f51966e73524b2dce8f7e"
+    "commit": "fd705343c72eca501a00ab252d639520ce11b25b"
   },
   "claims": [
     {
@@ -40,8 +40,8 @@
             "docs/assurance/MEMORY-SAFETY.md"
           ],
           "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
-          "revision": "75d03db1a146f664b352b044f4ab70ce46caaa33",
-          "notes": "Documents the intended language guarantee and the memory-safety boundary."
+          "revision": "fd705343c72eca501a00ab252d639520ce11b25b",
+          "notes": "Reviewed at this source snapshot. The output-context checker changes do not alter the memory/indexing bounds contract; exact-head platform validation remains pending."
         },
         {
           "kind": "test",
@@ -53,13 +53,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "75d03db1a146f664b352b044f4ab70ce46caaa33",
-          "notes": "Fixtures are present in this snapshot. No passing run is asserted by this record."
+          "revision": "fd705343c72eca501a00ab252d639520ce11b25b",
+          "notes": "The memory/indexing regression fixtures remain present. This record does not assert a passing exact-head test run."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "75d03db1a146f664b352b044f4ab70ce46caaa33"
+        "reviewed_commit": "fd705343c72eca501a00ab252d639520ce11b25b"
       },
       "covers": [
         "compiler/main.cap",
@@ -138,8 +138,8 @@
             "tests/run.sh"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
-          "notes": "This record does not assert a passing run for this assurance profile."
+          "revision": "fd705343c72eca501a00ab252d639520ce11b25b",
+          "notes": "Test plan refreshed against mainline, including the current repository test runner. This record does not assert a passing exact-head run."
         }
       ],
       "review": {
