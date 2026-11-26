@@ -148,9 +148,11 @@ class FreshnessTests(unittest.TestCase):
         self.assertTrue(any("duplicate boundary identifier EVAL" in e for e in errors))
 
     def test_partial_model_evidence_is_not_mistaken_for_refinement(self):
-        boundaries = {"boundaries": {"not": "a list"}}
-        # The JSON Schema rejects malformed container shapes before this policy runs.
-        self.assertIsInstance(boundaries, dict)
+        boundaries = {"boundaries": [{
+            "id": "LEAN-MODEL", "formal": "partial",
+            "implementation_refinement": False
+        }]}
+        self.assertEqual(MODULE.boundary_policy_errors(boundaries), [])
 
 
     def test_unrelated_change_does_not_stale_covered_path(self):
