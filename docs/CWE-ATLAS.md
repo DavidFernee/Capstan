@@ -9,7 +9,7 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**255 weaknesses, 293 attempts.** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 294 attempts.*** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
@@ -73,6 +73,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 
 | CWE | Weakness | Outcome | Detail |
 |---|---|---|---|
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a dynamic list index) | Prevented: rejected at compile time | `CWE-20`. A dynamic-index write widens to the whole element summary, so every possible element read remains derived. |
 | [15](https://cwe.mitre.org/data/definitions/15.html) | External control of system or configuration setting | Inexpressible: the construct does not exist |  |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through control flow | Logic or design decision: beyond any language | Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a bit mask | Prevented: rejected at compile time | `CWE-20`. |

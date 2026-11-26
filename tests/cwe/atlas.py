@@ -620,6 +620,11 @@ add(20, "Improper input validation (laundering through join)", "reject",
     "int main() { if (let input = read_line()) { Map<string> table = new Map<string>(); table.set(\"A\", \"trusted\"); List<string> parts = new List<string>(); parts.push(to_text(input.at(0))); string key = join(parts, \"\"); if (let value = table.get(key)) { println(value); } } return 0; }",
     "CWE-20", "Collection aggregation must preserve element provenance before a trusted map lookup.")
 
+# A write through a dynamic list index may affect every element.
+add(20, "Improper input validation (laundering through a dynamic list index)", "reject",
+    "int main() { if (let input = read_line()) { List<int> bytes = new List<int>(); bytes.push(65); bytes.push(66); int index = 0; bytes[index] = input.at(0); println(char_str(bytes[1])); } return 0; }",
+    "CWE-20", "A dynamic-index write widens to the whole element summary, so every possible element read remains derived.")
+
 # ---------------------------------------------------------------- harness
 
 # ---- found in the November 2026 attack review --------------------------------------------------

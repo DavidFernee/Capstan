@@ -1977,11 +1977,30 @@ string path_key(Node e) {
     return "";
 }
 
+bool has_path_prefix(Flow f, string prefix) {
+    List<string> keys = f.paths.keys();
+    for (int i = 0; i < keys.len(); i += 1) {
+        if (keys[i].len() > prefix.len() && keys[i].slice(0, prefix.len()) == prefix) { return true; }
+    }
+    return false;
+}
+
 bool path_marked(Flow f, Node e) {
     string key = path_key(e);
     if (key == "") { return false; }
     if (f.paths.has(key)) { return true; }
-    if (e.k == N_GETF || e.k == N_INDEX) { return path_marked(f, e.kids[0]); }
+    if (e.k == N_INDEX) {
+        string parent = path_key(e.kids[0]);
+        if (parent != "" && ty_of(e.kids[0]).k != TY_MAP) {
+            if (e.kids[1].k == N_INT) {
+                if (f.paths.has(parent + "[*]")) { return true; }
+            } else if (has_path_prefix(f, parent + "[")) {
+                return true;
+            }
+        }
+        return path_marked(f, e.kids[0]);
+    }
+    if (e.k == N_GETF) { return path_marked(f, e.kids[0]); }
     return false;
 }
 
@@ -1995,14 +2014,9 @@ bool aggregate_marked(Flow f, Node e) {
         || f.paths.has(key + "{key}")
         || f.paths.has(key + "{value}")) { return true; }
     // A nested child may be the only derived part of this aggregate.
-    List<string> keys = f.paths.keys();
-    for (int i = 0; i < keys.len(); i += 1) {
-        if (keys[i].len() > key.len() && keys[i].slice(0, key.len()) == key) {
-            int next = keys[i].at(key.len());
-            if (next == 46 || next == 91 || next == 123) { return true; }
-        }
-    }
-    return false;
+    return has_path_prefix(f, key + ".")
+        || has_path_prefix(f, key + "[")
+        || has_path_prefix(f, key + "{");
 }
 
 void mark_key(Flow f, string key) {
