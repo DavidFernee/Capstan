@@ -427,7 +427,7 @@ string gen_call(Gen g, Node e) {
     string extra = "";
     string cf = builtin_c(f);
     if (builtin_needs_loc(f)) { extra = loc(e); }
-     return wrap(s2, cf + "(" + call_list(s2.names, 0, extra) + ")");
+    return wrap(s2, cf + "(" + call_list(s2.names, 0, extra) + ")");
 }
 
 // ---- statements ---------------------------------------------------------------
