@@ -1,0 +1,3 @@
+import "ccam_aggregate_u64.cap";
+import "ccam_aggregate_native_reg.cap";
+bool ag_movimm(List<int> b,int r,int v){if(!ag_native_reg(r)||v<0||b.len()>AG_BYTE_LIMIT-10){return false;}b.push(72+r/8);b.push(184+r%8);return ag_u64(b,v);}
