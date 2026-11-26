@@ -18,6 +18,7 @@ inductive InjectionTextKind where
   | string
   | html
   | log
+  | csv
   | other
   deriving DecidableEq, Repr
 
@@ -25,6 +26,7 @@ def InjectionTextKind.isText : InjectionTextKind → Bool
   | .string => true
   | .html => true
   | .log => true
+  | .csv => true
   | .other => false
 
 inductive ProtectedSink where
@@ -72,10 +74,22 @@ theorem log_index_derived_selector_is_rejected
     checkerRejectsSink marks (.textIndex .log selector) = true := by
   simp [checkerRejectsSink, InjectionTextKind.isText, h]
 
+theorem csv_index_derived_selector_is_rejected
+    (marks : FlowMarks) (selector : FlowExpr)
+    (h : checkerDerived marks selector = true) :
+    checkerRejectsSink marks (.textIndex .csv selector) = true := by
+  simp [checkerRejectsSink, InjectionTextKind.isText, h]
+
 theorem optional_text_map_get_derived_key_is_rejected
     (marks : FlowMarks) (key : FlowExpr)
     (h : checkerDerived marks key = true) :
     checkerRejectsSink marks (.optionalTextMapGet .string key) = true := by
+  simp [checkerRejectsSink, InjectionTextKind.isText, h]
+
+theorem optional_csv_map_get_derived_key_is_rejected
+    (marks : FlowMarks) (key : FlowExpr)
+    (h : checkerDerived marks key = true) :
+    checkerRejectsSink marks (.optionalTextMapGet .csv key) = true := by
   simp [checkerRejectsSink, InjectionTextKind.isText, h]
 
 theorem trusted_slice_derived_selector_is_rejected
