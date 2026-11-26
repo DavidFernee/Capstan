@@ -576,7 +576,7 @@ test "Shanty budgeted parse and decode charge before materialising output" {
     List<int> bytes = shanty_test_stereo_wave();
     HalyardByteSourceResult made = halyard_source_from_list(bytes, 64);
     HalyardConsumptionBudgetResult budget_result =
-        halyard_consumption_budget_create(64, 16, 4, 128);
+        halyard_consumption_budget_create(64, 24, 4, 128);
     assert(made.ok && budget_result.ok);
     if (let source = made.source) {
         if (let budget = budget_result.budget) {
