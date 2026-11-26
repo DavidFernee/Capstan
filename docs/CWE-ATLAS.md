@@ -117,7 +117,6 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [99](https://cwe.mitre.org/data/definitions/99.html) | Resource injection | Prevented: rejected at compile time | `CWE-20`. |
 | [113](https://cwe.mitre.org/data/definitions/113.html) | HTTP response splitting | Not applicable (yet) | No HTTP facility yet; header output would follow the CWE-93 rule. |
 | [114](https://cwe.mitre.org/data/definitions/114.html) | Process control | Inexpressible: the construct does not exist |  |
-
 | [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | **Gap: can be written** | escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding or escaping of output | Prevented: rejected at compile time | `CWE-116`. Escaped text is typed by its context (Html, LogText) and cannot pass as a plain string. |
 | [116](https://cwe.mitre.org/data/definitions/116.html) | HTML context passed to CSV sink | Prevented: rejected at compile time | `CWE-116`. |
