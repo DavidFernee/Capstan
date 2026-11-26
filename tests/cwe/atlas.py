@@ -241,7 +241,7 @@ add(116, "Improper encoding or escaping of output", "reject",
     'int main() { string csv = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", csv); return 0; }', "CWE-116",
     "Escaped text is typed by its context (Html, LogText) and cannot pass as a plain string.")
 add(116, "Improper encoding: JSON-escaped fragment written into a CSV file", "gap",
-    'int main() { string cell = escape_json(taint("=cmd|\\' /C calc\\'!A0")); bool ok = write_file("out.csv", cell); return 0; }',
+    'int main() { string cell = escape_json(taint("=cmd|\' /C calc\'!A0")); bool ok = write_file("out.csv", cell); return 0; }',
     note="escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250.")
 add(116, "HTML context passed to CSV sink", "reject",
     'int main() { Html cell = escape_html(taint("=1+1")); bool ok = write_csv_file("out.csv", cell); return 0; }', "CWE-116")
