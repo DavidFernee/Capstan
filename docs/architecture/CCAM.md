@@ -166,6 +166,12 @@ The first mechanised proof target is preservation of the register typing invaria
 
 Conformance vectors and the machine implementation must be written in Capstan under `verification/`. The same vectors must be used by later native backends and any independent proof-assistant model.
 
+
+
 ## 10. Versioning
 
 CCAM v0.1 is a deliberately narrow first slice. New value kinds, instructions, effects, heap operations, and security constructs require explicit specification changes and tests. Existing instruction meanings must not be changed incompatibly without a machine-version change.
+
+## 11. Proposed v0.2 memory extension
+
+The separately versioned [CCAM v0.2 bounded scratch-region proposal](CCAM-MEMORY-EXTENSION.md) specifies an initial byte-addressed region model with opaque capabilities, fixed scalar layouts, checked reservations, typed loads/stores, linear ownership and frame-exit cleanup. It is a proposal only. It does not change v0.1 values, schemas, instructions or conformance requirements. No v0.2 evaluator, validator, native lowering or proof is claimed.

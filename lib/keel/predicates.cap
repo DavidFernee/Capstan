@@ -1,0 +1,215 @@
+// Keel: exact bounded 2D/3D geometry predicates.
+
+import "coordinates.cap";
+//
+// This is deliberately not a general-purpose real/vector library. It supplies one
+// topology-sensitive predicate over a documented integer coordinate domain while
+// Keel's wider numeric representation remains under study.
+//
+// Domain: every coordinate is in [-(2^30-1), +(2^30-1)].
+// For any two coordinates, a difference has magnitude <= 2^31-2.
+// Each product in the 2D determinant therefore has magnitude <= (2^31-2)^2.
+// The difference of two such products has magnitude <= 2*(2^31-2)^2
+// = 2^63 - 2^34 + 8, which is strictly less than 2^63.
+// Thus all subtractions, products and the final determinant fit signed int64.
+// The proof depends on validating ALL six coordinates before arithmetic.
+//
+// Return values: some(-1) clockwise, some(0) collinear, some(1) counter-clockwise.
+// none means at least one coordinate is outside this predicate's exact domain.
+
+int? keel_orient2d_sign(KPoint2 a, KPoint2 b, KPoint2 c) {
+    if (!keel_coord_in_domain(a.x) || !keel_coord_in_domain(a.y) ||
+        !keel_coord_in_domain(b.x) || !keel_coord_in_domain(b.y) ||
+        !keel_coord_in_domain(c.x) || !keel_coord_in_domain(c.y)) {
+        return none;
+    }
+
+    int abx = b.x - a.x;
+    int aby = b.y - a.y;
+    int acx = c.x - a.x;
+    int acy = c.y - a.y;
+
+    int left = abx * acy;
+    int right = aby * acx;
+    if (left > right) { return 1; }
+    if (left < right) { return -1; }
+    return 0;
+}
+
+
+// Exact bounded 3D orientation.
+//
+// Domain: every coordinate is in [-(2^18-1), +(2^18-1)]. A coordinate
+// difference has magnitude at most 2^19-2, strictly less than 2^19.
+// Each 2x2 minor is the difference of two products, each < 2^38,
+// hence its magnitude is < 2^39. Multiplying a minor by a coordinate
+// difference gives a term < 2^58. The sum of three terms has magnitude
+// < 3*2^58 < 2^60, safely inside signed int64.
+// All twelve input coordinates are validated before any subtraction or
+// multiplication. The returned sign is the orientation of (B-A,C-A,D-A):
+// +1 positive, -1 negative, 0 coplanar; none means outside the exact domain.
+
+int? keel_orient3d_sign(KPoint3 a, KPoint3 b, KPoint3 c, KPoint3 d) {
+    if (!keel_coord3_in_domain(a.x) || !keel_coord3_in_domain(a.y) ||
+        !keel_coord3_in_domain(a.z) || !keel_coord3_in_domain(b.x) ||
+        !keel_coord3_in_domain(b.y) || !keel_coord3_in_domain(b.z) ||
+        !keel_coord3_in_domain(c.x) || !keel_coord3_in_domain(c.y) ||
+        !keel_coord3_in_domain(c.z) || !keel_coord3_in_domain(d.x) ||
+        !keel_coord3_in_domain(d.y) || !keel_coord3_in_domain(d.z)) {
+        return none;
+    }
+
+    int ux = b.x - a.x;
+    int uy = b.y - a.y;
+    int uz = b.z - a.z;
+    int vx = c.x - a.x;
+    int vy = c.y - a.y;
+    int vz = c.z - a.z;
+    int wx = d.x - a.x;
+    int wy = d.y - a.y;
+    int wz = d.z - a.z;
+
+    int m0 = vy * wz - vz * wy;
+    int m1 = vx * wz - vz * wx;
+    int m2 = vx * wy - vy * wx;
+    int determinant = ux * m0 - uy * m1 + uz * m2;
+    if (determinant > 0) { return 1; }
+    if (determinant < 0) { return -1; }
+    return 0;
+}
+
+
+// Exact bounded 2D segment relation, using the orientation predicate above.
+// Return codes: -1 disjoint, 0 point touch (including a shared endpoint),
+// 1 proper crossing, 2 positive-length collinear overlap; none is out of domain.
+// No coordinate subtraction is performed by the interval tests.
+int keel_min_coord2(int a, int b) {
+    if (a < b) { return a; }
+    return b;
+}
+
+int keel_max_coord2(int a, int b) {
+    if (a > b) { return a; }
+    return b;
+}
+
+bool keel_between2(int value, int a, int b) {
+    return value >= keel_min_coord2(a, b) &&
+           value <= keel_max_coord2(a, b);
+}
+
+bool keel_on_segment2(KPoint2 a, KPoint2 b, KPoint2 p) {
+    return keel_between2(p.x, a.x, b.x) &&
+           keel_between2(p.y, a.y, b.y);
+}
+
+int? keel_segment_relation2d(KPoint2 a, KPoint2 b, KPoint2 c, KPoint2 d) {
+    int? oa = keel_orient2d_sign(a, b, c);
+    int? ob = keel_orient2d_sign(a, b, d);
+    int? oc = keel_orient2d_sign(c, d, a);
+    int? od = keel_orient2d_sign(c, d, b);
+
+    if (let sa = oa) {
+        if (let sb = ob) {
+            if (let sc = oc) {
+                if (let sd = od) {
+                    // Collinear segments need interval classification before
+                    // endpoint-touch handling, otherwise a positive overlap
+                    // would be misreported as a single point touch.
+                    if (sa == 0 && sb == 0 && sc == 0 && sd == 0) {
+                        int alo = 0;
+                        int ahi = 0;
+                        int clo = 0;
+                        int chi = 0;
+                        if (a.x != b.x || a.x != c.x || a.x != d.x) {
+                            alo = keel_min_coord2(a.x, b.x);
+                            ahi = keel_max_coord2(a.x, b.x);
+                            clo = keel_min_coord2(c.x, d.x);
+                            chi = keel_max_coord2(c.x, d.x);
+                        } else {
+                            alo = keel_min_coord2(a.y, b.y);
+                            ahi = keel_max_coord2(a.y, b.y);
+                            clo = keel_min_coord2(c.y, d.y);
+                            chi = keel_max_coord2(c.y, d.y);
+                        }
+                        int lo = keel_max_coord2(alo, clo);
+                        int hi = keel_min_coord2(ahi, chi);
+                        if (hi < lo) { return -1; }
+                        if (hi == lo) { return 0; }
+                        return 2;
+                    }
+
+                    if (sa != 0 && sb != 0 && sc != 0 && sd != 0 &&
+                        sa != sb && sc != sd) {
+                        return 1;
+                    }
+                    if ((sa == 0 && keel_on_segment2(a, b, c)) ||
+                        (sb == 0 && keel_on_segment2(a, b, d)) ||
+                        (sc == 0 && keel_on_segment2(c, d, a)) ||
+                        (sd == 0 && keel_on_segment2(c, d, b))) {
+                        return 0;
+                    }
+                    return -1;
+                }
+                return none;
+            }
+            return none;
+        }
+        return none;
+    }
+    return none;
+}
+
+
+// Classify a point against a non-degenerate tetrahedron using exact face signs.
+// Return codes: -1 outside, 0 on boundary, 1 strictly inside.
+// none means an input is outside the KPoint3 domain or the tetrahedron is degenerate.
+// All fifteen coordinates are validated before any determinant is evaluated.
+bool keel_sign_matches_or_zero(int value, int reference) {
+    return value == 0 || value == reference;
+}
+
+int? keel_point_in_tetrahedron3d(KPoint3 a, KPoint3 b, KPoint3 c,
+                                 KPoint3 d, KPoint3 p) {
+    if (!keel_coord3_in_domain(a.x) || !keel_coord3_in_domain(a.y) ||
+        !keel_coord3_in_domain(a.z) || !keel_coord3_in_domain(b.x) ||
+        !keel_coord3_in_domain(b.y) || !keel_coord3_in_domain(b.z) ||
+        !keel_coord3_in_domain(c.x) || !keel_coord3_in_domain(c.y) ||
+        !keel_coord3_in_domain(c.z) || !keel_coord3_in_domain(d.x) ||
+        !keel_coord3_in_domain(d.y) || !keel_coord3_in_domain(d.z) ||
+        !keel_coord3_in_domain(p.x) || !keel_coord3_in_domain(p.y) ||
+        !keel_coord3_in_domain(p.z)) {
+        return none;
+    }
+
+    int? base = keel_orient3d_sign(a, b, c, d);
+    if (let base_sign = base) {
+        if (base_sign == 0) { return none; }
+
+        int? s0 = keel_orient3d_sign(p, b, c, d);
+        if (let v0 = s0) {
+            if (!keel_sign_matches_or_zero(v0, base_sign)) { return -1; }
+            int? s1 = keel_orient3d_sign(a, p, c, d);
+            if (let v1 = s1) {
+                if (!keel_sign_matches_or_zero(v1, base_sign)) { return -1; }
+                int? s2 = keel_orient3d_sign(a, b, p, d);
+                if (let v2 = s2) {
+                    if (!keel_sign_matches_or_zero(v2, base_sign)) { return -1; }
+                    int? s3 = keel_orient3d_sign(a, b, c, p);
+                    if (let v3 = s3) {
+                        if (!keel_sign_matches_or_zero(v3, base_sign)) { return -1; }
+                        if (v0 == 0 || v1 == 0 || v2 == 0 || v3 == 0) {
+                            return 0;
+                        }
+                        return 1;
+                    }
+                    return none;
+                }
+                return none;
+            }
+            return none;
+        }
+        return none;
+    }
+    return none;
+}

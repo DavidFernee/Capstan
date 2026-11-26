@@ -1,0 +1,666 @@
+// CCAM v0.2 control-flow lifecycle validator prototype.
+// This is an isolated Capstan-native abstract interpreter. It does not alter
+// the v0.1 instruction set or claim to validate production capability values.
+// State tracks region and view registers, including an abstract generation.
+// Exact state equality is required at every reachable CFG join.
+
+const int CCAM_FLOW_NOP = 0;
+const int CCAM_FLOW_REGION_NEW = 1;
+const int CCAM_FLOW_REGION_RESET = 2;
+const int CCAM_FLOW_REGION_CLOSE = 3;
+const int CCAM_FLOW_CAP_USE = 4;
+const int CCAM_FLOW_JUMP = 5;
+const int CCAM_FLOW_BRANCH = 6;
+const int CCAM_FLOW_RETURN = 7;
+const int CCAM_FLOW_TRAP = 8;
+const int CCAM_FLOW_VIEW_NEW = 9;
+const int CCAM_FLOW_VIEW_USE = 10;
+const int CCAM_FLOW_VIEW_DROP = 11;
+const int CCAM_FLOW_VIEW_COPY = 12;
+const int CCAM_FLOW_CALL = 13;
+const int CCAM_FLOW_VIEW_ESCAPE = 14;
+
+const int CCAM_FLOW_MAX_REGIONS = 8;
+const int CCAM_FLOW_MAX_VIEWS = 32;
+const int CCAM_FLOW_MAX_INSTRUCTIONS = 4096;
+
+struct CCAMFlowInstruction {
+    int op;
+    int region_register;
+    int view_register;
+    int target;
+    int if_true;
+    int if_false;
+}
+
+struct CCAMFlowValidation {
+    bool ok;
+    string error;
+    int instruction;
+}
+
+CCAMFlowInstruction ccam_flow_instruction(int op) {
+    return new CCAMFlowInstruction{
+        op: op, region_register: -1, view_register: -1,
+        target: -1, if_true: -1, if_false: -1
+    };
+}
+
+CCAMFlowValidation ccam_flow_ok() {
+    return new CCAMFlowValidation{ok: true, error: "", instruction: -1};
+}
+
+CCAMFlowValidation ccam_flow_error(string error, int instruction) {
+    return new CCAMFlowValidation{
+        ok: false, error: error, instruction: instruction
+    };
+}
+
+List<int> ccam_flow_copy_state(List<int> source) {
+    List<int> copy = new List<int>();
+    for (int i = 0; i < source.len(); i += 1) {
+        copy.push(source[i]);
+    }
+    return copy;
+}
+
+bool ccam_flow_states_equal(List<int> left, List<int> right) {
+    if (left.len() != right.len()) { return false; }
+    for (int i = 0; i < left.len(); i += 1) {
+        if (left[i] != right[i]) { return false; }
+    }
+    return true;
+}
+
+// Merge one predecessor state into a successor. A successor is scheduled only
+// on its first incoming edge; subsequent edges must be exactly equivalent.
+// This conservative lattice intentionally rejects ambiguous ownership joins.
+CCAMFlowValidation ccam_flow_merge(
+    List<List<int>> incoming,
+    List<bool> reached,
+    List<int> worklist,
+    int target,
+    List<int> state,
+    int source
+) {
+    if (target < 0 || target >= incoming.len()) {
+        return ccam_flow_error("invalid_branch_target", source);
+    }
+    if (!reached[target]) {
+        incoming[target] = ccam_flow_copy_state(state);
+        reached[target] = true;
+        worklist.push(target);
+        return ccam_flow_ok();
+    }
+    if (!ccam_flow_states_equal(incoming[target], state)) {
+        return ccam_flow_error("capability_state_join_mismatch", source);
+    }
+    return ccam_flow_ok();
+}
+
+CCAMFlowValidation ccam_validate_region_lifecycle(
+    List<CCAMFlowInstruction> code,
+    int region_register_count,
+    int view_register_count
+) {
+    if (region_register_count < 0 ||
+        region_register_count > CCAM_FLOW_MAX_REGIONS) {
+        return ccam_flow_error("region_register_limit_exceeded", -1);
+    }
+    if (view_register_count < 0 || view_register_count > CCAM_FLOW_MAX_VIEWS) {
+        return ccam_flow_error("view_register_limit_exceeded", -1);
+    }
+    if (code.len() == 0) {
+        return ccam_flow_error("empty_instruction_sequence", -1);
+    }
+    if (code.len() > CCAM_FLOW_MAX_INSTRUCTIONS) {
+        return ccam_flow_error("instruction_limit_exceeded", -1);
+    }
+
+    // Validate every instruction, including unreachable instructions.
+    for (int pc = 0; pc < code.len(); pc += 1) {
+        CCAMFlowInstruction ins = code[pc];
+        if (ins.op == CCAM_FLOW_REGION_NEW ||
+            ins.op == CCAM_FLOW_REGION_RESET ||
+            ins.op == CCAM_FLOW_REGION_CLOSE ||
+            ins.op == CCAM_FLOW_CAP_USE ||
+            ins.op == CCAM_FLOW_VIEW_NEW) {
+            if (ins.region_register < 0 ||
+                ins.region_register >= region_register_count) {
+                return ccam_flow_error("invalid_region_register", pc);
+            }
+            if (ins.op == CCAM_FLOW_VIEW_NEW &&
+                (ins.view_register < 0 || ins.view_register >= view_register_count)) {
+                return ccam_flow_error("invalid_view_register", pc);
+            }
+        } else if (ins.op == CCAM_FLOW_VIEW_USE || ins.op == CCAM_FLOW_VIEW_DROP) {
+            if (ins.view_register < 0 || ins.view_register >= view_register_count) {
+                return ccam_flow_error("invalid_view_register", pc);
+            }
+        } else if (ins.op == CCAM_FLOW_VIEW_COPY) {
+            return ccam_flow_error("view_alias_forbidden", pc);
+        } else if (ins.op == CCAM_FLOW_VIEW_ESCAPE) {
+            return ccam_flow_error("view_escape_forbidden", pc);
+        } else if (ins.op == CCAM_FLOW_CALL) {
+            return ccam_flow_error("call_boundary_not_modelled", pc);
+        } else if (ins.op == CCAM_FLOW_JUMP) {
+            if (ins.target < 0 || ins.target >= code.len()) {
+                return ccam_flow_error("invalid_branch_target", pc);
+            }
+        } else if (ins.op == CCAM_FLOW_BRANCH) {
+            if (ins.if_true < 0 || ins.if_true >= code.len() ||
+                ins.if_false < 0 || ins.if_false >= code.len()) {
+                return ccam_flow_error("invalid_branch_target", pc);
+            }
+        } else if (ins.op != CCAM_FLOW_NOP &&
+                   ins.op != CCAM_FLOW_RETURN &&
+                   ins.op != CCAM_FLOW_TRAP) {
+            return ccam_flow_error("invalid_instruction", pc);
+        }
+    }
+
+    List<List<int>> incoming = new List<List<int>>();
+    List<bool> reached = new List<bool>();
+    for (int pc = 0; pc < code.len(); pc += 1) {
+        incoming.push(new List<int>());
+        reached.push(false);
+    }
+    List<int> initial = new List<int>();
+    // Layout: region states, region generations, view states, view owners,
+    // then view generations. All slots start unavailable at generation zero.
+    for (int i = 0; i < 2 * region_register_count + 3 * view_register_count; i += 1) {
+        initial.push(0);
+    }
+    incoming[0] = initial;
+    reached[0] = true;
+    List<int> worklist = new List<int>();
+    worklist.push(0);
+    int cursor = 0;
+
+    // A node is processed once because all later predecessors must match its
+    // first state exactly. Equal-state loops converge; lifecycle-changing
+    // loops necessarily revisit a node with a different state and are rejected.
+    while (cursor < worklist.len()) {
+        int pc = worklist[cursor];
+        cursor += 1;
+        CCAMFlowInstruction ins = code[pc];
+        List<int> state = ccam_flow_copy_state(incoming[pc]);
+
+        int region_state_base = 0;
+        int region_generation_base = region_register_count;
+        int view_state_base = 2 * region_register_count;
+        int view_owner_base = view_state_base + view_register_count;
+        int view_generation_base = view_owner_base + view_register_count;
+
+        if (ins.op == CCAM_FLOW_REGION_NEW) {
+            int r = ins.region_register;
+            if (state[region_state_base + r] == 1) {
+                return ccam_flow_error("linear_capability_overwrite", pc);
+            }
+            state[region_state_base + r] = 1;
+            // Preserve monotonicity when a closed abstract register is reused;
+            // this prevents generation ABA in the model.
+            state[region_generation_base + r] = state[region_generation_base + r] + 1;
+        } else if (ins.op == CCAM_FLOW_REGION_RESET ||
+                   ins.op == CCAM_FLOW_CAP_USE ||
+                   ins.op == CCAM_FLOW_REGION_CLOSE) {
+            int r = ins.region_register;
+            if (state[region_state_base + r] != 1) {
+                return ccam_flow_error("capability_not_live", pc);
+            }
+            if (ins.op == CCAM_FLOW_REGION_RESET) {
+                state[region_generation_base + r] = state[region_generation_base + r] + 1;
+                for (int v = 0; v < view_register_count; v += 1) {
+                    if (state[view_state_base + v] == 1 &&
+                        state[view_owner_base + v] == r) {
+                        state[view_state_base + v] = 0;
+                    }
+                }
+            } else if (ins.op == CCAM_FLOW_REGION_CLOSE) {
+                state[region_state_base + r] = 2;
+                state[region_generation_base + r] = state[region_generation_base + r] + 1;
+                for (int v = 0; v < view_register_count; v += 1) {
+                    if (state[view_state_base + v] == 1 &&
+                        state[view_owner_base + v] == r) {
+                        state[view_state_base + v] = 0;
+                    }
+                }
+            }
+        } else if (ins.op == CCAM_FLOW_VIEW_NEW) {
+            int r = ins.region_register;
+            int v = ins.view_register;
+            if (state[region_state_base + r] != 1) {
+                return ccam_flow_error("capability_not_live", pc);
+            }
+            if (state[view_state_base + v] == 1) {
+                return ccam_flow_error("linear_view_overwrite", pc);
+            }
+            // Until mutability and disjoint-range proofs are represented,
+            // allow at most one live view per region to prevent aliasing.
+            for (int other = 0; other < view_register_count; other += 1) {
+                if (state[view_state_base + other] == 1 &&
+                    state[view_owner_base + other] == r) {
+                    return ccam_flow_error("overlapping_live_view", pc);
+                }
+            }
+            state[view_state_base + v] = 1;
+            state[view_owner_base + v] = r;
+            state[view_generation_base + v] =
+                state[region_generation_base + r];
+        } else if (ins.op == CCAM_FLOW_VIEW_USE ||
+                   ins.op == CCAM_FLOW_VIEW_DROP) {
+            int v = ins.view_register;
+            if (state[view_state_base + v] != 1) {
+                return ccam_flow_error("view_not_live", pc);
+            }
+            int r = state[view_owner_base + v];
+            if (r < 0 || r >= region_register_count ||
+                state[region_state_base + r] != 1 ||
+                state[view_generation_base + v] !=
+                    state[region_generation_base + r]) {
+                return ccam_flow_error("stale_view_generation", pc);
+            }
+            if (ins.op == CCAM_FLOW_VIEW_DROP) {
+                state[view_state_base + v] = 0;
+            }
+        } else if (ins.op == CCAM_FLOW_RETURN) {
+            for (int r = 0; r < region_register_count; r += 1) {
+                if (state[region_state_base + r] == 1) {
+                    return ccam_flow_error("live_region_on_return", pc);
+                }
+            }
+            for (int v = 0; v < view_register_count; v += 1) {
+                if (state[view_state_base + v] == 1) {
+                    return ccam_flow_error("live_view_on_return", pc);
+                }
+            }
+            continue;
+        } else if (ins.op == CCAM_FLOW_TRAP) {
+            // Runtime frame-unwind must close regions and invalidate views.
+            // This abstract validator does not implement unwind cleanup.
+            continue;
+        }
+
+        if (ins.op == CCAM_FLOW_JUMP) {
+            CCAMFlowValidation merged = ccam_flow_merge(
+                incoming, reached, worklist, ins.target, state, pc
+            );
+            if (!merged.ok) { return merged; }
+        } else if (ins.op == CCAM_FLOW_BRANCH) {
+            CCAMFlowValidation yes = ccam_flow_merge(
+                incoming, reached, worklist, ins.if_true, state, pc
+            );
+            if (!yes.ok) { return yes; }
+            CCAMFlowValidation no = ccam_flow_merge(
+                incoming, reached, worklist, ins.if_false, state, pc
+            );
+            if (!no.ok) { return no; }
+        } else {
+            if (pc + 1 >= code.len()) {
+                return ccam_flow_error("reachable_fallthrough", pc);
+            }
+            CCAMFlowValidation next = ccam_flow_merge(
+                incoming, reached, worklist, pc + 1, state, pc
+            );
+            if (!next.ok) { return next; }
+        }
+    }
+    return ccam_flow_ok();
+}
+
+test "lifecycle validator accepts create use reset close return" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_CAP_USE);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_RESET);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 0);
+    assert(result.ok);
+}
+
+test "lifecycle validator rejects use before create and use after close" {
+    List<CCAMFlowInstruction> before = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_CAP_USE);
+    i.region_register = 0;
+    before.push(i);
+    before.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation a = ccam_validate_region_lifecycle(before, 1, 0);
+    assert(!a.ok && a.error == "capability_not_live");
+
+    List<CCAMFlowInstruction> after = new List<CCAMFlowInstruction>();
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    after.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    after.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_CAP_USE);
+    i.region_register = 0;
+    after.push(i);
+    after.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation b = ccam_validate_region_lifecycle(after, 1, 0);
+    assert(!b.ok && b.error == "capability_not_live");
+}
+
+test "lifecycle validator rejects live capability on normal return" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 0);
+    assert(!result.ok && result.error == "live_region_on_return");
+}
+
+test "lifecycle validator rejects overwrite of a live linear capability" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 0);
+    assert(!result.ok && result.error == "linear_capability_overwrite");
+}
+
+test "lifecycle validator requires identical states at branch joins" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_BRANCH));
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_JUMP));
+    code[2].target = 4;
+    code.push(ccam_flow_instruction(CCAM_FLOW_NOP));
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    code[0].if_true = 1;
+    code[0].if_false = 3;
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 0);
+    assert(!result.ok && result.error == "capability_state_join_mismatch");
+}
+
+test "lifecycle validator rejects closed versus unavailable branch states" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_BRANCH));
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_JUMP);
+    i.target = 6;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_NOP));
+    i = ccam_flow_instruction(CCAM_FLOW_JUMP);
+    i.target = 6;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    code[0].if_true = 1;
+    code[0].if_false = 4;
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 0);
+    assert(!result.ok && result.error == "capability_state_join_mismatch");
+}
+
+test "lifecycle validator accepts branch join after both paths close" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_BRANCH));
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_JUMP);
+    i.target = 8;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_JUMP);
+    i.target = 8;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_NOP));
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    code[0].if_true = 1;
+    code[0].if_false = 4;
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 0);
+    assert(result.ok);
+}
+
+test "lifecycle validator accepts equal-state loops and rejects lifecycle loops" {
+    List<CCAMFlowInstruction> stable = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction jump = ccam_flow_instruction(CCAM_FLOW_JUMP);
+    jump.target = 0;
+    stable.push(jump);
+    assert(ccam_validate_region_lifecycle(stable, 0, 0).ok);
+
+    List<CCAMFlowInstruction> changing = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    changing.push(i);
+    jump = ccam_flow_instruction(CCAM_FLOW_JUMP);
+    jump.target = 0;
+    changing.push(jump);
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(changing, 1, 0);
+    assert(!result.ok && result.error == "capability_state_join_mismatch");
+}
+
+test "lifecycle validator validates unreachable instruction structure" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    code.push(ccam_flow_instruction(999));
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 0, 0);
+    assert(!result.ok && result.error == "invalid_instruction");
+}
+
+test "lifecycle validator enforces bounded region and instruction counts" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    assert(!ccam_validate_region_lifecycle(code, 9, 0).ok);
+    List<CCAMFlowInstruction> too_many = new List<CCAMFlowInstruction>();
+    for (int i = 0; i < CCAM_FLOW_MAX_INSTRUCTIONS + 1; i += 1) {
+        too_many.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    }
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(too_many, 0, 0);
+    assert(!result.ok && result.error == "instruction_limit_exceeded");
+}
+
+test "view validator rejects use after region reset and close" {
+    List<CCAMFlowInstruction> reset_code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    reset_code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    reset_code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_RESET);
+    i.region_register = 0;
+    reset_code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_USE);
+    i.view_register = 0;
+    reset_code.push(i);
+    reset_code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation a = ccam_validate_region_lifecycle(reset_code, 1, 1);
+    assert(!a.ok && a.error == "view_not_live");
+
+    List<CCAMFlowInstruction> close_code = new List<CCAMFlowInstruction>();
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    close_code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    close_code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    close_code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_USE);
+    i.view_register = 0;
+    close_code.push(i);
+    close_code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation b = ccam_validate_region_lifecycle(close_code, 1, 1);
+    assert(!b.ok && b.error == "view_not_live");
+}
+
+test "view validator checks live generation and linear drop" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_USE);
+    i.view_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_DROP);
+    i.view_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    assert(ccam_validate_region_lifecycle(code, 1, 1).ok);
+}
+
+test "view validator rejects overwrite and leaked views" {
+    List<CCAMFlowInstruction> overwrite = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    overwrite.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    overwrite.push(i);
+    overwrite.push(i);
+    overwrite.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation a = ccam_validate_region_lifecycle(overwrite, 1, 1);
+    assert(!a.ok && a.error == "linear_view_overwrite");
+
+    List<CCAMFlowInstruction> leak = new List<CCAMFlowInstruction>();
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    leak.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    leak.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    leak.push(i);
+    leak.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    assert(ccam_validate_region_lifecycle(leak, 1, 1).ok);
+}
+
+test "view validator rejects branch joins with different view ownership" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_BRANCH));
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_JUMP);
+    i.target = 7;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 1;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 1;
+    i.view_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_JUMP);
+    i.target = 7;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    code[0].if_true = 1;
+    code[0].if_false = 4;
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 2, 1);
+    assert(!result.ok && result.error == "capability_state_join_mismatch");
+}
+
+test "view validator bounds view register count and validates indices" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    assert(!ccam_validate_region_lifecycle(code, 0, 33).ok);
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_VIEW_USE);
+    i.view_register = 0;
+    code[0] = i;
+    assert(ccam_validate_region_lifecycle(code, 0, 1).error == "invalid_view_register");
+}
+
+test "view validator rejects concurrent aliases for one region" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 1;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 2);
+    assert(!result.ok && result.error == "overlapping_live_view");
+}
+
+test "view validator rejects copy escape and unmodelled call boundaries" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_VIEW_COPY));
+    assert(ccam_validate_region_lifecycle(code, 0, 0).error == "view_alias_forbidden");
+    code[0] = ccam_flow_instruction(CCAM_FLOW_VIEW_ESCAPE);
+    assert(ccam_validate_region_lifecycle(code, 0, 0).error == "view_escape_forbidden");
+    code[0] = ccam_flow_instruction(CCAM_FLOW_CALL);
+    assert(ccam_validate_region_lifecycle(code, 0, 0).error == "call_boundary_not_modelled");
+}
+
+test "view validator permits a fresh view after reset invalidates the old one" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_RESET);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 1;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_USE);
+    i.view_register = 1;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_DROP);
+    i.view_register = 1;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    assert(ccam_validate_region_lifecycle(code, 1, 2).ok);
+}
+
