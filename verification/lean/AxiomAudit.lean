@@ -382,3 +382,9 @@ import CapstanVerification.InjectionValue
 #print axioms CredentialConfinement.unrelated_cell_preserved
 #print axioms CredentialConfinement.stored_credential_rejects_integrity
 #print axioms CredentialConfinement.stored_control_rejects_integrity
+
+#print axioms CredentialVerifierPolicy.rejects_weak_cost
+#print axioms CredentialVerifierPolicy.rejects_excessive_cost
+#print axioms CredentialVerifierPolicy.rejects_other_algorithm
+#print axioms CredentialVerifierPolicy.rejects_short_salt
+#print axioms CredentialVerifierPolicy.rejects_wrong_digest

@@ -23,3 +23,4 @@ import CapstanVerification.ReferenceSemantics
 import CapstanVerification.NativeRegisterHeapBridge
 import CapstanVerification.F1Provenance
 import CapstanVerification.CredentialConfinement
+import CapstanVerification.CredentialVerifierPolicy
