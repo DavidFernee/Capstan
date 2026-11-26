@@ -120,12 +120,10 @@ theorem nativeStepAdmission_corresponds (budget : StepBudget) :
       (consumeStep budget).map (fun next => Int.ofNat next.used) := by
   unfold nativeStepAdmission consumeStep
   by_cases h : budget.used < budget.limit
-  · have hlt : Int.ofNat budget.used < Int.ofNat budget.limit := by
-      exact Int.ofNat_lt.mpr h
-    simp [h, hlt]
-  · have hge : Int.ofNat budget.limit ≤ Int.ofNat budget.used := by
-      exact Int.ofNat_le.mpr (Nat.le_of_not_gt h)
-    simp [h, hge]
+  · have hge : ¬ budget.limit ≤ budget.used := Nat.not_le_of_gt h
+    simp [h, hge, Int.ofNat_add]
+  · have hle : budget.limit ≤ budget.used := Nat.le_of_not_gt h
+    simp [h, hle]
 
 /-- An exhausted budget is rejected before the native-shaped dispatch step. -/
 theorem nativeStepAdmission_exhausted
