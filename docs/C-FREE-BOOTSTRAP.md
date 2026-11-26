@@ -166,6 +166,19 @@ This sequence permits early progress without confusing a working scalar evaluato
 
 ## 10. Current status
 
-At the time this contract is introduced, the repository's integrated compiler still uses a Python-seeded bootstrap and generates C for GCC/Clang. The CCAM/C-free programme is under development. Typed validation, multi-frame execution, and checked scalar source lowering are separate increments with explicit limitations. A first Linux x86-64 freestanding native-backend prototype is under review in PR #173, stacked on the source-lowering/evaluator work; correctness and bounded-stack follow-ups are in PRs #182 and #185. These are open, unmerged prototypes and are not evidence of an integrated native backend, a C-free runtime, or a C-free compiler bootstrap.
+**Snapshot reviewed:** main at `92cc70cbb7c20f5903f415548367d7b76a7c648e` (2026-11-26).
 
-Update this section only against exact merged commits and current-head test evidence. Open pull requests, stale workflow runs, and design documents are not evidence of completed implementation.
+The production compiler still uses the Python-seeded bootstrap and generates C for GCC/Clang; its executable uses the Capstan C runtime. It is self-hosted, but it is not C-free under the definitions in this contract.
+
+The current CCAM development slices on main are:
+- PR #142: restricted Capstan-native single-frame evaluator;
+- PR #163: typed in-memory structural validator for that single-frame subset;
+- PR #207: bounded multi-function call-frame evaluator, using transitional call-site side tables;
+- PR #210: checked scalar source-to-CCAM lowering, not wired into the production compiler CLI;
+- PR #205: concrete Lean-model correspondence lemmas for native CCAM register tags and checked field reads/writes; this is a register-representation result, not a whole-evaluator refinement theorem.
+
+The source for a narrow freestanding Linux x86-64 native emitter is present in `verification/ccam_native_x64.cap` and described in `docs/architecture/CCAM-NATIVE-BACKEND.md` (PR #212). It is an experimental scalar backend, not a production compiler backend: it lacks full CCAM instruction coverage, a complete runtime/output path, all-instruction differential conformance and an implementation-refinement theorem to the CCAM model.
+
+The normative CCAM v0.1 document remains explicit that the implementation is not yet a conforming v0.1 machine, does not have a Lean evaluator-refinement theorem, and is not the complete Capstan semantics. The current status of every slice must be checked against that document and exact mainline code/tests. No C-free compiler bootstrap, C-free production runtime or multi-platform C-free release is established.
+
+Update this section only against exact source revisions and current-head test evidence. Open pull requests, stale workflow runs and design documents are not evidence of completed implementation. A passing model build is not implementation refinement; a prototype execution test is not complete backend conformance.
