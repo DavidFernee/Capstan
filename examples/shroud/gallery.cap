@@ -121,7 +121,7 @@ void run(Ui ui, string dir, string tag) {
 }
 
 int main() {
-    List<string> a = args();
+    List<string> a = args(4096, 1048576, 16777216);
     string dir = ".";
     if (a.len() > 0) { dir = a[0]; }
     Font? regular = none;
