@@ -215,6 +215,7 @@ add(20, "Laundering untrusted bytes through a struct field", "reject",
 add(20, "Laundering untrusted bytes through control flow", "logic",
     'string launder(Tainted t) { string out = ""; for (int i = 0; i < t.len(); i += 1) { if (t.at(i) == 60) { out += "<"; } else { out += "a"; } } return out; }' + MAIN,
     note="Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision.")
+# Terminal output is a LogText sink; Html and CsvText require explicit escape_log() re-encoding.
 add(80, "Basic XSS (improper neutralization of script tags)", "neutral",
     'int main() { println(escape_log("<p>" + escape_html(taint("<script>x()</script>")) + "</p>")); return 0; }', "&lt;script&gt;")
 add(88, "Argument injection", "reject",
