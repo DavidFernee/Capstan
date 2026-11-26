@@ -1,0 +1,131 @@
+// Candidate acyclic CFG validation. Not normative CCAM.
+import "ccam_aggregate_transfer.cap";
+import "ccam_aggregate_block.cap";
+
+const int AG_CFG_MAX_CELLS = 1048576;
+const int AG_CFG_MAX_INSTRUCTIONS = 65536;
+
+struct AGCFGBlock {
+    List<AGBlockInstruction> instructions;
+    int terminator; // 0 exit, 1 jump, 2 conditional
+    int condition;
+    int yes;
+    int no;
+}
+
+struct AGCFGState {
+    bool reached;
+    List<bool> ready;
+}
+
+bool ag_cfg_propagate(List<AGCFGState> states, int target, List<bool> ready) {
+    AGCFGState previous = states[target];
+    if (previous.reached) {
+        AGFlowJoin joined = ag_flow_meet(previous.ready, ready);
+        if (!joined.ok) { return false; }
+        states[target] = new AGCFGState{reached: true, ready: joined.ready};
+    } else {
+        states[target] = new AGCFGState{reached: true, ready: ready};
+    }
+    return true;
+}
+
+// Every block is structurally checked, even when unreachable.
+// Reachable blocks are then analysed in topological (index) order.
+// Total register-state cells and instruction count are bounded separately.
+bool ag_cfg_validate(List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks) {
+    int count = blocks.len();
+    if (count <= 0 || count > AG_FLOW_MAX_BLOCKS ||
+        kinds.len() > AG_SCHEMA_MAX_REGS || kinds.len() != entry.len()) { return false; }
+    if (kinds.len() > AG_CFG_MAX_CELLS / count) { return false; }
+    for (int r = 0; r < kinds.len(); r += 1) {
+        if (!ag_schema_kind(kinds[r])) { return false; }
+    }
+    int total = 0;
+    List<AGCFGState> states = new List<AGCFGState>();
+    for (int i = 0; i < count; i += 1) {
+        AGCFGBlock block = blocks[i];
+        if (block.instructions.len() > AG_CFG_MAX_INSTRUCTIONS - total) { return false; }
+        total += block.instructions.len();
+        for (int j = 0; j < block.instructions.len(); j += 1) {
+            AGBlockInstruction ins = block.instructions[j];
+            if (!ag_schema_operands(kinds, ins.opcode, ins.kind, ins.operands)) { return false; }
+        }
+        if (block.terminator == 0) {
+            if (block.condition != -1 || block.yes != -1 || block.no != -1) { return false; }
+        } else if (block.terminator == 1) {
+            if (block.condition != -1 || block.no != -1 || !ag_flow_edge(count, i, block.yes)) { return false; }
+        } else if (block.terminator == 2) {
+            if (!ag_flow_branch(kinds, block.condition, count, i, block.yes, block.no)) { return false; }
+        } else { return false; }
+        states.push(new AGCFGState{reached: false, ready: new List<bool>()});
+    }
+    if (total > 0 && kinds.len() > AG_CFG_MAX_CELLS / total) { return false; }
+    states[0] = new AGCFGState{reached: true, ready: entry};
+    for (int i = 0; i < count; i += 1) {
+        AGCFGState state = states[i];
+        if (state.reached) {
+            AGCFGBlock block = blocks[i];
+            List<bool> ready = state.ready;
+            for (int j = 0; j < block.instructions.len(); j += 1) {
+                AGBlockInstruction ins = block.instructions[j];
+                AGTransferResult next = ag_transfer(kinds, ready, ins.opcode, ins.kind, ins.operands);
+                if (!next.ok) { return false; }
+                ready = next.ready;
+            }
+            if (block.terminator == 1) {
+                if (!ag_cfg_propagate(states, block.yes, ready)) { return false; }
+            } else if (block.terminator == 2) {
+                if (!ag_transfer_condition(kinds, ready, block.condition)) { return false; }
+                if (!ag_cfg_propagate(states, block.yes, ready)) { return false; }
+                if (!ag_cfg_propagate(states, block.no, ready)) { return false; }
+            }
+        }
+    }
+    return true;
+}
+
+test "aggregate CFG diamond rejects one-sided initialisation" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_BOOL);
+    List<bool> entry = new List<bool>();
+    entry.push(false);
+    entry.push(true);
+    entry.push(true);
+    List<int> len_ops = new List<int>();
+    len_ops.push(0);
+    len_ops.push(1);
+    List<int> get_ops = new List<int>();
+    get_ops.push(0);
+    get_ops.push(1);
+    get_ops.push(0);
+    List<AGBlockInstruction> empty = new List<AGBlockInstruction>();
+    List<AGBlockInstruction> writes = new List<AGBlockInstruction>();
+    writes.push(new AGBlockInstruction{opcode: 3, kind: AG_SCHEMA_INT, operands: len_ops});
+    List<AGBlockInstruction> reads = new List<AGBlockInstruction>();
+    reads.push(new AGBlockInstruction{opcode: 1, kind: AG_SCHEMA_INT, operands: get_ops});
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: empty, terminator: 2, condition: 2, yes: 1, no: 2});
+    blocks.push(new AGCFGBlock{instructions: writes, terminator: 1, condition: -1, yes: 3, no: -1});
+    blocks.push(new AGCFGBlock{instructions: empty, terminator: 1, condition: -1, yes: 3, no: -1});
+    blocks.push(new AGCFGBlock{instructions: reads, terminator: 0, condition: -1, yes: -1, no: -1});
+    assert(!ag_cfg_validate(kinds, entry, blocks));
+    blocks[2] = new AGCFGBlock{instructions: writes, terminator: 1, condition: -1, yes: 3, no: -1};
+    assert(ag_cfg_validate(kinds, entry, blocks));
+    entry[2] = false;
+    assert(!ag_cfg_validate(kinds, entry, blocks));
+}
+
+test "aggregate CFG rejects malformed unreachable blocks and backedges" {
+    List<int> kinds = new List<int>();
+    List<bool> entry = new List<bool>();
+    List<AGBlockInstruction> empty = new List<AGBlockInstruction>();
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: empty, terminator: 0, condition: -1, yes: -1, no: -1});
+    blocks.push(new AGCFGBlock{instructions: empty, terminator: 1, condition: -1, yes: 0, no: -1});
+    assert(!ag_cfg_validate(kinds, entry, blocks));
+    blocks[1] = new AGCFGBlock{instructions: empty, terminator: 0, condition: -1, yes: -1, no: -1};
+    assert(ag_cfg_validate(kinds, entry, blocks));
+}
