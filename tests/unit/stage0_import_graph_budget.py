@@ -58,6 +58,16 @@ def padded(prefix: str, size: int) -> str:
 with tempfile.TemporaryDirectory(prefix="capstan-stage0-import-budget-") as td:
     base = pathlib.Path(td)
 
+    traversal = base / "import-traversal"
+    traversal.mkdir()
+    (traversal / "main.cap").write_text('import "../outside.cap";\n')
+    (base / "outside.cap").write_text("void main() {}\n")
+    expect_failure(
+        traversal / "main.cap",
+        "relative .cap path inside the project",
+        "stage0-import-path-confinement",
+    )
+
     expect_success(write_chain(base / "file-count-exact", 255), "stage0-file-count-exact")
     expect_failure(
         write_chain(base / "file-count-over", 256),
