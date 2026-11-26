@@ -676,6 +676,10 @@ def b_write_file(p, d):
         with open(p, "wb") as f: f.write(d.encode("latin-1"))
         return True
     except OSError: return False
+def b_write_html_file(p, d): return b_write_file(p, d)
+def b_write_log_file(p, d): return b_write_file(p, d)
+def b_write_csv_file(p, d): return b_write_file(p, d)
+
 def _filesystem_bytes_len(value):
     # Count host argv/environment bytes incrementally; do not make a second
     # unbounded copy of a potentially oversized secret or command-line value.
