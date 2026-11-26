@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_switch_count(int cases){return cases>=0&&cases<=65536;}
