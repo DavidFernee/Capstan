@@ -1,0 +1,2 @@
+import "ccam_aggregate_checked_add.cap";
+AGCheckedInt ag_checked_div(int a,int b){if(a>1000000000||a< -1000000000||b>1000000000||b< -1000000000||b==0){return new AGCheckedInt{ok:false,value:0};}return new AGCheckedInt{ok:true,value:a/b};}
