@@ -1,6 +1,6 @@
 # Output-context types and sink contracts
 
-> Status: implementation proposed on draft PR #238 and not yet merged to `main`; exact-head test/CI validation pending.
+> Status: implementation landed on the rebased draft PR #491 branch; exact-head test/CI validation pending.
 > Scope: HTML, log and CSV output contexts. JSON migration is deliberately separate.
 
 ## Contract
@@ -13,7 +13,7 @@ Capstan distinguishes context-encoded values from ordinary trusted strings:
 | `LogText` | `escape_log()` and safe log composition | `write_log_file()`, `print()` and `println()` |
 | `CsvText` | `escape_csv()` and safe CSV composition | `write_csv_file()` |
 
-Terminal output is a log context: `print()` and `println()` accept `LogText` or trusted `string`, but reject `Html` and `CsvText`. The format-agnostic `write_file(path, data)` accepts trusted `string` only. It rejects `Tainted` data and all three context-encoded types. A context-encoded value cannot be assigned to `string`, passed to another context's sink, or mixed with a different context type.
+Terminal output is a log context: `print()` and `println()` accept `LogText` or trusted `string`, but reject `Html` and `CsvText`. Applying `escape_log()` to an existing contextual value is an explicit re-encoding into `LogText`; it is not an implicit cross-context conversion. The format-agnostic `write_file(path, data)` accepts trusted `string` only. It rejects `Tainted` data and all three context-encoded types. A context-encoded value cannot be assigned to `string`, passed to another context's sink, or mixed with a different context type.
 
 Concatenation of a context-encoded value with trusted `string` or a value of the same context preserves that context. Concatenation with `Tainted` data or another context type is rejected. This permits assembling a CSV row from independently escaped fields and literal delimiters without erasing the CSV context.
 
@@ -29,16 +29,18 @@ The three typed file sinks currently lower to the same bounded-path-checked runt
 
 ## Evidence
 
-The draft implementation on PR #238 adds positive conformance coverage for all three matching sinks and negative tests for:
+The implementation on PR #491 adds positive conformance coverage for all three matching sinks and negative tests for:
 - HTML-encoded data passed to the generic file sink (CWE-116 atlas regression);
 - untrusted input passed directly to a typed HTML sink (CWE-20);
 - HTML data passed to the CSV sink;
 - HTML or CSV data passed to terminal/log output;
 - `LogText` passed to terminal output (positive control);
 - CSV formula leaders (`=`, `+`, `-`, `@`, tab, CR and LF), full-width variants and leading ASCII spaces before a leader are prefixed before the field content (CWE-1236 regressions);
+- CSV context preservation through `+=`, with mixed-context concatenation, unescaped tainted concatenation and assignment to plain `string` rejected (CWE-116);
+- explicit `escape_log()` re-encoding of `Html` and `CsvText` before terminal output, while direct cross-context terminal writes remain rejected;
 - JSON fragments containing C1/bidi terminal controls are neutralised by `escape_json()` (CWE-117 atlas regression);
 - CSV data passed to the HTML sink;
 - plain trusted strings passed to a typed CSV sink;
 - Secret values passed to a file sink.
 
-The fixtures and implementation described here remain on the unmerged PR #238 branch. The standard suite must compile the compiler and programs through the stage-0 bootstrap and check generated C warning-free; results must be recorded against the exact implementation PR head after CI completes. No universal proof is claimed by this document.
+The fixtures and implementation described here remain on the unmerged PR #238 branch. The standard suite must compile the compiler and programs through the stage-0 bootstrap and check generated C warning-free; results must be recorded against the exact implementation PR head after CI completes. The current compiler still uses one runtime file-writing primitive behind the three statically typed sinks. No universal proof is claimed by this document.

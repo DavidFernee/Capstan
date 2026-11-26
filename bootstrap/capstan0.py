@@ -556,7 +556,7 @@ class Parser:
 
 
 BUILTINS = {
-    "print", "println", "int_to_str", "char_str", "read_file", "read_line", "write_file",
+    "print", "println", "int_to_str", "char_str", "read_file", "read_line", "write_file", "write_html_file", "write_log_file", "write_csv_file",
     "args", "exit", "join", "assert", "validate_ident", "validate_int", "escape_c",
     "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
     "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
@@ -676,6 +676,10 @@ def b_write_file(p, d):
         with open(p, "wb") as f: f.write(d.encode("latin-1"))
         return True
     except OSError: return False
+def b_write_html_file(p, d): return b_write_file(p, d)
+def b_write_log_file(p, d): return b_write_file(p, d)
+def b_write_csv_file(p, d): return b_write_file(p, d)
+
 def _filesystem_bytes_len(value):
     # Count host argv/environment bytes incrementally; do not make a second
     # unbounded copy of a potentially oversized secret or command-line value.
@@ -768,8 +772,18 @@ def b_trust(t, why): return t
 def b_to_text(x):
     if isinstance(x, bool): return "true" if x else "false"
     return str(x) if isinstance(x, int) else x
+def _csv_formula_prefix(t):
+    i = 0
+    while i < len(t) and t[i] == " ":
+        i += 1
+    if i >= len(t):
+        return False
+    c = ord(t[i])
+    if c in (ord("="), ord("+"), ord("-"), ord("@"), 9, 10, 11, 12, 13):
+        return True
+    return len(t) - i >= 3 and ord(t[i]) == 0xEF and ord(t[i + 1]) == 0xBC and ord(t[i + 2]) in (0x9D, 0x8B, 0x8D, 0xA0)
 def b_escape_csv(t):
-    return '"' + ("'" if t[:1] in ("=", "+", "-", "@", "\t", "\r") and t else "") + t.replace('"', '""') + '"'
+    return '"' + ("'" if _csv_formula_prefix(t) else "") + t.replace('"', '""') + '"'
 def b_validate_path(t):
     if not t or len(t) > 4096 or t[0] in ("/", "-"): return None
     for seg in t.split("/"):

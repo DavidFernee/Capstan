@@ -1196,14 +1196,27 @@ static int64_t *cap_validate_range(CapStr *t, int64_t lo, int64_t hi) {
     return v;
 }
 
-/* One CSV field: always quoted, quotes doubled, and a leading = + - @ tab or CR
-   neutralised with an apostrophe so spreadsheets do not run it (CWE-1236). */
+/* Detect spreadsheet formula leaders after optional leading ASCII spaces. */
+static bool cap_csv_formula_prefix(const unsigned char *data, int64_t len) {
+    if (len <= 0) return false;
+    int64_t i = 0;
+    while (i < len && data[i] == ' ') i++;
+    if (i >= len) return false;
+    unsigned char c = data[i];
+    if (c == '=' || c == '+' || c == '-' || c == '@' ||
+        c == '\t' || c == '\r' || c == '\n' || c == '\v' || c == '\f') return true;
+    /* Full-width equals, plus, minus and at-sign used by some spreadsheet locales. */
+    return len - i >= 3 && data[i] == 0xEF && data[i + 1] == 0xBC &&
+        (data[i + 2] == 0x9D || data[i + 2] == 0x8B ||
+         data[i + 2] == 0x8D || data[i + 2] == 0xA0);
+}
+
 static CapStr *cap_escape_csv(CapStr *t) {
     if (!t) cap_panic("null string passed to cap_escape_csv", "CWE-476", 0);
     CapStr *r = (CapStr *)cap_alloc_atomic(cap_rt_checked_string_bytes(t->len, 2, 4, 0));
     char *w = r->data;
     *w++ = '"';
-    if (t->len > 0 && t->data[0] != 0 && strchr("=+-@\t\r", t->data[0])) *w++ = '\'';
+    if (cap_csv_formula_prefix((const unsigned char *)t->data, t->len)) *w++ = '\'';
     for (int64_t i = 0; i < t->len; i++) {
         if (t->data[i] == '"') *w++ = '"';
         *w++ = t->data[i];

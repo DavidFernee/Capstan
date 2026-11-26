@@ -28,6 +28,7 @@ REQUIRED_SOURCE_FRAGMENTS = (
     'e.s == "wrapping_add" || e.s == "wrapping_sub"',
     'n.k == N_CALL && n.s == "char_str"',
     'n.k == N_INDEX && texty_type(ty_of(n))',
+    "return t.k == TY_STR || t.k == TY_HTML || t.k == TY_LOG || t.k == TY_CSV;",
     'rounds < 100',
     'rounds < 50',
 )
@@ -58,6 +59,8 @@ REQUIRED_SINK_MODEL_FRAGMENTS = (
     "def checkerRejectsSink",
     "theorem char_string_derived_is_rejected",
     "theorem text_index_derived_selector_is_rejected",
+    "theorem csv_index_derived_selector_is_rejected",
+    "theorem optional_csv_map_get_derived_key_is_rejected",
     "theorem optional_text_map_get_derived_key_is_rejected",
     "theorem trusted_slice_derived_selector_is_rejected",
 )

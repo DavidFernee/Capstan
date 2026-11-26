@@ -2,7 +2,7 @@
 // The legitimate ways to handle untrusted input.
 int main() {
     Tainted name = taint("<b>Bob</b>\nadmin");
-    println("html: " + escape_html(name));
+    println(escape_log("html: " + escape_html(name)));
     println("log: " + escape_log(name));
     if (let id = validate_ident(taint("user_42"))) { println("ident: " + id); }
     if (let _bad = validate_ident(taint("42; drop"))) { println("unexpected"); } else { println("rejected bad ident"); }

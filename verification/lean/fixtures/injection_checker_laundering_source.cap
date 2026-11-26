@@ -97,7 +97,7 @@ void lookup_sink(Flow f, Node at) {
 }
 
 bool texty_type(Type t) {
-    return t.k == TY_STR || t.k == TY_HTML || t.k == TY_LOG;
+    return t.k == TY_STR || t.k == TY_HTML || t.k == TY_LOG || t.k == TY_CSV;
 }
 
 void flow_walk(Flow f, Node n) {
