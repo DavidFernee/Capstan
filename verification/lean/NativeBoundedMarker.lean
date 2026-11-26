@@ -92,8 +92,18 @@ theorem certificateCheck_sound {slotCount : Nat}
     cases a <;> simp_all
   have andRight {a b : Bool} (h : a && b = true) : b = true := by
     cases a <;> simp_all
-  have rootsChecked := andLeft checked
-  have markedChecked := andRight checked
+  have rootsChecked : roots.all (fun root => decide (root ∈ marked)) = true :=
+    andLeft (a := roots.all (fun root => decide (root ∈ marked)))
+      (b := marked.all (fun handle =>
+        isLive handle && descriptorValid handle &&
+          (referenceEdges handle).all (fun target => decide (target ∈ marked)))) checked
+  have markedChecked : marked.all (fun handle =>
+      isLive handle && descriptorValid handle &&
+        (referenceEdges handle).all (fun target => decide (target ∈ marked))) = true :=
+    andRight (a := roots.all (fun root => decide (root ∈ marked)))
+      (b := marked.all (fun handle =>
+        isLive handle && descriptorValid handle &&
+          (referenceEdges handle).all (fun target => decide (target ∈ marked)))) checked
   have rootsValid := List.all_eq_true.mp rootsChecked
   have markedValid := List.all_eq_true.mp markedChecked
   refine ⟨?_, ?_, ?_, ?_⟩
@@ -101,13 +111,31 @@ theorem certificateCheck_sound {slotCount : Nat}
     exact of_decide_eq_true (rootsValid root rootMember)
   · intro handle handleMember
     have fieldsChecked := markedValid handle handleMember
-    exact andLeft (andLeft fieldsChecked)
+    exact andLeft (a := isLive handle)
+      (b := descriptorValid handle &&
+        (referenceEdges handle).all (fun target => decide (target ∈ marked)))
+      fieldsChecked
   · intro handle handleMember
     have fieldsChecked := markedValid handle handleMember
-    exact andRight (andLeft fieldsChecked)
+    have descriptorAndEdges := andRight
+      (a := isLive handle)
+      (b := descriptorValid handle &&
+        (referenceEdges handle).all (fun target => decide (target ∈ marked)))
+      fieldsChecked
+    exact andLeft (a := descriptorValid handle)
+      (b := (referenceEdges handle).all (fun target => decide (target ∈ marked)))
+      descriptorAndEdges
   · intro handle handleMember target targetMember
     have fieldsChecked := markedValid handle handleMember
-    have edgesChecked := andRight fieldsChecked
+    have descriptorAndEdges := andRight
+      (a := isLive handle)
+      (b := descriptorValid handle &&
+        (referenceEdges handle).all (fun target => decide (target ∈ marked)))
+      fieldsChecked
+    have edgesChecked := andRight
+      (a := descriptorValid handle)
+      (b := (referenceEdges handle).all (fun target => decide (target ∈ marked)))
+      descriptorAndEdges
     exact of_decide_eq_true ((List.all_eq_true.mp edgesChecked) target targetMember)
 
 /-- Proof-carrying view of an accepted marker outcome. Sweep-facing
