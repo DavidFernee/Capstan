@@ -102,7 +102,7 @@ whether the relation is adequate; that remains a substantive review task.
 
 ### Compiler source/import graph budget
 
-The bounded-input work also makes the compiler's source/import graph finite across the Capstan CLI, experimental native driver, stage-0 bootstrap and LSP: 256 distinct files, 16 MiB per file, 32 MiB aggregate source, 500,000 lexer tokens and 200,000 AST nodes. Import directives are graph edges, not executable top-level declarations in the native lowering input. Exact-limit and one-over tests exercise the relevant paths. These are compiler-workload bounds, not a claim that arbitrary application parsers or OS reads have wall-clock deadlines.
+The bounded-input work also makes the compiler's source/import graph finite across the Capstan CLI, experimental native driver, stage-0 bootstrap and LSP: 256 distinct files, 16 MiB per file, 32 MiB aggregate source, 500,000 lexer tokens and 150,000 AST nodes. Import directives are graph edges, not executable top-level declarations in the native lowering input. Exact-limit and one-over tests exercise the relevant paths. These are compiler-workload bounds, not a claim that arbitrary application parsers or OS reads have wall-clock deadlines.
 
 ### Direct external-input contract
 
