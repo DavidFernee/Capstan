@@ -184,3 +184,8 @@ implementation increment is a Capstan-native, typed CCAM representation and
 small evaluator, with Capstan-written positive and negative tests. Only after
 that vertical slice is running should the machine be extended to heap,
 collections, taint, secrets, grants, and IO.
+
+
+## 11. Compiler memory profile integration
+
+The compiler's memory requirements and the separate frame-scoped scratch-memory work are reconciled in [C-Free compiler memory integration review](C-FREE-MEMORY-INTEGRATION-REVIEW.md). The review distinguishes a process-lifetime typed compiler arena from frame-owned scratch regions; neither is promoted to normative CCAM semantics by that document.
