@@ -977,8 +977,8 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             if (loaded[s] == uri) { seen = true; }
         }
         if (seen) { continue; }
-        if (loaded.len() >= MAX_IMPORTS) {
-            report(ctx, ofile, oline, true, "CWE-400", "more than " + int_to_str(MAX_IMPORTS) + " imported files");
+        if (loaded.len() >= MAX_IMPORT_FILES) {
+            report(ctx, ofile, oline, true, "CWE-400", "import graph exceeds file-count limit (" + int_to_str(MAX_IMPORT_FILES) + ")");
             break;
         }
         loaded.push(uri);
@@ -1001,7 +1001,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             if (src.len() > MAX_SOURCE_BYTES || src.len() > remaining) {
                 ctx.sources.push(taint(""));
                 budget.exhausted = true;
-                report_at(ctx, ofile, oline, ocol, true, "CWE-400", "import graph exceeds source-byte budget (" + int_to_str(MAX_TOTAL_SOURCE_BYTES) + " total; " + int_to_str(MAX_SOURCE_BYTES) + " per file)");
+                report(ctx, index, 0, true, "CWE-400", "import graph exceeds source-byte budget (" + int_to_str(MAX_TOTAL_SOURCE_BYTES) + " total; " + int_to_str(MAX_SOURCE_BYTES) + " per file)");
                 break;
             }
             budget.source_bytes += src.len();
