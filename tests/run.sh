@@ -36,7 +36,7 @@
 #   mutation     (--full) injected compiler bugs must be caught by the suite
 #   bench        (--full) speed against hand-written C, with a regression limit
 set -uo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 C="$ROOT/build/capstanc"
 CC="${CC:-cc}"
 FULL=0; [[ "${1:-}" == "--full" ]] && FULL=1
@@ -65,7 +65,7 @@ section "spec coverage: every language area has tests"
 if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
 else
   bad "CCAM Capstan arithmetic, register validation and evaluator" "$out"
@@ -86,7 +86,7 @@ else
 fi
 
 section "Capstan-native verification: CCAM multi-function calls and frames"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
   ok "CCAM function validation, argument transfer, call depth and atomic returns"
 else
   bad "CCAM multi-function evaluator" "$out"
@@ -170,14 +170,14 @@ else
 fi
 
 section "Capstan-native verification: checked source to CCAM lowering"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_lowering.cap" 2>&1)"; then
   ok "checked scalar source lowers to validated CCAM and executes in the Capstan evaluator"
 else
   bad "CCAM source-to-IR lowering" "$out"
 fi
 
 section "Capstan-native verification: freestanding Linux x86-64 native backend"
-if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_calls.cap" "$ROOT/verification/ccam_lowering.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
   ok "CCAM emits freestanding x86-64 assembly without C runtime references"
   if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
     native_run() {
@@ -283,6 +283,49 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
       fi
     }
     native_run_output_limit ccam-native-x64-output-limit 76
+    if "$ROOT/bin/capstan" native --root "$ROOT" "$ROOT/tests/fixtures/native_return_42.cap" -o "$tmp/capstan-native-cli"; then
+      "$tmp/capstan-native-cli"
+      cli_status=$?
+      if [[ $cli_status -eq 42 ]]; then
+        ok "capstan native CLI builds and runs source with no C runtime in target ELF"
+      else
+        bad "capstan native CLI exit status" "expected 42, got $cli_status"
+      fi
+    else
+      bad "capstan native CLI" "source-to-freestanding-ELF build failed"
+    fi
+
+    if "$ROOT/bin/capstan" native --root "$ROOT" "$ROOT/tests/fixtures/native_reject_parent_import.cap" -o "$tmp/rejected-native" >"$tmp/native-import.out" 2>&1; then
+      bad "native CLI import confinement" "parent-directory import was accepted"
+    elif grep -q "relative .cap path without absolute or dot-segment traversal" "$tmp/native-import.out"; then
+      ok "native CLI rejects lexical parent-directory import traversal"
+    else
+      bad "native CLI import confinement" "$(cat "$tmp/native-import.out")"
+    fi
+
+    native_workspace="$tmp/native-workspace"
+    native_outside="$tmp/native-outside"
+    mkdir -p "$native_workspace" "$native_outside"
+    printf 'fn secret() -> int { return 42; }\n' > "$native_outside/secret.cap"
+    printf 'import "linked/secret.cap";\nfn main() -> int { return 0; }\n' > "$native_workspace/main.cap"
+    ln -s "$native_outside" "$native_workspace/linked"
+    if "$ROOT/bin/capstan" native --root "$native_workspace" main.cap -o "$tmp/rejected-symlink-native" >"$tmp/native-symlink.out" 2>&1; then
+      bad "native CLI symlink confinement" "import through a workspace symlink was accepted"
+    elif grep -q "cannot read imported file" "$tmp/native-symlink.out"; then
+      ok "native CLI rejects symlinked import components"
+    else
+      bad "native CLI symlink confinement" "$(cat "$tmp/native-symlink.out")"
+    fi
+
+    ln -s "$native_outside/secret.cap" "$native_workspace/file-link.cap"
+    printf 'import "file-link.cap";\nfn main() -> int { return 0; }\n' > "$native_workspace/main-file-link.cap"
+    if "$ROOT/bin/capstan" native --root "$native_workspace" main-file-link.cap -o "$tmp/rejected-file-symlink-native" >"$tmp/native-file-symlink.out" 2>&1; then
+      bad "native CLI final-component symlink confinement" "import through a file symlink was accepted"
+    elif grep -q "cannot read imported file" "$tmp/native-file-symlink.out"; then
+      ok "native CLI rejects final-component symlinks"
+    else
+      bad "native CLI final-component symlink confinement" "$(cat "$tmp/native-file-symlink.out")"
+    fi
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
@@ -295,6 +338,14 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1)"; then
   ok "inventory purpose/language classification, binary detection, physical-line counting and aggregate totals"
 else
   bad "Capstan-native repository inventory" "$out"
+fi
+
+if "$ROOT/bin/capstan" build --root "$ROOT" "$ROOT/tests/fixtures/native_return_42.cap" -o "$tmp/invalid-root-build" >"$tmp/native-root-command.out" 2>&1; then
+  bad "native workspace option scope" "--root was accepted by the ordinary build command"
+elif grep -q -- "--root is supported only by the native command" "$tmp/native-root-command.out"; then
+  ok "native workspace root option is confined to the native CLI"
+else
+  bad "native workspace option scope" "$(cat "$tmp/native-root-command.out")"
 fi
 
 section "unit"
