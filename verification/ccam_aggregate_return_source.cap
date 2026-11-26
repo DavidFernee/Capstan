@@ -1,0 +1,6 @@
+import "ccam_aggregate_program.cap";
+bool ag_return_source_valid(AGFunction f,int block,List<bool> ready) {
+ if (block<0 || block>=f.blocks.len() || block>=f.returns.len()) { return false; }
+ if (f.blocks[block].terminator!=0) { return false; }
+ return ag_call_return(f.signature,f.kinds,ready,f.returns[block]);
+}
