@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+int ag_register_find_free(List<bool> live){for(int i=0;i<live.len();i+=1){if(!live[i]){return i;}}return -1;}
