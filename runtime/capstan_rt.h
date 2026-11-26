@@ -907,7 +907,11 @@ static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
     fclose(f);
     return failed || too_long ? NULL : b.s;
 }
- 
+/* Native unit-test compatibility wrapper; source programs must pass a bound. */
+static CapStr *cap_read_file(CapStr *path) {
+    return cap_read_file_max(path, CAP_READ_FILE_DEFAULT, 0);
+}
+
 /*
  * Workspace-scoped source loading for the experimental native compiler.
  * The root is opened once; all child files are resolved relative to that
@@ -1045,6 +1049,10 @@ static CapStr *cap_read_line_max(int64_t max, int64_t loc) {
     }
     if (!got) return NULL;
     return b.s;
+}
+/* Native unit-test compatibility wrapper; source programs must pass a bound. */
+static CapStr *cap_read_line(void) {
+    return cap_read_line_max(CAP_READ_LINE_MAX, 0);
 }
 
 /* Up to n bytes of standard input: exactly n unless the input ends first, or none
@@ -1341,6 +1349,10 @@ static CapStr *cap_secret_env_bounded(CapStr *name, int64_t max, int64_t loc) {
     memcpy(r->data, v, (size_t)n);
     r->data[n] = 0;
     return r;
+}
+/* Native unit-test compatibility wrapper; source programs must pass a bound. */
+static CapStr *cap_secret_env(CapStr *name) {
+    return cap_secret_env_bounded(name, CAP_SECRET_ENV_MAX_BYTES, 0);
 }
 
 static void cap_wipe(void *p, size_t n) { volatile unsigned char *w = (volatile unsigned char *)p; while (n--) *w++ = 0; }
