@@ -365,3 +365,8 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.descendant_fact_marks_aggregate
 #print axioms CapstanVerification.provenance_marking_monotone
 #print axioms CapstanVerification.provenance_fact_budget_fails_closed
+
+-- Credential confinement: restricted typed-expression model.
+#print axioms CredentialConfinement.integrity_excludes_credentials
+#print axioms CredentialConfinement.fast_hash_excludes_credentials
+#print axioms CredentialConfinement.storage_has_verifier
