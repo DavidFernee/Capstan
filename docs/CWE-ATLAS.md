@@ -174,7 +174,7 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [250](https://cwe.mitre.org/data/definitions/250.html) | Execution with unnecessary privileges | Not applicable (yet) | Deployment concern; capability-based I/O (v0.6) limits what code can touch. |
 | [252](https://cwe.mitre.org/data/definitions/252.html) | Unchecked return value | Prevented: rejected at compile time | `CWE-252`. Warning; an error with --strict (tested that way). |
 | [253](https://cwe.mitre.org/data/definitions/253.html) | Incorrect check of function return value | Prevented: rejected at compile time | `type mismatch`. |
-| [256](https://cwe.mitre.org/data/definitions/256.html) | Plaintext storage of a password | Prevented: rejected at compile time | `CWE-20`. |
+| [256](https://cwe.mitre.org/data/definitions/256.html) | Plaintext storage of a password | Prevented: rejected at compile time | `CWE-256`. |
 | [257](https://cwe.mitre.org/data/definitions/257.html) | Storing passwords in a recoverable format | Prevented: rejected at compile time | `CWE-256`. |
 | [259](https://cwe.mitre.org/data/definitions/259.html) | Use of hard-coded password | Prevented: rejected at compile time | `CWE-798`. |
 | [266](https://cwe.mitre.org/data/definitions/266.html) | Incorrect privilege assignment | Logic or design decision: beyond any language | Default roles are policy. |
