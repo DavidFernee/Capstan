@@ -786,7 +786,7 @@ test "aggregate program rejects unknown opcodes, invalid layouts and immutable s
         parameter_count: 2, layouts: layouts, instructions: code
     };
     CCAMAggregateValidationResult immutable_result = ccam_aggregate_validate_program(program);
-    assert(!immutable_result.ok && immutable_result.error == "field_value_type_or_initialisation");
+    assert(!immutable_result.ok && immutable_result.error == "immutable_field_write");
     code[1].right = 0;
     CCAMAggregateValidationResult bad_store = ccam_aggregate_validate_program(program);
     assert(!bad_store.ok);
