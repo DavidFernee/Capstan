@@ -59,7 +59,7 @@ theorem makeTypedMultiFrame_identity_and_entry {p n : Nat}
     let frame := makeTypedMultiFrame functionIndex entryPC continuation
       destination signature arguments harguments
     frame.functionIndex = functionIndex ∧ frame.pc = entryPC := by
-  rfl
+  simp [makeTypedMultiFrame, enterTypedFunction]
 
 /-- The heterogeneous frame constructor carries a well-typed register file. -/
 theorem makeTypedMultiFrame_registers_well_typed {p n : Nat}
@@ -73,7 +73,8 @@ theorem makeTypedMultiFrame_registers_well_typed {p n : Nat}
         signature arguments harguments).signature.registerTypes
       (makeTypedMultiFrame functionIndex entryPC continuation destination
         signature arguments harguments).registers := by
-  exact (enterTypedFunction signature arguments harguments).registers_well_typed
+  simpa [makeTypedMultiFrame] using
+    (enterTypedFunction signature arguments harguments).registers_well_typed
 
 /-- A successful caller-result commit changes only the continuation PC and
 the designated destination register. Its register invariant is reconstructed
