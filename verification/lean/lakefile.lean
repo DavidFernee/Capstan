@@ -7,3 +7,5 @@ package capstan_verification where
 
 lean_lib CapstanVerification where
   srcDir := "."
+  roots := #[`CapstanVerification, `NativeMemoryLifecycle, `NativeReachability,
+    `NativeHandleReachability, `NativeBoundedMarker]
