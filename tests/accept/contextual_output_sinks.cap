@@ -6,5 +6,7 @@ int main() {
     bool l = write_log_file("/tmp/capstan-contextual-output.log", log);
     bool c = write_csv_file("/tmp/capstan-contextual-output.csv", csv);
     println("typed sinks exercised");
+    println(escape_log(html));
+    println(escape_log(csv));
     return 0;
 }
