@@ -815,7 +815,8 @@ static CapList *cap_args_bounded(int64_t max_count, int64_t max_arg_bytes,
     int64_t count = cap_argc > 0 ? (int64_t)cap_argc - 1 : 0;
     if (CAP_UNLIKELY(count > max_count))
         cap_panic("command-line argument count exceeds explicit bound", "CWE-789", loc);
-    CapList *l = cap_list_new();
+    /* Preflight every host-provided argument before allocating the result
+       list or any managed strings. */
     int64_t total = 0;
     for (int i = 1; i < cap_argc; i++) {
         size_t n = strlen(cap_argv[i]);
@@ -823,6 +824,10 @@ static CapList *cap_args_bounded(int64_t max_count, int64_t max_arg_bytes,
                          n > (size_t)(max_total_bytes - total)))
             cap_panic("command-line argument bytes exceed explicit bound", "CWE-789", loc);
         total += (int64_t)n;
+    }
+    CapList *l = cap_list_new();
+    for (int i = 1; i < cap_argc; i++) {
+        size_t n = strlen(cap_argv[i]);
         cap_list_push(l, cap_vp(cap_str_new(cap_argv[i], (int64_t)n)));
     }
     return l;
