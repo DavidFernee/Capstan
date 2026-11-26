@@ -1,0 +1,8 @@
+// spec: types.html builtins.io
+// expect: CWE-116
+// CSV-encoded text is not safe for terminal/log output.
+int main() {
+    CsvText csv = escape_csv(taint("=1+1"));
+    println(csv);
+    return 0;
+}

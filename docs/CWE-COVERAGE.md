@@ -32,7 +32,7 @@ a model is not proof that the Capstan implementation refines that model. The CWE
 
 | # | CWE | Weakness | Status | How |
 |---|---|---|---|---|
-| 1 | 79 | Cross-site scripting | **Prevented** for HTML built from `Html` values | Untrusted input must go through `escape_html()`, whose `Html` result can't be confused with other text. *Gap:* typed HTML templates and an HTML-only output sink are on the roadmap |
+| 1 | 79 | Cross-site scripting | **Partial** | `escape_html()` produces `Html`, and `write_html_file()` accepts only `Html`; cross-statement HTML context tracking remains a known gap (see CWE atlas) |
 | 2 | 787 | Out-of-bounds write | **Prevented** | No pointers; every list write is bounds-checked, except where the compiler proves the index in range (see *Checks proved unnecessary* below) |
 | 3 | 89 | SQL injection | **Prevented** | Query text must be a string literal; values are bound parameters |
 | 4 | 352 | CSRF | Not yet | A framework concern (roadmap: web framework with built-in tokens) |
@@ -62,14 +62,14 @@ a model is not proof that the Capstan implementation refines that model. The CWE
 
 | CWE | Weakness | How |
 |---|---|---|
-| 116 | Wrong output encoding | Escaped text is typed by context (`Html`, `LogText`) and can't pass as a plain string |
+| 116 | Wrong output encoding | `Html`, `LogText` and `CsvText` are distinct; typed file sinks require the matching context, terminal output accepts `LogText` or trusted `string` and rejects `Html`/`CsvText`, and generic `write_file()` rejects context-encoded values. `escape_json()` remains a plain string-fragment encoder pending serializer migration |
 | 244 | Secrets left in freed memory | Secrets are zeroed when collected |
 | 256 / 257 | Passwords stored readably | Untrusted input can't be written to files unescaped; password-named data can't be written at all |
 | 390 / 546 / 547 / 617 / 783 / 489 | Ignored errors, suspicious comments, magic security numbers, reachable asserts, precedence slips, debug switches | Warnings (errors with `--strict`; debug switches are errors in `--release`) |
 | 478 | Missing case | `match` must handle every variant |
-| 1236 | CSV formula injection | `escape_csv()`; untrusted text can't be written to files unescaped |
+| 1236 | CSV formula injection | `escape_csv()` produces `CsvText`; `write_csv_file()` accepts only that type. The escaper prefixes tested ASCII (`=`, `+`, `-`, `@`, tab, CR, LF), leading-space and full-width formula leaders, and CSV quotes are doubled. Generic `write_file()` rejects context-encoded values. This is not a universal spreadsheet guarantee: Excel may remove some escaping on save/reopen; validate target clients (OWASP CSV Injection guidance). |
 | 88 | Argument injection | Untrusted arguments to `run()` must come after a literal `"--"`, so they can't be read as options |
-| 117 | Log injection | `Tainted` can't be printed without `escape_log()`, which neutralises line breaks and control bytes, and also C1 controls, bidirectional overrides, Unicode line separators and invalid UTF-8 |
+| 117 | Log injection | `Tainted` cannot be printed directly; `escape_log()` produces `LogText`, which is accepted by `print()` and `println()`, while `Html` and `CsvText` are rejected as wrong-context values. `escape_json()` also escapes the terminal-hostile Unicode set (C1 and bidi controls), so its current JSON fragment output does not reproduce those terminal control bytes; it remains a plain string and is not a type-level `LogText` guarantee. |
 | 1335 | Incorrect bitwise shift | Shift counts must be 0..63: a literal outside is a compile error, a computed one stops the program; `<<` that loses bits stops with CWE-190 |
 | 783 | Operator precedence (bitwise) | Bitwise and shift operators cannot be mixed with other operators without parentheses |
 | 480 | Incorrect operator (bitwise on booleans) | `&`, `\|`, `^`, `~` on `bool` are compile errors that name `&&`, `\|\|`, `!=`, `!` |
@@ -82,7 +82,7 @@ a model is not proof that the Capstan implementation refines that model. The CWE
 | 252 | Unchecked return value | Warning when `write_file()`'s result is ignored |
 | 327 / 328 | Weak cryptography | No weak primitives. `hash()` and `hash_password()` tag their outputs with the algorithm, so a new language version can change defaults while still verifying old values; `needs_rehash()` flags them for upgrade |
 | 561 / 563 / 570 / 571 / 1164 | Dead code, unused variables, constant conditions, self-assignment | Warnings (errors with `--strict`) |
-| 916 / 759 / 760 | Fast or unsalted password hashing | `hash()` on a password-named value is an error; use `hash_password()` |
+| 916 / 759 / 760 | Fast or unsalted password hashing | `hash()` and `hash_verify()` reject `Tainted` inputs regardless of name; password-name inspection traverses method receivers and helper arguments. Use `hash_password()` / `verify_password()`. Already-trusted strings with innocuous names still require first-class `Password` provenance; this is the remaining design limitation. |
 | 338 | Weak random numbers | `rand()` doesn't exist (secure random API on the roadmap) |
 | 369 | Division by zero | Literal zero rejected at compile time; checked at run time |
 | 415 | Double free | No manual memory management |

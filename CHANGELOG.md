@@ -5,6 +5,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Output safety: add `CsvText` and typed HTML/log/CSV file sinks; generic `write_file()` rejects context-encoded values; terminal output enforces the `LogText` context; `escape_csv()` covers tested ASCII (`=`, `+`, `-`, `@`), tab/CR/LF, leading-space and full-width formula prefixes (with spreadsheet-client limitations documented); the JSON-fragment-to-CSV gap remains explicit.
 - Shroud: retain and enforce sfnt table-local spans for cmap subtables, loca entries and hmtx metrics; reject in-file adjacent-table borrowing with deterministic regression fixtures
 - Security assurance: make v1.0 a C-free, evidence-gated release on Linux, macOS and Windows; add mandatory CWE/security acceptance criteria, explicit unknown/residual evidence states and a per-release assurance scorecard. Current C-backend status remains explicit; this is a release requirement, not a claim of implementation.
 - Security: password verifier accepts only the canonical 123-byte, 600,000-iteration PBKDF2-SHA256 record profile and caps password inputs at 256 bytes; malformed, noncanonical, oversized and legacy-cost records are rejected before KDF work. The format is unreleased in 0.4.0, so no legacy-record compatibility is promised; development credentials using older profiles must be recreated before upgrade.
