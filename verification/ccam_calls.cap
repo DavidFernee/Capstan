@@ -9,6 +9,7 @@
 //
 // Semantic authority: docs/architecture/CCAM.md.
 import "ccam_core.cap";
+import "ccam_memory_unwind_model.cap";
 
 const int CCAM_OP_CALL = 17;
 const int CCAM_MAX_FUNCTIONS = 4096;
@@ -37,6 +38,7 @@ struct CCAMFunction {
 }
 
 struct CCAMFrame {
+    int frame_id;
     int function_index;
     int pc;
     List<CCAMRegister> registers;
@@ -49,6 +51,8 @@ struct CCAMCallMachine {
     List<CCAMFrame> frames;
     List<List<int>> call_site_lookup;
     int frame_depth;
+    int next_frame_id;
+    CCAMMemManager memory;
     int steps;
     int max_steps;
     int max_depth;
@@ -371,6 +375,8 @@ CCAMCallMachine ccam_empty_call_machine() {
         frames: frames,
         call_site_lookup: new List<List<int>>(),
         frame_depth: 0,
+        next_frame_id: 1,
+        memory: ccam_mem_manager(CCAM_MEM_MAX_REGIONS, CCAM_MEM_MAX_BYTES),
         steps: 0,
         max_steps: 0,
         max_depth: 0,
@@ -460,6 +466,7 @@ CCAMCallMachineCreateResult ccam_call_machine_create_with_output_budget(
 
     List<CCAMFrame> frames = new List<CCAMFrame>();
     frames.push(new CCAMFrame{
+        frame_id: 1,
         function_index: entry_function,
         pc: 0,
         registers: registers.registers,
@@ -471,6 +478,8 @@ CCAMCallMachineCreateResult ccam_call_machine_create_with_output_budget(
         frames: frames,
         call_site_lookup: call_site_lookup,
         frame_depth: 1,
+        next_frame_id: 2,
+        memory: ccam_mem_manager(CCAM_MEM_MAX_REGIONS, CCAM_MEM_MAX_BYTES),
         steps: 0,
         max_steps: max_steps,
         max_depth: max_depth,
@@ -505,6 +514,26 @@ void ccam_call_machine_trap(
     int pc,
     string detail
 ) {
+    // Trap is a terminal machine transition. Unwind every active frame from
+    // innermost to outermost before making the halted state observable.
+    int cleanup_depth = machine.frame_depth;
+    if (cleanup_depth > machine.frames.len()) {
+        cleanup_depth = machine.frames.len();
+        code = "invalid_call_stack";
+    }
+    if (cleanup_depth < 0) { cleanup_depth = 0; }
+    for (int frame_index = cleanup_depth - 1; frame_index >= 0; frame_index -= 1) {
+        CCAMFrame frame = machine.frames[frame_index];
+        CCAMMemUnwindResult cleanup = ccam_mem_unwind_frame(
+            machine.memory, frame.frame_id);
+        if (!cleanup.ok) {
+            code = "frame_cleanup_integrity_failure";
+            detail = cleanup.error;
+        } else {
+            machine.memory = cleanup.manager;
+        }
+    }
+    machine.frame_depth = 0;
     machine.halted = true;
     machine.halt_has_value = false;
     machine.trap_code = code;
@@ -609,13 +638,21 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
 
         active.pc += 1;
         machine.frames[machine.frame_depth - 1] = active;
+        if (machine.next_frame_id <= 0 ||
+            machine.next_frame_id == CCAM_I64_MAX) {
+            ccam_call_machine_trap(
+                machine, "frame_identity_exhausted", fn.name, executing_pc, "");
+            return;
+        }
         CCAMFrame next = new CCAMFrame{
+            frame_id: machine.next_frame_id,
             function_index: site.callee_index,
             pc: 0,
             registers: new_registers,
             caller_destination: site.destination_register,
             caller_has_destination: site.has_destination
         };
+        machine.next_frame_id += 1;
         if (machine.frame_depth < machine.frames.len()) {
             machine.frames[machine.frame_depth] = next;
         } else {
@@ -663,7 +700,20 @@ void ccam_call_machine_step(CCAMCallMachine machine) {
             return;
         }
 
+        // The callee's scratch regions are wiped before either returning to
+        // its caller or exposing the entry result.
+        CCAMMemUnwindResult cleanup = ccam_mem_unwind_frame(
+            machine.memory, active.frame_id);
+        if (!cleanup.ok) {
+            ccam_call_machine_trap(
+                machine, "frame_cleanup_integrity_failure",
+                fn.name, executing_pc, cleanup.error);
+            return;
+        }
+        machine.memory = cleanup.manager;
+
         if (machine.frame_depth == 1) {
+            machine.frame_depth = 0;
             machine.halted = true;
             machine.halt_has_value = has_value;
             machine.halt_value = int_value;
@@ -962,7 +1012,7 @@ test "CCAM multi-function evaluator traps at the call-depth limit" {
     ccam_call_machine_step(machine);
     assert(machine.halted && machine.trap_code == "call_depth_exceeded");
     assert(machine.steps == 2 && machine.trap_function == "main");
-    assert(machine.trap_pc == 1 && machine.frame_depth == 1);
+    assert(machine.trap_pc == 1 && machine.frame_depth == 0);
 }
 
 test "CCAM multi-function validator rejects mismatched call signatures" {
@@ -1184,7 +1234,7 @@ test "CCAM multi-function return preflight preserves caller and stack on failure
     ccam_call_machine_step(machine);
     ccam_call_machine_step(machine);
     assert(machine.halted && machine.trap_code == "invalid_call_destination");
-    assert(machine.frame_depth == 2 && machine.steps == 3);
+    assert(machine.frame_depth == 0 && machine.steps == 3);
     assert(!machine.frames[0].registers[0].initialized);
 }
 
@@ -1340,7 +1390,7 @@ test "CCAM multi-function evaluator executes nested recursive calls" {
         ccam_call_machine_step(machine);
     }
     assert(machine.halted && machine.halt_has_value && machine.halt_value == 0);
-    assert(machine.steps == 26 && machine.frame_depth == 1);
+    assert(machine.steps == 26 && machine.frame_depth == 0);
     assert(machine.trap_code == "");
 }
 
@@ -1444,6 +1494,155 @@ test "CCAM multi-function validator enforces aggregate call-argument boundary" {
     functions[0] = updated_caller;
     CCAMValidationResult rejected = ccam_validate_multi_function(functions, 0);
     assert(!rejected.ok && rejected.error == "call_argument_limit_exceeded");
+}
+
+
+test "CCAM call machine unwinds all active frame regions on trap" {
+    List<int> types = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    code.push(ccam_instruction(CCAM_OP_TRAP));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: types, parameter_count: 0,
+        return_type: CCAM_RETURN_VOID, instructions: code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 4, 2);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    CCAMMemCreateResult region = ccam_mem_create(
+        machine.memory, 1, 16, -1);
+    assert(region.ok);
+    CCAMMemResult view = ccam_mem_reserve(
+        region.manager, region.identity, 1, 1, 8, 8);
+    CCAMMemResult stored = ccam_mem_store_i64(
+        view.manager, view.view, 1, 0, 987654321);
+    assert(view.ok && stored.ok);
+    machine.memory = stored.manager;
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "explicit_trap");
+    assert(machine.frame_depth == 0);
+    assert(machine.memory.live_regions == 0);
+    assert(machine.memory.live_capacity == 0);
+    assert(!machine.memory.regions[0].open);
+    for (int i = 0; i < machine.memory.regions[0].bytes.len(); i += 1) {
+        assert(machine.memory.regions[0].bytes[i] == 0);
+    }
+}
+
+test "CCAM call machine unwinds a returning frame before publishing result" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction value = ccam_instruction(CCAM_OP_CONST_I);
+    value.dst = 0;
+    value.int_value = 73;
+    code.push(value);
+    value = ccam_instruction(CCAM_OP_RET);
+    value.lhs = 0;
+    code.push(value);
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: types, parameter_count: 0,
+        return_type: CCAM_RETURN_INT, instructions: code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 4, 2);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    CCAMMemCreateResult region = ccam_mem_create(
+        machine.memory, 1, 8, -1);
+    assert(region.ok);
+    machine.memory = region.manager;
+    ccam_call_machine_step(machine);
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 73);
+    assert(machine.memory.live_regions == 0);
+    assert(machine.memory.live_capacity == 0);
+    assert(!machine.memory.regions[0].open);
+}
+
+
+test "CCAM trap unwinds nested caller and callee frame regions" {
+    List<int> caller_types = new List<int>();
+    List<CCAMInstruction> caller_code = new List<CCAMInstruction>();
+    caller_code.push(ccam_instruction(CCAM_OP_CALL));
+    caller_code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
+    callee_code.push(ccam_instruction(CCAM_OP_TRAP));
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1,
+        argument_registers: new List<int>(), destination_register: 0,
+        has_destination: false
+    });
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: caller_types, parameter_count: 0,
+        return_type: CCAM_RETURN_VOID, instructions: caller_code,
+        call_sites: sites
+    });
+    functions.push(new CCAMFunction{
+        name: "explode", register_types: new List<int>(), parameter_count: 0,
+        return_type: CCAM_RETURN_VOID, instructions: callee_code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 8, 3);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    CCAMMemCreateResult caller_region = ccam_mem_create(
+        machine.memory, 1, 8, -1);
+    assert(caller_region.ok);
+    machine.memory = caller_region.manager;
+    ccam_call_machine_step(machine);
+    assert(machine.frame_depth == 2);
+    CCAMFrame callee_frame = machine.frames[1];
+    CCAMMemCreateResult callee_region = ccam_mem_create(
+        machine.memory, callee_frame.frame_id, 12, -1);
+    assert(callee_region.ok);
+    machine.memory = callee_region.manager;
+    ccam_call_machine_step(machine);
+    assert(machine.halted && machine.trap_code == "explicit_trap");
+    assert(machine.frame_depth == 0);
+    assert(machine.memory.live_regions == 0);
+    assert(machine.memory.live_capacity == 0);
+    for (int region_index = 0; region_index < machine.memory.regions.len(); region_index += 1) {
+        assert(!machine.memory.regions[region_index].open);
+        for (int byte_index = 0; byte_index < machine.memory.regions[region_index].bytes.len(); byte_index += 1) {
+            assert(machine.memory.regions[region_index].bytes[byte_index] == 0);
+        }
+    }
+}
+
+
+test "CCAM corrupted frame depth cannot amplify trap cleanup work" {
+    List<int> types = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    code.push(ccam_instruction(CCAM_OP_RET_VOID));
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: types, parameter_count: 0,
+        return_type: CCAM_RETURN_VOID, instructions: code,
+        call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        functions, 0, 4, 2);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    CCAMMemCreateResult region = ccam_mem_create(
+        machine.memory, 1, 8, -1);
+    assert(region.ok);
+    machine.memory = region.manager;
+    machine.frame_depth = CCAM_I64_MAX;
+    ccam_call_machine_trap(
+        machine, "injected_stack_corruption", "main", 0, "");
+    assert(machine.halted && machine.trap_code == "invalid_call_stack");
+    assert(machine.frame_depth == 0);
+    assert(machine.memory.live_regions == 0);
+    assert(machine.memory.live_capacity == 0);
 }
 
 

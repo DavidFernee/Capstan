@@ -1,0 +1,158 @@
+// Keel: bounded integer 3D vector and axis-aligned-bounds primitives.
+// Imports coordinates.cap, which owns the shared point types and coordinate domains.
+//
+// This module intentionally defines a narrow exact domain, not a general real
+// vector algebra. All operations validate operands before arithmetic. Results
+// outside the declared vector domain are reported as none rather than silently
+// wrapped, saturated or allowed to trap.
+//
+// Domain: each component is in [-(2^18-1), +(2^18-1)]. Products of two
+// components are strictly below 2^36 in magnitude; a three-term dot product
+// is strictly below 3*2^36, well inside signed int64. Each cross-product
+// component is a difference of two such products, also inside int64.
+//
+// This domain is independent of world units, coordinate handedness and the
+// still-open general numeric representation decision.
+
+import "coordinates.cap";
+
+struct KVec3 {
+    int x;
+    int y;
+    int z;
+}
+
+KVec3 keel_vec3(int x, int y, int z) {
+    return new KVec3{x: x, y: y, z: z};
+}
+
+bool keel_vec3_valid(KVec3 v) {
+    return v.x >= -KEEL_COORD3_LIMIT && v.x <= KEEL_COORD3_LIMIT &&
+           v.y >= -KEEL_COORD3_LIMIT && v.y <= KEEL_COORD3_LIMIT &&
+           v.z >= -KEEL_COORD3_LIMIT && v.z <= KEEL_COORD3_LIMIT;
+}
+
+// Check whether a+b remains in the vector domain without evaluating a+b.
+bool keel_vec3_add_fits(int a, int b) {
+    if (a < -KEEL_COORD3_LIMIT || a > KEEL_COORD3_LIMIT ||
+        b < -KEEL_COORD3_LIMIT || b > KEEL_COORD3_LIMIT) { return false; }
+    if (b > 0 && a > KEEL_COORD3_LIMIT - b) { return false; }
+    if (b < 0 && a < -KEEL_COORD3_LIMIT - b) { return false; }
+    return true;
+}
+
+// Check whether a-b remains in the vector domain without evaluating a-b.
+bool keel_vec3_sub_fits(int a, int b) {
+    if (a < -KEEL_COORD3_LIMIT || a > KEEL_COORD3_LIMIT ||
+        b < -KEEL_COORD3_LIMIT || b > KEEL_COORD3_LIMIT) { return false; }
+    if (b < 0 && a > KEEL_COORD3_LIMIT + b) { return false; }
+    if (b > 0 && a < -KEEL_COORD3_LIMIT + b) { return false; }
+    return true;
+}
+
+KVec3? keel_vec3_add(KVec3 a, KVec3 b) {
+    if (!keel_vec3_valid(a) || !keel_vec3_valid(b)) { return none; }
+    if (!keel_vec3_add_fits(a.x, b.x) ||
+        !keel_vec3_add_fits(a.y, b.y) ||
+        !keel_vec3_add_fits(a.z, b.z)) { return none; }
+    return keel_vec3(a.x + b.x, a.y + b.y, a.z + b.z);
+}
+
+KVec3? keel_vec3_sub(KVec3 a, KVec3 b) {
+    if (!keel_vec3_valid(a) || !keel_vec3_valid(b)) { return none; }
+    if (!keel_vec3_sub_fits(a.x, b.x) ||
+        !keel_vec3_sub_fits(a.y, b.y) ||
+        !keel_vec3_sub_fits(a.z, b.z)) { return none; }
+    return keel_vec3(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+int? keel_vec3_dot(KVec3 a, KVec3 b) {
+    if (!keel_vec3_valid(a) || !keel_vec3_valid(b)) { return none; }
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+KVec3? keel_vec3_cross(KVec3 a, KVec3 b) {
+    if (!keel_vec3_valid(a) || !keel_vec3_valid(b)) { return none; }
+    int x = a.y * b.z - a.z * b.y;
+    int y = a.z * b.x - a.x * b.z;
+    int z = a.x * b.y - a.y * b.x;
+    if (x < -KEEL_COORD3_LIMIT || x > KEEL_COORD3_LIMIT ||
+        y < -KEEL_COORD3_LIMIT || y > KEEL_COORD3_LIMIT ||
+        z < -KEEL_COORD3_LIMIT || z > KEEL_COORD3_LIMIT) { return none; }
+    return keel_vec3(x, y, z);
+}
+
+int? keel_vec3_length_squared(KVec3 v) {
+    if (!keel_vec3_valid(v)) { return none; }
+    return v.x * v.x + v.y * v.y + v.z * v.z;
+}
+
+
+// Axis-aligned 3D bounds. Bounds are closed for containment and overlap:
+// a point on a face/edge/corner is contained, and touching boxes intersect.
+// The representation carries no unit, coordinate-frame or world-origin claim.
+struct KBounds3 {
+    KPoint3 min;
+    KPoint3 max;
+}
+
+bool keel_bounds3_endpoints_valid(KPoint3 minimum, KPoint3 maximum) {
+    return keel_coord3_in_domain(minimum.x) &&
+           keel_coord3_in_domain(minimum.y) &&
+           keel_coord3_in_domain(minimum.z) &&
+           keel_coord3_in_domain(maximum.x) &&
+           keel_coord3_in_domain(maximum.y) &&
+           keel_coord3_in_domain(maximum.z) &&
+           minimum.x <= maximum.x &&
+           minimum.y <= maximum.y &&
+           minimum.z <= maximum.z;
+}
+
+bool keel_bounds3_valid(KBounds3 bounds) {
+    return keel_bounds3_endpoints_valid(bounds.min, bounds.max);
+}
+
+int keel_bounds3_min_coord(int a, int b) {
+    if (a < b) { return a; }
+    return b;
+}
+
+int keel_bounds3_max_coord(int a, int b) {
+    if (a > b) { return a; }
+    return b;
+}
+
+KBounds3? keel_bounds3_make(KPoint3 minimum, KPoint3 maximum) {
+    if (!keel_bounds3_endpoints_valid(minimum, maximum)) { return none; }
+    return new KBounds3{min: minimum, max: maximum};
+}
+
+bool? keel_bounds3_contains(KBounds3 bounds, KPoint3 point) {
+    if (!keel_bounds3_valid(bounds) ||
+        !keel_coord3_in_domain(point.x) ||
+        !keel_coord3_in_domain(point.y) ||
+        !keel_coord3_in_domain(point.z)) { return none; }
+    return point.x >= bounds.min.x && point.x <= bounds.max.x &&
+           point.y >= bounds.min.y && point.y <= bounds.max.y &&
+           point.z >= bounds.min.z && point.z <= bounds.max.z;
+}
+
+bool? keel_bounds3_intersects(KBounds3 a, KBounds3 b) {
+    if (!keel_bounds3_valid(a) || !keel_bounds3_valid(b)) { return none; }
+    return a.min.x <= b.max.x && a.max.x >= b.min.x &&
+           a.min.y <= b.max.y && a.max.y >= b.min.y &&
+           a.min.z <= b.max.z && a.max.z >= b.min.z;
+}
+
+KBounds3? keel_bounds3_union(KBounds3 a, KBounds3 b) {
+    if (!keel_bounds3_valid(a) || !keel_bounds3_valid(b)) { return none; }
+    KPoint3 minimum = keel_point3(
+        keel_bounds3_min_coord(a.min.x, b.min.x),
+        keel_bounds3_min_coord(a.min.y, b.min.y),
+        keel_bounds3_min_coord(a.min.z, b.min.z));
+    KPoint3 maximum = keel_point3(
+        keel_bounds3_max_coord(a.max.x, b.max.x),
+        keel_bounds3_max_coord(a.max.y, b.max.y),
+        keel_bounds3_max_coord(a.max.z, b.max.z));
+    return keel_bounds3_make(minimum, maximum);
+}

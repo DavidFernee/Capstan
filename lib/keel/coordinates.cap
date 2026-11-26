@@ -1,0 +1,36 @@
+// Keel: shared bounded integer coordinate types and domains.
+//
+// These are exact integer coordinates, not a choice of physical units,
+// coordinate frame, handedness, world origin or general simulation scalar.
+// Geometry predicates and spatial operations validate against these domains
+// before arithmetic.
+
+const int KEEL_COORD_LIMIT = 0x3FFFFFFF;
+const int KEEL_COORD3_LIMIT = 0x3FFFF;
+
+struct KPoint2 {
+    int x;
+    int y;
+}
+
+KPoint2 keel_point2(int x, int y) {
+    return new KPoint2{x: x, y: y};
+}
+
+bool keel_coord_in_domain(int v) {
+    return v >= -KEEL_COORD_LIMIT && v <= KEEL_COORD_LIMIT;
+}
+
+struct KPoint3 {
+    int x;
+    int y;
+    int z;
+}
+
+KPoint3 keel_point3(int x, int y, int z) {
+    return new KPoint3{x: x, y: y, z: z};
+}
+
+bool keel_coord3_in_domain(int v) {
+    return v >= -KEEL_COORD3_LIMIT && v <= KEEL_COORD3_LIMIT;
+}

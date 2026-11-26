@@ -85,6 +85,46 @@ else
   bad "GC handles and immutable object layouts" "$out"
 fi
 
+section "Capstan-native verification: CCAM v0.2 scratch reservation arithmetic prototype"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_reservation.cap" 2>&1)"; then
+  ok "CCAM scratch reservation arithmetic, alignment, capacity and failure atomicity"
+else
+  bad "CCAM scratch reservation arithmetic prototype" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 scratch region lifecycle model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_region_model.cap" 2>&1)"; then
+  ok "CCAM region admission, ownership, generation invalidation, bounded views and failure atomicity"
+else
+  bad "CCAM scratch region lifecycle model" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 bounded multi-region byte store"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_store_model.cap" 2>&1)"; then
+  ok "CCAM bounded region table, aggregate admission, byte storage, typed scalar access and lifecycle"
+else
+  bad "CCAM multi-region byte store model" "$out"
+fi
+if out="$($PY "$ROOT/tests/keel/ccam_memory_oracle.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM independent byte-store oracle" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 region-capability CFG lifecycle validator"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_flow_validator.cap" 2>&1)"; then
+  ok "CCAM bounded region lifecycle dataflow, linear overwrite, CFG joins and return checks"
+else
+  bad "CCAM region-capability CFG lifecycle validator" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 frame-unwind cleanup model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_unwind_model.cap" 2>&1)"; then
+  ok "CCAM frame-exit cleanup, full-capacity wiping, owner isolation and failure-atomic accounting"
+else
+  bad "CCAM frame-unwind cleanup model" "$out"
+fi
+
 section "CCAM-SF-P generated Lean adapter freshness"
 if out="$($PY "$ROOT/scripts/generate_ccam_sf_lean_vectors.py" --check 2>&1)"; then
   ok "$out"
@@ -106,6 +146,68 @@ else
   bad "CCAM-SF-P canonical vector conformance" "$out"
 fi
 
+
+section "CCAM-SF-P generated Lean adapter freshness"
+if out="$($PY "$ROOT/scripts/generate_ccam_sf_lean_vectors.py" --check 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM-SF-P generated Lean adapter freshness" "$out"
+fi
+
+section "CCAM-SF-P corpus schema negative controls"
+if out="$($PY "$ROOT/tests/test_ccam_sf_vector_schema.py" 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM-SF-P corpus schema negative controls" "$out"
+fi
+
+section "CCAM-SF-P canonical vectors: strict corpus validation and concrete evaluator traces"
+if out="$($PY "$ROOT/scripts/run-ccam-sf-vectors.py" 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM-SF-P canonical vector conformance" "$out"
+fi
+
+
+section "Capstan-native verification: CCAM v0.2 scratch reservation arithmetic prototype"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_reservation.cap" 2>&1)"; then
+  ok "CCAM scratch reservation arithmetic, alignment, capacity and failure atomicity"
+else
+  bad "CCAM scratch reservation arithmetic prototype" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 scratch region lifecycle model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_region_model.cap" 2>&1)"; then
+  ok "CCAM region admission, ownership, generation invalidation, bounded views and failure atomicity"
+else
+  bad "CCAM scratch region lifecycle model" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 bounded multi-region byte store"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_store_model.cap" 2>&1)"; then
+  ok "CCAM bounded region table, aggregate admission, byte storage, typed scalar access and lifecycle"
+else
+  bad "CCAM multi-region byte store model" "$out"
+fi
+if out="$($PY "$ROOT/tests/keel/ccam_memory_oracle.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM independent byte-store oracle" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 region-capability CFG lifecycle validator"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_flow_validator.cap" 2>&1)"; then
+  ok "CCAM bounded region lifecycle dataflow, linear overwrite, CFG joins and return checks"
+else
+  bad "CCAM region-capability CFG lifecycle validator" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 frame-unwind cleanup model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_unwind_model.cap" 2>&1)"; then
+  ok "CCAM frame-exit cleanup, full-capacity wiping, owner isolation and failure-atomic accounting"
+else
+  bad "CCAM frame-unwind cleanup model" "$out"
+fi
 
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" 2>&1)"; then
@@ -523,6 +625,16 @@ if out="$($PY "$ROOT/tests/unit/read_line_eof.py" "$C" "$CC" $WFLAGS 2>&1)"; the
 
 section "crypto: lib/crypto.cap against hashlib, the published vectors and the runtime"
 if out="$($PY "$ROOT/tests/crypto/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "crypto" "$out"; fi
+
+section "Keel: bounded exact geometry predicates against Python arbitrary-precision integers"
+if out="$($PY "$ROOT/tests/keel/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else bad "Keel exact geometry predicates" "$out"; fi
+
+section "Keel: bounded exact triangle-mesh validation and topology incidence"
+if out="$($PY "$ROOT/tests/keel/mesh_check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else bad "Keel triangle mesh validation" "$out"; fi
 
 section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 decoder, zlib and golden frames"
 if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then

@@ -1,0 +1,329 @@
+// CCAM v0.2 single-region lifecycle reference model.
+// Capstan-native specification prototype only: no backing byte store, opaque
+// runtime capabilities, multi-region table, validator, or v0.2 evaluator.
+// CCAM v0.1 remains unchanged. Every transition is failure-atomic.
+
+import "ccam_core.cap";
+import "ccam_memory_reservation.cap";
+
+struct CCAMRegionModel {
+    bool open;
+    int identity;
+    int generation;
+    int owner_frame;
+    int capacity;
+    int used;
+}
+
+struct CCAMRegionCreateResult {
+    bool ok;
+    CCAMRegionModel region;
+    string error;
+}
+
+struct CCAMRegionView {
+    int identity;
+    int generation;
+    int owner_frame;
+    int offset;
+    int count;
+    int element_size;
+    int alignment;
+}
+
+struct CCAMRegionTransitionResult {
+    bool ok;
+    CCAMRegionModel region;
+    CCAMRegionView view;
+    string error;
+}
+
+CCAMRegionModel ccam_region_empty() {
+    return new CCAMRegionModel{
+        open: false, identity: 0, generation: 0,
+        owner_frame: 0, capacity: 0, used: 0
+    };
+}
+
+CCAMRegionView ccam_region_empty_view() {
+    return new CCAMRegionView{
+        identity: 0, generation: 0, owner_frame: 0,
+        offset: 0, count: 0, element_size: 0, alignment: 0
+    };
+}
+
+CCAMRegionCreateResult ccam_region_create(
+    int identity, int generation, int owner_frame,
+    int capacity, int max_capacity, bool admission_allowed
+) {
+    CCAMRegionModel empty = ccam_region_empty();
+    if (identity <= 0 || generation <= 0 || owner_frame <= 0 ||
+        capacity < 0 || max_capacity < 0) {
+        return new CCAMRegionCreateResult{
+            ok: false, region: empty, error: "invalid_region_request"
+        };
+    }
+    if (capacity > max_capacity) {
+        return new CCAMRegionCreateResult{
+            ok: false, region: empty, error: "region_limit_exceeded"
+        };
+    }
+    if (!admission_allowed) {
+        return new CCAMRegionCreateResult{
+            ok: false, region: empty, error: "allocation_failed"
+        };
+    }
+    CCAMRegionModel region = new CCAMRegionModel{
+        open: true, identity: identity, generation: generation,
+        owner_frame: owner_frame, capacity: capacity, used: 0
+    };
+    return new CCAMRegionCreateResult{
+        ok: true, region: region, error: ""
+    };
+}
+
+CCAMRegionTransitionResult ccam_region_error(
+    CCAMRegionModel region, string error
+) {
+    return new CCAMRegionTransitionResult{
+        ok: false, region: region,
+        view: ccam_region_empty_view(), error: error
+    };
+}
+
+CCAMRegionTransitionResult ccam_region_reserve(
+    CCAMRegionModel region, int caller_frame, int count,
+    int element_size, int alignment
+) {
+    if (!region.open) {
+        return ccam_region_error(region, "region_closed");
+    }
+    if (caller_frame != region.owner_frame) {
+        return ccam_region_error(region, "wrong_region_owner");
+    }
+    CCAMScratchViewPlan plan = ccam_scratch_reservation_plan(
+        region.capacity, region.used, count, element_size, alignment
+    );
+    if (!plan.ok) {
+        return ccam_region_error(region, plan.error);
+    }
+    CCAMRegionView view = new CCAMRegionView{
+        identity: region.identity,
+        generation: region.generation,
+        owner_frame: region.owner_frame,
+        offset: plan.offset,
+        count: plan.count,
+        element_size: plan.element_size,
+        alignment: plan.alignment
+    };
+    // Commit the cursor only after the complete reservation plan succeeds.
+    region.used = plan.new_used;
+    return new CCAMRegionTransitionResult{
+        ok: true, region: region, view: view, error: ""
+    };
+}
+
+string ccam_region_view_check(
+    CCAMRegionModel region, CCAMRegionView view,
+    int caller_frame, int index
+) {
+    if (view.identity != region.identity ||
+        view.generation != region.generation) {
+        return "stale_region_capability";
+    }
+    if (!region.open) {
+        return "region_closed";
+    }
+    if (caller_frame != region.owner_frame ||
+        view.owner_frame != region.owner_frame) {
+        return "wrong_region_owner";
+    }
+    if (!((view.element_size == 1 && view.alignment == 1) ||
+          (view.element_size == 8 && view.alignment == 8))) {
+        return "scratch_type_mismatch";
+    }
+    if (index < 0 || index >= view.count) {
+        return "scratch_range_error";
+    }
+    CCAMIntResult relative = ccam_mul(index, view.element_size);
+    if (!relative.ok) {
+        return "scratch_arithmetic_overflow";
+    }
+    CCAMIntResult absolute = ccam_add(view.offset, relative.value);
+    if (!absolute.ok) {
+        return "scratch_arithmetic_overflow";
+    }
+    CCAMIntResult end = ccam_add(absolute.value, view.element_size);
+    if (!end.ok) {
+        return "scratch_arithmetic_overflow";
+    }
+    if (view.offset < 0 || end.value > region.used ||
+        end.value > region.capacity) {
+        return "scratch_range_error";
+    }
+    if (view.offset % view.alignment != 0) {
+        return "scratch_type_mismatch";
+    }
+    return "";
+}
+
+CCAMRegionTransitionResult ccam_region_reset(
+    CCAMRegionModel region, int caller_frame
+) {
+    if (!region.open) {
+        return ccam_region_error(region, "region_closed");
+    }
+    if (caller_frame != region.owner_frame) {
+        return ccam_region_error(region, "wrong_region_owner");
+    }
+    CCAMIntResult next_generation = ccam_add(region.generation, 1);
+    if (!next_generation.ok || next_generation.value <= 0) {
+        return ccam_region_error(region, "scratch_arithmetic_overflow");
+    }
+    // Generation and cursor are committed together; prior views become stale.
+    region.generation = next_generation.value;
+    region.used = 0;
+    return new CCAMRegionTransitionResult{
+        ok: true, region: region,
+        view: ccam_region_empty_view(), error: ""
+    };
+}
+
+CCAMRegionTransitionResult ccam_region_close(
+    CCAMRegionModel region, int caller_frame
+) {
+    if (!region.open) {
+        return ccam_region_error(region, "region_closed");
+    }
+    if (caller_frame != region.owner_frame) {
+        return ccam_region_error(region, "wrong_region_owner");
+    }
+    region.open = false;
+    region.used = 0;
+    region.capacity = 0;
+    region.generation = 0;
+    return new CCAMRegionTransitionResult{
+        ok: true, region: region,
+        view: ccam_region_empty_view(), error: ""
+    };
+}
+
+test "region creation enforces capacity and injected admission atomically" {
+    CCAMRegionCreateResult exact = ccam_region_create(1, 1, 7, 64, 64, true);
+    CCAMRegionCreateResult over = ccam_region_create(1, 1, 7, 65, 64, true);
+    CCAMRegionCreateResult denied = ccam_region_create(1, 1, 7, 64, 64, false);
+    assert(exact.ok && exact.region.open && exact.region.capacity == 64);
+    assert(!over.ok && over.error == "region_limit_exceeded");
+    assert(!denied.ok && denied.error == "allocation_failed");
+    assert(!over.region.open && !denied.region.open);
+}
+
+test "region reservation binds identity generation and owner" {
+    CCAMRegionCreateResult created = ccam_region_create(4, 2, 9, 64, 64, true);
+    CCAMRegionTransitionResult reserved = ccam_region_reserve(
+        created.region, 9, 2, 8, 8
+    );
+    assert(reserved.ok && reserved.region.used == 16);
+    assert(reserved.view.identity == 4);
+    assert(reserved.view.generation == 2);
+    assert(reserved.view.owner_frame == 9);
+    assert(ccam_region_view_check(reserved.region, reserved.view, 9, 0) == "");
+    assert(ccam_region_view_check(reserved.region, reserved.view, 9, 1) == "");
+}
+
+test "wrong owner cannot reserve or use a view" {
+    CCAMRegionCreateResult created = ccam_region_create(4, 1, 9, 32, 32, true);
+    CCAMRegionTransitionResult denied = ccam_region_reserve(
+        created.region, 10, 1, 1, 1
+    );
+    assert(!denied.ok && denied.error == "wrong_region_owner");
+    assert(denied.region.used == 0);
+    CCAMRegionTransitionResult reserved = ccam_region_reserve(
+        created.region, 9, 1, 1, 1
+    );
+    assert(reserved.ok);
+    assert(ccam_region_view_check(reserved.region, reserved.view, 10, 0) ==
+           "wrong_region_owner");
+}
+
+test "failed reservation leaves the region cursor unchanged" {
+    CCAMRegionCreateResult created = ccam_region_create(2, 1, 3, 8, 8, true);
+    CCAMRegionTransitionResult failed = ccam_region_reserve(
+        created.region, 3, 2, 8, 8
+    );
+    assert(!failed.ok && failed.error == "scratch_exhausted");
+    assert(failed.region.used == 0);
+    assert(failed.region.open && failed.region.capacity == 8);
+}
+
+test "reset invalidates old views and restarts the reservation cursor" {
+    CCAMRegionCreateResult created = ccam_region_create(5, 1, 3, 32, 32, true);
+    CCAMRegionTransitionResult old = ccam_region_reserve(
+        created.region, 3, 1, 8, 8
+    );
+    CCAMRegionTransitionResult reset = ccam_region_reset(old.region, 3);
+    assert(old.ok && reset.ok);
+    assert(reset.region.generation == 2 && reset.region.used == 0);
+    assert(ccam_region_view_check(reset.region, old.view, 3, 0) ==
+           "stale_region_capability");
+    CCAMRegionTransitionResult fresh = ccam_region_reserve(
+        reset.region, 3, 1, 8, 8
+    );
+    assert(fresh.ok && fresh.view.generation == 2 && fresh.view.offset == 0);
+}
+
+test "reset generation overflow is failure atomic" {
+    CCAMRegionCreateResult created = ccam_region_create(
+        5, 9223372036854775807, 3, 32, 32, true
+    );
+    CCAMRegionTransitionResult reset = ccam_region_reset(created.region, 3);
+    assert(!reset.ok && reset.error == "scratch_arithmetic_overflow");
+    assert(reset.region.open);
+    assert(reset.region.generation == 9223372036854775807);
+    assert(reset.region.used == 0);
+}
+
+test "close invalidates views and double close is rejected" {
+    CCAMRegionCreateResult created = ccam_region_create(6, 1, 3, 32, 32, true);
+    CCAMRegionTransitionResult reserved = ccam_region_reserve(
+        created.region, 3, 1, 1, 1
+    );
+    CCAMRegionTransitionResult closed = ccam_region_close(reserved.region, 3);
+    assert(reserved.ok && closed.ok && !closed.region.open);
+    assert(closed.region.capacity == 0 && closed.region.used == 0);
+    assert(ccam_region_view_check(closed.region, reserved.view, 3, 0) ==
+           "stale_region_capability");
+    CCAMRegionTransitionResult twice = ccam_region_close(closed.region, 3);
+    assert(!twice.ok && twice.error == "region_closed");
+}
+
+test "view checks reject negative and count-equal indices" {
+    CCAMRegionCreateResult created = ccam_region_create(7, 1, 3, 32, 32, true);
+    CCAMRegionTransitionResult reserved = ccam_region_reserve(
+        created.region, 3, 2, 1, 1
+    );
+    assert(reserved.ok);
+    assert(ccam_region_view_check(reserved.region, reserved.view, 3, -1) ==
+           "scratch_range_error");
+    assert(ccam_region_view_check(reserved.region, reserved.view, 3, 2) ==
+           "scratch_range_error");
+}
+
+test "zero count view is valid but never indexable" {
+    CCAMRegionCreateResult created = ccam_region_create(8, 1, 3, 16, 16, true);
+    CCAMRegionTransitionResult reserved = ccam_region_reserve(
+        created.region, 3, 0, 8, 8
+    );
+    assert(reserved.ok && reserved.view.count == 0);
+    assert(ccam_region_view_check(reserved.region, reserved.view, 3, 0) ==
+           "scratch_range_error");
+}
+
+test "closed region cannot be reserved" {
+    CCAMRegionCreateResult created = ccam_region_create(9, 1, 3, 16, 16, true);
+    CCAMRegionTransitionResult closed = ccam_region_close(created.region, 3);
+    CCAMRegionTransitionResult reserve = ccam_region_reserve(
+        closed.region, 3, 1, 1, 1
+    );
+    assert(closed.ok && !reserve.ok && reserve.error == "region_closed");
+}

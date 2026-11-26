@@ -536,27 +536,49 @@ The ultimate goal is not merely to make Capstan another attractive systems langu
 
 **The standard is not that Capstan claims to do what other languages cannot. The standard is that Capstan demonstrates, with independently checkable evidence, a coherent set of guarantees that users cannot obtain as an equally integrated and practical property from the conventional alternatives.**
 
+## AREA-15. Spatial computing, graphics and simulation (Keel)
 
-## 13.1 F1 execution: language contract
+**Questions**
+- Can scene, geometry, asset and frame resource budgets compose without hidden transient
+  allocation or work amplification?
+- Which numeric semantics give reproducible simulation and robust topology decisions
+  across heterogeneous targets?
+- Can asynchronous graphics-resource ownership be specified across submission,
+  completion, cancellation, shutdown and device loss?
+- What subset of rendering semantics can a CPU reference backend define, and how can
+  accelerated backends demonstrate refinement within declared tolerances?
+- Can untrusted asset formats be decoded with bounded work, failure atomicity and
+  independently reproducible adversarial evidence?
 
-The selective literature synthesis is [F1-RELATED-WORK.md](../F1-RELATED-WORK.md); it identifies modal effects (2026), ownership-based information flow, resource-aware borrowing (2025) and two-sided resource analysis (2026 preprint) as important baselines. Its factored-judgement proposal is an experiment, not a settled architecture.
+**Candidate work:** resource-aware scene and render contracts; fixed-step deterministic
+simulation; fixed-point/IEEE-754/hybrid numeric comparison; robust geometric predicates;
+generational handles; GPU lifetime state machines; bounded asset decoders; CPU/GPU
+conformance; reproducible rendering benchmarks.
 
-The first language-contract research draft is [F1-LANGUAGE-CONTRACT.md](../F1-LANGUAGE-CONTRACT.md).
-It is deliberately a research draft, not a new normative specification or compiler feature.
-It records the current source-language baseline, proposes a syntax-neutral compositional
-judgement over types, ownership, authority, effects and resource budgets, and identifies
-ten unresolved design decisions that must be researched before dependent APIs are added.
+**Success evidence:** versioned scene and numeric semantics; compositional budget
+soundness conditions; conformance vectors across independent targets; adversarial parser
+corpora and fuzz results; lifecycle state-machine tests/proofs; measured backend
+conformance and performance; explicit driver/OS/hardware assumptions.
 
-The immediate research question is whether a small set of mutually compatible judgements
-can compose these guarantees across calls, aliases, control flow, generics, modules, lowering
-and execution without collapsing distinct properties into an opaque type system. The first
-prototype must compare at least two viable models (combined judgement and factored judgements),
-state soundness conditions, construct counterexamples, and measure checker complexity and
-diagnostic quality. No syntax or implementation strategy is selected by this draft.
+**Coordination:** Keel is specified in `docs/KEEL.md` and the detailed
+`docs/KEEL-ARCHITECTURE.md` supplement. Keel consumes Shroud through reviewed public
+host/presentation interfaces only and remains headless-testable. The Shroud research
+stream remains independent; neither toolkit correctness nor Keel correctness is inferred
+from the other. K0 specifies the CPU reference slice and its contracts; implementation
+begins in K1 after the language/runtime and numeric dependencies are checked. GPU work
+follows only after reference semantics, resource contracts and profiling evidence exist.
 
-The current CWE atlas records six distinct open gaps (CWE-116, CWE-798, CWE-916, CWE-862,
-CWE-306 and CWE-79). F1 treats them as blockers for any Safe-profile claim and requires
-positive controls and adversarial bypass coverage; it does not presume that a type-system
-change alone closes them. The current C-backed runtime, Python bootstrap, and model-to-
-implementation proof gaps remain part of the disclosed trusted-base boundary.
 
+## AREA-16. Scientific computing, digital twins and evidence-sensitive modelling (Keel Science)
+
+**Questions**
+- Can scientific quantities, units, dimensions, coordinate frames, time and uncertainty be represented so that invalid combinations are rejected or explicitly marked unknown?
+- Can digital-twin systems preserve the distinction between observed, estimated, simulated, planned and counterfactual state under delay, dropout, drift and contradictory telemetry?
+- Can imaging-derived geometry preserve acquisition metadata, orientation, transform history, segmentation provenance and uncertainty?
+- How can numerical verification, data validation, model validation and any future clinical validation be kept distinct?
+
+**Candidate work:** typed units and dimensions; coordinate-frame and transform semantics; uncertainty propagation; scientific data lineage; synthetic digital-twin replay; volumetric imaging and geometry preservation; version-pinned DICOM, FHIR, BIDS, NIfTI, OMOP, OME-NGFF and glTF adapters; privacy-preserving research workflows.
+
+**Success evidence:** dimensional and frame-error tests; analytical/manufactured solutions; independent numerical oracles; synthetic or appropriately governed datasets; version-pinned standards fixtures; provenance and uncertainty checks; external domain review; explicit intended-use and non-clinical limitations.
+
+**Coordination:** Keel Science is a downstream library specified in `docs/KEEL-SCIENCE.md`, not part of Keel's engine core. It consumes Capstan and Keel contracts but must not create private numeric, geometry, security or provenance semantics. Biomedical data governance and clinical/regulatory obligations are separate from renderer correctness; no diagnostic or clinical-use claim follows from this research programme.

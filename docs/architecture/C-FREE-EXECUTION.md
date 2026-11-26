@@ -184,3 +184,22 @@ implementation increment is a Capstan-native, typed CCAM representation and
 small evaluator, with Capstan-written positive and negative tests. Only after
 that vertical slice is running should the machine be extended to heap,
 collections, taint, secrets, grants, and IO.
+
+
+
+The next machine-level design artifact is [CCAM v0.2 bounded scratch regions](CCAM-MEMORY-EXTENSION.md). It keeps v0.1 normative semantics unchanged and proposes a versioned, byte-addressed region capability model. The proposal is not implemented; the CCAM reference evaluator, structural validator, native lowering and formal refinement remain explicit work items.
+
+## 11. Bounded temporary memory dependency
+
+A bounded temporary-memory contract is now proposed in [C-Free Bounded Scratch Memory](../keel/C-FREE-BOUNDED-SCRATCH.md), motivated by Keel's topology and spatial algorithms. It defines fixed-capacity regions, checked aligned reservations, scoped views, failure atomicity and deterministic sorting without exposing raw pointers.
+
+This is a consumer-driven proposal, not an approved CCAM feature. CCAM v0.1 currently has no general region/heap operations. The C-Free programme must resolve the memory/value representation, layout metadata, lifetime enforcement and backend refinement before any public scratch API is exposed. Keel must not implement a private allocator or claim byte-bounded behaviour using the existing C-backed List/sort path.
+
+The first implementation review should compare:
+- statically checked borrow/lifetime rules versus generation-checked runtime views;
+- scalar-only scratch versus reference-bearing storage and collector integration;
+- in-place deterministic heapsort versus caller-reserved stable mergesort;
+- logical capacity guarantees versus physical allocator/page accounting.
+
+The scratch contract's SCR-1 through SCR-6 gates are prerequisites for Keel production use, not evidence that the C-Free execution programme has reached its runtime or native-backend stages.
+

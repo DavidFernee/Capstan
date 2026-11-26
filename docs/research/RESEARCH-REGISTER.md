@@ -25,36 +25,6 @@ The present implementation remains C-backed. The C-free/CCAM programme is active
 not the default compiler or an end-to-end verified execution pipeline. This distinction
 is a hard constraint on all abstracts, diagrams and claims.
 
-## F1 language-contract execution status
-
-The selective related-work review is [F1-RELATED-WORK.md](../F1-RELATED-WORK.md). It sharpens the F1 hypothesis toward one shared derivation with distinct, mutually checked typing, ownership, authority/effect, information-flow and resource components. The review is not systematic and makes no novelty claim; the next step is a discriminating formal prototype.
-
-The active language-contract research draft is [F1-LANGUAGE-CONTRACT.md](../F1-LANGUAGE-CONTRACT.md),
-coordinated by the [programming-language research agenda](PROGRAMMING-LANGUAGE-RESEARCH-AGENDA.md).
-It records the current v0.1 source-language semantics, the gap between built-in generic
-containers and user-defined generics, and a proposed syntax-neutral judgement spanning
-types, ownership, authority, effects and resource budgets.
-
-**Maturity: E0 design draft.** No new type-system, effect-system, ownership or capability
-implementation is claimed. The draft identifies ten open design decisions and requires
-comparison of alternative models before selecting syntax or compiler architecture. It
-also elevates the six distinct CWE atlas gaps (116, 798, 916, 862, 306, 79) to explicit
-Safe-profile blockers. The atlas remains a project corpus, not an official MITRE mapping;
-its counts are not prevention percentages.
-
-The next evidence-producing work is:
-1. A formal core model for combined versus factored guarantee judgements.
-2. Small-step operational semantics and preservation/progress obligations for the current
-   source subset, including traps, side-effect order and bounded admission.
-3. A capability/effect model with explicit host-adapter authority and no ambient fallback.
-4. A resource-budget algebra with composition rules and adversarial counterexamples.
-5. Information-flow/context types that preserve provenance through calls, containers,
-   serialization and cross-statement output construction.
-6. A mapping from each model property to compiler, CCAM, runtime and test enforcement points.
-
-Until those artefacts exist and are independently challenged, F1 remains in progress and
-no Safe or Verified profile claim is authorised by the draft.
-
 ### Candidate papers
 
 | ID | Working title / question | Current contribution | Maturity | Publication decision |
@@ -65,6 +35,9 @@ no Safe or Verified profile claim is authorised by the draft.
 | R4 | **An Empirical Evaluation of Security Guarantees in Restricted Programming-Language Runtimes** — how accurately can a language's security claims be evaluated against real vulnerability records? | K0 Linux-kernel CVE study and methodology; PR #153 corrects population/classification/conservatism issues but remains open. | Dataset regeneration and independent relabelling/review not complete; headline figures are not publication-grade. | High-potential empirical paper; freeze claims until replication. |
 | R5 | **Resource-Bounded Cryptographic Primitives in a Constrained Runtime** — how should work, allocation and intermediate state be bounded for password derivation? | PBKDF2 work/output/input bounds and HMAC-state reuse merged in PR #149. | Focused implementation contribution; broader novelty and performance/security comparison not established. | Likely a section or case study unless evaluation reveals a distinct contribution. |
 | R6 | **A C-Free Self-Hosting Compiler and Its Assurance Boundary** — what staged architecture and proof obligations are required to remove C from the compiler/runtime trusted base? | C-free bootstrap contract PR #172 draft; CCAM and lowering work; current design map and threat model explicitly identify remaining C/Python/toolchain trust. | Architecture and early implementation only; no C-free default pipeline or end-to-end proof. | Long-term flagship direction; not yet a results paper. |
+
+| R7 | **Evidence-Carrying Scientific Simulation and Digital Twins** — can scientific types, provenance, uncertainty and resource contracts reduce silent modelling errors in digital-twin and biomedical research workflows? | Keel Science K0 architecture proposal: units/dimensions, coordinate frames, time, uncertainty, lineage, observed/estimated/simulated state separation, synthetic twin and imaging validation plan. | Proposal only; no scientific library implementation, standard conformance, domain validation or clinical evidence. | Research candidate; first evidence should come from synthetic twin and analytical/numerical reference workloads, followed by independent domain review. |
+| R9 | **Exact, Bounded Spatial Kernels in a Restricted Systems Language** — can topology-critical spatial decisions be implemented with explicit integer domains, bounded intermediates and independently reproducible oracles? | Keel K1 prototype in `lib/keel/coordinates.cap`, `lib/keel/predicates.cap` and `lib/keel/spatial.cap`: bounded 2D/3D orientation, 2D segment classification, 3D point-in-tetrahedron, checked 3D vector operations and closed AABB construction/containment/intersection/union; `tests/keel/check.py` compares results against Python arbitrary-precision integer oracles. | Early implementation prototype. Exact-head CI has not yet been established as passing; no machine-checked arithmetic proof or implementation-refinement theorem exists. Domains intentionally restrict inputs and are not a general coordinate system. | Candidate only. Require exact-head cross-platform CI, independent arithmetic-bound review, adversarial/property corpus, performance measurements and proof/refinement work before publication claims. |
 
 ## 2. Evidence ledger
 
@@ -225,6 +198,39 @@ engineering evidence. It does not yet have, on the evidence recorded here, a dem
 end-to-end formally verified C-free compiler/runtime, a final independently replicated K0
 study, or four completed journal papers. The immediate research task is to turn promising
 implementation and proof fragments into tightly scoped, reproducible claims.
+
+## R7 — Compositional assurance for resource-bounded 3D systems (Keel)
+
+**Question:** Can scene, geometry, asset, simulation and rendering guarantees compose
+across CPU and GPU boundaries without hiding transient resource amplification or
+lifetime hazards?
+
+**Current contribution:** K0 architecture in
+[`docs/KEEL-ARCHITECTURE.md`](../KEEL-ARCHITECTURE.md), numeric comparison protocol in
+[`docs/keel/NUMERIC-SEMANTICS-STUDY.md`](../keel/NUMERIC-SEMANTICS-STUDY.md), and an
+early K1 integer geometry kernel in [`lib/keel/predicates.cap`](../../lib/keel/predicates.cap).
+The kernel provides bounded exact 2D/3D orientation-sign predicates with explicit
+out-of-domain results and documented int64 intermediate bounds. Static conformance
+vectors and a deterministic randomized Python arbitrary-precision differential suite
+have been added to the normal test run.
+
+**Maturity:** early K1 kernel only. The predicates are not a scene graph, general
+coordinate/transform system, renderer, physics engine or asset pipeline. The arithmetic
+bounds are documented mathematical arguments, not yet a machine-checked proof. The
+differential test suite has been added but its CI result is pending; no independent
+reproduction, formal model, CPU/GPU refinement or benchmark result is claimed.
+
+**Next evidence required:**
+1. related-work review covering resource-aware type systems, real-time rendering,
+   robust predicates, GPU lifetime models and bounded parsers;
+2. falsifiable hypotheses and baselines for aggregate budgets and deterministic
+   simulation;
+3. a versioned spatial/scene semantics and executable conformance vectors;
+4. adversarial asset corpus, fuzzing and failure-atomicity tests;
+5. explicit CPU/GPU refinement boundary and device-loss/lifetime state-machine tests;
+6. independent reproduction with raw data, toolchain and hardware details.
+
+Publication readiness is not reached by the architecture document alone.
 
 
 ### R8 — Bounded, high-performance media processing
