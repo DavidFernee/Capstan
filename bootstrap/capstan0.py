@@ -772,8 +772,18 @@ def b_trust(t, why): return t
 def b_to_text(x):
     if isinstance(x, bool): return "true" if x else "false"
     return str(x) if isinstance(x, int) else x
+def _csv_formula_prefix(t):
+    i = 0
+    while i < len(t) and t[i] == " ":
+        i += 1
+    if i >= len(t):
+        return False
+    c = ord(t[i])
+    if c in (ord("="), ord("+"), ord("-"), ord("@"), 9, 10, 11, 12, 13):
+        return True
+    return len(t) - i >= 3 and ord(t[i]) == 0xEF and ord(t[i + 1]) == 0xBC and ord(t[i + 2]) in (0x9D, 0x8B, 0x8D, 0xA0)
 def b_escape_csv(t):
-    return '"' + ("'" if t[:1] in ("=", "+", "-", "@", "\t", "\r") and t else "") + t.replace('"', '""') + '"'
+    return '"' + ("'" if _csv_formula_prefix(t) else "") + t.replace('"', '""') + '"'
 def b_validate_path(t):
     if not t or len(t) > 4096 or t[0] in ("/", "-"): return None
     for seg in t.split("/"):
