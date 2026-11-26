@@ -11,9 +11,10 @@
 
 import "ccam_heap.cap";
 
-const int CCAM_AGG_TYPE_INT = CCAM_HEAP_VALUE_INT;
-const int CCAM_AGG_TYPE_BOOL = CCAM_HEAP_VALUE_BOOL;
-const int CCAM_AGG_TYPE_REF = CCAM_HEAP_VALUE_REF;
+// Keep the scalar heap value tags aligned with ccam_heap.cap's closed enum.
+const int CCAM_AGG_TYPE_INT = 1;
+const int CCAM_AGG_TYPE_BOOL = 2;
+const int CCAM_AGG_TYPE_REF = 3;
 const int CCAM_AGG_MAX_STEPS = 10000000;
 
 struct CCAMAggregateRegister {
@@ -565,7 +566,7 @@ test "aggregate CCAM step exhaustion occurs before heap allocation" {
     // The operation did not allocate: the first direct allocation still gets
     // the first object identity in this arena.
     CCAMHeapRefResult allocated = ccam_heap_alloc_record(machine.heap, layout);
-    assert(allocated.ok && allocated.reference.object_id == 1);
+    assert(allocated.ok && ccam_heap_object_index(machine.heap, allocated.reference) == 0);
 }
 
 test "aggregate CCAM rejects invalid register writes before mutation" {
