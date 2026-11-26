@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_provenance_valid(int origin,int current){return origin>=0&&current>=origin;}
