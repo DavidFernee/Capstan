@@ -353,25 +353,33 @@ def protocol(exe):
     exact_number = b"1" * 128
     exact_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments]) + b"]"
     over_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments, b'""']) + b"]"
-    bad_bodies.extend([
+    boundary_cases = [
         (exact_values, -32600, "exact JSON value budget"),
         (exact_members, -32600, "exact JSON object member budget"),
         (exact_elements, -32600, "exact JSON array element budget"),
-        (exact_string, -32600, "exact JSON per-string byte budget"),
-        (exact_aggregate_strings, -32600, "exact JSON aggregate string byte budget"),
-        (exact_fragments, -32600, "exact JSON string fragment budget"),
-        (exact_aggregate_parts, -32600, "exact JSON aggregate string fragment budget"),
         (exact_number, -32600, "exact JSON number token budget"),
         (b'{"jsonrpc":"2.0","jsonrpc":"2.0","id":1,"method":"x"}', -32700, "duplicate object key"),
         (value_fanout, -32700, "aggregate JSON value budget"),
         (too_many_members, -32700, "JSON object member budget"),
         (too_many_elements, -32700, "JSON array element budget"),
-        (long_string, -32700, "JSON per-string byte budget"),
-        (escape_fragments, -32700, "JSON string fragment budget"),
-        (aggregate_strings, -32700, "JSON aggregate string byte budget"),
-        (over_aggregate_parts, -32700, "JSON aggregate string fragment budget"),
         (b"1" * 129, -32700, "JSON number token byte budget"),
-    ])
+    ]
+    # Large string/fragment vectors are exercised in the normal session. The
+    # separate GC-stress pass focuses on collection safety with bounded inputs;
+    # replaying half a million fragment allocations under forced collection
+    # adds minutes without testing a different parser boundary.
+    if not os.environ.get("CAPSTAN_GC_STRESS"):
+        boundary_cases.extend([
+            (exact_string, -32600, "exact JSON per-string byte budget"),
+            (exact_aggregate_strings, -32600, "exact JSON aggregate string byte budget"),
+            (exact_fragments, -32600, "exact JSON string fragment budget"),
+            (exact_aggregate_parts, -32600, "exact JSON aggregate string fragment budget"),
+            (long_string, -32700, "JSON per-string byte budget"),
+            (escape_fragments, -32700, "JSON string fragment budget"),
+            (aggregate_strings, -32700, "JSON aggregate string byte budget"),
+            (over_aggregate_parts, -32700, "JSON aggregate string fragment budget"),
+        ])
+    bad_bodies.extend(boundary_cases)
     for body, code, name in bad_bodies:
         s.send(b"Content-Length: %d\r\n\r\n" % len(body) + body)
         if code is None:
