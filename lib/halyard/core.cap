@@ -496,7 +496,7 @@ int halyard_source_length(HalyardByteSource source) {
 }
 
 int halyard_source_remaining(HalyardByteSource source) {
-    if (source.closed || source.position < 0 || source.position > source.bytes.len()) {
+    if (!halyard_source_shape_valid(source)) {
         return 0;
     }
     return source.bytes.len() - source.position;
@@ -512,13 +512,16 @@ HalyardReadResult halyard_read_u8(HalyardByteSource source) {
     if (source.closed) {
         return new HalyardReadResult{ok: false, value: 0, error: "closed"};
     }
-    if (source.position < 0 || source.position > source.bytes.len()) {
+    if (!halyard_source_shape_valid(source)) {
         return new HalyardReadResult{ok: false, value: 0, error: "invalid_state"};
     }
     if (source.position == source.bytes.len()) {
         return new HalyardReadResult{ok: false, value: 0, error: "eof"};
     }
     int value = source.bytes[source.position];
+    if (value < 0 || value > 255) {
+        return new HalyardReadResult{ok: false, value: 0, error: "invalid_byte"};
+    }
     source.position += 1;
     return new HalyardReadResult{ok: true, value: value, error: ""};
 }
@@ -534,11 +537,19 @@ HalyardBytesResult halyard_read_exact(HalyardByteSource source, int count) {
         return new HalyardBytesResult{ok: false, bytes: empty, error: "negative_count"};
     }
     int length = source.bytes.len();
-    if (source.position < 0 || source.position > length) {
+    if (!halyard_source_shape_valid(source)) {
         return new HalyardBytesResult{ok: false, bytes: empty, error: "invalid_state"};
     }
     if (count > length - source.position) {
         return new HalyardBytesResult{ok: false, bytes: empty, error: "truncated"};
+    }
+    // Preflight only the requested span; avoid rescanning the entire source
+    // on every read. No cursor advance or result copy on malformed bytes.
+    for (int j = 0; j < count; j += 1) {
+        int value = source.bytes[source.position + j];
+        if (value < 0 || value > 255) {
+            return new HalyardBytesResult{ok: false, bytes: empty, error: "invalid_byte"};
+        }
     }
     List<int> result = new List<int>();
     for (int i = 0; i < count; i += 1) {
@@ -551,7 +562,7 @@ HalyardBytesResult halyard_read_exact(HalyardByteSource source, int count) {
 bool halyard_skip(HalyardByteSource source, int count) {
     if (source.closed || count < 0) { return false; }
     int length = source.bytes.len();
-    if (source.position < 0 || source.position > length) { return false; }
+    if (!halyard_source_shape_valid(source)) { return false; }
     if (count > length - source.position) { return false; }
     source.position += count;
     return true;
@@ -2328,4 +2339,49 @@ test "Halyard live lease release never refunds cumulative decode or work" {
     } else {
         assert(false);
     }
+}
+
+test "Halyard byte operations reject forged source capacity without advancing" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2);
+    HalyardByteSourceResult made = halyard_source_from_list(input, 2);
+    assert(made.ok);
+    if (let source = made.source) {
+        source.max_bytes = 1;
+        assert(halyard_source_remaining(source) == 0);
+        HalyardReadResult single = halyard_read_u8(source);
+        assert(!single.ok && single.error == "invalid_state");
+        HalyardBytesResult batch = halyard_read_exact(source, 1);
+        assert(!batch.ok && batch.error == "invalid_state" && batch.bytes.len() == 0);
+        assert(!halyard_skip(source, 1));
+        assert(source.position == 0);
+        source.max_bytes = -1;
+        assert(!halyard_skip(source, 0));
+        assert(source.position == 0);
+    } else { assert(false); }
+}
+
+test "Halyard malformed byte reads are failure atomic" {
+    List<int> input = new List<int>();
+    input.push(1); input.push(2); input.push(3); input.push(4);
+    HalyardByteSourceResult made = halyard_source_from_list(input, 4);
+    assert(made.ok);
+    if (let source = made.source) {
+        source.bytes[2] = 256;
+        HalyardBytesResult batch = halyard_read_exact(source, 3);
+        assert(!batch.ok && batch.error == "invalid_byte" && batch.bytes.len() == 0);
+        assert(source.position == 0);
+        HalyardReadResult word = halyard_read_u32_be(source);
+        assert(!word.ok && word.error == "invalid_byte");
+        assert(source.position == 0);
+        assert(halyard_skip(source, 2));
+        HalyardReadResult single = halyard_read_u8(source);
+        assert(!single.ok && single.error == "invalid_byte");
+        assert(source.position == 2);
+        source.bytes[2] = -1;
+        assert(!halyard_read_u8(source).ok && source.position == 2);
+        source.bytes[2] = 255;
+        HalyardReadResult repaired = halyard_read_u8(source);
+        assert(repaired.ok && repaired.value == 255 && source.position == 3);
+    } else { assert(false); }
 }
