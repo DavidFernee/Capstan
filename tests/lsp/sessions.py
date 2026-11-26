@@ -339,7 +339,7 @@ def protocol(exe):
     ) + b"}"
     too_many_elements = b"[" + b",".join([b"null"] * 16385) + b"]"
     long_string = b'{"s":"' + b"a" * (8 * 1024 * 1024 + 1) + b'"}'
-    escape_fragments = b'"' + b"\\n" * 131073 + b'"'
+    escape_fragments = b'"' + b"\\n" * 131072 + b'"'
     aggregate_strings = b"[" + b",".join(
         b'"' + b"a" * (7 * 1024 * 1024) + b'"' for _ in range(2)
     ) + b"]"
@@ -351,7 +351,8 @@ def protocol(exe):
     exact_aggregate_strings = b'["' + b"a" * (6 * 1024 * 1024) + b'","' + b"a" * (6 * 1024 * 1024) + b'"]'
     exact_fragments = b'"' + b"\\n" * 131069 + b"\\uD83D\\uDE00" + b'"'
     exact_number = b"1" * 128
-    aggregate_parts = b"[" + b",".join([exact_fragments] * 3) + b"]"
+    exact_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments, b'""', b'""']) + b"]"
+    over_aggregate_parts = b"[" + b",".join([exact_fragments, exact_fragments, b'""', b'""', b'""']) + b"]"
     bad_bodies.extend([
         (exact_values, -32600, "exact JSON value budget"),
         (exact_members, -32600, "exact JSON object member budget"),
@@ -359,6 +360,7 @@ def protocol(exe):
         (exact_string, -32600, "exact JSON per-string byte budget"),
         (exact_aggregate_strings, -32600, "exact JSON aggregate string byte budget"),
         (exact_fragments, -32600, "exact JSON string fragment budget"),
+        (exact_aggregate_parts, -32600, "exact JSON aggregate string fragment budget"),
         (exact_number, -32600, "exact JSON number token budget"),
         (b'{"jsonrpc":"2.0","jsonrpc":"2.0","id":1,"method":"x"}', -32700, "duplicate object key"),
         (value_fanout, -32700, "aggregate JSON value budget"),
@@ -367,7 +369,7 @@ def protocol(exe):
         (long_string, -32700, "JSON per-string byte budget"),
         (escape_fragments, -32700, "JSON string fragment budget"),
         (aggregate_strings, -32700, "JSON aggregate string byte budget"),
-        (aggregate_parts, -32700, "JSON aggregate string fragment budget"),
+        (over_aggregate_parts, -32700, "JSON aggregate string fragment budget"),
         (b"1" * 129, -32700, "JSON number token byte budget"),
     ])
     for body, code, name in bad_bodies:
