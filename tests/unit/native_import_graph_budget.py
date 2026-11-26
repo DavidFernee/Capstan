@@ -65,12 +65,12 @@ with tempfile.TemporaryDirectory(prefix="capstan-native-import-budget-") as td:
     mib = 1024 * 1024
     graph = base / "source-file-exact"
     graph.mkdir()
-    (graph / "main.cap").write_text(padded("void main() {}\\n", 16 * mib))
+    (graph / "main.cap").write_text(padded("void main() {}\n", 16 * mib))
     expect_success(graph, "native-source-file-exact")
 
     graph = base / "source-file-over"
     graph.mkdir()
-    (graph / "main.cap").write_text(padded("void main() {}\\n", 16 * mib + 1))
+    (graph / "main.cap").write_text(padded("void main() {}\n", 16 * mib + 1))
     expect_failure(graph, "over 16 MiB", "native-source-file-over")
 
     graph = base / "source-bytes-exact"
