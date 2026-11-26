@@ -1,0 +1,92 @@
+import "native_rel32.cap";
+
+// Numeric symbol IDs are assigned by the compiler, not parsed from input.
+struct NativeSymbol {
+    int id;
+    int offset;
+}
+struct NativeFixup {
+    int field;
+    int symbol;
+}
+struct NativeLinkResult {
+    bool ok;
+    List<int> bytes;
+}
+NativeLinkResult native_link_image(List<int> image, List<NativeSymbol> symbols, List<NativeFixup> fixups) {
+    List<int> output = new List<int>();
+    int size = image.len();
+    if (size < 1 || size > 1048576 || symbols.len() > 256 || fixups.len() > 1024) {
+        return new NativeLinkResult{ok: false, bytes: output};
+    }
+    for (int i = 0; i < size; i += 1) {
+        if (image[i] < 0 || image[i] > 255) {
+            return new NativeLinkResult{ok: false, bytes: output};
+        }
+    }
+    for (int i = 0; i < symbols.len(); i += 1) {
+        if (symbols[i].id < 0 || symbols[i].offset < 0 || symbols[i].offset >= size) {
+            return new NativeLinkResult{ok: false, bytes: output};
+        }
+        for (int j = 0; j < i; j += 1) {
+            if (symbols[i].id == symbols[j].id) {
+                return new NativeLinkResult{ok: false, bytes: output};
+            }
+        }
+    }
+    List<int> patches = new List<int>();
+    for (int i = 0; i < fixups.len(); i += 1) {
+        int field = fixups[i].field;
+        if (field < 0 || field > size - 4) {
+            return new NativeLinkResult{ok: false, bytes: output};
+        }
+        for (int j = 0; j < i; j += 1) {
+            int previous = fixups[j].field;
+            if (field < previous + 4 && previous < field + 4) {
+                return new NativeLinkResult{ok: false, bytes: output};
+            }
+        }
+        int target = -1;
+        for (int j = 0; j < symbols.len(); j += 1) {
+            if (symbols[j].id == fixups[i].symbol) { target = symbols[j].offset; }
+        }
+        if (target < 0) { return new NativeLinkResult{ok: false, bytes: output}; }
+        NativeRel32Result encoded = native_rel32_encode(field + 4, target);
+        if (!encoded.ok) { return new NativeLinkResult{ok: false, bytes: output}; }
+        for (int j = 0; j < 4; j += 1) { patches.push(encoded.bytes[j]); }
+    }
+    for (int i = 0; i < size; i += 1) { output.push(image[i]); }
+    for (int i = 0; i < fixups.len(); i += 1) {
+        for (int j = 0; j < 4; j += 1) { output[fixups[i].field + j] = patches[i * 4 + j]; }
+    }
+    return new NativeLinkResult{ok: true, bytes: output};
+}
+test "native linker resolves two fixups without mutating input" {
+    List<int> image = new List<int>();
+    for (int i = 0; i < 12; i += 1) { image.push(0); }
+    List<NativeSymbol> symbols = new List<NativeSymbol>();
+    symbols.push(new NativeSymbol{id: 1, offset: 10});
+    List<NativeFixup> fixups = new List<NativeFixup>();
+    fixups.push(new NativeFixup{field: 0, symbol: 1});
+    fixups.push(new NativeFixup{field: 4, symbol: 1});
+    NativeLinkResult result = native_link_image(image, symbols, fixups);
+    assert(result.ok && result.bytes.len() == 12);
+    assert(result.bytes[0] == 6 && result.bytes[4] == 2);
+    assert(image[0] == 0 && image[4] == 0);
+    fixups.push(new NativeFixup{field: 5, symbol: 1});
+    NativeLinkResult overlap = native_link_image(image, symbols, fixups);
+    assert(!overlap.ok && overlap.bytes.len() == 0);
+}
+test "native linker rejects undefined and duplicate symbols" {
+    List<int> image = new List<int>();
+    for (int i = 0; i < 8; i += 1) { image.push(0); }
+    List<NativeSymbol> symbols = new List<NativeSymbol>();
+    List<NativeFixup> fixups = new List<NativeFixup>();
+    fixups.push(new NativeFixup{field: 0, symbol: 1});
+    NativeLinkResult missing = native_link_image(image, symbols, fixups);
+    assert(!missing.ok && missing.bytes.len() == 0);
+    symbols.push(new NativeSymbol{id: 1, offset: 4});
+    symbols.push(new NativeSymbol{id: 1, offset: 5});
+    NativeLinkResult duplicate = native_link_image(image, symbols, fixups);
+    assert(!duplicate.ok && duplicate.bytes.len() == 0);
+}

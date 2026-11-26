@@ -1,3 +1,4 @@
+import CapstanVerification.F1Provenance
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
@@ -9,6 +10,8 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.Visibility
+import CapstanVerification.TransactionTypestate
 import CapstanVerification.GenerationalHandles
 import CapstanVerification.CollectorSemantics
 import CapstanVerification.ReferenceSemantics
@@ -330,3 +333,35 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.gcSweep_preserves_reachable
 #print axioms CapstanVerification.gcSweep_no_new_objects
 #print axioms CapstanVerification.handleResolve_requires_current_generation
+
+-- Transaction typestate policy model: theorem audit.
+#print axioms CapstanVerification.txOwnerIds_update_preserved
+#print axioms CapstanVerification.update_preserves_linear_context
+#print axioms CapstanVerification.advance_preserves_linear_context
+#print axioms CapstanVerification.duplicate_commit_rejected
+#print axioms CapstanVerification.abort_after_commit_decision_rejected
+#print axioms CapstanVerification.write_after_prepare_rejected
+#print axioms CapstanVerification.use_after_release_rejected
+#print axioms CapstanVerification.duplicate_owner_context_rejected
+#print axioms CapstanVerification.aliased_transaction_cannot_advance
+#print axioms CapstanVerification.unknown_transaction_cannot_advance
+#print axioms CapstanVerification.advance_preserves_owner_ids
+#print axioms CapstanVerification.canonical_commit_path
+#print axioms CapstanVerification.abort_before_commit_decision
+
+-- Module visibility policy model: theorem audit.
+#print axioms CapstanVerification.field_operation_same_policy
+#print axioms CapstanVerification.private_field_denied_cross_module
+#print axioms CapstanVerification.opaque_field_denied_cross_module
+#print axioms CapstanVerification.public_field_permitted_cross_module
+#print axioms CapstanVerification.owner_can_access_private_field
+#print axioms CapstanVerification.opaque_construction_denied_cross_module
+#print axioms CapstanVerification.opaque_construction_permitted_owner
+
+-- F1 provenance access-path algebra: abstract-model theorem audit.
+#print axioms CapstanVerification.dynamic_write_marks_constant_read
+#print axioms CapstanVerification.binding_identity_separates_locals
+#print axioms CapstanVerification.map_key_value_paths_are_disjoint
+#print axioms CapstanVerification.descendant_fact_marks_aggregate
+#print axioms CapstanVerification.provenance_marking_monotone
+#print axioms CapstanVerification.provenance_fact_budget_fails_closed

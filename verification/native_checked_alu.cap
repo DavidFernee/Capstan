@@ -1,0 +1,37 @@
+import "native_alu_encoding.cap";
+
+// Emit ADD/SUB followed immediately by JO rel32 to a caller-provided trap.
+// The trap target must be validated as a nonreturning trap by the backend.
+NativeRel32Result native_checked_alu(int op, int destination, int source, int start, int trap) {
+    List<int> bytes = new List<int>();
+    if ((op != NATIVE_ALU_ADD && op != NATIVE_ALU_SUB) ||
+        start < 0 || start > NATIVE_REL32_IMAGE_LIMIT - 9) {
+        return new NativeRel32Result{ok: false, bytes: bytes};
+    }
+    NativeRel32Result alu = native_alu64(op, destination, source);
+    if (!alu.ok) { return alu; }
+    NativeRel32Result displacement = native_rel32_encode(start + 9, trap);
+    if (!displacement.ok) { return displacement; }
+    for (int i = 0; i < 3; i += 1) { bytes.push(alu.bytes[i]); }
+    bytes.push(15); bytes.push(128);
+    for (int i = 0; i < 4; i += 1) { bytes.push(displacement.bytes[i]); }
+    return new NativeRel32Result{ok: true, bytes: bytes};
+}
+test "checked native arithmetic branches on signed overflow" {
+    NativeRel32Result add = native_checked_alu(NATIVE_ALU_ADD, 0, 1, 0, 12);
+    assert(add.ok && add.bytes.len() == 9);
+    assert(add.bytes[0] == 72 && add.bytes[1] == 1 && add.bytes[2] == 200);
+    assert(add.bytes[3] == 15 && add.bytes[4] == 128);
+    assert(add.bytes[5] == 3 && add.bytes[8] == 0);
+    NativeRel32Result sub = native_checked_alu(NATIVE_ALU_SUB, 8, 9, 20, 0);
+    assert(sub.ok && sub.bytes[1] == 41);
+    assert(sub.bytes[5] == 227 && sub.bytes[8] == 255);
+}
+test "checked native arithmetic rejects invalid inputs without partial emission" {
+    NativeRel32Result op = native_checked_alu(NATIVE_ALU_XOR, 0, 0, 0, 10);
+    NativeRel32Result reg = native_checked_alu(NATIVE_ALU_ADD, 16, 0, 0, 10);
+    NativeRel32Result far = native_checked_alu(NATIVE_ALU_ADD, 0, 0, 0, 4294967296);
+    assert(!op.ok && op.bytes.len() == 0);
+    assert(!reg.ok && reg.bytes.len() == 0);
+    assert(!far.ok && far.bytes.len() == 0);
+}

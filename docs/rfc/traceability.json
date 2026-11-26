@@ -1,0 +1,501 @@
+{
+  "schema_version": "0.1-draft",
+  "standard_revision": "0.7",
+  "baseline_tree_sha": "d5efd7a8488261914cf191c39c22ba26fa43aaa1",
+  "evidence_classification": "source-location mapping only; not test execution, implementation proof, or conformance",
+  "entries": [
+    {
+      "rfc": "RFC-0001",
+      "title": "Foundational requirements",
+      "requirement_id": "CAP-CORE-001",
+      "implementation_components": [
+        "docs/DESIGN-MAP.md"
+      ],
+      "evidence_candidates": [
+        "formal/SECURITY-OBLIGATIONS.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-693"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0002",
+      "title": "Lexical structure and grammar",
+      "requirement_id": "CAP-GRAM-001",
+      "implementation_components": [
+        "docs/SPEC.md",
+        "compiler/lexer.cap",
+        "compiler/parser.cap"
+      ],
+      "evidence_candidates": [
+        "tests/diagnostics/unterminated_string.cap"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-20"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0003",
+      "title": "Type system",
+      "requirement_id": "CAP-TYP-001",
+      "implementation_components": [
+        "docs/architecture/LANGUAGE-CORE.md",
+        "compiler/checker.cap"
+      ],
+      "evidence_candidates": [
+        "docs/assurance/C-FREE-TYPE-SAFETY.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-843"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0004",
+      "title": "Operational semantics",
+      "requirement_id": "CAP-SEM-001",
+      "implementation_components": [
+        "docs/architecture/LANGUAGE-CORE.md",
+        "docs/architecture/CCAM.md"
+      ],
+      "evidence_candidates": [
+        "verification/ccam_core.cap"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-670"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0005",
+      "title": "Memory and lifetime",
+      "requirement_id": "CAP-MEM-001",
+      "implementation_components": [
+        "docs/assurance/RUNTIME-MEMORY-MODEL.md",
+        "formal/CCAMHeap.lean"
+      ],
+      "evidence_candidates": [
+        "formal/CapstanFormal.lean"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-416"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0006",
+      "title": "Bounded external input",
+      "requirement_id": "CAP-INP-001",
+      "implementation_components": [
+        "docs/architecture/BOUNDED-INPUT-CONTRACT.md",
+        "docs/SPEC.md"
+      ],
+      "evidence_candidates": [
+        "tests/diagnostics/read_file_requires_explicit_bound.cap"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-789"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0007",
+      "title": "Injection resistance",
+      "requirement_id": "CAP-INJ-001",
+      "implementation_components": [
+        "docs/assurance/INJECTION-FREEDOM-PROOF.md",
+        "docs/assurance/OUTPUT-CONTEXT-SINKS.md"
+      ],
+      "evidence_candidates": [
+        "docs/assurance/INJECTION-CHECKER-CORRESPONDENCE.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-89",
+        "CWE-79"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0008",
+      "title": "Capabilities",
+      "requirement_id": "CAP-AUT-001",
+      "implementation_components": [
+        "docs/assurance/GRANT-SECURITY.md"
+      ],
+      "evidence_candidates": [
+        "docs/rfc/models/revocation-crash-model.py"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-863"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0009",
+      "title": "Arithmetic",
+      "requirement_id": "CAP-ARI-001",
+      "implementation_components": [
+        "docs/architecture/LANGUAGE-CORE.md",
+        "docs/architecture/CCAM.md"
+      ],
+      "evidence_candidates": [
+        "tests/accept/remainder_min_minus_one.cap"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-190"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0010",
+      "title": "Concurrency",
+      "requirement_id": "CAP-CON-001",
+      "implementation_components": [
+        "docs/architecture/CONCURRENCY-SAFETY-CORE.md"
+      ],
+      "evidence_candidates": [
+        "docs/rfc/models/revocation-crash-model.py"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-362"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0011",
+      "title": "CCAM",
+      "requirement_id": "CAP-CCAM-001",
+      "implementation_components": [
+        "docs/architecture/CCAM.md",
+        "docs/architecture/ccam-v0.1.schema.json"
+      ],
+      "evidence_candidates": [
+        "verification/ccam_core.cap"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-754"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0012",
+      "title": "Native bootstrap",
+      "requirement_id": "CAP-BST-001",
+      "implementation_components": [
+        "docs/C-FREE-BOOTSTRAP.md",
+        "docs/architecture/C-FREE-EXECUTION.md"
+      ],
+      "evidence_candidates": [
+        "docs/architecture/C-FREE-BASELINE-INVENTORY.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-494"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0013",
+      "title": "Compiler correctness",
+      "requirement_id": "CAP-COR-001",
+      "implementation_components": [
+        "docs/assurance/CCAM-CONCRETE-REFINEMENT-CONTRACT.md"
+      ],
+      "evidence_candidates": [
+        "docs/architecture/COMPILER-ASSURANCE-TEST-PLAN.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-682"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0014",
+      "title": "Crypto and secrets",
+      "requirement_id": "CAP-CRY-001",
+      "implementation_components": [
+        "docs/CRYPTOGRAPHIC-POLICY.md",
+        "docs/assurance/SHA256-SCALAR-WIPE-BOUNDARY.md"
+      ],
+      "evidence_candidates": [
+        "tests/crypto/check.py"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-327"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0015",
+      "title": "Resource accounting",
+      "requirement_id": "CAP-RES-001",
+      "implementation_components": [
+        "docs/research/COMPOSITIONAL-RESOURCE-ANALYSIS-SURVEY.md"
+      ],
+      "evidence_candidates": [
+        "docs/rfc/models/revocation-crash-model.py"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-400"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0016",
+      "title": "Platform interfaces",
+      "requirement_id": "CAP-PLT-001",
+      "implementation_components": [
+        "docs/proposals/CAPABILITY-IO-HOST-API-V0.1.md"
+      ],
+      "evidence_candidates": [
+        "docs/architecture/PLATFORM-PROGRAMME.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-269"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0017",
+      "title": "CWE exclusion",
+      "requirement_id": "CAP-CWE-001",
+      "implementation_components": [
+        "docs/assurance/CWE-PREVENTION-SPEC.md"
+      ],
+      "evidence_candidates": [
+        "docs/assurance/claims.json"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-693"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0018",
+      "title": "Conformance",
+      "requirement_id": "CAP-CNF-001",
+      "implementation_components": [
+        "docs/CONFORMANCE.md",
+        "docs/assurance/assurance.schema.json"
+      ],
+      "evidence_candidates": [
+        "docs/assurance/FORMAL-VERIFICATION-MATRIX.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-754"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0019",
+      "title": "Supply chain",
+      "requirement_id": "CAP-SUP-001",
+      "implementation_components": [
+        "docs/assurance/EVIDENCE-FRESHNESS.md"
+      ],
+      "evidence_candidates": [
+        "formal/PROOF-RUNS.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-494"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    },
+    {
+      "rfc": "RFC-0020",
+      "title": "Governance",
+      "requirement_id": "CAP-GOV-001",
+      "implementation_components": [
+        "docs/DESIGN-MAP.md"
+      ],
+      "evidence_candidates": [
+        "docs/programme/STAGE-GATES.md"
+      ],
+      "formal_theorems": [],
+      "proof_status": "not_established_for_full_requirement",
+      "conformance_status": "unassessed",
+      "cwe_candidates": [
+        "CWE-693"
+      ],
+      "blocking_obligations": [
+        "pin exact implementation revision",
+        "define formal scope and theorem-to-implementation correspondence",
+        "run relevant negative and positive conformance cases",
+        "independent review"
+      ],
+      "candidate_only": true
+    }
+  ]
+}
