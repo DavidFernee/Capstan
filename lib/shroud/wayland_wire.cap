@@ -166,8 +166,8 @@ WaylandPayloadSpan wayland_payload_string(Tainted bytes, int offset, int end) {
     return wayland_payload_span(bytes, offset, end, true);
 }
 
- // Bind payload parsing to a previously validated frame boundary. This prevents
- // a length field in one frame from consuming bytes belonging to the next frame.
+// Bind payload parsing to a previously validated frame boundary. This prevents
+// a length field in one frame from consuming bytes belonging to the next frame.
 WaylandPayloadSpan wayland_frame_payload_span(Tainted bytes, WaylandFrameHeader frame, int offset, bool nul_terminated) {
     if (frame.status != 1 || !wayland_frame_size_valid(frame.size)) { return wayland_bad_payload_span(); }
     if (frame.end_offset < frame.size || frame.end_offset > bytes.len()) { return wayland_bad_payload_span(); }
@@ -191,7 +191,7 @@ WaylandPayloadSpan wayland_frame_string(Tainted bytes, WaylandFrameHeader frame,
     return wayland_frame_payload_span(bytes, frame, offset, true);
 }
 
- // Decode a Wayland signed int32 without relying on the host's integer width.
+// Decode a Wayland signed int32 without relying on the host's integer width.
 WaylandPayloadWord wayland_payload_i32(Tainted bytes, int offset, int end) {
     WaylandPayloadWord word = wayland_payload_word(bytes, offset, end);
     if (word.status != 1) { return word; }
@@ -200,7 +200,7 @@ WaylandPayloadWord wayland_payload_i32(Tainted bytes, int offset, int end) {
     return wayland_complete_payload_word(value, word.end_offset);
 }
 
- // Wayland boolean is a uint32 with only 0 and 1 defined.
+// Wayland boolean is a uint32 with only 0 and 1 defined.
 WaylandPayloadWord wayland_payload_bool(Tainted bytes, int offset, int end) {
     WaylandPayloadWord word = wayland_payload_word(bytes, offset, end);
     if (word.status != 1) { return word; }
