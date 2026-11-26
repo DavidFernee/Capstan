@@ -281,6 +281,7 @@ const int BL_STORAGE_APPEND_COMMIT = 2;
 const int BL_STORAGE_FLUSH_LOG = 3;
 const int BL_STORAGE_FLUSH_PAGE = 4;
 const int BL_STORAGE_ACK_COMMIT = 5;
+const int BL_MAX_LSN = 9223372036854775807;
 
 struct BLStorageState {
     int next_lsn;
@@ -309,10 +310,14 @@ BLStorageState bl_storage_initial() {
 }
 
 bool bl_storage_invariant(BLStorageState state) {
-    if (state.next_lsn < 0 || state.durable_lsn < 0 ||
-        state.durable_lsn > state.next_lsn ||
+    if (state.next_lsn < 0 || state.next_lsn > BL_MAX_LSN ||
+        state.durable_lsn < 0 || state.durable_lsn > state.next_lsn ||
         state.page_lsn < 0 || state.page_lsn > state.next_lsn ||
         state.commit_lsn < 0 || state.commit_lsn > state.next_lsn) {
+        return false;
+    }
+    if (!state.page_persisted && state.page_lsn != 0) { return false; }
+    if (state.commit_lsn > 0 && state.next_lsn != state.commit_lsn) {
         return false;
     }
     if (state.page_persisted && state.page_lsn > state.durable_lsn) {
@@ -362,6 +367,9 @@ BLStorageTransition bl_storage_step(BLStorageState state, int action, int argume
         if (argument != 0 || next.acknowledged || next.commit_lsn != 0) {
             return bl_storage_reject(state, "invalid_update_append");
         }
+        if (next.next_lsn == BL_MAX_LSN) {
+            return bl_storage_reject(state, "lsn_exhausted");
+        }
         next.next_lsn += 1;
         return bl_storage_accept(next);
     }
@@ -369,6 +377,9 @@ BLStorageTransition bl_storage_step(BLStorageState state, int action, int argume
     if (action == BL_STORAGE_APPEND_COMMIT) {
         if (argument != 0 || next.commit_lsn != 0 || next.acknowledged) {
             return bl_storage_reject(state, "invalid_commit_append");
+        }
+        if (next.next_lsn == BL_MAX_LSN) {
+            return bl_storage_reject(state, "lsn_exhausted");
         }
         next.next_lsn += 1;
         next.commit_lsn = next.next_lsn;
@@ -534,6 +545,27 @@ test "Bosun transaction state invariant rejects forged durability flags" {
     assert(rejected.error == "invalid_prior_transaction_state");
 }
 
+
+
+test "Bosun WAL LSN exhaustion and impossible post-commit states fail closed" {
+    BLStorageState near_limit = bl_storage_initial();
+    near_limit.next_lsn = BL_MAX_LSN;
+    BLStorageTransition update_overflow = bl_storage_step(
+        near_limit, BL_STORAGE_APPEND_UPDATE, 0);
+    BLStorageTransition commit_overflow = bl_storage_step(
+        near_limit, BL_STORAGE_APPEND_COMMIT, 0);
+    assert(!update_overflow.accepted && update_overflow.error == "lsn_exhausted");
+    assert(!commit_overflow.accepted && commit_overflow.error == "lsn_exhausted");
+    assert(update_overflow.state.next_lsn == BL_MAX_LSN);
+    assert(commit_overflow.state.next_lsn == BL_MAX_LSN);
+
+    BLStorageState forged = bl_storage_initial();
+    forged.next_lsn = 3;
+    forged.commit_lsn = 2;
+    assert(!bl_storage_invariant(forged));
+    BLStorageTransition rejected = bl_storage_step(forged, BL_STORAGE_FLUSH_LOG, 3);
+    assert(!rejected.accepted && rejected.error == "invalid_prior_storage_state");
+}
 
 test "Bosun WAL model rejects page-LSN regression and post-commit updates" {
     BLStorageState initial = bl_storage_initial();
