@@ -95,8 +95,8 @@ with tempfile.TemporaryDirectory(prefix="capstan-native-import-budget-") as td:
 
     graph = base / "ast-over"
     graph.mkdir()
-    declarations = "".join(f"const int value{i} = 0;\n" for i in range(50_001))
-    (graph / "main.cap").write_text(declarations + ";")
+    declarations = "".join(f"const int value{i} = 0;\n" for i in range(100_001))
+    (graph / "main.cap").write_text(declarations)
     expect_failure(graph / "main.cap", "AST-node limit", "native-AST-budget-over")
 
 print("native compiler import graph: exact and over-limit file and source-byte budgets; token and AST ceilings")
