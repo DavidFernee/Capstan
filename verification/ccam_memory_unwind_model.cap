@@ -1,0 +1,156 @@
+// CCAM v0.2 frame-unwind cleanup model.
+// Every frame exit (normal return, trap, cancellation or limit termination)
+// invokes this operation before the frame is discarded. The operation is
+// failure-atomic with respect to accounting preflight and wipes full capacities.
+// This is a Capstan-native reference model, not yet wired into ccam_calls.cap.
+
+import "ccam_memory_store_model.cap";
+
+struct CCAMMemUnwindResult {
+    bool ok;
+    CCAMMemManager manager;
+    int closed_regions;
+    string error;
+}
+
+CCAMMemUnwindResult ccam_mem_unwind_frame(
+    CCAMMemManager manager,
+    int owner_frame
+) {
+    if (owner_frame <= 0) {
+        return new CCAMMemUnwindResult{
+            ok: false, manager: manager, closed_regions: 0,
+            error: "invalid_frame_owner"
+        };
+    }
+
+    // Preflight all affected regions and accounting before mutating anything.
+    int release_capacity = 0;
+    int close_count = 0;
+    for (int i = 0; i < manager.regions.len(); i += 1) {
+        CCAMMemRegion region = manager.regions[i];
+        if (region.open && region.owner_frame == owner_frame) {
+            if (region.capacity < 0 || region.bytes.len() != region.capacity) {
+                return new CCAMMemUnwindResult{
+                    ok: false, manager: manager, closed_regions: 0,
+                    error: "region_metadata_corrupt"
+                };
+            }
+            CCAMIntResult sum = ccam_add(release_capacity, region.capacity);
+            if (!sum.ok) {
+                return new CCAMMemUnwindResult{
+                    ok: false, manager: manager, closed_regions: 0,
+                    error: "scratch_arithmetic_overflow"
+                };
+            }
+            release_capacity = sum.value;
+            close_count += 1;
+        }
+    }
+    if (close_count > manager.live_regions ||
+        release_capacity > manager.live_capacity) {
+        return new CCAMMemUnwindResult{
+            ok: false, manager: manager, closed_regions: 0,
+            error: "region_accounting_corrupt"
+        };
+    }
+
+    // Commit: wipe every byte, including unused tail and alignment padding,
+    // invalidate each region, then release aggregate accounting.
+    for (int i = 0; i < manager.regions.len(); i += 1) {
+        CCAMMemRegion region = manager.regions[i];
+        if (region.open && region.owner_frame == owner_frame) {
+            for (int byte_index = 0; byte_index < region.bytes.len(); byte_index += 1) {
+                region.bytes[byte_index] = 0;
+            }
+            region.open = false;
+            region.used = 0;
+            region.generation = 0;
+            region.capacity = 0;
+            manager.regions[i] = region;
+        }
+    }
+    manager.live_regions -= close_count;
+    manager.live_capacity -= release_capacity;
+    return new CCAMMemUnwindResult{
+        ok: true, manager: manager, closed_regions: close_count, error: ""
+    };
+}
+
+test "frame unwind closes and wipes every owned region but preserves other frames" {
+    CCAMMemManager manager = ccam_mem_manager(4, 64);
+    CCAMMemCreateResult a = ccam_mem_create(manager, 11, 12, -1);
+    CCAMMemCreateResult b = ccam_mem_create(a.manager, 11, 20, -1);
+    CCAMMemCreateResult other = ccam_mem_create(b.manager, 12, 8, -1);
+    CCAMMemResult view = ccam_mem_reserve(
+        other.manager, a.identity, 11, 1, 8, 8
+    );
+    CCAMMemResult stored = ccam_mem_store_i64(
+        view.manager, view.view, 11, 0, 123456789
+    );
+    CCAMMemUnwindResult unwind = ccam_mem_unwind_frame(stored.manager, 11);
+    assert(a.ok && b.ok && other.ok && view.ok && stored.ok);
+    assert(unwind.ok && unwind.closed_regions == 2);
+    assert(unwind.manager.live_regions == 1);
+    assert(unwind.manager.live_capacity == 8);
+    assert(!unwind.manager.regions[0].open);
+    assert(!unwind.manager.regions[1].open);
+    for (int i = 0; i < unwind.manager.regions[0].bytes.len(); i += 1) {
+        assert(unwind.manager.regions[0].bytes[i] == 0);
+    }
+    for (int i = 0; i < unwind.manager.regions[1].bytes.len(); i += 1) {
+        assert(unwind.manager.regions[1].bytes[i] == 0);
+    }
+    assert(unwind.manager.regions[2].open);
+    assert(unwind.manager.regions[2].owner_frame == 12);
+}
+
+test "frame unwind is idempotent and does not release another frame capacity" {
+    CCAMMemManager manager = ccam_mem_manager(2, 32);
+    CCAMMemCreateResult a = ccam_mem_create(manager, 7, 16, -1);
+    CCAMMemCreateResult b = ccam_mem_create(a.manager, 8, 8, -1);
+    CCAMMemUnwindResult first = ccam_mem_unwind_frame(b.manager, 7);
+    CCAMMemUnwindResult second = ccam_mem_unwind_frame(first.manager, 7);
+    assert(first.ok && first.closed_regions == 1);
+    assert(second.ok && second.closed_regions == 0);
+    assert(second.manager.live_regions == 1);
+    assert(second.manager.live_capacity == 8);
+}
+
+test "frame unwind rejects corrupt metadata without partial cleanup" {
+    CCAMMemManager manager = ccam_mem_manager(2, 32);
+    CCAMMemCreateResult a = ccam_mem_create(manager, 7, 16, -1);
+    CCAMMemRegion corrupt = a.manager.regions[0];
+    corrupt.capacity = 15;
+    a.manager.regions[0] = corrupt;
+    CCAMMemUnwindResult result = ccam_mem_unwind_frame(a.manager, 7);
+    assert(!result.ok && result.error == "region_metadata_corrupt");
+    assert(result.closed_regions == 0);
+    assert(result.manager.regions[0].open);
+    assert(result.manager.live_regions == 1);
+    assert(result.manager.live_capacity == 16);
+}
+
+test "frame unwind rejects accounting underflow before wiping" {
+    CCAMMemManager manager = ccam_mem_manager(1, 16);
+    CCAMMemCreateResult a = ccam_mem_create(manager, 7, 16, -1);
+    a.manager.live_capacity = 0;
+    CCAMMemUnwindResult result = ccam_mem_unwind_frame(a.manager, 7);
+    assert(!result.ok && result.error == "region_accounting_corrupt");
+    assert(result.manager.regions[0].open);
+    assert(result.manager.regions[0].bytes.len() == 16);
+}
+
+test "normal return and trap termination use identical frame cleanup" {
+    CCAMMemManager manager = ccam_mem_manager(2, 32);
+    CCAMMemCreateResult a = ccam_mem_create(manager, 7, 16, -1);
+    CCAMMemCreateResult b = ccam_mem_create(a.manager, 8, 8, -1);
+    // The unwind primitive is intentionally outcome-agnostic: the evaluator
+    // must invoke it for every terminal frame outcome.
+    CCAMMemUnwindResult normal_exit = ccam_mem_unwind_frame(b.manager, 7);
+    CCAMMemUnwindResult trap_exit = ccam_mem_unwind_frame(b.manager, 8);
+    assert(normal_exit.ok && trap_exit.ok);
+    assert(normal_exit.manager.live_regions == 1);
+    assert(trap_exit.manager.live_regions == 0);
+    assert(trap_exit.manager.live_capacity == 0);
+}

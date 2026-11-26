@@ -54,14 +54,27 @@
 >    compiler correctness or freedom from a trusting-trust attack.
 > 7. **Shroud** — an independently reusable, cross-platform GUI toolkit implemented in
 >    Capstan, with platform hosts kept narrow and auditable.
-> 8. **Anchor** — the Capstan IDE built in Capstan on Shroud. It consumes compiler and
+> 8. **Keel** — the proposed Capstan-native 3D rendering, simulation and interactive-world
+>    engine. It owns spatial, scene, geometry, asset, rendering and simulation semantics;
+>    its K0 architecture is specified in `docs/KEEL.md`. Keel may consume Shroud's stable
+>    public host/presentation interfaces, but must remain usable headlessly.
+> 9. **Keel Science** — a proposed downstream scientific-computing library for quantities,
+>    units, coordinate frames, uncertainty, provenance, digital twins and biomedical/
+>    imaging research. It consumes Keel and Capstan contracts; it is not part of the engine
+>    core and must not become a dependency of Keel. Its K0 proposal is `docs/KEEL-SCIENCE.md`.
+>10. **Anchor** — the Capstan IDE built in Capstan on Shroud. It consumes compiler and
 >    language-server services; it is not a second compiler or security-policy engine.
-> 9. **Assurance and supply chain** — tests, fuzzing, sanitizers, proofs, SBOMs, provenance,
+>    Keel Studio may later be a separate Shroud-based application, not an Anchor dependency.
+>11. **Assurance and supply chain** — tests, fuzzing, sanitizers, proofs, SBOMs, provenance,
 >    signatures, vulnerability response and the explicit trusted-computing-base inventory.
 >
 > The dependency direction is intentional: compiler semantics and CCAM contracts are
-> below execution and tooling; Shroud is below Anchor; Anchor consumes compiler services.
-> No cycle is permitted (in particular, the compiler must not depend on Anchor or Shroud).
+> below execution and tooling; Shroud is below Anchor and may provide Keel host/presentation
+> adapters; Keel Science is above Keel and consumes its public spatial/scene contracts;
+> Keel does not depend on Keel Science, and neither engine nor science library makes Shroud
+> depend on 3D semantics. Anchor consumes compiler services and may host later Keel tooling
+> as an application. No cycle is permitted (in particular, the compiler must not depend on
+> Anchor, Shroud, Keel or Keel Science).
 >
 > ### Present execution path versus target
 >
@@ -1128,6 +1141,32 @@ never shell interpolation. Project hooks and in-process plugins are out of scope
 a separately reviewed capability and isolation design exists.
 
 
+## Keel architecture addendum (2026-11-25)
+
+Keel is the proposed 3D rendering, simulation and interactive-world engine for scene
+representation, geometry, visibility, materials, rendering, simulation, physics,
+animation, world streaming and asset ingestion. Its main proposal is
+[KEEL.md](KEEL.md); detailed resource, numeric, scene and backend contracts are in
+[KEEL-ARCHITECTURE.md](KEEL-ARCHITECTURE.md).
+
+Dependency rules:
+
+- Keel may consume Shroud's stable public host, lifecycle, input and presentation
+  interfaces; it must remain usable headlessly.
+- Shroud must not depend on Keel or import scene, mesh, simulation or renderer semantics.
+- Capstan remains the authority for language semantics, compiler acceptance, runtime and
+  capability security.
+- Anchor may host Keel Studio tooling as an application, but is not a dependency of either
+  library.
+- Shared abstractions are extracted only after stable contracts and concrete consumers
+  justify them.
+
+K0 remains specification and research preparation. The scene graph, spatial core, CPU
+reference renderer and asset pipeline are future phase deliverables, not integrated
+capabilities. GPU drivers, OS graphics services and hardware remain explicit external
+trust boundaries.
+
+
 ### Halyard: Capstan's media architecture
 
 10. **Halyard** — Capstan's media architecture, comprising Capstan Media Core, Shanty and Deadeye. **Capstan Media Core** supplies shared, versioned media primitives: bounded byte streams and sinks, explicit ownership, checked size arithmetic, aggregate resource reservations, rational clocks/timebases, timestamps, format registry, structured errors, cancellation and codec-worker contracts.
@@ -1157,11 +1196,6 @@ The ambition is broad practical historical and modern format compatibility, not 
 
 
 Media security assurance is mandatory for Shanty, Deadeye and Media Core. The vulnerability accounting, root-cause taxonomy, safe reproducer protocol, SBOM/advisory reconciliation and release-blocking gates are specified in [media/SECURITY-ASSURANCE.md](media/SECURITY-ASSURANCE.md) and tracked in [#292](https://github.com/DavidFernee/Capstan/issues/292). No media release may treat a clean scanner or absence of assigned CVEs as evidence that the attack surface is safe.
-
-
-## Capstan-only language and library foundation
-
-The governing programme is specified in [CAPSTAN-ONLY-FOUNDATION.md](CAPSTAN-ONLY-FOUNDATION.md). The F1 language contract is [F1-LANGUAGE-CONTRACT.md](F1-LANGUAGE-CONTRACT.md), and its prior-art synthesis is [F1-RELATED-WORK.md](F1-RELATED-WORK.md). These are research drafts, not claims that the target guarantees are implemented. F1 proposes a factored-but-mutually-checked guarantee calculus as an experiment, not a settled language design.
 
 ## Bosun's Locker database programme
 
