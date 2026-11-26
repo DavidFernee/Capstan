@@ -434,7 +434,16 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1 &&
       grep -Fq '"SUMMARY"' "$inventory_report"; then
     ok "inventory purpose/language classification, binary detection, physical-line counting, summary and typed CSV output"
   else
-    bad "Capstan-native repository inventory" "program ran but typed CSV report was absent or malformed"
+    diagnostic="program ran but typed CSV report was absent or malformed"
+    if [[ ! -e "$inventory_report" ]]; then
+      diagnostic="$diagnostic: output file missing"
+    elif [[ ! -s "$inventory_report" ]]; then
+      diagnostic="$diagnostic: output file empty"
+    else
+      diagnostic="$diagnostic: first three lines and byte count:"
+      diagnostic="$diagnostic $(wc -c < "$inventory_report") $(head -n 3 "$inventory_report")"
+    fi
+    bad "Capstan-native repository inventory" "$diagnostic; program output: $out"
   fi
 else
   bad "Capstan-native repository inventory" "$out"
