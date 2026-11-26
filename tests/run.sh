@@ -332,6 +332,15 @@ else
   bad "private field encapsulation" "$(tail -8 "$tmp/log"; tail -8 "$tmp/private_fields.out" 2>/dev/null)"
 fi
 
+section "experimental region heap: opaque state boundary"
+if out="$("$C" build -o "$tmp/ccam_heap_opaque_probe.c" "$ROOT/verification/ccam_heap_opaque_probe.cap" 2>&1)"; then
+  bad "region heap opacity" "external module read a private heap field"
+elif grep -qF "private field 'heap_token' of CCAMHeap" <<<"$out"; then
+  ok "region heap state is inaccessible to importing modules"
+else
+  bad "region heap opacity" "$out"
+fi
+
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do
     local n="$1/$(basename "$f")" want flags out code
