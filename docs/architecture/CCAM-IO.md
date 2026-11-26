@@ -122,3 +122,13 @@ No claim of Unicode text semantics, general string support, dynamic IO, portable
 ## 9. Acceptance gate
 
 Do not mark the v0.2 byte-output extension integrated until the schema, Capstan evaluator, validator, source lowerer, Linux native adapter, exact-byte tests, formal model and assurance matrix agree. The existing v0.1 contract remains unchanged until a reviewed version transition is accepted.
+
+## Byte-output implementation boundary
+
+The current Capstan-native representation stores the payload as `List<int>`, with each element validated to be in the inclusive range 0..255. Its byte length is `byte_data.len()`; no Unicode interpretation is performed. A serialized CCAM wire format and decoder are not yet implemented by this increment.
+
+The typed in-memory validator MUST admit `CCAM_OP_EMIT_BYTES` only with a byte payload whose elements are all in 0..255. The current implementation validates the `List<int>` representation; a closed serialized schema, duplicate-field rejection and raw decoder remain unimplemented and MUST NOT be claimed.
+
+The initial implementation uses a shared, bounded decoder for the canonical `escape_c()` representation and produces a `List<int>` of exact source bytes. The lowerer MUST NOT treat the escaped AST field as raw bytes, UTF-8 encode it again, or use an unbounded ad-hoc escape parser. Tests cover quotes, backslashes, octal bytes, NUL, empty strings and multibyte source bytes; broader lexer escape round-trip coverage remains part of conformance work.
+
+**Status:** CCAM byte-output implementation is developed in #256 and #266, with the abstract output-transition model in #258. The native adapter remains experimental until its exact-head checks pass and its refinement obligations are discharged. This extension does not amend normative CCAM v0.1.
