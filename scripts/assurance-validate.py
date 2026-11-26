@@ -80,6 +80,12 @@ def main():
         print("  schema: %s: %s" % (where, e.message))
         failed = True
 
+    # Never inspect nested manifest fields after schema failure. Malformed
+    # structures must fail closed with diagnostics, not raise AttributeError
+    # while freshness checks assume the schema's object/list shapes.
+    if errors:
+        return 1
+
     head = git("rev-parse", "HEAD")
     if head.returncode != 0:
         sys.exit("assurance-validate: must run inside a Git checkout")
