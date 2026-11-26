@@ -61,6 +61,11 @@ The following names define semantic types, not current Capstan declarations.
 | Deadline | Absolute monotonic instant plus clock-domain identity | Immutable value; never accepted from untrusted event payload as an authorization clock |
 | DirectoryRoot | Separate authority for relative font/configuration reads beneath one opened root | Not implied by DisplayEndpoint or DisplayConnection |
 | HostError | Closed stable error taxonomy | Native error numbers are optional diagnostic metadata only |
+| Outcome<T,E> | Semantic success/error sum: Ok(T) or Err(E) | Carries exactly one terminal result; partial-progress operations use their own result variants |
+| OwnedHandle | Closed union of runtime-private owned resource handles | Cannot be cloned or converted to a descriptor integer |
+| ResourceId | Opaque diagnostic identity for a resource whose release outcome is ambiguous | Not authority; cannot be used to reopen or operate on the resource |
+| MonotonicInstant | Nonnegative monotonic value plus clock-domain identity | Immutable; comparable only within the same clock domain |
+| RelativePath / FileRights / FileHandle | Root-relative filesystem name, requested rights and one opened file | Exists only under a separately issued DirectoryRoot |
 
 ### 3.1 Capability/effect separation
 
@@ -122,6 +127,8 @@ Conceptual records:
 - IoProgress { bytes: Nat }
 - SendReceipt { bytes_committed: Nat, descriptors_committed: Bool }
 - ReceiveBatch { bytes: ByteString, handles: List<ReceivedHandle>, handles_offset: Nat }
+- ReadResult ::= Data(ByteString) | EndOfStream
+- ReceiveResult ::= Batch(ReceiveBatch) | EndOfStream | Pending
 
 The handles_offset in ReceiveBatch is a zero-based offset within the returned bytes slice at which the ancillary descriptor set is associated. It is not an OS descriptor or pointer.
 
@@ -187,7 +194,7 @@ This stateful contract avoids duplicate descriptor transfer after a short send o
 
 ### 6.3 Receiving bytes and descriptors
 
-receive_batch(connection: DisplayConnection, max_bytes: Nat, max_handles: Nat, deadline: Deadline) -> Outcome<ReceiveBatch, HostError>
+receive_batch(connection: DisplayConnection, max_bytes: Nat, max_handles: Nat, deadline: Deadline) -> ReceiveResult or HostError
 
 Rules:
 - The operation uses close-on-exec semantics for every received descriptor.
@@ -196,7 +203,7 @@ Rules:
 - Every excess, malformed, unexpected or unclaimed descriptor is closed on all error paths.
 - A descriptor batch is associated with the exact stream offset returned in ReceiveBatch.
 - A protocol parser must not attach descriptors to a different frame because of buffering or partial reads.
-- A peer close with no bytes is returned as end_of_stream/peer_closed, not as an empty successful message.
+- An orderly peer shutdown with no bytes is returned as EndOfStream, not as an empty successful message. A reset/error is HostError.peer_closed.
 
 ### 6.4 Readiness wait
 
@@ -221,7 +228,7 @@ create_shared_memory(authority: SharedMemoryAuthority, byte_length: Nat) -> Outc
 
 write_at(object: SharedMemoryObject, offset: Nat, bytes: ByteString, deadline: Deadline) -> Outcome<IoProgress, HostError>
 
-read_at(object: SharedMemoryObject, offset: Nat, max_bytes: Nat, deadline: Deadline) -> Outcome<ByteString, HostError>
+read_at(object: SharedMemoryObject, offset: Nat, max_bytes: Nat, deadline: Deadline) -> ReadResult or HostError
 
 - offset + length is checked before kernel entry.
 - Access outside the exact declared object size is rejected.
@@ -259,6 +266,8 @@ monotonic_now(clock: MonotonicClock) -> Outcome<MonotonicInstant, HostError>
 ### 6.8 Close and ownership
 
 close_handle(handle: OwnedHandle) -> CloseOutcome
+
+CloseOutcome ::= Closed | CloseFailed(HostError, ResourceId)
 
 CloseOutcome distinguishes successfully closed from close failure/terminal ambiguity. The public handle is invalidated exactly once regardless of whether the platform reports an error after the underlying resource may have been released. A closed handle can never be reused by stale identity or descriptor-number reuse.
 
