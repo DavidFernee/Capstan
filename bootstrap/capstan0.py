@@ -556,7 +556,7 @@ class Parser:
 
 
 BUILTINS = {
-    "print", "println", "int_to_str", "char_str", "read_file", "read_line", "write_file",
+    "print", "println", "int_to_str", "char_str", "read_file", "read_line", "write_file", "write_html_file", "write_log_file", "write_csv_file",
     "args", "exit", "join", "assert", "validate_ident", "validate_int", "escape_c",
     "escape_html", "escape_log", "trust", "taint", "sql_query", "run", "secret_env",
     "secret_eq", "hash", "hash_verify", "hash_password", "verify_password", "needs_rehash",
