@@ -81,7 +81,7 @@ else
 fi
 
 section "Capstan-native verification: candidate aggregate execution and validation"
-for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke; do
+for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source; do
   if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_${module}.cap" 2>&1)"; then
     ok "aggregate candidate $module"
   else
