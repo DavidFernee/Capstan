@@ -966,6 +966,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
     qcol.push(0);
     int qi = 0;
     while (qi < queue.len()) {
+        if (budget.exhausted) { break; }
         Tainted uri = queue[qi];
         string name = qname[qi];
         int ofile = qfile[qi];
@@ -978,6 +979,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
         }
         if (seen) { continue; }
         if (loaded.len() >= MAX_IMPORT_FILES) {
+            budget.exhausted = true;
             report(ctx, ofile, oline, true, "CWE-400", "import graph exceeds file-count limit (" + int_to_str(MAX_IMPORT_FILES) + ")");
             break;
         }
