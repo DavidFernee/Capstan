@@ -209,7 +209,11 @@ def main():
         failed = True
     else:
         try:
-            changed_paths(baseline, [])
+            changed = changed_paths(baseline, sorted(boundary_paths))
+            if changed:
+                print("  boundary: architecture evidence is stale since %s: %s" %
+                      (baseline, ", ".join(changed)))
+                failed = True
         except ValueError as e:
             print("  boundary: baseline is not in current history: %s" % e)
             failed = True
