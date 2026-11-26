@@ -994,12 +994,12 @@ Type check_call(Checker c, Node e) {
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "workspace_open") {
-        want_args(c, e, 1, 1, f);
+        want_args(c, e, 0, 1, f);
         if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "workspace_open() root"); }
         return mk_type(TY_INT);
     }
     if (f == "workspace_read_file") {
-        want_args(c, e, 3, 3, f);
+        want_args(c, e, 0, 3, f);
         if (n == 3) {
             expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "workspace_read_file() root");
             expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_STR), "workspace_read_file() relative path");
@@ -1008,7 +1008,7 @@ Type check_call(Checker c, Node e) {
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "workspace_close") {
-        want_args(c, e, 1, 1, f);
+        want_args(c, e, 0, 1, f);
         if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "workspace_close() root"); }
         return mk_type(TY_VOID);
     }
