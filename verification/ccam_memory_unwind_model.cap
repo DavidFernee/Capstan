@@ -148,9 +148,13 @@ test "normal return and trap termination use identical frame cleanup" {
     // The unwind primitive is intentionally outcome-agnostic: the evaluator
     // must invoke it for every terminal frame outcome.
     CCAMMemUnwindResult normal_exit = ccam_mem_unwind_frame(b.manager, 7);
+    int normal_closed = normal_exit.closed_regions;
+    int normal_live_regions = normal_exit.manager.live_regions;
+    int normal_live_capacity = normal_exit.manager.live_capacity;
     CCAMMemUnwindResult trap_exit = ccam_mem_unwind_frame(b.manager, 8);
-    assert(normal_exit.ok && trap_exit.ok);
-    assert(normal_exit.manager.live_regions == 1);
+    assert(normal_exit.ok && normal_closed == 1);
+    assert(normal_live_regions == 1 && normal_live_capacity == 8);
+    assert(trap_exit.ok && trap_exit.closed_regions == 1);
     assert(trap_exit.manager.live_regions == 0);
     assert(trap_exit.manager.live_capacity == 0);
 }
