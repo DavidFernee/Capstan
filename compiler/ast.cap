@@ -81,10 +81,10 @@ const int N_BNOT = 53;     // ~x
 
 struct Node {
     int k;
-    string s;           // name, operator, or escaped string literal
-    string s2;          // if-let variable; protected policy name; field visibility
-    string s3;          // additional declaration marker (e.g. opaque struct)
-    int n;              // integer value, byte length of a string literal, flags
+    string s;            // name, operator, or escaped string literal
+    string s2;           // if-let variable; protected policy name; field visibility
+    string s3;           // additional declaration marker (e.g. opaque struct)
+    int n;               // integer value, byte length of a string literal, flags
     int binding_id;     // checker-assigned lexical identity; 0 means not a local binding
     int line;
     int col;
