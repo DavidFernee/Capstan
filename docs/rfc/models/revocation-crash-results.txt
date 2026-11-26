@@ -1,0 +1,6 @@
+commit revalidation=False: 60 states, 128 edges, 27 violating edges
+shortest witness: ['enqueue', 'revoke', 'commit']
+commit revalidation=True: 60 states, 101 edges, 0 violating edges
+shortest witness: none
+atomic durable dedup=False: 5 states, 11 edges, 5 violating edges
+atomic durable dedup=True: 3 states, 7 edges, 0 violating edges

@@ -176,31 +176,39 @@ def encode_frame(message):
 
 
 class RequestTracker:
-    """Correlation and cancellation rules, independent of process transport."""
+    """Bounded outgoing request correlation for one process generation."""
+
+    MAX_ID = 2147483647
 
     def __init__(self, max_pending=MAX_PENDING_REQUESTS):
-        if max_pending < 1:
+        if type(max_pending) is not int or not 1 <= max_pending <= MAX_PENDING_REQUESTS:
             raise ValueError("invalid pending request limit")
         self.max_pending = max_pending
         self.pending = set()
+        self.last_id = -1
+
+    @staticmethod
+    def _valid_id(request_id):
+        return type(request_id) is int and 0 <= request_id <= RequestTracker.MAX_ID
 
     def begin(self, request_id):
-        if isinstance(request_id, bool) or not isinstance(request_id, (int, str)):
-            raise ContractError("invalid request id")
-        if request_id in self.pending:
-            raise ContractError("duplicate in-flight request id")
+        if not self._valid_id(request_id):
+            raise ContractError("invalid outgoing request id")
+        if request_id <= self.last_id:
+            raise ContractError("outgoing request id must increase within a generation")
         if len(self.pending) >= self.max_pending:
             raise ContractError("pending request queue is full")
         self.pending.add(request_id)
+        self.last_id = request_id
 
     def cancel(self, request_id):
-        if request_id not in self.pending:
+        if not self._valid_id(request_id) or request_id not in self.pending:
             return False
         self.pending.remove(request_id)
         return True
 
     def resolve(self, request_id):
-        if request_id not in self.pending:
+        if not self._valid_id(request_id) or request_id not in self.pending:
             return False
         self.pending.remove(request_id)
         return True
@@ -731,15 +739,54 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             tracker.begin(41)
         self.assertTrue(tracker.cancel(41))
+        with self.assertRaises(ContractError):
+            tracker.begin(41)
+        tracker.begin(42)
         self.assertFalse(tracker.resolve(41))
-        tracker.begin(41)
-        self.assertTrue(tracker.resolve(41))
-        self.assertFalse(tracker.resolve(41))
+        self.assertTrue(tracker.resolve(42))
+        self.assertFalse(tracker.resolve(42))
         self.assertFalse(hasattr(tracker, "cancelled"))
-        for request_id in range(1000):
+        for request_id in range(43, 1043):
             tracker.begin(request_id)
             tracker.cancel(request_id)
         self.assertEqual(len(tracker.pending), 0)
+
+    def test_request_id_aliases_do_not_remove_pending_requests(self):
+        tracker = RequestTracker()
+        tracker.begin(1)
+        for invalid in (True, 1.0, "1", [], {}, None, -1):
+            with self.subTest(invalid=invalid):
+                self.assertFalse(tracker.cancel(invalid))
+                self.assertFalse(tracker.resolve(invalid))
+                self.assertEqual(tracker.pending, {1})
+        self.assertTrue(tracker.resolve(1))
+
+    def test_request_id_exhaustion_requires_new_generation(self):
+        tracker = RequestTracker()
+        tracker.begin(RequestTracker.MAX_ID)
+        self.assertTrue(tracker.resolve(RequestTracker.MAX_ID))
+        for invalid in (RequestTracker.MAX_ID, RequestTracker.MAX_ID + 1, 0):
+            with self.assertRaises(ContractError):
+                tracker.begin(invalid)
+        self.assertEqual(tracker.pending, set())
+        self.assertEqual(tracker.last_id, RequestTracker.MAX_ID)
+        new_generation = RequestTracker()
+        new_generation.begin(0)
+        self.assertTrue(new_generation.resolve(0))
+
+    def test_pending_limit_is_bounded_and_failed_admission_is_atomic(self):
+        for invalid in (True, 0, MAX_PENDING_REQUESTS + 1):
+            with self.assertRaises(ValueError):
+                RequestTracker(max_pending=invalid)
+        tracker = RequestTracker(max_pending=1)
+        tracker.begin(0)
+        with self.assertRaises(ContractError):
+            tracker.begin(1)
+        self.assertEqual(tracker.last_id, 0)
+        self.assertEqual(tracker.pending, {0})
+        self.assertTrue(tracker.resolve(0))
+        tracker.begin(1)
+        self.assertTrue(tracker.resolve(1))
 
     def test_boolean_json_rpc_error_code_is_rejected(self):
         frame = encode_frame({"jsonrpc": "2.0", "id": 1,

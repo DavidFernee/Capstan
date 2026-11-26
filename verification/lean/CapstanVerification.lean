@@ -12,7 +12,12 @@ import CapstanVerification.ProgramValidator
 import CapstanVerification.SFVectors
 import CapstanVerification.Output
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.Visibility
+import CapstanVerification.TransactionTypestate
 import CapstanVerification.InjectionChecker
-
 import CapstanVerification.InjectionSinks
 import CapstanVerification.InjectionValue
+import CapstanVerification.GenerationalHandles
+import CapstanVerification.CollectorSemantics
+import CapstanVerification.ReferenceSemantics
+import CapstanVerification.NativeRegisterHeapBridge

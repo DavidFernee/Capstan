@@ -1,0 +1,60 @@
+// Native x86-64 rel32 encoding primitive. No assembler or C helper.
+// Offsets are nonnegative positions in one bounded image, not virtual addresses.
+const int NATIVE_REL32_IMAGE_LIMIT = 4294967296;
+
+struct NativeRel32Result {
+    bool ok;
+    List<int> bytes;
+}
+
+NativeRel32Result native_rel32_encode(int next_ip, int target) {
+    List<int> bytes = new List<int>();
+    if (next_ip < 0 || target < 0 ||
+        next_ip > NATIVE_REL32_IMAGE_LIMIT || target > NATIVE_REL32_IMAGE_LIMIT) {
+        return new NativeRel32Result{ok: false, bytes: bytes};
+    }
+    int displacement = target - next_ip;
+    if (displacement < -2147483648 || displacement > 2147483647) {
+        return new NativeRel32Result{ok: false, bytes: bytes};
+    }
+    if (displacement < 0) { displacement += 4294967296; }
+    for (int i = 0; i < 4; i += 1) {
+        bytes.push(displacement % 256);
+        displacement = displacement / 256;
+    }
+    return new NativeRel32Result{ok: true, bytes: bytes};
+}
+
+test "native rel32 encodes forward and backward offsets" {
+    NativeRel32Result forward = native_rel32_encode(5, 261);
+    assert(forward.ok && forward.bytes.len() == 4);
+    assert(forward.bytes[0] == 0 && forward.bytes[1] == 1);
+    assert(forward.bytes[2] == 0 && forward.bytes[3] == 0);
+    NativeRel32Result backward = native_rel32_encode(5, 0);
+    assert(backward.ok && backward.bytes.len() == 4);
+    assert(backward.bytes[0] == 251 && backward.bytes[1] == 255);
+    assert(backward.bytes[2] == 255 && backward.bytes[3] == 255);
+}
+
+test "native rel32 accepts signed endpoints and rejects one over" {
+    NativeRel32Result low = native_rel32_encode(2147483648, 0);
+    assert(low.ok && low.bytes.len() == 4 && low.bytes[3] == 128);
+    assert(low.bytes[0] == 0 && low.bytes[1] == 0 && low.bytes[2] == 0);
+    NativeRel32Result high = native_rel32_encode(0, 2147483647);
+    assert(high.ok && high.bytes.len() == 4 && high.bytes[3] == 127);
+    assert(high.bytes[0] == 255 && high.bytes[1] == 255 && high.bytes[2] == 255);
+    NativeRel32Result under = native_rel32_encode(2147483649, 0);
+    NativeRel32Result over = native_rel32_encode(0, 2147483648);
+    assert(!under.ok && under.bytes.len() == 0);
+    assert(!over.ok && over.bytes.len() == 0);
+}
+
+test "native rel32 rejects unbounded offsets before subtraction" {
+    NativeRel32Result negative = native_rel32_encode(-1, 0);
+    NativeRel32Result huge = native_rel32_encode(0, 9223372036854775807);
+    assert(!negative.ok && negative.bytes.len() == 0);
+    assert(!huge.ok && huge.bytes.len() == 0);
+    NativeRel32Result zero = native_rel32_encode(4294967296, 4294967296);
+    assert(zero.ok && zero.bytes.len() == 4);
+    assert(zero.bytes[0] == 0 && zero.bytes[1] == 0 && zero.bytes[2] == 0 && zero.bytes[3] == 0);
+}
