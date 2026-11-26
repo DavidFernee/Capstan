@@ -338,10 +338,10 @@ def protocol(exe):
         b'"k%d":null' % i for i in range(4097)
     ) + b"}"
     too_many_elements = b"[" + b",".join([b"null"] * 16385) + b"]"
-    long_string = b'{"s":"' + b"a" * (1024 * 1024 + 1) + b'"}'
+    long_string = b'{"s":"' + b"a" * (8 * 1024 * 1024 + 1) + b'"}'
     escape_fragments = b'"' + b"\\n" * 131073 + b'"'
     aggregate_strings = b"[" + b",".join(
-        b'"' + b"a" * (1024 * 1024) + b'"' for _ in range(9)
+        b'"' + b"a" * (7 * 1024 * 1024) + b'"' for _ in range(2)
     ) + b"]"
     bad_bodies.extend([
         (b'{"jsonrpc":"2.0","jsonrpc":"2.0","id":1,"method":"x"}', -32700, "duplicate object key"),
