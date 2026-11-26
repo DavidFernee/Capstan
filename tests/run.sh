@@ -103,6 +103,13 @@ else
   bad "CCAM aggregate expression compilation pipeline" "$out"
 fi
 
+section "Capstan-native verification: expression variable bindings"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_expression_variables_tests.cap" 2>&1)"; then
+  ok "variable lookup, arithmetic binding, duplicate rejection and binding bounds"
+else
+  bad "CCAM expression variable bindings" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
