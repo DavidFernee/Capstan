@@ -20,22 +20,11 @@ def credentialOrigin : {k : Kind} → Expr k → Bool
   | _, .fastHash x => credentialOrigin x
   | _, .alias x => credentialOrigin x
 
-theorem credential_origin_by_kind {k : Kind} (e : Expr k) :
-    credentialOrigin e = (match k with
-      | .password | .verifier => true
-      | .integrity | .digest => false) := by
-  induction e with
-  | ingress => rfl
-  | artifact => rfl
-  | kdf _ _ => rfl
-  | decodeVerifier => rfl
-  | fastHash _ ih => exact ih
-  | alias _ ih => exact ih
-
 theorem integrity_excludes_credentials (e : Expr .integrity) :
-    credentialOrigin e = false :=
-  credential_origin_by_kind e
-
+    credentialOrigin e = false := by
+  induction e with
+  | artifact => rfl
+  | alias _ ih => exact ih
 theorem fast_hash_excludes_credentials (e : Expr .integrity) :
     credentialOrigin (.fastHash e) = false :=
   integrity_excludes_credentials e
