@@ -1,0 +1,139 @@
+// Candidate stack controller. Trusted interpreter owns this state exclusively.
+import "ccam_aggregate_frames.cap";
+
+const int AG_STACK_MAX_DEPTH = 1024;
+const int AG_STACK_MAX_SLOTS = 262144;
+
+struct AGContinuation {
+    CCAMAggregateMachine caller;
+    AGCallSignature signature;
+    int destination;
+}
+
+struct AGStack {
+    CCAMAggregateMachine active;
+    List<AGContinuation> suspended;
+    int depth;
+    int slots;
+    int max_depth;
+    int max_slots;
+}
+
+struct AGStackResult {
+    bool ok;
+    AGStack stack;
+}
+
+AGStackResult ag_stack_create(CCAMAggregateMachine root, int max_depth, int max_slots) {
+    AGStack stack = new AGStack{
+        active: root, suspended: new List<AGContinuation>(), depth: 0,
+        slots: root.registers.len(), max_depth: max_depth, max_slots: max_slots
+    };
+    bool ok = max_depth >= 0 && max_depth <= AG_STACK_MAX_DEPTH &&
+        max_slots >= root.registers.len() && max_slots <= AG_STACK_MAX_SLOTS;
+    return new AGStackResult{ok: ok, stack: stack};
+}
+
+string ag_stack_call(AGStack stack, AGCallSignature signature, List<int> kinds,
+    List<int> arguments, int destination) {
+    if (stack.active.trap_code != "") { return stack.active.trap_code; }
+    if (stack.depth >= stack.max_depth) {
+        return ccam_aggregate_trap(stack.active, "call_depth_limit");
+    }
+    if (stack.slots > stack.max_slots || kinds.len() > stack.max_slots - stack.slots) {
+        return ccam_aggregate_trap(stack.active, "frame_slot_limit");
+    }
+    AGFrameResult opened = ag_frame_open(stack.active, signature, kinds, arguments,
+        destination, stack.max_slots - stack.slots);
+    if (!opened.ok) { return ccam_aggregate_trap(stack.active, opened.error); }
+    // Copy signature parameters so future caller-side list mutation cannot
+    // alter the stored return continuation.
+    List<int> parameters = new List<int>();
+    for (int i = 0; i < signature.parameters.len(); i += 1) {
+        parameters.push(signature.parameters[i]);
+    }
+    AGContinuation continuation = new AGContinuation{
+        caller: stack.active,
+        signature: new AGCallSignature{parameters: parameters, result_kind: signature.result_kind},
+        destination: destination
+    };
+    if (stack.depth == stack.suspended.len()) {
+        stack.suspended.push(continuation);
+    } else {
+        stack.suspended[stack.depth] = continuation;
+    }
+    stack.depth += 1;
+    stack.slots += opened.frame.registers.len();
+    stack.active = opened.frame;
+    return "";
+}
+
+// No caller, destination or signature is supplied by the returning code.
+string ag_stack_return(AGStack stack, int source) {
+    if (stack.depth <= 0) {
+        return ccam_aggregate_trap(stack.active, "invalid_return");
+    }
+    AGContinuation continuation = stack.suspended[stack.depth - 1];
+    int released = stack.active.registers.len();
+    string result = ag_frame_return(continuation.caller, stack.active,
+        continuation.signature, source, continuation.destination);
+    stack.active = continuation.caller;
+    stack.depth -= 1;
+    stack.slots -= released;
+    // Clear the unused slot to avoid retaining retired frame register files.
+    stack.suspended[stack.depth] = new AGContinuation{
+        caller: ccam_aggregate_empty_machine(),
+        signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        destination: -1
+    };
+    return result;
+}
+
+test "aggregate stack matches nested return destinations and budgets" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(7)) == "");
+    AGStackResult created = ag_stack_create(root.machine, 2, 6);
+    assert(created.ok);
+    AGStack stack = created.stack;
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_INT);
+    AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    List<int> args = new List<int>();
+    args.push(0);
+    assert(ag_stack_call(stack, signature, kinds, args, 1) == "");
+    assert(ag_stack_call(stack, signature, kinds, args, 0) == "");
+    assert(stack.depth == 2 && stack.slots == 6 && stack.active.steps == 2);
+    assert(ccam_aggregate_write(stack.active, 0, ccam_heap_int(42)) == "");
+    assert(ag_stack_return(stack, 0) == "");
+    assert(stack.depth == 1 && stack.active.registers[0].value.int_value == 42);
+    assert(ag_stack_return(stack, 0) == "");
+    assert(stack.depth == 0 && stack.slots == 2 && stack.active.steps == 4);
+    assert(stack.active.registers[0].value.int_value == 7);
+    assert(stack.active.registers[1].value.int_value == 42);
+}
+
+test "aggregate stack rejects depth exhaustion and propagates sticky trap" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(7)) == "");
+    AGStackResult created = ag_stack_create(root.machine, 1, 2);
+    assert(created.ok);
+    AGStack stack = created.stack;
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_INT);
+    AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    List<int> args = new List<int>();
+    args.push(0);
+    assert(ag_stack_call(stack, signature, kinds, args, 0) == "");
+    assert(ag_stack_call(stack, signature, kinds, args, 0) == "call_depth_limit");
+    assert(stack.depth == 1 && stack.slots == 2);
+    assert(ag_stack_return(stack, 0) == "call_depth_limit");
+    assert(stack.depth == 0 && stack.slots == 1);
+    assert(stack.active.registers[0].value.int_value == 7);
+}
