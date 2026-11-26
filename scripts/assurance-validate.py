@@ -76,6 +76,23 @@ def promotion_errors(claim):
     return errors
 
 
+
+def boundary_policy_errors(boundaries):
+    """Reject duplicate boundary IDs and unsupported proof/refinement combinations."""
+    errors = []
+    seen = set()
+    for boundary in boundaries.get("boundaries", []):
+        bid = boundary.get("id", "<missing>")
+        if bid in seen:
+            errors.append("duplicate boundary identifier %s" % bid)
+        seen.add(bid)
+        if boundary.get("formal") == "proved" and not boundary.get("implementation_refinement"):
+            errors.append("%s: formal=proved requires implementation_refinement=true" % bid)
+        if boundary.get("implementation_refinement") and boundary.get("formal") != "proved":
+            errors.append("%s: implementation_refinement=true requires formal=proved" % bid)
+    return errors
+
+
 def git(*args):
     return subprocess.run(
         ["git", *args], cwd=ROOT, text=True, stdout=subprocess.PIPE,
@@ -168,24 +185,14 @@ def main():
     # Validate the architecture register independently from the claim register.
     # A formal proof over a model is not an implementation proof unless the
     # boundary explicitly records a reviewed refinement link.
-    boundary_ids = set()
     boundary_paths = set()
     for path in boundaries.get("production_path", []) + boundaries.get("target_path", []):
         boundary_paths.add(path)
-    for index, boundary in enumerate(boundaries.get("boundaries", [])):
-        bid = boundary.get("id", "<missing>")
-        if bid in boundary_ids:
-            print("  boundary: duplicate identifier %s" % bid)
-            failed = True
-        boundary_ids.add(bid)
-        if boundary.get("formal") == "proved" and not boundary.get("implementation_refinement"):
-            print("  boundary %s: formal=proved requires implementation_refinement=true" % bid)
-            failed = True
-        if boundary.get("implementation_refinement") and boundary.get("formal") != "proved":
-            print("  boundary %s: implementation_refinement=true requires formal=proved" % bid)
-            failed = True
-        for path in boundary.get("artifacts", []):
-            boundary_paths.add(path)
+    for error in boundary_policy_errors(boundaries):
+        print("  boundary: " + error)
+        failed = True
+    for boundary in boundaries.get("boundaries", []):
+        boundary_paths.update(boundary.get("artifacts", []))
     for path in sorted(boundary_paths):
         if not inside_repo(path):
             print("  boundary: unsafe repository path %r" % path)
