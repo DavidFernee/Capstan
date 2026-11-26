@@ -46,8 +46,10 @@ def check_engine(label, command):
     cases = [
         ("argument count", ["a", "b", "c"], "abcd", b"x"),
         ("per-argument bytes", ["abcde"], "abcd", b"x"),
+        ("multibyte per-argument bytes", ["ééé"], "abcd", b"x"),
         ("aggregate argument bytes", ["abcd", "xyz"], "abcd", b"x"),
         ("environment bytes", ["a"], "abcde", b"x"),
+        ("multibyte environment bytes", ["a"], "ééé", b"x"),
         ("line bytes", ["a"], "abcd", b"abcd\n"),
     ]
     for name, argv, secret, stdin in cases:
