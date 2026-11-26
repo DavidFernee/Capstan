@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "4c9a95b6a961cc06ec1f51966e73524b2dce8f7e"
+    "commit": "03d92fd33ca04624651f659d2d4f98d2e9e6a27b"
   },
   "claims": [
     {
@@ -40,8 +40,8 @@
             "docs/assurance/MEMORY-SAFETY.md"
           ],
           "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
-          "revision": "75d03db1a146f664b352b044f4ab70ce46caaa33",
-          "notes": "Documents the intended language guarantee and the memory-safety boundary."
+          "revision": "03d92fd33ca04624651f659d2d4f98d2e9e6a27b",
+          "notes": "Rechecked against the current main snapshot. The claim remains proposed and retains the stated C runtime/platform trust boundary."
         },
         {
           "kind": "test",
@@ -53,13 +53,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "75d03db1a146f664b352b044f4ab70ce46caaa33",
-          "notes": "Fixtures are present in this snapshot. No passing run is asserted by this record."
+          "revision": "6508f6d4819796f789f4b6e576949e3ed8b1861c",
+          "notes": "Fixtures remain present in the current integrated test runner. This record does not assert a passing run."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "75d03db1a146f664b352b044f4ab70ce46caaa33"
+        "reviewed_commit": "03d92fd33ca04624651f659d2d4f98d2e9e6a27b"
       },
       "covers": [
         "compiler/main.cap",
@@ -110,8 +110,8 @@
             "docs/architecture/COMPILER-CCAM-LOWERING.md"
           ],
           "procedure": "Review the stated profile, proof ladder, exclusions and implementation correspondence boundaries.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
-          "notes": "C-free assurance contract; proposed, not a claim of completed end-to-end verification."
+          "revision": "03d92fd33ca04624651f659d2d4f98d2e9e6a27b",
+          "notes": "Restricted proof profile and explicit implementation-correspondence gaps rechecked against current main; no end-to-end refinement claim."
         },
         {
           "kind": "mechanical-proof",
@@ -125,9 +125,9 @@
             "verification/lean/CapstanVerification/MultiFunction.lean"
           ],
           "procedure": "Build the pinned Lean verification package and inspect the axiom audit. Treat the results only as the restricted mathematical model documented in C-FREE-TYPE-SAFETY.md.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
+          "revision": "03d92fd33ca04624651f659d2d4f98d2e9e6a27b",
           "tool": "Lean 4.19.0",
-          "notes": "Restricted scalar CCAM proofs, including the typed call-frame protocol model; aggregate-heap model work is separately scoped and does not establish implementation correspondence."
+          "notes": "Lean proof artifacts are unchanged in the current main snapshot; formal CI is still required for the exact PR head."
         },
         {
           "kind": "test",
@@ -138,13 +138,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
-          "notes": "This record does not assert a passing run for this assurance profile."
+          "revision": "6508f6d4819796f789f4b6e576949e3ed8b1861c",
+          "notes": "Integration tests remain planned; the current runner includes the additional Shroud backend model test. No passing result is asserted here."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "db912986be48897fc37f83c7cc8df8552b3fe8ef"
+        "reviewed_commit": "03d92fd33ca04624651f659d2d4f98d2e9e6a27b"
       },
       "covers": [
         "verification/lean/CapstanVerification/Core.lean",
