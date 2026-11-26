@@ -1501,7 +1501,9 @@ test "CCAM multi-function validator enforces aggregate call-argument boundary" {
 test "CCAM call machine unwinds all active frame regions on trap" {
     List<int> types = new List<int>();
     List<CCAMInstruction> code = new List<CCAMInstruction>();
-    code.push(ccam_instruction(CCAM_OP_TRAP));
+    CCAMInstruction explicit_trap = ccam_instruction(CCAM_OP_TRAP);
+    explicit_trap.reason = "explicit_trap";
+    code.push(explicit_trap);
     List<CCAMFunction> functions = new List<CCAMFunction>();
     functions.push(new CCAMFunction{
         name: "main", register_types: types, parameter_count: 0,
@@ -1572,7 +1574,9 @@ test "CCAM trap unwinds nested caller and callee frame regions" {
     caller_code.push(ccam_instruction(CCAM_OP_CALL));
     caller_code.push(ccam_instruction(CCAM_OP_RET_VOID));
     List<CCAMInstruction> callee_code = new List<CCAMInstruction>();
-    callee_code.push(ccam_instruction(CCAM_OP_TRAP));
+    CCAMInstruction callee_trap = ccam_instruction(CCAM_OP_TRAP);
+    callee_trap.reason = "explicit_trap";
+    callee_code.push(callee_trap);
     List<CCAMCallSite> sites = new List<CCAMCallSite>();
     sites.push(new CCAMCallSite{
         instruction_index: 0, callee_index: 1,
@@ -1789,7 +1793,9 @@ test "CCAM direct machine trap transition unwinds frame-owned memory" {
 test "CCAM multi-function evaluator propagates explicit trap without memory" {
     List<int> types = new List<int>();
     List<CCAMInstruction> code = new List<CCAMInstruction>();
-    code.push(ccam_instruction(CCAM_OP_TRAP));
+    CCAMInstruction explicit_trap = ccam_instruction(CCAM_OP_TRAP);
+    explicit_trap.reason = "explicit_trap";
+    code.push(explicit_trap);
     List<CCAMFunction> functions = new List<CCAMFunction>();
     functions.push(new CCAMFunction{
         name: "main", register_types: types, parameter_count: 0,
