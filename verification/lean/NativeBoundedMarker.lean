@@ -88,20 +88,26 @@ theorem certificateCheck_sound {slotCount : Nat}
     (∀ handle, handle ∈ marked → ∀ target,
       target ∈ referenceEdges handle → target ∈ marked) := by
   unfold certificateCheck at checked
-  rcases Bool.and_eq_true.mp checked with ⟨rootsChecked, markedChecked⟩
+  have andLeft {a b : Bool} (h : a && b = true) : a = true := by
+    cases a <;> simp_all
+  have andRight {a b : Bool} (h : a && b = true) : b = true := by
+    cases a <;> simp_all
+  have rootsChecked := andLeft checked
+  have markedChecked := andRight checked
   have rootsValid := List.all_eq_true.mp rootsChecked
   have markedValid := List.all_eq_true.mp markedChecked
   refine ⟨?_, ?_, ?_, ?_⟩
   · intro root rootMember
     exact of_decide_eq_true (rootsValid root rootMember)
   · intro handle handleMember
-    exact (Bool.and_eq_true.mp (markedValid handle handleMember)).1
+    have fieldsChecked := markedValid handle handleMember
+    exact andLeft (andLeft fieldsChecked)
   · intro handle handleMember
-    have fieldsChecked := Bool.and_eq_true.mp (markedValid handle handleMember)
-    exact (Bool.and_eq_true.mp fieldsChecked.2).1
+    have fieldsChecked := markedValid handle handleMember
+    exact andRight (andLeft fieldsChecked)
   · intro handle handleMember target targetMember
-    have fieldsChecked := Bool.and_eq_true.mp (markedValid handle handleMember)
-    have edgesChecked := (Bool.and_eq_true.mp fieldsChecked.2).2
+    have fieldsChecked := markedValid handle handleMember
+    have edgesChecked := andRight fieldsChecked
     exact of_decide_eq_true ((List.all_eq_true.mp edgesChecked) target targetMember)
 
 /-- Proof-carrying view of an accepted marker outcome. Sweep-facing
