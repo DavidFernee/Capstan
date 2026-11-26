@@ -2,7 +2,7 @@
   "schema_version": "1.0.0",
   "snapshot": {
     "repository": "DavidFernee/Capstan",
-    "commit": "07cff7b45c92610c201f048bb7c7b4fadb21cced"
+    "commit": "91b4ec379ee62d822ee354411bf0db06c8c695bc"
   },
   "claims": [
     {
@@ -40,8 +40,8 @@
             "docs/assurance/MEMORY-SAFETY.md"
           ],
           "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
-          "revision": "07cff7b45c92610c201f048bb7c7b4fadb21cced",
-          "notes": "Reviewed against the contextual-output checker/codegen/runtime changes; indexing bounds paths are unchanged. Exact-head platform validation remains pending."
+          "revision": "91b4ec379ee62d822ee354411bf0db06c8c695bc",
+          "notes": "Reviewed at this snapshot; the contextual-output checker/runtime changes do not alter the indexing bounds contract. Exact-head platform validation remains pending."
         },
         {
           "kind": "test",
@@ -53,13 +53,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "07cff7b45c92610c201f048bb7c7b4fadb21cced",
+          "revision": "91b4ec379ee62d822ee354411bf0db06c8c695bc",
           "notes": "Regression fixtures remain present. No passing run is asserted until the current exact-head CI completes."
         }
       ],
       "review": {
         "reviewed_at": "2026-11-26",
-        "reviewed_commit": "07cff7b45c92610c201f048bb7c7b4fadb21cced"
+        "reviewed_commit": "91b4ec379ee62d822ee354411bf0db06c8c695bc"
       },
       "covers": [
         "compiler/main.cap",
@@ -138,7 +138,7 @@
             "tests/run.sh"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "07cff7b45c92610c201f048bb7c7b4fadb21cced",
+          "revision": "91b4ec379ee62d822ee354411bf0db06c8c695bc",
           "notes": "Test plan refreshed after the inventory smoke test was extended to verify the typed CSV report artifact. No passing run is asserted by this record."
         }
       ],

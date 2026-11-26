@@ -14,6 +14,7 @@ It does not prove that the production AST visitor refines this model, nor
 that an external sink adapter is safe.
 -/
 
+/-- Mirrors checker.cap texty_type: CSV is a text lookup result, not a generic string. -/
 inductive InjectionTextKind where
   | string
   | html
