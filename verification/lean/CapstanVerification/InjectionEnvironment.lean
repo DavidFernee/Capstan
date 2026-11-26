@@ -77,8 +77,7 @@ theorem assignment_readback
 
 /-- Reassignment is a strong update, not permanent tainting of a variable name. -/
 theorem reassignment_replaces_prior_provenance
-    (environment : LocalEnvironment) (slot : LocalSlot)
-    (newValue : ProvenanceValue) :
+    (environment : LocalEnvironment) (slot : LocalSlot) :
     execFlowStmt environment (.assign slot (.literal)) slot =
       emptyProvenanceValue := by
   simp [execFlowStmt, evalFlowExpr, writeLocal, emptyProvenanceValue]
