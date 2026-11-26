@@ -377,6 +377,12 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     else
       bad "native CLI final-component symlink confinement" "$(cat "$tmp/native-file-symlink.out")"
     fi
+
+    if out="$($PY "$ROOT/tests/unit/native_import_graph_budget.py" "$ROOT/bin/capstan" 2>&1)"; then
+      ok "$out"
+    else
+      bad "native compiler import graph budgets" "$out"
+    fi
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
