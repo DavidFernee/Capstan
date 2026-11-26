@@ -235,7 +235,7 @@ add(96, "Static code injection", "absent", INCLUDE)
 add(97, "Server-side includes injection", "na", note="No web server facility.")
 add(98, "PHP remote file inclusion", "absent", INCLUDE)
 add(99, "Resource injection", "reject",
-    "int main() { if (let p = read_line(1048576)) { if (let data = read_file(p, 1073741824)) { } } return 0; }", "CWE-20")
+    "int main() { if (let p = read_line(1048576)) { if (let data = read_file(p, 4096)) { } } return 0; }", "CWE-20")
 add(113, "HTTP response splitting", "na", note="No HTTP facility yet; header output would follow the CWE-93 rule.")
 add(116, "Improper encoding or escaping of output", "reject",
     'int main() { string csv = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", csv); return 0; }', "CWE-116",
@@ -262,7 +262,7 @@ add(185, "Incorrect regular expression", "absent", REGEX)
 
 # ---------------------------------------------------------------- files and paths
 add(22, "Path traversal", "reject",
-    "int main() { Tainted name = taint(\"../../etc/passwd\"); if (let f = read_file(name, 1073741824)) { } return 0; }", "CWE-20")
+    "int main() { Tainted name = taint(\"../../etc/passwd\"); if (let f = read_file(name, 4096)) { } return 0; }", "CWE-20")
 add(22, "Path traversal (via an audited trust())", "audited",
     'int main() { Tainted name = taint("../../etc/passwd"); if (let f = read_file(trust(name, "file name from form"))) { } return 0; }',
     note="Possible only through trust(), which needs a written justification and is reported in every build. validate_path() is the safe route.")
@@ -271,7 +271,7 @@ add(22, "Path traversal (attempt through validate_path)", "neutral",
 add(23, "Relative path traversal", "reject",
     "int main() { string base = \"/srv/files/\"; Tainted n = taint(\"../secret\"); bool ok = write_file(base + n, \"x\"); return 0; }", "CWE-20")
 add(36, "Absolute path traversal", "reject",
-    "int main() { Tainted n = taint(\"/etc/shadow\"); if (let f = read_file(n, 1073741824)) { } return 0; }", "CWE-20")
+    "int main() { Tainted n = taint(\"/etc/shadow\"); if (let f = read_file(n, 4096)) { } return 0; }", "CWE-20")
 add(59, "Improper link resolution before file access (link following)", "na",
     note="File access follows symbolic links; capability-based file access (v0.6) will address it.")
 add(73, "External control of file name or path", "reject",
@@ -284,8 +284,8 @@ add(732, "Incorrect permission assignment for critical resource", "absent", CHMO
 add(276, "Incorrect default permissions", "na", note="Files are created with the process umask; a file API with explicit permissions is planned with capabilities.")
 add(377, "Insecure temporary file", "na", note="No temporary-file API.")
 add(367, "Time-of-check time-of-use race", "absent",
-    "int main() { if (file_exists(\"x\")) { if (let d = read_file(\"x\", 1073741824)) { } } return 0; }",
-    note="There is no separate existence check; read_file(, 1073741824) returns the contents or none in one step.")
+    "int main() { if (file_exists(\"x\")) { if (let d = read_file(\"x\", 4096)) { } } return 0; }",
+    note="There is no separate existence check; read_file(, 4096) returns the contents or none in one step.")
 
 # ---------------------------------------------------------------- environment and execution
 add(15, "External control of system or configuration setting", "absent", SETENV)
@@ -456,10 +456,10 @@ add(252, "Unchecked return value", "reject",
 add(253, "Incorrect check of function return value", "reject",
     "int main() { int ok = write_file(\"x\", \"y\"); return 0; }", "type mismatch")
 add(390, "Detection of error condition without action", "reject",
-    "int main() { if (let d = read_file(\"config\", 1073741824)) { println(\"loaded\"); } else { } return 0; }", "CWE-390",
+    "int main() { if (let d = read_file(\"config\", 4096)) { println(\"loaded\"); } else { } return 0; }", "CWE-390",
     "An empty else is a warning; an error with --strict (tested that way).")
 add(391, "Unchecked error condition", "reject",
-    "int main() { Tainted? d = read_file(\"config\", 1073741824); println(int_to_str(d.len())); return 0; }", "CWE-476")
+    "int main() { Tainted? d = read_file(\"config\", 4096); println(int_to_str(d.len())); return 0; }", "CWE-476")
 add(396, "Declaration of catch for generic exception", "absent", EXCEPT)
 add(397, "Declaration of throws for generic exception", "absent", EXCEPT)
 add(617, "Reachable assertion", "reject",
@@ -470,7 +470,7 @@ add(636, "Not failing securely (failing open)", "reject",
 add(754, "Improper check for unusual or exceptional conditions", "reject",
     "int main() { Map<int> m = new Map<int>(); int v = m.get(\"k\"); return v; }", "CWE-476")
 add(755, "Improper handling of exceptional conditions", "reject",
-    "int main() { Tainted? f = read_file(\"x\", 1073741824); Tainted t = f; return 0; }", "CWE-476")
+    "int main() { Tainted? f = read_file(\"x\", 4096); Tainted t = f; return 0; }", "CWE-476")
 
 # ---------------------------------------------------------------- concurrency
 add(362, "Concurrent execution using shared resource with improper synchronization (race)", "absent", THREAD)
