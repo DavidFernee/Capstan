@@ -82,13 +82,13 @@ noncomputable def advanceTxContext (context : TxContext) (resource : Nat)
 theorem txOwnerIds_update_preserved (context : TxContext)
     (resource : Nat) (next : TxPhase) :
     txOwnerIds (updateTxPhase context resource next) = txOwnerIds context := by
-  induction context with
-  | nil => rfl
-  | cons owner rest ih =>
-    cases owner with
-    | mk id phase =>
-      cases hmatch : (id == resource) <;>
-        simp [updateTxPhase, txOwnerIds, hmatch, ih]
+  unfold txOwnerIds updateTxPhase
+  simp only [List.map_map]
+  apply List.map_congr_left
+  intro owner _
+  cases owner with
+  | mk id phase =>
+    simp [Prod.fst]
 
 /-- Updating a resource's phase cannot introduce a second owner. -/
 theorem update_preserves_linear_context (context : TxContext)
