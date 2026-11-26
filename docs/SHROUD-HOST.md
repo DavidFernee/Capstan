@@ -1,6 +1,7 @@
 # Shroud S1: native host contract
 
 **Status:** design contract for S1; not a shipped API.
+**API candidate:** [Capability-I/O host API v0.1](proposals/CAPABILITY-IO-HOST-API-V0.1.md) specifies the first shared opaque-handle, error, ownership and mock-host contract.
 **Scope:** the boundary between Shroud's existing, deterministic, headless UI core and a native platform embedder.
 **First target:** Linux/Wayland. Windows and macOS follow the same contract with platform-specific backends.
 

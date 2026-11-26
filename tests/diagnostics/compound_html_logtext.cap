@@ -1,7 +1,7 @@
 // expect: '+=' is not defined for Html and LogText
 // spec: types.html stmt.assign
 int main() {
-    if (let t = read_line()) {
+    if (let t = read_line(1048576)) {
         Html page = escape_html(t);
         page += escape_log(t);
     }

@@ -167,7 +167,7 @@ void usage() {
 }
 
 int main() {
-    List<string> argv = args();
+    List<string> argv = args(4096, 4096, 16777216);
     string output_path = "";
     List<string> paths = new List<string>();
     bool options = true;

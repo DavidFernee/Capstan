@@ -465,6 +465,16 @@ def check_wayland_protocol(capstanc, cc, cflags, tmp):
     return "47 checks: interface/opcode/direction/version resolution, typed arguments, nullable values, descriptor counts, object references, staged new IDs, destructor retirement/release, forged frames and fixed-capacity admission"
 
 
+def check_wayland_registry(capstanc, cc, cflags, tmp):
+    exe = build(capstanc, cc, cflags, tmp, "tests/shroud/wayland_registry.cap", "wayland-registry")
+    r = run(exe, check=False)
+    expected = "Wayland registry dynamic binding: 29 assertions passed\n"
+    if r.returncode != 0 or r.stdout != expected:
+        sys.exit(f"Wayland registry dynamic binding: exit {r.returncode}:\n{r.stdout}{r.stderr}")
+    return "29 checks: bounded global tracking, trusted interface lookup, version negotiation, staged dynamic bind, object-ID ownership and dense allocation, duplicate/removed globals, forged frames and mutation-free rejection"
+
+
+
 def check_pixmap_limits(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/limits.cap", "pixmap-limits")
     ok = run(exe)
@@ -492,7 +502,7 @@ def check_golden(capstanc, cc, cflags, tmp, update):
             f.write("# tests/shroud/check.py CAPSTANC CC --update-golden after an intended change.\n")
             for name, h in got.items():
                 f.write(f"{h}  {name}\n")
-        return f"recorded {len(got)} files"
+        return f"recorded {len(got)} files: " + "; ".join(f"{h}  {name}" for name, h in got.items())
     want = {}
     for line in open(GOLDEN):
         if line.strip() and not line.startswith("#"):
@@ -523,8 +533,16 @@ def main():
         vec = build(capstanc, cc, cflags, tmp, "tests/shroud/vectors.cap", "vectors")
         report.append("raster: " + check_raster(vec, tmp))
         if update:
-            with open(EXPECTED_FONTS, "w") as f:
-                f.write(font_reference())
+            # Generate the reference before opening the file: opening with "w"
+            # first would truncate the checked-in golden if fontTools is absent.
+            try:
+                fresh_fonts = font_reference()
+            except ImportError:
+                if not os.path.isfile(EXPECTED_FONTS) or os.path.getsize(EXPECTED_FONTS) == 0:
+                    sys.exit("fonts: fontTools is required to create the initial reference; install fontTools or restore tests/shroud/fonts.expected")
+            else:
+                with open(EXPECTED_FONTS, "w") as f:
+                    f.write(fresh_fonts)
         report.append("fonts: " + check_fonts(vec))
         report.append("utf-8: " + check_utf8(vec, tmp))
         report.append("png: " + check_png(vec, tmp))
@@ -532,6 +550,7 @@ def main():
         report.append("font fuzz: " + check_fuzz(vec, tmp))
         report.append("Wayland wire framing: " + check_wayland_wire(capstanc, cc, cflags, tmp))
         report.append("Wayland protocol schema: " + check_wayland_protocol(capstanc, cc, cflags, tmp))
+        report.append("Wayland registry: " + check_wayland_registry(capstanc, cc, cflags, tmp))
         report.append("pixmap limits: " + check_pixmap_limits(capstanc, cc, cflags, tmp))
         report.append("single-line filtering: " + check_single_line_budget(capstanc, cc, cflags, tmp))
         report.append("golden: " + check_golden(capstanc, cc, cflags, tmp, update))

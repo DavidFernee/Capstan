@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for Git-based assurance evidence freshness."""
+"""Unit tests for Git-based assurance evidence freshness and promotion policy."""
 import contextlib
 import importlib.util
 import io
@@ -51,6 +51,61 @@ class FreshnessTests(unittest.TestCase):
         self.assertFalse(MODULE.requires_freshness("proposed"))
         self.assertFalse(MODULE.requires_freshness("withdrawn"))
 
+    def test_live_claim_requires_passed_evidence(self):
+        claim = {"id": "MEM-001", "state": "qualified", "evidence": [],
+                 "review": {"reviewed_commit": self.baseline}}
+        errors = MODULE.promotion_errors(claim)
+        self.assertTrue(any("at least one passed evidence" in e for e in errors))
+
+    def test_live_claim_requires_independent_review_at_reviewed_revision(self):
+        claim = {
+            "id": "MEM-001", "state": "active",
+            "review": {"reviewed_commit": self.baseline},
+            "evidence": [{
+                "kind": "test", "result": "passed", "revision": self.baseline,
+                "verification": {"commit": self.baseline,
+                                 "run_url": "https://github.com/example/run/1"}
+            }]
+        }
+        errors = MODULE.promotion_errors(claim)
+        self.assertTrue(any("independent-review" in e for e in errors))
+
+    def test_independent_review_must_match_reviewed_revision(self):
+        other = "1" * 40
+        claim = {
+            "id": "MEM-001", "state": "qualified",
+            "review": {"reviewed_commit": self.baseline},
+            "evidence": [{
+                "kind": "independent-review", "result": "passed",
+                "revision": other,
+                "verification": {"commit": other,
+                                 "run_url": "https://github.com/example/review/1"}
+            }]
+        }
+        errors = MODULE.promotion_errors(claim)
+        self.assertTrue(any("independent-review" in e for e in errors))
+
+    def test_proposed_claim_does_not_require_promotion_evidence(self):
+        claim = {"id": "MEM-001", "state": "proposed", "evidence": [],
+                 "review": {"reviewed_commit": self.baseline}}
+        self.assertEqual(MODULE.promotion_errors(claim), [])
+
+    def test_exact_commit_test_and_independent_review_satisfy_promotion_policy(self):
+        claim = {
+            "id": "MEM-001", "state": "active",
+            "review": {"reviewed_commit": self.baseline},
+            "evidence": [
+                {"kind": "test", "result": "passed", "revision": self.baseline,
+                 "verification": {"commit": self.baseline,
+                                  "run_url": "https://github.com/example/actions/runs/1"}},
+                {"kind": "independent-review", "result": "passed",
+                 "revision": self.baseline,
+                 "verification": {"commit": self.baseline,
+                                  "run_url": "https://github.com/example/pull/1"}}
+            ]
+        }
+        self.assertEqual(MODULE.promotion_errors(claim), [])
+
     def test_repository_paths_use_portable_relative_posix_syntax(self):
         self.assertTrue(MODULE.inside_repo("src/covered.c"))
         for path in ("", "/etc/passwd", "../outside", "src\\\\outside",
@@ -65,6 +120,40 @@ class FreshnessTests(unittest.TestCase):
             schema = json.load(f)
         self.assertGreaterEqual(schema["properties"]["claims"].get("minItems", 0), 1)
         self.assertGreaterEqual(schema["$defs"]["claim"]["properties"]["evidence"].get("minItems", 0), 1)
+
+
+    def test_boundary_cannot_claim_proof_without_implementation_refinement(self):
+        boundaries = {"boundaries": [{
+            "id": "EVAL", "formal": "proved",
+            "implementation_refinement": False
+        }]}
+        errors = MODULE.boundary_policy_errors(boundaries)
+        self.assertTrue(any("requires implementation_refinement=true" in e
+                            for e in errors))
+
+    def test_boundary_refinement_flag_requires_proved_status(self):
+        boundaries = {"boundaries": [{
+            "id": "EVAL", "formal": "partial",
+            "implementation_refinement": True
+        }]}
+        errors = MODULE.boundary_policy_errors(boundaries)
+        self.assertTrue(any("requires formal=proved" in e for e in errors))
+
+    def test_boundary_register_rejects_duplicate_ids(self):
+        boundaries = {"boundaries": [
+            {"id": "EVAL", "formal": "partial", "implementation_refinement": False},
+            {"id": "EVAL", "formal": "partial", "implementation_refinement": False}
+        ]}
+        errors = MODULE.boundary_policy_errors(boundaries)
+        self.assertTrue(any("duplicate boundary identifier EVAL" in e for e in errors))
+
+    def test_partial_model_evidence_is_not_mistaken_for_refinement(self):
+        boundaries = {"boundaries": [{
+            "id": "LEAN-MODEL", "formal": "partial",
+            "implementation_refinement": False
+        }]}
+        self.assertEqual(MODULE.boundary_policy_errors(boundaries), [])
+
 
     def test_unrelated_change_does_not_stale_covered_path(self):
         with open(os.path.join(self.repo, "unrelated.txt"), "w", encoding="utf-8") as f:
@@ -91,14 +180,16 @@ class FreshnessTests(unittest.TestCase):
             MODULE.changed_paths(self.baseline, ["evidence.txt"]),
             ["evidence.txt"])
 
-
     def test_malformed_manifest_shape_fails_closed_after_schema_error(self):
-        # The validator must not dereference nested fields after the schema
-        # rejects their type. This used to raise AttributeError on snapshot=[].
         schema_path = os.path.join(self.repo, "schema.json")
         manifest_path = os.path.join(self.repo, "manifest.json")
-        with open(schema_path, "w", encoding="utf-8") as f:
-            f.write("{}")
+        boundary_schema_path = os.path.join(self.repo, "boundary-schema.json")
+        boundaries_path = os.path.join(self.repo, "boundaries.json")
+        for path in (schema_path, boundary_schema_path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{}")
+        with open(boundaries_path, "w", encoding="utf-8") as f:
+            f.write('{"baseline_commit": "%s", "production_path": [], "target_path": [], "boundaries": []}' % self.baseline)
         with open(manifest_path, "w", encoding="utf-8") as f:
             f.write('{"snapshot": [], "claims": []}')
 
@@ -122,7 +213,8 @@ class FreshnessTests(unittest.TestCase):
         previous_argv = sys.argv
         sys.modules["jsonschema"] = fake
         sys.argv = ["assurance-validate.py", "--schema", "schema.json",
-                    "--manifest", "manifest.json"]
+                    "--manifest", "manifest.json", "--boundary-schema",
+                    "boundary-schema.json", "--boundaries", "boundaries.json"]
         output = io.StringIO()
         try:
             with contextlib.redirect_stdout(output):
@@ -136,23 +228,25 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("schema: /snapshot: must be an object", output.getvalue())
 
-
     def test_require_fresh_rejects_active_claim_after_covered_code_changes(self):
-        # Exercise the CLI gate, not just the lower-level changed-path helper.
         with open(os.path.join(self.repo, "src", "covered.c"), "w", encoding="utf-8") as f:
-            f.write("int value = 2;\\n")
+            f.write("int value = 2;\n")
         run_git(self.repo, "add", ".")
         run_git(self.repo, "commit", "-qm", "covered implementation changed")
 
         schema_path = os.path.join(self.repo, "schema.json")
         manifest_path = os.path.join(self.repo, "manifest.json")
-        with open(schema_path, "w", encoding="utf-8") as f:
-            f.write("{}")
+        boundary_schema_path = os.path.join(self.repo, "boundary-schema.json")
+        boundaries_path = os.path.join(self.repo, "boundaries.json")
+        for path in (schema_path, boundary_schema_path):
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{}")
+        with open(boundaries_path, "w", encoding="utf-8") as f:
+            f.write('{"baseline_commit": "%s", "production_path": [], "target_path": [], "boundaries": []}' % self.baseline)
         manifest = {
             "snapshot": {"commit": self.baseline},
             "claims": [{
-                "id": "MEM-001",
-                "state": "active",
+                "id": "MEM-001", "state": "active",
                 "covers": ["src/covered.c"],
                 "review": {"reviewed_commit": self.baseline},
                 "evidence": [{
@@ -184,7 +278,9 @@ class FreshnessTests(unittest.TestCase):
         previous_argv = sys.argv
         sys.modules["jsonschema"] = fake
         sys.argv = ["assurance-validate.py", "--schema", "schema.json",
-                    "--manifest", "manifest.json", "--require-fresh"]
+                    "--manifest", "manifest.json", "--boundary-schema",
+                    "boundary-schema.json", "--boundaries", "boundaries.json",
+                    "--require-fresh"]
         output = io.StringIO()
         try:
             with contextlib.redirect_stdout(output):
@@ -198,6 +294,29 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(result, 1)
         self.assertIn("STALE MEM-001", output.getvalue())
         self.assertIn("active/qualified claims", output.getvalue())
+
+    def test_symlink_paths_must_resolve_inside_repository(self):
+        external = tempfile.TemporaryDirectory()
+        try:
+            external_file = os.path.join(external.name, "outside.txt")
+            with open(external_file, "w", encoding="utf-8") as f:
+                f.write("outside\n")
+            internal_link = os.path.join(self.repo, "src", "internal-link")
+            external_link = os.path.join(self.repo, "src", "external-link")
+            try:
+                os.symlink(os.path.join(self.repo, "src", "covered.c"), internal_link)
+                os.symlink(external_file, external_link)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest("symlink creation unavailable: %s" % exc)
+            self.assertTrue(MODULE.resolves_inside_repo("src/internal-link"))
+            self.assertFalse(MODULE.resolves_inside_repo("src/external-link"))
+        finally:
+            external.cleanup()
+
+    def test_cross_volume_commonpath_error_fails_closed(self):
+        from unittest import mock
+        with mock.patch.object(MODULE.os.path, "commonpath", side_effect=ValueError("different drives")):
+            self.assertFalse(MODULE.resolves_inside_repo("src/covered.c"))
 
     def test_unrelated_revision_is_rejected(self):
         with self.assertRaises(ValueError):

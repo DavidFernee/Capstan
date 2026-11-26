@@ -3,6 +3,6 @@
 // Untrusted input cannot silently become a trusted string.
 string greet(string name) { return "Hello " + name; }
 int main() {
-    if (let line = read_line()) { println(greet(line)); }
+    if (let line = read_line(1048576)) { println(greet(line)); }
     return 0;
 }

@@ -7,7 +7,7 @@ string repeat_newlines(int n) {
 }
 
 int main() {
-    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) {
+    if (let data = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) {
         if (let font = font_load(data)) {
             Ui ui = new_ui(font, font, light_theme(), 64, 64, 256);
             string first = repeat_newlines(MAX_FRAME_LINES / 2 - 1);

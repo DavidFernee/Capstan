@@ -182,3 +182,31 @@ The source for a narrow freestanding Linux x86-64 native emitter is present in `
 The normative CCAM v0.1 document remains explicit that the implementation is not yet a conforming v0.1 machine, does not have a Lean evaluator-refinement theorem, and is not the complete Capstan semantics. The current status of every slice must be checked against that document and exact mainline code/tests. No C-free compiler bootstrap, C-free production runtime or multi-platform C-free release is established.
 
 Update this section only against exact source revisions and current-head test evidence. Open pull requests, stale workflow runs and design documents are not evidence of completed implementation. A passing model build is not implementation refinement; a prototype execution test is not complete backend conformance.
+
+
+## 11. Strict Capstan-only self-hosting contract
+
+The S0→S1→S2→S3 chain is a self-hosting chain for the **entire toolchain**, not just the front end or compiler executable. Every repository-owned implementation needed to build, test, package and release Capstan must be Capstan source and must be compiled or executed by the Capstan seed/stages. This includes:
+
+- compiler front end, typed IR, validator, optimiser, native code generator and diagnostics;
+- runtime, allocator, memory manager, strings, collections and standard library;
+- target instruction selection, register allocation, assembler, object-file writer, relocation processing, linker and executable writer;
+- build graph and dependency evaluator, package/module tools, formatter, language server and command-line tools;
+- test runner, conformance corpus generators, property tests, fuzzers, benchmark harnesses and release packager;
+- bootstrap driver and all later compiler stages.
+
+No repository-owned C, C++, Python, Rust, Go, Java, JavaScript, shell, Make, or other foreign-language implementation may perform any of these functions in the final supported bootstrap. No FFI may conceal a foreign implementation. In particular, native code generation must not delegate assembly or linking to external executables: the Capstan toolchain must emit its own target object/executable representation and perform symbol resolution and relocation itself. It may invoke documented OS services at a narrow platform boundary, but those services do not implement compiler or build logic.
+
+### 11.1 The seed is a compiler, not a foreign-language escape hatch
+
+A cold start necessarily begins with an executable compiler seed. S0 must be an already-built Capstan compiler executable with recorded digest, source revision, target, provenance and limitations. Its implementation source is Capstan. The build being performed must not invoke a foreign compiler/interpreter to recreate S0, nor fetch a compiler during the build. A seed binary may be carried into a clean builder as a declared input.
+
+S0 must compile the complete Capstan toolchain source into S1. S1 must compile exactly that same source and build manifest into S2; S2 repeats it into S3. Each stage runs the complete applicable compiler, runtime, tool and conformance suites. The stage comparison covers the complete compiler/toolchain artifacts, not just generated source or one compiler executable. It is byte-identical unless a target format has documented nondeterministic fields, in which case only those precisely enumerated fields may be normalised and every executable section, relocation, symbol and semantic manifest remains compared.
+
+The original S0 is not a permanent implementation dependency: after the S1/S2/S3 chain is established, a later stage must rebuild the next stage with the earlier seed unavailable. Independent clean builders must reproduce the same artifacts from the declared Capstan seed and source revision.
+
+### 11.2 Explicit exclusions from the self-hosting claim
+
+A compiler that emits native code but shells out to as, ld, cc, clang, Python, Make or a project shell script is not a complete Capstan self-hosting toolchain. A test suite whose authoritative runner or oracle is written in another language is not a Capstan-only test system. A Capstan compiler that omits its own formatter, LSP, package tools, runtime modules or compiler modules from the source manifest has not compiled the complete toolchain.
+
+The only external trust boundaries are the documented seed executable as a declared bootstrap input, the target OS/hardware interfaces, and CI infrastructure used solely for scheduling, isolation and artifact storage. These boundaries must not contain hidden compiler, linker, test or build logic.

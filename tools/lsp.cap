@@ -18,8 +18,10 @@
 //
 // Limits (CWE-400): a message body is at most MAX_MESSAGE bytes, a header line
 // MAX_HEADER_LINE bytes, a header block MAX_HEADERS lines, JSON nesting
-// MAX_JSON_DEPTH levels; at most MAX_DOCS documents are open and MAX_DIAGS
-// diagnostics are published per document. Malformed framing, malformed JSON and
+// MAX_JSON_DEPTH levels, MAX_JSON_VALUES values, bounded object/array sizes,
+// bounded per-string and aggregate string bytes, escape fragments and number tokens;
+// at most MAX_DOCS documents are open and MAX_DIAGS diagnostics are published per
+// document. Malformed framing, malformed JSON and
 // unknown methods get JSON-RPC errors; nothing a client sends stops the server
 // except the exit notification or the end of its input.
 //
@@ -30,9 +32,16 @@ const int MAX_MESSAGE = 16777216;
 const int MAX_HEADER_LINE = 4096;
 const int MAX_HEADERS = 32;
 const int MAX_JSON_DEPTH = 64;
+const int MAX_JSON_VALUES = 65536;
+const int MAX_JSON_OBJECT_MEMBERS = 4096;
+const int MAX_JSON_ARRAY_ELEMENTS = 16384;
+const int MAX_JSON_STRING_BYTES = 8388608;
+const int MAX_JSON_TOTAL_STRING_BYTES = 12582912;
+const int MAX_JSON_STRING_PARTS = 262144;
+const int MAX_JSON_TOTAL_STRING_PARTS = 524288;
+const int MAX_JSON_NUMBER_BYTES = 128;
 const int MAX_DOCS = 1000;
 const int MAX_DIAGS = 1000;
-const int MAX_IMPORTS = 256;
 const int MAX_TOTAL_TEXT = 268435456;   // all open documents together
 const int MAX_EDIT_WORK = 67108864;     // bytes copied while applying one didChange
 
@@ -142,7 +151,7 @@ int lsp_find_last(Tainted s, string needle) {
 // ---- input --------------------------------------------------------------------------
 //
 // Header lines are read a byte at a time with read_bytes(1), so a line without a line
-// break can never grow beyond MAX_HEADER_LINE bytes in memory (read_line() would keep
+// break can never grow beyond MAX_HEADER_LINE bytes in memory (read_line(1048576) would keep
 // all of it); bodies are read whole with read_bytes(n), and oversized ones are skipped
 // in 1 MiB pieces without being stored.
 
@@ -244,6 +253,9 @@ struct JParse {
     Tainted s;
     int pos;
     string err;
+    int values;
+    int string_bytes;
+    int string_parts;
 }
 
 Json j_new(int k) {
@@ -253,6 +265,16 @@ Json j_new(int k) {
 void j_fail(JParse p, string msg) {
     if (p.err == "") { p.err = msg + " at byte " + int_to_str(p.pos); }
     p.pos = p.s.len();
+}
+
+bool j_string_add(JParse p, List<Tainted> parts, Tainted part) {
+    if (parts.len() >= MAX_JSON_STRING_PARTS || p.string_parts >= MAX_JSON_TOTAL_STRING_PARTS) {
+        j_fail(p, "JSON string fragment budget exceeded [CWE-400]");
+        return false;
+    }
+    parts.push(part);
+    p.string_parts += 1;
+    return true;
 }
 
 void j_ws(JParse p) {
@@ -282,35 +304,47 @@ int j_hex4(JParse p) {
 
 // At a '"'. Returns the decoded text; on error p.err is set.
 Tainted j_string(JParse p) {
+    int start = p.pos + 1;
     p.pos += 1;
     List<Tainted> parts = new List<Tainted>();
     int run = p.pos;
     while (p.err == "") {
+        int raw = p.pos - start;
+        if (raw > MAX_JSON_STRING_BYTES || raw > MAX_JSON_TOTAL_STRING_BYTES - p.string_bytes) {
+            j_fail(p, "JSON string byte budget exceeded [CWE-400]");
+            break;
+        }
         int c = lsp_ch(p.s, p.pos);
         if (c < 0) {
             j_fail(p, "unterminated string");
         } else if (c == '"') {
-            parts.push(p.s.slice(run, p.pos));
+            int raw_end = p.pos - start;
+            if (raw_end > MAX_JSON_STRING_BYTES || raw_end > MAX_JSON_TOTAL_STRING_BYTES - p.string_bytes) {
+                j_fail(p, "JSON string byte budget exceeded [CWE-400]");
+                break;
+            }
+            if (!j_string_add(p, parts, p.s.slice(run, p.pos))) { break; }
+            p.string_bytes += raw_end;
             p.pos += 1;
             return lsp_join(parts);
         } else if (c < 32) {
             j_fail(p, "control character in string");
         } else if (c == '\\') {
-            parts.push(p.s.slice(run, p.pos));
+            if (!j_string_add(p, parts, p.s.slice(run, p.pos))) { break; }
             int e = lsp_ch(p.s, p.pos + 1);
             p.pos += 2;
             if (e == '"' || e == '\\' || e == '/') {
-                parts.push(p.s.slice(p.pos - 1, p.pos));
+                if (!j_string_add(p, parts, p.s.slice(p.pos - 1, p.pos))) { break; }
             } else if (e == 'n') {
-                parts.push(taint("\n"));
+                if (!j_string_add(p, parts, taint("\n"))) { break; }
             } else if (e == 't') {
-                parts.push(taint("\t"));
+                if (!j_string_add(p, parts, taint("\t"))) { break; }
             } else if (e == 'r') {
-                parts.push(taint("\r"));
+                if (!j_string_add(p, parts, taint("\r"))) { break; }
             } else if (e == 'b') {
-                parts.push(taint_char(8));
+                if (!j_string_add(p, parts, taint_char(8))) { break; }
             } else if (e == 'f') {
-                parts.push(taint_char(12));
+                if (!j_string_add(p, parts, taint_char(12))) { break; }
             } else if (e == 'u') {
                 int cp = j_hex4(p);
                 if (cp >= 55296 && cp <= 56319 && lsp_has_at(p.s, p.pos, "\\u")) {
@@ -326,7 +360,13 @@ Tainted j_string(JParse p) {
                 } else if (cp >= 55296 && cp <= 57343) {
                     cp = 65533;   // an unpaired surrogate has no UTF-8 form
                 }
-                if (cp >= 0) { lsp_put_utf8(parts, cp); }
+                if (cp >= 0) {
+                    List<Tainted> encoded = new List<Tainted>();
+                    lsp_put_utf8(encoded, cp);
+                    for (int k = 0; k < encoded.len(); k += 1) {
+                        if (!j_string_add(p, parts, encoded[k])) { break; }
+                    }
+                }
             } else {
                 p.pos -= 1;
                 j_fail(p, "invalid escape in string");
@@ -373,6 +413,7 @@ Json j_number(JParse p) {
         if (!j_digit(lsp_ch(p.s, p.pos))) { j_fail(p, "invalid number"); }
         while (j_digit(lsp_ch(p.s, p.pos))) { p.pos += 1; }
     }
+    if (p.err == "" && p.pos - start > MAX_JSON_NUMBER_BYTES) { j_fail(p, "JSON number token exceeds byte limit [CWE-400]"); }
     Json v = j_new(J_NUM);
     if (p.err == "") { v.text = p.s.slice(start, p.pos); }
     return v;
@@ -392,6 +433,11 @@ Json j_value(JParse p, int depth) {
         return j_new(J_NULL);
     }
     j_ws(p);
+    if (p.values >= MAX_JSON_VALUES) {
+        j_fail(p, "JSON value count exceeds " + int_to_str(MAX_JSON_VALUES) + " [CWE-400]");
+        return j_new(J_NULL);
+    }
+    p.values += 1;
     int c = lsp_ch(p.s, p.pos);
     if (c == '{') {
         Json o = j_new(J_OBJ);
@@ -403,11 +449,21 @@ Json j_value(JParse p, int depth) {
         }
         while (p.err == "") {
             j_ws(p);
+            if (o.items.len() >= MAX_JSON_OBJECT_MEMBERS) {
+                j_fail(p, "JSON object member count exceeds " + int_to_str(MAX_JSON_OBJECT_MEMBERS) + " [CWE-400]");
+                return o;
+            }
             if (lsp_ch(p.s, p.pos) != '"') {
                 j_fail(p, "expected a string key");
                 return o;
             }
             Tainted key = j_string(p);
+            for (int i = 0; i < o.keys.len(); i += 1) {
+                if (o.keys[i] == key) {
+                    j_fail(p, "duplicate JSON object key");
+                    return o;
+                }
+            }
             j_ws(p);
             if (lsp_ch(p.s, p.pos) != ':') {
                 j_fail(p, "expected ':'");
@@ -437,6 +493,10 @@ Json j_value(JParse p, int depth) {
             return a;
         }
         while (p.err == "") {
+            if (a.items.len() >= MAX_JSON_ARRAY_ELEMENTS) {
+                j_fail(p, "JSON array element count exceeds " + int_to_str(MAX_JSON_ARRAY_ELEMENTS) + " [CWE-400]");
+                return a;
+            }
             a.items.push(j_value(p, depth + 1));
             j_ws(p);
             int d2 = lsp_ch(p.s, p.pos);
@@ -475,6 +535,9 @@ Json j_parse(Tainted s, JParse p) {
     p.s = s;
     p.pos = 0;
     p.err = "";
+    p.values = 0;
+    p.string_bytes = 0;
+    p.string_parts = 0;
     Json v = j_value(p, 0);
     j_ws(p);
     if (p.err == "" && p.pos < s.len()) { j_fail(p, "unexpected data after the JSON value"); }
@@ -840,12 +903,12 @@ string name_dir(string name) {
 // The text of an imported file: an open document with that URI, or the file on
 // disk if the URI is inside the workspace root. Disk paths are relative to the
 // server's working directory, which editors set to the workspace root.
-Tainted? import_text(Server srv, Tainted uri) {
+Tainted? import_text(Server srv, Tainted uri, int max_bytes) {
     int di = doc_index(srv, uri);
     if (di >= 0) { return srv.docs[di].text; }
     if (srv.root.len() == 0 || uri.len() <= srv.root.len() || uri.slice(0, srv.root.len()) != srv.root) { return none; }
     if (let rel = uri_decode(uri.slice(srv.root.len(), uri.len()))) {
-        if (let path = validate_path(rel)) { return read_file(path, MAX_SOURCE_BYTES); }
+        if (let path = validate_path(rel)) { return read_file(path, max_bytes); }
     }
     return none;
 }
@@ -887,6 +950,7 @@ void w_diag(List<string> out, Server srv, Tainted text, List<int> starts, Diag d
 // Check one document with the compiler's front end, as `capstanc check` would.
 Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<int> at_col) {
     Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: srv.release, strict: srv.strict, keep_checks: false};
+    CompileBudget budget = new_compile_budget();
     List<Node> decls = new List<Node>();
     List<Tainted> loaded = new List<Tainted>();
     List<Tainted> queue = new List<Tainted>();
@@ -901,6 +965,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
     qcol.push(0);
     int qi = 0;
     while (qi < queue.len()) {
+        if (budget.exhausted) { break; }
         Tainted uri = queue[qi];
         string name = qname[qi];
         int ofile = qfile[qi];
@@ -912,11 +977,13 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             if (loaded[s] == uri) { seen = true; }
         }
         if (seen) { continue; }
-        if (loaded.len() >= MAX_IMPORTS) {
-            report(ctx, ofile, oline, true, "CWE-400", "more than " + int_to_str(MAX_IMPORTS) + " imported files");
+        if (loaded.len() >= MAX_IMPORT_FILES) {
+            budget.exhausted = true;
+            report(ctx, ofile, oline, true, "CWE-400", "import graph exceeds file-count limit (" + int_to_str(MAX_IMPORT_FILES) + ")");
             break;
         }
         loaded.push(uri);
+        budget.files += 1;
         int index = ctx.files.len();
         ctx.files.push(name);
         names.push(name);
@@ -928,13 +995,27 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             at_line.push(at_line[ofile]);
             at_col.push(at_col[ofile]);
         }
+        int remaining = MAX_TOTAL_SOURCE_BYTES - budget.source_bytes;
+        int source_limit = MAX_SOURCE_BYTES;
+        if (remaining < source_limit) { source_limit = remaining; }
         Tainted? found = none;
-        if (index == 0) { found = doc.text; } else { found = import_text(srv, uri); }
+        if (index == 0) { found = doc.text; } else { found = import_text(srv, uri, source_limit); }
         if (let src = found) {
+            if (src.len() > MAX_SOURCE_BYTES || src.len() > remaining) {
+                ctx.sources.push(taint(""));
+                budget.exhausted = true;
+                report(ctx, index, 0, true, "CWE-400", "import graph exceeds source-byte budget (" + int_to_str(MAX_TOTAL_SOURCE_BYTES) + " total; " + int_to_str(MAX_SOURCE_BYTES) + " per file)");
+                break;
+            }
+            budget.source_bytes += src.len();
             ctx.sources.push(src);
-            List<Token> toks = lex(ctx, src, index);
-            if (error_count(ctx) == 0) {
+            List<Token> toks = lex_bounded(ctx, src, index, budget);
+            if (error_count(ctx) == 0 && !budget.exhausted) {
                 List<Node> part = parse_program(ctx, toks);
+                if (!charge_ast_nodes(budget, part)) {
+                    report(ctx, index, 0, true, "CWE-400", "import graph exceeds AST-node limit (" + int_to_str(MAX_TOTAL_AST_NODES) + ")");
+                    break;
+                }
                 for (int k = 0; k < part.len(); k += 1) {
                     Node d = part[k];
                     decls.push(d);
@@ -953,7 +1034,7 @@ Ctx check_doc(Server srv, Doc doc, List<string> names, List<int> at_line, List<i
             }
         } else {
             ctx.sources.push(taint(""));
-            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "' (missing, unreadable, a directory, or over 16 MiB)");
+            report_at(ctx, ofile, oline, ocol, true, "", "cannot read imported file '" + name + "' (missing, unreadable, a directory, over 16 MiB, or aggregate source budget exceeded)");
         }
     }
     if (error_count(ctx) == 0) {
@@ -1282,7 +1363,7 @@ void framing_error(string why) {
 }
 
 int main() {
-    Server srv = new Server{state: S_NEW, utf8: false, strict: false, release: false, root: taint(""), docs: new List<Doc>(), jp: new JParse{s: taint(""), pos: 0, err: ""}};
+    Server srv = new Server{state: S_NEW, utf8: false, strict: false, release: false, root: taint(""), docs: new List<Doc>(), jp: new JParse{s: taint(""), pos: 0, err: "", values: 0, string_bytes: 0, string_parts: 0}};
     Reader r = new Reader{eof: false};
     Frame f = new Frame{length: -1, bad: false, lines: 0};
     while (true) {

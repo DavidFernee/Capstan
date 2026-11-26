@@ -2,7 +2,7 @@
 // spec: types.tainted types.map
 // A map from the decimal text of each byte to its character launders through the key.
 int main() {
-    if (let t = read_line()) {
+    if (let t = read_line(1048576)) {
         Map<string> m = new Map<string>();
         for (int c = 0; c < 256; c += 1) { m.set(int_to_str(c), char_str(c)); }
         string out = "";

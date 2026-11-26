@@ -1,5 +1,5 @@
 int main() {
-    List<string> argv = args();
+    List<string> argv = args(1, 4096, 4096);
     if (argv.len() != 1) { return 2; }
     if (let input = read_file(argv[0], 65536)) {
         Tainted output = single_line(input);

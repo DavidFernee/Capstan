@@ -1,7 +1,7 @@
 # Capstan threat model
 
 What Capstan defends against, what it assumes, what it trusts today, what is out of scope, and what
-risk remains. It describes the integrated repository state reviewed on 2026-11-26 against mainline snapshot `8c3add03d55190fd0afe48b1b813621a90fcd797`, and is the
+risk remains. It describes the integrated repository state reviewed on 2026-11-26 against mainline snapshot `fa7cbc216c2f91aac64503aeeaefa86c831e5a43`, and is the
 maintained threat model called for in [DESIGN-MAP.md](../DESIGN-MAP.md). The default execution path
 is still generated C plus the C runtime; the C-free/CCAM programme is not yet the production path.
 Every claim refers to a document, implementation path or test in the repository.
