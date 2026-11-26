@@ -384,6 +384,13 @@ else
   bad "CCAM native x86-64 backend" "$out"
 fi
 
+section "Helm H0-C0 x86-64 entry and ELF artifact contract"
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  if out="$("$ROOT/tests/helm/check_boot_artifacts.sh" 2>&1)"; then ok "$out"; else bad "Helm H0-C0 boot artifact contract" "$out"; fi
+else
+  ok "Helm H0-C0 GNU linker artifact test skipped on non-Linux/non-x86-64 host"
+fi
+
 section "Capstan-native repository inventory"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/tools/inventory.cap" 2>&1)"; then
   ok "inventory purpose/language classification, binary detection, physical-line counting and aggregate totals"
