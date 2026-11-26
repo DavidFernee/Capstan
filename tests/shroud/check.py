@@ -492,7 +492,7 @@ def check_golden(capstanc, cc, cflags, tmp, update):
             f.write("# tests/shroud/check.py CAPSTANC CC --update-golden after an intended change.\n")
             for name, h in got.items():
                 f.write(f"{h}  {name}\n")
-        return f"recorded {len(got)} files"
+        return f"recorded {len(got)} files: " + "; ".join(f"{h}  {name}" for name, h in got.items())
     want = {}
     for line in open(GOLDEN):
         if line.strip() and not line.startswith("#"):
