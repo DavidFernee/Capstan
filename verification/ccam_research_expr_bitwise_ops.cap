@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+int ag_bitwise_opcode(int op){if(op==38){return 6;}if(op==124){return 7;}if(op==94){return 8;}return 0;}
