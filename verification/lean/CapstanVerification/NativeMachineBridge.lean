@@ -69,7 +69,9 @@ def nativeCCAMMachineInitial
     trapDetail := "" }
 
 /-- With the SF-P entry fixed at zero, the constructor's initial state agrees
-with the Lean initial state, assuming the already-proved register bridges. -/
+with the Lean initial state, assuming the already-proved register bridges and
+the supplied abstract register typing proof. This does not prove that the
+concrete decoder, validator or constructor establishes that typing premise. -/
 theorem nativeCCAMMachineInitial_matches
     {n m : Nat} {types : RegTypes n}
     (program : FiniteProgram n m types)
