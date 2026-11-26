@@ -316,8 +316,7 @@ Everything the client sends is untrusted (`Tainted`); the server has no `trust()
 replies are UTF-8 JSON whose strings all pass through `escape_json()` (decoded `\uXXXX` and
 `%XX` escapes are rebuilt with `taint_char()`, so they stay untrusted). Limits (CWE-400): 16 MiB per message (a larger one is
 skipped unread and answered with -32600), 4,096-byte header lines, 32 header lines,
-JSON nesting of 64 levels, 1,000 open documents and 256 MiB of text in all, 1,000
-diagnostics per document, 256 imported files.
+JSON nesting of 64 levels; 65,536 total JSON values; 4,096 object members and 16,384 array elements per container; 8 MiB per encoded string and 12 MiB aggregate string bytes; 262,144 escape fragments per string; 128 bytes per number token; duplicate object keys are rejected. The server also allows 1,000 open documents and 256 MiB of text in all, 1,000 diagnostics per document, and 256 imported files.
 
 ## Conformance areas
 
