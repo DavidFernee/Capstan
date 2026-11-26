@@ -473,6 +473,16 @@ if out="$($PY "$ROOT/tests/unit/read_line_eof.py" "$C" "$CC" $WFLAGS 2>&1)"; the
 section "crypto: lib/crypto.cap against hashlib, the published vectors and the runtime"
 if out="$($PY "$ROOT/tests/crypto/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "crypto" "$out"; fi
 
+section "Keel: bounded exact geometry predicates against Python arbitrary-precision integers"
+if out="$($PY "$ROOT/tests/keel/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else bad "Keel exact geometry predicates" "$out"; fi
+
+section "Keel: bounded exact triangle-mesh validation and topology incidence"
+if out="$($PY "$ROOT/tests/keel/mesh_check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else bad "Keel triangle mesh validation" "$out"; fi
+
 section "shroud: the GUI library against exact areas, fontTools, Python's UTF-8 decoder, zlib and golden frames"
 if out="$($PY "$ROOT/tests/shroud/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then
   ok "$(head -1 <<<"$out")"; tail -n +2 <<<"$out" | sed 's/^/      /'
