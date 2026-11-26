@@ -9,6 +9,7 @@ import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
 import CapstanVerification.InjectionProvenance
 import CapstanVerification.InjectionSinks
+import CapstanVerification.InjectionEnvironment
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -226,3 +227,12 @@ import CapstanVerification.InjectionSinks
 #print axioms CapstanVerification.context_encoder_preserves_data_provenance
 #print axioms CapstanVerification.context_encoder_preserves_selection_provenance
 #print axioms CapstanVerification.context_encoder_rejects_other_context
+
+-- Local environment and strong-update provenance semantics.
+#print axioms CapstanVerification.readLocal_after_write
+#print axioms CapstanVerification.readLocal_other_after_write
+#print axioms CapstanVerification.assignment_readback
+#print axioms CapstanVerification.reassignment_replaces_prior_provenance
+#print axioms CapstanVerification.assignment_preserves_other_locals
+#print axioms CapstanVerification.eval_local_is_environment_lookup
+#print axioms CapstanVerification.local_input_provenance_survives_assignment
