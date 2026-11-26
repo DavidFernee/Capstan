@@ -11,7 +11,7 @@ itself, and this file can be thrown away.
 
 Usage:  python3 capstan0.py out.py file1.cap [file2.cap ...]
 """
-import os, sys, stat
+import os, sys, stat, codecs
 
 MAX_SOURCE_BYTES = 16 * 1024 * 1024
 MAX_IMPORT_FILES = 256
@@ -664,12 +664,12 @@ def b_read_line(mx):
 def b_read_bytes(n):
     if n < 0 or n > (1 << 30): _panic("read_bytes() count outside 0..2^30", "CWE-789")
     if n == 0: return ""
-    out = b""
+    out = bytearray()
     while len(out) < n:
         got = sys.stdin.buffer.read1(min(n - len(out), 65536))
         if not got: break
-        out += got
-    return None if not out else out.decode("latin-1")
+        out.extend(got)
+    return None if not out else bytes(out).decode("latin-1")
 def b_flush(): sys.stdout.flush()
 def b_write_file(p, d):
     if p == "" or "\0" in p: return False
@@ -677,6 +677,19 @@ def b_write_file(p, d):
         with open(p, "wb") as f: f.write(d.encode("latin-1"))
         return True
     except OSError: return False
+def _filesystem_bytes_len(value):
+    # Count host argv/environment bytes incrementally; do not make a second
+    # unbounded copy of a potentially oversized secret or command-line value.
+    encoder = codecs.getincrementalencoder(sys.getfilesystemencoding())(
+        errors=sys.getfilesystemencodeerrors()
+    )
+    total = 0
+    for start in range(0, len(value), 4096):
+        total += len(encoder.encode(value[start:start + 4096], final=False))
+    total += len(encoder.encode("", final=True))
+    return total
+
+
 def b_args(max_count, max_arg_bytes, max_total_bytes):
     if not 0 <= max_count <= 4096 or not 0 <= max_arg_bytes <= (1 << 20) or not 0 <= max_total_bytes <= (1 << 24):
         _panic("args() bounds outside supported limits", "CWE-789")
@@ -684,7 +697,7 @@ def b_args(max_count, max_arg_bytes, max_total_bytes):
     if len(values) > max_count: _panic("command-line argument count exceeds explicit bound", "CWE-789")
     total = 0
     for value in values:
-        size = len(os.fsencode(value))
+        size = _filesystem_bytes_len(value)
         if size > max_arg_bytes or size > max_total_bytes - total:
             _panic("command-line argument bytes exceed explicit bound", "CWE-789")
         total += size
@@ -772,7 +785,7 @@ def b_run(prog, *a): b_println("[run] " + prog + "".join(" argv[%d]=%s" % (i + 1
 def b_secret_env(n, mx):
     if mx < 0 or mx > (1 << 20): _panic("secret_env() limit outside 0..1 MiB", "CWE-789")
     value = os.environ.get(n)
-    if value is not None and len(os.fsencode(value)) > mx:
+    if value is not None and _filesystem_bytes_len(value) > mx:
         _panic("secret environment value exceeds explicit byte limit", "CWE-789")
     return value
 def b_secret_eq(a, b):
