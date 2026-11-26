@@ -3,12 +3,12 @@
 // directory as the only argument, through both the native compiler and stage 0.
 // Every byte must survive, and bad paths must give none or false, not a crash.
 int main() {
-    List<string> a = args();
+    List<string> a = args(256, 4096, 1048576);
     if (a.len() != 1) { return 2; }
     string dir = a[0];
     int n = 0;
     while (true) {
-        if (let line = read_line()) {
+        if (let line = read_line(1048576)) {
             n += 1;
             println($"line {n}: {line.len()} bytes: " + escape_log(line));
         } else {
@@ -21,13 +21,13 @@ int main() {
     string all = join(bytes, "");
     string path = dir + "/all.bin";
     println("write: " + to_text(write_file(path, all)));
-    if (let back = read_file(path)) {
+    if (let back = read_file(path, 16777216)) {
         println($"read back {back.len()} bytes, identical: {back == all}");
     } else {
         println("read back: none");
     }
     println("empty write: " + to_text(write_file(path, "")));
-    if (let empty = read_file(path)) { println($"empty read: {empty.len()} bytes"); }
+    if (let empty = read_file(path, 16777216)) { println($"empty read: {empty.len()} bytes"); }
     List<string> bad = new List<string>();
     bad.push(dir);
     bad.push(dir + "/missing.txt");
@@ -35,7 +35,7 @@ int main() {
     bad.push(dir + "\0/all.bin");
     for (int j = 0; j < bad.len(); j += 1) {
         bool found = false;
-        if (let _x = read_file(bad[j])) { found = true; }
+        if (let _x = read_file(bad[j], 16777216)) { found = true; }
         println($"bad path {j}: read gives {found}, write gives {write_file(bad[j], "x")}");
     }
     return 0;

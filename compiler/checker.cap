@@ -1012,9 +1012,9 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_STR);
     }
     if (f == "read_file") {
-        if (n != 2) { want_args(c, e, 0, 1, f); }
+        want_args(c, e, 0, 2, f);
         if (n >= 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_STR), "read_file() path"); }
-        if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "read_file() limit"); }
+        if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "read_file() byte limit"); }
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "workspace_open") {
@@ -1037,7 +1037,8 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_VOID);
     }
     if (f == "read_line") {
-        want_args(c, e, 0, 0, f);
+        want_args(c, e, 0, 1, f);
+        if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "read_line() byte limit"); }
         return mk_wrap(TY_OPT, mk_type(TY_TAINT));
     }
     if (f == "read_bytes") {
@@ -1064,7 +1065,15 @@ Type check_call(Checker c, Node e) {
         }
         return mk_type(TY_BOOL);
     }
-    if (f == "args") { want_args(c, e, 0, 0, f); return mk_wrap(TY_LIST, mk_type(TY_STR)); }
+    if (f == "args") {
+        want_args(c, e, 0, 3, f);
+        if (n == 3) {
+            expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "args() argument-count limit");
+            expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "args() per-argument byte limit");
+            expect_type(c, e, ty_of(e.kids[2]), mk_type(TY_INT), "args() aggregate byte limit");
+        }
+        return mk_wrap(TY_LIST, mk_type(TY_STR));
+    }
     if (f == "exit") {
         want_args(c, e, 0, 1, f);
         if (n == 1) { expect_type(c, e, ty_of(e.kids[0]), mk_type(TY_INT), "exit()"); }
@@ -1174,8 +1183,9 @@ Type check_call(Checker c, Node e) {
         return mk_type(TY_VOID);
     }
     if (f == "secret_env") {
-        want_args(c, e, 0, 1, f);
-        if (n == 1) {
+        want_args(c, e, 2, 2, f);
+        if (n == 2) { expect_type(c, e, ty_of(e.kids[1]), mk_type(TY_INT), "secret_env() byte limit"); }
+        if (n == 2) {
             if (!is_literal_str(e.kids[0])) {
                 error_at(c.ctx, e, "", "secret_env() takes the variable name as a string literal");
             } else if (literal_has_nul(e.kids[0])) {

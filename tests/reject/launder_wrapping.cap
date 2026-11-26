@@ -1,6 +1,6 @@
 // expect: CWE-20
 // spec: types.tainted expr.bitwise
 int main() {
-    if (let t = read_line()) { println(char_str(wrapping_add(t.at(0), 0))); }
+    if (let t = read_line(1048576)) { println(char_str(wrapping_add(t.at(0), 0))); }
     return 0;
 }

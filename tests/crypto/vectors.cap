@@ -42,7 +42,7 @@ List<int> from_hex(string t) {
 }
 
 int main() {
-    List<string> a = args();
+    List<string> a = args(256, 4096, 1048576);
     bool long_vectors = a.len() > 0 && a[0] == "long";
     // FIPS 180-4 examples.
     println("sha256-empty " + to_hex(sha256(bytes_of(""))));

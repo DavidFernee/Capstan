@@ -2,7 +2,7 @@
 // spec: types.html
 // Untrusted input cannot be appended to Html without escaping.
 int main() {
-    if (let t = read_line()) {
+    if (let t = read_line(1048576)) {
         Html page = escape_html(taint("<p>")) + t;
     }
     return 0;

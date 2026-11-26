@@ -2,7 +2,7 @@
 // spec: types.html
 // Text escaped for HTML and text escaped for logs cannot be combined.
 int main() {
-    if (let t = read_line()) {
+    if (let t = read_line(1048576)) {
         Html h = escape_html(t);
         LogText l = escape_log(t);
         Html both = h + l;

@@ -2,7 +2,7 @@
 // spec: types.html
 // Event-handler attributes are JavaScript.
 int main() {
-    if (let t = read_line()) {
+    if (let t = read_line(1048576)) {
         bool ok = write_file("p.html", "<b onclick='go(" + escape_html(t) + ")'>x</b>");
         if (!ok) { println("write failed"); }
     }

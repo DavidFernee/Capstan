@@ -342,7 +342,7 @@ string builtin_c(string f) {
     if (f == "println") { return "cap_println"; }
     if (f == "int_to_str") { return "cap_int_to_str"; }
     if (f == "char_str") { return "cap_char_str"; }
-    if (f == "read_file") { return "cap_read_file"; }
+    if (f == "read_file") { return "cap_read_file_max"; }
     if (f == "workspace_open") { return "cap_workspace_open"; }
     if (f == "workspace_read_file") { return "cap_workspace_read_file"; }
     if (f == "workspace_close") { return "cap_workspace_close"; }
@@ -379,7 +379,7 @@ string builtin_c(string f) {
 }
 
 bool builtin_needs_loc(string f) {
-    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes" || f == "taint_char" || f == "workspace_read_file";
+    return f == "char_str" || f == "join" || f == "assert" || f == "wrapping_shl" || f == "read_bytes" || f == "taint_char" || f == "workspace_read_file" || f == "read_line" || f == "args" || f == "read_file" || f == "secret_env";
 }
 
 string gen_call(Gen g, Node e) {
@@ -427,10 +427,6 @@ string gen_call(Gen g, Node e) {
     string extra = "";
     string cf = builtin_c(f);
     if (builtin_needs_loc(f)) { extra = loc(e); }
-    if (f == "read_file" && e.kids.len() == 2) {
-        cf = "cap_read_file_max";
-        extra = loc(e);
-    }
     return wrap(s2, cf + "(" + call_list(s2.names, 0, extra) + ")");
 }
 

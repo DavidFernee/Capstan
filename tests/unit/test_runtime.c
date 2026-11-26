@@ -520,26 +520,26 @@ static void test_files(void) {
     for (int i = 0; i < 256; i++) all[i] = (char)i;
     CapStr *p = cap_str_new(path, (int64_t)strlen(path));
     CHECK(cap_write_file(p, cap_str_new(all, 256)));
-    CHECK(str_is(cap_read_file(p), all, 256));
+    CHECK(str_is(cap_read_file_max(p, 1 << 20, 0), all, 256));
     CHECK(cap_write_file(p, CAP_LIT("", 0)));
-    CHECK(str_is(cap_read_file(p), "", 0));
+    CHECK(str_is(cap_read_file_max(p, 1 << 20, 0), "", 0));
     /* larger than the read chunk, so the buffer must grow */
     char *big = (char *)malloc(300000);
     for (int i = 0; i < 300000; i++) big[i] = (char)(i * 7);
     CHECK(cap_write_file(p, cap_str_new(big, 300000)));
-    CHECK(str_is(cap_read_file(p), big, 300000));
+    CHECK(str_is(cap_read_file_max(p, 1 << 20, 0), big, 300000));
     free(big);
-    CHECK(cap_read_file(cap_str_new(dir, (int64_t)strlen(dir))) == NULL);            /* a directory */
-    CHECK(cap_read_file(CAP_LIT("/nonexistent/capstan", 20)) == NULL);
-    CHECK(cap_read_file(CAP_LIT("", 0)) == NULL);
+    CHECK(cap_read_file_max(cap_str_new(dir, (int64_t)strlen(dir)), 1 << 20, 0) == NULL);            /* a directory */
+    CHECK(cap_read_file_max(CAP_LIT("/nonexistent/capstan", 20), 1 << 20, 0) == NULL);
+    CHECK(cap_read_file_max(CAP_LIT("", 0), 1 << 20, 0) == NULL);
     char nul[300];
     int nn = snprintf(nul, sizeof nul, "%s/data.bin", dir);
     nul[strlen(dir)] = 0;                                                              /* "<dir>\0data.bin" */
-    CHECK(cap_read_file(cap_str_new(nul, nn)) == NULL);
+    CHECK(cap_read_file_max(cap_str_new(nul, nn), 1 << 20, 0) == NULL);
     CHECK(!cap_write_file(cap_str_new(nul, nn), CAP_LIT("x", 1)));
     CHECK(!cap_write_file(CAP_LIT("/nonexistent/capstan/x", 22), CAP_LIT("x", 1)));
     CHECK(!cap_write_file(cap_str_new(dir, (int64_t)strlen(dir)), CAP_LIT("x", 1)));
-    CapStr *proc = cap_read_file(CAP_LIT("/proc/self/status", 17));                   /* size 0 on Linux */
+    CapStr *proc = cap_read_file_max(CAP_LIT("/proc/self/status", 17), 1 << 20, 0);                   /* size 0 on Linux */
 #if defined(__linux__)
     CHECK(proc && proc->len > 0);
 #else
@@ -554,14 +554,14 @@ static void test_files(void) {
     fwrite("\nlast", 1, 5, f);
     fclose(f);
     CHECK(freopen(in, "rb", stdin) != NULL);
-    CHECK(str_is(cap_read_line(), "ab\0cd", 5));
-    CHECK(str_is(cap_read_line(), "", 0));
-    CHECK(str_is(cap_read_line(), "x\r", 2));
-    CapStr *longl = cap_read_line();
+    CHECK(str_is(cap_read_line(CAP_READ_LINE_MAX, 0), "ab\0cd", 5));
+    CHECK(str_is(cap_read_line(CAP_READ_LINE_MAX, 0), "", 0));
+    CHECK(str_is(cap_read_line(CAP_READ_LINE_MAX, 0), "x\r", 2));
+    CapStr *longl = cap_read_line(CAP_READ_LINE_MAX, 0);
     CHECK(longl && longl->len == 10000 && longl->data[0] == 'L' && longl->data[9999] == 'L');
-    CHECK(str_is(cap_read_line(), "last", 4)); /* EOF without a trailing newline */
-    CHECK(cap_read_line() == NULL);
-    CHECK(cap_read_line() == NULL);
+    CHECK(str_is(cap_read_line(CAP_READ_LINE_MAX, 0), "last", 4)); /* EOF without a trailing newline */
+    CHECK(cap_read_line(CAP_READ_LINE_MAX, 0) == NULL);
+    CHECK(cap_read_line(CAP_READ_LINE_MAX, 0) == NULL);
 
     /* Exactly the configured maximum is accepted, and the next line remains intact. */
     f = fopen(in, "wb");
@@ -572,11 +572,11 @@ static void test_files(void) {
     fwrite("\nnext\n", 1, 6, f);
     fclose(f);
     CHECK(freopen(in, "rb", stdin) != NULL);
-    CapStr *at_limit = cap_read_line();
+    CapStr *at_limit = cap_read_line(CAP_READ_LINE_MAX, 0);
     CHECK(at_limit && at_limit->len == CAP_READ_LINE_MAX &&
           at_limit->data[0] == 'Q' && at_limit->data[CAP_READ_LINE_MAX - 1] == 'Q');
-    CHECK(str_is(cap_read_line(), "next", 4));
-    CHECK(cap_read_line() == NULL);
+    CHECK(str_is(cap_read_line(CAP_READ_LINE_MAX, 0), "next", 4));
+    CHECK(cap_read_line(CAP_READ_LINE_MAX, 0) == NULL);
 
     /* One byte over the limit fails closed without growing the buffer further. */
     f = fopen(in, "wb");
@@ -588,10 +588,10 @@ static void test_files(void) {
     int old_test_mode = cap_test_mode;
     cap_test_mode = 1;
     int rejected = setjmp(cap_test_jmp) != 0;
-    if (!rejected) (void)cap_read_line();
+    if (!rejected) (void)cap_read_line(CAP_READ_LINE_MAX, 0);
     cap_test_mode = old_test_mode;
     CHECK(rejected);
-    CHECK(cap_read_line() == NULL);
+    CHECK(cap_read_line(CAP_READ_LINE_MAX, 0) == NULL);
     remove(in);
     remove(path);
     rmdir(dir);
@@ -1244,7 +1244,7 @@ static uintptr_t secret_addrs[CAP_NSECRETS];
 __attribute__((noinline)) static void make_secrets(void) {
     setenv("CAPSTAN_UNIT_SECRET", "correct-horse-battery-staple", 1);
     for (int i = 0; i < CAP_NSECRETS; i++) {
-        CapStr *sec = cap_secret_env(CAP_LIT("CAPSTAN_UNIT_SECRET", 19));
+        CapStr *sec = cap_secret_env(CAP_LIT("CAPSTAN_UNIT_SECRET", 19), 1024, 0);
         secret_addrs[i] = (uintptr_t)sec->data ^ CAP_DISGUISE;
     }
     unsetenv("CAPSTAN_UNIT_SECRET");
@@ -1252,7 +1252,7 @@ __attribute__((noinline)) static void make_secrets(void) {
 static void test_secret_env_name(void) {
     setenv("CAPSTAN_UNIT_SECRET_PREFIX", "prefix-value", 1);
     static const char truncated_name[] = "CAPSTAN_UNIT_SECRET_PREFIX\0SUFFIX";
-    CHECK(cap_secret_env(cap_str_new(truncated_name, (int64_t)sizeof truncated_name - 1)) == NULL);
+    CHECK(cap_secret_env(cap_str_new(truncated_name, (int64_t)sizeof truncated_name - 1), 1024, 0) == NULL);
     unsetenv("CAPSTAN_UNIT_SECRET_PREFIX");
 }
 

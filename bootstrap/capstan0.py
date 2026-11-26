@@ -607,7 +607,7 @@ def b_int_to_str(i): return str(i)
 def b_char_str(c):
     if c < 0 or c > 255: _panic("char_str out of range", "CWE-704")
     return chr(c)
-def b_read_file(p, mx=1 << 30):
+def b_read_file(p, mx):
     if mx < 0 or mx > (1 << 30): _panic("read_file() limit outside 0..2^30", "CWE-789")
     if p == "" or "\0" in p: return None
     try:
@@ -620,9 +620,13 @@ def b_read_file(p, mx=1 << 30):
             data = f.read(mx + 1)
             return None if len(data) > mx else data.decode("latin-1")
     except OSError: return None
-def b_read_line():
-    l = sys.stdin.buffer.readline()
-    return None if not l else l.decode("latin-1").rstrip("\n")
+def b_read_line(mx):
+    if mx < 0 or mx > (1 << 20): _panic("read_line() limit outside 0..1 MiB", "CWE-789")
+    raw = sys.stdin.buffer.readline(mx + 1)
+    if not raw: return None
+    payload = raw[:-1] if raw.endswith(b"\n") else raw
+    if len(payload) > mx: _panic("read_line() input exceeds declared byte bound", "CWE-789")
+    return payload.decode("latin-1")
 def b_read_bytes(n):
     if n < 0 or n > (1 << 30): _panic("read_bytes() count outside 0..2^30", "CWE-789")
     if n == 0: return ""
@@ -639,7 +643,18 @@ def b_write_file(p, d):
         with open(p, "wb") as f: f.write(d.encode("latin-1"))
         return True
     except OSError: return False
-def b_args(): return list(sys.argv[1:])
+def b_args(max_count, max_each, max_total):
+    if max_count < 0 or max_count > 4096 or max_each < 0 or max_each > (1 << 20) or max_total < 0 or max_total > (1 << 24): _panic("args() bounds outside supported limits", "CWE-789")
+    values = sys.argv[1:]
+    if len(values) > max_count: _panic("args() exceeds argument-count bound", "CWE-789")
+    total = 0
+    for value in values:
+        size = 0
+        for char in value:
+            size += len(os.fsencode(char))
+            if size > max_each or size > max_total - total: _panic("args() exceeds byte bound", "CWE-789")
+        total += size
+    return values
 def b_exit(c): sys.stdout.flush(); sys.exit(c)
 def b_join(l, sep): return sep.join(l)
 def b_assert(c):
@@ -720,7 +735,11 @@ def b_validate_range(t, lo, hi):
 def b_taint(s): return s
 def b_sql_query(tmpl, *a): b_println("[sql] " + tmpl + "".join(" $%d=%s" % (i + 1, b_escape_log(x)) for i, x in enumerate(a)))
 def b_run(prog, *a): b_println("[run] " + prog + "".join(" argv[%d]=%s" % (i + 1, b_escape_log(x)) for i, x in enumerate(a)))
-def b_secret_env(n): return os.environ.get(n)
+def b_secret_env(n, mx):
+    if mx < 0 or mx > (1 << 20): _panic("secret_env() limit outside 0..1 MiB", "CWE-789")
+    value = os.environ.get(n)
+    if value is not None and len(os.fsencode(value)) > mx: _panic("secret_env() value exceeds declared byte bound", "CWE-789")
+    return value
 def b_secret_eq(a, b):
     import hmac; return hmac.compare_digest(a.encode("latin-1"), b.encode("latin-1"))
 def b_hash(d): return "cap1$sha256$" + hashlib.sha256(d.encode("latin-1")).hexdigest()

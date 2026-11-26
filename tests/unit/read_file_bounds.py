@@ -15,15 +15,15 @@ PROGRAM = """void show(string label, Tainted? t) {
     if (let s = t) { println(label + ": " + int_to_str(s.len()) + " bytes"); } else { println(label + ": none"); }
 }
 int main() {
-    List<string> a = args();
+    List<string> a = args(4, 4096, 16384);
     string d = a[0];
-    show("fifo", read_file(d + "/fifo"));
+    show("fifo", read_file(d + "/fifo", 10));
     show("zero", read_file("/dev/zero", 100000));
     show("exact", read_file(d + "/ten", 10));
     show("over", read_file(d + "/ten", 9));
     show("empty limit", read_file(d + "/empty", 0));
-    show("default", read_file(d + "/ten"));
-    show("directory", read_file(d));
+    show("explicit", read_file(d + "/ten", 10));
+    show("directory", read_file(d, 10));
     show("bad limit", read_file(d + "/ten", -1));
     return 0;
 }
@@ -33,7 +33,7 @@ zero: none
 exact: 10 bytes
 over: none
 empty limit: 0 bytes
-default: 10 bytes
+explicit: 10 bytes
 directory: none
 """
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The read_line() maximum payload is accepted when EOF follows without a newline.
+"""The read_line(MAX) maximum payload is accepted when EOF follows without a newline.
 
     read_line_eof.py CAPSTANC CC [CFLAGS...]
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 MAX = 1 << 20
 PROGRAM = """int main() {
-    if (let line = read_line()) {
+    if (let line = read_line(MAX)) {
         println(int_to_str(line.len()));
     } else {
         println("none");
