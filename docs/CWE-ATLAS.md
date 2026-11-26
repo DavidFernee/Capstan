@@ -9,7 +9,7 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**255 weaknesses, 294 attempts.*** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 299 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
@@ -18,8 +18,8 @@ Attempts are written from the CWE descriptions; this atlas is not an official MI
 | Prevented: attempt compiles but has no effect | 16 |
 | Inexpressible: the construct does not exist | 71 |
 | Possible only through an audited escape hatch | 2 |
-| Logic or design decision: beyond any language | 22 |
-| **Gap: can be written** | 6 |
+| Logic or design decision: beyond any language | 21 |
+| **Gap: can be written** | 7 |
 | Not applicable (yet) | 33 |
 
 ## Gaps: weaknesses that can still be written
@@ -36,6 +36,7 @@ closes a gap the test fails and the entry is reclassified.
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a helper call) | `Tainted identity(Tainted value) { return value; }` | The password-name heuristic stops at N_CALL nodes, so a helper that preserves Tainted can hide a password-like variable from the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted. |
 | [862](https://cwe.mitre.org/data/definitions/862.html) | Missing authorization (data type not declared sensitive) | `string read_any(Record r) { return r.body; }` | Protection starts when the type is declared sensitive. It is declared once per type, not per function, but it can still be forgotten. |
 | [306](https://cwe.mitre.org/data/definitions/306.html) | Missing authentication for critical function | `void delete_all_records() { }` | An operation that touches no sensitive data value cannot be recognised as critical; it must be declared protected. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through Boolean comparison) | `int main() { if (let input = read_line()) { bool matched = input.at(0) == 65; string ou...` | The current byte-reconstruction sink is not a general information-flow sink. Boolean comparison provenance is now tracked through locals, but the compiler does not yet define a policy for every control-flow observation. |
 | [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (Html assembled across separate statements) | `int main() { if (let t = read_line()) { Html v = escape_html(t); Html page = "<img src=...` | The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap. |
 
 ## Beyond any language: logic and design decisions
@@ -73,13 +74,18 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 
 | CWE | Weakness | Outcome | Detail |
 |---|---|---|---|
-| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a dynamic list index) | Prevented: rejected at compile time | `CWE-20`. A dynamic-index write widens to the whole element summary, so every possible element read remains derived. |
 | [15](https://cwe.mitre.org/data/definitions/15.html) | External control of system or configuration setting | Inexpressible: the construct does not exist |  |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through Boolean comparison) | **Gap: can be written** | The current byte-reconstruction sink is not a general information-flow sink. Boolean comparison provenance is now tracked through locals, but the compiler does not yet define a policy for every control-flow observation. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through control flow | Logic or design decision: beyond any language | Building output by branching on each input byte is exactly how a validator is written (the compiler's own lexer works this way). Which branches are safe is the programmer's decision. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a bit mask | Prevented: rejected at compile time | `CWE-20`. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation | Prevented: rejected at compile time | `CWE-20`. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a list | Prevented: rejected at compile time | `CWE-20`. Collections and structs that hold bytes of untrusted input are tracked too. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Laundering untrusted bytes through a struct field | Prevented: rejected at compile time | `CWE-20`. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through Tainted length) | Prevented: rejected at compile time | `CWE-20`. Length is derived metadata; helper summaries must preserve the Tainted parameter dependency. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a Boolean helper) | Prevented: rejected at compile time | `CWE-20`. Boolean parameter-to-return summaries must preserve derived comparison results through helper calls. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through to_text) | Prevented: rejected at compile time | `CWE-20`. Numeric-to-text conversion must preserve provenance before a trusted map lookup. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through join) | Prevented: rejected at compile time | `CWE-20`. Collection aggregation must preserve element provenance before a trusted map lookup. |
+| [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a dynamic list index) | Prevented: rejected at compile time | `CWE-20`. A dynamic-index write widens to the whole element summary, so every possible element read remains derived. |
 | [20](https://cwe.mitre.org/data/definitions/20.html) | Improper input validation (laundering through a lookup table) | Prevented: rejected at compile time | `CWE-20`. Bytes of untrusted input are tainted integers: selecting trusted text with them (list index, slice, map key) is rejected. |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal (via an audited trust()) | Possible only through an audited escape hatch | Possible only through trust(), which needs a written justification and is reported in every build. validate_path() is the safe route. |
 | [22](https://cwe.mitre.org/data/definitions/22.html) | Path traversal (attempt through validate_path) | Prevented: attempt compiles but has no effect |  |
