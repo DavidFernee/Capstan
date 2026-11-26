@@ -1,9 +1,9 @@
 # Capstan build. `make` bootstraps the self-hosted compiler and verifies the fixpoint.
 CC      ?= cc
 CFLAGS  ?= -O2 -std=gnu11 -Wall -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-parentheses-equality
-HARDEN_FLAGS = -fstack-protector-strong -fPIE -pie
+HARDEN_FLAGS = -fstack-protector-strong -fPIE
 ifeq ($(shell uname -s),Linux)
-HARDEN_FLAGS += -D_FORTIFY_SOURCE=2
+HARDEN_FLAGS += -pie -D_FORTIFY_SOURCE=2
 endif
 SRC      = compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap compiler/ranges.cap compiler/codegen.cap compiler/main.cap
 RT       = runtime/capstan_rt.h
