@@ -13,13 +13,13 @@ Attempts are written from the CWE descriptions; this atlas is not an official MI
 
 | Outcome | Weaknesses |
 |---|---|
-| Prevented: rejected at compile time | 81 |
+| Prevented: rejected at compile time | 80 |
 | Prevented: stopped safely at run time | 25 |
 | Prevented: attempt compiles but has no effect | 16 |
 | Inexpressible: the construct does not exist | 71 |
 | Possible only through an audited escape hatch | 2 |
 | Logic or design decision: beyond any language | 22 |
-| **Gap: can be written** | 5 |
+| **Gap: can be written** | 6 |
 | Not applicable (yet) | 33 |
 
 ## Gaps: weaknesses that can still be written
