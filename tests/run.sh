@@ -435,13 +435,20 @@ else
   bad "private field encapsulation" "$(tail -8 "$tmp/log"; tail -8 "$tmp/private_fields.out" 2>/dev/null)"
 fi
 
-section "experimental region heap: opaque state boundary"
+section "experimental region heap: opaque state and reference boundaries"
 if out="$("$C" build -o "$tmp/ccam_heap_opaque_probe.c" "$ROOT/verification/ccam_heap_opaque_probe.cap" 2>&1)"; then
-  bad "region heap opacity" "external module read a private heap field"
-elif grep -qF "private field 'heap_token' of CCAMHeap" <<<"$out"; then
-  ok "region heap state is inaccessible to importing modules"
+  bad "region heap state opacity" "external module read the private arena identity"
+elif grep -qF "private field 'identity' of CCAMHeap" <<<"$out"; then
+  ok "region heap identity is inaccessible to importing modules"
 else
-  bad "region heap opacity" "$out"
+  bad "region heap state opacity" "$out"
+fi
+if out="$("$C" build -o "$tmp/ccam_heap_ref_opaque_probe.c" "$ROOT/verification/ccam_heap_ref_opaque_probe.cap" 2>&1)"; then
+  bad "region heap reference opacity" "external module constructed a CCAMHeapRef"
+elif grep -qi "opaque" <<<"$out"; then
+  ok "region heap references cannot be constructed by importing modules"
+else
+  bad "region heap reference opacity" "$out"
 fi
 
 expect_reject() {   # dir label
