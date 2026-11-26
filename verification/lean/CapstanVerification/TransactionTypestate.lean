@@ -64,17 +64,19 @@ A transition is admitted only for a well-formed linear context, an existing
 owner, and an operation enabled by that owner's current typestate. Invalid
 contexts and invalid transitions fail closed.
 -/
-def advanceTxContext (context : TxContext) (resource : Nat)
-    (operation : TxOperation) : Option TxContext :=
-  if LinearTxContext context then
-    match context.find? (fun owner => owner.1 == resource) with
-    | none => none
-    | some owner =>
-      match txTransition owner.2 operation with
+noncomputable def advanceTxContext (context : TxContext) (resource : Nat)
+    (operation : TxOperation) : Option TxContext := by
+  classical
+  exact
+    if LinearTxContext context then
+      match context.find? (fun owner => owner.1 == resource) with
       | none => none
-      | some next => some (updateTxPhase context resource next)
-  else
-    none
+      | some owner =>
+        match txTransition owner.2 operation with
+        | none => none
+        | some next => some (updateTxPhase context resource next)
+    else
+      none
 
 /-- The transition relation preserves the multiset/order of owner identities. -/
 theorem txOwnerIds_update_preserved (context : TxContext)
@@ -83,7 +85,10 @@ theorem txOwnerIds_update_preserved (context : TxContext)
   induction context with
   | nil => rfl
   | cons owner rest ih =>
-    simp [updateTxPhase, txOwnerIds, ih]
+    cases owner with
+    | mk id phase =>
+      cases hmatch : (id == resource) <;>
+        simp [updateTxPhase, txOwnerIds, hmatch, ih]
 
 /-- Updating a resource's phase cannot introduce a second owner. -/
 theorem update_preserves_linear_context (context : TxContext)
@@ -158,9 +163,11 @@ theorem advance_preserves_owner_ids (context next : TxContext)
     (resource : Nat) (operation : TxOperation)
     (hstep : advanceTxContext context resource operation = some next) :
     txOwnerIds next = txOwnerIds context := by
+  classical
   unfold advanceTxContext at hstep
-  split at hstep
-  · cases hfind : context.find? (fun owner => owner.1 == resource) with
+  by_cases hlinear : LinearTxContext context
+  · simp only [if_pos hlinear] at hstep
+    cases hfind : context.find? (fun owner => owner.1 == resource) with
     | none => simp [hfind] at hstep
     | some owner =>
       cases htransition : txTransition owner.2 operation with
@@ -169,7 +176,7 @@ theorem advance_preserves_owner_ids (context next : TxContext)
         simp [hfind, htransition] at hstep
         cases hstep
         exact txOwnerIds_update_preserved context resource phase
-  · simp at hstep
+  · simp [hlinear] at hstep
 
 /-- The canonical successful path: write, prepare, decide, commit, release. -/
 theorem canonical_commit_path :
