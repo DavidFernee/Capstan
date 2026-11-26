@@ -1390,7 +1390,7 @@ void check_stmt(Checker c, Node s) {
             if (!pure_path(target) && target.k != N_GETF) {
                 error_at(c.ctx, s, "", "'" + s.s + "' needs a variable, field or simply-indexed element on the left; write x = x + v");
             }
-            bool ctx_ok = s.s == "+=" && (tt.k == TY_HTML || tt.k == TY_LOG) && (rv.k == tt.k || rv.k == TY_STR);
+            bool ctx_ok = s.s == "+=" && is_contextual_text(tt) && (rv.k == tt.k || rv.k == TY_STR);
             if (!ctx_ok && !(tt.k == TY_INT && rv.k == TY_INT) && !(s.s == "+=" && is_stringish(tt) && is_stringish(rv) && (tt.k == TY_TAINT || rv.k == TY_STR))) {
                 error_at(c.ctx, s, "", "'" + s.s + "' is not defined for " + type_str(tt) + " and " + type_str(rv));
             }
@@ -1990,7 +1990,7 @@ void lookup_sink(Flow f, Node at) {
 }
 
 bool texty_type(Type t) {
-    return t.k == TY_STR || t.k == TY_HTML || t.k == TY_LOG;
+    return t.k == TY_STR || t.k == TY_HTML || t.k == TY_LOG || t.k == TY_CSV;
 }
 
 void flow_walk(Flow f, Node n) {
