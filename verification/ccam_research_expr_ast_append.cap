@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ast_append(List<AGExpression> nodes,AGExpression n){if(nodes.len()>=65536||!ag_expr_node_valid(n,nodes.len())){return false;}nodes.push(n);return true;}
