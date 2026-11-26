@@ -255,7 +255,7 @@ theorem replaceRegister_preserves_length
           | some tail =>
               simp [replaceRegister, hrec] at h
               cases h
-              simpa [ih tail index hrec]
+              simp [ih tail index hrec]
 
 /-- Checked update of a frame register; an out-of-range destination traps. -/
 def updateFrameRegister (frame : CCAMFrame) (index : Nat) (value : Val) :
@@ -469,7 +469,7 @@ def typedReturnDestination
     (value : Val) : Except Trap (Option (Fin n × Val)) :=
   match continuation.expectedReturn, continuation.destination with
   | some expected, some destination =>
-      if htype : expected = types destination then
+      if expected = types destination then
         if hasTypeB value expected then .ok (some (destination, value))
         else .error .typeMismatch
       else .error .typeMismatch
