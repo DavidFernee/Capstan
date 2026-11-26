@@ -123,3 +123,24 @@ New checked declarations:
 The checked-multiplication model accepts precisely products within the supplied natural-number limit and otherwise returns the explicit fatal result. The capacity-growth model preserves adequate capacity or grows directly to the requested capacity if within the limit.
 
 **Scope limitation:** these are model-only results. The capacity-growth definition is deliberately simpler than the current C `cap_gc_next_capacity` geometric-doubling loop. It does not establish that implementation's termination, saturation behaviour, initial-capacity handling or byte-size refinement. No C implementation theorem is claimed. The repository's separate C/platform CI was still running when this proof result was recorded.
+
+
+## Slot partition and free-list abstract proofs
+
+**Result classification: model-only proof**
+
+- **Merged PR:** [#309](https://github.com/DavidFernee/Capstan/pull/309)
+- **Exact PR head:** `13313b2cce442e6a33700e847281cfefb18651c0`
+- **Formal workflow:** [45627584924](https://github.com/DavidFernee/Capstan/actions/runs/45627584924) — passed
+- **Repository CI:** [45627584740](https://github.com/DavidFernee/Capstan/actions/runs/45627584740) — passed
+
+The Lean model now proves:
+- `SlotPartition.Valid` is preserved by abstract allocation and release;
+- unrelated slot ownership is unchanged by a single-slot transition;
+- free-list push/pop preserve bounded indices, uniqueness, soundness and completeness.
+
+The model separates slot ownership from concrete C representation. It does not prove bitmap/free-list correspondence, intrusive pointer validity for ordinary classes, secret `free_slots` array correspondence, page-table invariants or concrete page-spare transitions.
+
+PR #309 also reconciles the specification with mainline source changes: page release consumes the `madvise` result before updating release accounting, and secret small-object pages use out-of-line free-slot indices with a volatile payload wipe before publication. Those are source-level corrections, not machine-checked C refinement.
+
+**Next implementation-facing gate:** add a pinned Frama-C/ACSL pilot for a small production helper, with a negative control and an explicit relation to the Lean machine model. Until that exists, all current allocator/collector theorems remain model-only.
