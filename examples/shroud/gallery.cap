@@ -126,8 +126,8 @@ int main() {
     if (a.len() > 0) { dir = a[0]; }
     Font? regular = none;
     Font? bold = none;
-    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) { regular = font_load(r); }
-    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 1073741824)) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf", 1073741824)) { bold = font_load(b); }
     if (let f = regular) {
         if (let fb = bold) {
             run(new_ui(f, fb, light_theme(), 560, 520, 256), dir, "light");
