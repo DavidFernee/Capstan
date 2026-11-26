@@ -28,6 +28,20 @@ test "candidate expression parser respects precedence and emits native exit imag
  assert(image.bytes[4096]==72 && image.bytes[4097]==191 && image.bytes[4098]==14);
 }
 
+test "candidate expression pipeline handles grouping and division" {
+ // 2 * (3 + 4) = 14.
+ List<int> grouped=new List<int>();
+ grouped.push(50); grouped.push(42); grouped.push(40); grouped.push(51);
+ grouped.push(43); grouped.push(52); grouped.push(41);
+ AGCheckedInt grouped_result=ag_compile_expression(grouped);
+ assert(grouped_result.ok && grouped_result.value==14);
+ // 8 / 2 = 4.
+ List<int> divided=new List<int>();
+ divided.push(56); divided.push(47); divided.push(50);
+ AGCheckedInt divided_result=ag_compile_expression(divided);
+ assert(divided_result.ok && divided_result.value==4);
+}
+
 test "candidate source-to-ELF pipeline rejects unsupported source" {
  List<int> source=new List<int>(); source.push(52); source.push(50);
  source.push(43);
