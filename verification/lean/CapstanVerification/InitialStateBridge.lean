@@ -132,7 +132,7 @@ theorem runtimeInitialRegisterFileOf_relation
   · intro index
     simp [runtimeInitialRegisterFileOf, runtimeInitialRegisterFile,
       runtimeTypeAt, runtimeValueAt, runtimeRegisterAt,
-      runtimeRegisterInitForType, runtimeRegisterInit]
+      runtimeRegisterInitForType, runtimeRegisterInit, RuntimeRegister.value?]
 
 /-- Native-shaped initial records and abstract runtime records correspond
 for the same finite indexed CCAM type vector. -/
