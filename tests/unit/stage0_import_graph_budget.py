@@ -112,14 +112,14 @@ with tempfile.TemporaryDirectory(prefix="capstan-stage0-import-budget-") as td:
 
     graph = base / "ast-exact"
     graph.mkdir()
-    declarations = "".join(f"const int value{i} = 0;\n" for i in range(50_000))
+    declarations = "".join(f"const int value{i} = 0;\n" for i in range(100_000))
     (graph / "main.cap").write_text(declarations)
     expect_success(graph / "main.cap", "stage0-exact-AST-budget")
 
     graph = base / "ast-over"
     graph.mkdir()
-    declarations = "".join(f"const int value{i} = 0;\n" for i in range(50_001))
-    (graph / "main.cap").write_text(declarations + ";")
+    declarations = "".join(f"const int value{i} = 0;\n" for i in range(100_001))
+    (graph / "main.cap").write_text(declarations)
     expect_failure(graph / "main.cap", "AST-node limit", "stage0-AST-budget-over")
 
 print("stage 0 import graph: exact and over-limit file, byte, token and AST budgets")
