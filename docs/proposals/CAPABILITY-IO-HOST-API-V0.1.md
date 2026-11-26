@@ -175,7 +175,7 @@ connect_display(endpoint: DisplayEndpoint, deadline: Deadline) -> Outcome<Displa
 
 ### 6.2 Sending bytes and descriptors
 
-send_frame(connection: DisplayConnection, bytes: ByteString, handles: List<TransferableHandle>, deadline: Deadline) -> SendResult
+send_bytes_with_handles(connection: DisplayConnection, bytes: ByteString, handles: List<TransferableHandle>, deadline: Deadline) -> SendResult
 
 SendResult ::= Complete(SendReceipt) | Pending(PendingSend, SendReceipt) | Failed(HostError, SendReceipt)
 
@@ -184,13 +184,13 @@ PendingSend is an opaque, owned continuation containing the remaining bytes, exa
 resume_send(pending: PendingSend, deadline: Deadline) -> SendResult
 
 Rules:
-- The first successful sendmsg that transfers ancillary descriptors marks descriptors_committed exactly once. This means the local kernel accepted the descriptor control message for transmission; it does not prove that the peer application has received or accepted the descriptors.
+- The first successful sendmsg that transfers ancillary descriptors marks descriptors_committed exactly once. The host-I/O layer does not parse or construct Wayland frames; framing belongs to the Capstan protocol layer. This means the local kernel accepted the descriptor control message for transmission; it does not prove that the peer application has received or accepted the descriptors.
 - If the first send makes no progress and transfers no descriptors, a retry may still include them.
 - Once descriptors_committed is true, every retry sends remaining bytes without reattaching descriptors.
 - Partial bytes are never resent.
 - Sender ownership of each original handle remains unchanged; SCM_RIGHTS creates receiver-side descriptor ownership.
 - A PendingSend cannot be cloned, replayed on another connection or resumed after connection close.
-- The operation never claims that the complete Wayland frame was delivered merely because the descriptor control message was accepted. Every result, including failure, preserves the exact byte and descriptor progress so a caller cannot accidentally resend a committed descriptor or duplicate bytes.
+- The operation never claims that the complete complete byte sequence was delivered merely because the descriptor control message was accepted. Every result, including failure, preserves the exact byte and descriptor progress so a caller cannot accidentally resend a committed descriptor or duplicate bytes.
 
 This stateful contract avoids duplicate descriptor transfer after a short send or would-block.
 
@@ -295,7 +295,7 @@ The ABI module contains only kernel entry, argument/result marshalling and nativ
 | connect | connect_display | Bounded endpoint representation; EINPROGRESS state |
 | getsockopt(SO_ERROR) | connect_display | Verify connection completion; typed platform failure |
 | fcntl or socket flags | connection setup | Only approved flag transitions; no arbitrary descriptor mutation |
-| sendmsg | send_frame | Bounded iovec/control data; SCM_RIGHTS; MSG_NOSIGNAL; exact partial-progress state |
+| sendmsg | send_bytes_with_handles | Bounded iovec/control data; SCM_RIGHTS; MSG_NOSIGNAL; exact partial-progress state |
 | recvmsg | receive_batch | Bounded buffers; MSG_CMSG_CLOEXEC; reject MSG_TRUNC/MSG_CTRUNC; close excess FDs |
 | poll / ppoll | wait_ready | Finite timeout; EINTR recomputes against absolute deadline |
 | memfd_create | create_shared_memory | CLOEXEC; bounded name; explicit sealing policy |
