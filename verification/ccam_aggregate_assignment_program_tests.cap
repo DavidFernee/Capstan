@@ -1,0 +1,24 @@
+import "ccam_aggregate_assignment_program.cap";
+test "assignment program updates and reads variables" {
+    List<int> source=new List<int>();
+    int bytes[]={120,61,49,48,59,120,61,120,43,50,59,120,42,50,43,49};
+    for(int i=0;i<16;i+=1) { source.push(bytes[i]); }
+    AGProgramResult result=ag_compile_assignment_program(source);
+    assert(result.ok && result.assignments==2 && result.value==25);
+}
+test "assignment program rejects unresolved variable" {
+    List<int> source=new List<int>();
+    source.push(120); source.push(43); source.push(49);
+    AGProgramResult result=ag_compile_assignment_program(source);
+    assert(!result.ok);
+}
+test "assignment program rejects malformed assignment" {
+    List<int> source=new List<int>();
+    source.push(120); source.push(61); source.push(59); source.push(49);
+    assert(!ag_compile_assignment_program(source).ok);
+}
+test "assignment program rejects missing final expression" {
+    List<int> source=new List<int>();
+    source.push(120); source.push(61); source.push(49); source.push(59);
+    assert(!ag_compile_assignment_program(source).ok);
+}
