@@ -90,6 +90,9 @@ The API uses a closed sum type called HostError. Final source syntax may use the
 | invalid_argument | Invalid size, offset, flag, handle combination or encoding | No retry without changing input |
 | invalid_capability | Forged, wrong-kind, stale-generation or revoked capability | No |
 | permission_denied | Capability exists but lacks the required right/scope | No |
+| not_found | The scoped relative object does not exist | No unless the caller explicitly retries after a separate creation event |
+| wrong_object_type | The opened object is not the required file/directory/socket kind | No |
+| already_exists | A create-exclusive operation found an existing object | No unless the caller changes the requested operation |
 | resource_exhausted | Kernel or configured resource ceiling reached | Only after a separately observable release/retry condition |
 | limit_exceeded | Requested bytes, descriptors, queue entries or mapping exceed an explicit ceiling | No; caller must reduce request |
 | would_block | Nonblocking operation cannot currently make progress | Wait for readiness; never busy-loop |
@@ -105,6 +108,8 @@ The API uses a closed sum type called HostError. Final source syntax may use the
 
 HostError may carry a bounded operation identifier and optional numeric platform code. It must not rely on an OS error string for program control flow or UI output.
 
+Linux mapping is operation-sensitive but must preserve these stable categories: EAGAIN/EWOULDBLOCK maps to would_block; EINTR to interrupted unless retried internally under the original deadline; ETIMEDOUT to timed_out; ECONNRESET/EPIPE/ENOTCONN to peer_closed; EACCES/EPERM to permission_denied; EBADF to invalid_capability or stale/closed handle; ENOMEM/ENFILE/EMFILE/ENOBUFS to resource_exhausted; EOVERFLOW to limit_exceeded; EINVAL to invalid_argument. Filesystem ENOENT/ENOTDIR/ELOOP map to not_found/wrong_object_type/permission_denied according to the operation and must not reveal paths outside the DirectoryRoot.
+
 EOF is distinct from failure. Partial progress is distinct from both. A timeout is distinct from cancellation. A limit rejection is distinct from kernel resource exhaustion.
 
 ## 5. Common progress and deadline semantics
@@ -115,7 +120,7 @@ Every byte-stream send/receive result reports exact positive progress. A zero-by
 
 Conceptual records:
 - IoProgress { bytes: Nat }
-- SendProgress { bytes: Nat, descriptors_committed: Bool }
+- SendReceipt { bytes_committed: Nat, descriptors_committed: Bool }
 - ReceiveBatch { bytes: ByteString, handles: List<ReceivedHandle>, handles_offset: Nat }
 
 The handles_offset in ReceiveBatch is a zero-based offset within the returned bytes slice at which the ancillary descriptor set is associated. It is not an OS descriptor or pointer.
@@ -163,9 +168,9 @@ connect_display(endpoint: DisplayEndpoint, deadline: Deadline) -> Outcome<Displa
 
 ### 6.2 Sending bytes and descriptors
 
-send_frame(connection: DisplayConnection, bytes: ByteString, handles: List<TransferableHandle>, deadline: Deadline) -> Outcome<SendResult, HostError>
+send_frame(connection: DisplayConnection, bytes: ByteString, handles: List<TransferableHandle>, deadline: Deadline) -> SendResult
 
-SendResult ::= Complete | Pending(PendingSend)
+SendResult ::= Complete(SendReceipt) | Pending(PendingSend, SendReceipt) | Failed(HostError, SendReceipt)
 
 PendingSend is an opaque, owned continuation containing the remaining bytes, exact byte offset, descriptor-transfer state and connection generation. It can be resumed only on the same connection.
 
@@ -176,7 +181,7 @@ Rules:
 - Partial bytes are never resent.
 - Sender ownership of each original handle remains unchanged; SCM_RIGHTS creates receiver-side descriptor ownership.
 - A PendingSend cannot be cloned, replayed on another connection or resumed after connection close.
-- The operation never claims that the complete Wayland frame was delivered merely because the descriptor control message was accepted.
+- The operation never claims that the complete Wayland frame was delivered merely because the descriptor control message was accepted. Every result, including failure, preserves the exact byte and descriptor progress so a caller cannot accidentally resend a committed descriptor or duplicate bytes.
 
 This stateful contract avoids duplicate descriptor transfer after a short send or would-block.
 
@@ -228,7 +233,9 @@ read_at(object: SharedMemoryObject, offset: Nat, max_bytes: Nat, deadline: Deadl
 
 map_region(object: SharedMemoryObject, offset: Nat, length: Nat, access: ReadOnly | ReadWrite) -> Outcome<MappedRegion, HostError>
 
-unmap_region(region: MappedRegion) -> Outcome<Unit, HostError>
+unmap_region(region: MappedRegion) -> UnmapOutcome
+
+UnmapOutcome ::= Unmapped | Failed(HostError, MappedRegion) | Poisoned(HostError, ResourceId)
 
 - offset and length are nonzero/range checked; offset alignment is checked against the target page size.
 - offset + length must fit inside the object's declared size and the caller's mapping-byte budget.
