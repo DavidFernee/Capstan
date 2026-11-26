@@ -3,11 +3,9 @@
 
     read_file_bounds.py CAPSTANC CC [CFLAGS...]
 
-This covers a FIFO with no writer, /dev/zero, exact/over-limit regular files,
-directories and invalid limits. It does NOT establish a time bound for a live
-stream: the runtime clears O_NONBLOCK before reading, so a FIFO with a writer
-that remains open but supplies no data can block indefinitely. See issue #444;
-do not describe a byte ceiling as a deadline or a bound on elapsed time.
+Covers FIFOs with no writer and with an idle live writer, /dev/zero,
+exact/over-limit regular files, directories and invalid limits. Non-regular
+sources must be rejected before reading: a byte ceiling is not a deadline.
 """
 import os, subprocess, sys, tempfile
 
@@ -29,7 +27,7 @@ int main() {
     return 0;
 }
 """
-WANT = """fifo: 0 bytes
+WANT = """fifo: none
 zero: none
 exact: 10 bytes
 over: none
@@ -42,7 +40,8 @@ directory: none
 def main():
     capstanc, cc, flags = sys.argv[1], sys.argv[2], sys.argv[3:]
     with tempfile.TemporaryDirectory() as d:
-        os.mkfifo(os.path.join(d, "fifo"))
+        fifo = os.path.join(d, "fifo")
+        os.mkfifo(fifo)
         with open(os.path.join(d, "ten"), "wb") as f:
             f.write(b"0123456789")
         open(os.path.join(d, "empty"), "wb").close()
@@ -53,28 +52,31 @@ def main():
         subprocess.run([cc] + flags + [cap[:-4] + ".c", "-o", cap[:-4]], check=True)
         subprocess.run([sys.executable, "-I", os.path.join(ROOT, "bootstrap/capstan0.py"), cap[:-4] + ".py", cap], check=True)
         for label, cmd in (("native", [cap[:-4], d]), ("stage 0", [sys.executable, "-I", cap[:-4] + ".py", d])):
-            try:
-                p = subprocess.run(cmd, capture_output=True, timeout=60)
-            except subprocess.TimeoutExpired:
-                print(f"FAIL {label}: read_file hung")
-                return 1
-            if p.stdout.decode() != WANT or p.returncode != 101 or b"CWE-789" not in p.stderr:
-                print(f"FAIL {label}: exit {p.returncode}\n{p.stdout.decode()}{p.stderr.decode()}")
-                return 1
-        for src in ("/dev/zero", os.path.join(d, "fifo")):
-            try:
-                p = subprocess.run([capstanc, "check", src], capture_output=True, timeout=60)
-            except subprocess.TimeoutExpired:
-                print(f"FAIL compiler hung reading {src}")
-                return 1
-            out = p.stdout.decode(errors="replace")
-            if src == "/dev/zero" and (p.returncode != 1 or "over 16 MiB" not in out):
-                print(f"FAIL compiler on {src}: exit {p.returncode}: {out[:200]}")
-                return 1
-            if src != "/dev/zero" and p.returncode not in (0, 1):
-                print(f"FAIL compiler on an empty FIFO: exit {p.returncode}: {out[:200]}")
-                return 1
-    print("read_file is bounded: FIFO, /dev/zero, limits and directories, natively and under stage 0; the compiler refuses endless sources")
+            for idle_writer in (False, True):
+                # O_RDWR keeps a FIFO writer present but idle. This used to hang
+                # when the native runtime cleared O_NONBLOCK before calling fread().
+                keeper = os.open(fifo, os.O_RDWR | os.O_NONBLOCK) if idle_writer else None
+                try:
+                    try:
+                        p = subprocess.run(cmd, capture_output=True, timeout=5)
+                    except subprocess.TimeoutExpired:
+                        print(f"FAIL {label}: read_file blocked on a FIFO (idle_writer={idle_writer})")
+                        return 1
+                finally:
+                    if keeper is not None:
+                        os.close(keeper)
+                if p.stdout.decode() != WANT or p.returncode != 101 or b"CWE-789" not in p.stderr:
+                    print(f"FAIL {label}: exit {p.returncode}\n{p.stdout.decode()}{p.stderr.decode()}")
+                    return 1
+        try:
+            p = subprocess.run([capstanc, "check", "/dev/zero"], capture_output=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            print("FAIL compiler hung reading /dev/zero")
+            return 1
+        if p.returncode != 1:
+            print(f"FAIL compiler on /dev/zero: exit {p.returncode}")
+            return 1
+    print("read_file rejects non-regular sources before reading; idle FIFO, byte limits and directories tested natively and under stage 0")
     return 0
 
 
