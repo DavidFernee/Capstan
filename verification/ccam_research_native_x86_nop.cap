@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_x86_nop(List<int> b){return ag_byte_append(b,144);}
