@@ -39,7 +39,7 @@ def records_from_atlas():
             [cwe, name, attempt["verdict"], code, attempt["expect"], attempt["note"]],
             ensure_ascii=True, separators=(",", ":"))
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
-        slug = "".join(ch if ch.isalnum() else "-" for ch in name.lower())
+        slug = "".join(ch if ch.isascii() and ch.isalnum() else "-" for ch in name.lower())
         slug = "-".join(part for part in slug.split("-") if part)[:48].rstrip("-")
         record_id = "CWE-%d-%s-%s" % (cwe, slug or "attempt", digest)
         if record_id in seen:
