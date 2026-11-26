@@ -253,6 +253,12 @@ add(116, "Plain string passed to CSV sink", "reject",
     'int main() { string cell = "ordinary"; bool ok = write_csv_file("out.csv", cell); return 0; }', "CWE-116")
 add(116, "HTML context passed to format-agnostic file sink", "reject",
     'int main() { Html cell = escape_html(taint("x")); bool ok = write_file("out.html", cell); return 0; }', "CWE-116")
+add(116, "Mixed CSV and HTML contexts concatenated", "reject",
+    'int main() { CsvText csv = escape_csv(taint("cell")); Html html = escape_html(taint("markup")); CsvText invalid = csv + html; return 0; }', "CWE-116")
+add(116, "CSV context erased by assignment to string", "reject",
+    'int main() { string raw = escape_csv(taint("cell")); return 0; }', "CWE-116")
+add(116, "Tainted value concatenated into CSV context", "reject",
+    'int main() { CsvText csv = escape_csv(taint("cell")); CsvText invalid = csv + taint("untrusted"); return 0; }', "CWE-116")
 add(117, "Improper output neutralization for logs", "reject",
     'int main() { println("login failed: " + taint("bob\\nINFO admin ok")); return 0; }', "CWE-117")
 add(117, "Log injection (attempt after escape_log)", "neutral",
