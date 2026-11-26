@@ -1,0 +1,8 @@
+// expect: CWE-916
+// spec: types.tainted builtins.crypto
+int main() {
+    if (let input = read_line()) {
+        string digest = hash(input);
+    }
+    return 0;
+}

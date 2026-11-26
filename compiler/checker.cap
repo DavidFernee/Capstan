@@ -200,7 +200,7 @@ bool mentions_name(Node e, int kind) {
         if (kind == 1 && looks_secret(e.s)) { return true; }
         if (kind == 2 && (looks_password(e.s))) { return true; }
     }
-    if (e.k == N_CALL || e.k == N_METHOD) { return false; }
+    // Traverse call/method children so wrappers and slices cannot hide credential provenance.
     for (int i = 0; i < e.kids.len(); i += 1) {
         if (mentions_name(e.kids[i], kind)) { return true; }
     }
