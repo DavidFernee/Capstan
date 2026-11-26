@@ -1,0 +1,3 @@
+import "ccam_aggregate_elf_image.cap";
+import "ccam_aggregate_exit_code.cap";
+test "native exit image header and code" {List<int> b=new List<int>();assert(ag_exit_code(b,42));AGImage image=ag_elf_image(b);assert(image.ok&&image.bytes.len()==4118);assert(image.bytes[0]==127&&image.bytes[4096]==72&&image.bytes[4117]==5);}
