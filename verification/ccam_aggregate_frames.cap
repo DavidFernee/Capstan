@@ -1,0 +1,89 @@
+// Candidate single-frame transition helpers. The caller owns the stack,
+// continuation and cumulative frame budget. Both frames share one arena.
+import "ccam_aggregate_machine.cap";
+import "ccam_aggregate_calls.cap";
+
+struct AGFrameResult {
+    bool ok;
+    CCAMAggregateMachine frame;
+    string error;
+}
+
+AGFrameResult ag_frame_open(CCAMAggregateMachine caller, AGCallSignature signature,
+    List<int> callee_kinds, List<int> arguments, int destination, int remaining_slots) {
+    if (caller.trap_code != "") {
+        return new AGFrameResult{ok: false, frame: caller, error: caller.trap_code};
+    }
+    if (remaining_slots < 0 || callee_kinds.len() > remaining_slots ||
+        !ag_call_signature(signature) || arguments.len() != signature.parameters.len() ||
+        ccam_aggregate_register_check(caller, destination, signature.result_kind) != "") {
+        return new AGFrameResult{ok: false, frame: caller, error: "invalid_call"};
+    }
+    AGTransferResult entry = ag_call_entry(signature, callee_kinds);
+    if (!entry.ok) { return new AGFrameResult{ok: false, frame: caller, error: "invalid_call"}; }
+    if (caller.steps >= caller.max_steps) {
+        return new AGFrameResult{ok: false, frame: caller, error: "step_limit"};
+    }
+    List<CCAMAggregateRegister> registers = new List<CCAMAggregateRegister>();
+    for (int i = 0; i < callee_kinds.len(); i += 1) {
+        registers.push(new CCAMAggregateRegister{
+            declared_type: callee_kinds[i], initialised: false, value: ccam_heap_int(0)
+        });
+    }
+    CCAMAggregateMachine callee = new CCAMAggregateMachine{
+        heap: caller.heap, registers: registers, steps: caller.steps + 1,
+        max_steps: caller.max_steps, trap_code: ""
+    };
+    for (int i = 0; i < arguments.len(); i += 1) {
+        CCAMAggregateValueResult argument = ccam_aggregate_read(caller, arguments[i], signature.parameters[i]);
+        if (!argument.ok) {
+            return new AGFrameResult{ok: false, frame: caller, error: argument.trap};
+        }
+        string error = ccam_aggregate_write(callee, i, argument.value);
+        if (error != "") { return new AGFrameResult{ok: false, frame: caller, error: error}; }
+    }
+    return new AGFrameResult{ok: true, frame: callee, error: ""};
+}
+
+// Only a stack controller retaining the matching suspended caller may use
+// this helper. It must not accept externally manufactured frames.
+string ag_frame_return(CCAMAggregateMachine caller, CCAMAggregateMachine callee,
+    AGCallSignature signature, int source, int destination) {
+    if (caller.trap_code != "") { return caller.trap_code; }
+    if (callee.max_steps != caller.max_steps || callee.steps <= caller.steps ||
+        callee.steps > caller.max_steps || !ag_call_signature(signature)) {
+        return ccam_aggregate_trap(caller, "invalid_return");
+    }
+    caller.steps = callee.steps;
+    if (callee.trap_code != "") { return ccam_aggregate_trap(caller, callee.trap_code); }
+    if (caller.steps >= caller.max_steps) { return ccam_aggregate_trap(caller, "step_limit"); }
+    CCAMAggregateValueResult returned = ccam_aggregate_read(callee, source, signature.result_kind);
+    if (!returned.ok) { return ccam_aggregate_trap(caller, returned.trap); }
+    string error = ccam_aggregate_write(caller, destination, returned.value);
+    if (error != "") { return ccam_aggregate_trap(caller, error); }
+    caller.steps += 1;
+    return "";
+}
+
+test "aggregate frame admission and return preserve caller locals" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(created.ok);
+    CCAMAggregateMachine caller = created.machine;
+    assert(ccam_aggregate_write(caller, 0, ccam_heap_int(7)) == "");
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_INT);
+    AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    List<int> arguments = new List<int>();
+    arguments.push(0);
+    assert(!ag_frame_open(caller, signature, kinds, arguments, 1, 1).ok);
+    AGFrameResult opened = ag_frame_open(caller, signature, kinds, arguments, 1, 2);
+    assert(opened.ok && opened.frame.steps == 1);
+    assert(!opened.frame.registers[1].initialised && !caller.registers[1].initialised);
+    assert(ccam_aggregate_write(opened.frame, 0, ccam_heap_int(42)) == "");
+    assert(ag_frame_return(caller, opened.frame, signature, 0, 1) == "");
+    assert(caller.registers[0].value.int_value == 7);
+    assert(caller.registers[1].value.int_value == 42 && caller.steps == 2);
+}
