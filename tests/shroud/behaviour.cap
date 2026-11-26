@@ -1164,6 +1164,19 @@ void test_checked_geometry_small_domain(Tally t) {
 }
 
 void test_display_list(Tally t, Font font) {
+    // Empty clips outside the viewport are valid no-op state. Recording must
+    // canonicalise their origin so the published command remains in-surface.
+    Pixmap empty_target = new_pixmap(4, 4);
+    Canvas empty_recorder = new_recording_canvas(empty_target);
+    empty_recorder.push_clip(rect_px(8, 8, 2, 2));
+    empty_recorder.fill_rect(rect_px(0, 0, 2, 2), solid(0xFFFFFFFF));
+    DisplayList empty_frame = finish_display_list(empty_recorder);
+    expect(t, display_list_valid(empty_frame, empty_target),
+        "display list: fully clipped command publishes a canonical empty clip",
+        "empty clip outside viewport rejected");
+    execute_display_list(empty_frame, empty_target);
+    expect_int(t, empty_target.get(0, 0), 0,
+        "display list: canonical empty clip remains a no-op");
     List<int> canonical_alpha = new List<int>();
     canonical_alpha.push(0);
     canonical_alpha.push(128);
