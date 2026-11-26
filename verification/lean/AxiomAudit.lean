@@ -5,6 +5,10 @@ import CapstanVerification.NativeRegisterFileBridge
 import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
+import NativeMemoryLifecycle
+import NativeReachability
+import NativeHandleReachability
+import NativeBoundedMarker
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
