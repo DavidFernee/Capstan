@@ -1,12 +1,12 @@
 # Provenance scalar-transfer implementation slice
 
-**Status:** implementation under review in PR #351  
+**Status:** initial compiler implementation under review in PR #410  
 **Scope:** scalar and metadata transfer rules in `compiler/checker.cap`  
 **Normative authority:** none; the proposal in `PROVENANCE-SEMANTICS.md` remains the target contract.
 
 ## Changes in this slice
 
-The existing laundering analysis remains a syntax-directed, variable-name may-analysis. This change does not replace it with the proposed abstract heap or a per-value product domain. It closes a narrow set of source-level transfer omissions while retaining the existing fail-closed fixed-point limits.
+The laundering analysis is now a syntax-directed, binding-identity may-analysis with typed field/index/map access-path facts and a fail-closed fact budget. It remains a coarse monotone analysis, not the proposed control-flow-sensitive abstract heap or a complete per-value product domain. This slice closes selected scalar/metadata transfer omissions and reduces unrelated-local and disjoint-field contamination; it does not establish alias or heap soundness.
 
 1. **Boolean expression propagation:** Boolean binary expressions (comparisons and logical connectives) inherit derivation from either operand. Unary logical negation preserves derivation.
 2. **Boolean locals:** declarations and simple assignments of derived Boolean values mark the local, so a subsequent read does not discard the fact.

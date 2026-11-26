@@ -554,8 +554,8 @@ prototype must compare at least two viable models (combined judgement and factor
 state soundness conditions, construct counterexamples, and measure checker complexity and
 diagnostic quality. No syntax or implementation strategy is selected by this draft.
 
-The current CWE atlas records six distinct open gaps (CWE-116, CWE-798, CWE-916, CWE-862,
-CWE-306 and CWE-79). F1 treats them as blockers for any Safe-profile claim and requires
+The current CWE atlas records seven distinct open gaps (CWE-20, CWE-116, CWE-798, CWE-916,
+CWE-862, CWE-306 and CWE-79). F1 treats them as blockers for any Safe-profile claim and requires
 positive controls and adversarial bypass coverage; it does not presume that a type-system
 change alone closes them. The current C-backed runtime, Python bootstrap, and model-to-
 implementation proof gaps remain part of the disclosed trusted-base boundary.
