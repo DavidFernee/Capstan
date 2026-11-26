@@ -337,7 +337,7 @@ def returnFromCallee (state : MultiFunctionState) (result : Option Val) :
                 })
             | .ok (some (destination, value)) =>
                 let resumedCaller := { caller with pc := continuation.resumePC }
-                match hupdate : updateFrameRegister resumedCaller destination value with
+                match updateFrameRegister resumedCaller destination value with
                 | .error reason => .error reason
                 | .ok updatedCaller =>
                     .ok (callee, {
@@ -347,13 +347,9 @@ def returnFromCallee (state : MultiFunctionState) (result : Option Val) :
                       maxDepth := maxDepth
                       nonempty := by simp
                       depth_bounded := by
-                        have hlen := updateFrameRegister_preserves_length
-                          resumedCaller updatedCaller destination value hupdate
-                        have hcallerLen : resumedCaller.registers.length =
-                            caller.registers.length := by rfl
                         have hbound : (updatedCaller :: rest).length ≤
                             (callee :: caller :: rest).length := by
-                          simp [hlen, hcallerLen]
+                          simp
                         exact Nat.le_trans hbound depth_bounded
                       steps_bounded := steps_bounded
                     })
