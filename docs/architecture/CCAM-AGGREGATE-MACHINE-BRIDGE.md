@@ -18,7 +18,8 @@ The bridge currently models:
 - typed integer, boolean and opaque-reference registers;
 - record, typed-array and immutable-byte allocation;
 - typed record field reads and writes;
-- typed array append and read;
+- typed array append, indexed read/update and logical length;
+- immutable byte allocation, byte length/index reads and failure-atomic concatenation;
 - register initialisation checks and exact kind checks;
 - arena-instance validation before a reference enters a register;
 - step-budget admission before each aggregate operation;
