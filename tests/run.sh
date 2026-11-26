@@ -78,6 +78,55 @@ else
   bad "CCAM multi-function evaluator" "$out"
 fi
 
+section "Capstan-native verification: bounded CCAM JSON integer parsing"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_integer.cap" 2>&1)"; then
+  ok "CCAM JSON integer lexemes parse exactly within signed 64-bit bounds"
+else
+  bad "CCAM JSON integer parser" "$out"
+fi
+
+section "Capstan-native verification: bounded CCAM JSON string decoding"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_string_tests.cap" 2>&1)"; then
+  ok "CCAM JSON strings decode escapes and reject malformed UTF-8 and surrogates"
+else
+  bad "CCAM JSON string decoder" "$out"
+fi
+
+section "Capstan-native verification: bounded CCAM JSON lexical scanner"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_scanner.cap" 2>&1)"; then
+  ok "CCAM JSON scanner tokenises bounded input and rejects malformed lexical forms"
+else
+  bad "CCAM JSON lexical scanner" "$out"
+fi
+
+section "Capstan-native verification: bounded CCAM JSON structural parser"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_parser.cap" 2>&1)"; then
+  ok "CCAM JSON parser enforces value grammar, one root and decoded-key uniqueness"
+else
+  bad "CCAM JSON structural parser" "$out"
+fi
+
+section "Capstan-native verification: closed CCAM JSON program schema"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_schema.cap" 2>&1)"; then
+  ok "CCAM JSON schema rejects unknown fields, invalid variants, bad names and entry signatures"
+else
+  bad "CCAM JSON program schema" "$out"
+fi
+
+section "Capstan-native verification: CCAM whole-program JSON validation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_semantics.cap" 2>&1)"; then
+  ok "CCAM JSON validates register types, call signatures, targets and reachable termination"
+else
+  bad "CCAM JSON whole-program validation" "$out"
+fi
+
+section "Capstan-native verification: bounded CCAM JSON-to-machine materialisation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_json_materialize.cap" 2>&1)"; then
+  ok "CCAM JSON validates, materialises an evaluator-owned program and executes minimal and forward-call programs"
+else
+  bad "CCAM JSON-to-machine materialisation" "$out"
+fi
+
 section "Capstan-native verification: bounded concurrency reference machine"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/concurrency_model.cap" 2>&1)"; then
   ok "bounded task/channel transitions, ownership, cancellation, scope and resource invariants"
