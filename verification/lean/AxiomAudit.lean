@@ -9,6 +9,10 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.ExplicitTrap
+import CapstanVerification.GenerationalHandles
+import CapstanVerification.CollectorSemantics
+import CapstanVerification.ReferenceSemantics
+import CapstanVerification.NativeRegisterHeapBridge
 import CapstanVerification.InjectionChecker
 import CapstanVerification.InjectionSinks
 import CapstanVerification.InjectionValue
@@ -317,3 +321,12 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.aggregate_build_preserves_field
 #print axioms CapstanVerification.selection_preserves_control
 #print axioms CapstanVerification.map_lookup_preserves_key
+
+-- Reference identity, heap refinement, collector preservation, and generation checks.
+#print axioms CapstanVerification.copyReference_identity
+#print axioms CapstanVerification.referenceAllocate_uses_fresh_identity
+#print axioms CapstanVerification.referenceWrite_other_identity
+#print axioms CapstanVerification.nativeRegisterHeapWrite_refines_setAt
+#print axioms CapstanVerification.gcSweep_preserves_reachable
+#print axioms CapstanVerification.gcSweep_no_new_objects
+#print axioms CapstanVerification.handleResolve_requires_current_generation
