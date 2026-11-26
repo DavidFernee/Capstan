@@ -59,6 +59,6 @@ int layer52(int value) { return layer53(value); }
 int layer53(int value) { return layer54(value); }
 int layer54(int value) { return value; }
 int main() {
-    if (let input = read_line()) { println(char_str(layer00(input.at(0)))); }
+    if (let input = read_line(1048576)) { println(char_str(layer00(input.at(0)))); }
     return 0;
 }

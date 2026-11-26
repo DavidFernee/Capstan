@@ -59,14 +59,14 @@ View view_of(Model m) {
 }
 
 int main() {
-    List<string> args0 = args();
+    List<string> args0 = args(1, 4096, 4096);
     string out = "/tmp";
     if (args0.len() > 0) { out = args0[0]; }
 
     Font? regular = none;
     Font? bold = none;
-    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf")) { regular = font_load(r); }
-    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf")) { bold = font_load(b); }
+    if (let r = read_file("lib/shroud/fonts/DejaVuSans-Latin.ttf", 16777216)) { regular = font_load(r); }
+    if (let b = read_file("lib/shroud/fonts/DejaVuSans-Bold-Latin.ttf", 16777216)) { bold = font_load(b); }
     if (let f = regular) {
         if (let fb = bold) {
             Model m = new Model{project: "Capstan", file: "examples/patient_records.cap", status: "A0 prototype · headless PNG · static navigation · no commands executed"};

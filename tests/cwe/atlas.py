@@ -51,7 +51,7 @@ FREE = "int main() { string s = \"x\"; free(s); free(s); return 0; }"
 MALLOC = "int main() { string s = malloc(16); return 0; }"
 EVAL = "int main() { eval(\"1 + 1\"); return 0; }"
 REFLECT = "int main() { string cls = \"User\"; Object o = Class.forName(cls).newInstance(); return 0; }"
-DESER = "int main() { Object o = deserialize(read_line()); return 0; }"
+DESER = "int main() { Object o = deserialize(read_line(65536)); return 0; }"
 XML = "int main() { Xml doc = parse_xml(taint(\"<!DOCTYPE x [<!ENTITY e SYSTEM 'file:///etc/passwd'>]>\")); return 0; }"
 NET = "int main() { string body = http_get(\"http://169.254.169.254/latest/meta-data/\"); return 0; }"
 SOCKET = "int main() { Socket s = connect(\"example.com\", 80); return 0; }"
@@ -182,13 +182,13 @@ add(783, "Operator precedence logic error (bitwise)", "reject",
 add(480, "Use of incorrect operator (bitwise on booleans)", "reject",
     "bool both(bool a, bool b) { return a & b; }" + MAIN, "CWE-480")
 add(20, "Laundering untrusted bytes through a bit mask", "reject",
-    "int main() { if (let t = read_line()) { println(char_str(t.at(0) & 0x7F)); } return 0; }", "CWE-20")
+    "int main() { if (let t = read_line(65536)) { println(char_str(t.at(0) & 0x7F)); } return 0; }", "CWE-20")
 add(1339, "Insufficient precision or accuracy of a real number", "absent", FLOAT)
 add(1077, "Floating point comparison with incorrect operator", "absent", FLOAT)
 
 # ---------------------------------------------------------------- injection
 add(20, "Improper input validation", "reject",
-    "int main() { if (let line = read_line()) { string name = line; } return 0; }", "CWE-20")
+    "int main() { if (let line = read_line(65536)) { string name = line; } return 0; }", "CWE-20")
 add(74, "Injection (generic)", "reject",
     "void sink(string cmd) { }\nint main() { Tainted t = taint(\"; rm -rf /\"); sink(t); return 0; }", "CWE-20")
 add(77, "Command injection", "reject",
@@ -235,7 +235,7 @@ add(96, "Static code injection", "absent", INCLUDE)
 add(97, "Server-side includes injection", "na", note="No web server facility.")
 add(98, "PHP remote file inclusion", "absent", INCLUDE)
 add(99, "Resource injection", "reject",
-    "int main() { if (let p = read_line()) { if (let data = read_file(p)) { } } return 0; }", "CWE-20")
+    "int main() { if (let p = read_line(65536)) { if (let data = read_file(p, 4096)) { } } return 0; }", "CWE-20")
 add(113, "HTTP response splitting", "na", note="No HTTP facility yet; header output would follow the CWE-93 rule.")
 add(116, "Improper encoding or escaping of output", "reject",
     'int main() { string csv = escape_html(taint("=cmd|\' /C calc\'!A0")) + ",1"; bool ok = write_file("out.csv", csv); return 0; }', "CWE-116",
@@ -262,30 +262,30 @@ add(185, "Incorrect regular expression", "absent", REGEX)
 
 # ---------------------------------------------------------------- files and paths
 add(22, "Path traversal", "reject",
-    "int main() { Tainted name = taint(\"../../etc/passwd\"); if (let f = read_file(name)) { } return 0; }", "CWE-20")
+    "int main() { Tainted name = taint(\"../../etc/passwd\"); if (let f = read_file(name, 4096)) { } return 0; }", "CWE-20")
 add(22, "Path traversal (via an audited trust())", "audited",
-    'int main() { Tainted name = taint("../../etc/passwd"); if (let f = read_file(trust(name, "file name from form"))) { } return 0; }',
+    'int main() { Tainted name = taint("../../etc/passwd"); if (let f = read_file(trust(name, "file name from form"), 4096)) { } return 0; }',
     note="Possible only through trust(), which needs a written justification and is reported in every build. validate_path() is the safe route.")
 add(22, "Path traversal (attempt through validate_path)", "neutral",
     'int main() { if (let p = validate_path(taint("../../etc/passwd"))) { println("accepted"); } else { println("rejected"); } return 0; }', "rejected")
 add(23, "Relative path traversal", "reject",
     "int main() { string base = \"/srv/files/\"; Tainted n = taint(\"../secret\"); bool ok = write_file(base + n, \"x\"); return 0; }", "CWE-20")
 add(36, "Absolute path traversal", "reject",
-    "int main() { Tainted n = taint(\"/etc/shadow\"); if (let f = read_file(n)) { } return 0; }", "CWE-20")
+    "int main() { Tainted n = taint(\"/etc/shadow\"); if (let f = read_file(n, 4096)) { } return 0; }", "CWE-20")
 add(59, "Improper link resolution before file access (link following)", "na",
     note="File access follows symbolic links; capability-based file access (v0.6) will address it.")
 add(73, "External control of file name or path", "reject",
-    "int main() { if (let p = read_line()) { bool ok = write_file(p, \"data\"); } return 0; }", "CWE-20")
+    "int main() { if (let p = read_line(65536)) { bool ok = write_file(p, \"data\"); } return 0; }", "CWE-20")
 add(434, "Unrestricted upload of file with dangerous type", "na", note="No upload facility.")
 add(538, "Insertion of sensitive information into externally-accessible file", "reject",
-    'int main() { if (let key = secret_env("API_KEY")) { bool ok = write_file("public/config.txt", key); } return 0; }', "CWE-532")
+    'int main() { if (let key = secret_env("API_KEY", 65536)) { bool ok = write_file("public/config.txt", key); } return 0; }', "CWE-532")
 add(552, "Files or directories accessible to external parties", "na", note="Deployment concern.")
 add(732, "Incorrect permission assignment for critical resource", "absent", CHMOD)
 add(276, "Incorrect default permissions", "na", note="Files are created with the process umask; a file API with explicit permissions is planned with capabilities.")
 add(377, "Insecure temporary file", "na", note="No temporary-file API.")
 add(367, "Time-of-check time-of-use race", "absent",
-    "int main() { if (file_exists(\"x\")) { if (let d = read_file(\"x\")) { } } return 0; }",
-    note="There is no separate existence check; read_file() returns the contents or none in one step.")
+    "int main() { if (file_exists(\"x\")) { if (let d = read_file(\"x\", 4096)) { } } return 0; }",
+    note="There is no separate existence check; read_file(path, 4096) returns the contents or none in one step.")
 
 # ---------------------------------------------------------------- environment and execution
 add(15, "External control of system or configuration setting", "absent", SETENV)
@@ -304,9 +304,9 @@ add(250, "Execution with unnecessary privileges", "na", note="Deployment concern
 
 # ---------------------------------------------------------------- cryptography and randomness
 add(256, "Plaintext storage of a password", "reject",
-    'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }', "CWE-20")
+    'int main() { if (let pw = read_line(65536)) { bool ok = write_file("users.db", "alice:" + pw); } return 0; }', "CWE-20")
 add(257, "Storing passwords in a recoverable format", "reject",
-    'int main() { if (let pw = read_line()) { bool ok = write_file("users.db", escape_html(pw)); } return 0; }', "CWE-256")
+    'int main() { if (let pw = read_line(65536)) { bool ok = write_file("users.db", escape_html(pw)); } return 0; }', "CWE-256")
 add(259, "Use of hard-coded password", "reject", "int main() { string admin_password = \"letmein\"; return 0; }", "CWE-798")
 add(798, "Use of hard-coded credentials", "reject",
     "struct Client { string api_key; }\nint main() { Client c = new Client{api_key: \"sk_live_42\"}; return 0; }", "CWE-798")
@@ -319,7 +319,7 @@ add(798, "Hard-coded password-like literal under an innocuous name", "gap",
 add(321, "Use of hard-coded cryptographic key", "reject", "int main() { string signing_secret = \"0123456789abcdef\"; return 0; }", "CWE-798")
 add(311, "Missing encryption of sensitive data", "na", note="No encryption API yet (seal()/open() planned for v0.6).")
 add(312, "Cleartext storage of sensitive information", "reject",
-    'int main() { if (let k = secret_env("DB_KEY")) { bool ok = write_file("cache.txt", k); } return 0; }', "CWE-532")
+    'int main() { if (let k = secret_env("DB_KEY", 65536)) { bool ok = write_file("cache.txt", k); } return 0; }', "CWE-532")
 add(319, "Cleartext transmission of sensitive information", "absent", NET)
 add(326, "Inadequate encryption strength", "absent", ENCRYPT)
 add(327, "Use of a broken or risky cryptographic algorithm", "reject", "int main() { string h = sha1(\"x\"); return 0; }", "CWE-327")
@@ -337,15 +337,15 @@ add(331, "Insufficient entropy", "reject", RANDOM, "CWE-338")
 add(335, "Incorrect usage of seeds in PRNG", "absent", "int main() { srand(42); return 0; }")
 add(338, "Use of cryptographically weak PRNG", "reject", RANDOM, "CWE-338")
 add(916, "Use of password hash with insufficient computational effort", "reject",
-    "int main() { if (let pw = read_line()) { string stored = hash(pw); } return 0; }", "CWE-916")
+    "int main() { if (let pw = read_line(65536)) { string stored = hash(pw); } return 0; }", "CWE-916")
 add(916, "Weak password hash (password in an innocuously named variable)", "gap",
-    "int main() { if (let x = read_line()) { string stored = hash(x); } return 0; }",
+    "int main() { if (let x = read_line(65536)) { string stored = hash(x); } return 0; }",
     note="Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap).")
 add(916, "Weak password hash (password passed through a method call)", "gap",
-    "int main() { if (let password = read_line()) { string stored = hash(password.slice(0, password.len())); } return 0; }",
+    "int main() { if (let password = read_line(65536)) { string stored = hash(password.slice(0, password.len())); } return 0; }",
     note="The password-name heuristic stops at N_METHOD nodes, so wrapping a password in a string method may evade the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted.")
 add(916, "Weak password hash (password passed through a helper call)", "gap",
-    "Tainted identity(Tainted value) { return value; }\nint main() { if (let password = read_line()) { string stored = hash(identity(password)); } return 0; }",
+    "Tainted identity(Tainted value) { return value; }\nint main() { if (let password = read_line(65536)) { string stored = hash(identity(password)); } return 0; }",
     note="The password-name heuristic stops at N_CALL nodes, so a helper that preserves Tainted can hide a password-like variable from the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted.")
 add(759, "Use of a one-way hash without a salt", "reject",
     "string store(Tainted password) { return hash(password); }" + MAIN, "CWE-916")
@@ -402,7 +402,7 @@ add(307, "Improper restriction of excessive authentication attempts", "logic",
 add(308, "Use of single-factor authentication", "na", note="Design concern.")
 add(521, "Weak password requirements", "logic", "bool acceptable(Tainted pw) { return pw.len() >= 1; }" + MAIN, note="Password rules are policy.")
 add(522, "Insufficiently protected credentials", "reject",
-    'int main() { if (let token = secret_env("TOKEN")) { println("token loaded: " + token); } return 0; }', "CWE-200")
+    'int main() { if (let token = secret_env("TOKEN", 65536)) { println("token loaded: " + token); } return 0; }', "CWE-200")
 add(620, "Unverified password change", "logic",
     'string change(Tainted new_pw) { return hash_password(new_pw); }' + MAIN, note="Workflow design.")
 add(640, "Weak password recovery mechanism", "na", note="Design concern.")
@@ -422,30 +422,30 @@ add(266, "Incorrect privilege assignment", "logic",
 
 # ---------------------------------------------------------------- information exposure
 add(200, "Exposure of sensitive information", "reject",
-    'int main() { if (let k = secret_env("KEY")) { string s = "k=" + k; } return 0; }', "CWE-200")
+    'int main() { if (let k = secret_env("KEY", 65536)) { string s = "k=" + k; } return 0; }', "CWE-200")
 add(209, "Error message containing sensitive information", "reject",
-    'int main() { if (let k = secret_env("DB_PASSWORD")) { println("connection failed with " + k); } return 0; }', "CWE-200")
+    'int main() { if (let k = secret_env("DB_PASSWORD", 65536)) { println("connection failed with " + k); } return 0; }', "CWE-200")
 add(210, "Self-generated error message with sensitive information", "neutral",
     'int main() { List<string> l = new List<string>(); println(l[3]); return 0; }', "",
     "Runtime stops report the file, line and check, never data values. The test expects the stop's stderr to be data-free.")
 add(215, "Insertion of sensitive information into debugging code", "reject",
-    'int main() { if (let k = secret_env("KEY")) { println(k); } return 0; }', "CWE-532")
+    'int main() { if (let k = secret_env("KEY", 65536)) { println(k); } return 0; }', "CWE-532")
 add(532, "Insertion of sensitive information into log file", "reject",
-    'int main() { if (let k = secret_env("KEY")) { println(k); } return 0; }', "CWE-532")
+    'int main() { if (let k = secret_env("KEY", 65536)) { println(k); } return 0; }', "CWE-532")
 add(359, "Exposure of private personal information", "reject",
     "sensitive struct Patient { string name; string diagnosis; }\nint main() { Patient p = new Patient{name: \"A\", diagnosis: \"x\"}; println(p.diagnosis); return 0; }",
     "CWE-862", "Personal data declared sensitive can only be read under a grant.")
 add(497, "Exposure of sensitive system information", "na", note="No system-information API.")
 add(214, "Invocation of process using visible sensitive information", "neutral",
-    'int main() { if (let k = secret_env("KEY")) { run("tool", "--"); } return 0; }', "[run] tool",
+    'int main() { if (let k = secret_env("KEY", 65536)) { run("tool", "--"); } return 0; }', "[run] tool",
     "Secrets cannot be passed to run(); a separate test proves that (CWE-532).")
 add(214, "Sensitive information on a command line", "reject",
-    'int main() { if (let k = secret_env("KEY")) { run("tool", "--", k); } return 0; }', "CWE-532")
+    'int main() { if (let k = secret_env("KEY", 65536)) { run("tool", "--", k); } return 0; }', "CWE-532")
 add(226, "Sensitive information in resource not removed before reuse", "neutral",
     'int main() { println("ok"); return 0; }', "ok",
     "Memory is zeroed when the collector reuses it and when it is allocated. Freed but not yet reused memory is not wiped; see CWE-244.")
 add(244, "Improper clearing of heap memory before release (heap inspection)", "neutral",
-    'int main() { if (let k = secret_env("KEY")) { } println("ok"); return 0; }', "ok",
+    'int main() { if (let k = secret_env("KEY", 65536)) { } println("ok"); return 0; }', "ok",
     "Secrets live in their own memory class and are zeroed when collected; tests/unit proves it. Password-hashing scratch buffers are wiped too.")
 add(316, "Cleartext storage of sensitive information in memory", "na", note="As CWE-244.")
 
@@ -456,21 +456,21 @@ add(252, "Unchecked return value", "reject",
 add(253, "Incorrect check of function return value", "reject",
     "int main() { int ok = write_file(\"x\", \"y\"); return 0; }", "type mismatch")
 add(390, "Detection of error condition without action", "reject",
-    "int main() { if (let d = read_file(\"config\")) { println(\"loaded\"); } else { } return 0; }", "CWE-390",
+    "int main() { if (let d = read_file(\"config\", 4096)) { println(\"loaded\"); } else { } return 0; }", "CWE-390",
     "An empty else is a warning; an error with --strict (tested that way).")
 add(391, "Unchecked error condition", "reject",
-    "int main() { Tainted? d = read_file(\"config\"); println(int_to_str(d.len())); return 0; }", "CWE-476")
+    "int main() { Tainted? d = read_file(\"config\", 4096); println(int_to_str(d.len())); return 0; }", "CWE-476")
 add(396, "Declaration of catch for generic exception", "absent", EXCEPT)
 add(397, "Declaration of throws for generic exception", "absent", EXCEPT)
 add(617, "Reachable assertion", "reject",
-    "int main() { if (let line = read_line()) { assert(line.len() < 10); } return 0; }", "CWE-617",
+    "int main() { if (let line = read_line(65536)) { assert(line.len() < 10); } return 0; }", "CWE-617",
     "assert() outside tests is a warning; an error with --strict (tested that way).")
 add(636, "Not failing securely (failing open)", "reject",
     USERS + "policy Read(User u, Record r) { if (u.id == r.owner) { return true; } }" + MAIN, "default deny")
 add(754, "Improper check for unusual or exceptional conditions", "reject",
     "int main() { Map<int> m = new Map<int>(); int v = m.get(\"k\"); return v; }", "CWE-476")
 add(755, "Improper handling of exceptional conditions", "reject",
-    "int main() { Tainted? f = read_file(\"x\"); Tainted t = f; return 0; }", "CWE-476")
+    "int main() { Tainted? f = read_file(\"x\", 4096); Tainted t = f; return 0; }", "CWE-476")
 
 # ---------------------------------------------------------------- concurrency
 add(362, "Concurrent execution using shared resource with improper synchronization (race)", "absent", THREAD)
@@ -561,7 +561,7 @@ add(693, "Protection mechanism failure", "audited",
 
 # ---------------------------------------------------------------- data handling
 add(1284, "Improper validation of specified quantity in input", "logic",
-    "int main() { if (let l = read_line()) { if (let qty = validate_int(l)) { int total = qty * 10; } } return 0; }",
+    "int main() { if (let l = read_line(65536)) { if (let qty = validate_int(l)) { int total = qty * 10; } } return 0; }",
     note="Which range is valid is business knowledge; validate_range(t, min, max) makes enforcing it one call. Overflow is still caught.")
 add(1287, "Improper validation of specified type in input", "neutral",
     'int main() { if (let n = validate_int(taint("12abc"))) { println("accepted"); } else { println("rejected"); } return 0; }', "rejected")
@@ -602,28 +602,28 @@ add(1394, "Use of default cryptographic key", "reject", "int main() { string pri
 # ---- found in the November 2026 attack review --------------------------------------------------
 TABLE = "List<string> table = new List<string>(); for (int c = 0; c < 256; c += 1) { table.push(char_str(c)); } "
 add(20, "Improper input validation (laundering through a lookup table)", "reject",
-    "int main() { if (let t = read_line()) { " + TABLE + "string out = \"\"; for (int i = 0; i < t.len(); i += 1) { out = out + table[t.at(i)]; } sql_query(\"SELECT ?\", out); } return 0; }", "CWE-20",
+    "int main() { if (let t = read_line(65536)) { " + TABLE + "string out = \"\"; for (int i = 0; i < t.len(); i += 1) { out = out + table[t.at(i)]; } sql_query(\"SELECT ?\", out); } return 0; }", "CWE-20",
     "Bytes of untrusted input are tainted integers: selecting trusted text with them (list index, slice, map key) is rejected.")
 add(78, "OS command injection (through a shell named as the program)", "reject",
-    'int main() { if (let t = read_line()) { run("sh", "-c", "--", t); } return 0; }', "CWE-78",
+    'int main() { if (let t = read_line(65536)) { run("sh", "-c", "--", t); } return 0; }', "CWE-78",
     "Shells, interpreters and launchers (sh, env, python, xargs and others) take only literal arguments.")
 add(88, "Argument injection (computed argument read as an option)", "reject",
-    'int main() { if (let t = read_line()) { if (let n = validate_int(t)) { run("head", "-n", int_to_str(n), "log"); } } return 0; }', "CWE-88",
+    'int main() { if (let t = read_line(65536)) { if (let n = validate_int(t)) { run("head", "-n", int_to_str(n), "log"); } } return 0; }', "CWE-88",
     "Every computed argument must follow a literal \"--\"; validate_path() also refuses a leading '-'.")
 add(79, "Cross-site scripting (escaped text in an unquoted attribute)", "reject",
-    'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<img src=" + escape_html(t) + ">"); } return 0; }', "CWE-79")
+    'int main() { if (let t = read_line(65536)) { bool ok = write_file("p.html", "<img src=" + escape_html(t) + ">"); } return 0; }', "CWE-79")
 add(79, "Cross-site scripting (escaped text in a URL attribute)", "reject",
-    'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<a href=\\"" + escape_html(t) + "\\">x</a>"); } return 0; }', "CWE-79")
+    'int main() { if (let t = read_line(65536)) { bool ok = write_file("p.html", "<a href=\\"" + escape_html(t) + "\\">x</a>"); } return 0; }', "CWE-79")
 add(79, "Cross-site scripting (escaped text in a script block)", "reject",
-    'int main() { if (let t = read_line()) { bool ok = write_file("p.html", "<script>var n = \'" + escape_html(t) + "\';</script>"); } return 0; }', "CWE-79")
+    'int main() { if (let t = read_line(65536)) { bool ok = write_file("p.html", "<script>var n = \'" + escape_html(t) + "\';</script>"); } return 0; }', "CWE-79")
 add(79, "Cross-site scripting (Html assembled across separate statements)", "gap",
-    'int main() { if (let t = read_line()) { Html v = escape_html(t); Html page = "<img src=" + v + ">"; bool ok = write_file("p.html", page); } return 0; }',
+    'int main() { if (let t = read_line(65536)) { Html v = escape_html(t); Html page = "<img src=" + v + ">"; bool ok = write_file("p.html", page); } return 0; }',
     note="The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap.")
 add(1007, "Insufficient visual distinction of homoglyphs and invisible characters (Trojan Source)", "reject",
     "int main() { bool admin = false; /* \u202e } \u2066if (admin)\u2069 \u2066 */ return 0; }", "CWE-1007",
     "Bidirectional controls and zero-width characters are rejected anywhere in source (CVE-2021-42574).")
 add(532, "Insertion of sensitive information into output (hash of a secret)", "reject",
-    'int main() { if (let s = secret_env("PIN")) { println(hash(s)); } return 0; }', "CWE-532",
+    'int main() { if (let s = secret_env("PIN", 65536)) { println(hash(s)); } return 0; }', "CWE-532",
     "A fast hash of a short secret is reversed by trying every value.")
 add(367, "Time-of-check time-of-use (grant used after the checked data changed)", "runtime",
     "struct User { int id; }\nsensitive struct Doc { int owner; string body; }\npolicy CanRead(User u, Doc d, int to) { return u.id == d.owner && to >= 0; }\n"

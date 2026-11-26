@@ -69,7 +69,7 @@ int main() {
     if (favourite == Color.Blue) { println("blue"); }
     println(int_to_str(local_named_like_enum()));
     if (let pct = validate_range(taint("42"), 0, 100)) { println(int_to_str(pct)); }
-    if (let key = secret_env("CAPSTAN_TEST_NO_SUCH_VARIABLE")) {
+    if (let key = secret_env("CAPSTAN_TEST_NO_SUCH_VARIABLE", 65536)) {
         if (secret_eq(key, "expected")) { println("unexpected secret"); }
     } else {
         println("no secret set");

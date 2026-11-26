@@ -384,6 +384,12 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lex
     else
       bad "native CLI final-component symlink confinement" "$(cat "$tmp/native-file-symlink.out")"
     fi
+
+    if out="$($PY "$ROOT/tests/unit/native_import_graph_budget.py" "$ROOT/bin/capstan" 2>&1)"; then
+      ok "$out"
+    else
+      bad "native compiler import graph budgets" "$out"
+    fi
   else
     ok "Linux x86-64 execution test skipped on non-Linux/non-x86-64 host"
   fi
@@ -545,6 +551,9 @@ done
 if out="$($PY "$ROOT/tests/unit/stdio_interactive.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: conversation over a pipe" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/read_file_bounds.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: read_file bounds" "$out"; fi
 if out="$($PY "$ROOT/tests/unit/read_line_eof.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: read_line exact-limit EOF" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/input_api_bounds.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "io: explicit input API bounds" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/import_graph_budget.py" "$C" 2>&1)"; then ok "$out"; else bad "compiler: import graph budgets" "$out"; fi
+if out="$($PY "$ROOT/tests/unit/stage0_import_graph_budget.py" "$ROOT/bootstrap/capstan0.py" 2>&1)"; then ok "$out"; else bad "bootstrap: stage-0 import graph budgets" "$out"; fi
 
 section "crypto: lib/crypto.cap against hashlib, the published vectors and the runtime"
 if out="$($PY "$ROOT/tests/crypto/check.py" "$C" "$CC" $WFLAGS 2>&1)"; then ok "$out"; else bad "crypto" "$out"; fi
