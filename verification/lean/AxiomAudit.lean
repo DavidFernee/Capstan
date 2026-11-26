@@ -374,3 +374,7 @@ import CapstanVerification.InjectionValue
 #print axioms CredentialConfinement.combine_rejects_right_credential
 #print axioms CredentialConfinement.selection_rejects_credential_control
 #print axioms CredentialConfinement.selection_rejects_inherited_control
+#print axioms CredentialConfinement.call_preserves_argument
+#print axioms CredentialConfinement.call_preserves_control
+#print axioms CredentialConfinement.projection_preserves_aggregate
+#print axioms CredentialConfinement.projection_preserves_field

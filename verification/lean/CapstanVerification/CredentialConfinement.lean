@@ -77,4 +77,33 @@ theorem selection_rejects_inherited_control (c a b : Provenance)
     integrityAllowed (select c a b) = false := by
   simp [integrityAllowed, select, h]
 
+
+-- Conservative call summaries: every argument and the caller's PC contributes.
+def callResult (arg summary pc : Provenance) : Provenance :=
+  combine (combine arg summary) pc
+
+-- Field projection retains the whole aggregate label (intentionally conservative).
+def projectField (aggregate field : Provenance) : Provenance :=
+  combine aggregate field
+
+theorem call_preserves_argument (arg summary pc : Provenance)
+    (h : arg.dataCredential = true) :
+    integrityAllowed (callResult arg summary pc) = false := by
+  simp [integrityAllowed, callResult, combine, h]
+
+theorem call_preserves_control (arg summary pc : Provenance)
+    (h : pc.controlCredential = true) :
+    integrityAllowed (callResult arg summary pc) = false := by
+  simp [integrityAllowed, callResult, combine, h]
+
+theorem projection_preserves_aggregate (aggregate field : Provenance)
+    (h : aggregate.dataCredential = true) :
+    integrityAllowed (projectField aggregate field) = false := by
+  exact combine_rejects_left_credential aggregate field h
+
+theorem projection_preserves_field (aggregate field : Provenance)
+    (h : field.dataCredential = true) :
+    integrityAllowed (projectField aggregate field) = false := by
+  exact combine_rejects_right_credential aggregate field h
+
 end CredentialConfinement
