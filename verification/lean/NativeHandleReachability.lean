@@ -132,8 +132,7 @@ theorem stale_handle_not_reachable_from_root {slotCount : Nat}
     (heap : HandleHeap slotCount) (domain : Nat)
     (roots : HandleRootFrame slotCount)
     (handle : ObjectHandle slotCount)
-    (stale : resolveHandle heap domain handle = none)
-    (member : handle ∈ roots) :
+    (stale : resolveHandle heap domain handle = none) :
     ¬ HandleReachable descriptors heap domain roots handle := by
   intro reachable
   cases reachable with
