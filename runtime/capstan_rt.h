@@ -881,14 +881,14 @@ static CapBuf cap_buf_new(int64_t cap) {
     return b;
 }
 
-/* File contents are untrusted input: returned as Tainted. Reads until end of file
-   rather than trusting the reported size, so regular files, pipes and /proc files are
-   supported. Gives none for a directory, an unreadable file, or a file longer than the
-   caller-supplied max (hard ceiling 2^30), so /dev/zero or an endless pipe cannot exhaust
-   memory (CWE-400). Opening is non-blocking: a FIFO with no writer reads as empty.
-   The implementation then clears O_NONBLOCK before reading, so a live FIFO with an idle
-   writer can still block indefinitely; finite byte bounds do not imply a deadline
-   (tracked in issue #473). */
+/* File contents are untrusted input: returned as Tainted. Reads regular files
+   (including procfs entries exposed as regular files) to EOF, without trusting
+   the reported size. Non-regular sources such as FIFOs, devices and sockets are
+   rejected before any read: a finite byte ceiling does not prevent an idle
+   stream from blocking forever (CWE-400; issue #473). This removes attacker-controlled
+   FIFO/device reads, but does not provide a deadline for slow or stalled host filesystems.
+   Gives none for a directory, non-regular source, unreadable file, or file longer than
+   the caller-supplied max (hard ceiling 2^30). */
 #define CAP_READ_FILE_MAX_BYTES ((int64_t)1 << 30)
 static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
     if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_MAX_BYTES)) cap_panic("read_file() limit outside 0..2^30", "CWE-789", loc);
@@ -896,12 +896,10 @@ static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
     int fd = open(path->data, O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
     if (fd < 0) return NULL;
     struct stat st;
-    if (fstat(fd, &st) != 0 || S_ISDIR(st.st_mode)) { close(fd); return NULL; }
-    int fl = fcntl(fd, F_GETFL);
-    if (fl < 0 || fcntl(fd, F_SETFL, fl & ~O_NONBLOCK) < 0) { close(fd); return NULL; }
+    if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) { close(fd); return NULL; }
     FILE *f = fdopen(fd, "rb");
     if (!f) { close(fd); return NULL; }
-    int64_t hint = S_ISREG(st.st_mode) && st.st_size > 0 && st.st_size <= max ? (int64_t)st.st_size + 1 : 4096;
+    int64_t hint = st.st_size > 0 && st.st_size <= max ? (int64_t)st.st_size + 1 : 4096;
     CapBuf b = cap_buf_new(hint);
     char chunk[65536];
     size_t got;
