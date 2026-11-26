@@ -25,6 +25,7 @@
 | `Secret` | a credential; cannot be printed, concatenated, compared with `==` or read |
 | `Html` | text escaped for HTML (from `escape_html()`); joins only with `Html` and trusted `string`, and is accepted only by `write_html_file()` |
 | `LogText` | text escaped for logs and terminals (from `escape_log()`): printable ASCII and valid UTF-8 text are kept; control bytes, invalid UTF-8, C1 controls, bidirectional controls, line and paragraph separators and the byte-order mark become `\\xNN`; accepted by terminal output and `write_log_file()` |
+| `CsvText` | CSV field/row text from `escape_csv()`; formula-leading values are neutralised and the value is accepted only by `write_csv_file()` |
 | `S` | a `struct` (reference type) |
 | `List<T>` | growable, bounds-checked list |
 | `Map<T>` | map from `string` keys to `T`, iterated in insertion order. Keys are hashed with SipHash-1-3 under a random per-process key, so chosen keys cannot be made to collide (CWE-407) |
