@@ -1294,9 +1294,39 @@ void test_display_list(Tally t, Font font) {
         DisplayList isolated_frame = new DisplayList{
             width: frame.width, height: frame.height, commands: isolated_commands
         };
+        DisplayCommand checked = frame.commands[check];
+        expect(t, display_clip_valid(checked.clip, frame.width, frame.height),
+            $"display list diagnostic: command {check} clip",
+            $"clip={checked.clip.x},{checked.clip.y},{checked.clip.w},{checked.clip.h}");
+        expect(t, checked.opacity >= 0 && checked.opacity <= 255,
+            $"display list diagnostic: command {check} opacity", $"opacity={checked.opacity}");
+        expect(t, display_paint_valid(checked.paint),
+            $"display list diagnostic: command {check} paint", $"paint kind={checked.paint.kind}, color={checked.paint.color}");
+        if (checked.kind == DISPLAY_PATH) {
+            expect(t, checked.rule == FILL_NONZERO || checked.rule == FILL_EVENODD,
+                $"display list diagnostic: command {check} fill rule", $"rule={checked.rule}");
+            if (let diagnostic_segments = checked.segments) {
+                int diagnostic_n = diagnostic_segments.x0.len();
+                expect(t, diagnostic_segments.y0.len() == diagnostic_n &&
+                    diagnostic_segments.x1.len() == diagnostic_n &&
+                    diagnostic_segments.y1.len() == diagnostic_n,
+                    $"display list diagnostic: command {check} parallel arrays",
+                    $"x0={diagnostic_n}, y0={diagnostic_segments.y0.len()}, x1={diagnostic_segments.x1.len()}, y1={diagnostic_segments.y1.len()}");
+                for (int diagnostic_i = 0; diagnostic_i < diagnostic_n; diagnostic_i += 1) {
+                    expect(t, display_coord_valid(diagnostic_segments.x0[diagnostic_i]) &&
+                        display_coord_valid(diagnostic_segments.y0[diagnostic_i]) &&
+                        display_coord_valid(diagnostic_segments.x1[diagnostic_i]) &&
+                        display_coord_valid(diagnostic_segments.y1[diagnostic_i]),
+                        $"display list diagnostic: command {check} segment {diagnostic_i} coordinates",
+                        $"({diagnostic_segments.x0[diagnostic_i]},{diagnostic_segments.y0[diagnostic_i]})-({diagnostic_segments.x1[diagnostic_i]},{diagnostic_segments.y1[diagnostic_i]})");
+                }
+            } else {
+                expect(t, false, $"display list diagnostic: command {check} segments present", "segments are none");
+            }
+        }
         expect(t, display_list_valid(isolated_frame, replayed),
             $"display list: command {check} is independently valid",
-            $"kind={frame.commands[check].kind}, clip={frame.commands[check].clip.x},{frame.commands[check].clip.y},{frame.commands[check].clip.w},{frame.commands[check].clip.h}");
+            $"kind={checked.kind}, clip={checked.clip.x},{checked.clip.y},{checked.clip.w},{checked.clip.h}");
     }
 
     // Appending to the recorder after publication must not mutate the frame.
