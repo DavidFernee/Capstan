@@ -9,7 +9,7 @@ The rest of the CWE list (hardware design, organisational and process weaknesses
 categories and views) is outside scope: it describes things program code cannot express.
 Attempts are written from the CWE descriptions; this atlas is not an official MITRE mapping.
 
-**255 weaknesses, 298 attempts.** Counting each weakness once, by its weakest attempt:
+**255 weaknesses, 301 attempts.** Counting each weakness once, by its weakest attempt:
 
 | Outcome | Weaknesses |
 |---|---|
