@@ -168,11 +168,12 @@ theorem allocation_success_facts
                 constructor
                 · exact hTemporary
                 · have hOldTemporary : s.temporaryPeakBytes ≤ s.maxTemporaryBytes := by
-                    by_contra hBad
-                    have hgt : s.temporaryPeakBytes > s.maxTemporaryBytes := by omega
+                    by_cases hOldPeak : s.temporaryPeakBytes ≤ s.maxTemporaryBytes
+                  · exact hOldPeak
+                  · have hgt : s.temporaryPeakBytes > s.maxTemporaryBytes := by omega
                     have hInvalid' : invalidHeapState s = true := by
                       simp [invalidHeapState, hgt]
-                    exact hInvalid hInvalid'
+                    exact False.elim (hInvalid hInvalid')
                   exact hOldTemporary
   · simp [hAuth] at h
 
@@ -197,11 +198,9 @@ theorem allocate_success_preserves_heapInvariant
   subst after
   have hPeak : max s.temporaryPeakBytes temporaryCharge ≤ s.maxTemporaryBytes := by
     by_cases hOld : s.temporaryPeakBytes ≤ temporaryCharge
-    · rw [max_eq_right hOld]
-      exact hTemporary
+    · simpa [Nat.max, hOld] using hTemporary
     · have hTempOld : temporaryCharge ≤ s.temporaryPeakBytes := by omega
-      rw [max_eq_left hTempOld]
-      exact hOldTemporary
+      simpa [Nat.max, hOld] using hOldTemporary
   unfold heapInvariant
   constructor
   · omega
@@ -270,11 +269,9 @@ theorem allocation_bounds_temporary_peak
     ⟨hAfter, hObject, hCharge, hObjects, hBytes, hWork, hTemporary, hOldTemporary⟩
   subst after
   by_cases hOld : s.temporaryPeakBytes ≤ temporaryCharge
-  · rw [max_eq_right hOld]
-    exact hTemporary
+  · simpa [Nat.max, hOld] using hTemporary
   · have hTempOld : temporaryCharge ≤ s.temporaryPeakBytes := by omega
-    rw [max_eq_left hTempOld]
-    exact hOldTemporary
+    simpa [Nat.max, hOld] using hOldTemporary
 
 /-- Successful allocation preserves the cumulative work budget. -/
 theorem allocation_preserves_work_bound
