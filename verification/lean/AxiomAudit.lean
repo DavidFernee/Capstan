@@ -6,6 +6,7 @@ import CapstanVerification.Progress
 import CapstanVerification.Validator
 import CapstanVerification.ProgramValidator
 import CapstanVerification.TransactionTypestate
+import CapstanVerification.ExplicitTrap
 
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
@@ -180,16 +181,18 @@ import CapstanVerification.TransactionTypestate
 #print axioms CapstanVerification.nativeRuntimeRegisterFileRelation_slot_exists
 #print axioms CapstanVerification.nativeWriteRegister_accepts_iff_runtimeWriteRegister_accepts_of_in_bounds
 
+#print axioms CapstanVerification.validExplicitReasonBytes
+#print axioms CapstanVerification.explicitTrap_preserves_detail
+#print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
+#print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
+-- Explicit application-trap model: keep these proof dependencies visible.
+#print axioms CapstanVerification.explicitTrap_preserves_detail
+#print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
+#print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
 #print axioms CapstanVerification.txOwnerIds_update_preserved
 #print axioms CapstanVerification.update_preserves_linear_context
 #print axioms CapstanVerification.advance_preserves_linear_context
-#print axioms CapstanVerification.duplicate_commit_rejected
-#print axioms CapstanVerification.abort_after_commit_decision_rejected
-#print axioms CapstanVerification.write_after_prepare_rejected
-#print axioms CapstanVerification.use_after_release_rejected
-#print axioms CapstanVerification.duplicate_owner_context_rejected
-#print axioms CapstanVerification.aliased_transaction_cannot_advance
-#print axioms CapstanVerification.unknown_transaction_cannot_advance
-#print axioms CapstanVerification.advance_preserves_owner_ids
-#print axioms CapstanVerification.canonical_commit_path
-#print axioms CapstanVerification.abort_before_commit_decision
+#print axioms CapstanVerification.tx_transition_rejects_after_commit
+#print axioms CapstanVerification.tx_transition_rejects_abort_after_decision
