@@ -153,7 +153,7 @@ void fuzz(List<string> paths) {
 }
 
 int main() {
-    List<string> a = args(8, 4096, 32768);
+    List<string> a = args(64, 4096, 262144);
     if (a.len() < 1) {
         println("usage: vectors raster|font|utf8|png|fuzz ...");
         return 2;
