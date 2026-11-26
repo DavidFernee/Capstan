@@ -1,0 +1,287 @@
+Tainted wayland_protocol_test_bytes(List<int> bytes) {
+    List<Tainted> parts = new List<Tainted>();
+    for (int i = 0; i < bytes.len(); i += 1) { parts.push(taint_char(bytes[i])); }
+    return join(parts, "");
+}
+void wayland_protocol_push_u32(List<int> out, int value) {
+    out.push(value & 0xFF); out.push((value >>> 8) & 0xFF);
+    out.push((value >>> 16) & 0xFF); out.push((value >>> 24) & 0xFF);
+}
+Tainted wayland_protocol_make_frame(int object_id, int opcode, List<int> payload) {
+    List<int> bytes = new List<int>();
+    int size = 8 + payload.len();
+    wayland_protocol_push_u32(bytes, object_id);
+    wayland_protocol_push_u32(bytes, (size << 16) | opcode);
+    for (int i = 0; i < payload.len(); i += 1) { bytes.push(payload[i]); }
+    return wayland_protocol_test_bytes(bytes);
+}
+WaylandArgSpec wayland_protocol_arg(int kind, int interface_id, int version, bool nullable) {
+    return new WaylandArgSpec{kind: kind, interface_id: interface_id, version: version, nullable: nullable};
+}
+WaylandMessageSpec wayland_protocol_spec(int interface_id, int opcode, int direction, int since,
+    List<WaylandArgSpec> args, int fd_count, bool destroys) {
+    return new WaylandMessageSpec{interface_id: interface_id, opcode: opcode, direction: direction,
+        since_version: since, args: args, fd_count: fd_count, destroys_target: destroys};
+}
+int main() {
+    WaylandObjectTable objects = wayland_object_table();
+    if (objects.slots.len() != WAYLAND_OBJECT_SLOTS_MAX) { return 1; }
+    if (!wayland_object_add(objects, 1, 10, 3)) { return 2; }
+    if (wayland_object_add(objects, 2, 20, 1)) { return 41; }
+    if (!wayland_object_add_client(objects, 2, 20, 1)) { return 3; }
+    if (!wayland_object_add_client(objects, 3, 30, 1)) { return 4; }
+    if (wayland_object_add(objects, 1, 99, 1)) { return 5; }
+    if (wayland_object_get(objects, 1).interface_id != 10) { return 6; }
+
+    // Resolve an interface/opcode/direction and validate mixed wire/out-of-band args.
+    List<WaylandArgSpec> args = new List<WaylandArgSpec>();
+    args.push(wayland_protocol_arg(WAYLAND_ARG_UINT, 0, 0, false));
+    args.push(wayland_protocol_arg(WAYLAND_ARG_STRING, 0, 0, false));
+    args.push(wayland_protocol_arg(WAYLAND_ARG_OBJECT, 20, 0, false));
+    args.push(wayland_protocol_arg(WAYLAND_ARG_FD, 0, 0, false));
+    WaylandMessageSpec request = wayland_protocol_spec(10, 0, WAYLAND_DIRECTION_REQUEST, 1, args, 1, false);
+    List<WaylandMessageSpec> catalog = new List<WaylandMessageSpec>();
+    catalog.push(request);
+    List<int> payload = new List<int>();
+    wayland_protocol_push_u32(payload, 1234);
+    wayland_protocol_push_u32(payload, 3);
+    payload.push(104); payload.push(105); payload.push(0); payload.push(0);
+    wayland_protocol_push_u32(payload, 2);
+    Tainted bytes = wayland_protocol_make_frame(1, 0, payload);
+    WaylandFrameHeader frame = wayland_frame_header(bytes, 0);
+    WaylandProtocolResult result = wayland_protocol_dispatch(bytes, frame, objects, catalog, WAYLAND_DIRECTION_REQUEST, 1);
+    if (result.status != 1 || result.fd_count != 1 || result.next_offset != frame.end_offset) { return 7; }
+
+    // Descriptor count is exact; an FD argument has no in-band payload word.
+    result = wayland_protocol_dispatch(bytes, frame, objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1) { return 8; }
+    result = wayland_protocol_dispatch(bytes, frame, objects, catalog, WAYLAND_DIRECTION_EVENT, 1);
+    if (result.status != -1) { return 9; }
+    result = wayland_protocol_dispatch(bytes, frame, objects, catalog, WAYLAND_DIRECTION_REQUEST, 17);
+    if (result.status != -1) { return 10; }
+
+    // Unknown opcode and wrong target interface fail closed.
+    result = wayland_protocol_dispatch(bytes, wayland_frame_header(wayland_protocol_make_frame(1, 9, payload), 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 1);
+    if (result.status != -1) { return 11; }
+    Tainted wrong_target = wayland_protocol_make_frame(2, 0, payload);
+    result = wayland_protocol_dispatch(wrong_target, wayland_frame_header(wrong_target, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 1);
+    if (result.status != -1) { return 12; }
+
+    // Ambiguous duplicate metadata is rejected rather than selecting one schema.
+    catalog.push(request);
+    result = wayland_protocol_dispatch(bytes, frame, objects, catalog, WAYLAND_DIRECTION_REQUEST, 1);
+    if (result.status != -1) { return 13; }
+    catalog = new List<WaylandMessageSpec>();
+    catalog.push(request);
+
+    // A complete frame cannot claim an argument schema introduced after object version.
+    List<WaylandArgSpec> no_args = new List<WaylandArgSpec>();
+    catalog[0] = wayland_protocol_spec(10, 0, WAYLAND_DIRECTION_REQUEST, 4, no_args, 0, false);
+    Tainted empty_frame = wayland_protocol_make_frame(1, 0, new List<int>());
+    result = wayland_protocol_dispatch(empty_frame, wayland_frame_header(empty_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1) { return 14; }
+
+    // Empty arrays are valid; a zero-length string is the nullable wire value.
+    List<WaylandArgSpec> array_args = new List<WaylandArgSpec>();
+    array_args.push(wayland_protocol_arg(WAYLAND_ARG_ARRAY, 0, 0, false));
+    catalog[0] = wayland_protocol_spec(10, 1, WAYLAND_DIRECTION_REQUEST, 1, array_args, 0, false);
+    List<int> zero_array = new List<int>(); wayland_protocol_push_u32(zero_array, 0);
+    Tainted array_frame = wayland_protocol_make_frame(1, 1, zero_array);
+    result = wayland_protocol_dispatch(array_frame, wayland_frame_header(array_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != 1) { return 15; }
+
+    List<WaylandArgSpec> string_args = new List<WaylandArgSpec>();
+    string_args.push(wayland_protocol_arg(WAYLAND_ARG_STRING, 0, 0, false));
+    catalog[0] = wayland_protocol_spec(10, 2, WAYLAND_DIRECTION_REQUEST, 1, string_args, 0, false);
+    Tainted null_string = wayland_protocol_make_frame(1, 2, zero_array);
+    result = wayland_protocol_dispatch(null_string, wayland_frame_header(null_string, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1) { return 16; }
+    string_args[0] = wayland_protocol_arg(WAYLAND_ARG_STRING, 0, 0, true);
+    catalog[0] = wayland_protocol_spec(10, 2, WAYLAND_DIRECTION_REQUEST, 1, string_args, 0, false);
+    result = wayland_protocol_dispatch(null_string, wayland_frame_header(null_string, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != 1) { return 17; }
+
+    // Empty non-null strings have length one and a NUL terminator.
+    List<int> empty_nonnull_payload = new List<int>(); wayland_protocol_push_u32(empty_nonnull_payload, 1);
+    empty_nonnull_payload.push(0); empty_nonnull_payload.push(0); empty_nonnull_payload.push(0); empty_nonnull_payload.push(0);
+    Tainted empty_nonnull = wayland_protocol_make_frame(1, 2, empty_nonnull_payload);
+    result = wayland_protocol_dispatch(empty_nonnull, wayland_frame_header(empty_nonnull, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != 1) { return 18; }
+
+    // Object references require a live object of the declared interface.
+    List<WaylandArgSpec> object_args = new List<WaylandArgSpec>();
+    object_args.push(wayland_protocol_arg(WAYLAND_ARG_OBJECT, 20, 0, false));
+    catalog[0] = wayland_protocol_spec(10, 3, WAYLAND_DIRECTION_REQUEST, 1, object_args, 0, false);
+    List<int> object_payload = new List<int>(); wayland_protocol_push_u32(object_payload, 3);
+    Tainted object_frame = wayland_protocol_make_frame(1, 3, object_payload);
+    result = wayland_protocol_dispatch(object_frame, wayland_frame_header(object_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1) { return 19; }
+    object_args[0] = wayland_protocol_arg(WAYLAND_ARG_OBJECT, 20, 0, true);
+    List<int> null_object_payload = new List<int>(); wayland_protocol_push_u32(null_object_payload, 0);
+    Tainted nullable_object = wayland_protocol_make_frame(1, 3, null_object_payload);
+    result = wayland_protocol_dispatch(nullable_object, wayland_frame_header(nullable_object, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != 1) { return 20; }
+
+    // Canonical booleans are checked by the schema layer too.
+    List<WaylandArgSpec> bool_args = new List<WaylandArgSpec>();
+    bool_args.push(wayland_protocol_arg(WAYLAND_ARG_BOOL, 0, 0, false));
+    catalog[0] = wayland_protocol_spec(10, 4, WAYLAND_DIRECTION_REQUEST, 1, bool_args, 0, false);
+    List<int> bad_bool_payload = new List<int>(); wayland_protocol_push_u32(bad_bool_payload, 2);
+    Tainted bad_bool = wayland_protocol_make_frame(1, 4, bad_bool_payload);
+    result = wayland_protocol_dispatch(bad_bool, wayland_frame_header(bad_bool, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1) { return 21; }
+
+    // Metadata cannot declare scalar arguments nullable.
+    bool_args[0] = wayland_protocol_arg(WAYLAND_ARG_BOOL, 0, 0, true);
+    catalog[0] = wayland_protocol_spec(10, 4, WAYLAND_DIRECTION_REQUEST, 1, bool_args, 0, false);
+    List<int> good_bool_payload = new List<int>(); wayland_protocol_push_u32(good_bool_payload, 1);
+    Tainted good_bool = wayland_protocol_make_frame(1, 4, good_bool_payload);
+    result = wayland_protocol_dispatch(good_bool, wayland_frame_header(good_bool, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1) { return 34; }
+
+    // Static new_id creation is committed only after every argument validates.
+    List<WaylandArgSpec> create_args = new List<WaylandArgSpec>();
+    create_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 40, 2, false));
+    catalog[0] = wayland_protocol_spec(10, 5, WAYLAND_DIRECTION_REQUEST, 1, create_args, 0, false);
+    List<int> new_id_payload = new List<int>(); wayland_protocol_push_u32(new_id_payload, 4);
+    Tainted create_frame = wayland_protocol_make_frame(1, 5, new_id_payload);
+    result = wayland_protocol_dispatch(create_frame, wayland_frame_header(create_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != 1 || result.created_ids.len() != 1 || result.created_ids[0] != 4) { return 22; }
+    if (wayland_object_get(objects, 4).interface_id != 40 || wayland_object_get(objects, 4).version != 2) { return 23; }
+    result = wayland_protocol_dispatch(create_frame, wayland_frame_header(create_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1 || wayland_object_get(objects, 4).state != 1) { return 24; }
+
+    // Failed trailing arguments leave pending object IDs unallocated.
+    List<WaylandArgSpec> atomic_args = new List<WaylandArgSpec>();
+    atomic_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 41, 1, false));
+    atomic_args.push(wayland_protocol_arg(WAYLAND_ARG_BOOL, 0, 0, false));
+    catalog[0] = wayland_protocol_spec(10, 6, WAYLAND_DIRECTION_REQUEST, 1, atomic_args, 0, false);
+    List<int> atomic_payload = new List<int>();
+    wayland_protocol_push_u32(atomic_payload, 88); wayland_protocol_push_u32(atomic_payload, 7);
+    Tainted atomic_frame = wayland_protocol_make_frame(1, 6, atomic_payload);
+    result = wayland_protocol_dispatch(atomic_frame, wayland_frame_header(atomic_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1 || wayland_object_get(objects, 88).state != 0) { return 25; }
+
+    // A destructor event retires a client-owned ID until wl_display.delete_id.
+    catalog[0] = wayland_protocol_spec(30, 7, WAYLAND_DIRECTION_EVENT, 1, no_args, 0, true);
+    Tainted destroy_frame = wayland_protocol_make_frame(3, 7, new List<int>());
+    result = wayland_protocol_dispatch(destroy_frame, wayland_frame_header(destroy_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_EVENT, 0);
+    if (result.status != 1 || result.retired_id != 3 || wayland_object_get(objects, 3).state != 0) { return 26; }
+    if (wayland_object_add_client(objects, 3, 30, 1)) { return 27; }
+
+    // delete_id cannot release a still-live object or an unrelated ID.
+    List<int> live_delete_payload = new List<int>(); wayland_protocol_push_u32(live_delete_payload, 4);
+    Tainted live_delete = wayland_protocol_make_frame(1, 1, live_delete_payload);
+    result = wayland_display_delete_id(live_delete, wayland_frame_header(live_delete, 0), objects, 1, 10);
+    if (result.status != -1 || wayland_object_get(objects, 4).state != 1) { return 28; }
+
+    // Only the matching display.delete_id event makes the retired ID reusable.
+    List<int> delete_payload = new List<int>(); wayland_protocol_push_u32(delete_payload, 3);
+    Tainted delete_bytes = wayland_protocol_make_frame(1, 1, delete_payload);
+    result = wayland_display_delete_id(delete_bytes, wayland_frame_header(delete_bytes, 0), objects, 1, 10);
+    if (result.status != 1) { return 29; }
+    Tainted wrong_display_delete = wayland_protocol_make_frame(2, 1, delete_payload);
+    result = wayland_display_delete_id(wrong_display_delete, wayland_frame_header(wrong_display_delete, 0),
+        objects, 1, 10);
+    if (result.status != -1) { return 42; }
+    result = wayland_display_delete_id(delete_bytes, wayland_frame_header(delete_bytes, 0), objects, 1, 10);
+    if (result.status != -1) { return 30; }
+    List<WaylandArgSpec> reuse_args = new List<WaylandArgSpec>();
+    reuse_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 30, 1, false));
+    catalog[0] = wayland_protocol_spec(10, 8, WAYLAND_DIRECTION_REQUEST, 1, reuse_args, 0, false);
+    List<int> reuse_payload = new List<int>(); wayland_protocol_push_u32(reuse_payload, 3);
+    Tainted reuse_frame = wayland_protocol_make_frame(1, 8, reuse_payload);
+    result = wayland_protocol_dispatch(reuse_frame, wayland_frame_header(reuse_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != 1 || wayland_object_get(objects, 3).state != 1) { return 31; }
+
+    // Server-created IDs use their own dense range and are destroyed locally
+    // when a destructor event is received; they do not await client delete_id.
+    List<WaylandArgSpec> server_new_args = new List<WaylandArgSpec>();
+    server_new_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 50, 1, false));
+    catalog[0] = wayland_protocol_spec(10, 11, WAYLAND_DIRECTION_EVENT, 1, server_new_args, 0, false);
+    List<int> server_new_payload = new List<int>(); wayland_protocol_push_u32(server_new_payload, 4278190080);
+    Tainted server_new_frame = wayland_protocol_make_frame(1, 11, server_new_payload);
+    result = wayland_protocol_dispatch(server_new_frame, wayland_frame_header(server_new_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_EVENT, 0);
+    if (result.status != 1 || wayland_object_get(objects, 4278190080).owner != WAYLAND_OBJECT_OWNER_SERVER) { return 32; }
+    List<int> server_gap_payload = new List<int>(); wayland_protocol_push_u32(server_gap_payload, 4278190082);
+    Tainted server_gap_frame = wayland_protocol_make_frame(1, 11, server_gap_payload);
+    result = wayland_protocol_dispatch(server_gap_frame, wayland_frame_header(server_gap_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_EVENT, 0);
+    if (result.status != -1 || wayland_object_get(objects, 4278190082).state != 0) { return 43; }
+    catalog[0] = wayland_protocol_spec(50, 12, WAYLAND_DIRECTION_EVENT, 1, no_args, 0, true);
+    Tainted server_destroy_frame = wayland_protocol_make_frame(4278190080, 12, new List<int>());
+    result = wayland_protocol_dispatch(server_destroy_frame, wayland_frame_header(server_destroy_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_EVENT, 0);
+    if (result.status != 1 || wayland_object_get(objects, 4278190080).state != 0) { return 33; }
+
+    // A forged parsed-frame record is rejected even for a scalar-only message.
+    catalog[0] = wayland_protocol_spec(10, 0, WAYLAND_DIRECTION_REQUEST, 1, no_args, 0, false);
+    WaylandFrameHeader forged = new WaylandFrameHeader{status: 1, object_id: 1, size: 8,
+        opcode: 0, end_offset: 12};
+    result = wayland_protocol_dispatch(empty_frame, forged, objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1) { return 30; }
+
+    // Duplicate new IDs within one message are rejected before either is installed.
+    List<WaylandArgSpec> duplicate_new_args = new List<WaylandArgSpec>();
+    duplicate_new_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 60, 1, false));
+    duplicate_new_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 60, 1, false));
+    catalog[0] = wayland_protocol_spec(10, 8, WAYLAND_DIRECTION_REQUEST, 1, duplicate_new_args, 0, false);
+    List<int> duplicate_new_payload = new List<int>();
+    wayland_protocol_push_u32(duplicate_new_payload, 99); wayland_protocol_push_u32(duplicate_new_payload, 99);
+    Tainted duplicate_new_frame = wayland_protocol_make_frame(1, 8, duplicate_new_payload);
+    result = wayland_protocol_dispatch(duplicate_new_frame, wayland_frame_header(duplicate_new_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1 || wayland_object_get(objects, 99).state != 0) { return 36; }
+
+    // Client object IDs are dense; skipped IDs cannot be introduced.
+    List<WaylandArgSpec> gap_args = new List<WaylandArgSpec>();
+    gap_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 42, 1, false));
+    catalog[0] = wayland_protocol_spec(10, 10, WAYLAND_DIRECTION_REQUEST, 1, gap_args, 0, false);
+    List<int> gap_payload = new List<int>(); wayland_protocol_push_u32(gap_payload, 6);
+    Tainted gap_frame = wayland_protocol_make_frame(1, 10, gap_payload);
+    result = wayland_protocol_dispatch(gap_frame, wayland_frame_header(gap_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1 || wayland_object_get(objects, 6).state != 0) { return 38; }
+    List<int> next_payload = new List<int>(); wayland_protocol_push_u32(next_payload, 5);
+    Tainted next_frame = wayland_protocol_make_frame(1, 10, next_payload);
+    result = wayland_protocol_dispatch(next_frame, wayland_frame_header(next_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != 1 || wayland_object_get(objects, 5).state != 1) { return 39; }
+
+    // More than the fixed slot budget cannot be admitted.
+    int added = 0;
+    for (int id = 4278190081; id < 4278192081; id += 1) {
+        if (wayland_object_add_server(objects, id, 50, 1)) { added += 1; }
+    }
+    if (added != WAYLAND_OBJECT_SLOTS_MAX - 5) { return 31; }
+    if (wayland_object_add(objects, 4000, 50, 1)) { return 32; }
+    if (wayland_object_free_slots(objects) != 0) { return 33; }
+    List<WaylandArgSpec> full_args = new List<WaylandArgSpec>();
+    full_args.push(wayland_protocol_arg(WAYLAND_ARG_NEW_ID, 60, 1, false));
+    catalog[0] = wayland_protocol_spec(10, 9, WAYLAND_DIRECTION_REQUEST, 1, full_args, 0, false);
+    List<int> full_payload = new List<int>(); wayland_protocol_push_u32(full_payload, 6);
+    Tainted full_frame = wayland_protocol_make_frame(1, 9, full_payload);
+    result = wayland_protocol_dispatch(full_frame, wayland_frame_header(full_frame, 0),
+        objects, catalog, WAYLAND_DIRECTION_REQUEST, 0);
+    if (result.status != -1 || wayland_object_get(objects, 6).state != 0) { return 37; }
+
+    println("Wayland protocol schema and object lifecycle: 47 assertions passed");
+    return 0;
+}

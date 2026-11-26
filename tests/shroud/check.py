@@ -450,10 +450,19 @@ def check_single_line_budget(capstanc, cc, cflags, tmp):
 def check_wayland_wire(capstanc, cc, cflags, tmp):
     exe = build(capstanc, cc, cflags, tmp, "tests/shroud/wayland_wire.cap", "wayland-wire")
     r = run(exe, check=False)
-    expected = "Wayland framing: 15 adversarial assertions passed\n"
+    expected = "Wayland framing and payload spans: 49 adversarial assertions passed\n"
     if r.returncode != 0 or r.stdout != expected:
-        sys.exit(f"Wayland wire framing: exit {r.returncode}:\n{r.stdout}{r.stderr}")
-    return "15 checks: exhaustive 16-bit size domain, fragmentation, concatenation, offsets, malformed sizes and the 65,532-byte maximum"
+        sys.exit(f"Wayland wire framing and payload spans: exit {r.returncode}:\n{r.stdout}{r.stderr}")
+    return "49 checks: exhaustive frame-size domain, fragmentation, concatenation, uint32/signed-int32/boolean/fixed argument decoding, array padding, strict UTF-8 strings, maximum-size and high-bit lengths, complete-frame argument-boundary rejection, cross-frame isolation and forged-frame rejection"
+
+
+def check_wayland_protocol(capstanc, cc, cflags, tmp):
+    exe = build(capstanc, cc, cflags, tmp, "tests/shroud/wayland_protocol.cap", "wayland-protocol")
+    r = run(exe, check=False)
+    expected = "Wayland protocol schema and object lifecycle: 47 assertions passed\n"
+    if r.returncode != 0 or r.stdout != expected:
+        sys.exit(f"Wayland protocol schema/object lifecycle: exit {r.returncode}:\n{r.stdout}{r.stderr}")
+    return "47 checks: interface/opcode/direction/version resolution, typed arguments, nullable values, descriptor counts, object references, staged new IDs, destructor retirement/release, forged frames and fixed-capacity admission"
 
 
 def check_pixmap_limits(capstanc, cc, cflags, tmp):
@@ -522,6 +531,7 @@ def main():
         report.append("font table spans: " + check_table_span_rejection(vec, tmp))
         report.append("font fuzz: " + check_fuzz(vec, tmp))
         report.append("Wayland wire framing: " + check_wayland_wire(capstanc, cc, cflags, tmp))
+        report.append("Wayland protocol schema: " + check_wayland_protocol(capstanc, cc, cflags, tmp))
         report.append("pixmap limits: " + check_pixmap_limits(capstanc, cc, cflags, tmp))
         report.append("single-line filtering: " + check_single_line_budget(capstanc, cc, cflags, tmp))
         report.append("golden: " + check_golden(capstanc, cc, cflags, tmp, update))
