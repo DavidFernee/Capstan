@@ -1,0 +1,6 @@
+// expect: args expects 3 argument(s), found 1
+// spec: builtins.io
+int main() {
+    List<string> values = args(2);
+    return values.len();
+}

@@ -5,6 +5,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Require explicit finite source-level bounds for command-line arguments, file reads, standard-input lines and environment secrets; runtime checks preflight limits before allocating or copying input.
 - Shroud: retain and enforce sfnt table-local spans for cmap subtables, loca entries and hmtx metrics; reject in-file adjacent-table borrowing with deterministic regression fixtures
 - CCAM research prototype: add a bounded process-lifetime region-heap model with nominal record/array references, array bounds/initialisation, opaque validated references, byte/object/work budgets and temporary-allocation peak limits; not yet integrated into normative CCAM or native code generation
 - Security assurance: make v1.0 a C-free, evidence-gated release on Linux, macOS and Windows; add mandatory CWE/security acceptance criteria, explicit unknown/residual evidence states and a per-release assurance scorecard. Current C-backend status remains explicit; this is a release requirement, not a claim of implementation.

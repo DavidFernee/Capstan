@@ -1,0 +1,5 @@
+// expect: wrapping_add expects 2 argument(s), found 4
+// spec: expr.bitwise
+int main() {
+    return wrapping_add(1, 2, 3, 4);
+}
