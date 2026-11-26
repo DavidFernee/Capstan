@@ -882,12 +882,12 @@ static CapBuf cap_buf_new(int64_t cap) {
 
 /* File contents are untrusted input: returned as Tainted. Reads until end of file
    rather than trusting the reported size, so pipes and /proc files work. Gives none
-   for a directory, an unreadable file, or a file longer than max bytes (default
-   2^30), so /dev/zero or an endless pipe cannot exhaust memory (CWE-400). Opening
+   for a directory, an unreadable file, or a file longer than the caller-supplied max (hard ceiling 2^30), so /dev/zero
+   or an endless pipe cannot exhaust memory (CWE-400). Opening
    never blocks: a FIFO with no writer reads as empty instead of hanging. */
-#define CAP_READ_FILE_DEFAULT ((int64_t)1 << 30)
+#define CAP_READ_FILE_MAX_BYTES ((int64_t)1 << 30)
 static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
-    if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_DEFAULT)) cap_panic("read_file() limit outside 0..2^30", "CWE-789", loc);
+    if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_MAX_BYTES)) cap_panic("read_file() limit outside 0..2^30", "CWE-789", loc);
     if (!cap_path_ok(path)) return NULL;
     int fd = open(path->data, O_RDONLY | O_NONBLOCK | O_NOCTTY | O_CLOEXEC);
     if (fd < 0) return NULL;
@@ -914,7 +914,7 @@ static CapStr *cap_read_file_max(CapStr *path, int64_t max, int64_t loc) {
 }
 /* Native unit-test compatibility wrapper; source programs must pass a bound. */
 static CapStr *cap_read_file(CapStr *path) {
-    return cap_read_file_max(path, CAP_READ_FILE_DEFAULT, 0);
+    return cap_read_file_max(path, CAP_READ_FILE_MAX_BYTES, 0);
 }
 
 /*
@@ -982,7 +982,7 @@ static int64_t cap_workspace_open(CapStr *root) {
    kernel; symlinks, magic links, mount crossings and path replacement races
    are rejected. The opened descriptor pins the selected inode for the read. */
 static CapStr *cap_workspace_read_file(int64_t root_fd, CapStr *relative, int64_t max, int64_t loc) {
-    if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_DEFAULT))
+    if (CAP_UNLIKELY(max < 0 || max > CAP_READ_FILE_MAX_BYTES))
         cap_panic("workspace_read_file() limit outside 0..2^30", "CWE-789", loc);
 #if defined(__linux__) && defined(CAP_RESOLVE_BENEATH) && defined(CAP_RESOLVE_NO_SYMLINKS) && defined(CAP_RESOLVE_NO_XDEV)
     if (root_fd < 0 || root_fd > INT_MAX || !cap_workspace_components_ok(relative, false)) return NULL;
