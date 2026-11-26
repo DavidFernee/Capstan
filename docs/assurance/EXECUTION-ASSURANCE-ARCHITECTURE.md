@@ -98,7 +98,11 @@ whether the relation is adequate; that remains a substantive review task.
 
 
 
+### Memory-lifetime profiles in the C-free programme
 
+The C-free compiler work now distinguishes two non-interchangeable prototype profiles: a process-lifetime typed compiler arena for tokens, ASTs, scopes and diagnostics, and frame-owned scratch regions for temporary byte/scalar workspaces. The integration review in [C-FREE-MEMORY-INTEGRATION-REVIEW.md](../architecture/C-FREE-MEMORY-INTEGRATION-REVIEW.md) records their separate lifetime, aliasing and validation obligations.
+
+Neither prototype is yet a production memory manager or a proved implementation refinement. The arena's integer identity tokens are not unforgeable, and its mutable aggregate aliasing semantics remain unresolved. Scratch generation/owner checks and call-frame unwinding remain prototype obligations. Logical byte/capacity accounting is not a host RSS, allocator-overhead, stack or wall-clock bound. Do not combine the two profiles into one capability or claim complete C-free compiler memory safety.
 
 ### Compiler source/import graph budget
 
