@@ -59,7 +59,7 @@ View view_of(Model m) {
 }
 
 int main() {
-    List<string> args0 = args(4096, 1048576, 16777216);
+    List<string> args0 = args(1, 4096, 4096);
     string out = "/tmp";
     if (args0.len() > 0) { out = args0[0]; }
 
