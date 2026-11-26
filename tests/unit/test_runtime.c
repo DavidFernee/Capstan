@@ -495,6 +495,18 @@ static void test_csv(void) {
     CHECK(str_is(cap_escape_csv(CAP_LIT("a=b", 3)), "\"a=b\"", 5));   /* only a leading prefix matters */
     CHECK(str_is(cap_escape_csv(cap_str_new("\0=", 2)), "\"\0=\"", 4));
     CHECK(str_is(cap_escape_csv(CAP_LIT("\"=x", 3)), "\"\"\"=x\"", 6));
+    /* Spreadsheet formula prefixes after leading spaces and in full-width form. */
+    CHECK(str_is(cap_escape_csv(CAP_LIT(" =1+1", 5)), "\"' =1+1\"", 8));
+    CHECK(str_is(cap_escape_csv(CAP_LIT("  @cmd", 6)), "\"'  @cmd\"", 9));
+    const char fullwidth_equals[] = "\xEF\xBC\x9D" "1+1";
+    CapStr *fw = cap_escape_csv(cap_str_new(fullwidth_equals, (int64_t)(sizeof fullwidth_equals - 1)));
+    CHECK(fw->len == (int64_t)sizeof fullwidth_equals + 2 && fw->data[0] == '"' &&
+        fw->data[1] == '\'' && memcmp(fw->data + 2, fullwidth_equals, sizeof fullwidth_equals - 1) == 0);
+    const char fullwidth_plus[] = "\xEF\xBC\x8B" "1";
+    fw = cap_escape_csv(cap_str_new(fullwidth_plus, (int64_t)(sizeof fullwidth_plus - 1)));
+    CHECK(fw->data[1] == '\'');
+    CHECK(str_is(cap_escape_csv(CAP_LIT("\n=1", 3)), "\"'\\n=1\"", 6));
+
 }
 
 /* secret_eq(): constant-time comparison gives the right answer in every case. */
