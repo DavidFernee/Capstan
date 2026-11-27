@@ -100,8 +100,8 @@ test "aggregate invoke propagates runtime bounds traps and restores caller frame
     arguments.push(1);
 
     AGStack stack = created.stack;
-    assert(ag_invoke(stack, functions, 0, arguments, 2) == "array_index_out_of_bounds");
+    assert(ag_invoke(stack, functions, 0, arguments, 2) == "array_bounds");
     assert(stack.depth == 0 && stack.slots == 3);
-    assert(stack.active.trap_code == "array_index_out_of_bounds");
+    assert(stack.active.trap_code == "array_bounds");
     assert(!stack.active.registers[2].initialised);
 }
