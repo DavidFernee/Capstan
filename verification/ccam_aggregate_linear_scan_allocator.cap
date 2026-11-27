@@ -1,6 +1,7 @@
 // Deterministic linear-scan allocator for bounded CCAM virtual-register intervals.
 // Physical pool is restricted to caller-saved SysV GPRs; RSP/RBP and
 // callee-saved registers are deliberately excluded until frame preservation exists.
+// Intervals are half-open [start,end); equal starts are ordered by virtual_id.
 const int AG_ALLOC_INTERVAL_LIMIT = 65536;
 const int AG_ALLOC_VIRTUAL_LIMIT = 1048576;
 const int AG_ALLOC_SPILL_LIMIT = 65536;
