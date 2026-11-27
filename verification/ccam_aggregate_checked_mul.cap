@@ -1,2 +1,14 @@
 import "ccam_aggregate_checked_add.cap";
-AGCheckedInt ag_checked_mul(int a,int b){if(a>1000000000||a< -1000000000||b>1000000000||b< -1000000000){return new AGCheckedInt{ok:false,value:0};}return new AGCheckedInt{ok:true,value:a*b};}
+AGCheckedInt ag_checked_mul(int a,int b){
+    if(a>1000000000||a< -1000000000||b>1000000000||b< -1000000000){return new AGCheckedInt{ok:false,value:0};}
+    int value=a*b;
+    if(value>1000000000||value< -1000000000){return new AGCheckedInt{ok:false,value:0};}
+    return new AGCheckedInt{ok:true,value:value};
+}
+
+test "checked multiplication enforces result range" {
+    assert(ag_checked_mul(1000,1000).ok);
+    assert(!ag_checked_mul(1000000,1000000).ok);
+    assert(!ag_checked_mul(-1000000,1000000).ok);
+    assert(ag_checked_mul(-1000,1000).value==-1000000);
+}
