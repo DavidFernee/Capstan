@@ -7,7 +7,7 @@ Estimates are engineer-weeks of remaining package effort, provisional pending A0
 | A01 | Baseline inventory | Integration | — | 1–2 | Pin main, map modules/issues/PRs and evidence; reconcile #542 |
 | B01 | Source semantics | Frontend | A01 | 1–2 | Approved accepted subset, evaluation order, traps, types |
 | B02 | Scalar CCAM and decoder | CCAM | A01 | 2–4 | Closed schema, exact numbers, canonical calls, bounded decoding |
-| B03 | Result and native ABI | Native | B02 | 1–2 | Exact terminal outcomes; coordinate #540; no exit-code aliasing |
+| B03 | Result and native ABI | Native | B02 | 1–2 | Exact terminal outcomes; coordinate #552; no exit-code aliasing |
 | B04 | Memory and resource contracts | Runtime | B02 | 2–4 | Typed handles, layout, roots, quotas, atomic failures |
 | B05 | Effects and capability contracts | Security | B01,B04 | 2–4 | Explicit authority and host-boundary policy |
 | C01 | Scalar Lean refinement | Formal | B02 | 3–6 | Concrete evaluator correspondence; coordinate #547/#549 |
