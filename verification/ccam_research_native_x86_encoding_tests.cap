@@ -148,3 +148,26 @@ test "x86-64 LEA base encoding covers all sixteen registers" {
         }
     }
 }
+
+test "x86-64 conditional emitter rejects invalid conditions atomically" {
+    List<int> bytes = new List<int>();
+    assert(!ag_x86_jcc(bytes,-1));
+    assert(!ag_x86_jcc(bytes,16));
+    assert(bytes.len()==0);
+    assert(ag_x86_jcc(bytes,15));
+    assert(bytes.len()==6 && bytes[0]==15 && bytes[1]==143);
+}
+test "x86-64 relocation helpers reject invalid ranges without mutation" {
+    List<int> bytes = new List<int>();
+    assert(ag_u32(bytes,0));
+    assert(ag_u32(bytes,0));
+    int before0=bytes[0]; int before4=bytes[4];
+    assert(!ag_rel32(bytes,-1,8));
+    assert(!ag_rel32(bytes,6,8));
+    assert(!ag_rel32(bytes,0,9));
+    assert(!ag_patch32(bytes,-1,1));
+    assert(!ag_patch32(bytes,5,1));
+    assert(!ag_patch32(bytes,0,-1));
+    assert(!ag_patch32(bytes,0,4294967296));
+    assert(bytes.len()==8 && bytes[0]==before0 && bytes[4]==before4);
+}
