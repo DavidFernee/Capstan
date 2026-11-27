@@ -318,6 +318,19 @@ else
   bad "direct native machine-code and ELF encoding regression tests" "$out"
 fi
 
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_direct_elf_tests.cap" 2>&1)"; then
+  ok "direct CCAM ELF validates branch joins and profile limits"
+else
+  bad "direct CCAM ELF profile validation" "$out"
+fi
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  if out="$($PY "$ROOT/tests/unit/native_direct_elf.py" "$ROOT/bin/capstan" 2>&1)"; then
+    ok "direct CCAM ELF executes and preserves full-width results and arithmetic traps"
+  else
+    bad "direct CCAM ELF execution" "$out"
+  fi
+fi
+
 section "Capstan-native verification: freestanding Linux x86-64 native backend"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_native_x64.cap" 2>&1)"; then
   ok "CCAM emits freestanding x86-64 assembly without C runtime references"
