@@ -1,0 +1,34 @@
+import "ccam_aggregate_linear_scan_allocator.cap";
+bool ag_alloc_reg_allowed(int reg) {
+    return reg==0 || reg==1 || reg==2 || reg==6 || reg==7 ||
+        reg==8 || reg==9 || reg==10 || reg==11;
+}
+bool ag_allocation_validate(List<AGLiveInterval> intervals,AGAllocationResult result) {
+    if(!ag_interval_set_valid(intervals) || !result.ok ||
+        result.assignments.len()!=intervals.len() || result.spill_count<0 ||
+        result.spill_count>intervals.len()) { return false; }
+    int spills=0;
+    for(int i=0;i<intervals.len();i+=1) {
+        int ix=ag_assignment_index(result.assignments,intervals[i].virtual_id);
+        if(ix<0) { return false; }
+        AGRegisterAssignment a=result.assignments[ix];
+        if(a.physical_reg>=0) {
+            if(!ag_alloc_reg_allowed(a.physical_reg) || a.spill_slot!=-1) { return false; }
+        } else if(a.physical_reg==-1) {
+            if(a.spill_slot<0 || a.spill_slot>=result.spill_count) { return false; }
+            spills+=1;
+            for(int j=0;j<i;j+=1) {
+                int other_ix=ag_assignment_index(result.assignments,intervals[j].virtual_id);
+                if(other_ix>=0 && result.assignments[other_ix].spill_slot==a.spill_slot) { return false; }
+            }
+        } else { return false; }
+        for(int j=0;j<i;j+=1) {
+            int other_ix=ag_assignment_index(result.assignments,intervals[j].virtual_id);
+            if(other_ix<0) { return false; }
+            AGRegisterAssignment other=result.assignments[other_ix];
+            bool overlaps=intervals[i].start<intervals[j].end && intervals[j].start<intervals[i].end;
+            if(overlaps && a.physical_reg>=0 && a.physical_reg==other.physical_reg) { return false; }
+        }
+    }
+    return spills==result.spill_count;
+}
