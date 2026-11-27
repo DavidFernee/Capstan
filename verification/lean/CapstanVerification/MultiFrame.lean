@@ -249,44 +249,23 @@ theorem commitTypedReturnOnStack_decreases_depth
     (hreturn : commitTypedReturnOnStack stack value = .ok next) :
     next.frames.length + 1 = stack.frames.length := by
   unfold commitTypedReturnOnStack at hreturn
-  cases hframes : stack.frames with
-  | nil =>
-      simp [hframes] at hreturn
-  | cons callee tail =>
-      cases htail : tail with
-      | nil =>
-          simp [hframes, htail] at hreturn
-      | cons caller rest =>
-          cases hcommit : commitTypedReturnToCaller callee caller value with
-          | error reason =>
-              simp [hcommit] at hreturn
-          | ok resumedCaller =>
-              simp [hcommit] at hreturn
-              cases hreturn
-              simp
+  split at hreturn
+  · rename_i callee caller rest hframes
+    split at hreturn
+    · contradiction
+    · rename_i resumedCaller hcommit
+      cases hreturn
+      simp [hframes]
+  · contradiction
 
 /-- The integrated return transition preserves the configured maximum depth. -/
 theorem commitTypedReturnOnStack_within_limit
     (stack next : TypedMultiCallStack) (value : Val)
     (hreturn : commitTypedReturnOnStack stack value = .ok next) :
     next.frames.length ≤ stack.maxDepth := by
-  unfold commitTypedReturnOnStack at hreturn
-  cases hframes : stack.frames with
-  | nil =>
-      simp [hframes] at hreturn
-  | cons callee tail =>
-      cases htail : tail with
-      | nil =>
-          simp [hframes, htail] at hreturn
-      | cons caller rest =>
-          simp only [hframes, htail] at hreturn
-          cases hcommit : commitTypedReturnToCaller callee caller value with
-          | error reason =>
-              simp [hcommit] at hreturn
-          | ok resumedCaller =>
-              simp [hcommit] at hreturn
-              cases hreturn
-              simpa using next.within_limit
+  have hdepth := commitTypedReturnOnStack_decreases_depth stack next value hreturn
+  have hlimit := stack.within_limit
+  omega
 
 /-- Every frame in a successful successor stack carries its intrinsic
 register-typing invariant, including the resumed caller after result commit. -/
