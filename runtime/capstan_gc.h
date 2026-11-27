@@ -163,6 +163,8 @@ static long cap_gc_test_meta_fail_after = -1;
 #endif
 
 static void *cap_gc_meta(size_t n) {
+    /* A single metadata object must support pointer differences. */
+    if (n > (size_t)PTRDIFF_MAX) cap_gc_oom();
 #ifdef CAP_GC_TESTING
     if (cap_gc_test_meta_fail_after == 0) cap_gc_oom();
     if (cap_gc_test_meta_fail_after > 0) cap_gc_test_meta_fail_after--;
