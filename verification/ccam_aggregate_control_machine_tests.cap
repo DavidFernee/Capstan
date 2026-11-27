@@ -6,7 +6,7 @@ test "bounded control machine executes a summation loop" {
     code.push(new AGControlInstruction{opcode:1,destination:2,left:0,right:0,immediate:5,target:0});
     code.push(new AGControlInstruction{opcode:1,destination:4,left:0,right:0,immediate:1,target:0});
     code.push(new AGControlInstruction{opcode:6,destination:3,left:0,right:2,immediate:0,target:0});
-    code.push(new AGControlInstruction{opcode:8,destination:0,left:3,right:0,immediate:0,target:10});
+    code.push(new AGControlInstruction{opcode:8,destination:0,left:3,right:0,immediate:0,target:9});
     code.push(new AGControlInstruction{opcode:2,destination:1,left:1,right:0,immediate:0,target:0});
     code.push(new AGControlInstruction{opcode:2,destination:0,left:0,right:4,immediate:0,target:0});
     code.push(new AGControlInstruction{opcode:9,destination:0,left:0,right:0,immediate:0,target:4});
