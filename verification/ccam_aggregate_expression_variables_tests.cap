@@ -6,7 +6,8 @@ test "expression compiler resolves bounded variable bindings" {
     List<int> name=new List<int>(); name.push(120);
     assert(ag_variable_bind(bindings,name,10));
     AGCheckedInt result=ag_compile_expression_with_bindings(source,bindings);
-    assert(result.ok && result.value==21);
+    assert(result.ok);
+    assert(result.value==21);
 }
 test "expression compiler rejects unknown variable" {
     List<int> source=new List<int>(); source.push(121);
