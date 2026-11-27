@@ -69,3 +69,17 @@ test "candidate expression pipeline rejects divide by zero and malformed groupin
  grouping.push(40); grouping.push(50); grouping.push(43); grouping.push(51);
  assert(!ag_compile_expression(grouping).ok);
 }
+
+test "candidate literal pipeline evaluates the full positive signed 64-bit range" {
+    // Leading zeroes do not change the value.
+    string padded_maximum = "09223372036854775807";
+    List<int> bytes = new List<int>();
+    for (int i=0; i<padded_maximum.len(); i+=1) {
+        bytes.push(padded_maximum.at(i));
+    }
+    AGScalarResult maximum = ag_compile_literal(bytes);
+    assert(maximum.ok && maximum.value == 9223372036854775807);
+
+    bytes[bytes.len()-1] = 56;
+    assert(!ag_compile_literal(bytes).ok);
+}
