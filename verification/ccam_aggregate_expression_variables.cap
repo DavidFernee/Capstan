@@ -1,0 +1,80 @@
+import "ccam_aggregate_lex.cap";
+import "ccam_aggregate_expression_parse.cap";
+import "ccam_aggregate_scalar_lower.cap";
+import "ccam_aggregate_scalar_machine.cap";
+
+struct AGVariableBinding { List<int> name; int value; }
+struct AGVariableResult { bool ok; int value; }
+bool ag_variable_name_equal(List<int> source, AGToken token, List<int> name) {
+    if (token.kind != 1 || token.end-token.start != name.len() || name.len()==0) { return false; }
+    for (int i=0;i<name.len();i+=1) { if (source[token.start+i] != name[i]) { return false; } }
+    return true;
+}
+AGVariableResult ag_variable_lookup(List<int> source, AGToken token, List<AGVariableBinding> bindings) {
+    int found=-1;
+    if (bindings.len()>4096) { return new AGVariableResult{ok:false,value:0}; }
+    for (int i=0;i<bindings.len();i+=1) {
+        if (ag_variable_name_equal(source,token,bindings[i].name)) {
+            if (found!=-1) { return new AGVariableResult{ok:false,value:0}; }
+            found=i;
+        }
+    }
+    if (found<0) { return new AGVariableResult{ok:false,value:0}; }
+    return new AGVariableResult{ok:true,value:bindings[found].value};
+}
+bool ag_variable_bind(List<AGVariableBinding> bindings,List<int> name,int value) {
+    if (name.len()==0 || name.len()>128 || bindings.len()>=4096) { return false; }
+    for(int i=0;i<bindings.len();i+=1) {
+        if(bindings[i].name.len()==name.len()) {
+            bool same=true;
+            for(int j=0;j<name.len();j+=1) { if(bindings[i].name[j]!=name[j]) { same=false; } }
+            if(same) { return false; }
+        }
+    }
+    bindings.push(new AGVariableBinding{name:name,value:value});
+    return true;
+}
+AGCheckedInt ag_compile_expression_with_bindings(List<int> source,List<AGVariableBinding> bindings) {
+    AGLexResult lex=ag_lex_bytes(source);
+    List<AGExpression> nodes=new List<AGExpression>();
+    List<int> values=new List<int>();
+    List<int> operators=new List<int>();
+    int nv=0; int no=0; bool expect_value=true;
+    AGCheckedInt failure=new AGCheckedInt{ok:false,value:0};
+    if(!lex.ok || lex.tokens.len()>65536) { return failure; }
+    for(int i=0;i<lex.tokens.len();i+=1) {
+        AGToken token=lex.tokens[i];
+        if((token.kind==2 || token.kind==1) && expect_value) {
+            int value=0;
+            if(token.kind==2) {
+                AGExpressionResult literal=ag_parse_literal(source,token);
+                if(!literal.ok) { return failure; }
+                value=literal.nodes[0].value;
+            } else {
+                AGVariableResult variable=ag_variable_lookup(source,token,bindings);
+                if(!variable.ok) { return failure; }
+                value=variable.value;
+            }
+            nodes.push(new AGExpression{kind:1,value:value,left:-1,right:-1});
+            values.push(nodes.len()-1); nv+=1; expect_value=false; continue;
+        }
+        int op=0;
+        if(token.kind==3) { op=source[token.start]; }
+        if(op==40 && expect_value) { operators.push(op); no+=1; continue; }
+        if(expect_value || (token.kind!=0 && op!=41 && ag_precedence(op)==0)) { return failure; }
+        while(no>0 && operators[no-1]!=40 && (token.kind==0 || op==41 || ag_precedence(operators[no-1])>=ag_precedence(op))) {
+            if(nv<2) { return failure; }
+            nodes.push(new AGExpression{kind:2,value:operators[no-1],left:values[nv-2],right:values[nv-1]});
+            no-=1; nv-=1; values[nv-1]=nodes.len()-1;
+        }
+        if(token.kind==0) {
+            if(no!=0 || nv!=1) { return failure; }
+            AGScalarLower lowered=ag_scalar_lower(nodes);
+            if(!lowered.ok) { return failure; }
+            return ag_scalar_machine(lowered.instructions);
+        }
+        if(op==41) { if(no==0 || operators[no-1]!=40) { return failure; } no-=1; continue; }
+        operators.push(op); no+=1; expect_value=true;
+    }
+    return failure;
+}
