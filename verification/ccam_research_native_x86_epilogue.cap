@@ -2,5 +2,6 @@
 bool ag_x86_epilogue(List<int> b) {
     if (b.len() > AG_BYTE_LIMIT - 5) { return false; }
     b.push(72); b.push(137); b.push(236); b.push(93);
-    return ag_native_ret(b);
+    b.push(195); // x86-64 RET (0xC3), covered by the five-byte reservation.
+    return true;
 }
