@@ -1,13 +1,19 @@
 import "ccam_aggregate_character.cap";
 struct AGDecimal { bool ok; int value; }
-AGDecimal ag_decimal(List<int> bytes) {
+AGDecimal ag_decimal_span(List<int> bytes, int start, int end) {
  int value = 0;
- if (bytes.len() == 0 || bytes.len() > 18) { return new AGDecimal{ok:false,value:0}; }
- for (int i=0; i<bytes.len(); i+=1) {
-  if (!ag_digit(bytes[i])) { return new AGDecimal{ok:false,value:0}; }
-  value = value * 10 + bytes[i] - 48;
+ AGDecimal invalid = new AGDecimal{ok:false,value:0};
+ if (start < 0 || end <= start || end > bytes.len()) { return invalid; }
+ for (int i=start; i<end; i+=1) {
+  if (!ag_digit(bytes[i])) { return invalid; }
+  int digit = bytes[i] - 48;
+  if (value > (9223372036854775807 - digit) / 10) { return invalid; }
+  value = value * 10 + digit;
  }
  return new AGDecimal{ok:true,value:value};
+}
+AGDecimal ag_decimal(List<int> bytes) {
+ return ag_decimal_span(bytes,0,bytes.len());
 }
 test "decimal rejects malformed input" {
  List<int> digits = new List<int>(); digits.push(49); digits.push(50);

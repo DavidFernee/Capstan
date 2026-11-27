@@ -3,10 +3,8 @@ import "ccam_aggregate_decimal.cap";
 struct AGExpressionResult { bool ok; List<AGExpression> nodes; }
 AGExpressionResult ag_parse_literal(List<int> bytes, AGToken token) {
  List<AGExpression> nodes=new List<AGExpression>();
- List<int> digits=new List<int>();
- if (token.kind!=2 || !ag_token_valid(token,bytes.len()) || token.end-token.start>18) { return new AGExpressionResult{ok:false,nodes:nodes}; }
- for (int i=token.start;i<token.end;i+=1) { digits.push(bytes[i]); }
- AGDecimal decimal=ag_decimal(digits);
+ if (token.kind!=2 || !ag_token_valid(token,bytes.len())) { return new AGExpressionResult{ok:false,nodes:nodes}; }
+ AGDecimal decimal=ag_decimal_span(bytes,token.start,token.end);
  if (decimal.ok) { nodes.push(new AGExpression{kind:1,value:decimal.value,left:-1,right:-1}); }
  return new AGExpressionResult{ok:decimal.ok,nodes:nodes};
 }
