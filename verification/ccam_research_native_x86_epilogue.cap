@@ -1,2 +1,6 @@
-// Research batch module; pending integration audit.
-bool ag_x86_epilogue(List<int> b){if(b.len()>AG_BYTE_LIMIT-4){return false;}b.push(72);b.push(137);b.push(236);b.push(93);return ag_native_ret(b);}
+// Reserve the complete epilogue, including RET, before mutating the buffer.
+bool ag_x86_epilogue(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - 5) { return false; }
+    b.push(72); b.push(137); b.push(236); b.push(93);
+    return ag_native_ret(b);
+}
