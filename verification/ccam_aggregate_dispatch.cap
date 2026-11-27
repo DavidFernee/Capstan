@@ -31,6 +31,17 @@ bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<
         return ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF) &&
             ag_dispatch_reg(machine, operands[1], kind);
     }
+    if (opcode == 7) {
+        if (operands.len() != 2 || kind != AG_SCHEMA_INT) { return false; }
+        return ag_dispatch_reg(machine, operands[0], AG_SCHEMA_INT) &&
+            ag_dispatch_reg(machine, operands[1], AG_SCHEMA_REF);
+    }
+    if (opcode == 8) {
+        if (operands.len() != 3 || kind != AG_SCHEMA_REF) { return false; }
+        return ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF) &&
+            ag_dispatch_reg(machine, operands[1], AG_SCHEMA_REF) &&
+            ag_dispatch_reg(machine, operands[2], AG_SCHEMA_REF);
+    }
     return false;
 }
 
@@ -44,6 +55,12 @@ string ag_dispatch(CCAMAggregateMachine machine, int opcode, int kind, List<int>
     }
     if (opcode == 6) {
         return ccam_aggregate_array_append(machine, operands[0], operands[1], kind);
+    }
+    if (opcode == 7) {
+        return ccam_aggregate_bytes_len(machine, operands[0], operands[1]);
+    }
+    if (opcode == 8) {
+        return ccam_aggregate_bytes_concat(machine, operands[0], operands[1], operands[2]);
     }
     if (opcode == 3) {
         return ccam_aggregate_array_len(machine, operands[0], operands[1], kind);
@@ -97,4 +114,24 @@ test "aggregate dispatch rejects malformed allocation and unknown opcodes before
     assert(ag_dispatch(machine, 5, AG_SCHEMA_INT, allocation) == "invalid_aggregate_instruction");
     assert(ag_dispatch(machine, 99, AG_SCHEMA_INT, allocation) == "invalid_aggregate_instruction");
     assert(machine.steps == 0 && !machine.registers[0].initialised);
+}
+
+test "aggregate dispatch concatenates immutable bytes and reads byte length" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_alloc_bytes(machine, 0, "A\\0") == "");
+    assert(ccam_aggregate_alloc_bytes(machine, 1, "B") == "");
+    List<int> concat = new List<int>();
+    concat.push(2); concat.push(0); concat.push(1);
+    assert(ag_dispatch(machine, 8, AG_SCHEMA_REF, concat) == "");
+    List<int> length = new List<int>();
+    length.push(3); length.push(2);
+    assert(ag_dispatch(machine, 7, AG_SCHEMA_INT, length) == "");
+    CCAMAggregateValueResult result = ccam_aggregate_read(machine, 3, AG_SCHEMA_INT);
+    assert(result.ok && result.value.int_value == 3);
+    assert(machine.steps == 4);
 }
