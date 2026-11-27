@@ -15,4 +15,4 @@ Planning assumptions: five existing hourly agent streams are not five full-time 
 
 Likely dependency chain A01 -> B02 -> B04 -> D01 -> D02 -> D03 -> F01 -> F02 -> F03; E01 and D04 can become competing critical paths. Not a computed CPM until task estimates and capacity are validated. C01/C02/C03/C04 can overlap after their interfaces freeze. Optimisation must not delay the initial unoptimised vertical slice; G5 is not a prerequisite for experimental self-hosting.
 
-First tranche: inventory main and existing PRs; reconcile #542; consume #540/#545 result-ABI evidence and #547/#549 proof work; freeze scalar acceptance corpus; assign next unclaimed task. Weekly update planned vs actual, capacity, CI latency, dependencies and risk. Escalate unresolved semantic ambiguity rather than building around it.
+First tranche: inventory main and existing PRs; reconcile #542; consume #552 result-ABI evidence and #547/#549 proof work; freeze scalar acceptance corpus; assign next unclaimed task. Weekly update planned vs actual, capacity, CI latency, dependencies and risk. Escalate unresolved semantic ambiguity rather than building around it.
