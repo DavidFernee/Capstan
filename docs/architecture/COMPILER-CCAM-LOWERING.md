@@ -36,7 +36,7 @@ The first lowering implementation should support only constructs expressible by 
 - initialised local declarations and local-variable reads/writes;
 - checked integer addition, subtraction, multiplication, division and remainder;
 - integer equality and signed less-than;
-- boolean negation;
+- boolean negation, equality and inequality;
 - derived integer comparisons (`!=`, `<=`, `>`, `>=`);
 - short-circuit `&&` and `||`;
 - blocks, `if` / `else`, `while`, and `for`;
@@ -47,7 +47,7 @@ The exact accepted subset must be checked against the final normative core and t
 
 The first implementation must reject unsupported constructs with a structured compiler diagnostic. It must never emit a placeholder instruction, silently coerce a value, or fall back to generated C.
 
-Explicitly excluded until separately specified and implemented: strings, structs, enums, optionals, lists, maps, heap references, methods, closures, taint, secrets, grants, IO, policies, cryptographic operations, FFI and concurrency. Bitwise operations, shifts, wrapping arithmetic, boolean equality and indirect calls are also excluded from this initial slice.
+Explicitly excluded until separately specified and implemented: strings, structs, enums, optionals, lists, maps, heap references, methods, closures, taint, secrets, grants, IO, policies, cryptographic operations, FFI and concurrency. Bitwise operations, shifts, wrapping arithmetic and indirect calls are also excluded from this initial slice.
 
 ## 2.1 Aggregate assignment is a later semantic extension
 
@@ -144,6 +144,12 @@ Derived comparisons use only typed boolean operations and integer comparisons:
 
 No derived form may introduce an unchecked arithmetic operation. Boolean equality and inequality are excluded until the machine contract admits them or defines an approved lowering.
 
+Boolean equality and inequality evaluate both operands from left to right.
+A branch on the left value selects either a move or a boolean negation of the
+right value into the same result register. Equality copies the right value
+when the left value is true, and inequality copies it when the left value is
+false. Both paths initialise the result before joining.
+
 ### 4.4 Short-circuit boolean operators
 
 Do not lower `&&` or `||` as eager binary instructions. CCAM has no such opcode, and the RHS must not execute when short-circuited.
@@ -232,7 +238,7 @@ A later optimisation IR is permitted only as a derived representation translated
 - invalid entry signature;
 - boolean supplied to an integer operation or vice versa;
 - out-of-range integer literal;
-- unsupported boolean equality, bitwise, shift or wrapping operation.
+- unsupported bitwise, shift or wrapping operation.
 
 ### Machine-level adversarial programs
 
