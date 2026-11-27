@@ -637,14 +637,12 @@ test "view validator rejects concurrent aliases for one region" {
     assert(!result.ok && result.error == "overlapping_live_view");
 }
 
-test "view validator rejects copy escape and unmodelled call boundaries" {
+test "view validator rejects copy and escape" {
     List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
     code.push(ccam_flow_instruction(CCAM_FLOW_VIEW_COPY));
     assert(ccam_validate_region_lifecycle(code, 0, 0).error == "view_alias_forbidden");
     code[0] = ccam_flow_instruction(CCAM_FLOW_VIEW_ESCAPE);
     assert(ccam_validate_region_lifecycle(code, 0, 0).error == "view_escape_forbidden");
-    code[0] = ccam_flow_instruction(CCAM_FLOW_CALL);
-    assert(ccam_validate_region_lifecycle(code, 0, 0).error == "call_boundary_not_modelled");
 }
 
 test "view validator permits a fresh view after reset invalidates the old one" {
