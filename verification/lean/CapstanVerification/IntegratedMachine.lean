@@ -285,4 +285,70 @@ theorem enterTypedCall_preserves_continuation
     · rfl
   · simp [hdepth] at hcall
 
+
+/-- Observable result of a return instruction in the whole typed stack model.
+Nested returns resume a caller; entry returns halt without popping the entry
+frame; malformed return contracts become explicit traps. -/
+inductive TypedStackReturnOutcome where
+  | resume (stack : TypedMultiCallStack)
+  | haltValue (value : Val)
+  | haltVoid
+  | trap (reason : Trap)
+
+/-- Execute a typed value return at the stack boundary. The singleton entry
+frame is retained and converted to a terminal value; nested frames use the
+atomic caller-write-and-pop transition above. -/
+def returnTypedValueOnStack (stack : TypedMultiCallStack)
+    (value : Val) : TypedStackReturnOutcome :=
+  match hframes : stack.frames with
+  | [entry] =>
+      match entry.signature.returnType with
+      | none => .trap .typeMismatch
+      | some expected =>
+          if hasTypeB value expected then
+            .haltValue value
+          else
+            .trap .typeMismatch
+  | _ :: _ :: _ =>
+      match commitTypedReturnOnStack stack value with
+      | .error reason => .trap reason
+      | .ok resumed => .resume resumed
+  | _ => .trap .invalidControlFlow
+
+/-- Execute a typed void return. The singleton entry frame halts in place;
+nested void returns restore the caller without writing a destination. -/
+def returnTypedVoidOnStack (stack : TypedMultiCallStack) :
+    TypedStackReturnOutcome :=
+  match stack.frames with
+  | [entry] =>
+      match entry.signature.returnType with
+      | none => .haltVoid
+      | some _ => .trap .typeMismatch
+  | _ :: _ :: _ =>
+      match commitTypedVoidReturnOnStack stack with
+      | .error reason => .trap reason
+      | .ok resumed => .resume resumed
+  | _ => .trap .invalidControlFlow
+
+/-- A value-returning entry function halts with its payload rather than
+popping the singleton entry frame. -/
+theorem returnTypedValueOnStack_entry_halts_in_place
+    (entry : TypedMultiFrame) (value : Val)
+    (hreturn : entry.signature.returnType = some
+      (entry.signature.returnType.getD .int))
+    (hvalue : hasTypeB value (entry.signature.returnType.getD .int) = true) :
+    returnTypedValueOnStack
+      { frames := [entry], maxDepth := 1, nonempty := by simp,
+        within_limit := by simp } value = .haltValue value := by
+  simp [returnTypedValueOnStack, hreturn, hvalue]
+
+/-- A void entry function halts without removing its entry frame. -/
+theorem returnTypedVoidOnStack_entry_halts_in_place
+    (entry : TypedMultiFrame)
+    (hreturn : entry.signature.returnType = none) :
+    returnTypedVoidOnStack
+      { frames := [entry], maxDepth := 1, nonempty := by simp,
+        within_limit := by simp } = .haltVoid := by
+  simp [returnTypedVoidOnStack, hreturn]
+
 end CapstanVerification
