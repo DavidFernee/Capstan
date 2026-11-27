@@ -854,6 +854,70 @@ if (( FULL )); then
   if out="$("$ROOT/bench/run.sh" 2>&1)"; then ok "benchmarks within limit"; echo "$out" | sed 's/^/        /'; else bad "bench" "$out"; fi
 fi
 
+section "Capstan-native verification: arithmetic expression compilation pipeline"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_expression_tests.cap" 2>&1)"; then
+  ok "expression precedence, parentheses, division-by-zero and malformed-input rejection"
+else
+  bad "CCAM aggregate expression compilation pipeline" "$out"
+fi
+
+section "Capstan-native verification: expression variable bindings"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_expression_variables_tests.cap" 2>&1)"; then
+  ok "variable lookup, arithmetic binding, duplicate rejection and binding bounds"
+else
+  bad "CCAM expression variable bindings" "$out"
+fi
+
+section "Capstan-native verification: assignment-program execution"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_assignment_program_tests.cap" 2>&1)"; then
+  ok "assignment updates, variable reads, malformed assignment and final expression"
+else
+  bad "CCAM assignment-program execution" "$out"
+fi
+
+section "Capstan-native verification: bounded control-flow machine"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_control_machine_tests.cap" 2>&1)"; then
+  ok "summation loop, bounded execution fuel, branch validation and arithmetic failure"
+else
+  bad "CCAM bounded control-flow machine" "$out"
+fi
+
+section "Capstan-native verification: control-flow instruction builder"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_control_builder_tests.cap" 2>&1)"; then
+  ok "builder loop emission, branch patching and invalid operand rejection"
+else
+  bad "CCAM control-flow instruction builder" "$out"
+fi
+
+section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
+  ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
+else
+  bad "CCAM Capstan arithmetic, register validation and evaluator" "$out"
+fi
+
+section "Capstan-native verification: precise GC reachability and transactional sweep model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/gc_model.cap" 2>&1)"; then
+  ok "precise roots, transitive/cyclic reachability, pointer-free leaves, invalid graphs, bounded worklist and failure-atomic sweep model"
+else
+  bad "precise GC reachability and transactional sweep model" "$out"
+fi
+
+section "Capstan-native verification: GC handles and immutable object layouts"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/gc_handle_model.cap" 2>&1)"; then
+  ok "heap-instance identity, generation checks, nominal descriptors and pointer-map validation"
+else
+  bad "GC handles and immutable object layouts" "$out"
+fi
+
+section "CCAM-SF-P generated Lean adapter freshness"
+if out="$($PY "$ROOT/scripts/generate_ccam_sf_lean_vectors.py" --check 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM-SF-P generated Lean adapter freshness" "$out"
+fi
+
+
 echo
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
