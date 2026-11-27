@@ -1,2 +1,9 @@
-// Research batch module; pending integration audit.
-bool ag_x86_patch_branch(List<int> b,int patch,int target){return ag_rel32(b,patch,target);}
+// Accept only an E9 rel32 jump or 0F 8x rel32 conditional branch.
+bool ag_x86_patch_branch(List<int> b,int patch,int target) {
+    if (patch < 1 || patch > b.len() - 4) { return false; }
+    bool is_jump = b[patch - 1] == 233;
+    bool is_jcc = patch >= 2 && b[patch - 2] == 15 &&
+        b[patch - 1] >= 128 && b[patch - 1] <= 143;
+    if (!is_jump && !is_jcc) { return false; }
+    return ag_rel32(b,patch,target);
+}
