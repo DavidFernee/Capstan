@@ -872,6 +872,13 @@ else
   bad "CCAM register allocation validator" "$out"
 fi
 
+section "Capstan-native verification: aligned stack-frame and spill-slot layout"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_stack_frame_layout_tests.cap" 2>&1)"; then
+  ok "spill-slot offsets, stack alignment, bounds and allocator integration"
+else
+  bad "CCAM stack-frame layout" "$out"
+fi
+
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
 
