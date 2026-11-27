@@ -459,6 +459,35 @@ int ccam_lower_short_circuit(CCAMLoweringContext context, Node expression) {
     return result;
 }
 
+// Both operands have already been evaluated in source order.
+int ccam_lower_bool_comparison(CCAMLoweringContext context, int left, int right, bool equal) {
+    int result = ccam_lower_new_register(context, CCAM_TYPE_BOOL);
+    if (result < 0) { return -1; }
+
+    CCAMInstruction branch = ccam_instruction(CCAM_OP_BRANCH);
+    branch.lhs = left;
+    int branch_pc = ccam_lower_emit(context, branch);
+
+    int copy_pc = context.instructions.len();
+    ccam_lower_move(context, result, right);
+    int jump_pc = ccam_lower_emit(context, ccam_instruction(CCAM_OP_JUMP));
+
+    int negate_pc = context.instructions.len();
+    CCAMInstruction negate = ccam_instruction(CCAM_OP_NOT_B);
+    negate.dst = result;
+    negate.lhs = right;
+    ccam_lower_emit(context, negate);
+
+    int join_pc = context.instructions.len();
+    if (equal) {
+        ccam_lower_patch_branch(context, branch_pc, copy_pc, negate_pc);
+    } else {
+        ccam_lower_patch_branch(context, branch_pc, negate_pc, copy_pc);
+    }
+    ccam_lower_patch_jump(context, jump_pc, join_pc);
+    return result;
+}
+
 // The checker assigns unique identities to locals and parameters, including
 // declarations with the same spelling in disjoint scopes.
 int ccam_lower_bind_local(CCAMLoweringContext context, Node declaration, int type) {
@@ -541,6 +570,17 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
         int right = ccam_lower_expression(context, expression.kids[1]);
         if (left < 0 || right < 0) { return -1; }
 
+        if (expression.s == "==" || expression.s == "!=") {
+            int operand_type = context.register_types[left];
+            if (operand_type != context.register_types[right]) {
+                ccam_lower_fail(context, "comparison_type_mismatch");
+                return -1;
+            }
+            if (operand_type == CCAM_TYPE_BOOL) {
+                return ccam_lower_bool_comparison(context, left, right, expression.s == "==");
+            }
+        }
+
         int opcode = 0;
         bool derived_comparison = false;
         bool negate_comparison = false;
@@ -577,12 +617,6 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
             return -1;
         }
 
-        if ((expression.s == "==" || expression.s == "!=") &&
-            (context.register_types[left] != CCAM_TYPE_INT ||
-             context.register_types[right] != CCAM_TYPE_INT)) {
-            ccam_lower_fail(context, "unsupported_boolean_equality");
-            return -1;
-        }
         int result_type = CCAM_TYPE_INT;
         if (opcode == CCAM_OP_EQ_I || opcode == CCAM_OP_LT_I) {
             result_type = CCAM_TYPE_BOOL;
@@ -1011,6 +1045,35 @@ test "CCAM source lowering preserves checked binding identities" {
         ccam_call_machine_step(machine);
     }
     assert(machine.halted && machine.halt_has_value && machine.halt_value == 43);
+    assert(machine.trap_code == "");
+}
+
+test "CCAM source lowering evaluates boolean equality and inequality" {
+    Ctx context = new Ctx{
+        files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false
+    };
+    context.files.push("boolean-comparison.cap");
+    Tainted source = taint(
+        "int main() { bool t = true; bool f = false; " +
+        "if (t == t && f == f && !(t == f) && !(f == t) " +
+        "&& t != f && f != t && !(t != t) && !(f != f)) { return 42; } " +
+        "return 0; }");
+    context.sources.push(source);
+    List<Node> declarations = parse_program(context, lex(context, source, 0));
+    check_program(new_checker(context), declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 200, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    for (int step = 0; step < 200 && !machine.halted; step += 1) {
+        ccam_call_machine_step(machine);
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 42);
     assert(machine.trap_code == "");
 }
 
