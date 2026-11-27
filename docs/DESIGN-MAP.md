@@ -24,7 +24,17 @@
 > named branch and revision date. When in doubt, the default branch and exact-head CI
 > determine the integrated state.
 >
-> ## Architecture decisions and current status
+> ## Native compiler architecture programme
+
+The governing compiler architecture and implementation ledger are:
+- [Native Compiler Architecture RFC](architecture/NATIVE-COMPILER-ARCHITECTURE-RFC.md)
+- [Native Compiler Implementation Gap Ledger](architecture/NATIVE-COMPILER-IMPLEMENTATION-GAP-LEDGER.md)
+
+The target pipeline is checked source core -> CCAM (the canonical typed core IR and abstract machine) -> optional derived optimisation IR with validation/refinement back to CCAM -> native target lowering -> object/link -> executable plus assurance manifest. CCAM remains the sole semantic authority. Low-level backend forms are optional implementation details with explicit simulation obligations. This is a target-state architecture, not a claim that the proofs or production native toolchain are already implemented.
+
+The gap ledger is the implementation-facing register. It records known semantic, memory, decoder, native ABI, optimisation, resource, assurance and bootstrap blockers. Status must be reconciled against exact mainline code and CI before being described as complete. No final 10/10 verdict is permitted while a critical acceptance gate remains open.
+
+## Architecture decisions and current status
 >
 > ### System decomposition
 >
