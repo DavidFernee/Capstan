@@ -558,9 +558,14 @@ prototype must compare at least two viable models (combined judgement and factor
 state soundness conditions, construct counterexamples, and measure checker complexity and
 diagnostic quality. No syntax or implementation strategy is selected by this draft.
 
-The current CWE atlas records six distinct open gaps (CWE-116, CWE-798, CWE-916, CWE-862,
+The current CWE atlas records seven distinct open gaps (CWE-20, CWE-116, CWE-798, CWE-916, CWE-862,
 CWE-306 and CWE-79). F1 treats them as blockers for any Safe-profile claim and requires
 positive controls and adversarial bypass coverage; it does not presume that a type-system
 change alone closes them. The current C-backed runtime, Python bootstrap, and model-to-
 implementation proof gaps remain part of the disclosed trusted-base boundary.
 
+## F1 executable guarantee model and checker implementation boundary
+
+The first Capstan-native executable reference model is [F1-EXECUTABLE-MODEL.md](F1-EXECUTABLE-MODEL.md), implemented in `verification/f1_guarantee_model.cap`. It separates data, selection and control provenance; confidentiality; context guarantees; authority; effects; and bounded resource composition. It is a finite research model, not a production checker or soundness proof.
+
+The checker experiment is documented in [PROVENANCE-SCALAR-SLICE.md](../assurance/PROVENANCE-SCALAR-SLICE.md). The current AST-walking implementation remains a coarse variable-name may-analysis. [F1-ABSTRACT-STATE-DESIGN.md](F1-ABSTRACT-STATE-DESIGN.md) specifies the next implementation direction: typed access paths, explicit locals/references/heap state, alias and escape handling, strong/weak updates, monotone joins and body-derived summaries. These are design constraints, not implemented capabilities. The Boolean-to-text output-flow policy remains an explicit open gap.

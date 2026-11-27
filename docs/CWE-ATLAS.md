@@ -13,13 +13,13 @@ Attempts are written from the CWE descriptions; this atlas is not an official MI
 
 | Outcome | Weaknesses |
 |---|---|
-| Prevented: rejected at compile time | 80 |
+| Prevented: rejected at compile time | 81 |
 | Prevented: stopped safely at run time | 25 |
 | Prevented: attempt compiles but has no effect | 16 |
 | Inexpressible: the construct does not exist | 71 |
 | Possible only through an audited escape hatch | 2 |
 | Logic or design decision: beyond any language | 22 |
-| **Gap: can be written** | 6 |
+| **Gap: can be written** | 5 |
 | Not applicable (yet) | 33 |
 
 ## Gaps: weaknesses that can still be written
@@ -31,9 +31,6 @@ closes a gap the test fails and the entry is reclassified.
 |---|---|---|---|
 | [116](https://cwe.mitre.org/data/definitions/116.html) | Improper encoding: JSON-escaped fragment written into a CSV file | `int main() { string cell = escape_json(taint("=cmd\|' /C calc'!A0")); bool ok = write_f...` | escape_json() returns an untyped string fragment for JSON serializers; typed JSON fragments and sinks are tracked in #250. |
 | [798](https://cwe.mitre.org/data/definitions/798.html) | Hard-coded password-like literal under an innocuous name | `int main() { string cfg = "Winter2026!"; sql_query("UPDATE settings SET v = ?", cfg); r...` | A short password-like literal under an ordinary name is indistinguishable from other text. |
-| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | `int main() { if (let x = read_line(65536)) { string stored = hash(x); } return 0; }` | Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap). |
-| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a method call) | `int main() { if (let password = read_line(65536)) { string stored = hash(password.slice...` | The password-name heuristic stops at N_METHOD nodes, so wrapping a password in a string method may evade the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted. |
-| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a helper call) | `Tainted identity(Tainted value) { return value; }` | The password-name heuristic stops at N_CALL nodes, so a helper that preserves Tainted can hide a password-like variable from the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted. |
 | [862](https://cwe.mitre.org/data/definitions/862.html) | Missing authorization (data type not declared sensitive) | `string read_any(Record r) { return r.body; }` | Protection starts when the type is declared sensitive. It is declared once per type, not per function, but it can still be forgotten. |
 | [306](https://cwe.mitre.org/data/definitions/306.html) | Missing authentication for critical function | `void delete_all_records() { }` | An operation that touches no sensitive data value cannot be recognised as critical; it must be declared protected. |
 | [79](https://cwe.mitre.org/data/definitions/79.html) | Cross-site scripting (Html assembled across separate statements) | `int main() { if (let t = read_line(65536)) { Html v = escape_html(t); Html page = "<img...` | The context of escaped text is checked only where escape_html() is called in the same expression as the literal HTML around it. Contextual HTML templates, which track context across statements, are on the roadmap. |
@@ -343,10 +340,10 @@ wrong. No compiler can tell them from intended behaviour. Each attempt still com
 | [909](https://cwe.mitre.org/data/definitions/909.html) | Missing initialization of resource | Prevented: rejected at compile time | `CWE-908`. |
 | [912](https://cwe.mitre.org/data/definitions/912.html) | Hidden functionality | Logic or design decision: beyond any language | A deliberate backdoor written as ordinary logic is indistinguishable from intended logic. Code review and Capstan Review (AI) are the defences. |
 | [915](https://cwe.mitre.org/data/definitions/915.html) | Improperly controlled modification of dynamically-determined object attributes | Inexpressible: the construct does not exist |  |
-| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | **Gap: can be written** | Detection is name-based. Typing passwords as Secret at input would make this a type error (roadmap). |
-| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a method call) | **Gap: can be written** | The password-name heuristic stops at N_METHOD nodes, so wrapping a password in a string method may evade the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted. |
-| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a helper call) | **Gap: can be written** | The password-name heuristic stops at N_CALL nodes, so a helper that preserves Tainted can hide a password-like variable from the name-based CWE-916 check. Provisional until compiler CI confirms this expression is accepted. |
 | [916](https://cwe.mitre.org/data/definitions/916.html) | Use of password hash with insufficient computational effort | Prevented: rejected at compile time | `CWE-916`. |
+| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password in an innocuously named variable) | Prevented: rejected at compile time | `CWE-916`. Tainted password provenance is preserved through innocuous variable names and rejected by the fast-hash checker. |
+| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a method call) | Prevented: rejected at compile time | `CWE-916`. Password provenance survives string-slice method calls before the fast-hash check. |
+| [916](https://cwe.mitre.org/data/definitions/916.html) | Weak password hash (password passed through a helper call) | Prevented: rejected at compile time | `CWE-916`. Password provenance survives helper calls that preserve Tainted values. |
 | [917](https://cwe.mitre.org/data/definitions/917.html) | Expression language injection | Inexpressible: the construct does not exist |  |
 | [918](https://cwe.mitre.org/data/definitions/918.html) | Server-side request forgery | Inexpressible: the construct does not exist |  |
 | [1007](https://cwe.mitre.org/data/definitions/1007.html) | Insufficient visual distinction of homoglyphs and invisible characters (Trojan Source) | Prevented: rejected at compile time | `CWE-1007`. Bidirectional controls and zero-width characters are rejected anywhere in source (CVE-2021-42574). |
