@@ -34,6 +34,27 @@ AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int 
     return new AGTransferResult{ok: true, ready: output};
 }
 
+
+// Must-analysis generation transfer. This intentionally does not reject
+// reads: backedge states are solved first, then ag_transfer checks reads at
+// the fixed point. It only records which operations definitely write a
+// destination register.
+AGTransferResult ag_transfer_generation(
+    List<int> kinds, List<bool> input, int opcode, int kind, List<int> operands
+) {
+    List<bool> output = new List<bool>();
+    if (input.len() != kinds.len() ||
+        !ag_schema_operands(kinds, opcode, kind, operands)) {
+        return new AGTransferResult{ok: false, ready: output};
+    }
+    for (int i = 0; i < input.len(); i += 1) {
+        bool writes_destination = opcode == 1 || opcode == 3 || opcode == 4 ||
+            opcode == 5 || opcode == 7 || opcode == 8;
+        output.push(input[i] || (writes_destination && i == operands[0]));
+    }
+    return new AGTransferResult{ok: true, ready: output};
+}
+
 bool ag_transfer_condition(List<int> kinds, List<bool> input, int condition) {
     if (input.len() != kinds.len() || !ag_schema_register(kinds, condition, AG_SCHEMA_BOOL)) { return false; }
     return input[condition];
