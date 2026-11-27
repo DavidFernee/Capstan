@@ -1,0 +1,39 @@
+import "ccam_aggregate_scalar_ir.cap";
+import "ccam_aggregate_linear_scan_allocator.cap";
+import "ccam_aggregate_register_allocation_validator.cap";
+struct AGScalarAllocationResult { bool ok; AGAllocationResult allocation; }
+AGScalarAllocationResult ag_allocate_scalar_ir(List<AGScalarInstruction> instructions) {
+    List<int> last_use=new List<int>();
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    if(instructions.len()==0 || instructions.len()>AG_ALLOC_INTERVAL_LIMIT) {
+        return new AGScalarAllocationResult{ok:false,allocation:new AGAllocationResult{ok:false,spill_count:0,assignments:new List<AGRegisterAssignment>()}};
+    }
+    for(int i=0;i<instructions.len();i+=1) {
+        AGScalarInstruction ins=instructions[i];
+        if(!ag_scalar_shape(ins,instructions.len()) || ins.dest!=i) {
+            return new AGScalarAllocationResult{ok:false,allocation:new AGAllocationResult{ok:false,spill_count:0,assignments:new List<AGRegisterAssignment>()}};
+        }
+        if(ins.opcode!=1 && (ins.left>=i || ins.right>=i)) {
+            return new AGScalarAllocationResult{ok:false,allocation:new AGAllocationResult{ok:false,spill_count:0,assignments:new List<AGRegisterAssignment>()}};
+        }
+        last_use.push(i);
+    }
+    for(int i=0;i<instructions.len();i+=1) {
+        AGScalarInstruction ins=instructions[i];
+        if(ins.opcode!=1) {
+            if(ins.left<0 || ins.left>=i || ins.right<0 || ins.right>=i) {
+                return new AGScalarAllocationResult{ok:false,allocation:new AGAllocationResult{ok:false,spill_count:0,assignments:new List<AGRegisterAssignment>()}};
+            }
+            if(last_use[ins.left]<i) { last_use[ins.left]=i; }
+            if(last_use[ins.right]<i) { last_use[ins.right]=i; }
+        }
+    }
+    for(int i=0;i<instructions.len();i+=1) {
+        intervals.push(new AGLiveInterval{virtual_id:i,start:i,end:last_use[i]+1});
+    }
+    AGAllocationResult allocation=ag_linear_scan_allocate(intervals);
+    if(!allocation.ok || !ag_allocation_validate(intervals,allocation)) {
+        return new AGScalarAllocationResult{ok:false,allocation:allocation};
+    }
+    return new AGScalarAllocationResult{ok:true,allocation:allocation};
+}

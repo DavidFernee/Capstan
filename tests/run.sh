@@ -901,6 +901,60 @@ else
   bad "CCAM exact x86-64 emitter verification" "$out"
 fi
 
+echo
+section "Capstan-native verification: bounded linear-scan register allocation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_linear_scan_allocator_tests.cap" 2>&1)"; then
+  ok "linear-scan interval reuse, register pressure, spills and input validation"
+else
+  bad "CCAM linear-scan register allocator" "$out"
+fi
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_scalar_register_allocation_tests.cap" 2>&1)"; then
+  ok "scalar IR live-interval derivation and allocation"
+else
+  bad "CCAM scalar IR register allocation" "$out"
+fi
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_register_allocation_validator_tests.cap" 2>&1)"; then
+  ok "independent register allocation collision and spill validation"
+else
+  bad "CCAM register allocation validator" "$out"
+fi
+
+section "Capstan-native verification: aligned stack-frame and spill-slot layout"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_stack_frame_layout_tests.cap" 2>&1)"; then
+  ok "spill-slot offsets, stack alignment, bounds and allocator integration"
+else
+  bad "CCAM stack-frame layout" "$out"
+fi
+
+section "Capstan-native verification: x86-64 spill loads and stores"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_research_native_x86_spill_memory_tests.cap" 2>&1)"; then
+  ok "RBP-relative spill load/store disp8 and disp32 encodings"
+else
+  bad "CCAM x86-64 spill memory encoding" "$out"
+fi
+
+section "Capstan-native verification: allocator spill lowering"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_spill_lowering_tests.cap" 2>&1)"; then
+  ok "allocator spill assignments lower to validated RBP-relative loads and stores"
+else
+  bad "CCAM spill lowering" "$out"
+fi
+
+section "Capstan-native verification: x86-64 scalar arithmetic encodings"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_research_native_x86_scalar_ops_tests.cap" 2>&1)"; then
+  ok "ADD/SUB/IMUL and signed MOV-immediate encodings"
+else
+  bad "CCAM x86-64 scalar arithmetic encodings" "$out"
+fi
+
+section "Capstan-native verification: scalar IR to x86-64 lowering"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_scalar_native_emit_tests.cap" 2>&1)"; then
+  ok "scalar constants, add/subtract/multiply and explicit unsupported-operation rejection"
+else
+  bad "CCAM scalar native lowering" "$out"
+fi
+
+
 section "Capstan-native verification: 80-module research batch integration and adversarial boundaries"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_research_batch_80_tests.cap" 2>&1)"; then
   ok "80 research modules compile together; expression, AST, IR, arithmetic, UTF-8 and x86-64 boundary tests"
@@ -908,7 +962,6 @@ else
   bad "80-module research batch integration" "$out"
 fi
 
-
-echo
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
+

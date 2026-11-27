@@ -1,0 +1,70 @@
+import "ccam_aggregate_linear_scan_allocator.cap";
+
+bool ag_alloc_reg_allowed(int reg) {
+    return reg==0 || reg==1 || reg==2 || reg==6 || reg==7 ||
+        reg==8 || reg==9 || reg==10 || reg==11;
+}
+int ag_alloc_reg_index(int reg) {
+    if(reg==0) { return 0; }
+    if(reg==1) { return 1; }
+    if(reg==2) { return 2; }
+    if(reg==6) { return 3; }
+    if(reg==7) { return 4; }
+    if(reg==8) { return 5; }
+    if(reg==9) { return 6; }
+    if(reg==10) { return 7; }
+    if(reg==11) { return 8; }
+    return -1;
+}
+bool ag_allocation_validate(List<AGLiveInterval> intervals,AGAllocationResult result) {
+    if(!ag_interval_set_valid(intervals) || !result.ok ||
+        result.assignments.len()!=intervals.len() || result.spill_count<0 ||
+        result.spill_count>intervals.len()) { return false; }
+
+    // Build a bounded identity index once. Avoid repeated linear scans of the
+    // assignment vector inside nested interval checks.
+    Map<int> assignment_by_id=new Map<int>();
+    for(int i=0;i<result.assignments.len();i+=1) {
+        AGRegisterAssignment assignment=result.assignments[i];
+        string key=int_to_str(assignment.virtual_id);
+        if(assignment_by_id.has(key)) { return false; }
+        assignment_by_id.set(key,i);
+    }
+
+    List<AGLiveInterval> ordered=new List<AGLiveInterval>();
+    for(int i=0;i<intervals.len();i+=1) { ordered.push(intervals[i]); }
+    ag_sort_intervals(ordered);
+
+    // With intervals sorted by start, one last-end value per physical register
+    // is sufficient to detect every overlapping assignment collision.
+    List<int> last_end=new List<int>();
+    for(int r=0;r<9;r+=1) { last_end.push(-1); }
+    Map<bool> spill_slots=new Map<bool>();
+    int spills=0;
+    for(int i=0;i<ordered.len();i+=1) {
+        AGLiveInterval interval=ordered[i];
+        string key=int_to_str(interval.virtual_id);
+        if (!assignment_by_id.has(key)) { return false; }
+        int ix=-1;
+        if (let found=assignment_by_id.get(key)) { ix=found; }
+        if(ix<0 || ix>=result.assignments.len()) { return false; }
+        AGRegisterAssignment assignment=result.assignments[ix];
+        if(assignment.virtual_id!=interval.virtual_id) { return false; }
+
+        if(assignment.physical_reg>=0) {
+            int reg_index=ag_alloc_reg_index(assignment.physical_reg);
+            if(reg_index<0 || assignment.spill_slot!=-1) { return false; }
+            if(last_end[reg_index]>interval.start) { return false; }
+            last_end[reg_index]=interval.end;
+        } else if(assignment.physical_reg==-1) {
+            if(assignment.spill_slot<0 || assignment.spill_slot>=result.spill_count) { return false; }
+            string spill_key=int_to_str(assignment.spill_slot);
+            if(spill_slots.has(spill_key)) { return false; }
+            spill_slots.set(spill_key,true);
+            spills+=1;
+        } else {
+            return false;
+        }
+    }
+    return spills==result.spill_count;
+}

@@ -1,0 +1,34 @@
+import "ccam_aggregate_native_reg.cap";
+import "ccam_aggregate_byte_buffer.cap";
+// Encode ADD dst, src (64-bit): REX.W + 01 /r.
+bool ag_x86_add_rr(List<int> b,int dst,int src) {
+    if(!ag_native_reg(dst)||!ag_native_reg(src)||b.len()>AG_BYTE_LIMIT-3) { return false; }
+    b.push(72+(src/8)*4+dst/8); b.push(1);
+    b.push(192+(src%8)*8+dst%8); return true;
+}
+// Encode SUB dst, src (64-bit): REX.W + 29 /r.
+bool ag_x86_sub_rr(List<int> b,int dst,int src) {
+    if(!ag_native_reg(dst)||!ag_native_reg(src)||b.len()>AG_BYTE_LIMIT-3) { return false; }
+    b.push(72+(src/8)*4+dst/8); b.push(41);
+    b.push(192+(src%8)*8+dst%8); return true;
+}
+// Encode IMUL dst, src (64-bit): REX.W + 0F AF /r.
+bool ag_x86_imul_rr(List<int> b,int dst,int src) {
+    if(!ag_native_reg(dst)||!ag_native_reg(src)||b.len()>AG_BYTE_LIMIT-4) { return false; }
+    b.push(72+(dst/8)*4+src/8); b.push(15); b.push(175);
+    b.push(192+(dst%8)*8+src%8); return true;
+}
+// Encode MOV r64, imm64. Values are signed Capstan integers; two's complement
+// bytes are emitted explicitly without relying on host-endian memory layout.
+bool ag_x86_mov_ri64(List<int> b,int dst,int immediate) {
+    if(!ag_native_reg(dst)||b.len()>AG_BYTE_LIMIT-10) { return false; }
+    b.push(72+dst/8); b.push(184+(dst%8));
+    int remaining=immediate;
+    for(int i=0;i<8;i+=1) {
+        int byte=remaining%256;
+        if(byte<0) { byte+=256; }
+        b.push(byte);
+        remaining=(remaining-byte)/256;
+    }
+    return true;
+}

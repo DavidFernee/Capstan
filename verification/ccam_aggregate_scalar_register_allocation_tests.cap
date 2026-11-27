@@ -1,0 +1,22 @@
+import "ccam_aggregate_scalar_register_allocation.cap";
+test "scalar IR live intervals feed the linear-scan allocator" {
+    List<AGScalarInstruction> code=new List<AGScalarInstruction>();
+    code.push(new AGScalarInstruction{opcode:1,dest:0,left:-1,right:-1,immediate:6});
+    code.push(new AGScalarInstruction{opcode:1,dest:1,left:-1,right:-1,immediate:7});
+    code.push(new AGScalarInstruction{opcode:2,dest:2,left:0,right:1,immediate:0});
+    code.push(new AGScalarInstruction{opcode:1,dest:3,left:-1,right:-1,immediate:2});
+    code.push(new AGScalarInstruction{opcode:4,dest:4,left:2,right:3,immediate:0});
+    AGScalarAllocationResult result=ag_allocate_scalar_ir(code);
+    assert(result.ok && result.allocation.ok && result.allocation.assignments.len()==5);
+    assert(result.allocation.spill_count==0);
+}
+test "scalar IR allocator rejects forward and invalid value references" {
+    List<AGScalarInstruction> code=new List<AGScalarInstruction>();
+    code.push(new AGScalarInstruction{opcode:2,dest:0,left:1,right:1,immediate:0});
+    assert(!ag_allocate_scalar_ir(code).ok);
+}
+test "scalar IR allocator rejects malformed destination numbering" {
+    List<AGScalarInstruction> code=new List<AGScalarInstruction>();
+    code.push(new AGScalarInstruction{opcode:1,dest:1,left:-1,right:-1,immediate:3});
+    assert(!ag_allocate_scalar_ir(code).ok);
+}
