@@ -2,7 +2,9 @@
 
 **Status:** design proposal only; not part of normative CCAM v0.1.  
 **Purpose:** specify a minimal deterministic memory extension for Capstan-native bounded workspaces without raw pointers, host allocation semantics or implicit collection.  
-**Depends on:** [CCAM v0.1](CCAM.md), [C-Free bounded scratch contract](../keel/C-FREE-BOUNDED-SCRATCH.md), [C-Free execution](C-FREE-EXECUTION.md).\n**Security target:** [CCAM v0.2 memory-safety contract](CCAM-MEMORY-SECURITY-CONTRACT.md). The contract defines the required language guarantee and release gates; it does not certify this proposal or the current prototype.
+**Depends on:** [CCAM v0.1](CCAM.md), [C-Free bounded scratch contract](../keel/C-FREE-BOUNDED-SCRATCH.md), [C-Free execution](C-FREE-EXECUTION.md).
+
+**Security target:** [CCAM v0.2 memory-safety contract](CCAM-MEMORY-SECURITY-CONTRACT.md). The contract defines the required language guarantee and release gates; it does not certify this proposal or the current prototype.
 
 ## 1. Version boundary
 
