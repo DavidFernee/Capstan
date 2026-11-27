@@ -1,2 +1,5 @@
-// Research batch module; pending integration audit.
-bool ag_ir_precedes(int definition,int use){return definition>=0&&use>definition;}
+// This checks linear instruction order only. It is NOT a CFG dominance
+// predicate and must not be used as evidence of SSA dominance.
+bool ag_ir_precedes(int definition,int use) {
+    return definition >= 0 && use > definition;
+}

@@ -1,2 +1,5 @@
-// Research batch module; pending integration audit.
-bool ag_x86_patch_call(List<int> b,int patch,int target){return ag_rel32(b,patch,target);}
+// Patch only the four-byte displacement immediately following CALL rel32.
+bool ag_x86_patch_call(List<int> b,int patch,int target) {
+    if (patch < 1 || patch > b.len() - 4 || b[patch - 1] != 232) { return false; }
+    return ag_rel32(b,patch,target);
+}
