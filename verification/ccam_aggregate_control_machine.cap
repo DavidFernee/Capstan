@@ -31,7 +31,7 @@ AGControlResult ag_control_execute(List<AGControlInstruction> code,int fuel,int 
             if(!result.ok) { return new AGControlResult{ok:false,value:0,steps:steps}; }
             variables[ins.destination]=result.value; pc+=1; continue;
         }
-        if(ins.opcode==8) { if(ins.left>=variable_count) { return new AGControlResult{ok:false,value:0,steps:steps}; } pc=variables[ins.left]==0?ins.target:pc+1; continue; }
+        if(ins.opcode==8) { if(ins.left>=variable_count) { return new AGControlResult{ok:false,value:0,steps:steps}; } if(variables[ins.left]==0){pc=ins.target;}else{pc=pc+1;} continue; }
         if(ins.opcode==9) { pc=ins.target; continue; }
         if(ins.opcode==10) { return new AGControlResult{ok:true,value:variables[ins.destination],steps:steps}; }
         return new AGControlResult{ok:false,value:0,steps:steps};
