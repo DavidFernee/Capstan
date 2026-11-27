@@ -8,3 +8,50 @@ AGLowerInstruction ag_lower_operand(List<int> kinds, int opcode, int kind, int d
     return new AGLowerInstruction{ok: ag_schema_operands(kinds, opcode, kind, operands),
         instruction: new AGBlockInstruction{opcode: opcode, kind: kind, operands: operands}};
 }
+
+AGLowerInstruction ag_lower_array_alloc(
+    List<int> kinds, int element_kind, int destination,
+    int element_ref_type_id, int capacity
+) {
+    List<int> operands = new List<int>();
+    operands.push(destination);
+    operands.push(element_ref_type_id);
+    operands.push(capacity);
+    return new AGLowerInstruction{
+        ok: ag_schema_operands(kinds, 5, element_kind, operands),
+        instruction: new AGBlockInstruction{
+            opcode: 5, kind: element_kind, operands: operands
+        }
+    };
+}
+
+AGLowerInstruction ag_lower_array_append(
+    List<int> kinds, int element_kind, int array_register, int value_register
+) {
+    List<int> operands = new List<int>();
+    operands.push(array_register);
+    operands.push(value_register);
+    return new AGLowerInstruction{
+        ok: ag_schema_operands(kinds, 6, element_kind, operands),
+        instruction: new AGBlockInstruction{
+            opcode: 6, kind: element_kind, operands: operands
+        }
+    };
+}
+
+test "aggregate array lowerers preserve immediate bounds and typed operands" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT);
+    AGLowerInstruction allocation = ag_lower_array_alloc(
+        kinds, AG_SCHEMA_INT, 0, 0, 32
+    );
+    assert(allocation.ok && allocation.instruction.opcode == 5);
+    AGLowerInstruction append = ag_lower_array_append(
+        kinds, AG_SCHEMA_INT, 0, 1
+    );
+    assert(append.ok && append.instruction.opcode == 6);
+    assert(!ag_lower_array_alloc(kinds, AG_SCHEMA_INT, 1, 0, 32).ok);
+    assert(!ag_lower_array_append(kinds, AG_SCHEMA_BOOL, 0, 1).ok);
+    assert(!ag_lower_array_alloc(kinds, AG_SCHEMA_INT, 0, 0, 65537).ok);
+}
