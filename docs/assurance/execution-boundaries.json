@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "821cce073548466552d5267027d1f366ee701496",
+  "baseline_commit": "7e2dea3b4657b8fdfd5e8e761015feda6c9bfbb6",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -34,7 +34,9 @@
       "open": [
         "Define the formal scalar source typing judgement.",
         "Prove checker acceptance implies the formal typing judgement.",
-        "Integrate the restricted C-free path into the production CLI without using generated C as semantic authority."
+        "Integrate the restricted C-free path into the production CLI without using generated C as semantic authority.",
+        "Prove soundness of lexical binding identities and bounded access-path provenance, including nested wildcard selectors, aliases and aggregate summaries; current implementation is not a formal information-flow proof.",
+        "Establish password provenance completeness beyond name heuristics and explicit Tainted rejection; CWE-916 inexpressibility is not established."
       ]
     },
     {
