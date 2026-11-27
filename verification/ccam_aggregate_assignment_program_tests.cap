@@ -5,7 +5,9 @@ test "assignment program updates and reads variables" {
     source.push(120); source.push(61); source.push(120); source.push(43); source.push(50); source.push(59);
     source.push(120); source.push(42); source.push(50); source.push(43); source.push(49);
     AGProgramResult result=ag_compile_assignment_program(source);
-    assert(result.ok && result.assignments==2 && result.value==25);
+    assert(result.ok);
+    assert(result.assignments==2);
+    assert(result.value==25);
 }
 test "assignment program rejects unresolved variable" {
     List<int> source=new List<int>();
