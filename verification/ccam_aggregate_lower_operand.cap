@@ -55,3 +55,38 @@ test "aggregate array lowerers preserve immediate bounds and typed operands" {
     assert(!ag_lower_array_append(kinds, AG_SCHEMA_BOOL, 0, 1).ok);
     assert(!ag_lower_array_alloc(kinds, AG_SCHEMA_INT, 0, 0, 65537).ok);
 }
+
+AGLowerInstruction ag_lower_bytes_len(
+    List<int> kinds, int destination, int bytes_register
+) {
+    List<int> operands = new List<int>();
+    operands.push(destination); operands.push(bytes_register);
+    return new AGLowerInstruction{
+        ok: ag_schema_operands(kinds, 7, AG_SCHEMA_INT, operands),
+        instruction: new AGBlockInstruction{
+            opcode: 7, kind: AG_SCHEMA_INT, operands: operands
+        }
+    };
+}
+
+AGLowerInstruction ag_lower_bytes_concat(
+    List<int> kinds, int destination, int left_register, int right_register
+) {
+    List<int> operands = new List<int>();
+    operands.push(destination); operands.push(left_register); operands.push(right_register);
+    return new AGLowerInstruction{
+        ok: ag_schema_operands(kinds, 8, AG_SCHEMA_REF, operands),
+        instruction: new AGBlockInstruction{
+            opcode: 8, kind: AG_SCHEMA_REF, operands: operands
+        }
+    };
+}
+
+test "aggregate byte lowerers enforce reference and integer register kinds" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    assert(ag_lower_bytes_len(kinds, 2, 0).ok);
+    assert(ag_lower_bytes_concat(kinds, 0, 0, 1).ok);
+    assert(!ag_lower_bytes_len(kinds, 0, 1).ok);
+    assert(!ag_lower_bytes_concat(kinds, 2, 0, 1).ok);
+}
