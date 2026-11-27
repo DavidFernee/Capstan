@@ -21,7 +21,7 @@ int ag_control_emit_jump(AGControlBuilder builder,int target) {
  int at=builder.code.len(); if(!ag_control_emit(builder,new AGControlInstruction{opcode:9,destination:0,left:0,right:0,immediate:0,target:target})) { return -1; } return at;
 }
 bool ag_control_patch_target(AGControlBuilder builder,int instruction,int target) {
- if(builder.failed || instruction<0 || instruction>=builder.code.len() || target<0 || target>=builder.code.len()) { return false; }
+ if(builder.failed || instruction<0 || instruction>=builder.code.len() || target<0 || target>builder.code.len()) { return false; }
  int op=builder.code[instruction].opcode; if(op!=8 && op!=9) { return false; }
  builder.code[instruction].target=target; return true;
 }
