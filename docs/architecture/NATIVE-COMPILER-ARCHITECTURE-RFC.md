@@ -335,9 +335,7 @@ Use Lean 4 as the primary machine-checked proof environment, with an explicitly 
 
 The proof programme is layered. It should be complemented by an incremental certifier that checks individual compiler runs, rather than waiting for every production compiler pass to be proved before providing any machine-checkable assurance. The certifier consumes the canonical compilation trace and checks each pass against a formal translation relation; the soundness of each relation is separately proved. A failed, unknown, timed-out or over-budget check rejects certification.
 
-The proof programme is layered:
-
-| Proof layer | Required result |
+The layered proof obligations are:
 |---|---|
 | Source core | Type soundness and source semantic properties |
 | Checked source core | Source typing and accepted-subset preservation obligations |
