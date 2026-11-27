@@ -1,5 +1,18 @@
+// Return the result type or -1 when the operation is not defined for the
+// supplied scalar operands. Equality accepts like-typed int/bool values;
+// relational, arithmetic and bitwise operators are integer-only.
 int ag_binary_result_type(int op,int left,int right) {
-    if (!ag_scalar_type_compatible(left,right) || ag_operator_class(op) == 0) { return -1; }
-    if (op == 60 || op == 62 || op == 61 || op == 33) { return AG_SCHEMA_BOOL; }
-    return left;
+    if (!ag_scalar_type_compatible(left,right)) { return -1; }
+    int precedence = ag_operator_class(op);
+    if (precedence == 4) { return AG_SCHEMA_BOOL; }
+    if (precedence == 5) {
+        if (left != AG_SCHEMA_INT) { return -1; }
+        return AG_SCHEMA_BOOL;
+    }
+    if (precedence == 1 || precedence == 2 || precedence == 3 ||
+        precedence == 6 || precedence == 7) {
+        if (left != AG_SCHEMA_INT) { return -1; }
+        return AG_SCHEMA_INT;
+    }
+    return -1;
 }
