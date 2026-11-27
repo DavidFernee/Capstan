@@ -88,13 +88,48 @@ else
 fi
 
 section "Capstan-native verification: candidate aggregate execution and validation"
-for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source byte_buffer u16 u32 u64 patch32 rel32 native_reg rex modrm movimm alu jump ret syscall exit_code padding elf_ident elf_header elf_segment elf_image native_smoke operator_stack expr_reduce checked_add checked_sub checked_mul checked_div arithmetic scalar_machine native_driver native_source_smoke runtime_budget runtime_region runtime_align runtime_span runtime_copy runtime_zero runtime_smoke native_reloc native_link; do
+for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source byte_buffer u16 u32 u64 patch32 rel32 native_reg rex modrm movimm alu jump ret syscall exit_code padding elf_ident elf_header elf_segment elf_image native_smoke operator_stack expr_reduce checked_add checked_sub checked_mul checked_div arithmetic scalar_machine native_driver expression_pipeline native_source_smoke runtime_budget runtime_region runtime_align runtime_span runtime_copy runtime_zero runtime_smoke native_reloc native_link; do
   if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_${module}.cap" 2>&1)"; then
     ok "aggregate candidate $module"
   else
     bad "aggregate candidate $module" "$out"
   fi
 done
+
+section "Capstan-native verification: arithmetic expression compilation pipeline"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_expression_tests.cap" 2>&1)"; then
+  ok "expression precedence, parentheses, division-by-zero and malformed-input rejection"
+else
+  bad "CCAM aggregate expression compilation pipeline" "$out"
+fi
+
+section "Capstan-native verification: expression variable bindings"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_expression_variables_tests.cap" 2>&1)"; then
+  ok "variable lookup, arithmetic binding, duplicate rejection and binding bounds"
+else
+  bad "CCAM expression variable bindings" "$out"
+fi
+
+section "Capstan-native verification: assignment-program execution"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_assignment_program_tests.cap" 2>&1)"; then
+  ok "assignment updates, variable reads, malformed assignment and final expression"
+else
+  bad "CCAM assignment-program execution" "$out"
+fi
+
+section "Capstan-native verification: bounded control-flow machine"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_control_machine_tests.cap" 2>&1)"; then
+  ok "summation loop, bounded execution fuel, branch validation and arithmetic failure"
+else
+  bad "CCAM bounded control-flow machine" "$out"
+fi
+
+section "Capstan-native verification: control-flow instruction builder"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_control_builder_tests.cap" 2>&1)"; then
+  ok "builder loop emission, branch patching and invalid operand rejection"
+else
+  bad "CCAM control-flow instruction builder" "$out"
+fi
 
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
