@@ -96,20 +96,28 @@ bool ag_expr_node_valid(AGExpression node, int index) {
 }
 
 test "research expression helpers enforce precedence and associativity" {
-    assert(ag_operator_class(43) == 5);
-    assert(ag_operator_class(42) == 6);
+    assert(ag_operator_class(43) == 6);
+    assert(ag_operator_class(42) == 7);
     assert(ag_operator_class(124) == 1);
     assert(ag_operator_class(94) == 2);
     assert(ag_operator_class(38) == 3);
-    assert(ag_operator_class(60) == 4);
-    assert(ag_unary_precedence(126) == 7);
+    assert(ag_operator_class(60) == 5);
+    assert(ag_operator_class(61) == 4);
+    assert(ag_unary_precedence(126) == 8);
     assert(!ag_operator_right_associative(94));
-    assert(ag_operator_arity(42) == 2);
-    assert(ag_operator_arity(33) == 1);
+    assert(ag_operator_arity(42, false) == 2);
+    assert(ag_operator_arity(43, true) == 1);
+    assert(ag_operator_arity(43, false) == 2);
+    assert(ag_operator_arity(33, true) == 1);
+    assert(ag_operator_arity(33, false) == 2);
+    assert(ag_operator_arity(126, true) == 1);
+    assert(ag_operator_arity(126, false) == 0);
     assert(ag_should_reduce(42, 43));
     assert(!ag_should_reduce(43, 42));
     assert(ag_should_reduce(43, 124));
     assert(!ag_should_reduce(38, 60));
+    assert(ag_should_reduce(60, 61));
+    assert(!ag_should_reduce(61, 60));
     assert(ag_compare_opcode(60) != 0);
     assert(ag_bitwise_opcode(38) != 0);
     assert(ag_escape_valid(34));
@@ -184,5 +192,9 @@ test "research binary typing distinguishes comparisons from scalar operators" {
     assert(ag_binary_result_type(60,AG_SCHEMA_INT,AG_SCHEMA_INT) == AG_SCHEMA_BOOL);
     assert(ag_binary_result_type(61,AG_SCHEMA_BOOL,AG_SCHEMA_BOOL) == AG_SCHEMA_BOOL);
     assert(ag_binary_result_type(43,AG_SCHEMA_INT,AG_SCHEMA_BOOL) == -1);
+    assert(ag_binary_result_type(38,AG_SCHEMA_INT,AG_SCHEMA_INT) == AG_SCHEMA_INT);
+    assert(ag_binary_result_type(38,AG_SCHEMA_BOOL,AG_SCHEMA_BOOL) == -1);
+    assert(ag_binary_result_type(60,AG_SCHEMA_BOOL,AG_SCHEMA_BOOL) == -1);
+    assert(ag_binary_result_type(61,AG_SCHEMA_BOOL,AG_SCHEMA_BOOL) == AG_SCHEMA_BOOL);
     assert(ag_binary_result_type(0,AG_SCHEMA_INT,AG_SCHEMA_INT) == -1);
 }
