@@ -1,2 +1,64 @@
-// Candidate compiler support module. Research batch; pending integration audit.
-bool ag_utf8_validate(List<int> b){int i=0;while(i<b.len()){int w=ag_utf8_width(b[i]);if(w==0||i+w>b.len()){return false;}for(int j=1;j<w;j+=1){if(!ag_utf8_cont(b[i+j])){return false;}}i+=w;}return true;}
+// Strict UTF-8 validation. Reject overlong encodings, surrogate code points,
+// truncated sequences, stray continuation bytes and values above U+10FFFF.
+bool ag_utf8_validate(List<int> b) {
+    int i = 0;
+    while (i < b.len()) {
+        int lead = b[i];
+        if (lead < 0 || lead > 255) { return false; }
+        if (lead <= 127) { i += 1; continue; }
+        if (lead >= 194 && lead <= 223) {
+            if (i > b.len() - 2 || !ag_utf8_cont(b[i + 1])) { return false; }
+            i += 2;
+            continue;
+        }
+        if (lead >= 224 && lead <= 239) {
+            if (i > b.len() - 3) { return false; }
+            int second = b[i + 1];
+            int third = b[i + 2];
+            if (!ag_utf8_cont(third)) { return false; }
+            if (lead == 224) {
+                if (second < 160 || second > 191) { return false; }
+            } else if (lead == 237) {
+                if (second < 128 || second > 159) { return false; }
+            } else if (!ag_utf8_cont(second)) { return false; }
+            i += 3;
+            continue;
+        }
+        if (lead >= 240 && lead <= 244) {
+            if (i > b.len() - 4) { return false; }
+            int second = b[i + 1];
+            if (lead == 240) {
+                if (second < 144 || second > 191) { return false; }
+            } else if (lead == 244) {
+                if (second < 128 || second > 143) { return false; }
+            } else if (!ag_utf8_cont(second)) { return false; }
+            if (!ag_utf8_cont(b[i + 2]) || !ag_utf8_cont(b[i + 3])) { return false; }
+            i += 4;
+            continue;
+        }
+        return false;
+    }
+    return true;
+}
+
+test "UTF-8 validator accepts canonical boundary sequences" {
+    List<int> b = new List<int>();
+    b.push(0); b.push(127); b.push(194); b.push(128);
+    b.push(224); b.push(160); b.push(128);
+    b.push(237); b.push(159); b.push(191);
+    b.push(240); b.push(144); b.push(128); b.push(128);
+    b.push(244); b.push(143); b.push(191); b.push(191);
+    assert(ag_utf8_validate(b));
+}
+
+test "UTF-8 validator rejects malformed and non-scalar sequences" {
+    List<int> b = new List<int>();
+    b.push(128); assert(!ag_utf8_validate(b));
+    b.clear(); b.push(192); b.push(128); assert(!ag_utf8_validate(b));
+    b.clear(); b.push(224); b.push(128); b.push(128); assert(!ag_utf8_validate(b));
+    b.clear(); b.push(237); b.push(160); b.push(128); assert(!ag_utf8_validate(b));
+    b.clear(); b.push(244); b.push(144); b.push(128); b.push(128); assert(!ag_utf8_validate(b));
+    b.clear(); b.push(240); b.push(159); b.push(146); assert(!ag_utf8_validate(b));
+    b.clear(); b.push(245); b.push(128); b.push(128); b.push(128); assert(!ag_utf8_validate(b));
+    b.clear(); b.push(65); b.push(256); assert(!ag_utf8_validate(b));
+}
