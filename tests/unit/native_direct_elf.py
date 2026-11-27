@@ -211,6 +211,15 @@ def main(capstan):
         ("int divisor = 0; return 7 / divisor;", 71, None),
         ("int divisor = 0; return -7 % divisor;", 71, None),
         (
+            "bool t = true; bool f = false; "
+            "if (t == t && f == f && !(t == f) && !(f == t) "
+            "&& t != f && f != t && !(t != t) && !(f != f)) { return 42; } "
+            "return 0;",
+            0,
+            42,
+        ),
+        ("int divisor = 0; if (false == (7 / divisor == 0)) { return 1; } return 0;", 71, None),
+        (
             "int sum = 0; "
             "if (sum == 0) { int value = 10; value += 2; sum = value; } "
             "else { bool value = sum < 0; if (value) { sum = 100; } } "
