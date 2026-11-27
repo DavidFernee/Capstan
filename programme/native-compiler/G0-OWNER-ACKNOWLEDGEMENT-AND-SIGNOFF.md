@@ -49,7 +49,7 @@ Both owners review changes as producer/consumer or delegated peer representative
 ## Acceptance checklist
 
 - G0-01/03/04/06: ACCEPT in PR #601, scoped to pinned baseline evidence.
-- G0-02: #598 now merged; #599 still draft/open at preparation. Integrate reviewed correction and verify against source before clearing.
+- G0-02: #598 merged at `d8627dbbba67eb18568b099ca68e4af4a2aab770`; #599 merged at `0f8fde8c545adc692c1c740000a256550d50406d`. At reviewed main `c3d30cbc037656128f6b95a3f00a16ad064bd029`, Makefile lists both runtime headers; `compiler/ast.cap` declares 16 MiB per file, 256 imports and 32 MiB aggregate; `verification/ccam_native_x64.cap` declares 32 MiB stack budget and emits page rounding and guard mapping. These corroborate the corrected documentation. Full enforcement-path review and independent disposition remain outstanding; no fresh execution claimed.
 - G0-05: ChatGPT acknowledgement recorded; Claude acknowledgement of this allocation pending.
 - G0-07: #595 provides previously operated reproduction of #583 baseline. PR #601 reviewer could not execute a fresh build. Review raw evidence or execute independently and explicitly record disposition under existing G0 criteria. No fresh execution is asserted here.
 - G0-08: after preceding holds resolved, David records acceptance against pinned build and final reviewed evidence revision.
