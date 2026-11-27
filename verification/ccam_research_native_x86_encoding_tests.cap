@@ -11,6 +11,7 @@ import "ccam_research_native_x86_lea.cap";
 import "ccam_research_native_x86_push.cap";
 import "ccam_research_native_x86_pop.cap";
 import "ccam_research_native_x86_jmp_rel32.cap";
+import "ccam_research_native_x86_call_rel32.cap";
 import "ccam_research_native_x86_jcc.cap";
 import "ccam_research_native_x86_call_rel32.cap";
 import "ccam_research_native_x86_prologue.cap";
@@ -67,7 +68,7 @@ test "x86-64 branch and call emit exact rel32 placeholders" {
     assert(b[5]==15 && b[6]==132);
     assert(ag_rel32(b,conditional_disp+2,b.len()));
     int call_disp = ag_x86_call_rel32(b);
-    assert(call_disp==13 && b[12]==232);
+    assert(call_disp==12 && b[11]==232);
 }
 test "x86-64 prologue and epilogue bytes are exact" {
     List<int> b = new List<int>();
