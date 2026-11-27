@@ -30,7 +30,7 @@ formal/CCAMHeap.lean blob 31d55db: rejected_allocation_preserves_state, allocati
 ## Architectural findings and work allocation
 
 - M-01: Compiler arena has no individual free or GC; frame-owned RegionCap/ViewCap rules intentionally prohibit live capabilities across calls. Do not use either as evidence of a production collecting heap. Establish separate profile identifiers and cross-profile interface rules.
-- M-02: Aggregate bridge does not yet establish canonical instruction, call-frame or native integration at the pinned revision. Coordinate #458/#481/#538/#550 before starting new code.
+- M-02: Aggregate bridge does not yet establish canonical instruction, call-frame or native integration at the pinned revision. #538 is merged; coordinate remaining #458/#481/#550 work before starting new code.
 - M-03: Aggregate allocation checks destination before step admission in ccam_aggregate_alloc_record. For malformed direct API inputs this can change failure precedence; this is a contract reconciliation question, not a demonstrated normative machine violation. Specify admission versus dispatch and test zero fuel with invalid destination.
 - M-04: Logical byte charges and temporary peak accounting need explicit physical runtime correspondence; host allocation overhead and collector storage are not demonstrated bounded by those logical counters.
 - M-05: Frame wiping and whole-program termination semantics must distinguish controlled unwind from uncatchable external termination; do not claim guarantees outside the stated storage/threat model.
