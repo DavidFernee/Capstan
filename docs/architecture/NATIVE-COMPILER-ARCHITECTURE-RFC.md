@@ -103,9 +103,9 @@ CCAM remains the canonical abstract execution machine, not a generic name for ev
 
 The reference evaluator is an executable implementation of CCAM, not a replacement for its specification. Its concrete transition relation must be related to the Lean machine.
 
-### 3.5 Capstan Low-level IR (CLIR)
+### 3.5 Native backend lowering forms (optional)
 
-CLIR is target-independent but machine-oriented. It introduces:
+A backend may use one or more target-independent low-level representations internally, but these are implementation forms, not new semantic authorities or mandatory pipeline stages. The initial native prototype may lower validated CCAM directly to target instructions. If a reusable low-level IR is introduced, it must be explicitly versioned, bounded, validated, and connected to CCAM by a backend simulation or independently checkable translation relation. It may introduce:
 - explicit machine-sized values and legalisation;
 - virtual registers and register classes;
 - explicit calling-convention-independent call/return operations;
@@ -116,11 +116,11 @@ CLIR is target-independent but machine-oriented. It introduces:
 - target-neutral relocation and symbol intents;
 - explicit resource-check operations where runtime enforcement remains necessary.
 
-CLIR does not contain host pointers or assume a source reference is a native address. References remain opaque handles until a target/runtime lowering pass establishes their representation.
+A low-level backend form does not contain unvalidated host pointers or assume a source reference is a native address. References remain opaque handles until a target/runtime lowering pass establishes their representation under the approved memory ABI.
 
-### 3.6 Capstan Target IR (CTIR)
+### 3.6 Target-specific instruction representation
 
-CTIR is target-specific and versioned by architecture, ABI, object format and platform profile. It specifies:
+A target-specific instruction representation is optional and target-specific, versioned by architecture, ABI, object format and platform profile. It specifies:
 - legal instruction encodings and operand constraints;
 - register classes, reserved registers and calling convention;
 - stack alignment and frame layout;
@@ -133,7 +133,7 @@ CTIR is target-specific and versioned by architecture, ABI, object format and pl
 - entry-point and runtime ABI;
 - platform syscall/import boundary.
 
-A CTIR program is valid only for its declared target profile. A target profile cannot be inferred from the build host.
+A target-specific instruction stream is valid only for its declared target profile. A target profile cannot be inferred from the build host.
 
 ## 4. Translation contracts
 
@@ -144,8 +144,8 @@ Every adjacent stage has a named translation and an acceptance relation.
 | Source/checker -> CCAM | Accepted-subset completeness, source semantic preservation, explicit sequencing and source-span mapping |
 | CCAM -> derived optimisation IR | Validated conversion, CFG/SSA invariants and preservation of CCAM observables |
 | Derived optimisation IR -> CCAM | Valid reconstruction, simulation/refinement, trap/effect/resource preservation |
-| CCAM -> native target lowering | Machine-level simulation, value representation, memory and call semantics preserved |
-| Target IR -> object | Encoding validity, relocation correctness, section/permission correctness |
+| CCAM -> native target lowering (direct or through optional backend forms) | Machine-level simulation, value representation, memory and call semantics preserved |
+| Target instruction stream -> object | Encoding validity, relocation correctness, section/permission correctness |
 | CLIR -> CTIR | Instruction selection, register allocation, stack layout, relocations and ABI correctness |
 | CTIR -> object | Encoding validity, relocation correctness, section/permission correctness |
 | object -> executable | Link/load integrity, symbol resolution, segment policy and manifest binding |
@@ -341,7 +341,7 @@ The proof programme is layered:
 | Concrete evaluator | Simulation/refinement to Lean CCAM |
 | Memory | Reference validity, descriptor safety, lifecycle and root completeness |
 | Optimisations | Pass correctness or independent translation validation |
-| CLIR/CTIR | Machine lowering and ABI simulation |
+| Native backend forms (if present) | Machine lowering and ABI simulation |
 | Object/link | Encoding, relocation, image-policy validation |
 | Runtime/host | Capability, resource and memory-boundary correctness |
 | Certificate | Exact binding to source, semantics, target, policy and executable |
@@ -451,7 +451,7 @@ A release claims only the highest profile whose gates it actually passes. Profil
 ### A3 — Native foundations
 - Freeze native ABI and trap ABI.
 - Complete aggregate and memory lowering.
-- Add CLIR and CTIR validators.
+- Add validators for any selected low-level or target-specific backend representation; retain direct CCAM-to-native lowering if it is simpler and easier to assure.
 - Implement object writer and relocation model.
 - Add differential and adversarial native execution tests.
 
