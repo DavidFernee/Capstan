@@ -1,4 +1,4 @@
-import CapstanVerification.IntegratedMachine
+import CapstanVerification.Machine
 
 namespace CapstanVerification
 
