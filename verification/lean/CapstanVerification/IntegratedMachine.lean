@@ -352,4 +352,53 @@ theorem returnTypedVoidOnStack_entry_halts_in_place
         within_limit := by simp } = .haltVoid := by
   simp [returnTypedVoidOnStack, hreturn]
 
+
+/-- A call attempt records whether failure occurred before dispatch admission
+or after the opcode consumed its global instruction slot. -/
+inductive BudgetedCallOutcome where
+  | entered (stack : TypedMultiCallStack) (budget : StepBudget)
+  | trapped (reason : Trap) (budget : StepBudget)
+  | preDispatchTrap (reason : Trap) (budget : StepBudget)
+
+/-- Apply the global budget gate before observing a call's dispatch result.
+The supplied attempt is a pure, already-validated typed transition; dynamic
+call-site decoding and argument-read failures remain to be connected. If the
+budget is exhausted, the attempt is not admitted and the original budget is
+preserved. Once admitted, either success or an opcode-level trap consumes one
+step. -/
+def budgetedCallTransition (budget : StepBudget)
+    (attempt : Except Trap TypedMultiCallStack) : BudgetedCallOutcome :=
+  match consumeStep budget with
+  | .error reason => .preDispatchTrap reason budget
+  | .ok charged =>
+      match attempt with
+      | .error reason => .trapped reason charged
+      | .ok stack => .entered stack charged
+
+/-- An admitted call attempt that traps has consumed exactly one instruction. -/
+theorem budgetedCallTransition_trap_consumes_one
+    (budget charged : StepBudget) (reason : Trap)
+    (htransition :
+      budgetedCallTransition budget (.error reason) =
+        .trapped reason charged) :
+    charged.used = budget.used + 1 := by
+  unfold budgetedCallTransition at htransition
+  cases hconsume : consumeStep budget with
+  | error exhausted =>
+      simp [hconsume] at htransition
+  | ok next =>
+      simp [hconsume] at htransition
+      cases htransition
+      exact consumeStep_increments budget next hconsume
+
+/-- Budget exhaustion is detected before call dispatch and preserves the
+pre-attempt instruction count. -/
+theorem budgetedCallTransition_exhausted_before_dispatch
+    (budget : StepBudget) (attempt : Except Trap TypedMultiCallStack)
+    (hexhausted : budget.limit ≤ budget.used) :
+    budgetedCallTransition budget attempt =
+      .preDispatchTrap .instructionLimit budget := by
+  unfold budgetedCallTransition
+  rw [consumeStep_exhausted_traps budget hexhausted]
+
 end CapstanVerification
