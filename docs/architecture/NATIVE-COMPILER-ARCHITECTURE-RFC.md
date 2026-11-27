@@ -329,6 +329,21 @@ No one milestone implies the others.
 
 The native backend has a documented ABI for integer widths, booleans, aggregates, arguments, results, stack alignment, traps, runtime calls, root maps and external capabilities. Current register-only argument limitations are prototype constraints, not the final ABI.
 
+### 10.1 Terminal-result and trap transport
+
+The process ABI is not the CCAM result ABI. In particular, Linux process exit status exposes only the low eight bits and cannot represent arbitrary signed-64 return values. It must never be used as the general transport for `Halt(Int64)`.
+
+The native result contract must distinguish:
+- `Halt(Int64(value))` with the exact signed-64 value;
+- `HaltVoid`;
+- CCAM traps, preserving stable trap code, function identity, program counter, explicit-trap detail and instruction-step count;
+- platform/transport failures, kept separate from CCAM traps;
+- compile-time validation failures, which produce no executable result record.
+
+The initial Linux profile should evaluate the existing bounded fd-3 result-record proposal in `research/native-bootstrap/NATIVE-RESULT-ABI.md`. If adopted, the launcher must supply a fresh bounded result sink as an explicit capability; the executable must not discover a path or silently fall back to stdout, stderr or exit status. The record parser must reject absent, partial, overlong, malformed, duplicate or inconsistent records. The producer must use a fixed-size buffer and bounded write/retry behaviour. The concrete wire format, code assignments and maximum size require a current review and a normative versioned decision before implementation.
+
+The process exit code reports transport/process status only. A launcher must not infer a CCAM return or trap from an exit status, signal, timeout or partial record.
+
 ## 11. Formal assurance architecture
 
 Use Lean 4 as the primary machine-checked proof environment, with an explicitly reviewed kernel and no unexamined axioms, unsafe declarations or trusted external oracles in release theorems.
@@ -485,7 +500,7 @@ A final 10/10 verdict requires all of the following, with no unresolved critical
 6. **Security preservation:** authority, taint, secrets and effects survive compilation; residual host assumptions are explicit.
 7. **Resource safety:** fuel, stack, heap, output, IO and compiler work are bounded or explicitly rejected as unknown under the selected profile.
 8. **Optimisation integrity:** assured transformations are proved or independently validated; adversarial fuzzing and regression suites pass.
-9. **Native toolchain integrity:** target ABI, encoding, relocations, object writer, linker, loader and runtime satisfy their contracts.
+9. **Native toolchain integrity:** target ABI, exact full-width terminal-result/trap transport, encoding, relocations, object writer, linker, loader and runtime satisfy their contracts.
 10. **Bootstrap integrity:** C-free self-hosting and independent reproducible bootstrap are demonstrated, with seed trust disclosed.
 11. **Performance:** representative workloads meet published, reproducible performance and resource budgets against stated baselines.
 12. **Portability and usability:** supported targets have independent conformance evidence; diagnostics, tooling and documentation are production quality.
