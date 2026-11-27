@@ -123,7 +123,7 @@ test "aggregate dispatch concatenates immutable bytes and reads byte length" {
     CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
     assert(created.ok);
     CCAMAggregateMachine machine = created.machine;
-    assert(ccam_aggregate_alloc_bytes(machine, 0, "A\\0") == "");
+    assert(ccam_aggregate_alloc_bytes(machine, 0, "A\0") == "");
     assert(ccam_aggregate_alloc_bytes(machine, 1, "B") == "");
     List<int> concat = new List<int>();
     concat.push(2); concat.push(0); concat.push(1);
