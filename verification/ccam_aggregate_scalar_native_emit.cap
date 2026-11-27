@@ -1,0 +1,13 @@
+import "ccam_aggregate_scalar_ir.cap";
+import "ccam_aggregate_register_allocation_validator.cap";
+import "ccam_research_native_x86_scalar_ops.cap";
+import "ccam_research_native_x86_mov_rr.cap";
+struct AGScalarNativeResult { bool ok; List<int> bytes; int result_register; }
+AGScalarNativeResult ag_scalar_native_emit(List<AGScalarInstruction> instructions,AGAllocationResult allocation) {
+    List<int> output=new List<int>();
+    if(instructions.len()==0 || instructions.len()>AG_ALLOC_INTERVAL_LIMIT ||
+        !ag_allocation_validate(ag_scalar_intervals_placeholder,allocation)) {
+        return new AGScalarNativeResult{ok:false,bytes:output,result_register:-1};
+    }
+    return new AGScalarNativeResult{ok:false,bytes:output,result_register:-1};
+}
