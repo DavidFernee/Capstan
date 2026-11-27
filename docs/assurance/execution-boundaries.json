@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "26c5c635f4874cc266aaf6628e2ebfb8bd55ed34",
+  "baseline_commit": "2409357ea777a3875bc608106fce5e42eb233656",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -122,6 +122,8 @@
       "implementation_refinement": false,
       "artifacts": [
         "verification/ccam_native_x64.cap",
+        "verification/ccam_direct_elf.cap",
+        "verification/native_elf64.cap",
         "docs/architecture/CCAM-NATIVE-BACKEND.md",
         "tools/native_driver.cap"
       ],
