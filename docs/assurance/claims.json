@@ -40,8 +40,8 @@
             "docs/assurance/MEMORY-SAFETY.md"
           ],
           "procedure": "Review the indexing and bounds-checking requirements and the stated scope/limitations.",
-          "revision": "7d9b264d8d5a988df1c4da4e0595223de8e55b4c",
-          "notes": "Reviewed at this source snapshot. The output-context checker changes do not alter the memory/indexing bounds contract; exact-head platform validation remains pending."
+          "revision": "cbdeb41f84cd63352b5c6e86b8ad91e622a2c356",
+          "notes": "Reviewed at this source snapshot. The output-context checker changes do not alter the memory/indexing bounds contract; exact-head platform validation remains pending. Artifact inventory refreshed at reconciled source revision; no new passing test result asserted."
         },
         {
           "kind": "test",
@@ -53,13 +53,13 @@
             "tests/run.sh"
           ],
           "procedure": "Run tests/run.sh; inspect the runtime section and the expected CWE-labelled stop for each fixture.",
-          "revision": "6caf6931352fa8b0c69a753250a0d6efe07f69f8",
-          "notes": "The memory/indexing regression fixtures remain present. This record does not assert a passing exact-head test run."
+          "revision": "cbdeb41f84cd63352b5c6e86b8ad91e622a2c356",
+          "notes": "The memory/indexing regression fixtures remain present. This record does not assert a passing exact-head test run. Artifact inventory refreshed at reconciled source revision; no new passing test result asserted."
         }
       ],
       "review": {
-        "reviewed_at": "2026-11-26",
-        "reviewed_commit": "fd705343c72eca501a00ab252d639520ce11b25b"
+        "reviewed_at": "2026-11-27",
+        "reviewed_commit": "cbdeb41f84cd63352b5c6e86b8ad91e622a2c356"
       },
       "covers": [
         "compiler/main.cap",
@@ -118,8 +118,8 @@
             "docs/architecture/CCAM-AGGREGATE-MACHINE-BRIDGE.md"
           ],
           "procedure": "Review the stated profile, proof ladder, exclusions and implementation correspondence boundaries.",
-          "revision": "6caf6931352fa8b0c69a753250a0d6efe07f69f8",
-          "notes": "C-free assurance contract and compatibility boundary, including the experimental aggregate bridge's explicit non-goals; not a claim of completed end-to-end verification."
+          "revision": "cbdeb41f84cd63352b5c6e86b8ad91e622a2c356",
+          "notes": "C-free assurance contract and compatibility boundary, including the experimental aggregate bridge's explicit non-goals; not a claim of completed end-to-end verification. Artifact inventory refreshed at reconciled source revision; no new passing test result asserted."
         },
         {
           "kind": "mechanical-proof",
@@ -133,9 +133,9 @@
             "verification/lean/CapstanVerification/MultiFunction.lean"
           ],
           "procedure": "Build the pinned Lean verification package and inspect the axiom audit. Treat the results only as the restricted mathematical model documented in C-FREE-TYPE-SAFETY.md.",
-          "revision": "db912986be48897fc37f83c7cc8df8552b3fe8ef",
+          "revision": "cbdeb41f84cd63352b5c6e86b8ad91e622a2c356",
           "tool": "Lean 4.19.0",
-          "notes": "Restricted scalar CCAM proofs, including the typed call-frame protocol model; aggregate-heap model work is separately scoped and does not establish implementation correspondence."
+          "notes": "Restricted scalar CCAM proofs, including the typed call-frame protocol model; aggregate-heap model work is separately scoped and does not establish implementation correspondence. Inventory refreshed at reconciled source revision; no new proof execution or concrete refinement asserted."
         },
         {
           "kind": "test",
@@ -147,13 +147,13 @@
             "verification/ccam_core.cap"
           ],
           "procedure": "Run CCAM core and source-lowering tests, then add cross-layer generated-vector, differential and adversarial coverage.",
-          "revision": "6caf6931352fa8b0c69a753250a0d6efe07f69f8",
-          "notes": "Test plan includes CCAM core, source lowering and the repository runner. The runner now also exercises the experimental aggregate bridge; that test does not promote aggregates into the scalar proof profile. No exact-head passing run is asserted."
+          "revision": "cbdeb41f84cd63352b5c6e86b8ad91e622a2c356",
+          "notes": "Test plan includes CCAM core, source lowering and the repository runner. The runner now also exercises the experimental aggregate bridge; that test does not promote aggregates into the scalar proof profile. No exact-head passing run is asserted. Artifact inventory refreshed at reconciled source revision; no new passing test result asserted."
         }
       ],
       "review": {
-        "reviewed_at": "2026-11-26",
-        "reviewed_commit": "db912986be48897fc37f83c7cc8df8552b3fe8ef"
+        "reviewed_at": "2026-11-27",
+        "reviewed_commit": "cbdeb41f84cd63352b5c6e86b8ad91e622a2c356"
       },
       "covers": [
         "verification/lean/CapstanVerification/Core.lean",

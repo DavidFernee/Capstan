@@ -200,6 +200,12 @@ def compare_ccam_vectors(capstan, directory):
 def main(capstan):
     check_record_mutations()
     cases = [
+        ("return 0;", 0, 0),
+        ("return 256;", 0, 256),
+        ("int divisor = 0; if (true || (1 / divisor == 1)) { return 42; } return 0;", 0, 42),
+        ("int divisor = 0; if (false && (1 / divisor == 1)) { return 0; } return 42;", 0, 42),
+        ("int divisor = 0; if (false || (1 / divisor == 1)) { return 0; } return 42;", 71, None),
+        ("int divisor = 0; if (true && (1 / divisor == 1)) { return 0; } return 42;", 71, None),
         ("return (-9223372036854775807 - 1);", 0, -(1 << 63)),
         ("return 9223372036854775807;", 0, (1 << 63) - 1),
         ("return -1000000000000 / 3 * 4 + -13 % 5 - 7;", 0, -1333333333342),
