@@ -178,7 +178,7 @@ this constructor's present scope. -/
 def enterTypedCall
     {p n : Nat}
     (caller : TypedMultiFrame) (rest : List TypedMultiFrame)
-    (maxDepth : Nat) (hwithin : (caller :: rest).length ≤ maxDepth)
+    (maxDepth : Nat)
     (calleeFunctionIndex entryPC : Nat)
     (signature : FunctionSignature p n)
     (arguments : Fin p → Val)
@@ -229,13 +229,12 @@ theorem enterTypedCall_increases_depth
     (hdestination : ReturnDestinationMatches caller.signature.registerTypes
       signature.returnType destination)
     (next : TypedMultiCallStack)
-    (hcall := enterTypedCall caller rest maxDepth hwithin
+    (hcall : enterTypedCall caller rest maxDepth
       calleeFunctionIndex entryPC signature arguments sources hsnapshot
       hsources destination hdestination = .ok next) :
     next.frames.length = (caller :: rest).length + 1 := by
-  unfold enterTypedCall at hcall
   by_cases hdepth : (caller :: rest).length < maxDepth
-  · simp only [hdepth, ↓reduceDIte] at hcall
+  · simp [enterTypedCall, hdepth] at hcall
     cases hcall
     simp
   · simp [hdepth] at hcall
