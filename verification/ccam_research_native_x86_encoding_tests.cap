@@ -1,0 +1,173 @@
+import "ccam_aggregate_native_reg.cap";
+import "ccam_aggregate_byte_buffer.cap";
+import "ccam_aggregate_u32.cap";
+import "ccam_aggregate_patch32.cap";
+import "ccam_aggregate_rel32.cap";
+import "ccam_aggregate_ret.cap";
+import "ccam_research_native_x86_mov_rr.cap";
+import "ccam_research_native_x86_cmp.cap";
+import "ccam_research_native_x86_test.cap";
+import "ccam_research_native_x86_lea.cap";
+import "ccam_research_native_x86_push.cap";
+import "ccam_research_native_x86_pop.cap";
+import "ccam_research_native_x86_jmp_rel32.cap";
+import "ccam_research_native_x86_call_rel32.cap";
+import "ccam_research_native_x86_jcc.cap";
+import "ccam_research_native_x86_prologue.cap";
+import "ccam_research_native_x86_epilogue.cap";
+import "ccam_research_native_x86_stack_adjust.cap";
+import "ccam_research_native_x86_sysv_arg.cap";
+import "ccam_research_native_x86_sysv_return.cap";
+import "ccam_research_native_x86_condition.cap";
+
+test "x86-64 register move emits exact REX and ModRM bytes" {
+    List<int> b = new List<int>();
+    assert(ag_x86_mov_rr(b,0,1));
+    assert(b.len()==3 && b[0]==72 && b[1]==137 && b[2]==200);
+    assert(ag_x86_mov_rr(b,9,10));
+    assert(b[3]==77 && b[4]==137 && b[5]==209);
+}
+test "x86-64 compare and test emit exact operand encodings" {
+    List<int> cmp = new List<int>();
+    assert(ag_x86_cmp(cmp,0,1));
+    assert(cmp.len()==3 && cmp[0]==72 && cmp[1]==57 && cmp[2]==200);
+    List<int> tst = new List<int>();
+    assert(ag_x86_test(tst,0,1));
+    assert(tst.len()==3 && tst[0]==72 && tst[1]==133 && tst[2]==200);
+}
+test "x86-64 LEA handles all special base register encodings" {
+    List<int> rsp = new List<int>();
+    assert(ag_x86_lea(rsp,0,4));
+    assert(rsp.len()==4 && rsp[0]==72 && rsp[1]==141 && rsp[2]==4 && rsp[3]==36);
+    List<int> rbp = new List<int>();
+    assert(ag_x86_lea(rbp,0,5));
+    assert(rbp.len()==4 && rbp[0]==72 && rbp[1]==141 && rbp[2]==69 && rbp[3]==0);
+    List<int> r13 = new List<int>();
+    assert(ag_x86_lea(r13,9,13));
+    assert(r13.len()==4 && r13[0]==77 && r13[1]==141 && r13[2]==77 && r13[3]==0);
+    List<int> ordinary = new List<int>();
+    assert(ag_x86_lea(ordinary,0,3));
+    assert(ordinary.len()==3 && ordinary[2]==3);
+}
+test "x86-64 extended push and pop use REX.B prefix" {
+    List<int> b = new List<int>();
+    assert(ag_x86_push(b,8));
+    assert(ag_x86_pop(b,15));
+    assert(b.len()==4 && b[0]==65 && b[1]==80 && b[2]==65 && b[3]==95);
+}
+test "x86-64 branch and call emit exact rel32 placeholders" {
+    List<int> b = new List<int>();
+    int jump_disp = ag_x86_jmp_rel32(b);
+    assert(jump_disp==1 && b.len()==5);
+    assert(b[0]==233 && b[1]==0 && b[2]==0 && b[3]==0 && b[4]==0);
+    assert(ag_rel32(b,jump_disp,5));
+    assert(b[1]==0 && b[2]==0 && b[3]==0 && b[4]==0);
+    int conditional_disp = b.len();
+    assert(ag_x86_jcc(b,4));
+    assert(b[5]==15 && b[6]==132);
+    assert(ag_rel32(b,conditional_disp+2,b.len()));
+    int call_disp = ag_x86_call_rel32(b);
+    assert(call_disp==12 && b[11]==232);
+}
+test "x86-64 prologue and epilogue bytes are exact" {
+    List<int> b = new List<int>();
+    assert(ag_x86_prologue(b));
+    assert(b.len()==4 && b[0]==85 && b[1]==72 && b[2]==137 && b[3]==229);
+    assert(ag_x86_epilogue(b));
+    assert(b.len()==9 && b[4]==72 && b[5]==137 && b[6]==236 && b[7]==93 && b[8]==195);
+}
+test "x86-64 stack adjustment selects correct immediate width" {
+    List<int> small = new List<int>();
+    assert(ag_x86_stack_adjust(small,16));
+    assert(small.len()==4 && small[0]==72 && small[1]==131 && small[2]==236 && small[3]==16);
+    List<int> large = new List<int>();
+    assert(ag_x86_stack_adjust(large,128));
+    assert(large.len()==7 && large[0]==72 && large[1]==129 && large[2]==236);
+    assert(large[3]==128 && large[4]==0 && large[5]==0 && large[6]==0);
+}
+test "System V argument registers and comparison conditions are mapped" {
+    assert(ag_x86_sysv_arg(0)==7);
+    assert(ag_x86_sysv_arg(1)==6);
+    assert(ag_x86_sysv_arg(2)==2);
+    assert(ag_x86_sysv_arg(3)==1);
+    assert(ag_x86_sysv_arg(4)==8);
+    assert(ag_x86_sysv_arg(5)==9);
+    assert(ag_x86_sysv_arg(6)==-1);
+    assert(ag_x86_sysv_return()==0);
+    assert(ag_x86_condition(61)==4);
+    assert(ag_x86_condition(33)==5);
+    assert(ag_x86_condition(60)==12);
+    assert(ag_x86_condition(62)==15);
+    assert(ag_x86_condition(43)==-1);
+}
+test "native emitter rejects invalid registers without partial output" {
+    List<int> b = new List<int>();
+    assert(!ag_x86_mov_rr(b,16,0));
+    assert(!ag_x86_cmp(b,0,-1));
+    assert(!ag_x86_test(b,0,16));
+    assert(!ag_x86_lea(b,16,4));
+    assert(!ag_x86_push(b,16));
+    assert(!ag_x86_pop(b,-1));
+    assert(b.len()==0);
+}
+test "rel32 patcher handles forward and backward branches" {
+    List<int> b = new List<int>();
+    assert(ag_u32(b,0));
+    assert(ag_u32(b,0));
+    assert(ag_u32(b,0));
+    assert(ag_rel32(b,0,12));
+    assert(b[0]==8 && b[1]==0 && b[2]==0 && b[3]==0);
+    assert(ag_rel32(b,4,0));
+    assert(b[4]==248 && b[5]==255 && b[6]==255 && b[7]==255);
+}
+
+test "x86-64 MOV register encoding covers all 256 register pairs" {
+    for (int dst=0; dst<16; dst+=1) {
+        for (int src=0; src<16; src+=1) {
+            List<int> bytes = new List<int>();
+            assert(ag_x86_mov_rr(bytes,dst,src));
+            int rex = 72 + (src/8)*4 + dst/8;
+            int modrm = 192 + (src%8)*8 + dst%8;
+            assert(bytes.len()==3 && bytes[0]==rex && bytes[1]==137 && bytes[2]==modrm);
+        }
+    }
+}
+test "x86-64 LEA base encoding covers all sixteen registers" {
+    for (int base=0; base<16; base+=1) {
+        List<int> bytes = new List<int>();
+        assert(ag_x86_lea(bytes,9,base));
+        int low = base%8;
+        int rex = 72 + 4 + base/8;
+        assert(bytes[0]==rex && bytes[1]==141);
+        if (low==4) {
+            assert(bytes.len()==4 && bytes[2]==12 && bytes[3]==36);
+        } else if (low==5) {
+            assert(bytes.len()==4 && bytes[2]==77 && bytes[3]==0);
+        } else {
+            assert(bytes.len()==3 && bytes[2]==8+low);
+        }
+    }
+}
+
+test "x86-64 conditional emitter rejects invalid conditions atomically" {
+    List<int> bytes = new List<int>();
+    assert(!ag_x86_jcc(bytes,-1));
+    assert(!ag_x86_jcc(bytes,16));
+    assert(bytes.len()==0);
+    assert(ag_x86_jcc(bytes,15));
+    assert(bytes.len()==6 && bytes[0]==15 && bytes[1]==143);
+}
+test "x86-64 relocation helpers reject invalid ranges without mutation" {
+    List<int> bytes = new List<int>();
+    assert(ag_u32(bytes,0));
+    assert(ag_u32(bytes,0));
+    int before0=bytes[0]; int before4=bytes[4];
+    assert(!ag_rel32(bytes,-1,8));
+    assert(!ag_rel32(bytes,6,8));
+    assert(!ag_rel32(bytes,0,9));
+    assert(!ag_patch32(bytes,-1,1));
+    assert(!ag_patch32(bytes,5,1));
+    assert(!ag_patch32(bytes,0,-1));
+    assert(!ag_patch32(bytes,0,4294967296));
+    assert(bytes.len()==8 && bytes[0]==before0 && bytes[4]==before4);
+}
