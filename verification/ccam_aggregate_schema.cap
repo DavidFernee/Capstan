@@ -18,7 +18,8 @@ bool ag_schema_register(List<int> kinds, int index, int expected) {
 // 1 array_get [destination,array,index]; 2 array_set [value,array,index];
 // 3 array_len [destination,array]; 4 byte_get [destination,bytes,index];
 // 5 array_alloc [destination,reference-element-type-id,capacity];
-// 6 array_append [array,value]. Immediate operands are bounded integers.
+// 6 array_append [array,value]; 7 bytes_len [destination,bytes];
+// 8 bytes_concat [destination,left,right]. Immediate operands are bounded integers.
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
     if (kinds.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(element_kind)) { return false; }
     if (opcode == 1 || opcode == 2 || opcode == 4) {
@@ -44,6 +45,17 @@ bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int>
         return ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
             ag_schema_register(kinds, operands[1], element_kind);
     }
+    if (opcode == 7) {
+        if (operands.len() != 2 || element_kind != AG_SCHEMA_INT) { return false; }
+        return ag_schema_register(kinds, operands[0], AG_SCHEMA_INT) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+    }
+    if (opcode == 8) {
+        if (operands.len() != 3 || element_kind != AG_SCHEMA_REF) { return false; }
+        return ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
+    }
     return false;
 }
 
@@ -65,6 +77,12 @@ test "aggregate schema accepts typed dynamic indices and array lifecycle" {
     append.push(1); append.push(0);
     assert(ag_schema_operands(kinds, 6, AG_SCHEMA_INT, append));
     assert(!ag_schema_operands(kinds, 7, AG_SCHEMA_INT, indexed));
+    List<int> byte_length = new List<int>();
+    byte_length.push(0); byte_length.push(1);
+    assert(ag_schema_operands(kinds, 7, AG_SCHEMA_INT, byte_length));
+    List<int> byte_concat = new List<int>();
+    byte_concat.push(1); byte_concat.push(1); byte_concat.push(1);
+    assert(ag_schema_operands(kinds, 8, AG_SCHEMA_REF, byte_concat));
     assert(!ag_schema_operands(kinds, 5, AG_SCHEMA_INT, new List<int>()));
 }
 
