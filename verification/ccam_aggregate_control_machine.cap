@@ -4,12 +4,13 @@ struct AGControlInstruction { int opcode; int destination; int left; int right; 
 struct AGControlResult { bool ok; int value; int steps; }
 bool ag_control_instruction_valid(AGControlInstruction ins,int pc,int count) {
     if(pc<0 || pc>=count || count>AG_CONTROL_LIMIT || ins.destination<0 || ins.destination>=AG_CONTROL_VARIABLE_LIMIT) { return false; }
-    if(ins.opcode==1) { return ins.immediate>=-2147483648 && ins.immediate<=2147483647; }
-    if(ins.opcode==2 || ins.opcode==3 || ins.opcode==4 || ins.opcode==5) {
+    if(ins.opcode==1) { return true; }
+    if(ins.opcode>=2 && ins.opcode<=7) {
         return ins.left>=0 && ins.left<AG_CONTROL_VARIABLE_LIMIT && ins.right>=0 && ins.right<AG_CONTROL_VARIABLE_LIMIT;
     }
-    if(ins.opcode==6 || ins.opcode==7) { return ins.target>=0 && ins.target<count; }
-    return ins.opcode==8 || ins.opcode==9;
+    if(ins.opcode==8) { return ins.left>=0 && ins.left<AG_CONTROL_VARIABLE_LIMIT && ins.target>=0 && ins.target<count; }
+    if(ins.opcode==9) { return ins.target>=0 && ins.target<count; }
+    return ins.opcode==10;
 }
 AGControlResult ag_control_execute(List<AGControlInstruction> code,int fuel,int variable_count) {
     List<int> variables=new List<int>();
@@ -24,16 +25,15 @@ AGControlResult ag_control_execute(List<AGControlInstruction> code,int fuel,int 
         if(!ag_control_instruction_valid(ins,pc,code.len()) || ins.destination>=variable_count) { return new AGControlResult{ok:false,value:0,steps:steps}; }
         steps+=1;
         if(ins.opcode==1) { variables[ins.destination]=ins.immediate; pc+=1; continue; }
-        if(ins.opcode>=2 && ins.opcode<=5) {
+        if(ins.opcode>=2 && ins.opcode<=7) {
             if(ins.left>=variable_count || ins.right>=variable_count) { return new AGControlResult{ok:false,value:0,steps:steps}; }
-            AGCheckedInt result=ag_arithmetic(ins.opcode+1,variables[ins.left],variables[ins.right]);
+            AGCheckedInt result=ag_arithmetic(ins.opcode,variables[ins.left],variables[ins.right]);
             if(!result.ok) { return new AGControlResult{ok:false,value:0,steps:steps}; }
             variables[ins.destination]=result.value; pc+=1; continue;
         }
-        if(ins.opcode==6) { pc=variables[ins.left]!=0?ins.target:pc+1; continue; }
-        if(ins.opcode==7) { pc=ins.target; continue; }
-        if(ins.opcode==8) { return new AGControlResult{ok:true,value:variables[ins.destination],steps:steps}; }
-        if(ins.opcode==9) { pc+=1; continue; }
+        if(ins.opcode==8) { if(ins.left>=variable_count) { return new AGControlResult{ok:false,value:0,steps:steps}; } pc=variables[ins.left]==0?ins.target:pc+1; continue; }
+        if(ins.opcode==9) { pc=ins.target; continue; }
+        if(ins.opcode==10) { return new AGControlResult{ok:true,value:variables[ins.destination],steps:steps}; }
         return new AGControlResult{ok:false,value:0,steps:steps};
     }
     return new AGControlResult{ok:false,value:0,steps:steps};
