@@ -54,12 +54,15 @@ G-01 reconcile one-semantic-authority architecture
   -> G-02 source-to-CCAM semantics and lowering contracts
   -> G-04/G-05/G-06 CCAM profile, decoder and calls
   -> G-07/G-08 memory and object ABI
-  -> G-09/G-10/G-11 native backend, object and ABI
+  -> G-11/G-19 native ABI and terminal-result contract
+  -> G-09/G-10 native backend and object emission
   -> G-03/G-12 end-to-end refinement and validated optimisation
   -> G-13/G-14/G-15 resource, authority and GC assurance
   -> G-16 bootstrap
-  -> G-17/G-18/G-19 release evidence
+  -> G-17/G-18 release evidence
 ```
+
+See the [programme crosswalk](../../programme/native-compiler/ARCHITECTURE-CROSSWALK.md) for work packages, gates and evidence references.
 
 Some work can proceed in parallel only where interfaces are frozen and recorded. In particular, native instruction encoding experiments may continue, but they cannot establish a production ABI or memory model by themselves.
 
