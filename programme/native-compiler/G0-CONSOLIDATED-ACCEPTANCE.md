@@ -24,3 +24,13 @@ Decision: HOLD pending recorded acceptance. This register supersedes stale statu
 5. Update gate decision in reviewed PR. G1–G7 implementation obligations remain open as appropriate.
 
 No new build executed, independent reviewer signature obtained, or gate approval asserted by this preparer. Do not fabricate missing record fields.
+
+
+## Verified provenance and tree equivalence — 2026-11-27
+Evidence verifier: ChatGPT (repository metadata and CI log inspection; not an independent build operator or programme approver).
+
+#583 merged at `02328b31a555f282878574b2f65ee68dc2751a2a`; redundant #584 closed unmerged. The tested synthetic merge `d8dbb7c41236b77e35ea3868c4c50a8d78404775` and integrated #583 commit both have exact Git root tree `a6d553ef83f09c87801c2de65e21c733b91ae9a5` and ordered parents `c6cfc03ce0aa7217813cae728058f5abfcd65283`, `b2d0a29512214823ee5ea03697acddf8cbf66f66`. Verified directly using Git commit objects (https://api.github.com/repos/DavidFernee/Capstan/git/commits/<sha>) and CI job 140423820894, whose git rev-parse output records the same tree and successful clean checkout check. Both changed file blobs also match: .github/workflows/ci.yml `4fdc4b933e59e2a91fc38c7df841ff9163b20045`; docs/assurance/execution-boundaries.json `3f5fb0725720db410b7f1fa9bced897e105ef1ed`.
+
+CI https://github.com/DavidFernee/Capstan/actions/runs/45974821039: Ubuntu GCC, Ubuntu Clang, macOS Clang and supply-chain jobs passed. Formal 45974821025 and CodeQL 45974821002 passed. Retained provenance artifact IDs: 15186880963 (GCC), 15186712041 (Linux Clang), 15186098618 (macOS Clang). GCC log records GCC 15.2.0, Python 3.14.4, GNU Make 4.4.1, Git 2.56.1, 562 passed/0 failed, successful bootstrap fixpoint and identical stage2.c/stage3.c SHA-256 `ad9b87ea02f3060c71d3719aa4d826d366cda9eb57138448bf9dfa3578691c4b`.
+
+G0-06: exact integrated source-tree identity and provenance infrastructure established for #583 candidate. G0-07: bind successful CI to identical integrated tree; commit-sensitive outputs and independent clean reproduction remain distinct obligations. This checkpoint supersedes the earlier pending #583/#584 integration and tree-equivalence status only. No claim that later main revisions have the same tree, no fresh build executed, no full independent reviewer disposition or gate acceptance asserted. Overall HOLD remains pending remaining required evidence and approval.
