@@ -886,6 +886,13 @@ else
   bad "CCAM x86-64 spill memory encoding" "$out"
 fi
 
+section "Capstan-native verification: allocator spill lowering"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_spill_lowering_tests.cap" 2>&1)"; then
+  ok "allocator spill assignments lower to validated RBP-relative loads and stores"
+else
+  bad "CCAM spill lowering" "$out"
+fi
+
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
 
