@@ -88,7 +88,7 @@ else
 fi
 
 section "Capstan-native verification: candidate aggregate execution and validation"
-for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source byte_buffer u16 u32 u64 patch32 rel32 native_reg rex modrm movimm alu jump ret syscall exit_code padding elf_ident elf_header elf_segment elf_image native_smoke operator_stack expr_reduce checked_add checked_sub checked_mul checked_div arithmetic scalar_machine native_driver native_source_smoke runtime_budget runtime_region runtime_align runtime_span runtime_copy runtime_zero runtime_smoke native_reloc native_link; do
+for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source byte_buffer u16 u32 u64 patch32 rel32 native_reg rex modrm movimm alu jump ret syscall exit_code padding elf_ident elf_header elf_segment elf_image native_smoke operator_stack expr_reduce checked_add checked_sub checked_mul checked_div arithmetic scalar_machine native_driver native_source_smoke expression_pipeline runtime_budget runtime_region runtime_align runtime_span runtime_copy runtime_zero runtime_smoke native_reloc native_link; do
   if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_${module}.cap" 2>&1)"; then
     ok "aggregate candidate $module"
   else
@@ -138,6 +138,46 @@ else
   bad "CCAM-SF-P canonical vector conformance" "$out"
 fi
 
+
+section "Capstan-native verification: CCAM v0.2 scratch reservation arithmetic prototype"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_reservation.cap" 2>&1)"; then
+  ok "CCAM scratch reservation arithmetic, alignment, capacity and failure atomicity"
+else
+  bad "CCAM scratch reservation arithmetic prototype" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 scratch region lifecycle model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_region_model.cap" 2>&1)"; then
+  ok "CCAM region admission, ownership, generation invalidation, bounded views and failure atomicity"
+else
+  bad "CCAM scratch region lifecycle model" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 bounded multi-region byte store"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_store_model.cap" 2>&1)"; then
+  ok "CCAM bounded region table, aggregate admission, byte storage, typed scalar access and lifecycle"
+else
+  bad "CCAM multi-region byte store model" "$out"
+fi
+if out="$($PY "$ROOT/tests/keel/ccam_memory_oracle.py" "$C" "$CC" $WFLAGS 2>&1)"; then
+  ok "$out"
+else
+  bad "CCAM independent byte-store oracle" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 region-capability CFG lifecycle validator"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_flow_validator.cap" 2>&1)"; then
+  ok "CCAM bounded region lifecycle dataflow, linear overwrite, CFG joins and return checks"
+else
+  bad "CCAM region-capability CFG lifecycle validator" "$out"
+fi
+
+section "Capstan-native verification: CCAM v0.2 frame-unwind cleanup model"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_memory_unwind_model.cap" 2>&1)"; then
+  ok "CCAM frame-exit cleanup, full-capacity wiping, owner isolation and failure-atomic accounting"
+else
+  bad "CCAM frame-unwind cleanup model" "$out"
+fi
 
 section "Capstan-native verification: CCAM multi-function calls and frames"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_calls.cap" "$ROOT/verification/ccam_initial_state_tests.cap" 2>&1)"; then
@@ -852,6 +892,13 @@ if (( FULL )); then
 
   section "bench"
   if out="$("$ROOT/bench/run.sh" 2>&1)"; then ok "benchmarks within limit"; echo "$out" | sed 's/^/        /'; else bad "bench" "$out"; fi
+fi
+
+section "Capstan-native verification: exact x86-64 emitter encodings and relocations"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_research_native_x86_encoding_tests.cap" 2>&1)"; then
+  ok "exact REX/ModRM/SIB encodings, branches, calls, stack frame and relocation boundaries"
+else
+  bad "CCAM exact x86-64 emitter verification" "$out"
 fi
 
 echo
