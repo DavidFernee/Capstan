@@ -26,3 +26,6 @@ import NativeMemoryLifecycle
 import NativeReachability
 import NativeHandleReachability
 import NativeBoundedMarker
+
+import CapstanVerification.CredentialConfinement
+import CapstanVerification.CredentialVerifierPolicy
