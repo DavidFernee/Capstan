@@ -34,6 +34,45 @@ bool ag_interval_set_valid(List<AGLiveInterval> intervals) {
     }
     return true;
 }
+bool ag_interval_before(AGLiveInterval a,AGLiveInterval b) {
+    if(a.start!=b.start) { return a.start<b.start; }
+    if(a.end!=b.end) { return a.end<b.end; }
+    return a.virtual_id<b.virtual_id;
+}
+void ag_sort_intervals(List<AGLiveInterval> values) {
+    int n=values.len();
+    List<AGLiveInterval> scratch=new List<AGLiveInterval>();
+    for(int i=0;i<n;i+=1) { scratch.push(values[i]); }
+    // Bottom-up stable merge sort: O(n log n), with a fixed n <= interval limit.
+    int width=1;
+    while(width<n) {
+        int start=0;
+        while(start<n) {
+            int middle=start+width;
+            if(middle>n) { middle=n; }
+            int finish=middle+width;
+            if(finish>n) { finish=n; }
+            int left=start;
+            int right=middle;
+            int output=start;
+            while(left<middle && right<finish) {
+                if(ag_interval_before(values[left],values[right])) {
+                    scratch[output]=values[left];
+                    left+=1;
+                } else {
+                    scratch[output]=values[right];
+                    right+=1;
+                }
+                output+=1;
+            }
+            while(left<middle) { scratch[output]=values[left]; left+=1; output+=1; }
+            while(right<finish) { scratch[output]=values[right]; right+=1; output+=1; }
+            start=finish;
+        }
+        for(int i=0;i<n;i+=1) { values[i]=scratch[i]; }
+        width*=2;
+    }
+}
 int ag_assignment_index(List<AGRegisterAssignment> assignments,int virtual_id) {
     for(int i=0;i<assignments.len();i+=1) {
         if(assignments[i].virtual_id==virtual_id) { return i; }
@@ -56,16 +95,7 @@ AGAllocationResult ag_linear_scan_allocate(List<AGLiveInterval> input) {
         return new AGAllocationResult{ok:false,spill_count:0,assignments:assignments};
     }
     for(int i=0;i<input.len();i+=1) { ordered.push(input[i]); }
-    // Stable insertion sort by start, then end, then virtual id.
-    for(int i=1;i<ordered.len();i+=1) {
-        AGLiveInterval key=ordered[i]; int j=i-1;
-        while(j>=0 && (ordered[j].start>key.start ||
-            (ordered[j].start==key.start && ordered[j].end>key.end) ||
-            (ordered[j].start==key.start && ordered[j].end==key.end && ordered[j].virtual_id>key.virtual_id))) {
-            ordered[j+1]=ordered[j]; j-=1;
-        }
-        ordered[j+1]=key;
-    }
+    ag_sort_intervals(ordered);
     for(int n=0;n<ordered.len();n+=1) {
         AGLiveInterval current=ordered[n];
         List<AGLiveInterval> survivors=new List<AGLiveInterval>();
