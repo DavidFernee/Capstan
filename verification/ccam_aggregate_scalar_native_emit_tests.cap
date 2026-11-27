@@ -1,0 +1,45 @@
+import "ccam_aggregate_scalar_native_emit.cap";
+test "scalar native emitter lowers constants and addition" {
+    List<AGScalarInstruction> code=new List<AGScalarInstruction>();
+    code.push(new AGScalarInstruction{opcode:1,dest:0,left:-1,right:-1,immediate:20});
+    code.push(new AGScalarInstruction{opcode:1,dest:1,left:-1,right:-1,immediate:25});
+    code.push(new AGScalarInstruction{opcode:2,dest:2,left:0,right:1,immediate:0});
+    AGScalarNativeResult result=ag_scalar_native_emit(code);
+    assert(result.ok && result.bytes.len()==23);
+    assert(result.result_register>=0 && result.result_register<16);
+    assert(result.bytes[0]==72 && result.bytes[1]==184 && result.bytes[2]==20);
+    assert(result.bytes[10]==72 && result.bytes[11]==184 && result.bytes[12]==25);
+}
+test "scalar native emitter lowers subtraction and multiplication" {
+    List<AGScalarInstruction> code=new List<AGScalarInstruction>();
+    code.push(new AGScalarInstruction{opcode:1,dest:0,left:-1,right:-1,immediate:9});
+    code.push(new AGScalarInstruction{opcode:1,dest:1,left:-1,right:-1,immediate:3});
+    code.push(new AGScalarInstruction{opcode:3,dest:2,left:0,right:1,immediate:0});
+    code.push(new AGScalarInstruction{opcode:4,dest:3,left:2,right:1,immediate:0});
+    AGScalarNativeResult result=ag_scalar_native_emit(code);
+    assert(result.ok && result.result_register>=0);
+    assert(result.bytes.len()>20);
+}
+test "scalar native emitter rejects division until constrained lowering exists" {
+    List<AGScalarInstruction> code=new List<AGScalarInstruction>();
+    code.push(new AGScalarInstruction{opcode:1,dest:0,left:-1,right:-1,immediate:9});
+    code.push(new AGScalarInstruction{opcode:1,dest:1,left:-1,right:-1,immediate:3});
+    code.push(new AGScalarInstruction{opcode:5,dest:2,left:0,right:1,immediate:0});
+    AGScalarNativeResult result=ag_scalar_native_emit(code);
+    assert(!result.ok && result.bytes.len()==0 && result.result_register==-1);
+}
+test "scalar native emitter rejects programs requiring spills atomically" {
+    List<AGScalarInstruction> code=new List<AGScalarInstruction>();
+    for(int i=0;i<10;i+=1) {
+        code.push(new AGScalarInstruction{opcode:1,dest:i,left:-1,right:-1,immediate:i+1});
+    }
+    int next=10;
+    code.push(new AGScalarInstruction{opcode:2,dest:next,left:0,right:1,immediate:0});
+    next+=1;
+    for(int i=2;i<10;i+=1) {
+        code.push(new AGScalarInstruction{opcode:2,dest:next,left:next-1,right:i,immediate:0});
+        next+=1;
+    }
+    AGScalarNativeResult result=ag_scalar_native_emit(code);
+    assert(!result.ok && result.bytes.len()==0);
+}
