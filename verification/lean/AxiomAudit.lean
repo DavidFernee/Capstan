@@ -281,6 +281,11 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.enterTypedCall
 #print axioms CapstanVerification.enterTypedCall_increases_depth
 #print axioms CapstanVerification.enterTypedCall_preserves_continuation
+#print axioms CapstanVerification.TypedStackReturnOutcome
+#print axioms CapstanVerification.returnTypedValueOnStack
+#print axioms CapstanVerification.returnTypedVoidOnStack
+#print axioms CapstanVerification.returnTypedValueOnStack_entry_halts_in_place
+#print axioms CapstanVerification.returnTypedVoidOnStack_entry_halts_in_place
 
 -- Process-lifetime aggregate arena: state-in/state-out allocation and typed records.
 #print axioms CapstanVerification.emptyAggregateHeap
