@@ -879,6 +879,13 @@ else
   bad "CCAM stack-frame layout" "$out"
 fi
 
+section "Capstan-native verification: x86-64 spill loads and stores"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_research_native_x86_spill_memory_tests.cap" 2>&1)"; then
+  ok "RBP-relative spill load/store disp8 and disp32 encodings"
+else
+  bad "CCAM x86-64 spill memory encoding" "$out"
+fi
+
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
 
