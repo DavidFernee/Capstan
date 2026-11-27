@@ -1,0 +1,154 @@
+import "ccam_aggregate_expression.cap";
+import "ccam_aggregate_token.cap";
+import "ccam_aggregate_schema.cap";
+import "ccam_aggregate_arithmetic.cap";
+import "ccam_aggregate_native_reg.cap";
+import "ccam_aggregate_byte_buffer.cap";
+import "ccam_aggregate_u32.cap";
+import "ccam_aggregate_patch32.cap";
+import "ccam_aggregate_rel32.cap";
+import "ccam_aggregate_character.cap";
+import "ccam_research_expr_arity.cap";
+import "ccam_research_expr_associativity.cap";
+import "ccam_research_expr_ast_append.cap";
+import "ccam_research_expr_ast_capacity.cap";
+import "ccam_research_expr_bitwise_ops.cap";
+import "ccam_research_expr_boolean_normalize.cap";
+import "ccam_research_expr_comment_scan.cap";
+import "ccam_research_expr_compare_ops.cap";
+import "ccam_research_expr_constant_fold.cap";
+import "ccam_research_expr_constant_range.cap";
+import "ccam_research_expr_delimiter_stack.cap";
+import "ccam_research_expr_division_guard.cap";
+import "ccam_research_expr_escape_validate.cap";
+import "ccam_research_expr_identifier_lexeme.cap";
+import "ccam_research_expr_integer_lexeme.cap";
+import "ccam_research_expr_ir_alignment.cap";
+import "ccam_research_expr_ir_block_id.cap";
+import "ccam_research_expr_ir_block_limit.cap";
+import "ccam_research_expr_ir_branch_target.cap";
+import "ccam_research_expr_ir_call_arity.cap";
+import "ccam_research_expr_ir_const_width.cap";
+import "ccam_research_expr_ir_dominance.cap";
+import "ccam_research_expr_ir_edge.cap";
+import "ccam_research_expr_ir_effect.cap";
+import "ccam_research_expr_ir_function_limit.cap";
+import "ccam_research_expr_ir_instruction_limit.cap";
+import "ccam_research_expr_ir_phi_arity.cap";
+import "ccam_research_expr_ir_provenance.cap";
+import "ccam_research_expr_ir_return_type.cap";
+import "ccam_research_expr_ir_switch_count.cap";
+import "ccam_research_expr_ir_switch_unique.cap";
+import "ccam_research_expr_ir_terminator.cap";
+import "ccam_research_expr_ir_type_id.cap";
+import "ccam_research_expr_ir_use_def.cap";
+import "ccam_research_expr_ir_validate_limits.cap";
+import "ccam_research_expr_ir_value_id.cap";
+import "ccam_research_expr_keyword.cap";
+import "ccam_research_expr_literal_range.cap";
+import "ccam_research_expr_modulo_guard.cap";
+import "ccam_research_expr_node_bounds.cap";
+import "ccam_research_expr_operator_class.cap";
+import "ccam_research_expr_parser_budget.cap";
+import "ccam_research_expr_recursion_guard.cap";
+import "ccam_research_expr_recursion_leave.cap";
+import "ccam_research_expr_register_claim.cap";
+import "ccam_research_expr_register_free.cap";
+import "ccam_research_expr_register_liveness.cap";
+import "ccam_research_expr_register_release.cap";
+import "ccam_research_expr_shift_guard.cap";
+import "ccam_research_expr_string_scan.cap";
+import "ccam_research_expr_token_cursor.cap";
+import "ccam_research_expr_token_sequence.cap";
+import "ccam_research_expr_token_span.cap";
+import "ccam_research_expr_tree_order.cap";
+import "ccam_research_expr_type_compat.cap";
+import "ccam_research_expr_type_result.cap";
+import "ccam_research_expr_unary.cap";
+import "ccam_research_expr_utf8_cont.cap";
+import "ccam_research_expr_utf8_lead.cap";
+import "ccam_research_expr_utf8_validate.cap";
+import "ccam_research_native_x86_call_rel32.cap";
+import "ccam_research_native_x86_cmp.cap";
+import "ccam_research_native_x86_condition.cap";
+import "ccam_research_native_x86_epilogue.cap";
+import "ccam_research_native_x86_imm32.cap";
+import "ccam_research_native_x86_int3.cap";
+import "ccam_research_native_x86_jcc.cap";
+import "ccam_research_native_x86_jmp_rel32.cap";
+import "ccam_research_native_x86_lea.cap";
+import "ccam_research_native_x86_mov_rr.cap";
+import "ccam_research_native_x86_nop.cap";
+import "ccam_research_native_x86_patch_branch.cap";
+import "ccam_research_native_x86_patch_call.cap";
+import "ccam_research_native_x86_pop.cap";
+import "ccam_research_native_x86_prologue.cap";
+import "ccam_research_native_x86_push.cap";
+import "ccam_research_native_x86_stack_adjust.cap";
+import "ccam_research_native_x86_sysv_arg.cap";
+import "ccam_research_native_x86_sysv_return.cap";
+import "ccam_research_native_x86_test.cap";
+
+// Compatibility adapter: the research AST append helper used the earlier
+// abbreviated name; keep the adapter explicit until the module is reconciled.
+bool ag_expr_node_valid(AGExpression node, int index) {
+    return ag_expression_node_valid(node, index);
+}
+
+test "research expression helpers enforce precedence and associativity" {
+    assert(ag_operator_class(43) == 1);
+    assert(ag_operator_class(42) == 2);
+    assert(ag_operator_arity(43) == 2);
+    assert(ag_operator_arity(33) == 1);
+    assert(ag_should_reduce(42, 43));
+    assert(!ag_should_reduce(43, 42));
+    assert(ag_compare_opcode(60) != 0);
+    assert(ag_bitwise_opcode(38) != 0);
+    assert(ag_escape_valid(34));
+    assert(!ag_escape_valid(65));
+}
+
+test "research AST helpers reject forward and out-of-range references" {
+    List<AGExpression> nodes = new List<AGExpression>();
+    AGExpression leaf = new AGExpression{kind:1,value:7,left:-1,right:-1};
+    assert(ag_ast_append(nodes, leaf));
+    assert(nodes.len() == 1);
+    assert(!ag_ast_append(nodes, new AGExpression{kind:2,value:43,left:1,right:0}));
+    assert(!ag_ast_append(nodes, new AGExpression{kind:2,value:43,left:-2,right:0}));
+    assert(ag_expr_tree_order(nodes));
+}
+
+test "research IR helpers enforce identifier and resource boundaries" {
+    assert(ag_ir_alignment(1));
+    assert(ag_ir_alignment(4096));
+    assert(!ag_ir_alignment(3));
+    assert(ag_ir_block_id_valid(0,1));
+    assert(!ag_ir_block_id_valid(1,1));
+    assert(ag_ir_instruction_limit(65535,1));
+    assert(!ag_ir_instruction_limit(65536,1));
+    assert(ag_ir_const_width(64));
+    assert(!ag_ir_const_width(128));
+    assert(ag_ir_phi_arity(2,2));
+    assert(!ag_ir_phi_arity(1,2));
+    assert(ag_ir_type_id(AG_SCHEMA_INT));
+    assert(!ag_ir_type_id(0));
+}
+
+test "research arithmetic guards reject undefined integer operations" {
+    assert(ag_division_safe(10,2));
+    assert(!ag_division_safe(10,0));
+    assert(!ag_division_safe(-2147483648,-1));
+    assert(ag_modulo_safe(10,3));
+    assert(!ag_modulo_safe(10,0));
+}
+
+test "research x86 register and byte helpers are bounded" {
+    List<int> bytes = new List<int>();
+    assert(ag_x86_mov_rr(bytes,0,1));
+    assert(bytes.len() == 3);
+    int before = bytes.len();
+    assert(!ag_x86_mov_rr(bytes,16,1));
+    assert(bytes.len() == before);
+    assert(ag_x86_jmp_rel32(bytes) >= 0);
+    assert(bytes.len() == before + 5);
+}
