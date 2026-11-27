@@ -39,6 +39,43 @@ int main() {
     if (!(r.ok && r.value == 1)) { return 1; }
     r = ccam_rem(CCAM_I64_MIN, -1);
     if (!(r.ok && r.value == 0)) { return 1; }
+    // G1 B01/B02: signed boundary and competing arithmetic faults.
+    r = ccam_add(CCAM_I64_MIN, 0);
+    if (!(r.ok && r.value == CCAM_I64_MIN)) { return 1; }
+    r = ccam_add(CCAM_I64_MIN, -1);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_add(CCAM_I64_MAX, CCAM_I64_MIN);
+    if (!(r.ok && r.value == -1)) { return 1; }
+    r = ccam_sub(0, CCAM_I64_MIN);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_sub(CCAM_I64_MIN, CCAM_I64_MIN);
+    if (!(r.ok && r.value == 0)) { return 1; }
+    r = ccam_sub(CCAM_I64_MAX, CCAM_I64_MAX);
+    if (!(r.ok && r.value == 0)) { return 1; }
+    r = ccam_mul(0, CCAM_I64_MIN);
+    if (!(r.ok && r.value == 0)) { return 1; }
+    r = ccam_mul(-1, CCAM_I64_MIN);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_mul(CCAM_I64_MAX, 1);
+    if (!(r.ok && r.value == CCAM_I64_MAX)) { return 1; }
+    r = ccam_mul(3037000499, 3037000499);
+    if (!(r.ok && r.value == 9223372030926249001)) { return 1; }
+    r = ccam_mul(3037000500, 3037000500);
+    if (!(!r.ok && r.trap == "integer_overflow")) { return 1; }
+    r = ccam_div(CCAM_I64_MIN, 0);
+    if (!(!r.ok && r.trap == "division_by_zero")) { return 1; }
+    r = ccam_div(CCAM_I64_MIN, CCAM_I64_MIN);
+    if (!(r.ok && r.value == 1)) { return 1; }
+    r = ccam_div(CCAM_I64_MAX, CCAM_I64_MIN);
+    if (!(r.ok && r.value == 0)) { return 1; }
+    r = ccam_div(7, -3);
+    if (!(r.ok && r.value == -2)) { return 1; }
+    r = ccam_rem(CCAM_I64_MIN, 0);
+    if (!(!r.ok && r.trap == "division_by_zero")) { return 1; }
+    r = ccam_rem(CCAM_I64_MIN, CCAM_I64_MIN);
+    if (!(r.ok && r.value == 0)) { return 1; }
+    r = ccam_rem(CCAM_I64_MAX, CCAM_I64_MIN);
+    if (!(r.ok && r.value == CCAM_I64_MAX)) { return 1; }
     println("CCAM Capstan arithmetic: ok");
     return 0;
 }
