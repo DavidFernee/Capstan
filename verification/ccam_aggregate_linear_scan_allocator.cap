@@ -25,13 +25,12 @@ bool ag_interval_valid(AGLiveInterval interval) {
 }
 bool ag_interval_set_valid(List<AGLiveInterval> intervals) {
     if(intervals.len()==0 || intervals.len()>AG_ALLOC_INTERVAL_LIMIT) { return false; }
-    List<bool> seen=new List<bool>();
-    for(int i=0;i<AG_ALLOC_VIRTUAL_LIMIT;i+=1) { seen.push(false); }
+    Map<bool> seen=new Map<bool>();
     for(int i=0;i<intervals.len();i+=1) {
         if(!ag_interval_valid(intervals[i])) { return false; }
-        int id=intervals[i].virtual_id;
-        if(seen[id]) { return false; }
-        seen[id]=true;
+        string id_key=int_to_str(intervals[i].virtual_id);
+        if(seen.has(id_key)) { return false; }
+        seen.set(id_key,true);
     }
     return true;
 }
