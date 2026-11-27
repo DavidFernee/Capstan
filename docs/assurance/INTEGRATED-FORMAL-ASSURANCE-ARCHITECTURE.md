@@ -21,7 +21,7 @@ The evidence vocabulary remains strict: **model theorem**, **implementation corr
 
 ## 2. Repository inventory and existing proof assets
 
-The review found 37 Lean source files in the mainline tree. They are not all parts of one connected execution semantics.
+The review found 37 Lean source files at the pinned mainline baseline. They are not all parts of one connected execution semantics. Subsequent open PRs #547 and #549 propose additional return-stack and ordered-argument-read components; neither yet supplies a complete whole-machine transition or implementation refinement.
 
 ### 2.1 CCAM scalar and single-frame core
 
@@ -42,6 +42,7 @@ The single-frame proof model is deliberately smaller than normative CCAM. In par
 |---|---|---|
 | `MultiFunction.lean` | Function signatures, parameter/register type alignment, typed arguments and frame initialisation | No function-table validation or concrete call dispatch refinement |
 | `MultiFrame.lean` | Heterogeneous typed frames, callee construction, return-destination checks, caller write preservation, abstract stack push/pop facts | No ordinary instruction dispatch over the stack, call-site lookup, step accounting or concrete `ccam_calls.cap` refinement |
+| `IntegratedMachine.lean` (proposed in #547) | Immutable abstract stack return commit/pop transitions and depth preservation | Not yet part of the mainline baseline; no ordinary instruction dispatch, complete call transition, output state, budget accounting or concrete evaluator refinement |
 | `RuntimeBridge.lean` | Mathematical list-register representation relation and abstract read/write correspondence | Does not prove Capstan List/object semantics |
 | `NativeRegisterBridge.lean` | Native-shaped type tags, field values and register operations correspond to abstract records | Still a manually mirrored data model |
 | `NativeRegisterFileBridge.lean` | List-slot operations and native/runtime register relation | Does not prove the actual Capstan list implementation |
@@ -220,7 +221,8 @@ Do not start P5/P6 by adding more unrelated local theorems while P2-P4 remain di
 
 - Add `NativeMachineBridge.lean` to the `CapstanVerification` root and `AxiomAudit.lean`; this branch does so. It was previously present but not in either explicit proof path.
 - Keep `NativeMachineBridge`'s claim limited to initial state, PC and fuel admission. It does not establish opcode refinement.
-- Treat `Machine.lean` + `MultiFunction.lean` + `MultiFrame.lean` as components awaiting integration, not a complete multi-function machine.
+- Treat `Machine.lean` + `MultiFunction.lean` + `MultiFrame.lean` and proposed `IntegratedMachine.lean` (#547) as components awaiting integration, not a complete multi-function machine.
+- Treat ordered argument-read semantics (#549) as a separate subtransition specification; it does not yet model function lookup, callee-frame construction or the full call transition.
 - Keep the SF-P validator's stronger final-instruction condition as an explicitly named proof profile; do not silently call it full normative validator equivalence.
 - Keep `AggregateHeap`, `CCAMHeap`, conservative C GC and explicit-root handle/marker models as separate memory architectures until runtime selection and implementation correspondence are decided.
 - Keep the value-sensitive provenance model and the current checker model separate until a sound checker refinement is proved; the current checker model contains known transfer gaps.
