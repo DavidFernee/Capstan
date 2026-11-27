@@ -29,3 +29,28 @@ Pinned commit 7be0a4a6ee02b9eb76bb06a5505cb6d9b277e6b6. Roots: seven explicitly 
 | verification/native_rel32.cap | a261d36ac481db9983eda5624a7a3613d7f69f73 | None detected |
 
 G0 HOLD. Extend to remaining build roots and actual compiler invocation manifest.
+
+## Build entry points at the integrated G0 revision
+
+Inspected `02328b31a555f282878574b2f65ee68dc2751a2a`, the pinned #583
+revision used for the separately operated Linux/GCC reproduction.
+
+| Entry point | Explicit inputs and generated stages |
+|---|---|
+| `make bootstrap` | `bootstrap/capstan0.py` translates the seven compiler sources from `Makefile`'s `SRC` into `stage1.py`. The same ordered inputs produce `stage2.c` and `stage3.c`. The recipe compares those outputs byte for byte. |
+| `make fmt` | The bootstrapped compiler translates `tools/fmt.cap` into `fmt.c`. GCC produces `capstanfmt`. |
+| `make lsp` | The bootstrapped compiler translates the first six compiler sources in `SRC`, followed by `tools/lsp.cap`, into `lsp.c`. GCC produces `capstan-lsp`. |
+| `bin/capstan native` | The bootstrapped compiler receives `compiler/{ast,lexer,parser,checker}.cap`, `verification/{ccam_core,ccam_calls,ccam_lowering,ccam_native_x64,ccam_direct_elf}.cap`, then `tools/native_driver.cap`. GCC builds the driver. Direct mode writes ELF from the driver. Assembly mode additionally uses `as` and `ld`, then checks the image with `readelf` and `nm`. |
+
+Ran `gcc -MM -Iruntime` on the reproduced `stage2.c`, `stage3.c`, `fmt.c`
+and `lsp.c`, and on a freshly emitted `native-driver.c` generated from
+the ordered inputs above. All five reported the same two repository headers,
+`runtime/capstan_rt.h` and its included `runtime/capstan_gc.h`. The pinned
+Makefile declared only the first as a prerequisite. A simulated change to
+the collector header left the stage 2 build out of date without scheduling
+its recipe. The follow-up Makefile change tracks both headers for the four
+persistent executables.
+
+The dependency scan excludes host and system headers. This inventory covers
+the listed entry points on the pinned Linux/GCC baseline. It does not extend
+to a production C-free seed, future native profiles or every repository test.
