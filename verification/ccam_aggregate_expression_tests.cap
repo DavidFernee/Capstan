@@ -27,3 +27,22 @@ test "expression compiler rejects unmatched delimiters" {
     source.push(40); source.push(49); source.push(43); source.push(50);
     assert(!ag_compile_expression(source).ok);
 }
+
+test "expression compiler evaluates less-than comparison" {
+    List<int> source=new List<int>();
+    source.push(50); source.push(60); source.push(51);
+    AGCheckedInt result=ag_compile_expression(source);
+    assert(result.ok && result.value==1);
+}
+test "expression compiler evaluates greater-than comparison" {
+    List<int> source=new List<int>();
+    source.push(50); source.push(62); source.push(51);
+    AGCheckedInt result=ag_compile_expression(source);
+    assert(result.ok && result.value==0);
+}
+test "comparison binds less tightly than addition" {
+    List<int> source=new List<int>();
+    source.push(49); source.push(43); source.push(50); source.push(60); source.push(52);
+    AGCheckedInt result=ag_compile_expression(source);
+    assert(result.ok && result.value==1);
+}
