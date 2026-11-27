@@ -109,3 +109,33 @@ arithmetic traps, branch joins, bounded loops, exact reference step limits,
 malformed CCAM, byte-identical rebuilds and
 output failure paths. Native-code refinement and C-free self-hosting remain
 open.
+
+### Scalar terminal outcome baseline
+
+The direct backend's current result transport is an experimental projection of
+the validated single-entry CCAM machine. This table records the implemented
+boundary for the native architecture RFC's T3 work.
+
+| Reference terminal outcome | Linux exit status | Bytes written to fd 3 |
+| --- | ---: | --- |
+| Integer return | 0 | Exactly eight signed little-endian bytes |
+| `integer_overflow` | 70 | None |
+| `division_by_zero` | 71 | None |
+| `explicit_trap` | 72 | None |
+| `step_limit_exceeded` | 73 | None |
+| Result write fails or is short | 77 | Discard any partial bytes |
+
+Status 77 is a platform transport failure. Compilation and validation failures
+produce no replacement executable. For traps, the reference machine carries
+the function, instruction PC, detail string and charged step count. The
+current transport carries the trap class only. Resource exhaustion is checked
+before dispatch at the pending PC. An arithmetic or explicit trap reached by
+dispatch consumes that instruction's step.
+
+The Linux tests emit an executable and run the reference evaluator from the
+same typed CCAM fixture and step budget. They compare the implemented
+projection, including zero bytes for each trap, and assert expected reference
+PCs, step counts and details separately. The result record proposal in
+[Native Result ABI](../../research/native-bootstrap/NATIVE-RESULT-ABI.md)
+would need versioning, a byte-level consumer and end-to-end checks for the
+additional observable fields before adoption.

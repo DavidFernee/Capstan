@@ -1,0 +1,102 @@
+// Compiled by native_direct_elf.py together with the direct backend. Both
+// consumers receive the same typed CCAM object and step budget.
+void direct_vector(string directory, string name, List<int> types,
+                   List<CCAMInstruction> code, int steps) {
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: types, parameter_count: 0,
+        return_type: CCAM_RETURN_INT, instructions: code, call_sites: new List<CCAMCallSite>()
+    });
+    CCAMCallMachineCreateResult reference = ccam_call_machine_create(functions, 0, steps, 1);
+    CCAMDirectResult image = ccam_direct_elf(functions, 0, steps);
+    if (!reference.ok || !image.ok) { exit(1); }
+    CCAMCallMachine machine = reference.machine;
+    while (!machine.halted) { ccam_call_machine_step(machine); }
+    if (machine.output_bytes.len() != 0 ||
+        (machine.trap_code == "" && !machine.halt_has_value)) { exit(1); }
+
+    List<string> bytes = new List<string>();
+    for (int i = 0; i < image.bytes.len(); i += 1) {
+        bytes.push(char_str(image.bytes[i]));
+    }
+    if (!write_file(directory + "/" + name, join(bytes, ""))) { exit(1); }
+
+    // Keep reference-only fields so a later result ABI can compare them too.
+    println(name + "\t" + machine.trap_code + "\t" + int_to_str(machine.halt_value) +
+        "\t" + int_to_str(machine.steps) + "\t" + machine.trap_function +
+        "\t" + int_to_str(machine.trap_pc) + "\t" + machine.trap_detail);
+}
+
+CCAMInstruction direct_constant(int dst, int value) {
+    CCAMInstruction ins = ccam_instruction(CCAM_OP_CONST_I);
+    ins.dst = dst;
+    ins.int_value = value;
+    return ins;
+}
+
+void direct_arithmetic_vectors(string directory) {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction left = direct_constant(0, CCAM_I64_MIN);
+    CCAMInstruction right = direct_constant(1, -1);
+    code.push(left);
+    code.push(right);
+    CCAMInstruction operation = ccam_instruction(CCAM_OP_DIV_I);
+    operation.dst = 0;
+    operation.lhs = 0;
+    operation.rhs = 1;
+    code.push(operation);
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+    ret.lhs = 0;
+    code.push(ret);
+
+    direct_vector(directory, "fuel-before-overflow", types, code, 2);
+    direct_vector(directory, "division-overflow", types, code, 3);
+    operation.op = CCAM_OP_REM_I;
+    direct_vector(directory, "fuel-before-return", types, code, 3);
+    direct_vector(directory, "min-remainder", types, code, 4);
+    right.int_value = 0;
+    direct_vector(directory, "remainder-by-zero", types, code, 3);
+    operation.op = CCAM_OP_DIV_I;
+    direct_vector(directory, "division-by-zero", types, code, 3);
+    operation.op = CCAM_OP_ADD_I;
+    direct_vector(directory, "full-width-return", types, code, 4);
+}
+
+void direct_control_vectors(string directory) {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    code.push(direct_constant(0, 42));
+    CCAMInstruction condition = ccam_instruction(CCAM_OP_CONST_B);
+    condition.dst = 1;
+    condition.bool_value = true;
+    code.push(condition);
+    CCAMInstruction branch = ccam_instruction(CCAM_OP_BRANCH);
+    branch.lhs = 1;
+    branch.if_true = 3;
+    branch.if_false = 4;
+    code.push(branch);
+    CCAMInstruction jump = ccam_instruction(CCAM_OP_JUMP);
+    jump.target = 2;
+    code.push(jump);
+    CCAMInstruction stop = ccam_instruction(CCAM_OP_TRAP);
+    stop.reason = "chosen_stop";
+    code.push(stop);
+    direct_vector(directory, "loop-at-back-edge", types, code, 5);
+    direct_vector(directory, "loop-at-branch", types, code, 6);
+    condition.bool_value = false;
+    direct_vector(directory, "fuel-before-explicit-trap", types, code, 3);
+    direct_vector(directory, "explicit-trap", types, code, 4);
+}
+
+int main() {
+    List<string> arguments = args(1, 4096, 4096);
+    if (arguments.len() != 1) { return 2; }
+    direct_arithmetic_vectors(arguments[0]);
+    direct_control_vectors(arguments[0]);
+    return 0;
+}

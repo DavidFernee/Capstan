@@ -9,14 +9,66 @@ from pathlib import Path
 
 
 def run_case(executable, sink):
-    with sink.open("wb") as stream:
-        result = subprocess.run(
-            ["bash", "-c", 'exec "$1" 3>&1', "direct-elf", executable],
-            stdout=stream,
-            check=False,
-            timeout=5,
-        )
+    result = subprocess.run(
+        ["bash", "-c", 'exec "$1" 3>"$2"', "direct-elf", executable, sink],
+        capture_output=True,
+        check=False,
+        timeout=5,
+    )
+    assert result.stdout == result.stderr == b"", result
     return result.returncode, sink.read_bytes()
+
+
+def compare_ccam_vectors(capstan, directory):
+    repo = Path(__file__).resolve().parents[2]
+    generator = directory / "generate-vectors"
+    subprocess.run(
+        [
+            capstan, "build", "--strict",
+            repo / "verification/ccam_direct_elf.cap",
+            repo / "tests/unit/native_direct_elf_vectors.cap",
+            "-o", generator,
+        ],
+        check=True,
+        timeout=60,
+    )
+    vectors = subprocess.run(
+        [generator, directory], capture_output=True, text=True, check=True, timeout=10,
+    ).stdout.splitlines()
+    expected_trap = {
+        "fuel-before-overflow": ("step_limit_exceeded", 2, 2, ""),
+        "division-overflow": ("integer_overflow", 3, 2, ""),
+        "fuel-before-return": ("step_limit_exceeded", 3, 3, ""),
+        "remainder-by-zero": ("division_by_zero", 3, 2, ""),
+        "division-by-zero": ("division_by_zero", 3, 2, ""),
+        "loop-at-back-edge": ("step_limit_exceeded", 5, 3, ""),
+        "loop-at-branch": ("step_limit_exceeded", 6, 2, ""),
+        "fuel-before-explicit-trap": ("step_limit_exceeded", 3, 4, ""),
+        "explicit-trap": ("explicit_trap", 4, 4, "chosen_stop"),
+    }
+    expected_value = {"min-remainder": 0, "full-width-return": -(1 << 63)}
+    native_status = {
+        "integer_overflow": 70,
+        "division_by_zero": 71,
+        "explicit_trap": 72,
+        "step_limit_exceeded": 73,
+    }
+    remaining = expected_trap.keys() | expected_value.keys()
+    for row in vectors:
+        name, trap, value, steps, function, pc, detail = row.split("\t")
+        remaining.remove(name)
+        if trap:
+            assert (trap, int(steps), int(pc), detail) == expected_trap[name], row
+            assert function == "main", row
+            expected = (native_status[trap], b"")
+        else:
+            assert int(value) == expected_value[name] and int(steps) == 4, row
+            expected = (0, struct.pack("<q", int(value)))
+        image = directory / name
+        image.chmod(0o700)
+        assert run_case(image, directory / "oracle-result") == expected, row
+    assert not remaining, remaining
+    return len(vectors)
 
 
 def main(capstan):
@@ -104,8 +156,9 @@ def main(capstan):
         assert rejection.returncode == 2, rejection
         assert "step budget outside" in rejection.stdout, rejection
         assert executable.read_bytes() == image  # A failed compilation did not replace the artifact.
+        vector_count = compare_ccam_vectors(capstan, root)
         assert not list(root.glob("program.*"))  # A failed compilation did not leave a staging file.
-    print(f"{len(cases)} direct execution cases plus ELF, determinism, and failure-path checks passed")
+    print(f"{len(cases)} direct execution cases and {vector_count} same-CCAM reference vectors passed")
 
 
 if __name__ == "__main__":
