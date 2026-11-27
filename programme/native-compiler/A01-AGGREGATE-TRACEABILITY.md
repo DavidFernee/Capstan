@@ -1,6 +1,6 @@
 # A01 — Aggregate and runtime traceability (RTM-002)
 
-Pinned main: 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce. Static audit, no execution evidence. Distinguish process-lifetime compiler arena (A), proposed frame-owned region/view profile (R), and future collecting runtime (G). Do not infer one profile's guarantees from another.
+Pinned main: 2409357ea777a3875bc608106fce5e42eb233656. Static audit, no execution evidence. Distinguish process-lifetime compiler arena (A), proposed frame-owned region/view profile (R), and future collecting runtime (G). Do not infer one profile's guarantees from another.
 
 | Requirement | Profile | Implementation / evidence | Acceptance gap |
 |---|---|---|---|
