@@ -10,7 +10,7 @@ AGLexResult ag_lex_bytes(List<int> bytes) {
   if (ag_space(ch)) { i+=1; continue; }
   if (ag_letter(ch)) { end=ag_scan_identifier(bytes,i); kind=1; }
   else if (ag_digit(ch)) { end=ag_scan_number(bytes,i); kind=2; }
-  else if (ch!=40 && ch!=41 && ch!=43 && ch!=45 && ch!=42 && ch!=47 && ch!=59 && ch!=61) { return new AGLexResult{ok:false,tokens:tokens}; }
+  else if (ch!=40 && ch!=41 && ch!=43 && ch!=45 && ch!=42 && ch!=47 && ch!=59 && ch!=61 && ch!=60 && ch!=62) { return new AGLexResult{ok:false,tokens:tokens}; }
   tokens.push(new AGToken{kind:kind,spelling:"",start:i,end:end}); i=end;
  }
  tokens.push(new AGToken{kind:0,spelling:"",start:i,end:i});
