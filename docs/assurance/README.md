@@ -17,6 +17,7 @@ Documents for organisations assessing Capstan, in particular government and defe
 | [ISM-MAPPING.md](ISM-MAPPING.md) | The toolchain, process and tests mapped to the ISM's software development controls (September 2026) and NIST SP 800-218 (SSDF 1.1) |
 | [EVIDENCE-FRESHNESS.md](EVIDENCE-FRESHNESS.md) | How implementation and evidence changes invalidate assurance reviews and records |
 | [FORMAL-VERIFICATION-MATRIX.md](FORMAL-VERIFICATION-MATRIX.md) | Machine-checked proof obligations, current coverage, specification gates and acceptance criteria |
+| [INTEGRATED-FORMAL-ASSURANCE-ARCHITECTURE.md](INTEGRATED-FORMAL-ASSURANCE-ARCHITECTURE.md) | Repository-wide inventory of existing Lean models, implementation gaps, integrated machine design, refinement chain and staged closure programme |
 | [V1-RELEASE-SCORECARD.md](V1-RELEASE-SCORECARD.md) | Release-by-release evidence register and mandatory v1.0 security/assurance gates |
 | [FORMAL-VERIFICATION.md](FORMAL-VERIFICATION.md) | Allocator/GC abstract-model verification scope, implementation blockers, proof layers and evidence status |
 
@@ -29,12 +30,10 @@ quarterly, and of the SSDF.
 ## Reviewed implementation boundary
 
 This assurance-pack baseline is anchored to mainline commit
-`35f7ce57132f235adbb8e60b00a4f27f3a87d9eb` (2026-11-26). The production compiler
+`3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce` (2026-11-27). The production compiler
 execution path remains generated C followed by GCC/Clang and the Capstan C runtime.
 Mainline includes restricted Capstan-native CCAM evaluation and validation, bounded
-multi-function execution, checked scalar source lowering and selected Lean representation
-lemmas. These are C-free research/verification slices, not an end-to-end formally verified
-production compiler path. The CCAM evaluator is not yet connected to the Lean model by a
+multi-function execution, checked scalar source lowering and selected Lean representation and protocol lemmas. The repository contains separate scalar-machine, function/frame, register-bridge, heap/GC, provenance, visibility and typestate models; they are not yet one integrated execution semantics. These are C-free research/verification slices, not an end-to-end formally verified production compiler path. The CCAM evaluator is not yet connected to the Lean model by a
 complete evaluator-refinement theorem; the experimental Linux x86-64 native emitter is
 not a complete production backend. The C-free production toolchain across Linux, macOS
 and Windows remains a target.

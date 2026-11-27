@@ -1,0 +1,41 @@
+import "ccam_aggregate_arithmetic.cap";
+const int AG_CONTROL_LIMIT = 65536;
+const int AG_CONTROL_VARIABLE_LIMIT = 4096;
+struct AGControlInstruction { int opcode; int destination; int left; int right; int immediate; int target; }
+struct AGControlResult { bool ok; int value; int steps; }
+bool ag_control_instruction_valid(AGControlInstruction ins,int pc,int count) {
+    if(pc<0 || pc>=count || count>AG_CONTROL_LIMIT || ins.destination<0 || ins.destination>=AG_CONTROL_VARIABLE_LIMIT) { return false; }
+    if(ins.opcode==1) { return true; }
+    if(ins.opcode>=2 && ins.opcode<=7) {
+        return ins.left>=0 && ins.left<AG_CONTROL_VARIABLE_LIMIT && ins.right>=0 && ins.right<AG_CONTROL_VARIABLE_LIMIT;
+    }
+    if(ins.opcode==8) { return ins.left>=0 && ins.left<AG_CONTROL_VARIABLE_LIMIT && ins.target>=0 && ins.target<count; }
+    if(ins.opcode==9) { return ins.target>=0 && ins.target<count; }
+    return ins.opcode==10;
+}
+AGControlResult ag_control_execute(List<AGControlInstruction> code,int fuel,int variable_count) {
+    List<int> variables=new List<int>();
+    int pc=0; int steps=0;
+    if(code.len()==0 || code.len()>AG_CONTROL_LIMIT || fuel<1 || fuel>1048576 || variable_count<1 || variable_count>AG_CONTROL_VARIABLE_LIMIT) {
+        return new AGControlResult{ok:false,value:0,steps:0};
+    }
+    for(int i=0;i<variable_count;i+=1) { variables.push(0); }
+    while(pc>=0 && pc<code.len()) {
+        if(steps>=fuel) { return new AGControlResult{ok:false,value:0,steps:steps}; }
+        AGControlInstruction ins=code[pc];
+        if(!ag_control_instruction_valid(ins,pc,code.len()) || ins.destination>=variable_count) { return new AGControlResult{ok:false,value:0,steps:steps}; }
+        steps+=1;
+        if(ins.opcode==1) { variables[ins.destination]=ins.immediate; pc+=1; continue; }
+        if(ins.opcode>=2 && ins.opcode<=7) {
+            if(ins.left>=variable_count || ins.right>=variable_count) { return new AGControlResult{ok:false,value:0,steps:steps}; }
+            AGCheckedInt result=ag_arithmetic(ins.opcode,variables[ins.left],variables[ins.right]);
+            if(!result.ok) { return new AGControlResult{ok:false,value:0,steps:steps}; }
+            variables[ins.destination]=result.value; pc+=1; continue;
+        }
+        if(ins.opcode==8) { if(ins.left>=variable_count) { return new AGControlResult{ok:false,value:0,steps:steps}; } if(variables[ins.left]==0){pc=ins.target;}else{pc=pc+1;} continue; }
+        if(ins.opcode==9) { pc=ins.target; continue; }
+        if(ins.opcode==10) { return new AGControlResult{ok:true,value:variables[ins.destination],steps:steps}; }
+        return new AGControlResult{ok:false,value:0,steps:steps};
+    }
+    return new AGControlResult{ok:false,value:0,steps:steps};
+}

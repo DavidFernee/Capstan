@@ -1,0 +1,38 @@
+import "ccam_research_native_x86_scalar_ops.cap";
+test "x86-64 ADD and SUB emit exact REX and ModRM bytes" {
+    List<int> add=new List<int>();
+    assert(ag_x86_add_rr(add,0,1));
+    assert(add.len()==3 && add[0]==72 && add[1]==1 && add[2]==200);
+    List<int> sub=new List<int>();
+    assert(ag_x86_sub_rr(sub,9,10));
+    assert(sub.len()==3 && sub[0]==77 && sub[1]==41 && sub[2]==209);
+}
+test "x86-64 IMUL emits exact extended-register encoding" {
+    List<int> bytes=new List<int>();
+    assert(ag_x86_imul_rr(bytes,9,10));
+    assert(bytes.len()==4 && bytes[0]==77 && bytes[1]==15 && bytes[2]==175 && bytes[3]==202);
+}
+test "x86-64 MOV immediate encodes positive and negative values" {
+    List<int> positive=new List<int>();
+    assert(ag_x86_mov_ri64(positive,0,45));
+    assert(positive.len()==10 && positive[0]==72 && positive[1]==184);
+    assert(positive[2]==45 && positive[3]==0 && positive[9]==0);
+    List<int> negative=new List<int>();
+    assert(ag_x86_mov_ri64(negative,9,-1));
+    assert(negative.len()==10 && negative[0]==73 && negative[1]==185);
+    for(int i=2;i<10;i+=1) { assert(negative[i]==255); }
+}
+test "x86-64 scalar emitters reject invalid registers atomically" {
+    List<int> bytes=new List<int>();
+    assert(!ag_x86_add_rr(bytes,16,0));
+    assert(!ag_x86_sub_rr(bytes,0,-1));
+    assert(!ag_x86_imul_rr(bytes,16,16));
+    assert(!ag_x86_mov_ri64(bytes,16,1));
+    assert(bytes.len()==0);
+}
+test "x86-64 scalar emitters enforce byte-buffer capacity atomically" {
+    List<int> bytes=new List<int>();
+    for(int i=0;i<AG_BYTE_LIMIT-2;i+=1) { bytes.push(0); }
+    assert(!ag_x86_add_rr(bytes,0,1));
+    assert(bytes.len()==AG_BYTE_LIMIT-2);
+}

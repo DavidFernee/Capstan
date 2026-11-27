@@ -1,0 +1,43 @@
+import "ccam_aggregate_linear_scan_allocator.cap";
+const int AG_FRAME_SLOT_LIMIT = 65536;
+const int AG_FRAME_BYTE_LIMIT = 1048576;
+struct AGStackFrame { bool ok; int spill_slots; int frame_bytes; }
+bool ag_frame_round16(int bytes) {
+    return bytes>=0 && bytes<=AG_FRAME_BYTE_LIMIT && bytes%16==0;
+}
+AGStackFrame ag_stack_frame_layout(int spill_slots) {
+    if(spill_slots<0 || spill_slots>AG_FRAME_SLOT_LIMIT ||
+        spill_slots>AG_FRAME_BYTE_LIMIT/8) {
+        return new AGStackFrame{ok:false,spill_slots:0,frame_bytes:0};
+    }
+    int raw=spill_slots*8;
+    int aligned=((raw+15)/16)*16;
+    if(aligned>AG_FRAME_BYTE_LIMIT || aligned%16!=0) {
+        return new AGStackFrame{ok:false,spill_slots:0,frame_bytes:0};
+    }
+    return new AGStackFrame{ok:true,spill_slots:spill_slots,frame_bytes:aligned};
+}
+int ag_frame_spill_offset(int slot,int spill_slots) {
+    if(spill_slots<0 || spill_slots>AG_FRAME_SLOT_LIMIT ||
+        slot<0 || slot>=spill_slots || slot>=AG_FRAME_SLOT_LIMIT) { return 0; }
+    return -8*(slot+1);
+}
+bool ag_frame_validate(AGStackFrame frame) {
+    if(!frame.ok || frame.spill_slots<0 || frame.spill_slots>AG_FRAME_SLOT_LIMIT ||
+        frame.frame_bytes<0 || frame.frame_bytes>AG_FRAME_BYTE_LIMIT ||
+        frame.frame_bytes%16!=0) { return false; }
+    int raw=frame.spill_slots*8;
+    int expected=((raw+15)/16)*16;
+    return frame.frame_bytes==expected;
+}
+AGStackFrame ag_frame_from_allocation(AGAllocationResult allocation) {
+    if(!allocation.ok || allocation.spill_count<0 ||
+        allocation.spill_count>AG_ALLOC_SPILL_LIMIT) {
+        return new AGStackFrame{ok:false,spill_slots:0,frame_bytes:0};
+    }
+    AGStackFrame frame=ag_stack_frame_layout(allocation.spill_count);
+    if(!ag_frame_validate(frame)) {
+        return new AGStackFrame{ok:false,spill_slots:0,frame_bytes:0};
+    }
+    return frame;
+}
