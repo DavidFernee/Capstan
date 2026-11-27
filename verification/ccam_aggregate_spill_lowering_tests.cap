@@ -1,0 +1,30 @@
+import "ccam_aggregate_spill_lowering.cap";
+test "spill assignment lowers to correct frame-relative store and reload" {
+    List<AGRegisterAssignment> assignments=new List<AGRegisterAssignment>();
+    assignments.push(new AGRegisterAssignment{virtual_id:42,physical_reg:-1,spill_slot:2});
+    AGStackFrame frame=ag_stack_frame_layout(3);
+    List<int> store=new List<int>();
+    assert(ag_x86_spill_store(store,frame,assignments,42,9));
+    assert(store.len()==4 && store[0]==76 && store[1]==137 && store[2]==77 && store[3]==232);
+    List<int> load=new List<int>();
+    assert(ag_x86_spill_load(load,frame,assignments,42,10));
+    assert(load.len()==4 && load[0]==76 && load[1]==139 && load[2]==85 && load[3]==232);
+}
+test "spill lowering rejects register-resident and unknown values atomically" {
+    List<AGRegisterAssignment> assignments=new List<AGRegisterAssignment>();
+    assignments.push(new AGRegisterAssignment{virtual_id:1,physical_reg:8,spill_slot:-1});
+    AGStackFrame frame=ag_stack_frame_layout(1);
+    List<int> bytes=new List<int>();
+    assert(!ag_x86_spill_store(bytes,frame,assignments,1,0));
+    assert(!ag_x86_spill_load(bytes,frame,assignments,999,0));
+    assert(bytes.len()==0);
+}
+test "spill lowering rejects frame and spill-slot mismatches" {
+    List<AGRegisterAssignment> assignments=new List<AGRegisterAssignment>();
+    assignments.push(new AGRegisterAssignment{virtual_id:1,physical_reg:-1,spill_slot:2});
+    AGStackFrame frame=ag_stack_frame_layout(1);
+    List<int> bytes=new List<int>();
+    assert(!ag_x86_spill_store(bytes,frame,assignments,1,0));
+    assert(!ag_x86_spill_load(bytes,frame,assignments,1,0));
+    assert(bytes.len()==0);
+}
