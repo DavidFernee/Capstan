@@ -148,4 +148,24 @@ theorem commitTypedVoidReturnOnStack_preserves_depth_limit
               cases hreturn
               rfl
 
+
+/-- Construct the typed argument vector from a caller's register snapshot.
+The source-index vector fixes argument order; no caller register is modified
+while the values are collected. -/
+theorem typedCallArgumentsWellTyped
+    {p : Nat} (caller : TypedMultiFrame)
+    ({n : Nat} (signature : FunctionSignature p n)
+    (arguments : Fin p → Val)
+    (sources : Fin p → Fin caller.registerCount)
+    (hsnapshot : ∀ i, caller.registers (sources i) = some (arguments i))
+    (hsources :
+      ∀ i, caller.signature.registerTypes (sources i) =
+        signature.parameterTypes i) :
+    ArgumentsWellTyped signature arguments := by
+  intro i
+  have hstored := caller.registers_well_typed (sources i) (arguments i)
+    (hsnapshot i)
+  rw [hsources i] at hstored
+  exact hstored
+
 end CapstanVerification
