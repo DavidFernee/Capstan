@@ -333,10 +333,9 @@ def returnTypedVoidOnStack (stack : TypedMultiCallStack) :
 /-- A value-returning entry function halts with its payload rather than
 popping the singleton entry frame. -/
 theorem returnTypedValueOnStack_entry_halts_in_place
-    (entry : TypedMultiFrame) (value : Val)
-    (hreturn : entry.signature.returnType = some
-      (entry.signature.returnType.getD .int))
-    (hvalue : hasTypeB value (entry.signature.returnType.getD .int) = true) :
+    (entry : TypedMultiFrame) (resultType : Ty) (value : Val)
+    (hreturn : entry.signature.returnType = some resultType)
+    (hvalue : hasTypeB value resultType = true) :
     returnTypedValueOnStack
       { frames := [entry], maxDepth := 1, nonempty := by simp,
         within_limit := by simp } value = .haltValue value := by
