@@ -1,6 +1,6 @@
 # A01 — Initial implementation and work allocation inventory
 
-Snapshot: main 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce; open PR/issue search 2026-11-27. Partial inventory, not gate G0 acceptance. File presence and comments were inspected; no new execution or proof claim.
+Snapshot: main 2409357ea777a3875bc608106fce5e42eb233656; open PR/issue search 2026-11-27. Partial inventory, not gate G0 acceptance. File presence and comments were inspected; no new execution or proof claim.
 
 | Package | Evidence or active work | Remaining acceptance gap |
 |---|---|---|
