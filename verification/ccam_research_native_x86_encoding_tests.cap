@@ -45,7 +45,7 @@ test "x86-64 LEA handles all special base register encodings" {
     assert(rbp.len()==4 && rbp[0]==72 && rbp[1]==141 && rbp[2]==69 && rbp[3]==0);
     List<int> r13 = new List<int>();
     assert(ag_x86_lea(r13,9,13));
-    assert(r13.len()==4 && r13[0]==77 && r13[1]==141 && r13[2]==69 && r13[3]==0);
+    assert(r13.len()==4 && r13[0]==77 && r13[1]==141 && r13[2]==77 && r13[3]==0);
     List<int> ordinary = new List<int>();
     assert(ag_x86_lea(ordinary,0,3));
     assert(ordinary.len()==3 && ordinary[2]==3);
