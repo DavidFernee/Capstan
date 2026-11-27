@@ -1,4 +1,7 @@
 import "ccam_aggregate_executor.cap";
+
+// Invoke a validated function in a fresh frame, then transfer the declared
+// return register into the continuation's prevalidated destination.
 string ag_invoke(AGStack stack, List<AGFunction> functions, int id, List<int> arguments, int destination) {
     if (id < 0 || id >= functions.len() || !ag_program_validate(functions)) {
         return ccam_aggregate_trap(stack.active, "invalid_function");
@@ -7,9 +10,88 @@ string ag_invoke(AGStack stack, List<AGFunction> functions, int id, List<int> ar
     string error = ag_stack_call(stack, f.signature, f.kinds, arguments, destination);
     if (error != "") { return error; }
     AGExecutionResult result = ag_execute_function(stack.active, functions, id);
-    if (!result.ok) { ccam_aggregate_trap(stack.active, result.error); }
-    // Executor returns a value rather than the source index. Find no
-    // arbitrary register: the dedicated result slot must be supplied later.
-    if (result.ok) { ccam_aggregate_trap(stack.active, "return_slot_not_lowered"); }
-    return ag_stack_return(stack, -1);
+    if (!result.ok) {
+        ccam_aggregate_trap(stack.active, result.error);
+        return ag_stack_return(stack, -1);
+    }
+    return ag_stack_return(stack, result.return_register);
+}
+
+test "aggregate invoke transfers the declared return register to caller" {
+    List<int> root_kinds = new List<int>();
+    root_kinds.push(AG_SCHEMA_INT);
+    root_kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(root_kinds, 4096, 16, 4096, 4096, 16);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(42)) == "");
+    AGStackResult created = ag_stack_create(root.machine, 4, 16);
+    assert(created.ok);
+
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_INT);
+    AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    List<int> callee_kinds = new List<int>();
+    callee_kinds.push(AG_SCHEMA_INT);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{
+        instructions: instructions, terminator: 0,
+        condition: -1, yes: -1, no: -1
+    });
+    List<int> returns = new List<int>();
+    returns.push(0);
+    AGFunction function = new AGFunction{
+        signature: signature, kinds: callee_kinds, blocks: blocks, returns: returns
+    };
+    List<AGFunction> functions = new List<AGFunction>();
+    functions.push(function);
+    List<int> arguments = new List<int>();
+    arguments.push(0);
+
+    AGStack stack = created.stack;
+    assert(ag_invoke(stack, functions, 0, arguments, 1) == "");
+    assert(stack.depth == 0 && stack.slots == 2);
+    CCAMAggregateValueResult returned = ccam_aggregate_read(stack.active, 1, AG_SCHEMA_INT);
+    assert(returned.ok && returned.value.int_value == 42);
+    assert(stack.active.steps == 3);
+}
+
+test "aggregate invoke propagates callee traps and restores caller frame" {
+    List<int> root_kinds = new List<int>();
+    root_kinds.push(AG_SCHEMA_INT);
+    root_kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(root_kinds, 4096, 16, 4096, 4096, 16);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(42)) == "");
+    AGStackResult created = ag_stack_create(root.machine, 4, 16);
+
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_INT);
+    AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    List<int> callee_kinds = new List<int>();
+    callee_kinds.push(AG_SCHEMA_INT);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{
+        opcode: 99, kind: AG_SCHEMA_INT, operands: new List<int>()
+    });
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{
+        instructions: instructions, terminator: 0,
+        condition: -1, yes: -1, no: -1
+    });
+    List<int> returns = new List<int>();
+    returns.push(0);
+    AGFunction function = new AGFunction{
+        signature: signature, kinds: callee_kinds, blocks: blocks, returns: returns
+    };
+    List<AGFunction> functions = new List<AGFunction>();
+    functions.push(function);
+    List<int> arguments = new List<int>();
+    arguments.push(0);
+
+    AGStack stack = created.stack;
+    assert(ag_invoke(stack, functions, 0, arguments, 1) == "invalid_aggregate_instruction");
+    assert(stack.depth == 0 && stack.slots == 2);
+    assert(stack.active.trap_code == "invalid_aggregate_instruction");
+    assert(!stack.active.registers[1].initialised);
 }
