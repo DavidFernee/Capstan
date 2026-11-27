@@ -64,7 +64,7 @@ section "K0: complete CVE population, race patterns and kernel-specific memory p
 if out="$($PY "$ROOT/tests/k0/check.py" 2>&1)"; then ok "$out"; else bad "K0 study checks" "$out"; fi
 
 section "spec coverage: every language area has tests"
-if out="$($PY "$ROOT/tests/spec_coverage.py" 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
+if out="$($PY "$ROOT/tests/spec_coverage.py" --check 2>&1)"; then ok "$(tail -1 <<<"$out")"; else bad "spec coverage" "$out"; fi
 
 section "Capstan-native verification: F1 compositional guarantee model"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/f1_guarantee_model.cap" 2>&1)"; then

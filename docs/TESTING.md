@@ -93,6 +93,8 @@ other, not who made them.
 `docs/SPEC.md` defines the **conformance areas**, one per language feature. Every test declares the
 areas it covers with a `// spec: area ...` line, and `tests/spec_coverage.py` fails the run if any area
 has no tests or a test names an unknown area. The generated matrix is in [CONFORMANCE.md](CONFORMANCE.md).
+The default suite checks that the committed matrix matches the generated output. Run
+`python3 tests/spec_coverage.py` to regenerate it when the spec or tagging changes.
 A new feature is not finished until its area is in the spec and covered.
 
 ## Sections
