@@ -696,7 +696,7 @@ test "lifecycle validator rejects calls while a region is live" {
     assert(!result.ok && result.error == "call_with_live_region");
 }
 
-test "lifecycle validator rejects calls while a view is live" {
+test "lifecycle validator rejects calls while a view and its region are live" {
     List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
     CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
     i.region_register = 0;
@@ -714,6 +714,8 @@ test "lifecycle validator rejects calls while a view is live" {
     code.push(i);
     code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
     CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 1);
-    assert(!result.ok && result.error == "call_with_live_view");
+    // A live view necessarily has a live owner region, so region rejection
+    // is the first and stronger diagnostic for this invalid call boundary.
+    assert(!result.ok && result.error == "call_with_live_region");
 }
 
