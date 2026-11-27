@@ -33,8 +33,31 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Record baseline identity and toolchain
+        run: |
+          git rev-parse HEAD HEAD^{tree}
+          git status --porcelain
+          test -z "$(git status --porcelain)"
+          uname -a
+          "${CC}" --version
+          python3 --version
+          make --version
+          git --version
+          git ls-tree -r HEAD > "${RUNNER_TEMP}/g0-tree.txt"
       - name: Bootstrap (stage 0 -> self-hosted fixpoint)
         run: make
+      - name: Record bootstrap artifact digests
+        run: |
+          cmp build/stage2.c build/stage3.c
+          shasum -a 256 build/stage1.py build/stage2.c build/stage3.c build/capstanc2 build/capstanc build/capstanfmt build/capstan-lsp | tee "${RUNNER_TEMP}/g0-digests.txt"
+      - name: Retain baseline evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: g0-baseline-${{ matrix.os }}-${{ matrix.cc }}
+          path: |
+            ${{ runner.temp }}/g0-tree.txt
+            ${{ runner.temp }}/g0-digests.txt
+          if-no-files-found: error
       - name: Test suite
         run: |
           if [ "${EVENT}" = "schedule" ]; then bash tests/run.sh --full; else bash tests/run.sh; fi
