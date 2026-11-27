@@ -49,6 +49,7 @@ theorem commitTypedReturnOnStack_decreases_depth
       | nil =>
           simp [hframes, htail] at hreturn
       | cons caller rest =>
+          simp only [hframes, htail] at hreturn
           cases hcommit : commitTypedReturnToCaller callee caller value with
           | error reason =>
               simp [hcommit] at hreturn
@@ -118,9 +119,10 @@ theorem commitTypedVoidReturnOnStack_decreases_depth
       | nil =>
           simp [hframes, htail] at hreturn
       | cons caller rest =>
+          simp only [hframes, htail] at hreturn
           cases hcommit : commitTypedVoidReturnToCaller callee caller with
           | error reason =>
-              simp [hframes, htail, hcommit] at hreturn
+              simp [hcommit] at hreturn
           | ok resumedCaller =>
               simp [hframes, htail, hcommit] at hreturn
               cases hreturn
@@ -153,8 +155,8 @@ theorem commitTypedVoidReturnOnStack_preserves_depth_limit
 The source-index vector fixes argument order; no caller register is modified
 while the values are collected. -/
 theorem typedCallArgumentsWellTyped
-    {p : Nat} (caller : TypedMultiFrame)
-    ({n : Nat} (signature : FunctionSignature p n)
+    {p n : Nat} (caller : TypedMultiFrame)
+    (signature : FunctionSignature p n)
     (arguments : Fin p → Val)
     (sources : Fin p → Fin caller.registerCount)
     (hsnapshot : ∀ i, caller.registers (sources i) = some (arguments i))
@@ -333,10 +335,9 @@ def returnTypedVoidOnStack (stack : TypedMultiCallStack) :
 /-- A value-returning entry function halts with its payload rather than
 popping the singleton entry frame. -/
 theorem returnTypedValueOnStack_entry_halts_in_place
-    (entry : TypedMultiFrame) (value : Val)
-    (hreturn : entry.signature.returnType = some
-      (entry.signature.returnType.getD .int))
-    (hvalue : hasTypeB value (entry.signature.returnType.getD .int) = true) :
+    (entry : TypedMultiFrame) (value : Val) (expected : Ty)
+    (hreturn : entry.signature.returnType = some expected)
+    (hvalue : hasTypeB value expected = true) :
     returnTypedValueOnStack
       { frames := [entry], maxDepth := 1, nonempty := by simp,
         within_limit := by simp } value = .haltValue value := by
