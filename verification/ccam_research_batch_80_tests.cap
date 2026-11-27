@@ -152,3 +152,20 @@ test "research x86 register and byte helpers are bounded" {
     assert(ag_x86_jmp_rel32(bytes) >= 0);
     assert(bytes.len() == before + 5);
 }
+
+test "native stack adjustment and epilogue reserve complete encodings" {
+    List<int> small = new List<int>();
+    assert(ag_x86_stack_adjust(small,16));
+    assert(small.len() == 4);
+    List<int> large = new List<int>();
+    assert(ag_x86_stack_adjust(large,128));
+    assert(large.len() == 7);
+    int before = large.len();
+    assert(!ag_x86_stack_adjust(large,15));
+    assert(!ag_x86_stack_adjust(large,1048592));
+    assert(large.len() == before);
+    List<int> epilogue = new List<int>();
+    assert(ag_x86_epilogue(epilogue));
+    assert(epilogue.len() == 5);
+    assert(epilogue[4] == 195);
+}
