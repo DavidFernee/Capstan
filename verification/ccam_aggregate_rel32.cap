@@ -1,2 +1,33 @@
 import "ccam_aggregate_patch32.cap";
-bool ag_rel32(List<int> b,int p,int target) { if(p<0 || p>b.len()-4 || target<0 || target>b.len()){return false;} int d=target-p-4; if(d<0){d+=4294967296;} return ag_patch32(b,p,d); }
+import "native_rel32.cap";
+
+// Preserve the existing aggregate target domain, including end-of-image
+// labels. The aggregate linker separately requires targets inside the image.
+bool ag_rel32(List<int> b, int p, int target) {
+    if (p < 0 || p > b.len() - 4 || target < 0 || target > b.len()) {
+        return false;
+    }
+    NativeRel32Result encoded = native_rel32_encode(p + 4, target);
+    if (!encoded.ok) { return false; }
+    for (int i = 0; i < 4; i += 1) {
+        b[p + i] = encoded.bytes[i];
+    }
+    return true;
+}
+
+test "aggregate rel32 agrees with checked native encoder" {
+    List<int> b = new List<int>();
+    for (int i = 0; i < 8; i += 1) { b.push(17); }
+    assert(ag_rel32(b, 4, 0));
+    NativeRel32Result expected = native_rel32_encode(8, 0);
+    assert(expected.ok);
+    for (int i = 0; i < 4; i += 1) {
+        assert(b[i] == 17 && b[i + 4] == expected.bytes[i]);
+    }
+    assert(ag_rel32(b, 0, 8));
+    assert(b[0] == 4 && b[1] == 0 && b[2] == 0 && b[3] == 0);
+    assert(!ag_rel32(b, 5, 0));
+    assert(!ag_rel32(b, 0, 9));
+    assert(!ag_rel32(b, -1, 0));
+    assert(b[0] == 4 && b[4] == 248);
+}
