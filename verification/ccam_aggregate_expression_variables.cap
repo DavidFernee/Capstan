@@ -56,11 +56,17 @@ AGCheckedInt ag_compile_expression_with_bindings(List<int> source,List<AGVariabl
                 value=variable.value;
             }
             nodes.push(new AGExpression{kind:1,value:value,left:-1,right:-1});
-            values.push(nodes.len()-1); nv+=1; expect_value=false; continue;
+            if (nv==values.len()) { values.push(nodes.len()-1); }
+            else { values[nv]=nodes.len()-1; }
+            nv+=1; expect_value=false; continue;
         }
         int op=0;
         if(token.kind==3) { op=source[token.start]; }
-        if(op==40 && expect_value) { operators.push(op); no+=1; continue; }
+        if(op==40 && expect_value) {
+            if (no==operators.len()) { operators.push(op); }
+            else { operators[no]=op; }
+            no+=1; continue;
+        }
         if(expect_value || (token.kind!=0 && op!=41 && ag_precedence(op)==0)) { return failure; }
         while(no>0 && operators[no-1]!=40 && (token.kind==0 || op==41 || ag_precedence(operators[no-1])>=ag_precedence(op))) {
             if(nv<2) { return failure; }
@@ -74,7 +80,9 @@ AGCheckedInt ag_compile_expression_with_bindings(List<int> source,List<AGVariabl
             return ag_scalar_machine(lowered.instructions);
         }
         if(op==41) { if(no==0 || operators[no-1]!=40) { return failure; } no-=1; continue; }
-        operators.push(op); no+=1; expect_value=true;
+        if (no==operators.len()) { operators.push(op); }
+        else { operators[no]=op; }
+        no+=1; expect_value=true;
     }
     return failure;
 }
