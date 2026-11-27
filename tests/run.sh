@@ -893,6 +893,13 @@ else
   bad "CCAM spill lowering" "$out"
 fi
 
+section "Capstan-native verification: x86-64 scalar arithmetic encodings"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_research_native_x86_scalar_ops_tests.cap" 2>&1)"; then
+  ok "ADD/SUB/IMUL and signed MOV-immediate encodings"
+else
+  bad "CCAM x86-64 scalar arithmetic encodings" "$out"
+fi
+
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
 
