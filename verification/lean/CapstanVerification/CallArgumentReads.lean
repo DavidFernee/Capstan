@@ -114,12 +114,47 @@ theorem readCallArguments_success_well_typed
               cases hvalue : hasTypeB value expected <;> simp_all
             simp [hsource, hfalse] at hread
 
-/-- The read phase is observationally read-only: it returns only a value
-snapshot or a trap and has no machine-state argument to mutate. -/
-theorem readCallArguments_has_no_state_transition
-    {n : Nat} (registers : Registers n)
+/-- Atomic call-argument snapshot: on success it returns the ordered
+values together with the unchanged caller register file. On failure there is
+no successor register state. -/
+def readCallArgumentsAtomic {n : Nat} (registers : Registers n)
     (requests : List (CallArgumentRequest n)) :
-    ∃ result, readCallArguments registers requests = result :=
-  ⟨readCallArguments registers requests, rfl⟩
+    Except Trap (List Val × Registers n) :=
+  match readCallArguments registers requests with
+  | .error reason => .error reason
+  | .ok values => .ok (values, registers)
+
+/-- A successful argument snapshot leaves every caller register unchanged. -/
+theorem readCallArgumentsAtomic_preserves_registers
+    {n : Nat} (registers next : Registers n)
+    (requests : List (CallArgumentRequest n))
+    (values : List Val)
+    (hsnapshot :
+      readCallArgumentsAtomic registers requests = .ok (values, next)) :
+    next = registers := by
+  unfold readCallArgumentsAtomic at hsnapshot
+  cases hread : readCallArguments registers requests with
+  | error reason =>
+      simp [hread] at hsnapshot
+  | ok snapshot =>
+      simp [hread] at hsnapshot
+      cases hsnapshot
+      rfl
+
+/-- A failed argument snapshot has no successor machine/register state. -/
+theorem readCallArgumentsAtomic_failure_has_no_successor
+    {n : Nat} (registers : Registers n)
+    (requests : List (CallArgumentRequest n)) (reason : Trap)
+    (hfailure :
+      readCallArgumentsAtomic registers requests = .error reason) :
+    readCallArguments registers requests = .error reason := by
+  unfold readCallArgumentsAtomic at hfailure
+  cases hread : readCallArguments registers requests with
+  | error actual =>
+      simp [hread] at hfailure
+      cases hfailure
+      exact hread
+  | ok values =>
+      simp [hread] at hfailure
 
 end CapstanVerification
