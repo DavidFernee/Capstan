@@ -1,7 +1,13 @@
 namespace CredentialVerifierPolicy
 
+inductive Algorithm where
+  | argon2id
+  | scrypt
+  | pbkdf2Sha256
+  deriving DecidableEq
+
 structure Policy where
-  algorithm : Nat
+  algorithm : Algorithm
   minCost : Nat
   maxCost : Nat
   minSaltBytes : Nat
@@ -9,7 +15,7 @@ structure Policy where
   digestBytes : Nat
 
 structure Header where
-  algorithm : Nat
+  algorithm : Algorithm
   cost : Nat
   saltBytes : Nat
   digestBytes : Nat
@@ -19,6 +25,55 @@ def Accepts (p : Policy) (h : Header) : Prop :=
   p.minCost ≤ h.cost ∧ h.cost ≤ p.maxCost ∧
   p.minSaltBytes ≤ h.saltBytes ∧ h.saltBytes ≤ p.maxSaltBytes ∧
   h.digestBytes = p.digestBytes
+
+-- These are conservative global policy ceilings/floors for the abstract model.
+-- Concrete KDF adapters must separately define the unit and map each algorithm's
+-- native parameters into this bounded work-factor contract.
+def minAllowedWork : Nat := 1
+def maxAllowedWork : Nat := 1000000
+def minAllowedSaltBytes : Nat := 16
+def maxAllowedSaltBytes : Nat := 64
+def minAllowedDigestBytes : Nat := 16
+def maxAllowedDigestBytes : Nat := 64
+
+def ValidPolicy (p : Policy) : Prop :=
+  minAllowedWork ≤ p.minCost ∧
+  p.maxCost ≤ maxAllowedWork ∧
+  p.minCost ≤ p.maxCost ∧
+  minAllowedSaltBytes ≤ p.minSaltBytes ∧
+  p.maxSaltBytes ≤ maxAllowedSaltBytes ∧
+  p.minSaltBytes ≤ p.maxSaltBytes ∧
+  minAllowedDigestBytes ≤ p.digestBytes ∧
+  p.digestBytes ≤ maxAllowedDigestBytes
+
+-- Only this combined predicate represents an acceptable stored verifier.
+-- Accepts alone is the structural header match and is deliberately insufficient.
+def SecureAccepts (p : Policy) (h : Header) : Prop :=
+  ValidPolicy p ∧ Accepts p h
+
+theorem secure_accepts_requires_valid_policy (p : Policy) (h : Header)
+    (accepted : SecureAccepts p h) : ValidPolicy p :=
+  accepted.1
+
+theorem secure_accepts_has_bounded_work (p : Policy) (h : Header)
+    (accepted : SecureAccepts p h) :
+    minAllowedWork ≤ p.minCost ∧ p.maxCost ≤ maxAllowedWork :=
+  ⟨accepted.1.1, accepted.1.2.1⟩
+
+theorem secure_accepts_has_bounded_salt (p : Policy) (h : Header)
+    (accepted : SecureAccepts p h) :
+    minAllowedSaltBytes ≤ p.minSaltBytes ∧ p.maxSaltBytes ≤ maxAllowedSaltBytes :=
+  ⟨accepted.1.2.2.2.1, accepted.1.2.2.2.2.1⟩
+
+theorem secure_accepts_has_bounded_digest (p : Policy) (h : Header)
+    (accepted : SecureAccepts p h) :
+    minAllowedDigestBytes ≤ p.digestBytes ∧ p.digestBytes ≤ maxAllowedDigestBytes :=
+  ⟨accepted.1.2.2.2.2.2.1, accepted.1.2.2.2.2.2.2⟩
+
+theorem secure_accepts_rejects_weak_cost (p : Policy) (h : Header)
+    (accepted : SecureAccepts p h) (weak : h.cost < p.minCost) : False := by
+  exact (Nat.not_lt_of_ge accepted.2.2.1) weak
+
 
 theorem rejects_weak_cost (p : Policy) (h : Header)
     (weak : h.cost < p.minCost) : ¬ Accepts p h := by
