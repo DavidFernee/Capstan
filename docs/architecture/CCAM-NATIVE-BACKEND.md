@@ -1,6 +1,6 @@
 # CCAM Native Backend: Linux x86-64
 
-**Status:** experimental freestanding Linux x86-64 backend; executable tests and native CLI integration are present, but full CCAM conformance, lossless terminal-result transport and compiler/refinement assurance remain open  
+**Status:** experimental freestanding Linux x86-64 backend; direct mode has bounded fd-3 result transport and an opt-in CCAMRES v1 record, while full CCAM conformance, stable public ABI, and compiler/refinement assurance remain open  
 **Input:** validated multi-function CCAM v0.1 scalar subset  
 **Target:** freestanding Linux x86-64 ELF, System V AMD64 calling convention, GNU assembler syntax
 
@@ -49,7 +49,7 @@ Each CCAM virtual register is assigned an eight-byte value slot and an eight-byt
 
 The emitted program maintains process-global step and call-depth counters and switches to a dedicated, 16-byte-aligned BSS stack sized conservatively from the largest function frame and configured maximum depth. This prevents the host process's default stack limit from silently changing CCAM call-depth behaviour. The backend caps this stack allocation at 32 MiB. It checks the step budget before dispatching each CCAM instruction and checks call depth before entering a callee. The initial frame counts as depth one, matching the reference evaluator.
 
-The prototype maps dynamic trap classes to distinct process exit statuses: integer overflow (70), division by zero (71), explicit trap (72), step limit (73), call-depth limit (74), and uninitialised register (75). It does not yet preserve structured trap locations/details or expose a stable public trap ABI. More importantly, an `int main` result is transported through Linux process exit status, which exposes only the low eight bits; this is not a lossless encoding of CCAM `Halt(Int64)`. A separate bounded terminal-result channel is required before native execution can claim full CCAM outcome equivalence. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned. The native backend also applies stricter expansion ceilings of 8,192 total instructions and 65,536 aggregate registers before validation or assembly allocation; these are backend resource limits, not changes to the CCAM language limits.
+The legacy assembler-backed path maps dynamic trap classes to distinct process exit statuses and does not preserve full-width integer results or structured trap locations/details. Linux process status exposes only the low eight bits, so it is not a lossless encoding of CCAM `Halt(Int64)`. The separate direct ELF profile addresses this for its narrow scalar subset: raw-result mode writes an eight-byte signed result to fd 3, while opt-in `--direct-record` writes an experimental CCAMRES v1 record containing the value or trap class, charged steps, PC, function name and (for explicit traps) detail. This is useful execution evidence, not a stable public ABI or complete CCAM outcome equivalence: the direct profile accepts only a parameterless integer-returning entry, uses one write to a regular file, and treats short/interrupted writes as transport failure. The bounded retry protocol, production record consumer, void entry semantics and whole-program refinement remain open. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned. The native backend also applies stricter expansion ceilings of 8,192 total instructions and 65,536 aggregate registers before validation or assembly allocation; these are backend resource limits, not changes to the CCAM language limits.
 
 ## 4. Validation and testing
 
@@ -59,7 +59,7 @@ On Linux x86-64, the integration test assembles with `as --64`, links directly w
 
 ## 5. Explicit gaps
 
-This is not yet a production backend. It does not support strings, output, heap objects, aggregates, globals, foreign calls, more than six integer-class arguments, Windows ABI, macOS Mach-O, AArch64, or a complete runtime. Trap details are reduced to exit statuses. There is no Lean theorem proving that emitted machine code simulates CCAM, and no differential conformance suite yet compares every supported CCAM instruction against the native executable.
+This is not yet a production backend. The direct ELF profile does not support calls, byte output, heap objects, aggregates, globals, foreign calls, void entry points, or more than one parameterless integer-returning entry. The assembler-backed profile has a separate byte-output adapter but still lacks complete aggregate/runtime coverage and a stable public trap ABI. Neither profile supports Windows ABI, macOS Mach-O or AArch64. There is no Lean theorem proving that emitted machine code simulates CCAM, and no exhaustive differential conformance suite across the full supported machine semantics.
 
 Next work:
 
