@@ -274,6 +274,8 @@ The following ordering is observed in `verification/ccam_calls.cap` at the revie
 8. Construct the callee frame at entry PC zero, including the saved caller destination.
 9. Push/reuse the frame slot and increment active frame depth.
 
+The current Lean increment now includes `budgetedCallTransition`: it gates a pure typed call attempt through the shared `StepBudget`, preserves the original counter on pre-dispatch exhaustion, and records one consumed step for an admitted attempt that traps. This is a budget-admission wrapper around the typed call protocol, not yet the complete dynamic CALL implementation: call-site lookup and argument-read failures must still be represented inside the attempt with their exact precedence.
+
 The formal call transition must preserve this ordering. In particular, checking depth before argument reads would change which trap wins when both an argument read and depth check fail. Re-reading caller registers after mutation would not implement the snapshot semantics.
 
 **Return and void-return opcodes**
