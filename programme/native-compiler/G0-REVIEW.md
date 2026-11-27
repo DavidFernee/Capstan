@@ -40,3 +40,25 @@ Candidate baseline: `549d5ad4d81f7a88e1d76a959aed6c65230e05c6` (merge #548); not
 
 ## Matrix structural review — pinned #548 baseline
 All seven matrices inspected. Row counts: scalar 17, aggregate 18, native 18, frontend 18, GC 18, bootstrap 12, optimisation 12 (113 total). The count is a traceability inventory, not a completion metric. GC rows refine aggregate requirements; bootstrap and optimisation use local IDs and require explicit CAP-001 parent links. Proposed parent mapping: GC01–18 R04/R05/R09; BS01–12 R09/R10/R11; OPT01–12 R08/R05/R06/R11. Security and performance supplemental obligations remain necessary. Crosswalk still labels RTM-006/007 pending despite their presence; interpret as acceptance pending, not missing files. All 19 WBS packages have role owners and exit deliverables; actual worker acknowledgement remains outstanding. G0-03 remains open: per-row normative clause, exact current source/test/proof bindings and transitive compiler module inventory are incomplete. Static review is not independent approval or proof execution.
+
+## Configuration manifest increment
+Static Git blob identities at candidate revision `549d5ad4d81f7a88e1d76a959aed6c65230e05c6` (not executable artifact hashes):
+
+| Input | Git blob |
+|---|---|
+| compiler/ast.cap | `7202b1676409773cf55a4de57c45d38db0532142` |
+| compiler/lexer.cap | `6bc9bf8c12b4b9bcf8928b45d302f8e8453a02eb` |
+| compiler/parser.cap | `b656da773f2aa118b0fd2eeeb537a8a4614cad1e` |
+| compiler/checker.cap | `9b485cf9c467fc0c5cd15aa07b5190c6b0b5e2de` |
+| compiler/ranges.cap | `91431cbf826b5953481178f67ecfe942f08094f4` |
+| compiler/codegen.cap | `a43b6163a11f3d71f0e74b1758e4cf49e24d9c89` |
+| compiler/main.cap | `ac1b4d3b4985ddc32b19914dd353b127d5fddc68` |
+| bootstrap/capstan0.py | `f374716051640c4e2776089156fb4eff18a87c4b` |
+| runtime/capstan_rt.h | `27cc7cfc6827f5745150f4bf2d5c38dd65978a06` |
+| scripts/sbom-schema-requirements.txt | `f4b1f260bc4ddf120343ba78a75039fe0804b990` |
+| Makefile | `effba39be3f91c98c6c6c2b99c22b5e78dd10ab5` |
+| tests/run.sh | `f0b3937dad515b119deb8ec79d428b84e5713bf5` |
+| .github/workflows/ci.yml | `39e08c63a2bb863ff5aeb0367bb7975253c47e38` |
+| verification/lean/lean-toolchain | `7aca1d8a939cc24c413eddd793671cdce7070b74` |
+
+Lean pin: leanprover/lean4:v4.19.0. Prescribed general CI: `make`, then `bash tests/run.sh` on Ubuntu GCC, Ubuntu Clang, macOS Clang; scheduled full run uses `--full`. Checkout action pinned at `3d3c42e5aac5ba805825da76410c181273ba90b1`. Current bootstrap is Python stage 0, Python stage 1, C stage 2/3 with generated C comparison; this is not G6 C-free evidence. Runner image labels are floating; actual compiler/Python/OS versions, transitive dependency closure, clean checkout, executed command output, test counts, Lean axiom results and independent reproduction remain unrecorded. Formal workflow path lookup was unsuccessful; do not infer its command or result. No fresh execution. G0-06/07 remain open.
