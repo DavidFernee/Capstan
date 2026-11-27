@@ -89,6 +89,7 @@ AGAllocationResult ag_linear_scan_allocate(List<AGLiveInterval> input) {
     List<AGLiveInterval> ordered=new List<AGLiveInterval>();
     List<AGLiveInterval> active=new List<AGLiveInterval>();
     List<AGRegisterAssignment> assignments=new List<AGRegisterAssignment>();
+    Map<int> assignment_by_id=new Map<int>();
     int spill_count=0;
     // RAX, RCX, RDX, RSI, RDI, R8, R9, R10, R11 (SysV caller-saved).
     if(!ag_interval_set_valid(input)) {
@@ -108,13 +109,19 @@ AGAllocationResult ag_linear_scan_allocate(List<AGLiveInterval> input) {
         for(int r=0;r<9;r+=1) {
             bool used=false;
             for(int a=0;a<active.len();a+=1) {
-                int assignment=ag_assignment_index(assignments,active[a].virtual_id);
-                if(assignment>=0 && assignments[assignment].physical_reg==ag_alloc_physical_reg(r)) { used=true; }
+                string active_key=int_to_str(active[a].virtual_id);
+                if (let assignment = assignment_by_id.get(active_key)) {
+                    if(assignments[assignment].physical_reg==ag_alloc_physical_reg(r)) { used=true; }
+                } else {
+                    return new AGAllocationResult{ok:false,spill_count:spill_count,assignments:assignments};
+                }
             }
             if(!used) { free_reg=ag_alloc_physical_reg(r); break; }
         }
         if(free_reg>=0) {
+            int new_assignment=assignments.len();
             assignments.push(new AGRegisterAssignment{virtual_id:current.virtual_id,physical_reg:free_reg,spill_slot:-1});
+            assignment_by_id.set(int_to_str(current.virtual_id),new_assignment);
             active.push(current);
             continue;
         }
@@ -126,7 +133,10 @@ AGAllocationResult ag_linear_scan_allocate(List<AGLiveInterval> input) {
         }
         if(farthest>=0) {
             AGLiveInterval victim=active[farthest];
-            int victim_assignment=ag_assignment_index(assignments,victim.virtual_id);
+            int victim_assignment=-1;
+            if (let found = assignment_by_id.get(int_to_str(victim.virtual_id))) {
+                victim_assignment=found;
+            }
             if(victim_assignment<0 || spill_count>=AG_ALLOC_SPILL_LIMIT) {
                 return new AGAllocationResult{ok:false,spill_count:spill_count,assignments:assignments};
             }
@@ -137,7 +147,9 @@ AGAllocationResult ag_linear_scan_allocate(List<AGLiveInterval> input) {
             assignments[victim_assignment].physical_reg=-1;
             assignments[victim_assignment].spill_slot=spill_count;
             spill_count+=1;
+            int new_assignment=assignments.len();
             assignments.push(new AGRegisterAssignment{virtual_id:current.virtual_id,physical_reg:reclaimed,spill_slot:-1});
+            assignment_by_id.set(int_to_str(current.virtual_id),new_assignment);
             List<AGLiveInterval> kept=new List<AGLiveInterval>();
             for(int a=0;a<active.len();a+=1) { if(a!=farthest) { kept.push(active[a]); } }
             active=kept;
@@ -146,7 +158,9 @@ AGAllocationResult ag_linear_scan_allocate(List<AGLiveInterval> input) {
             if(spill_count>=AG_ALLOC_SPILL_LIMIT) {
                 return new AGAllocationResult{ok:false,spill_count:spill_count,assignments:assignments};
             }
+            int new_assignment=assignments.len();
             assignments.push(new AGRegisterAssignment{virtual_id:current.virtual_id,physical_reg:-1,spill_slot:spill_count});
+            assignment_by_id.set(int_to_str(current.virtual_id),new_assignment);
             spill_count+=1;
         }
     }
