@@ -900,6 +900,13 @@ else
   bad "CCAM x86-64 scalar arithmetic encodings" "$out"
 fi
 
+section "Capstan-native verification: scalar IR to x86-64 lowering"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_scalar_native_emit_tests.cap" 2>&1)"; then
+  ok "scalar constants, add/subtract/multiply and explicit unsupported-operation rejection"
+else
+  bad "CCAM scalar native lowering" "$out"
+fi
+
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
 
