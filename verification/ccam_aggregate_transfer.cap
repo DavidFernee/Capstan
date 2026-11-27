@@ -104,3 +104,16 @@ test "static aggregate transfer rejects inconsistent condition states" {
     assert(ag_transfer_condition(kinds, input, 0));
     assert(!ag_transfer_condition(kinds, input, -1));
 }
+
+test "static byte concat reads aliased sources before writing destination" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    List<bool> ready = new List<bool>();
+    ready.push(true); ready.push(true);
+    List<int> concat = new List<int>();
+    concat.push(0); concat.push(0); concat.push(1);
+    AGTransferResult result = ag_transfer(kinds, ready, 8, AG_SCHEMA_REF, concat);
+    assert(result.ok && result.ready[0] && result.ready[1]);
+    ready[1] = false;
+    assert(!ag_transfer(kinds, ready, 8, AG_SCHEMA_REF, concat).ok);
+}
