@@ -6,7 +6,7 @@ AGScalarLower ag_scalar_lower(List<AGExpression> nodes) {
  if (!ag_typecheck_expression(nodes)) { return new AGScalarLower{ok:false,instructions:instructions}; }
  for (int i=0;i<nodes.len();i+=1) {
   AGExpression node=nodes[i]; int op=1;
-  if (node.kind==2) { if (node.value==43) { op=2; } else if (node.value==45) { op=3; } else if (node.value==42) { op=4; } else { op=5; } }
+  if (node.kind==2) { if (node.value==43) { op=2; } else if (node.value==45) { op=3; } else if (node.value==42) { op=4; } else if (node.value==47) { op=5; } else if (node.value==60) { op=6; } else if (node.value==62) { op=7; } else { return new AGScalarLower{ok:false,instructions:instructions}; } }
   instructions.push(new AGScalarInstruction{opcode:op,dest:i,left:node.left,right:node.right,immediate:node.value});
  }
  return new AGScalarLower{ok:true,instructions:instructions};
