@@ -198,3 +198,52 @@ test "research binary typing distinguishes comparisons from scalar operators" {
     assert(ag_binary_result_type(61,AG_SCHEMA_BOOL,AG_SCHEMA_BOOL) == AG_SCHEMA_BOOL);
     assert(ag_binary_result_type(0,AG_SCHEMA_INT,AG_SCHEMA_INT) == -1);
 }
+
+test "keyword scanning validates spans before indexing" {
+    List<int> b = new List<int>();
+    b.push(119); b.push(104); b.push(105); b.push(108); b.push(101);
+    assert(ag_keyword(b,0,5));
+    assert(!ag_keyword(b,-1,4));
+    assert(!ag_keyword(b,0,6));
+    assert(!ag_keyword(b,4,3));
+    assert(!ag_keyword(b,5,5));
+    List<int> r = new List<int>();
+    r.push(114); r.push(101); r.push(116); r.push(117); r.push(114); r.push(110);
+    assert(ag_keyword(r,0,6));
+}
+
+test "UTF-8 lead classifier rejects negative and out-of-byte-range values" {
+    assert(ag_utf8_width(0) == 1);
+    assert(ag_utf8_width(127) == 1);
+    assert(ag_utf8_width(194) == 2);
+    assert(ag_utf8_width(244) == 4);
+    assert(ag_utf8_width(-1) == 0);
+    assert(ag_utf8_width(256) == 0);
+}
+
+test "switch uniqueness has an explicit quadratic-work bound" {
+    List<int> keys = new List<int>();
+    keys.push(1); keys.push(2); keys.push(3);
+    assert(ag_ir_switch_unique(keys));
+    assert(ag_ir_switch_count(4096));
+    assert(!ag_ir_switch_count(4097));
+    keys.push(2);
+    assert(!ag_ir_switch_unique(keys));
+}
+
+test "x86 LEA emits correct SIB and zero-displacement base encodings" {
+    List<int> bytes = new List<int>();
+    assert(ag_x86_lea(bytes,0,1));
+    assert(bytes[0] == 72 && bytes[1] == 141 && bytes[2] == 1);
+    assert(ag_x86_lea(bytes,0,4));
+    assert(bytes[3] == 72 && bytes[4] == 141 && bytes[5] == 4 && bytes[6] == 36);
+    assert(ag_x86_lea(bytes,0,5));
+    assert(bytes[7] == 72 && bytes[8] == 141 && bytes[9] == 69 && bytes[10] == 0);
+    assert(ag_x86_lea(bytes,8,12));
+    assert(bytes[11] == 77 && bytes[12] == 141 && bytes[13] == 4 && bytes[14] == 36);
+    assert(ag_x86_lea(bytes,9,13));
+    assert(bytes[15] == 77 && bytes[16] == 141 && bytes[17] == 77 && bytes[18] == 0);
+    int before = bytes.len();
+    assert(!ag_x86_lea(bytes,16,0));
+    assert(bytes.len() == before);
+}
