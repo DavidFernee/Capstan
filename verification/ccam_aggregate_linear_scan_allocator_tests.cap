@@ -72,3 +72,11 @@ test "linear scan assigns unique bounded spill slots under pressure" {
     }
     assert(spilled==2);
 }
+
+test "linear scan validates sparse high virtual identities without dense allocation" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    intervals.push(new AGLiveInterval{virtual_id:1048575,start:0,end:2});
+    intervals.push(new AGLiveInterval{virtual_id:3,start:2,end:4});
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    assert(result.ok && result.assignments.len()==2 && result.spill_count==0);
+}
