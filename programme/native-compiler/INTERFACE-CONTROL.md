@@ -12,4 +12,4 @@ Proposed freeze gates, not normative replacements. Each interface requires versi
 | I06 | Machine code, relocations, object/load | Native | C04,E01 |
 | I07 | Optimisation/certificate and exact artifact binding | Formal/Native | E02,F03 |
 
-I03 must distinguish signed-64 and void outcomes, trap identity/location/detail/steps, and platform failures; coordinate active #540 rather than invent wire format. I04 must state generation exhaustion, root publication and failure atomicity. I07 must state validator timeout policy and trust assumptions. Interface changes require review from both producers and consumers.
+I03 must distinguish signed-64 and void outcomes, trap identity/location/detail/steps, and platform failures; coordinate active #552 and its experimental CCAMRES v1 transport rather than invent a competing wire format. I04 must state generation exhaustion, root publication and failure atomicity. I07 must state validator timeout policy and trust assumptions. Interface changes require review from both producers and consumers.
