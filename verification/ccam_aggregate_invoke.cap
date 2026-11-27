@@ -56,23 +56,32 @@ test "aggregate invoke transfers the declared return register to caller" {
     assert(stack.active.steps == 3);
 }
 
-test "aggregate invoke propagates callee traps and restores caller frame" {
+test "aggregate invoke propagates runtime bounds traps and restores caller frame" {
     List<int> root_kinds = new List<int>();
+    root_kinds.push(AG_SCHEMA_REF);
     root_kinds.push(AG_SCHEMA_INT);
     root_kinds.push(AG_SCHEMA_INT);
     CCAMAggregateCreateResult root = ccam_aggregate_create(root_kinds, 4096, 16, 4096, 4096, 16);
     assert(root.ok);
-    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(42)) == "");
+    assert(ccam_aggregate_alloc_array(root.machine, 0, AG_SCHEMA_INT, 0, 1) == "");
+    assert(ccam_aggregate_write(root.machine, 1, ccam_heap_int(0)) == "");
     AGStackResult created = ag_stack_create(root.machine, 4, 16);
 
     List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_REF);
     parameters.push(AG_SCHEMA_INT);
     AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
     List<int> callee_kinds = new List<int>();
+    callee_kinds.push(AG_SCHEMA_REF);
     callee_kinds.push(AG_SCHEMA_INT);
+    callee_kinds.push(AG_SCHEMA_INT);
+    List<int> operands = new List<int>();
+    operands.push(2);
+    operands.push(0);
+    operands.push(1);
     List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
     instructions.push(new AGBlockInstruction{
-        opcode: 99, kind: AG_SCHEMA_INT, operands: new List<int>()
+        opcode: 1, kind: AG_SCHEMA_INT, operands: operands
     });
     List<AGCFGBlock> blocks = new List<AGCFGBlock>();
     blocks.push(new AGCFGBlock{
@@ -80,7 +89,7 @@ test "aggregate invoke propagates callee traps and restores caller frame" {
         condition: -1, yes: -1, no: -1
     });
     List<int> returns = new List<int>();
-    returns.push(0);
+    returns.push(2);
     AGFunction function = new AGFunction{
         signature: signature, kinds: callee_kinds, blocks: blocks, returns: returns
     };
@@ -88,10 +97,11 @@ test "aggregate invoke propagates callee traps and restores caller frame" {
     functions.push(function);
     List<int> arguments = new List<int>();
     arguments.push(0);
+    arguments.push(1);
 
     AGStack stack = created.stack;
-    assert(ag_invoke(stack, functions, 0, arguments, 1) == "invalid_aggregate_instruction");
-    assert(stack.depth == 0 && stack.slots == 2);
-    assert(stack.active.trap_code == "invalid_aggregate_instruction");
-    assert(!stack.active.registers[1].initialised);
+    assert(ag_invoke(stack, functions, 0, arguments, 2) == "array_index_out_of_bounds");
+    assert(stack.depth == 0 && stack.slots == 3);
+    assert(stack.active.trap_code == "array_index_out_of_bounds");
+    assert(!stack.active.registers[2].initialised);
 }
