@@ -168,3 +168,21 @@ test "fixedpoint rejects uninitialised array append values" {
     List<AGCFGState> states = new List<AGCFGState>();
     assert(!ag_fp_validate(kinds, entry, blocks, states));
 }
+
+test "fixedpoint transfer handles aliased immutable byte operations" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    List<bool> entry = new List<bool>();
+    entry.push(true); entry.push(true); entry.push(false);
+    List<int> concat = new List<int>();
+    concat.push(0); concat.push(0); concat.push(1);
+    List<int> length = new List<int>();
+    length.push(2); length.push(0);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{opcode: 8, kind: AG_SCHEMA_REF, operands: concat});
+    instructions.push(new AGBlockInstruction{opcode: 7, kind: AG_SCHEMA_INT, operands: length});
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<AGCFGState> states = new List<AGCFGState>();
+    assert(ag_fp_validate(kinds, entry, blocks, states));
+}
