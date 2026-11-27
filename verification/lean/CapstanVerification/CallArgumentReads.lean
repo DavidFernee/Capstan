@@ -109,7 +109,7 @@ theorem readCallArguments_success_well_typed
             | ok tail =>
                 simp [htail] at hread
                 cases hread
-                exact .cons htyped (ih htail)
+                exact .cons htyped (ih tail htail)
           · have hfalse : hasTypeB value expected = false := by
               cases hvalue : hasTypeB value expected <;> simp_all
             simp [hsource, hfalse] at hread
@@ -138,8 +138,7 @@ theorem readCallArgumentsAtomic_preserves_registers
       simp [hread] at hsnapshot
   | ok snapshot =>
       simp [hread] at hsnapshot
-      cases hsnapshot
-      rfl
+      exact hsnapshot.2.symm
 
 /-- A failed argument snapshot has no successor machine/register state. -/
 theorem readCallArgumentsAtomic_failure_has_no_successor
@@ -153,7 +152,7 @@ theorem readCallArgumentsAtomic_failure_has_no_successor
   | error actual =>
       simp [hread] at hfailure
       cases hfailure
-      exact hread
+      rfl
   | ok values =>
       simp [hread] at hfailure
 
