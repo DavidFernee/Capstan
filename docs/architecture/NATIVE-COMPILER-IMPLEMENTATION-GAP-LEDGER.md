@@ -68,9 +68,9 @@ Some work can proceed in parallel only where interfaces are frozen and recorded.
 ### T1 — Architecture contracts
 1. Review and approve the layered compiler architecture RFC.
 2. Add the architecture to the repository design map and research register.
-3. Define CHIR schema and verifier invariants.
-4. Define CMIR CFG/SSA choice, schema and verifier invariants.
-5. Define explicit translation contracts and metadata preservation obligations.
+3. Keep the checked-source contract aligned with the existing typed-core work; do not add a competing source-core IR.
+4. Treat SSA/CFG as optional derived optimisation IR only when a measured need justifies it; specify its closed schema, validator and refinement back to CCAM before implementation.
+5. Define explicit translation contracts and metadata-preservation obligations for each representation actually selected.
 6. Inventory existing frontend, checker, CCAM and native modules against these contracts.
 
 ### T2 — CCAM reconciliation
