@@ -119,12 +119,16 @@ int main() {
     }
 
     List<Node> declarations = new List<Node>();
-    Map<int> loaded = new Map<int>();
+    // Record paths on enqueue so shared imports occupy one slot and keep their first origin.
+    Map<int> scheduled = new Map<int>();
     List<string> queue = new List<string>();
     List<int> from_file = new List<int>();
     List<int> from_line = new List<int>();
     for (int q = 0; q < source_paths.len(); q += 1) {
-        queue.push(source_paths[q]);
+        string path = source_paths[q];
+        if (scheduled.has(path)) { continue; }
+        scheduled.set(path, 1);
+        queue.push(path);
         from_file.push(-1);
         from_line.push(0);
     }
@@ -136,8 +140,6 @@ int main() {
         int origin_file = from_file[queue_index];
         int origin_line = from_line[queue_index];
         queue_index += 1;
-        if (loaded.has(path)) { continue; }
-        loaded.set(path, 1);
         int file_index = context.files.len();
         context.files.push(path);
         if (budget.files >= MAX_IMPORT_FILES) {
@@ -166,7 +168,10 @@ int main() {
                     Node declaration = part[k];
                     if (declaration.k == N_IMPORT) {
                         if (native_import_path_ok(declaration.s)) {
-                            queue.push(native_dir_of(path) + declaration.s);
+                            string imported_path = native_dir_of(path) + declaration.s;
+                            if (scheduled.has(imported_path)) { continue; }
+                            scheduled.set(imported_path, 1);
+                            queue.push(imported_path);
                             from_file.push(file_index);
                             from_line.push(declaration.line);
                         } else {

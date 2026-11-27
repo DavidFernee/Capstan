@@ -39,11 +39,13 @@ def expect_failure(source: pathlib.Path, needle: str, label: str) -> None:
         raise SystemExit(f"{label}: expected {needle!r}; exit={result.returncode}\n{result.stdout[-4000:]}")
 
 
-def write_chain(directory: pathlib.Path, imported_files: int) -> pathlib.Path:
+def write_chain(directory: pathlib.Path, imported_files: int, *, repeat_edges: bool = False) -> pathlib.Path:
     directory.mkdir()
     (directory / "main.cap").write_text('import "f0.cap";\n')
     for i in range(imported_files):
         body = f'import "f{i + 1}.cap";\n' if i + 1 < imported_files else "int main() { return 0; }\n"
+        if repeat_edges and i + 1 < imported_files:
+            body += body
         (directory / f"f{i}.cap").write_text(body)
     return directory / "main.cap"
 
@@ -56,7 +58,7 @@ def padded(prefix: str, size: int) -> str:
 with tempfile.TemporaryDirectory(prefix="capstan-native-import-budget-") as td:
     base = pathlib.Path(td)
 
-    expect_success(write_chain(base / "file-count-exact", 255), "native-file-count-exact")
+    expect_success(write_chain(base / "file-count-exact", 255, repeat_edges=True), "native-file-count-exact")
     expect_failure(
         write_chain(base / "file-count-over", 256),
         "file-count limit (256)",
