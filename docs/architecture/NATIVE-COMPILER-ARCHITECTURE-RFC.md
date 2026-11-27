@@ -53,7 +53,7 @@ The resolver assigns stable declaration identities. Names are never the sole ide
 
 The initial C-free frontend contract is the checked source core defined by the language-semantics workstream and the existing typed-core proposal. The compiler must preserve stable binding identity, resolved types, explicit left-to-right sequencing, short-circuit behaviour, source spans, security classifications, effect/authority requirements and bounded compilation work.
 
-Do not introduce a separate CHIR instruction language or duplicate CCAM's value and operation semantics. The first vertical slice remains:
+Do not introduce a separate source-core instruction language or duplicate CCAM's value and operation semantics. The first vertical slice remains:
 
 `source -> lexer/parser -> checker -> deterministic lowering -> complete CCAM validation -> CCAM evaluator`
 
@@ -89,19 +89,6 @@ The derived IR must:
 The initial SSA choice (block arguments or phi nodes), memory/effect token design and resource-cost model remain deferred until a concrete prototype and proof interface are reviewed. Do not freeze additional constructors or semantics in parallel with CCAM.
 
 No implicit undefined behaviour is introduced to simplify optimisation. Integer overflow, division by zero, invalid references, bounds violations and other language-defined failures retain their specified outcomes.
-
-### 3.4 CCAM
-
-CCAM remains the canonical abstract execution machine, not a generic name for every compiler IR.
-
-- CCAM v0.1 remains frozen for its documented scalar profile.
-- Experimental aggregate, memory, output and capability instructions are not v0.1 conformance.
-- CCAM v0.2 (or separately versioned profiles) specifies typed references, object layouts, allocation, aggregate operations, strings/bytes, frame semantics, effects, traps and resource accounting before those features become normative.
-- Strict decoding, duplicate-key rejection, exact integer parsing, closed schemas and whole-program validation are required before untrusted external CCAM documents are accepted.
-- The internal multi-function side-table representation must have a specified, validated mapping to canonical call representation.
-- Every extension defines validation, dynamic semantics, resource charges, failure atomicity, serialization and formal obligations.
-
-The reference evaluator is an executable implementation of CCAM, not a replacement for its specification. Its concrete transition relation must be related to the Lean machine.
 
 ### 3.5 Native backend lowering forms (optional)
 
@@ -145,9 +132,8 @@ Every adjacent stage has a named translation and an acceptance relation.
 | CCAM -> derived optimisation IR | Validated conversion, CFG/SSA invariants and preservation of CCAM observables |
 | Derived optimisation IR -> CCAM | Valid reconstruction, simulation/refinement, trap/effect/resource preservation |
 | CCAM -> native target lowering (direct or through optional backend forms) | Machine-level simulation, value representation, memory and call semantics preserved |
-| Target instruction stream -> object | Encoding validity, relocation correctness, section/permission correctness |
-| CLIR -> CTIR | Instruction selection, register allocation, stack layout, relocations and ABI correctness |
-| CTIR -> object | Encoding validity, relocation correctness, section/permission correctness |
+| Optional backend form -> target-specific instruction stream | Instruction selection, register allocation, stack layout, relocations and ABI correctness, when such a form is used |
+| Target-specific instruction stream -> object | Encoding validity, relocation correctness, section/permission correctness |
 | object -> executable | Link/load integrity, symbol resolution, segment policy and manifest binding |
 
 Each contract specifies:
