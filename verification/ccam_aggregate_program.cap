@@ -1,17 +1,44 @@
 import "ccam_aggregate_stack.cap";
 import "ccam_aggregate_fixedpoint.cap";
-struct AGFunction { AGCallSignature signature; List<int> kinds; List<AGCFGBlock> blocks; List<int> returns; }
+
+struct AGFunction {
+    AGCallSignature signature;
+    List<int> kinds;
+    List<AGCFGBlock> blocks;
+    List<int> returns;
+}
+
 bool ag_function_validate(AGFunction f) {
     AGTransferResult entry = ag_call_entry(f.signature, f.kinds);
     if (!entry.ok || f.returns.len() != f.blocks.len()) { return false; }
-    if (!ag_fp_validate(f.kinds, entry.ready, f.blocks)) { return false; }
+    List<AGCFGState> states = new List<AGCFGState>();
+    if (!ag_fp_validate(f.kinds, entry.ready, f.blocks, states)) { return false; }
     for (int i = 0; i < f.blocks.len(); i += 1) {
         if (f.blocks[i].terminator == 0) {
-            if (!ag_schema_register(f.kinds, f.returns[i], f.signature.result_kind)) { return false; }
-        } else if (f.returns[i] != -1) { return false; }
+            int source = f.returns[i];
+            if (!ag_schema_register(f.kinds, source, f.signature.result_kind)) { return false; }
+            if (states[i].reached) {
+                List<bool> ready = new List<bool>();
+                for (int r = 0; r < states[i].ready.len(); r += 1) {
+                    ready.push(states[i].ready[r]);
+                }
+                for (int j = 0; j < f.blocks[i].instructions.len(); j += 1) {
+                    AGBlockInstruction ins = f.blocks[i].instructions[j];
+                    AGTransferResult next = ag_transfer(
+                        f.kinds, ready, ins.opcode, ins.kind, ins.operands
+                    );
+                    if (!next.ok) { return false; }
+                    ready = next.ready;
+                }
+                if (!ag_call_return(f.signature, f.kinds, ready, source)) { return false; }
+            }
+        } else if (f.returns[i] != -1) {
+            return false;
+        }
     }
     return true;
 }
+
 bool ag_program_validate(List<AGFunction> functions) {
     if (functions.len() == 0 || functions.len() > 256) { return false; }
     int total = 0;
@@ -21,4 +48,22 @@ bool ag_program_validate(List<AGFunction> functions) {
         if (!ag_function_validate(functions[i])) { return false; }
     }
     return true;
+}
+
+test "aggregate function rejects a return register not definitely initialised" {
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_INT);
+    AGCallSignature signature = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_INT);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>();
+    returns.push(1);
+    AGFunction invalid = new AGFunction{signature: signature, kinds: kinds, blocks: blocks, returns: returns};
+    assert(!ag_function_validate(invalid));
+    returns[0] = 0;
+    AGFunction valid = new AGFunction{signature: signature, kinds: kinds, blocks: blocks, returns: returns};
+    assert(ag_function_validate(valid));
 }

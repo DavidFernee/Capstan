@@ -8,6 +8,8 @@ import CapstanVerification.F1Provenance
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
+import CapstanVerification.IntegratedMachine
+import CapstanVerification.NativeMachineBridge
 import CapstanVerification.AggregateHeap
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
@@ -226,6 +228,15 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
 #print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
 
+-- Whole-state native CCAM bridge: constructor, PC and pre-dispatch fuel only.
+#print axioms CapstanVerification.nativeCCAMMachineInitial
+#print axioms CapstanVerification.nativeCCAMMachineInitial_matches
+#print axioms CapstanVerification.nativePCAdvance
+#print axioms CapstanVerification.nativePCAdvance_corresponds
+#print axioms CapstanVerification.nativeStepAdmission
+#print axioms CapstanVerification.nativeStepAdmission_corresponds
+#print axioms CapstanVerification.nativeStepAdmission_exhausted
+
 -- Explicit application-trap model: keep these proof dependencies visible.
 #print axioms CapstanVerification.explicitTrap_preserves_detail
 #print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
@@ -257,7 +268,22 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.pushTypedMultiFrame_active
 #print axioms CapstanVerification.pushTypedMultiFrame_depth
 #print axioms CapstanVerification.pushTypedMultiFrame_exhausted
+#print axioms CapstanVerification.commitTypedReturnOnStack_decreases_depth
+#print axioms CapstanVerification.commitTypedReturnOnStack_within_limit
+#print axioms CapstanVerification.commitTypedReturnOnStack_frames_well_typed
 
+
+-- First integrated stack return transition (abstract model only).
+#print axioms CapstanVerification.commitTypedReturnOnStack
+#print axioms CapstanVerification.commitTypedReturnOnStack_decreases_depth
+#print axioms CapstanVerification.commitTypedReturnOnStack_preserves_depth_limit
+#print axioms CapstanVerification.commitTypedVoidReturnOnStack
+#print axioms CapstanVerification.commitTypedVoidReturnOnStack_decreases_depth
+#print axioms CapstanVerification.commitTypedVoidReturnOnStack_preserves_depth_limit
+#print axioms CapstanVerification.typedCallArgumentsWellTyped
+#print axioms CapstanVerification.enterTypedCall
+#print axioms CapstanVerification.enterTypedCall_increases_depth
+#print axioms CapstanVerification.enterTypedCall_preserves_continuation
 
 -- Process-lifetime aggregate arena: state-in/state-out allocation and typed records.
 #print axioms CapstanVerification.emptyAggregateHeap
