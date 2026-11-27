@@ -869,3 +869,8 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_scalar_re
 else
   bad "CCAM scalar IR register allocation" "$out"
 fi
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_register_allocation_validator_tests.cap" 2>&1)"; then
+  ok "independent register allocation collision and spill validation"
+else
+  bad "CCAM register allocation validator" "$out"
+fi
