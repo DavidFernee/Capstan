@@ -8,6 +8,7 @@ import CapstanVerification.F1Provenance
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
+import CapstanVerification.IntegratedMachine
 import CapstanVerification.NativeMachineBridge
 import CapstanVerification.AggregateHeap
 import CapstanVerification.RuntimeBridge
@@ -268,6 +269,12 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.pushTypedMultiFrame_depth
 #print axioms CapstanVerification.pushTypedMultiFrame_exhausted
 
+
+-- First integrated stack return transition (abstract model only).
+#print axioms CapstanVerification.commitTypedReturnOnStack
+#print axioms CapstanVerification.commitTypedReturnOnStack_decreases_depth
+#print axioms CapstanVerification.commitTypedReturnOnStack_preserves_depth_limit
+#print axioms CapstanVerification.commitTypedReturnOnStack_frames_well_typed
 
 -- Process-lifetime aggregate arena: state-in/state-out allocation and typed records.
 #print axioms CapstanVerification.emptyAggregateHeap
