@@ -934,3 +934,37 @@ test "CCAM region heap rejects malformed layouts and invalid budgets" {
     CCAMHeapRefResult rejected = ccam_heap_alloc_record(created.heap, bad);
     assert(!rejected.ok && rejected.trap == "invalid_record_field_type");
 }
+
+test "CCAM region heap aliases share writes and rejected writes preserve state" {
+    List<int> field_types = new List<int>();
+    field_types.push(CCAM_HEAP_VALUE_INT);
+    List<bool> field_mutable = new List<bool>();
+    field_mutable.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{
+        type_id: 9201, field_types: field_types,
+        field_ref_type_ids: new List<int>(), field_mutable: field_mutable
+    };
+    CCAMHeapCreateResult created = ccam_heap_create_bounded(128, 4, 32, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult record = ccam_heap_alloc_record(heap, layout);
+    assert(record.ok);
+
+    // Struct assignment must preserve the identity of the process-lifetime arena.
+    CCAMHeap alias = heap;
+    assert(ccam_heap_field_set(alias, record.reference, 9201, 0, ccam_heap_int(73)) == "");
+    CCAMHeapValueResult through_original = ccam_heap_field_get(heap, record.reference, 9201, 0);
+    assert(through_original.ok && through_original.value.int_value == 73);
+
+    // A rejected mutation through an alias must not partially change the object.
+    int objects_before = heap.objects.len();
+    int bytes_before = heap.bytes_used;
+    int work_before = heap.work_used;
+    int next_id_before = heap.next_id;
+    string rejected = ccam_heap_field_set(alias, record.reference, 9201, 0, ccam_heap_bool(true));
+    assert(rejected == "value_type_mismatch");
+    CCAMHeapValueResult after_rejection = ccam_heap_field_get(heap, record.reference, 9201, 0);
+    assert(after_rejection.ok && after_rejection.value.int_value == 73);
+    assert(heap.objects.len() == objects_before && heap.bytes_used == bytes_before &&
+        heap.work_used == work_before && heap.next_id == next_id_before);
+}
