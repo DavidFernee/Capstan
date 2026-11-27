@@ -29,7 +29,7 @@
 The governing compiler architecture and implementation ledger are:
 - [Native Compiler Architecture RFC](architecture/NATIVE-COMPILER-ARCHITECTURE-RFC.md)
 - [Native Compiler Implementation Gap Ledger](architecture/NATIVE-COMPILER-IMPLEMENTATION-GAP-LEDGER.md)
-- [Native Compiler Research Update — 2026-11-27](../research/NATIVE-COMPILER-RESEARCH-UPDATE-2026-11-27.md)
+- [Native Compiler Research Update — 2026-11-27](research/NATIVE-COMPILER-RESEARCH-UPDATE-2026-11-27.md)
 
 The target pipeline is checked source core -> CCAM (the canonical typed core IR and abstract machine) -> optional derived optimisation IR with validation/refinement back to CCAM -> native target lowering -> object/link -> executable plus assurance manifest. CCAM remains the sole semantic authority. Low-level backend forms are optional implementation details with explicit simulation obligations. This is a target-state architecture, not a claim that the proofs or production native toolchain are already implemented.
 
