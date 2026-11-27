@@ -49,7 +49,6 @@ theorem commitTypedReturnOnStack_decreases_depth
       | nil =>
           simp [hframes, htail] at hreturn
       | cons caller rest =>
-          simp only [hframes, htail] at hreturn
           cases hcommit : commitTypedReturnToCaller callee caller value with
           | error reason =>
               simp [hcommit] at hreturn
@@ -72,7 +71,6 @@ theorem commitTypedReturnOnStack_preserves_depth_limit
       | nil =>
           simp [hframes, htail] at hreturn
       | cons caller rest =>
-          simp only [hframes, htail] at hreturn
           cases hcommit : commitTypedReturnToCaller callee caller value with
           | error reason =>
               simp [hcommit] at hreturn
@@ -80,16 +78,5 @@ theorem commitTypedReturnOnStack_preserves_depth_limit
               simp [hcommit] at hreturn
               cases hreturn
               rfl
-
-/-- Every frame retained by a successful return has a well-typed register
-file. This follows from the intrinsic frame invariant, not from an evaluator
-refinement theorem. -/
-theorem commitTypedReturnOnStack_frames_well_typed
-    (stack next : TypedMultiCallStack) (value : Val)
-    (hreturn : commitTypedReturnOnStack stack value = .ok next) :
-    ∀ frame, frame ∈ next.frames →
-      WellTyped frame.signature.registerTypes frame.registers := by
-  intro frame _membership
-  exact frame.registers_well_typed
 
 end CapstanVerification
