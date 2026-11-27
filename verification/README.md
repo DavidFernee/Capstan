@@ -42,3 +42,16 @@ first slice is implemented and tested in Capstan.
 - `bosuns_locker_protocol.cap` models transaction lifecycle, recovery idempotence and WAL/page persistence ordering.
 
 These are executable reference models, not an implemented database, durable WAL, recovery engine or implementation-refinement proof. Bounds and unsupported history classes are documented in the source and Bosun semantics contract.
+
+
+## Proposed CCAM v0.2 memory work
+
+The v0.2 scratch-memory extension is specified separately in
+[`CCAM-MEMORY-EXTENSION.md`](../docs/architecture/CCAM-MEMORY-EXTENSION.md), with its
+security acceptance contract in
+[`CCAM-MEMORY-SECURITY-CONTRACT.md`](../docs/architecture/CCAM-MEMORY-SECURITY-CONTRACT.md).
+The executable artifacts cover reservation arithmetic, region lifecycle, bounded byte
+storage, CFG lifecycle validation, frame-unwind cleanup and an independent byte-store
+oracle. They are reference models/prototypes, not a conforming v0.2 evaluator, opaque
+runtime capability implementation or proof of memory safety. CCAM v0.1 remains normative
+and unchanged.
