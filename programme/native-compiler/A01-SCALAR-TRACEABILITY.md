@@ -13,7 +13,7 @@ Pinned main: 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce. Static evidence inventory
 | R03.03 | MIN/-1 division traps | ccam_div; native div-overflow vector | SFVectors.lean sfP_run_SF003 | Exact native terminal record and refinement |
 | R03.04 | MIN%-1 returns zero | ccam_rem; native rem-min vector | SFVectors.lean sfP_run_SF004 | Exact result comparison, not exit-status-only |
 | R03.05 | Zero divisor traps | ccam_div, ccam_rem; native divzero vector | SFVectors.lean sfP_run_SF005 covers division | Both operations, exact trap and step count |
-| R03.06 | Exact integer terminal result | native x64 exit status; #540 candidate | SFVectors.lean sfP_run_SF001 models 42 | Distinguish 0/256, MIN/MAX, void, transport failure |
+| R03.06 | Exact integer terminal result | #552 direct fd-3 result/CCAMRES v1 candidate | SFVectors.lean sfP_run_SF001 models 42 | Distinguish 0/256, MIN/MAX, void, transport failure |
 | R03.07 | Uninitialised read and typed destination checks | ccam_register_read_int/bool and write_int/bool; native uninitialised vector | RuntimeBridge.lean representation relation per contract | Concrete read/write simulation and failure atomicity |
 | R03.08 | Left-to-right call reads; depth check afterward | ccam_calls.cap; ccam_initial_state_tests.cap | #549 ordered reads, #547 prerequisite | Prove implementation correspondence and exact competing-trap vectors |
 | R03.09 | Atomic return pop/write | ccam_calls.cap | #527 active | Preflight invalid destination; unchanged stack and destination on failure |
@@ -26,8 +26,8 @@ Pinned main: 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce. Static evidence inventory
 
 All rows remain unaccepted. Named Lean vector theorems were read in SFVectors.lean (14812895); they establish propositions about model execution, not implementation correctness. The existing concrete refinement contract (a8e8028) pins an older concrete core blob b29b619, not the current 5ce0daf; refresh the proof input inventory before making implementation-linked claims. Its opcode correspondence table must be read together with the later SF-P scope restrictions: explicit trap is excluded, and the stricter terminality rule is not normative CCAM.
 
-Existing runner invokes schema validation, generated Lean vector check, concrete vector runner and native executable tests. Presence of commands is not a successful run. Native legacy exit-status vectors are insufficient for full-width terminal observation. Consume #540 evidence rather than duplicate its implementation.
+Existing runner invokes schema validation, generated Lean vector check, concrete vector runner and native executable tests. Presence of commands is not a successful run. Legacy exit-status vectors are insufficient for full-width terminal observation; #552 adds experimental fd-3 raw-result and CCAMRES v1 modes, with stable ABI and full outcome refinement still open. Consume #552 evidence rather than duplicate its implementation.
 
 ## Acceptance sequencing
 
-Use #542 as the governing architecture candidate; then freeze I02/I03 and review #540. Extend shared corpus with exact terminal outcome and competing-trap negatives. Formal work must pin toolchain, imports, machine profile and implementation revision. Integration must record exact-head CI and release evidence separately from model theorem statements.
+Use #542 as the governing architecture candidate; then freeze I02/I03 and review #552. Extend shared corpus with exact terminal outcome and competing-trap negatives. Formal work must pin toolchain, imports, machine profile and implementation revision. Integration must record exact-head CI and release evidence separately from model theorem statements.
