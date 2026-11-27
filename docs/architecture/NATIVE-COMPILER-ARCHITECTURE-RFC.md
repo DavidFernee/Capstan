@@ -12,13 +12,15 @@ Adopt a layered compiler architecture with explicit, versioned representations a
 
 ```
 Capstan source
-  -> parser / resolver / checker
-  -> CHIR (typed, resolved high-level IR)
-  -> CMIR (control-flow and data-flow IR)
-  -> CCAM (canonical abstract execution machine)
-  -> CLIR (target-independent low-level IR)
-  -> CTIR (target-specific instruction IR)
-  -> native object writer / linker
+  -> lexer / parser / resolver / checker
+  -> checked source core (existing typed-core contract)
+  -> CCAM (canonical typed core IR and abstract execution semantics)
+  -> [optional] derived optimisation IR (e.g. typed SSA/CFG)
+       -> validator + refinement back to CCAM
+       -> validated CCAM
+  -> target-specific native lowering
+       -> optional implementation-only low-level/target IRs
+       -> object writer / linker
   -> executable + assurance manifest
 ```
 
@@ -47,48 +49,46 @@ The parser produces a syntax tree preserving source structure and exact source s
 
 The resolver assigns stable declaration identities. Names are never the sole identity after resolution. The frontend enforces bounded source size, import count/depth, token count, nesting, AST node count and diagnostic volume using a compilation-wide budget.
 
-### 3.2 Capstan High-level IR (CHIR)
+### 3.2 Checked source core and direct lowering
 
-CHIR is the first fully typed and resolved compiler IR. It is the frontend/backend contract and the primary home for source-level semantic distinctions.
+The initial C-free frontend contract is the checked source core defined by the language-semantics workstream and the existing typed-core proposal. The compiler must preserve stable binding identity, resolved types, explicit left-to-right sequencing, short-circuit behaviour, source spans, security classifications, effect/authority requirements and bounded compilation work.
 
-CHIR contains:
-- stable symbol and binding identities;
-- fully resolved types, type arguments and nominal type identities;
-- explicit evaluation order and short-circuit semantics;
-- explicit conversions, checked arithmetic and trap-producing operations;
-- ownership, borrow/lifetime and mutability facts;
-- taint, validation and trust provenance;
-- secret classification and permitted secret operations;
-- capability requirements and authority provenance;
-- effect summaries and call contracts;
-- source spans and provenance;
-- resource preconditions/postconditions or conservative unknowns;
-- explicit control constructs and return types.
+Do not introduce a separate CHIR instruction language or duplicate CCAM's value and operation semantics. The first vertical slice remains:
 
-No unresolved identifier, implicit coercion, error type, unchecked control-flow edge, unclassified external effect or missing source provenance may cross the validated CHIR boundary.
+`source -> lexer/parser -> checker -> deterministic lowering -> complete CCAM validation -> CCAM evaluator`
 
-CHIR does not encode backend register numbers, machine ABI details, native pointers or target-specific layout assumptions.
+The current mutable AST with optional type annotations is not automatically a trusted typed IR. The lowerer must consume only a successfully checked tree, independently enforce its accepted subset and fail closed on unsupported or inconsistent nodes. The compiler architecture workstream must coordinate any strengthening of the checked-source contract with the language-semantics owner.
 
-### 3.3 Capstan Mid-level IR (CMIR)
+### 3.3 CCAM — canonical typed core IR and abstract machine
 
-CMIR is the principal optimisation and data-flow representation. The baseline is a typed control-flow graph with block parameters or a formally specified SSA form. The implementation may use either block arguments or phi nodes, but must choose one canonical form per version and define dominance, use-def, edge and critical-edge rules.
+CCAM is both the canonical typed core IR and the reference abstract execution machine for the initial C-free programme. It is the only semantic authority for the supported core. The compiler lowers the checked source subset directly into CCAM; the evaluator defines CCAM execution; native backends and derived optimisers must preserve CCAM outcomes.
 
-CMIR makes explicit:
-- basic blocks and terminators;
-- definitions and uses;
-- memory reads/writes and alias-relevant identities;
-- effect ordering and effect tokens where required;
-- calls, returns and exceptional/trap edges;
-- bounds and range facts with proof provenance;
-- ownership/lifetime transitions;
-- capability and information-flow facts;
-- resource charges and allocation points;
-- safepoints and root liveness obligations;
-- debug/source provenance.
+- CCAM v0.1 remains frozen for its documented scalar profile, subject to the approved language-core semantic corrections. In particular, preserve the established remainder rule: remainder by zero traps, while `INT64_MIN % -1 == 0`; do not inherit host-language undefined behaviour.
+- Experimental aggregate, memory, output and capability instructions are not v0.1 conformance.
+- CCAM v0.2 (or separately versioned profiles) specifies typed references, object layouts, allocation, aggregate operations, strings/bytes, frame semantics, effects, traps and resource accounting before those features become normative.
+- Strict decoding, duplicate-key rejection, exact integer parsing, closed schemas and whole-program validation are required before untrusted external CCAM documents are accepted.
+- The internal multi-function side-table representation must have a specified, validated mapping to canonical call representation.
+- Every extension defines validation, dynamic semantics, resource charges, failure atomicity, serialization and formal obligations.
 
-Memory operations are not reordered across observable effects, aliasing writes, volatile/atomic operations, safepoints or capability boundaries unless the relevant analysis proves the transformation valid.
+The reference evaluator is an executable implementation of CCAM, not a replacement for its specification. Its concrete transition relation must be related to the Lean machine.
 
-No implicit undefined behaviour is introduced to simplify optimisation. Integer overflow, division by zero, invalid references, bounds violations and other language-defined failures retain their specified trap outcomes.
+### 3.4 Derived optimisation IR (optional)
+
+A typed SSA/CFG representation may be introduced only as a derived optimisation representation when a measured optimisation or analysis need justifies it. It is not a second semantic authority and is not required for the first native vertical slice.
+
+The derived IR must:
+- be constructed only from a fully validated CCAM program;
+- define a closed schema, type/CFG verifier, dominance and use-def rules;
+- represent traps, trap ordering, observable effects, memory dependencies and resource charges explicitly;
+- retain source provenance and security metadata needed by later validation;
+- provide a deterministic translation back to CCAM;
+- validate the reconstructed CCAM before execution or native lowering;
+- have a simulation/refinement argument to CCAM and differential conformance tests;
+- give every optimisation pass a preservation contract.
+
+The initial SSA choice (block arguments or phi nodes), memory/effect token design and resource-cost model remain deferred until a concrete prototype and proof interface are reviewed. Do not freeze additional constructors or semantics in parallel with CCAM.
+
+No implicit undefined behaviour is introduced to simplify optimisation. Integer overflow, division by zero, invalid references, bounds violations and other language-defined failures retain their specified outcomes.
 
 ### 3.4 CCAM
 
@@ -141,10 +141,11 @@ Every adjacent stage has a named translation and an acceptance relation.
 
 | Translation | Required contract |
 |---|---|
-| AST -> CHIR | Resolution, type soundness, explicit evaluation order, source-span preservation |
-| CHIR -> CMIR | Semantic lowering, control-flow correctness, effect/ownership/provenance preservation |
-| CMIR -> CCAM | Execution semantics, traps, effects and resource accounting preserved |
-| CCAM -> CLIR | Machine-level simulation, value representation, memory and call semantics preserved |
+| Source/checker -> CCAM | Accepted-subset completeness, source semantic preservation, explicit sequencing and source-span mapping |
+| CCAM -> derived optimisation IR | Validated conversion, CFG/SSA invariants and preservation of CCAM observables |
+| Derived optimisation IR -> CCAM | Valid reconstruction, simulation/refinement, trap/effect/resource preservation |
+| CCAM -> native target lowering | Machine-level simulation, value representation, memory and call semantics preserved |
+| Target IR -> object | Encoding validity, relocation correctness, section/permission correctness |
 | CLIR -> CTIR | Instruction selection, register allocation, stack layout, relocations and ABI correctness |
 | CTIR -> object | Encoding validity, relocation correctness, section/permission correctness |
 | object -> executable | Link/load integrity, symbol resolution, segment policy and manifest binding |
@@ -334,9 +335,9 @@ The proof programme is layered:
 | Proof layer | Required result |
 |---|---|
 | Source core | Type soundness and source semantic properties |
-| CHIR | Well-formedness and preservation of source invariants |
-| CMIR | CFG/SSA invariants, effect and memory consistency |
+| Checked source core | Source typing and accepted-subset preservation obligations |
 | CCAM | Machine progress/determinism and safety for declared profiles |
+| Derived optimisation IR (if present) | CFG/SSA invariants, effect/memory consistency and refinement back to CCAM |
 | Concrete evaluator | Simulation/refinement to Lean CCAM |
 | Memory | Reference validity, descriptor safety, lifecycle and root completeness |
 | Optimisations | Pass correctness or independent translation validation |
@@ -442,10 +443,10 @@ A release claims only the highest profile whose gates it actually passes. Profil
 - Define resource vector and charge points.
 
 ### A2 — Executable foundations
-- Implement CHIR validation and stable symbol identity.
-- Implement canonical CMIR CFG/SSA representation and verifier.
-- Integrate aggregate semantics with multi-frame evaluator.
+- Strengthen the checked-source/lowering contract without introducing a competing semantic IR.
+- Integrate aggregate semantics with the multi-frame evaluator only under a separately versioned normative CCAM profile.
 - Establish one conformance corpus across evaluator, Lean and native prototype.
+- Prototype a derived SSA/CFG optimiser only where justified; validate round-tripping to CCAM before adoption.
 
 ### A3 — Native foundations
 - Freeze native ABI and trap ABI.
@@ -456,8 +457,9 @@ A release claims only the highest profile whose gates it actually passes. Profil
 
 ### A4 — Optimisation and assurance
 - Add first validated optimisation passes.
-- Prove source-to-CHIR and CHIR-to-CMIR preservation.
+- Prove or independently validate source-to-CCAM preservation for the accepted subset.
 - Prove evaluator-to-Lean refinement.
+- If a derived optimisation IR is adopted, prove or validate its refinement back to CCAM.
 - Prove or validate CCAM-to-native simulation.
 - Add certificate binding and independent checking.
 
@@ -504,7 +506,7 @@ A missing critical gate means the verdict is not 10/10. A design document alone 
 
 ## 20. Decision record
 
-**Accepted architectural direction:** layered CHIR / CMIR / CCAM / CLIR / CTIR pipeline, with CCAM as canonical abstract execution semantics.
+**Accepted architectural direction:** checked source core lowers directly to CCAM, the canonical typed core IR and abstract machine. Any SSA/CFG optimiser is derived, optional and must validate/refine back to CCAM. Native low-level representations are backend implementation forms with explicit simulation obligations.
 
 **Accepted assurance direction:** compositional semantic preservation, translation validation for unverified transformations, independently checked evidence and explicit TCB.
 
