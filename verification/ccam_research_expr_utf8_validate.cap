@@ -52,13 +52,12 @@ test "UTF-8 validator accepts canonical boundary sequences" {
 }
 
 test "UTF-8 validator rejects malformed and non-scalar sequences" {
-    List<int> b = new List<int>();
-    b.push(128); assert(!ag_utf8_validate(b));
-    b.clear(); b.push(192); b.push(128); assert(!ag_utf8_validate(b));
-    b.clear(); b.push(224); b.push(128); b.push(128); assert(!ag_utf8_validate(b));
-    b.clear(); b.push(237); b.push(160); b.push(128); assert(!ag_utf8_validate(b));
-    b.clear(); b.push(244); b.push(144); b.push(128); b.push(128); assert(!ag_utf8_validate(b));
-    b.clear(); b.push(240); b.push(159); b.push(146); assert(!ag_utf8_validate(b));
-    b.clear(); b.push(245); b.push(128); b.push(128); b.push(128); assert(!ag_utf8_validate(b));
-    b.clear(); b.push(65); b.push(256); assert(!ag_utf8_validate(b));
+    List<int> stray = new List<int>(); stray.push(128); assert(!ag_utf8_validate(stray));
+    List<int> overlong = new List<int>(); overlong.push(192); overlong.push(128); assert(!ag_utf8_validate(overlong));
+    List<int> overlong3 = new List<int>(); overlong3.push(224); overlong3.push(128); overlong3.push(128); assert(!ag_utf8_validate(overlong3));
+    List<int> surrogate = new List<int>(); surrogate.push(237); surrogate.push(160); surrogate.push(128); assert(!ag_utf8_validate(surrogate));
+    List<int> too_high = new List<int>(); too_high.push(244); too_high.push(144); too_high.push(128); too_high.push(128); assert(!ag_utf8_validate(too_high));
+    List<int> truncated = new List<int>(); truncated.push(240); truncated.push(159); truncated.push(146); assert(!ag_utf8_validate(truncated));
+    List<int> invalid_lead = new List<int>(); invalid_lead.push(245); invalid_lead.push(128); invalid_lead.push(128); invalid_lead.push(128); assert(!ag_utf8_validate(invalid_lead));
+    List<int> invalid_byte = new List<int>(); invalid_byte.push(65); invalid_byte.push(256); assert(!ag_utf8_validate(invalid_byte));
 }
