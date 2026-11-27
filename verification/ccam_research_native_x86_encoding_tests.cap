@@ -115,6 +115,7 @@ test "rel32 patcher handles forward and backward branches" {
     List<int> b = new List<int>();
     assert(ag_u32(b,0));
     assert(ag_u32(b,0));
+    assert(ag_u32(b,0));
     assert(ag_rel32(b,0,12));
     assert(b[0]==8 && b[1]==0 && b[2]==0 && b[3]==0);
     assert(ag_rel32(b,4,0));
