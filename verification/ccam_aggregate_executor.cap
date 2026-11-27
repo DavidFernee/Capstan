@@ -1,16 +1,25 @@
 import "ccam_aggregate_branch.cap";
-struct AGExecutionResult { bool ok; CCAMHeapValue value; string error; }
+struct AGExecutionResult {
+    bool ok;
+    CCAMHeapValue value;
+    int return_register;
+    string error;
+}
+
+// Execute one already-admitted aggregate frame. On a successful return, expose
+// the validated source register as well as its value so the stack controller
+// can perform the actual caller-destination transfer without guessing a slot.
 AGExecutionResult ag_execute_function(CCAMAggregateMachine machine, List<AGFunction> functions, int id) {
     if (id < 0 || id >= functions.len() || !ag_program_validate(functions)) {
-        return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: "invalid_program"};
+        return new AGExecutionResult{ok: false, value: ccam_heap_int(0), return_register: -1, error: "invalid_program"};
     }
     AGFunction f = functions[id];
     if (machine.registers.len() != f.kinds.len()) {
-        return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: "invalid_frame"};
+        return new AGExecutionResult{ok: false, value: ccam_heap_int(0), return_register: -1, error: "invalid_frame"};
     }
     for (int i = 0; i < f.kinds.len(); i += 1) {
         if (machine.registers[i].declared_type != f.kinds[i]) {
-            return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: "invalid_frame"};
+            return new AGExecutionResult{ok: false, value: ccam_heap_int(0), return_register: -1, error: "invalid_frame"};
         }
     }
     int block_id = 0;
@@ -19,17 +28,27 @@ AGExecutionResult ag_execute_function(CCAMAggregateMachine machine, List<AGFunct
         for (int j = 0; j < block.instructions.len(); j += 1) {
             AGBlockInstruction ins = block.instructions[j];
             string error = ag_dispatch(machine, ins.opcode, ins.kind, ins.operands);
-            if (error != "") { return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: error}; }
+            if (error != "") {
+                return new AGExecutionResult{ok: false, value: ccam_heap_int(0), return_register: -1, error: error};
+            }
         }
         if (block.terminator == 0) {
             string error = ccam_aggregate_begin_step(machine);
-            if (error != "") { return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: error}; }
-            CCAMAggregateValueResult result = ccam_aggregate_read(machine, f.returns[block_id], f.signature.result_kind);
-            return new AGExecutionResult{ok: result.ok, value: result.value, error: result.trap};
+            if (error != "") {
+                return new AGExecutionResult{ok: false, value: ccam_heap_int(0), return_register: -1, error: error};
+            }
+            int source = f.returns[block_id];
+            CCAMAggregateValueResult result = ccam_aggregate_read(machine, source, f.signature.result_kind);
+            return new AGExecutionResult{
+                ok: result.ok, value: result.value,
+                return_register: result.ok ? source : -1, error: result.trap
+            };
         }
         AGBranchResult branch = ag_branch_select(machine, block, f.blocks.len());
-        if (!branch.ok) { return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: branch.error}; }
+        if (!branch.ok) {
+            return new AGExecutionResult{ok: false, value: ccam_heap_int(0), return_register: -1, error: branch.error};
+        }
         block_id = branch.target;
     }
-    return new AGExecutionResult{ok: false, value: ccam_heap_int(0), error: machine.trap_code};
+    return new AGExecutionResult{ok: false, value: ccam_heap_int(0), return_register: -1, error: machine.trap_code};
 }
