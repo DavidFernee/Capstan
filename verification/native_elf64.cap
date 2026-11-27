@@ -91,3 +91,41 @@ test "native ELF64 rejects malformed payload before emission" {
     NativeElfImage bad_entry = native_elf64_image(code, 1);
     assert(!bad_entry.ok && bad_entry.bytes.len() == 0);
 }
+
+test "native ELF64 explicit nonexecutable stack header and final byte entry" {
+    List<int> code = new List<int>();
+    code.push(144); code.push(195);
+    NativeElfImage image = native_elf64_image_with_stack(code, 1, true);
+    assert(image.ok && image.bytes.len() == 178);
+    assert(image.bytes[56] == 2 && image.bytes[57] == 0);
+    assert(image.bytes[24] == 177 && image.bytes[25] == 0 && image.bytes[26] == 64);
+    assert(image.bytes[64] == 1 && image.bytes[68] == 5);
+    assert(image.bytes[96] == 178 && image.bytes[104] == 178);
+    assert(image.bytes[112] == 0 && image.bytes[113] == 16);
+    assert(image.bytes[120] == 81 && image.bytes[121] == 229);
+    assert(image.bytes[122] == 116 && image.bytes[123] == 100);
+    assert(image.bytes[124] == 6 && image.bytes[125] == 0);
+    assert(image.bytes[126] == 0 && image.bytes[127] == 0);
+    for (int i = 128; i < 168; i += 1) { assert(image.bytes[i] == 0); }
+    assert(image.bytes[168] == 16);
+    for (int i = 169; i < 176; i += 1) { assert(image.bytes[i] == 0); }
+    assert(image.bytes[176] == 144 && image.bytes[177] == 195);
+    NativeElfImage repeat = native_elf64_image_with_stack(code, 1, true);
+    assert(repeat.ok && repeat.bytes.len() == image.bytes.len());
+    for (int i = 0; i < image.bytes.len(); i += 1) {
+        assert(repeat.bytes[i] == image.bytes[i]);
+    }
+    assert(code.len() == 2 && code[0] == 144 && code[1] == 195);
+}
+test "native ELF64 rejects negative byte and entry atomically in stack profile" {
+    List<int> code = new List<int>();
+    code.push(144); code.push(-1);
+    NativeElfImage bad_byte = native_elf64_image_with_stack(code, 0, true);
+    assert(!bad_byte.ok && bad_byte.bytes.len() == 0);
+    code[1] = 195;
+    NativeElfImage bad_entry = native_elf64_image_with_stack(code, -1, true);
+    assert(!bad_entry.ok && bad_entry.bytes.len() == 0);
+    NativeElfImage end_entry = native_elf64_image_with_stack(code, 2, true);
+    assert(!end_entry.ok && end_entry.bytes.len() == 0);
+    assert(code[0] == 144 && code[1] == 195);
+}
