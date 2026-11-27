@@ -855,9 +855,6 @@ if (( FULL )); then
 fi
 
 echo
-echo "$pass passed, $fail failed"
-[[ $fail -eq 0 ]]
-
 section "Capstan-native verification: bounded linear-scan register allocation"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_linear_scan_allocator_tests.cap" 2>&1)"; then
   ok "linear-scan interval reuse, register pressure, spills and input validation"
@@ -874,3 +871,7 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_register_
 else
   bad "CCAM register allocation validator" "$out"
 fi
+
+echo "$pass passed, $fail failed"
+[[ $fail -eq 0 ]]
+
