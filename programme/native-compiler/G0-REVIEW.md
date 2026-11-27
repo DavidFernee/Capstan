@@ -21,3 +21,19 @@
 6. Record G0 accepted in a reviewed decision only after above evidence exists. G1 work can be prepared in parallel but cannot be claimed accepted.
 
 No compiler code or proof changed. No fresh build executed by this review. No schedules changed.
+
+## Integrated evidence refresh — 2026-11-27
+Candidate baseline: `549d5ad4d81f7a88e1d76a959aed6c65230e05c6` (merge #548); not a claim about later main revisions.
+
+| Criterion | Updated evidence | Proposed disposition |
+|---|---|---|
+| G0-01 | #542 merged at `ceeb5068294e4ebd9e76b5a27c8e24c0338854e2` | Satisfied subject to review |
+| G0-02 | #544 closed unmerged; full RFC/ledger comparison recorded in G0-PREPARATION.md | Satisfied subject to review |
+| G0-03 | Seven matrices and supplemental coverage review in G0-REQUIREMENTS-REVIEW.md | Open: atomic inventory review against pinned revision |
+| G0-04 | All 19 RFC gaps mapped in ARCHITECTURE-CROSSWALK.md | Established, review pending |
+| G0-05 | Ownership proposal in G0-PREPARATION.md; coordination request posted in #25 | Open: owner confirmation |
+| G0-06 | Candidate integrated revision pinned above | Partial: tree/dependency/toolchain/host manifest outstanding |
+| G0-07 | #548 exact head `0b750abebacfd7c455ea97f591e49eb71adacef6` had successful ci, CodeQL and formal-verification workflows before merge | Partial: exact integrated revision verification not established; PR-only workflow lookup returned no runs for merge SHA |
+| G0-08 | This successor review | HOLD: independent reviewer and explicit acceptance outstanding |
+
+#545 is closed unmerged, not an integration dependency to revive blindly. #552 remains open for direct ELF backend reconciliation; #547 remains open; #549 has merged at `5feae0b77d77b7736cfe1cfb720567a28c91cc8b`. Preserve distinct assembly and direct execution profiles. Do not equate successful PR checks with reproducible integrated-main evidence. No fresh build executed in this refresh.
