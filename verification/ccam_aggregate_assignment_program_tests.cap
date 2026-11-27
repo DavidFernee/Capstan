@@ -23,3 +23,18 @@ test "assignment program rejects missing final expression" {
     source.push(120); source.push(61); source.push(49); source.push(59);
     assert(!ag_compile_assignment_program(source).ok);
 }
+
+test "assignment program stores and returns one variable" {
+    List<int> source=new List<int>();
+    source.push(120); source.push(61); source.push(49); source.push(48); source.push(59); source.push(120);
+    AGProgramResult result=ag_compile_assignment_program(source);
+    assert(result.ok && result.assignments==1 && result.value==10);
+}
+test "assignment program updates an existing variable before final read" {
+    List<int> source=new List<int>();
+    source.push(120); source.push(61); source.push(49); source.push(48); source.push(59);
+    source.push(120); source.push(61); source.push(120); source.push(43); source.push(50); source.push(59);
+    source.push(120);
+    AGProgramResult result=ag_compile_assignment_program(source);
+    assert(result.ok && result.assignments==2 && result.value==12);
+}
