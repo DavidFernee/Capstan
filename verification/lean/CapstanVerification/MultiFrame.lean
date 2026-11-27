@@ -257,14 +257,14 @@ theorem commitTypedReturnOnStack_decreases_depth
       | nil =>
           simp [hframes, htail] at hreturn
       | cons caller rest =>
-          simp only [hframes, htail] at hreturn
           cases hcommit : commitTypedReturnToCaller callee caller value with
           | error reason =>
               simp [hcommit] at hreturn
           | ok resumedCaller =>
               simp [hcommit] at hreturn
               cases hreturn
-              simp
+              simp only [List.length_cons]
+              omega
 
 /-- The integrated return transition preserves the configured maximum depth. -/
 theorem commitTypedReturnOnStack_within_limit
@@ -287,13 +287,13 @@ theorem commitTypedReturnOnStack_within_limit
           | ok resumedCaller =>
               simp [hcommit] at hreturn
               cases hreturn
-              simpa using next.within_limit
+              simp only [List.length_cons]
+              omega
 
 /-- Every frame in a successful successor stack carries its intrinsic
 register-typing invariant, including the resumed caller after result commit. -/
 theorem commitTypedReturnOnStack_frames_well_typed
-    (stack next : TypedMultiCallStack) (value : Val)
-    (hreturn : commitTypedReturnOnStack stack value = .ok next) :
+    (next : TypedMultiCallStack) :
     ∀ frame, frame ∈ next.frames →
       WellTyped frame.signature.registerTypes frame.registers := by
   intro frame _membership
