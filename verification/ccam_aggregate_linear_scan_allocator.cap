@@ -70,7 +70,7 @@ void ag_sort_intervals(List<AGLiveInterval> values) {
             start=finish;
         }
         for(int i=0;i<n;i+=1) { values[i]=scratch[i]; }
-        width*=2;
+        width=width*2;
     }
 }
 int ag_assignment_index(List<AGRegisterAssignment> assignments,int virtual_id) {
