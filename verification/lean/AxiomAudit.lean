@@ -9,6 +9,7 @@ import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
 import CapstanVerification.IntegratedMachine
+import CapstanVerification.CallArgumentReads
 import CapstanVerification.NativeMachineBridge
 import CapstanVerification.AggregateHeap
 import CapstanVerification.RuntimeBridge
@@ -281,6 +282,7 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.enterTypedCall
 #print axioms CapstanVerification.enterTypedCall_increases_depth
 #print axioms CapstanVerification.enterTypedCall_preserves_continuation
+#print axioms CapstanVerification.enterTypedCall_establishes_return_destination
 #print axioms CapstanVerification.TypedStackReturnOutcome
 #print axioms CapstanVerification.returnTypedValueOnStack
 #print axioms CapstanVerification.returnTypedVoidOnStack
@@ -452,3 +454,12 @@ import CapstanVerification.InjectionValue
 -- Bounded marker result/certificate contract.
 #print axioms CapstanNativeBoundedMarker.certificateCheck_sound
 #print axioms CapstanNativeBoundedMarker.complete_result_is_certificate
+
+
+-- Ordered dynamic CCAM call-argument read semantics and precedence.
+#print axioms CapstanVerification.readCallArguments_first_read_error
+#print axioms CapstanVerification.readCallArguments_first_type_error
+#print axioms CapstanVerification.readCallArguments_masks_later_failure
+#print axioms CapstanVerification.readCallArguments_success_well_typed
+#print axioms CapstanVerification.readCallArgumentsAtomic_preserves_registers
+#print axioms CapstanVerification.readCallArgumentsAtomic_failure_has_no_successor

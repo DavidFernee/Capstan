@@ -45,21 +45,12 @@ theorem commitTypedReturnOnStack_decreases_depth
     (hreturn : commitTypedReturnOnStack stack value = .ok next) :
     next.frames.length + 1 = stack.frames.length := by
   unfold commitTypedReturnOnStack at hreturn
-  cases hframes : stack.frames with
-  | nil =>
-      simp [hframes] at hreturn
-  | cons callee tail =>
-      cases htail : tail with
-      | nil =>
-          simp [hframes, htail] at hreturn
-      | cons caller rest =>
-          cases hcommit : commitTypedReturnToCaller callee caller value with
-          | error reason =>
-              simp [hcommit] at hreturn
-          | ok resumedCaller =>
-              simp [hcommit] at hreturn
-              cases hreturn
-              simp
+  split at hreturn
+  · split at hreturn
+    · contradiction
+    · cases hreturn
+      simp_all
+  · contradiction
 
 /-- A successful return preserves the configured stack-depth bound exactly. -/
 theorem commitTypedReturnOnStack_preserves_depth_limit
@@ -67,21 +58,12 @@ theorem commitTypedReturnOnStack_preserves_depth_limit
     (hreturn : commitTypedReturnOnStack stack value = .ok next) :
     next.maxDepth = stack.maxDepth := by
   unfold commitTypedReturnOnStack at hreturn
-  cases hframes : stack.frames with
-  | nil =>
-      simp [hframes] at hreturn
-  | cons callee tail =>
-      cases htail : tail with
-      | nil =>
-          simp [hframes, htail] at hreturn
-      | cons caller rest =>
-          cases hcommit : commitTypedReturnToCaller callee caller value with
-          | error reason =>
-              simp [hcommit] at hreturn
-          | ok resumedCaller =>
-              simp [hcommit] at hreturn
-              cases hreturn
-              rfl
+  split at hreturn
+  · split at hreturn
+    · contradiction
+    · cases hreturn
+      rfl
+  · contradiction
 
 
 /-- Commit a void return and remove the active callee in one abstract stack
@@ -114,21 +96,12 @@ theorem commitTypedVoidReturnOnStack_decreases_depth
     (hreturn : commitTypedVoidReturnOnStack stack = .ok next) :
     next.frames.length + 1 = stack.frames.length := by
   unfold commitTypedVoidReturnOnStack at hreturn
-  cases hframes : stack.frames with
-  | nil =>
-      simp [hframes] at hreturn
-  | cons callee tail =>
-      cases htail : tail with
-      | nil =>
-          simp [hframes, htail] at hreturn
-      | cons caller rest =>
-          cases hcommit : commitTypedVoidReturnToCaller callee caller with
-          | error reason =>
-              simp [hframes, htail, hcommit] at hreturn
-          | ok resumedCaller =>
-              simp [hframes, htail, hcommit] at hreturn
-              cases hreturn
-              simp
+  split at hreturn
+  · split at hreturn
+    · contradiction
+    · cases hreturn
+      simp_all
+  · contradiction
 
 /-- A successful void return preserves the configured maximum stack depth. -/
 theorem commitTypedVoidReturnOnStack_preserves_depth_limit
@@ -136,21 +109,12 @@ theorem commitTypedVoidReturnOnStack_preserves_depth_limit
     (hreturn : commitTypedVoidReturnOnStack stack = .ok next) :
     next.maxDepth = stack.maxDepth := by
   unfold commitTypedVoidReturnOnStack at hreturn
-  cases hframes : stack.frames with
-  | nil =>
-      simp [hframes] at hreturn
-  | cons callee tail =>
-      cases htail : tail with
-      | nil =>
-          simp [hframes, htail] at hreturn
-      | cons caller rest =>
-          cases hcommit : commitTypedVoidReturnToCaller callee caller with
-          | error reason =>
-              simp [hframes, htail, hcommit] at hreturn
-          | ok resumedCaller =>
-              simp [hframes, htail, hcommit] at hreturn
-              cases hreturn
-              rfl
+  split at hreturn
+  · split at hreturn
+    · contradiction
+    · cases hreturn
+      rfl
+  · contradiction
 
 
 /-- Construct the typed argument vector from a caller's register snapshot.
@@ -158,7 +122,7 @@ The source-index vector fixes argument order; no caller register is modified
 while the values are collected. -/
 theorem typedCallArgumentsWellTyped
     {p : Nat} (caller : TypedMultiFrame)
-    ({n : Nat} (signature : FunctionSignature p n)
+    {n : Nat} (signature : FunctionSignature p n)
     (arguments : Fin p → Val)
     (sources : Fin p → Fin caller.registerCount)
     (hsnapshot : ∀ i, caller.registers (sources i) = some (arguments i))
@@ -192,7 +156,7 @@ def enterTypedCall
       ∀ i, caller.signature.registerTypes (sources i) =
         signature.parameterTypes i)
     (destination : Option (Fin caller.registerCount))
-    (hdestination : ReturnDestinationMatches caller.signature.registerTypes
+    (_hdestination : ReturnDestinationMatches caller.signature.registerTypes
       signature.returnType destination) :
     Except Trap TypedMultiCallStack :=
   if hdepth : (caller :: rest).length < maxDepth then
@@ -237,11 +201,11 @@ theorem enterTypedCall_increases_depth
       calleeFunctionIndex entryPC signature arguments sources hsnapshot
       hsources destination hdestination = .ok next) :
     next.frames.length = (caller :: rest).length + 1 := by
-  by_cases hdepth : (caller :: rest).length < maxDepth
+  by_cases hdepth : rest.length + 1 < maxDepth
   · simp [enterTypedCall, hdepth] at hcall
     cases hcall
     simp
-  · simp [hdepth] at hcall
+  · simp [enterTypedCall, hdepth] at hcall
 
 /-- A successful typed call leaves the caller continuation immediately after
 the call site, while storing that same continuation in the active callee. -/
@@ -271,7 +235,7 @@ theorem enterTypedCall_preserves_continuation
       callee.callerContinuation = caller.pc + 1 ∧
       resumedCaller.functionIndex = caller.functionIndex ∧
       resumedCaller.pc = caller.pc + 1 := by
-  by_cases hdepth : (caller :: rest).length < maxDepth
+  by_cases hdepth : rest.length + 1 < maxDepth
   · simp [enterTypedCall, hdepth] at hcall
     cases hcall
     refine ⟨makeTypedMultiFrame calleeFunctionIndex entryPC (caller.pc + 1)
@@ -285,7 +249,45 @@ theorem enterTypedCall_preserves_continuation
     · simp [makeTypedMultiFrame]
     · rfl
     · rfl
-  · simp [hdepth] at hcall
+  · simp [enterTypedCall, hdepth] at hcall
+
+
+/-- Successful call entry establishes the return destination contract for
+the new callee and the suspended caller. The bounded register witness also
+connects that contract to the raw destination stored in the frame. -/
+theorem enterTypedCall_establishes_return_destination
+    {p n : Nat}
+    (caller : TypedMultiFrame) (rest : List TypedMultiFrame)
+    (maxDepth : Nat)
+    (calleeFunctionIndex entryPC : Nat)
+    (signature : FunctionSignature p n)
+    (arguments : Fin p → Val)
+    (sources : Fin p → Fin caller.registerCount)
+    (hsnapshot : ∀ i, caller.registers (sources i) = some (arguments i))
+    (hsources :
+      ∀ i, caller.signature.registerTypes (sources i) =
+        signature.parameterTypes i)
+    (destination : Option (Fin caller.registerCount))
+    (hdestination : ReturnDestinationMatches caller.signature.registerTypes
+      signature.returnType destination)
+    (next : TypedMultiCallStack)
+    (hcall : enterTypedCall caller rest maxDepth
+      calleeFunctionIndex entryPC signature arguments sources hsnapshot
+      hsources destination hdestination = .ok next) :
+    ∃ (callee resumedCaller : TypedMultiFrame)
+      (savedDestination : Option (Fin resumedCaller.registerCount)),
+      next.frames = callee :: resumedCaller :: rest ∧
+      callee.callerDestination = savedDestination.map Fin.val ∧
+      ReturnDestinationMatches resumedCaller.signature.registerTypes
+        callee.signature.returnType savedDestination := by
+  by_cases hdepth : rest.length + 1 < maxDepth
+  · simp [enterTypedCall, hdepth] at hcall
+    cases hcall
+    refine ⟨makeTypedMultiFrame calleeFunctionIndex entryPC (caller.pc + 1)
+      (destination.map Fin.val) signature arguments
+      (typedCallArgumentsWellTyped caller signature arguments sources hsnapshot hsources),
+      { caller with pc := caller.pc + 1 }, destination, rfl, rfl, hdestination⟩
+  · simp [enterTypedCall, hdepth] at hcall
 
 
 /-- Observable result of a return instruction in the whole typed stack model.
@@ -302,7 +304,7 @@ frame is retained and converted to a terminal value; nested frames use the
 atomic caller-write-and-pop transition above. -/
 def returnTypedValueOnStack (stack : TypedMultiCallStack)
     (value : Val) : TypedStackReturnOutcome :=
-  match hframes : stack.frames with
+  match stack.frames with
   | [entry] =>
       match entry.signature.returnType with
       | none => .trap .typeMismatch
@@ -389,7 +391,7 @@ theorem budgetedCallTransition_trap_consumes_one
   | ok next =>
       simp [hconsume] at htransition
       cases htransition
-      exact consumeStep_increments budget next hconsume
+      exact consumeStep_increments budget charged hconsume
 
 /-- Budget exhaustion is detected before call dispatch and preserves the
 pre-attempt instruction count. -/
