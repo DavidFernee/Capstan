@@ -263,8 +263,7 @@ theorem commitTypedReturnOnStack_decreases_depth
           | ok resumedCaller =>
               simp [hcommit] at hreturn
               cases hreturn
-              simp only [List.length_cons]
-              omega
+              simp
 
 /-- The integrated return transition preserves the configured maximum depth. -/
 theorem commitTypedReturnOnStack_within_limit
@@ -287,8 +286,7 @@ theorem commitTypedReturnOnStack_within_limit
           | ok resumedCaller =>
               simp [hcommit] at hreturn
               cases hreturn
-              simp only [List.length_cons]
-              omega
+              simpa using next.within_limit
 
 /-- Every frame in a successful successor stack carries its intrinsic
 register-typing invariant, including the resumed caller after result commit. -/
