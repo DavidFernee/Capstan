@@ -31,7 +31,7 @@ The underlying heap continues to enforce nominal record descriptors, reference-f
 
 This is a Capstan-written executable reference bridge, not yet the canonical CCAM aggregate machine. In particular, it does **not** yet:
 
-1. extend the canonical `CCAMInstruction` encoding or whole-program validator;
+1. integrate the candidate aggregate opcode slice into the canonical, separately versioned CCAM instruction encoding, including immutable whole-program layout validation;
 2. extend `CCAMCallMachine` frames with reference-valued registers;
 3. lower the production AST's `List<T>`, `Map<K,V>`, optional and string operations to aggregate instructions;
 4. execute the aggregate profile in the freestanding x86-64 backend;
@@ -42,12 +42,13 @@ The bridge tests are regression tests for this transition model only. They are n
 
 ## Next integration gates
 
-1. Define a closed, versioned aggregate instruction schema and immutable layout table.
-2. Add reference-valued register/frame semantics to the CCAM validator and evaluator while preserving v0.1.
-3. Prove reference provenance, descriptor safety, initialisation and failure atomicity in Lean; audit all proof axioms.
-4. Implement identical aggregate operations in the native backend using checked handles, never source-controlled native pointers.
-5. Implement the bounded List/Map/string library actually required by `compiler/ast.cap`, `compiler/lexer.cap` and `compiler/parser.cap`.
-6. Execute those production modules through the aggregate evaluator and native backend against one deterministic valid/invalid corpus.
-7. Keep #451 open until source-to-CCAM and CCAM-to-native preservation obligations are discharged.
+1. Freeze the closed candidate opcode schema as a separately versioned aggregate profile and add the immutable whole-program layout table; do not alter CCAM v0.1.
+2. Complete reference-valued register/frame semantics and whole-program validation, including descriptor provenance and exact field layouts.
+3. Extend the executor to cover all admitted aggregate instructions and multi-frame calls; test aliasing, trap propagation and resource boundaries.
+4. Prove reference provenance, descriptor safety, initialisation and failure atomicity in Lean; audit all proof axioms and connect the model to the implementation.
+5. Implement identical aggregate operations in the native backend using checked handles, never source-controlled native pointers.
+6. Implement the bounded List/Map/string library actually required by `compiler/ast.cap`, `compiler/lexer.cap` and `compiler/parser.cap`.
+7. Execute those production modules through the aggregate evaluator and native backend against one deterministic valid/invalid corpus.
+8. Keep #451 open until source-to-CCAM and CCAM-to-native preservation obligations are discharged.
 
 No generated-C backend or C runtime is part of the aggregate execution contract. The existing generated-C compiler remains a temporary development and differential path, not an accepted bootstrap stage under the S0–S3 contract.
