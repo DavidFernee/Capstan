@@ -1,6 +1,6 @@
 # A01 — Native backend traceability (RTM-003)
 
-Pinned main 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce. Static audit only. Backend verification/ccam_native_x64.cap blob e3eee99; architecture CCAM-NATIVE-BACKEND.md f70ef34; historical research/native-bootstrap/NATIVE-RESULT-ABI.md 8f3be66. Active #540/#533/#521 work must be reconciled before implementation.
+Pinned main 2409357ea777a3875bc608106fce5e42eb233656. Static audit only. Backend verification/ccam_native_x64.cap blob e3eee99; architecture CCAM-NATIVE-BACKEND.md f70ef34; historical research/native-bootstrap/NATIVE-RESULT-ABI.md 8f3be66. Active #552/#555 work must be reconciled before implementation; #533 is merged.
 
 | ID | Requirement | Existing evidence | Acceptance gap |
 |---|---|---|---|
@@ -25,7 +25,7 @@ Pinned main 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce. Static audit only. Backend
 
 ## Findings
 
-N-01: Backend architecture documentation describes BSS stack and no output; pinned implementation emits mmap-backed guarded stack and output tests. Reconcile documentation (#545) before treating it as design authority.
+N-01: Backend architecture documentation describes BSS stack and no output; pinned implementation emits mmap-backed guarded stack and output tests. Reconcile the direct-result transport and legacy backend documentation in #552 before treating it as design authority.
 N-02: Historical result ABI specifies unsigned 0xffffffff no-location sentinel in header but describes zero sentinels in outcome prose. Resolve explicitly; reject noncanonical alternatives. Its candidate kinds omit Bool; determine canonical entry contract before adoption, not silently coerce.
 N-03: Specifying bounded retry attempts is necessary but does not bound elapsed blocking syscall time. Launcher must enforce an explicit timeout and classify termination without fabricating a machine result.
 N-04: GNU assembler/linker and host loader remain part of the artifact assurance boundary even when generated executable has no C runtime; direct ELF generation requires independent byte-level checking, not merely replacing tools.
