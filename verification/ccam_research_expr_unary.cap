@@ -1,3 +1,2 @@
-// Candidate compiler support module. Research batch; pending integration audit.
-bool ag_unary_operator(int op){return op==43||op==45||op==33||op==126;}
-int ag_unary_precedence(int op){return ag_unary_operator(op)?3:0;}
+bool ag_unary_operator(int op) { return op == 43 || op == 45 || op == 33 || op == 126; }
+int ag_unary_precedence(int op) { return ag_unary_operator(op) ? 7 : 0; }
