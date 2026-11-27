@@ -1561,3 +1561,106 @@ test "CCAM literal byte decoder round-trips every octet through escape_c" {
         assert(decoded.bytes[0] == value);
     }
 }
+
+test "CCAM source lowering preserves argument evaluation order" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("order-lowering.cap");
+    Tainted source = taint("int left() { print(\"L\"); return 4; } int right() { print(\"R\"); return 2; } int combine(int x, int y) { return x * 10 + y; } int main() { return combine(left(), right()); }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create_with_output_budget(
+        lowered.functions, lowered.entry_function, 100, 16, 32);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted);
+    assert(machine.trap_code == "" && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.output_bytes.len() == 2);
+    assert(machine.output_bytes[0] == 76 && machine.output_bytes[1] == 82);
+}
+
+test "CCAM source lowering preserves first argument trap suppresses later effects" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("order-lowering.cap");
+    Tainted source = taint("int fail(int d) { return 1 / d; } int later() { print(\"X\"); return 2; } int combine(int x, int y) { return x + y; } int main() { return combine(fail(0), later()); }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create_with_output_budget(
+        lowered.functions, lowered.entry_function, 100, 16, 32);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted);
+    assert(machine.trap_code == "division_by_zero" && !machine.halt_has_value);
+    assert(machine.output_bytes.len() == 0);
+}
+
+test "CCAM source lowering preserves or short circuit suppresses right call" {
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    context.files.push("order-lowering.cap");
+    Tainted source = taint("int later() { print(\"X\"); return 1; } int main() { if (true || later() == 1) { return 42; } return 0; }");
+    context.sources.push(source);
+    List<Token> tokens = lex(context, source, 0);
+    List<Node> declarations = parse_program(context, tokens);
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create_with_output_budget(
+        lowered.functions, lowered.entry_function, 100, 16, 32);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    int guard = 0;
+    while (!machine.halted && guard < 100) {
+        ccam_call_machine_step(machine);
+        guard += 1;
+    }
+    assert(machine.halted);
+    assert(machine.trap_code == "" && machine.halt_has_value && machine.halt_value == 42);
+    assert(machine.output_bytes.len() == 0);
+}
