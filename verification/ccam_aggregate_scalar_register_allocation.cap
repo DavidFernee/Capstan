@@ -32,7 +32,7 @@ AGScalarAllocationResult ag_allocate_scalar_ir(List<AGScalarInstruction> instruc
         intervals.push(new AGLiveInterval{virtual_id:i,start:i,end:last_use[i]+1});
     }
     AGAllocationResult allocation=ag_linear_scan_allocate(intervals);
-    if(!allocation.ok) {
+    if(!allocation.ok || !ag_allocation_validate(intervals,allocation)) {
         return new AGScalarAllocationResult{ok:false,allocation:allocation};
     }
     return new AGScalarAllocationResult{ok:true,allocation:allocation};
