@@ -282,6 +282,7 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.enterTypedCall
 #print axioms CapstanVerification.enterTypedCall_increases_depth
 #print axioms CapstanVerification.enterTypedCall_preserves_continuation
+#print axioms CapstanVerification.enterTypedCall_establishes_return_destination
 #print axioms CapstanVerification.TypedStackReturnOutcome
 #print axioms CapstanVerification.returnTypedValueOnStack
 #print axioms CapstanVerification.returnTypedVoidOnStack
