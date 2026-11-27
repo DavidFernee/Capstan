@@ -95,8 +95,8 @@ The implementation refinement contract in `CCAM-CONCRETE-REFINEMENT-CONTRACT.md`
 ### 3.1 Specific semantic gaps
 
 1. **Whole-program identity:** no Lean validated-program object yet mirrors the concrete function table, function names, signatures, instruction arrays and call-site tables as one immutable snapshot.
-2. **Call dispatch:** the abstract machine has no `call` instruction constructor whose transition validates the call-site relation, reads arguments in the specified order, creates the callee frame and records the caller continuation.
-3. **Return transition:** the typed return commit and stack-pop transitions are not yet part of a complete instruction dispatcher. A single atomic transition must either return an error without a successor state or produce the complete resumed stack and caller write.
+2. **Call dispatch:** a typed call-entry transition now constructs a heterogeneous callee frame from an ordered, statically indexed caller-register snapshot, validates the typed return destination and advances/saves the caller continuation. Still absent are whole-program call-site side-table lookup, dynamic argument-read failure precedence and concrete instruction-dispatch refinement.
+3. **Return transition:** abstract nested value and void returns now combine typed caller commit with stack removal; entry returns are classified as terminal outcomes without popping the entry frame. These remain abstract transitions, not yet connected to instruction dispatch or the concrete mutable-list evaluator.
 4. **Frame invariants:** the whole state must state that every frame is typed against its own function signature, every frame PC is in range, the active frame is the stack head, and each callee's saved continuation/destination is valid in its caller.
 5. **Resource accounting:** the scalar step-budget wrapper is not integrated with calls/returns, output, trap terminalisation or the concrete mutable `steps` field.
 6. **Terminal observations:** the abstract outcome and the concrete state expose different observations. A relation must include PC, steps, halt flags, integer/Boolean return payloads, trap code/detail and output trace.
