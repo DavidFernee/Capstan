@@ -244,7 +244,7 @@ the call site, while storing that same continuation in the active callee. -/
 theorem enterTypedCall_preserves_continuation
     {p n : Nat}
     (caller : TypedMultiFrame) (rest : List TypedMultiFrame)
-    (maxDepth : Nat) (hwithin : (caller :: rest).length ≤ maxDepth)
+    (maxDepth : Nat)
     (calleeFunctionIndex entryPC : Nat)
     (signature : FunctionSignature p n)
     (arguments : Fin p → Val)
