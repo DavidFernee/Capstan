@@ -28,3 +28,24 @@ test "spill lowering rejects frame and spill-slot mismatches" {
     assert(!ag_x86_spill_load(bytes,frame,assignments,1,0));
     assert(bytes.len()==0);
 }
+
+test "register pressure allocation feeds frame layout and spill instruction emission" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    for(int i=0;i<10;i+=1) {
+        intervals.push(new AGLiveInterval{virtual_id:500+i,start:i,end:100-i});
+    }
+    AGAllocationResult allocation=ag_linear_scan_allocate(intervals);
+    assert(allocation.ok && allocation.spill_count>0);
+    assert(ag_allocation_validate(intervals,allocation));
+    AGStackFrame frame=ag_frame_from_allocation(allocation);
+    assert(frame.ok && frame.frame_bytes%16==0);
+    int spilled_id=-1;
+    for(int i=0;i<allocation.assignments.len();i+=1) {
+        if(allocation.assignments[i].spill_slot>=0) { spilled_id=allocation.assignments[i].virtual_id; }
+    }
+    assert(spilled_id>=0);
+    List<int> bytes=new List<int>();
+    assert(ag_x86_spill_store(bytes,frame,allocation.assignments,spilled_id,0));
+    assert(ag_x86_spill_load(bytes,frame,allocation.assignments,spilled_id,1));
+    assert(bytes.len()>=8);
+}
