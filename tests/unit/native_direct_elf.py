@@ -60,18 +60,66 @@ RECORD_TRAPS = {
 }
 
 
-def decode_record(record):
-    assert RESULT_HEADER.size <= len(record) <= 1136, record
+def decode_record(record, status=0):
+    """Validate the experimental single-function record, not a production ABI."""
+    if status != 0 or not RESULT_HEADER.size <= len(record) <= 1136:
+        raise ValueError("invalid termination or record size")
     magic, version, kind, code, value, steps, function, pc, name_len, detail_len = (
         RESULT_HEADER.unpack_from(record)
     )
-    assert magic == b"CCAMRES\0" and version == 1, record
-    assert name_len <= 1024 and detail_len <= 64, record
-    assert len(record) == RESULT_HEADER.size + name_len + detail_len, record
+    if (magic != b"CCAMRES\0" or version != 1 or name_len > 1024
+            or detail_len > 64 or len(record) != RESULT_HEADER.size + name_len + detail_len):
+        raise ValueError("invalid record framing")
     name_end = RESULT_HEADER.size + name_len
     name = record[RESULT_HEADER.size:name_end]
     detail = record[name_end:]
+    if kind == 0:
+        if (code, function, pc, name_len, detail_len) != (0, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0):
+            raise ValueError("invalid return fields")
+    elif kind == 2:
+        if (code not in RECORD_TRAPS.values() or value != 0 or function != 0
+                or pc >= 252 or not name or (code != 8 and detail)):
+            raise ValueError("invalid trap fields")
+    else:
+        raise ValueError("unsupported outcome kind")
     return kind, code, value, steps, function, pc, name, detail
+
+
+def check_record_mutations():
+    good = RESULT_HEADER.pack(b"CCAMRES\0", 1, 0, 0, 42, 2,
+                              0xFFFFFFFF, 0xFFFFFFFF, 0, 0)
+    assert decode_record(good)[2] == 42
+
+    def reject(record, status=0):
+        try:
+            decode_record(record, status)
+        except ValueError:
+            return
+        raise AssertionError("accepted invalid terminal record")
+
+    for offset in (0, 8, 10, 12, 32, 36, 40, 44):
+        mutated = bytearray(good)
+        mutated[offset] ^= 1
+        reject(mutated)
+    for length in range(len(good)):
+        reject(good[:length])
+    reject(good + b"\0")
+    reject(bytes(1137))
+    for status in (76, 77, -9, -11):
+        reject(good, status)
+    trap = RESULT_HEADER.pack(b"CCAMRES\0", 1, 2, 8, 0, 1, 0, 0, 4, 1) + b"mainx"
+    assert decode_record(trap)[-2:] == (b"main", b"x")
+    for offset in (12, 16, 32):
+        mutated = bytearray(trap)
+        mutated[offset] ^= 1
+        reject(mutated)
+    mutated = bytearray(trap)
+    struct.pack_into("<I", mutated, 36, 252)
+    reject(mutated)
+    mutated = bytearray(trap)
+    struct.pack_into("<I", mutated, 12, 1)
+    reject(mutated)  # non-explicit trap cannot carry detail
+    reject(trap[:-1])
 
 
 def compare_ccam_vectors(capstan, directory):
@@ -134,7 +182,7 @@ def compare_ccam_vectors(capstan, directory):
             )
         else:
             expected_record = (0, 0, int(value), int(steps), 0xFFFFFFFF, 0xFFFFFFFF, b"", b"")
-        assert decode_record(record) == expected_record, (row, record)
+        assert decode_record(record, status) == expected_record, (row, record)
     assert not remaining, remaining
 
     partial = directory / "partial-record"
@@ -150,7 +198,14 @@ def compare_ccam_vectors(capstan, directory):
 
 
 def main(capstan):
+    check_record_mutations()
     cases = [
+        ("return 0;", 0, 0),
+        ("return 256;", 0, 256),
+        ("int divisor = 0; if (true || (1 / divisor == 1)) { return 42; } return 0;", 0, 42),
+        ("int divisor = 0; if (false && (1 / divisor == 1)) { return 0; } return 42;", 0, 42),
+        ("int divisor = 0; if (false || (1 / divisor == 1)) { return 0; } return 42;", 71, None),
+        ("int divisor = 0; if (true && (1 / divisor == 1)) { return 0; } return 42;", 71, None),
         ("return (-9223372036854775807 - 1);", 0, -(1 << 63)),
         ("return 9223372036854775807;", 0, (1 << 63) - 1),
         ("return -1000000000000 / 3 * 4 + -13 % 5 - 7;", 0, -1333333333342),
