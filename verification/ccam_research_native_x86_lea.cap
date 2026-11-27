@@ -1,2 +1,21 @@
-// Research batch module; pending integration audit.
-bool ag_x86_lea(List<int> b,int dst,int base){if(!ag_native_reg(dst)||!ag_native_reg(base)||b.len()>AG_BYTE_LIMIT-3){return false;}b.push(72+(dst/8)*4+base/8);b.push(141);b.push(0+(dst%8)*8+base%8);return true;}
+// Encode LEA r64, [base] without an index or displacement. RSP/R12 need
+// a SIB byte; RBP/R13 need mod=01 with a zero disp8 (mod=00 means RIP-relative).
+bool ag_x86_lea(List<int> b,int dst,int base) {
+    if (!ag_native_reg(dst) || !ag_native_reg(base)) { return false; }
+    int low = base % 8;
+    int required = 3;
+    if (low == 4 || low == 5) { required = 4; }
+    if (b.len() > AG_BYTE_LIMIT - required) { return false; }
+    b.push(72 + (dst / 8) * 4 + base / 8);
+    b.push(141);
+    if (low == 4) {
+        b.push((dst % 8) * 8 + 4);
+        b.push(32 + low);
+    } else if (low == 5) {
+        b.push(64 + (dst % 8) * 8 + low);
+        b.push(0);
+    } else {
+        b.push((dst % 8) * 8 + low);
+    }
+    return true;
+}
