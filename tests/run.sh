@@ -857,3 +857,10 @@ fi
 echo
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
+
+section "Capstan-native verification: exact x86-64 emitter encodings and relocations"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_research_native_x86_encoding_tests.cap" 2>&1)"; then
+  ok "exact REX/ModRM/SIB encodings, branches, calls, stack frame and relocation boundaries"
+else
+  bad "CCAM exact x86-64 emitter verification" "$out"
+fi
