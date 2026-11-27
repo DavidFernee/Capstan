@@ -1,4 +1,4 @@
 import "ccam_aggregate_checked_sub.cap";
 import "ccam_aggregate_checked_mul.cap";
 import "ccam_aggregate_checked_div.cap";
-AGCheckedInt ag_arithmetic(int op,int a,int b){if(op==2){return ag_checked_add(a,b);}if(op==3){return ag_checked_sub(a,b);}if(op==4){return ag_checked_mul(a,b);}if(op==5){return ag_checked_div(a,b);}return new AGCheckedInt{ok:false,value:0};}
+AGCheckedInt ag_arithmetic(int op,int a,int b){if(op==2){return ag_checked_add(a,b);}if(op==3){return ag_checked_sub(a,b);}if(op==4){return ag_checked_mul(a,b);}if(op==5){return ag_checked_div(a,b);}if(op==6){return new AGCheckedInt{ok:true,value:a<b?1:0};}if(op==7){return new AGCheckedInt{ok:true,value:a>b?1:0};}return new AGCheckedInt{ok:false,value:0};}
