@@ -1,0 +1,39 @@
+import "ccam_aggregate_stack_frame_layout.cap";
+test "stack frame rounds spill storage to sixteen-byte alignment" {
+    AGStackFrame zero=ag_stack_frame_layout(0);
+    AGStackFrame one=ag_stack_frame_layout(1);
+    AGStackFrame two=ag_stack_frame_layout(2);
+    AGStackFrame three=ag_stack_frame_layout(3);
+    assert(zero.ok && zero.frame_bytes==0);
+    assert(one.ok && one.frame_bytes==16);
+    assert(two.ok && two.frame_bytes==16);
+    assert(three.ok && three.frame_bytes==32);
+}
+test "spill slots map to unique negative RBP-relative eight-byte offsets" {
+    assert(ag_frame_spill_offset(0,4)==-8);
+    assert(ag_frame_spill_offset(1,4)==-16);
+    assert(ag_frame_spill_offset(2,4)==-24);
+    assert(ag_frame_spill_offset(3,4)==-32);
+    assert(ag_frame_spill_offset(-1,4)==0);
+    assert(ag_frame_spill_offset(4,4)==0);
+}
+test "stack frame rejects excessive and malformed spill counts" {
+    assert(!ag_stack_frame_layout(-1).ok);
+    assert(!ag_stack_frame_layout(65537).ok);
+    assert(!ag_stack_frame_layout(131073).ok);
+}
+test "stack frame validates only exact aligned layouts" {
+    AGStackFrame valid=ag_stack_frame_layout(5);
+    assert(ag_frame_validate(valid));
+    valid.frame_bytes=40;
+    assert(!ag_frame_validate(valid));
+    valid.frame_bytes=48;
+    assert(ag_frame_validate(valid));
+}
+test "stack frame derives storage from allocator spill count" {
+    AGAllocationResult allocation=new AGAllocationResult{ok:true,spill_count:3,assignments:new List<AGRegisterAssignment>()};
+    AGStackFrame frame=ag_frame_from_allocation(allocation);
+    assert(frame.ok && frame.spill_slots==3 && frame.frame_bytes==32);
+    allocation.ok=false;
+    assert(!ag_frame_from_allocation(allocation).ok);
+}

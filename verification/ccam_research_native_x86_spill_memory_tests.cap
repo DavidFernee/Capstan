@@ -1,0 +1,36 @@
+import "ccam_research_native_x86_spill_memory.cap";
+test "spill store and load use exact disp8 bytes for first frame slots" {
+    List<int> store=new List<int>();
+    assert(ag_x86_store_rbp(store,0,-8));
+    assert(store.len()==4 && store[0]==72 && store[1]==137 && store[2]==69 && store[3]==248);
+    List<int> load=new List<int>();
+    assert(ag_x86_load_rbp(load,0,-8));
+    assert(load.len()==4 && load[0]==72 && load[1]==139 && load[2]==69 && load[3]==248);
+}
+test "spill load and store use exact disp32 bytes for deep slots" {
+    List<int> store=new List<int>();
+    assert(ag_x86_store_rbp(store,9,-136));
+    assert(store.len()==7 && store[0]==76 && store[1]==137 && store[2]==141);
+    assert(store[3]==120 && store[4]==255 && store[5]==255 && store[6]==255);
+    List<int> load=new List<int>();
+    assert(ag_x86_load_rbp(load,9,-136));
+    assert(load.len()==7 && load[0]==76 && load[1]==139 && load[2]==141);
+    assert(load[3]==120 && load[4]==255 && load[5]==255 && load[6]==255);
+}
+test "spill memory encoders cover extended registers" {
+    List<int> bytes=new List<int>();
+    assert(ag_x86_store_rbp(bytes,15,-16));
+    assert(bytes[0]==76 && bytes[1]==137 && bytes[2]==125 && bytes[3]==240);
+    assert(ag_x86_load_rbp(bytes,15,-24));
+    assert(bytes[4]==76 && bytes[5]==139 && bytes[6]==125 && bytes[7]==232);
+}
+test "spill memory encoders reject invalid offsets and registers atomically" {
+    List<int> bytes=new List<int>();
+    assert(!ag_x86_store_rbp(bytes,16,-8));
+    assert(!ag_x86_load_rbp(bytes,-1,-8));
+    assert(!ag_x86_store_rbp(bytes,0,0));
+    assert(!ag_x86_load_rbp(bytes,0,8));
+    assert(!ag_x86_store_rbp(bytes,0,-7));
+    assert(!ag_x86_load_rbp(bytes,0,-1048584));
+    assert(bytes.len()==0);
+}

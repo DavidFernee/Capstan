@@ -37,7 +37,7 @@ jobs:
         run: make
       - name: Test suite
         run: |
-          if [ "${EVENT}" = "schedule" ]; then tests/run.sh --full; else tests/run.sh; fi
+          if [ "${EVENT}" = "schedule" ]; then bash tests/run.sh --full; else bash tests/run.sh; fi
       - name: Keep fuzz failures
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -46,6 +46,8 @@ jobs:
           path: |
             tests/fuzz/failures/
             tests/fmt/failures/
+            tests/shroud/failures/
+            tests/ci-failures/
           if-no-files-found: ignore
 
   # The release pipeline's evidence, checked on every change: the workflows lint clean, and the
