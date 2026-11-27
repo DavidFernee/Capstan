@@ -1,2 +1,12 @@
-// Candidate compiler support module. Research batch; pending integration audit.
-int ag_operator_class(int op){if(op==43||op==45){return 1;}if(op==42||op==47||op==37){return 2;}if(op==60||op==62||op==61||op==33){return 3;}if(op==38){return 4;}if(op==124){return 5;}return 0;}
+// Higher values bind more tightly. This models the C-family precedence
+// groups represented by the research token codes.
+int ag_operator_class(int op) {
+    if (op == 124) { return 1; } // bitwise OR
+    if (op == 94) { return 2; }  // bitwise XOR
+    if (op == 38) { return 3; }  // bitwise AND
+    if (op == 61 || op == 33) { return 4; } // equality / inequality
+    if (op == 60 || op == 62) { return 5; } // relational
+    if (op == 43 || op == 45) { return 6; } // additive
+    if (op == 42 || op == 47 || op == 37) { return 7; } // multiplicative
+    return 0;
+}

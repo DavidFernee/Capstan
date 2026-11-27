@@ -1,2 +1,8 @@
-// Candidate compiler support module. Research batch; pending integration audit.
-int ag_utf8_width(int c){if(c<128){return 1;}if(c>=194&&c<=223){return 2;}if(c>=224&&c<=239){return 3;}if(c>=240&&c<=244){return 4;}return 0;}
+// Return the canonical UTF-8 sequence width for an unsigned byte.
+int ag_utf8_width(int c) {
+    if (c >= 0 && c <= 127) { return 1; }
+    if (c >= 194 && c <= 223) { return 2; }
+    if (c >= 224 && c <= 239) { return 3; }
+    if (c >= 240 && c <= 244) { return 4; }
+    return 0;
+}
