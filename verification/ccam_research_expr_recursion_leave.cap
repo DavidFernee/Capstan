@@ -1,2 +1,7 @@
-// Research batch module; pending integration audit.
-bool ag_recursion_leave(AGRecursionGuard g){if(g.depth<=0){return false;}g.depth-=1;return true;}
+bool ag_recursion_leave(AGRecursionGuard g) {
+    if (g.maximum < 0 || g.maximum > 1024 || g.depth <= 0 || g.depth > g.maximum) {
+        return false;
+    }
+    g.depth -= 1;
+    return true;
+}
