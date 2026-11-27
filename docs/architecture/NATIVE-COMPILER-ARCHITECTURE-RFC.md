@@ -180,7 +180,7 @@ The refinement relation states whether it is trace inclusion, forward simulation
 
 The compiler must never convert a specified trap into wraparound, undefined behaviour, an arbitrary host exception or silent process termination.
 
-For security properties such as noninterference, the programme uses relational proofs or other appropriate hyperproperty methods. A single-run trace theorem is insufficient to establish confidentiality.
+For security properties such as noninterference, the programme uses relational proofs or other appropriate hyperproperty methods. A single-run trace theorem is insufficient to establish confidentiality. The assurance model distinguishes architectural functional correctness, language-level information-flow security, and microarchitectural/speculative leakage properties. A constant-time or speculative-noninterference profile requires an explicit attacker model, observable-event model and speculation assumptions. Register allocation, spills, instruction selection, scheduling and memory layout are included in that profile's proof/validation scope; source-level secret taint alone does not establish constant-time native execution.
 
 ## 6. Optimisation and translation validation
 
@@ -205,13 +205,16 @@ The order is a dependency guide, not a requirement to implement every pass befor
 ### 6.2 Validation policy
 
 Every optimisation pass declares:
-- input/output IR versions;
+- stable pass identifier and version;
+- input/output IR versions and canonical schemas;
 - invariants it assumes and establishes;
-- semantic relation;
+- semantic relation and observable events;
 - effect and memory model;
-- proof status;
-- negative tests and adversarial corpus;
-- deterministic resource limits.
+- proof/validator status and validator identity;
+- targeted negative tests, adversarial corpus and pass-directed fuzzing strategy;
+- deterministic resource limits and timeout policy.
+
+The compiler emits a canonical compilation trace containing exact pre-pass and post-pass representations, pass identity/version, compiler build identity, target/profile and relevant analysis hints. The trace encoding has a bounded strict parser, canonical serialization and round-trip tests. A certificate is bound to the exact trace and final executable digest. Trace production/parsing is a small, explicit TCB boundary.
 
 Where a pass is not formally verified, translation validation independently checks the individual result or the pass remains outside the assured profile. Validation failure rejects the transformed output. There is no permissive fallback that silently trusts the optimiser.
 
@@ -329,6 +332,8 @@ The native backend has a documented ABI for integer widths, booleans, aggregates
 ## 11. Formal assurance architecture
 
 Use Lean 4 as the primary machine-checked proof environment, with an explicitly reviewed kernel and no unexamined axioms, unsafe declarations or trusted external oracles in release theorems.
+
+The proof programme is layered. It should be complemented by an incremental certifier that checks individual compiler runs, rather than waiting for every production compiler pass to be proved before providing any machine-checkable assurance. The certifier consumes the canonical compilation trace and checks each pass against a formal translation relation; the soundness of each relation is separately proved. A failed, unknown, timed-out or over-budget check rejects certification.
 
 The proof programme is layered:
 
