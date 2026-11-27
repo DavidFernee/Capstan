@@ -221,3 +221,18 @@ A clean, isolated machine with no foreign compiler/interpreter, assembler, linke
 5. rebuild the compiler and tool suite reproducibly and report exact artifact digests.
 
 The gate fails if any repository-owned compiler/build/test/release path emits or compiles C, invokes a foreign-language helper, delegates code generation to an external assembler/linker, or silently omits a source module. External CI orchestration and the target OS/hardware are recorded trust boundaries, not counted as Capstan implementations.
+
+
+## 13. Bounded temporary memory dependency
+
+A bounded temporary-memory contract is proposed in [CCAM v0.2 bounded scratch regions](CCAM-MEMORY-EXTENSION.md), motivated by Keel's topology and spatial algorithms. It defines fixed-capacity regions, checked aligned reservations, scoped views, failure atomicity and deterministic sorting without exposing raw pointers.
+
+This is a consumer-driven proposal, not an approved CCAM feature. CCAM v0.1 currently has no general region/heap operations. The C-Free programme must resolve the memory/value representation, layout metadata, lifetime enforcement and backend refinement before any public scratch API is exposed. Keel must not implement a private allocator or claim byte-bounded behaviour using the existing C-backed List/sort path.
+
+The first implementation review should compare:
+- statically checked borrow/lifetime rules versus generation-checked runtime views;
+- scalar-only scratch versus reference-bearing storage and collector integration;
+- in-place deterministic heapsort versus caller-reserved stable mergesort;
+- logical capacity guarantees versus physical allocator/page accounting.
+
+The scratch contract's SCR-1 through SCR-6 gates are prerequisites for Keel production use, not evidence that the C-Free execution programme has reached its runtime or native-backend stages.
