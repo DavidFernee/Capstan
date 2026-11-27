@@ -225,7 +225,7 @@ about the mutable-list evaluator in ccam_calls.cap.
 -/
 def commitTypedReturnOnStack (stack : TypedMultiCallStack)
     (value : Val) : Except Trap TypedMultiCallStack :=
-  match stack.frames with
+  match hframes : stack.frames with
   | callee :: caller :: rest =>
       match commitTypedReturnToCaller callee caller value with
       | .error reason => .error reason
@@ -236,7 +236,7 @@ def commitTypedReturnOnStack (stack : TypedMultiCallStack)
             nonempty := by simp
             within_limit := by
               have hdepth : rest.length + 2 ≤ stack.maxDepth := by
-                simpa using stack.within_limit
+                simpa [hframes] using stack.within_limit
               simp
               omega
           }
@@ -270,8 +270,24 @@ theorem commitTypedReturnOnStack_decreases_depth
 theorem commitTypedReturnOnStack_within_limit
     (stack next : TypedMultiCallStack) (value : Val)
     (hreturn : commitTypedReturnOnStack stack value = .ok next) :
-    next.frames.length ≤ stack.maxDepth :=
-  next.within_limit
+    next.frames.length ≤ stack.maxDepth := by
+  unfold commitTypedReturnOnStack at hreturn
+  cases hframes : stack.frames with
+  | nil =>
+      simp [hframes] at hreturn
+  | cons callee tail =>
+      cases htail : tail with
+      | nil =>
+          simp [hframes, htail] at hreturn
+      | cons caller rest =>
+          simp only [hframes, htail] at hreturn
+          cases hcommit : commitTypedReturnToCaller callee caller value with
+          | error reason =>
+              simp [hcommit] at hreturn
+          | ok resumedCaller =>
+              simp [hcommit] at hreturn
+              cases hreturn
+              simpa using next.within_limit
 
 /-- Every frame in a successful successor stack carries its intrinsic
 register-typing invariant, including the resumed caller after result commit. -/
