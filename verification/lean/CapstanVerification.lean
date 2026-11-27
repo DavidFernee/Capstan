@@ -7,6 +7,7 @@ import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
 import CapstanVerification.IntegratedMachine
+import CapstanVerification.CallArgumentReads
 import CapstanVerification.NativeMachineBridge
 import CapstanVerification.AggregateHeap
 import CapstanVerification.Progress
