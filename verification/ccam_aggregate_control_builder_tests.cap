@@ -1,0 +1,43 @@
+import "ccam_aggregate_control_builder.cap";
+test "control builder emits and patches conditional loop" {
+ AGControlBuilder builder=new AGControlBuilder{code:new List<AGControlInstruction>(),failed:false};
+ assert(ag_control_emit_constant(builder,0,0)>=0);
+ assert(ag_control_emit_constant(builder,1,0)>=0);
+ assert(ag_control_emit_constant(builder,2,5)>=0);
+ assert(ag_control_emit_constant(builder,4,1)>=0);
+ int head=builder.code.len();
+ assert(ag_control_emit_binary(builder,6,3,0,2)>=0);
+ int exit=ag_control_emit_branch_zero(builder,3,0);
+ assert(exit>=0);
+ assert(ag_control_emit_binary(builder,2,1,1,0)>=0);
+ assert(ag_control_emit_binary(builder,2,0,0,4)>=0);
+ assert(ag_control_emit_jump(builder,head)>=0);
+ int done=builder.code.len();
+ assert(ag_control_patch_target(builder,exit,done));
+ assert(ag_control_emit_return(builder,1));
+ AGControlResult result=ag_control_run_builder(builder,100,5);
+ assert(result.ok && result.value==10);
+}
+test "control builder rejects patching non-branch instruction" {
+ AGControlBuilder builder=new AGControlBuilder{code:new List<AGControlInstruction>(),failed:false};
+ int at=ag_control_emit_constant(builder,0,7);
+ assert(at==0 && !ag_control_patch_target(builder,at,0));
+}
+test "control builder rejects invalid variable operands" {
+ AGControlBuilder builder=new AGControlBuilder{code:new List<AGControlInstruction>(),failed:false};
+ assert(ag_control_emit_binary(builder,2,4096,0,0)==-1);
+ assert(builder.failed);
+}
+
+test "control builder rejects unresolved forward target at execution" {
+ AGControlBuilder builder=new AGControlBuilder{code:new List<AGControlInstruction>(),failed:false};
+ int jump=ag_control_emit_jump(builder,0);
+ assert(jump==0);
+ assert(ag_control_patch_target(builder,jump,1));
+ assert(!ag_control_run_builder(builder,10,1).ok);
+}
+test "control builder rejects patch target beyond next instruction boundary" {
+ AGControlBuilder builder=new AGControlBuilder{code:new List<AGControlInstruction>(),failed:false};
+ int jump=ag_control_emit_jump(builder,0);
+ assert(jump==0 && !ag_control_patch_target(builder,jump,2));
+}
