@@ -90,3 +90,56 @@ test "native linker rejects undefined and duplicate symbols" {
     NativeLinkResult duplicate = native_link_image(image, symbols, fixups);
     assert(!duplicate.ok && duplicate.bytes.len() == 0);
 }
+
+test "native linker negative displacement and adjacent fields are deterministic" {
+    List<int> image = new List<int>();
+    for (int i = 0; i < 8; i += 1) { image.push(0); }
+    List<NativeSymbol> symbols = new List<NativeSymbol>();
+    symbols.push(new NativeSymbol{id: 0, offset: 0});
+    List<NativeFixup> a = new List<NativeFixup>();
+    a.push(new NativeFixup{field: 0, symbol: 0});
+    a.push(new NativeFixup{field: 4, symbol: 0});
+    List<NativeFixup> b = new List<NativeFixup>();
+    b.push(new NativeFixup{field: 4, symbol: 0});
+    b.push(new NativeFixup{field: 0, symbol: 0});
+    NativeLinkResult first = native_link_image(image, symbols, a);
+    NativeLinkResult second = native_link_image(image, symbols, b);
+    assert(first.ok && second.ok);
+    assert(first.bytes.len() == 8 && second.bytes.len() == 8);
+    assert(first.bytes[0] == 252 && first.bytes[4] == 248);
+    for (int i = 0; i < 8; i += 1) {
+        assert(first.bytes[i] == second.bytes[i]);
+        assert(image[i] == 0);
+    }
+    assert(first.bytes[1] == 255 && first.bytes[2] == 255 && first.bytes[3] == 255);
+    assert(first.bytes[5] == 255 && first.bytes[6] == 255 && first.bytes[7] == 255);
+}
+test "native linker rejects late invalid fixup without publishing partial bytes" {
+    List<int> image = new List<int>();
+    for (int i = 0; i < 8; i += 1) { image.push(17); }
+    List<NativeSymbol> symbols = new List<NativeSymbol>();
+    symbols.push(new NativeSymbol{id: 0, offset: 0});
+    List<NativeFixup> fixups = new List<NativeFixup>();
+    fixups.push(new NativeFixup{field: 0, symbol: 0});
+    fixups.push(new NativeFixup{field: 5, symbol: 0});
+    NativeLinkResult invalid = native_link_image(image, symbols, fixups);
+    assert(!invalid.ok && invalid.bytes.len() == 0);
+    for (int i = 0; i < 8; i += 1) { assert(image[i] == 17); }
+}
+test "native linker rejects invalid bytes and symbol count one over limit" {
+    List<int> image = new List<int>();
+    image.push(256);
+    List<NativeSymbol> symbols = new List<NativeSymbol>();
+    List<NativeFixup> fixups = new List<NativeFixup>();
+    NativeLinkResult invalid = native_link_image(image, symbols, fixups);
+    assert(!invalid.ok && invalid.bytes.len() == 0);
+    image[0] = 0;
+    for (int i = 0; i < 256; i += 1) {
+        symbols.push(new NativeSymbol{id: i, offset: 0});
+    }
+    NativeLinkResult exact = native_link_image(image, symbols, fixups);
+    assert(exact.ok && exact.bytes.len() == 1);
+    symbols.push(new NativeSymbol{id: 256, offset: 0});
+    NativeLinkResult over = native_link_image(image, symbols, fixups);
+    assert(!over.ok && over.bytes.len() == 0);
+}
