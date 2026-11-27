@@ -1,5 +1,6 @@
 import "ccam_aggregate_scalar_ir.cap";
 import "ccam_aggregate_linear_scan_allocator.cap";
+import "ccam_aggregate_register_allocation_validator.cap";
 struct AGScalarAllocationResult { bool ok; AGAllocationResult allocation; }
 AGScalarAllocationResult ag_allocate_scalar_ir(List<AGScalarInstruction> instructions) {
     List<int> last_use=new List<int>();
