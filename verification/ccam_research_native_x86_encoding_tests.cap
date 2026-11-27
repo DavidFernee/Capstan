@@ -120,3 +120,31 @@ test "rel32 patcher handles forward and backward branches" {
     assert(ag_rel32(b,4,0));
     assert(b[4]==248 && b[5]==255 && b[6]==255 && b[7]==255);
 }
+
+test "x86-64 MOV register encoding covers all 256 register pairs" {
+    for (int dst=0; dst<16; dst+=1) {
+        for (int src=0; src<16; src+=1) {
+            List<int> bytes = new List<int>();
+            assert(ag_x86_mov_rr(bytes,dst,src));
+            int rex = 72 + (src/8)*4 + dst/8;
+            int modrm = 192 + (src%8)*8 + dst%8;
+            assert(bytes.len()==3 && bytes[0]==rex && bytes[1]==137 && bytes[2]==modrm);
+        }
+    }
+}
+test "x86-64 LEA base encoding covers all sixteen registers" {
+    for (int base=0; base<16; base+=1) {
+        List<int> bytes = new List<int>();
+        assert(ag_x86_lea(bytes,9,base));
+        int low = base%8;
+        int rex = 72 + 4 + base/8;
+        assert(bytes[0]==rex && bytes[1]==141);
+        if (low==4) {
+            assert(bytes.len()==4 && bytes[2]==12 && bytes[3]==36);
+        } else if (low==5) {
+            assert(bytes.len()==4 && bytes[2]==77 && bytes[3]==0);
+        } else {
+            assert(bytes.len()==3 && bytes[2]==8+low);
+        }
+    }
+}
