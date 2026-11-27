@@ -1,0 +1,74 @@
+import "ccam_aggregate_linear_scan_allocator.cap";
+test "linear scan reuses a register for disjoint half-open intervals" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    intervals.push(new AGLiveInterval{virtual_id:10,start:0,end:4});
+    intervals.push(new AGLiveInterval{virtual_id:11,start:4,end:9});
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    assert(result.ok && result.spill_count==0 && result.assignments.len()==2);
+    assert(result.assignments[0].physical_reg==result.assignments[1].physical_reg);
+    assert(result.assignments[0].spill_slot==-1 && result.assignments[1].spill_slot==-1);
+}
+test "linear scan allocates distinct registers to overlapping intervals" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    intervals.push(new AGLiveInterval{virtual_id:1,start:0,end:10});
+    intervals.push(new AGLiveInterval{virtual_id:2,start:1,end:9});
+    intervals.push(new AGLiveInterval{virtual_id:3,start:2,end:8});
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    assert(result.ok && result.spill_count==0);
+    assert(result.assignments[0].physical_reg!=result.assignments[1].physical_reg);
+    assert(result.assignments[1].physical_reg!=result.assignments[2].physical_reg);
+    assert(result.assignments[0].physical_reg!=result.assignments[2].physical_reg);
+}
+test "linear scan spills the longest-lived active interval deterministically" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    for(int i=0;i<10;i+=1) {
+        intervals.push(new AGLiveInterval{virtual_id:i,start:i,end:100-i});
+    }
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    assert(result.ok && result.spill_count==1);
+    assert(result.assignments[0].physical_reg==-1 && result.assignments[0].spill_slot==0);
+    assert(result.assignments[9].physical_reg>=0 && result.assignments[9].spill_slot==-1);
+}
+test "linear scan rejects duplicate virtual ids and malformed intervals" {
+    List<AGLiveInterval> duplicate=new List<AGLiveInterval>();
+    duplicate.push(new AGLiveInterval{virtual_id:4,start:0,end:5});
+    duplicate.push(new AGLiveInterval{virtual_id:4,start:5,end:8});
+    assert(!ag_linear_scan_allocate(duplicate).ok);
+    List<AGLiveInterval> malformed=new List<AGLiveInterval>();
+    malformed.push(new AGLiveInterval{virtual_id:5,start:8,end:8});
+    assert(!ag_linear_scan_allocate(malformed).ok);
+}
+test "linear scan rejects empty and excessive interval sets" {
+    List<AGLiveInterval> empty=new List<AGLiveInterval>();
+    assert(!ag_linear_scan_allocate(empty).ok);
+}
+
+test "linear scan uses only caller-saved allocatable GPRs" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    for(int i=0;i<9;i+=1) {
+        intervals.push(new AGLiveInterval{virtual_id:100+i,start:i,end:30-i});
+    }
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    assert(result.ok && result.spill_count==0);
+    for(int i=0;i<result.assignments.len();i+=1) {
+        int reg=result.assignments[i].physical_reg;
+        assert(reg==0 || reg==1 || reg==2 || reg==6 || reg==7 ||
+            reg==8 || reg==9 || reg==10 || reg==11);
+    }
+}
+test "linear scan assigns unique bounded spill slots under pressure" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    for(int i=0;i<11;i+=1) {
+        intervals.push(new AGLiveInterval{virtual_id:200+i,start:i,end:100-i});
+    }
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    assert(result.ok && result.spill_count==2);
+    int spilled=0;
+    for(int i=0;i<result.assignments.len();i+=1) {
+        if(result.assignments[i].physical_reg==-1) {
+            assert(result.assignments[i].spill_slot>=0 && result.assignments[i].spill_slot<2);
+            spilled+=1;
+        }
+    }
+    assert(spilled==2);
+}
