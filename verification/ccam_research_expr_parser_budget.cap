@@ -1,3 +1,6 @@
-// Research batch module; pending integration audit.
-struct AGParseBudget{int remaining;}
-bool ag_parse_charge(AGParseBudget b,int n){if(n<0||b.remaining<n){return false;}b.remaining-=n;return true;}
+struct AGParseBudget { int remaining; }
+bool ag_parse_charge(AGParseBudget b,int n) {
+    if (b.remaining < 0 || b.remaining > 1048576 || n < 0 || n > b.remaining) { return false; }
+    b.remaining -= n;
+    return true;
+}
