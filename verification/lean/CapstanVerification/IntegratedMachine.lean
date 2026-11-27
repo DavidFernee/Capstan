@@ -216,7 +216,7 @@ def enterTypedCall
 theorem enterTypedCall_increases_depth
     {p n : Nat}
     (caller : TypedMultiFrame) (rest : List TypedMultiFrame)
-    (maxDepth : Nat) (hwithin : (caller :: rest).length ≤ maxDepth)
+    (maxDepth : Nat)
     (calleeFunctionIndex entryPC : Nat)
     (signature : FunctionSignature p n)
     (arguments : Fin p → Val)
@@ -257,7 +257,7 @@ theorem enterTypedCall_preserves_continuation
     (hdestination : ReturnDestinationMatches caller.signature.registerTypes
       signature.returnType destination)
     (next : TypedMultiCallStack)
-    (hcall := enterTypedCall caller rest maxDepth hwithin
+    (hcall : enterTypedCall caller rest maxDepth
       calleeFunctionIndex entryPC signature arguments sources hsnapshot
       hsources destination hdestination = .ok next) :
     ∃ callee resumedCaller,
@@ -267,9 +267,8 @@ theorem enterTypedCall_preserves_continuation
       callee.callerContinuation = caller.pc + 1 ∧
       resumedCaller.functionIndex = caller.functionIndex ∧
       resumedCaller.pc = caller.pc + 1 := by
-  unfold enterTypedCall at hcall
   by_cases hdepth : (caller :: rest).length < maxDepth
-  · simp only [hdepth, ↓reduceDIte] at hcall
+  · simp [enterTypedCall, hdepth] at hcall
     cases hcall
     refine ⟨makeTypedMultiFrame calleeFunctionIndex entryPC (caller.pc + 1)
       (destination.map Fin.val) signature arguments
