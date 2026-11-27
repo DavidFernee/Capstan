@@ -365,7 +365,7 @@ add(916, "Weak password hash (password passed through a method call)", "reject",
     "int main() { if (let password = read_line(65536)) { string stored = hash(password.slice(0, password.len())); } return 0; }", "CWE-916",
     note="Password provenance survives string-slice method calls before the fast-hash check.")
 add(916, "Weak password hash (password passed through a helper call)", "reject",
-    "Tainted identity(Tainted value) { return value; }\\nint main() { if (let password = read_line(65536)) { string stored = hash(identity(password)); } return 0; }", "CWE-916",
+    "Tainted identity(Tainted value) { return value; }\nint main() { if (let password = read_line(65536)) { string stored = hash(identity(password)); } return 0; }", "CWE-916",
     note="Password provenance survives helper calls that preserve Tainted values.")
 add(759, "Use of a one-way hash without a salt", "reject",
     "string store(Tainted password) { return hash(password); }" + MAIN, "CWE-916")
