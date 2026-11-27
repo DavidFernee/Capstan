@@ -31,7 +31,7 @@ The underlying heap continues to enforce nominal record descriptors, reference-f
 
 This is a Capstan-written executable reference bridge, not yet the canonical CCAM aggregate machine. In particular, it does **not** yet:
 
-1. integrate the candidate aggregate opcode slice into the canonical, separately versioned CCAM instruction encoding, including immutable whole-program layout validation;
+1. integrate the candidate aggregate opcode slice into the canonical, separately versioned CCAM instruction encoding, including immutable whole-program layout validation and byte/string construction;
 2. extend `CCAMCallMachine` frames with reference-valued registers;
 3. lower the production AST's `List<T>`, `Map<K,V>`, optional and string operations to aggregate instructions;
 4. execute the aggregate profile in the freestanding x86-64 backend;
