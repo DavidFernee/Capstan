@@ -6,7 +6,7 @@ ifeq ($(shell uname -s),Linux)
 HARDEN_FLAGS += -pie -D_FORTIFY_SOURCE=2
 endif
 SRC      = compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap compiler/ranges.cap compiler/codegen.cap compiler/main.cap
-RT       = runtime/capstan_rt.h
+RT       = runtime/capstan_rt.h runtime/capstan_gc.h
 
 .PHONY: all bootstrap fmt lsp test clean
 
