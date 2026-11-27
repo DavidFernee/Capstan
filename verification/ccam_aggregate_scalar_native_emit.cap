@@ -1,13 +1,51 @@
-import "ccam_aggregate_scalar_ir.cap";
-import "ccam_aggregate_register_allocation_validator.cap";
+import "ccam_aggregate_scalar_register_allocation.cap";
 import "ccam_research_native_x86_scalar_ops.cap";
 import "ccam_research_native_x86_mov_rr.cap";
 struct AGScalarNativeResult { bool ok; List<int> bytes; int result_register; }
-AGScalarNativeResult ag_scalar_native_emit(List<AGScalarInstruction> instructions,AGAllocationResult allocation) {
+int ag_scalar_assignment_reg(AGAllocationResult allocation,int virtual_id) {
+    int ix=ag_assignment_index(allocation.assignments,virtual_id);
+    if(ix<0) { return -1; }
+    return allocation.assignments[ix].physical_reg;
+}
+AGScalarNativeResult ag_scalar_native_emit(List<AGScalarInstruction> instructions) {
     List<int> output=new List<int>();
-    if(instructions.len()==0 || instructions.len()>AG_ALLOC_INTERVAL_LIMIT ||
-        !ag_allocation_validate(ag_scalar_intervals_placeholder,allocation)) {
+    AGScalarAllocationResult allocated=ag_allocate_scalar_ir(instructions);
+    if(!allocated.ok) {
         return new AGScalarNativeResult{ok:false,bytes:output,result_register:-1};
     }
-    return new AGScalarNativeResult{ok:false,bytes:output,result_register:-1};
+    for(int i=0;i<instructions.len();i+=1) {
+        AGScalarInstruction ins=instructions[i];
+        int dst=ag_scalar_assignment_reg(allocated.allocation,i);
+        if(dst<0) {
+            return new AGScalarNativeResult{ok:false,bytes:new List<int>(),result_register:-1};
+        }
+        if(ins.opcode==1) {
+            if(!ag_x86_mov_ri64(output,dst,ins.immediate)) {
+                return new AGScalarNativeResult{ok:false,bytes:new List<int>(),result_register:-1};
+            }
+            continue;
+        }
+        if(ins.opcode<2 || ins.opcode>4) {
+            return new AGScalarNativeResult{ok:false,bytes:new List<int>(),result_register:-1};
+        }
+        int left=ag_scalar_assignment_reg(allocated.allocation,ins.left);
+        int right=ag_scalar_assignment_reg(allocated.allocation,ins.right);
+        if(left<0 || right<0) {
+            return new AGScalarNativeResult{ok:false,bytes:new List<int>(),result_register:-1};
+        }
+        if(dst!=left && !ag_x86_mov_rr(output,dst,left)) {
+            return new AGScalarNativeResult{ok:false,bytes:new List<int>(),result_register:-1};
+        }
+        bool emitted=false;
+        if(ins.opcode==2) { emitted=ag_x86_add_rr(output,dst,right); }
+        else if(ins.opcode==3) { emitted=ag_x86_sub_rr(output,dst,right); }
+        else if(ins.opcode==4) { emitted=ag_x86_imul_rr(output,dst,right); }
+        if(!emitted) {
+            return new AGScalarNativeResult{ok:false,bytes:new List<int>(),result_register:-1};
+        }
+    }
+    if(output.len()==0 || output.len()>AG_BYTE_LIMIT) {
+        return new AGScalarNativeResult{ok:false,bytes:new List<int>(),result_register:-1};
+    }
+    return new AGScalarNativeResult{ok:true,bytes:output,result_register:ag_scalar_assignment_reg(allocated.allocation,instructions.len()-1)};
 }
