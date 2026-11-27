@@ -1,6 +1,6 @@
 # A01 — Frontend traceability (RTM-004)
 
-Pinned baseline 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce. Static inspection only. All requirements unaccepted; active #539/#444/#481 work must be reconciled before new implementation.
+Pinned baseline 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce. Static inspection only. All requirements unaccepted; active #551/#444/#481 work must be reconciled before new implementation.
 
 | ID | Requirement | Concrete evidence | Acceptance gap |
 |---|---|---|---|
