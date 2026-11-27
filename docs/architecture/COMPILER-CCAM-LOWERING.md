@@ -72,7 +72,7 @@ For each function, the lowering context contains:
 
 - the checked source function and its declared signature;
 - an ordered vector of CCAM register types;
-- a lexical mapping from source local names to fixed register indices;
+- a mapping from checker-resolved local and parameter binding identities to fixed register indices;
 - an append-only instruction buffer;
 - a monotonically increasing temporary-register allocator;
 - loop targets for `break` and `continue`;
@@ -82,7 +82,7 @@ For each function, the lowering context contains:
 
 Allocate parameter registers first, in source declaration order. Allocate local registers in declaration order. Allocate expression temporaries in deterministic emission order. Do not reuse registers in the first implementation: simple monotonic allocation makes initialisation and lifetime reasoning easier. Register reuse is a later optimisation and must preserve the same CCAM outcomes.
 
-Every allocated register has exactly one declared CCAM type (`int` or `bool`). A source local is mapped to one fixed register for its lexical lifetime. Shadowing is already rejected by the current checker; if that policy changes, the lowering map must become scope-aware rather than silently aliasing names.
+Every allocated register has exactly one declared CCAM type (`int` or `bool`). A source local is mapped to one fixed register for its lexical lifetime. The checker rejects shadowing of an enclosing local and gives distinct binding identities to declarations that reuse a name in disjoint scopes. Lowering resolves reads and writes through those identities.
 
 Register and instruction limits are checked before extending their respective vectors. Exceeding a compiler resource bound is a compile failure, not integer wraparound, partial output or an allocation attempt based on unchecked arithmetic.
 

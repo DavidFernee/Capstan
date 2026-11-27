@@ -20,7 +20,7 @@ struct CCAMLoweringContext {
     Node source_function;
     List<Node> source_functions;
     Map<int> function_indices;
-    Map<int> locals;
+    Map<int> binding_registers;
     List<int> register_types;
     List<CCAMInstruction> instructions;
     List<CCAMCallSite> call_sites;
@@ -459,6 +459,26 @@ int ccam_lower_short_circuit(CCAMLoweringContext context, Node expression) {
     return result;
 }
 
+// The checker assigns unique identities to locals and parameters, including
+// declarations with the same spelling in disjoint scopes.
+int ccam_lower_bind_local(CCAMLoweringContext context, Node declaration, int type) {
+    string key = binding_path(declaration.binding_id);
+    if (key == "" || context.binding_registers.has(key)) {
+        ccam_lower_fail(context, "invalid_local_binding");
+        return -1;
+    }
+    int index = ccam_lower_new_register(context, type);
+    if (index >= 0) { context.binding_registers.set(key, index); }
+    return index;
+}
+
+int ccam_lower_local_register(CCAMLoweringContext context, Node reference) {
+    string key = binding_path(reference.binding_id);
+    if (let index = context.binding_registers.get(key)) { return index; }
+    ccam_lower_fail(context, "unknown_or_unsupported_local");
+    return -1;
+}
+
 int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
     if (context.error != "") { return -1; }
     int source_type = ccam_source_register_type(ty_of(expression));
@@ -474,16 +494,9 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
         return ccam_lower_bool_constant(context, expression.n != 0);
     }
     if (expression.k == N_VAR) {
-        if (!context.locals.has(expression.s)) {
-            ccam_lower_fail(context, "unknown_or_unsupported_local");
-            return -1;
-        }
-        int index = -1;
-        if (let found_index = context.locals.get(expression.s)) {
-            index = found_index;
-        }
-        if (index < 0 || index >= context.register_types.len() ||
-            context.register_types[index] != source_type) {
+        int index = ccam_lower_local_register(context, expression);
+        if (index < 0) { return -1; }
+        if (context.register_types[index] != source_type) {
             ccam_lower_fail(context, "local_type_mismatch");
             return -1;
         }
@@ -612,37 +625,26 @@ void ccam_lower_statement(CCAMLoweringContext context, Node statement) {
             ccam_lower_fail(context, "unsupported_local_type");
             return;
         }
-        if (context.locals.has(statement.s)) {
-            ccam_lower_fail(context, "local_shadowing_not_supported");
-            return;
-        }
         int initializer = ccam_lower_expression(context, statement.kids[0]);
         if (initializer < 0) { return; }
-        int destination = ccam_lower_new_register(context, type);
+        int destination = ccam_lower_bind_local(context, statement, type);
         if (destination < 0) { return; }
         if (context.register_types[initializer] != type) {
             ccam_lower_fail(context, "local_initializer_type_mismatch");
             return;
         }
-        context.locals.set(statement.s, destination);
         ccam_lower_move(context, destination, initializer);
         return;
     }
 
     if (statement.k == N_ASSIGN) {
         Node target = statement.kids[0];
-        if (target.k != N_VAR || !context.locals.has(target.s)) {
+        if (target.k != N_VAR) {
             ccam_lower_fail(context, "unsupported_assignment_target");
             return;
         }
-        int destination = -1;
-        if (let found_index = context.locals.get(target.s)) {
-            destination = found_index;
-        }
-        if (destination < 0 || destination >= context.register_types.len()) {
-            ccam_lower_fail(context, "invalid_local_register");
-            return;
-        }
+        int destination = ccam_lower_local_register(context, target);
+        if (destination < 0) { return; }
         if (statement.s == "=") {
             int value = ccam_lower_expression(context, statement.kids[1]);
             if (value < 0) { return; }
@@ -888,7 +890,7 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
             source_function: source_function,
             source_functions: source_functions,
             function_indices: function_indices,
-            locals: new Map<int>(),
+            binding_registers: new Map<int>(),
             register_types: new List<int>(),
             instructions: new List<CCAMInstruction>(),
             call_sites: new List<CCAMCallSite>(),
@@ -898,13 +900,13 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
         };
 
         for (int parameter = 0; parameter < source_function.n; parameter += 1) {
-            int type = ccam_source_register_type(ty_of(source_function.kids[parameter]));
+            Node declaration = source_function.kids[parameter];
+            int type = ccam_source_register_type(ty_of(declaration));
             if (type == 0) {
                 ccam_lower_fail(context, "unsupported_parameter_type");
                 break;
             }
-            int register_index = ccam_lower_new_register(context, type);
-            context.locals.set(source_function.kids[parameter].s, register_index);
+            if (ccam_lower_bind_local(context, declaration, type) < 0) { break; }
         }
 
         if (context.error == "") {
@@ -980,6 +982,37 @@ CCAMLoweringResult ccam_lower_checked_program(List<Node> declarations) {
     };
 }
 
+
+test "CCAM source lowering preserves checked binding identities" {
+    Ctx context = new Ctx{
+        files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false
+    };
+    context.files.push("local-binding-lowering.cap");
+    Tainted source = taint(
+        "int add(int item) { return item + 1; } " +
+        "int main() { int count = 0; " +
+        "if (count == 0) { int item = 2; item += 3; count = add(item); } " +
+        "else { bool item = count < 0; if (item) { count = 30; } } " +
+        "for (int item = 0; item < 3; item++) { count += item; } " +
+        "int item = 34; return count + item; }");
+    context.sources.push(source);
+    List<Node> declarations = parse_program(context, lex(context, source, 0));
+    check_program(new_checker(context), declarations, true);
+    assert(error_count(context) == 0);
+
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(lowered.ok);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(
+        lowered.functions, lowered.entry_function, 200, 16);
+    assert(created.ok);
+    CCAMCallMachine machine = created.machine;
+    for (int step = 0; step < 200 && !machine.halted; step += 1) {
+        ccam_call_machine_step(machine);
+    }
+    assert(machine.halted && machine.halt_has_value && machine.halt_value == 43);
+    assert(machine.trap_code == "");
+}
 
 test "CCAM source lowering executes while loops" {
     Ctx context = new Ctx{
