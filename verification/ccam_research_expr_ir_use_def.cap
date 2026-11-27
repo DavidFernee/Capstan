@@ -1,2 +1,4 @@
-// Research batch module; pending integration audit.
-bool ag_ir_use_def_valid(int dest,int left,int right,int index){return dest==index&&left>=0&&left<index&&right>=0&&right<index;}
+// Binary-instruction form only: both operands must be prior SSA values.
+bool ag_ir_use_def_valid(int dest,int left,int right,int index) {
+    return dest == index && left >= 0 && left < index && right >= 0 && right < index;
+}

@@ -954,6 +954,14 @@ else
   bad "CCAM scalar native lowering" "$out"
 fi
 
+
+section "Capstan-native verification: 80-module research batch integration and adversarial boundaries"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_research_batch_80_tests.cap" 2>&1)"; then
+  ok "80 research modules compile together; expression, AST, IR, arithmetic, UTF-8 and x86-64 boundary tests"
+else
+  bad "80-module research batch integration" "$out"
+fi
+
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
 
