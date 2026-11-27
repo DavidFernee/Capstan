@@ -5,6 +5,7 @@ Every release is gated by `scripts/release-check.sh` and the full test suite
 [docs/TESTING.md](docs/TESTING.md).
 
 ## 0.4.0 (unreleased)
+- Add an experimental direct Linux x86-64 ELF backend for checked scalar Capstan programs with forward-only control flow and full signed 64-bit results.
 - Require explicit finite source-level bounds for command-line arguments, file reads, standard-input lines and environment secrets; runtime checks preflight limits before allocating or copying input.
 - Shroud: retain and enforce sfnt table-local spans for cmap subtables, loca entries and hmtx metrics; reject in-file adjacent-table borrowing with deterministic regression fixtures
 - CCAM research prototype: add a bounded process-lifetime region-heap model with nominal record/array references, array bounds/initialisation, opaque validated references, byte/object/work budgets and temporary-allocation peak limits; not yet integrated into normative CCAM or native code generation

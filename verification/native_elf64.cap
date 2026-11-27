@@ -8,12 +8,15 @@ struct NativeElfImage {
 }
 void native_elf_field(List<int> output, int value, int width) {
     NativeBinaryField field = native_binary_field(value, width);
-    assert(field.ok);
     for (int i = 0; i < field.bytes.len(); i += 1) {
         output.push(field.bytes[i]);
     }
 }
 NativeElfImage native_elf64_image(List<int> code, int entry_offset) {
+    return native_elf64_image_with_stack(code, entry_offset, false);
+}
+
+NativeElfImage native_elf64_image_with_stack(List<int> code, int entry_offset, bool nx_stack) {
     List<int> output = new List<int>();
     int length = code.len();
     if (length < 1 || length > 1048576 || entry_offset < 0 || entry_offset >= length) {
@@ -25,7 +28,9 @@ NativeElfImage native_elf64_image(List<int> code, int entry_offset) {
         }
     }
     int base = 4194304;
-    int header_size = 120;
+    int program_headers = 1;
+    if (nx_stack) { program_headers += 1; }
+    int header_size = 64 + program_headers * 56;
     int file_size = header_size + length;
     output.push(127); output.push(69); output.push(76); output.push(70);
     output.push(2); output.push(1); output.push(1);
@@ -39,7 +44,7 @@ NativeElfImage native_elf64_image(List<int> code, int entry_offset) {
     native_elf_field(output, 0, 4);
     native_elf_field(output, 64, 2);
     native_elf_field(output, 56, 2);
-    native_elf_field(output, 1, 2);
+    native_elf_field(output, program_headers, 2);
     native_elf_field(output, 0, 2);
     native_elf_field(output, 0, 2);
     native_elf_field(output, 0, 2);
@@ -51,7 +56,15 @@ NativeElfImage native_elf64_image(List<int> code, int entry_offset) {
     native_elf_field(output, file_size, 8);
     native_elf_field(output, file_size, 8);
     native_elf_field(output, 4096, 8);
-    assert(output.len() == header_size);
+    if (nx_stack) {
+        native_elf_field(output, 1685382481, 4); // PT_GNU_STACK
+        native_elf_field(output, 6, 4);          // PF_R | PF_W
+        for (int i = 0; i < 5; i += 1) { native_elf_field(output, 0, 8); }
+        native_elf_field(output, 16, 8);         // Stack alignment
+    }
+    if (output.len() != header_size) {
+        return new NativeElfImage{ok: false, bytes: new List<int>()};
+    }
     for (int i = 0; i < length; i += 1) { output.push(code[i]); }
     return new NativeElfImage{ok: true, bytes: output};
 }

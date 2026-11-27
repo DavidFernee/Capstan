@@ -1,6 +1,6 @@
 // C-hosted driver for the experimental freestanding Linux x86-64 target.
-// The target program is emitted as assembly and linked directly with ld;
-// this driver itself still runs through the existing C-dependent bootstrap.
+// The target program is emitted as assembly or as a direct ELF image.
+// This driver itself runs through the existing C-dependent bootstrap.
 // Workspace reads use a pinned directory descriptor and Linux openat2 with
 // BENEATH, NO_SYMLINKS, NO_MAGICLINKS and NO_XDEV resolution. Unsupported
 // kernels fail closed; source paths remain workspace-relative.
@@ -33,7 +33,7 @@ string native_dir_of(string path) {
 }
 
 void native_usage() {
-    println("usage: capstan-native --root /workspace -o out.s [--strict] [--release] [--keep-checks] file.cap...");
+    println("usage: capstan-native --root /workspace -o output [--direct] [--strict] [--release] [--keep-checks] file.cap...");
 }
 
 int main() {
@@ -46,12 +46,15 @@ int main() {
         strict: false,
         keep_checks: false
     };
+    bool direct = false;
     string output_path = "";
     string workspace_root = "";
     List<string> source_paths = new List<string>();
     for (int i = 0; i < arguments.len(); i += 1) {
         string arg = arguments[i];
-        if (arg == "--strict") {
+        if (arg == "--direct") {
+            direct = true;
+        } else if (arg == "--strict") {
             context.strict = true;
         } else if (arg == "--release") {
             context.release = true;
@@ -176,7 +179,11 @@ int main() {
     check_program(checker, declarations, true);
     print_diags(context);
     if (error_count(context) > 0) {
-        println("capstan native: source checking failed; no assembly generated");
+        if (direct) {
+            println("capstan native: source checking failed; no ELF generated");
+        } else {
+            println("capstan native: source checking failed; no assembly generated");
+        }
         return 1;
     }
 
@@ -184,6 +191,22 @@ int main() {
     if (!lowered.ok) {
         println("capstan native: lowering failed: " + lowered.error);
         return 1;
+    }
+    if (direct) {
+        CCAMDirectResult image = ccam_direct_elf(lowered.functions, lowered.entry_function);
+        if (!image.ok) {
+            println("capstan native: direct backend rejected program: " + image.error);
+            return 1;
+        }
+        List<string> bytes = new List<string>();
+        for (int i = 0; i < image.bytes.len(); i += 1) {
+            bytes.push(char_str(image.bytes[i]));
+        }
+        if (!write_file(output_path, join(bytes, ""))) {
+            println("capstan native: cannot write ELF file '" + output_path + "'");
+            return 1;
+        }
+        return 0;
     }
     CCAMNativeResult native = ccam_x64_emit_linux_elf(
         lowered.functions, lowered.entry_function, 1000000, 256);

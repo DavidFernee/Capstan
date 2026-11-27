@@ -69,3 +69,40 @@ Next work:
 4. implement the minimum native runtime and output syscall interface for a C-free Hello World;
 5. wire a target-selecting native build command into the compiler CLI and keep generated-C as an explicit compatibility backend only;
 6. replace the C-dependent bootstrap and runtime, then demonstrate a reproducible self-hosting chain with no C compiler/runtime in the trusted path.
+
+## Direct ELF prototype
+
+On Linux x86-64, `capstan native --direct --root . main.cap -o program` uses the
+same workspace loader, source checker and CCAM lowering as the assembler-backed
+command. The backend validates the CCAM and writes a static ELF image directly.
+The image has one read/execute load segment and an explicit non-executable stack.
+The driver still builds through the C-backed toolchain. Generation and execution
+of the target ELF require neither an assembler nor a linker.
+
+The profile admits one parameterless, integer-returning function with at most
+252 CCAM instructions and 256 typed registers. Constants, moves, signed checked
+arithmetic, comparisons, boolean negation, forward branches and returns are
+supported. An instruction can load a register only when every incoming path
+has initialized it. Calls, backward edges and byte output are outside this
+profile. Every accepted execution reaches a return or a trap in at most 252
+CCAM instructions.
+
+Run the executable with a fresh writable regular file on descriptor 3.
+
+```sh
+./program 3>result.bin
+od -An -td8 result.bin
+```
+
+Exit status 0 carries exactly eight little-endian bytes containing the signed
+return value. Status 70 denotes integer overflow, 71 division or remainder by
+zero, and 72 an explicit CCAM trap. Status 77 means the result write failed or
+was short. Discard the file on any nonzero status. Use a regular file as the
+result sink. The prototype uses a single write and does not retry interruptions.
+Trap detail, instruction count, and location are outside this transport profile.
+
+The standard test runner executes this profile on Linux x86-64 with assembler
+and linker paths set to nonexistent files. It checks full-width signed results,
+arithmetic traps, branch joins, malformed CCAM, byte-identical rebuilds and
+output failure paths. Native-code refinement and C-free self-hosting remain
+open.
