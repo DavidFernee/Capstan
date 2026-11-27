@@ -1,0 +1,40 @@
+import "ccam_aggregate_register_allocation_validator.cap";
+test "allocation validator accepts a valid allocation" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    intervals.push(new AGLiveInterval{virtual_id:1,start:0,end:5});
+    intervals.push(new AGLiveInterval{virtual_id:2,start:1,end:4});
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    assert(ag_allocation_validate(intervals,result));
+}
+test "allocation validator rejects overlapping physical-register collision" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    intervals.push(new AGLiveInterval{virtual_id:1,start:0,end:5});
+    intervals.push(new AGLiveInterval{virtual_id:2,start:1,end:4});
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    result.assignments[1].physical_reg=result.assignments[0].physical_reg;
+    assert(!ag_allocation_validate(intervals,result));
+}
+test "allocation validator rejects duplicate spill slots" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    for(int i=0;i<11;i+=1) {
+        intervals.push(new AGLiveInterval{virtual_id:100+i,start:i,end:100-i});
+    }
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    assert(result.ok && result.spill_count==2);
+    int first=-1; int second=-1;
+    for(int i=0;i<result.assignments.len();i+=1) {
+        if(result.assignments[i].spill_slot>=0) {
+            if(first<0) { first=i; } else { second=i; }
+        }
+    }
+    assert(first>=0 && second>=0);
+    result.assignments[second].spill_slot=result.assignments[first].spill_slot;
+    assert(!ag_allocation_validate(intervals,result));
+}
+test "allocation validator rejects wrong assignment cardinality" {
+    List<AGLiveInterval> intervals=new List<AGLiveInterval>();
+    intervals.push(new AGLiveInterval{virtual_id:3,start:0,end:2});
+    AGAllocationResult result=ag_linear_scan_allocate(intervals);
+    result.assignments[0].physical_reg=4;
+    assert(!ag_allocation_validate(intervals,result));
+}

@@ -1,0 +1,48 @@
+import "ccam_aggregate_expression_pipeline.cap";
+
+test "expression compiler respects multiplication precedence" {
+    List<int> source = new List<int>();
+    source.push(50); source.push(43); source.push(51); source.push(42); source.push(52);
+    AGCheckedInt result = ag_compile_expression(source);
+    assert(result.ok && result.value == 14);
+}
+test "expression compiler respects parentheses" {
+    List<int> source = new List<int>();
+    source.push(40); source.push(50); source.push(43); source.push(51); source.push(41); source.push(42); source.push(52);
+    AGCheckedInt result = ag_compile_expression(source);
+    assert(result.ok && result.value == 20);
+}
+test "expression compiler rejects division by zero" {
+    List<int> source = new List<int>();
+    source.push(56); source.push(47); source.push(48);
+    assert(!ag_compile_expression(source).ok);
+}
+test "expression compiler rejects trailing operators" {
+    List<int> source = new List<int>();
+    source.push(49); source.push(43);
+    assert(!ag_compile_expression(source).ok);
+}
+test "expression compiler rejects unmatched delimiters" {
+    List<int> source = new List<int>();
+    source.push(40); source.push(49); source.push(43); source.push(50);
+    assert(!ag_compile_expression(source).ok);
+}
+
+test "expression compiler evaluates less-than comparison" {
+    List<int> source=new List<int>();
+    source.push(50); source.push(60); source.push(51);
+    AGCheckedInt result=ag_compile_expression(source);
+    assert(result.ok && result.value==1);
+}
+test "expression compiler evaluates greater-than comparison" {
+    List<int> source=new List<int>();
+    source.push(50); source.push(62); source.push(51);
+    AGCheckedInt result=ag_compile_expression(source);
+    assert(result.ok && result.value==0);
+}
+test "comparison binds less tightly than addition" {
+    List<int> source=new List<int>();
+    source.push(49); source.push(43); source.push(50); source.push(60); source.push(52);
+    AGCheckedInt result=ag_compile_expression(source);
+    assert(result.ok && result.value==1);
+}

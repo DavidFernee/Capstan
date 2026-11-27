@@ -1,0 +1,49 @@
+import "ccam_aggregate_native_reg.cap";
+import "ccam_aggregate_byte_buffer.cap";
+// Encode MOV [RBP+disp], r64. Spill slots use negative aligned offsets.
+// RBP addressing always carries a displacement; choose disp8 or disp32.
+bool ag_x86_store_rbp(List<int> b,int src,int displacement) {
+    if(!ag_native_reg(src) || displacement>=0 || displacement< -1048576 ||
+        displacement%8!=0) { return false; }
+    int width=4;
+    if(displacement>=-128) { width=1; }
+    int needed=3+width;
+    if(b.len()>AG_BYTE_LIMIT-needed) { return false; }
+    b.push(72+(src/8)*4);
+    b.push(137);
+    if(width==1) {
+        b.push(64+(src%8)*8+5);
+        b.push(256+displacement);
+        return true;
+    }
+    b.push(128+(src%8)*8+5);
+    int encoded=4294967296+displacement;
+    for(int i=0;i<4;i+=1) {
+        b.push(encoded%256);
+        encoded=encoded/256;
+    }
+    return true;
+}
+// Encode MOV r64, [RBP+disp].
+bool ag_x86_load_rbp(List<int> b,int dst,int displacement) {
+    if(!ag_native_reg(dst) || displacement>=0 || displacement< -1048576 ||
+        displacement%8!=0) { return false; }
+    int width=4;
+    if(displacement>=-128) { width=1; }
+    int needed=3+width;
+    if(b.len()>AG_BYTE_LIMIT-needed) { return false; }
+    b.push(72+(dst/8)*4);
+    b.push(139);
+    if(width==1) {
+        b.push(64+(dst%8)*8+5);
+        b.push(256+displacement);
+        return true;
+    }
+    b.push(128+(dst%8)*8+5);
+    int encoded=4294967296+displacement;
+    for(int i=0;i<4;i+=1) {
+        b.push(encoded%256);
+        encoded=encoded/256;
+    }
+    return true;
+}
