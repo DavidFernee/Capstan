@@ -126,12 +126,19 @@ test "aggregate dispatch concatenates immutable bytes and reads byte length" {
     assert(ccam_aggregate_alloc_bytes(machine, 0, "A\0") == "");
     assert(ccam_aggregate_alloc_bytes(machine, 1, "B") == "");
     List<int> concat = new List<int>();
-    concat.push(2); concat.push(0); concat.push(1);
+    // Destination aliases the left source; dispatch must read both references first.
+    concat.push(0); concat.push(0); concat.push(1);
     assert(ag_dispatch(machine, 8, AG_SCHEMA_REF, concat) == "");
     List<int> length = new List<int>();
-    length.push(3); length.push(2);
+    length.push(3); length.push(0);
     assert(ag_dispatch(machine, 7, AG_SCHEMA_INT, length) == "");
     CCAMAggregateValueResult result = ccam_aggregate_read(machine, 3, AG_SCHEMA_INT);
     assert(result.ok && result.value.int_value == 3);
-    assert(machine.steps == 4);
+    assert(ccam_aggregate_write(machine, 3, ccam_heap_int(2)) == "");
+    List<int> byte_get = new List<int>();
+    byte_get.push(3); byte_get.push(0); byte_get.push(3);
+    assert(ag_dispatch(machine, 4, AG_SCHEMA_INT, byte_get) == "");
+    CCAMAggregateValueResult byte_value = ccam_aggregate_read(machine, 3, AG_SCHEMA_INT);
+    assert(byte_value.ok && byte_value.value.int_value == 66);
+    assert(machine.steps == 5);
 }
