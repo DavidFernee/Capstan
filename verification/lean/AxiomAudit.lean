@@ -8,6 +8,7 @@ import CapstanVerification.F1Provenance
 import CapstanVerification.Machine
 import CapstanVerification.MultiFunction
 import CapstanVerification.MultiFrame
+import CapstanVerification.NativeMachineBridge
 import CapstanVerification.AggregateHeap
 import CapstanVerification.RuntimeBridge
 import CapstanVerification.NativeRegisterBridge
@@ -225,6 +226,15 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.explicitTrap_preserves_detail
 #print axioms CapstanVerification.explicitTrap_dispatch_consumes_one
 #print axioms CapstanVerification.explicitTrap_exhausted_before_dispatch
+
+-- Whole-state native CCAM bridge: constructor, PC and pre-dispatch fuel only.
+#print axioms CapstanVerification.nativeCCAMMachineInitial
+#print axioms CapstanVerification.nativeCCAMMachineInitial_matches
+#print axioms CapstanVerification.nativePCAdvance
+#print axioms CapstanVerification.nativePCAdvance_corresponds
+#print axioms CapstanVerification.nativeStepAdmission
+#print axioms CapstanVerification.nativeStepAdmission_corresponds
+#print axioms CapstanVerification.nativeStepAdmission_exhausted
 
 -- Explicit application-trap model: keep these proof dependencies visible.
 #print axioms CapstanVerification.explicitTrap_preserves_detail
