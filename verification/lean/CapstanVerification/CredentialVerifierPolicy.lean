@@ -57,18 +57,21 @@ theorem secure_accepts_requires_valid_policy (p : Policy) (h : Header)
 
 theorem secure_accepts_has_bounded_work (p : Policy) (h : Header)
     (accepted : SecureAccepts p h) :
-    minAllowedWork ≤ p.minCost ∧ p.maxCost ≤ maxAllowedWork :=
-  ⟨accepted.1.1, accepted.1.2.1⟩
+    minAllowedWork ≤ p.minCost ∧ p.maxCost ≤ maxAllowedWork := by
+  rcases accepted.1 with ⟨workMin, workMax, _, _, _, _, _, _⟩
+  exact ⟨workMin, workMax⟩
 
 theorem secure_accepts_has_bounded_salt (p : Policy) (h : Header)
     (accepted : SecureAccepts p h) :
-    minAllowedSaltBytes ≤ p.minSaltBytes ∧ p.maxSaltBytes ≤ maxAllowedSaltBytes :=
-  ⟨accepted.1.2.2.2.1, accepted.1.2.2.2.2.1⟩
+    minAllowedSaltBytes ≤ p.minSaltBytes ∧ p.maxSaltBytes ≤ maxAllowedSaltBytes := by
+  rcases accepted.1 with ⟨_, _, _, saltMin, saltMax, _, _, _⟩
+  exact ⟨saltMin, saltMax⟩
 
 theorem secure_accepts_has_bounded_digest (p : Policy) (h : Header)
     (accepted : SecureAccepts p h) :
-    minAllowedDigestBytes ≤ p.digestBytes ∧ p.digestBytes ≤ maxAllowedDigestBytes :=
-  ⟨accepted.1.2.2.2.2.2.1, accepted.1.2.2.2.2.2.2⟩
+    minAllowedDigestBytes ≤ p.digestBytes ∧ p.digestBytes ≤ maxAllowedDigestBytes := by
+  rcases accepted.1 with ⟨_, _, _, _, _, _, digestMin, digestMax⟩
+  exact ⟨digestMin, digestMax⟩
 
 theorem secure_accepts_rejects_weak_cost (p : Policy) (h : Header)
     (accepted : SecureAccepts p h) (weak : h.cost < p.minCost) : False := by
