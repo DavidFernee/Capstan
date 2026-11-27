@@ -857,3 +857,15 @@ fi
 echo
 echo "$pass passed, $fail failed"
 [[ $fail -eq 0 ]]
+
+section "Capstan-native verification: bounded linear-scan register allocation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_linear_scan_allocator_tests.cap" 2>&1)"; then
+  ok "linear-scan interval reuse, register pressure, spills and input validation"
+else
+  bad "CCAM linear-scan register allocator" "$out"
+fi
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_scalar_register_allocation_tests.cap" 2>&1)"; then
+  ok "scalar IR live-interval derivation and allocation"
+else
+  bad "CCAM scalar IR register allocation" "$out"
+fi
