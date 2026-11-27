@@ -8,7 +8,39 @@ import tempfile
 from pathlib import Path
 
 
+def valid_direct_image(image):
+    """Strict current direct ET_EXEC profile, not an instruction safety proof."""
+    if not 177 <= len(image) <= 1048576 + 176:
+        return False
+    ident, kind, machine, version, entry, phoff, shoff, flags, ehsize, phsize, phnum, shsize, shnum, shstr = struct.unpack_from("<16sHHIQQQIHHHHHH", image)
+    if ident != b"\x7fELF\x02\x01\x01" + bytes(9):
+        return False
+    if (kind, machine, version, phoff, shoff, flags, ehsize, phsize, phnum, shsize, shnum, shstr) != (2, 62, 1, 64, 0, 0, 64, 56, 2, 0, 0, 0):
+        return False
+    if not 0x4000B0 <= entry < 0x400000 + len(image):
+        return False
+    if struct.unpack_from("<IIQQQQQQ", image, 64) != (1, 5, 0, 0x400000, 0x400000, len(image), len(image), 4096):
+        return False
+    return struct.unpack_from("<IIQQQQQQ", image, 120) == (0x6474E551, 6, 0, 0, 0, 0, 0, 16)
+
+
+def check_image_mutations(image):
+    assert valid_direct_image(image)
+    for offset in (0, 4, 5, 16, 18, 20, 32, 40, 48, 52, 54, 56, 58, 60, 62, 64, 68, 72, 80, 88, 96, 104, 112, 120, 124, 128, 136, 144, 152, 160, 168):
+        mutated = bytearray(image)
+        mutated[offset] ^= 1
+        assert not valid_direct_image(mutated), offset
+    for entry in (0x400000, 0x4000AF, 0x400000 + len(image), (1 << 64) - 1):
+        mutated = bytearray(image)
+        struct.pack_into("<Q", mutated, 24, entry)
+        assert not valid_direct_image(mutated), entry
+    assert not valid_direct_image(image[:175])
+    assert not valid_direct_image(image[:-1])
+    assert not valid_direct_image(image + b"\0")
+
+
 def run_case(executable, sink):
+    assert valid_direct_image(executable.read_bytes()), executable
     result = subprocess.run(
         ["bash", "-c", 'exec "$1" 3>"$2"', "direct-elf", executable, sink],
         capture_output=True,
@@ -154,6 +186,7 @@ def main(capstan):
             assert (actual_status, record) == (status, expected_record), (body, actual_status, record)
 
         image = executable.read_bytes()
+        check_image_mutations(image)
         assert image[:7] == b"\x7fELF\x02\x01\x01"
         assert struct.unpack_from("<HH", image, 16) == (2, 62)  # ET_EXEC, EM_X86_64
         assert struct.unpack_from("<Q", image, 24) == (0x4000B0,)
