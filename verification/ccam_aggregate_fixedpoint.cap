@@ -17,12 +17,17 @@ bool ag_fp_equal(List<bool> a, List<bool> b) {
     return true;
 }
 
-// All input shapes are checked before the solver runs.
-bool ag_fp_validate(List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks) {
+// Return the converged entry state for every block so the function validator
+// can additionally prove that each reachable return register is initialised.
+bool ag_fp_validate(
+    List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks,
+    List<AGCFGState> final_states
+) {
     int count = blocks.len();
     int width = kinds.len();
     if (count <= 0 || count > AG_FLOW_MAX_BLOCKS || width > AG_SCHEMA_MAX_REGS ||
-        entry.len() != width || width > AG_CFG_MAX_CELLS / count) { return false; }
+        entry.len() != width || width > AG_CFG_MAX_CELLS / count ||
+        final_states.len() != 0) { return false; }
     for (int r = 0; r < width; r += 1) {
         if (!ag_schema_kind(kinds[r])) { return false; }
     }
@@ -53,7 +58,6 @@ bool ag_fp_validate(List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks) 
         changed = false;
         for (int i = 0; i < count; i += 1) {
             AGCFGBlock block = blocks[i];
-            // Charge even unreachable visits and empty register files.
             int cost = 1 + width * 4 + block.instructions.len();
             if (cost > work) { return false; }
             work -= cost;
@@ -63,7 +67,11 @@ bool ag_fp_validate(List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks) 
                 for (int r = 0; r < width; r += 1) { output.push(state.ready[r]); }
                 for (int j = 0; j < block.instructions.len(); j += 1) {
                     AGBlockInstruction ins = block.instructions[j];
-                    if (ins.opcode != 2) { output[ins.operands[0]] = true; }
+                    AGTransferResult generated = ag_transfer_generation(
+                        kinds, output, ins.opcode, ins.kind, ins.operands
+                    );
+                    if (!generated.ok) { return false; }
+                    output = generated.ready;
                 }
                 if (block.terminator != 0) {
                     AGCFGState before = states[block.yes];
@@ -78,42 +86,37 @@ bool ag_fp_validate(List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks) 
             }
         }
     }
-    // At convergence check every reachable read against its must-state.
+    // At convergence, check every reachable read against its must-state.
     for (int i = 0; i < count; i += 1) {
         if (states[i].reached) {
             List<bool> ready = new List<bool>();
-            for (int r = 0; r < width; r += 1) {
-                ready.push(states[i].ready[r]);
-            }
+            for (int r = 0; r < width; r += 1) { ready.push(states[i].ready[r]); }
             AGCFGBlock block = blocks[i];
             for (int j = 0; j < block.instructions.len(); j += 1) {
                 AGBlockInstruction ins = block.instructions[j];
-                if (!ready[ins.operands[1]]) { return false; }
-                if (ins.opcode != 3 && !ready[ins.operands[2]]) { return false; }
-                if (ins.opcode == 2) {
-                    if (!ready[ins.operands[0]]) { return false; }
-                } else { ready[ins.operands[0]] = true; }
+                AGTransferResult next = ag_transfer(
+                    kinds, ready, ins.opcode, ins.kind, ins.operands
+                );
+                if (!next.ok) { return false; }
+                ready = next.ready;
             }
-            if (block.terminator == 2 && !ag_transfer_condition(kinds, ready, block.condition)) { return false; }
+            if (block.terminator == 2 &&
+                !ag_transfer_condition(kinds, ready, block.condition)) { return false; }
         }
+        final_states.push(states[i]);
     }
     return true;
 }
 
 test "cyclic aggregate CFG does not bootstrap readiness from a backedge" {
     List<int> kinds = new List<int>();
-    kinds.push(AG_SCHEMA_INT);
-    kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_REF);
     List<bool> entry = new List<bool>();
-    entry.push(false);
-    entry.push(true);
+    entry.push(false); entry.push(true);
     List<int> get_ops = new List<int>();
-    get_ops.push(0);
-    get_ops.push(1);
-    get_ops.push(0);
+    get_ops.push(0); get_ops.push(1); get_ops.push(0);
     List<int> len_ops = new List<int>();
-    len_ops.push(0);
-    len_ops.push(1);
+    len_ops.push(0); len_ops.push(1);
     List<AGBlockInstruction> reads = new List<AGBlockInstruction>();
     reads.push(new AGBlockInstruction{opcode: 1, kind: AG_SCHEMA_INT, operands: get_ops});
     List<AGBlockInstruction> writes = new List<AGBlockInstruction>();
@@ -121,7 +124,47 @@ test "cyclic aggregate CFG does not bootstrap readiness from a backedge" {
     List<AGCFGBlock> blocks = new List<AGCFGBlock>();
     blocks.push(new AGCFGBlock{instructions: reads, terminator: 1, condition: -1, yes: 1, no: -1});
     blocks.push(new AGCFGBlock{instructions: writes, terminator: 1, condition: -1, yes: 0, no: -1});
-    assert(!ag_fp_validate(kinds, entry, blocks));
+    List<AGCFGState> states = new List<AGCFGState>();
+    assert(!ag_fp_validate(kinds, entry, blocks, states));
     entry[0] = true;
-    assert(ag_fp_validate(kinds, entry, blocks));
+    states = new List<AGCFGState>();
+    assert(ag_fp_validate(kinds, entry, blocks, states));
+    assert(states.len() == 2 && states[0].reached && states[1].reached);
+}
+
+test "fixedpoint transfer handles array allocation append and byte operations" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_INT);
+    List<bool> entry = new List<bool>();
+    entry.push(false); entry.push(true); entry.push(false);
+    List<int> allocation = new List<int>();
+    allocation.push(0); allocation.push(0); allocation.push(4);
+    List<int> append = new List<int>();
+    append.push(0); append.push(1);
+    List<int> length = new List<int>();
+    length.push(2); length.push(0);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{opcode: 5, kind: AG_SCHEMA_INT, operands: allocation});
+    instructions.push(new AGBlockInstruction{opcode: 6, kind: AG_SCHEMA_INT, operands: append});
+    instructions.push(new AGBlockInstruction{opcode: 3, kind: AG_SCHEMA_INT, operands: length});
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<AGCFGState> states = new List<AGCFGState>();
+    assert(ag_fp_validate(kinds, entry, blocks, states));
+    assert(states[0].ready[0] == false && states[0].ready[2] == false);
+}
+
+test "fixedpoint rejects uninitialised array append values" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    List<bool> entry = new List<bool>();
+    entry.push(true); entry.push(false);
+    List<int> append = new List<int>();
+    append.push(0); append.push(1);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{opcode: 6, kind: AG_SCHEMA_INT, operands: append});
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<AGCFGState> states = new List<AGCFGState>();
+    assert(!ag_fp_validate(kinds, entry, blocks, states));
 }
