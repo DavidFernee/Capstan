@@ -214,4 +214,66 @@ theorem pushTypedMultiFrame_exhausted
     pushTypedMultiFrame stack callee = .error .callDepthLimit :=
   pushCallFrame_exhausted_traps stack callee hfull
 
+
+/-- Execute a non-void return as one abstract stack transition.
+
+The callee is removed and the caller continuation/result write is committed
+only if every return contract check succeeds. On any error, no successor
+stack is produced. This composes the previously separate frame-commit and
+stack-pop models; it remains an abstract Lean transition, not yet a proof
+about the mutable-list evaluator in ccam_calls.cap.
+-/
+def commitTypedReturnOnStack (stack : TypedMultiCallStack)
+    (value : Val) : Except Trap TypedMultiCallStack :=
+  match hframes : stack.frames with
+  | callee :: caller :: rest =>
+      match commitTypedReturnToCaller callee caller value with
+      | .error reason => .error reason
+      | .ok resumedCaller =>
+          .ok {
+            frames := resumedCaller :: rest
+            maxDepth := stack.maxDepth
+            nonempty := by simp
+            within_limit := by
+              have hdepth : rest.length + 2 ≤ stack.maxDepth := by
+                simpa [hframes] using stack.within_limit
+              simp
+              omega
+          }
+  | _ => .error .invalidControlFlow
+
+/-- A successful integrated return removes exactly the active callee frame.
+The caller remains as the new stack head, with the same stack depth bound. -/
+theorem commitTypedReturnOnStack_decreases_depth
+    (stack next : TypedMultiCallStack) (value : Val)
+    (hreturn : commitTypedReturnOnStack stack value = .ok next) :
+    next.frames.length + 1 = stack.frames.length := by
+  unfold commitTypedReturnOnStack at hreturn
+  split at hreturn
+  · rename_i callee caller rest hframes
+    split at hreturn
+    · contradiction
+    · rename_i resumedCaller hcommit
+      cases hreturn
+      simp [hframes]
+  · contradiction
+
+/-- The integrated return transition preserves the configured maximum depth. -/
+theorem commitTypedReturnOnStack_within_limit
+    (stack next : TypedMultiCallStack) (value : Val)
+    (hreturn : commitTypedReturnOnStack stack value = .ok next) :
+    next.frames.length ≤ stack.maxDepth := by
+  have hdepth := commitTypedReturnOnStack_decreases_depth stack next value hreturn
+  have hlimit := stack.within_limit
+  omega
+
+/-- Every frame in a successful successor stack carries its intrinsic
+register-typing invariant, including the resumed caller after result commit. -/
+theorem commitTypedReturnOnStack_frames_well_typed
+    (next : TypedMultiCallStack) :
+    ∀ frame, frame ∈ next.frames →
+      WellTyped frame.signature.registerTypes frame.registers := by
+  intro frame _membership
+  exact frame.registers_well_typed
+
 end CapstanVerification

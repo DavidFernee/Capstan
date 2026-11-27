@@ -1,0 +1,7 @@
+# CAP-004 — Verification and validation
+
+V-model pairings: requirements/acceptance (R01–R11); architecture/system integration (same-source evaluator/native and bootstrap); subsystem design/interface conformance; detailed design/unit and proof checks.
+
+G0 baseline: pinned inventory and reviewed traceability. G1 semantic contract: versioned approved interfaces, no unresolved ambiguity for next slice. G2 scalar evaluator: closed decoding, exact arithmetic, calls, bounded execution, Lean correspondence. G3 scalar native: exact same-CCAM outcomes including INT64_MIN/MAX, 0/256, void, trap precedence, step exhaustion and transport failure. G4 managed runtime: allocation, stale references, roots, quotas, failure atomicity and machine correspondence. G5 optimisation: sound validator rejects unknown/timeouts and retains counterexamples. G6 bootstrap: actual compiler workload, independent rebuild, C-free dependency closure. G7 release: all applicable requirements accepted, security and performance evidence and residual TCB reviewed.
+
+Record for each result: requirement/package, commit, profile, environment, command, expected/actual, test or theorem identifier, assumptions, reviewer. Tests are not proofs; model theorems are not implementation correspondence. Independent validators need a soundness argument. No waived gate may count as certified. For confidentiality define attacker/observations separately from functional equivalence.
