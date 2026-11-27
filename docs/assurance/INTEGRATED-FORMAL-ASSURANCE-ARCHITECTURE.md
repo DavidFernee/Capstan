@@ -249,3 +249,62 @@ Lean 4.34.0's release notes report kernel soundness fixes and additional defensi
 A guarantee may be described as **formally established for Capstan implementation X** only when the proof is machine-checked on the exact implementation revision and the chain from the normative property to the concrete execution path is complete. Otherwise describe it precisely as a model theorem, a restricted profile theorem, a representation lemma, test evidence or an open obligation.
 
 The aim is not to maximise theorem count. It is to minimise the distance between the normative claim, the Lean semantics and the executable Capstan implementation.
+
+### 3.2 Concrete call/return ordering contract
+
+The following ordering is observed in `verification/ccam_calls.cap` at the review baseline. It is a refinement target and must be reconciled with the normative CCAM specification before being treated as the final semantic contract.
+
+**Common pre-dispatch path**
+
+1. A halted machine is inert.
+2. The active frame depth is checked for a valid range.
+3. The global step limit is checked. If already exhausted, the machine traps without consuming another step.
+4. The active frame PC is checked against its instruction sequence. An invalid PC traps before instruction accounting.
+5. A valid instruction is selected. The opcode-specific path then consumes exactly one step.
+
+**Call opcode**
+
+1. Increment the global step counter.
+2. Resolve the call-site side-table index for the active function and executing PC.
+3. Resolve the callee function and call-site metadata.
+4. Read and snapshot every argument in source order, using the callee parameter's declared type for each read. An argument read/type failure traps after the step has been consumed.
+5. Check the maximum call depth. A depth failure also occurs after step consumption and argument reads.
+6. Construct a fresh callee register file and write the snapshotted arguments into parameter registers.
+7. Advance and store the caller continuation PC.
+8. Construct the callee frame at entry PC zero, including the saved caller destination.
+9. Push/reuse the frame slot and increment active frame depth.
+
+The formal call transition must preserve this ordering. In particular, checking depth before argument reads would change which trap wins when both an argument read and depth check fail. Re-reading caller registers after mutation would not implement the snapshot semantics.
+
+**Return and void-return opcodes**
+
+1. Increment the global step counter.
+2. Read the return register, if any, using the function's declared return type. A read/type failure traps after consuming the step.
+3. If this is the entry frame, set the terminal halt fields and retain the entry frame; do not perform a nested pop.
+4. Otherwise, inspect the saved caller destination and check presence, bounds and exact declared type.
+5. For a void return, reject a callee/call-site combination that carries a result destination.
+6. For a non-void return, preflight the complete destination contract before writing.
+7. Commit the caller register write before reducing frame depth. This ordering is deliberate: a defensive write failure must leave the caller/callee stack unpopped.
+8. Reduce active frame depth exactly once.
+
+A formal transition that returns only `Except Trap Stack` loses an important observable: a trap after opcode dispatch has consumed a step, whereas pre-dispatch fuel exhaustion has not. The integrated outcome must therefore retain the post-attempt budget on opcode-level traps, and the unchanged budget on pre-dispatch exhaustion. It must also distinguish entry halt-with-value, entry halt-void, nested continuation and trap.
+
+**Other opcodes**
+
+Non-call/non-return instructions are delegated to `ccam_machine_step` through a temporary single-frame view carrying the shared global step counter and output buffer. The result counter/output are copied back, the active frame is stored, and a terminal result is translated into a call-machine trap. The whole-machine refinement must cover this delegation and prove that the temporary view and persisted active frame are related.
+
+**Required adversarial ordering vectors**
+
+- exhausted global budget plus invalid PC (budget trap wins, no increment);
+- invalid PC with available budget (PC trap, no increment);
+- valid CALL with invalid call-site metadata (one step consumed);
+- CALL with both an unreadable argument and exhausted depth (argument trap wins);
+- CALL with valid arguments and exhausted depth (depth trap after one step);
+- RET with unreadable or wrongly typed return register (one step consumed);
+- RET with absent, out-of-range or wrong-typed caller destination (one step consumed, no caller write/pop);
+- RET where the defensive write helper fails (one step consumed, no stack pop);
+- entry return versus nested return (halt versus caller restoration);
+- void return with and without an unexpected destination;
+- successful call/return pairs preserve exact caller continuation and global step count.
+
+These cases should become shared concrete/Lean vectors. Passing the vectors is differential evidence, not a replacement for the universal transition-refinement theorem.
