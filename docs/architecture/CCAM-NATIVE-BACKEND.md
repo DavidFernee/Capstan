@@ -139,3 +139,27 @@ PCs, step counts and details separately. The result record proposal in
 [Native Result ABI](../../research/native-bootstrap/NATIVE-RESULT-ABI.md)
 would need versioning, a byte-level consumer and end-to-end checks for the
 additional observable fields before adoption.
+
+### Experimental versioned terminal record
+
+Use `capstan native --direct --direct-record --root . main.cap -o program`
+to opt in to the scalar subset of the proposed CCAMRES v1 format. Pass a
+fresh writable regular file on descriptor 3. The raw-result mode remains
+the default.
+
+The record starts with the 48-byte little-endian header described in
+[Native Result ABI](../../research/native-bootstrap/NATIVE-RESULT-ABI.md).
+An integer return carries its signed 64-bit value and charged step count
+with both location fields set to `0xffffffff`. A trap carries its code,
+charged steps, function index zero, current CCAM PC, and function name.
+Explicit traps append the exact detail bytes. The invariant is one record
+of 48 through 1,136 bytes, with the declared name and detail lengths.
+The PC identifies the pending instruction for fuel exhaustion and the
+dispatched instruction for every other supported trap.
+
+Process status 0 confirms the complete record was written, including
+records that describe CCAM traps. Status 76 reports a failed or short
+write. Discard any bytes when status is nonzero. This prototype uses
+one write to the caller's regular file, so interrupted and short writes
+fail rather than retrying. The proposed bounded retry protocol and
+production record consumer remain open.

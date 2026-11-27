@@ -33,7 +33,7 @@ string native_dir_of(string path) {
 }
 
 void native_usage() {
-    println("usage: capstan-native --root /workspace -o output [--direct [--direct-steps N]] [--strict] [--release] [--keep-checks] file.cap...");
+    println("usage: capstan-native --root /workspace -o output [--direct [--direct-steps N] [--direct-record]] [--strict] [--release] [--keep-checks] file.cap...");
 }
 
 int main() {
@@ -47,6 +47,7 @@ int main() {
         keep_checks: false
     };
     bool direct = false;
+    bool direct_record = false;
     int max_steps = 1000000;
     bool step_override = false;
     string output_path = "";
@@ -56,6 +57,8 @@ int main() {
         string arg = arguments[i];
         if (arg == "--direct") {
             direct = true;
+        } else if (arg == "--direct-record") {
+            direct_record = true;
         } else if (arg == "--direct-steps") {
             if (i + 1 >= arguments.len()) { native_usage(); return 2; }
             if (let steps = validate_int(taint(arguments[i + 1]))) {
@@ -94,7 +97,7 @@ int main() {
             source_paths.push(arg);
         }
     }
-    if (step_override && !direct) { native_usage(); return 2; }
+    if ((step_override || direct_record) && !direct) { native_usage(); return 2; }
     if (source_paths.len() > MAX_IMPORT_FILES) {
         println("capstan native: source file count exceeds import graph limit");
         return 2;
@@ -210,7 +213,7 @@ int main() {
         return 1;
     }
     if (direct) {
-        CCAMDirectResult image = ccam_direct_elf(lowered.functions, lowered.entry_function, max_steps);
+        CCAMDirectResult image = ccam_direct_elf_with_record(lowered.functions, lowered.entry_function, max_steps, direct_record);
         if (!image.ok) {
             println("capstan native: direct backend rejected program: " + image.error);
             return 1;

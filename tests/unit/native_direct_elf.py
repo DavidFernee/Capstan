@@ -19,6 +19,29 @@ def run_case(executable, sink):
     return result.returncode, sink.read_bytes()
 
 
+RESULT_HEADER = struct.Struct("<8sHHIqQIIII")
+RECORD_TRAPS = {
+    "integer_overflow": 1,
+    "division_by_zero": 2,
+    "step_limit_exceeded": 6,
+    "explicit_trap": 8,
+}
+
+
+def decode_record(record):
+    assert RESULT_HEADER.size <= len(record) <= 1136, record
+    magic, version, kind, code, value, steps, function, pc, name_len, detail_len = (
+        RESULT_HEADER.unpack_from(record)
+    )
+    assert magic == b"CCAMRES\0" and version == 1, record
+    assert name_len <= 1024 and detail_len <= 64, record
+    assert len(record) == RESULT_HEADER.size + name_len + detail_len, record
+    name_end = RESULT_HEADER.size + name_len
+    name = record[RESULT_HEADER.size:name_end]
+    detail = record[name_end:]
+    return kind, code, value, steps, function, pc, name, detail
+
+
 def compare_ccam_vectors(capstan, directory):
     repo = Path(__file__).resolve().parents[2]
     generator = directory / "generate-vectors"
@@ -45,6 +68,7 @@ def compare_ccam_vectors(capstan, directory):
         "loop-at-branch": ("step_limit_exceeded", 6, 2, ""),
         "fuel-before-explicit-trap": ("step_limit_exceeded", 3, 4, ""),
         "explicit-trap": ("explicit_trap", 4, 4, "chosen_stop"),
+        "max-record": ("explicit_trap", 4, 4, "t" * 64),
     }
     expected_value = {"min-remainder": 0, "full-width-return": -(1 << 63)}
     native_status = {
@@ -59,7 +83,7 @@ def compare_ccam_vectors(capstan, directory):
         remaining.remove(name)
         if trap:
             assert (trap, int(steps), int(pc), detail) == expected_trap[name], row
-            assert function == "main", row
+            assert function == ("m" * 1024 if name == "max-record" else "main"), row
             expected = (native_status[trap], b"")
         else:
             assert int(value) == expected_value[name] and int(steps) == 4, row
@@ -67,7 +91,29 @@ def compare_ccam_vectors(capstan, directory):
         image = directory / name
         image.chmod(0o700)
         assert run_case(image, directory / "oracle-result") == expected, row
+        record_image = directory / (name + ".record")
+        record_image.chmod(0o700)
+        status, record = run_case(record_image, directory / "oracle-record")
+        assert status == 0, (row, status, record)
+        if trap:
+            expected_record = (
+                2, RECORD_TRAPS[trap], 0, int(steps), 0, int(pc),
+                function.encode("ascii"), detail.encode("ascii"),
+            )
+        else:
+            expected_record = (0, 0, int(value), int(steps), 0xFFFFFFFF, 0xFFFFFFFF, b"", b"")
+        assert decode_record(record) == expected_record, (row, record)
     assert not remaining, remaining
+
+    partial = directory / "partial-record"
+    short_write = subprocess.run(
+        ["bash", "-c", 'ulimit -f 1; exec "$1" 3>"$2"', "short-record",
+         directory / "max-record.record", partial],
+        capture_output=True,
+        timeout=5,
+    )
+    assert short_write.returncode == 76 and short_write.stdout == short_write.stderr == b"", short_write
+    assert 0 < partial.stat().st_size < 1136
     return len(vectors)
 
 
@@ -156,6 +202,17 @@ def main(capstan):
         assert rejection.returncode == 2, rejection
         assert "step budget outside" in rejection.stdout, rejection
         assert executable.read_bytes() == image  # A failed compilation did not replace the artifact.
+        source.write_text("int main() { return 42; }\n", encoding="ascii")
+        subprocess.run(command + ["--direct-record"], env=env, check=True, timeout=60)
+        status, record = run_case(executable, sink)
+        assert status == 0 and decode_record(record) == (0, 0, 42, 2, 0xFFFFFFFF, 0xFFFFFFFF, b"", b"")
+        for redirection in ('3>&-', '3>/dev/full'):
+            broken = subprocess.run(
+                ["bash", "-c", 'exec "$1" ' + redirection, "direct-record", executable],
+                capture_output=True,
+                timeout=5,
+            )
+            assert broken.returncode == 76 and broken.stdout == broken.stderr == b"", broken
         vector_count = compare_ccam_vectors(capstan, root)
         assert not list(root.glob("program.*"))  # A failed compilation did not leave a staging file.
     print(f"{len(cases)} direct execution cases and {vector_count} same-CCAM reference vectors passed")

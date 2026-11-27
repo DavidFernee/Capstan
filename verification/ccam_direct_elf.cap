@@ -1,6 +1,6 @@
 // Direct Linux x86-64 backend for one integer-returning
 // CCAM entry function. The kernel supplies the initial stack. This backend
-// uses at most 2056 bytes of it and charges one step before every CCAM instruction.
+// uses at most 3184 bytes of it and charges one step before every CCAM instruction.
 import "ccam_calls.cap";
 import "native_elf64.cap";
 import "native_link_model.cap";
@@ -69,21 +69,84 @@ void ccam_direct_exit(List<int> code, int status) {
     ccam_direct_exit_syscall(code);
 }
 
-void ccam_direct_result(List<int> code) {
+void ccam_direct_write_result(List<int> code, int length, int failure_status) {
     // The caller supplies fd 3 (a fresh regular file). A single bounded
-    // write transfers the signed little-endian result. Any short write or
+    // write transfers the result payload. Any short write or
     // error is a transport failure, and the caller discards the result.
-    code.push(80);                                      // push rax
     code.push(72); code.push(137); code.push(230);       // mov rsi,rsp
-    code.push(186); native_elf_field(code, 8, 4);        // mov edx,8
+    code.push(186); native_elf_field(code, length, 4);   // mov edx,length
     code.push(191); native_elf_field(code, 3, 4);        // mov edi,3
     code.push(184); native_elf_field(code, 1, 4);        // mov eax,SYS_write
     code.push(15); code.push(5);                        // syscall
-    code.push(72); code.push(131); code.push(248); code.push(8); // cmp rax,8
-    code.push(191); native_elf_field(code, 77, 4); // mov edi,77 (preserves flags)
+    // CMP rax,length uses a signed immediate. Preserve the compact scalar
+    // encoding while allowing a record up to 1,136 bytes.
+    code.push(72);
+    if (length <= 127) {
+        code.push(131); code.push(248); code.push(length);
+    } else {
+        code.push(61); native_elf_field(code, length, 4);
+    }
+    code.push(191); native_elf_field(code, failure_status, 4); // mov edi,status (preserves flags)
     code.push(186); native_elf_field(code, 0, 4);  // mov edx,0
     code.push(15); code.push(68); code.push(250); // cmove edi,edx
     ccam_direct_exit_syscall(code);
+}
+
+// Experimental scalar subset of the proposed CCAMRES v1 record. RAX holds
+// the return value, R9D remaining fuel and R10D the current instruction PC.
+void ccam_direct_record(List<int> code, int budget, int trap, string name, string detail) {
+    List<int> record = new List<int>();
+    string magic = "CCAMRES";
+    for (int i = 0; i < magic.len(); i += 1) { record.push(magic.at(i)); }
+    record.push(0);
+    native_elf_field(record, 1, 2);
+    int kind = 0;
+    int function = 4294967295;
+    int pc = 4294967295;
+    if (trap != 0) {
+        kind = 2;
+        function = 0;
+        pc = 0;
+    }
+    native_elf_field(record, kind, 2);
+    native_elf_field(record, trap, 4);
+    native_elf_field(record, 0, 8); // signed value filled at runtime on return
+    native_elf_field(record, 0, 8); // charged steps filled at runtime
+    native_elf_field(record, function, 4);
+    native_elf_field(record, pc, 4);
+    native_elf_field(record, name.len(), 4);
+    native_elf_field(record, detail.len(), 4);
+    for (int i = 0; i < name.len(); i += 1) { record.push(name.at(i)); }
+    for (int i = 0; i < detail.len(); i += 1) { record.push(detail.at(i)); }
+
+    // Load the address just after the five-byte jump that skips the template.
+    code.push(72); code.push(141); code.push(53);
+    native_elf_field(code, 5, 4); // lea rsi,[rip+5]
+    code.push(233); native_elf_field(code, record.len(), 4);
+    for (int i = 0; i < record.len(); i += 1) { code.push(record[i]); }
+    code.push(72); code.push(129); code.push(236); // sub rsp,length
+    native_elf_field(code, record.len(), 4);
+    code.push(72); code.push(137); code.push(231); // mov rdi,rsp
+    code.push(185); native_elf_field(code, record.len(), 4); // mov ecx,length
+    code.push(252); code.push(243); code.push(164); // cld; rep movsb
+    if (trap == 0) {
+        code.push(72); code.push(137); code.push(68); code.push(36); code.push(16);
+    } else {
+        code.push(68); code.push(137); code.push(84); code.push(36); code.push(36);
+    }
+    code.push(186); native_elf_field(code, budget, 4); // mov edx,budget
+    code.push(68); code.push(41); code.push(202); // sub edx,r9d (zero-extends RDX)
+    code.push(72); code.push(137); code.push(84); code.push(36); code.push(24);
+    ccam_direct_write_result(code, record.len(), 76);
+}
+
+void ccam_direct_terminal_trap(List<int> code, bool record, int budget,
+                               int trap, string name, int legacy_status) {
+    if (record) {
+        ccam_direct_record(code, budget, trap, name, "");
+    } else {
+        ccam_direct_exit(code, legacy_status);
+    }
 }
 
 void ccam_direct_division(List<int> code, List<NativeFixup> fixups, bool remainder) {
@@ -204,6 +267,11 @@ string ccam_direct_profile(CCAMFunction fn) {
 }
 
 CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry, int max_steps) {
+    return ccam_direct_elf_with_record(functions, entry, max_steps, false);
+}
+
+CCAMDirectResult ccam_direct_elf_with_record(List<CCAMFunction> functions, int entry,
+                                            int max_steps, bool record) {
     if (max_steps < 0 || max_steps > CCAM_MAX_STEPS) {
         return ccam_direct_error("invalid_step_budget");
     }
@@ -232,6 +300,10 @@ CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry, int ma
         CCAMInstruction ins = fn.instructions[pc];
         int op = ins.op;
         symbols.push(new NativeSymbol{id: pc, offset: code.len()});
+        if (record) {
+            code.push(65); code.push(186); // mov r10d,pc, before the fuel check
+            native_elf_field(code, pc, 4);
+        }
         code.push(69); code.push(133); code.push(201); // test r9d,r9d
         ccam_direct_fixup(code, fixups, 132, CCAM_DIRECT_STEP_LIMIT);
         code.push(65); code.push(255); code.push(201); // dec r9d
@@ -240,7 +312,11 @@ CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry, int ma
             continue;
         }
         if (op == CCAM_OP_TRAP) {
-            ccam_direct_jump(code, fixups, CCAM_DIRECT_EXPLICIT_TRAP);
+            if (record) {
+                ccam_direct_record(code, max_steps, 8, fn.name, ins.reason);
+            } else {
+                ccam_direct_jump(code, fixups, CCAM_DIRECT_EXPLICIT_TRAP);
+            }
             continue;
         }
         if (op == CCAM_OP_CONST_I) {
@@ -254,7 +330,12 @@ CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry, int ma
             if (op == CCAM_OP_MOVE) { source = ins.src; }
             ccam_direct_slot(code, true, 0, source);
             if (op == CCAM_OP_RET) {
-                ccam_direct_result(code);
+                if (record) {
+                    ccam_direct_record(code, max_steps, 0, "", "");
+                } else {
+                    code.push(80); // push rax
+                    ccam_direct_write_result(code, 8, 77);
+                }
                 continue;
             }
             if (op == CCAM_OP_BRANCH) {
@@ -273,11 +354,11 @@ CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry, int ma
         ccam_direct_slot(code, false, 0, ins.dst);
     }
     symbols.push(new NativeSymbol{id: CCAM_DIRECT_OVERFLOW, offset: code.len()});
-    ccam_direct_exit(code, 70);
+    ccam_direct_terminal_trap(code, record, max_steps, 1, fn.name, 70);
     symbols.push(new NativeSymbol{id: CCAM_DIRECT_DIVZERO, offset: code.len()});
-    ccam_direct_exit(code, 71);
+    ccam_direct_terminal_trap(code, record, max_steps, 2, fn.name, 71);
     symbols.push(new NativeSymbol{id: CCAM_DIRECT_STEP_LIMIT, offset: code.len()});
-    ccam_direct_exit(code, 73);
+    ccam_direct_terminal_trap(code, record, max_steps, 6, fn.name, 73);
     symbols.push(new NativeSymbol{id: CCAM_DIRECT_EXPLICIT_TRAP, offset: code.len()});
     ccam_direct_exit(code, 72);
     NativeLinkResult linked = native_link_image(code, symbols, fixups);

@@ -3,8 +3,14 @@
 void direct_vector(string directory, string name, List<int> types,
                    List<CCAMInstruction> code, int steps) {
     List<CCAMFunction> functions = new List<CCAMFunction>();
+    string function_name = "main";
+    if (name == "max-record") {
+        List<string> name_bytes = new List<string>();
+        for (int i = 0; i < CCAM_MAX_FUNCTION_NAME_BYTES; i += 1) { name_bytes.push("m"); }
+        function_name = join(name_bytes, "");
+    }
     functions.push(new CCAMFunction{
-        name: "main", register_types: types, parameter_count: 0,
+        name: function_name, register_types: types, parameter_count: 0,
         return_type: CCAM_RETURN_INT, instructions: code, call_sites: new List<CCAMCallSite>()
     });
     CCAMCallMachineCreateResult reference = ccam_call_machine_create(functions, 0, steps, 1);
@@ -15,16 +21,23 @@ void direct_vector(string directory, string name, List<int> types,
     if (machine.output_bytes.len() != 0 ||
         (machine.trap_code == "" && !machine.halt_has_value)) { exit(1); }
 
-    List<string> bytes = new List<string>();
-    for (int i = 0; i < image.bytes.len(); i += 1) {
-        bytes.push(char_str(image.bytes[i]));
-    }
-    if (!write_file(directory + "/" + name, join(bytes, ""))) { exit(1); }
+    CCAMDirectResult record = ccam_direct_elf_with_record(functions, 0, steps, true);
+    if (!record.ok) { exit(1); }
+    direct_write_vector(directory + "/" + name, image.bytes);
+    direct_write_vector(directory + "/" + name + ".record", record.bytes);
 
-    // Keep reference-only fields so a later result ABI can compare them too.
+    // Report the reference fields independently of the emitted ELF.
     println(name + "\t" + machine.trap_code + "\t" + int_to_str(machine.halt_value) +
         "\t" + int_to_str(machine.steps) + "\t" + machine.trap_function +
         "\t" + int_to_str(machine.trap_pc) + "\t" + machine.trap_detail);
+}
+
+void direct_write_vector(string path, List<int> image) {
+    List<string> bytes = new List<string>();
+    for (int i = 0; i < image.len(); i += 1) {
+        bytes.push(char_str(image[i]));
+    }
+    if (!write_file(path, join(bytes, ""))) { exit(1); }
 }
 
 CCAMInstruction direct_constant(int dst, int value) {
@@ -91,6 +104,10 @@ void direct_control_vectors(string directory) {
     condition.bool_value = false;
     direct_vector(directory, "fuel-before-explicit-trap", types, code, 3);
     direct_vector(directory, "explicit-trap", types, code, 4);
+    List<string> detail = new List<string>();
+    for (int i = 0; i < 64; i += 1) { detail.push("t"); }
+    stop.reason = join(detail, "");
+    direct_vector(directory, "max-record", types, code, 4);
 }
 
 int main() {
