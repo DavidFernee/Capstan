@@ -81,11 +81,13 @@ of the target ELF require neither an assembler nor a linker.
 
 The profile admits one parameterless, integer-returning function with at most
 252 CCAM instructions and 256 typed registers. Constants, moves, signed checked
-arithmetic, comparisons, boolean negation, forward branches and returns are
+arithmetic, comparisons, boolean negation, branches, loops and returns are
 supported. An instruction can load a register only when every incoming path
-has initialized it. Calls, backward edges and byte output are outside this
-profile. Every accepted execution reaches a return or a trap in at most 252
-CCAM instructions.
+has initialized it. Calls and byte output are outside this profile. Each instruction charges
+one step before dispatch, including jumps, returns and explicit traps. An
+exhausted budget exits before the next instruction's effects. The default is
+1,000,000 steps. Pass `--direct-steps N` to set a budget from 0 through
+10,000,000. Image size is separately limited by the static instruction count.
 
 Run the executable with a fresh writable regular file on descriptor 3.
 
@@ -96,13 +98,14 @@ od -An -td8 result.bin
 
 Exit status 0 carries exactly eight little-endian bytes containing the signed
 return value. Status 70 denotes integer overflow, 71 division or remainder by
-zero, and 72 an explicit CCAM trap. Status 77 means the result write failed or
+zero, 72 an explicit CCAM trap, and 73 instruction budget exhaustion. Status 77 means the result write failed or
 was short. Discard the file on any nonzero status. Use a regular file as the
 result sink. The prototype uses a single write and does not retry interruptions.
 Trap detail, instruction count, and location are outside this transport profile.
 
 The standard test runner executes this profile on Linux x86-64 with assembler
 and linker paths set to nonexistent files. It checks full-width signed results,
-arithmetic traps, branch joins, malformed CCAM, byte-identical rebuilds and
+arithmetic traps, branch joins, bounded loops, exact reference step limits,
+malformed CCAM, byte-identical rebuilds and
 output failure paths. Native-code refinement and C-free self-hosting remain
 open.

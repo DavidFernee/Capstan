@@ -33,7 +33,7 @@ string native_dir_of(string path) {
 }
 
 void native_usage() {
-    println("usage: capstan-native --root /workspace -o output [--direct] [--strict] [--release] [--keep-checks] file.cap...");
+    println("usage: capstan-native --root /workspace -o output [--direct [--direct-steps N]] [--strict] [--release] [--keep-checks] file.cap...");
 }
 
 int main() {
@@ -47,6 +47,8 @@ int main() {
         keep_checks: false
     };
     bool direct = false;
+    int max_steps = 1000000;
+    bool step_override = false;
     string output_path = "";
     string workspace_root = "";
     List<string> source_paths = new List<string>();
@@ -54,6 +56,20 @@ int main() {
         string arg = arguments[i];
         if (arg == "--direct") {
             direct = true;
+        } else if (arg == "--direct-steps") {
+            if (i + 1 >= arguments.len()) { native_usage(); return 2; }
+            if (let steps = validate_int(taint(arguments[i + 1]))) {
+                if (steps < 0 || steps > CCAM_MAX_STEPS) {
+                    println("capstan native: step budget outside 0.." + int_to_str(CCAM_MAX_STEPS));
+                    return 2;
+                }
+                max_steps = steps;
+                step_override = true;
+                i += 1;
+            } else {
+                println("capstan native: invalid direct step budget");
+                return 2;
+            }
         } else if (arg == "--strict") {
             context.strict = true;
         } else if (arg == "--release") {
@@ -78,6 +94,7 @@ int main() {
             source_paths.push(arg);
         }
     }
+    if (step_override && !direct) { native_usage(); return 2; }
     if (source_paths.len() > MAX_IMPORT_FILES) {
         println("capstan native: source file count exceeds import graph limit");
         return 2;
@@ -193,7 +210,7 @@ int main() {
         return 1;
     }
     if (direct) {
-        CCAMDirectResult image = ccam_direct_elf(lowered.functions, lowered.entry_function);
+        CCAMDirectResult image = ccam_direct_elf(lowered.functions, lowered.entry_function, max_steps);
         if (!image.ok) {
             println("capstan native: direct backend rejected program: " + image.error);
             return 1;

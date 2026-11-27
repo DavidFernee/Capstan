@@ -2,7 +2,7 @@
 # capstan: front end for the Capstan compiler.
 #   capstan run   file.cap... [-- program args]
 #   capstan build file.cap... -o program [--release] [--strict]
-#   capstan native [--direct] [--root DIR] file.cap... -o program [--release] [--strict] (Linux x86-64 prototype)
+#   capstan native [--direct [--direct-steps N]] [--root DIR] file.cap... -o program [--release] [--strict] (Linux x86-64 prototype)
 #   capstan test  file.cap...           [--strict]
 #   capstan check file.cap...           [--release] [--strict]
 #   capstan fmt   file.cap...           [--check]
@@ -29,12 +29,15 @@ if [[ "$cmd" == lsp ]]; then
   [[ -x "$ROOT/build/capstan-lsp" ]] || make -s -C "$ROOT" lsp >&2
   exec "$ROOT/build/capstan-lsp" "$@"
 fi
-files=(); flags=(); out=""; workspace_root=""; direct=0; progargs=()
+files=(); flags=(); out=""; workspace_root=""; direct=0; direct_steps=(); progargs=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
     --root) workspace_root="$2"; shift 2 ;;
     --direct) direct=1; shift ;;
+    --direct-steps)
+      [[ $# -ge 2 ]] || { echo "capstan native: --direct-steps requires a budget" >&2; exit 2; }
+      direct_steps=("$1" "$2"); shift 2 ;;
     --release|--strict|--keep-checks) flags+=("$1"); shift ;;
     --) shift; progargs=("$@"); break ;;
     *) files+=("$1"); shift ;;
@@ -48,6 +51,11 @@ fi
 
 if [[ "$direct" -gt 0 && "$cmd" != "native" ]]; then
   echo "capstan: --direct is supported only by the native command" >&2
+  exit 2
+fi
+
+if [[ -n "${direct_steps[0]-}" && ( "$cmd" != "native" || "$direct" -eq 0 ) ]]; then
+  echo "capstan: --direct-steps requires native --direct" >&2
   exit 2
 fi
 
@@ -111,6 +119,7 @@ case "$cmd" in
     if [[ "$direct" -gt 0 ]]; then
       output_tmp="$(mktemp -d -- "$out.XXXXXXXX")"
       "$tmp/native-driver" --root "$workspace_root" -o "$output_tmp/program" --direct \
+        ${direct_steps[@]+"${direct_steps[@]}"} \
         ${flags[@]+"${flags[@]}"} ${native_files[@]+"${native_files[@]}"}
       chmod 700 -- "$output_tmp/program"
       mv -fT -- "$output_tmp/program" "$out"

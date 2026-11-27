@@ -1,6 +1,6 @@
-// Direct Linux x86-64 backend for one forward-only, integer-returning
+// Direct Linux x86-64 backend for one integer-returning
 // CCAM entry function. The kernel supplies the initial stack. This backend
-// uses at most 2056 bytes of it and executes at most 252 CCAM instructions.
+// uses at most 2056 bytes of it and charges one step before every CCAM instruction.
 import "ccam_calls.cap";
 import "native_elf64.cap";
 import "native_link_model.cap";
@@ -11,7 +11,7 @@ const int CCAM_DIRECT_INSTRUCTION_LIMIT = 252;
 const int CCAM_DIRECT_REGISTER_LIMIT = 256;
 const int CCAM_DIRECT_OVERFLOW = 252;
 const int CCAM_DIRECT_DIVZERO = 253;
-const int CCAM_DIRECT_WRITE_FAILED = 254;
+const int CCAM_DIRECT_STEP_LIMIT = 254;
 const int CCAM_DIRECT_EXPLICIT_TRAP = 255;
 
 struct CCAMDirectResult {
@@ -58,14 +58,18 @@ void ccam_direct_jump(List<int> code, List<NativeFixup> fixups, int symbol) {
     native_elf_field(code, 0, 4);
 }
 
-void ccam_direct_exit(List<int> code, int status) {
-    code.push(191); native_elf_field(code, status, 4); // mov edi,status
+void ccam_direct_exit_syscall(List<int> code) {
     code.push(184); native_elf_field(code, 60, 4);     // mov eax,SYS_exit
     code.push(15); code.push(5);                       // syscall
     code.push(15); code.push(11);                      // ud2 if exit returns
 }
 
-void ccam_direct_result(List<int> code, List<NativeFixup> fixups) {
+void ccam_direct_exit(List<int> code, int status) {
+    code.push(191); native_elf_field(code, status, 4); // mov edi,status
+    ccam_direct_exit_syscall(code);
+}
+
+void ccam_direct_result(List<int> code) {
     // The caller supplies fd 3 (a fresh regular file). A single bounded
     // write transfers the signed little-endian result. Any short write or
     // error is a transport failure, and the caller discards the result.
@@ -76,8 +80,10 @@ void ccam_direct_result(List<int> code, List<NativeFixup> fixups) {
     code.push(184); native_elf_field(code, 1, 4);        // mov eax,SYS_write
     code.push(15); code.push(5);                        // syscall
     code.push(72); code.push(131); code.push(248); code.push(8); // cmp rax,8
-    ccam_direct_fixup(code, fixups, 133, CCAM_DIRECT_WRITE_FAILED); // jne
-    ccam_direct_exit(code, 0);
+    code.push(191); native_elf_field(code, 77, 4); // mov edi,77 (preserves flags)
+    code.push(186); native_elf_field(code, 0, 4);  // mov edx,0
+    code.push(15); code.push(68); code.push(250); // cmove edi,edx
+    ccam_direct_exit_syscall(code);
 }
 
 void ccam_direct_division(List<int> code, List<NativeFixup> fixups, bool remainder) {
@@ -125,69 +131,82 @@ void ccam_direct_binary(List<int> code, List<NativeFixup> fixups, int op) {
     }
 }
 
-// Join facts by intersection. Always copy the first incoming state so
-// processing one successor cannot mutate a sibling's facts.
-void ccam_direct_propagate(List<List<bool>> states, int target, List<bool> incoming) {
-    List<bool> prior = states[target];
-    if (prior.len() == 0) {
-        for (int i = 0; i < incoming.len(); i += 1) { prior.push(incoming[i]); }
-    } else {
-        for (int i = 0; i < incoming.len(); i += 1) {
-            prior[i] = prior[i] && incoming[i];
-        }
+struct CCAMDirectFlow {
+    int read_first;
+    int read_second;
+    int write_register;
+    int next_first;
+    int next_second;
+}
+
+void ccam_direct_visit(List<int> work, List<bool> seen, int pc) {
+    if (pc >= 0 && !seen[pc]) {
+        seen[pc] = true;
+        work.push(pc);
     }
 }
 
-// Canonical validation establishes operand types, index ranges and reachable
-// termination edges. Forward-only edges allow one pass in PC order to prove
-// that each reachable native load reads a value stored on every path to it.
+// The canonical validator establishes operand types and index ranges.
+// For each register, visit the paths on which it is still uninitialized.
+// A write closes that path. Reads precede writes, including aliased operands.
+// Each PC is visited at most once per register even on cyclic control flow.
 string ccam_direct_profile(CCAMFunction fn) {
-    List<List<bool>> states = new List<List<bool>>();
-    for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
-        states.push(new List<bool>());
-    }
-    for (int i = 0; i < fn.register_types.len(); i += 1) {
-        states[0].push(false);
-    }
+    List<CCAMDirectFlow> flow = new List<CCAMDirectFlow>();
     for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
         CCAMInstruction ins = fn.instructions[pc];
         int op = ins.op;
-        bool binary = op >= CCAM_OP_ADD_I && op <= CCAM_OP_LT_I;
-        if (op == CCAM_OP_JUMP && ins.target <= pc) { return "unsupported_direct_back_edge"; }
-        if (op == CCAM_OP_BRANCH && (ins.if_true <= pc || ins.if_false <= pc)) {
-            return "unsupported_direct_back_edge";
+        CCAMDirectFlow instruction = new CCAMDirectFlow{
+            read_first: -1, read_second: -1, write_register: -1,
+            next_first: -1, next_second: -1
+        };
+        if (op == CCAM_OP_JUMP) {
+            instruction.next_first = ins.target;
+        } else if (op == CCAM_OP_BRANCH) {
+            instruction.read_first = ins.lhs;
+            instruction.next_first = ins.if_true;
+            instruction.next_second = ins.if_false;
+        } else if (op == CCAM_OP_RET) {
+            instruction.read_first = ins.lhs;
+        } else if (op != CCAM_OP_TRAP) {
+            if (op >= CCAM_OP_ADD_I && op <= CCAM_OP_LT_I) {
+                instruction.read_first = ins.lhs;
+                instruction.read_second = ins.rhs;
+            } else if (op == CCAM_OP_NOT_B) {
+                instruction.read_first = ins.lhs;
+            } else if (op == CCAM_OP_MOVE) {
+                instruction.read_first = ins.src;
+            } else if (op != CCAM_OP_CONST_I && op != CCAM_OP_CONST_B) {
+                return "unsupported_direct_instruction";
+            }
+            instruction.write_register = ins.dst;
+            // The canonical validator rejects reachable fallthrough.
+            if (pc + 1 < fn.instructions.len()) { instruction.next_first = pc + 1; }
         }
-        if (!binary && op != CCAM_OP_CONST_I && op != CCAM_OP_CONST_B &&
-            op != CCAM_OP_MOVE && op != CCAM_OP_NOT_B && op != CCAM_OP_RET &&
-            op != CCAM_OP_TRAP && op != CCAM_OP_JUMP && op != CCAM_OP_BRANCH) {
-            return "unsupported_direct_instruction";
-        }
-
-        List<bool> initialized = states[pc];
-        if (initialized.len() == 0) { continue; }
-        if (binary || op == CCAM_OP_NOT_B || op == CCAM_OP_MOVE ||
-            op == CCAM_OP_RET || op == CCAM_OP_BRANCH) {
-            int source = ins.lhs;
-            if (op == CCAM_OP_MOVE) { source = ins.src; }
-            if (!initialized[source] || (binary && !initialized[ins.rhs])) {
+        flow.push(instruction);
+    }
+    for (int reg = 0; reg < fn.register_types.len(); reg += 1) {
+        List<bool> seen = new List<bool>();
+        for (int pc = 0; pc < flow.len(); pc += 1) { seen.push(false); }
+        List<int> work = new List<int>();
+        ccam_direct_visit(work, seen, 0);
+        for (int cursor = 0; cursor < work.len(); cursor += 1) {
+            CCAMDirectFlow ins = flow[work[cursor]];
+            if (ins.read_first == reg || ins.read_second == reg) {
                 return "uninitialised_register";
             }
-        }
-        if (op == CCAM_OP_RET || op == CCAM_OP_TRAP) { continue; }
-        if (op == CCAM_OP_JUMP) {
-            ccam_direct_propagate(states, ins.target, initialized);
-        } else if (op == CCAM_OP_BRANCH) {
-            ccam_direct_propagate(states, ins.if_true, initialized);
-            ccam_direct_propagate(states, ins.if_false, initialized);
-        } else {
-            initialized[ins.dst] = true;
-            ccam_direct_propagate(states, pc + 1, initialized);
+            if (ins.write_register != reg) {
+                ccam_direct_visit(work, seen, ins.next_first);
+                ccam_direct_visit(work, seen, ins.next_second);
+            }
         }
     }
     return "";
 }
 
-CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry) {
+CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry, int max_steps) {
+    if (max_steps < 0 || max_steps > CCAM_MAX_STEPS) {
+        return ccam_direct_error("invalid_step_budget");
+    }
     if (functions.len() != 1 || entry != 0) {
         return ccam_direct_error("direct_backend_requires_one_entry");
     }
@@ -207,10 +226,15 @@ CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry) {
     List<NativeSymbol> symbols = new List<NativeSymbol>();
     code.push(72); code.push(129); code.push(236); // sub rsp,imm32
     native_elf_field(code, fn.register_types.len() * 8, 4);
+    code.push(65); code.push(185); // mov r9d,imm32; R9 is reserved for remaining steps
+    native_elf_field(code, max_steps, 4);
     for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
         CCAMInstruction ins = fn.instructions[pc];
         int op = ins.op;
         symbols.push(new NativeSymbol{id: pc, offset: code.len()});
+        code.push(69); code.push(133); code.push(201); // test r9d,r9d
+        ccam_direct_fixup(code, fixups, 132, CCAM_DIRECT_STEP_LIMIT);
+        code.push(65); code.push(255); code.push(201); // dec r9d
         if (op == CCAM_OP_JUMP) {
             ccam_direct_jump(code, fixups, ins.target);
             continue;
@@ -230,7 +254,7 @@ CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry) {
             if (op == CCAM_OP_MOVE) { source = ins.src; }
             ccam_direct_slot(code, true, 0, source);
             if (op == CCAM_OP_RET) {
-                ccam_direct_result(code, fixups);
+                ccam_direct_result(code);
                 continue;
             }
             if (op == CCAM_OP_BRANCH) {
@@ -252,8 +276,8 @@ CCAMDirectResult ccam_direct_elf(List<CCAMFunction> functions, int entry) {
     ccam_direct_exit(code, 70);
     symbols.push(new NativeSymbol{id: CCAM_DIRECT_DIVZERO, offset: code.len()});
     ccam_direct_exit(code, 71);
-    symbols.push(new NativeSymbol{id: CCAM_DIRECT_WRITE_FAILED, offset: code.len()});
-    ccam_direct_exit(code, 77);
+    symbols.push(new NativeSymbol{id: CCAM_DIRECT_STEP_LIMIT, offset: code.len()});
+    ccam_direct_exit(code, 73);
     symbols.push(new NativeSymbol{id: CCAM_DIRECT_EXPLICIT_TRAP, offset: code.len()});
     ccam_direct_exit(code, 72);
     NativeLinkResult linked = native_link_image(code, symbols, fixups);

@@ -79,10 +79,30 @@ def main(capstan):
         )
         assert full_fd.returncode == 77
 
-        source.write_text("int main() { int n = 1; while (n < 2) { n += 1; } return n; }\n", encoding="ascii")
-        rejection = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60)
-        assert rejection.returncode == 1, rejection
-        assert "unsupported_direct_back_edge" in rejection.stdout, rejection
+        # Match the reference machine's two-instruction CONST_I/RET vector.
+        source.write_text("int main() { return 42; }\n", encoding="ascii")
+        for limit in range(3):
+            subprocess.run(command + ["--direct-steps", str(limit)], env=env, check=True, timeout=60)
+            wanted = (0, struct.pack("<q", 42)) if limit == 2 else (73, b"")
+            assert run_case(executable, sink) == wanted
+
+        source.write_text(
+            "int main() { int n = 1; while (n < 4) { n += 1; } return n; }\n",
+            encoding="ascii",
+        )
+        subprocess.run(command, env=env, check=True, timeout=60)
+        assert run_case(executable, sink) == (0, struct.pack("<q", 4))
+        source.write_text("int main() { while (true) {} }\n", encoding="ascii")
+        subprocess.run(command + ["--direct-steps", "20"], env=env, check=True, timeout=60)
+        assert run_case(executable, sink) == (73, b"")
+
+        image = executable.read_bytes()
+        rejection = subprocess.run(
+            command + ["--direct-steps", "10000001"], env=env,
+            capture_output=True, text=True, timeout=60,
+        )
+        assert rejection.returncode == 2, rejection
+        assert "step budget outside" in rejection.stdout, rejection
         assert executable.read_bytes() == image  # A failed compilation did not replace the artifact.
         assert not list(root.glob("program.*"))  # A failed compilation did not leave a staging file.
     print(f"{len(cases)} direct execution cases plus ELF, determinism, and failure-path checks passed")
