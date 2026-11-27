@@ -98,7 +98,7 @@ bool ag_expr_node_valid(AGExpression node, int index) {
 test "research expression helpers enforce precedence and associativity" {
     assert(ag_operator_class(43) == 1);
     assert(ag_operator_class(42) == 2);
-    assert(ag_operator_arity(43) == 2);
+    assert(ag_operator_arity(42) == 2);
     assert(ag_operator_arity(33) == 1);
     assert(ag_should_reduce(42, 43));
     assert(!ag_should_reduce(43, 42));
