@@ -1,6 +1,6 @@
 int ag_precedence(int ch) {
- if (ch==43 || ch==45) { return 1; }
- if (ch==42 || ch==47) { return 2; }
- if (ch==60 || ch==62) { return 0; }
+ if (ch==60 || ch==62) { return 1; }
+ if (ch==43 || ch==45) { return 2; }
+ if (ch==42 || ch==47) { return 3; }
  return 0;
 }
