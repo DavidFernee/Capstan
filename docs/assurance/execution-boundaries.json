@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "7e2dea3b4657b8fdfd5e8e761015feda6c9bfbb6",
+  "baseline_commit": "05b24a45a6021b186e4b97a913c85d6c40c1d8be",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -34,9 +34,7 @@
       "open": [
         "Define the formal scalar source typing judgement.",
         "Prove checker acceptance implies the formal typing judgement.",
-        "Integrate the restricted C-free path into the production CLI without using generated C as semantic authority.",
-        "Prove soundness of lexical binding identities and bounded access-path provenance, including nested wildcard selectors, aliases and aggregate summaries; current implementation is not a formal information-flow proof.",
-        "Establish password provenance completeness beyond name heuristics and explicit Tainted rejection; CWE-916 inexpressibility is not established."
+        "Integrate the restricted C-free path into the production CLI without using generated C as semantic authority."
       ]
     },
     {
@@ -124,6 +122,8 @@
       "implementation_refinement": false,
       "artifacts": [
         "verification/ccam_native_x64.cap",
+        "verification/ccam_direct_elf.cap",
+        "verification/native_elf64.cap",
         "docs/architecture/CCAM-NATIVE-BACKEND.md",
         "tools/native_driver.cap"
       ],
@@ -131,7 +131,9 @@
         "Cover every admitted opcode and observable effect in the backend.",
         "Establish differential conformance against the reference machine for adversarial vectors.",
         "Prove or translation-validate machine-code simulation, including ABI, traps and resource limits.",
-        "Add separately tested supported target and platform rows."
+        "Add separately tested supported target and platform rows.",
+        "Direct ELF profile remains limited to a single parameterless integer-returning entry; calls, byte output, void entry, and complete terminal-outcome equivalence remain open.",
+        "Establish stable result-record consumer and bounded transport retry semantics; driver bootstrap remains C-dependent."
       ]
     },
     {

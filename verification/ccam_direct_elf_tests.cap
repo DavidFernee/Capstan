@@ -1,0 +1,98 @@
+import "ccam_direct_elf.cap";
+
+List<CCAMFunction> direct_test_program(List<CCAMInstruction> code, List<int> types) {
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{
+        name: "main", register_types: types, parameter_count: 0,
+        return_type: CCAM_RETURN_INT, instructions: code, call_sites: new List<CCAMCallSite>()
+    });
+    return functions;
+}
+
+test "direct ELF requires initialization on every incoming path" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_BOOL);
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction check = ccam_instruction(CCAM_OP_CONST_B);
+    check.dst = 0;
+    code.push(check);
+    CCAMInstruction branch = ccam_instruction(CCAM_OP_BRANCH);
+    branch.lhs = 0;
+    branch.if_true = 2;
+    branch.if_false = 3;
+    code.push(branch);
+    CCAMInstruction assign = ccam_instruction(CCAM_OP_CONST_I);
+    assign.dst = 1;
+    assign.int_value = 42;
+    code.push(assign);
+    CCAMInstruction terminal = ccam_instruction(CCAM_OP_RET);
+    terminal.lhs = 1;
+    code.push(terminal);
+    List<CCAMFunction> functions = direct_test_program(code, types);
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    CCAMDirectResult missing = ccam_direct_elf(functions, 0, 1000);
+    assert(!missing.ok && missing.error == "uninitialised_register" && missing.bytes.len() == 0);
+
+    branch.if_false = 2;
+    CCAMDirectResult image = ccam_direct_elf(functions, 0, 1000);
+    assert(image.ok && image.bytes.len() > 176 && image.bytes[0] == 127);
+    assert(image.bytes[56] == 2 && image.bytes[124] == 6);
+
+    branch.if_false = 1;
+    CCAMDirectResult loop = ccam_direct_elf(functions, 0, 1000);
+    assert(loop.ok);
+    branch.if_false = 3;
+    assign.op = CCAM_OP_JUMP;
+    assign.target = 1;
+    CCAMDirectResult cyclic = ccam_direct_elf(functions, 0, 1000);
+    assert(!cyclic.ok && cyclic.error == "uninitialised_register");
+    assert(ccam_direct_elf(functions, 0, -1).error == "invalid_step_budget");
+    assert(ccam_direct_elf(functions, 0, CCAM_MAX_STEPS + 1).error == "invalid_step_budget");
+}
+
+test "direct ELF accepts the instruction and register limits and rejects one over" {
+    List<int> types = new List<int>();
+    for (int i = 0; i < CCAM_DIRECT_REGISTER_LIMIT; i += 1) { types.push(CCAM_TYPE_INT); }
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction assign = ccam_instruction(CCAM_OP_CONST_I);
+    assign.dst = CCAM_DIRECT_REGISTER_LIMIT - 1;
+    for (int i = 0; i < CCAM_DIRECT_INSTRUCTION_LIMIT - 1; i += 1) { code.push(assign); }
+    CCAMInstruction terminal = ccam_instruction(CCAM_OP_RET);
+    terminal.lhs = assign.dst;
+    code.push(terminal);
+    List<CCAMFunction> functions = direct_test_program(code, types);
+    assert(ccam_direct_elf(functions, 0, 1000).ok);
+
+    code.push(terminal);
+    assert(ccam_direct_elf(functions, 0, 1000).error == "unsupported_direct_profile");
+    code.pop();
+    types.push(CCAM_TYPE_INT);
+    assert(ccam_direct_elf(functions, 0, 1000).error == "unsupported_direct_profile");
+}
+
+test "reference evaluator checks fuel before the instruction including return" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction assign = ccam_instruction(CCAM_OP_CONST_I);
+    assign.dst = 0;
+    assign.int_value = 42;
+    code.push(assign);
+    CCAMInstruction terminal = ccam_instruction(CCAM_OP_RET);
+    terminal.lhs = 0;
+    code.push(terminal);
+    for (int limit = 0; limit <= 2; limit += 1) {
+        CCAMMachineCreateResult created = ccam_machine_create_validated(
+            types, code, limit, CCAM_RETURN_INT);
+        assert(created.ok);
+        CCAMMachineState state = created.state;
+        while (!state.halted) { ccam_machine_step(state); }
+        assert(state.steps == limit);
+        if (limit < 2) {
+            assert(state.trap_code == "step_limit_exceeded");
+        } else {
+            assert(state.trap_code == "" && state.halt_value == 42);
+        }
+    }
+}
