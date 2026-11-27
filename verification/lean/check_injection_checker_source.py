@@ -15,22 +15,33 @@ SOURCE = ROOT / "compiler" / "checker.cap"
 MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "InjectionChecker.lean"
 SINK_MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "InjectionSinks.lean"
 VALUE_MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "InjectionValue.lean"
+PATH_MODEL = ROOT / "verification" / "lean" / "CapstanVerification" / "F1Provenance.lean"
 BASELINE = ROOT / "verification" / "lean" / "fixtures" / "injection_checker_laundering_source.cap"
 SOURCE_MARKER = "// ---- laundering analysis (CWE-20)"
 
 REQUIRED_SOURCE_FRAGMENTS = (
     "bool derived(Flow f, Node e)",
-    "bool base_marked(Flow f, Node e)",
-    "void flow_walk(Flow f, Node n)",
+    "bool aggregate_type(Type t)",
+    "string binding_path(int binding_id)",
+    "string path_key(Node e)",
+    "string wildcard_path_key(Node e)",
+    "bool path_marked(Flow f, Node e)",
+    "bool aggregate_marked(Flow f, Node e)",
+    "void mark_key(Flow f, string key)",
+    "f.path_count >= MAX_FLOW_PATHS",
+    "bool needs_aggregate_summary(Node n, int binding_id)",
+    "at.binding_id = c.next_binding_id",
+    "e.binding_id = declaration.binding_id",
+    "kind == 1 && (e.k == N_CALL || e.k == N_METHOD)",
+    'if ((f == "hash" || f == "hash_verify") && dt.k == TY_TAINT)',
     'e.k == N_METHOD && e.s == "at"',
-    'e.k == N_CALL && e.s == "int_to_str"',
+    'e.s == "int_to_str" || e.s == "to_text"',
     'e.k == N_BIN && e.s == "+" && ty_of(e).k == TY_STR',
-    'e.s == "wrapping_add" || e.s == "wrapping_sub"',
     'n.k == N_CALL && n.s == "char_str"',
     'n.k == N_INDEX && texty_type(ty_of(n))',
     "return t.k == TY_STR || t.k == TY_HTML || t.k == TY_LOG || t.k == TY_CSV;",
-    'rounds < 100',
-    'rounds < 50',
+    "rounds < 100",
+    "rounds < 50",
 )
 
 REQUIRED_MODEL_FRAGMENTS = (
@@ -55,6 +66,19 @@ REQUIRED_VALUE_MODEL_FRAGMENTS = (
     "theorem selection_preserves_control",
 )
 
+REQUIRED_PATH_MODEL_FRAGMENTS = (
+    "structure ProvenancePath",
+    "def provenanceWildcardPath",
+    "def provenancePrefix",
+    "def provenancePathMarked",
+    "theorem dynamic_write_marks_constant_read",
+    "theorem binding_identity_separates_locals",
+    "theorem map_key_value_paths_are_disjoint",
+    "theorem descendant_fact_marks_aggregate",
+    "def addProvenanceFactBounded",
+    "theorem provenance_fact_budget_fails_closed",
+)
+
 REQUIRED_SINK_MODEL_FRAGMENTS = (
     "def checkerRejectsSink",
     "theorem char_string_derived_is_rejected",
@@ -72,13 +96,14 @@ def fail(message: str) -> None:
 
 
 def main() -> None:
-    if not SOURCE.is_file() or not MODEL.is_file() or not SINK_MODEL.is_file() or not VALUE_MODEL.is_file():
+    if not SOURCE.is_file() or not MODEL.is_file() or not SINK_MODEL.is_file() or not VALUE_MODEL.is_file() or not PATH_MODEL.is_file():
         fail("run from a complete Capstan checkout; required source/model file missing")
 
     source = SOURCE.read_text(encoding="utf-8")
     model = MODEL.read_text(encoding="utf-8")
     sink_model = SINK_MODEL.read_text(encoding="utf-8")
     value_model = VALUE_MODEL.read_text(encoding="utf-8")
+    path_model = PATH_MODEL.read_text(encoding="utf-8")
     baseline = BASELINE.read_text(encoding="utf-8")
     if SOURCE_MARKER not in source:
         fail("checker laundering-analysis section marker is missing")
@@ -93,10 +118,13 @@ def main() -> None:
     missing_model = [fragment for fragment in REQUIRED_MODEL_FRAGMENTS if fragment not in model]
     missing_sink_model = [fragment for fragment in REQUIRED_SINK_MODEL_FRAGMENTS if fragment not in sink_model]
     missing_value_model = [fragment for fragment in REQUIRED_VALUE_MODEL_FRAGMENTS if fragment not in value_model]
+    missing_path_model = [fragment for fragment in REQUIRED_PATH_MODEL_FRAGMENTS if fragment not in path_model]
     if missing_source:
         fail("expected checker transfer/sink/fixpoint fragment missing: " + repr(missing_source))
     if missing_model:
         fail("expected Lean model declaration missing: " + repr(missing_model))
+    if missing_path_model:
+        fail("expected F1 access-path model declaration missing: " + repr(missing_path_model))
     if missing_sink_model:
         fail("expected Lean protected-sink theorem missing: " + repr(missing_sink_model))
     if missing_value_model:
@@ -104,7 +132,7 @@ def main() -> None:
 
     print(
         "injection checker source bridge: PASS "
-        "(checker laundering-analysis section matches fixture; transfer, sink and value-provenance declarations present)"
+        "(checker access-path section matches fixture; transfer, sink, value-provenance and F1 path-model declarations present)"
     )
     print(
         "LIMIT: source identity and declaration-presence checks only; "
