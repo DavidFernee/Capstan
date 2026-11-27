@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "821cce073548466552d5267027d1f366ee701496",
+  "baseline_commit": "0e67ffac2b076963e1dabb32a6822aebafedc522",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -131,7 +131,9 @@
         "Cover every admitted opcode and observable effect in the backend.",
         "Establish differential conformance against the reference machine for adversarial vectors.",
         "Prove or translation-validate machine-code simulation, including ABI, traps and resource limits.",
-        "Add separately tested supported target and platform rows."
+        "Add separately tested supported target and platform rows.",
+        "Direct ELF profile remains limited to a single parameterless integer-returning entry; calls, byte output, void entry, and complete terminal-outcome equivalence remain open.",
+        "Establish stable result-record consumer and bounded transport retry semantics; driver bootstrap remains C-dependent."
       ]
     },
     {
