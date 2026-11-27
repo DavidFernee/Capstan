@@ -1524,7 +1524,7 @@ void test_display_payload_byte_budget(Tally t) {
         "over-budget command admitted");
 
     DisplayCommand command = new DisplayCommand{
-        kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: rect_px(0, 0, 1, 1),
+        kind: DISPLAY_BLEND, bounds: rect(0, 0, 0, 0), clip: rect(0, 0, 1, 1),
         paint: solid(0xFFFFFFFF), rule: FILL_NONZERO, segments: none, mask_alpha: none,
         mask_w: 0, mask_h: 0, x: 0, y: 0, coverage: 255, opacity: 255
     };
@@ -1544,7 +1544,7 @@ void test_display_work_budget(Tally t) {
     }
     DisplayCommand small_cmd = new DisplayCommand{
         kind: DISPLAY_PATH, bounds: rect(0, 0, 0, 0),
-        clip: rect_px(0, 0, 1, MAX_PIXMAP_SIDE),
+        clip: rect(0, 0, 1, MAX_PIXMAP_SIDE),
         paint: solid(0xFFFFFFFF), rule: FILL_NONZERO,
         segments: small, mask_alpha: none, mask_w: 0, mask_h: 0,
         x: 0, y: 0, coverage: 0, opacity: 255
