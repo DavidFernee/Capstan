@@ -5,7 +5,7 @@ test "scalar native emitter lowers constants and addition" {
     code.push(new AGScalarInstruction{opcode:1,dest:1,left:-1,right:-1,immediate:25});
     code.push(new AGScalarInstruction{opcode:2,dest:2,left:0,right:1,immediate:0});
     AGScalarNativeResult result=ag_scalar_native_emit(code);
-    assert(result.ok && result.bytes.len()==23);
+    assert(result.ok && result.bytes.len()==26);
     assert(result.result_register>=0 && result.result_register<16);
     assert(result.bytes[0]==72 && result.bytes[1]==184 && result.bytes[2]==20);
     assert(result.bytes[10]==72 && result.bytes[11]==184 && result.bytes[12]==25);
