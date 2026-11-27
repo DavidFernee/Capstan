@@ -43,6 +43,7 @@ This baseline is intentionally conservative. Each status must be refreshed again
 | G-16 | C-free S0-S3 bootstrap is not complete | Compiler still relies on transitional bootstrap components | Independent seed, native compiler, clean-room diverse rebuild and production build without C/Python dependencies |
 | G-17 | Performance and portability acceptance baselines are not published | Cannot substantiate production readiness or cross-target claims | Reproducible benchmark suite and per-target ABI/conformance suites |
 | G-18 | Executable evidence manifest/checker is not complete | Claims may not bind to exact source, binary, policy and target | Canonical manifest, hashes, certificate checker and tamper/mismatch tests |
+| G-19 | Native terminal-result ABI is lossy: Linux exit status cannot encode arbitrary signed-64 returns and current trap exits collapse detail/location | Native execution cannot be compared faithfully with CCAM outcomes; process/transport failures can be confused with machine results | Versioned bounded result record carrying exact Int64/Void/trap identity, function/PC/detail/step count and separate platform failures; strict launcher validation and exact differential tests |
 
 ## 3. Dependency order
 
@@ -57,7 +58,7 @@ G-01 reconcile one-semantic-authority architecture
   -> G-03/G-12 end-to-end refinement and validated optimisation
   -> G-13/G-14/G-15 resource, authority and GC assurance
   -> G-16 bootstrap
-  -> G-17/G-18 release evidence
+  -> G-17/G-18/G-19 release evidence
 ```
 
 Some work can proceed in parallel only where interfaces are frozen and recorded. In particular, native instruction encoding experiments may continue, but they cannot establish a production ABI or memory model by themselves.
@@ -80,11 +81,12 @@ Some work can proceed in parallel only where interfaces are frozen and recorded.
 5. Establish shared conformance vectors for validator, evaluator and Lean model.
 
 ### T3 — Native boundary
-1. Freeze integer, aggregate, call, return, trap and runtime ABI.
-2. Freeze reference, frame and safepoint representation.
-3. Extend native lowering only after the preceding contracts are approved.
-4. Define object format and relocation model before production linker implementation.
-5. Add native-vs-reference differential tests and mutation tests.
+1. Freeze integer, aggregate, call, return, trap, terminal-result and runtime ABI.
+2. Reconcile the candidate bounded fd-3 result record with the current native launcher and CCAM-IO contract.
+3. Freeze reference, frame and safepoint representation.
+4. Extend native lowering only after the preceding contracts are approved.
+5. Define object format and relocation model before production linker implementation.
+6. Add native-vs-reference differential tests and mutation tests covering full-width returns and every terminal outcome.
 
 ## 5. Definition of done for each gap
 
