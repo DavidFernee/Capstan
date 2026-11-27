@@ -39,9 +39,11 @@ AGExecutionResult ag_execute_function(CCAMAggregateMachine machine, List<AGFunct
             }
             int source = f.returns[block_id];
             CCAMAggregateValueResult result = ccam_aggregate_read(machine, source, f.signature.result_kind);
+            int return_register = -1;
+            if (result.ok) { return_register = source; }
             return new AGExecutionResult{
                 ok: result.ok, value: result.value,
-                return_register: result.ok ? source : -1, error: result.trap
+                return_register: return_register, error: result.trap
             };
         }
         AGBranchResult branch = ag_branch_select(machine, block, f.blocks.len());
