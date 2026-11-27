@@ -5,7 +5,8 @@ import "ccam_aggregate_byte_buffer.cap";
 bool ag_x86_store_rbp(List<int> b,int src,int displacement) {
     if(!ag_native_reg(src) || displacement>=0 || displacement< -1048576 ||
         displacement%8!=0) { return false; }
-    int width=displacement>=-128 ? 1 : 4;
+    int width=4;
+    if(displacement>=-128) { width=1; }
     int needed=3+width;
     if(b.len()>AG_BYTE_LIMIT-needed) { return false; }
     b.push(72+(src/8)*4);
