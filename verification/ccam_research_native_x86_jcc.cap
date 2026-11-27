@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_x86_jcc(List<int> b,int condition){if(condition<0||condition>15||b.len()>AG_BYTE_LIMIT-6){return false;}b.push(15);b.push(128+condition);return ag_u32(b,0);}

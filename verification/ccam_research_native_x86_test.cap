@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_x86_test(List<int> b,int left,int right){if(!ag_native_reg(left)||!ag_native_reg(right)||b.len()>AG_BYTE_LIMIT-3){return false;}b.push(72+(right/8)*4+left/8);b.push(133);b.push(192+(right%8)*8+left%8);return true;}

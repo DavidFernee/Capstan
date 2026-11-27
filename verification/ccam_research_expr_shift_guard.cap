@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_shift_count_valid(int n,int width){return width>0&&width<=64&&n>=0&&n<width;}

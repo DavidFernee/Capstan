@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_scalar_type_compatible(int left,int right){return left==right&&(left==AG_SCHEMA_INT||left==AG_SCHEMA_BOOL);}

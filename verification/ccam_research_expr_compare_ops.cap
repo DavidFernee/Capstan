@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+int ag_compare_opcode(int op){if(op==60){return 9;}if(op==62){return 10;}if(op==61){return 11;}if(op==33){return 12;}return 0;}

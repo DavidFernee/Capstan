@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_value_id(int value,int count){return value>=0&&value<count&&count<=1048576;}

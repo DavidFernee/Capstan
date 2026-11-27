@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_utf8_cont(int c){return c>=128&&c<=191;}

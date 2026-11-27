@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_block_id_valid(int id,int count){return id>=0&&id<count&&count<=65536;}

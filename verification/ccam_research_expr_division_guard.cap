@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_division_safe(int a,int b){return b!=0&&!(a== -2147483648&&b== -1);}

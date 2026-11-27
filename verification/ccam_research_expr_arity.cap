@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+int ag_operator_arity(int op){if(ag_unary_operator(op)){return 1;}if(ag_operator_class(op)>0){return 2;}return 0;}

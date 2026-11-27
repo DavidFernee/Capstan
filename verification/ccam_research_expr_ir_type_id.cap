@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_type_id(int type){return type==AG_SCHEMA_INT||type==AG_SCHEMA_BOOL||type==AG_SCHEMA_REF;}

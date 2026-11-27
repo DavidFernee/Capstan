@@ -1,0 +1,3 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_delimiter_push(List<int> s,int d){if(s.len()>=65536||(d!=40&&d!=91&&d!=123)){return false;}s.push(d);return true;}
+bool ag_delimiter_close(List<int> s,int d){if(s.len()==0){return false;}int o=s[s.len()-1];if(!((o==40&&d==41)||(o==91&&d==93)||(o==123&&d==125))){return false;}s.pop();return true;}

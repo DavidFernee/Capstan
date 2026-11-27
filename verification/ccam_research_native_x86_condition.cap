@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+int ag_x86_condition(int op){if(op==61){return 4;}if(op==33){return 5;}if(op==60){return 12;}if(op==62){return 15;}return -1;}

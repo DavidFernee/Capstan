@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+int ag_line_comment_end(List<int> b,int p){if(p<0||p>b.len()){return -1;}while(p<b.len()&&b[p]!=10){p+=1;}return p;}

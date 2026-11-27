@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+bool ag_integer_lexeme(List<int> b,int start,int end){if(!ag_literal_range(start,end,b.len())){return false;}for(int i=start;i<end;i+=1){if(!ag_digit(b[i])){return false;}}return true;}

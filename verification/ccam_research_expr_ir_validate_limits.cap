@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_validate_limits(int funcs,int blocks,int ins,int regs){return funcs>0&&funcs<=4096&&blocks>0&&blocks<=65536&&ins>=0&&ins<=1048576&&regs>=0&&regs<=65536;}

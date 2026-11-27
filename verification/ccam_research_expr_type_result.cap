@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+int ag_binary_result_type(int op,int left,int right){if(!ag_scalar_type_compatible(left,right)){return -1;}if(ag_operator_class(op)==3||ag_operator_class(op)>=4){return AG_SCHEMA_BOOL;}return left;}

@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+bool ag_ir_edge_valid(int from,int to,int count){return ag_ir_block_id_valid(from,count)&&ag_ir_block_id_valid(to,count);}

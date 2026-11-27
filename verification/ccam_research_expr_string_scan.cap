@@ -1,0 +1,2 @@
+// Candidate compiler support module. Research batch; pending integration audit.
+int ag_string_end(List<int> b,int p){if(p<0||p>=b.len()||b[p]!=34){return -1;}p+=1;while(p<b.len()){if(b[p]==34){return p+1;}if(b[p]==92){p+=1;if(p>=b.len()){return -1;}}p+=1;}return -1;}

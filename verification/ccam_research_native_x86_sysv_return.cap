@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+int ag_x86_sysv_return(){return 0;}

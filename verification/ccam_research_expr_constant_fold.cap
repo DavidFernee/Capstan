@@ -1,0 +1,2 @@
+// Research batch module; pending integration audit.
+AGCheckedInt ag_constant_fold(int op,int a,int b){return ag_arithmetic(op,a,b);}
