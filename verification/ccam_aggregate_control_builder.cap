@@ -1,0 +1,35 @@
+import "ccam_aggregate_control_machine.cap";
+struct AGControlBuilder { List<AGControlInstruction> code; bool failed; }
+bool ag_control_emit(AGControlBuilder builder,AGControlInstruction instruction) {
+ if(builder.failed || builder.code.len()>=AG_CONTROL_LIMIT) { builder.failed=true; return false; }
+ builder.code.push(instruction); return true;
+}
+int ag_control_emit_constant(AGControlBuilder builder,int destination,int value) {
+ if(destination<0 || destination>=AG_CONTROL_VARIABLE_LIMIT) { builder.failed=true; return -1; }
+ int at=builder.code.len(); if(!ag_control_emit(builder,new AGControlInstruction{opcode:1,destination:destination,left:0,right:0,immediate:value,target:0})) { return -1; } return at;
+}
+int ag_control_emit_binary(AGControlBuilder builder,int opcode,int destination,int left,int right) {
+ if(opcode<2 || opcode>7 || destination<0 || destination>=AG_CONTROL_VARIABLE_LIMIT || left<0 || left>=AG_CONTROL_VARIABLE_LIMIT || right<0 || right>=AG_CONTROL_VARIABLE_LIMIT) { builder.failed=true; return -1; }
+ int at=builder.code.len(); if(!ag_control_emit(builder,new AGControlInstruction{opcode:opcode,destination:destination,left:left,right:right,immediate:0,target:0})) { return -1; } return at;
+}
+int ag_control_emit_branch_zero(AGControlBuilder builder,int condition,int target) {
+ if(condition<0 || condition>=AG_CONTROL_VARIABLE_LIMIT || target<0 || target>AG_CONTROL_LIMIT) { builder.failed=true; return -1; }
+ int at=builder.code.len(); if(!ag_control_emit(builder,new AGControlInstruction{opcode:8,destination:0,left:condition,right:0,immediate:0,target:target})) { return -1; } return at;
+}
+int ag_control_emit_jump(AGControlBuilder builder,int target) {
+ if(target<0 || target>AG_CONTROL_LIMIT) { builder.failed=true; return -1; }
+ int at=builder.code.len(); if(!ag_control_emit(builder,new AGControlInstruction{opcode:9,destination:0,left:0,right:0,immediate:0,target:target})) { return -1; } return at;
+}
+bool ag_control_patch_target(AGControlBuilder builder,int instruction,int target) {
+ if(builder.failed || instruction<0 || instruction>=builder.code.len() || target<0 || target>=builder.code.len()) { return false; }
+ int op=builder.code[instruction].opcode; if(op!=8 && op!=9) { return false; }
+ builder.code[instruction].target=target; return true;
+}
+bool ag_control_emit_return(AGControlBuilder builder,int variable) {
+ if(variable<0 || variable>=AG_CONTROL_VARIABLE_LIMIT) { builder.failed=true; return false; }
+ return ag_control_emit(builder,new AGControlInstruction{opcode:10,destination:variable,left:0,right:0,immediate:0,target:0});
+}
+AGControlResult ag_control_run_builder(AGControlBuilder builder,int fuel,int variables) {
+ if(builder.failed) { return new AGControlResult{ok:false,value:0,steps:0}; }
+ return ag_control_execute(builder.code,fuel,variables);
+}
