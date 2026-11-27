@@ -1,6 +1,6 @@
 # Native compiler engineering programme — baseline 1.0
 
-Status: proposed control baseline, 2026-11-27. This is a management overlay, not a new language standard. Existing approved specifications govern; unresolved conflicts go to architecture review. RFC #542 is the governing architecture candidate; #544 is a superseded duplicate. #540 and #547/#549 are active implementation/proof work, not completed gates.
+Status: proposed control baseline, 2026-11-27. This is a management overlay, not a new language standard. Existing approved specifications govern; unresolved conflicts go to architecture review. RFC #542 is the governing architecture candidate; #544 is a superseded duplicate. #552 and #547/#549 are active implementation/proof work, not completed gates.
 
 ## Controlled documents
 - CAP-001: [MASTER-REQUIREMENTS](MASTER-REQUIREMENTS.md)
