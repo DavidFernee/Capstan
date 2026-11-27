@@ -1,2 +1,20 @@
 import "ccam_aggregate_u32.cap";
-bool ag_patch32(List<int> b,int p,int v) { if(p<0 || p>b.len()-4 || v<0 || v>4294967295){return false;} for(int i=0;i<4;i+=1){b[p+i]=v%256;v=v/256;} return true; }
+import "native_binary_fields.cap";
+
+bool ag_patch32(List<int> b, int p, int v) {
+    if (p < 0 || p > b.len() - 4) { return false; }
+    NativeBinaryField field = native_binary_field(v, 4);
+    if (!field.ok) { return false; }
+    for (int i = 0; i < 4; i += 1) { b[p+i] = field.bytes[i]; }
+    return true;
+}
+test "aggregate patch32 preserves surrounding bytes and rejects invalid fields" {
+    List<int> b = new List<int>();
+    for (int i = 0; i < 6; i += 1) { b.push(17); }
+    assert(ag_patch32(b, 1, 305419896));
+    assert(!ag_patch32(b, 3, 0));
+    assert(!ag_patch32(b, 1, 4294967296));
+    assert(!ag_patch32(b, -1, 0));
+    assert(b[0] == 17 && b[5] == 17);
+    assert(b[1] == 120 && b[2] == 86 && b[3] == 52 && b[4] == 18);
+}
