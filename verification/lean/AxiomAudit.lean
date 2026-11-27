@@ -274,7 +274,6 @@ import CapstanVerification.InjectionValue
 #print axioms CapstanVerification.commitTypedReturnOnStack
 #print axioms CapstanVerification.commitTypedReturnOnStack_decreases_depth
 #print axioms CapstanVerification.commitTypedReturnOnStack_preserves_depth_limit
-#print axioms CapstanVerification.commitTypedReturnOnStack_frames_well_typed
 
 -- Process-lifetime aggregate arena: state-in/state-out allocation and typed records.
 #print axioms CapstanVerification.emptyAggregateHeap
