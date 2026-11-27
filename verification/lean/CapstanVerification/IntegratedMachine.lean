@@ -252,6 +252,44 @@ theorem enterTypedCall_preserves_continuation
   · simp [enterTypedCall, hdepth] at hcall
 
 
+/-- Successful call entry establishes the return destination contract for
+the new callee and the suspended caller. The bounded register witness also
+connects that contract to the raw destination stored in the frame. -/
+theorem enterTypedCall_establishes_return_destination
+    {p n : Nat}
+    (caller : TypedMultiFrame) (rest : List TypedMultiFrame)
+    (maxDepth : Nat)
+    (calleeFunctionIndex entryPC : Nat)
+    (signature : FunctionSignature p n)
+    (arguments : Fin p → Val)
+    (sources : Fin p → Fin caller.registerCount)
+    (hsnapshot : ∀ i, caller.registers (sources i) = some (arguments i))
+    (hsources :
+      ∀ i, caller.signature.registerTypes (sources i) =
+        signature.parameterTypes i)
+    (destination : Option (Fin caller.registerCount))
+    (hdestination : ReturnDestinationMatches caller.signature.registerTypes
+      signature.returnType destination)
+    (next : TypedMultiCallStack)
+    (hcall : enterTypedCall caller rest maxDepth
+      calleeFunctionIndex entryPC signature arguments sources hsnapshot
+      hsources destination hdestination = .ok next) :
+    ∃ (callee resumedCaller : TypedMultiFrame)
+      (savedDestination : Option (Fin resumedCaller.registerCount)),
+      next.frames = callee :: resumedCaller :: rest ∧
+      callee.callerDestination = savedDestination.map Fin.val ∧
+      ReturnDestinationMatches resumedCaller.signature.registerTypes
+        callee.signature.returnType savedDestination := by
+  by_cases hdepth : rest.length + 1 < maxDepth
+  · simp [enterTypedCall, hdepth] at hcall
+    cases hcall
+    refine ⟨makeTypedMultiFrame calleeFunctionIndex entryPC (caller.pc + 1)
+      (destination.map Fin.val) signature arguments
+      (typedCallArgumentsWellTyped caller signature arguments sources hsnapshot hsources),
+      { caller with pc := caller.pc + 1 }, destination, rfl, rfl, hdestination⟩
+  · simp [enterTypedCall, hdepth] at hcall
+
+
 /-- Observable result of a return instruction in the whole typed stack model.
 Nested returns resume a caller; entry returns halt without popping the entry
 frame; malformed return contracts become explicit traps. -/
