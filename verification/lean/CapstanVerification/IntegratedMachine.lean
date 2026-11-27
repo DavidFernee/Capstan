@@ -156,7 +156,7 @@ def enterTypedCall
       ∀ i, caller.signature.registerTypes (sources i) =
         signature.parameterTypes i)
     (destination : Option (Fin caller.registerCount))
-    (hdestination : ReturnDestinationMatches caller.signature.registerTypes
+    (_hdestination : ReturnDestinationMatches caller.signature.registerTypes
       signature.returnType destination) :
     Except Trap TypedMultiCallStack :=
   if hdepth : (caller :: rest).length < maxDepth then
@@ -266,7 +266,7 @@ frame is retained and converted to a terminal value; nested frames use the
 atomic caller-write-and-pop transition above. -/
 def returnTypedValueOnStack (stack : TypedMultiCallStack)
     (value : Val) : TypedStackReturnOutcome :=
-  match hframes : stack.frames with
+  match stack.frames with
   | [entry] =>
       match entry.signature.returnType with
       | none => .trap .typeMismatch
