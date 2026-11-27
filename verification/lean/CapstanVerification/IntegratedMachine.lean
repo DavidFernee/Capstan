@@ -168,4 +168,121 @@ theorem typedCallArgumentsWellTyped
   rw [hsources i] at hstored
   exact hstored
 
+
+/-- Enter a validated typed callee from an immutable caller-register snapshot.
+The caller continuation is advanced and saved in the callee frame. The callee
+is pushed only when the configured depth admits it. Argument values and the
+return destination are statically checked before this transition is called;
+the concrete evaluator's step-counter and dynamic trap precedence are outside
+this constructor's present scope. -/
+def enterTypedCall
+    {p n : Nat}
+    (caller : TypedMultiFrame) (rest : List TypedMultiFrame)
+    (maxDepth : Nat) (hwithin : (caller :: rest).length ≤ maxDepth)
+    (calleeFunctionIndex entryPC : Nat)
+    (signature : FunctionSignature p n)
+    (arguments : Fin p → Val)
+    (sources : Fin p → Fin caller.registerCount)
+    (hsnapshot : ∀ i, caller.registers (sources i) = some (arguments i))
+    (hsources :
+      ∀ i, caller.signature.registerTypes (sources i) =
+        signature.parameterTypes i)
+    (destination : Option (Fin caller.registerCount))
+    (hdestination : ReturnDestinationMatches caller.signature.registerTypes
+      signature.returnType destination) :
+    Except Trap TypedMultiCallStack :=
+  if hdepth : (caller :: rest).length < maxDepth then
+    let continuation := caller.pc + 1
+    let harguments := typedCallArgumentsWellTyped caller signature
+      arguments sources hsnapshot hsources
+    let callee := makeTypedMultiFrame calleeFunctionIndex entryPC
+      continuation (destination.map Fin.val) signature arguments harguments
+    let resumedCaller := { caller with pc := continuation }
+    .ok {
+      frames := callee :: resumedCaller :: rest
+      maxDepth := maxDepth
+      nonempty := by simp
+      within_limit := by
+        have hlength :
+            (callee :: resumedCaller :: rest).length =
+              (caller :: rest).length + 1 := by simp
+        rw [hlength]
+        exact Nat.succ_le_of_lt hdepth
+    }
+  else
+    .error .callDepthLimit
+
+/-- A successful typed call increases the heterogeneous stack depth by one. -/
+theorem enterTypedCall_increases_depth
+    {p n : Nat}
+    (caller : TypedMultiFrame) (rest : List TypedMultiFrame)
+    (maxDepth : Nat) (hwithin : (caller :: rest).length ≤ maxDepth)
+    (calleeFunctionIndex entryPC : Nat)
+    (signature : FunctionSignature p n)
+    (arguments : Fin p → Val)
+    (sources : Fin p → Fin caller.registerCount)
+    (hsnapshot : ∀ i, caller.registers (sources i) = some (arguments i))
+    (hsources :
+      ∀ i, caller.signature.registerTypes (sources i) =
+        signature.parameterTypes i)
+    (destination : Option (Fin caller.registerCount))
+    (hdestination : ReturnDestinationMatches caller.signature.registerTypes
+      signature.returnType destination)
+    (next : TypedMultiCallStack)
+    (hcall := enterTypedCall caller rest maxDepth hwithin
+      calleeFunctionIndex entryPC signature arguments sources hsnapshot
+      hsources destination hdestination = .ok next) :
+    next.frames.length = (caller :: rest).length + 1 := by
+  unfold enterTypedCall at hcall
+  by_cases hdepth : (caller :: rest).length < maxDepth
+  · simp only [hdepth, ↓reduceDIte] at hcall
+    cases hcall
+    simp
+  · simp [hdepth] at hcall
+
+/-- A successful typed call leaves the caller continuation immediately after
+the call site, while storing that same continuation in the active callee. -/
+theorem enterTypedCall_preserves_continuation
+    {p n : Nat}
+    (caller : TypedMultiFrame) (rest : List TypedMultiFrame)
+    (maxDepth : Nat) (hwithin : (caller :: rest).length ≤ maxDepth)
+    (calleeFunctionIndex entryPC : Nat)
+    (signature : FunctionSignature p n)
+    (arguments : Fin p → Val)
+    (sources : Fin p → Fin caller.registerCount)
+    (hsnapshot : ∀ i, caller.registers (sources i) = some (arguments i))
+    (hsources :
+      ∀ i, caller.signature.registerTypes (sources i) =
+        signature.parameterTypes i)
+    (destination : Option (Fin caller.registerCount))
+    (hdestination : ReturnDestinationMatches caller.signature.registerTypes
+      signature.returnType destination)
+    (next : TypedMultiCallStack)
+    (hcall := enterTypedCall caller rest maxDepth hwithin
+      calleeFunctionIndex entryPC signature arguments sources hsnapshot
+      hsources destination hdestination = .ok next) :
+    ∃ callee resumedCaller,
+      next.frames = callee :: resumedCaller :: rest ∧
+      callee.functionIndex = calleeFunctionIndex ∧
+      callee.pc = entryPC ∧
+      callee.callerContinuation = caller.pc + 1 ∧
+      resumedCaller.functionIndex = caller.functionIndex ∧
+      resumedCaller.pc = caller.pc + 1 := by
+  unfold enterTypedCall at hcall
+  by_cases hdepth : (caller :: rest).length < maxDepth
+  · simp only [hdepth, ↓reduceDIte] at hcall
+    cases hcall
+    refine ⟨makeTypedMultiFrame calleeFunctionIndex entryPC (caller.pc + 1)
+      (destination.map Fin.val) signature arguments
+      (typedCallArgumentsWellTyped caller signature arguments sources
+        hsnapshot hsources),
+      { caller with pc := caller.pc + 1 }, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · rfl
+    · simp [makeTypedMultiFrame]
+    · simp [makeTypedMultiFrame]
+    · simp [makeTypedMultiFrame]
+    · rfl
+    · rfl
+  · simp [hdepth] at hcall
+
 end CapstanVerification
