@@ -1,2 +1,4 @@
+// Unary/binary meaning is selected by parser context, not by the character
+// alone: + and - (and !) are valid in both positions.
 bool ag_unary_operator(int op) { return op == 43 || op == 45 || op == 33 || op == 126; }
-int ag_unary_precedence(int op) { return ag_unary_operator(op) ? 7 : 0; }
+int ag_unary_precedence(int op) { return ag_unary_operator(op) ? 8 : 0; }
