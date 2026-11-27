@@ -25,3 +25,31 @@ test "expression compiler rejects oversized binding table" {
     for(int i=0;i<129;i+=1) { name.push(97); }
     assert(!ag_variable_bind(bindings,name,1));
 }
+
+test "variable lookup matches the identifier token span" {
+    List<int> source=new List<int>();
+    source.push(120);
+    AGLexResult lex=ag_lex_bytes(source);
+    List<AGVariableBinding> bindings=new List<AGVariableBinding>();
+    List<int> name=new List<int>(); name.push(120);
+    assert(lex.ok && ag_variable_bind(bindings,name,10));
+    AGVariableResult found=ag_variable_lookup(source,lex.tokens[0],bindings);
+    assert(found.ok && found.value==10);
+}
+test "expression compiler evaluates a single bound identifier" {
+    List<int> source=new List<int>(); source.push(120);
+    List<AGVariableBinding> bindings=new List<AGVariableBinding>();
+    List<int> name=new List<int>(); name.push(120);
+    assert(ag_variable_bind(bindings,name,10));
+    AGCheckedInt result=ag_compile_expression_with_bindings(source,bindings);
+    assert(result.ok && result.value==10);
+}
+test "expression compiler evaluates multiplication of a bound identifier" {
+    List<int> source=new List<int>();
+    source.push(120); source.push(42); source.push(50);
+    List<AGVariableBinding> bindings=new List<AGVariableBinding>();
+    List<int> name=new List<int>(); name.push(120);
+    assert(ag_variable_bind(bindings,name,10));
+    AGCheckedInt result=ag_compile_expression_with_bindings(source,bindings);
+    assert(result.ok && result.value==20);
+}
