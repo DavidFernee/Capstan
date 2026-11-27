@@ -1,6 +1,6 @@
 # A01 — Scalar requirements traceability, increment 1
 
-Pinned main: 3187b3adc3d9b2f5476c2d25ed410da1ec1c88ce. Static evidence inventory only; no tests executed in this increment. Requirement identifiers below are local children of CAP-001. Normative authority: docs/architecture/CCAM.md (blob 9e5db9b). Test runner: tests/run.sh (f465e8b). Concrete core: verification/ccam_core.cap (5ce0daf).
+Pinned main: 2409357ea777a3875bc608106fce5e42eb233656. Static evidence inventory only; no tests executed in this increment. Requirement identifiers below are local children of CAP-001. Normative authority: docs/architecture/CCAM.md (blob 9e5db9b). Test runner: tests/run.sh (f465e8b). Concrete core: verification/ccam_core.cap (5ce0daf).
 
 | ID | Requirement | Concrete implementation / test entry | Formal evidence or gap | Acceptance obligation |
 |---|---|---|---|---|
