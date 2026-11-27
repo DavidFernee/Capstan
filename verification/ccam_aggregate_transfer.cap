@@ -76,7 +76,8 @@ test "static aggregate transfer checks alias reads before writes" {
     List<int> alloc_ops = new List<int>();
     alloc_ops.push(1); alloc_ops.push(0); alloc_ops.push(4);
     AGTransferResult allocated = ag_transfer(kinds, input, 5, AG_SCHEMA_INT, alloc_ops);
-    assert(allocated.ok && allocated.ready[0] && allocated.ready[1]);
+    // Allocation operands after the destination are immediates, not register writes.
+    assert(allocated.ok && !allocated.ready[0] && allocated.ready[1]);
     assert(!input[0] && input[1]);
 }
 
