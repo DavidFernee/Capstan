@@ -124,6 +124,13 @@ else
   bad "CCAM bounded control-flow machine" "$out"
 fi
 
+section "Capstan-native verification: control-flow instruction builder"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_control_builder_tests.cap" 2>&1)"; then
+  ok "builder loop emission, branch patching and invalid operand rejection"
+else
+  bad "CCAM control-flow instruction builder" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
