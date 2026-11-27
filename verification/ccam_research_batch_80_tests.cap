@@ -247,3 +247,67 @@ test "x86 LEA emits correct SIB and zero-displacement base encodings" {
     assert(!ag_x86_lea(bytes,16,0));
     assert(bytes.len() == before);
 }
+
+test "parser cursor and budget enforce bounded mutable state" {
+    AGExprTokenCursor cursor = new AGExprTokenCursor{position:0,count:2};
+    assert(ag_expr_cursor_valid(cursor));
+    assert(ag_expr_cursor_advance(cursor));
+    assert(cursor.position == 1);
+    assert(ag_expr_cursor_advance(cursor));
+    assert(!ag_expr_cursor_advance(cursor));
+    AGExprTokenCursor invalid = new AGExprTokenCursor{position:0,count:65537};
+    assert(!ag_expr_cursor_valid(invalid));
+    AGParseBudget budget = new AGParseBudget{remaining:10};
+    assert(ag_parse_charge(budget,4));
+    assert(budget.remaining == 6);
+    assert(!ag_parse_charge(budget,7));
+    assert(!ag_parse_charge(budget,-1));
+    AGParseBudget oversized = new AGParseBudget{remaining:1048577};
+    assert(!ag_parse_charge(oversized,1));
+}
+
+test "recursion guard rejects corrupt state and respects its configured maximum" {
+    AGRecursionGuard guard = new AGRecursionGuard{depth:0,maximum:2};
+    assert(ag_recursion_enter(guard));
+    assert(ag_recursion_enter(guard));
+    assert(!ag_recursion_enter(guard));
+    assert(ag_recursion_leave(guard));
+    assert(ag_recursion_leave(guard));
+    assert(!ag_recursion_leave(guard));
+    AGRecursionGuard corrupt = new AGRecursionGuard{depth:3,maximum:2};
+    assert(!ag_recursion_leave(corrupt));
+}
+
+test "AST capacity and linear SSA helpers state their actual bounds" {
+    assert(ag_ast_capacity(65536,0,65536));
+    assert(!ag_ast_capacity(65536,1,65536));
+    assert(!ag_ast_capacity(0,1,65537));
+    assert(ag_ir_precedes(2,3));
+    assert(!ag_ir_precedes(3,2));
+    assert(ag_ir_use_def_valid(4,1,3,4));
+    assert(!ag_ir_use_def_valid(4,4,3,4));
+    assert(!ag_ir_use_def_valid(4,1,-1,4));
+}
+
+test "native rel32 patchers validate instruction provenance" {
+    List<int> call = new List<int>();
+    int call_patch = ag_x86_call_rel32(call);
+    assert(call_patch == 1);
+    assert(ag_x86_patch_call(call,call_patch,call.len()));
+    assert(call[1] == 0 && call[2] == 0 && call[3] == 0 && call[4] == 0);
+    assert(!ag_x86_patch_call(call,0,call.len()));
+    List<int> wrong_call = new List<int>();
+    wrong_call.push(144); wrong_call.push(0); wrong_call.push(0); wrong_call.push(0); wrong_call.push(0);
+    assert(!ag_x86_patch_call(wrong_call,1,5));
+    List<int> jump = new List<int>();
+    int jump_patch = ag_x86_jmp_rel32(jump);
+    assert(jump_patch == 1);
+    assert(ag_x86_patch_branch(jump,jump_patch,jump.len()));
+    assert(!ag_x86_patch_branch(jump,0,jump.len()));
+    List<int> conditional = new List<int>();
+    assert(ag_x86_jcc(conditional,4));
+    assert(ag_x86_patch_branch(conditional,2,conditional.len()));
+    List<int> wrong_branch = new List<int>();
+    wrong_branch.push(144); wrong_branch.push(0); wrong_branch.push(0); wrong_branch.push(0); wrong_branch.push(0);
+    assert(!ag_x86_patch_branch(wrong_branch,1,5));
+}
