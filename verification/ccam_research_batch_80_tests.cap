@@ -177,3 +177,12 @@ test "native stack adjustment and epilogue reserve complete encodings" {
     assert(epilogue.len() == 5);
     assert(epilogue[4] == 195);
 }
+
+test "research binary typing distinguishes comparisons from scalar operators" {
+    assert(ag_binary_result_type(43,AG_SCHEMA_INT,AG_SCHEMA_INT) == AG_SCHEMA_INT);
+    assert(ag_binary_result_type(42,AG_SCHEMA_INT,AG_SCHEMA_INT) == AG_SCHEMA_INT);
+    assert(ag_binary_result_type(60,AG_SCHEMA_INT,AG_SCHEMA_INT) == AG_SCHEMA_BOOL);
+    assert(ag_binary_result_type(61,AG_SCHEMA_BOOL,AG_SCHEMA_BOOL) == AG_SCHEMA_BOOL);
+    assert(ag_binary_result_type(43,AG_SCHEMA_INT,AG_SCHEMA_BOOL) == -1);
+    assert(ag_binary_result_type(0,AG_SCHEMA_INT,AG_SCHEMA_INT) == -1);
+}
