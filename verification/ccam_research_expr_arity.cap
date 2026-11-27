@@ -1,2 +1,6 @@
-// Candidate compiler support module. Research batch; pending integration audit.
-int ag_operator_arity(int op){if(ag_unary_operator(op)){return 1;}if(ag_operator_class(op)>0){return 2;}return 0;}
+// The parser supplies operand position because '+', '-', and '!' can denote
+// either unary or binary operators depending on context.
+int ag_operator_arity(int op, bool unary_context) {
+    if (unary_context) { return ag_unary_operator(op) ? 1 : 0; }
+    return ag_operator_class(op) > 0 ? 2 : 0;
+}
