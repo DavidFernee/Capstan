@@ -17,6 +17,7 @@ The following facts were confirmed against the repository default branch during 
 - `docs/research/ECE-RELATED-WORK-AND-NOVELTY-ASSESSMENT.md` correctly distinguishes PCC, translation validation, verified compilation, proof-carrying data and software provenance. It identifies end-to-end correspondence and exact artifact binding as research obligations, not completed results.
 - `docs/architecture/NATIVE-BOOTSTRAP-PLAN.md` is a staged plan, not evidence that S0-S3 are complete.
 - The existing compiler frontend/checker/code generator remain a separate, established source path; `compiler/codegen.cap` emits C. The C-free path must not be described as the production compiler until that dependency is removed from the production build.
+- `docs/architecture/TYPED-IR.md`, `docs/architecture/FORMAL-VERIFICATION.md`, `docs/architecture/COMPILER-CCAM-LOWERING.md` and `docs/architecture/CAPSTAN-NORTH-STAR.md` establish an existing architectural decision: CCAM is the single canonical typed core IR and abstract machine. The source compiler lowers the checked source subset directly to CCAM. Any SSA/CFG optimisation IR is optional, derived and must refine back to CCAM. The initial architecture draft's proposed CHIR layer would have contradicted this decision; it has been removed from the amended RFC.
 
 This baseline is intentionally conservative. Each status must be refreshed against current main and exact-head CI before implementation claims or merges.
 
@@ -24,8 +25,8 @@ This baseline is intentionally conservative. Each status must be refreshed again
 
 | ID | Gap | Dependency / risk | Acceptance evidence |
 |---|---|---|---|
-| G-01 | Layered IR contracts do not yet exist as one coherent normative compiler architecture | Frontend/backend interfaces may drift; security metadata may be lost | Approved RFC; closed IR schemas; validators; versioning and translation contracts |
-| G-02 | Source-to-IR semantic preservation is not established | Native compiler may miscompile source semantics | Formal source core and compositional lowering proofs or independent validators |
+| G-01 | Compiler architecture contracts need consolidation across the existing typed-core, CCAM, lowering and native-backend documents | Conflicting documents could create a second semantic authority or duplicate IR | Approved reconciled RFC; CCAM remains sole semantic core; any optional derived IR has a closed schema, validator and refinement back to CCAM |
+| G-02 | Source-to-CCAM semantic preservation is not established for the complete accepted subset | Native compiler may miscompile source semantics | Formal source core and source-to-CCAM lowering proof or independently checked translation validation |
 | G-03 | Concrete CCAM evaluator does not refine the complete Lean machine | Model theorem may not apply to executable evaluator | Whole-machine simulation theorem tied to exact implementation/profile |
 | G-04 | Normative v0.1, Lean single-frame proof profile and implementation have identified acceptance differences | False conformance claims | Explicit conservative profile plus normative reachability proof or reconciled semantics |
 | G-05 | Strict external CCAM decoder is not implemented as normative boundary | Untrusted input ambiguity, duplicate keys, numeric precision and resource exhaustion | Bounded decoder, closed schema, exact integer parsing, duplicate-key rejection and adversarial corpus |
@@ -35,7 +36,7 @@ This baseline is intentionally conservative. Each status must be refreshed again
 | G-09 | Native backend coverage is restricted | Cannot compile actual compiler workload | Required instruction/aggregate/runtime coverage and differential native conformance |
 | G-10 | Native object writer/linker are not established as production Capstan-native components | External binutils remain in the toolchain | Object/relocation specification, writer/linker, loader checks and reproducible object tests |
 | G-11 | ABI and trap ABI need a complete versioned contract | Arguments, results, unwinding, runtime calls and roots may disagree | ABI specification plus boundary conformance tests |
-| G-12 | Optimisation pipeline and independent validation are incomplete | Correctness/performance gap; unsound transformations | Pass contracts, proof or translation validator, adversarial fuzzing and benchmark evidence |
+| G-12 | Optional derived optimisation IR and pass validation are incomplete | Correctness/performance gap; unsound transformations or semantic duplication | Demonstrated need; CCAM-derived construction; closed verifier; translation back to CCAM; refinement evidence; pass contracts, adversarial fuzzing and benchmark evidence |
 | G-13 | Resource semantics are not yet compositional across all resource classes | Step limits do not bound heap, stack, output, IO or compile work | Multidimensional charge semantics, function summaries and runtime quotas |
 | G-14 | Capability/effect/security metadata preservation across native lowering is incomplete | Authority escalation or information-flow loss | Capability-aware IR, host ABI and preservation/refinement evidence |
 | G-15 | Precise GC root completeness and relocation are not established end-to-end | Use-after-free or stale references at safepoints | Safepoint/root-map ABI, liveness proof, collector implementation and adversarial tests |
@@ -48,8 +49,8 @@ This baseline is intentionally conservative. Each status must be refreshed again
 Do not implement dependent layers ahead of their contracts.
 
 ```
-G-01 IR architecture
-  -> G-02 source semantics and lowering contracts
+G-01 reconcile one-semantic-authority architecture
+  -> G-02 source-to-CCAM semantics and lowering contracts
   -> G-04/G-05/G-06 CCAM profile, decoder and calls
   -> G-07/G-08 memory and object ABI
   -> G-09/G-10/G-11 native backend, object and ABI
