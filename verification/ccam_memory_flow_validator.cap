@@ -141,8 +141,6 @@ CCAMFlowValidation ccam_validate_region_lifecycle(
             return ccam_flow_error("view_alias_forbidden", pc);
         } else if (ins.op == CCAM_FLOW_VIEW_ESCAPE) {
             return ccam_flow_error("view_escape_forbidden", pc);
-        } else if (ins.op == CCAM_FLOW_CALL) {
-            return ccam_flow_error("call_boundary_not_modelled", pc);
         } else if (ins.op == CCAM_FLOW_JUMP) {
             if (ins.target < 0 || ins.target >= code.len()) {
                 return ccam_flow_error("invalid_branch_target", pc);
@@ -153,6 +151,7 @@ CCAMFlowValidation ccam_validate_region_lifecycle(
                 return ccam_flow_error("invalid_branch_target", pc);
             }
         } else if (ins.op != CCAM_FLOW_NOP &&
+                   ins.op != CCAM_FLOW_CALL &&
                    ins.op != CCAM_FLOW_RETURN &&
                    ins.op != CCAM_FLOW_TRAP) {
             return ccam_flow_error("invalid_instruction", pc);
@@ -262,6 +261,19 @@ CCAMFlowValidation ccam_validate_region_lifecycle(
             }
             if (ins.op == CCAM_FLOW_VIEW_DROP) {
                 state[view_state_base + v] = 0;
+            }
+        } else if (ins.op == CCAM_FLOW_CALL) {
+            // Calls are permitted only when the caller has no live capabilities.
+            // Callee-local memory and cleanup are outside this intraprocedural model.
+            for (int r = 0; r < region_register_count; r += 1) {
+                if (state[region_state_base + r] == 1) {
+                    return ccam_flow_error("call_with_live_region", pc);
+                }
+            }
+            for (int v = 0; v < view_register_count; v += 1) {
+                if (state[view_state_base + v] == 1) {
+                    return ccam_flow_error("call_with_live_view", pc);
+                }
             }
         } else if (ins.op == CCAM_FLOW_RETURN) {
             for (int r = 0; r < region_register_count; r += 1) {
@@ -662,5 +674,48 @@ test "view validator permits a fresh view after reset invalidates the old one" {
     code.push(i);
     code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
     assert(ccam_validate_region_lifecycle(code, 1, 2).ok);
+}
+
+
+test "lifecycle validator permits calls with no live capabilities" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    code.push(ccam_flow_instruction(CCAM_FLOW_CALL));
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    assert(ccam_validate_region_lifecycle(code, 1, 1).ok);
+}
+
+test "lifecycle validator rejects calls while a region is live" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_CALL));
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 0);
+    assert(!result.ok && result.error == "call_with_live_region");
+}
+
+test "lifecycle validator rejects calls while a view is live" {
+    List<CCAMFlowInstruction> code = new List<CCAMFlowInstruction>();
+    CCAMFlowInstruction i = ccam_flow_instruction(CCAM_FLOW_REGION_NEW);
+    i.region_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_NEW);
+    i.region_register = 0;
+    i.view_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_CALL));
+    i = ccam_flow_instruction(CCAM_FLOW_VIEW_DROP);
+    i.view_register = 0;
+    code.push(i);
+    i = ccam_flow_instruction(CCAM_FLOW_REGION_CLOSE);
+    i.region_register = 0;
+    code.push(i);
+    code.push(ccam_flow_instruction(CCAM_FLOW_RETURN));
+    CCAMFlowValidation result = ccam_validate_region_lifecycle(code, 1, 1);
+    assert(!result.ok && result.error == "call_with_live_view");
 }
 
