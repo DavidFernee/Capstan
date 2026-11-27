@@ -1,0 +1,27 @@
+import "ccam_aggregate_stack_frame_layout.cap";
+import "ccam_research_native_x86_spill_memory.cap";
+int ag_spill_assignment_index(List<AGRegisterAssignment> assignments,int virtual_id) {
+    return ag_assignment_index(assignments,virtual_id);
+}
+bool ag_x86_spill_store(List<int> bytes,AGStackFrame frame,List<AGRegisterAssignment> assignments,int virtual_id,int src_reg) {
+    if(!ag_frame_validate(frame) || !ag_native_reg(src_reg)) { return false; }
+    int ix=ag_spill_assignment_index(assignments,virtual_id);
+    if(ix<0) { return false; }
+    AGRegisterAssignment assignment=assignments[ix];
+    if(assignment.physical_reg!=-1 || assignment.spill_slot<0 ||
+        assignment.spill_slot>=frame.spill_slots) { return false; }
+    int offset=ag_frame_spill_offset(assignment.spill_slot,frame.spill_slots);
+    if(offset==0) { return false; }
+    return ag_x86_store_rbp(bytes,src_reg,offset);
+}
+bool ag_x86_spill_load(List<int> bytes,AGStackFrame frame,List<AGRegisterAssignment> assignments,int virtual_id,int dst_reg) {
+    if(!ag_frame_validate(frame) || !ag_native_reg(dst_reg)) { return false; }
+    int ix=ag_spill_assignment_index(assignments,virtual_id);
+    if(ix<0) { return false; }
+    AGRegisterAssignment assignment=assignments[ix];
+    if(assignment.physical_reg!=-1 || assignment.spill_slot<0 ||
+        assignment.spill_slot>=frame.spill_slots) { return false; }
+    int offset=ag_frame_spill_offset(assignment.spill_slot,frame.spill_slots);
+    if(offset==0) { return false; }
+    return ag_x86_load_rbp(bytes,dst_reg,offset);
+}
