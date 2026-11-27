@@ -22,6 +22,13 @@ import CapstanVerification.InjectionChecker
 import CapstanVerification.InjectionSinks
 import CapstanVerification.InjectionValue
 
+
+#print axioms CredentialVerifierPolicy.secure_accepts_requires_valid_policy
+#print axioms CredentialVerifierPolicy.secure_accepts_has_bounded_work
+#print axioms CredentialVerifierPolicy.secure_accepts_has_bounded_salt
+#print axioms CredentialVerifierPolicy.secure_accepts_has_bounded_digest
+#print axioms CredentialVerifierPolicy.secure_accepts_rejects_weak_cost
+
 #print axioms CapstanVerification.minI64_in_range
 #print axioms CapstanVerification.maxI64_in_range
 #print axioms CapstanVerification.below_minI64_out_of_range
