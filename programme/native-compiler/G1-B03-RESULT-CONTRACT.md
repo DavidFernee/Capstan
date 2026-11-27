@@ -1,0 +1,13 @@
+# G1 B03 / I03 — terminal result contract candidate
+
+Sources: CCAM.md §§2.1,5,6; CCAM-NATIVE-BACKEND.md direct record profile; research/native-bootstrap/NATIVE-RESULT-ABI.md §§2–5; RTM-003 R07.09–13. G0 HOLD; proposal, not a normative amendment.
+
+Resolve historical zero-sentinel prose in favour of implemented 0xffffffff for both location fields on nonlocated outcomes. Function index and PC zero are valid locations. Entry int or void only; internal Bool is not a process terminal kind. UTF-8 exact scalar bytes, function name bound to validated table, zero-based indices. Reject location index/name mismatch or PC outside function. Preserve 48-byte header and maximum 1136 bytes. Reject unused nonzero fields, unknown kind/code, malformed lengths and trailing bytes. Trap detail only for explicit trap, grammar inherited from CCAM.
+
+Proposed launcher contract: fresh exclusive writable regular file/memfd, nonappend, initial offset zero, no other writer; accept only normal status zero and exact canonical record, discard on timeout, signals, nonzero status or malformed bytes. Status 76 reserved for record transport failure; raw mode status 77 remains legacy distinct profile. Platform codes require registered table before enabling kind 3. No fabricated machine observations for transport errors. Cap sink using host-enforced policy; post-read length check alone is not a write bound for untrusted executables.
+
+Proposed bounded retry extension: at most 1136 positive-progress writes plus a separately bounded 16 EINTR retries, total at most 1152 attempts; reject zero progress, unexpected return count, other errors. Launcher independently enforces wall deadline, which is not CCAM fuel. Existing single-write experimental producer remains a restricted profile, not claimed compliant with extension.
+
+Conformance: integer MIN/MAX, 0/256, void; no-location sentinel mutations; function 0 PC 0 valid trap; unknown code/kind; incorrect name bytes, invalid UTF-8, truncated or trailing record; explicit reason 1/64 bytes; fuel zero, dynamic trap step charged; short writes, EINTR exhaustion, zero progress, blocked write timeout, transport failure with partial bytes; compiler rejection produces no executable. For each accepted record compare complete observable tuple against same validated CCAM and budget. Independent validation needed for emitted bytes and launcher. No tests executed in this design pass.
+
+Review required from Native, CCAM, Formal and Security owners: sentinel, entry domain, resource/timeout policy, platform code assignment, artifact binding. No new public ABI version claimed; G1 freeze pending.
