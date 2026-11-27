@@ -88,7 +88,7 @@ The executable Capstan CCAM path currently has these principal layers:
 - `compiler/checker.cap`: source type checking and current injection/laundering analysis.
 - `runtime/capstan_gc.h` and `runtime/capstan_rt.h`: current C runtime and conservative GC boundary.
 
-The key mismatch is architectural: the executable implementation has advanced beyond the Lean execution model. In particular, `ccam_calls.cap` has function tables, call-site lookup, mutable frames, return destinations, budgets, terminal fields and output. The Lean core has typed function/frame protocols, but those protocols do not yet form the instruction transition relation for that implementation.
+The key mismatch is architectural: the executable implementation has advanced beyond the Lean execution model. In particular, `ccam_calls.cap` has function tables, call-site lookup, mutable frames, return destinations, budgets, terminal fields and output. The Lean core now has typed function/frame protocols and first integrated call-entry and return outcomes, but these protocols still do not form the complete instruction transition relation for that implementation.
 
 The implementation refinement contract in `CCAM-CONCRETE-REFINEMENT-CONTRACT.md` is still useful for the SF-P subset. It already records concrete/abstract state fields, opcode mapping, trap-domain partition, terminal observations, budget timing and reachability invariants. It must become a layer in the larger proof chain, not be discarded.
 
@@ -96,7 +96,7 @@ The implementation refinement contract in `CCAM-CONCRETE-REFINEMENT-CONTRACT.md`
 
 1. **Whole-program identity:** no Lean validated-program object yet mirrors the concrete function table, function names, signatures, instruction arrays and call-site tables as one immutable snapshot.
 2. **Call dispatch:** the abstract machine has no `call` instruction constructor whose transition validates the call-site relation, reads arguments in the specified order, creates the callee frame and records the caller continuation.
-3. **Return transition:** the existing typed return commit and stack-pop facts are separate from instruction dispatch. A single atomic transition must either return an error without a successor state or produce the complete resumed stack and caller write.
+3. **Return transition:** the typed return commit and stack-pop transitions are not yet part of a complete instruction dispatcher. A single atomic transition must either return an error without a successor state or produce the complete resumed stack and caller write.
 4. **Frame invariants:** the whole state must state that every frame is typed against its own function signature, every frame PC is in range, the active frame is the stack head, and each callee's saved continuation/destination is valid in its caller.
 5. **Resource accounting:** the scalar step-budget wrapper is not integrated with calls/returns, output, trap terminalisation or the concrete mutable `steps` field.
 6. **Terminal observations:** the abstract outcome and the concrete state expose different observations. A relation must include PC, steps, halt flags, integer/Boolean return payloads, trap code/detail and output trace.
