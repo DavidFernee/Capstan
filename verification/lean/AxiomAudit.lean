@@ -452,3 +452,11 @@ import CapstanVerification.InjectionValue
 -- Bounded marker result/certificate contract.
 #print axioms CapstanNativeBoundedMarker.certificateCheck_sound
 #print axioms CapstanNativeBoundedMarker.complete_result_is_certificate
+
+
+-- Ordered dynamic CCAM call-argument read semantics and precedence.
+#print axioms CapstanVerification.readCallArguments_first_read_error
+#print axioms CapstanVerification.readCallArguments_first_type_error
+#print axioms CapstanVerification.readCallArguments_masks_later_failure
+#print axioms CapstanVerification.readCallArguments_success_well_typed
+#print axioms CapstanVerification.readCallArguments_has_no_state_transition
