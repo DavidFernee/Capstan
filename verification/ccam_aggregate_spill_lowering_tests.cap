@@ -1,4 +1,5 @@
 import "ccam_aggregate_spill_lowering.cap";
+import "ccam_aggregate_register_allocation_validator.cap";
 test "spill assignment lowers to correct frame-relative store and reload" {
     List<AGRegisterAssignment> assignments=new List<AGRegisterAssignment>();
     assignments.push(new AGRegisterAssignment{virtual_id:42,physical_reg:-1,spill_slot:2});
