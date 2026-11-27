@@ -8,8 +8,12 @@ First integration layer for the CCAM multi-frame machine.
 This module deliberately composes the existing typed return protocol with the
 heterogeneous call stack. It does not yet define ordinary instruction dispatch,
 function-table validation, calls, output or the complete whole-machine step.
-The transition is immutable: failure returns no successor stack; success
-returns the resumed caller stack with the result write already committed.
+The transitions are immutable: typed call entry snapshots a statically indexed
+argument vector and pushes a fresh heterogeneous callee frame; nested value and
+void returns commit the caller continuation atomically; entry returns produce
+terminal outcomes without popping the entry frame. These are abstract protocol
+transitions, not yet a complete instruction-dispatch machine or implementation
+refinement.
 -/
 
 /-- Commit a non-void return and remove the active callee in one abstract
