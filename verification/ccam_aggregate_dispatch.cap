@@ -11,6 +11,13 @@ bool ag_dispatch_reg(CCAMAggregateMachine machine, int index, int kind) {
 
 bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.registers.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(kind)) { return false; }
+    if (opcode == AG_OP_LIST_PUSH) {
+        return operands.len() == 2 && ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF) &&
+            ag_dispatch_reg(machine, operands[1], kind);
+    }
+    if (opcode == AG_OP_LIST_POP_DISCARD) {
+        return operands.len() == 1 && ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF);
+    }
     if (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT) {
         List<int> kinds = new List<int>();
         for (int i = 0; i < machine.registers.len(); i += 1) {
@@ -163,10 +170,35 @@ string ag_dispatch_scalar(CCAMAggregateMachine machine, int opcode, int kind, Li
     return "";
 }
 
+string ag_dispatch_list(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
+    CCAMAggregateValueResult array = ccam_aggregate_read_ref(machine, operands[0]);
+    if (!array.ok) { return ccam_aggregate_trap(machine, array.trap); }
+    if (let reference = array.value.reference) {
+        if (opcode == AG_OP_LIST_PUSH) {
+            CCAMAggregateValueResult value = ccam_aggregate_read(machine, operands[1], kind);
+            if (!value.ok) { return ccam_aggregate_trap(machine, value.trap); }
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            string error = ccam_heap_list_push(machine.heap, reference, kind, value.value);
+            if (error != "") { return ccam_aggregate_trap(machine, error); }
+            return "";
+        }
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        string error = ccam_heap_list_pop_discard(machine.heap, reference, kind);
+        if (error != "") { return ccam_aggregate_trap(machine, error); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
 string ag_dispatch(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.trap_code != "") { return machine.trap_code; }
     if (!ag_dispatch_shape(machine, opcode, kind, operands)) {
         return ccam_aggregate_trap(machine, "invalid_aggregate_instruction");
+    }
+    if (opcode == AG_OP_LIST_PUSH || opcode == AG_OP_LIST_POP_DISCARD) {
+        return ag_dispatch_list(machine, opcode, kind, operands);
     }
     if (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT) {
         return ag_dispatch_scalar(machine, opcode, kind, operands);

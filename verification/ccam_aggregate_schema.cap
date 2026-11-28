@@ -96,7 +96,19 @@ bool ag_schema_scalar_operands(List<int> kinds, int opcode, int kind, List<int> 
         ag_schema_register(kinds, operands[2], kind);
 }
 
+// Growable push [array,value], discarded optional pop [array].
+const int AG_OP_LIST_PUSH = 26;
+const int AG_OP_LIST_POP_DISCARD = 27;
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (opcode == AG_OP_LIST_PUSH) {
+        return operands.len() == 2 && ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[1], element_kind);
+    }
+    if (opcode == AG_OP_LIST_POP_DISCARD) {
+        return ag_schema_kind(element_kind) && operands.len() == 1 &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF);
+    }
     if (kinds.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(element_kind)) { return false; }
     if (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT) {
         return ag_schema_scalar_operands(kinds, opcode, element_kind, operands);
