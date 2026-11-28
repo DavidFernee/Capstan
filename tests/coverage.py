@@ -29,6 +29,29 @@ def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, timeout=300, **kw)
 
 
+# An exploratory coverage probe may intentionally be rejected; it is never
+# credited as a successful positive test. Unexpected exits fail the campaign.
+WORKLOADS = []
+
+
+def checked_workload(label, cmd, *, allowed=(0,), expected_stderr=None, timeout=300, **kw):
+    entry = {"label": label, "allowed_exit_codes": list(allowed), "status": "incomplete"}
+    WORKLOADS.append(entry)
+    try:
+        result = subprocess.run(cmd, capture_output=True, timeout=timeout, **kw)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        entry["error"] = type(exc).__name__
+        raise ValueError(f"{label}: {exc}") from exc
+    entry["returncode"] = result.returncode
+    if result.returncode not in allowed or (expected_stderr is not None and
+            expected_stderr.encode() not in result.stderr):
+        entry["status"] = "failed"
+        raise ValueError(f"{label}: unexpected exit {result.returncode}: "
+                         + result.stderr.decode(errors="replace")[:1000])
+    entry["status"] = "completed"
+    return result
+
+
 def tests(*dirs):
     return sorted(p for d in dirs for p in glob.glob(os.path.join(ROOT, d, "*.cap")))
 
@@ -111,14 +134,22 @@ def compiler(work, counts, branches=None):
              ["build", "-o", out] + SRC[:-1] + [os.path.join(ROOT, "tests/unit/ranges_props.cap")],
              [], ["version"], ["bogus"], ["build"], ["build", "-o"], ["check", os.path.join(work, "missing.cap")]]
     for j in jobs:
-        run([exe] + j, cwd=ROOT)
+        # These deliberately mixed check/build/test invocations include
+        # incomplete modules and strict-mode probes. Only normal compiler
+        # dispositions are permitted; explicit usage probes have exact exits.
+        allowed = (0, 1)
+        if j == ["version"]: allowed = (0,)
+        elif j in ([], ["bogus"], ["build"], ["build", "-o"]): allowed = (2,)
+        elif j == ["check", os.path.join(work, "missing.cap")]: allowed = (1,)
+        checked_workload("compiler probe: " + " ".join(j), [exe] + j,
+                         allowed=allowed, cwd=ROOT)
     env = dict(os.environ, CAPSTANC=exe, FUZZ_FAILURES=os.path.join(work, "fuzz-failures"))
     deep = os.path.join(work, "deep.cap")
     open(deep, "w").write("int main() { return " + "(" * 2000 + "1" + ")" * 2000 + "; }\n")
-    run([exe, "check", deep])
+    checked_workload("compiler nesting probe", [exe, "check", deep], allowed=(0, 1))
     for script, args in (("tests/cwe/atlas.py", []), ("tests/fuzz/gen.py", ["40", "7"]), ("tests/fuzz/mutate.py", ["600", "7"]),
                          ("tests/unit/lint_table.py", []), ("tests/unit/ranges_props.py", [])):
-        subprocess.run([sys.executable, "-I", os.path.join(ROOT, script)] + args, capture_output=True, timeout=3000, env=env, cwd=ROOT)
+        checked_workload(script, [sys.executable, "-I", os.path.join(ROOT, script)] + args, timeout=3000, env=env, cwd=ROOT)
     gcov_lines(d, counts, branches)
 
 
@@ -126,7 +157,7 @@ def formatter(work, counts, branches=None):
     d = os.path.join(work, "fmt")
     os.makedirs(d)
     if not os.path.exists(os.path.join(ROOT, "build/fmt.c")):
-        run(["make", "-s", "-C", ROOT, "fmt"])
+        checked_workload("formatter build prerequisite", ["make", "-s", "-C", ROOT, "fmt"])
     shutil.copy(os.path.join(ROOT, "build/fmt.c"), d)
     exe = os.path.join(d, "capstanfmt")
     if run([GCC] + FLAGS + [os.path.join(d, "fmt.c"), "-o", exe]).returncode:
@@ -137,12 +168,12 @@ def formatter(work, counts, branches=None):
     for i, f in enumerate(files):
         shutil.copy(f, os.path.join(scratch, f"{i}.cap"))
     copies = sorted(glob.glob(os.path.join(scratch, "*.cap")))
-    run([exe, "--check"] + copies)
-    run([exe] + copies)
+    checked_workload("formatter check probe", [exe, "--check"] + copies, allowed=(0, 1, 2))
+    checked_workload("formatter rewrite probe", [exe] + copies, allowed=(0, 1, 2))
     for j in ([], ["--help"], [os.path.join(work, "missing.cap")]):
-        run([exe] + j)
-    run([sys.executable, "-I", os.path.join(ROOT, "tests/fmt/perturb.py"), exe, "2", "1"] + tests("compiler"), cwd=ROOT)
-    run([sys.executable, "-I", os.path.join(ROOT, "tests/fmt/perturb.py"), "--corrupt", exe, "3", "1"] + tests("tests/accept"), cwd=ROOT)
+        checked_workload("formatter argument probe: " + " ".join(j), [exe] + j, allowed=(0, 1, 2))
+    checked_workload("formatter whitespace fuzz", [sys.executable, "-I", os.path.join(ROOT, "tests/fmt/perturb.py"), exe, "2", "1"] + tests("compiler"), cwd=ROOT)
+    checked_workload("formatter corruption fuzz", [sys.executable, "-I", os.path.join(ROOT, "tests/fmt/perturb.py"), "--corrupt", exe, "3", "1"] + tests("tests/accept"), cwd=ROOT)
     gcov_lines(d, counts, branches)
 
 
@@ -153,11 +184,13 @@ def runtime(work, counts, branches=None):
     progs = [(f, "build") for f in tests("tests/accept", "tests/gc", "tests/runtime", "tests/io")] + [(f, "test") for f in tests("examples")]
     for i, (f, mode) in enumerate(progs):
         c = os.path.join(d, f"p{i}.c")
-        if run([capstanc, mode, "-o", c, f]).returncode:
-            continue
+        label = os.path.relpath(f, ROOT)
+        source = open(f, encoding="latin-1").read()
+        flags = re.findall(r"^// flags: (.*)$", source, re.M)
+        extra = flags[0].split() if flags else []
+        checked_workload(label + " Capstan build", [capstanc, mode, "-o", c] + extra + [f])
         exe = os.path.join(d, f"p{i}")
-        if run([GCC] + FLAGS + [c, "-o", exe], cwd=d).returncode:
-            continue
+        checked_workload(label + " host build", [GCC] + FLAGS + [c, "-o", exe], cwd=d)
         env = dict(os.environ, CAPSTAN_GC_STATS="1")
         for kv in re.findall(r"^// env: (.*)$", open(f, encoding="latin-1").read(), re.M):
             for pair in kv.split():
@@ -167,15 +200,26 @@ def runtime(work, counts, branches=None):
         args = [tempfile.mkdtemp(dir=d)] if "/tests/io/" in f else []
         if i == 0:
             env["CAPSTAN_MAX_HEAP"] = "1G"
-        try:
-            subprocess.run([exe] + args, capture_output=True, timeout=120, env=env, input=stdin)
-            if "tests/gc/" not in f and "// env:" not in open(f, encoding="latin-1").read():   # collector stress (too slow for the big ones at -O0)
-                subprocess.run([exe], capture_output=True, timeout=120, env=dict(env, CAPSTAN_GC_STRESS="7"))
-        except subprocess.TimeoutExpired:
-            print(f"  note: {os.path.relpath(f, ROOT)} timed out under coverage")
+        expected = re.findall(r"^// expect-runtime: (.*)$", source, re.M)
+        is_negative = label.startswith("tests/runtime/")
+        if is_negative and not expected:
+            raise ValueError(f"{label}: runtime rejection fixture lacks expected diagnostic")
+        allowed = (101,) if is_negative else (0,)
+        marker = expected[0] if is_negative else None
+        checked_workload(label + " execution", [exe] + args, timeout=120,
+                         env=env, input=stdin, allowed=allowed, expected_stderr=marker)
+        if "tests/gc/" not in f and "// env:" not in source:
+            # Preserve the same input and arguments in the stress workload.
+            stress_args = [tempfile.mkdtemp(dir=d)] if args else []
+            checked_workload(label + " GC stress", [exe] + stress_args,
+                             timeout=120, env=dict(env, CAPSTAN_GC_STRESS="7"),
+                             input=stdin, allowed=allowed, expected_stderr=marker)
+        else:
+            WORKLOADS.append({"label": label + " GC stress",
+                              "status": "excluded", "reason": "GC-specific workload or explicit environment"})
     unit = os.path.join(d, "unit")
-    if not run([GCC] + FLAGS + [os.path.join(ROOT, "tests/unit/test_runtime.c"), "-o", unit], cwd=d).returncode:
-        run([unit], cwd=d)
+    checked_workload("runtime unit build", [GCC] + FLAGS + [os.path.join(ROOT, "tests/unit/test_runtime.c"), "-o", unit], cwd=d)
+    checked_workload("runtime unit execution", [unit], cwd=d)
     gcov_lines(d, counts, branches)
 
 
@@ -214,6 +258,7 @@ def parse_floors(lines):
 
 
 def main():
+    WORKLOADS.clear()
     check = "--check" in sys.argv
     report_path = os.path.join(ROOT, "build", "coverage-evidence.json")
     if os.path.exists(report_path):
@@ -274,7 +319,8 @@ def main():
             print(f"no branch evidence for {group}", file=sys.stderr)
             return 2
     report = {
-        "schema": 1,
+        "schema": 2,
+        "workloads": WORKLOADS,
         "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "gcc": subprocess.check_output([GCC, "--version"], text=True).splitlines()[0],
         "gcov": subprocess.check_output([GCOV, "--version"], text=True).splitlines()[0],
