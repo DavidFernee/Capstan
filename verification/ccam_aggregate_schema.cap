@@ -234,7 +234,49 @@ bool ag_schema_conversion_operands(List<int> kinds, int opcode, int kind, List<i
         ag_schema_register(kinds, operands[1], AG_SCHEMA_INT);
 }
 
+// Distinct taint operations. Coarse register kinds alone cannot authorize
+// trusted text conversion; evaluator checks exact nominal object tags.
+// All operands are registers, and only the first six operations write a destination.
+const int AG_OP_TAINT = 46;
+const int AG_OP_TAINT_LEN = 47;
+const int AG_OP_TAINT_AT = 48;
+const int AG_OP_TAINT_SLICE = 49;
+const int AG_OP_TAINT_LIST_LEN = 50;
+const int AG_OP_TAINT_LIST_GET = 51;
+const int AG_OP_TAINT_LIST_SET = 52;
+const int AG_OP_TAINT_LIST_PUSH = 53;
+const int AG_OP_TAINT_LIST_POP = 54;
+
+bool ag_schema_taint_opcode(int opcode) {
+    return opcode >= AG_OP_TAINT && opcode <= AG_OP_TAINT_LIST_POP;
+}
+
+bool ag_schema_taint_writes(int opcode) {
+    return opcode >= AG_OP_TAINT && opcode <= AG_OP_TAINT_LIST_GET;
+}
+
+bool ag_schema_taint_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_TAINT_LIST_POP) {
+        return kind == AG_SCHEMA_REF && operands.len() == 1 &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF);
+    }
+    int count = 2;
+    if (opcode == AG_OP_TAINT_AT || opcode == AG_OP_TAINT_LIST_GET || opcode == AG_OP_TAINT_LIST_SET) { count = 3; }
+    if (opcode == AG_OP_TAINT_SLICE) { count = 4; }
+    if (!ag_schema_taint_opcode(opcode) || operands.len() != count) { return false; }
+    int output = AG_SCHEMA_REF;
+    if (opcode == AG_OP_TAINT_LEN || opcode == AG_OP_TAINT_AT || opcode == AG_OP_TAINT_LIST_LEN) { output = AG_SCHEMA_INT; }
+    if (kind != output && opcode != AG_OP_TAINT_LIST_LEN) { return false; }
+    // List length retains the list element kind, like the legacy length opcode.
+    if (opcode == AG_OP_TAINT_LIST_LEN && kind != AG_SCHEMA_REF) { return false; }
+    if (!ag_schema_register(kinds, operands[0], output) ||
+        !ag_schema_register(kinds, operands[1], AG_SCHEMA_REF)) { return false; }
+    if (count >= 3 && !ag_schema_register(kinds, operands[2], AG_SCHEMA_INT)) { return false; }
+    return count != 4 || ag_schema_register(kinds, operands[3], AG_SCHEMA_INT);
+}
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (ag_schema_taint_opcode(opcode)) { return ag_schema_taint_operands(kinds, opcode, element_kind, operands); }
     if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
     if (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) {
         return ag_schema_conversion_operands(kinds, opcode, element_kind, operands);

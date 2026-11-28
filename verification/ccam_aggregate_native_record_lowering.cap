@@ -142,6 +142,8 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
             if (op.len() > AG_NV_MAX_OPERANDS - operands ||
                 !ag_schema_operands(f.kinds, ins.opcode, ins.kind, op)) { return false; }
             operands += op.len();
+            // Evaluator-only taint opcodes stay closed until exact native bridges exist.
+            if (ag_schema_taint_opcode(ins.opcode)) { return false; }
             if (ins.opcode == AG_OP_RECORD_ALLOC) {
                 int id = op[1]; int count = (op.len() - 2) / 2;
                 if (id < 1 || id >= AG_NV_RECORD_LIMIT || (layouts[id] != -1 && layouts[id] != count)) { return false; }
