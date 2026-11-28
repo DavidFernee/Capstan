@@ -269,3 +269,30 @@ test "candidate native reserved string tag cannot be allocated by record opcode"
     AGImage rejected = ag_nvc_compile_typed(functions, signatures, 1, 100, 8);
     assert(!rejected.ok && rejected.bytes.len() == 0);
 }
+
+test "candidate native string copy preserves source alias and embedded NUL" {
+    string source = "string join(string a, string b) { return a + b; } " +
+        "int run() { string a = \"a\\0b\"; string b = join(a, \"cd\"); " +
+        "string middle = b.slice(1, 4); if (a == \"a\\0b\") { " +
+        "if (middle == \"\\0bc\") { return b.len() * 10 + middle.at(0); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-bytes-copy.elf"));
+}
+
+test "candidate native string copy supports empty and exact endpoint ranges" {
+    string source = "int run() { string a = \"abc\"; string b = \"\" + a + \"\"; " +
+        "if (b.slice(0, 3) == a) { if (b.slice(3, 3) == \"\") { return b.len(); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-bytes-copy-empty.elf"));
+}
+
+test "candidate native string output limit and invalid slice ranges reject" {
+    string full = "int run() { string a = \"x\"; int i = 0; while (i < 12) { a = a + a; i += 1; } return a.len(); }";
+    string over = "int run() { string a = \"x\"; int i = 0; while (i < 13) { a = a + a; i += 1; } return a.len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(full, 1024, 8), "build/ccam-native-record-bytes-max.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(over, 1024, 8), "build/ccam-native-record-bytes-over.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string a = \"abc\"; return a.slice(2, 1).len(); }", 100, 8),
+        "build/ccam-native-record-bytes-reversed.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string a = \"abc\"; return a.slice(0, 4).len(); }", 100, 8),
+        "build/ccam-native-record-bytes-slice-oob.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string a = \"abc\"; return a.slice(0 - 1, 2).len(); }", 100, 8),
+        "build/ccam-native-record-bytes-slice-negative.elf"));
+}
