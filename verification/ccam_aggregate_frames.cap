@@ -16,7 +16,9 @@ AGFrameResult ag_frame_open(CCAMAggregateMachine caller, AGCallSignature signatu
     }
     if (remaining_slots < 0 || callee_kinds.len() > remaining_slots ||
         !ag_call_signature(signature) || arguments.len() != signature.parameters.len() ||
-        ccam_aggregate_register_check(caller, destination, signature.result_kind) != "") {
+        (signature.result_kind == AG_RESULT_VOID && destination != -1) ||
+        (signature.result_kind != AG_RESULT_VOID &&
+            ccam_aggregate_register_check(caller, destination, signature.result_kind) != "")) {
         return new AGFrameResult{ok: false, frame: caller, error: "invalid_call"};
     }
     AGTransferResult entry = ag_call_entry(signature, callee_kinds);
@@ -57,6 +59,11 @@ string ag_frame_return(CCAMAggregateMachine caller, CCAMAggregateMachine callee,
     caller.steps = callee.steps;
     if (callee.trap_code != "") { return ccam_aggregate_trap(caller, callee.trap_code); }
     if (caller.steps >= caller.max_steps) { return ccam_aggregate_trap(caller, "step_limit"); }
+    if (signature.result_kind == AG_RESULT_VOID) {
+        if (source != -1 || destination != -1) { return ccam_aggregate_trap(caller, "invalid_return"); }
+        caller.steps += 1;
+        return "";
+    }
     CCAMAggregateValueResult returned = ccam_aggregate_read(callee, source, signature.result_kind);
     if (!returned.ok) { return ccam_aggregate_trap(caller, returned.trap); }
     string error = ccam_aggregate_write(caller, destination, returned.value);

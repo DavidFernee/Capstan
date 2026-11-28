@@ -1,7 +1,7 @@
 // Candidate nominal record call boundary, layered over existing aggregate frames.
 // Candidate shape encoding: zero for scalars; positive record descriptor IDs;
 // -1 bytes, -2 int arrays, -3 bool arrays, -(record descriptor + 3) record arrays.
-// Nested arrays, maps and void results remain outside this candidate profile.
+// Nested arrays and maps remain outside this candidate profile.
 import "ccam_aggregate_frames.cap";
 
 struct AGNominalSignature {
@@ -46,7 +46,8 @@ bool ag_nominal_value_matches(CCAMHeap heap, CCAMHeapValue value, int kind, int 
 bool ag_nominal_signature(AGNominalSignature signature) {
     if (!ag_call_signature(signature.coarse) ||
         signature.parameter_descriptors.len() != signature.coarse.parameters.len() ||
-        !ag_nominal_kind(signature.coarse.result_kind, signature.result_descriptor)) {
+        !(ag_nominal_kind(signature.coarse.result_kind, signature.result_descriptor) ||
+            (signature.coarse.result_kind == AG_RESULT_VOID && signature.result_descriptor == 0))) {
         return false;
     }
     for (int i = 0; i < signature.parameter_descriptors.len(); i += 1) {
@@ -85,6 +86,7 @@ AGFrameResult ag_nominal_open(CCAMAggregateMachine caller, AGNominalSignature si
 bool ag_nominal_result_matches(CCAMAggregateMachine callee,
     AGNominalSignature signature, int source) {
     if (!ag_nominal_signature(signature) || callee.trap_code != "") { return false; }
+    if (signature.coarse.result_kind == AG_RESULT_VOID) { return source == -1; }
     CCAMAggregateValueResult value = ccam_aggregate_read(
         callee, source, signature.coarse.result_kind);
     return value.ok && ag_nominal_value_matches(callee.heap, value.value,
