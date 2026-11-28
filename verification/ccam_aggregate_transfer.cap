@@ -55,6 +55,11 @@ AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int 
             return new AGTransferResult{ok: false, ready: output};
         }
     }
+    if (opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE) {
+        if (!input[operands[1]] || (opcode == AG_OP_MAP_REMOVE && !input[operands[2]])) {
+            return new AGTransferResult{ok: false, ready: output};
+        }
+    }
     for (int i = 0; i < input.len(); i += 1) {
         bool writes_destination = opcode == 1 || opcode == 3 || opcode == 4 ||
             opcode == 5 || opcode == 7 || opcode == 8 || opcode == AG_OP_FIELD_GET ||
@@ -62,7 +67,8 @@ AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int 
             (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT) || opcode == AG_OP_DIRECT_CALL ||
             (opcode >= AG_OP_OPT_NONE && opcode <= AG_OP_OPT_UNWRAP) ||
             (opcode >= AG_OP_MAP_NEW && opcode <= AG_OP_MAP_HAS) ||
-            (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE);
+            (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) ||
+            opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE;
         output.push(input[i] || (writes_destination && i == operands[0]));
     }
     return new AGTransferResult{ok: true, ready: output};
@@ -88,7 +94,8 @@ AGTransferResult ag_transfer_generation(
             (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT) || opcode == AG_OP_DIRECT_CALL ||
             (opcode >= AG_OP_OPT_NONE && opcode <= AG_OP_OPT_UNWRAP) ||
             (opcode >= AG_OP_MAP_NEW && opcode <= AG_OP_MAP_HAS) ||
-            (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE);
+            (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) ||
+            opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE;
         output.push(input[i] || (writes_destination && i == operands[0]));
     }
     return new AGTransferResult{ok: true, ready: output};
