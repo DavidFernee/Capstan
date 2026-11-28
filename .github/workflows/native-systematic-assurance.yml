@@ -25,10 +25,16 @@ jobs:
           make bootstrap
       - name: Test evidence runner
         run: python3 tools/assurance/test_systematic_runner.py
+      - name: Test artifact readback controls
+        run: python3 tools/assurance/test_verify_systematic_evidence.py
       - name: Execute all suites in selected group
         env:
           ASSURANCE_GROUP: ${{ matrix.group }}
         run: python3 tools/assurance/systematic_runner.py "$ASSURANCE_GROUP"
+      - name: Read back and admit successful group evidence
+        env:
+          ASSURANCE_GROUP: ${{ matrix.group }}
+        run: python3 tools/assurance/verify_systematic_evidence.py "$ASSURANCE_GROUP"
       - name: Preserve group evidence and logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
