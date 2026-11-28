@@ -110,10 +110,107 @@ void direct_control_vectors(string directory) {
     direct_vector(directory, "max-record", types, code, 4);
 }
 
+// Observe both the returned offset and resulting cursor via the raw
+// result file. A failed reservation writes the unchanged cursor alone.
+void direct_arena_vector(string directory, string name, int used, int count) {
+    int capacity = 16;
+    AGRuntimeRegion model = new AGRuntimeRegion{capacity: capacity, used: used};
+    int expected = ag_region_reserve(model, count);
+
+    List<int> code = new List<int>();
+    List<NativeFixup> fixups = new List<NativeFixup>();
+    List<NativeSymbol> symbols = new List<NativeSymbol>();
+    ccam_direct_movabs(code, 0, used);
+    code.push(73); code.push(137); code.push(192); // mov r8,rax
+    ccam_direct_movabs(code, 7, count);
+    if (!native_arena_reserve(code, fixups, capacity, 0)) { exit(1); }
+    code.push(65); code.push(80); // push r8 (updated cursor)
+    code.push(80); // push rax (reserved offset)
+    ccam_direct_write_result(code, 16, 77);
+    symbols.push(new NativeSymbol{id: 0, offset: code.len()});
+    code.push(65); code.push(80); // push r8 (original cursor)
+    ccam_direct_write_result(code, 8, 77);
+
+    NativeLinkResult linked = native_link_image(code, symbols, fixups);
+    if (!linked.ok) { exit(1); }
+    NativeElfImage image = native_elf64_image_with_stack(linked.bytes, 0, true);
+    if (!image.ok) { exit(1); }
+    direct_write_vector(directory + "/" + name, image.bytes);
+    println(name + "\t" + int_to_str(expected) + "\t" + int_to_str(model.used));
+}
+
+void direct_record_vector(string directory, string name, int offset, int descriptor) {
+    int value = -9223372036854775807 - 1;
+    CCAMHeapCreateResult created = ccam_heap_create(1024, 2);
+    List<int> types = new List<int>();
+    types.push(CCAM_HEAP_VALUE_INT);
+    List<bool> mutable = new List<bool>();
+    mutable.push(false);
+    CCAMHeapLayout layout = new CCAMHeapLayout{
+        type_id: 7, field_types: types, field_ref_type_ids: new List<int>(),
+        field_mutable: mutable
+    };
+    CCAMHeapRefResult first = ccam_heap_alloc_record(created.heap, layout);
+    CCAMHeapRefResult second = ccam_heap_alloc_record(created.heap, layout);
+    if (!first.ok || !second.ok ||
+        ccam_heap_field_set(created.heap, first.reference, 7, 0, ccam_heap_int(value)) != "" ||
+        ccam_heap_field_set(created.heap, second.reference, 7, 0, ccam_heap_int(42)) != "") {
+        exit(1);
+    }
+    bool valid = offset == 0 || offset == 16;
+    int expected = 0;
+    if (valid) {
+        CCAMHeapRef reference = first.reference;
+        if (offset == 16) { reference = second.reference; }
+        CCAMHeapValueResult result = ccam_heap_field_get(created.heap, reference, descriptor, 0);
+        valid = result.ok;
+        expected = result.value.int_value;
+    }
+
+    List<int> code = new List<int>();
+    List<NativeFixup> fixups = new List<NativeFixup>();
+    List<NativeSymbol> symbols = new List<NativeSymbol>();
+    ccam_direct_stack_adjust(code, true, 32);
+    code.push(73); code.push(137); code.push(227); // mov r11,rsp
+    code.push(69); code.push(49); code.push(192); // xor r8d,r8d
+    ccam_direct_movabs(code, 6, value);
+    if (!native_arena_record_new(code, fixups, 32, 7, 0)) { exit(1); }
+    ccam_direct_movabs(code, 6, 42);
+    if (!native_arena_record_new(code, fixups, 32, 7, 0)) { exit(1); }
+    ccam_direct_movabs(code, 0, offset);
+    if (!native_arena_record_get(code, fixups, 32, descriptor, 0)) { exit(1); }
+    code.push(80); // push rax
+    ccam_direct_write_result(code, 8, 77);
+    symbols.push(new NativeSymbol{id: 0, offset: code.len()});
+    ccam_direct_exit(code, 79);
+    NativeLinkResult linked = native_link_image(code, symbols, fixups);
+    if (!linked.ok) { exit(1); }
+    NativeElfImage image = native_elf64_image_with_stack(linked.bytes, 0, true);
+    if (!image.ok) { exit(1); }
+    direct_write_vector(directory + "/" + name, image.bytes);
+    int status = 79;
+    if (valid) { status = 0; }
+    println(name + "\t" + int_to_str(status) + "\t" + int_to_str(expected));
+}
+
 int main() {
     List<string> arguments = args(1, 4096, 4096);
     if (arguments.len() != 1) { return 2; }
     direct_arithmetic_vectors(arguments[0]);
     direct_control_vectors(arguments[0]);
+    direct_arena_vector(arguments[0], "arena-within", 3, 5);
+    direct_arena_vector(arguments[0], "arena-exact", 3, 13);
+    direct_arena_vector(arguments[0], "arena-empty-at-end", 16, 0);
+    direct_arena_vector(arguments[0], "arena-over", 3, 14);
+    direct_arena_vector(arguments[0], "arena-negative-size", 3, -1);
+    direct_arena_vector(arguments[0], "arena-invalid-cursor", -1, 1);
+    direct_arena_vector(arguments[0], "arena-cursor-over", 17, 0);
+    direct_arena_vector(arguments[0], "arena-oversized-size", 3, 9223372036854775807);
+    direct_record_vector(arguments[0], "record-first", 0, 7);
+    direct_record_vector(arguments[0], "record-second", 16, 7);
+    direct_record_vector(arguments[0], "record-wrong-descriptor", 16, 8);
+    direct_record_vector(arguments[0], "record-negative-offset", -16, 7);
+    direct_record_vector(arguments[0], "record-unaligned-offset", 8, 7);
+    direct_record_vector(arguments[0], "record-unallocated-offset", 32, 7);
     return 0;
 }

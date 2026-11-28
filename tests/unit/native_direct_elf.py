@@ -56,11 +56,12 @@ RECORD_TRAPS = {
     "integer_overflow": 1,
     "division_by_zero": 2,
     "step_limit_exceeded": 6,
+    "call_depth_exceeded": 7,
     "explicit_trap": 8,
 }
 
 
-def decode_record(record, status=0):
+def decode_record(record, status=0, function_count=1):
     """Validate the experimental single-function record, not a production ABI."""
     if status != 0 or not RESULT_HEADER.size <= len(record) <= 1136:
         raise ValueError("invalid termination or record size")
@@ -73,11 +74,11 @@ def decode_record(record, status=0):
     name_end = RESULT_HEADER.size + name_len
     name = record[RESULT_HEADER.size:name_end]
     detail = record[name_end:]
-    if kind == 0:
-        if (code, function, pc, name_len, detail_len) != (0, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0):
+    if kind in (0, 1):
+        if (kind == 1 and value != 0) or (code, function, pc, name_len, detail_len) != (0, 0xFFFFFFFF, 0xFFFFFFFF, 0, 0):
             raise ValueError("invalid return fields")
     elif kind == 2:
-        if (code not in RECORD_TRAPS.values() or value != 0 or function != 0
+        if (code not in RECORD_TRAPS.values() or value != 0 or function >= function_count
                 or pc >= 252 or not name or (code != 8 and detail)):
             raise ValueError("invalid trap fields")
     else:
@@ -103,6 +104,13 @@ def check_record_mutations():
         reject(mutated)
     for length in range(len(good)):
         reject(good[:length])
+    void = RESULT_HEADER.pack(b"CCAMRES\0", 1, 1, 0, 0, 1,
+                              0xFFFFFFFF, 0xFFFFFFFF, 0, 0)
+    assert decode_record(void)[:4] == (1, 0, 0, 1)
+    for offset in (12, 16, 32, 36):
+        mutated = bytearray(void)
+        mutated[offset] ^= 1
+        reject(mutated)
     reject(good + b"\0")
     reject(bytes(1137))
     for status in (76, 77, -9, -11):
@@ -129,6 +137,9 @@ def compare_ccam_vectors(capstan, directory):
         [
             capstan, "build", "--strict",
             repo / "verification/ccam_direct_elf.cap",
+            repo / "verification/native_arena_record.cap",
+            repo / "verification/ccam_heap.cap",
+            repo / "verification/ccam_aggregate_runtime_region.cap",
             repo / "tests/unit/native_direct_elf_vectors.cap",
             "-o", generator,
         ],
@@ -158,7 +169,28 @@ def compare_ccam_vectors(capstan, directory):
         "step_limit_exceeded": 73,
     }
     remaining = expected_trap.keys() | expected_value.keys()
+    arena_vectors = set()
+    record_vectors = set()
     for row in vectors:
+        if row.startswith("record-"):
+            name, status, value = row.split("\t")
+            assert name not in record_vectors
+            record_vectors.add(name)
+            image = directory / name
+            image.chmod(0o700)
+            expected = struct.pack("<q", int(value)) if status == "0" else b""
+            assert run_case(image, directory / "typed-record-result") == (int(status), expected), row
+            continue
+        if row.startswith("arena-"):
+            name, offset, cursor = row.split("\t")
+            assert name not in arena_vectors
+            arena_vectors.add(name)
+            image = directory / name
+            image.chmod(0o700)
+            expected = (struct.pack("<q", int(cursor)) if int(offset) < 0
+                        else struct.pack("<qq", int(offset), int(cursor)))
+            assert run_case(image, directory / "arena-result") == (0, expected), row
+            continue
         name, trap, value, steps, function, pc, detail = row.split("\t")
         remaining.remove(name)
         if trap:
@@ -184,6 +216,8 @@ def compare_ccam_vectors(capstan, directory):
             expected_record = (0, 0, int(value), int(steps), 0xFFFFFFFF, 0xFFFFFFFF, b"", b"")
         assert decode_record(record, status) == expected_record, (row, record)
     assert not remaining, remaining
+    assert len(arena_vectors) == 8, arena_vectors
+    assert len(record_vectors) == 6, record_vectors
 
     partial = directory / "partial-record"
     short_write = subprocess.run(
@@ -319,9 +353,56 @@ def main(capstan):
                 timeout=5,
             )
             assert broken.returncode == 76 and broken.stdout == broken.stderr == b"", broken
+        source.write_text("void main() { return; }\n", encoding="ascii")
+        for limit in (0, 1):
+            subprocess.run(
+                command + ["--direct-record", "--direct-steps", str(limit)],
+                env=env, check=True, timeout=60,
+            )
+            status, record = run_case(executable, sink)
+            expected = (
+                (2, RECORD_TRAPS["step_limit_exceeded"], 0, 0, 0, 0, b"main", b"")
+                if limit == 0 else (1, 0, 0, 1, 0xFFFFFFFF, 0xFFFFFFFF, b"", b"")
+            )
+            assert decode_record(record, status) == expected
+        raw_void = subprocess.run(command, env=env, capture_output=True, text=True, timeout=60)
+        assert raw_void.returncode == 1 and "unsupported_direct_profile" in raw_void.stdout
+
+        source.write_text(
+            "int main() { touch(); if (positive(21)) { return twice(21); } return 0; } "
+            "int twice(int n) { return n + n; } "
+            "bool positive(int n) { return 0 < n; } "
+            "void touch() { return; }",
+            encoding="ascii",
+        )
+        subprocess.run(command, env=env, check=True, timeout=60)
+        assert run_case(executable, sink) == (0, struct.pack("<q", 42))
+
+        source.write_text(
+            "int main() { return descend(1); } "
+            "int descend(int value) { return descend(value); }",
+            encoding="ascii",
+        )
+        subprocess.run(command + ["--direct-record"], env=env, check=True, timeout=60)
+        status, outcome = run_case(executable, sink)
+        assert decode_record(outcome, status, function_count=2) == (
+            2, RECORD_TRAPS["call_depth_exceeded"], 0, 32, 1, 1, b"descend", b"",
+        )
+
+        source.write_text(
+            "int main() { return divide(0); } "
+            "int divide(int divisor) { return 1 / divisor; }",
+            encoding="ascii",
+        )
+        subprocess.run(command + ["--direct-record"], env=env, check=True, timeout=60)
+        status, outcome = run_case(executable, sink)
+        assert decode_record(outcome, status, function_count=2) == (
+            2, RECORD_TRAPS["division_by_zero"], 0, 5, 1, 2, b"divide", b"",
+        )
+
         vector_count = compare_ccam_vectors(capstan, root)
         assert not list(root.glob("program.*"))  # A failed compilation did not leave a staging file.
-    print(f"{len(cases)} direct execution cases and {vector_count} same-CCAM reference vectors passed")
+    print(f"{len(cases)} direct execution cases and {vector_count} CCAM, arena, and record reference vectors passed")
 
 
 if __name__ == "__main__":
