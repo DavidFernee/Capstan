@@ -15,7 +15,7 @@ directives, so coverage is reported against the Capstan source lines themselves.
 Writes docs/COVERAGE.md (per-file totals and the lines no test reaches). With
 --check, fails if any file falls below its floor in tests/coverage_floors.txt.
 """
-import glob, math, os, re, shutil, subprocess, sys, tempfile
+import glob, json, math, os, re, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GCC = os.environ.get("COVERAGE_CC", "gcc")
@@ -33,17 +33,41 @@ def tests(*dirs):
     return sorted(p for d in dirs for p in glob.glob(os.path.join(ROOT, d, "*.cap")))
 
 
-def gcov_lines(objdir, counts):
+def branch_counts(report):
+    """Count generated-code branch records without conflating separate C units."""
+    total = hit = 0
+    for line in report.splitlines():
+        m = re.match(r"^\s*branch\s+\d+\s+(.*)$", line)
+        if not m:
+            continue
+        value = m.group(1)
+        if value == "never executed":
+            count = 0
+        else:
+            taken = re.fullmatch(r"taken\s+(\d+)(?:\s+\([^)]*\))*", value)
+            if not taken:
+                raise ValueError(f"unrecognised gcov branch record: {line}")
+            count = int(taken.group(1))
+        total += 1
+        hit += count > 0
+    return {"branches": total, "covered": hit}
+
+
+def gcov_lines(objdir, counts, branches=None):
     """Merge gcov's per-line counts for every .gcda in objdir into counts[file][line]."""
     files = sorted(glob.glob(os.path.join(objdir, "*.gcda")))
     if not files:
         raise ValueError(f"no gcov data in {objdir}")
     for gcda in files:
-        res = run([GCOV, "--stdout", "-o", objdir, gcda], cwd=ROOT)
+        res = run([GCOV, "--stdout", "--branch-probabilities", "--branch-counts", "-o", objdir, gcda], cwd=ROOT)
         if res.returncode or not res.stdout:
             raise ValueError(f"gcov failed for {gcda}: {res.stderr.decode(errors='replace')}")
+        report = res.stdout.decode(errors="replace")
+        if branches is not None:
+            branches[os.path.basename(gcda)] = branch_counts(report)
         src = None
-        for line in res.stdout.decode(errors="replace").splitlines():
+        observed = 0
+        for line in report.splitlines():
             m = re.match(r"\s*([^:]+):\s*(\d+):(.*)$", line)
             if not m:
                 continue
@@ -54,13 +78,22 @@ def gcov_lines(objdir, counts):
                 continue
             if count == "-" or src is None:
                 continue
-            hit = count not in ("#####", "=====")
+            if count in ("#####", "====="):
+                hit = False
+            else:
+                number = count.rstrip("*")
+                if not number.isdecimal():
+                    raise ValueError(f"unrecognised gcov line count: {count}")
+                hit = int(number) > 0
+            observed += 1
             per = counts.setdefault(src, {})
             per[num] = per.get(num, False) or hit
+        if not observed:
+            raise ValueError(f"no executable line records in {gcda}")
         os.remove(gcda)
 
 
-def compiler(work, counts):
+def compiler(work, counts, branches=None):
     d = os.path.join(work, "compiler")
     os.makedirs(d)
     shutil.copy(os.path.join(ROOT, "build/stage3.c"), d)
@@ -86,10 +119,10 @@ def compiler(work, counts):
     for script, args in (("tests/cwe/atlas.py", []), ("tests/fuzz/gen.py", ["40", "7"]), ("tests/fuzz/mutate.py", ["600", "7"]),
                          ("tests/unit/lint_table.py", []), ("tests/unit/ranges_props.py", [])):
         subprocess.run([sys.executable, "-I", os.path.join(ROOT, script)] + args, capture_output=True, timeout=3000, env=env, cwd=ROOT)
-    gcov_lines(d, counts)
+    gcov_lines(d, counts, branches)
 
 
-def formatter(work, counts):
+def formatter(work, counts, branches=None):
     d = os.path.join(work, "fmt")
     os.makedirs(d)
     if not os.path.exists(os.path.join(ROOT, "build/fmt.c")):
@@ -110,10 +143,10 @@ def formatter(work, counts):
         run([exe] + j)
     run([sys.executable, "-I", os.path.join(ROOT, "tests/fmt/perturb.py"), exe, "2", "1"] + tests("compiler"), cwd=ROOT)
     run([sys.executable, "-I", os.path.join(ROOT, "tests/fmt/perturb.py"), "--corrupt", exe, "3", "1"] + tests("tests/accept"), cwd=ROOT)
-    gcov_lines(d, counts)
+    gcov_lines(d, counts, branches)
 
 
-def runtime(work, counts):
+def runtime(work, counts, branches=None):
     d = os.path.join(work, "rt")
     os.makedirs(d)
     capstanc = os.path.join(ROOT, "build/capstanc")
@@ -143,7 +176,7 @@ def runtime(work, counts):
     unit = os.path.join(d, "unit")
     if not run([GCC] + FLAGS + [os.path.join(ROOT, "tests/unit/test_runtime.c"), "-o", unit], cwd=d).returncode:
         run([unit], cwd=d)
-    gcov_lines(d, counts)
+    gcov_lines(d, counts, branches)
 
 
 def ranges_of(nums):
@@ -184,9 +217,11 @@ def main():
     check = "--check" in sys.argv
     work = tempfile.mkdtemp()
     groups = {}
+    branch_groups = {}
     for name, fn in (("compiler", compiler), ("formatter", formatter), ("runtime", runtime)):
         counts = {}
-        fn(work, counts)
+        branch_groups[name] = {}
+        fn(work, counts, branch_groups[name])
         groups[name] = counts
     want = {"compiler": "compiler/", "formatter": "tools/", "runtime": "runtime/"}
     lines = ["# Coverage", "", "Generated by `tests/coverage.py`: line coverage of the compiler, the formatter and the",
@@ -227,6 +262,14 @@ def main():
         print("no coverage evidence", file=sys.stderr)
         return 2
     print(f"coverage: {total} files measured; report in docs/COVERAGE.md")
+    # Separate evidence: these branches describe instrumented C units, including
+    # runtime headers, not unique source-language decisions or MC/DC.
+    print("generated-C branch coverage (per instrumented compilation unit):")
+    print(json.dumps(branch_groups, sort_keys=True))
+    for group, units in branch_groups.items():
+        if not any(unit["branches"] for unit in units.values()):
+            print(f"no branch evidence for {group}", file=sys.stderr)
+            return 2
     return 0
 
 
