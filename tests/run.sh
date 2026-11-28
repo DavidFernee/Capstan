@@ -194,6 +194,34 @@ else
   bad "bounded native scalar list emission" "$out"
 fi
 
+section "Candidate native stdout"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_stdout.cap" 2>&1)"; then
+  ok "bounded native stdout emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_stdout.py" "$ROOT/build/ccam-native-stdout.bin" 2>&1)"; then
+      ok "native stdout execution and failure behavior"
+    else
+      bad "native stdout execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native stdout emission" "$out"
+fi
+
+section "Candidate native process argument capture"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_process_argv.cap" 2>&1)"; then
+  ok "bounded native process argv emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_process_argv.py" "$ROOT/build/ccam-native-process-argv.bin" 2>&1)"; then
+      ok "native process argument capture execution"
+    else
+      bad "native process argv execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native process argv emission" "$out"
+fi
+
 section "Candidate native scalar record CFG lowering"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_native_record_lowering_tests.cap" 2>&1)"; then
   ok "checked scalar record CFG to direct native ELF"
