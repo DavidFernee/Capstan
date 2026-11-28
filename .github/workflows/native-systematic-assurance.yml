@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        group: [scalar, memory, security, native, mutation, generative]
+        group: [scalar, memory, security, native, mutation, generative, ecosystem]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
