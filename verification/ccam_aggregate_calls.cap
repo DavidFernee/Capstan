@@ -1,4 +1,4 @@
-// Candidate single-result call signature contract. Reference kinds are
+// Candidate zero-or-one-result call signature contract. Reference kinds are
 // coarse tags only; descriptor identity and heap provenance remain required.
 import "ccam_aggregate_transfer.cap";
 
@@ -11,18 +11,23 @@ struct AGCallSignature {
 
 bool ag_call_signature(AGCallSignature signature) {
     if (signature.parameters.len() > AG_CALL_MAX_ARGS ||
-        !ag_schema_kind(signature.result_kind)) { return false; }
+        !(ag_schema_kind(signature.result_kind) || signature.result_kind == AG_RESULT_VOID)) { return false; }
     for (int i = 0; i < signature.parameters.len(); i += 1) {
         if (!ag_schema_kind(signature.parameters[i])) { return false; }
     }
     return true;
 }
 
+bool ag_call_result_slot(List<int> kinds, int slot, int kind) {
+    if (kind == AG_RESULT_VOID) { return slot == -1; }
+    return ag_schema_register(kinds, slot, kind);
+}
+
 bool ag_call_admit(AGCallSignature signature, List<int> kinds, List<bool> ready,
     List<int> arguments, int destination) {
     if (!ag_call_signature(signature) || ready.len() != kinds.len() ||
         arguments.len() != signature.parameters.len() ||
-        !ag_schema_register(kinds, destination, signature.result_kind)) { return false; }
+        !ag_call_result_slot(kinds, destination, signature.result_kind)) { return false; }
     for (int i = 0; i < arguments.len(); i += 1) {
         int source = arguments[i];
         if (!ag_schema_register(kinds, source, signature.parameters[i])) { return false; }
@@ -51,7 +56,8 @@ AGTransferResult ag_call_entry(AGCallSignature signature, List<int> kinds) {
 
 bool ag_call_return(AGCallSignature signature, List<int> kinds, List<bool> ready, int source) {
     if (!ag_call_signature(signature) || ready.len() != kinds.len() ||
-        !ag_schema_register(kinds, source, signature.result_kind)) { return false; }
+        !ag_call_result_slot(kinds, source, signature.result_kind)) { return false; }
+    if (signature.result_kind == AG_RESULT_VOID) { return true; }
     return ready[source];
 }
 
@@ -108,4 +114,27 @@ test "aggregate calls isolate locals and validate returns" {
     assert(!ag_call_return(signature, kinds, successor.ready, 0));
     kinds[0] = AG_SCHEMA_BOOL;
     assert(!ag_call_entry(signature, kinds).ok);
+}
+
+test "void results never admit a register or create a definite initialisation fact" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    List<bool> ready = new List<bool>(); ready.push(false);
+    AGCallSignature signature = new AGCallSignature{parameters: new List<int>(), result_kind: AG_RESULT_VOID};
+    List<int> args = new List<int>();
+    assert(ag_call_signature(signature));
+    assert(!ag_schema_kind(AG_RESULT_VOID));
+    assert(ag_call_admit(signature, kinds, ready, args, -1));
+    assert(!ag_call_admit(signature, kinds, ready, args, 0));
+    assert(ag_call_return(signature, kinds, ready, -1));
+    assert(!ag_call_return(signature, kinds, ready, 0));
+    AGTransferResult next = ag_call_normal_successor(signature, kinds, ready, args, -1);
+    assert(next.ok && !next.ready[0]);
+    List<int> operands = new List<int>(); operands.push(-1); operands.push(0);
+    assert(ag_schema_operands(kinds, AG_OP_DIRECT_CALL, AG_RESULT_VOID, operands));
+    next = ag_transfer(kinds, ready, AG_OP_DIRECT_CALL, AG_RESULT_VOID, operands);
+    assert(next.ok && !next.ready[0]);
+    operands[0] = 0;
+    assert(!ag_schema_operands(kinds, AG_OP_DIRECT_CALL, AG_RESULT_VOID, operands));
+    signature.parameters.push(AG_RESULT_VOID);
+    assert(!ag_call_signature(signature));
 }

@@ -16,7 +16,7 @@ bool ag_function_validate(AGFunction f) {
     for (int i = 0; i < f.blocks.len(); i += 1) {
         if (f.blocks[i].terminator == 0) {
             int source = f.returns[i];
-            if (!ag_schema_register(f.kinds, source, f.signature.result_kind)) { return false; }
+            if (!ag_call_result_slot(f.kinds, source, f.signature.result_kind)) { return false; }
             if (states[i].reached) {
                 List<bool> ready = new List<bool>();
                 for (int r = 0; r < states[i].ready.len(); r += 1) {

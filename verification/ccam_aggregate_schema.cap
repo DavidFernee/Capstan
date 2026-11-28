@@ -4,6 +4,8 @@ const int AG_SCHEMA_MAX_REGS = 262144;
 const int AG_SCHEMA_INT = 1;
 const int AG_SCHEMA_BOOL = 2;
 const int AG_SCHEMA_REF = 3;
+// Result-only tag; deliberately excluded from ag_schema_kind.
+const int AG_RESULT_VOID = 4;
 const int AG_SCHEMA_MAX_ARRAY_CAPACITY = 65536;
 
 bool ag_schema_kind(int kind) {
@@ -105,9 +107,13 @@ const int AG_OP_DIRECT_CALL = 28;
 const int AG_DIRECT_MAX_ARGS = 256;
 
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
     if (opcode == AG_OP_DIRECT_CALL) {
         if (operands.len() < 2 || operands.len() > AG_DIRECT_MAX_ARGS + 2 ||
-            operands[1] < 0 || !ag_schema_register(kinds, operands[0], element_kind)) { return false; }
+            operands[1] < 0) { return false; }
+        if (element_kind == AG_RESULT_VOID) {
+            if (operands[0] != -1) { return false; }
+        } else if (!ag_schema_register(kinds, operands[0], element_kind)) { return false; }
         for (int i = 2; i < operands.len(); i += 1) {
             int reg = operands[i];
             if (reg < 0 || reg >= kinds.len() || !ag_schema_kind(kinds[reg])) { return false; }

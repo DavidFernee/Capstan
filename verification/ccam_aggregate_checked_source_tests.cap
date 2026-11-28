@@ -280,3 +280,54 @@ test "sealed recursion honours explicit depth and unwinds without publishing a r
     assert(stack.stack.depth == 0 && stack.stack.slots == 1);
     assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 8);
 }
+
+test "checked void calls mutate records without manufacturing a result register" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Budget { int nodes; } " +
+        "void charge(Budget budget, int amount) { if (amount == 0) { return; } budget.nodes += amount; } " +
+        "void empty() { } " +
+        "int main() { Budget budget = new Budget{nodes: 1}; empty(); charge(budget, 0); charge(budget, 41); return budget.nodes; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(99)) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), -1) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 99);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
+    assert(stack.stack.depth == 0 && stack.stack.slots == 1);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "invalid_call");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
+}
+
+test "void calls propagate arithmetic failure through all opened frames" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Budget { int nodes; } " +
+        "void charge(Budget budget) { budget.nodes += 1; } " +
+        "int run(Budget budget) { charge(budget); return budget.nodes; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    List<int> fields = new List<int>(); fields.push(AG_SCHEMA_INT);
+    List<bool> mutability = new List<bool>(); mutability.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 1, field_types: fields,
+        field_ref_type_ids: new List<int>(), field_mutable: mutability};
+    assert(ccam_aggregate_alloc_record(root.machine, 0, layout) == "");
+    assert(ccam_aggregate_write(root.machine, 1, ccam_heap_int(CCAM_I64_MAX)) == "");
+    assert(ccam_aggregate_field_set(root.machine, 0, 1, 0, 1, AG_SCHEMA_INT) == "");
+    assert(ccam_aggregate_write(root.machine, 1, ccam_heap_int(42)) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    List<int> arguments = new List<int>(); arguments.push(0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, arguments, 1) == "integer_overflow");
+    assert(stack.stack.depth == 0 && stack.stack.slots == 2);
+    assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT).value.int_value == 42);
+    CCAMAggregateValueResult budget = ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_REF);
+    if (let reference = budget.value.reference) {
+        assert(ccam_heap_field_get(stack.stack.active.heap, reference, 1, 0).value.int_value == CCAM_I64_MAX);
+    } else { assert(false); }
+}
