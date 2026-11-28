@@ -305,6 +305,151 @@ CCAMHeapValueResult ccam_heap_optional_read(CCAMHeap heap, CCAMHeapValue value, 
     return ccam_heap_value_error("invalid_reference");
 }
 
+// Candidate fixed-capacity map storage. Keys are immutable arena bytes;
+// values use the same exact payload descriptors as optional lookup results.
+// This linear-search model is deliberately bounded, not a production hash map.
+const int CCAM_HEAP_OBJECT_MAP = 5;
+const int AG_MAP_MAX_ENTRIES = 4096;
+const int AG_MAP_MAX_KEY_BYTES = 4096;
+
+struct CCAMMapLookup {
+    bool ok;
+    bool found;
+    CCAMHeapValue value;
+    string trap;
+}
+
+CCAMMapLookup ccam_map_lookup_error(string error) {
+    return new CCAMMapLookup{ok: false, found: false, value: ccam_heap_int(0), trap: error};
+}
+
+CCAMHeapValue ccam_map_snapshot_value(CCAMHeapValue value) {
+    return new CCAMHeapValue{kind: value.kind, int_value: value.int_value,
+        bool_value: value.bool_value, reference: value.reference};
+}
+
+CCAMHeapRefResult ccam_heap_alloc_map(CCAMHeap heap, int descriptor, int capacity) {
+    if (!ccam_heap_optional_descriptor(descriptor) || capacity < 0 || capacity > AG_MAP_MAX_ENTRIES) {
+        return ccam_heap_ref_error("invalid_map_layout");
+    }
+    int backing = capacity * CCAM_HEAP_SLOT_BYTES * 2;
+    int charge = CCAM_HEAP_ARRAY_HEADER_BYTES + backing;
+    string admission = ccam_heap_allocation_check(heap, charge, capacity * 2 + 1, backing);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    List<CCAMHeapValue> keys = new List<CCAMHeapValue>();
+    List<CCAMHeapValue> values = new List<CCAMHeapValue>();
+    for (int i = 0; i < capacity; i += 1) {
+        keys.push(ccam_heap_int(0)); values.push(ccam_heap_int(0));
+    }
+    int id = heap.next_id;
+    CCAMHeapObject object = new CCAMHeapObject{id: id, kind: CCAM_HEAP_OBJECT_MAP,
+        descriptor_id: descriptor, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>(),
+        fields: keys, field_initialised: new List<bool>(),
+        element_type: ccam_heap_optional_payload_kind(descriptor), element_ref_type_id: 0,
+        capacity: capacity, length: 0, elements: values,
+        element_initialised: new List<bool>(), byte_data: ""};
+    heap.objects.push(object);
+    heap.bytes_used += charge;
+    heap.work_used += capacity * 2 + 1;
+    heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, backing);
+    heap.next_id += 1;
+    return new CCAMHeapRefResult{ok: true,
+        reference: new CCAMHeapRef{identity: heap.identity, object_id: id}, trap: ""};
+}
+
+bool ccam_map_shape(CCAMHeapObject object, int descriptor) {
+    return ccam_heap_optional_descriptor(descriptor) && object.kind == CCAM_HEAP_OBJECT_MAP &&
+        object.descriptor_id == descriptor && object.capacity >= 0 &&
+        object.capacity <= AG_MAP_MAX_ENTRIES && object.length >= 0 &&
+        object.length <= object.capacity && object.fields.len() == object.capacity &&
+        object.elements.len() == object.capacity;
+}
+
+// Returns a byte-object index or -1. Key references never grant authority to
+// another arena; lookup goes through the existing identity check.
+int ccam_map_key_index(CCAMHeap heap, CCAMHeapValue key) {
+    if (key.kind != CCAM_HEAP_VALUE_REF) { return -1; }
+    if (let reference = key.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        if (index >= 0 && heap.objects[index].kind == CCAM_HEAP_OBJECT_BYTES &&
+            heap.objects[index].byte_data.len() <= AG_MAP_MAX_KEY_BYTES) { return index; }
+    }
+    return -1;
+}
+
+bool ccam_map_key_equal(string left, string right) {
+    if (left.len() != right.len()) { return false; }
+    for (int i = 0; i < left.len(); i += 1) {
+        if (left.at(i) != right.at(i)) { return false; }
+    }
+    return true;
+}
+
+struct CCAMMapSearch { bool ok; int index; string trap; }
+
+// Charge a conservative upper bound before scanning. The charge remains
+// consumed on a miss or capacity rejection; contents remain unchanged.
+CCAMMapSearch ccam_map_find(CCAMHeap heap, CCAMHeapObject object, int key_index) {
+    string key = heap.objects[key_index].byte_data;
+    int work = 1 + object.length * (key.len() + 1);
+    if (heap.work_used < 0 || heap.work_used > heap.max_work ||
+        work > heap.max_work - heap.work_used) {
+        return new CCAMMapSearch{ok: false, index: -1, trap: "work_limit"};
+    }
+    heap.work_used += work;
+    for (int i = 0; i < object.length; i += 1) {
+        int stored = ccam_map_key_index(heap, object.fields[i]);
+        if (stored < 0) { return new CCAMMapSearch{ok: false, index: -1, trap: "invalid_map_key"}; }
+        if (ccam_map_key_equal(key, heap.objects[stored].byte_data)) {
+            return new CCAMMapSearch{ok: true, index: i, trap: ""};
+        }
+    }
+    return new CCAMMapSearch{ok: true, index: -1, trap: ""};
+}
+
+CCAMMapLookup ccam_heap_map_get(CCAMHeap heap, CCAMHeapRef reference, int descriptor, CCAMHeapValue key) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_map_lookup_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (!ccam_map_shape(object, descriptor)) { return ccam_map_lookup_error("map_shape_mismatch"); }
+    int key_index = ccam_map_key_index(heap, key);
+    if (key_index < 0) { return ccam_map_lookup_error("invalid_map_key"); }
+    CCAMMapSearch found = ccam_map_find(heap, object, key_index);
+    if (!found.ok) { return ccam_map_lookup_error(found.trap); }
+    if (found.index < 0) {
+        return new CCAMMapLookup{ok: true, found: false, value: ccam_heap_int(0), trap: ""};
+    }
+    CCAMHeapValue value = object.elements[found.index];
+    if (!ccam_heap_optional_payload_matches(heap, descriptor, value)) {
+        return ccam_map_lookup_error("invalid_map_value");
+    }
+    return new CCAMMapLookup{ok: true, found: true, value: ccam_map_snapshot_value(value), trap: ""};
+}
+
+string ccam_heap_map_set(CCAMHeap heap, CCAMHeapRef reference, int descriptor,
+    CCAMHeapValue key, CCAMHeapValue value) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return "invalid_reference"; }
+    CCAMHeapObject object = heap.objects[index];
+    if (!ccam_map_shape(object, descriptor)) { return "map_shape_mismatch"; }
+    if (!ccam_heap_optional_payload_matches(heap, descriptor, value)) { return "value_type_mismatch"; }
+    int key_index = ccam_map_key_index(heap, key);
+    if (key_index < 0) { return "invalid_map_key"; }
+    CCAMMapSearch found = ccam_map_find(heap, object, key_index);
+    if (!found.ok) { return found.trap; }
+    if (found.index >= 0) {
+        object.elements[found.index] = ccam_map_snapshot_value(value);
+    } else {
+        if (object.length >= object.capacity) { return "map_capacity"; }
+        object.fields[object.length] = ccam_map_snapshot_value(key);
+        object.elements[object.length] = ccam_map_snapshot_value(value);
+        object.length += 1;
+    }
+    heap.objects[index] = object;
+    return "";
+}
+
 public policy CCAMHeapIdentityBound(CCAMHeapIdentity identity) { return true; }
 
 protected(CCAMHeapIdentityBound) void ccam_heap_require_identity(
