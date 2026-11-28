@@ -71,10 +71,10 @@ test "candidate native arithmetic admits signed extrema and explicit arithmetic 
 test "candidate native admission rejects invalid budgets and unsupported source" {
     AGFunction f = ag_nv_test_arith(AG_OP_ADD, 1, 2);
     assert(!ag_nv_compile(f, 0).ok && !ag_nv_compile(f, 4097).ok);
-    if (let entry = ag_nv_test_source("int run() { Map<int> v = new Map<int>(); return v.keys().len(); }")) {
-        AGImage refused = ag_nv_compile(entry.function, 100);
-        assert(!refused.ok && refused.bytes.len() == 0);
-    } else { assert(false); }
+    AGFunction unsupported = ag_nv_test_arith(AG_OP_ADD, 1, 2);
+    unsupported.blocks[0].instructions[2].opcode = 999;
+    AGImage refused = ag_nv_compile(unsupported, 100);
+    assert(!refused.ok && refused.bytes.len() == 0);
     f.blocks[0].instructions[2].operands[1] = 99;
     AGImage invalid = ag_nv_compile(f, 100);
     assert(!invalid.ok && invalid.bytes.len() == 0);
@@ -114,9 +114,8 @@ test "candidate native direct calls preserve local record identity across scalar
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-local-record.elf"));
 }
 
-test "candidate native direct calls reject unsupported map enumeration and invalid budgets" {
-    string source = "int read(Map<int> values) { return values.keys().len(); } " +
-        "int run() { Map<int> values = new Map<int>(); return read(values); }";
+test "candidate native direct calls reject absent entry and invalid budgets" {
+    string source = "int not_entry() { return 1; }";
     AGImage rejected = ag_nvc_test_source(source, 100, 8);
     assert(!rejected.ok && rejected.bytes.len() == 0);
     assert(!ag_nvc_test_source("int run() { return 1; }", 100, 0).ok);
@@ -475,4 +474,25 @@ test "candidate native fixed map bound admits replacement and rejects growth" {
     string over = "int run() { Map<int> m = new Map<int>(); int i = 0; while (i < 65) { m.set(int_to_str(i), i); i += 1; } return 42; }";
     assert(ag_nv_test_write(ag_nvc_test_source(full, 4096, 8), "build/ccam-native-record-map-full.elf"));
     assert(ag_nv_test_write(ag_nvc_test_source(over, 4096, 8), "build/ccam-native-record-map-over.elf"));
+}
+
+test "candidate native map keys snapshot preserves insertion order after removal" {
+    string source = "int run() { Map<int> m = new Map<int>(); m.set(\"a\", 1); m.set(\"b\", 2); m.set(\"c\", 3); " +
+        "List<string> old = m.keys(); if (m.remove(\"b\")) { m.set(\"d\", 4); List<string> fresh = m.keys(); " +
+        "if (old[1] == \"b\") { if (fresh[0] == \"a\") { if (fresh[1] == \"c\") { if (fresh[2] == \"d\") { " +
+        "return old.len() * 10 + fresh.len(); } } } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-snapshot.elf"));
+}
+
+test "candidate native map removal handles content equivalent keys and absent values" {
+    string source = "int run() { Map<int> m = new Map<int>(); m.set(\"a\\0b\", 0); string k = \"a\" + \"\\0b\"; " +
+        "if (m.remove(k)) { if (!m.remove(k)) { if (!m.has(k)) { " +
+        "if (let x = m.get(k)) { return 99; } m.set(k, 42); if (let v = m.get(k)) { return v; } } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-remove.elf"));
+}
+
+test "candidate native empty map snapshot is independently mutable" {
+    string source = "int run() { Map<bool> m = new Map<bool>(); List<string> keys = m.keys(); " +
+        "keys.push(\"x\"); if (!m.has(\"x\")) { if (m.keys().len() == 0) { return keys.len(); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-empty-keys.elf"));
 }
