@@ -297,7 +297,7 @@ bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int>
     if (opcode == 5) {
         if (operands.len() != 3 ||
             !ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) ||
-            operands[1] < -1 || operands[2] < 0 ||
+            operands[1] < -2 || (operands[1] == -2 && operands[2] != 0) || operands[2] < 0 ||
             operands[2] > AG_SCHEMA_MAX_ARRAY_CAPACITY) { return false; }
         return element_kind == AG_SCHEMA_REF || operands[1] == 0;
     }

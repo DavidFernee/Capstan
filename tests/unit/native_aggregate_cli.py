@@ -46,6 +46,27 @@ def main():
         p = run(root, cli, out, "../fixture.cap")
         assert p.returncode != 0 and out.read_bytes() == original, p.stdout
 
+        # Exercise the production layouts and functions with all six Diag fields observable.
+        ast = (repo / "compiler/ast.cap").read_text()
+        declarations = ast[ast.index("struct Diag {"):ast.index("void error_at(")]
+        source.write_text(declarations + """
+int main() {
+    Ctx c = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: false, strict: true, keep_checks: false};
+    report(c, 2, 42, true, "FIRST", "message");
+    report_at(c, 3, 7, 9, false, "SECOND", "another");
+    if (c.diags.len() != 2) { return 1; }
+    Diag a = c.diags[0];
+    Diag b = c.diags[1];
+    if (a.file != 2 || a.line != 42 || a.col != 0 || !a.error || a.code != "FIRST" || a.msg != "message") { return 2; }
+    if (b.file != 3 || b.line != 7 || b.col != 9 || b.error || b.code != "SECOND" || b.msg != "another") { return 3; }
+    return 42;
+}
+""")
+        p = run(root, cli, out, "fixture.cap")
+        assert p.returncode == 0, p.stdout.decode(errors="replace")
+        q = subprocess.run([str(out)], capture_output=True, timeout=5)
+        assert (q.returncode, q.stdout, q.stderr) == (0, struct.pack("<q", 42), b""), q
+
         # The complete checked compiler is the actual target. Do not prune
         # declarations, rename functions, or substitute a synthetic subset.
         probe = root / "compiler-probe"

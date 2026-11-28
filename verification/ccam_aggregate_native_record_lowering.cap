@@ -36,8 +36,11 @@ const int AG_NV_OPT_INT_TAG = 1021;
 const int AG_NV_OPT_BOOL_TAG = 1022;
 const int AG_NV_OPT_STRING_TAG = 1023;
 const int AG_NV_STRING_LIST_TAG = 4093;
+// Between scalar optional tags (through 1023) and record optionals (1024 + positive ID).
+const int AG_NV_EMPTY_TAINTED_LIST_TAG = 1024;
 
 int ag_nv_ref_list_tag(int descriptor) {
+    if (descriptor == -4101) { return AG_NV_EMPTY_TAINTED_LIST_TAG; }
     if (descriptor == -4100) { return AG_NV_STRING_LIST_TAG; }
     if (descriptor <= -4 && descriptor >= -1023) { return 2048 - (descriptor + 3); }
     return 0;
@@ -160,7 +163,7 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
                 if (ins.opcode == 5) {
                     if (op[2] != 0) { return false; }
                     if (ins.kind == AG_SCHEMA_REF) {
-                        if (op[1] != -1 && (op[1] < 1 || op[1] >= AG_NV_RECORD_LIMIT)) { return false; }
+                        if (op[1] != -2 && op[1] != -1 && (op[1] < 1 || op[1] >= AG_NV_RECORD_LIMIT)) { return false; }
                     } else if (op[1] != 0) { return false; }
                 }
             } else if (ins.opcode == AG_OP_MAP_KEYS) {
@@ -421,7 +424,8 @@ bool ag_nv_list_instruction(AGNVContext c, AGBlockInstruction ins) {
     if (ins.kind == AG_SCHEMA_BOOL) { descriptor = AG_NV_BOOL_LIST_DESCRIPTOR; tag = AG_NV_BOOL_LIST_TAG; }
     else if (ins.kind == AG_SCHEMA_REF) {
         if (ins.opcode != 5) { return ag_nv_ref_list_instruction(c, ins); }
-        if (a[1] == -1) { tag = AG_NV_STRING_LIST_TAG; }
+        if (a[1] == -2) { tag = AG_NV_EMPTY_TAINTED_LIST_TAG; }
+        else if (a[1] == -1) { tag = AG_NV_STRING_LIST_TAG; }
         else { tag = 2048 + a[1]; }
     } else if (ins.kind != AG_SCHEMA_INT) { return false; }
     if (ins.opcode == 5) {
