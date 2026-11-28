@@ -44,6 +44,7 @@ jobs:
               check bin/capstan test verification/ccam_assurance_transition_tests.cap
               check bin/capstan test verification/ccam_assurance_dispatch_tests.cap
               check bin/capstan test verification/ccam_assurance_admission_tests.cap
+              check bin/capstan test verification/ccam_assurance_malformed_tests.cap
               check bin/capstan test verification/ccam_assurance_loop_tests.cap
               ;;
             memory)
@@ -55,6 +56,7 @@ jobs:
             security)
               check bin/capstan test verification/schooner_assurance_capability_tests.cap
               check bin/capstan test verification/schooner_assurance_schedule_tests.cap
+              check bin/capstan test verification/assurance_mcdc_tests.cap
               check bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/security_assurance_checker_tests.cap
               check bin/capstan test verification/concurrency_assurance_capacity_tests.cap
               ;;
@@ -70,6 +72,7 @@ jobs:
             generative)
               check bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/ccam_core.cap verification/ccam_calls.cap verification/ccam_lowering.cap verification/source_assurance_grammar_tests.cap
               check bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/source_assurance_reduction_tests.cap
+              check python3 tests/unit/assurance_raw_corpus_tests.py
               ;;
             *) exit 2 ;;
           esac
