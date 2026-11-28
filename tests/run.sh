@@ -166,6 +166,20 @@ else
   bad "bounded native record membership guard emission" "$out"
 fi
 
+section "Candidate native borrowed-FD output"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_output.cap" 2>&1)"; then
+  ok "bounded borrowed-FD output emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_borrowed_output.py" "$ROOT/build/ccam-native-borrowed-fd-output.bin" 2>&1)"; then
+      ok "native borrowed-FD output boundary execution"
+    else
+      bad "native borrowed-FD output execution" "$out"
+    fi
+  fi
+else
+  bad "bounded borrowed-FD output emission" "$out"
+fi
+
 section "Candidate native borrowed-FD input"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_fd.cap" 2>&1)"; then
   ok "bounded borrowed-FD input emission"
