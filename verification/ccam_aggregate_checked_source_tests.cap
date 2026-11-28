@@ -331,3 +331,35 @@ test "void calls propagate arithmetic failure through all opened frames" {
         assert(ccam_heap_field_get(stack.stack.active.heap, reference, 1, 0).value.int_value == CCAM_I64_MAX);
     } else { assert(false); }
 }
+
+test "checked optional calls preserve present zero and absent values" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int? choose(bool present) { if (present) { return 0; } return none; } " +
+        "int read_value(int? value) { if (let number = value) { return number; } return 7; } " +
+        "int main() { int? present = choose(true); int? absent = choose(false); return read_value(present) + read_value(absent); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 7);
+    assert(stack.stack.depth == 0 && stack.stack.slots == 1);
+}
+
+test "checked optional record field and if-let retain nominal payload identity" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Node { int number; } struct Holder { Node? node; } " +
+        "Holder make(Node node) { return new Holder{node: node}; } " +
+        "int read_value(Holder holder) { if (let node = holder.node) { return node.number; } return 0; } " +
+        "int main() { Node node = new Node{number: 42}; Holder holder = make(node); return read_value(holder); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
+}
