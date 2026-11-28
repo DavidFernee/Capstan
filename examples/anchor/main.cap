@@ -25,7 +25,7 @@ View view_of(Model m) {
         .add(text("Capstan development environment").grow(1))
         .add(text("A0 · Shroud S0")));
     root.add(divider());
-    root.add(row().spacing(12).align(ALIGN_START, ALIGN_STRETCH)
+    root.add(row().spacing(12).align(ALIGN_START, ALIGN_STRETCH).grow(1)
         .add(column().spacing(8).padding(8).min_width(190)
             .add(text("WORKSPACE").bold())
             .add(text(m.project))

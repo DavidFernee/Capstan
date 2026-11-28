@@ -1,0 +1,32 @@
+// Host adapter passes independently verified typed evidence fields, never code.
+// Bounded CLI profile: at most 64 suite results per group.
+int main() {
+    List<string> a = args(1024, 4096, 1048576);
+    if (a.len() < 10) { return 2; }
+    int count = 0;
+    if (let n = validate_int(taint(a[4]))) { count = n; } else { return 2; }
+    if (count < 1 || count > 64 || a.len() != 10 + count * 8) { return 2; }
+    List<string> hashes = new List<string>();
+    for (int i = 0; i < count; i += 1) { hashes.push(a[10 + i]); }
+    int schema = 0;
+    if (let n = validate_int(taint(a[5]))) { schema = n; } else { return 2; }
+    List<AssuranceSuiteResult> rows = new List<AssuranceSuiteResult>();
+    for (int i = 0; i < count; i += 1) {
+        int p = 10 + count + i * 7;
+        int ordinal = 0;
+        int status = 0;
+        if (let n = validate_int(taint(a[p]))) { ordinal = n; } else { return 2; }
+        if (let n = validate_int(taint(a[p + 5]))) { status = n; } else { return 2; }
+        if ((a[p + 3] != "0" && a[p + 3] != "1") ||
+            (a[p + 4] != "0" && a[p + 4] != "1")) { return 2; }
+        rows.push(new AssuranceSuiteResult{ordinal: ordinal, command_hash: a[p + 1],
+            log_hash: a[p + 2], log_verified: a[p + 3] == "1",
+            completed: a[p + 4] == "1", exit_code: status, error: a[p + 6]});
+    }
+    AssuranceGroupEvidence report = new AssuranceGroupEvidence{schema: schema, revision: a[6],
+        tree: a[7], manifest_hash: a[8], group_id: a[9], results: rows};
+    string disposition = assurance_admit_group(report,a[0],a[1],a[2],a[3],hashes);
+    if (disposition != "") { println(disposition); return 1; }
+    println("assurance evidence admitted");
+    return 0;
+}

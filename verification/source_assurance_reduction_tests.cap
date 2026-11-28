@@ -1,0 +1,118 @@
+// A bounded statement-level reducer. It preserves the same diagnostic
+// classification through actual parsing and checking, not textual matching.
+// This is the first reducer profile: compile-time security counterexamples.
+struct AssuranceReduction {
+    List<string> statements;
+    int evaluations;
+    bool complete;
+    bool preserved;
+}
+
+string assurance_reduction_source(List<string> statements) {
+    return "int main() { " + join(statements, " ") + " return 0; }";
+}
+
+bool assurance_reduction_oracle(List<string> statements, string code) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("reduce-fixture.cap");
+    Tainted source = taint(assurance_reduction_source(statements));
+    ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    if (error_count(ctx) != 0) { return false; }
+    check_program(new_checker(ctx), declarations, true);
+    bool found = false;
+    for (int i = 0; i < ctx.diags.len(); i += 1) {
+        if (ctx.diags[i].error) {
+            if (ctx.diags[i].code != code) { return false; }
+            found = true;
+        }
+    }
+    return found;
+}
+
+List<string> assurance_remove_chunk(List<string> input, int start, int count) {
+    List<string> output = new List<string>();
+    for (int i = 0; i < input.len(); i += 1) {
+        if (i < start || i >= start + count) { output.push(input[i]); }
+    }
+    return output;
+}
+
+AssuranceReduction assurance_reduce_diagnostic(List<string> input, string code, int budget) {
+    List<string> current = assurance_remove_chunk(input, 0, 0);
+    if (budget < 1 || budget > 4096 || input.len() > 128 || code == "") {
+        return new AssuranceReduction{statements: current, evaluations: 0, complete: false, preserved: false};
+    }
+    int used = 1;
+    if (!assurance_reduction_oracle(current, code)) {
+        return new AssuranceReduction{statements: current, evaluations: used, complete: false, preserved: false};
+    }
+    int chunk = current.len();
+    while (chunk > 0) {
+        int start = 0;
+        while (start < current.len()) {
+            if (used >= budget) {
+                return new AssuranceReduction{statements: current, evaluations: used, complete: false, preserved: true};
+            }
+            List<string> candidate = assurance_remove_chunk(current, start, chunk);
+            used += 1;
+            if (assurance_reduction_oracle(candidate, code)) {
+                current = candidate;
+                // Restart at the same granularity: earlier removals may become possible.
+                start = 0;
+            } else { start += 1; }
+        }
+        chunk = chunk / 2;
+    }
+    return new AssuranceReduction{statements: current, evaluations: used, complete: true, preserved: true};
+}
+
+List<string> assurance_reduction_fixture(int padding, int location) {
+    List<string> input = new List<string>();
+    for (int i = 0; i <= padding; i += 1) {
+        if (i == location) {
+            input.push("Tainted supplied = taint(\"external\");");
+            input.push("string leaked = supplied;");
+        }
+        if (i < padding) { input.push("int irrelevant" + int_to_str(i) + " = 1;"); }
+    }
+    return input;
+}
+
+test "diagnostic reducer preserves CWE classification and reaches one-minimal statements" {
+    for (int padding = 0; padding <= 8; padding += 1) {
+        for (int location = 0; location <= padding; location += 1) {
+            List<string> input = assurance_reduction_fixture(padding, location);
+            AssuranceReduction result = assurance_reduce_diagnostic(input, "CWE-20", 256);
+            assert(result.complete && result.preserved && result.evaluations <= 256);
+            assert(input.len() == padding + 2 && result.statements.len() == 2);
+            assert(assurance_reduction_oracle(result.statements, "CWE-20"));
+            for (int i = 0; i < result.statements.len(); i += 1) {
+                assert(!assurance_reduction_oracle(assurance_remove_chunk(result.statements, i, 1), "CWE-20"));
+            }
+        }
+    }
+}
+
+test "diagnostic reducer distinguishes bounded incomplete search from minimal witness" {
+    List<string> input = assurance_reduction_fixture(8, 4);
+    for (int budget = 1; budget <= 16; budget += 1) {
+        AssuranceReduction result = assurance_reduce_diagnostic(input, "CWE-20", budget);
+        assert(result.preserved && result.evaluations <= budget);
+        assert(assurance_reduction_oracle(result.statements, "CWE-20"));
+        if (result.complete) { assert(result.statements.len() == 2); }
+    }
+    AssuranceReduction exhausted = assurance_reduce_diagnostic(input, "CWE-20", 1);
+    assert(!exhausted.complete && exhausted.preserved && exhausted.evaluations == 1);
+}
+
+test "diagnostic reducer does not confuse wrong diagnostics or passing fixtures with witnesses" {
+    List<string> input = assurance_reduction_fixture(2, 1);
+    assert(!assurance_reduce_diagnostic(input, "CWE-208", 32).preserved);
+    assert(!assurance_reduce_diagnostic(input, "CWE-20", 0).preserved);
+    List<string> positive = new List<string>();
+    positive.push("Tainted supplied = taint(\"external\");");
+    positive.push("Html encoded = escape_html(supplied);");
+    assert(!assurance_reduce_diagnostic(positive, "CWE-20", 32).preserved);
+}

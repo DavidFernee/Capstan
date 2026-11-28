@@ -1,0 +1,83 @@
+// Compiled with the actual compiler frontend and scalar lowering.
+// A bounded typed grammar with independent arithmetic expectations.
+// No random host input, unbounded loops or implicit narrowing.
+struct AssuranceGrammarCase {
+    string source;
+    int expected;
+}
+
+AssuranceGrammarCase assurance_grammar_case(int seed, int variant) {
+    int a = seed % 17 - 8;
+    int b = (seed / 17) % 13 - 6;
+    int rounds = (seed / 221) % 4;
+    int operation = (seed / 7) % 3;
+    int value = a + b;
+    string symbol = "+";
+    if (operation == 1) { value = a - b; symbol = "-"; }
+    if (operation == 2) { value = a * b; symbol = "*"; }
+    string local = "acc";
+    if (variant == 1) { local = "renamed"; }
+    string expression = "left " + symbol + " right";
+    if (variant == 2) { expression = "((" + expression + ") + 0)"; }
+    if (variant == 3 && operation != 1) { expression = "right " + symbol + " left"; }
+    string source = "int compute(int left, int right) { int " + local + " = " + expression + "; ";
+    source += "for (int idx = 0; idx < " + int_to_str(rounds) + "; idx += 1) { ";
+    source += "if (idx % 2 == 0) { " + local + " += left; } else { " + local + " -= right; } } ";
+    source += "return " + local + "; } int main() { return compute(" + int_to_str(a) + ", " + int_to_str(b) + "); }";
+    for (int i = 0; i < rounds; i += 1) {
+        if (i % 2 == 0) { value += a; } else { value -= b; }
+    }
+    return new AssuranceGrammarCase{source: source, expected: value};
+}
+
+bool assurance_grammar_evaluate(AssuranceGrammarCase fixture) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("grammar-fixture.cap");
+    Tainted source = taint(fixture.source);
+    ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    if (error_count(ctx) != 0) { return false; }
+    check_program(new_checker(ctx), declarations, true);
+    if (error_count(ctx) != 0) { return false; }
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    if (!lowered.ok) { return false; }
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(lowered.functions, lowered.entry_function, 512, 4);
+    if (!created.ok) { return false; }
+    CCAMCallMachine machine = created.machine;
+    for (int n = 0; n <= 512 && !machine.halted; n += 1) {
+        ccam_call_machine_step(machine);
+    }
+    return machine.halted && machine.halt_has_value &&
+        machine.trap_code == "" && machine.halt_value == fixture.expected &&
+        machine.output_bytes.len() == 0 && machine.frame_depth == 0;
+}
+
+bool assurance_grammar_shard(int shard) {
+    for (int seed = shard * 221; seed < (shard + 1) * 221; seed += 1) {
+        for (int variant = 0; variant < 4; variant += 1) {
+            AssuranceGrammarCase fixture = assurance_grammar_case(seed, variant);
+            if (!assurance_grammar_evaluate(fixture)) {
+                println("grammar counterexample seed=" + int_to_str(seed) + " variant=" + int_to_str(variant));
+                println(fixture.source);
+                return false;
+            }
+        }
+    }
+    return true;
+}
+test "typed source grammar differential shard 0" {
+    assert(assurance_grammar_shard(0));
+}
+
+test "typed source grammar differential shard 1" {
+    assert(assurance_grammar_shard(1));
+}
+
+test "typed source grammar differential shard 2" {
+    assert(assurance_grammar_shard(2));
+}
+
+test "typed source grammar differential shard 3" {
+    assert(assurance_grammar_shard(3));
+}

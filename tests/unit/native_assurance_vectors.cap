@@ -1,0 +1,52 @@
+// Built with ccam_direct_elf.cap, using the same typed program for
+// the evaluator and native backend. The host oracle verifies every outcome.
+void assurance_write_image(string path, List<int> bytes) {
+    List<string> parts = new List<string>();
+    for (int i = 0; i < bytes.len(); i += 1) { parts.push(char_str(bytes[i])); }
+    if (!write_file(path, join(parts, ""))) { exit(1); }
+}
+
+void assurance_native_case(string directory, int id, int op, int left, int right, int fuel) {
+    List<int> types = new List<int>(); types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction ins = ccam_instruction(CCAM_OP_CONST_I);
+    ins.dst = 0; ins.int_value = left; code.push(ins);
+    ins = ccam_instruction(CCAM_OP_CONST_I);
+    ins.dst = 1; ins.int_value = right; code.push(ins);
+    ins = ccam_instruction(op); ins.dst = 0; ins.lhs = 0; ins.rhs = 1; code.push(ins);
+    ins = ccam_instruction(CCAM_OP_RET); ins.lhs = 0; code.push(ins);
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{name: "main", register_types: types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT, instructions: code,
+        call_sites: new List<CCAMCallSite>()});
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(functions, 0, fuel, 1);
+    CCAMDirectResult image = ccam_direct_elf_with_record(functions, 0, fuel, true);
+    if (!created.ok || !image.ok) { exit(1); }
+    CCAMCallMachine machine = created.machine;
+    for (int n = 0; n < 5; n += 1) { ccam_call_machine_step(machine); }
+    if (!machine.halted || machine.output_bytes.len() != 0) { exit(1); }
+    assurance_write_image(directory + "/case-" + int_to_str(id), image.bytes);
+    println(int_to_str(id) + "\t" + machine.trap_code + "\t" +
+        int_to_str(machine.halt_value) + "\t" + int_to_str(machine.steps) + "\t" +
+        machine.trap_function + "\t" + int_to_str(machine.trap_pc) + "\t" + machine.trap_detail);
+}
+
+int main() {
+    List<string> arguments = args(1, 4096, 4096);
+    if (arguments.len() != 1) { return 2; }
+    List<int> values = new List<int>();
+    values.push(CCAM_I64_MIN); values.push(-3); values.push(-1); values.push(0);
+    values.push(1); values.push(3); values.push(CCAM_I64_MAX);
+    int id = 0;
+    for (int op = CCAM_OP_ADD_I; op <= CCAM_OP_REM_I; op += 1) {
+        for (int a = 0; a < values.len(); a += 1) {
+            for (int b = 0; b < values.len(); b += 1) {
+                for (int fuel = 0; fuel <= 4; fuel += 1) {
+                    assurance_native_case(arguments[0], id, op, values[a], values[b], fuel);
+                    id += 1;
+                }
+            }
+        }
+    }
+    return 0;
+}

@@ -1,0 +1,122 @@
+// Typed Capstan policy for evidence admission. The host adapter must independently
+// verify the actual file hashes before constructing these records. This module
+// does not parse JSON, execute subprocesses or authenticate an evidence producer.
+struct AssuranceSuiteResult {
+    int ordinal;
+    string command_hash;
+    string log_hash;
+    bool log_verified;
+    bool completed;
+    int exit_code;
+    string error;
+}
+
+struct AssuranceGroupEvidence {
+    int schema;
+    string revision;
+    string tree;
+    string manifest_hash;
+    string group_id;
+    List<AssuranceSuiteResult> results;
+}
+
+bool assurance_hex_digest(string value, int width) {
+    if (value.len() != width) { return false; }
+    for (int i = 0; i < width; i += 1) {
+        int c = value.at(i);
+        if (!((c >= 48 && c <= 57) || (c >= 97 && c <= 102))) { return false; }
+    }
+    return true;
+}
+
+bool assurance_group_id(string value) {
+    if (value.len() == 0 || value.len() > 64) { return false; }
+    for (int i = 0; i < value.len(); i += 1) {
+        int c = value.at(i);
+        if (c < 97 || c > 122) { return false; }
+    }
+    return true;
+}
+
+// The expected manifest is supplied independently of the candidate report.
+// An empty, partial, reordered, stale or unverified report cannot pass.
+string assurance_admit_group(AssuranceGroupEvidence report, string revision,
+    string tree, string manifest_hash, string group_id, List<string> command_hashes) {
+    if (!assurance_hex_digest(revision, 40) || !assurance_hex_digest(tree, 40) ||
+        !assurance_hex_digest(manifest_hash, 64) || !assurance_group_id(group_id) ||
+        command_hashes.len() < 1 || command_hashes.len() > 1024) { return "invalid_expected_identity"; }
+    for (int i = 0; i < command_hashes.len(); i += 1) {
+        if (!assurance_hex_digest(command_hashes[i], 64)) { return "invalid_expected_command"; }
+        for (int j = 0; j < i; j += 1) {
+            if (command_hashes[j] == command_hashes[i]) { return "duplicate_expected_command"; }
+        }
+    }
+    if (report.schema != 1) { return "unsupported_schema"; }
+    if (report.revision != revision || report.tree != tree ||
+        report.manifest_hash != manifest_hash || report.group_id != group_id) { return "identity_mismatch"; }
+    if (report.results.len() != command_hashes.len()) { return "incomplete_results"; }
+    for (int i = 0; i < command_hashes.len(); i += 1) {
+        AssuranceSuiteResult row = report.results[i];
+        if (row.ordinal != i || row.command_hash != command_hashes[i]) { return "command_mismatch"; }
+        if (!assurance_hex_digest(row.log_hash, 64) || !row.log_verified) { return "unverified_log"; }
+        if (!row.completed || row.exit_code != 0 || row.error != "") { return "unsuccessful_execution"; }
+    }
+    return "";
+}
+
+string assurance_repeat_digest(string digit, int count) {
+    string out = "";
+    for (int i = 0; i < count; i += 1) { out += digit; }
+    return out;
+}
+
+test "evidence policy rejects each corrupted identity and execution field independently" {
+    string revision = assurance_repeat_digest("1", 40);
+    string tree = assurance_repeat_digest("2", 40);
+    string manifest_hash = assurance_repeat_digest("3", 64);
+    string log_hash = assurance_repeat_digest("4", 64);
+    List<string> hashes = new List<string>();
+    hashes.push(assurance_repeat_digest("5", 64)); hashes.push(assurance_repeat_digest("6", 64));
+    for (int fault = -1; fault < 14; fault += 1) {
+        List<AssuranceSuiteResult> rows = new List<AssuranceSuiteResult>();
+        for (int i = 0; i < 2; i += 1) {
+            AssuranceSuiteResult row = new AssuranceSuiteResult{ordinal: i, command_hash: hashes[i],
+                log_hash: log_hash, log_verified: true, completed: true, exit_code: 0, error: ""};
+            if (i == 1) {
+                if (fault == 5) { row.ordinal = 0; }
+                if (fault == 6) { row.command_hash = hashes[0]; }
+                if (fault == 7) { row.log_hash = ""; }
+                if (fault == 8) { row.log_verified = false; }
+                if (fault == 9) { row.completed = false; }
+                if (fault == 10) { row.exit_code = 1; }
+                if (fault == 11) { row.error = "timeout"; }
+                if (fault == 12) { row.log_hash = assurance_repeat_digest("G",64); }
+            }
+            if (fault != 13 || i == 0) { rows.push(row); }
+        }
+        AssuranceGroupEvidence report = new AssuranceGroupEvidence{schema: 1, revision: revision,
+            tree: tree, manifest_hash: manifest_hash, group_id: "scalar", results: rows};
+        if (fault == 0) { report.schema = 2; }
+        if (fault == 1) { report.revision = tree; }
+        if (fault == 2) { report.tree = revision; }
+        if (fault == 3) { report.manifest_hash = log_hash; }
+        if (fault == 4) { report.group_id = "native"; }
+        string expected = "";
+        if (fault == 0) { expected = "unsupported_schema"; }
+        if (fault >= 1 && fault <= 4) { expected = "identity_mismatch"; }
+        if (fault == 5 || fault == 6) { expected = "command_mismatch"; }
+        if (fault == 7 || fault == 8 || fault == 12) { expected = "unverified_log"; }
+        if (fault >= 9 && fault <= 11) { expected = "unsuccessful_execution"; }
+        if (fault == 13) { expected = "incomplete_results"; }
+        assert(assurance_admit_group(report, revision, tree, manifest_hash, "scalar", hashes) == expected);
+    }
+}
+
+test "evidence digest rejects every non-lowercase-hex ASCII character" {
+    string rest = assurance_repeat_digest("0", 63);
+    for (int c = 1; c < 128; c += 1) {
+        bool expected = (c >= 48 && c <= 57) || (c >= 97 && c <= 102);
+        assert(assurance_hex_digest(char_str(c) + rest, 64) == expected);
+        assert(assurance_hex_digest(rest + char_str(c), 64) == expected);
+    }
+}

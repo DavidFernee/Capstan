@@ -1,0 +1,124 @@
+import "ccam_calls.cap";
+
+// main calls a recursive count-up-on-return function. Each positive level
+// contributes five instructions before the call and two on return.
+List<CCAMFunction> assurance_recursive_program(int input) {
+    List<int> main_types = new List<int>();
+    main_types.push(CCAM_TYPE_INT); main_types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> main_code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0; i.int_value = input; main_code.push(i);
+    main_code.push(ccam_instruction(CCAM_OP_CALL));
+    i = ccam_instruction(CCAM_OP_RET); i.lhs = 1; main_code.push(i);
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_BOOL); types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    i = ccam_instruction(CCAM_OP_CONST_I); i.dst = 3; i.int_value = 1; code.push(i);
+    i = ccam_instruction(CCAM_OP_LT_I); i.dst = 2; i.lhs = 0; i.rhs = 3; code.push(i);
+    i = ccam_instruction(CCAM_OP_BRANCH); i.lhs = 2; i.if_true = 7; i.if_false = 3; code.push(i);
+    i = ccam_instruction(CCAM_OP_SUB_I); i.dst = 1; i.lhs = 0; i.rhs = 3; code.push(i);
+    code.push(ccam_instruction(CCAM_OP_CALL));
+    i = ccam_instruction(CCAM_OP_ADD_I); i.dst = 1; i.lhs = 1; i.rhs = 3; code.push(i);
+    i = ccam_instruction(CCAM_OP_RET); i.lhs = 1; code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I); i.dst = 1; i.int_value = 0; code.push(i);
+    i = ccam_instruction(CCAM_OP_RET); i.lhs = 1; code.push(i);
+    List<int> main_args = new List<int>(); main_args.push(0);
+    List<CCAMCallSite> main_sites = new List<CCAMCallSite>();
+    main_sites.push(new CCAMCallSite{instruction_index: 1, callee_index: 1,
+        argument_registers: main_args, destination_register: 1, has_destination: true});
+    List<int> args = new List<int>(); args.push(1);
+    List<CCAMCallSite> sites = new List<CCAMCallSite>();
+    sites.push(new CCAMCallSite{instruction_index: 4, callee_index: 1,
+        argument_registers: args, destination_register: 1, has_destination: true});
+    List<CCAMFunction> functions = new List<CCAMFunction>();
+    functions.push(new CCAMFunction{name: "main", register_types: main_types,
+        parameter_count: 0, return_type: CCAM_RETURN_INT, instructions: main_code, call_sites: main_sites});
+    functions.push(new CCAMFunction{name: "recurse", register_types: types,
+        parameter_count: 1, return_type: CCAM_RETURN_INT, instructions: code, call_sites: sites});
+    return functions;
+}
+
+bool assurance_recursive_case(int input, int fuel, int depth) {
+    List<CCAMFunction> functions = assurance_recursive_program(input);
+    CCAMCallMachineCreateResult created = ccam_call_machine_create(functions, 0, fuel, depth);
+    if (!created.ok) { return false; }
+    CCAMCallMachine machine = created.machine;
+    int total = 8 + 7 * input;
+    int depth_stop = 2 + 5 * (depth - 1);
+    string expected = "step_limit_exceeded";
+    int steps = fuel;
+    bool success = false;
+    if (depth < input + 2) {
+        if (fuel >= depth_stop) { expected = "call_depth_exceeded"; steps = depth_stop; }
+    } else if (fuel >= total) {
+        expected = ""; steps = total; success = true;
+    }
+    for (int n = 0; n <= total; n += 1) {
+        // Inspect all live recursive argument slots: callers must retain the
+        // original parameter even when the recursive destination aliases a local.
+        if (!machine.halted) {
+            for (int f = 1; f < machine.frame_depth; f += 1) {
+                CCAMRegisterResult r = ccam_register_read_int(machine.frames[f].registers, 0);
+                if (!r.ok || r.int_value != input - f + 1) { return false; }
+            }
+        }
+        ccam_call_machine_step(machine);
+    }
+    if (!machine.halted || machine.steps != steps || machine.frame_depth != 0 ||
+        machine.trap_code != expected || machine.halt_has_value != success) { return false; }
+    if (success && machine.halt_value != input) { return false; }
+    if (expected == "call_depth_exceeded") {
+        if (depth == 1) {
+            if (machine.trap_function != "main" || machine.trap_pc != 1) { return false; }
+        } else if (machine.trap_function != "recurse" || machine.trap_pc != 4) { return false; }
+    }
+    if (machine.memory.live_regions != 0 || machine.memory.live_capacity != 0) { return false; }
+    ccam_call_machine_step(machine);
+    return machine.steps == steps && machine.trap_code == expected && machine.frame_depth == 0;
+}
+
+test "systematic recursion across all bounded input fuel and depth combinations" {
+    for (int input = 0; input <= 8; input += 1) {
+        for (int fuel = 0; fuel <= 9 + 7 * input; fuel += 1) {
+            for (int depth = 1; depth <= 10; depth += 1) {
+                assert(assurance_recursive_case(input, fuel, depth));
+            }
+        }
+    }
+}
+
+test "systematic call-site index arity and destination admission precedence" {
+    for (int pc = -1; pc <= 3; pc += 1) {
+        for (int callee = -1; callee <= 2; callee += 1) {
+            for (int arity = 0; arity <= 2; arity += 1) {
+                for (int arg = -1; arg <= 2; arg += 1) {
+                    for (int dst = -1; dst <= 2; dst += 1) {
+                        for (int has_dst = 0; has_dst <= 1; has_dst += 1) {
+                            List<CCAMFunction> functions = assurance_recursive_program(0);
+                            CCAMCallSite site = functions[0].call_sites[0];
+                            site.instruction_index = pc; site.callee_index = callee;
+                            site.destination_register = dst; site.has_destination = has_dst == 1;
+                            site.argument_registers = new List<int>();
+                            for (int j = 0; j < arity; j += 1) { site.argument_registers.push(arg); }
+                            string expected = "";
+                            if (pc < 0 || pc >= 3) { expected = "invalid_call_site_pc"; }
+                            else if (pc != 1) { expected = "call_site_without_call"; }
+                            else if (callee < 0 || callee >= 2) { expected = "unknown_function"; }
+                            else if (arity != callee) { expected = "call_arity_mismatch"; }
+                            else if (arity == 1 && (arg < 0 || arg >= 2)) { expected = "invalid_call_argument_register"; }
+                            else if (has_dst == 0) { expected = "nonvoid_call_missing_destination"; }
+                            else if (dst < 0 || dst >= 2) { expected = "invalid_call_destination"; }
+                            CCAMCallMachineCreateResult result = ccam_call_machine_create(functions, 0, 20, 4);
+                            assert(result.ok == (expected == ""));
+                            if (!result.ok) {
+                                assert(result.error == expected && result.machine.halted);
+                                assert(result.machine.steps == 0 && result.machine.frame_depth == 0);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

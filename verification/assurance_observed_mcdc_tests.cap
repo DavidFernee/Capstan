@@ -1,0 +1,99 @@
+import "assurance_evidence_policy_tests.cap";
+
+// Conservative unique-cause evidence over actual recorded observations.
+// A condition is 0=false, 1=true, 2=not evaluated. Unevaluated conditions
+// are never converted to false. No masking MC/DC credit is inferred.
+struct AssuranceObservation {
+    string decision_id;
+    string source_hash;
+    List<int> values;
+    bool outcome;
+}
+struct AssuranceWitnessReport {
+    bool ok;
+    List<bool> covered;
+    string error;
+}
+AssuranceWitnessReport assurance_observation_error(string error) {
+    return new AssuranceWitnessReport{ok: false, covered: new List<bool>(), error: error};
+}
+AssuranceWitnessReport assurance_observed_witnesses(List<AssuranceObservation> rows,
+    string decision_id, string source_hash, int width) {
+    if (decision_id == "" || decision_id.len() > 128 ||
+        !assurance_hex_digest(source_hash, 64) ||
+        width < 1 || width > 32 || rows.len() < 1 || rows.len() > 1024) {
+        return assurance_observation_error("invalid_observation_domain");
+    }
+    for (int i = 0; i < rows.len(); i += 1) {
+        AssuranceObservation row = rows[i];
+        if (row.decision_id != decision_id || row.source_hash != source_hash ||
+            row.values.len() != width) { return assurance_observation_error("identity_or_width_mismatch"); }
+        for (int j = 0; j < width; j += 1) {
+            if (row.values[j] < 0 || row.values[j] > 2) {
+                return assurance_observation_error("invalid_condition_value");
+            }
+        }
+    }
+    List<bool> covered = new List<bool>();
+    for (int j = 0; j < width; j += 1) { covered.push(false); }
+    for (int a = 0; a < rows.len(); a += 1) {
+        for (int b = a + 1; b < rows.len(); b += 1) {
+            int difference = -1;
+            bool valid = rows[a].outcome != rows[b].outcome;
+            for (int j = 0; j < width; j += 1) {
+                int left = rows[a].values[j];
+                int right = rows[b].values[j];
+                if (left == 2 || right == 2) { valid = false; }
+                if (left != right) {
+                    if (difference >= 0) { valid = false; }
+                    difference = j;
+                }
+            }
+            if (valid && difference >= 0) { covered[difference] = true; }
+        }
+    }
+    return new AssuranceWitnessReport{ok: true, covered: covered, error: ""};
+}
+
+AssuranceObservation assurance_observation_fixture(string hash, int a, int b, bool outcome) {
+    List<int> values = new List<int>(); values.push(a); values.push(b);
+    return new AssuranceObservation{decision_id: "d1", source_hash: hash, values: values, outcome: outcome};
+}
+
+test "observation pairs never credit unevaluated or correlated conditions" {
+    string hash = assurance_repeat_digest("a",64);
+    for (int a = 0; a < 3; a += 1) {
+        for (int b = 0; b < 3; b += 1) {
+            for (int c = 0; c < 3; c += 1) {
+                for (int d = 0; d < 3; d += 1) {
+                    for (int result = 0; result < 2; result += 1) {
+                        List<AssuranceObservation> rows = new List<AssuranceObservation>();
+                        rows.push(assurance_observation_fixture(hash,a,b,false));
+                        rows.push(assurance_observation_fixture(hash,c,d,result == 1));
+                        AssuranceWitnessReport report = assurance_observed_witnesses(rows,"d1",hash,2);
+                        assert(report.ok && report.covered.len() == 2);
+                        bool known = a < 2 && b < 2 && c < 2 && d < 2 && result == 1;
+                        assert(report.covered[0] == (known && a != c && b == d));
+                        assert(report.covered[1] == (known && a == c && b != d));
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "observation evidence rejects cross-decision and stale-source pairs" {
+    string hash = assurance_repeat_digest("a",64);
+    for (int fault = 0; fault < 4; fault += 1) {
+        List<AssuranceObservation> rows = new List<AssuranceObservation>();
+        rows.push(assurance_observation_fixture(hash,1,1,true));
+        AssuranceObservation row = assurance_observation_fixture(hash,0,1,false);
+        if (fault == 0) { row.decision_id = "d2"; }
+        if (fault == 1) { row.source_hash = assurance_repeat_digest("b",64); }
+        if (fault == 2) { row.values.push(0); }
+        if (fault == 3) { row.values[0] = 3; }
+        rows.push(row);
+        AssuranceWitnessReport report = assurance_observed_witnesses(rows,"d1",hash,2);
+        assert(!report.ok && report.covered.len() == 0);
+    }
+}

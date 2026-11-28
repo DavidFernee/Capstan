@@ -1,0 +1,94 @@
+import "ccam_core.cap";
+
+test "systematic register read and write admission and failure atomicity" {
+    for (int kind = CCAM_TYPE_INT; kind <= CCAM_TYPE_BOOL; kind += 1) {
+        for (int initialized = 0; initialized <= 1; initialized += 1) {
+            for (int index = -1; index <= 1; index += 1) {
+                for (int access = CCAM_TYPE_INT; access <= CCAM_TYPE_BOOL; access += 1) {
+                    List<int> types = new List<int>(); types.push(kind);
+                    CCAMRegisterFileResult created = ccam_registers_create(types);
+                    assert(created.ok);
+                    List<CCAMRegister> regs = created.registers;
+                    if (initialized == 1) {
+                        if (kind == CCAM_TYPE_INT) { assert(ccam_register_write_int(regs, 0, 73) == ""); }
+                        else { assert(ccam_register_write_bool(regs, 0, true) == ""); }
+                    }
+                    CCAMRegisterResult read = ccam_register_read_int(regs, index);
+                    if (access == CCAM_TYPE_BOOL) { read = ccam_register_read_bool(regs, index); }
+                    string expected = "";
+                    if (index != 0) { expected = "invalid_register"; }
+                    else if (initialized == 0) { expected = "uninitialised_register"; }
+                    else if (kind != access) { expected = "register_type_mismatch"; }
+                    assert(read.ok == (expected == "") && read.trap == expected);
+                    if (read.ok) {
+                        if (access == CCAM_TYPE_INT) { assert(read.int_value == 73); }
+                        else { assert(read.bool_value); }
+                    }
+                    string write_error = "";
+                    if (access == CCAM_TYPE_INT) { write_error = ccam_register_write_int(regs, index, 99); }
+                    else { write_error = ccam_register_write_bool(regs, index, false); }
+                    if (index != 0) { assert(write_error == "invalid_register"); }
+                    else if (kind != access) { assert(write_error == "register_type_mismatch"); }
+                    else { assert(write_error == ""); }
+                    assert(regs[0].declared_type == kind);
+                    if (write_error != "") {
+                        assert(regs[0].initialized == (initialized == 1));
+                        if (kind == CCAM_TYPE_INT && initialized == 1) { assert(regs[0].int_value == 73); }
+                        if (kind == CCAM_TYPE_BOOL && initialized == 1) { assert(regs[0].bool_value); }
+                    } else {
+                        assert(regs[0].initialized);
+                        if (kind == CCAM_TYPE_INT) { assert(regs[0].int_value == 99); }
+                        else { assert(!regs[0].bool_value); }
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "systematic fuel and output budgets preserve prefix and terminal state" {
+    for (int fuel = 0; fuel <= 4; fuel += 1) {
+        for (int budget = 0; budget <= 4; budget += 1) {
+            List<int> types = new List<int>();
+            List<CCAMInstruction> code = new List<CCAMInstruction>();
+            CCAMInstruction first = ccam_instruction(CCAM_OP_EMIT_BYTES);
+            first.byte_data.push(65); code.push(first);
+            CCAMInstruction second = ccam_instruction(CCAM_OP_EMIT_BYTES);
+            second.byte_data.push(0); second.byte_data.push(255); code.push(second);
+            code.push(ccam_instruction(CCAM_OP_RET_VOID));
+            CCAMMachineCreateResult created = ccam_machine_create_validated_with_output_budget(
+                types, code, fuel, CCAM_RETURN_VOID, budget);
+            assert(created.ok);
+            CCAMMachineState state = created.state;
+            for (int i = 0; i < 5; i += 1) { ccam_machine_step(state); }
+            string expected = "";
+            int steps = 3;
+            int bytes = 3;
+            if (fuel == 0) { expected = "step_limit_exceeded"; steps = 0; bytes = 0; }
+            else if (budget == 0) { expected = "output_limit"; steps = 1; bytes = 0; }
+            else if (fuel == 1) { expected = "step_limit_exceeded"; steps = 1; bytes = 1; }
+            else if (budget < 3) { expected = "output_limit"; steps = 2; bytes = 1; }
+            else if (fuel == 2) { expected = "step_limit_exceeded"; steps = 2; }
+            assert(state.halted && state.trap_code == expected && state.steps == steps);
+            assert(!state.halt_has_value && state.output_bytes.len() == bytes);
+            if (bytes >= 1) { assert(state.output_bytes[0] == 65); }
+            if (bytes == 3) { assert(state.output_bytes[1] == 0 && state.output_bytes[2] == 255); }
+            int pc = state.pc;
+            ccam_machine_step(state);
+            assert(state.pc == pc && state.steps == steps && state.trap_code == expected);
+            assert(state.output_bytes.len() == bytes);
+        }
+    }
+}
+
+test "systematic malformed unreachable instruction never creates runnable state" {
+    for (int opcode = -3; opcode <= 0; opcode += 1) {
+        List<int> types = new List<int>();
+        List<CCAMInstruction> code = new List<CCAMInstruction>();
+        code.push(ccam_instruction(CCAM_OP_RET_VOID));
+        code.push(ccam_instruction(opcode));
+        CCAMMachineCreateResult result = ccam_machine_create_validated(types, code, 4, CCAM_RETURN_VOID);
+        assert(!result.ok && result.state.halted);
+        assert(result.state.steps == 0 && result.state.instructions.len() == 0);
+    }
+}

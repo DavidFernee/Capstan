@@ -1,0 +1,82 @@
+import "ccam_aggregate_stack_frame_layout.cap";
+import "ccam_research_native_x86_sysv_arg.cap";
+import "ccam_research_native_x86_sysv_return.cap";
+import "ccam_research_native_x86_scalar_ops.cap";
+import "ccam_research_native_x86_spill_memory.cap";
+import "ccam_research_native_x86_mov_rr.cap";
+
+test "stack layout every admitted spill count has minimal aligned storage" {
+    for (int slots = 0; slots <= AG_FRAME_SLOT_LIMIT; slots += 1) {
+        AGStackFrame frame = ag_stack_frame_layout(slots);
+        assert(frame.ok && ag_frame_validate(frame));
+        assert(frame.spill_slots == slots);
+        assert(frame.frame_bytes >= slots * 8 && frame.frame_bytes < slots * 8 + 16);
+        assert(frame.frame_bytes % 16 == 0);
+        assert(ag_frame_spill_offset(-1, slots) == 0);
+        assert(ag_frame_spill_offset(slots, slots) == 0);
+        if (slots > 0) {
+            assert(ag_frame_spill_offset(0, slots) == -8);
+            assert(ag_frame_spill_offset(slots - 1, slots) == -8 * slots);
+        }
+    }
+}
+
+test "stack layout rejects invalid counts and forged frame lengths" {
+    List<int> counts = new List<int>();
+    counts.push(-1); counts.push(-9223372036854775807 - 1);
+    counts.push(AG_FRAME_SLOT_LIMIT + 1); counts.push(9223372036854775807);
+    for (int i = 0; i < counts.len(); i += 1) {
+        AGStackFrame frame = ag_stack_frame_layout(counts[i]);
+        assert(!frame.ok && !ag_frame_validate(frame));
+    }
+    for (int slots = 0; slots <= 32; slots += 1) {
+        AGStackFrame correct = ag_stack_frame_layout(slots);
+        for (int delta = -16; delta <= 16; delta += 1) {
+            AGStackFrame candidate = new AGStackFrame{ok: true, spill_slots: slots,
+                frame_bytes: correct.frame_bytes + delta};
+            assert(ag_frame_validate(candidate) == (delta == 0));
+        }
+    }
+}
+
+test "SysV integer register mapping is exact and rejects all tested invalid indices" {
+    List<int> expected = new List<int>();
+    expected.push(7); expected.push(6); expected.push(2);
+    expected.push(1); expected.push(8); expected.push(9);
+    for (int i = -16; i <= 16; i += 1) {
+        int want = -1;
+        if (i >= 0 && i < 6) { want = expected[i]; }
+        assert(ag_x86_sysv_arg(i) == want);
+    }
+    assert(ag_x86_sysv_return() == 0);
+}
+
+test "x86 register operand rejection preserves existing output prefix" {
+    for (int dst = -1; dst <= 16; dst += 1) {
+        for (int src = -1; src <= 16; src += 1) {
+            if (dst < 0 || dst >= 16 || src < 0 || src >= 16) {
+                List<int> b = new List<int>(); b.push(204);
+                assert(!ag_x86_add_rr(b, dst, src));
+                assert(!ag_x86_sub_rr(b, dst, src));
+                assert(!ag_x86_imul_rr(b, dst, src));
+                assert(!ag_x86_mov_rr(b, dst, src));
+                assert(b.len() == 1 && b[0] == 204);
+            }
+        }
+    }
+}
+
+test "x86 invalid spill displacements preserve existing output prefix" {
+    List<int> displacements = new List<int>();
+    displacements.push(0); displacements.push(8); displacements.push(-1);
+    displacements.push(-7); displacements.push(-127); displacements.push(-129);
+    displacements.push(-1048577); displacements.push(-1048584);
+    for (int r = 0; r < 16; r += 1) {
+        for (int d = 0; d < displacements.len(); d += 1) {
+            List<int> b = new List<int>(); b.push(204);
+            assert(!ag_x86_store_rbp(b, r, displacements[d]));
+            assert(!ag_x86_load_rbp(b, r, displacements[d]));
+            assert(b.len() == 1 && b[0] == 204);
+        }
+    }
+}

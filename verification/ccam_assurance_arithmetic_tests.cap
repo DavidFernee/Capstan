@@ -1,0 +1,2098 @@
+import "ccam_core.cap";
+
+// Exact signed-64 fixtures independently computed with arbitrary-precision integers.
+// All ordered pairs of 19 boundary values; expected outcomes are fixed literals.
+
+bool assurance_int_matches(CCAMIntResult actual, bool ok, int value, string trap) {
+    return actual.ok == ok && actual.value == value && actual.trap == trap;
+}
+
+test "systematic add boundary row 0" {
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, -1), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 0), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 1), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 2), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 3), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 65536), true, -9223372036854710272, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 3037000499), true, -9223372033817775309, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 3037000500), true, -9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 9223372036854775805), true, -3, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, 9223372036854775806), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MIN, CCAM_I64_MAX), true, -1, ""));
+}
+
+test "systematic add boundary row 1" {
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, -1), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 0), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 1), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 2), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 3), true, -9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 65536), true, -9223372036854710271, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 3037000499), true, -9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 3037000500), true, -9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 9223372036854775805), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, 9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775807, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic add boundary row 2" {
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, -2), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, -1), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 0), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 1), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 2), true, -9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 3), true, -9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 65536), true, -9223372036854710270, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 3037000499), true, -9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 3037000500), true, -9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 9223372036854775805), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(-9223372036854775806, CCAM_I64_MAX), true, 1, ""));
+}
+
+test "systematic add boundary row 3" {
+    assert(assurance_int_matches(ccam_add(-3037000500, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3037000500, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3037000500, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3037000500, -3037000500), true, -6074001000, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, -3037000499), true, -6074000999, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, -65536), true, -3037066036, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, -3), true, -3037000503, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, -2), true, -3037000502, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, -1), true, -3037000501, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 0), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 1), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 2), true, -3037000498, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 3), true, -3037000497, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 65536), true, -3036934964, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 9223372036854775805), true, 9223372033817775305, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, 9223372036854775806), true, 9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_add(-3037000500, CCAM_I64_MAX), true, 9223372033817775307, ""));
+}
+
+test "systematic add boundary row 4" {
+    assert(assurance_int_matches(ccam_add(-3037000499, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3037000499, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3037000499, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3037000499, -3037000500), true, -6074000999, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, -3037000499), true, -6074000998, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, -65536), true, -3037066035, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, -3), true, -3037000502, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, -2), true, -3037000501, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, -1), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 0), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 1), true, -3037000498, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 2), true, -3037000497, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 3), true, -3037000496, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 65536), true, -3036934963, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 3037000500), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 9223372036854775805), true, 9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, 9223372036854775806), true, 9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_add(-3037000499, CCAM_I64_MAX), true, 9223372033817775308, ""));
+}
+
+test "systematic add boundary row 5" {
+    assert(assurance_int_matches(ccam_add(-65536, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-65536, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-65536, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-65536, -3037000500), true, -3037066036, ""));
+    assert(assurance_int_matches(ccam_add(-65536, -3037000499), true, -3037066035, ""));
+    assert(assurance_int_matches(ccam_add(-65536, -65536), true, -131072, ""));
+    assert(assurance_int_matches(ccam_add(-65536, -3), true, -65539, ""));
+    assert(assurance_int_matches(ccam_add(-65536, -2), true, -65538, ""));
+    assert(assurance_int_matches(ccam_add(-65536, -1), true, -65537, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 0), true, -65536, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 1), true, -65535, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 2), true, -65534, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 3), true, -65533, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 3037000499), true, 3036934963, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 3037000500), true, 3036934964, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 9223372036854775805), true, 9223372036854710269, ""));
+    assert(assurance_int_matches(ccam_add(-65536, 9223372036854775806), true, 9223372036854710270, ""));
+    assert(assurance_int_matches(ccam_add(-65536, CCAM_I64_MAX), true, 9223372036854710271, ""));
+}
+
+test "systematic add boundary row 6" {
+    assert(assurance_int_matches(ccam_add(-3, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-3, -3037000500), true, -3037000503, ""));
+    assert(assurance_int_matches(ccam_add(-3, -3037000499), true, -3037000502, ""));
+    assert(assurance_int_matches(ccam_add(-3, -65536), true, -65539, ""));
+    assert(assurance_int_matches(ccam_add(-3, -3), true, -6, ""));
+    assert(assurance_int_matches(ccam_add(-3, -2), true, -5, ""));
+    assert(assurance_int_matches(ccam_add(-3, -1), true, -4, ""));
+    assert(assurance_int_matches(ccam_add(-3, 0), true, -3, ""));
+    assert(assurance_int_matches(ccam_add(-3, 1), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(-3, 2), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(-3, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(-3, 65536), true, 65533, ""));
+    assert(assurance_int_matches(ccam_add(-3, 3037000499), true, 3037000496, ""));
+    assert(assurance_int_matches(ccam_add(-3, 3037000500), true, 3037000497, ""));
+    assert(assurance_int_matches(ccam_add(-3, 9223372036854775805), true, 9223372036854775802, ""));
+    assert(assurance_int_matches(ccam_add(-3, 9223372036854775806), true, 9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_add(-3, CCAM_I64_MAX), true, 9223372036854775804, ""));
+}
+
+test "systematic add boundary row 7" {
+    assert(assurance_int_matches(ccam_add(-2, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-2, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-2, -9223372036854775806), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_add(-2, -3037000500), true, -3037000502, ""));
+    assert(assurance_int_matches(ccam_add(-2, -3037000499), true, -3037000501, ""));
+    assert(assurance_int_matches(ccam_add(-2, -65536), true, -65538, ""));
+    assert(assurance_int_matches(ccam_add(-2, -3), true, -5, ""));
+    assert(assurance_int_matches(ccam_add(-2, -2), true, -4, ""));
+    assert(assurance_int_matches(ccam_add(-2, -1), true, -3, ""));
+    assert(assurance_int_matches(ccam_add(-2, 0), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(-2, 1), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(-2, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(-2, 3), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(-2, 65536), true, 65534, ""));
+    assert(assurance_int_matches(ccam_add(-2, 3037000499), true, 3037000497, ""));
+    assert(assurance_int_matches(ccam_add(-2, 3037000500), true, 3037000498, ""));
+    assert(assurance_int_matches(ccam_add(-2, 9223372036854775805), true, 9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_add(-2, 9223372036854775806), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(-2, CCAM_I64_MAX), true, 9223372036854775805, ""));
+}
+
+test "systematic add boundary row 8" {
+    assert(assurance_int_matches(ccam_add(-1, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(-1, -9223372036854775807), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_add(-1, -9223372036854775806), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_add(-1, -3037000500), true, -3037000501, ""));
+    assert(assurance_int_matches(ccam_add(-1, -3037000499), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_add(-1, -65536), true, -65537, ""));
+    assert(assurance_int_matches(ccam_add(-1, -3), true, -4, ""));
+    assert(assurance_int_matches(ccam_add(-1, -2), true, -3, ""));
+    assert(assurance_int_matches(ccam_add(-1, -1), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(-1, 0), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(-1, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(-1, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(-1, 3), true, 2, ""));
+    assert(assurance_int_matches(ccam_add(-1, 65536), true, 65535, ""));
+    assert(assurance_int_matches(ccam_add(-1, 3037000499), true, 3037000498, ""));
+    assert(assurance_int_matches(ccam_add(-1, 3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_add(-1, 9223372036854775805), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(-1, 9223372036854775806), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(-1, CCAM_I64_MAX), true, 9223372036854775806, ""));
+}
+
+test "systematic add boundary row 9" {
+    assert(assurance_int_matches(ccam_add(0, CCAM_I64_MIN), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_add(0, -9223372036854775807), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_add(0, -9223372036854775806), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(0, -3037000500), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_add(0, -3037000499), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_add(0, -65536), true, -65536, ""));
+    assert(assurance_int_matches(ccam_add(0, -3), true, -3, ""));
+    assert(assurance_int_matches(ccam_add(0, -2), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(0, -1), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(0, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(0, 1), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(0, 2), true, 2, ""));
+    assert(assurance_int_matches(ccam_add(0, 3), true, 3, ""));
+    assert(assurance_int_matches(ccam_add(0, 65536), true, 65536, ""));
+    assert(assurance_int_matches(ccam_add(0, 3037000499), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_add(0, 3037000500), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_add(0, 9223372036854775805), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(0, 9223372036854775806), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(0, CCAM_I64_MAX), true, CCAM_I64_MAX, ""));
+}
+
+test "systematic add boundary row 10" {
+    assert(assurance_int_matches(ccam_add(1, CCAM_I64_MIN), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_add(1, -9223372036854775807), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(1, -9223372036854775806), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(1, -3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_add(1, -3037000499), true, -3037000498, ""));
+    assert(assurance_int_matches(ccam_add(1, -65536), true, -65535, ""));
+    assert(assurance_int_matches(ccam_add(1, -3), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(1, -2), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(1, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(1, 0), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(1, 1), true, 2, ""));
+    assert(assurance_int_matches(ccam_add(1, 2), true, 3, ""));
+    assert(assurance_int_matches(ccam_add(1, 3), true, 4, ""));
+    assert(assurance_int_matches(ccam_add(1, 65536), true, 65537, ""));
+    assert(assurance_int_matches(ccam_add(1, 3037000499), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_add(1, 3037000500), true, 3037000501, ""));
+    assert(assurance_int_matches(ccam_add(1, 9223372036854775805), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(1, 9223372036854775806), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_add(1, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic add boundary row 11" {
+    assert(assurance_int_matches(ccam_add(2, CCAM_I64_MIN), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(2, -9223372036854775807), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(2, -9223372036854775806), true, -9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(2, -3037000500), true, -3037000498, ""));
+    assert(assurance_int_matches(ccam_add(2, -3037000499), true, -3037000497, ""));
+    assert(assurance_int_matches(ccam_add(2, -65536), true, -65534, ""));
+    assert(assurance_int_matches(ccam_add(2, -3), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(2, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(2, -1), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(2, 0), true, 2, ""));
+    assert(assurance_int_matches(ccam_add(2, 1), true, 3, ""));
+    assert(assurance_int_matches(ccam_add(2, 2), true, 4, ""));
+    assert(assurance_int_matches(ccam_add(2, 3), true, 5, ""));
+    assert(assurance_int_matches(ccam_add(2, 65536), true, 65538, ""));
+    assert(assurance_int_matches(ccam_add(2, 3037000499), true, 3037000501, ""));
+    assert(assurance_int_matches(ccam_add(2, 3037000500), true, 3037000502, ""));
+    assert(assurance_int_matches(ccam_add(2, 9223372036854775805), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_add(2, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(2, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic add boundary row 12" {
+    assert(assurance_int_matches(ccam_add(3, CCAM_I64_MIN), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(3, -9223372036854775807), true, -9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(3, -9223372036854775806), true, -9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_add(3, -3037000500), true, -3037000497, ""));
+    assert(assurance_int_matches(ccam_add(3, -3037000499), true, -3037000496, ""));
+    assert(assurance_int_matches(ccam_add(3, -65536), true, -65533, ""));
+    assert(assurance_int_matches(ccam_add(3, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(3, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(3, -1), true, 2, ""));
+    assert(assurance_int_matches(ccam_add(3, 0), true, 3, ""));
+    assert(assurance_int_matches(ccam_add(3, 1), true, 4, ""));
+    assert(assurance_int_matches(ccam_add(3, 2), true, 5, ""));
+    assert(assurance_int_matches(ccam_add(3, 3), true, 6, ""));
+    assert(assurance_int_matches(ccam_add(3, 65536), true, 65539, ""));
+    assert(assurance_int_matches(ccam_add(3, 3037000499), true, 3037000502, ""));
+    assert(assurance_int_matches(ccam_add(3, 3037000500), true, 3037000503, ""));
+    assert(assurance_int_matches(ccam_add(3, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(3, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(3, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic add boundary row 13" {
+    assert(assurance_int_matches(ccam_add(65536, CCAM_I64_MIN), true, -9223372036854710272, ""));
+    assert(assurance_int_matches(ccam_add(65536, -9223372036854775807), true, -9223372036854710271, ""));
+    assert(assurance_int_matches(ccam_add(65536, -9223372036854775806), true, -9223372036854710270, ""));
+    assert(assurance_int_matches(ccam_add(65536, -3037000500), true, -3036934964, ""));
+    assert(assurance_int_matches(ccam_add(65536, -3037000499), true, -3036934963, ""));
+    assert(assurance_int_matches(ccam_add(65536, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(65536, -3), true, 65533, ""));
+    assert(assurance_int_matches(ccam_add(65536, -2), true, 65534, ""));
+    assert(assurance_int_matches(ccam_add(65536, -1), true, 65535, ""));
+    assert(assurance_int_matches(ccam_add(65536, 0), true, 65536, ""));
+    assert(assurance_int_matches(ccam_add(65536, 1), true, 65537, ""));
+    assert(assurance_int_matches(ccam_add(65536, 2), true, 65538, ""));
+    assert(assurance_int_matches(ccam_add(65536, 3), true, 65539, ""));
+    assert(assurance_int_matches(ccam_add(65536, 65536), true, 131072, ""));
+    assert(assurance_int_matches(ccam_add(65536, 3037000499), true, 3037066035, ""));
+    assert(assurance_int_matches(ccam_add(65536, 3037000500), true, 3037066036, ""));
+    assert(assurance_int_matches(ccam_add(65536, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(65536, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(65536, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic add boundary row 14" {
+    assert(assurance_int_matches(ccam_add(3037000499, CCAM_I64_MIN), true, -9223372033817775309, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, -9223372036854775807), true, -9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, -9223372036854775806), true, -9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, -3037000500), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, -65536), true, 3036934963, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, -3), true, 3037000496, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, -2), true, 3037000497, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, -1), true, 3037000498, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, 0), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, 1), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, 2), true, 3037000501, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, 3), true, 3037000502, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, 65536), true, 3037066035, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, 3037000499), true, 6074000998, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, 3037000500), true, 6074000999, ""));
+    assert(assurance_int_matches(ccam_add(3037000499, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(3037000499, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(3037000499, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic add boundary row 15" {
+    assert(assurance_int_matches(ccam_add(3037000500, CCAM_I64_MIN), true, -9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, -9223372036854775807), true, -9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, -9223372036854775806), true, -9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, -3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, -65536), true, 3036934964, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, -3), true, 3037000497, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, -2), true, 3037000498, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, -1), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, 0), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, 1), true, 3037000501, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, 2), true, 3037000502, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, 3), true, 3037000503, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, 65536), true, 3037066036, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, 3037000499), true, 6074000999, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, 3037000500), true, 6074001000, ""));
+    assert(assurance_int_matches(ccam_add(3037000500, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(3037000500, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(3037000500, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic add boundary row 16" {
+    assert(assurance_int_matches(ccam_add(9223372036854775805, CCAM_I64_MIN), true, -3, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, -9223372036854775807), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, -9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, -3037000500), true, 9223372033817775305, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, -3037000499), true, 9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, -65536), true, 9223372036854710269, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, -3), true, 9223372036854775802, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, -2), true, 9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, -1), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 0), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 1), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 2), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775805, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic add boundary row 17" {
+    assert(assurance_int_matches(ccam_add(9223372036854775806, CCAM_I64_MIN), true, -2, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, -9223372036854775807), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, -3037000500), true, 9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, -3037000499), true, 9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, -65536), true, 9223372036854710270, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, -3), true, 9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, -2), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, -1), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 0), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 1), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(9223372036854775806, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic add boundary row 18" {
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, CCAM_I64_MIN), true, -1, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, -9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, -3037000500), true, 9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, -3037000499), true, 9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, -65536), true, 9223372036854710271, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, -3), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, -2), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, -1), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 0), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 1), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_add(CCAM_I64_MAX, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 0" {
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, -9223372036854775807), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, -9223372036854775806), true, -2, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, -3037000500), true, -9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, -3037000499), true, -9223372033817775309, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, -65536), true, -9223372036854710272, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, -3), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, -2), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, -1), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 0), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 1), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MIN, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 1" {
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, CCAM_I64_MIN), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, -9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, -3037000500), true, -9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, -3037000499), true, -9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, -65536), true, -9223372036854710271, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, -3), true, -9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, -2), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, -1), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 0), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 1), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775807, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 2" {
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, CCAM_I64_MIN), true, 2, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, -9223372036854775807), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, -3037000500), true, -9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, -3037000499), true, -9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, -65536), true, -9223372036854710270, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, -3), true, -9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, -2), true, -9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, -1), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 0), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 1), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 2), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-9223372036854775806, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 3" {
+    assert(assurance_int_matches(ccam_sub(-3037000500, CCAM_I64_MIN), true, 9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, -9223372036854775807), true, 9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, -9223372036854775806), true, 9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, -3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, -65536), true, -3036934964, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, -3), true, -3037000497, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, -2), true, -3037000498, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, -1), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 0), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 1), true, -3037000501, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 2), true, -3037000502, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 3), true, -3037000503, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 65536), true, -3037066036, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 3037000499), true, -6074000999, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 3037000500), true, -6074001000, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-3037000500, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-3037000500, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 4" {
+    assert(assurance_int_matches(ccam_sub(-3037000499, CCAM_I64_MIN), true, 9223372033817775309, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, -9223372036854775807), true, 9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, -9223372036854775806), true, 9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, -3037000500), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, -65536), true, -3036934963, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, -3), true, -3037000496, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, -2), true, -3037000497, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, -1), true, -3037000498, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 0), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 1), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 2), true, -3037000501, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 3), true, -3037000502, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 65536), true, -3037066035, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 3037000499), true, -6074000998, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 3037000500), true, -6074000999, ""));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-3037000499, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-3037000499, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 5" {
+    assert(assurance_int_matches(ccam_sub(-65536, CCAM_I64_MIN), true, 9223372036854710272, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, -9223372036854775807), true, 9223372036854710271, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, -9223372036854775806), true, 9223372036854710270, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, -3037000500), true, 3036934964, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, -3037000499), true, 3036934963, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, -3), true, -65533, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, -2), true, -65534, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, -1), true, -65535, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, 0), true, -65536, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, 1), true, -65537, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, 2), true, -65538, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, 3), true, -65539, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, 65536), true, -131072, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, 3037000499), true, -3037066035, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, 3037000500), true, -3037066036, ""));
+    assert(assurance_int_matches(ccam_sub(-65536, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-65536, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-65536, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 6" {
+    assert(assurance_int_matches(ccam_sub(-3, CCAM_I64_MIN), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(-3, -9223372036854775807), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(-3, -9223372036854775806), true, 9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_sub(-3, -3037000500), true, 3037000497, ""));
+    assert(assurance_int_matches(ccam_sub(-3, -3037000499), true, 3037000496, ""));
+    assert(assurance_int_matches(ccam_sub(-3, -65536), true, 65533, ""));
+    assert(assurance_int_matches(ccam_sub(-3, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(-3, -2), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(-3, -1), true, -2, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 0), true, -3, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 1), true, -4, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 2), true, -5, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 3), true, -6, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 65536), true, -65539, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 3037000499), true, -3037000502, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 3037000500), true, -3037000503, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 9223372036854775805), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_sub(-3, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(-3, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 7" {
+    assert(assurance_int_matches(ccam_sub(-2, CCAM_I64_MIN), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(-2, -9223372036854775807), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(-2, -9223372036854775806), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(-2, -3037000500), true, 3037000498, ""));
+    assert(assurance_int_matches(ccam_sub(-2, -3037000499), true, 3037000497, ""));
+    assert(assurance_int_matches(ccam_sub(-2, -65536), true, 65534, ""));
+    assert(assurance_int_matches(ccam_sub(-2, -3), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(-2, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(-2, -1), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 0), true, -2, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 1), true, -3, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 2), true, -4, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 3), true, -5, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 65536), true, -65538, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 3037000499), true, -3037000501, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 3037000500), true, -3037000502, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 9223372036854775805), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_sub(-2, 9223372036854775806), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_sub(-2, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic sub boundary row 8" {
+    assert(assurance_int_matches(ccam_sub(-1, CCAM_I64_MIN), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_sub(-1, -9223372036854775807), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(-1, -9223372036854775806), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(-1, -3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_sub(-1, -3037000499), true, 3037000498, ""));
+    assert(assurance_int_matches(ccam_sub(-1, -65536), true, 65535, ""));
+    assert(assurance_int_matches(ccam_sub(-1, -3), true, 2, ""));
+    assert(assurance_int_matches(ccam_sub(-1, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(-1, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 0), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 1), true, -2, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 2), true, -3, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 3), true, -4, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 65536), true, -65537, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 3037000499), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 3037000500), true, -3037000501, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 9223372036854775805), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(-1, 9223372036854775806), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_sub(-1, CCAM_I64_MAX), true, CCAM_I64_MIN, ""));
+}
+
+test "systematic sub boundary row 9" {
+    assert(assurance_int_matches(ccam_sub(0, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(0, -9223372036854775807), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_sub(0, -9223372036854775806), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(0, -3037000500), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_sub(0, -3037000499), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_sub(0, -65536), true, 65536, ""));
+    assert(assurance_int_matches(ccam_sub(0, -3), true, 3, ""));
+    assert(assurance_int_matches(ccam_sub(0, -2), true, 2, ""));
+    assert(assurance_int_matches(ccam_sub(0, -1), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(0, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(0, 1), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(0, 2), true, -2, ""));
+    assert(assurance_int_matches(ccam_sub(0, 3), true, -3, ""));
+    assert(assurance_int_matches(ccam_sub(0, 65536), true, -65536, ""));
+    assert(assurance_int_matches(ccam_sub(0, 3037000499), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_sub(0, 3037000500), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_sub(0, 9223372036854775805), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(0, 9223372036854775806), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(0, CCAM_I64_MAX), true, -9223372036854775807, ""));
+}
+
+test "systematic sub boundary row 10" {
+    assert(assurance_int_matches(ccam_sub(1, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(1, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(1, -9223372036854775806), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_sub(1, -3037000500), true, 3037000501, ""));
+    assert(assurance_int_matches(ccam_sub(1, -3037000499), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_sub(1, -65536), true, 65537, ""));
+    assert(assurance_int_matches(ccam_sub(1, -3), true, 4, ""));
+    assert(assurance_int_matches(ccam_sub(1, -2), true, 3, ""));
+    assert(assurance_int_matches(ccam_sub(1, -1), true, 2, ""));
+    assert(assurance_int_matches(ccam_sub(1, 0), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(1, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(1, 2), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(1, 3), true, -2, ""));
+    assert(assurance_int_matches(ccam_sub(1, 65536), true, -65535, ""));
+    assert(assurance_int_matches(ccam_sub(1, 3037000499), true, -3037000498, ""));
+    assert(assurance_int_matches(ccam_sub(1, 3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_sub(1, 9223372036854775805), true, -9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(1, 9223372036854775806), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(1, CCAM_I64_MAX), true, -9223372036854775806, ""));
+}
+
+test "systematic sub boundary row 11" {
+    assert(assurance_int_matches(ccam_sub(2, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(2, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(2, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(2, -3037000500), true, 3037000502, ""));
+    assert(assurance_int_matches(ccam_sub(2, -3037000499), true, 3037000501, ""));
+    assert(assurance_int_matches(ccam_sub(2, -65536), true, 65538, ""));
+    assert(assurance_int_matches(ccam_sub(2, -3), true, 5, ""));
+    assert(assurance_int_matches(ccam_sub(2, -2), true, 4, ""));
+    assert(assurance_int_matches(ccam_sub(2, -1), true, 3, ""));
+    assert(assurance_int_matches(ccam_sub(2, 0), true, 2, ""));
+    assert(assurance_int_matches(ccam_sub(2, 1), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(2, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(2, 3), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(2, 65536), true, -65534, ""));
+    assert(assurance_int_matches(ccam_sub(2, 3037000499), true, -3037000497, ""));
+    assert(assurance_int_matches(ccam_sub(2, 3037000500), true, -3037000498, ""));
+    assert(assurance_int_matches(ccam_sub(2, 9223372036854775805), true, -9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_sub(2, 9223372036854775806), true, -9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(2, CCAM_I64_MAX), true, -9223372036854775805, ""));
+}
+
+test "systematic sub boundary row 12" {
+    assert(assurance_int_matches(ccam_sub(3, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3, -3037000500), true, 3037000503, ""));
+    assert(assurance_int_matches(ccam_sub(3, -3037000499), true, 3037000502, ""));
+    assert(assurance_int_matches(ccam_sub(3, -65536), true, 65539, ""));
+    assert(assurance_int_matches(ccam_sub(3, -3), true, 6, ""));
+    assert(assurance_int_matches(ccam_sub(3, -2), true, 5, ""));
+    assert(assurance_int_matches(ccam_sub(3, -1), true, 4, ""));
+    assert(assurance_int_matches(ccam_sub(3, 0), true, 3, ""));
+    assert(assurance_int_matches(ccam_sub(3, 1), true, 2, ""));
+    assert(assurance_int_matches(ccam_sub(3, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(3, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(3, 65536), true, -65533, ""));
+    assert(assurance_int_matches(ccam_sub(3, 3037000499), true, -3037000496, ""));
+    assert(assurance_int_matches(ccam_sub(3, 3037000500), true, -3037000497, ""));
+    assert(assurance_int_matches(ccam_sub(3, 9223372036854775805), true, -9223372036854775802, ""));
+    assert(assurance_int_matches(ccam_sub(3, 9223372036854775806), true, -9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_sub(3, CCAM_I64_MAX), true, -9223372036854775804, ""));
+}
+
+test "systematic sub boundary row 13" {
+    assert(assurance_int_matches(ccam_sub(65536, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(65536, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(65536, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(65536, -3037000500), true, 3037066036, ""));
+    assert(assurance_int_matches(ccam_sub(65536, -3037000499), true, 3037066035, ""));
+    assert(assurance_int_matches(ccam_sub(65536, -65536), true, 131072, ""));
+    assert(assurance_int_matches(ccam_sub(65536, -3), true, 65539, ""));
+    assert(assurance_int_matches(ccam_sub(65536, -2), true, 65538, ""));
+    assert(assurance_int_matches(ccam_sub(65536, -1), true, 65537, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 0), true, 65536, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 1), true, 65535, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 2), true, 65534, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 3), true, 65533, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 3037000499), true, -3036934963, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 3037000500), true, -3036934964, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 9223372036854775805), true, -9223372036854710269, ""));
+    assert(assurance_int_matches(ccam_sub(65536, 9223372036854775806), true, -9223372036854710270, ""));
+    assert(assurance_int_matches(ccam_sub(65536, CCAM_I64_MAX), true, -9223372036854710271, ""));
+}
+
+test "systematic sub boundary row 14" {
+    assert(assurance_int_matches(ccam_sub(3037000499, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3037000499, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3037000499, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3037000499, -3037000500), true, 6074000999, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, -3037000499), true, 6074000998, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, -65536), true, 3037066035, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, -3), true, 3037000502, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, -2), true, 3037000501, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, -1), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 0), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 1), true, 3037000498, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 2), true, 3037000497, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 3), true, 3037000496, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 65536), true, 3036934963, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 3037000500), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 9223372036854775805), true, -9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, 9223372036854775806), true, -9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_sub(3037000499, CCAM_I64_MAX), true, -9223372033817775308, ""));
+}
+
+test "systematic sub boundary row 15" {
+    assert(assurance_int_matches(ccam_sub(3037000500, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3037000500, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3037000500, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(3037000500, -3037000500), true, 6074001000, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, -3037000499), true, 6074000999, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, -65536), true, 3037066036, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, -3), true, 3037000503, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, -2), true, 3037000502, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, -1), true, 3037000501, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 0), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 1), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 2), true, 3037000498, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 3), true, 3037000497, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 65536), true, 3036934964, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 9223372036854775805), true, -9223372033817775305, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, 9223372036854775806), true, -9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_sub(3037000500, CCAM_I64_MAX), true, -9223372033817775307, ""));
+}
+
+test "systematic sub boundary row 16" {
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, -2), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, -1), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 0), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 1), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 2), true, 9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 3), true, 9223372036854775802, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 65536), true, 9223372036854710269, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 3037000499), true, 9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 3037000500), true, 9223372033817775305, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, 9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775805, CCAM_I64_MAX), true, -2, ""));
+}
+
+test "systematic sub boundary row 17" {
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, -1), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 0), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 1), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 2), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 3), true, 9223372036854775803, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 65536), true, 9223372036854710270, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 3037000499), true, 9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 3037000500), true, 9223372033817775306, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 9223372036854775805), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_sub(9223372036854775806, CCAM_I64_MAX), true, -1, ""));
+}
+
+test "systematic sub boundary row 18" {
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, -1), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 0), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 1), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 2), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 3), true, 9223372036854775804, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 65536), true, 9223372036854710271, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 3037000499), true, 9223372033817775308, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 3037000500), true, 9223372033817775307, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 9223372036854775805), true, 2, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, 9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_sub(CCAM_I64_MAX, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic mul boundary row 0" {
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, -1), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 1), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MIN, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 1" {
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, -1), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 1), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775807, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 2" {
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, -1), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 1), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-9223372036854775806, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 3" {
+    assert(assurance_int_matches(ccam_mul(-3037000500, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000500, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000500, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000500, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000500, -3037000499), true, 9223372033963249500, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, -65536), true, 199032864768000, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, -3), true, 9111001500, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, -2), true, 6074001000, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, -1), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 1), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 2), true, -6074001000, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 3), true, -9111001500, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 65536), true, -199032864768000, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 3037000499), true, -9223372033963249500, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000500, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000500, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 4" {
+    assert(assurance_int_matches(ccam_mul(-3037000499, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000499, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000499, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000499, -3037000500), true, 9223372033963249500, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, -3037000499), true, 9223372030926249001, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, -65536), true, 199032864702464, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, -3), true, 9111001497, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, -2), true, 6074000998, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, -1), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 1), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 2), true, -6074000998, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 3), true, -9111001497, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 65536), true, -199032864702464, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 3037000499), true, -9223372030926249001, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 3037000500), true, -9223372033963249500, ""));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000499, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3037000499, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 5" {
+    assert(assurance_int_matches(ccam_mul(-65536, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-65536, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-65536, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-65536, -3037000500), true, 199032864768000, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, -3037000499), true, 199032864702464, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, -65536), true, 4294967296, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, -3), true, 196608, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, -2), true, 131072, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, -1), true, 65536, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, 1), true, -65536, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, 2), true, -131072, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, 3), true, -196608, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, 65536), true, -4294967296, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, 3037000499), true, -199032864702464, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, 3037000500), true, -199032864768000, ""));
+    assert(assurance_int_matches(ccam_mul(-65536, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-65536, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-65536, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 6" {
+    assert(assurance_int_matches(ccam_mul(-3, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3, -3037000500), true, 9111001500, ""));
+    assert(assurance_int_matches(ccam_mul(-3, -3037000499), true, 9111001497, ""));
+    assert(assurance_int_matches(ccam_mul(-3, -65536), true, 196608, ""));
+    assert(assurance_int_matches(ccam_mul(-3, -3), true, 9, ""));
+    assert(assurance_int_matches(ccam_mul(-3, -2), true, 6, ""));
+    assert(assurance_int_matches(ccam_mul(-3, -1), true, 3, ""));
+    assert(assurance_int_matches(ccam_mul(-3, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(-3, 1), true, -3, ""));
+    assert(assurance_int_matches(ccam_mul(-3, 2), true, -6, ""));
+    assert(assurance_int_matches(ccam_mul(-3, 3), true, -9, ""));
+    assert(assurance_int_matches(ccam_mul(-3, 65536), true, -196608, ""));
+    assert(assurance_int_matches(ccam_mul(-3, 3037000499), true, -9111001497, ""));
+    assert(assurance_int_matches(ccam_mul(-3, 3037000500), true, -9111001500, ""));
+    assert(assurance_int_matches(ccam_mul(-3, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-3, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 7" {
+    assert(assurance_int_matches(ccam_mul(-2, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-2, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-2, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-2, -3037000500), true, 6074001000, ""));
+    assert(assurance_int_matches(ccam_mul(-2, -3037000499), true, 6074000998, ""));
+    assert(assurance_int_matches(ccam_mul(-2, -65536), true, 131072, ""));
+    assert(assurance_int_matches(ccam_mul(-2, -3), true, 6, ""));
+    assert(assurance_int_matches(ccam_mul(-2, -2), true, 4, ""));
+    assert(assurance_int_matches(ccam_mul(-2, -1), true, 2, ""));
+    assert(assurance_int_matches(ccam_mul(-2, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(-2, 1), true, -2, ""));
+    assert(assurance_int_matches(ccam_mul(-2, 2), true, -4, ""));
+    assert(assurance_int_matches(ccam_mul(-2, 3), true, -6, ""));
+    assert(assurance_int_matches(ccam_mul(-2, 65536), true, -131072, ""));
+    assert(assurance_int_matches(ccam_mul(-2, 3037000499), true, -6074000998, ""));
+    assert(assurance_int_matches(ccam_mul(-2, 3037000500), true, -6074001000, ""));
+    assert(assurance_int_matches(ccam_mul(-2, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-2, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-2, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 8" {
+    assert(assurance_int_matches(ccam_mul(-1, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(-1, -9223372036854775807), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_mul(-1, -9223372036854775806), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_mul(-1, -3037000500), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_mul(-1, -3037000499), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_mul(-1, -65536), true, 65536, ""));
+    assert(assurance_int_matches(ccam_mul(-1, -3), true, 3, ""));
+    assert(assurance_int_matches(ccam_mul(-1, -2), true, 2, ""));
+    assert(assurance_int_matches(ccam_mul(-1, -1), true, 1, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 1), true, -1, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 2), true, -2, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 3), true, -3, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 65536), true, -65536, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 3037000499), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 3037000500), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 9223372036854775805), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_mul(-1, 9223372036854775806), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_mul(-1, CCAM_I64_MAX), true, -9223372036854775807, ""));
+}
+
+test "systematic mul boundary row 9" {
+    assert(assurance_int_matches(ccam_mul(0, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(0, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic mul boundary row 10" {
+    assert(assurance_int_matches(ccam_mul(1, CCAM_I64_MIN), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_mul(1, -9223372036854775807), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_mul(1, -9223372036854775806), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_mul(1, -3037000500), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_mul(1, -3037000499), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_mul(1, -65536), true, -65536, ""));
+    assert(assurance_int_matches(ccam_mul(1, -3), true, -3, ""));
+    assert(assurance_int_matches(ccam_mul(1, -2), true, -2, ""));
+    assert(assurance_int_matches(ccam_mul(1, -1), true, -1, ""));
+    assert(assurance_int_matches(ccam_mul(1, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(1, 1), true, 1, ""));
+    assert(assurance_int_matches(ccam_mul(1, 2), true, 2, ""));
+    assert(assurance_int_matches(ccam_mul(1, 3), true, 3, ""));
+    assert(assurance_int_matches(ccam_mul(1, 65536), true, 65536, ""));
+    assert(assurance_int_matches(ccam_mul(1, 3037000499), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_mul(1, 3037000500), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_mul(1, 9223372036854775805), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_mul(1, 9223372036854775806), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_mul(1, CCAM_I64_MAX), true, CCAM_I64_MAX, ""));
+}
+
+test "systematic mul boundary row 11" {
+    assert(assurance_int_matches(ccam_mul(2, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(2, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(2, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(2, -3037000500), true, -6074001000, ""));
+    assert(assurance_int_matches(ccam_mul(2, -3037000499), true, -6074000998, ""));
+    assert(assurance_int_matches(ccam_mul(2, -65536), true, -131072, ""));
+    assert(assurance_int_matches(ccam_mul(2, -3), true, -6, ""));
+    assert(assurance_int_matches(ccam_mul(2, -2), true, -4, ""));
+    assert(assurance_int_matches(ccam_mul(2, -1), true, -2, ""));
+    assert(assurance_int_matches(ccam_mul(2, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(2, 1), true, 2, ""));
+    assert(assurance_int_matches(ccam_mul(2, 2), true, 4, ""));
+    assert(assurance_int_matches(ccam_mul(2, 3), true, 6, ""));
+    assert(assurance_int_matches(ccam_mul(2, 65536), true, 131072, ""));
+    assert(assurance_int_matches(ccam_mul(2, 3037000499), true, 6074000998, ""));
+    assert(assurance_int_matches(ccam_mul(2, 3037000500), true, 6074001000, ""));
+    assert(assurance_int_matches(ccam_mul(2, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(2, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(2, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 12" {
+    assert(assurance_int_matches(ccam_mul(3, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3, -3037000500), true, -9111001500, ""));
+    assert(assurance_int_matches(ccam_mul(3, -3037000499), true, -9111001497, ""));
+    assert(assurance_int_matches(ccam_mul(3, -65536), true, -196608, ""));
+    assert(assurance_int_matches(ccam_mul(3, -3), true, -9, ""));
+    assert(assurance_int_matches(ccam_mul(3, -2), true, -6, ""));
+    assert(assurance_int_matches(ccam_mul(3, -1), true, -3, ""));
+    assert(assurance_int_matches(ccam_mul(3, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(3, 1), true, 3, ""));
+    assert(assurance_int_matches(ccam_mul(3, 2), true, 6, ""));
+    assert(assurance_int_matches(ccam_mul(3, 3), true, 9, ""));
+    assert(assurance_int_matches(ccam_mul(3, 65536), true, 196608, ""));
+    assert(assurance_int_matches(ccam_mul(3, 3037000499), true, 9111001497, ""));
+    assert(assurance_int_matches(ccam_mul(3, 3037000500), true, 9111001500, ""));
+    assert(assurance_int_matches(ccam_mul(3, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 13" {
+    assert(assurance_int_matches(ccam_mul(65536, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(65536, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(65536, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(65536, -3037000500), true, -199032864768000, ""));
+    assert(assurance_int_matches(ccam_mul(65536, -3037000499), true, -199032864702464, ""));
+    assert(assurance_int_matches(ccam_mul(65536, -65536), true, -4294967296, ""));
+    assert(assurance_int_matches(ccam_mul(65536, -3), true, -196608, ""));
+    assert(assurance_int_matches(ccam_mul(65536, -2), true, -131072, ""));
+    assert(assurance_int_matches(ccam_mul(65536, -1), true, -65536, ""));
+    assert(assurance_int_matches(ccam_mul(65536, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(65536, 1), true, 65536, ""));
+    assert(assurance_int_matches(ccam_mul(65536, 2), true, 131072, ""));
+    assert(assurance_int_matches(ccam_mul(65536, 3), true, 196608, ""));
+    assert(assurance_int_matches(ccam_mul(65536, 65536), true, 4294967296, ""));
+    assert(assurance_int_matches(ccam_mul(65536, 3037000499), true, 199032864702464, ""));
+    assert(assurance_int_matches(ccam_mul(65536, 3037000500), true, 199032864768000, ""));
+    assert(assurance_int_matches(ccam_mul(65536, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(65536, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(65536, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 14" {
+    assert(assurance_int_matches(ccam_mul(3037000499, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000499, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000499, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000499, -3037000500), true, -9223372033963249500, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, -3037000499), true, -9223372030926249001, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, -65536), true, -199032864702464, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, -3), true, -9111001497, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, -2), true, -6074000998, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, -1), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, 1), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, 2), true, 6074000998, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, 3), true, 9111001497, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, 65536), true, 199032864702464, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, 3037000499), true, 9223372030926249001, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, 3037000500), true, 9223372033963249500, ""));
+    assert(assurance_int_matches(ccam_mul(3037000499, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000499, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000499, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 15" {
+    assert(assurance_int_matches(ccam_mul(3037000500, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000500, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000500, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000500, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000500, -3037000499), true, -9223372033963249500, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, -65536), true, -199032864768000, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, -3), true, -9111001500, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, -2), true, -6074001000, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, -1), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, 1), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, 2), true, 6074001000, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, 3), true, 9111001500, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, 65536), true, 199032864768000, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, 3037000499), true, 9223372033963249500, ""));
+    assert(assurance_int_matches(ccam_mul(3037000500, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000500, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000500, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(3037000500, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 16" {
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, -1), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 1), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775805, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 17" {
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, -1), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 1), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(9223372036854775806, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic mul boundary row 18" {
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, CCAM_I64_MIN), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, -9223372036854775807), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, -9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, -3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, -3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, -65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, -3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, -2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, -1), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 0), true, 0, ""));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 1), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 2), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 3), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 65536), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 3037000499), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 3037000500), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 9223372036854775805), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, 9223372036854775806), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_mul(CCAM_I64_MAX, CCAM_I64_MAX), false, 0, "integer_overflow"));
+}
+
+test "systematic div boundary row 0" {
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, CCAM_I64_MIN), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, -9223372036854775807), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, -9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, -3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, -3037000499), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, -65536), true, 140737488355328, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, -3), true, 3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, -2), true, 4611686018427387904, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, -1), false, 0, "integer_overflow"));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 1), true, CCAM_I64_MIN, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 2), true, -4611686018427387904, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 3), true, -3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 65536), true, -140737488355328, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 3037000499), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 9223372036854775805), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, 9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MIN, CCAM_I64_MAX), true, -1, ""));
+}
+
+test "systematic div boundary row 1" {
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, -9223372036854775807), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, -9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, -3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, -3037000499), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, -65536), true, 140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, -3), true, 3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, -2), true, 4611686018427387903, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, -1), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 1), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 2), true, -4611686018427387903, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 3), true, -3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 65536), true, -140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 3037000499), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 9223372036854775805), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, 9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775807, CCAM_I64_MAX), true, -1, ""));
+}
+
+test "systematic div boundary row 2" {
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, -9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, -3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, -3037000499), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, -65536), true, 140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, -3), true, 3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, -2), true, 4611686018427387903, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, -1), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 1), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 2), true, -4611686018427387903, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 3), true, -3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 65536), true, -140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 3037000499), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 9223372036854775805), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, 9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-9223372036854775806, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 3" {
+    assert(assurance_int_matches(ccam_div(-3037000500, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, -3037000500), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, -3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, -65536), true, 46340, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, -3), true, 1012333500, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, -2), true, 1518500250, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, -1), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(-3037000500, 1), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, 2), true, -1518500250, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, 3), true, -1012333500, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, 65536), true, -46340, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, 3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, 3037000500), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000500, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 4" {
+    assert(assurance_int_matches(ccam_div(-3037000499, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, -3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, -65536), true, 46340, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, -3), true, 1012333499, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, -2), true, 1518500249, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, -1), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(-3037000499, 1), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, 2), true, -1518500249, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, 3), true, -1012333499, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, 65536), true, -46340, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, 3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3037000499, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 5" {
+    assert(assurance_int_matches(ccam_div(-65536, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, -65536), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-65536, -3), true, 21845, ""));
+    assert(assurance_int_matches(ccam_div(-65536, -2), true, 32768, ""));
+    assert(assurance_int_matches(ccam_div(-65536, -1), true, 65536, ""));
+    assert(assurance_int_matches(ccam_div(-65536, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(-65536, 1), true, -65536, ""));
+    assert(assurance_int_matches(ccam_div(-65536, 2), true, -32768, ""));
+    assert(assurance_int_matches(ccam_div(-65536, 3), true, -21845, ""));
+    assert(assurance_int_matches(ccam_div(-65536, 65536), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-65536, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-65536, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 6" {
+    assert(assurance_int_matches(ccam_div(-3, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, -3), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-3, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-3, -1), true, 3, ""));
+    assert(assurance_int_matches(ccam_div(-3, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(-3, 1), true, -3, ""));
+    assert(assurance_int_matches(ccam_div(-3, 2), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-3, 3), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-3, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-3, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 7" {
+    assert(assurance_int_matches(ccam_div(-2, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-2, -1), true, 2, ""));
+    assert(assurance_int_matches(ccam_div(-2, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(-2, 1), true, -2, ""));
+    assert(assurance_int_matches(ccam_div(-2, 2), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-2, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-2, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 8" {
+    assert(assurance_int_matches(ccam_div(-1, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, -1), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(-1, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(-1, 1), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(-1, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(-1, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 9" {
+    assert(assurance_int_matches(ccam_div(0, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(0, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(0, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 10" {
+    assert(assurance_int_matches(ccam_div(1, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, -1), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(1, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(1, 1), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(1, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(1, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 11" {
+    assert(assurance_int_matches(ccam_div(2, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, -2), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(2, -1), true, -2, ""));
+    assert(assurance_int_matches(ccam_div(2, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(2, 1), true, 2, ""));
+    assert(assurance_int_matches(ccam_div(2, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(2, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(2, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 12" {
+    assert(assurance_int_matches(ccam_div(3, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, -3), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(3, -2), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(3, -1), true, -3, ""));
+    assert(assurance_int_matches(ccam_div(3, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(3, 1), true, 3, ""));
+    assert(assurance_int_matches(ccam_div(3, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(3, 3), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(3, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 13" {
+    assert(assurance_int_matches(ccam_div(65536, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, -65536), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(65536, -3), true, -21845, ""));
+    assert(assurance_int_matches(ccam_div(65536, -2), true, -32768, ""));
+    assert(assurance_int_matches(ccam_div(65536, -1), true, -65536, ""));
+    assert(assurance_int_matches(ccam_div(65536, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(65536, 1), true, 65536, ""));
+    assert(assurance_int_matches(ccam_div(65536, 2), true, 32768, ""));
+    assert(assurance_int_matches(ccam_div(65536, 3), true, 21845, ""));
+    assert(assurance_int_matches(ccam_div(65536, 65536), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(65536, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(65536, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 14" {
+    assert(assurance_int_matches(ccam_div(3037000499, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, -3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, -65536), true, -46340, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, -3), true, -1012333499, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, -2), true, -1518500249, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, -1), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(3037000499, 1), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, 2), true, 1518500249, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, 3), true, 1012333499, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, 65536), true, 46340, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, 3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000499, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 15" {
+    assert(assurance_int_matches(ccam_div(3037000500, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, -3037000500), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, -3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, -65536), true, -46340, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, -3), true, -1012333500, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, -2), true, -1518500250, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, -1), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(3037000500, 1), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, 2), true, 1518500250, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, 3), true, 1012333500, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, 65536), true, 46340, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, 3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, 3037000500), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(3037000500, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 16" {
+    assert(assurance_int_matches(ccam_div(9223372036854775805, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, -3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, -3037000499), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, -65536), true, -140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, -3), true, -3074457345618258601, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, -2), true, -4611686018427387902, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, -1), true, -9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 1), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 2), true, 4611686018427387902, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 3), true, 3074457345618258601, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 65536), true, 140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 3037000499), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 9223372036854775805), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775805, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 17" {
+    assert(assurance_int_matches(ccam_div(9223372036854775806, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, -9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, -3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, -3037000499), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, -65536), true, -140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, -3), true, -3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, -2), true, -4611686018427387903, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, -1), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 1), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 2), true, 4611686018427387903, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 3), true, 3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 65536), true, 140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 3037000499), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 9223372036854775805), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, 9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(9223372036854775806, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic div boundary row 18" {
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, -9223372036854775807), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, -9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, -3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, -3037000499), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, -65536), true, -140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, -3), true, -3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, -2), true, -4611686018427387903, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, -1), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 1), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 2), true, 4611686018427387903, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 3), true, 3074457345618258602, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 65536), true, 140737488355327, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 3037000499), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 9223372036854775805), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, 9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_div(CCAM_I64_MAX, CCAM_I64_MAX), true, 1, ""));
+}
+
+test "systematic rem boundary row 0" {
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, -9223372036854775807), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, -9223372036854775806), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, -3037000500), true, -2891526308, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, -3037000499), true, -2891526308, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, -3), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 3), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 3037000499), true, -2891526308, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 3037000500), true, -2891526308, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 9223372036854775805), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, 9223372036854775806), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MIN, CCAM_I64_MAX), true, -1, ""));
+}
+
+test "systematic rem boundary row 1" {
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, CCAM_I64_MIN), true, -9223372036854775807, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, -9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, -3037000500), true, -2891526307, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, -3037000499), true, -2891526307, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, -65536), true, -65535, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, -3), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, -2), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 2), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 3), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 65536), true, -65535, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 3037000499), true, -2891526307, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 3037000500), true, -2891526307, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 9223372036854775805), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, 9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775807, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic rem boundary row 2" {
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, CCAM_I64_MIN), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, -9223372036854775807), true, -9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, -3037000500), true, -2891526306, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, -3037000499), true, -2891526306, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, -65536), true, -65534, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 65536), true, -65534, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 3037000499), true, -2891526306, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 3037000500), true, -2891526306, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 9223372036854775805), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-9223372036854775806, CCAM_I64_MAX), true, -9223372036854775806, ""));
+}
+
+test "systematic rem boundary row 3" {
+    assert(assurance_int_matches(ccam_rem(-3037000500, CCAM_I64_MIN), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, -9223372036854775807), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, -9223372036854775806), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, -3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, -65536), true, -62260, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 65536), true, -62260, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 9223372036854775805), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, 9223372036854775806), true, -3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000500, CCAM_I64_MAX), true, -3037000500, ""));
+}
+
+test "systematic rem boundary row 4" {
+    assert(assurance_int_matches(ccam_rem(-3037000499, CCAM_I64_MIN), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, -9223372036854775807), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, -9223372036854775806), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, -3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, -65536), true, -62259, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, -3), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, -2), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 2), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 3), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 65536), true, -62259, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 3037000500), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 9223372036854775805), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, 9223372036854775806), true, -3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(-3037000499, CCAM_I64_MAX), true, -3037000499, ""));
+}
+
+test "systematic rem boundary row 5" {
+    assert(assurance_int_matches(ccam_rem(-65536, CCAM_I64_MIN), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, -9223372036854775807), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, -9223372036854775806), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, -3037000500), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, -3037000499), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, -3), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(-65536, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, 3), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, 3037000499), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, 3037000500), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, 9223372036854775805), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, 9223372036854775806), true, -65536, ""));
+    assert(assurance_int_matches(ccam_rem(-65536, CCAM_I64_MAX), true, -65536, ""));
+}
+
+test "systematic rem boundary row 6" {
+    assert(assurance_int_matches(ccam_rem(-3, CCAM_I64_MIN), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, -9223372036854775807), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, -9223372036854775806), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, -3037000500), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, -3037000499), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, -65536), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3, -2), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-3, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(-3, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3, 2), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-3, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-3, 65536), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, 3037000499), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, 3037000500), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, 9223372036854775805), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, 9223372036854775806), true, -3, ""));
+    assert(assurance_int_matches(ccam_rem(-3, CCAM_I64_MAX), true, -3, ""));
+}
+
+test "systematic rem boundary row 7" {
+    assert(assurance_int_matches(ccam_rem(-2, CCAM_I64_MIN), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, -9223372036854775807), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, -9223372036854775806), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, -3037000500), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, -3037000499), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, -65536), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, -3), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-2, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-2, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(-2, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-2, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-2, 3), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, 65536), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, 3037000499), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, 3037000500), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, 9223372036854775805), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, 9223372036854775806), true, -2, ""));
+    assert(assurance_int_matches(ccam_rem(-2, CCAM_I64_MAX), true, -2, ""));
+}
+
+test "systematic rem boundary row 8" {
+    assert(assurance_int_matches(ccam_rem(-1, CCAM_I64_MIN), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, -9223372036854775807), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, -9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, -3037000500), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, -3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, -65536), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, -3), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, -2), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-1, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(-1, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(-1, 2), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, 3), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, 65536), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, 3037000499), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, 3037000500), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, 9223372036854775805), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, 9223372036854775806), true, -1, ""));
+    assert(assurance_int_matches(ccam_rem(-1, CCAM_I64_MAX), true, -1, ""));
+}
+
+test "systematic rem boundary row 9" {
+    assert(assurance_int_matches(ccam_rem(0, CCAM_I64_MIN), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(0, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(0, CCAM_I64_MAX), true, 0, ""));
+}
+
+test "systematic rem boundary row 10" {
+    assert(assurance_int_matches(ccam_rem(1, CCAM_I64_MIN), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, -9223372036854775807), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, -9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, -3037000500), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, -3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, -65536), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, -3), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(1, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(1, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(1, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, 3), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, 65536), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, 3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, 3037000500), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, 9223372036854775805), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, 9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(1, CCAM_I64_MAX), true, 1, ""));
+}
+
+test "systematic rem boundary row 11" {
+    assert(assurance_int_matches(ccam_rem(2, CCAM_I64_MIN), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, -9223372036854775807), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, -9223372036854775806), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, -3037000500), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, -3037000499), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, -65536), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, -3), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(2, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(2, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(2, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(2, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(2, 3), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, 65536), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, 3037000499), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, 3037000500), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, 9223372036854775805), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, 9223372036854775806), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(2, CCAM_I64_MAX), true, 2, ""));
+}
+
+test "systematic rem boundary row 12" {
+    assert(assurance_int_matches(ccam_rem(3, CCAM_I64_MIN), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, -9223372036854775807), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, -9223372036854775806), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, -3037000500), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, -3037000499), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, -65536), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(3, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(3, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(3, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3, 65536), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, 3037000499), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, 3037000500), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, 9223372036854775805), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, 9223372036854775806), true, 3, ""));
+    assert(assurance_int_matches(ccam_rem(3, CCAM_I64_MAX), true, 3, ""));
+}
+
+test "systematic rem boundary row 13" {
+    assert(assurance_int_matches(ccam_rem(65536, CCAM_I64_MIN), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, -9223372036854775807), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, -9223372036854775806), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, -3037000500), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, -3037000499), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, -65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(65536, -3), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(65536, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(65536, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(65536, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(65536, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(65536, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(65536, 3), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(65536, 65536), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(65536, 3037000499), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, 3037000500), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, 9223372036854775805), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, 9223372036854775806), true, 65536, ""));
+    assert(assurance_int_matches(ccam_rem(65536, CCAM_I64_MAX), true, 65536, ""));
+}
+
+test "systematic rem boundary row 14" {
+    assert(assurance_int_matches(ccam_rem(3037000499, CCAM_I64_MIN), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, -9223372036854775807), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, -9223372036854775806), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, -3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, -3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, -65536), true, 62259, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, -3), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(3037000499, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, 3), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, 65536), true, 62259, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, 3037000499), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, 3037000500), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, 9223372036854775805), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, 9223372036854775806), true, 3037000499, ""));
+    assert(assurance_int_matches(ccam_rem(3037000499, CCAM_I64_MAX), true, 3037000499, ""));
+}
+
+test "systematic rem boundary row 15" {
+    assert(assurance_int_matches(ccam_rem(3037000500, CCAM_I64_MIN), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, -9223372036854775807), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, -9223372036854775806), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, -3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, -3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, -65536), true, 62260, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(3037000500, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, 65536), true, 62260, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, 3037000499), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, 3037000500), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, 9223372036854775805), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, 9223372036854775806), true, 3037000500, ""));
+    assert(assurance_int_matches(ccam_rem(3037000500, CCAM_I64_MAX), true, 3037000500, ""));
+}
+
+test "systematic rem boundary row 16" {
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, CCAM_I64_MIN), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, -9223372036854775807), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, -9223372036854775806), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, -3037000500), true, 2891526305, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, -3037000499), true, 2891526305, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, -65536), true, 65533, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, -3), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 3), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 65536), true, 65533, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 3037000499), true, 2891526305, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 3037000500), true, 2891526305, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 9223372036854775805), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, 9223372036854775806), true, 9223372036854775805, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775805, CCAM_I64_MAX), true, 9223372036854775805, ""));
+}
+
+test "systematic rem boundary row 17" {
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, CCAM_I64_MIN), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, -9223372036854775807), true, 9223372036854775806, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, -9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, -3037000500), true, 2891526306, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, -3037000499), true, 2891526306, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, -65536), true, 65534, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, -3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, -2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 2), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 3), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 65536), true, 65534, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 3037000499), true, 2891526306, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 3037000500), true, 2891526306, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 9223372036854775805), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, 9223372036854775806), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(9223372036854775806, CCAM_I64_MAX), true, 9223372036854775806, ""));
+}
+
+test "systematic rem boundary row 18" {
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, CCAM_I64_MIN), true, CCAM_I64_MAX, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, -9223372036854775807), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, -9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, -3037000500), true, 2891526307, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, -3037000499), true, 2891526307, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, -65536), true, 65535, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, -3), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, -2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, -1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 0), false, 0, "division_by_zero"));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 1), true, 0, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 2), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 3), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 65536), true, 65535, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 3037000499), true, 2891526307, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 3037000500), true, 2891526307, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 9223372036854775805), true, 2, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, 9223372036854775806), true, 1, ""));
+    assert(assurance_int_matches(ccam_rem(CCAM_I64_MAX, CCAM_I64_MAX), true, 0, ""));
+}
