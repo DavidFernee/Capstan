@@ -1,0 +1,111 @@
+import "ccam_core.cap";
+
+bool assurance_admission_result(List<int> types, List<CCAMInstruction> code,
+    int return_type, int steps, int output_budget, string expected) {
+    CCAMMachineCreateResult result = ccam_machine_create_validated_with_output_budget(
+        types, code, steps, return_type, output_budget);
+    if (expected == "") {
+        return result.ok && !result.state.halted && result.state.steps == 0;
+    }
+    return !result.ok && result.error == expected && result.state.halted &&
+        result.state.steps == 0 && result.state.instructions.len() == 0 &&
+        result.state.registers.len() == 0 && result.state.output_bytes.len() == 0;
+}
+
+test "malformed trap reason byte grammar at every byte value and position" {
+    for (int byte = 0; byte <= 255; byte += 1) {
+        for (int position = 0; position < 3; position += 1) {
+            string reason = char_str(byte);
+            if (position == 1) { reason = "a" + reason; }
+            if (position == 2) { reason = "a" + reason + "z"; }
+            bool lowercase = byte >= 97 && byte <= 122;
+            bool expected = lowercase;
+            if (position != 0) {
+                expected = lowercase || (byte >= 48 && byte <= 57) || byte == 95;
+            }
+            for (int unreachable = 0; unreachable <= 1; unreachable += 1) {
+                List<int> types = new List<int>();
+                List<CCAMInstruction> code = new List<CCAMInstruction>();
+                if (unreachable == 1) { code.push(ccam_instruction(CCAM_OP_RET_VOID)); }
+                CCAMInstruction trap = ccam_instruction(CCAM_OP_TRAP);
+                trap.reason = reason; code.push(trap);
+                string error = "invalid_trap_reason";
+                if (expected) { error = ""; }
+                assert(assurance_admission_result(types, code, CCAM_RETURN_VOID, 3, 0, error));
+            }
+        }
+    }
+}
+
+test "trap reason length boundary and invalid output byte admission" {
+    string reason = "";
+    for (int length = 0; length <= 66; length += 1) {
+        List<int> types = new List<int>();
+        List<CCAMInstruction> code = new List<CCAMInstruction>();
+        CCAMInstruction trap = ccam_instruction(CCAM_OP_TRAP);
+        trap.reason = reason; code.push(trap);
+        string error = "";
+        if (length == 0 || length > 64) { error = "invalid_trap_reason"; }
+        assert(assurance_admission_result(types, code, CCAM_RETURN_VOID, 3, 0, error));
+        reason += "a";
+    }
+    for (int byte = -2; byte <= 257; byte += 1) {
+        for (int position = 0; position < 3; position += 1) {
+            for (int unreachable = 0; unreachable <= 1; unreachable += 1) {
+                List<int> types = new List<int>();
+                List<CCAMInstruction> code = new List<CCAMInstruction>();
+                if (unreachable == 1) { code.push(ccam_instruction(CCAM_OP_RET_VOID)); }
+                CCAMInstruction output = ccam_instruction(CCAM_OP_EMIT_BYTES);
+                for (int i = 0; i < 3; i += 1) {
+                    int value = 65;
+                    if (i == position) { value = byte; }
+                    output.byte_data.push(value);
+                }
+                code.push(output); code.push(ccam_instruction(CCAM_OP_RET_VOID));
+                string error = "";
+                if (byte < 0 || byte > 255) { error = "invalid_output_byte"; }
+                assert(assurance_admission_result(types, code, CCAM_RETURN_VOID, 4, 3, error));
+            }
+        }
+    }
+}
+
+test "branch admission and failure precedence across malformed reachable and unreachable instructions" {
+    for (int cond = -1; cond <= 2; cond += 1) {
+        for (int yes = -1; yes <= 3; yes += 1) {
+            for (int no = -1; no <= 3; no += 1) {
+                for (int unreachable = 0; unreachable <= 1; unreachable += 1) {
+                    List<int> types = new List<int>(); types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_BOOL);
+                    List<CCAMInstruction> code = new List<CCAMInstruction>();
+                    if (unreachable == 1) { code.push(ccam_instruction(CCAM_OP_RET_VOID)); }
+                    CCAMInstruction branch = ccam_instruction(CCAM_OP_BRANCH);
+                    branch.lhs = cond; branch.if_true = yes; branch.if_false = no;
+                    code.push(branch); code.push(ccam_instruction(CCAM_OP_RET_VOID));
+                    string error = "";
+                    if (cond != 1) { error = "invalid_or_mistyped_branch_condition"; }
+                    else if (yes < 0 || yes >= code.len() || no < 0 || no >= code.len()) {
+                        error = "invalid_branch_target";
+                    }
+                    assert(assurance_admission_result(types, code, CCAM_RETURN_VOID, 4, 0, error));
+                }
+            }
+        }
+    }
+}
+
+test "constructor rejects malformed budgets before examining invalid instruction" {
+    List<int> types = new List<int>();
+    List<CCAMInstruction> code = new List<CCAMInstruction>(); code.push(ccam_instruction(0));
+    List<int> steps = new List<int>(); steps.push(-1); steps.push(0); steps.push(1);
+    List<int> budgets = new List<int>();
+    budgets.push(-1); budgets.push(0); budgets.push(1);
+    budgets.push(CCAM_MAX_OUTPUT_BYTES); budgets.push(CCAM_MAX_OUTPUT_BYTES + 1);
+    for (int i = 0; i < steps.len(); i += 1) {
+        for (int j = 0; j < budgets.len(); j += 1) {
+            string error = "invalid_instruction";
+            if (budgets[j] < 0 || budgets[j] > CCAM_MAX_OUTPUT_BYTES) { error = "invalid_output_limit"; }
+            else if (steps[i] < 0) { error = "invalid_step_limit"; }
+            assert(assurance_admission_result(types, code, CCAM_RETURN_VOID, steps[i], budgets[j], error));
+        }
+    }
+}
