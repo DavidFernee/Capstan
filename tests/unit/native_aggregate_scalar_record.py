@@ -13,6 +13,8 @@ VALUE = 0xfedcba9876543210
 
 def image(leaves, case):
     code = bytearray(b'\x48\x81\xec\x80\x00\x00\x00\x49\x89\xe7')
+    if case[0] == 'profile-full':
+        code = bytearray(b'\x48\x81\xec\x80\x00\x10\x00\x49\x89\xe7')
     failures, calls = [], []
 
     def mov(reg, value):
@@ -89,6 +91,27 @@ def image(leaves, case):
         allocate(1, 0)
         result(False, 0, 80, 80)
         memory(80, SENTINEL)
+    elif case[0] == 'profile-full':
+        _, count = case
+        mov(13, 0)
+        mov(14, 1048576)
+        mov(11, count)
+        start = len(code)
+        allocate(7, 0)
+        check(2, 0)
+        code.extend(b'\x49\xff\xcb\x0f\x85')
+        code.extend(struct.pack('<i', start - len(code) - 4))
+        if count == 65534:
+            allocate(9, 1)
+            result(True, 1048544, 1048576, 1048576)
+            access('store', 1048544, 9, 1, 0)
+            result(True, 0, 1048576, 1048576)
+            access('load', 1048544, 9, 1, 0)
+            result(True, VALUE, 1048576, 1048576)
+        else:
+            check(13, 1048576)
+        allocate(7, 0)
+        result(False, 0, 1048576, 1048576)
     elif case[0] == 'forged-interior':
         _, name = case
         mov(13, 0)
@@ -160,7 +183,7 @@ def main():
     cases += [('reject-alloc', *c) for c in [(0, 1, 0, 64), (4097, 1, 0, 64),
               (-1, 1, 0, 64), (1, -1, 0, 64), (1, 4097, 0, 64),
               (1, 4, 0, 64), (1, 0, 1, 64), (1, 0, 72, 64),
-              (1, 0, -8, 64), (1, 0, 0, -1), (1, 0, 0, 67108865)]]
+              (1, 0, -8, 64), (1, 0, 0, -1), (1, 0, 0, 67108865), (1, 0, 0, 1048577)]]
     for name in ('load', 'store'):
         cases += [('reject-access', name, *c) for c in [(0, 8, 2, 0, 1),
                   (0, 7, 1, 0, 1), (0, 7, 2, 2, 1), (0, 7, 2, -1, 1),
@@ -169,7 +192,8 @@ def main():
     cases.append(('reject-access', 'load', 0, 7, 2, 0, 0))
     if guarded:
         cases += [('forged-interior', 'load'), ('forged-interior', 'store'),
-                  ('later-record', False), ('later-record', True)]
+                  ('later-record', False), ('later-record', True),
+                  ('profile-full', 65534), ('profile-full', 65536)]
     with tempfile.TemporaryDirectory() as directory:
         executable = Path(directory) / 'record'
         for case in cases:
