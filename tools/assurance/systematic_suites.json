@@ -154,5 +154,23 @@
       "test",
       "verification/bosun_assurance_storage_tests.cap"
     ]
+  ],
+  "presentation": [
+    [
+      "bin/capstan",
+      "test",
+      "lib/shroud/geom.cap",
+      "tests/shroud/assurance_geometry.cap"
+    ],
+    [
+      "bin/capstan",
+      "test",
+      "lib/keel/predicates.cap",
+      "tests/keel/assurance_geometry.cap"
+    ],
+    [
+      "python3",
+      "tests/unit/anchor_assurance_smoke.py"
+    ]
   ]
 }
