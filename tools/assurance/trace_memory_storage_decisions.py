@@ -8,6 +8,9 @@ import hashlib
 from pathlib import Path
 import subprocess
 import tempfile
+import json
+
+from systematic_runner import capstan_summary_valid
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -72,6 +75,11 @@ bool assurance_trace_atom(List<int> trace, int index, bool value) {
     if (value) { trace[index] = 1; } else { trace[index] = 0; }
     return value;
 }
+void assurance_trace_report(List<int> trace) {
+    List<string> values = new List<string>();
+    for (int i = 0; i < trace.len(); i += 1) { values.push(int_to_str(trace[i])); }
+    println("ASSURANCE_TRACE " + join(values, ""));
+}
 List<int> assurance_trace_empty(int count) {
     List<int> trace = new List<int>();
     for (int i = 0; i < count; i += 1) { trace.push(2); }
@@ -101,6 +109,7 @@ test "memory instrumentation preserves access disposition and validation precede
                         string baseline = ccam_mem_check(manager, view, caller, index);
                         string observed = assurance_traced_memory(manager, view, caller, index, trace);
                         assert(baseline == observed);
+                        assurance_trace_report(trace);
                         assert(trace[0] == 0);
                         if (fault == 1) {
                             assert(trace[1] == 1);
@@ -150,6 +159,7 @@ test "WAL instrumentation preserves ordering decisions and transition state" {
                             assert(actual.accepted == baseline.accepted && actual.error == baseline.error);
                             assert(assurance_storage_same(actual.state, baseline.state));
                             assert(assurance_storage_same(state, original));
+                            assurance_trace_report(trace);
                             if (mode == 0 && argument < durable) {
                                 assert(trace[0] == 1 && trace[1] == 2);
                             }
@@ -169,14 +179,30 @@ test "WAL instrumentation preserves ordering decisions and transition state" {
 """
 
 
+def validate_trace_output(output, width, expected_rows):
+    rows = []
+    for line in output.splitlines():
+        if line.startswith(b"ASSURANCE_TRACE "):
+            values = line[len(b"ASSURANCE_TRACE "):]
+            if len(values) != width or any(value not in b"012" for value in values):
+                raise ValueError("invalid condition observation")
+            rows.append(values)
+    if len(rows) != expected_rows or not capstan_summary_valid(output):
+        raise ValueError("missing or incomplete execution evidence")
+    return [{"atom": i, "false": sum(row[i] == 48 for row in rows),
+             "true": sum(row[i] == 49 for row in rows),
+             "not_evaluated": sum(row[i] == 50 for row in rows)}
+            for i in range(width)]
+
+
 def main():
     profiles = [
         ("ccam_memory_store_model.cap", "string ccam_mem_check(", "\n)",
-         "assurance_traced_memory", MEMORY, 20, MEM_HARNESS),
+         "assurance_traced_memory", MEMORY, 20, 2340, MEM_HARNESS),
         ("bosuns_locker_protocol.cap", "BLStorageTransition bl_storage_step(",
-         "int argument)", "assurance_traced_storage", WAL, 8, WAL_HARNESS),
+         "int argument)", "assurance_traced_storage", WAL, 8, 1470, WAL_HARNESS),
     ]
-    for file, prefix, suffix, clone, guards, width, harness in profiles:
+    for file, prefix, suffix, clone, guards, width, expected_rows, harness in profiles:
         source = ROOT / "verification" / file
         raw = source.read_bytes()
         rewritten, count = instrument(raw.decode("utf-8"), prefix, suffix, clone, guards)
@@ -186,8 +212,15 @@ def main():
             fixture = Path(tmp) / "instrumented.cap"
             fixture.write_text(COMMON + rewritten + "\n" + harness, encoding="utf-8")
             print(f"{file}: source_sha256={hashlib.sha256(raw).hexdigest()} atoms={count}", flush=True)
-            subprocess.run([ROOT / "bin/capstan", "test", source, fixture],
-                           cwd=ROOT, check=True, timeout=180)
+            result = subprocess.run([ROOT / "bin/capstan", "test", source, fixture],
+                                    cwd=ROOT, capture_output=True, timeout=180)
+            # Preserve actual observed masks in the enclosing suite log even on failure.
+            print(result.stdout.decode("utf-8", errors="replace"), end="", flush=True)
+            print(result.stderr.decode("utf-8", errors="replace"), end="", flush=True)
+            result.check_returncode()
+            summary = validate_trace_output(result.stdout, width, expected_rows)
+            print(json.dumps({"source": file, "rows": expected_rows, "conditions": summary}),
+                  flush=True)
 
 
 if __name__ == "__main__":
