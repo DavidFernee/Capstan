@@ -387,3 +387,61 @@ test "candidate native reference list rejects wrong nominal payload before store
         kinds: kinds, blocks: blocks, returns: returns};
     assert(ag_nv_test_write(ag_nv_compile(f, 100), "build/ccam-native-record-list-reference-mismatch.elf"));
 }
+
+test "candidate native optionals distinguish absent from present zero and false" {
+    string source = "int? choose(bool b) { if (b) { return 0; } return none; } " +
+        "int read(int? v) { if (let n = v) { return n; } return 7; } " +
+        "bool? flag() { return false; } " +
+        "int run() { int? a = choose(true); int? b = choose(false); " +
+        "if (let f = flag()) { if (!f) { return read(a) + read(b); } } return 99; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-opt-scalar.elf"));
+}
+
+test "candidate native optional record payload retains alias identity at offset zero" {
+    string source = "struct Node { int number; } struct Holder { Node? node; } " +
+        "Holder make(Node n) { return new Holder{node: n}; } " +
+        "int run() { Node n = new Node{number: 20}; Holder h = make(n); " +
+        "if (let p = h.node) { p.number += 22; return n.number; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-opt-record.elf"));
+}
+
+test "candidate native optional strings retain embedded NUL through returns" {
+    string source = "string? choose(bool b) { if (b) { return \"a\\0b\"; } return none; } " +
+        "int run() { if (let s = choose(true)) { if (s == \"a\\0b\") { return s.len(); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-opt-string.elf"));
+}
+
+AGFunction ag_nv_test_optional_graph(int descriptor, int read_descriptor, bool unwrap) {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    List<int> alloc = new List<int>(); alloc.push(0); alloc.push(descriptor);
+    instructions.push(new AGBlockInstruction{opcode: AG_OP_OPT_NONE, kind: AG_SCHEMA_REF, operands: alloc});
+    List<int> read = new List<int>();
+    if (unwrap) { read.push(1); } else { read.push(2); }
+    read.push(0); read.push(read_descriptor);
+    if (unwrap) {
+        instructions.push(new AGBlockInstruction{opcode: AG_OP_OPT_UNWRAP, kind: AG_SCHEMA_INT, operands: read});
+    } else {
+        instructions.push(new AGBlockInstruction{opcode: AG_OP_OPT_PRESENT, kind: AG_SCHEMA_BOOL, operands: read});
+        instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 1, 42, 0));
+    }
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(1);
+    return new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        kinds: kinds, blocks: blocks, returns: returns};
+}
+
+test "candidate native optional tag partition and wrong descriptor rejection" {
+    assert(ag_nv_optional_tag(8193) == 1021 && ag_nv_optional_tag(8194) == 1022);
+    assert(ag_nv_optional_tag(8195) == 1023 && ag_nv_optional_tag(10001) == 1025);
+    assert(ag_nv_optional_tag(11020) == 2044 && ag_nv_optional_tag(11021) == 0);
+    assert(ag_nv_ref_list_tag(-1023) == 3068 && ag_nv_ref_list_tag(-1024) == 0);
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_optional_graph(8193, 8193, false), 100),
+        "build/ccam-native-record-opt-absent.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_optional_graph(8193, 8193, true), 100),
+        "build/ccam-native-record-opt-unwrap-none.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_optional_graph(8193, 8194, false), 100),
+        "build/ccam-native-record-opt-mismatch.elf"));
+    assert(!ag_nv_compile(ag_nv_test_optional_graph(11021, 11021, false), 100).ok);
+}
