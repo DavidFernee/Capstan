@@ -166,6 +166,20 @@ else
   bad "bounded native record membership guard emission" "$out"
 fi
 
+section "Candidate native borrowed-FD input"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_fd.cap" 2>&1)"; then
+  ok "bounded borrowed-FD input emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_borrowed_fd.py" "$ROOT/build/ccam-native-borrowed-fd-read.bin" 2>&1)"; then
+      ok "native borrowed-FD input boundary execution"
+    else
+      bad "native borrowed-FD input execution" "$out"
+    fi
+  fi
+else
+  bad "bounded borrowed-FD input emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"
