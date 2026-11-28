@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "7016b66e092206ac57bfdc77f96d76cc72cd46e5",
+  "baseline_commit": "4ff314e51680262c016c655fd874a884c8b4ff47",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -52,7 +52,7 @@
         "Prove source-to-CCAM semantic preservation for values, traps, evaluation order and control flow.",
         "Generate deterministic, schema-conforming CCAM vectors from the accepted source subset.",
         "Prove unsupported syntax is rejected before emission.",
-        "Establish correspondence for expression arity, literal domain and result-type rejection, including void calls in value position; regression vectors are not refinement proofs."
+        "Establish source-to-CCAM correspondence for literal scalar constants, including declaration ordering, duplicate-name rejection, local-binding precedence, type preservation and evaluation semantics; the current regression tests do not prove this refinement."
       ]
     },
     {
