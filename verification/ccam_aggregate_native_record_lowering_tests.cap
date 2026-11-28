@@ -174,3 +174,65 @@ test "candidate native reference return rejects wrong nominal descriptor before 
     assert(ag_nv_test_write(ag_nvc_compile_typed(functions, signatures, 2, 100, 8), "build/ccam-native-record-reference-mismatch.elf"));
     assert(!ag_nvc_compile(functions, 2, 100, 8).ok);
 }
+
+test "candidate native mixed records preserve boolean fields and nested alias identity" {
+    string source = "struct Child { int n; } struct Parent { bool ready; Child child; int extra; } " +
+        "void enable(Parent p) { p.ready = true; p.child.n += p.extra; } " +
+        "int run() { Child c = new Child{n: 20}; " +
+        "Parent p = new Parent{ready: false, child: c, extra: 22}; " +
+        "if (p.ready) { return 0; } enable(p); if (p.ready) { return c.n; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-mixed.elf"));
+}
+
+test "candidate native mixed record references survive replacement and return" {
+    string source = "struct Child { int n; } struct Parent { Child child; bool ready; } " +
+        "Child replace(Parent p) { p.child = new Child{n: 31}; p.ready = true; return p.child; } " +
+        "int run() { Child old = new Child{n: 11}; Parent p = new Parent{child: old, ready: false}; " +
+        "Child fresh = replace(p); if (p.ready) { return fresh.n + old.n; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-mixed-replace.elf"));
+}
+
+AGBlockInstruction ag_nv_test_record_alloc(int destination, int descriptor, int field_kind, int shape) {
+    List<int> a = new List<int>(); a.push(destination); a.push(descriptor);
+    if (field_kind != 0) { a.push(field_kind); a.push(shape); }
+    return new AGBlockInstruction{opcode: AG_OP_RECORD_ALLOC, kind: AG_SCHEMA_REF, operands: a};
+}
+
+AGFunction ag_nv_test_mixed_graph(bool conflicting_layout, bool wrong_reference, bool wrong_field_kind) {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(ag_nv_test_record_alloc(0, 1, 0, 0));
+    instructions.push(ag_nv_test_record_alloc(1, 2, 0, 0));
+    instructions.push(ag_nv_test_record_alloc(2, 3, AG_SCHEMA_REF, 1));
+    if (conflicting_layout) {
+        instructions.push(ag_nv_test_record_alloc(2, 3, AG_SCHEMA_BOOL, 0));
+    }
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_BOOL, 4, 1, 0));
+    List<int> a = new List<int>();
+    int kind = AG_SCHEMA_REF;
+    if (wrong_field_kind) { a.push(4); kind = AG_SCHEMA_BOOL; }
+    else if (wrong_reference) { a.push(1); }
+    else { a.push(0); }
+    a.push(2); a.push(3); a.push(0);
+    if (wrong_field_kind) { a.push(0); } else { a.push(1); }
+    instructions.push(new AGBlockInstruction{opcode: AG_OP_FIELD_SET, kind: kind, operands: a});
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 3, 42, 0));
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(3);
+    return new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        kinds: kinds, blocks: blocks, returns: returns};
+}
+
+test "candidate native mixed layout admission rejects contradictions and wrong field shapes" {
+    AGImage conflict = ag_nv_compile(ag_nv_test_mixed_graph(true, false, false), 100);
+    assert(!conflict.ok && conflict.bytes.len() == 0);
+    AGImage field = ag_nv_compile(ag_nv_test_mixed_graph(false, false, true), 100);
+    assert(!field.ok && field.bytes.len() == 0);
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_mixed_graph(false, false, false), 100),
+        "build/ccam-native-record-mixed-valid.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_mixed_graph(false, true, false), 100),
+        "build/ccam-native-record-mixed-mismatch.elf"));
+}
