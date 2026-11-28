@@ -700,6 +700,38 @@ bool ag_source_field_assignment(AGSourceContext c, Node target, Node rhs, string
     return false;
 }
 
+// Capture list identity and index before evaluating a potentially mutating RHS.
+// Compound assignment reads the old element before RHS; the final setter
+// checks the live bounds again, so shrinking the list cannot bypass checks.
+bool ag_source_index_assignment(AGSourceContext c, Node target, Node rhs, string operation) {
+    if (target.kids.len() != 2 || ty_of(target.kids[0]).k != TY_LIST) { return false; }
+    AGSourceShape shape = ag_source_shape(ty_of(target), c.records);
+    int receiver = ag_source_snapshot(c, ag_source_expr(c, target.kids[0], 0));
+    if (receiver < 0 || c.kinds[receiver] != AG_SCHEMA_REF) { return false; }
+    int descriptor = c.descriptors[receiver];
+    if (shape.kind == 0 || ag_source_element_kind(descriptor) != shape.kind ||
+        ag_source_element_descriptor(descriptor) != shape.descriptor) { return false; }
+    int index = ag_source_snapshot(c, ag_source_expr(c, target.kids[1], 0));
+    if (index < 0 || c.kinds[index] != AG_SCHEMA_INT) { return false; }
+    int old = -1;
+    if (operation == "+=" || operation == "-=") {
+        if (shape.kind != AG_SCHEMA_INT) { return false; }
+        old = ag_source_emit_read(c, 1, shape.kind, shape, receiver, index);
+        if (old < 0) { return false; }
+    } else if (operation != "=") { return false; }
+    int value = ag_source_expected(c, rhs, shape, 0);
+    if (!ag_source_register_matches(c, value, shape)) { return false; }
+    if (old >= 0) {
+        int opcode = AG_OP_ADD;
+        if (operation == "-=") { opcode = AG_OP_SUB; }
+        value = ag_source_binary(c, opcode, shape, old, value);
+        if (value < 0) { return false; }
+    }
+    List<int> operands = new List<int>();
+    operands.push(value); operands.push(receiver); operands.push(index);
+    return ag_source_emit(c, 2, shape.kind, operands);
+}
+
 // List mutation is admitted only when the optional pop result is discarded.
 bool ag_source_list_statement(AGSourceContext c, Node e) {
     if (e.k != N_METHOD || e.kids.len() == 0) { return false; }
@@ -766,6 +798,9 @@ bool ag_source_statement(AGSourceContext c, Node statement, AGSourceShape result
         Node target = statement.kids[0];
         if (target.k == N_GETF) {
             return ag_source_field_assignment(c, target, statement.kids[1], statement.s);
+        }
+        if (target.k == N_INDEX) {
+            return ag_source_index_assignment(c, target, statement.kids[1], statement.s);
         }
         if (target.k != N_VAR) { return false; }
         int destination = ag_source_expr(c, target, 0);
