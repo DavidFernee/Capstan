@@ -1,0 +1,253 @@
+// Candidate checked AGFunction -> Linux x86-64 ELF. Not canonical native CCAM.
+// Only zero-argument, int-result functions, closed scalar and int-record
+// instructions. All reference values originate in allocation or reference
+// moves; headers are immutable, arena lifetime is one process invocation.
+// No calls, external references, collection types, GC or source ABI claim.
+// Result transport: one little-endian signed 64-bit stdout word, exit 0.
+// Any runtime rejection exits 1 without a language result; I/O errors may
+// have written a prefix. This is a test interface, not private transport.
+import "ccam_aggregate_program.cap";
+import "ccam_aggregate_native_arena_lifecycle.cap";
+import "ccam_aggregate_native_record_boundary.cap";
+import "ccam_aggregate_elf_image.cap";
+import "ccam_aggregate_rel32.cap";
+import "ccam_aggregate_exit_code.cap";
+
+const int AG_NV_MAX_REGS = 256;
+const int AG_NV_MAX_BLOCKS = 256;
+const int AG_NV_MAX_INS = 1024;
+const int AG_NV_MAX_OPERANDS = 32768;
+const int AG_NV_MAX_FUEL = 4096;
+
+struct AGNVContext {
+    List<int> code;
+    List<int> patches;
+    List<int> targets;
+    List<int> labels;
+    List<int> layouts;
+    int trap;
+}
+
+AGImage ag_nv_failure() {
+    return new AGImage{ok: false, bytes: new List<int>()};
+}
+
+// Structural and profile admission before any code emission. Layouts are
+// globally consistent for each record descriptor, even in unreachable code.
+bool ag_nv_admit(AGFunction f, List<int> layouts) {
+    if (f.signature.parameters.len() != 0 || f.signature.result_kind != AG_SCHEMA_INT ||
+        f.kinds.len() == 0 || f.kinds.len() > AG_NV_MAX_REGS ||
+        f.blocks.len() == 0 || f.blocks.len() > AG_NV_MAX_BLOCKS ||
+        f.returns.len() != f.blocks.len()) { return false; }
+    for (int i = 0; i <= 4096; i += 1) { layouts.push(-1); }
+    int total = 0; int operands = 0;
+    for (int b = 0; b < f.blocks.len(); b += 1) {
+        AGCFGBlock block = f.blocks[b];
+        if (block.instructions.len() > AG_NV_MAX_INS - total) { return false; }
+        total += block.instructions.len();
+        for (int i = 0; i < block.instructions.len(); i += 1) {
+            AGBlockInstruction ins = block.instructions[i];
+            List<int> op = ins.operands;
+            if (op.len() > AG_NV_MAX_OPERANDS - operands ||
+                !ag_schema_operands(f.kinds, ins.opcode, ins.kind, op)) { return false; }
+            operands += op.len();
+            if (ins.opcode == AG_OP_RECORD_ALLOC) {
+                int id = op[1]; int count = (op.len() - 2) / 2;
+                if (id < 1 || id > 4096 || (layouts[id] != -1 && layouts[id] != count)) { return false; }
+                for (int j = 2; j < op.len(); j += 2) {
+                    if (op[j] != AG_SCHEMA_INT || op[j + 1] != 0) { return false; }
+                }
+                layouts[id] = count;
+            } else if (ins.opcode == AG_OP_FIELD_GET || ins.opcode == AG_OP_FIELD_SET) {
+                if (ins.kind != AG_SCHEMA_INT || op[2] < 1 || op[2] > 4096 || op[4] != 0) { return false; }
+            } else if (ins.opcode < AG_OP_SCALAR_CONST || ins.opcode > AG_OP_NOT) { return false; }
+        }
+    }
+    for (int b = 0; b < f.blocks.len(); b += 1) {
+        for (int i = 0; i < f.blocks[b].instructions.len(); i += 1) {
+            AGBlockInstruction ins = f.blocks[b].instructions[i];
+            if (ins.opcode == AG_OP_FIELD_GET || ins.opcode == AG_OP_FIELD_SET) {
+                if (ins.operands[3] >= layouts[ins.operands[2]]) { return false; }
+            }
+        }
+    }
+    return ag_function_validate(f);
+}
+
+// Signed immediate encoding without negating INT64_MIN or forming 2^64.
+bool ag_nv_imm(List<int> code, int reg, int value) {
+    if (reg < 0 || reg > 15 || code.len() > AG_BYTE_LIMIT - 10) { return false; }
+    code.push(72 + reg / 8); code.push(184 + reg % 8);
+    for (int i = 0; i < 8; i += 1) {
+        int rem = value % 256;
+        value = value / 256;
+        if (rem < 0) { rem += 256; value -= 1; }
+        code.push(rem);
+    }
+    return true;
+}
+
+// Fixed stack slots addressed only by admitted register indices; R15 is
+// immutable frame base. REX.B selects R15 and REX.R selects high reg.
+bool ag_nv_slot(List<int> code, bool store, int reg, int slot) {
+    if (reg < 0 || reg > 15 || slot < 0 || slot > AG_NV_MAX_REGS ||
+        code.len() > AG_BYTE_LIMIT - 7) { return false; }
+    code.push(73 + 4 * (reg / 8));
+    if (store) { code.push(137); } else { code.push(139); }
+    code.push(135 + 8 * (reg % 8));
+    return ag_u32(code, slot * 8);
+}
+
+bool ag_nv_edge(AGNVContext c, int op, int target) {
+    if (target < 0 || target >= c.labels.len() || c.code.len() > AG_BYTE_LIMIT - 6) { return false; }
+    if (op == 0) { c.code.push(233); }
+    else if (op == 1) { c.code.push(232); }
+    else { c.code.push(15); c.code.push(op); }
+    c.patches.push(c.code.len()); c.targets.push(target);
+    return ag_u32(c.code, 0);
+}
+
+bool ag_nv_call(AGNVContext c, int target) {
+    if (!ag_nv_edge(c, 1, target)) { return false; }
+    c.code.push(133); c.code.push(210); // test edx,edx
+    return ag_nv_edge(c, 133, c.trap); // jne
+}
+
+bool ag_nv_fuel(AGNVContext c) {
+    c.code.push(72); c.code.push(255); c.code.push(203); // dec rbx
+    return ag_nv_edge(c, 136, c.trap); // js
+}
+
+bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
+    if (c.code.len() > AG_BYTE_LIMIT - 256 || !ag_nv_fuel(c)) { return false; }
+    List<int> b = c.code; List<int> a = ins.operands; int op = ins.opcode;
+    if (op == AG_OP_SCALAR_CONST) {
+        return ag_nv_imm(b, 0, a[1]) && ag_nv_slot(b, true, 0, a[0]);
+    }
+    if (op == AG_OP_MOVE || op == AG_OP_NOT) {
+        if (!ag_nv_slot(b, false, 0, a[1])) { return false; }
+        if (op == AG_OP_NOT) { b.push(72); b.push(131); b.push(240); b.push(1); }
+        return ag_nv_slot(b, true, 0, a[0]);
+    }
+    if (op == AG_OP_RECORD_ALLOC) {
+        return ag_nv_imm(b, 0, a[1]) && ag_nv_imm(b, 6, c.layouts[a[1]]) &&
+            ag_nv_call(c, c.trap + 3) && ag_nv_slot(b, true, 0, a[0]);
+    }
+    if (op == AG_OP_FIELD_GET || op == AG_OP_FIELD_SET) {
+        if (!ag_nv_slot(b, false, 0, a[1]) || !ag_nv_imm(b, 6, a[2]) ||
+            !ag_nv_imm(b, 7, c.layouts[a[2]]) || !ag_nv_imm(b, 8, a[3])) { return false; }
+        if (op == AG_OP_FIELD_SET) {
+            return ag_nv_slot(b, false, 9, a[0]) && ag_nv_call(c, c.trap + 5);
+        }
+        return ag_nv_call(c, c.trap + 4) && ag_nv_slot(b, true, 0, a[0]);
+    }
+    if (!ag_nv_slot(b, false, 0, a[1]) || !ag_nv_slot(b, false, 1, a[2])) { return false; }
+    if (op == AG_OP_ADD || op == AG_OP_SUB || op == AG_OP_MUL) {
+        b.push(72);
+        if (op == AG_OP_ADD) { b.push(1); b.push(200); }
+        else if (op == AG_OP_SUB) { b.push(41); b.push(200); }
+        else { b.push(15); b.push(175); b.push(193); }
+        if (!ag_nv_edge(c, 128, c.trap)) { return false; } // jo
+    } else if (op == AG_OP_DIV || op == AG_OP_REM) {
+        b.push(72); b.push(133); b.push(201); // test rcx,rcx
+        if (!ag_nv_edge(c, 132, c.trap)) { return false; } // jz
+        // Handle min/-1 without hardware divide exception. Remainder is 0.
+        b.push(72); b.push(131); b.push(249); b.push(255);
+        b.push(15); b.push(133); int not_minus = b.len(); if (!ag_u32(b, 0)) { return false; }
+        if (!ag_nv_imm(b, 2, CCAM_I64_MIN)) { return false; }
+        b.push(72); b.push(57); b.push(208); // cmp rax,rdx
+        if (op == AG_OP_DIV) {
+            if (!ag_nv_edge(c, 132, c.trap)) { return false; }
+            if (!ag_rel32(b, not_minus, b.len())) { return false; }
+            b.push(72); b.push(153); b.push(72); b.push(247); b.push(249);
+        } else {
+            b.push(15); b.push(133); int not_min = b.len(); if (!ag_u32(b, 0)) { return false; }
+            b.push(49); b.push(192); // zero remainder
+            b.push(233); int done = b.len(); if (!ag_u32(b, 0)) { return false; }
+            if (!ag_rel32(b, not_minus, b.len()) || !ag_rel32(b, not_min, b.len())) { return false; }
+            b.push(72); b.push(153); b.push(72); b.push(247); b.push(249);
+            b.push(72); b.push(137); b.push(208); // mov rax,rdx
+            if (!ag_rel32(b, done, b.len())) { return false; }
+        }
+    } else {
+        int cc = 0;
+        if (op == AG_OP_EQ) { cc = 148; }
+        if (op == AG_OP_NE) { cc = 149; }
+        if (op == AG_OP_LT) { cc = 156; }
+        if (op == AG_OP_LE) { cc = 158; }
+        if (op == AG_OP_GT) { cc = 159; }
+        if (op == AG_OP_GE) { cc = 157; }
+        if (cc == 0) { return false; }
+        b.push(72); b.push(57); b.push(200); // cmp rax,rcx
+        b.push(15); b.push(cc); b.push(192); // setcc al
+        b.push(72); b.push(15); b.push(182); b.push(192); // movzx rax,al
+    }
+    return ag_nv_slot(b, true, 0, a[0]);
+}
+
+bool ag_nv_return(AGNVContext c, int source, int result_slot) {
+    List<int> b = c.code;
+    if (!ag_nv_slot(b, false, 0, source) || !ag_nv_slot(b, true, 0, result_slot) ||
+        !ag_nv_call(c, c.trap + 2)) { return false; }
+    // lea rsi,[r15+result_slot*8]; write(1, result, 8).
+    b.push(73); b.push(141); b.push(183);
+    if (!ag_u32(b, result_slot * 8) || !ag_nv_imm(b, 0, 1) ||
+        !ag_nv_imm(b, 7, 1) || !ag_nv_imm(b, 2, 8)) { return false; }
+    b.push(15); b.push(5);
+    b.push(72); b.push(131); b.push(248); b.push(8);
+    return ag_nv_edge(c, 133, c.trap) && ag_exit_code(b, 0);
+}
+
+AGImage ag_nv_compile(AGFunction f, int fuel) {
+    List<int> layouts = new List<int>();
+    if (fuel < 1 || fuel > AG_NV_MAX_FUEL || !ag_nv_admit(f, layouts)) { return ag_nv_failure(); }
+    int count = f.blocks.len();
+    AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
+        targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
+    for (int i = 0; i < count + 6; i += 1) { c.labels.push(-1); }
+    List<int> b = c.code;
+    // Stack frame: one slot per register and one private return word.
+    b.push(72); b.push(129); b.push(236);
+    if (!ag_u32(b, 8 * (f.kinds.len() + 1))) { return ag_nv_failure(); }
+    b.push(73); b.push(137); b.push(231); // mov r15,rsp
+    if (!ag_nv_imm(b, 12, 0) || !ag_nv_imm(b, 13, 0) || !ag_nv_imm(b, 14, 0) ||
+        !ag_nv_imm(b, 3, fuel) || !ag_nv_imm(b, 0, AG_NATIVE_SCALAR_RECORD_MAX_CAPACITY) ||
+        !ag_nv_call(c, count + 1)) { return ag_nv_failure(); }
+    for (int i = 0; i < count; i += 1) {
+        c.labels[i] = b.len();
+        AGCFGBlock block = f.blocks[i];
+        for (int j = 0; j < block.instructions.len(); j += 1) {
+            if (!ag_nv_instruction(c, block.instructions[j])) { return ag_nv_failure(); }
+        }
+        if (b.len() > AG_BYTE_LIMIT - 256 || !ag_nv_fuel(c)) { return ag_nv_failure(); }
+        if (block.terminator == 0) {
+            if (!ag_nv_return(c, f.returns[i], f.kinds.len())) { return ag_nv_failure(); }
+        } else if (block.terminator == 1) {
+            if (!ag_nv_edge(c, 0, block.yes)) { return ag_nv_failure(); }
+        } else {
+            if (!ag_nv_slot(b, false, 0, block.condition)) { return ag_nv_failure(); }
+            b.push(72); b.push(133); b.push(192);
+            if (!ag_nv_edge(c, 133, block.yes) || !ag_nv_edge(c, 0, block.no)) { return ag_nv_failure(); }
+        }
+    }
+    c.labels[count] = b.len();
+    if (!ag_exit_code(b, 1)) { return ag_nv_failure(); }
+    c.labels[count + 1] = b.len(); if (!ag_native_emit_arena_init(b)) { return ag_nv_failure(); }
+    c.labels[count + 2] = b.len(); if (!ag_native_emit_arena_release(b)) { return ag_nv_failure(); }
+    c.labels[count + 3] = b.len(); if (!ag_native_emit_scalar_record_alloc(b)) { return ag_nv_failure(); }
+    c.labels[count + 4] = b.len(); if (!ag_native_emit_guarded_record_access(b, false)) { return ag_nv_failure(); }
+    c.labels[count + 5] = b.len(); if (!ag_native_emit_guarded_record_access(b, true)) { return ag_nv_failure(); }
+    for (int i = 0; i < c.patches.len(); i += 1) {
+        if (!ag_rel32(b, c.patches[i], c.labels[c.targets[i]])) { return ag_nv_failure(); }
+    }
+    // Existing direct ELF builder; add explicit non-executable stack header.
+    AGImage image = ag_elf_image(b);
+    if (!image.ok || image.bytes.len() < 4096) { return ag_nv_failure(); }
+    image.bytes[56] = 2; // e_phnum
+    List<int> stack = new List<int>();
+    if (!ag_u32(stack, 1685382481) || !ag_u32(stack, 6)) { return ag_nv_failure(); }
+    for (int i = 0; i < 5; i += 1) { if (!ag_u64(stack, 0)) { return ag_nv_failure(); } }
+    if (!ag_u64(stack, 16) || stack.len() != 56) { return ag_nv_failure(); }
+    for (int i = 0; i < stack.len(); i += 1) { image.bytes[120 + i] = stack[i]; }
+    return image;
+}

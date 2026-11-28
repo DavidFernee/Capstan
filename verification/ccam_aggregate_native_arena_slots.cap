@@ -1,0 +1,63 @@
+// Candidate x86-64 trusted arena word access. R12=base, R13=committed bytes,
+// R14=capacity, RAX=byte offset, RSI=store value. Load returns word in RAX;
+// store returns zero. RDX=0 success, 1 rejection (RAX=0). RCX/flags clobbered.
+// No mutation of arena metadata; reject misalignment, invalid extent,
+// wraparound and incomplete slots before accessing memory. Caller must
+// establish mapped backing and ownership, object-level type and bounds,
+// initialisation and authority. This is not a language-level memory ABI.
+import "ccam_aggregate_byte_buffer.cap";
+
+const int AG_NATIVE_SLOT_LOAD_SIZE = 82;
+const int AG_NATIVE_SLOT_STORE_SIZE = 84;
+
+bool ag_native_emit_slot_load(List<int> code) {
+    if (code.len() > AG_BYTE_LIMIT - AG_NATIVE_SLOT_LOAD_SIZE) { return false; }
+    code.push(77); code.push(133); code.push(228); code.push(116); code.push(69); code.push(73); code.push(247); code.push(196);
+    code.push(7); code.push(0); code.push(0); code.push(0); code.push(117); code.push(60); code.push(77); code.push(133);
+    code.push(237); code.push(120); code.push(55); code.push(77); code.push(133); code.push(246); code.push(120); code.push(50);
+    code.push(77); code.push(57); code.push(245); code.push(119); code.push(45); code.push(76); code.push(137); code.push(225);
+    code.push(76); code.push(1); code.push(241); code.push(114); code.push(37); code.push(72); code.push(133); code.push(192);
+    code.push(120); code.push(32); code.push(72); code.push(169); code.push(7); code.push(0); code.push(0); code.push(0);
+    code.push(117); code.push(24); code.push(76); code.push(57); code.push(232); code.push(119); code.push(19); code.push(76);
+    code.push(137); code.push(233); code.push(72); code.push(41); code.push(193); code.push(72); code.push(131); code.push(249);
+    code.push(8); code.push(114); code.push(7); code.push(73); code.push(139); code.push(4); code.push(4); code.push(49);
+    code.push(210); code.push(195); code.push(49); code.push(192); code.push(186); code.push(1); code.push(0); code.push(0);
+    code.push(0); code.push(195);
+    return true;
+}
+
+bool ag_native_emit_slot_store(List<int> code) {
+    if (code.len() > AG_BYTE_LIMIT - AG_NATIVE_SLOT_STORE_SIZE) { return false; }
+    code.push(77); code.push(133); code.push(228); code.push(116); code.push(71); code.push(73); code.push(247); code.push(196);
+    code.push(7); code.push(0); code.push(0); code.push(0); code.push(117); code.push(62); code.push(77); code.push(133);
+    code.push(237); code.push(120); code.push(57); code.push(77); code.push(133); code.push(246); code.push(120); code.push(52);
+    code.push(77); code.push(57); code.push(245); code.push(119); code.push(47); code.push(76); code.push(137); code.push(225);
+    code.push(76); code.push(1); code.push(241); code.push(114); code.push(39); code.push(72); code.push(133); code.push(192);
+    code.push(120); code.push(34); code.push(72); code.push(169); code.push(7); code.push(0); code.push(0); code.push(0);
+    code.push(117); code.push(26); code.push(76); code.push(57); code.push(232); code.push(119); code.push(21); code.push(76);
+    code.push(137); code.push(233); code.push(72); code.push(41); code.push(193); code.push(72); code.push(131); code.push(249);
+    code.push(8); code.push(114); code.push(9); code.push(73); code.push(137); code.push(52); code.push(4); code.push(49);
+    code.push(192); code.push(49); code.push(210); code.push(195); code.push(49); code.push(192); code.push(186); code.push(1);
+    code.push(0); code.push(0); code.push(0); code.push(195);
+    return true;
+}
+
+test "native slot guards branch to common failure before memory access" {
+    List<int> load = new List<int>(); List<int> store = new List<int>();
+    assert(ag_native_emit_slot_load(load) && ag_native_emit_slot_store(store));
+    assert(load.len() == 82 && store.len() == 84);
+    List<int> branches = new List<int>();
+    branches.push(3); branches.push(12); branches.push(17); branches.push(22);
+    branches.push(27); branches.push(35); branches.push(40); branches.push(48);
+    branches.push(53); branches.push(65);
+    for (int i = 0; i < branches.len(); i += 1) {
+        int b = branches[i];
+        assert(b + 2 + load[b + 1] == 74);
+        assert(b + 2 + store[b + 1] == 76);
+    }
+    assert(load[67] == 73 && load[68] == 139 && store[67] == 73 && store[68] == 137);
+    string data = "";
+    for (int i = 0; i < load.len(); i += 1) { data = data + char_str(load[i]); }
+    for (int i = 0; i < store.len(); i += 1) { data = data + char_str(store[i]); }
+    assert(write_file("build/ccam-aggregate-arena-slots.bin", data));
+}
