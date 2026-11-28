@@ -1,0 +1,257 @@
+// Candidate multi-function Linux x86-64 backend. Calls carry scalars or
+// exact nominal scalar-record handles; void has no destination. The arena
+// is monotonic and process-local; each reference boundary checks membership
+// and layout. Every runtime rejection terminates the process.
+// R15 = current frame base; RBP = remaining language depth; RBX = shared fuel.
+// R12-R14 are shared arena state. The caller owns and restores each frame.
+// Fixed 256-slot maximum and 32 active language frames bound stack use.
+// No external ABI, canonical fuel equivalence, or complete compiler claim.
+import "ccam_aggregate_native_record_lowering.cap";
+import "ccam_aggregate_sealed_program.cap";
+import "ccam_aggregate_native_process_argv.cap";
+
+// Explicit opt-in candidate profile; shared/sealed defaults stay 256.
+const int AG_NVC_MAX_FUNCTIONS = 512;
+const int AG_NVC_MAX_TOTAL_REGS = 32768;
+const int AG_NVC_MAX_DEPTH = 32;
+
+bool ag_nvc_nominal_shape(int kind, int descriptor, List<int> layouts) {
+    if (kind == AG_SCHEMA_REF) {
+        return descriptor == AG_NV_BYTES_DESCRIPTOR || descriptor == AG_NV_TAINTED_DESCRIPTOR || descriptor == AG_NV_LOG_DESCRIPTOR || descriptor == AG_NV_INT_LIST_DESCRIPTOR ||
+            descriptor == AG_NV_BOOL_LIST_DESCRIPTOR || ag_nv_ref_list_tag(descriptor) != 0 ||
+            ag_nv_optional_tag(descriptor) != 0 || ag_nv_map_descriptor(descriptor) ||
+            (descriptor >= 1 && descriptor < AG_NV_RECORD_LIMIT && layouts[descriptor] >= 0);
+    }
+    return (kind == AG_SCHEMA_INT || kind == AG_SCHEMA_BOOL || kind == AG_RESULT_VOID) && descriptor == 0;
+}
+
+bool ag_nvc_admit_typed(List<AGFunction> functions, List<AGNominalSignature> signatures, int entry, List<int> layouts) {
+    return ag_nvc_admit_entry(functions, signatures, entry, layouts, false);
+}
+
+bool ag_nvc_admit_entry(List<AGFunction> functions, List<AGNominalSignature> signatures,
+    int entry, List<int> layouts, bool process_args) {
+    if (functions.len() == 0 || functions.len() > AG_NVC_MAX_FUNCTIONS ||
+        entry < 0 || entry >= functions.len() || layouts.len() != 0 || signatures.len() != functions.len()) { return false; }
+    if (functions[entry].signature.result_kind != AG_SCHEMA_INT) { return false; }
+    if (process_args) {
+        if (functions[entry].signature.parameters.len() != 1 ||
+            functions[entry].signature.parameters[0] != AG_SCHEMA_REF ||
+            signatures[entry].parameter_descriptors.len() != 1 ||
+            signatures[entry].parameter_descriptors[0] != -4100) { return false; }
+    } else if (functions[entry].signature.parameters.len() != 0) { return false; }
+    for (int i = 0; i <= 4096; i += 1) { layouts.push(-1); }
+    Map<int> fields = new Map<int>();
+    int blocks = 0; int instructions = 0; int operands = 0; int registers = 0;
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGFunction f = functions[i];
+        if (f.kinds.len() > AG_NVC_MAX_TOTAL_REGS - registers ||
+            f.blocks.len() > AG_NV_MAX_BLOCKS - blocks ||
+            !ag_nv_admit_function(f, layouts, fields, true)) { return false; }
+        registers += f.kinds.len(); blocks += f.blocks.len();
+        for (int j = 0; j < f.blocks.len(); j += 1) {
+            AGCFGBlock b = f.blocks[j];
+            if (b.instructions.len() > AG_NV_MAX_INS - instructions) { return false; }
+            instructions += b.instructions.len();
+            for (int k = 0; k < b.instructions.len(); k += 1) {
+                if (b.instructions[k].operands.len() > AG_NV_MAX_OPERANDS - operands) { return false; }
+                operands += b.instructions[k].operands.len();
+            }
+        }
+    }
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGNominalSignature signature = signatures[i];
+        if (!ag_nv_check_layouts(functions[i], layouts, fields) ||
+            !ag_seal_signature_matches(functions[i].signature, signature) ||
+            !ag_nvc_nominal_shape(signature.coarse.result_kind, signature.result_descriptor, layouts)) { return false; }
+        for (int j = 0; j < signature.coarse.parameters.len(); j += 1) {
+            if (!ag_nvc_nominal_shape(signature.coarse.parameters[j], signature.parameter_descriptors[j], layouts)) { return false; }
+        }
+    }
+    return ag_program_validate_profile(functions, AG_NVC_MAX_FUNCTIONS) && ag_seal_validate_edges(functions);
+}
+
+bool ag_nvc_stack_adjust(List<int> b, bool allocate, int slots) {
+    if (slots < 0 || slots > AG_NV_MAX_REGS || b.len() > AG_BYTE_LIMIT - 7) { return false; }
+    b.push(72); b.push(129);
+    if (allocate) { b.push(236); } else { b.push(196); }
+    return ag_u32(b, slots * 8);
+}
+
+// R15 remains the caller base during argument copying. No callee code
+// executes until the new frame is established and all parameter words copied.
+bool ag_nvc_enter(AGNVContext c, int label, int slots, List<int> args) {
+    List<int> b = c.code;
+    if (args.len() > slots || b.len() > AG_BYTE_LIMIT - 64 - args.len() * 16) { return false; }
+    b.push(72); b.push(255); b.push(205); // dec rbp
+    if (!ag_nv_edge(c, 136, c.trap)) { return false; } // js
+    b.push(65); b.push(87); // push r15
+    if (!ag_nvc_stack_adjust(b, true, slots)) { return false; }
+    for (int i = 0; i < args.len(); i += 1) {
+        if (!ag_nv_slot(b, false, 0, args[i])) { return false; }
+        b.push(72); b.push(137); b.push(132); b.push(36); // mov [rsp+disp32],rax
+        if (!ag_u32(b, i * 8)) { return false; }
+    }
+    b.push(73); b.push(137); b.push(231); // mov r15,rsp
+    if (!ag_nv_edge(c, 1, label) || !ag_nvc_stack_adjust(b, false, slots)) { return false; }
+    b.push(65); b.push(95); // pop r15
+    b.push(72); b.push(255); b.push(197); // inc rbp
+    return true;
+}
+
+bool ag_nvc_instruction(AGNVContext c, AGBlockInstruction ins,
+    List<AGFunction> functions, List<AGNominalSignature> signatures, List<int> starts) {
+    if (ins.opcode != AG_OP_DIRECT_CALL) { return ag_nv_instruction(c, ins); }
+    if (!ag_nv_fuel(c)) { return false; }
+    int id = ins.operands[1];
+    List<int> args = new List<int>();
+    AGNominalSignature signature = signatures[id];
+    for (int i = 2; i < ins.operands.len(); i += 1) {
+        int source = ins.operands[i];
+        if (signature.coarse.parameters[i - 2] == AG_SCHEMA_REF) {
+            if (!ag_nv_slot(c.code, false, 0, source) ||
+                !ag_nv_reference(c, signature.parameter_descriptors[i - 2])) { return false; }
+        }
+        args.push(source);
+    }
+    if (!ag_nvc_enter(c, starts[id], functions[id].kinds.len(), args)) { return false; }
+    if (ins.kind == AG_RESULT_VOID) { return true; }
+    // Callee checks the return boundary before ret; the caller publishes only
+    // after normal return and frame restoration.
+    return ag_nv_slot(c.code, true, 0, ins.operands[0]);
+}
+
+bool ag_nvc_function(AGNVContext c, List<AGFunction> functions,
+    List<AGNominalSignature> signatures, List<int> starts, int id) {
+    AGFunction f = functions[id]; List<int> b = c.code;
+    int start = starts[id];
+    for (int i = 0; i < f.blocks.len(); i += 1) {
+        c.labels[start + i] = b.len();
+        AGCFGBlock block = f.blocks[i];
+        for (int j = 0; j < block.instructions.len(); j += 1) {
+            if (!ag_nvc_instruction(c, block.instructions[j], functions, signatures, starts)) { return false; }
+        }
+        if (b.len() > AG_BYTE_LIMIT - 256 || !ag_nv_fuel(c)) { return false; }
+        if (block.terminator == 0) {
+            if (f.signature.result_kind != AG_RESULT_VOID) {
+                if (!ag_nv_slot(b, false, 0, f.returns[i])) { return false; }
+                if (f.signature.result_kind == AG_SCHEMA_REF &&
+                    !ag_nv_reference(c, signatures[id].result_descriptor)) { return false; }
+            } else { b.push(49); b.push(192); }
+            b.push(195); // ret, caller restores frame and depth
+        } else if (block.terminator == 1) {
+            if (!ag_nv_edge(c, 0, start + block.yes)) { return false; }
+        } else {
+            if (!ag_nv_slot(b, false, 0, block.condition)) { return false; }
+            b.push(72); b.push(133); b.push(192);
+            if (!ag_nv_edge(c, 133, start + block.yes) || !ag_nv_edge(c, 0, start + block.no)) { return false; }
+        }
+    }
+    return true;
+}
+
+// Compatibility entry: coarse signatures cannot manufacture a nominal
+// reference contract. Ref-bearing modules must use the typed entry.
+AGImage ag_nvc_compile(List<AGFunction> functions, int entry, int fuel, int depth) {
+    if (functions.len() > AG_NVC_MAX_FUNCTIONS) { return ag_nv_failure(); }
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>();
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGCallSignature coarse = functions[i].signature;
+        if (coarse.parameters.len() > AG_NV_MAX_REGS) { return ag_nv_failure(); }
+        List<int> descriptors = new List<int>();
+        for (int j = 0; j < coarse.parameters.len(); j += 1) { descriptors.push(0); }
+        signatures.push(new AGNominalSignature{coarse: coarse,
+            parameter_descriptors: descriptors, result_descriptor: 0});
+    }
+    return ag_nvc_compile_typed(functions, signatures, entry, fuel, depth);
+}
+
+AGImage ag_nvc_compile_typed(List<AGFunction> functions, List<AGNominalSignature> signatures,
+    int entry, int fuel, int depth) {
+    return ag_nvc_compile_entry(functions, signatures, entry, fuel, depth, false);
+}
+
+// Explicit candidate process entry, not the source args() builtin.
+// The initial kernel stack is never passed as a language value.
+AGImage ag_nvc_compile_process(List<AGFunction> functions, List<AGNominalSignature> signatures,
+    int entry, int fuel, int depth) {
+    return ag_nvc_compile_entry(functions, signatures, entry, fuel, depth, true);
+}
+
+AGImage ag_nvc_compile_entry(List<AGFunction> functions, List<AGNominalSignature> signatures,
+    int entry, int fuel, int depth, bool process_args) {
+    List<int> layouts = new List<int>();
+    if (fuel < 1 || fuel > AG_NV_MAX_FUEL || depth < 1 || depth > AG_NVC_MAX_DEPTH ||
+        !ag_nvc_admit_entry(functions, signatures, entry, layouts, process_args)) { return ag_nv_failure(); }
+    List<int> starts = new List<int>();
+    int count = 0;
+    for (int i = 0; i < functions.len(); i += 1) {
+        starts.push(count); count += functions[i].blocks.len();
+    }
+    AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
+        targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
+    for (int i = 0; i < count + 21; i += 1) { c.labels.push(-1); }
+    List<int> b = c.code;
+    // Root scratch frame is not a language call; entry consumes one depth.
+    if (!ag_nvc_stack_adjust(b, true, 1)) { return ag_nv_failure(); }
+    b.push(73); b.push(137); b.push(231);
+    if (!ag_nv_imm(b, 12, 0) || !ag_nv_imm(b, 13, 0) || !ag_nv_imm(b, 14, 0) ||
+        !ag_nv_imm(b, 3, fuel) || !ag_nv_imm(b, 5, depth) ||
+        !ag_nv_imm(b, 0, AG_NATIVE_SCALAR_RECORD_MAX_CAPACITY) || !ag_nv_call(c, count + 1)) { return ag_nv_failure(); }
+    List<int> entry_args = new List<int>();
+    if (process_args) {
+        // R15 is the root one-word frame immediately below original RSP.
+        b.push(73); b.push(141); b.push(71); b.push(8); // lea rax,[r15+8]
+        if (!ag_nv_call(c, count + 15) || !ag_nv_slot(b, true, 0, 0)) { return ag_nv_failure(); }
+        entry_args.push(0);
+    }
+    if (!ag_nvc_enter(c, starts[entry], functions[entry].kinds.len(), entry_args) ||
+        !ag_nv_slot(b, true, 0, 0) || !ag_nv_return(c, 0, 0)) { return ag_nv_failure(); }
+    for (int i = 0; i < functions.len(); i += 1) {
+        if (!ag_nvc_function(c, functions, signatures, starts, i)) { return ag_nv_failure(); }
+    }
+    c.labels[count] = b.len(); if (!ag_exit_code(b, 1)) { return ag_nv_failure(); }
+    c.labels[count + 1] = b.len(); if (!ag_native_emit_arena_init(b)) { return ag_nv_failure(); }
+    c.labels[count + 2] = b.len(); if (!ag_native_emit_arena_release(b)) { return ag_nv_failure(); }
+    c.labels[count + 3] = b.len(); if (!ag_native_emit_scalar_record_alloc(b)) { return ag_nv_failure(); }
+    c.labels[count + 4] = b.len(); if (!ag_native_emit_guarded_record_access(b, false)) { return ag_nv_failure(); }
+    c.labels[count + 5] = b.len(); if (!ag_native_emit_guarded_record_access(b, true)) { return ag_nv_failure(); }
+    c.labels[count + 6] = b.len(); if (!ag_native_emit_record_boundary(b)) { return ag_nv_failure(); }
+    c.labels[count + 7] = b.len(); if (!ag_nv_emit_bytes_equal(b)) { return ag_nv_failure(); }
+    c.labels[count + 8] = b.len(); if (!ag_nv_emit_bytes_concat(b)) { return ag_nv_failure(); }
+    c.labels[count + 9] = b.len(); if (!ag_nv_emit_bytes_slice(b)) { return ag_nv_failure(); }
+    c.labels[count + 10] = b.len(); if (!ag_nv_emit_bytes_conversion(b)) { return ag_nv_failure(); }
+    c.labels[count + 11] = b.len(); if (!ag_nv_emit_scalar_list(b)) { return ag_nv_failure(); }
+    c.labels[count + 12] = b.len(); if (!ag_nv_emit_reference_list(b)) { return ag_nv_failure(); }
+    c.labels[count + 13] = b.len();
+    c.labels[count + 14] = b.len() + AG_NV_MAP_KEYS_OFFSET;
+    if (!ag_nv_emit_map(b)) { return ag_nv_failure(); }
+    c.labels[count + 15] = b.len();
+    if (process_args && !ag_nv_emit_process_argv(b)) { return ag_nv_failure(); }
+    bool taint_ops = false;
+    for (int i = 0; i < functions.len(); i += 1) {
+        if (ag_nv_has_taint(functions[i])) { taint_ops = true; }
+    }
+    if (taint_ops && !ag_nv_emit_taint_leaves(c)) { return ag_nv_failure(); }
+    bool log_ops = false;
+    for (int i = 0; i < functions.len(); i += 1) {
+        if (ag_nv_has_log(functions[i])) { log_ops = true; }
+    }
+    if (log_ops) {
+        c.labels[count + 19] = b.len();
+        if (!ag_native_emit_log_bridge(b)) { return ag_nv_failure(); }
+    }
+    bool join_ops = false;
+    for (int i = 0; i < functions.len(); i += 1) {
+        if (ag_nv_has_join(functions[i])) { join_ops = true; }
+    }
+    if (join_ops) {
+        c.labels[count + 20] = b.len();
+        if (!ag_native_emit_join(b)) { return ag_nv_failure(); }
+    }
+    for (int i = 0; i < c.patches.len(); i += 1) {
+        int target = c.labels[c.targets[i]];
+        if (target < 0 || !ag_rel32(b, c.patches[i], target)) { return ag_nv_failure(); }
+    }
+    return ag_nv_image(b);
+}

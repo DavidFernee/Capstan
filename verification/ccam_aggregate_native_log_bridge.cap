@@ -1,0 +1,114 @@
+// Candidate Linux x86-64 private SysV arena LogText bridge.
+// RDI=base RSI=cursor pointer RDX=capacity RCX=left offset
+// R8=right offset R9=mode (0 escape, 1 contextual concat).
+// Returns RAX=offset RDX=status. Exclusive mapped arena, disjoint cursor,
+// immutable headers and valid stack required. No writes before preflight.
+// Exact tags 4096 trusted, 2045 tainted, 2046 log. Concat rejects tainted
+// operands and requires at least one LogText. All byte pairs canonical.
+// Scratch 8224 bytes plus nested escape leaf; cursor publication last.
+// The internal relative call targets the appended raw escape leaf.
+// Reference: research/native-bootstrap/log-bridge-leaf.S.
+import "ccam_aggregate_native_log_escape.cap";
+
+const int AG_NATIVE_LOG_BRIDGE_PREFIX_SIZE = 674;
+const int AG_NATIVE_LOG_BRIDGE_SIZE = 1263;
+
+bool ag_native_emit_log_bridge(List<int> b) {
+    if (AG_NATIVE_LOG_BRIDGE_SIZE != AG_NATIVE_LOG_BRIDGE_PREFIX_SIZE + AG_NATIVE_LOG_ESCAPE_SIZE ||
+        b.len() > AG_BYTE_LIMIT - AG_NATIVE_LOG_BRIDGE_SIZE) { return false; }
+    b.push(72); b.push(133); b.push(255); b.push(15); b.push(132); b.push(229); b.push(1); b.push(0);
+    b.push(0); b.push(72); b.push(247); b.push(199); b.push(7); b.push(0); b.push(0); b.push(0);
+    b.push(15); b.push(133); b.push(216); b.push(1); b.push(0); b.push(0); b.push(72); b.push(133);
+    b.push(246); b.push(15); b.push(132); b.push(207); b.push(1); b.push(0); b.push(0); b.push(72);
+    b.push(247); b.push(198); b.push(7); b.push(0); b.push(0); b.push(0); b.push(15); b.push(133);
+    b.push(194); b.push(1); b.push(0); b.push(0); b.push(72); b.push(129); b.push(250); b.push(0);
+    b.push(0); b.push(16); b.push(0); b.push(15); b.push(135); b.push(181); b.push(1); b.push(0);
+    b.push(0); b.push(72); b.push(137); b.push(248); b.push(72); b.push(1); b.push(208); b.push(15);
+    b.push(130); b.push(169); b.push(1); b.push(0); b.push(0); b.push(73); b.push(131); b.push(249);
+    b.push(1); b.push(15); b.push(135); b.push(159); b.push(1); b.push(0); b.push(0); b.push(83);
+    b.push(85); b.push(65); b.push(84); b.push(65); b.push(85); b.push(65); b.push(86); b.push(65);
+    b.push(87); b.push(72); b.push(129); b.push(236); b.push(32); b.push(32); b.push(0); b.push(0);
+    b.push(73); b.push(137); b.push(252); b.push(76); b.push(139); b.push(46); b.push(73); b.push(137);
+    b.push(246); b.push(73); b.push(137); b.push(215); b.push(76); b.push(137); b.push(205); b.push(76);
+    b.push(137); b.push(132); b.push(36); b.push(0); b.push(32); b.push(0); b.push(0); b.push(77);
+    b.push(57); b.push(253); b.push(15); b.push(135); b.push(85); b.push(1); b.push(0); b.push(0);
+    b.push(73); b.push(247); b.push(197); b.push(15); b.push(0); b.push(0); b.push(0); b.push(15);
+    b.push(133); b.push(72); b.push(1); b.push(0); b.push(0); b.push(72); b.push(137); b.push(200);
+    b.push(232); b.push(97); b.push(1); b.push(0); b.push(0); b.push(72); b.push(133); b.push(192);
+    b.push(15); b.push(132); b.push(55); b.push(1); b.push(0); b.push(0); b.push(72); b.push(139);
+    b.push(24); b.push(72); b.push(139); b.push(72); b.push(8); b.push(72); b.push(137); b.push(140);
+    b.push(36); b.push(8); b.push(32); b.push(0); b.push(0); b.push(76); b.push(141); b.push(80);
+    b.push(16); b.push(69); b.push(49); b.push(219); b.push(73); b.push(57); b.push(203); b.push(115);
+    b.push(16); b.push(73); b.push(139); b.push(2); b.push(66); b.push(136); b.push(4); b.push(28);
+    b.push(73); b.push(131); b.push(194); b.push(16); b.push(73); b.push(255); b.push(195); b.push(235);
+    b.push(235); b.push(72); b.push(133); b.push(237); b.push(117); b.push(51); b.push(72); b.push(137);
+    b.push(231); b.push(72); b.push(139); b.push(180); b.push(36); b.push(8); b.push(32); b.push(0);
+    b.push(0); b.push(72); b.push(141); b.push(148); b.push(36); b.push(0); b.push(16); b.push(0);
+    b.push(0); b.push(185); b.push(0); b.push(16); b.push(0); b.push(0); b.push(232); b.push(183);
+    b.push(1); b.push(0); b.push(0); b.push(72); b.push(133); b.push(192); b.push(15); b.push(136);
+    b.push(225); b.push(0); b.push(0); b.push(0); b.push(72); b.push(137); b.push(195); b.push(76);
+    b.push(141); b.push(132); b.push(36); b.push(0); b.push(16); b.push(0); b.push(0); b.push(235);
+    b.push(126); b.push(72); b.push(129); b.push(251); b.push(253); b.push(7); b.push(0); b.push(0);
+    b.push(15); b.push(132); b.push(199); b.push(0); b.push(0); b.push(0); b.push(72); b.push(139);
+    b.push(132); b.push(36); b.push(0); b.push(32); b.push(0); b.push(0); b.push(232); b.push(219);
+    b.push(0); b.push(0); b.push(0); b.push(72); b.push(133); b.push(192); b.push(15); b.push(132);
+    b.push(177); b.push(0); b.push(0); b.push(0); b.push(72); b.push(129); b.push(56); b.push(253);
+    b.push(7); b.push(0); b.push(0); b.push(15); b.push(132); b.push(164); b.push(0); b.push(0);
+    b.push(0); b.push(72); b.push(129); b.push(251); b.push(254); b.push(7); b.push(0); b.push(0);
+    b.push(116); b.push(13); b.push(72); b.push(129); b.push(56); b.push(254); b.push(7); b.push(0);
+    b.push(0); b.push(15); b.push(133); b.push(142); b.push(0); b.push(0); b.push(0); b.push(76);
+    b.push(139); b.push(156); b.push(36); b.push(8); b.push(32); b.push(0); b.push(0); b.push(72);
+    b.push(139); b.push(72); b.push(8); b.push(73); b.push(141); b.push(28); b.push(11); b.push(72);
+    b.push(129); b.push(251); b.push(0); b.push(16); b.push(0); b.push(0); b.push(119); b.push(117);
+    b.push(76); b.push(141); b.push(80); b.push(16); b.push(72); b.push(133); b.push(201); b.push(116);
+    b.push(19); b.push(73); b.push(139); b.push(2); b.push(66); b.push(136); b.push(4); b.push(28);
+    b.push(73); b.push(131); b.push(194); b.push(16); b.push(73); b.push(255); b.push(195); b.push(72);
+    b.push(255); b.push(201); b.push(235); b.push(232); b.push(73); b.push(137); b.push(224); b.push(73);
+    b.push(137); b.push(219); b.push(73); b.push(193); b.push(227); b.push(4); b.push(73); b.push(131);
+    b.push(195); b.push(16); b.push(76); b.push(137); b.push(248); b.push(76); b.push(41); b.push(232);
+    b.push(73); b.push(57); b.push(195); b.push(119); b.push(64); b.push(79); b.push(141); b.push(20);
+    b.push(44); b.push(73); b.push(199); b.push(2); b.push(254); b.push(7); b.push(0); b.push(0);
+    b.push(73); b.push(137); b.push(90); b.push(8); b.push(73); b.push(131); b.push(194); b.push(16);
+    b.push(49); b.push(201); b.push(72); b.push(57); b.push(217); b.push(115); b.push(25); b.push(65);
+    b.push(15); b.push(182); b.push(4); b.push(8); b.push(73); b.push(137); b.push(2); b.push(73);
+    b.push(199); b.push(66); b.push(8); b.push(1); b.push(0); b.push(0); b.push(0); b.push(73);
+    b.push(131); b.push(194); b.push(16); b.push(72); b.push(255); b.push(193); b.push(235); b.push(226);
+    b.push(76); b.push(137); b.push(232); b.push(77); b.push(1); b.push(235); b.push(77); b.push(137);
+    b.push(30); b.push(49); b.push(210); b.push(235); b.push(7); b.push(49); b.push(192); b.push(186);
+    b.push(1); b.push(0); b.push(0); b.push(0); b.push(72); b.push(129); b.push(196); b.push(32);
+    b.push(32); b.push(0); b.push(0); b.push(65); b.push(95); b.push(65); b.push(94); b.push(65);
+    b.push(93); b.push(65); b.push(92); b.push(93); b.push(91); b.push(195); b.push(49); b.push(192);
+    b.push(186); b.push(1); b.push(0); b.push(0); b.push(0); b.push(195); b.push(76); b.push(57);
+    b.push(232); b.push(15); b.push(131); b.push(160); b.push(0); b.push(0); b.push(0); b.push(72);
+    b.push(169); b.push(15); b.push(0); b.push(0); b.push(0); b.push(15); b.push(133); b.push(148);
+    b.push(0); b.push(0); b.push(0); b.push(69); b.push(49); b.push(210); b.push(77); b.push(137);
+    b.push(235); b.push(77); b.push(41); b.push(211); b.push(73); b.push(131); b.push(251); b.push(16);
+    b.push(15); b.push(130); b.push(129); b.push(0); b.push(0); b.push(0); b.push(75); b.push(131);
+    b.push(60); b.push(20); b.push(1); b.push(114); b.push(122); b.push(75); b.push(129); b.push(60);
+    b.push(20); b.push(0); b.push(16); b.push(0); b.push(0); b.push(119); b.push(112); b.push(75);
+    b.push(139); b.push(76); b.push(20); b.push(8); b.push(72); b.push(129); b.push(249); b.push(0);
+    b.push(16); b.push(0); b.push(0); b.push(119); b.push(98); b.push(72); b.push(193); b.push(225);
+    b.push(4); b.push(72); b.push(131); b.push(193); b.push(16); b.push(76); b.push(57); b.push(217);
+    b.push(119); b.push(85); b.push(73); b.push(57); b.push(194); b.push(116); b.push(10); b.push(73);
+    b.push(1); b.push(202); b.push(73); b.push(57); b.push(194); b.push(119); b.push(72); b.push(235);
+    b.push(181); b.push(75); b.push(141); b.push(4); b.push(20); b.push(72); b.push(129); b.push(56);
+    b.push(0); b.push(16); b.push(0); b.push(0); b.push(116); b.push(18); b.push(72); b.push(129);
+    b.push(56); b.push(253); b.push(7); b.push(0); b.push(0); b.push(116); b.push(9); b.push(72);
+    b.push(129); b.push(56); b.push(254); b.push(7); b.push(0); b.push(0); b.push(117); b.push(39);
+    b.push(72); b.push(139); b.push(72); b.push(8); b.push(76); b.push(141); b.push(80); b.push(16);
+    b.push(72); b.push(133); b.push(201); b.push(116); b.push(25); b.push(73); b.push(129); b.push(58);
+    b.push(255); b.push(0); b.push(0); b.push(0); b.push(119); b.push(17); b.push(73); b.push(131);
+    b.push(122); b.push(8); b.push(1); b.push(117); b.push(10); b.push(73); b.push(131); b.push(194);
+    b.push(16); b.push(72); b.push(255); b.push(201); b.push(235); b.push(226); b.push(195); b.push(49);
+    b.push(192); b.push(195);
+    return ag_native_emit_log_escape(b);
+}
+
+test "native LogText bridge emits exact composed leaf" {
+    List<int> b = new List<int>();
+    assert(ag_native_emit_log_bridge(b));
+    assert(b.len() == AG_NATIVE_LOG_BRIDGE_SIZE);
+    string data = "";
+    for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
+    assert(write_file("build/ccam-native-log-bridge.bin", data));
+}

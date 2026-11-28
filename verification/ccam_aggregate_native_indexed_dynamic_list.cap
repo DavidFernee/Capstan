@@ -1,0 +1,131 @@
+// Opt-in indexed arena scalar lists. Stable two-pair handle tags 2046
+// (int) and 2047 (bool); private backing tag 2048. Handle contains length
+// and backing offset/readiness. Lazy allocation, capacity 4..4096 doubling.
+// RAX=handle, R8=mode (0 new int,1 new bool,2 len,3 get,4 set,5 push,6 pop),
+// R9=index, R10=payload. RDI/RSI retain bitmap metadata; indexed arena
+// R12/R13/R14. RAX=result, RDX=status; no writes on rejection. Growth
+// preflights live pairs, allocates new backing via indexed allocator,
+// copies values and publishes handle metadata; no rejecting step after
+// allocation. Retired backing is retained (no GC); pop clears live slot.
+// Trusted exclusive arena and private handles; no concurrency, canonical
+// ABI, source opcode integration, reference elements or dynamic maps.
+// Appended exact indexed allocator and guard; do not mix with old leaves.
+import "ccam_aggregate_native_indexed_arena.cap";
+
+const int AG_INDEXED_DYNAMIC_LIST_PREFIX_SIZE = 803;
+const int AG_INDEXED_DYNAMIC_LIST_SIZE = 1153;
+
+bool ag_native_emit_indexed_dynamic_list(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - AG_INDEXED_DYNAMIC_LIST_SIZE) { return false; }
+    b.push(72); b.push(131); b.push(236); b.push(64); b.push(76); b.push(137); b.push(4); b.push(36);
+    b.push(76); b.push(137); b.push(76); b.push(36); b.push(8); b.push(76); b.push(137); b.push(84);
+    b.push(36); b.push(16); b.push(73); b.push(131); b.push(248); b.push(6); b.push(15); b.push(135);
+    b.push(251); b.push(2); b.push(0); b.push(0); b.push(73); b.push(131); b.push(248); b.push(1);
+    b.push(15); b.push(134); b.push(180); b.push(2); b.push(0); b.push(0); b.push(232); b.push(130);
+    b.push(3); b.push(0); b.push(0); b.push(133); b.push(210); b.push(15); b.push(133); b.push(228);
+    b.push(2); b.push(0); b.push(0); b.push(77); b.push(141); b.push(20); b.push(4); b.push(76);
+    b.push(137); b.push(84); b.push(36); b.push(24); b.push(73); b.push(139); b.push(10); b.push(72);
+    b.push(129); b.push(233); b.push(254); b.push(7); b.push(0); b.push(0); b.push(72); b.push(131);
+    b.push(249); b.push(1); b.push(15); b.push(135); b.push(199); b.push(2); b.push(0); b.push(0);
+    b.push(72); b.push(137); b.push(76); b.push(36); b.push(56); b.push(73); b.push(131); b.push(122);
+    b.push(8); b.push(2); b.push(15); b.push(133); b.push(183); b.push(2); b.push(0); b.push(0);
+    b.push(73); b.push(131); b.push(122); b.push(24); b.push(1); b.push(15); b.push(133); b.push(172);
+    b.push(2); b.push(0); b.push(0); b.push(73); b.push(139); b.push(74); b.push(16); b.push(72);
+    b.push(129); b.push(249); b.push(0); b.push(16); b.push(0); b.push(0); b.push(15); b.push(135);
+    b.push(155); b.push(2); b.push(0); b.push(0); b.push(72); b.push(137); b.push(76); b.push(36);
+    b.push(40); b.push(73); b.push(131); b.push(122); b.push(40); b.push(0); b.push(117); b.push(40);
+    b.push(72); b.push(133); b.push(201); b.push(15); b.push(133); b.push(134); b.push(2); b.push(0);
+    b.push(0); b.push(73); b.push(131); b.push(122); b.push(32); b.push(0); b.push(15); b.push(133);
+    b.push(123); b.push(2); b.push(0); b.push(0); b.push(72); b.push(199); b.push(68); b.push(36);
+    b.push(32); b.push(0); b.push(0); b.push(0); b.push(0); b.push(72); b.push(199); b.push(68);
+    b.push(36); b.push(48); b.push(0); b.push(0); b.push(0); b.push(0); b.push(235); b.push(93);
+    b.push(73); b.push(131); b.push(122); b.push(40); b.push(1); b.push(15); b.push(133); b.push(92);
+    b.push(2); b.push(0); b.push(0); b.push(73); b.push(139); b.push(66); b.push(32); b.push(232);
+    b.push(233); b.push(2); b.push(0); b.push(0); b.push(133); b.push(210); b.push(15); b.push(133);
+    b.push(75); b.push(2); b.push(0); b.push(0); b.push(77); b.push(141); b.push(20); b.push(4);
+    b.push(73); b.push(129); b.push(58); b.push(0); b.push(8); b.push(0); b.push(0); b.push(15);
+    b.push(133); b.push(58); b.push(2); b.push(0); b.push(0); b.push(73); b.push(139); b.push(74);
+    b.push(8); b.push(72); b.push(131); b.push(249); b.push(4); b.push(15); b.push(130); b.push(44);
+    b.push(2); b.push(0); b.push(0); b.push(76); b.push(141); b.push(89); b.push(255); b.push(76);
+    b.push(133); b.push(217); b.push(15); b.push(133); b.push(31); b.push(2); b.push(0); b.push(0);
+    b.push(72); b.push(57); b.push(76); b.push(36); b.push(40); b.push(15); b.push(135); b.push(20);
+    b.push(2); b.push(0); b.push(0); b.push(76); b.push(137); b.push(84); b.push(36); b.push(32);
+    b.push(72); b.push(137); b.push(76); b.push(36); b.push(48); b.push(76); b.push(139); b.push(4);
+    b.push(36); b.push(73); b.push(131); b.push(248); b.push(2); b.push(116); b.push(106); b.push(73);
+    b.push(131); b.push(248); b.push(5); b.push(15); b.push(132); b.push(180); b.push(0); b.push(0);
+    b.push(0); b.push(73); b.push(131); b.push(248); b.push(6); b.push(116); b.push(100); b.push(72);
+    b.push(139); b.push(76); b.push(36); b.push(8); b.push(72); b.push(59); b.push(76); b.push(36);
+    b.push(40); b.push(15); b.push(131); b.push(224); b.push(1); b.push(0); b.push(0); b.push(72);
+    b.push(193); b.push(225); b.push(4); b.push(76); b.push(139); b.push(84); b.push(36); b.push(32);
+    b.push(77); b.push(141); b.push(84); b.push(10); b.push(16); b.push(73); b.push(131); b.push(122);
+    b.push(8); b.push(1); b.push(15); b.push(133); b.push(199); b.push(1); b.push(0); b.push(0);
+    b.push(73); b.push(131); b.push(248); b.push(3); b.push(116); b.push(24); b.push(72); b.push(139);
+    b.push(68); b.push(36); b.push(16); b.push(232); b.push(155); b.push(1); b.push(0); b.push(0);
+    b.push(15); b.push(130); b.push(177); b.push(1); b.push(0); b.push(0); b.push(73); b.push(137);
+    b.push(2); b.push(233); b.push(160); b.push(1); b.push(0); b.push(0); b.push(73); b.push(139);
+    b.push(2); b.push(232); b.push(133); b.push(1); b.push(0); b.push(0); b.push(15); b.push(130);
+    b.push(155); b.push(1); b.push(0); b.push(0); b.push(233); b.push(143); b.push(1); b.push(0);
+    b.push(0); b.push(72); b.push(139); b.push(68); b.push(36); b.push(40); b.push(233); b.push(133);
+    b.push(1); b.push(0); b.push(0); b.push(72); b.push(139); b.push(76); b.push(36); b.push(40);
+    b.push(72); b.push(133); b.push(201); b.push(15); b.push(132); b.push(117); b.push(1); b.push(0);
+    b.push(0); b.push(72); b.push(255); b.push(201); b.push(76); b.push(139); b.push(84); b.push(36);
+    b.push(32); b.push(73); b.push(137); b.push(203); b.push(73); b.push(193); b.push(227); b.push(4);
+    b.push(79); b.push(141); b.push(84); b.push(26); b.push(16); b.push(73); b.push(131); b.push(122);
+    b.push(8); b.push(1); b.push(15); b.push(133); b.push(95); b.push(1); b.push(0); b.push(0);
+    b.push(73); b.push(199); b.push(2); b.push(0); b.push(0); b.push(0); b.push(0); b.push(73);
+    b.push(199); b.push(66); b.push(8); b.push(0); b.push(0); b.push(0); b.push(0); b.push(76);
+    b.push(139); b.push(84); b.push(36); b.push(24); b.push(73); b.push(137); b.push(74); b.push(16);
+    b.push(233); b.push(57); b.push(1); b.push(0); b.push(0); b.push(72); b.push(139); b.push(68);
+    b.push(36); b.push(16); b.push(232); b.push(28); b.push(1); b.push(0); b.push(0); b.push(15);
+    b.push(130); b.push(50); b.push(1); b.push(0); b.push(0); b.push(72); b.push(139); b.push(76);
+    b.push(36); b.push(40); b.push(72); b.push(59); b.push(76); b.push(36); b.push(48); b.push(116);
+    b.push(30); b.push(76); b.push(139); b.push(84); b.push(36); b.push(32); b.push(72); b.push(193);
+    b.push(225); b.push(4); b.push(77); b.push(141); b.push(84); b.push(10); b.push(16); b.push(73);
+    b.push(131); b.push(122); b.push(8); b.push(0); b.push(15); b.push(133); b.push(13); b.push(1);
+    b.push(0); b.push(0); b.push(233); b.push(176); b.push(0); b.push(0); b.push(0); b.push(72);
+    b.push(129); b.push(249); b.push(0); b.push(16); b.push(0); b.push(0); b.push(15); b.push(131);
+    b.push(251); b.push(0); b.push(0); b.push(0); b.push(76); b.push(139); b.push(84); b.push(36);
+    b.push(32); b.push(69); b.push(49); b.push(219); b.push(76); b.push(59); b.push(92); b.push(36);
+    b.push(40); b.push(115); b.push(35); b.push(73); b.push(131); b.push(122); b.push(24); b.push(1);
+    b.push(15); b.push(133); b.push(225); b.push(0); b.push(0); b.push(0); b.push(73); b.push(139);
+    b.push(66); b.push(16); b.push(232); b.push(188); b.push(0); b.push(0); b.push(0); b.push(15);
+    b.push(130); b.push(210); b.push(0); b.push(0); b.push(0); b.push(73); b.push(131); b.push(194);
+    b.push(16); b.push(73); b.push(255); b.push(195); b.push(235); b.push(214); b.push(76); b.push(139);
+    b.push(68); b.push(36); b.push(48); b.push(77); b.push(133); b.push(192); b.push(117); b.push(8);
+    b.push(65); b.push(184); b.push(4); b.push(0); b.push(0); b.push(0); b.push(235); b.push(3);
+    b.push(73); b.push(209); b.push(224); b.push(184); b.push(0); b.push(8); b.push(0); b.push(0);
+    b.push(232); b.push(182); b.push(0); b.push(0); b.push(0); b.push(133); b.push(210); b.push(15);
+    b.push(133); b.push(162); b.push(0); b.push(0); b.push(0); b.push(73); b.push(137); b.push(193);
+    b.push(77); b.push(141); b.push(92); b.push(4); b.push(16); b.push(76); b.push(139); b.push(84);
+    b.push(36); b.push(32); b.push(73); b.push(131); b.push(194); b.push(16); b.push(72); b.push(139);
+    b.push(76); b.push(36); b.push(40); b.push(72); b.push(133); b.push(201); b.push(116); b.push(27);
+    b.push(73); b.push(139); b.push(2); b.push(73); b.push(137); b.push(3); b.push(73); b.push(199);
+    b.push(67); b.push(8); b.push(1); b.push(0); b.push(0); b.push(0); b.push(73); b.push(131);
+    b.push(194); b.push(16); b.push(73); b.push(131); b.push(195); b.push(16); b.push(72); b.push(255);
+    b.push(201); b.push(235); b.push(224); b.push(76); b.push(139); b.push(84); b.push(36); b.push(24);
+    b.push(77); b.push(137); b.push(74); b.push(32); b.push(73); b.push(199); b.push(66); b.push(40);
+    b.push(1); b.push(0); b.push(0); b.push(0); b.push(77); b.push(137); b.push(218); b.push(72);
+    b.push(139); b.push(68); b.push(36); b.push(16); b.push(73); b.push(137); b.push(2); b.push(73);
+    b.push(199); b.push(66); b.push(8); b.push(1); b.push(0); b.push(0); b.push(0); b.push(76);
+    b.push(139); b.push(84); b.push(36); b.push(24); b.push(73); b.push(255); b.push(66); b.push(16);
+    b.push(235); b.push(52); b.push(73); b.push(141); b.push(128); b.push(254); b.push(7); b.push(0);
+    b.push(0); b.push(65); b.push(184); b.push(2); b.push(0); b.push(0); b.push(0); b.push(232);
+    b.push(55); b.push(0); b.push(0); b.push(0); b.push(133); b.push(210); b.push(117); b.push(39);
+    b.push(73); b.push(199); b.push(68); b.push(4); b.push(24); b.push(1); b.push(0); b.push(0);
+    b.push(0); b.push(235); b.push(21); b.push(72); b.push(131); b.push(124); b.push(36); b.push(64);
+    b.push(0); b.push(116); b.push(9); b.push(185); b.push(1); b.push(0); b.push(0); b.push(0);
+    b.push(72); b.push(57); b.push(193); b.push(195); b.push(248); b.push(195); b.push(49); b.push(192);
+    b.push(49); b.push(210); b.push(72); b.push(131); b.push(196); b.push(64); b.push(195); b.push(49);
+    b.push(192); b.push(186); b.push(1); b.push(0); b.push(0); b.push(0); b.push(72); b.push(131);
+    b.push(196); b.push(64); b.push(195);
+    return ag_native_emit_indexed_arena(b);
+}
+
+test "indexed dynamic scalar list leaf has exact extent" {
+    List<int> b = new List<int>();
+    assert(ag_native_emit_indexed_dynamic_list(b));
+    assert(b.len() == 1153);
+    string data = "";
+    for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
+    assert(write_file("build/ccam-native-indexed-dynamic-list.bin", data));
+}

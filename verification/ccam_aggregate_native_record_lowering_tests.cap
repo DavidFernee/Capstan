@@ -11,7 +11,7 @@ AGSourceFunction? ag_nv_test_source(string text) {
 }
 
 bool ag_nv_test_write(AGImage image, string path) {
-    if (!image.ok || image.bytes.len() > 32768) { return false; }
+    if (!image.ok || image.bytes.len() > 65536) { return false; }
     string data = "";
     for (int i = 0; i < image.bytes.len(); i += 1) { data = data + char_str(image.bytes[i]); }
     return write_file(path, data);
@@ -71,11 +71,574 @@ test "candidate native arithmetic admits signed extrema and explicit arithmetic 
 test "candidate native admission rejects invalid budgets and unsupported source" {
     AGFunction f = ag_nv_test_arith(AG_OP_ADD, 1, 2);
     assert(!ag_nv_compile(f, 0).ok && !ag_nv_compile(f, 4097).ok);
-    if (let entry = ag_nv_test_source("int run() { List<int> v = new List<int>(); return v.len(); }")) {
-        AGImage refused = ag_nv_compile(entry.function, 100);
-        assert(!refused.ok && refused.bytes.len() == 0);
-    } else { assert(false); }
+    AGFunction unsupported = ag_nv_test_arith(AG_OP_ADD, 1, 2);
+    unsupported.blocks[0].instructions[2].opcode = 999;
+    AGImage refused = ag_nv_compile(unsupported, 100);
+    assert(!refused.ok && refused.bytes.len() == 0);
     f.blocks[0].instructions[2].operands[1] = 99;
     AGImage invalid = ag_nv_compile(f, 100);
     assert(!invalid.ok && invalid.bytes.len() == 0);
+}
+
+AGImage ag_nvc_test_source(string text, int fuel, int depth) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("native-calls.cap");
+    Tainted source = taint(text); ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    if (error_count(ctx) == 0) { check_program(new_checker(ctx), declarations, false); }
+    return ag_nvc_compile_checked(ctx, declarations, fuel, depth);
+}
+
+test "candidate native nested scalar calls preserve argument order caller slots and void results" {
+    string source = "int pair(int a, int b) { return a * 10 + b; } " +
+        "bool choose(int a, int b) { return a < b; } " +
+        "void empty() { } " +
+        "int run() { int x = 2; int y = 3; empty(); " +
+        "if (choose(x, y)) { return pair(pair(x, y), x) + y; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-calls.elf"));
+}
+
+test "candidate native recursion observes exact active frame ceiling and shared fuel" {
+    string source = "int fact(int n) { if (n <= 1) { return 1; } return n * fact(n - 1); } " +
+        "int run() { return fact(5); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 6), "build/ccam-native-record-recursion.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 5), "build/ccam-native-record-depth.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 3, 6), "build/ccam-native-record-callfuel.elf"));
+}
+
+test "candidate native direct calls preserve local record identity across scalar call" {
+    string source = "struct Budget { int n; } " +
+        "int twice(int x) { Budget local = new Budget{n: x}; return local.n * 2; } " +
+        "int run() { Budget budget = new Budget{n: 21}; int result = twice(budget.n); return result + budget.n; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-local-record.elf"));
+}
+
+test "candidate native direct calls reject absent entry and invalid budgets" {
+    string source = "int not_entry() { return 1; }";
+    AGImage rejected = ag_nvc_test_source(source, 100, 8);
+    assert(!rejected.ok && rejected.bytes.len() == 0);
+    assert(!ag_nvc_test_source("int run() { return 1; }", 100, 0).ok);
+    assert(!ag_nvc_test_source("int run() { return 1; }", 100, 33).ok);
+}
+
+test "candidate native record calls preserve alias identity and reference return lifetime" {
+    string source = "struct Budget { int n; } " +
+        "Budget make(int x) { return new Budget{n: x}; } " +
+        "void charge(Budget b, int x) { b.n += x; } " +
+        "Budget identity(Budget b) { return b; } " +
+        "int run() { Budget b = make(20); Budget alias = identity(b); charge(alias, 22); return b.n; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-reference.elf"));
+}
+
+test "candidate native recursive record calls retain one allocation across frames" {
+    string source = "struct Budget { int n; } " +
+        "void charge(Budget b, int x) { if (x == 0) { return; } b.n += x; charge(b, x - 1); } " +
+        "int run() { Budget b = new Budget{n: 0}; charge(b, 5); return b.n; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-reference-recursion.elf"));
+}
+
+// Construct coarse-valid but nominally wrong graph: allocator and boundary
+// descriptor differ. This cannot be expressed through the checked frontend.
+AGFunction ag_nvc_test_record_return(int descriptor) {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF);
+    List<int> operands = new List<int>(); operands.push(0); operands.push(descriptor);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(new AGBlockInstruction{opcode: AG_OP_RECORD_ALLOC, kind: AG_SCHEMA_REF, operands: operands});
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(0);
+    return new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_REF},
+        kinds: kinds, blocks: blocks, returns: returns};
+}
+
+test "candidate native reference return rejects wrong nominal descriptor before publication" {
+    AGFunction maker = ag_nvc_test_record_return(1);
+    AGFunction other = ag_nvc_test_record_return(2);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    List<int> call = new List<int>(); call.push(0); call.push(0);
+    instructions.push(new AGBlockInstruction{opcode: AG_OP_DIRECT_CALL, kind: AG_SCHEMA_REF, operands: call});
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 1, 42, 0));
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(1);
+    AGFunction entry = new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        kinds: kinds, blocks: blocks, returns: returns};
+    List<AGFunction> functions = new List<AGFunction>(); functions.push(maker); functions.push(other); functions.push(entry);
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>();
+    signatures.push(new AGNominalSignature{coarse: maker.signature, parameter_descriptors: new List<int>(), result_descriptor: 2});
+    signatures.push(new AGNominalSignature{coarse: other.signature, parameter_descriptors: new List<int>(), result_descriptor: 2});
+    signatures.push(new AGNominalSignature{coarse: entry.signature, parameter_descriptors: new List<int>(), result_descriptor: 0});
+    assert(ag_nv_test_write(ag_nvc_compile_typed(functions, signatures, 2, 100, 8), "build/ccam-native-record-reference-mismatch.elf"));
+    assert(!ag_nvc_compile(functions, 2, 100, 8).ok);
+}
+
+test "candidate native mixed records preserve boolean fields and nested alias identity" {
+    string source = "struct Child { int n; } struct Parent { bool ready; Child child; int extra; } " +
+        "void enable(Parent p) { p.ready = true; p.child.n += p.extra; } " +
+        "int run() { Child c = new Child{n: 20}; " +
+        "Parent p = new Parent{ready: false, child: c, extra: 22}; " +
+        "if (p.ready) { return 0; } enable(p); if (p.ready) { return c.n; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-mixed.elf"));
+}
+
+test "candidate native mixed record references survive replacement and return" {
+    string source = "struct Child { int n; } struct Parent { Child child; bool ready; } " +
+        "Child replace(Parent p) { p.child = new Child{n: 31}; p.ready = true; return p.child; } " +
+        "int run() { Child old = new Child{n: 11}; Parent p = new Parent{child: old, ready: false}; " +
+        "Child fresh = replace(p); if (p.ready) { return fresh.n + old.n; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-mixed-replace.elf"));
+}
+
+AGBlockInstruction ag_nv_test_record_alloc(int destination, int descriptor, int field_kind, int shape) {
+    List<int> a = new List<int>(); a.push(destination); a.push(descriptor);
+    if (field_kind != 0) { a.push(field_kind); a.push(shape); }
+    return new AGBlockInstruction{opcode: AG_OP_RECORD_ALLOC, kind: AG_SCHEMA_REF, operands: a};
+}
+
+AGFunction ag_nv_test_mixed_graph(bool conflicting_layout, bool wrong_reference, bool wrong_field_kind) {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(ag_nv_test_record_alloc(0, 1, 0, 0));
+    instructions.push(ag_nv_test_record_alloc(1, 2, 0, 0));
+    instructions.push(ag_nv_test_record_alloc(2, 3, AG_SCHEMA_REF, 1));
+    if (conflicting_layout) {
+        instructions.push(ag_nv_test_record_alloc(2, 3, AG_SCHEMA_BOOL, 0));
+    }
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_BOOL, 4, 1, 0));
+    List<int> a = new List<int>();
+    int kind = AG_SCHEMA_REF;
+    if (wrong_field_kind) { a.push(4); kind = AG_SCHEMA_BOOL; }
+    else if (wrong_reference) { a.push(1); }
+    else { a.push(0); }
+    a.push(2); a.push(3); a.push(0);
+    if (wrong_field_kind) { a.push(0); } else { a.push(1); }
+    instructions.push(new AGBlockInstruction{opcode: AG_OP_FIELD_SET, kind: kind, operands: a});
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 3, 42, 0));
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(3);
+    return new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        kinds: kinds, blocks: blocks, returns: returns};
+}
+
+test "candidate native mixed layout admission rejects contradictions and wrong field shapes" {
+    AGImage conflict = ag_nv_compile(ag_nv_test_mixed_graph(true, false, false), 100);
+    assert(!conflict.ok && conflict.bytes.len() == 0);
+    AGImage field = ag_nv_compile(ag_nv_test_mixed_graph(false, false, true), 100);
+    assert(!field.ok && field.bytes.len() == 0);
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_mixed_graph(false, false, false), 100),
+        "build/ccam-native-record-mixed-valid.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_mixed_graph(false, true, false), 100),
+        "build/ccam-native-record-mixed-mismatch.elf"));
+}
+
+test "candidate native immutable strings preserve embedded zero and byte indexing" {
+    string source = "int run() { string s = \"a\\0b\"; return s.len() * 10 + s.at(1) + s.at(2); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-bytes-index.elf"));
+}
+
+test "candidate native string fields calls and equality preserve exact bytes" {
+    string source = "struct Label { string text; } " +
+        "string get(Label label) { return label.text; } " +
+        "int run() { Label label = new Label{text: \"a\\0b\"}; string s = get(label); " +
+        "if (s == \"a\\0b\") { if (s != \"a\\0c\") { if (s != \"a\") { return 42; } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-bytes-equal.elf"));
+}
+
+test "candidate native empty strings compare exactly and reject invalid indexes" {
+    string empty = "int run() { string s = \"\"; if (s == \"\") { return s.len(); } return 1; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(empty, 1024, 8), "build/ccam-native-record-bytes-empty.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string s = \"a\"; return s.at(1); }", 100, 8),
+        "build/ccam-native-record-bytes-oob.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string s = \"a\"; return s.at(0 - 1); }", 100, 8),
+        "build/ccam-native-record-bytes-negative.elf"));
+}
+
+test "candidate native reserved string tag cannot be allocated by record opcode" {
+    AGFunction f = ag_nvc_test_record_return(AG_NV_BYTES_TAG);
+    List<AGFunction> functions = new List<AGFunction>(); functions.push(f);
+    functions.push(ag_nv_test_arith(AG_OP_ADD, 1, 2));
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>();
+    signatures.push(new AGNominalSignature{coarse: f.signature, parameter_descriptors: new List<int>(), result_descriptor: AG_NV_BYTES_DESCRIPTOR});
+    signatures.push(new AGNominalSignature{coarse: functions[1].signature, parameter_descriptors: new List<int>(), result_descriptor: 0});
+    AGImage rejected = ag_nvc_compile_typed(functions, signatures, 1, 100, 8);
+    assert(!rejected.ok && rejected.bytes.len() == 0);
+}
+
+test "candidate native string copy preserves source alias and embedded NUL" {
+    string source = "string join(string a, string b) { return a + b; } " +
+        "int run() { string a = \"a\\0b\"; string b = join(a, \"cd\"); " +
+        "string middle = b.slice(1, 4); if (a == \"a\\0b\") { " +
+        "if (middle == \"\\0bc\") { return b.len() * 10 + middle.at(0); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-bytes-copy.elf"));
+}
+
+test "candidate native string copy supports empty and exact endpoint ranges" {
+    string source = "int run() { string a = \"abc\"; string b = \"\" + a + \"\"; " +
+        "if (b.slice(0, 3) == a) { if (b.slice(3, 3) == \"\") { return b.len(); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-bytes-copy-empty.elf"));
+}
+
+test "candidate native string output limit and invalid slice ranges reject" {
+    string full = "int run() { string a = \"x\"; int i = 0; while (i < 12) { a = a + a; i += 1; } return a.len(); }";
+    string over = "int run() { string a = \"x\"; int i = 0; while (i < 13) { a = a + a; i += 1; } return a.len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(full, 1024, 8), "build/ccam-native-record-bytes-max.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(over, 1024, 8), "build/ccam-native-record-bytes-over.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string a = \"abc\"; return a.slice(2, 1).len(); }", 100, 8),
+        "build/ccam-native-record-bytes-reversed.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string a = \"abc\"; return a.slice(0, 4).len(); }", 100, 8),
+        "build/ccam-native-record-bytes-slice-oob.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string a = \"abc\"; return a.slice(0 - 1, 2).len(); }", 100, 8),
+        "build/ccam-native-record-bytes-slice-negative.elf"));
+}
+
+test "candidate native integer text handles signed extrema and zero" {
+    string source = "int run() { int low = 0 - 9223372036854775807 - 1; " +
+        "if (int_to_str(low) == \"-9223372036854775808\") { " +
+        "if (int_to_str(9223372036854775807) == \"9223372036854775807\") { " +
+        "if (int_to_str(0) == \"0\") { return 42; } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-text-extrema.elf"));
+}
+
+test "candidate native byte and boolean conversions preserve exact values" {
+    string source = "string label(bool b) { return to_text(b); } " +
+        "int run() { string s = char_str(0) + char_str(255); " +
+        "if (label(true) == \"true\") { if (label(false) == \"false\") { " +
+        "if (s.len() == 2) { return s.at(0) + s.at(1); } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-text-byte-bool.elf"));
+}
+
+test "candidate native invalid byte conversions reject before publication" {
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { return char_str(256).len(); }", 100, 8),
+        "build/ccam-native-record-text-byte-over.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { return char_str(0 - 1).len(); }", 100, 8),
+        "build/ccam-native-record-text-byte-negative.elf"));
+}
+
+test "candidate native scalar list calls preserve identity and mutable logical length" {
+    string source = "struct Work { List<int> values; } " +
+        "void fill(List<int> values) { values.push(10); values.push(20); values.push(12); } " +
+        "int run() { List<int> values = new List<int>(); Work w = new Work{values: values}; " +
+        "fill(w.values); values[0] = values[0] + values[1]; values.pop(); values.push(12); " +
+        "return values[0] + values[2]; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-list-int.elf"));
+}
+
+test "candidate native bool list supports return aliases and cleared pop slots" {
+    string source = "List<bool> make() { List<bool> b = new List<bool>(); b.push(false); b.push(true); return b; } " +
+        "int run() { List<bool> b = make(); b.pop(); b.push(false); b[0] = true; " +
+        "if (b[0]) { if (!b[1]) { return b.len(); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-list-bool.elf"));
+}
+
+test "candidate native list capacity and index boundaries" {
+    string full = "int run() { List<int> a = new List<int>(); int i = 0; while (i < 256) { a.push(i); i += 1; } return a[255]; }";
+    string over = "int run() { List<int> a = new List<int>(); int i = 0; while (i < 257) { a.push(i); i += 1; } return 42; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(full, 4096, 8), "build/ccam-native-record-list-full.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(over, 4096, 8), "build/ccam-native-record-list-over.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<int> a = new List<int>(); a.pop(); return a.len(); }", 100, 8),
+        "build/ccam-native-record-list-empty.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<int> a = new List<int>(); return a[0]; }", 100, 8),
+        "build/ccam-native-record-list-oob.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<int> a = new List<int>(); a.push(1); return a[0 - 1]; }", 100, 8),
+        "build/ccam-native-record-list-negative.elf"));
+}
+
+test "candidate native string lists preserve byte identity and slot replacement" {
+    string source = "List<string> make() { List<string> a = new List<string>(); a.push(\"a\\0b\"); return a; } " +
+        "int run() { List<string> a = make(); a.push(\"z\"); a[1] = a[0]; a.pop(); " +
+        "if (a[0] == \"a\\0b\") { return a.len() * 10 + a[0].at(2); } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-list-string.elf"));
+}
+
+test "candidate native record worklist preserves shared object identity" {
+    string source = "struct Task { int n; } struct Work { List<Task> tasks; } " +
+        "void fill(List<Task> tasks, Task task) { tasks.push(task); } " +
+        "int run() { Task t = new Task{n: 20}; List<Task> tasks = new List<Task>(); " +
+        "Work w = new Work{tasks: tasks}; fill(w.tasks, t); Task alias = w.tasks[0]; " +
+        "alias.n += 22; return t.n; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-list-reference.elf"));
+}
+
+test "candidate native reference list rejects invalid index" {
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<string> a = new List<string>(); a.push(\"a\"); return a[1].len(); }", 100, 8),
+        "build/ccam-native-record-list-reference-oob.elf"));
+}
+
+// Deliberately coarse-valid wrong-element graph: string list, record payload.
+test "candidate native reference list rejects wrong nominal payload before store" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(ag_nv_test_record_alloc(0, 1, 0, 0));
+    List<int> alloc = new List<int>(); alloc.push(1); alloc.push(-1); alloc.push(0);
+    instructions.push(new AGBlockInstruction{opcode: 5, kind: AG_SCHEMA_REF, operands: alloc});
+    List<int> push = new List<int>(); push.push(1); push.push(0);
+    instructions.push(new AGBlockInstruction{opcode: AG_OP_LIST_PUSH, kind: AG_SCHEMA_REF, operands: push});
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 2, 42, 0));
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(2);
+    AGFunction f = new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        kinds: kinds, blocks: blocks, returns: returns};
+    assert(ag_nv_test_write(ag_nv_compile(f, 100), "build/ccam-native-record-list-reference-mismatch.elf"));
+}
+
+test "candidate native optionals distinguish absent from present zero and false" {
+    string source = "int? choose(bool b) { if (b) { return 0; } return none; } " +
+        "int read(int? v) { if (let n = v) { return n; } return 7; } " +
+        "bool? flag() { return false; } " +
+        "int run() { int? a = choose(true); int? b = choose(false); " +
+        "if (let f = flag()) { if (!f) { return read(a) + read(b); } } return 99; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-opt-scalar.elf"));
+}
+
+test "candidate native optional record payload retains alias identity at offset zero" {
+    string source = "struct Node { int number; } struct Holder { Node? node; } " +
+        "Holder make(Node n) { return new Holder{node: n}; } " +
+        "int run() { Node n = new Node{number: 20}; Holder h = make(n); " +
+        "if (let p = h.node) { p.number += 22; return n.number; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-opt-record.elf"));
+}
+
+test "candidate native optional strings retain embedded NUL through returns" {
+    string source = "string? choose(bool b) { if (b) { return \"a\\0b\"; } return none; } " +
+        "int run() { if (let s = choose(true)) { if (s == \"a\\0b\") { return s.len(); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-opt-string.elf"));
+}
+
+AGFunction ag_nv_test_optional_graph(int descriptor, int read_descriptor, bool unwrap) {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    List<int> alloc = new List<int>(); alloc.push(0); alloc.push(descriptor);
+    instructions.push(new AGBlockInstruction{opcode: AG_OP_OPT_NONE, kind: AG_SCHEMA_REF, operands: alloc});
+    List<int> read = new List<int>();
+    if (unwrap) { read.push(1); } else { read.push(2); }
+    read.push(0); read.push(read_descriptor);
+    if (unwrap) {
+        instructions.push(new AGBlockInstruction{opcode: AG_OP_OPT_UNWRAP, kind: AG_SCHEMA_INT, operands: read});
+    } else {
+        instructions.push(new AGBlockInstruction{opcode: AG_OP_OPT_PRESENT, kind: AG_SCHEMA_BOOL, operands: read});
+        instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 1, 42, 0));
+    }
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(1);
+    return new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        kinds: kinds, blocks: blocks, returns: returns};
+}
+
+test "candidate native optional tag partition and wrong descriptor rejection" {
+    assert(ag_nv_optional_tag(8193) == 1021 && ag_nv_optional_tag(8194) == 1022);
+    assert(ag_nv_optional_tag(8195) == 1023 && ag_nv_optional_tag(10001) == 1025);
+    assert(ag_nv_optional_tag(11020) == 2044 && ag_nv_optional_tag(11021) == 0);
+    assert(ag_nv_ref_list_tag(-1023) == 3068 && ag_nv_ref_list_tag(-1024) == 0);
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_optional_graph(8193, 8193, false), 100),
+        "build/ccam-native-record-opt-absent.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_optional_graph(8193, 8193, true), 100),
+        "build/ccam-native-record-opt-unwrap-none.elf"));
+    assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_optional_graph(8193, 8194, false), 100),
+        "build/ccam-native-record-opt-mismatch.elf"));
+    assert(!ag_nv_compile(ag_nv_test_optional_graph(11021, 11021, false), 100).ok);
+}
+
+test "candidate native map lookup preserves present zero and content equality" {
+    string source = "int run() { Map<int> m = new Map<int>(); m.set(\"a\\0b\", 0); " +
+        "string k = \"a\" + \"\\0b\"; if (m.has(k)) { if (let v = m.get(k)) { " +
+        "m.set(k, 42); if (let w = m.get(\"a\\0b\")) { return v + w; } } } return 99; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-int.elf"));
+}
+
+test "candidate native map fields and returned reference payloads preserve aliases" {
+    string source = "struct Node { int n; } struct Holder { Map<Node> nodes; } " +
+        "Map<Node> make(Node n) { Map<Node> m = new Map<Node>(); m.set(\"n\", n); return m; } " +
+        "int run() { Node n = new Node{n: 20}; Holder h = new Holder{nodes: make(n)}; " +
+        "if (let v = h.nodes.get(\"n\")) { v.n += 22; return n.n; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-ref.elf"));
+}
+
+test "candidate native map string and bool payloads and absent lookup" {
+    string source = "int run() { Map<string> s = new Map<string>(); Map<bool> b = new Map<bool>(); " +
+        "s.set(\"k\", \"abc\"); b.set(\"k\", false); if (let value = b.get(\"k\")) { if (!value) { " +
+        "if (let text = s.get(\"k\")) { if (!s.has(\"missing\")) { if (let other = s.get(\"missing\")) { return 99; } " +
+        "return text.len(); } } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-string-bool.elf"));
+}
+
+test "candidate native fixed map bound admits replacement and rejects growth" {
+    string full = "int run() { Map<int> m = new Map<int>(); int i = 0; while (i < 64) { m.set(int_to_str(i), i); i += 1; } " +
+        "m.set(\"0\", 42); if (let v = m.get(\"0\")) { return v; } return 0; }";
+    string over = "int run() { Map<int> m = new Map<int>(); int i = 0; while (i < 65) { m.set(int_to_str(i), i); i += 1; } return 42; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(full, 4096, 8), "build/ccam-native-record-map-full.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(over, 4096, 8), "build/ccam-native-record-map-over.elf"));
+}
+
+test "candidate native map keys snapshot preserves insertion order after removal" {
+    string source = "int run() { Map<int> m = new Map<int>(); m.set(\"a\", 1); m.set(\"b\", 2); m.set(\"c\", 3); " +
+        "List<string> old = m.keys(); if (m.remove(\"b\")) { m.set(\"d\", 4); List<string> fresh = m.keys(); " +
+        "if (old[1] == \"b\") { if (fresh[0] == \"a\") { if (fresh[1] == \"c\") { if (fresh[2] == \"d\") { " +
+        "return old.len() * 10 + fresh.len(); } } } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-snapshot.elf"));
+}
+
+test "candidate native map removal handles content equivalent keys and absent values" {
+    string source = "int run() { Map<int> m = new Map<int>(); m.set(\"a\\0b\", 0); string k = \"a\" + \"\\0b\"; " +
+        "if (m.remove(k)) { if (!m.remove(k)) { if (!m.has(k)) { " +
+        "if (let x = m.get(k)) { return 99; } m.set(k, 42); if (let v = m.get(k)) { return v; } } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-remove.elf"));
+}
+
+test "candidate native empty map snapshot is independently mutable" {
+    string source = "int run() { Map<bool> m = new Map<bool>(); List<string> keys = m.keys(); " +
+        "keys.push(\"x\"); if (!m.has(\"x\")) { if (m.keys().len() == 0) { return keys.len(); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-empty-keys.elf"));
+}
+
+test "candidate native source admits checked literal constants across functions" {
+    string source = "const int NUMBER = 40; const bool ENABLED = true; const string LABEL = \"ok\"; " +
+        "int helper() { if (ENABLED) { return NUMBER + LABEL.len(); } return 0; } " +
+        "int run() { return helper(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-constants.elf"));
+    AGImage invalid = ag_nvc_test_source("int helper() { return 42; } const int X = helper(); int run() { return X; }", 100, 8);
+    assert(!invalid.ok && invalid.bytes.len() == 0);
+}
+
+test "candidate native checked module exceeds former 32 function ceiling" {
+    string source = "";
+    for (int i = 0; i < 40; i += 1) {
+        source = source + "int helper" + int_to_str(i) + "() { return " + int_to_str(i) + "; } ";
+    }
+    source = source + "int run() { return helper39() + helper3(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-41.elf"));
+}
+
+test "candidate native module admits original shared ceiling and explicit larger boundary" {
+    List<AGFunction> functions = new List<AGFunction>();
+    AGFunction f = ag_nv_test_arith(AG_OP_ADD, 20, 22);
+    for (int i = 0; i < AG_PROGRAM_DEFAULT_FUNCTIONS; i += 1) { functions.push(f); }
+    assert(ag_nv_test_write(ag_nvc_compile(functions, AG_PROGRAM_DEFAULT_FUNCTIONS - 1, 100, 8),
+        "build/ccam-native-record-module-256.elf"));
+    for (int i = AG_PROGRAM_DEFAULT_FUNCTIONS; i < AG_NVC_MAX_FUNCTIONS; i += 1) { functions.push(f); }
+    assert(ag_nvc_compile(functions, AG_NVC_MAX_FUNCTIONS - 1, 100, 8).ok);
+    functions.push(f);
+    AGImage rejected = ag_nvc_compile(functions, 0, 100, 8);
+    assert(!rejected.ok && rejected.bytes.len() == 0);
+}
+
+test "candidate native source admits calls across old function index boundary" {
+    string source = "";
+    for (int i = 0; i < 299; i += 1) {
+        source = source + "int helper" + int_to_str(i) + "() { return " + int_to_str(i) + "; } ";
+    }
+    source = source + "int run() { return helper298() - helper256(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-300.elf"));
+}
+
+AGImage ag_nv_test_process(string text) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("native-process.cap");
+    Tainted source = taint(text); ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    if (error_count(ctx) == 0) { check_program(new_checker(ctx), declarations, false); }
+    return ag_nvc_compile_checked_process(ctx, declarations, 1024, 8);
+}
+
+test "candidate process entry accepts only exact string list signature" {
+    string source = "int run(List<string> argv) { if (argv.len() == 0) { return 0; } return argv.len() * 10000 + argv[0].len(); }";
+    assert(ag_nv_test_write(ag_nv_test_process(source), "build/ccam-native-record-process-argv.elf"));
+    assert(!ag_nv_test_process("int run() { return 0; }").ok);
+    assert(!ag_nv_test_process("int run(List<int> argv) { return argv.len(); }").ok);
+    assert(!ag_nvc_test_source(source, 1024, 8).ok);
+}
+
+test "candidate process entry preserves argument bytes" {
+    string source = "int run(List<string> argv) { if (argv.len() == 2) { if (argv[0].len() == 0) { return argv[1].at(0); } } return 0; }";
+    assert(ag_nv_test_write(ag_nv_test_process(source), "build/ccam-native-record-process-bytes.elf"));
+}
+
+test "candidate closed integer constants include production signed minimum" {
+    string source = "const int I64_MIN = -9223372036854775807 - 1; " +
+        "int run() { return I64_MIN; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-constant-min.elf"));
+    string ops = "const int A = (7 * 9 - 3) / 2 + 12 % 7 + 7; int run() { return A; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(ops, 1024, 8), "build/ccam-native-record-constant-ops.elf"));
+    assert(!ag_nvc_test_source("const int X = 9223372036854775807 + 1; int run() { return X; }", 100, 8).ok);
+    assert(!ag_nvc_test_source("const int X = 1 / 0; int run() { return X; }", 100, 8).ok);
+    assert(!ag_nvc_test_source("const int X = (-9223372036854775807 - 1) / -1; int run() { return X; }", 100, 8).ok);
+}
+
+test "candidate constant folding preserves checked input and enforces independent budgets" {
+    Type t = mk_type(TY_INT);
+    Node a = mk_node(N_INT, 0, 1); a.n = 20; a.ty = t;
+    Node b = mk_node(N_INT, 0, 1); b.n = 22; b.ty = t;
+    Node sum = mk_node_s(N_BIN, "+", 0, 1); sum.ty = t;
+    sum.kids.push(a); sum.kids.push(b);
+    Node d = mk_node_s(N_CONST, "X", 0, 1); d.ty = t; d.kids.push(sum);
+    if (let folded = ag_nv_normalize_constant(d)) {
+        assert(folded.kids[0].k == N_INT && folded.kids[0].n == 42);
+        assert(d.kids[0].k == N_BIN && d.kids[0].kids.len() == 2);
+    } else { assert(false); }
+    AGNVConstantBudget short = new AGNVConstantBudget{remaining: 2};
+    if (let value = ag_nv_const_int(sum, short, 1)) { assert(false); }
+    assert(short.remaining == 0);
+    AGNVConstantBudget exact = new AGNVConstantBudget{remaining: 3};
+    if (let value = ag_nv_const_int(sum, exact, 1)) { assert(value == 42 && exact.remaining == 0); }
+    else { assert(false); }
+    Node deep = a;
+    for (int i = 0; i < AG_NV_CONST_DEPTH; i += 1) {
+        Node neg = mk_node(N_NEG, 0, 1); neg.ty = t; neg.kids.push(deep); deep = neg;
+    }
+    AGNVConstantBudget bounded = new AGNVConstantBudget{remaining: AG_NV_CONST_WORK};
+    if (let value = ag_nv_const_int(deep, bounded, 1)) { assert(false); }
+}
+
+test "candidate native taint operations preserve exact classification and list aliasing" {
+    string source = "Tainted pick(List<Tainted> values, int i) { return values[i]; } " +
+        "int run() { List<Tainted> values = new List<Tainted>(); " +
+        "values.push(taint(\"abc\")); values.push(taint(\"xyz\")); " +
+        "values[1] = pick(values, 0).slice(1, 3); Tainted selected = pick(values, 1); " +
+        "values.pop(); return selected.at(0) + selected.len() + values.len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-taint-list.elf"));
+    string empty = "int run() { List<Tainted> values = new List<Tainted>(); values.pop(); Tainted x = taint(\"\"); return x.slice(0, 0).len() + values.len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(empty, 1024, 8), "build/ccam-native-record-taint-empty.elf"));
+    string bounds = "int run() { Tainted x = taint(\"abc\"); return x.slice(0, 4).len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(bounds, 1024, 8), "build/ccam-native-record-taint-slice-oob.elf"));
+    string index = "int run() { Tainted x = taint(\"abc\"); return x.at(-1); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(index, 1024, 8), "build/ccam-native-record-taint-negative.elf"));
+    string absent = "int run() { List<Tainted> values = new List<Tainted>(); return values[0].len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(absent, 1024, 8), "build/ccam-native-record-taint-list-oob.elf"));
+    assert(!ag_nvc_test_source("string wrong() { return taint(\"x\"); } int run() { return 0; }", 1024, 8).ok);
+}
+
+test "candidate native tainted record field and direct return retain nominal type" {
+    string source = "struct Input { Tainted text; } " +
+        "Tainted get(Input item) { return item.text; } " +
+        "int run() { Input item = new Input{text: taint(\"A\")}; return get(item).at(0); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-taint-field.elf"));
+}
+
+test "native LogText contextual composition and optional direct returns" {
+    string source = "LogText? excerpt(Tainted src, bool present) { if (!present) { return none; } " +
+        "LogText line = \"    \" + escape_log(src.slice(0, src.len())); return line + \"\\n    ^\"; } " +
+        "int run() { if (let value = excerpt(taint(\"abc\"), true)) { " +
+        "LogText again = escape_log(value); return 42; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-log-present.elf"));
+    string absent = "LogText? excerpt() { return none; } int run() { if (let x = excerpt()) { return 1; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(absent, 1024, 8), "build/ccam-native-record-log-absent.elf"));
+    assert(!ag_nvc_test_source("string bad(Tainted x) { return escape_log(x); } int run() { return 0; }", 1024, 8).ok);
+    assert(!ag_nvc_test_source("LogText bad(Tainted x) { return escape_log(x) + x; } int run() { return 0; }", 1024, 8).ok);
+}
+
+test "native join preserves trusted and tainted nominal result including empty lists" {
+    string source = "int run() { List<string> a = new List<string>(); a.push(\"left\"); a.push(\"right\"); " +
+        "List<Tainted> b = new List<Tainted>(); b.push(taint(\"left\")); b.push(taint(\"right\")); " +
+        "Tainted x = join(b, \"-\"); string y = join(a, \"-\"); " +
+        "List<Tainted> empty = new List<Tainted>(); Tainted z = join(empty, \"!\"); " +
+        "return x.len() + y.len() + z.len() + x.at(4); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-join.elf"));
+    assert(!ag_nvc_test_source("string bad(List<Tainted> x) { return join(x, \"\"); } int run() { return 0; }", 1024, 8).ok);
 }
