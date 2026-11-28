@@ -24,6 +24,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Test portable conformance oracle
+        run: python3 tools/assurance/test_portable_bootstrap.py
       - name: Bootstrap existing C-backed compiler
         run: make bootstrap
       - name: Check diverse optimisation fixpoints and security fixtures
