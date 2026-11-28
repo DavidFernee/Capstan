@@ -57,12 +57,20 @@ AGSourceModuleResult ag_source_lower_checked(Ctx ctx, List<Node> declarations) {
     List<AGNominalSignature> signatures = new List<AGNominalSignature>();
     int total_registers = 0;
     int total_instructions = 0;
+    int total_blocks = 0;
     for (int i = 0; i < declarations.len(); i += 1) {
         Node d = declarations[i];
         if (d.k == N_FN) {
             if (let lowered = ag_source_lower_function(d, records, record_nodes)) {
                 int registers = lowered.function.kinds.len();
-                int instructions = lowered.function.blocks[0].instructions.len();
+                if (lowered.function.blocks.len() > AG_SEALED_MAX_BLOCKS - total_blocks) {
+                    return ag_source_module_failure("source_module_limit");
+                }
+                total_blocks += lowered.function.blocks.len();
+                int instructions = 0;
+                for (int j = 0; j < lowered.function.blocks.len(); j += 1) {
+                    instructions += lowered.function.blocks[j].instructions.len();
+                }
                 if (registers > AG_SEALED_MAX_REGISTERS - total_registers ||
                     instructions > AG_SEALED_MAX_INSTRUCTIONS - total_instructions) {
                     return ag_source_module_failure("source_module_limit");
