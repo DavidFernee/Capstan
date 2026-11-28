@@ -50,8 +50,14 @@ AGSourceShape ag_source_shape(Type t, Map<int> records) {
         if (element.k == TY_BOOL && element.name == "") {
             return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_BOOL_ARRAY};
         }
+        if (element.k == TY_TAINT && element.name == "") {
+            return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_TAINTED_ARRAY};
+        }
         if (element.k == TY_STR && element.name == "") {
             return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_STRING_ARRAY};
+        }
+        if (element.k == TY_TAINT && element.name == "") {
+            return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_TAINTED_ARRAY};
         }
         if (element.k == TY_STRUCT) {
             if (let descriptor = records.get(element.name)) {
@@ -110,6 +116,7 @@ bool ag_source_register_matches(AGSourceContext c, int id, AGSourceShape shape) 
 int ag_source_element_kind(int descriptor) {
     if (descriptor == AG_NOMINAL_INT_ARRAY) { return AG_SCHEMA_INT; }
     if (descriptor == AG_NOMINAL_BOOL_ARRAY) { return AG_SCHEMA_BOOL; }
+    if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return 0; } // no payload operations yet
     if (descriptor < -3) { return AG_SCHEMA_REF; }
     return 0;
 }
@@ -544,11 +551,13 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
     }
     if (e.k == N_NEWLIST && e.kids.len() == 0 && shape.kind == AG_SCHEMA_REF) {
         int kind = ag_source_element_kind(shape.descriptor);
+        if (shape.descriptor == AG_NOMINAL_TAINTED_ARRAY) { kind = AG_SCHEMA_REF; }
         if (kind == 0) { return -1; }
         int descriptor = 0;
         if (kind == AG_SCHEMA_REF) {
             descriptor = ag_source_element_descriptor(shape.descriptor);
             if (shape.descriptor == AG_NOMINAL_STRING_ARRAY) { descriptor = CCAM_HEAP_ELEMENT_BYTES; }
+            if (shape.descriptor == AG_NOMINAL_TAINTED_ARRAY) { descriptor = CCAM_HEAP_ELEMENT_TAINTED; }
         }
         int destination = ag_source_register(c, shape);
         if (destination < 0) { return -1; }

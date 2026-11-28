@@ -72,7 +72,8 @@ bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<
             ag_dispatch_reg(machine, operands[1], AG_SCHEMA_REF);
     }
     if (opcode == 5) {
-        if (operands.len() != 3 || operands[1] < CCAM_HEAP_ELEMENT_BYTES || operands[2] < 0 ||
+        if (operands.len() != 3 || operands[1] < CCAM_HEAP_ELEMENT_TAINTED ||
+            (operands[1] == CCAM_HEAP_ELEMENT_TAINTED && operands[2] != 0) || operands[2] < 0 ||
             operands[2] > AG_SCHEMA_MAX_ARRAY_CAPACITY ||
             (kind != AG_SCHEMA_REF && operands[1] != 0)) { return false; }
         return ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF);
