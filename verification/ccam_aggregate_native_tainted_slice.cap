@@ -1,0 +1,76 @@
+// Candidate Linux x86-64 native tainted byte slice, private SysV ABI.
+// RDI=arena base, RSI=committed cursor pointer, RDX=capacity,
+// RCX=source offset, R8=start, R9=end. RAX=offset, RDX=status.
+// Caller owns live disjoint mapped backing, cursor storage and stack.
+// Single-threaded immutable record headers; no mixing indexed arenas.
+// Scan proves membership in record-only prefix, not reference authenticity.
+// Validate every source byte pair before allocating. Retain tag 2045.
+// No writes on failure; publish committed cursor last. No typed lowering claim.
+// Reference assembly: research/native-bootstrap/tainted-slice-leaf.S.
+import "ccam_aggregate_byte_buffer.cap";
+
+const int AG_NATIVE_TAINTED_SLICE_SIZE = 396;
+
+bool ag_native_emit_tainted_slice(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - AG_NATIVE_TAINTED_SLICE_SIZE) { return false; }
+    b.push(72); b.push(133); b.push(255); b.push(15); b.push(132); b.push(123); b.push(1); b.push(0);
+    b.push(0); b.push(72); b.push(247); b.push(199); b.push(7); b.push(0); b.push(0); b.push(0);
+    b.push(15); b.push(133); b.push(110); b.push(1); b.push(0); b.push(0); b.push(72); b.push(133);
+    b.push(246); b.push(15); b.push(132); b.push(101); b.push(1); b.push(0); b.push(0); b.push(72);
+    b.push(247); b.push(198); b.push(7); b.push(0); b.push(0); b.push(0); b.push(15); b.push(133);
+    b.push(88); b.push(1); b.push(0); b.push(0); b.push(72); b.push(129); b.push(250); b.push(0);
+    b.push(0); b.push(16); b.push(0); b.push(15); b.push(135); b.push(75); b.push(1); b.push(0);
+    b.push(0); b.push(72); b.push(137); b.push(248); b.push(72); b.push(1); b.push(208); b.push(15);
+    b.push(130); b.push(63); b.push(1); b.push(0); b.push(0); b.push(76); b.push(139); b.push(22);
+    b.push(73); b.push(57); b.push(210); b.push(15); b.push(135); b.push(51); b.push(1); b.push(0);
+    b.push(0); b.push(73); b.push(247); b.push(194); b.push(15); b.push(0); b.push(0); b.push(0);
+    b.push(15); b.push(133); b.push(38); b.push(1); b.push(0); b.push(0); b.push(76); b.push(57);
+    b.push(209); b.push(15); b.push(131); b.push(29); b.push(1); b.push(0); b.push(0); b.push(72);
+    b.push(247); b.push(193); b.push(15); b.push(0); b.push(0); b.push(0); b.push(15); b.push(133);
+    b.push(16); b.push(1); b.push(0); b.push(0); b.push(49); b.push(192); b.push(77); b.push(137);
+    b.push(211); b.push(73); b.push(41); b.push(195); b.push(73); b.push(131); b.push(251); b.push(16);
+    b.push(15); b.push(130); b.push(254); b.push(0); b.push(0); b.push(0); b.push(72); b.push(131);
+    b.push(60); b.push(7); b.push(1); b.push(15); b.push(130); b.push(243); b.push(0); b.push(0);
+    b.push(0); b.push(72); b.push(129); b.push(60); b.push(7); b.push(0); b.push(16); b.push(0);
+    b.push(0); b.push(15); b.push(135); b.push(229); b.push(0); b.push(0); b.push(0); b.push(76);
+    b.push(139); b.push(92); b.push(7); b.push(8); b.push(73); b.push(129); b.push(251); b.push(0);
+    b.push(16); b.push(0); b.push(0); b.push(15); b.push(135); b.push(211); b.push(0); b.push(0);
+    b.push(0); b.push(73); b.push(193); b.push(227); b.push(4); b.push(73); b.push(131); b.push(195);
+    b.push(16); b.push(73); b.push(1); b.push(195); b.push(77); b.push(57); b.push(211); b.push(15);
+    b.push(135); b.push(191); b.push(0); b.push(0); b.push(0); b.push(72); b.push(57); b.push(200);
+    b.push(116); b.push(14); b.push(73); b.push(57); b.push(203); b.push(15); b.push(135); b.push(177);
+    b.push(0); b.push(0); b.push(0); b.push(76); b.push(137); b.push(216); b.push(235); b.push(158);
+    b.push(72); b.push(129); b.push(60); b.push(15); b.push(253); b.push(7); b.push(0); b.push(0);
+    b.push(15); b.push(133); b.push(158); b.push(0); b.push(0); b.push(0); b.push(76); b.push(139);
+    b.push(92); b.push(15); b.push(8); b.push(77); b.push(57); b.push(200); b.push(15); b.push(135);
+    b.push(144); b.push(0); b.push(0); b.push(0); b.push(77); b.push(57); b.push(217); b.push(15);
+    b.push(135); b.push(135); b.push(0); b.push(0); b.push(0); b.push(72); b.push(141); b.push(68);
+    b.push(15); b.push(16); b.push(77); b.push(133); b.push(219); b.push(116); b.push(25); b.push(72);
+    b.push(129); b.push(56); b.push(255); b.push(0); b.push(0); b.push(0); b.push(119); b.push(116);
+    b.push(72); b.push(131); b.push(120); b.push(8); b.push(1); b.push(117); b.push(109); b.push(72);
+    b.push(131); b.push(192); b.push(16); b.push(73); b.push(255); b.push(203); b.push(117); b.push(231);
+    b.push(77); b.push(41); b.push(193); b.push(77); b.push(137); b.push(203); b.push(73); b.push(193);
+    b.push(227); b.push(4); b.push(73); b.push(131); b.push(195); b.push(16); b.push(72); b.push(137);
+    b.push(208); b.push(76); b.push(41); b.push(208); b.push(73); b.push(57); b.push(195); b.push(119);
+    b.push(75); b.push(74); b.push(141); b.push(20); b.push(23); b.push(72); b.push(199); b.push(2);
+    b.push(253); b.push(7); b.push(0); b.push(0); b.push(76); b.push(137); b.push(74); b.push(8);
+    b.push(73); b.push(193); b.push(224); b.push(4); b.push(72); b.push(141); b.push(68); b.push(15);
+    b.push(16); b.push(76); b.push(1); b.push(192); b.push(72); b.push(131); b.push(194); b.push(16);
+    b.push(77); b.push(133); b.push(201); b.push(116); b.push(27); b.push(72); b.push(139); b.push(8);
+    b.push(72); b.push(137); b.push(10); b.push(72); b.push(199); b.push(66); b.push(8); b.push(1);
+    b.push(0); b.push(0); b.push(0); b.push(72); b.push(131); b.push(192); b.push(16); b.push(72);
+    b.push(131); b.push(194); b.push(16); b.push(73); b.push(255); b.push(201); b.push(117); b.push(229);
+    b.push(77); b.push(1); b.push(211); b.push(76); b.push(137); b.push(30); b.push(76); b.push(137);
+    b.push(208); b.push(49); b.push(210); b.push(195); b.push(49); b.push(192); b.push(186); b.push(1);
+    b.push(0); b.push(0); b.push(0); b.push(195);
+    return true;
+}
+
+test "native tainted slice emits exact private leaf" {
+    List<int> b = new List<int>();
+    assert(ag_native_emit_tainted_slice(b));
+    assert(b.len() == AG_NATIVE_TAINTED_SLICE_SIZE);
+    string data = "";
+    for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
+    assert(write_file("build/ccam-native-tainted-slice.bin", data));
+}

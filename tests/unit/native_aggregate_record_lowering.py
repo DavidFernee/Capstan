@@ -36,6 +36,10 @@ def main():
         'module-constants': 42, 'module-41': 42, 'module-256': 42,
         'module-300': 42,
         'constant-min': -(1 << 63), 'constant-ops': 42,
+        'taint-list': 101, 'taint-empty': 0, 'taint-slice-oob': None,
+        'taint-negative': None, 'taint-list-oob': None, 'taint-field': 65,
+        'log-present': 42, 'log-absent': 0,
+        'join': 65,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():

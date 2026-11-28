@@ -15,6 +15,9 @@ const int AG_NOMINAL_INT_ARRAY = -2;
 const int AG_NOMINAL_BOOL_ARRAY = -3;
 const int AG_NOMINAL_STRING_ARRAY = -4100;
 const int AG_NOMINAL_TAINTED_ARRAY = -4101;
+// Distinct immutable tainted byte value; never a trusted byte or record array.
+const int AG_NOMINAL_TAINTED = -4102;
+const int AG_NOMINAL_LOG = -4103;
 
 // A zero result indicates an unrepresentable array descriptor, never a reference type.
 int ag_nominal_record_array(int descriptor) {
@@ -26,7 +29,7 @@ bool ag_nominal_kind(int kind, int descriptor) {
     if (kind == AG_SCHEMA_REF) {
         return (descriptor > 0 && descriptor <= AG_OPTIONAL_RECORD_MAX) ||
             (descriptor < 0 && descriptor >= -AG_OPTIONAL_RECORD_MAX - 3) || descriptor == AG_NOMINAL_STRING_ARRAY ||
-            descriptor == AG_NOMINAL_TAINTED_ARRAY ||
+            descriptor == AG_NOMINAL_TAINTED_ARRAY || descriptor == AG_NOMINAL_TAINTED || descriptor == AG_NOMINAL_LOG ||
             (ccam_heap_optional_descriptor(descriptor) || ccam_heap_map_descriptor(descriptor));
     }
     return (kind == AG_SCHEMA_INT || kind == AG_SCHEMA_BOOL) && descriptor == 0;
@@ -45,6 +48,10 @@ bool ag_nominal_value_matches(CCAMHeap heap, CCAMHeapValue value, int kind, int 
     }
     if (descriptor == AG_NOMINAL_BYTES) {
         return ccam_heap_value_is_bytes(heap, value);
+    }
+    if (descriptor == AG_NOMINAL_LOG) { return ccam_heap_value_is_log(heap, value); }
+    if (descriptor == AG_NOMINAL_TAINTED) {
+        return ccam_heap_value_has_type(heap, value, AG_SCHEMA_REF, CCAM_HEAP_ELEMENT_TAINTED);
     }
     if (descriptor == AG_NOMINAL_INT_ARRAY) {
         return ccam_heap_value_has_array_type(heap, value, AG_SCHEMA_INT, 0);
@@ -152,4 +159,27 @@ test "nominal aggregate calls reject wrong record before opening a frame" {
     assert(!ag_nominal_result_matches(accepted.frame, signature, 1));
     descriptors[0] = 0;
     assert(!ag_nominal_signature(signature));
+}
+
+test "nominal call shapes distinguish tainted bytes from trusted strings and lists" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult trusted = ccam_heap_alloc_bytes(heap, "abc");
+    assert(trusted.ok);
+    CCAMHeapRefResult tainted = ccam_heap_taint_bytes(heap, trusted.reference);
+    CCAMHeapRefResult list = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 0);
+    assert(tainted.ok && list.ok);
+    CCAMHeapValue a = ccam_heap_ref_value(trusted.reference);
+    CCAMHeapValue b = ccam_heap_ref_value(tainted.reference);
+    CCAMHeapValue c = ccam_heap_ref_value(list.reference);
+    assert(ag_nominal_kind(AG_SCHEMA_REF, AG_NOMINAL_TAINTED));
+    assert(!ag_nominal_kind(AG_SCHEMA_INT, AG_NOMINAL_TAINTED));
+    assert(ag_nominal_value_matches(heap, b, AG_SCHEMA_REF, AG_NOMINAL_TAINTED));
+    assert(!ag_nominal_value_matches(heap, a, AG_SCHEMA_REF, AG_NOMINAL_TAINTED));
+    assert(!ag_nominal_value_matches(heap, c, AG_SCHEMA_REF, AG_NOMINAL_TAINTED));
+    assert(!ag_nominal_value_matches(heap, b, AG_SCHEMA_REF, AG_NOMINAL_BYTES));
+    assert(!ag_nominal_value_matches(heap, b, AG_SCHEMA_REF, AG_NOMINAL_TAINTED_ARRAY));
+    assert(ag_nominal_value_matches(heap, c, AG_SCHEMA_REF, AG_NOMINAL_TAINTED_ARRAY));
+    assert(!ag_nominal_value_matches(heap, c, AG_SCHEMA_REF, AG_NOMINAL_STRING_ARRAY));
 }

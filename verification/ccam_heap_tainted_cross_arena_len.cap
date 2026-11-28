@@ -1,0 +1,17 @@
+// Cross-arena tainted len must trap before reading the target heap.
+// Independent process: the capability violation is not a recoverable result.
+import "ccam_heap.cap";
+
+int main() {
+    CCAMHeapCreateResult first = ccam_heap_create(128, 8);
+    CCAMHeapCreateResult second = ccam_heap_create(128, 8);
+    if (!first.ok || !second.ok) { return 2; }
+    CCAMHeapRefResult a = ccam_heap_alloc_bytes(first.heap, "first");
+    CCAMHeapRefResult b = ccam_heap_alloc_bytes(second.heap, "second");
+    if (!a.ok || !b.ok) { return 3; }
+    CCAMHeapRefResult x = ccam_heap_taint_bytes(first.heap, a.reference);
+    CCAMHeapRefResult y = ccam_heap_taint_bytes(second.heap, b.reference);
+    if (!x.ok || !y.ok) { return 4; }
+    ccam_heap_tainted_len(first.heap, y.reference);
+    return 0;
+}

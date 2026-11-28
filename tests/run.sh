@@ -250,6 +250,76 @@ else
   bad "native taint validation emission" "$out"
 fi
 
+section "Candidate native bounded log escaping"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_log_escape.cap" 2>&1)"; then
+  ok "native log escape emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_log_escape.py" "$ROOT/build/ccam-native-log-escape.bin" 2>&1)"; then
+      ok "native log escape differential and boundary execution"
+    else
+      bad "native log escape execution" "$out"
+    fi
+  fi
+else
+  bad "native log escape emission" "$out"
+fi
+
+section "Candidate native bounded tainted slicing"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_tainted_slice.cap" 2>&1)"; then
+  ok "native tainted slice emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_tainted_slice.py" "$ROOT/build/ccam-native-tainted-slice.bin" 2>&1)"; then
+      ok "native tainted slice differential and boundary execution"
+    else
+      bad "native tainted slice execution" "$out"
+    fi
+  fi
+else
+  bad "native tainted slice emission" "$out"
+fi
+
+section "Candidate native bounded tainted lists"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_tainted_list.cap" 2>&1)"; then
+  ok "native tainted list emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_tainted_list.py" "$ROOT/build/ccam-native-tainted-list.bin" 2>&1)"; then
+      ok "native tainted list differential and boundary execution"
+    else
+      bad "native tainted list execution" "$out"
+    fi
+  fi
+else
+  bad "native tainted list emission" "$out"
+fi
+
+section "Candidate native nominal LogText bridge"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_log_bridge.cap" 2>&1)"; then
+  ok "native LogText bridge emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_log_bridge.py" "$ROOT/build/ccam-native-log-bridge.bin" 2>&1)"; then
+      ok "native LogText bridge differential and boundary execution"
+    else
+      bad "native LogText bridge execution" "$out"
+    fi
+  fi
+else
+  bad "native LogText bridge emission" "$out"
+fi
+
+section "Candidate native bounded join"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_join.cap" 2>&1)"; then
+  ok "native join emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_join.py" "$ROOT/build/ccam-native-join.bin" 2>&1)"; then
+      ok "native join differential and boundary execution"
+    else
+      bad "native join execution" "$out"
+    fi
+  fi
+else
+  bad "native join emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"
@@ -838,6 +908,22 @@ if "$C" build -o "$tmp/ccam_heap_cross_arena.c" "$ROOT/verification/ccam_heap_cr
 else
   bad "region heap cross-arena build" "$(head -3 "$tmp/log")"
 fi
+
+section "experimental region heap: tainted cross-arena rejection"
+for operation in len type; do
+  probe="ccam_heap_tainted_cross_arena_${operation}"
+  if "$C" build -o "$tmp/$probe.c" "$ROOT/verification/$probe.cap" >"$tmp/log" 2>&1 &&
+     "$CC" $WFLAGS "$tmp/$probe.c" -o "$tmp/$probe" 2>>"$tmp/log"; then
+    err="$("$tmp/$probe" 2>&1)"; code=$?
+    if [[ $code -eq 101 ]] && grep -qF "CWE-639" <<<"$err"; then
+      ok "tainted cross-arena $operation rejects a foreign reference"
+    else
+      bad "tainted cross-arena $operation" "exit $code: $err"
+    fi
+  else
+    bad "tainted cross-arena $operation build" "$(head -3 "$tmp/log")"
+  fi
+done
 
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do

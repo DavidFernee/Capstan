@@ -553,3 +553,107 @@ test "checked conversions preserve signed extrema, boolean text and embedded zer
         assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 5).value == "false");
     } else { assert(false); }
 }
+
+test "checked source executes tainted slicing and list operations without string laundering" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "Tainted pick(List<Tainted> values, int i) { return values[i]; } " +
+        "int run() { List<Tainted> values = new List<Tainted>(); " +
+        "values.push(taint(\"abc\")); values.push(taint(\"xyz\")); " +
+        "values[1] = pick(values, 0).slice(1, 3); Tainted selected = pick(values, 1); " +
+        "values.pop(); return selected.at(0) + selected.len() + values.len(); }");
+    assert(compiled.ok && compiled.function_names.len() == 2);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 65536, 64, 65536, 65536, 1024);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 8, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 101);
+    AGSourceModuleResult wrong = ag_source_test_compile("string run() { return taint(\"abc\"); }");
+    assert(!wrong.ok);
+    AGSourceModuleResult wrong_list = ag_source_test_compile(
+        "int run() { List<Tainted> values = new List<Tainted>(); values.push(\"abc\"); return values.len(); }");
+    assert(!wrong_list.ok);
+}
+
+test "taint evaluator refuses a trusted receiver and preserves its destination" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 16);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(77)) == "");
+    assert(ccam_aggregate_alloc_bytes(root.machine, 1, "abc") == "");
+    List<int> operands = new List<int>(); operands.push(0); operands.push(1);
+    assert(ag_dispatch(root.machine, AG_OP_TAINT_LEN, AG_SCHEMA_INT, operands) == "object_type_mismatch");
+    assert(ccam_aggregate_read(root.machine, 0, AG_SCHEMA_INT).value.int_value == 77);
+}
+
+test "taint transfer rejects uninitialised index and alias before destination write" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    List<bool> ready = new List<bool>(); ready.push(true); ready.push(false);
+    List<int> operands = new List<int>(); operands.push(0); operands.push(0); operands.push(1); operands.push(1);
+    assert(!ag_transfer(kinds, ready, AG_OP_TAINT_SLICE, AG_SCHEMA_REF, operands).ok);
+    ready[1] = true;
+    assert(ag_transfer(kinds, ready, AG_OP_TAINT_SLICE, AG_SCHEMA_REF, operands).ok);
+    ready[0] = false;
+    assert(!ag_transfer(kinds, ready, AG_OP_TAINT_SLICE, AG_SCHEMA_REF, operands).ok);
+}
+
+test "checked contextual LogText lowering preserves nominal optional return" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "LogText? excerpt(Tainted src, bool present) { if (!present) { return none; } " +
+        "LogText line = \"    \" + escape_log(src.slice(0, src.len())); return line + \"\\n    ^\"; } " +
+        "int run() { if (let value = excerpt(taint(\"abc\"), true)) { " +
+        "LogText again = escape_log(value); return 42; } return 0; } " +
+        "int absent() { if (let value = excerpt(taint(\"abc\"), false)) { return 1; } return 0; }");
+    assert(compiled.ok && compiled.function_names.len() == 3);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 65536, 64, 65536, 65536, 1024);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 8, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 0);
+    assert(!ag_source_test_compile("string bad(Tainted x) { return escape_log(x); }").ok);
+    assert(!ag_source_test_compile("LogText bad(Tainted x) { return escape_log(x) + x; }").ok);
+    assert(!ag_source_test_compile("LogText? bad() { return \"raw\"; }").ok);
+}
+
+test "LogText static transfer rejects unread operands even with aliased destination" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    List<bool> ready = new List<bool>(); ready.push(true); ready.push(false);
+    List<int> operands = new List<int>(); operands.push(0); operands.push(0); operands.push(1);
+    assert(!ag_transfer(kinds, ready, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands).ok);
+    ready[1] = true;
+    assert(ag_transfer(kinds, ready, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands).ok);
+    ready[0] = false;
+    assert(!ag_transfer(kinds, ready, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands).ok);
+}
+
+test "checked join retains nominal taint even when empty" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int run() { List<string> a = new List<string>(); a.push(\"left\"); a.push(\"right\"); " +
+        "List<Tainted> b = new List<Tainted>(); b.push(taint(\"left\")); b.push(taint(\"right\")); " +
+        "Tainted x = join(b, \"-\"); string y = join(a, \"-\"); " +
+        "List<Tainted> empty = new List<Tainted>(); Tainted z = join(empty, \"!\"); " +
+        "return x.len() + y.len() + z.len() + x.at(4); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 65536, 64, 65536, 65536, 1024);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 8, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 65);
+    assert(!ag_source_test_compile("string bad(List<Tainted> x) { return join(x, \"\"); }").ok);
+}
+
+test "join transfer requires both source registers before aliased write" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    List<bool> ready = new List<bool>(); ready.push(true); ready.push(false);
+    List<int> operands = new List<int>(); operands.push(0); operands.push(0); operands.push(1);
+    assert(!ag_transfer(kinds, ready, AG_OP_JOIN_TAINTED, AG_SCHEMA_REF, operands).ok);
+    ready[1] = true;
+    assert(ag_transfer(kinds, ready, AG_OP_JOIN_TAINTED, AG_SCHEMA_REF, operands).ok);
+}
