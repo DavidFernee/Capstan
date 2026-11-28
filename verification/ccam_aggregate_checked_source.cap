@@ -356,10 +356,62 @@ bool ag_source_map_assignment(AGSourceContext c, Node e) {
     return ag_source_emit(c, AG_OP_MAP_SET, payload.kind, operands);
 }
 
+// The production lexer stores escape_c(decoded) plus the original byte count.
+// Invert that exact representation, not the user's raw source spelling.
+int ag_source_string_literal(AGSourceContext c, Node e, AGSourceShape shape) {
+    if (shape.kind != AG_SCHEMA_REF || shape.descriptor != AG_NOMINAL_BYTES ||
+        e.n < 0 || e.n > AG_STRING_MAX_LITERAL ||
+        e.s.len() > AG_STRING_MAX_LITERAL * 4) { return -1; }
+    int dest = ag_source_register(c, shape);
+    if (dest < 0) { return -1; }
+    List<int> operands = new List<int>(); operands.push(dest);
+    int pos = 0;
+    while (pos < e.s.len()) {
+        int byte = e.s.at(pos);
+        pos += 1;
+        if (byte == 92) {
+            if (pos >= e.s.len()) { return -1; }
+            byte = e.s.at(pos);
+            pos += 1;
+            if (byte != 92 && byte != 34 && byte != 63) {
+                if (byte < 48 || byte > 51 || pos + 2 > e.s.len()) { return -1; }
+                int middle = e.s.at(pos);
+                int last = e.s.at(pos + 1);
+                if (middle < 48 || middle > 55 || last < 48 || last > 55) { return -1; }
+                byte = (byte - 48) * 64 + (middle - 48) * 8 + last - 48;
+                pos += 2;
+                if (byte >= 32 && byte < 127) { return -1; }
+            }
+        } else if (byte < 32 || byte >= 127 || byte == 34 || byte == 63) { return -1; }
+        if (operands.len() - 1 >= e.n) { return -1; }
+        operands.push(byte);
+    }
+    if (operands.len() - 1 != e.n || !ag_source_emit(c, AG_OP_BYTES_LITERAL, AG_SCHEMA_REF, operands)) {
+        return -1;
+    }
+    return dest;
+}
+
+int ag_source_string_binary(AGSourceContext c, string operation, AGSourceShape shape, int left, int right) {
+    if (left < 0 || right < 0 || c.descriptors[left] != AG_NOMINAL_BYTES ||
+        c.descriptors[right] != AG_NOMINAL_BYTES) { return -1; }
+    int opcode = 0;
+    if (operation == "+" && shape.kind == AG_SCHEMA_REF && shape.descriptor == AG_NOMINAL_BYTES) { opcode = 8; }
+    if (operation == "==" && shape.kind == AG_SCHEMA_BOOL) { opcode = AG_OP_BYTES_EQ; }
+    if (operation == "!=" && shape.kind == AG_SCHEMA_BOOL) { opcode = AG_OP_BYTES_NE; }
+    if (opcode == 0) { return -1; }
+    int dest = ag_source_register(c, shape);
+    if (dest < 0) { return -1; }
+    List<int> operands = new List<int>(); operands.push(dest); operands.push(left); operands.push(right);
+    if (!ag_source_emit(c, opcode, shape.kind, operands)) { return -1; }
+    return dest;
+}
+
 int ag_source_expr(AGSourceContext c, Node e, int depth) {
     if (depth >= AG_SOURCE_MAX_EXPR_DEPTH) { return -1; }
     AGSourceShape shape = ag_source_shape(ty_of(e), c.records);
     if (shape.kind == 0) { return -1; }
+    if (e.k == N_STR && e.kids.len() == 0) { return ag_source_string_literal(c, e, shape); }
     if (e.k == N_INT && e.kids.len() == 0 && shape.kind == AG_SCHEMA_INT) {
         return ag_source_constant(c, shape, e.n);
     }
@@ -371,6 +423,10 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         int left = ag_source_expr(c, e.kids[0], depth + 1);
         if (left < 0) { return -1; }
         int right = ag_source_expr(c, e.kids[1], depth + 1);
+        if (right < 0) { return -1; }
+        if (c.descriptors[left] == AG_NOMINAL_BYTES || c.descriptors[right] == AG_NOMINAL_BYTES) {
+            return ag_source_string_binary(c, e.s, shape, left, right);
+        }
         return ag_source_binary(c, opcode, shape, left, right);
     }
     if (e.k == N_NEG && e.kids.len() == 1 && shape.kind == AG_SCHEMA_INT) {
@@ -417,6 +473,7 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         if (let constant = c.constants.get(e.s)) {
             if (!ag_source_shape_equal(shape, ag_source_shape(ty_of(constant), c.records))) { return -1; }
             Node literal = constant.kids[0];
+            if (literal.k == N_STR) { return ag_source_string_literal(c, literal, shape); }
             return ag_source_constant(c, shape, literal.n);
         }
         return -1;
@@ -429,6 +486,20 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
             if (ag_source_register_matches(c, id, shape)) { return id; }
         }
         return -1;
+    }
+    if (e.k == N_METHOD && e.s == "slice" && e.kids.len() == 3 &&
+        shape.kind == AG_SCHEMA_REF && shape.descriptor == AG_NOMINAL_BYTES) {
+        int receiver = ag_source_expr(c, e.kids[0], depth + 1);
+        if (receiver < 0 || c.descriptors[receiver] != AG_NOMINAL_BYTES) { return -1; }
+        int start = ag_source_expr(c, e.kids[1], depth + 1);
+        int end = ag_source_expr(c, e.kids[2], depth + 1);
+        if (start < 0 || end < 0 || c.kinds[start] != AG_SCHEMA_INT || c.kinds[end] != AG_SCHEMA_INT) { return -1; }
+        int dest = ag_source_register(c, shape);
+        if (dest < 0) { return -1; }
+        List<int> operands = new List<int>();
+        operands.push(dest); operands.push(receiver); operands.push(start); operands.push(end);
+        if (!ag_source_emit(c, AG_OP_BYTES_SLICE, AG_SCHEMA_REF, operands)) { return -1; }
+        return dest;
     }
     bool length = e.k == N_METHOD && e.s == "len" && e.kids.len() == 1;
     bool byte_at = e.k == N_METHOD && e.s == "at" && e.kids.len() == 2;
