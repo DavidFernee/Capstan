@@ -15,6 +15,8 @@ def main():
         'depth': None, 'callfuel': None,
         'reference': 42, 'reference-recursion': 15,
         'reference-mismatch': None,
+        'mixed': 42, 'mixed-replace': 42, 'mixed-valid': 42,
+        'mixed-mismatch': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
