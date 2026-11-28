@@ -215,6 +215,9 @@ def parse_floors(lines):
 
 def main():
     check = "--check" in sys.argv
+    report_path = os.path.join(ROOT, "build", "coverage-evidence.json")
+    if os.path.exists(report_path):
+        os.remove(report_path)
     work = tempfile.mkdtemp()
     groups = {}
     branch_groups = {}
@@ -270,6 +273,19 @@ def main():
         if not any(unit["branches"] for unit in units.values()):
             print(f"no branch evidence for {group}", file=sys.stderr)
             return 2
+    report = {
+        "schema": 1,
+        "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "gcc": subprocess.check_output([GCC, "--version"], text=True).splitlines()[0],
+        "gcov": subprocess.check_output([GCOV, "--version"], text=True).splitlines()[0],
+        "scope": "generated C compilation units; not Capstan source MC/DC",
+        "line_percent_by_file": summary,
+        "branch_groups": branch_groups,
+    }
+    path = os.path.join(ROOT, "build", "coverage-evidence.json")
+    with open(path, "w") as stream:
+        json.dump(report, stream, indent=2, sort_keys=True)
+        stream.write("\n")
     return 0
 
 
