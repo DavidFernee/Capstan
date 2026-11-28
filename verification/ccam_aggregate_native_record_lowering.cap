@@ -9,6 +9,7 @@
 import "ccam_aggregate_program.cap";
 import "ccam_aggregate_native_arena_lifecycle.cap";
 import "ccam_aggregate_native_record_boundary.cap";
+import "ccam_aggregate_native_string_copy.cap";
 import "ccam_aggregate_elf_image.cap";
 import "ccam_aggregate_rel32.cap";
 import "ccam_aggregate_exit_code.cap";
@@ -87,7 +88,8 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
             } else if (ins.opcode == AG_OP_FIELD_GET || ins.opcode == AG_OP_FIELD_SET) {
                 if (op[2] < 1 || op[2] >= AG_NV_BYTES_TAG || ag_nv_field_shape(ins.kind, op[4]) == -2) { return false; }
             } else if (ins.opcode == AG_OP_BYTES_LITERAL || ins.opcode == 4 || ins.opcode == 7 ||
-                ins.opcode == AG_OP_BYTES_EQ || ins.opcode == AG_OP_BYTES_NE) {
+                ins.opcode == AG_OP_BYTES_EQ || ins.opcode == AG_OP_BYTES_NE ||
+                ins.opcode == 8 || ins.opcode == AG_OP_BYTES_SLICE) {
                 // Existing operand schemas admit closed immutable byte operations.
             } else if (calls && ins.opcode == AG_OP_DIRECT_CALL) {
                 // Module-level nominal signature admission and boundary guards.
@@ -249,6 +251,14 @@ bool ag_nv_bytes_instruction(AGNVContext c, AGBlockInstruction ins) {
         b.push(73); b.push(139); b.push(2);
         b.push(72); b.push(61);
         if (!ag_u32(b, 255) || !ag_nv_edge(c, 135, c.trap)) { return false; }
+    } else if (ins.opcode == AG_OP_BYTES_SLICE) {
+        if (!ag_nv_slot(b, false, 8, a[2]) || !ag_nv_slot(b, false, 9, a[3]) ||
+            !ag_nv_call(c, c.trap + 9)) { return false; }
+    } else if (ins.opcode == 8) {
+        // Guard both source objects before entering the trusted copy leaf.
+        if (!ag_nv_slot(b, false, 0, a[2]) || !ag_nv_reference(c, AG_NV_BYTES_DESCRIPTOR) ||
+            !ag_nv_slot(b, false, 0, a[1]) || !ag_nv_slot(b, false, 8, a[2]) ||
+            !ag_nv_call(c, c.trap + 8)) { return false; }
     } else {
         // Both operands are validated before the read-only comparison leaf.
         if (!ag_nv_slot(b, false, 0, a[2]) || !ag_nv_reference(c, AG_NV_BYTES_DESCRIPTOR) ||
@@ -277,7 +287,8 @@ bool ag_nv_emit_bytes_equal(List<int> b) {
 bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
     if (c.code.len() > AG_BYTE_LIMIT - 256 || !ag_nv_fuel(c)) { return false; }
     List<int> b = c.code; List<int> a = ins.operands; int op = ins.opcode;
-    if (op == AG_OP_BYTES_LITERAL || op == 4 || op == 7 || op == AG_OP_BYTES_EQ || op == AG_OP_BYTES_NE) {
+    if (op == AG_OP_BYTES_LITERAL || op == 4 || op == 7 || op == AG_OP_BYTES_EQ || op == AG_OP_BYTES_NE ||
+        op == 8 || op == AG_OP_BYTES_SLICE) {
         return ag_nv_bytes_instruction(c, ins);
     }
     if (op == AG_OP_SCALAR_CONST) {
@@ -368,7 +379,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     int count = f.blocks.len();
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 8; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 10; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Stack frame: one slot per register and one private return word.
     b.push(72); b.push(129); b.push(236);
@@ -403,6 +414,8 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     c.labels[count + 5] = b.len(); if (!ag_native_emit_guarded_record_access(b, true)) { return ag_nv_failure(); }
     c.labels[count + 6] = b.len(); if (!ag_native_emit_record_boundary(b)) { return ag_nv_failure(); }
     c.labels[count + 7] = b.len(); if (!ag_nv_emit_bytes_equal(b)) { return ag_nv_failure(); }
+    c.labels[count + 8] = b.len(); if (!ag_nv_emit_bytes_concat(b)) { return ag_nv_failure(); }
+    c.labels[count + 9] = b.len(); if (!ag_nv_emit_bytes_slice(b)) { return ag_nv_failure(); }
     for (int i = 0; i < c.patches.len(); i += 1) {
         if (!ag_rel32(b, c.patches[i], c.labels[c.targets[i]])) { return ag_nv_failure(); }
     }
