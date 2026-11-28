@@ -124,6 +124,20 @@ else
   bad "checked native arena load/store emission" "$out"
 fi
 
+section "Candidate native arena lifecycle"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_arena_lifecycle.cap" 2>&1)"; then
+  ok "bounded native arena lifecycle emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_arena_lifecycle.py" "$ROOT/build/ccam-aggregate-arena-lifecycle.bin" 2>&1)"; then
+      ok "native arena mapping, reservation, access and release composition"
+    else
+      bad "native arena lifecycle execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native arena lifecycle emission" "$out"
+fi
+
 section "Checked production AST to candidate aggregate evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_checked_source_tests.cap" 2>&1)"; then
   ok "checked aggregate source leaf lowering and sealed invocation"
