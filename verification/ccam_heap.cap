@@ -972,6 +972,63 @@ CCAMHeapRefResult ccam_heap_log_concat(CCAMHeap heap, CCAMHeapRef left_ref, CCAM
     return result;
 }
 
+// Candidate bounded join, matching the existing source builtin's provenance.
+// The separator is trusted; an empty tainted list still yields Tainted.
+// Validate and size before materialising the single joined byte object.
+CCAMHeapRefResult ccam_heap_join_bytes(CCAMHeap heap, CCAMHeapRef list_ref,
+    CCAMHeapRef separator_ref, bool tainted) {
+    int li = ccam_heap_object_index(heap, list_ref);
+    int si = ccam_heap_object_index(heap, separator_ref);
+    if (li < 0 || si < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject parts = heap.objects[li];
+    CCAMHeapObject separator = heap.objects[si];
+    int element = CCAM_HEAP_ELEMENT_BYTES;
+    int kind = CCAM_HEAP_OBJECT_BYTES;
+    if (tainted) { element = CCAM_HEAP_ELEMENT_TAINTED; kind = CCAM_HEAP_OBJECT_TAINTED; }
+    if (parts.kind != CCAM_HEAP_OBJECT_ARRAY || parts.element_type != CCAM_HEAP_VALUE_REF ||
+        parts.element_ref_type_id != element || separator.kind != CCAM_HEAP_OBJECT_BYTES) {
+        return ccam_heap_ref_error("object_type_mismatch");
+    }
+    if (parts.length < 0 || parts.length > 256 || separator.byte_data.len() > 4096) {
+        return ccam_heap_ref_error("invalid_bytes_size");
+    }
+    int length = 0;
+    for (int i = 0; i < parts.length; i += 1) {
+        CCAMHeapValueResult value = ccam_heap_array_get(heap, list_ref, CCAM_HEAP_VALUE_REF, i);
+        if (!value.ok) { return ccam_heap_ref_error(value.trap); }
+        if (let ref_value = value.value.reference) {
+            int at = ccam_heap_object_index(heap, ref_value);
+            if (at < 0 || heap.objects[at].kind != kind) { return ccam_heap_ref_error("object_type_mismatch"); }
+            int n = heap.objects[at].byte_data.len();
+            if (i > 0) {
+                if (separator.byte_data.len() > 4096 - length) { return ccam_heap_ref_error("invalid_bytes_size"); }
+                length += separator.byte_data.len();
+            }
+            if (n > 4096 - length) { return ccam_heap_ref_error("invalid_bytes_size"); }
+            length += n;
+        } else { return ccam_heap_ref_error("invalid_reference"); }
+    }
+    // Conservative accounting for bounded host list materialisation and output copies.
+    int work = length * 2 + parts.length * 4;
+    int temporary = length * 2 + parts.length * CCAM_HEAP_SLOT_BYTES;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, work, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    List<string> chunks = new List<string>();
+    for (int i = 0; i < parts.length; i += 1) {
+        if (let ref_value = parts.elements[i].reference) {
+            int at = ccam_heap_object_index(heap, ref_value);
+            if (at < 0) { return ccam_heap_ref_error("invalid_reference"); }
+            chunks.push(heap.objects[at].byte_data);
+        } else { return ccam_heap_ref_error("invalid_reference"); }
+    }
+    CCAMHeapRefResult result = ccam_heap_alloc_classified_bytes(heap, join(chunks, separator.byte_data), kind);
+    if (result.ok) {
+        heap.work_used += work - length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return result;
+}
+
 CCAMHeapRefResult ccam_heap_bytes_concat(CCAMHeap heap, CCAMHeapRef left_reference, CCAMHeapRef right_reference) {
     int left_index = ccam_heap_object_index(heap, left_reference);
     int right_index = ccam_heap_object_index(heap, right_reference);
@@ -2003,4 +2060,28 @@ test "LogText escape quota rejection does not publish or charge" {
     assert(!ccam_heap_escape_log(heap, source.reference).ok);
     assert(heap.bytes_used == before && heap.work_used == work && heap.next_id == id &&
         heap.temporary_peak_bytes == peak);
+}
+
+test "join rejects mismatched list provenance and publishes one object on success" {
+    CCAMHeapCreateResult created = ccam_heap_create(65536, 64);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult a = ccam_heap_alloc_bytes(heap, "left");
+    CCAMHeapRefResult b = ccam_heap_taint_bytes(heap, a.reference);
+    CCAMHeapRefResult sep = ccam_heap_alloc_bytes(heap, "-");
+    CCAMHeapRefResult list = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 0);
+    assert(a.ok && b.ok && sep.ok && list.ok);
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, ccam_heap_ref_value(b.reference)) == "");
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, ccam_heap_ref_value(b.reference)) == "");
+    int prior = heap.objects.len();
+    int used = heap.bytes_used;
+    int work = heap.work_used;
+    assert(!ccam_heap_join_bytes(heap, list.reference, sep.reference, false).ok);
+    assert(!ccam_heap_join_bytes(heap, list.reference, b.reference, true).ok);
+    assert(heap.objects.len() == prior && heap.bytes_used == used && heap.work_used == work);
+    CCAMHeapRefResult joined = ccam_heap_join_bytes(heap, list.reference, sep.reference, true);
+    assert(joined.ok && heap.objects.len() == prior + 1);
+    assert(ccam_heap_tainted_len(heap, joined.reference).value == 9);
+    assert(ccam_heap_tainted_get(heap, joined.reference, 4).value == 45);
+    assert(!ccam_heap_bytes_len(heap, joined.reference).ok);
 }

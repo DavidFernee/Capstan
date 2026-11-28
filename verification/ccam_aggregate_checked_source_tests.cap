@@ -630,3 +630,30 @@ test "LogText static transfer rejects unread operands even with aliased destinat
     ready[0] = false;
     assert(!ag_transfer(kinds, ready, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands).ok);
 }
+
+test "checked join retains nominal taint even when empty" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int run() { List<string> a = new List<string>(); a.push(\"left\"); a.push(\"right\"); " +
+        "List<Tainted> b = new List<Tainted>(); b.push(taint(\"left\")); b.push(taint(\"right\")); " +
+        "Tainted x = join(b, \"-\"); string y = join(a, \"-\"); " +
+        "List<Tainted> empty = new List<Tainted>(); Tainted z = join(empty, \"!\"); " +
+        "return x.len() + y.len() + z.len() + x.at(4); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 65536, 64, 65536, 65536, 1024);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 8, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 65);
+    assert(!ag_source_test_compile("string bad(List<Tainted> x) { return join(x, \"\"); }").ok);
+}
+
+test "join transfer requires both source registers before aliased write" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    List<bool> ready = new List<bool>(); ready.push(true); ready.push(false);
+    List<int> operands = new List<int>(); operands.push(0); operands.push(0); operands.push(1);
+    assert(!ag_transfer(kinds, ready, AG_OP_JOIN_TAINTED, AG_SCHEMA_REF, operands).ok);
+    ready[1] = true;
+    assert(ag_transfer(kinds, ready, AG_OP_JOIN_TAINTED, AG_SCHEMA_REF, operands).ok);
+}

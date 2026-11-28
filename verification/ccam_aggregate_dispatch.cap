@@ -11,6 +11,11 @@ bool ag_dispatch_reg(CCAMAggregateMachine machine, int index, int kind) {
 
 bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.registers.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(kind)) { return false; }
+    if (ag_schema_join_opcode(opcode)) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_join_operands(kinds, opcode, kind, operands);
+    }
     if (ag_schema_log_opcode(opcode)) {
         List<int> kinds = new List<int>();
         for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
@@ -473,11 +478,29 @@ string ag_dispatch_log(CCAMAggregateMachine machine, int opcode, List<int> opera
     return ccam_aggregate_trap(machine, "invalid_reference");
 }
 
+string ag_dispatch_join(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    CCAMAggregateValueResult parts = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!parts.ok) { return ccam_aggregate_trap(machine, parts.trap); }
+    CCAMAggregateValueResult separator = ccam_aggregate_read_ref(machine, operands[2]);
+    if (!separator.ok) { return ccam_aggregate_trap(machine, separator.trap); }
+    if (let list_ref = parts.value.reference) {
+        if (let sep_ref = separator.value.reference) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult result = ccam_heap_join_bytes(machine.heap, list_ref, sep_ref, opcode == AG_OP_JOIN_TAINTED);
+            if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(result.reference));
+        }
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
 string ag_dispatch(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.trap_code != "") { return machine.trap_code; }
     if (!ag_dispatch_shape(machine, opcode, kind, operands)) {
         return ccam_aggregate_trap(machine, "invalid_aggregate_instruction");
     }
+    if (ag_schema_join_opcode(opcode)) { return ag_dispatch_join(machine, opcode, operands); }
     if (ag_schema_log_opcode(opcode)) { return ag_dispatch_log(machine, opcode, operands); }
     if (opcode >= AG_OP_TAINT && opcode <= AG_OP_TAINT_SLICE) {
         return ag_dispatch_taint_bytes(machine, opcode, operands);

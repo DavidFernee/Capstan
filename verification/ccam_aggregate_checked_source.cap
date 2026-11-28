@@ -592,6 +592,23 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         return -1;
     }
     if (e.k == N_CALL) {
+        if (e.s == "join" && !c.function_nodes.has(e.s) && e.kids.len() == 2 && shape.kind == AG_SCHEMA_REF) {
+            int expected = AG_NOMINAL_STRING_ARRAY;
+            int opcode = AG_OP_JOIN_BYTES;
+            if (shape.descriptor == AG_NOMINAL_TAINTED) {
+                expected = AG_NOMINAL_TAINTED_ARRAY; opcode = AG_OP_JOIN_TAINTED;
+            } else if (shape.descriptor != AG_NOMINAL_BYTES) { return -1; }
+            int parts = ag_source_snapshot(c, ag_source_expr(c, e.kids[0], depth + 1));
+            if (parts < 0 || c.descriptors[parts] != expected) { return -1; }
+            int separator = ag_source_expr(c, e.kids[1], depth + 1);
+            if (separator < 0 || c.descriptors[separator] != AG_NOMINAL_BYTES) { return -1; }
+            int dest = ag_source_register(c, shape);
+            if (dest < 0) { return -1; }
+            List<int> operands = new List<int>();
+            operands.push(dest); operands.push(parts); operands.push(separator);
+            if (!ag_source_emit(c, opcode, AG_SCHEMA_REF, operands)) { return -1; }
+            return dest;
+        }
         if (e.s == "escape_log" && !c.function_nodes.has(e.s) && e.kids.len() == 1 &&
             shape.kind == AG_SCHEMA_REF && shape.descriptor == AG_NOMINAL_LOG) {
             int value = ag_source_expr(c, e.kids[0], depth + 1);

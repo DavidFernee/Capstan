@@ -297,10 +297,26 @@ bool ag_schema_log_operands(List<int> kinds, int opcode, int kind, List<int> ope
     return true;
 }
 
+// Separate opcodes bind the result classification, including empty lists.
+const int AG_OP_JOIN_BYTES = 57;
+const int AG_OP_JOIN_TAINTED = 58;
+
+bool ag_schema_join_opcode(int opcode) {
+    return opcode == AG_OP_JOIN_BYTES || opcode == AG_OP_JOIN_TAINTED;
+}
+
+bool ag_schema_join_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    return ag_schema_join_opcode(opcode) && kind == AG_SCHEMA_REF && operands.len() == 3 &&
+        ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
+}
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
+    if (ag_schema_join_opcode(opcode)) { return ag_schema_join_operands(kinds, opcode, element_kind, operands); }
     if (ag_schema_log_opcode(opcode)) { return ag_schema_log_operands(kinds, opcode, element_kind, operands); }
     if (ag_schema_taint_opcode(opcode)) { return ag_schema_taint_operands(kinds, opcode, element_kind, operands); }
-    if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
     if (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) {
         return ag_schema_conversion_operands(kinds, opcode, element_kind, operands);
     }
