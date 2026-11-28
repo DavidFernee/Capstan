@@ -194,6 +194,20 @@ else
   bad "bounded native scalar list emission" "$out"
 fi
 
+section "Candidate native stdout"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_stdout.cap" 2>&1)"; then
+  ok "bounded native stdout emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_stdout.py" "$ROOT/build/ccam-native-stdout.bin" 2>&1)"; then
+      ok "native stdout execution and failure behavior"
+    else
+      bad "native stdout execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native stdout emission" "$out"
+fi
+
 section "Candidate native process argument capture"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_process_argv.cap" 2>&1)"; then
   ok "bounded native process argv emission"
