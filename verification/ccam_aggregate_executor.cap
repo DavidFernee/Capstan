@@ -38,6 +38,9 @@ AGExecutionResult ag_execute_function(CCAMAggregateMachine machine, List<AGFunct
                 return new AGExecutionResult{ok: false, value: ccam_heap_int(0), return_register: -1, error: error};
             }
             int source = f.returns[block_id];
+            if (f.signature.result_kind == AG_RESULT_VOID) {
+                return new AGExecutionResult{ok: true, value: ccam_heap_int(0), return_register: -1, error: ""};
+            }
             CCAMAggregateValueResult result = ccam_aggregate_read(machine, source, f.signature.result_kind);
             int return_register = -1;
             if (result.ok) { return_register = source; }
