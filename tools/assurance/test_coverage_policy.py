@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -41,6 +42,35 @@ class CoveragePolicyTests(unittest.TestCase):
             with patch.object(runner, "run", return_value=result):
                 runner.gcov_lines(d, counts)
             self.assertEqual(counts, {"compiler/a.cap": {1: True, 2: False}})
+
+    def test_branch_counts(self):
+        report = "branch  0 taken 0 (fallthrough)\nbranch  1 taken 1\nbranch  2 never executed\n"
+        self.assertEqual(runner.branch_counts(report), {"branches": 3, "covered": 1})
+
+    def test_unknown_branch_count(self):
+        with self.assertRaises(ValueError):
+            runner.branch_counts("branch  0 taken 50%")
+
+    def test_empty_line_records(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "fixture.gcda").touch()
+            result = subprocess.CompletedProcess([], 0, b"no records\n", b"")
+            with patch.object(runner, "run", return_value=result), self.assertRaises(ValueError):
+                runner.gcov_lines(d, {})
+
+    def test_real_gcov(self):
+        self.assertIsNotNone(shutil.which(runner.GCC), "GCC required for integration control")
+        self.assertIsNotNone(shutil.which(runner.GCOV), "gcov required for integration control")
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "branch.c"
+            src.write_text("int main(int n, char **v) { if (n > 1) return 1; return 0; }\n")
+            exe = Path(d) / "branch"
+            subprocess.run([runner.GCC, "--coverage", str(src), "-o", str(exe)], check=True)
+            subprocess.run([str(exe)], check=True)
+            counts, branches = {}, {}
+            runner.gcov_lines(d, counts, branches)
+            self.assertEqual(len(branches), 1)
+            self.assertEqual(next(iter(branches.values())), {"branches": 2, "covered": 1})
 
 if __name__ == "__main__":
     unittest.main()
