@@ -72,9 +72,15 @@ def main():
               "revision": revision, "tree": tree,
               "platform": platform.platform(), "machine": platform.machine(),
               "toolchain": require([cc, "--version"]).stdout.decode(errors="replace"),
-              "fixpoints": [], "fixtures": []}
+              "fixpoints": [], "fixtures": [], "passed": False}
     directory = ROOT / "build" / "portable-assurance"
     directory.mkdir(parents=True, exist_ok=False)
+    evidence = directory / "evidence.json"
+    def checkpoint():
+        temporary = evidence.with_suffix(".tmp")
+        temporary.write_text(json.dumps(report, indent=2) + "\n")
+        temporary.replace(evidence)
+    checkpoint()
     reference = ROOT / "build/stage3.c"
     if (ROOT / "build/stage2.c").read_bytes() != reference.read_bytes():
         raise ValueError("bootstrap baseline mismatch")
@@ -89,6 +95,7 @@ def main():
             if generated.read_bytes() != reference.read_bytes():
                 raise ValueError(f"bootstrap differs under {cc} {opt}")
             report["fixpoints"].append({"optimisation": opt, "sha256": digest(generated)})
+            checkpoint()
             for name in FIXTURES:
                 source = ROOT / "tests" / (name + ".cap")
                 status, expected = fixture_expected(source)
@@ -107,17 +114,23 @@ def main():
                 require([compiler, "build", "-o", c, *(capflags[0].split() if capflags else []), source])
                 require([cc, opt, *flags, c, "-o", exe])
                 observed = run([exe], env=env)
-                check_outcome(observed, status, expected)
-                report["fixtures"].append({"name": name, "optimisation": opt,
+                row = {"name": name, "optimisation": opt,
                                            "exit": observed.returncode,
                                            "stdout_sha256": hashlib.sha256(observed.stdout).hexdigest(),
                                            "expected_sha256": hashlib.sha256(expected).hexdigest(),
-                                           "generated_c_sha256": digest(c)})
+                                           "stderr_sha256": hashlib.sha256(observed.stderr).hexdigest(),
+                                           "generated_c_sha256": digest(c), "passed": False}
+                report["fixtures"].append(row)
+                checkpoint()
+                check_outcome(observed, status, expected)
+                row["passed"] = True
+                checkpoint()
     if len(report["fixpoints"]) != 3 or len(report["fixtures"]) != 3 * len(FIXTURES):
         raise ValueError("incomplete campaign")
     if require(["git", "status", "--porcelain", "--untracked-files=no"]).stdout:
         raise ValueError("source tree changed during campaign")
-    (directory / "evidence.json").write_text(json.dumps(report, indent=2) + "\n")
+    report["passed"] = True
+    checkpoint()
     print(f"three C-backed fixpoints and {len(report['fixtures'])} fixture executions passed")
 
 
