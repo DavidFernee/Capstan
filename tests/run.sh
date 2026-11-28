@@ -166,6 +166,20 @@ else
   bad "bounded native record membership guard emission" "$out"
 fi
 
+section "Candidate native indexed arena"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_indexed_arena.cap" 2>&1)"; then
+  ok "indexed arena allocation and membership emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_indexed_arena.py" "$ROOT/build/ccam-native-indexed-arena.bin" 2>&1)"; then
+      ok "native indexed arena capacity and membership execution"
+    else
+      bad "native indexed arena execution" "$out"
+    fi
+  fi
+else
+  bad "indexed arena emission" "$out"
+fi
+
 section "Candidate native borrowed-FD output"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_output.cap" 2>&1)"; then
   ok "bounded borrowed-FD output emission"
