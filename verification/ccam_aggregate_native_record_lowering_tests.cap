@@ -71,7 +71,7 @@ test "candidate native arithmetic admits signed extrema and explicit arithmetic 
 test "candidate native admission rejects invalid budgets and unsupported source" {
     AGFunction f = ag_nv_test_arith(AG_OP_ADD, 1, 2);
     assert(!ag_nv_compile(f, 0).ok && !ag_nv_compile(f, 4097).ok);
-    if (let entry = ag_nv_test_source("int run() { List<int> v = new List<int>(); return v.len(); }")) {
+    if (let entry = ag_nv_test_source("int run() { List<string> v = new List<string>(); return v.len(); }")) {
         AGImage refused = ag_nv_compile(entry.function, 100);
         assert(!refused.ok && refused.bytes.len() == 0);
     } else { assert(false); }
@@ -114,9 +114,9 @@ test "candidate native direct calls preserve local record identity across scalar
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-local-record.elf"));
 }
 
-test "candidate native direct calls reject unsupported collection boundaries and invalid budgets" {
-    string source = "int read(List<int> values) { return values.len(); } " +
-        "int run() { List<int> values = new List<int>(); return read(values); }";
+test "candidate native direct calls reject unsupported map boundaries and invalid budgets" {
+    string source = "int read(Map<int> values) { return 1; } " +
+        "int run() { Map<int> values = new Map<int>(); return read(values); }";
     AGImage rejected = ag_nvc_test_source(source, 100, 8);
     assert(!rejected.ok && rejected.bytes.len() == 0);
     assert(!ag_nvc_test_source("int run() { return 1; }", 100, 0).ok);
@@ -318,4 +318,33 @@ test "candidate native invalid byte conversions reject before publication" {
         "build/ccam-native-record-text-byte-over.elf"));
     assert(ag_nv_test_write(ag_nvc_test_source("int run() { return char_str(0 - 1).len(); }", 100, 8),
         "build/ccam-native-record-text-byte-negative.elf"));
+}
+
+test "candidate native scalar list calls preserve identity and mutable logical length" {
+    string source = "struct Work { List<int> values; } " +
+        "void fill(List<int> values) { values.push(10); values.push(20); values.push(12); } " +
+        "int run() { List<int> values = new List<int>(); Work w = new Work{values: values}; " +
+        "fill(w.values); values[0] = values[0] + values[1]; values.pop(); values.push(12); " +
+        "return values[0] + values[2]; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-list-int.elf"));
+}
+
+test "candidate native bool list supports return aliases and cleared pop slots" {
+    string source = "List<bool> make() { List<bool> b = new List<bool>(); b.push(false); b.push(true); return b; } " +
+        "int run() { List<bool> b = make(); b.pop(); b.push(false); b[0] = true; " +
+        "if (b[0]) { if (!b[1]) { return b.len(); } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-list-bool.elf"));
+}
+
+test "candidate native list capacity and index boundaries" {
+    string full = "int run() { List<int> a = new List<int>(); int i = 0; while (i < 256) { a.push(i); i += 1; } return a[255]; }";
+    string over = "int run() { List<int> a = new List<int>(); int i = 0; while (i < 257) { a.push(i); i += 1; } return 42; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(full, 4096, 8), "build/ccam-native-record-list-full.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(over, 4096, 8), "build/ccam-native-record-list-over.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<int> a = new List<int>(); a.pop(); return a.len(); }", 100, 8),
+        "build/ccam-native-record-list-empty.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<int> a = new List<int>(); return a[0]; }", 100, 8),
+        "build/ccam-native-record-list-oob.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<int> a = new List<int>(); a.push(1); return a[0 - 1]; }", 100, 8),
+        "build/ccam-native-record-list-negative.elf"));
 }
