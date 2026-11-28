@@ -312,7 +312,19 @@ bool ag_schema_join_operands(List<int> kinds, int opcode, int kind, List<int> op
         ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
 }
 
+// Native-only stdout effect: [source reference register, exact descriptor].
+// It writes no language register. No arbitrary FD or tainted sink.
+const int AG_OP_PRINT = 59;
+const int AG_OP_PRINTLN = 60;
+bool ag_schema_stdout_opcode(int opcode) { return opcode == AG_OP_PRINT || opcode == AG_OP_PRINTLN; }
+bool ag_schema_stdout_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    return ag_schema_stdout_opcode(opcode) && kind == AG_SCHEMA_REF && operands.len() == 2 &&
+        ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+        (operands[1] == -1 || operands[1] == -4103);
+}
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (ag_schema_stdout_opcode(opcode)) { return ag_schema_stdout_operands(kinds, opcode, element_kind, operands); }
     if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
     if (ag_schema_join_opcode(opcode)) { return ag_schema_join_operands(kinds, opcode, element_kind, operands); }
     if (ag_schema_log_opcode(opcode)) { return ag_schema_log_operands(kinds, opcode, element_kind, operands); }

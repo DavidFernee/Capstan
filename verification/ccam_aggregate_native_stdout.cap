@@ -1,7 +1,7 @@
 // Candidate Linux x86-64 stdout leaf, not a source-level builtin.
 // RAX=arena string offset, RDI=0 (write) or 1 (append LF).
 // R12/R13/R14 trusted live monotonic arena, valid stack, single thread.
-// Reject forged offsets, non-string tags, malformed ready/payload words
+// Reject forged offsets, non-matching trusted/LogText tags, malformed ready/payload words
 // before the first syscall. No arena writes; 4112 bytes stack scratch.
 // RAX=bytes written on success, RDX=0; RAX=0/RDX=1 on rejection/error.
 // Positive short writes advance; each syscall must make progress, so at
@@ -11,12 +11,14 @@
 // RBX/RBP/R12-R15 preserved; private membership guard at offset 204.
 import "ccam_aggregate_native_record_boundary.cap";
 
-bool ag_nv_emit_stdout(List<int> b) {
+// Reuse the same validated leaf for the two exact nominal sink classes.
+bool ag_nv_emit_stdout_tag(List<int> b, int tag) {
+    if (tag != 4096 && tag != 2046) { return false; }
     if (b.len() > AG_BYTE_LIMIT - 204 - AG_NATIVE_RECORD_BOUNDARY_SIZE) { return false; }
     b.push(72); b.push(131); b.push(255); b.push(1); b.push(15); b.push(135); b.push(186); b.push(0);
     b.push(0); b.push(0); b.push(232); b.push(189); b.push(0); b.push(0); b.push(0); b.push(133);
     b.push(210); b.push(15); b.push(133); b.push(173); b.push(0); b.push(0); b.push(0); b.push(77);
-    b.push(141); b.push(20); b.push(4); b.push(73); b.push(129); b.push(58); b.push(0); b.push(16);
+    b.push(141); b.push(20); b.push(4); b.push(73); b.push(129); b.push(58); b.push(tag % 256); b.push(tag / 256);
     b.push(0); b.push(0); b.push(15); b.push(133); b.push(156); b.push(0); b.push(0); b.push(0);
     b.push(77); b.push(139); b.push(66); b.push(8); b.push(73); b.push(129); b.push(248); b.push(0);
     b.push(16); b.push(0); b.push(0); b.push(15); b.push(135); b.push(139); b.push(0); b.push(0);
@@ -42,6 +44,8 @@ bool ag_nv_emit_stdout(List<int> b) {
     return ag_native_emit_record_boundary(b);
 }
 
+bool ag_nv_emit_stdout(List<int> b) { return ag_nv_emit_stdout_tag(b, 4096); }
+
 test "candidate native stdout leaf and private guard emit exact extent" {
     List<int> b = new List<int>();
     assert(ag_nv_emit_stdout(b));
@@ -49,4 +53,19 @@ test "candidate native stdout leaf and private guard emit exact extent" {
     string data = "";
     for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
     assert(write_file("build/ccam-native-stdout.bin", data));
+}
+test "candidate nominal LogText stdout differs only by exact tag" {
+    List<int> trusted = new List<int>();
+    List<int> log = new List<int>();
+    assert(ag_nv_emit_stdout(trusted) && ag_nv_emit_stdout_tag(log, 2046));
+    assert(log.len() == 382 && trusted.len() == log.len());
+    assert(!ag_nv_emit_stdout_tag(log, 2045) && log.len() == 382);
+    string data = "";
+    int changed = 0;
+    for (int i = 0; i < log.len(); i += 1) {
+        if (log[i] != trusted[i]) { changed += 1; }
+        data = data + char_str(log[i]);
+    }
+    assert(changed == 2);
+    assert(write_file("build/ccam-native-stdout-log.bin", data));
 }

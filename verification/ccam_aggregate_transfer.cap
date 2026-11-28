@@ -10,6 +10,7 @@ AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int 
     if (input.len() != kinds.len() || !ag_schema_operands(kinds, opcode, kind, operands)) {
         return new AGTransferResult{ok: false, ready: output};
     }
+    if (ag_schema_stdout_opcode(opcode) && !input[operands[0]]) { return new AGTransferResult{ok: false, ready: output}; }
     if (ag_schema_log_opcode(opcode) || ag_schema_join_opcode(opcode)) {
         for (int i = 1; i < operands.len(); i += 1) {
             if (!input[operands[i]]) { return new AGTransferResult{ok: false, ready: output}; }

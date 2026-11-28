@@ -642,3 +642,17 @@ test "native join preserves trusted and tainted nominal result including empty l
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-join.elf"));
     assert(!ag_nvc_test_source("string bad(List<Tainted> x) { return join(x, \"\"); } int run() { return 0; }", 1024, 8).ok);
 }
+
+test "candidate stdout supports trusted and contextual log values without laundering" {
+    string source = "int run() { print(\"prefix:\"); println(escape_log(taint(char_str(27)))); return 42; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-stdout.elf"));
+    assert(!ag_nvc_test_source("int run() { println(taint(\"x\")); return 0; }", 1024, 8).ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF);
+    List<int> a = new List<int>(); a.push(0); a.push(-4103);
+    List<bool> ready = new List<bool>(); ready.push(false);
+    assert(!ag_transfer(kinds, ready, AG_OP_PRINTLN, AG_SCHEMA_REF, a).ok);
+    ready[0] = true;
+    assert(ag_transfer(kinds, ready, AG_OP_PRINTLN, AG_SCHEMA_REF, a).ok);
+    a[1] = -4102;
+    assert(!ag_schema_operands(kinds, AG_OP_PRINTLN, AG_SCHEMA_REF, a));
+}

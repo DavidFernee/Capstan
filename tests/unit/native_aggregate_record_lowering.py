@@ -55,6 +55,13 @@ def main():
             assert (run.returncode, run.stdout, run.stderr) == (1, b'', b''), (name, run)
         else:
             assert (run.returncode, run.stdout, run.stderr) == (0, struct.pack('<q', value), b''), (name, run)
+    executable = directory / 'ccam-native-record-stdout.elf'
+    os.chmod(executable, 0o700)
+    run = subprocess.run([executable.resolve()], capture_output=True, timeout=5)
+    assert (run.returncode, run.stdout, run.stderr) == (0, b'prefix:\\x1b\n' + struct.pack('<q', 42), b''), run
+    with open('/dev/full', 'wb') as full:
+        run = subprocess.run([executable.resolve()], stdout=full, stderr=subprocess.PIPE, timeout=5)
+    assert (run.returncode, run.stderr) == (1, b''), run
     cases = [
         ('argv', [], 0), ('argv', [b'abc'], 10003),
         ('argv', [b'', b'x'], 20000),
