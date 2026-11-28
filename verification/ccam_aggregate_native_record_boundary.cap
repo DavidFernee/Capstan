@@ -6,8 +6,8 @@
 // RAX=offset; R12=base,R13=committed bytes,R14=capacity.
 // RDX=0 if found; 1 on rejection. RAX and all field arguments preserved;
 // RCX,R10,R11,flags clobbered. No writes. Scan cap: 65,536 headers per call.
-// Later objects beyond that cap are deliberately rejected; allocator and
-// profile integration must enforce a matching object bound before adoption.
+// The record-only allocator and access leaves enforce a matching 1 MiB
+// capacity ceiling. Minimum extent 16 bytes makes the scan cap sufficient.
 // Single-threaded trusted backing only; no canonical native ABI claim.
 import "ccam_aggregate_native_scalar_record.cap";
 
@@ -22,7 +22,7 @@ bool ag_native_emit_record_boundary(List<int> code) {
     code.push(237); code.push(15); code.push(136); code.push(141); code.push(0); code.push(0); code.push(0); code.push(73);
     code.push(247); code.push(197); code.push(15); code.push(0); code.push(0); code.push(0); code.push(15); code.push(133);
     code.push(128); code.push(0); code.push(0); code.push(0); code.push(73); code.push(129); code.push(254); code.push(0);
-    code.push(0); code.push(0); code.push(4); code.push(119); code.push(119); code.push(77); code.push(57); code.push(245);
+    code.push(0); code.push(16); code.push(0); code.push(119); code.push(119); code.push(77); code.push(57); code.push(245);
     code.push(119); code.push(114); code.push(76); code.push(137); code.push(225); code.push(76); code.push(1); code.push(241);
     code.push(114); code.push(106); code.push(76); code.push(57); code.push(232); code.push(115); code.push(101); code.push(72);
     code.push(169); code.push(15); code.push(0); code.push(0); code.push(0); code.push(117); code.push(93); code.push(69);
