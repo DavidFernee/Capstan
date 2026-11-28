@@ -250,6 +250,20 @@ else
   bad "native taint validation emission" "$out"
 fi
 
+section "Candidate native bounded log escaping"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_log_escape.cap" 2>&1)"; then
+  ok "native log escape emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_log_escape.py" "$ROOT/build/ccam-native-log-escape.bin" 2>&1)"; then
+      ok "native log escape differential and boundary execution"
+    else
+      bad "native log escape execution" "$out"
+    fi
+  fi
+else
+  bad "native log escape emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"
