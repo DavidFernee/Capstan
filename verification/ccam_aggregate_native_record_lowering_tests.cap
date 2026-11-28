@@ -502,7 +502,7 @@ test "candidate native source admits checked literal constants across functions"
         "int helper() { if (ENABLED) { return NUMBER + LABEL.len(); } return 0; } " +
         "int run() { return helper(); }";
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-constants.elf"));
-    AGImage invalid = ag_nvc_test_source("const int X = 20 + 22; int run() { return X; }", 100, 8);
+    AGImage invalid = ag_nvc_test_source("int helper() { return 42; } const int X = helper(); int run() { return X; }", 100, 8);
     assert(!invalid.ok && invalid.bytes.len() == 0);
 }
 
@@ -558,4 +558,40 @@ test "candidate process entry accepts only exact string list signature" {
 test "candidate process entry preserves argument bytes" {
     string source = "int run(List<string> argv) { if (argv.len() == 2) { if (argv[0].len() == 0) { return argv[1].at(0); } } return 0; }";
     assert(ag_nv_test_write(ag_nv_test_process(source), "build/ccam-native-record-process-bytes.elf"));
+}
+
+test "candidate closed integer constants include production signed minimum" {
+    string source = "const int I64_MIN = -9223372036854775807 - 1; " +
+        "int run() { return I64_MIN; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-constant-min.elf"));
+    string ops = "const int A = (7 * 9 - 3) / 2 + 12 % 7 + 7; int run() { return A; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(ops, 1024, 8), "build/ccam-native-record-constant-ops.elf"));
+    assert(!ag_nvc_test_source("const int X = 9223372036854775807 + 1; int run() { return X; }", 100, 8).ok);
+    assert(!ag_nvc_test_source("const int X = 1 / 0; int run() { return X; }", 100, 8).ok);
+    assert(!ag_nvc_test_source("const int X = (-9223372036854775807 - 1) / -1; int run() { return X; }", 100, 8).ok);
+}
+
+test "candidate constant folding preserves checked input and enforces independent budgets" {
+    Type t = mk_type(TY_INT);
+    Node a = mk_node(N_INT, 0, 1); a.n = 20; a.ty = t;
+    Node b = mk_node(N_INT, 0, 1); b.n = 22; b.ty = t;
+    Node sum = mk_node_s(N_BIN, "+", 0, 1); sum.ty = t;
+    sum.kids.push(a); sum.kids.push(b);
+    Node d = mk_node_s(N_CONST, "X", 0, 1); d.ty = t; d.kids.push(sum);
+    if (let folded = ag_nv_normalize_constant(d)) {
+        assert(folded.kids[0].k == N_INT && folded.kids[0].n == 42);
+        assert(d.kids[0].k == N_BIN && d.kids[0].kids.len() == 2);
+    } else { assert(false); }
+    AGNVConstantBudget short = new AGNVConstantBudget{remaining: 2};
+    if (let value = ag_nv_const_int(sum, short, 1)) { assert(false); }
+    assert(short.remaining == 0);
+    AGNVConstantBudget exact = new AGNVConstantBudget{remaining: 3};
+    if (let value = ag_nv_const_int(sum, exact, 1)) { assert(value == 42 && exact.remaining == 0); }
+    else { assert(false); }
+    Node deep = a;
+    for (int i = 0; i < AG_NV_CONST_DEPTH; i += 1) {
+        Node neg = mk_node(N_NEG, 0, 1); neg.ty = t; neg.kids.push(deep); deep = neg;
+    }
+    AGNVConstantBudget bounded = new AGNVConstantBudget{remaining: AG_NV_CONST_WORK};
+    if (let value = ag_nv_const_int(deep, bounded, 1)) { assert(false); }
 }
