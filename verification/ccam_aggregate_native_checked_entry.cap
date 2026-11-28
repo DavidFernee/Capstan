@@ -36,7 +36,7 @@ AGImage ag_nv_compile_checked(Ctx ctx, List<Node> declarations, int fuel) {
 }
 
 // Multi-function variant. Reuse the checked source lowering, with stable
-// source-order IDs. Scalar-only call boundaries are enforced by ag_nvc_admit.
+// source-order IDs. Preserve exact nominal signatures for call boundaries.
 AGImage ag_nvc_compile_checked(Ctx ctx, List<Node> declarations, int fuel, int depth) {
     if (error_count(ctx) != 0 || declarations.len() == 0 ||
         declarations.len() > 256 + AG_NVC_MAX_FUNCTIONS) { return ag_nv_failure(); }
@@ -62,13 +62,15 @@ AGImage ag_nvc_compile_checked(Ctx ctx, List<Node> declarations, int fuel, int d
     }
     if (entry < 0) { return ag_nv_failure(); }
     List<AGFunction> functions = new List<AGFunction>();
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>();
     for (int i = 0; i < declarations.len(); i += 1) {
         Node d = declarations[i];
         if (d.k == N_FN) {
             if (let lowered = ag_source_lower_function(d, records, record_nodes, constants, function_nodes, indices)) {
                 functions.push(lowered.function);
+                signatures.push(lowered.signature);
             } else { return ag_nv_failure(); }
         }
     }
-    return ag_nvc_compile(functions, entry, fuel, depth);
+    return ag_nvc_compile_typed(functions, signatures, entry, fuel, depth);
 }
