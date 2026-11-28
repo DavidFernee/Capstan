@@ -101,12 +101,12 @@ string ag_stack_return(AGStack stack, int source) {
     AGContinuation continuation = stack.suspended[stack.depth - 1];
     int released = stack.active.registers.len();
     // Preserve existing trap and exhausted-budget precedence. Reject a wrong
-    // record descriptor before the caller destination can be written.
+    // reference shape before the caller destination can be written.
     if (stack.active.trap_code == "" && stack.active.steps < stack.active.max_steps &&
-        continuation.result_descriptor > 0) {
+        continuation.result_descriptor != 0) {
         CCAMAggregateValueResult returned = ccam_aggregate_read(stack.active, source,
             continuation.signature.result_kind);
-        if (returned.ok && !ccam_heap_value_has_type(stack.active.heap, returned.value,
+        if (returned.ok && !ag_nominal_value_matches(stack.active.heap, returned.value,
             continuation.signature.result_kind, continuation.result_descriptor)) {
             ccam_aggregate_trap(stack.active, "return_descriptor_mismatch");
         }
