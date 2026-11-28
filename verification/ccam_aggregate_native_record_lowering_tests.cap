@@ -515,13 +515,24 @@ test "candidate native checked module exceeds former 32 function ceiling" {
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-41.elf"));
 }
 
-test "candidate native module admits exact shared function ceiling and rejects next" {
+test "candidate native module admits original shared ceiling and explicit larger boundary" {
     List<AGFunction> functions = new List<AGFunction>();
     AGFunction f = ag_nv_test_arith(AG_OP_ADD, 20, 22);
-    for (int i = 0; i < AG_NVC_MAX_FUNCTIONS; i += 1) { functions.push(f); }
-    assert(ag_nv_test_write(ag_nvc_compile(functions, AG_NVC_MAX_FUNCTIONS - 1, 100, 8),
+    for (int i = 0; i < AG_PROGRAM_DEFAULT_FUNCTIONS; i += 1) { functions.push(f); }
+    assert(ag_nv_test_write(ag_nvc_compile(functions, AG_PROGRAM_DEFAULT_FUNCTIONS - 1, 100, 8),
         "build/ccam-native-record-module-256.elf"));
+    for (int i = AG_PROGRAM_DEFAULT_FUNCTIONS; i < AG_NVC_MAX_FUNCTIONS; i += 1) { functions.push(f); }
+    assert(ag_nvc_compile(functions, AG_NVC_MAX_FUNCTIONS - 1, 100, 8).ok);
     functions.push(f);
     AGImage rejected = ag_nvc_compile(functions, 0, 100, 8);
     assert(!rejected.ok && rejected.bytes.len() == 0);
+}
+
+test "candidate native source admits calls across old function index boundary" {
+    string source = "";
+    for (int i = 0; i < 299; i += 1) {
+        source = source + "int helper" + int_to_str(i) + "() { return " + int_to_str(i) + "; } ";
+    }
+    source = source + "int run() { return helper298() - helper256(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-300.elf"));
 }
