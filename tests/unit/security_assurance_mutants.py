@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import sys
+import re
 
 ROOT = Path(__file__).resolve().parents[2]
 MUTATIONS = [
@@ -144,7 +145,14 @@ def validate_inventory():
 
 
 def classify(observed):
-    if observed.returncode == 101 and "assertion failed" in observed.stderr:
+    # Test mode catches cap_panic with longjmp, reports FAIL, then exits 1.
+    # Require a complete runner summary, not an arbitrary process exit.
+    summary = re.findall(r"(?m)^([0-9]+) test\(s\), ([0-9]+) failed$", observed.stdout)
+    if (observed.returncode == 1 and len(summary) == 1
+            and 0 < int(summary[0][1]) <= int(summary[0][0])
+            and len(re.findall(r"(?m)^  FAIL  .+$", observed.stdout)) == int(summary[0][1])
+            and len(re.findall(r"(?m)^  (?:pass|FAIL)  .+$", observed.stdout)) == int(summary[0][0])
+            and "assertion failed" in observed.stderr):
         return "assertion_detected"
     if observed.returncode == 0:
         return "survived"
