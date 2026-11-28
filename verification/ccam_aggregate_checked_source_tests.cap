@@ -1,0 +1,81 @@
+import "ccam_aggregate_checked_module.cap";
+
+AGSourceModuleResult ag_source_test_compile(string text) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("aggregate-source.cap");
+    Tainted source = taint(text);
+    ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    if (error_count(ctx) == 0) { check_program(new_checker(ctx), declarations, false); }
+    return ag_source_lower_checked(ctx, declarations);
+}
+
+test "checked aggregate source indexes nominal record arrays and measures collections" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Node { int number; } struct Budget { int number; } " +
+        "Node select(List<Node> roots, int index) { Node selected = roots[index]; return selected; } " +
+        "int count(List<Node> roots) { return roots.len(); } " +
+        "int byte_at(string text, int index) { return text.at(index); }");
+    assert(compiled.ok && compiled.function_names.len() == 3);
+    assert(compiled.record_names[0] == "Node" && compiled.record_names[1] == "Budget");
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 64);
+    assert(root.ok);
+    CCAMAggregateMachine machine = root.machine;
+    assert(ccam_aggregate_alloc_array(machine, 0, AG_SCHEMA_REF, 1, 2) == "");
+    List<int> field_types = new List<int>(); field_types.push(AG_SCHEMA_INT);
+    List<bool> field_mutable = new List<bool>(); field_mutable.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 1, field_types: field_types,
+        field_ref_type_ids: new List<int>(), field_mutable: field_mutable};
+    assert(ccam_aggregate_alloc_record(machine, 2, layout) == "");
+    assert(ccam_aggregate_array_append(machine, 0, 2, AG_SCHEMA_REF) == "");
+    assert(ccam_aggregate_write(machine, 1, ccam_heap_int(0)) == "");
+    assert(ccam_aggregate_alloc_bytes(machine, 3, "A") == "");
+    AGStackResult stack = ag_stack_create(machine, 4, 32);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0); args.push(1);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 2) == "");
+    CCAMAggregateValueResult selected = ccam_aggregate_read(stack.stack.active, 2, AG_SCHEMA_REF);
+    assert(selected.ok && ag_nominal_value_matches(machine.heap, selected.value, AG_SCHEMA_REF, 1));
+    List<int> count_args = new List<int>(); count_args.push(0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, count_args, 1) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT).value.int_value == 1);
+    assert(ccam_aggregate_write(stack.stack.active, 1, ccam_heap_int(0)) == "");
+    args[0] = 3;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 1) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT).value.int_value == 65);
+}
+
+test "checked source adapter refuses unsupported code without a partial executable" {
+    AGSourceModuleResult invalid = ag_source_test_compile(
+        "int first(List<int> values, int index) { return values[index]; } " +
+        "int unsupported(int value) { return value + 1; }");
+    assert(!invalid.ok && invalid.error == "unsupported_function_body");
+    assert(invalid.function_names.len() == 0);
+    AGSourceModuleResult wrong = ag_source_test_compile(
+        "bool wrong(List<int> values, int index) { return values[index]; }");
+    assert(!wrong.ok && wrong.error == "source_diagnostics");
+    AGSourceModuleResult nested = ag_source_test_compile(
+        "int nested(List<List<int>> values) { return values.len(); }");
+    assert(!nested.ok);
+}
+
+test "checked source array indexing preserves out of bounds trap and caller destination" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int get_item(List<int> values, int index) { return values[index]; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 16);
+    assert(root.ok);
+    assert(ccam_aggregate_alloc_array(root.machine, 0, AG_SCHEMA_INT, 0, 2) == "");
+    assert(ccam_aggregate_write(root.machine, 1, ccam_heap_int(7)) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 16);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0); args.push(1);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 1) == "array_bounds");
+    assert(stack.stack.depth == 0 && stack.stack.slots == 2);
+    assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT).value.int_value == 7);
+}
