@@ -62,6 +62,13 @@ jobs:
       - name: Test suite
         run: |
           if [ "${EVENT}" = "schedule" ]; then bash tests/run.sh --full; else bash tests/run.sh; fi
+      - name: Retain full-run coverage evidence
+        if: success() && github.event_name == 'schedule' && runner.os == 'Linux'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-evidence-${{ matrix.os }}-${{ matrix.cc }}
+          path: build/coverage-evidence.json
+          if-no-files-found: error
       - name: Keep fuzz failures
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
