@@ -11,6 +11,11 @@ bool ag_dispatch_reg(CCAMAggregateMachine machine, int index, int kind) {
 
 bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.registers.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(kind)) { return false; }
+    if (opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_map_enumeration(kinds, opcode, kind, operands);
+    }
     if (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) {
         List<int> kinds = new List<int>();
         for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
@@ -60,7 +65,7 @@ bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<
             ag_dispatch_reg(machine, operands[1], AG_SCHEMA_REF);
     }
     if (opcode == 5) {
-        if (operands.len() != 3 || operands[1] < 0 || operands[2] < 0 ||
+        if (operands.len() != 3 || operands[1] < CCAM_HEAP_ELEMENT_BYTES || operands[2] < 0 ||
             operands[2] > AG_SCHEMA_MAX_ARRAY_CAPACITY ||
             (kind != AG_SCHEMA_REF && operands[1] != 0)) { return false; }
         return ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF);
@@ -320,10 +325,35 @@ string ag_dispatch_string(CCAMAggregateMachine machine, int opcode, List<int> op
     return ccam_aggregate_trap(machine, "invalid_reference");
 }
 
+string ag_dispatch_map_enumeration(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    CCAMAggregateValueResult map = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!map.ok) { return ccam_aggregate_trap(machine, map.trap); }
+    if (let reference = map.value.reference) {
+        if (opcode == AG_OP_MAP_KEYS) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult keys = ccam_heap_map_keys(machine.heap, reference, operands[2]);
+            if (!keys.ok) { return ccam_aggregate_trap(machine, keys.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(keys.reference));
+        }
+        CCAMAggregateValueResult key = ccam_aggregate_read_ref(machine, operands[2]);
+        if (!key.ok) { return ccam_aggregate_trap(machine, key.trap); }
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapValueResult removed = ccam_heap_map_remove(machine.heap, reference, operands[3], key.value);
+        if (!removed.ok) { return ccam_aggregate_trap(machine, removed.trap); }
+        return ccam_aggregate_write(machine, operands[0], removed.value);
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
 string ag_dispatch(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.trap_code != "") { return machine.trap_code; }
     if (!ag_dispatch_shape(machine, opcode, kind, operands)) {
         return ccam_aggregate_trap(machine, "invalid_aggregate_instruction");
+    }
+    if (opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE) {
+        return ag_dispatch_map_enumeration(machine, opcode, operands);
     }
     if (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) {
         return ag_dispatch_string(machine, opcode, operands);
