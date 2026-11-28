@@ -9,7 +9,9 @@
 import "ccam_aggregate_native_record_lowering.cap";
 import "ccam_aggregate_sealed_program.cap";
 
-const int AG_NVC_MAX_FUNCTIONS = 32;
+// Respect the shared ag_program_validate function ceiling.
+const int AG_NVC_MAX_FUNCTIONS = 256;
+const int AG_NVC_MAX_TOTAL_REGS = 32768;
 const int AG_NVC_MAX_DEPTH = 32;
 
 bool ag_nvc_nominal_shape(int kind, int descriptor, List<int> layouts) {
@@ -29,12 +31,13 @@ bool ag_nvc_admit_typed(List<AGFunction> functions, List<AGNominalSignature> sig
         functions[entry].signature.result_kind != AG_SCHEMA_INT) { return false; }
     for (int i = 0; i <= 4096; i += 1) { layouts.push(-1); }
     Map<int> fields = new Map<int>();
-    int blocks = 0; int instructions = 0; int operands = 0;
+    int blocks = 0; int instructions = 0; int operands = 0; int registers = 0;
     for (int i = 0; i < functions.len(); i += 1) {
         AGFunction f = functions[i];
-        if (f.blocks.len() > AG_NV_MAX_BLOCKS - blocks ||
+        if (f.kinds.len() > AG_NVC_MAX_TOTAL_REGS - registers ||
+            f.blocks.len() > AG_NV_MAX_BLOCKS - blocks ||
             !ag_nv_admit_function(f, layouts, fields, true)) { return false; }
-        blocks += f.blocks.len();
+        registers += f.kinds.len(); blocks += f.blocks.len();
         for (int j = 0; j < f.blocks.len(); j += 1) {
             AGCFGBlock b = f.blocks[j];
             if (b.instructions.len() > AG_NV_MAX_INS - instructions) { return false; }
