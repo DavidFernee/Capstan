@@ -1,0 +1,105 @@
+// Candidate nominal record call boundary, layered over existing aggregate frames.
+// Positive descriptor IDs are required for references; scalar descriptor IDs are zero.
+// Arrays, bytes, void returns and integration into the stack executor are deferred.
+import "ccam_aggregate_frames.cap";
+
+struct AGNominalSignature {
+    AGCallSignature coarse;
+    List<int> parameter_descriptors;
+    int result_descriptor;
+}
+
+bool ag_nominal_kind(int kind, int descriptor) {
+    if (kind == AG_SCHEMA_REF) { return descriptor > 0; }
+    return (kind == AG_SCHEMA_INT || kind == AG_SCHEMA_BOOL) && descriptor == 0;
+}
+
+bool ag_nominal_signature(AGNominalSignature signature) {
+    if (!ag_call_signature(signature.coarse) ||
+        signature.parameter_descriptors.len() != signature.coarse.parameters.len() ||
+        !ag_nominal_kind(signature.coarse.result_kind, signature.result_descriptor)) {
+        return false;
+    }
+    for (int i = 0; i < signature.parameter_descriptors.len(); i += 1) {
+        if (!ag_nominal_kind(signature.coarse.parameters[i],
+            signature.parameter_descriptors[i])) { return false; }
+    }
+    return true;
+}
+
+AGFrameResult ag_nominal_open(CCAMAggregateMachine caller, AGNominalSignature signature,
+    List<int> callee_kinds, List<int> arguments, int destination, int remaining_slots) {
+    if (caller.trap_code != "") {
+        return new AGFrameResult{ok: false, frame: caller, error: caller.trap_code};
+    }
+    if (!ag_nominal_signature(signature) ||
+        arguments.len() != signature.coarse.parameters.len()) {
+        return new AGFrameResult{ok: false, frame: caller, error: "invalid_call"};
+    }
+    for (int i = 0; i < arguments.len(); i += 1) {
+        CCAMAggregateValueResult value = ccam_aggregate_read(
+            caller, arguments[i], signature.coarse.parameters[i]);
+        if (!value.ok) {
+            return new AGFrameResult{ok: false, frame: caller, error: value.trap};
+        }
+        if (!ccam_heap_value_has_type(caller.heap, value.value,
+            signature.coarse.parameters[i], signature.parameter_descriptors[i])) {
+            return new AGFrameResult{ok: false, frame: caller, error: "argument_descriptor_mismatch"};
+        }
+    }
+    return ag_frame_open(caller, signature.coarse, callee_kinds,
+        arguments, destination, remaining_slots);
+}
+
+// Candidate preflight only. The trusted stack controller must retain the
+// matching caller, callee and signature; this helper does not authenticate them.
+bool ag_nominal_result_matches(CCAMAggregateMachine callee,
+    AGNominalSignature signature, int source) {
+    if (!ag_nominal_signature(signature) || callee.trap_code != "") { return false; }
+    CCAMAggregateValueResult value = ccam_aggregate_read(
+        callee, source, signature.coarse.result_kind);
+    return value.ok && ccam_heap_value_has_type(callee.heap, value.value,
+        signature.coarse.result_kind, signature.result_descriptor);
+}
+
+test "nominal aggregate calls reject wrong record before opening a frame" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(
+        kinds, 4096, 16, 4096, 4096, 16);
+    assert(created.ok);
+    CCAMAggregateMachine caller = created.machine;
+    CCAMHeapLayout node = new CCAMHeapLayout{
+        type_id: 7, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()
+    };
+    CCAMHeapLayout budget = new CCAMHeapLayout{
+        type_id: 8, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()
+    };
+    assert(ccam_aggregate_alloc_record(caller, 0, node) == "");
+    assert(ccam_aggregate_alloc_record(caller, 1, budget) == "");
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_REF);
+    List<int> descriptors = new List<int>();
+    descriptors.push(7);
+    AGNominalSignature signature = new AGNominalSignature{
+        coarse: new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_REF},
+        parameter_descriptors: descriptors, result_descriptor: 7
+    };
+    List<int> arguments = new List<int>();
+    arguments.push(1);
+    int before = caller.steps;
+    AGFrameResult rejected = ag_nominal_open(caller, signature, kinds, arguments, 1, 2);
+    assert(!rejected.ok && rejected.error == "argument_descriptor_mismatch");
+    assert(caller.steps == before && caller.trap_code == "");
+    arguments[0] = 0;
+    AGFrameResult accepted = ag_nominal_open(caller, signature, kinds, arguments, 1, 2);
+    assert(accepted.ok);
+    assert(ag_nominal_result_matches(accepted.frame, signature, 0));
+    assert(!ag_nominal_result_matches(accepted.frame, signature, 1));
+    assert(ccam_aggregate_alloc_record(accepted.frame, 1, budget) == "");
+    assert(!ag_nominal_result_matches(accepted.frame, signature, 1));
+    descriptors[0] = 0;
+    assert(!ag_nominal_signature(signature));
+}
