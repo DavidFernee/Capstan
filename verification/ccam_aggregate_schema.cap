@@ -20,8 +20,54 @@ bool ag_schema_register(List<int> kinds, int index, int expected) {
 // 5 array_alloc [destination,reference-element-type-id,capacity];
 // 6 array_append [array,value]; 7 bytes_len [destination,bytes];
 // 8 bytes_concat [destination,left,right]. Immediate operands are bounded integers.
+// Candidate record operations (not canonical scalar CCAM).
+const int AG_OP_FIELD_GET = 9;
+const int AG_OP_FIELD_SET = 10;
+const int AG_OP_RECORD_ALLOC = 11;
+const int AG_OP_SCALAR_CONST = 12;
+const int AG_SCHEMA_MAX_RECORD_FIELDS = 4096;
+const int AG_SCHEMA_MAX_OPERANDS = 8194;
+
+bool ag_schema_value_shape(int kind, int descriptor) {
+    if (kind == AG_SCHEMA_REF) { return descriptor != 0; }
+    return (kind == AG_SCHEMA_INT || kind == AG_SCHEMA_BOOL) && descriptor == 0;
+}
+
+// Field operands: [value register, object register, record ID, field index, value shape].
+// Allocation operands: [destination, record ID, (field kind, field shape)*].
+// Scalar constant operands: [destination, value]; booleans are exactly 0 or 1.
+bool ag_schema_record_immediates(int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_FIELD_GET || opcode == AG_OP_FIELD_SET) {
+        return operands.len() == 5 && operands[2] > 0 &&
+            operands[3] >= 0 && operands[3] < AG_SCHEMA_MAX_RECORD_FIELDS &&
+            ag_schema_value_shape(kind, operands[4]);
+    }
+    if (opcode == AG_OP_RECORD_ALLOC) {
+        if (kind != AG_SCHEMA_REF || operands.len() < 2 ||
+            operands.len() > AG_SCHEMA_MAX_OPERANDS || operands.len() % 2 != 0 ||
+            operands[1] <= 0) { return false; }
+        for (int i = 2; i < operands.len(); i += 2) {
+            if (!ag_schema_value_shape(operands[i], operands[i + 1])) { return false; }
+        }
+        return true;
+    }
+    if (opcode == AG_OP_SCALAR_CONST) {
+        return operands.len() == 2 && (kind == AG_SCHEMA_INT ||
+            (kind == AG_SCHEMA_BOOL && (operands[1] == 0 || operands[1] == 1)));
+    }
+    return false;
+}
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
     if (kinds.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(element_kind)) { return false; }
+    if (opcode >= AG_OP_FIELD_GET && opcode <= AG_OP_SCALAR_CONST) {
+        if (!ag_schema_record_immediates(opcode, element_kind, operands) ||
+            !ag_schema_register(kinds, operands[0], element_kind)) { return false; }
+        if (opcode == AG_OP_FIELD_GET || opcode == AG_OP_FIELD_SET) {
+            return ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+        }
+        return true;
+    }
     if (opcode == 1 || opcode == 2 || opcode == 4) {
         if (operands.len() != 3 || (opcode == 4 && element_kind != AG_SCHEMA_INT)) { return false; }
         return ag_schema_register(kinds, operands[0], element_kind) &&
