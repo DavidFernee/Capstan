@@ -363,3 +363,36 @@ test "checked optional record field and if-let retain nominal payload identity" 
     assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
     assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
 }
+
+test "checked maps grow and transport present zero through optional lookup" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "Map<int> build(string first, string second) { Map<int> values = new Map<int>(); values.set(first, 0); values.set(second, 42); return values; } " +
+        "int read_value(Map<int> values, string key) { if (let value = values.get(key)) { return value; } return 7; } " +
+        "bool member(Map<int> values, string key) { return values.has(key); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 8192, 32, 8192, 8192, 256);
+    assert(root.ok);
+    assert(ccam_aggregate_alloc_bytes(root.machine, 0, "first") == "");
+    assert(ccam_aggregate_alloc_bytes(root.machine, 1, "second") == "");
+    assert(ccam_aggregate_alloc_bytes(root.machine, 2, "missing") == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0); args.push(1);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 3) == "");
+    args[0] = 3; args[1] = 0;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 4) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 4, AG_SCHEMA_INT).value.int_value == 0);
+    args[1] = 1;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 4) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 4, AG_SCHEMA_INT).value.int_value == 42);
+    args[1] = 2;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 4) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 4, AG_SCHEMA_INT).value.int_value == 7);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 5) == "");
+    assert(!ccam_aggregate_read(stack.stack.active, 5, AG_SCHEMA_BOOL).value.bool_value);
+    args[1] = 0;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 5) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 5, AG_SCHEMA_BOOL).value.bool_value);
+}
