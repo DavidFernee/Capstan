@@ -528,6 +528,11 @@ parse_record:
     lea struct_prefix(%rip), %r14
     call match_prefix
     call parse_record_identifier
+    lea text_list_elements(%rip), %rax
+    mov $2, %r10d
+    call find_name
+    test %rax, %rax
+    jnz invalid
     lea layouts(%rip), %rax
     mov layout_count(%rip), %r10
     call find_name
@@ -586,22 +591,24 @@ record_list_type:
     call match_prefix
     call parse_record_identifier
     cmp $3, %rdx
-    jne record_recursive_list_type
+    jne record_named_list_type
     cmpw $0x6e69, (%rdi)
-    jne record_recursive_list_type
+    jne record_named_list_type
     cmpb $116, 2(%rdi)
-    jne record_recursive_list_type
+    jne record_named_list_type
     mov $6, %ebp
     jmp record_list_type_close
-record_recursive_list_type:
-    mov layout_count(%rip), %rax
-    lea (%rax,%rax,2), %rcx
-    lea layouts(%rip), %rax
-    lea (%rax,%rcx,8), %rax
-    mov $1, %r10d
-    call find_name
-    test %rax, %rax
-    jz invalid                    /* only self-recursive List<ThisLayout> */
+record_named_list_type:
+    /* Include the current layout so a recursive worklist keeps kind 4. */
+    mov layout_count(%rip), %r10
+    inc %r10
+    call resolve_list_element
+    lea layouts(%rip), %rcx
+    imul $24, layout_count(%rip), %rdx
+    add %rdx, %rcx
+    cmp %rcx, %rax
+    je record_list_type_close
+    mov %rax, %rbp                /* exact element identity for empty lists */
 record_list_type_close:
     lea list_type_close(%rip), %r14
 record_field_type:
@@ -1267,6 +1274,8 @@ record_reader_return:
     call resolve_parameter_field
     cmp $1, %r12
     je record_reader_load
+    cmp $FIRST_NOMINAL_FIELD_KIND, %r12
+    jae record_reader_list
     cmp $6, %r12
     je record_reader_list
     cmp $4, %r12
@@ -1285,6 +1294,8 @@ record_reader_list:
     pop %rcx
     jmp record_reader_load
 record_reader_index:
+    cmp $FIRST_NOMINAL_FIELD_KIND, %r12
+    jae invalid                    /* no payload access for read-only empty lists */
     lea list_index_open(%rip), %r14
     call match_prefix
     call parse_operand
@@ -1315,6 +1326,8 @@ record_reader_load:
     je record_reader_index_load
     cmp $8, %r12
     je record_reader_index_load
+    cmp $FIRST_NOMINAL_FIELD_KIND, %r12
+    jae record_reader_length_load
     cmp $6, %r12
     je record_reader_length_load
     cmp $4, %r12
@@ -1610,6 +1623,8 @@ record_initializer:
     call parse_operand
     jmp record_push
 record_bool:
+    cmpq $FIRST_NOMINAL_FIELD_KIND, 16(%r12)
+    jae record_typed_empty_list
     cmpq $3, 16(%r12)
     je record_string
     cmpq $4, 16(%r12)
@@ -1711,6 +1726,17 @@ record_initialize_list_offset:
     movl $0, 10(%rbx)
     add $14, %rbx
     jmp record_store
+record_typed_empty_list:
+    lea list_value_open(%rip), %r14
+    call match_prefix
+    call parse_record_identifier
+    mov layout_count(%rip), %r10
+    call resolve_list_element
+    cmp 16(%r12), %rax
+    jne invalid
+    lea list_value_close(%rip), %r14
+    call match_prefix
+    jmp record_immutable_empty
 record_empty_list:
     lea list_value_open(%rip), %r14
     call match_prefix
@@ -1719,6 +1745,7 @@ record_empty_list:
     call match_prefix
     cmpb $0, emitting_constructor(%rip)
     je record_initialize_list_backing
+record_immutable_empty:
     mov %rsi, %rdi
     xor %edx, %edx
 record_blob:
@@ -2150,6 +2177,23 @@ resolve_record_field:
     dec %rcx
     sub %rax, %rcx                 /* reverse index of pushed field */
     shl $3, %ecx
+    ret
+
+/* Input is a parsed element name and the number of visible layouts.
+ * Return the stable name-table entry as its nominal identity. */
+resolve_list_element:
+    push %r10
+    lea text_list_elements(%rip), %rax
+    mov $2, %r10d
+    call find_name
+    pop %r10
+    test %rax, %rax
+    jnz resolved_list_element
+    lea layouts(%rip), %rax
+    call find_name
+    test %rax, %rax
+    jz invalid
+resolved_list_element:
     ret
 
 lookup_record_layout:
@@ -2719,6 +2763,13 @@ helper_local_prefix: .asciz " item\001=\001"
 helper_call_end: .asciz "\001(\001)\001;"
 record_close_initializer: .asciz "\001}\001;"
 record_return_prefix: .asciz "\001return item\001.\001"
+.set FIRST_NOMINAL_FIELD_KIND, 16
+/* Pointer-valued field kinds are disjoint from the small scalar/worklist tags. */
+text_list_elements:
+    .quad text_string_name,6,0
+    .quad text_tainted_name,7,0
+text_string_name: .ascii "string"
+text_tainted_name: .ascii "Tainted"
 string_escapes:
     .byte 110,10, 116,9, 114,13, 48,0, 92,92, 34,34, 39,39
 string_escapes_end:

@@ -729,7 +729,7 @@ printf '%s' 'struct Budget { int count; } struct Node { int k; List<Node> kids; 
 
 for budget in fresh 149999 150000; do
     {
-        sed '/^struct Ctx {/,$d' ../../compiler/ast.cap
+        sed '/^void report(/,$d' ../../compiler/ast.cap
         if [[ "$budget" == fresh ]]; then
             printf '%s' 'int main(){ CompileBudget item = new_compile_budget(); '
         else
@@ -747,6 +747,25 @@ done
 # Reject two helpers sharing a name, and a constructor of the wrong nominal type.
 printf '%s' 'struct A { int k; } A make(){ return new A{k: 42}; } bool make(A item){ return true; } int main(){ A item = make(); if (make(item)) { return 1; } return 0; }' | reject
 printf '%s' 'struct A { int k; } struct B { int k; } A make(){ return new A{k: 42}; } bool check(B item){ return true; } int main(){ B item = make(); if (check(item)) { return 1; } return 0; }' | reject
+
+# Build the production Ctx layout and read each list through a typed parameter.
+for field in files sources diags; do
+    {
+        sed -n '/^struct Diag {/,/^void report(/{ /^void report(/!p; }' ../../compiler/ast.cap
+        printf 'int _size(Ctx value){ return value.%s.len(); } ' "$field"
+        printf '%s' 'int main(){ Ctx item = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: false, strict: false, keep_checks: false}; return _size(item); }'
+    } | compile > "$scratch/context"
+    chmod +x "$scratch/context"
+    env -i PATH="$scratch/empty" "$scratch/context" 3>"$scratch/result"
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 0 ]]
+done
+
+printf '%s' 'struct Tainted { int k; } int main(){ Tainted item = new Tainted{k: 2}; return item.k; }' | reject
+for element_pair in 'string Tainted' 'Tainted string' 'Diag Token' 'Diag Missing'; do
+    read -r declared supplied <<< "$element_pair"
+    printf 'struct Diag { int k; } struct Token { int k; } struct Ctx { List<%s> values; } int main(){ Ctx item = new Ctx{values: new List<%s>()}; return item.values.len(); }' "$declared" "$supplied" | reject
+done
+printf '%s' 'struct Ctx { List<Tainted> values; } int _read(Ctx item){ return item.values[0]; } int main(){ Ctx item = new Ctx{values: new List<Tainted>()}; return _read(item); }' | reject
 
 # Distinguish a broken input channel from a malformed source, and check
 # that transport failures cannot be mistaken for a successful compile/run.
