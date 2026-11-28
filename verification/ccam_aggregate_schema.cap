@@ -107,6 +107,7 @@ const int AG_OP_DIRECT_CALL = 28;
 const int AG_DIRECT_MAX_ARGS = 256;
 
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
     if (opcode == AG_OP_DIRECT_CALL) {
         if (operands.len() < 2 || operands.len() > AG_DIRECT_MAX_ARGS + 2 ||
             operands[1] < 0) { return false; }
