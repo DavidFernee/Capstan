@@ -8,6 +8,8 @@ const int CCAM_HEAP_VALUE_BOOL = 2;
 const int CCAM_HEAP_VALUE_REF = 3;
 // Array-only exact byte-object element tag; never a nominal record ID.
 const int CCAM_HEAP_ELEMENT_BYTES = -1;
+// Reserved for lists of tainted inputs. Payload operations await a tainted byte object.
+const int CCAM_HEAP_ELEMENT_TAINTED = -2;
 
 const int CCAM_HEAP_OBJECT_RECORD = 1;
 const int CCAM_HEAP_OBJECT_ARRAY = 2;
@@ -183,6 +185,7 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
             if (index < 0) { return false; }
             if (expected_ref_type_id == 0) { return true; }
             CCAMHeapObject target = heap.objects[index];
+            if (expected_ref_type_id == CCAM_HEAP_ELEMENT_TAINTED) { return false; }
             if (expected_ref_type_id == CCAM_HEAP_ELEMENT_BYTES) { return target.kind == CCAM_HEAP_OBJECT_BYTES; }
             return target.kind == CCAM_HEAP_OBJECT_RECORD &&
                 target.descriptor_id == expected_ref_type_id;
@@ -197,7 +200,7 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
 bool ccam_heap_value_has_array_type(CCAMHeap heap, CCAMHeapValue value,
     int element_type, int element_ref_type_id) {
     if (value.kind != CCAM_HEAP_VALUE_REF ||
-        !ccam_heap_valid_value_type(element_type) || element_ref_type_id < CCAM_HEAP_ELEMENT_BYTES ||
+        !ccam_heap_valid_value_type(element_type) || element_ref_type_id < CCAM_HEAP_ELEMENT_TAINTED ||
         (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0)) {
         return false;
     }
@@ -690,8 +693,9 @@ CCAMHeapRefResult ccam_heap_alloc_typed_array(
     CCAMHeap heap, int element_type, int element_ref_type_id, int capacity
 ) {
     if (!ccam_heap_valid_value_type(element_type) ||
-        element_ref_type_id < CCAM_HEAP_ELEMENT_BYTES ||
+        element_ref_type_id < CCAM_HEAP_ELEMENT_TAINTED ||
         (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0) ||
+        (element_ref_type_id == CCAM_HEAP_ELEMENT_TAINTED && capacity != 0) ||
         capacity < 0 || capacity > CCAM_HEAP_MAX_ARRAY_CAPACITY) {
         return ccam_heap_ref_error("invalid_array_layout");
     }
@@ -1617,6 +1621,20 @@ test "growable map retains alias identity and rejects over-budget backing replac
     assert(ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, a).value.int_value == 42);
     assert(ccam_heap_map_matches(heap, ccam_heap_ref_value(alias), AG_MAP_DESCRIPTOR_BASE + AG_OPTIONAL_INT));
     assert(!ccam_heap_map_matches(heap, ccam_heap_ref_value(alias), AG_MAP_DESCRIPTOR_BASE + AG_OPTIONAL_BOOL));
+}
+
+test "empty tainted lists retain a distinct element identity" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult list = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 0);
+    CCAMHeapRefResult text = ccam_heap_alloc_bytes(heap, "trusted");
+    assert(list.ok && text.ok);
+    CCAMHeapValue value = ccam_heap_ref_value(list.reference);
+    assert(ccam_heap_value_has_array_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(!ccam_heap_value_has_array_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_BYTES));
+    assert(!ccam_heap_value_has_type(heap, ccam_heap_ref_value(text.reference), CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(!ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 1).ok);
 }
 
 test "byte array element descriptor excludes records and preserves map key snapshots" {

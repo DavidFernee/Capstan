@@ -2,7 +2,7 @@
 # capstan: front end for the Capstan compiler.
 #   capstan run   file.cap... [-- program args]
 #   capstan build file.cap... -o program [--release] [--strict]
-#   capstan native [--direct [--direct-steps N] [--direct-record]] [--root DIR] file.cap... -o program [--release] [--strict] (Linux x86-64 prototype)
+#   capstan native [--direct [--direct-steps N] [--direct-record | --direct-aggregate]] [--root DIR] file.cap... -o program [--release] [--strict] (Linux x86-64 prototype)
 #   capstan test  file.cap...           [--strict]
 #   capstan check file.cap...           [--release] [--strict]
 #   capstan fmt   file.cap...           [--check]
@@ -29,13 +29,14 @@ if [[ "$cmd" == lsp ]]; then
   [[ -x "$ROOT/build/capstan-lsp" ]] || make -s -C "$ROOT" lsp >&2
   exec "$ROOT/build/capstan-lsp" "$@"
 fi
-files=(); flags=(); out=""; workspace_root=""; direct=0; direct_steps=(); direct_record=(); progargs=()
+files=(); flags=(); out=""; workspace_root=""; direct=0; direct_steps=(); direct_record=(); direct_aggregate=0; progargs=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -o) out="$2"; shift 2 ;;
     --root) workspace_root="$2"; shift 2 ;;
     --direct) direct=1; shift ;;
     --direct-record) direct_record=("$1"); shift ;;
+    --direct-aggregate) direct_aggregate=1; shift ;;
     --direct-steps)
       [[ $# -ge 2 ]] || { echo "capstan native: --direct-steps requires a budget" >&2; exit 2; }
       direct_steps=("$1" "$2"); shift 2 ;;
@@ -65,6 +66,11 @@ if [[ -n "${direct_record[0]-}" && ( "$cmd" != "native" || "$direct" -eq 0 ) ]];
   exit 2
 fi
 
+if [[ "$direct_aggregate" -gt 0 && ( "$cmd" != "native" || "$direct" -eq 0 || -n "${direct_record[0]-}" ) ]]; then
+  echo "capstan native: --direct-aggregate requires native --direct and excludes --direct-record" >&2
+  exit 2
+fi
+
 tmp="$(mktemp -d)"
 output_tmp=""
 trap 'rm -rf -- "$tmp"; if [[ -n "$output_tmp" ]]; then rm -rf -- "$output_tmp"; fi' EXIT
@@ -88,6 +94,15 @@ case "$cmd" in
       exit 2
     }
     [[ -n "$out" ]] || { echo "capstan native: needs -o program" >&2; exit 2; }
+    if [[ "$direct_aggregate" -gt 0 ]]; then
+      "$CAPSTANC" build -o "$tmp/native-driver.c" \
+        "$ROOT/compiler/ast.cap" \
+        "$ROOT/compiler/lexer.cap" \
+        "$ROOT/compiler/parser.cap" \
+        "$ROOT/compiler/checker.cap" \
+        "$ROOT/verification/ccam_aggregate_native_checked_entry.cap" \
+        "$ROOT/tools/native_aggregate_driver.cap"
+    else
     "$CAPSTANC" build -o "$tmp/native-driver.c" \
       "$ROOT/compiler/ast.cap" \
       "$ROOT/compiler/lexer.cap" \
@@ -99,6 +114,7 @@ case "$cmd" in
       "$ROOT/verification/ccam_native_x64.cap" \
       "$ROOT/verification/ccam_direct_elf.cap" \
       "$ROOT/tools/native_driver.cap"
+    fi
     "$CC" $CFLAGS $HARDEN_FLAGS "$tmp/native-driver.c" -o "$tmp/native-driver"
     workspace_root="${workspace_root:-$(pwd -P)}"
     workspace_root="$(cd "$workspace_root" 2>/dev/null && pwd -P)" || {

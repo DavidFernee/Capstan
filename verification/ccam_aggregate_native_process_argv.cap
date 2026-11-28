@@ -1,0 +1,70 @@
+// Linux x86-64 initial process argv capture, candidate profile.
+// RAX = original trusted kernel stack pointer, R12/R13/R14 live arena.
+// Only the entry trampoline may invoke this leaf. Excludes argv[0].
+// Fixed bounds: 256 arguments, 4096 bytes per arg, 1048576 total bytes.
+// Preflight all lengths and exact word-pair arena cost before writes.
+// Two passes assume kernel-provided argv bytes stable in this single-threaded
+// entry; no language-controlled pointers or concurrent mutation.
+// RAX = fresh string-list offset, RDX = status (0 success, 1 rejection).
+// Cursor published last, unchanged on rejection. RBX/RBP/R12/R14/R15 preserved.
+// No environment capture, authority grants, source args() builtin or canonical ABI.
+import "ccam_aggregate_byte_buffer.cap";
+
+bool ag_nv_emit_process_argv(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - 353) { return false; }
+    b.push(72); b.push(131); b.push(236); b.push(32); b.push(72); b.push(137); b.push(4); b.push(36);
+    b.push(76); b.push(139); b.push(8); b.push(73); b.push(131); b.push(249); b.push(1); b.push(15);
+    b.push(130); b.push(64); b.push(1); b.push(0); b.push(0); b.push(73); b.push(129); b.push(249);
+    b.push(1); b.push(1); b.push(0); b.push(0); b.push(15); b.push(135); b.push(51); b.push(1);
+    b.push(0); b.push(0); b.push(73); b.push(255); b.push(201); b.push(76); b.push(137); b.push(76);
+    b.push(36); b.push(8); b.push(69); b.push(49); b.push(192); b.push(49); b.push(201); b.push(76);
+    b.push(57); b.push(201); b.push(115); b.push(65); b.push(76); b.push(139); b.push(28); b.push(36);
+    b.push(73); b.push(139); b.push(116); b.push(203); b.push(16); b.push(72); b.push(133); b.push(246);
+    b.push(15); b.push(132); b.push(15); b.push(1); b.push(0); b.push(0); b.push(49); b.push(210);
+    b.push(128); b.push(60); b.push(22); b.push(0); b.push(116); b.push(18); b.push(72); b.push(255);
+    b.push(194); b.push(72); b.push(129); b.push(250); b.push(0); b.push(16); b.push(0); b.push(0);
+    b.push(15); b.push(135); b.push(247); b.push(0); b.push(0); b.push(0); b.push(235); b.push(232);
+    b.push(73); b.push(1); b.push(208); b.push(73); b.push(129); b.push(248); b.push(0); b.push(0);
+    b.push(16); b.push(0); b.push(15); b.push(135); b.push(229); b.push(0); b.push(0); b.push(0);
+    b.push(72); b.push(255); b.push(193); b.push(235); b.push(186); b.push(76); b.push(139); b.push(28);
+    b.push(36); b.push(75); b.push(131); b.push(124); b.push(203); b.push(16); b.push(0); b.push(15);
+    b.push(133); b.push(208); b.push(0); b.push(0); b.push(0); b.push(75); b.push(141); b.push(20);
+    b.push(8); b.push(72); b.push(193); b.push(226); b.push(4); b.push(72); b.push(129); b.push(194);
+    b.push(32); b.push(16); b.push(0); b.push(0); b.push(76); b.push(137); b.push(240); b.push(76);
+    b.push(41); b.push(232); b.push(15); b.push(130); b.push(181); b.push(0); b.push(0); b.push(0);
+    b.push(72); b.push(57); b.push(194); b.push(15); b.push(135); b.push(172); b.push(0); b.push(0);
+    b.push(0); b.push(72); b.push(137); b.push(84); b.push(36); b.push(16); b.push(75); b.push(141);
+    b.push(60); b.push(44); b.push(72); b.push(137); b.push(124); b.push(36); b.push(24); b.push(49);
+    b.push(192); b.push(185); b.push(4); b.push(2); b.push(0); b.push(0); b.push(252); b.push(243);
+    b.push(72); b.push(171); b.push(76); b.push(139); b.push(84); b.push(36); b.push(24); b.push(73);
+    b.push(199); b.push(2); b.push(253); b.push(15); b.push(0); b.push(0); b.push(73); b.push(199);
+    b.push(66); b.push(8); b.push(1); b.push(1); b.push(0); b.push(0); b.push(76); b.push(139);
+    b.push(76); b.push(36); b.push(8); b.push(77); b.push(137); b.push(74); b.push(16); b.push(73);
+    b.push(199); b.push(66); b.push(24); b.push(1); b.push(0); b.push(0); b.push(0); b.push(77);
+    b.push(141); b.push(82); b.push(32); b.push(69); b.push(49); b.push(192); b.push(77); b.push(57);
+    b.push(200); b.push(115); b.push(83); b.push(76); b.push(139); b.push(28); b.push(36); b.push(75);
+    b.push(139); b.push(116); b.push(195); b.push(16); b.push(72); b.push(137); b.push(248); b.push(76);
+    b.push(41); b.push(224); b.push(73); b.push(137); b.push(2); b.push(73); b.push(199); b.push(66);
+    b.push(8); b.push(1); b.push(0); b.push(0); b.push(0); b.push(73); b.push(131); b.push(194);
+    b.push(16); b.push(72); b.push(199); b.push(7); b.push(0); b.push(16); b.push(0); b.push(0);
+    b.push(73); b.push(137); b.push(251); b.push(72); b.push(131); b.push(199); b.push(16); b.push(49);
+    b.push(201); b.push(15); b.push(182); b.push(4); b.push(14); b.push(133); b.push(192); b.push(116);
+    b.push(20); b.push(72); b.push(137); b.push(7); b.push(72); b.push(199); b.push(71); b.push(8);
+    b.push(1); b.push(0); b.push(0); b.push(0); b.push(72); b.push(131); b.push(199); b.push(16);
+    b.push(72); b.push(255); b.push(193); b.push(235); b.push(228); b.push(73); b.push(137); b.push(75);
+    b.push(8); b.push(73); b.push(255); b.push(192); b.push(235); b.push(168); b.push(76); b.push(137);
+    b.push(232); b.push(76); b.push(3); b.push(108); b.push(36); b.push(16); b.push(49); b.push(210);
+    b.push(72); b.push(131); b.push(196); b.push(32); b.push(195); b.push(49); b.push(192); b.push(186);
+    b.push(1); b.push(0); b.push(0); b.push(0); b.push(72); b.push(131); b.push(196); b.push(32);
+    b.push(195);
+    return true;
+}
+
+test "candidate Linux process argv leaf emits exact extent" {
+    List<int> b = new List<int>();
+    assert(ag_nv_emit_process_argv(b));
+    assert(b.len() == 353);
+    string data = "";
+    for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
+    assert(write_file("build/ccam-native-process-argv.bin", data));
+}
