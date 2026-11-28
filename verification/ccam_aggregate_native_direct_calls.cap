@@ -9,8 +9,8 @@
 import "ccam_aggregate_native_record_lowering.cap";
 import "ccam_aggregate_sealed_program.cap";
 
-// Respect the shared ag_program_validate function ceiling.
-const int AG_NVC_MAX_FUNCTIONS = 256;
+// Explicit opt-in candidate profile; shared/sealed defaults stay 256.
+const int AG_NVC_MAX_FUNCTIONS = 512;
 const int AG_NVC_MAX_TOTAL_REGS = 32768;
 const int AG_NVC_MAX_DEPTH = 32;
 
@@ -57,7 +57,7 @@ bool ag_nvc_admit_typed(List<AGFunction> functions, List<AGNominalSignature> sig
             if (!ag_nvc_nominal_shape(signature.coarse.parameters[j], signature.parameter_descriptors[j], layouts)) { return false; }
         }
     }
-    return ag_program_validate(functions) && ag_seal_validate_edges(functions);
+    return ag_program_validate_profile(functions, AG_NVC_MAX_FUNCTIONS) && ag_seal_validate_edges(functions);
 }
 
 bool ag_nvc_stack_adjust(List<int> b, bool allocate, int slots) {
