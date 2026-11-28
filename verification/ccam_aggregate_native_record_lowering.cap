@@ -36,13 +36,13 @@ AGImage ag_nv_failure() {
 // globally consistent for each record descriptor, even in unreachable code.
 bool ag_nv_admit_function(AGFunction f, List<int> layouts, bool calls) {
     if ((!calls && (f.signature.parameters.len() != 0 || f.signature.result_kind != AG_SCHEMA_INT)) ||
-        f.signature.parameters.len() > AG_NV_MAX_REGS || f.signature.result_kind == AG_SCHEMA_REF ||
+        f.signature.parameters.len() > AG_NV_MAX_REGS ||
         f.kinds.len() > AG_NV_MAX_REGS ||
         f.blocks.len() == 0 || f.blocks.len() > AG_NV_MAX_BLOCKS ||
         f.returns.len() != f.blocks.len()) { return false; }
     if (layouts.len() != 4097) { return false; }
     for (int i = 0; i < f.signature.parameters.len(); i += 1) {
-        if (f.signature.parameters[i] != AG_SCHEMA_INT && f.signature.parameters[i] != AG_SCHEMA_BOOL) { return false; }
+        if (!ag_schema_kind(f.signature.parameters[i])) { return false; }
     }
     int total = 0; int operands = 0;
     for (int b = 0; b < f.blocks.len(); b += 1) {
@@ -65,7 +65,7 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, bool calls) {
             } else if (ins.opcode == AG_OP_FIELD_GET || ins.opcode == AG_OP_FIELD_SET) {
                 if (ins.kind != AG_SCHEMA_INT || op[2] < 1 || op[2] > 4096 || op[4] != 0) { return false; }
             } else if (calls && ins.opcode == AG_OP_DIRECT_CALL) {
-                if (ins.kind == AG_SCHEMA_REF) { return false; }
+                // Module-level nominal signature admission and boundary guards.
             } else if (ins.opcode < AG_OP_SCALAR_CONST || ins.opcode > AG_OP_NOT) { return false; }
         }
     }
