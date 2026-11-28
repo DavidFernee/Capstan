@@ -138,6 +138,20 @@ else
   bad "bounded native arena lifecycle emission" "$out"
 fi
 
+section "Candidate native scalar records"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_scalar_record.cap" 2>&1)"; then
+  ok "bounded native scalar record emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_scalar_record.py" "$ROOT/build/ccam-aggregate-native-scalar-record.bin" 2>&1)"; then
+      ok "native scalar record allocation and checked field access"
+    else
+      bad "native scalar record execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native scalar record emission" "$out"
+fi
+
 section "Checked production AST to candidate aggregate evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_checked_source_tests.cap" 2>&1)"; then
   ok "checked aggregate source leaf lowering and sealed invocation"
