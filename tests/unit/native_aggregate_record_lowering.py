@@ -30,6 +30,8 @@ def main():
         'list-reference-oob': None, 'list-reference-mismatch': None,
         'opt-scalar': 7, 'opt-record': 42, 'opt-string': 3, 'opt-absent': 42,
         'opt-unwrap-none': None, 'opt-mismatch': None,
+        'map-int': 42, 'map-ref': 42, 'map-string-bool': 3,
+        'map-full': 42, 'map-over': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
