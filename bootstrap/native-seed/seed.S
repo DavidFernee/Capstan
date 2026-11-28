@@ -86,7 +86,7 @@ parse_constants:
     jmp parse_constants
 constants_done:
     ret
-/* One integer helper with up to six integer arguments. */
+/* One integer helper with up to sixteen integer arguments. */
 scalar_helper:
     pop %rax                      /* release the declaration lookahead */
     call parse_record_identifier
@@ -97,7 +97,7 @@ scalar_helper:
     lea scalar_call_open(%rip), %r14
     call match_prefix
 scalar_parameter:
-    cmpq $6, scalar_local_count(%rip)
+    cmpq $16, scalar_local_count(%rip)
     jae invalid
     lea int_prefix(%rip), %r14
     call match_prefix
@@ -142,6 +142,17 @@ scalar_helper_body:
     movl $0x00ec8148, (%rbx)       /* reserve non-parameter slots */
     mov %eax, 3(%rbx)
     add $7, %rbx
+    /* The incoming return address lies above the reserved locals. Copy the
+       stacked arguments from last to first. Each push moves the next source
+       and RSP down by eight, so the displacement stays (16 - 6) * 8. */
+scalar_copy_stack_parameter:
+    cmp $6, %ecx
+    jbe scalar_spill_registers
+    movl $0x502474ff, (%rbx)       /* push qword [rsp+80] */
+    add $4, %rbx
+    dec %ecx
+    jmp scalar_copy_stack_parameter
+scalar_spill_registers:
     lea argument_push(%rip), %rax
 scalar_spill_argument:
     dec %rcx
@@ -178,6 +189,12 @@ finish_scalar_helper:
     pushq scalar_helper_arity(%rip) /* preserve arity, hide helper locals */
     movq $0, scalar_local_count(%rip)
     mov (%rsp), %rax
+    cmp $6, %eax
+    jbe scalar_argument
+    test $1, %al
+    jz scalar_argument
+    movl $0x08ec8348, (%rbx)       /* alignment pad above all arguments */
+    add $4, %rbx
 scalar_argument:
     push %rax
     call emit_expression
@@ -195,6 +212,37 @@ scalar_call_finish:
     lea close_paren(%rip), %r14
     call match_prefix
     pop %rcx
+    cmp $6, %ecx
+    jbe scalar_call_registers
+    /* Arguments were evaluated left-to-right and pushed in reverse stack
+       order. Reverse the slots, then pop the six register arguments. */
+    xor %eax, %eax
+    lea -8(,%rcx,8), %edx
+scalar_reverse_slots:
+    cmp %edx, %eax
+    jae scalar_pop_registers_forward
+    movl $0x24448b48, (%rbx)       /* mov rax,[rsp+lo] */
+    mov %al, 4(%rbx)
+    movl $0x24448748, 5(%rbx)      /* xchg rax,[rsp+hi] */
+    mov %dl, 9(%rbx)
+    movl $0x24448948, 10(%rbx)     /* mov [rsp+lo],rax */
+    mov %al, 14(%rbx)
+    add $15, %rbx
+    add $8, %eax
+    sub $8, %edx
+    jmp scalar_reverse_slots
+scalar_pop_registers_forward:
+    lea argument_pop(%rip), %rax
+    mov $6, %ecx
+scalar_pop_next_register:
+    movzwl (%rax), %edx
+    mov %dx, (%rbx)
+    add $2, %rax
+    add $2, %rbx
+    dec %ecx
+    jnz scalar_pop_next_register
+    jmp scalar_emit_call
+scalar_call_registers:
     lea argument_pop(%rip), %rax
 scalar_restore_argument:
     dec %rcx
@@ -203,11 +251,21 @@ scalar_restore_argument:
     add $2, %rbx
     test %rcx, %rcx
     jnz scalar_restore_argument
+scalar_emit_call:
     movb $0xe8, (%rbx)             /* call helper */
     add $5, %rbx
     lea result_code+5(%rip), %rax
     sub %rbx, %rax
     mov %eax, -4(%rbx)
+    mov scalar_helper_arity(%rip), %eax
+    cmp $6, %eax
+    jbe finish_main
+    sub $5, %eax                   /* round stacked slot count up to even */
+    and $-2, %eax
+    shl $3, %eax
+    movl $0x00c48348, (%rbx)       /* add rsp,stacked bytes + alignment pad */
+    mov %al, 3(%rbx)
+    add $4, %rbx
     jmp finish_main
 
 parse_main:

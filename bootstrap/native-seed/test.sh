@@ -403,8 +403,22 @@ done
 for helper in \
     'int _sub(int _a, int _a){ return _a; } int main(){ return _sub(50, 8); }' \
     'int _sub(int _a, int _b){ return _a - _b; } int main(){ return _sub(42); }' \
-    'int _many(int _a, int _b, int _c, int _d, int _e, int _f, int _g){ return _g; } int main(){ return _many(1, 2, 3, 4, 5, 6, 7); }'; do
+    'int _many(int _a, int _b, int _c, int _d, int _e, int _f, int _g){ return _g; } int main(){ return _many(1, 2, 3, 4, 5, 6); }'; do
     printf '%s' "$helper" | reject
+done
+
+# Exercise both alignment cases and every register/stack argument position.
+for arity in 7 8 15 16 17; do
+    params=() args=()
+    for ((i=1; i<=arity; i++)); do params+=("int _p$i"); args+=("$i + 20"); done
+    for ((i=1; i<=arity; i++)); do
+        fixture="$(IFS=,; printf 'int _pick(%s){ return _p%d; } int main(){ return _pick(%s); }' "${params[*]}" "$i" "${args[*]}")"
+        if ((arity > 16)); then printf '%s' "$fixture" | reject; break; fi
+        printf '%s' "$fixture" | compile > "$scratch/stack-arguments"
+        chmod +x "$scratch/stack-arguments"
+        env -i PATH="$scratch/empty" "$scratch/stack-arguments" 3>"$scratch/result"
+        [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$((i+20))" ]]
+    done
 done
 
 printf '%s' 'int _sub(int _left, int _right){ return _left - _right; } int main(){ return _sub(45 + 5, 10 - 2); }' |
