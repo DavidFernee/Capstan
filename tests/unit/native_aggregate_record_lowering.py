@@ -11,6 +11,8 @@ def main():
     expected = {
         'loop': 23, 'min': -(1 << 63), 'div': -2, 'rem': 0,
         'negative-rem': -1,
+        'calls': 235, 'recursion': 120, 'local-record': 63,
+        'depth': None, 'callfuel': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
