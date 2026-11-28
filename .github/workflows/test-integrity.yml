@@ -15,6 +15,8 @@ jobs:
           persist-credentials: false
       - name: Exercise detector controls
         run: python3 -m unittest discover -s tools/assurance -p test_test_integrity_inventory.py -v
+      - name: Exercise mutation accounting controls
+        run: python3 -m unittest discover -s tools/assurance -p test_mutation_campaign.py -v
       - name: Compare tested tree against target base
         if: github.event_name == 'pull_request'
         env:
