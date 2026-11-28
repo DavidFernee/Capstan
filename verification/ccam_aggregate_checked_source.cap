@@ -20,6 +20,19 @@ AGSourceShape ag_source_invalid_shape() {
 }
 
 AGSourceShape ag_source_shape(Type t, Map<int> records) {
+    if (t.k == TY_OPT && t.args.len() == 1 && t.name == "") {
+        Type inner = t.args[0];
+        if (inner.args.len() != 0) { return ag_source_invalid_shape(); }
+        int descriptor = 0;
+        if (inner.k == TY_INT && inner.name == "") { descriptor = AG_OPTIONAL_INT; }
+        if (inner.k == TY_BOOL && inner.name == "") { descriptor = AG_OPTIONAL_BOOL; }
+        if (inner.k == TY_STR && inner.name == "") { descriptor = AG_OPTIONAL_BYTES; }
+        if (inner.k == TY_STRUCT) {
+            if (let id = records.get(inner.name)) { descriptor = AG_OPTIONAL_RECORD_BASE + id; }
+        }
+        if (!ccam_heap_optional_descriptor(descriptor)) { return ag_source_invalid_shape(); }
+        return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: descriptor};
+    }
     if (t.k == TY_LIST) {
         if (t.args.len() != 1 || t.name != "") { return ag_source_invalid_shape(); }
         Type element = t.args[0];
@@ -128,6 +141,39 @@ int ag_source_constant(AGSourceContext c, AGSourceShape shape, int value) {
     return dest;
 }
 
+// Contextual optional injection: no implicit conversion between optional types.
+int ag_source_expected(AGSourceContext c, Node e, AGSourceShape expected, int depth) {
+    if (depth >= AG_SOURCE_MAX_EXPR_DEPTH || expected.kind == 0) { return -1; }
+    if (expected.kind != AG_SCHEMA_REF || !ccam_heap_optional_descriptor(expected.descriptor)) {
+        int value = ag_source_expr(c, e, depth);
+        if (ag_source_register_matches(c, value, expected)) { return value; }
+        return -1;
+    }
+    List<int> operands = new List<int>();
+    int dest = -1;
+    if (e.k == N_NONE && e.kids.len() == 0) {
+        dest = ag_source_register(c, expected);
+        if (dest < 0) { return -1; }
+        operands.push(dest); operands.push(expected.descriptor);
+        if (!ag_source_emit(c, AG_OP_OPT_NONE, AG_SCHEMA_REF, operands)) { return -1; }
+        return dest;
+    }
+    int value = ag_source_expr(c, e, depth);
+    if (ag_source_register_matches(c, value, expected)) { return value; }
+    int kind = ccam_heap_optional_payload_kind(expected.descriptor);
+    int descriptor = 0;
+    if (expected.descriptor == AG_OPTIONAL_BYTES) { descriptor = AG_NOMINAL_BYTES; }
+    if (expected.descriptor > AG_OPTIONAL_RECORD_BASE) {
+        descriptor = expected.descriptor - AG_OPTIONAL_RECORD_BASE;
+    }
+    if (!ag_source_register_matches(c, value, new AGSourceShape{kind: kind, descriptor: descriptor})) { return -1; }
+    dest = ag_source_register(c, expected);
+    if (dest < 0) { return -1; }
+    operands.push(dest); operands.push(value); operands.push(expected.descriptor);
+    if (!ag_source_emit(c, AG_OP_OPT_SOME, AG_SCHEMA_REF, operands)) { return -1; }
+    return dest;
+}
+
 int ag_source_construct(AGSourceContext c, Node e, AGSourceShape shape, int depth) {
     if (shape.kind != AG_SCHEMA_REF || shape.descriptor <= 0 ||
         ty_of(e).name != e.s) { return -1; }
@@ -153,7 +199,7 @@ int ag_source_construct(AGSourceContext c, Node e, AGSourceShape shape, int dept
             int index = ag_source_field_index(record, init.s);
             if (init.k != N_INIT || init.kids.len() != 1 || index < 0 || seen[index]) { return -1; }
             AGSourceShape field_shape = ag_source_shape(ty_of(record.kids[index]), c.records);
-            int value = ag_source_expr(c, init.kids[0], depth + 1);
+            int value = ag_source_expected(c, init.kids[0], field_shape, depth + 1);
             if (!ag_source_register_matches(c, value, field_shape)) { return -1; }
             List<int> operands = new List<int>();
             operands.push(value); operands.push(dest); operands.push(shape.descriptor);
@@ -250,7 +296,7 @@ int ag_source_direct_call(AGSourceContext c, Node e, AGSourceShape result, int d
             List<int> operands = new List<int>(); operands.push(destination); operands.push(id);
             for (int i = 0; i < f.n; i += 1) {
                 AGSourceShape expected = ag_source_shape(ty_of(f.kids[i]), c.records);
-                int value = ag_source_expr(c, e.kids[i], depth + 1);
+                int value = ag_source_expected(c, e.kids[i], expected, depth + 1);
                 if (!ag_source_register_matches(c, value, expected)) { return -1; }
                 int saved = ag_source_register(c, expected);
                 if (!ag_source_move(c, saved, value)) { return -1; }
@@ -411,7 +457,7 @@ bool ag_source_field_assignment(AGSourceContext c, Node target, Node rhs, string
             read.push(field); read.push(shape.descriptor);
             if (!ag_source_emit(c, AG_OP_FIELD_GET, shape.kind, read)) { return false; }
         } else if (operation != "=") { return false; }
-        int value = ag_source_expr(c, rhs, 0);
+        int value = ag_source_expected(c, rhs, shape, 0);
         if (!ag_source_register_matches(c, value, shape)) { return false; }
         if (old >= 0) {
             int opcode = AG_OP_ADD;
@@ -464,7 +510,7 @@ bool ag_source_statement(AGSourceContext c, Node statement, AGSourceShape result
         if (statement.kids.len() != 1 || statement.binding_id <= 0 ||
             c.bindings.has(int_to_str(statement.binding_id))) { return false; }
         AGSourceShape shape = ag_source_shape(ty_of(statement), c.records);
-        int value = ag_source_expr(c, statement.kids[0], 0);
+        int value = ag_source_expected(c, statement.kids[0], shape, 0);
         if (!ag_source_register_matches(c, value, shape)) { return false; }
         int destination = ag_source_register(c, shape);
         if (!ag_source_move(c, destination, value)) { return false; }
@@ -487,7 +533,7 @@ bool ag_source_statement(AGSourceContext c, Node statement, AGSourceShape result
         if (target.k != N_VAR) { return false; }
         int destination = ag_source_expr(c, target, 0);
         if (destination < 0) { return false; }
-        int value = ag_source_expr(c, statement.kids[1], 0);
+        int value = ag_source_expected(c, statement.kids[1], ag_source_shape(ty_of(target), c.records), 0);
         if (value < 0) { return false; }
         if (statement.s == "+=" || statement.s == "-=") {
             int opcode = AG_OP_ADD;
@@ -502,7 +548,7 @@ bool ag_source_statement(AGSourceContext c, Node statement, AGSourceShape result
     }
     if (statement.k == N_RETURN && statement.kids.len() == 1) {
         if (result.kind == AG_RESULT_VOID) { return false; }
-        int value = ag_source_expr(c, statement.kids[0], 0);
+        int value = ag_source_expected(c, statement.kids[0], result, 0);
         if (!ag_source_register_matches(c, value, result)) { return false; }
         return ag_source_close(c, 0, -1, -1, -1, value);
     }
@@ -512,14 +558,38 @@ bool ag_source_statement(AGSourceContext c, Node statement, AGSourceShape result
     if (statement.k == N_CONTINUE && statement.kids.len() == 0) {
         return ag_source_jump(c, continue_target);
     }
-    if (statement.k == N_IF && statement.n == 0 && statement.s2 == "" &&
-        (statement.kids.len() == 2 || statement.kids.len() == 3)) {
-        int condition = ag_source_expr(c, statement.kids[0], 0);
+    if (statement.k == N_IF && (statement.kids.len() == 2 || statement.kids.len() == 3)) {
+        int condition = -1;
+        int optional = -1;
+        AGSourceShape payload = ag_source_invalid_shape();
+        if (statement.n == 1 && statement.s2 != "" && statement.binding_id > 0) {
+            Type t = ty_of(statement.kids[0]);
+            if (t.k != TY_OPT || t.args.len() != 1 ||
+                c.bindings.has(int_to_str(statement.binding_id))) { return false; }
+            optional = ag_source_expr(c, statement.kids[0], 0);
+            if (optional < 0 || !ccam_heap_optional_descriptor(c.descriptors[optional])) { return false; }
+            payload = ag_source_shape(t.args[0], c.records);
+            condition = ag_source_register(c, new AGSourceShape{kind: AG_SCHEMA_BOOL, descriptor: 0});
+            if (condition < 0) { return false; }
+            List<int> presence = new List<int>();
+            presence.push(condition); presence.push(optional); presence.push(c.descriptors[optional]);
+            if (!ag_source_emit(c, AG_OP_OPT_PRESENT, AG_SCHEMA_BOOL, presence)) { return false; }
+        } else if (statement.n == 0 && statement.s2 == "") {
+            condition = ag_source_expr(c, statement.kids[0], 0);
+        } else { return false; }
         if (condition < 0 || c.kinds[condition] != AG_SCHEMA_BOOL) { return false; }
         int yes = ag_source_new_block(c);
         int no = ag_source_new_block(c);
         if (yes < 0 || no < 0 || !ag_source_close(c, 2, condition, yes, no, -1) ||
             !ag_source_enter(c, yes)) { return false; }
+        if (optional >= 0) {
+            int bound = ag_source_register(c, payload);
+            if (bound < 0) { return false; }
+            List<int> unwrap = new List<int>();
+            unwrap.push(bound); unwrap.push(optional); unwrap.push(c.descriptors[optional]);
+            if (!ag_source_emit(c, AG_OP_OPT_UNWRAP, payload.kind, unwrap)) { return false; }
+            c.bindings.set(int_to_str(statement.binding_id), bound);
+        }
         if (!ag_source_statement(c, statement.kids[1], result, depth + 1,
             break_target, continue_target)) { return false; }
         int yes_end = c.current;
