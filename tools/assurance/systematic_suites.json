@@ -82,6 +82,11 @@
       "bin/capstan",
       "test",
       "verification/concurrency_assurance_capacity_tests.cap"
+    ],
+    [
+      "bin/capstan",
+      "test",
+      "verification/assurance_observed_mcdc_tests.cap"
     ]
   ],
   "native": [
