@@ -437,6 +437,202 @@ printf '%s' 'int _choose(int _n){ if (_n == 42) { return _n; } return 9223372036
 env -i PATH="$scratch/empty" "$scratch/helper-branch" 3>"$scratch/result"
 [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
 
+printf '%s' 'int _count(int _limit, int _step){ int _n = 0; while (_n < _limit) { _n = _n + _step; } if (_n == _limit) { return _n; } return 0; } int main(){ return _count(40 + 2, 3); }' |
+    compile > "$scratch/helper-loop"
+chmod +x "$scratch/helper-loop"
+env -i PATH="$scratch/empty" "$scratch/helper-loop" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'int _step(int _n){ _n = _n + 1; return _n; } int main(){ return _step(41); }' |
+    compile > "$scratch/helper-loop"
+env -i PATH="$scratch/empty" "$scratch/helper-loop" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'int _same(int _n){ int _old = _n; while (_n < 1) { _n = _old; } return _n; } int main(){ return _same(0); }' |
+    compile > "$scratch/helper-loop"
+status=0
+env -i PATH="$scratch/empty" "$scratch/helper-loop" 3>"$scratch/result" || status=$?
+[[ "$status" == 73 && ! -s "$scratch/result" ]]
+printf '%s' 'int _foo(int _n){ int _x = _n; return _x; } int main(){ return _foo(_x); }' |
+    reject
+
+{
+    sed -n '1,/^CompileBudget new_compile_budget()/p' ../../compiler/ast.cap | sed '$d'
+    printf '%s\n' 'int _nodes(CompileBudget item){ return item.ast_nodes; }'
+    printf '%s\n' 'int main(){ CompileBudget item = new CompileBudget{source_bytes: 4, tokens: 7, ast_nodes: 42, files: 2, exhausted: false}; return _nodes(item); }'
+} | compile > "$scratch/record-argument"
+chmod +x "$scratch/record-argument"
+check_static "$scratch/record-argument"
+env -i PATH="$scratch/empty" "$scratch/record-argument" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'struct Cell { int a; int b; } int _read(Cell item){ return item.a; } int main(){ Cell item = new Cell{a: 42, b: 17}; return _read(item); }' |
+    compile > "$scratch/record-argument"
+env -i PATH="$scratch/empty" "$scratch/record-argument" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'struct Cell { int a; } struct Other { int b; } int _read(Cell item){ return item.a; } int main(){ Other item = new Other{b: 42}; return _read(item); }' |
+    reject
+
+for field in a b; do
+    printf 'struct Cell { int a; int b; } int _update(Cell item){ item.a = 40; item.a += 2; return item.%s; } int main(){ Cell item = new Cell{a: 0, b: 17}; return _update(item); }' "$field" |
+        compile > "$scratch/record-update"
+    chmod +x "$scratch/record-update"
+    env -i PATH="$scratch/empty" "$scratch/record-update" 3>"$scratch/result"
+    expected=42
+    [[ "$field" != b ]] || expected=17
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
+done
+printf '%s' 'struct Cell { int a; } int _inc(Cell item){ item.a += 1; return item.a; } int main(){ Cell item = new Cell{a: 9223372036854775807}; return _inc(item); }' |
+    compile > "$scratch/record-update"
+status=0
+env -i PATH="$scratch/empty" "$scratch/record-update" 3>"$scratch/result" || status=$?
+[[ "$status" == 70 && ! -s "$scratch/result" ]]
+printf '%s' 'struct Cell { bool flag; int a; } int _inc(Cell item){ item.flag += 1; return item.a; } int main(){ Cell item = new Cell{flag: true, a: 42}; return _inc(item); }' |
+    reject
+
+for count in 0 16 17; do
+    pushes=''
+    for ((i = 0; i < count; i++)); do pushes+='item.values.push(42); '; done
+    printf 'struct Work { int marker; List<int> values; } int _fill(Work item){ %s return item.values.len(); } int main(){ Work item = new Work{marker: 7, values: new List<int>()}; return _fill(item); }' "$pushes" |
+        compile > "$scratch/list"
+    chmod +x "$scratch/list"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/list" 3>"$scratch/result" || status=$?
+    if [[ "$count" == 17 ]]; then
+        [[ "$status" == 75 && ! -s "$scratch/result" ]]
+    else
+        [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$count" ]]
+    fi
+done
+printf '%s' 'struct Work { List<int> values; } Work _make(){ return new Work{values: new List<int>()}; } int main(){ Work item = _make(); return item.values.len(); }' |
+    reject
+
+for index in 0 1 2 -1; do
+    printf 'struct Work { List<int> values; } int _read(Work item){ item.values.push(17); item.values.push(42); return item.values[%s]; } int main(){ Work item = new Work{values: new List<int>()}; return _read(item); }' "$index" |
+        compile > "$scratch/list-index"
+    chmod +x "$scratch/list-index"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/list-index" 3>"$scratch/result" || status=$?
+    case "$index" in
+        0) [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 17 ]];;
+        1) [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]];;
+        *) [[ "$status" == 75 && ! -s "$scratch/result" ]];;
+    esac
+done
+
+for access in 'kids[0].k' 'kids[1].k' 'kids[-1].k' 'kids.len()'; do
+    printf 'struct Node { int k; List<Node> kids; } int _walk(Node item){ item.kids.push(item); item.k += 2; return item.%s; } int main(){ Node item = new Node{k: 40, kids: new List<Node>()}; return _walk(item); }' "$access" |
+        compile > "$scratch/record-list"
+    chmod +x "$scratch/record-list"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/record-list" 3>"$scratch/result" || status=$?
+    case "$access" in
+        'kids[0].k') [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]];;
+        'kids.len()') [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 1 ]];;
+        *) [[ "$status" == 75 && ! -s "$scratch/result" ]];;
+    esac
+done
+printf '%s' 'struct Node { int k; List<Node> kids; } int _walk(Node item){ item.kids.push(42); return item.k; } int main(){ Node item = new Node{k: 40, kids: new List<Node>()}; return _walk(item); }' |
+    reject
+
+for index in 0 1 -1; do
+    printf 'struct Node { int k; List<Node> src; List<Node> dst; } int _copy(Node item){ item.src.push(item); item.dst.push(item.src[%s]); item.k += 2; return item.dst[0].k; } int main(){ Node item = new Node{k: 40, src: new List<Node>(), dst: new List<Node>()}; return _copy(item); }' "$index" |
+        compile > "$scratch/list-copy"
+    chmod +x "$scratch/list-copy"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/list-copy" 3>"$scratch/result" || status=$?
+    if [[ "$index" == 0 ]]; then
+        [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+    else
+        [[ "$status" == 75 && ! -s "$scratch/result" ]]
+    fi
+done
+printf '%s' 'struct Node { int k; List<Node> kids; } int _copy(Node item){ item.kids.push(item); item.kids.push(item.kids[0]); return item.kids.len(); } int main(){ Node item = new Node{k: 42, kids: new List<Node>()}; return _copy(item); }' |
+    compile > "$scratch/list-copy"
+env -i PATH="$scratch/empty" "$scratch/list-copy" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 2 ]]
+
+for index in 0 1 2; do
+    printf 'struct Node { int k; List<Node> kids; } int _walk(Node item, Node peer){ item.kids.push(item); item.kids.push(peer); item.k += 2; return item.kids[%s].k; } int main(){ Node item = new Node{k: 15, kids: new List<Node>()}; Node peer = new Node{k: 42, kids: new List<Node>()}; return _walk(item, peer); }' "$index" |
+        compile > "$scratch/peer"
+    chmod +x "$scratch/peer"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/peer" 3>"$scratch/result" || status=$?
+    case "$index" in
+        0) [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 17 ]];;
+        1) [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]];;
+        *) [[ "$status" == 75 && ! -s "$scratch/result" ]];;
+    esac
+done
+printf '%s' 'struct Node { int k; List<Node> kids; } int _walk(Node item){ item.kids.push(peer); return item.k; } int main(){ Node item = new Node{k: 42, kids: new List<Node>()}; return _walk(item); }' |
+    reject
+
+for order in empty item-first peer-first; do
+    pushes=''
+    expected=7
+    case "$order" in
+        item-first) pushes='item.kids.push(item); item.kids.push(peer);'; expected=42;;
+        peer-first) pushes='item.kids.push(peer); item.kids.push(item);'; expected=17;;
+    esac
+    printf 'struct Node { int k; List<Node> kids; } int _pop(Node item, Node peer){ %s if (let child = item.kids.pop()) { return child.k; } return 7; } int main(){ Node item = new Node{k: 17, kids: new List<Node>()}; Node peer = new Node{k: 42, kids: new List<Node>()}; return _pop(item, peer); }' "$pushes" |
+        compile > "$scratch/pop"
+    chmod +x "$scratch/pop"
+    env -i PATH="$scratch/empty" "$scratch/pop" 3>"$scratch/result"
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
+done
+printf '%s' 'struct Node { int k; List<Node> kids; } int _pop(Node item){ if (let child = item.kids.pop()) { return child.missing; } return 7; } int main(){ Node item = new Node{k: 17, kids: new List<Node>()}; return _pop(item); }' |
+    reject
+
+printf '%s' 'struct Node { int k; List<Node> kids; } int _walk(Node item, Node peer){ item.kids.pop(); item.kids.push(item); item.kids.push(peer); item.kids.pop(); return item.kids[0].k; } int main(){ Node item = new Node{k: 42, kids: new List<Node>()}; Node peer = new Node{k: 17, kids: new List<Node>()}; return _walk(item, peer); }' |
+    compile > "$scratch/discard-pop"
+chmod +x "$scratch/discard-pop"
+env -i PATH="$scratch/empty" "$scratch/discard-pop" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'struct Node { int k; List<Node> kids; } int _walk(Node item){ item.kids.push(item); item.kids.pop(); item.kids.pop(); return item.kids.len(); } int main(){ Node item = new Node{k: 42, kids: new List<Node>()}; return _walk(item); }' |
+    compile > "$scratch/discard-pop"
+env -i PATH="$scratch/empty" "$scratch/discard-pop" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 0 ]]
+
+for mode in drain empty stuck; do
+    pushes='item.kids.push(item); item.kids.push(item);'
+    body='item.k += 1; item.kids.pop();'
+    expected=42
+    case "$mode" in
+        empty) pushes=''; expected=40;;
+        stuck) body='item.kids.push(item); item.kids.pop();';;
+    esac
+    printf 'struct Node { int k; List<Node> kids; } int _walk(Node item){ %s while (item.kids.len() > 0) { %s } return item.k; } int main(){ Node item = new Node{k: 40, kids: new List<Node>()}; return _walk(item); }' "$pushes" "$body" |
+        compile > "$scratch/record-loop"
+    chmod +x "$scratch/record-loop"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/record-loop" 3>"$scratch/result" || status=$?
+    if [[ "$mode" == stuck ]]; then
+        [[ "$status" == 73 && ! -s "$scratch/result" ]]
+    else
+        [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
+    fi
+done
+printf '%s' 'struct Node { int k; List<Node> kids; } int _walk(Node item){ while (item.kids.len() > 0) { return item.k; } return item.k; } int main(){ Node item = new Node{k: 40, kids: new List<Node>()}; return _walk(item); }' |
+    reject
+
+walk_prefix='struct Node { int k; int total; List<Node> kids; List<Node> spare; }'
+walk_suffix='int main(){ Node item = new Node{k: 17, total: 0, kids: new List<Node>(), spare: new List<Node>()}; Node peer = new Node{k: 25, total: 0, kids: new List<Node>(), spare: new List<Node>()}; return _walk(item, peer); }'
+printf '%s %s %s' "$walk_prefix" 'int _walk(Node item, Node peer){ item.kids.push(item); item.kids.push(peer); while (item.kids.len() > 0) { Node node = item.kids[item.kids.len() - 1]; item.kids.pop(); item.total += node.k; } return item.total; }' "$walk_suffix" |
+    compile > "$scratch/worklist-fields"
+chmod +x "$scratch/worklist-fields"
+env -i PATH="$scratch/empty" "$scratch/worklist-fields" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s %s %s' "$walk_prefix" 'int _walk(Node item, Node peer){ while (item.kids.len() > 0) { Node node = item.kids[item.spare.len() - 1]; item.kids.pop(); } return item.total; }' "$walk_suffix" |
+    reject
+printf '%s %s %s' "$walk_prefix" 'int _walk(Node item, Node peer){ while (item.kids.len() > 0) { Node node = item.kids[item.kids.len() - 1]; item.kids.pop(); } item.total = node.k; return item.total; }' "$walk_suffix" |
+    reject
+
+for start in 39 40 41 42; do
+    printf 'const int LIMIT = 42; struct Node { int count; List<Node> kids; } int _charge(Node item){ item.kids.push(item); item.kids.push(item); while (item.kids.len() > 0) { if (item.count >= LIMIT) { return -1; } item.count += 1; item.kids.pop(); } return item.count; } int main(){ Node item = new Node{count: %s, kids: new List<Node>()}; return _charge(item); }' "$start" |
+        compile > "$scratch/worklist-budget"
+    chmod +x "$scratch/worklist-budget"
+    env -i PATH="$scratch/empty" "$scratch/worklist-budget" 3>"$scratch/result"
+    if (( start <= 40 )); then expected=$((start + 2)); else expected=-1; fi
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
+done
+
 # Distinguish a broken input channel from a malformed source, and check
 # that transport failures cannot be mistaken for a successful compile/run.
 status=0
