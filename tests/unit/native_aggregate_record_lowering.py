@@ -13,6 +13,8 @@ def main():
         'negative-rem': -1,
         'calls': 235, 'recursion': 120, 'local-record': 63,
         'depth': None, 'callfuel': None,
+        'reference': 42, 'reference-recursion': 15,
+        'reference-mismatch': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
