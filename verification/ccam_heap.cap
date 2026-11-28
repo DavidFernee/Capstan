@@ -1437,3 +1437,26 @@ test "candidate map charges search work before mutation" {
     assert(index >= 0 && heap.objects[index].length == 1);
     assert(!heap.objects[index].elements[0].bool_value);
 }
+
+test "growable map retains alias identity and rejects over-budget backing replacement" {
+    CCAMHeapCreateResult created = ccam_heap_create(100, 16);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult map = ccam_heap_alloc_map(heap, AG_OPTIONAL_INT, 0);
+    CCAMHeapRefResult first = ccam_heap_alloc_bytes(heap, "a");
+    CCAMHeapRefResult second = ccam_heap_alloc_bytes(heap, "b");
+    assert(map.ok && first.ok && second.ok);
+    CCAMHeapRef alias = map.reference;
+    CCAMHeapValue a = ccam_heap_ref_value(first.reference);
+    CCAMHeapValue b = ccam_heap_ref_value(second.reference);
+    assert(ccam_heap_map_set_grow(heap, map.reference, AG_OPTIONAL_INT, a, ccam_heap_int(7)) == "");
+    int bytes = heap.bytes_used;
+    assert(ccam_heap_map_set_grow(heap, alias, AG_OPTIONAL_INT, b, ccam_heap_int(8)) == "heap_limit");
+    assert(heap.bytes_used == bytes);
+    assert(ccam_heap_map_get(heap, alias, AG_OPTIONAL_INT, a).value.int_value == 7);
+    assert(!ccam_heap_map_get(heap, alias, AG_OPTIONAL_INT, b).found);
+    assert(ccam_heap_map_set_grow(heap, alias, AG_OPTIONAL_INT, a, ccam_heap_int(42)) == "");
+    assert(ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, a).value.int_value == 42);
+    assert(ccam_heap_map_matches(heap, ccam_heap_ref_value(alias), AG_MAP_DESCRIPTOR_BASE + AG_OPTIONAL_INT));
+    assert(!ccam_heap_map_matches(heap, ccam_heap_ref_value(alias), AG_MAP_DESCRIPTOR_BASE + AG_OPTIONAL_BOOL));
+}
