@@ -513,6 +513,10 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
     int source_type = ccam_source_register_type(ty_of(expression));
 
     if (expression.k == N_INT) {
+        if (expression.kids.len() != 0 || source_type != CCAM_TYPE_INT) {
+            ccam_lower_fail(context, "invalid_integer_literal_ast");
+            return -1;
+        }
         if (expression.n < CCAM_I64_MIN || expression.n > CCAM_I64_MAX) {
             ccam_lower_fail(context, "integer_literal_out_of_range");
             return -1;
@@ -520,6 +524,11 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
         return ccam_lower_int_constant(context, expression.n);
     }
     if (expression.k == N_BOOL) {
+        if (expression.kids.len() != 0 || source_type != CCAM_TYPE_BOOL ||
+            (expression.n != 0 && expression.n != 1)) {
+            ccam_lower_fail(context, "invalid_boolean_literal_ast");
+            return -1;
+        }
         return ccam_lower_bool_constant(context, expression.n != 0);
     }
     if (expression.k == N_VAR) {
@@ -538,6 +547,10 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
         return snapshot;
     }
     if (expression.k == N_NEG) {
+        if (expression.kids.len() != 1 || source_type != CCAM_TYPE_INT) {
+            ccam_lower_fail(context, "invalid_integer_negation_ast");
+            return -1;
+        }
         int operand = ccam_lower_expression(context, expression.kids[0]);
         if (operand < 0) { return -1; }
         int zero = ccam_lower_int_constant(context, 0);
@@ -550,6 +563,10 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
         return result;
     }
     if (expression.k == N_NOT) {
+        if (expression.kids.len() != 1 || source_type != CCAM_TYPE_BOOL) {
+            ccam_lower_fail(context, "invalid_boolean_negation_ast");
+            return -1;
+        }
         int operand = ccam_lower_expression(context, expression.kids[0]);
         if (operand < 0) { return -1; }
         int result = ccam_lower_new_register(context, CCAM_TYPE_BOOL);
@@ -560,10 +577,22 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
         return result;
     }
     if (expression.k == N_CALL) {
+        if (source_type == 0 || expression.s == "print" || expression.s == "println") {
+            ccam_lower_fail(context, "invalid_scalar_call_result_type");
+            return -1;
+        }
         return ccam_lower_call_expression(context, expression);
     }
     if (expression.k == N_BIN) {
+        if (expression.kids.len() != 2) {
+            ccam_lower_fail(context, "invalid_binary_expression_ast");
+            return -1;
+        }
         if (expression.s == "&&" || expression.s == "||") {
+            if (source_type != CCAM_TYPE_BOOL) {
+                ccam_lower_fail(context, "binary_result_type_mismatch");
+                return -1;
+            }
             return ccam_lower_short_circuit(context, expression);
         }
         int left = ccam_lower_expression(context, expression.kids[0]);
@@ -577,6 +606,10 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
                 return -1;
             }
             if (operand_type == CCAM_TYPE_BOOL) {
+                if (source_type != CCAM_TYPE_BOOL) {
+                    ccam_lower_fail(context, "binary_result_type_mismatch");
+                    return -1;
+                }
                 return ccam_lower_bool_comparison(context, left, right, expression.s == "==");
             }
         }
@@ -620,6 +653,10 @@ int ccam_lower_expression(CCAMLoweringContext context, Node expression) {
         int result_type = CCAM_TYPE_INT;
         if (opcode == CCAM_OP_EQ_I || opcode == CCAM_OP_LT_I) {
             result_type = CCAM_TYPE_BOOL;
+        }
+        if (source_type != result_type) {
+            ccam_lower_fail(context, "binary_result_type_mismatch");
+            return -1;
         }
         int operation_result = ccam_lower_new_register(context, result_type);
         CCAMInstruction operation = ccam_instruction(opcode);
@@ -725,7 +762,7 @@ void ccam_lower_statement(CCAMLoweringContext context, Node statement) {
             ccam_lower_fail(context, "unsupported_expression_statement");
             return;
         }
-        ccam_lower_expression(context, expression);
+        ccam_lower_call_expression(context, expression);
         return;
     }
 
@@ -1726,4 +1763,69 @@ test "CCAM source lowering preserves or short circuit suppresses right call" {
     assert(machine.halted);
     assert(machine.trap_code == "" && machine.halt_has_value && machine.halt_value == 42);
     assert(machine.output_bytes.len() == 0);
+}
+
+test "CCAM source lowering rejects inconsistent scalar expression nodes" {
+    Ctx context = new Ctx{
+        files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false
+    };
+    context.files.push("invalid-expression-lowering.cap");
+    Tainted source = taint("int main() { if (!false) { return -1 + 43; } return 0; }");
+    context.sources.push(source);
+    List<Node> declarations = parse_program(context, lex(context, source, 0));
+    check_program(new_checker(context), declarations, true);
+    assert(error_count(context) == 0);
+    assert(ccam_lower_checked_program(declarations).ok);
+
+    Node branch = declarations[0].kids[0].kids[0];
+    Node condition = branch.kids[0];
+    Node boolean = condition.kids[0];
+    boolean.n = 2;
+    CCAMLoweringResult invalid_boolean = ccam_lower_checked_program(declarations);
+    assert(!invalid_boolean.ok && invalid_boolean.error == "invalid_boolean_literal_ast");
+    boolean.n = 0;
+
+    Node sum = branch.kids[1].kids[0].kids[0];
+    Node negative = sum.kids[0];
+    Node integer = negative.kids[0];
+    integer.ty = mk_type(TY_ERR);
+    CCAMLoweringResult invalid_integer = ccam_lower_checked_program(declarations);
+    assert(!invalid_integer.ok && invalid_integer.error == "invalid_integer_literal_ast");
+    integer.ty = mk_type(TY_INT);
+
+    sum.ty = mk_type(TY_BOOL);
+    CCAMLoweringResult invalid_result = ccam_lower_checked_program(declarations);
+    assert(!invalid_result.ok && invalid_result.error == "binary_result_type_mismatch");
+    sum.ty = mk_type(TY_INT);
+
+    negative.kids.pop();
+    CCAMLoweringResult missing_operand = ccam_lower_checked_program(declarations);
+    assert(!missing_operand.ok && missing_operand.error == "invalid_integer_negation_ast");
+    negative.kids.push(integer);
+
+    sum.kids.pop();
+    CCAMLoweringResult invalid_binary = ccam_lower_checked_program(declarations);
+    assert(!invalid_binary.ok && invalid_binary.error == "invalid_binary_expression_ast");
+}
+
+test "CCAM source lowering cannot use a void output call as a register" {
+    Ctx context = new Ctx{
+        files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false
+    };
+    context.files.push("void-call-value-lowering.cap");
+    Tainted source = taint("int main() { int value = 42; print(\"ok\"); return value; }");
+    context.sources.push(source);
+    List<Node> declarations = parse_program(context, lex(context, source, 0));
+    check_program(new_checker(context), declarations, true);
+    assert(error_count(context) == 0);
+    assert(ccam_lower_checked_program(declarations).ok);
+
+    Node body = declarations[0].kids[0];
+    Node output_call = body.kids[1].kids[0];
+    Node return_statement = body.kids[2];
+    return_statement.kids[0] = output_call;
+    CCAMLoweringResult lowered = ccam_lower_checked_program(declarations);
+    assert(!lowered.ok && lowered.error == "invalid_scalar_call_result_type");
 }
