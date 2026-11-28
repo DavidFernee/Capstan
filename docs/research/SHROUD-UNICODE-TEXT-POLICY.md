@@ -285,19 +285,20 @@ The test programme is staged. Do not mark a stage complete from a few hand-picke
 
 The first accessibility-preservation increment exposes the exact logical Tainted name/value for
 ordinary text and non-secure text fields. The accessibility JSON carries a separate
-`security_annotations` array for bidi formatting controls, including scalar indices and original
-UTF-8 byte spans. JSON escaping and output-budget preflight cover annotation strings as well as
+`security_annotations` array for bidi formatting controls and malformed UTF-8 maximal subparts,
+including scalar indices and original UTF-8 byte spans. A literal U+FFFD is not reported as
+malformed input. JSON escaping and output-budget preflight cover annotation strings as well as
 logical fields. Secure fields still expose only their documented protected length, never the
 secret value.
 
 This is deliberately a narrow step. The visual renderer still uses the conservative
 `untrusted_codepoints()` transformation, so ordinary visual presentation can still replace
 joiners, variation selectors, soft hyphens, word joiners and emoji tag characters. The annotation
-set currently covers bidi formatting controls only; it is not a complete Unicode security-property
-classifier. No UAX #9 bidi resolution, UAX #14 line breaking, UAX #29 grapheme segmentation or
-general OpenType shaping conformance is claimed. The JSON annotation field also requires the
-platform embedder to expose those annotations to assistive technology; JSON presence alone does
-not prove screen-reader behaviour.
+set covers bidi formatting controls and malformed UTF-8 maximal subparts only; it is not a
+complete Unicode security-property classifier. No UAX #9 bidi resolution, UAX #14 line breaking,
+UAX #29 grapheme segmentation or general OpenType shaping conformance is claimed. The JSON
+annotation field also requires the platform embedder to expose those annotations to assistive
+technology; JSON presence alone does not prove screen-reader behaviour.
 
 This document records the implemented first increment and its limits. It is not evidence that
 the remaining Unicode algorithms or conformance suites have been implemented or passed.

@@ -174,7 +174,8 @@ bool is_bidi_format_control(int cp) {
 // Report source-positioned annotations without changing the original Tainted value.
 // Offsets are zero-based scalar indices and half-open UTF-8 byte spans.
 List<string> unicode_security_annotations(Tainted value, string field) {
-    Utf8Decoded decoded = utf8_decode_with_ends(tainted_bytes(value));
+    List<int> source = tainted_bytes(value);
+    Utf8Decoded decoded = utf8_decode_with_ends(source);
     List<string> out = new List<string>();
     int byte_start = 0;
     for (int i = 0; i < decoded.codepoints.len(); i += 1) {
@@ -182,6 +183,14 @@ List<string> unicode_security_annotations(Tainted value, string field) {
         int cp = decoded.codepoints[i];
         if (is_bidi_format_control(cp)) {
             out.push($"{field}: bidi formatting control at scalar {i}, bytes [{byte_start},{byte_end}), code point {cp}");
+        }
+        bool literal_replacement = false;
+        if (byte_end - byte_start == 3) {
+            literal_replacement = source[byte_start] == 0xEF &&
+                source[byte_start + 1] == 0xBF && source[byte_start + 2] == 0xBD;
+        }
+        if (cp == REPLACEMENT_CHAR && !literal_replacement) {
+            out.push($"{field}: invalid UTF-8 maximal subpart at scalar {i}, bytes [{byte_start},{byte_end})");
         }
         byte_start = byte_end;
     }

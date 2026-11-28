@@ -126,7 +126,7 @@ events. It writes each frame as a PNG, in both themes, plus the accessibility tr
 |---|---|
 | Untrusted input used as trusted data (CWE-20) | Every text field yields `Tainted`. The compiler makes the application validate it (`validate_ident`, `validate_int`, ...) before it can become trusted text, a file name or a query. No other toolkit types user input. |
 | Deceptive text (CWE-451; Trojan Source, CVE-2021-42574) | `user_text()` and text fields show bidirectional overrides and isolates, zero-width characters, controls, BOMs and tag characters as a visible mark, so `invoice‮fdp.exe` cannot pass for `invoiceexe.pdf`. This conservative fallback can replace valid joiner, emoji and line-break semantics; full Unicode bidi, segmentation and shaping are not implemented. The program's own text keeps these code points. |
-| Accessibility text spoofing | The accessibility tree preserves the original `Tainted` names and non-secure values; JSON reports bidi formatting controls separately with scalar positions and UTF-8 byte spans. JSON escaping replaces malformed UTF-8 bytes with U+FFFD. Password values remain hidden. Annotations currently cover bidi formatting controls only, and the JSON field does not prove that a platform bridge exposes them to assistive technology. |
+| Accessibility text spoofing | The accessibility tree preserves the original `Tainted` names and non-secure values; JSON reports bidi formatting controls and malformed UTF-8 maximal subparts separately with scalar positions and byte spans. JSON escaping replaces malformed UTF-8 bytes with U+FFFD. Password values remain hidden. Annotations are not a complete Unicode security classifier, and the JSON field does not prove that a platform bridge exposes them to assistive technology. |
 | Clickjacking and tap-jacking (CWE-1021) | A `guarded()` control, and every `danger()` button, has a 500 ms activation delay after it appears, moves, reappears, or changes its action or visible identity. The delay is measured only against the monotonic clock advanced by `render()`; an input event's timestamp cannot advance or satisfy it. The platform adapter must therefore supply a monotonic render clock from the trusted window system. Input is matched against the last rendered frame. This mitigates some deceptive repositioning/reappearance patterns and future-dated event attempts; it is not a complete defence against arbitrary overlays or synthetic events. The headless library cannot authenticate event provenance, prove that pixels were displayed, or establish that a human saw the control. |
 | Password exposure (CWE-200, CWE-549) | `password_field()` draws dots and never lays out the text. The accessibility tree reports only its length, and the role `password` lets screen readers and remote-access tools treat it as protected. |
 | Memory corruption in font parsing (CWE-125, CWE-787) | Every file read is bounded; SFNT directory and `cmap`, `loca`, `hmtx` accesses are constrained to validated table spans. Simple and composite glyph reads are constrained to each `loca`-delimited glyph record, including component arguments, transforms and instructions. Malformed-font corpus tests run under ASan+UBSan. |
@@ -150,9 +150,9 @@ Flutter showed that this can be done well, and that it is easy to leave out. In 
   (Linux). Plain layout containers are flattened, as screen readers expect.
 - **Logical text is retained.** Ordinary untrusted names and non-secure field values remain
   `Tainted` in the tree. The JSON serializer adds separate annotations for bidi formatting
-  controls, including scalar positions and UTF-8 byte spans; secure values are never included.
-  This is not a complete Unicode security classifier or proof that platform bridges expose
-  annotations to assistive technology.
+  controls and malformed UTF-8 maximal subparts, including scalar positions and source byte
+  spans; secure values are never included. This is not a complete Unicode security classifier
+  or proof that platform bridges expose annotations to assistive technology.
 - **Everything works from the keyboard.** Tab and Shift+Tab move through controls in reading
   order and skip disabled ones. Enter and Space activate. Arrow keys and Home, End, Page Up and
   Page Down adjust sliders. The focus ring appears after keyboard use and disappears after
