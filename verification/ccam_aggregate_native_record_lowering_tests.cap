@@ -11,7 +11,7 @@ AGSourceFunction? ag_nv_test_source(string text) {
 }
 
 bool ag_nv_test_write(AGImage image, string path) {
-    if (!image.ok || image.bytes.len() > 32768) { return false; }
+    if (!image.ok || image.bytes.len() > 65536) { return false; }
     string data = "";
     for (int i = 0; i < image.bytes.len(); i += 1) { data = data + char_str(image.bytes[i]); }
     return write_file(path, data);
