@@ -1,5 +1,6 @@
 // Straight-line candidate aggregate blocks. No control-flow or call semantics.
 import "ccam_aggregate_dispatch.cap";
+import "ccam_aggregate_transfer.cap";
 
 const int AG_BLOCK_MAX = 65536;
 
@@ -28,18 +29,16 @@ bool ag_block_initialised(CCAMAggregateMachine machine, List<AGBlockInstruction>
     for (int i = 0; i < machine.registers.len(); i += 1) {
         ready.push(machine.registers[i].initialised);
     }
+    List<int> kinds = new List<int>();
+    for (int i = 0; i < machine.registers.len(); i += 1) {
+        kinds.push(machine.registers[i].declared_type);
+    }
     for (int i = 0; i < instructions.len(); i += 1) {
         AGBlockInstruction instruction = instructions[i];
-        List<int> operands = instruction.operands;
-        if (!ready[operands[1]]) { return false; }
-        if (instruction.opcode != 3) {
-            if (!ready[operands[2]]) { return false; }
-        }
-        if (instruction.opcode == 2) {
-            if (!ready[operands[0]]) { return false; }
-        } else {
-            ready[operands[0]] = true;
-        }
+        AGTransferResult next = ag_transfer(kinds, ready, instruction.opcode,
+            instruction.kind, instruction.operands);
+        if (!next.ok) { return false; }
+        ready = next.ready;
     }
     return true;
 }

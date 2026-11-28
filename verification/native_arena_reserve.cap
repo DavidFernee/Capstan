@@ -1,0 +1,39 @@
+import "native_elf64.cap";
+import "native_link_model.cap";
+
+// Reserve bytes in a process-lifetime arena. R8 holds the cursor and RDI
+// holds the requested size. RAX returns the old cursor on success. The
+// caller owns the backing storage and validates any subsequent access.
+// Failure branches before updating the cursor or producing an offset.
+bool native_arena_reserve(
+    List<int> code, List<NativeFixup> fixups, int capacity, int failure
+) {
+    if (capacity < 0 || capacity > 1073741824 || failure < 0 ||
+        code.len() > 1048576 - 32 || fixups.len() > 1022) { return false; }
+
+    code.push(186); native_elf_field(code, capacity, 4); // mov edx,capacity
+    code.push(73); code.push(57); code.push(208); // cmp r8,rdx
+    native_arena_above(code, fixups, failure); // also rejects a negative cursor
+    code.push(76); code.push(41); code.push(194); // sub rdx,r8
+    code.push(72); code.push(57); code.push(215); // cmp rdi,rdx
+    native_arena_above(code, fixups, failure); // also rejects a negative size
+    code.push(76); code.push(137); code.push(192); // mov rax,r8
+    code.push(73); code.push(1); code.push(248); // add r8,rdi
+    return true;
+}
+
+void native_arena_above(List<int> code, List<NativeFixup> fixups, int failure) {
+    code.push(15); code.push(135); // ja rel32
+    fixups.push(new NativeFixup{field: code.len(), symbol: failure});
+    native_elf_field(code, 0, 4);
+}
+
+test "native arena reservation emission preflights its operands and fixups" {
+    List<int> code = new List<int>();
+    List<NativeFixup> fixups = new List<NativeFixup>();
+    assert(!native_arena_reserve(code, fixups, -1, 0));
+    assert(!native_arena_reserve(code, fixups, 16, -1));
+    assert(code.len() == 0 && fixups.len() == 0);
+    assert(native_arena_reserve(code, fixups, 16, 0));
+    assert(code.len() == 32 && fixups.len() == 2);
+}

@@ -189,6 +189,35 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
     return expected_ref_type_id == 0;
 }
 
+// Read-only shape queries for candidate aggregate call contracts. The opaque
+// heap retains authority over object identity and element metadata.
+bool ccam_heap_value_has_array_type(CCAMHeap heap, CCAMHeapValue value,
+    int element_type, int element_ref_type_id) {
+    if (value.kind != CCAM_HEAP_VALUE_REF ||
+        !ccam_heap_valid_value_type(element_type) || element_ref_type_id < 0 ||
+        (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0)) {
+        return false;
+    }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        if (index < 0) { return false; }
+        CCAMHeapObject object = heap.objects[index];
+        return object.kind == CCAM_HEAP_OBJECT_ARRAY &&
+            object.element_type == element_type &&
+            object.element_ref_type_id == element_ref_type_id;
+    }
+    return false;
+}
+
+bool ccam_heap_value_is_bytes(CCAMHeap heap, CCAMHeapValue value) {
+    if (value.kind != CCAM_HEAP_VALUE_REF) { return false; }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        return index >= 0 && heap.objects[index].kind == CCAM_HEAP_OBJECT_BYTES;
+    }
+    return false;
+}
+
 public policy CCAMHeapIdentityBound(CCAMHeapIdentity identity) { return true; }
 
 protected(CCAMHeapIdentityBound) void ccam_heap_require_identity(
@@ -600,6 +629,89 @@ string ccam_heap_array_append(CCAMHeap heap, CCAMHeapRef reference, int expected
     return "";
 }
 
+// Candidate growable list append. Existing fixed-capacity append is unchanged.
+// A backing replacement retains the object identity. Charge the full new
+// backing monotonically because this model does not reclaim arena memory.
+string ccam_heap_list_push(CCAMHeap heap, CCAMHeapRef reference, int expected_element_type,
+    CCAMHeapValue value) {
+    int object_index = ccam_heap_object_index(heap, reference);
+    if (object_index < 0) { return "invalid_reference"; }
+    CCAMHeapObject object = heap.objects[object_index];
+    if (object.kind != CCAM_HEAP_OBJECT_ARRAY || object.element_type != expected_element_type) {
+        return "object_type_mismatch";
+    }
+    if (!ccam_heap_value_has_type(heap, value, object.element_type, object.element_ref_type_id)) {
+        return "value_type_mismatch";
+    }
+    if (object.length < 0 || object.capacity < object.length ||
+        object.capacity > CCAM_HEAP_MAX_ARRAY_CAPACITY ||
+        object.elements.len() != object.capacity ||
+        object.element_initialised.len() != object.capacity) { return "invalid_array_layout"; }
+    if (object.length < object.capacity) {
+        return ccam_heap_array_append(heap, reference, expected_element_type, value);
+    }
+    if (object.capacity == CCAM_HEAP_MAX_ARRAY_CAPACITY) { return "array_capacity"; }
+    int capacity = object.capacity * 2;
+    if (capacity == 0) { capacity = 1; }
+    if (capacity > CCAM_HEAP_MAX_ARRAY_CAPACITY) { capacity = CCAM_HEAP_MAX_ARRAY_CAPACITY; }
+    int charge = capacity * CCAM_HEAP_SLOT_BYTES;
+    int work = capacity + 1;
+    // Unlike object allocation, a backing replacement does not use a new
+    // object ID or object slot. Admit all proportional work before copying.
+    if (heap.bytes_used < 0 || heap.bytes_used > heap.max_bytes ||
+        heap.work_used < 0 || heap.work_used > heap.max_work ||
+        heap.temporary_peak_bytes < 0 || heap.temporary_peak_bytes > heap.max_temporary_bytes) {
+        return "invalid_heap_accounting";
+    }
+    if (charge > heap.max_bytes - heap.bytes_used) { return "heap_limit"; }
+    if (work > heap.max_work - heap.work_used) { return "work_limit"; }
+    if (charge > heap.max_temporary_bytes) { return "temporary_limit"; }
+    List<CCAMHeapValue> replacement = new List<CCAMHeapValue>();
+    List<bool> ready = new List<bool>();
+    for (int i = 0; i < capacity; i += 1) {
+        if (i < object.length) {
+            replacement.push(object.elements[i]);
+            ready.push(object.element_initialised[i]);
+        } else {
+            replacement.push(ccam_heap_int(0));
+            ready.push(false);
+        }
+    }
+    replacement[object.length] = value;
+    ready[object.length] = true;
+    object.elements = replacement;
+    object.element_initialised = ready;
+    object.capacity = capacity;
+    object.length += 1;
+    heap.objects[object_index] = object;
+    heap.bytes_used += charge;
+    heap.work_used += work;
+    heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, charge);
+    return "";
+}
+
+// Source pop returns an optional. When its result is discarded, empty pop
+// succeeds without mutation; a nonempty pop clears the retired reference.
+string ccam_heap_list_pop_discard(CCAMHeap heap, CCAMHeapRef reference, int expected_element_type) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return "invalid_reference"; }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_ARRAY || object.element_type != expected_element_type) {
+        return "object_type_mismatch";
+    }
+    if (object.length < 0 || object.length > object.capacity ||
+        object.elements.len() != object.capacity ||
+        object.element_initialised.len() != object.capacity) { return "invalid_array_layout"; }
+    if (object.length == 0) { return ""; }
+    int last = object.length - 1;
+    if (!object.element_initialised[last]) { return "uninitialised_element"; }
+    object.elements[last] = ccam_heap_int(0);
+    object.element_initialised[last] = false;
+    object.length = last;
+    heap.objects[index] = object;
+    return "";
+}
+
 CCAMHeapIntResult ccam_heap_array_len(CCAMHeap heap, CCAMHeapRef reference, int expected_element_type) {
     int object_index = ccam_heap_object_index(heap, reference);
     if (object_index < 0) {
@@ -967,4 +1079,29 @@ test "CCAM region heap aliases share writes and rejected writes preserve state" 
     assert(after_rejection.ok && after_rejection.value.int_value == 73);
     assert(heap.objects.len() == objects_before && heap.bytes_used == bytes_before &&
         heap.work_used == work_before && heap.next_id == next_id_before);
+}
+
+test "candidate list growth preserves identity and rejects growth atomically at heap limit" {
+    CCAMHeapCreateResult created = ccam_heap_create(72, 4);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult allocated = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_INT, 0, 0);
+    assert(allocated.ok);
+    CCAMHeapRef alias = allocated.reference;
+    assert(ccam_heap_list_push(heap, allocated.reference, CCAM_HEAP_VALUE_INT, ccam_heap_int(7)) == "");
+    assert(ccam_heap_list_push(heap, alias, CCAM_HEAP_VALUE_INT, ccam_heap_int(8)) == "");
+    assert(ccam_heap_array_len(heap, alias, CCAM_HEAP_VALUE_INT).value == 2);
+    int before = heap.bytes_used;
+    int work = heap.work_used;
+    assert(ccam_heap_list_push(heap, alias, CCAM_HEAP_VALUE_INT, ccam_heap_int(9)) == "heap_limit");
+    assert(heap.bytes_used == before && heap.work_used == work);
+    assert(ccam_heap_array_len(heap, alias, CCAM_HEAP_VALUE_INT).value == 2);
+    assert(ccam_heap_array_get(heap, alias, CCAM_HEAP_VALUE_INT, 0).value.int_value == 7);
+    assert(ccam_heap_array_get(heap, alias, CCAM_HEAP_VALUE_INT, 1).value.int_value == 8);
+    assert(ccam_heap_list_pop_discard(heap, alias, CCAM_HEAP_VALUE_INT) == "");
+    assert(ccam_heap_list_pop_discard(heap, alias, CCAM_HEAP_VALUE_INT) == "");
+    assert(ccam_heap_list_pop_discard(heap, alias, CCAM_HEAP_VALUE_INT) == "");
+    assert(ccam_heap_array_len(heap, alias, CCAM_HEAP_VALUE_INT).value == 0);
+    assert(!ccam_heap_array_get(heap, alias, CCAM_HEAP_VALUE_INT, 0).ok);
+    assert(heap.bytes_used == before);
 }

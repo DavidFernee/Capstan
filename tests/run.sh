@@ -88,13 +88,20 @@ else
 fi
 
 section "Capstan-native verification: candidate aggregate execution and validation"
-for module in schema dispatch block flow transfer cfg fixedpoint calls frames stack program cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source byte_buffer u16 u32 u64 patch32 rel32 native_reg rex modrm movimm alu jump ret syscall exit_code padding elf_ident elf_header elf_segment elf_image native_smoke operator_stack expr_reduce checked_add checked_sub checked_mul checked_div arithmetic scalar_machine native_driver native_source_smoke expression_pipeline runtime_budget runtime_region runtime_align runtime_span runtime_copy runtime_zero runtime_smoke native_reloc native_link; do
+for module in schema dispatch block flow transfer cfg fixedpoint calls frames nominal_call stack program nominal_conformance sealed_program_tests cursor branch executor invoke lower_register lower_operand lower_block lower_function lower_smoke source token character decimal scan lex parse_cursor precedence expression expression_parse statement declaration symbol typecheck scalar_ir scalar_lower scalar_eval driver bootstrap_smoke return_source byte_buffer u16 u32 u64 patch32 rel32 native_reg rex modrm movimm alu jump ret syscall exit_code padding elf_ident elf_header elf_segment elf_image native_smoke operator_stack expr_reduce checked_add checked_sub checked_mul checked_div arithmetic scalar_machine native_driver native_source_smoke expression_pipeline runtime_budget runtime_region runtime_align runtime_span runtime_copy runtime_zero runtime_smoke native_reloc native_link; do
   if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_${module}.cap" 2>&1)"; then
     ok "aggregate candidate $module"
   else
     bad "aggregate candidate $module" "$out"
   fi
 done
+
+section "Checked production AST to candidate aggregate evaluator"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_checked_source_tests.cap" 2>&1)"; then
+  ok "checked aggregate source leaf lowering and sealed invocation"
+else
+  bad "checked aggregate source leaf lowering" "$out"
+fi
 
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then

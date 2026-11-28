@@ -1,5 +1,5 @@
-// Direct Linux x86-64 backend for one integer-returning
-// CCAM entry function. The kernel supplies the initial stack. This backend
+// Direct Linux x86-64 backend for one scalar CCAM entry function.
+// The kernel supplies the initial stack. This backend
 // uses at most 3184 bytes of it and charges one step before every CCAM instruction.
 import "ccam_calls.cap";
 import "native_elf64.cap";
@@ -9,10 +9,8 @@ import "native_alu_encoding.cap";
 // One label per instruction plus four shared exit labels fits the linker.
 const int CCAM_DIRECT_INSTRUCTION_LIMIT = 252;
 const int CCAM_DIRECT_REGISTER_LIMIT = 256;
-const int CCAM_DIRECT_OVERFLOW = 252;
-const int CCAM_DIRECT_DIVZERO = 253;
-const int CCAM_DIRECT_STEP_LIMIT = 254;
-const int CCAM_DIRECT_EXPLICIT_TRAP = 255;
+const int CCAM_DIRECT_CALL_DEPTH = 16;
+const int CCAM_DIRECT_CALL_REGISTERS = 15;
 
 struct CCAMDirectResult {
     bool ok;
@@ -94,18 +92,16 @@ void ccam_direct_write_result(List<int> code, int length, int failure_status) {
 
 // Experimental scalar subset of the proposed CCAMRES v1 record. RAX holds
 // the return value, R9D remaining fuel and R10D the current instruction PC.
-void ccam_direct_record(List<int> code, int budget, int trap, string name, string detail) {
+void ccam_direct_record(List<int> code, int budget, int kind, int trap, int function_index, string name, string detail) {
     List<int> record = new List<int>();
     string magic = "CCAMRES";
     for (int i = 0; i < magic.len(); i += 1) { record.push(magic.at(i)); }
     record.push(0);
     native_elf_field(record, 1, 2);
-    int kind = 0;
     int function = 4294967295;
     int pc = 4294967295;
-    if (trap != 0) {
-        kind = 2;
-        function = 0;
+    if (kind == 2) {
+        function = function_index;
         pc = 0;
     }
     native_elf_field(record, kind, 2);
@@ -129,9 +125,9 @@ void ccam_direct_record(List<int> code, int budget, int trap, string name, strin
     code.push(72); code.push(137); code.push(231); // mov rdi,rsp
     code.push(185); native_elf_field(code, record.len(), 4); // mov ecx,length
     code.push(252); code.push(243); code.push(164); // cld; rep movsb
-    if (trap == 0) {
+    if (kind == 0) {
         code.push(72); code.push(137); code.push(68); code.push(36); code.push(16);
-    } else {
+    } else if (kind == 2) {
         code.push(68); code.push(137); code.push(84); code.push(36); code.push(36);
     }
     code.push(186); native_elf_field(code, budget, 4); // mov edx,budget
@@ -141,17 +137,17 @@ void ccam_direct_record(List<int> code, int budget, int trap, string name, strin
 }
 
 void ccam_direct_terminal_trap(List<int> code, bool record, int budget,
-                               int trap, string name, int legacy_status) {
+                               int trap, int function_index, string name, int legacy_status) {
     if (record) {
-        ccam_direct_record(code, budget, trap, name, "");
+        ccam_direct_record(code, budget, 2, trap, function_index, name, "");
     } else {
         ccam_direct_exit(code, legacy_status);
     }
 }
 
-void ccam_direct_division(List<int> code, List<NativeFixup> fixups, bool remainder) {
+void ccam_direct_division(List<int> code, List<NativeFixup> fixups, bool remainder, int overflow, int divzero) {
     code.push(72); code.push(133); code.push(201); // test rcx,rcx
-    ccam_direct_fixup(code, fixups, 132, CCAM_DIRECT_DIVZERO);
+    ccam_direct_fixup(code, fixups, 132, divzero);
     code.push(72); code.push(131); code.push(249); code.push(255); // cmp rcx,-1
     if (remainder) {
         // x % -1 is always zero in CCAM, even when IDIV would overflow.
@@ -162,7 +158,7 @@ void ccam_direct_division(List<int> code, List<NativeFixup> fixups, bool remaind
         code.push(117); code.push(19); // jne normal (movabs + cmp + je)
         ccam_direct_movabs(code, 2, CCAM_I64_MIN);
         code.push(72); code.push(57); code.push(208); // cmp rax,rdx
-        ccam_direct_fixup(code, fixups, 132, CCAM_DIRECT_OVERFLOW);
+        ccam_direct_fixup(code, fixups, 132, overflow);
     }
     code.push(72); code.push(153);                // cqo
     code.push(72); code.push(247); code.push(249); // idiv rcx
@@ -171,12 +167,12 @@ void ccam_direct_division(List<int> code, List<NativeFixup> fixups, bool remaind
     }
 }
 
-void ccam_direct_binary(List<int> code, List<NativeFixup> fixups, int op) {
+void ccam_direct_binary(List<int> code, List<NativeFixup> fixups, int op, int overflow, int divzero) {
     if (op == CCAM_OP_DIV_I || op == CCAM_OP_REM_I) {
-        ccam_direct_division(code, fixups, op == CCAM_OP_REM_I);
+        ccam_direct_division(code, fixups, op == CCAM_OP_REM_I, overflow, divzero);
     } else if (op == CCAM_OP_MUL_I) {
         code.push(72); code.push(15); code.push(175); code.push(193); // imul rax,rcx
-        ccam_direct_fixup(code, fixups, 128, CCAM_DIRECT_OVERFLOW); // jo
+        ccam_direct_fixup(code, fixups, 128, overflow); // jo
     } else if (op == CCAM_OP_EQ_I || op == CCAM_OP_LT_I) {
         code.push(72); code.push(57); code.push(200); // cmp rax,rcx
         code.push(15);
@@ -190,8 +186,30 @@ void ccam_direct_binary(List<int> code, List<NativeFixup> fixups, int op) {
         for (int i = 0; i < encoded.bytes.len(); i += 1) {
             code.push(encoded.bytes[i]);
         }
-        ccam_direct_fixup(code, fixups, 128, CCAM_DIRECT_OVERFLOW);
+        ccam_direct_fixup(code, fixups, 128, overflow);
     }
+}
+
+void ccam_direct_stack_adjust(List<int> code, bool reserve, int bytes) {
+    code.push(72); code.push(129);
+    if (reserve) { code.push(236); } else { code.push(196); }
+    native_elf_field(code, bytes, 4);
+}
+
+void ccam_direct_call(List<int> code, List<NativeFixup> fixups, int symbol) {
+    code.push(232);
+    fixups.push(new NativeFixup{field: code.len(), symbol: symbol});
+    native_elf_field(code, 0, 4);
+}
+
+CCAMCallSite ccam_direct_call_site(CCAMFunction fn, int pc) {
+    for (int i = 0; i < fn.call_sites.len(); i += 1) {
+        if (fn.call_sites[i].instruction_index == pc) { return fn.call_sites[i]; }
+    }
+    return new CCAMCallSite{
+        instruction_index: -1, callee_index: -1, argument_registers: new List<int>(),
+        destination_register: 0, has_destination: false
+    };
 }
 
 struct CCAMDirectFlow {
@@ -230,7 +248,7 @@ string ccam_direct_profile(CCAMFunction fn) {
             instruction.next_second = ins.if_false;
         } else if (op == CCAM_OP_RET) {
             instruction.read_first = ins.lhs;
-        } else if (op != CCAM_OP_TRAP) {
+        } else if (op != CCAM_OP_TRAP && op != CCAM_OP_RET_VOID) {
             if (op >= CCAM_OP_ADD_I && op <= CCAM_OP_LT_I) {
                 instruction.read_first = ins.lhs;
                 instruction.read_second = ins.rhs;
@@ -238,16 +256,24 @@ string ccam_direct_profile(CCAMFunction fn) {
                 instruction.read_first = ins.lhs;
             } else if (op == CCAM_OP_MOVE) {
                 instruction.read_first = ins.src;
+            } else if (op == CCAM_OP_CALL) {
+                CCAMCallSite site = ccam_direct_call_site(fn, pc);
+                if (site.instruction_index < 0) { return "missing_call_site"; }
             } else if (op != CCAM_OP_CONST_I && op != CCAM_OP_CONST_B) {
                 return "unsupported_direct_instruction";
             }
             instruction.write_register = ins.dst;
+            if (op == CCAM_OP_CALL) {
+                CCAMCallSite site = ccam_direct_call_site(fn, pc);
+                instruction.write_register = -1;
+                if (site.has_destination) { instruction.write_register = site.destination_register; }
+            }
             // The canonical validator rejects reachable fallthrough.
             if (pc + 1 < fn.instructions.len()) { instruction.next_first = pc + 1; }
         }
         flow.push(instruction);
     }
-    for (int reg = 0; reg < fn.register_types.len(); reg += 1) {
+    for (int reg = fn.parameter_count; reg < fn.register_types.len(); reg += 1) {
         List<bool> seen = new List<bool>();
         for (int pc = 0; pc < flow.len(); pc += 1) { seen.push(false); }
         List<int> work = new List<int>();
@@ -256,6 +282,12 @@ string ccam_direct_profile(CCAMFunction fn) {
             CCAMDirectFlow ins = flow[work[cursor]];
             if (ins.read_first == reg || ins.read_second == reg) {
                 return "uninitialised_register";
+            }
+            if (fn.instructions[work[cursor]].op == CCAM_OP_CALL) {
+                CCAMCallSite site = ccam_direct_call_site(fn, work[cursor]);
+                for (int arg = 0; arg < site.argument_registers.len(); arg += 1) {
+                    if (site.argument_registers[arg] == reg) { return "uninitialised_register"; }
+                }
             }
             if (ins.write_register != reg) {
                 ccam_direct_visit(work, seen, ins.next_first);
@@ -275,92 +307,161 @@ CCAMDirectResult ccam_direct_elf_with_record(List<CCAMFunction> functions, int e
     if (max_steps < 0 || max_steps > CCAM_MAX_STEPS) {
         return ccam_direct_error("invalid_step_budget");
     }
-    if (functions.len() != 1 || entry != 0) {
+    if (entry < 0 || entry >= functions.len()) {
         return ccam_direct_error("direct_backend_requires_one_entry");
     }
-    CCAMFunction fn = functions[0];
-    if (fn.parameter_count != 0 || fn.return_type != CCAM_RETURN_INT ||
-        fn.call_sites.len() != 0 || fn.register_types.len() == 0 || fn.register_types.len() > CCAM_DIRECT_REGISTER_LIMIT ||
-        fn.instructions.len() > CCAM_DIRECT_INSTRUCTION_LIMIT) {
+    CCAMFunction entry_function = functions[entry];
+    bool integer_entry = entry_function.return_type == CCAM_RETURN_INT &&
+        entry_function.register_types.len() > 0;
+    bool void_record_entry = record && entry_function.return_type == CCAM_RETURN_VOID;
+    if (entry_function.parameter_count != 0 || (!integer_entry && !void_record_entry)) {
         return ccam_direct_error("unsupported_direct_profile");
+    }
+    bool calls = functions.len() > 1 || entry_function.call_sites.len() > 0;
+    List<int> bases = new List<int>();
+    int labels = 0;
+    int frame_slots = 0;
+    for (int index = 0; index < functions.len(); index += 1) {
+        CCAMFunction fn = functions[index];
+        int registers = fn.register_types.len();
+        if (registers > CCAM_DIRECT_REGISTER_LIMIT ||
+            (calls && registers > CCAM_DIRECT_CALL_REGISTERS) ||
+            fn.instructions.len() > CCAM_DIRECT_INSTRUCTION_LIMIT) {
+            return ccam_direct_error("unsupported_direct_profile");
+        }
+        bases.push(labels);
+        labels += fn.instructions.len() + 4;
+        if (labels > 256) { return ccam_direct_error("unsupported_direct_profile"); }
+        if (registers > frame_slots) { frame_slots = registers; }
     }
     CCAMValidationResult valid = ccam_validate_multi_function(functions, entry);
     if (!valid.ok) { return ccam_direct_error(valid.error); }
-    string profile = ccam_direct_profile(fn);
-    if (profile != "") { return ccam_direct_error(profile); }
+    for (int index = 0; index < functions.len(); index += 1) {
+        CCAMFunction fn = functions[index];
+        for (int site = 0; site < fn.call_sites.len(); site += 1) {
+            if (fn.call_sites[site].callee_index == entry) {
+                return ccam_direct_error("unsupported_call_to_direct_entry");
+            }
+        }
+        string profile = ccam_direct_profile(functions[index]);
+        if (profile != "") { return ccam_direct_error(profile); }
+    }
 
     List<NativeFixup> fixups = new List<NativeFixup>();
     List<int> code = new List<int>();
     List<NativeSymbol> symbols = new List<NativeSymbol>();
-    code.push(72); code.push(129); code.push(236); // sub rsp,imm32
-    native_elf_field(code, fn.register_types.len() * 8, 4);
+    int slot_offset = 0;
+    ccam_direct_stack_adjust(code, true, frame_slots * 8);
     code.push(65); code.push(185); // mov r9d,imm32; R9 is reserved for remaining steps
     native_elf_field(code, max_steps, 4);
-    for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
-        CCAMInstruction ins = fn.instructions[pc];
-        int op = ins.op;
-        symbols.push(new NativeSymbol{id: pc, offset: code.len()});
-        if (record) {
-            code.push(65); code.push(186); // mov r10d,pc, before the fuel check
-            native_elf_field(code, pc, 4);
-        }
-        code.push(69); code.push(133); code.push(201); // test r9d,r9d
-        ccam_direct_fixup(code, fixups, 132, CCAM_DIRECT_STEP_LIMIT);
-        code.push(65); code.push(255); code.push(201); // dec r9d
-        if (op == CCAM_OP_JUMP) {
-            ccam_direct_jump(code, fixups, ins.target);
-            continue;
-        }
-        if (op == CCAM_OP_TRAP) {
+    if (calls) {
+        slot_offset = 1;
+        code.push(65); code.push(184); // mov r8d,1; depth includes entry
+        native_elf_field(code, 1, 4);
+        ccam_direct_call(code, fixups, bases[entry]);
+        code.push(15); code.push(11); // entry terminates the process
+    }
+    for (int function_index = 0; function_index < functions.len(); function_index += 1) {
+        CCAMFunction fn = functions[function_index];
+        int base = bases[function_index];
+        int overflow = base + fn.instructions.len();
+        int divzero = overflow + 1;
+        int fuel = overflow + 2;
+        int depth = overflow + 3;
+        for (int pc = 0; pc < fn.instructions.len(); pc += 1) {
+            CCAMInstruction ins = fn.instructions[pc];
+            int op = ins.op;
+            symbols.push(new NativeSymbol{id: base + pc, offset: code.len()});
             if (record) {
-                ccam_direct_record(code, max_steps, 8, fn.name, ins.reason);
-            } else {
-                ccam_direct_jump(code, fixups, CCAM_DIRECT_EXPLICIT_TRAP);
+                code.push(65); code.push(186); // mov r10d,pc, before the fuel check
+                native_elf_field(code, pc, 4);
             }
-            continue;
-        }
-        if (op == CCAM_OP_CONST_I) {
-            ccam_direct_movabs(code, 0, ins.int_value);
-        } else if (op == CCAM_OP_CONST_B) {
-            int value = 0;
-            if (ins.bool_value) { value = 1; }
-            ccam_direct_movabs(code, 0, value);
-        } else {
-            int source = ins.lhs;
-            if (op == CCAM_OP_MOVE) { source = ins.src; }
-            ccam_direct_slot(code, true, 0, source);
-            if (op == CCAM_OP_RET) {
+            code.push(69); code.push(133); code.push(201); // test r9d,r9d
+            ccam_direct_fixup(code, fixups, 132, fuel);
+            code.push(65); code.push(255); code.push(201); // dec r9d
+            if (op == CCAM_OP_JUMP) {
+                ccam_direct_jump(code, fixups, base + ins.target);
+                continue;
+            }
+            if (op == CCAM_OP_TRAP) {
                 if (record) {
-                    ccam_direct_record(code, max_steps, 0, "", "");
+                    ccam_direct_record(code, max_steps, 2, 8, function_index, fn.name, ins.reason);
                 } else {
-                    code.push(80); // push rax
-                    ccam_direct_write_result(code, 8, 77);
+                    ccam_direct_exit(code, 72);
                 }
                 continue;
             }
-            if (op == CCAM_OP_BRANCH) {
-                code.push(72); code.push(133); code.push(192); // test rax,rax
-                ccam_direct_fixup(code, fixups, 133, ins.if_true);
-                ccam_direct_jump(code, fixups, ins.if_false);
+            if (op == CCAM_OP_CALL) {
+                CCAMCallSite site = ccam_direct_call_site(fn, pc);
+                code.push(65); code.push(131); code.push(248); code.push(CCAM_DIRECT_CALL_DEPTH);
+                ccam_direct_fixup(code, fixups, 131, depth); // jae
+                ccam_direct_stack_adjust(code, true, frame_slots * 8);
+                for (int arg = 0; arg < site.argument_registers.len(); arg += 1) {
+                    ccam_direct_slot(code, true, 0, frame_slots + slot_offset + site.argument_registers[arg]);
+                    ccam_direct_slot(code, false, 0, arg);
+                }
+                code.push(65); code.push(255); code.push(192); // inc r8d
+                ccam_direct_call(code, fixups, bases[site.callee_index]);
+                code.push(65); code.push(255); code.push(200); // dec r8d
+                ccam_direct_stack_adjust(code, false, frame_slots * 8);
+                if (site.has_destination) {
+                    ccam_direct_slot(code, false, 0, slot_offset + site.destination_register);
+                }
                 continue;
             }
-            if (op == CCAM_OP_NOT_B) {
-                code.push(131); code.push(240); code.push(1); // xor eax,1
-            } else if (op != CCAM_OP_MOVE) {
-                ccam_direct_slot(code, true, 1, ins.rhs);
-                ccam_direct_binary(code, fixups, op);
+            if (op == CCAM_OP_RET_VOID) {
+                if (function_index != entry) {
+                    code.push(195);
+                } else {
+                    ccam_direct_record(code, max_steps, 1, 0, 0, "", "");
+                }
+                continue;
             }
+            if (op == CCAM_OP_CONST_I) {
+                ccam_direct_movabs(code, 0, ins.int_value);
+            } else if (op == CCAM_OP_CONST_B) {
+                int value = 0;
+                if (ins.bool_value) { value = 1; }
+                ccam_direct_movabs(code, 0, value);
+            } else {
+                int source = ins.lhs;
+                if (op == CCAM_OP_MOVE) { source = ins.src; }
+                ccam_direct_slot(code, true, 0, slot_offset + source);
+                if (op == CCAM_OP_RET) {
+                    if (function_index != entry) {
+                        code.push(195);
+                    } else if (record) {
+                        ccam_direct_record(code, max_steps, 0, 0, 0, "", "");
+                    } else {
+                        code.push(80); // push rax
+                        ccam_direct_write_result(code, 8, 77);
+                    }
+                    continue;
+                }
+                if (op == CCAM_OP_BRANCH) {
+                    code.push(72); code.push(133); code.push(192); // test rax,rax
+                    ccam_direct_fixup(code, fixups, 133, base + ins.if_true);
+                    ccam_direct_jump(code, fixups, base + ins.if_false);
+                    continue;
+                }
+                if (op == CCAM_OP_NOT_B) {
+                    code.push(131); code.push(240); code.push(1); // xor eax,1
+                } else if (op != CCAM_OP_MOVE) {
+                    ccam_direct_slot(code, true, 1, slot_offset + ins.rhs);
+                    ccam_direct_binary(code, fixups, op, overflow, divzero);
+                }
+            }
+            ccam_direct_slot(code, false, 0, slot_offset + ins.dst);
         }
-        ccam_direct_slot(code, false, 0, ins.dst);
+        symbols.push(new NativeSymbol{id: overflow, offset: code.len()});
+        ccam_direct_terminal_trap(code, record, max_steps, 1, function_index, fn.name, 70);
+        symbols.push(new NativeSymbol{id: divzero, offset: code.len()});
+        ccam_direct_terminal_trap(code, record, max_steps, 2, function_index, fn.name, 71);
+        symbols.push(new NativeSymbol{id: fuel, offset: code.len()});
+        ccam_direct_terminal_trap(code, record, max_steps, 6, function_index, fn.name, 73);
+        symbols.push(new NativeSymbol{id: depth, offset: code.len()});
+        ccam_direct_terminal_trap(code, record, max_steps, 7, function_index, fn.name, 74);
     }
-    symbols.push(new NativeSymbol{id: CCAM_DIRECT_OVERFLOW, offset: code.len()});
-    ccam_direct_terminal_trap(code, record, max_steps, 1, fn.name, 70);
-    symbols.push(new NativeSymbol{id: CCAM_DIRECT_DIVZERO, offset: code.len()});
-    ccam_direct_terminal_trap(code, record, max_steps, 2, fn.name, 71);
-    symbols.push(new NativeSymbol{id: CCAM_DIRECT_STEP_LIMIT, offset: code.len()});
-    ccam_direct_terminal_trap(code, record, max_steps, 6, fn.name, 73);
-    symbols.push(new NativeSymbol{id: CCAM_DIRECT_EXPLICIT_TRAP, offset: code.len()});
-    ccam_direct_exit(code, 72);
     NativeLinkResult linked = native_link_image(code, symbols, fixups);
     if (!linked.ok) { return ccam_direct_error("direct_relocation_failed"); }
     NativeElfImage image = native_elf64_image_with_stack(linked.bytes, 0, true);

@@ -1,0 +1,208 @@
+// Candidate sealed aggregate program. The registry owns every mutable list
+// reachable from its functions and signatures. No accessor returns those lists.
+// Admission is synchronous and assumes exclusive access to the input graph
+// during copying; this is not a concurrent snapshot or normative CCAM format.
+import "ccam_aggregate_invoke.cap";
+
+const int AG_SEALED_MAX_FUNCTIONS = 256;
+const int AG_SEALED_MAX_REGISTERS = 262144;
+const int AG_SEALED_MAX_BLOCKS = 65536;
+const int AG_SEALED_MAX_INSTRUCTIONS = 65536;
+const int AG_SEALED_MAX_OPERANDS = 196608;
+
+opaque struct AGSealedProgram {
+    List<AGFunction> functions;
+    List<AGNominalSignature> signatures;
+}
+
+struct AGSealResult {
+    bool ok;
+    AGSealedProgram program;
+    string error;
+}
+
+AGSealResult ag_seal_failure(string error) {
+    return new AGSealResult{ok: false, error: error,
+        program: new AGSealedProgram{functions: new List<AGFunction>(),
+            signatures: new List<AGNominalSignature>()}};
+}
+
+List<int> ag_seal_copy_ints(List<int> source) {
+    List<int> copy = new List<int>();
+    for (int i = 0; i < source.len(); i += 1) { copy.push(source[i]); }
+    return copy;
+}
+
+bool ag_seal_signature_matches(AGCallSignature coarse, AGNominalSignature nominal) {
+    if (!ag_call_signature(coarse) || !ag_nominal_signature(nominal) ||
+        coarse.result_kind != nominal.coarse.result_kind ||
+        coarse.parameters.len() != nominal.coarse.parameters.len()) { return false; }
+    for (int i = 0; i < coarse.parameters.len(); i += 1) {
+        if (coarse.parameters[i] != nominal.coarse.parameters[i]) { return false; }
+    }
+    return true;
+}
+
+// Bound cumulative snapshot size before allocating the owned graph.
+// Repeated aliases are charged once per occurrence, because each is copied.
+string ag_seal_preflight(List<AGFunction> functions, List<AGNominalSignature> signatures) {
+    if (functions.len() == 0 || functions.len() > AG_SEALED_MAX_FUNCTIONS ||
+        signatures.len() != functions.len()) { return "invalid_function_table"; }
+    int registers = 0;
+    int blocks = 0;
+    int instructions = 0;
+    int operands = 0;
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGFunction f = functions[i];
+        if (!ag_seal_signature_matches(f.signature, signatures[i]) ||
+            f.returns.len() != f.blocks.len() || f.blocks.len() == 0) {
+            return "invalid_function_contract";
+        }
+        if (f.kinds.len() > AG_SEALED_MAX_REGISTERS - registers ||
+            f.blocks.len() > AG_SEALED_MAX_BLOCKS - blocks) { return "snapshot_limit"; }
+        registers += f.kinds.len();
+        blocks += f.blocks.len();
+        for (int j = 0; j < f.blocks.len(); j += 1) {
+            AGCFGBlock block = f.blocks[j];
+            if (block.instructions.len() > AG_SEALED_MAX_INSTRUCTIONS - instructions) {
+                return "snapshot_limit";
+            }
+            instructions += block.instructions.len();
+            for (int k = 0; k < block.instructions.len(); k += 1) {
+                AGBlockInstruction ins = block.instructions[k];
+                if (ins.operands.len() > AG_SCHEMA_MAX_OPERANDS ||
+                    ins.operands.len() > AG_SEALED_MAX_OPERANDS - operands) {
+                    return "invalid_instruction_operands";
+                }
+                operands += ins.operands.len();
+            }
+        }
+    }
+    return "";
+}
+
+AGCFGBlock ag_seal_copy_block(AGCFGBlock source) {
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    for (int i = 0; i < source.instructions.len(); i += 1) {
+        AGBlockInstruction ins = source.instructions[i];
+        instructions.push(new AGBlockInstruction{opcode: ins.opcode,
+            kind: ins.kind, operands: ag_seal_copy_ints(ins.operands)});
+    }
+    return new AGCFGBlock{instructions: instructions,
+        terminator: source.terminator, condition: source.condition,
+        yes: source.yes, no: source.no};
+}
+
+// Validate direct-call edges across the owned graph, including unreachable blocks.
+bool ag_seal_validate_edges(List<AGFunction> functions) {
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGFunction caller = functions[i];
+        for (int b = 0; b < caller.blocks.len(); b += 1) {
+            for (int j = 0; j < caller.blocks[b].instructions.len(); j += 1) {
+                AGBlockInstruction ins = caller.blocks[b].instructions[j];
+                if (ins.opcode == AG_OP_DIRECT_CALL) {
+                    if (!ag_schema_operands(caller.kinds, ins.opcode, ins.kind, ins.operands)) { return false; }
+                    int id = ins.operands[1];
+                    if (id >= functions.len()) { return false; }
+                    AGCallSignature signature = functions[id].signature;
+                    if (ins.kind != signature.result_kind ||
+                        ins.operands.len() - 2 != signature.parameters.len()) { return false; }
+                    for (int a = 0; a < signature.parameters.len(); a += 1) {
+                        if (!ag_schema_register(caller.kinds, ins.operands[a + 2], signature.parameters[a])) { return false; }
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
+AGSealResult ag_seal_program(List<AGFunction> functions, List<AGNominalSignature> signatures) {
+    string error = ag_seal_preflight(functions, signatures);
+    if (error != "") { return ag_seal_failure(error); }
+    List<AGFunction> owned_functions = new List<AGFunction>();
+    List<AGNominalSignature> owned_signatures = new List<AGNominalSignature>();
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGFunction f = functions[i];
+        AGNominalSignature nominal = signatures[i];
+        AGCallSignature coarse = new AGCallSignature{
+            parameters: ag_seal_copy_ints(f.signature.parameters),
+            result_kind: f.signature.result_kind};
+        List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+        for (int j = 0; j < f.blocks.len(); j += 1) {
+            blocks.push(ag_seal_copy_block(f.blocks[j]));
+        }
+        owned_functions.push(new AGFunction{signature: coarse,
+            kinds: ag_seal_copy_ints(f.kinds), blocks: blocks,
+            returns: ag_seal_copy_ints(f.returns)});
+        owned_signatures.push(new AGNominalSignature{coarse: coarse,
+            parameter_descriptors: ag_seal_copy_ints(nominal.parameter_descriptors),
+            result_descriptor: nominal.result_descriptor});
+    }
+    // Validate the actual owned snapshot, not the mutable source graph.
+    if (!ag_program_validate(owned_functions) || !ag_seal_validate_edges(owned_functions)) { return ag_seal_failure("invalid_program"); }
+    return new AGSealResult{ok: true, error: "",
+        program: new AGSealedProgram{functions: owned_functions,
+            signatures: owned_signatures}};
+}
+
+// The continuation cursor is private to this iterative interpreter. Language
+// recursion consumes the explicit stack budget, never the host call stack.
+struct AGSealedCursor {
+    int function_id;
+    int block_id;
+    int instruction;
+}
+
+string ag_sealed_invoke(AGSealedProgram program, AGStack stack, int id,
+    List<int> arguments, int destination) {
+    if (stack.active.trap_code != "") { return stack.active.trap_code; }
+    if (id < 0 || id >= program.functions.len()) {
+        return ccam_aggregate_trap(stack.active, "invalid_function");
+    }
+    int initial_depth = stack.depth;
+    string error = ag_stack_nominal_call(stack, program.signatures[id],
+        program.functions[id].kinds, arguments, destination);
+    if (error != "") { return error; }
+    List<AGSealedCursor> cursors = new List<AGSealedCursor>();
+    cursors.push(new AGSealedCursor{function_id: id, block_id: 0, instruction: 0});
+    while (cursors.len() > 0 && error == "") {
+        AGSealedCursor cursor = cursors[cursors.len() - 1];
+        AGFunction fn = program.functions[cursor.function_id];
+        AGCFGBlock block = fn.blocks[cursor.block_id];
+        if (cursor.instruction < block.instructions.len()) {
+            AGBlockInstruction ins = block.instructions[cursor.instruction];
+            cursor.instruction += 1;
+            if (ins.opcode == AG_OP_DIRECT_CALL) {
+                int callee = ins.operands[1];
+                List<int> args = new List<int>();
+                for (int a = 2; a < ins.operands.len(); a += 1) { args.push(ins.operands[a]); }
+                error = ag_stack_nominal_call(stack, program.signatures[callee],
+                    program.functions[callee].kinds, args, ins.operands[0]);
+                if (error == "") {
+                    cursors.push(new AGSealedCursor{function_id: callee, block_id: 0, instruction: 0});
+                }
+            } else { error = ag_dispatch(stack.active, ins.opcode, ins.kind, ins.operands); }
+        } else if (block.terminator == 0) {
+            error = ccam_aggregate_begin_step(stack.active);
+            if (error == "") {
+                error = ag_stack_return(stack, fn.returns[cursor.block_id]);
+                cursors.pop();
+            }
+        } else {
+            AGBranchResult next = ag_branch_select(stack.active, block, fn.blocks.len());
+            if (!next.ok) { error = next.error; }
+            else { cursor.block_id = next.target; cursor.instruction = 0; }
+        }
+    }
+    // On failure unwind exactly the frames opened by this invocation. Preserve
+    // the first trap and cumulative fuel, never publish a failed return value.
+    if (error != "") {
+        while (stack.depth > initial_depth) {
+            ccam_aggregate_trap(stack.active, error);
+            ag_stack_return(stack, -1);
+        }
+        return ccam_aggregate_trap(stack.active, error);
+    }
+    return "";
+}

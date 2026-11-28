@@ -1,0 +1,73 @@
+import "native_arena_reserve.cap";
+
+// Experimental process-lifetime layout for an initialized immutable int
+// record. Each 16-byte slot stores a descriptor followed by one i64 field.
+// R11 is the trusted backing base, R8 the cursor, RSI the initial field.
+// The only returned reference representation is a byte offset in RAX.
+const int NATIVE_ARENA_RECORD_SIZE = 16;
+
+bool native_arena_record_layout(int capacity, int descriptor) {
+    return capacity >= NATIVE_ARENA_RECORD_SIZE && capacity <= 1073741824 &&
+        capacity % NATIVE_ARENA_RECORD_SIZE == 0 &&
+        descriptor > 0 && descriptor <= 2147483647;
+}
+
+bool native_arena_record_new(
+    List<int> code, List<NativeFixup> fixups, int capacity, int descriptor, int failure
+) {
+    if (!native_arena_record_layout(capacity, descriptor) || failure < 0 ||
+        code.len() > 1048576 - 60 || fixups.len() > 1021) { return false; }
+
+    code.push(65); code.push(246); code.push(192); code.push(15); // test r8b,15
+    native_arena_record_jne(code, fixups, failure);
+    code.push(191); native_elf_field(code, NATIVE_ARENA_RECORD_SIZE, 4); // mov edi,16
+    if (!native_arena_reserve(code, fixups, capacity, failure)) { return false; }
+    code.push(73); code.push(199); code.push(4); code.push(3); // mov qword [r11+rax],imm32
+    native_elf_field(code, descriptor, 4);
+    code.push(73); code.push(137); code.push(116); code.push(3); code.push(8); // mov [r11+rax+8],rsi
+    return true;
+}
+
+// Resolve an offset against the committed prefix, check the descriptor,
+// and return the field in RAX. R8 and the backing bytes are preserved.
+bool native_arena_record_get(
+    List<int> code, List<NativeFixup> fixups, int capacity, int descriptor, int failure
+) {
+    if (!native_arena_record_layout(capacity, descriptor) || failure < 0 ||
+        code.len() > 1048576 - 60 || fixups.len() > 1019) { return false; }
+
+    code.push(186); native_elf_field(code, capacity, 4); // mov edx,capacity
+    code.push(73); code.push(57); code.push(208); // cmp r8,rdx
+    native_arena_above(code, fixups, failure);
+    code.push(65); code.push(246); code.push(192); code.push(15); // test r8b,15
+    native_arena_record_jne(code, fixups, failure);
+    code.push(168); code.push(15); // test al,15
+    native_arena_record_jne(code, fixups, failure);
+    code.push(76); code.push(57); code.push(192); // cmp rax,r8
+    code.push(15); code.push(131); // jae rel32: includes negative offsets
+    fixups.push(new NativeFixup{field: code.len(), symbol: failure});
+    native_elf_field(code, 0, 4);
+    code.push(73); code.push(129); code.push(60); code.push(3); // cmp qword [r11+rax],imm32
+    native_elf_field(code, descriptor, 4);
+    native_arena_record_jne(code, fixups, failure);
+    code.push(73); code.push(139); code.push(68); code.push(3); code.push(8); // mov rax,[r11+rax+8]
+    return true;
+}
+
+void native_arena_record_jne(List<int> code, List<NativeFixup> fixups, int failure) {
+    code.push(15); code.push(133);
+    fixups.push(new NativeFixup{field: code.len(), symbol: failure});
+    native_elf_field(code, 0, 4);
+}
+
+test "native record operations reject invalid layouts before emission" {
+    List<int> code = new List<int>();
+    List<NativeFixup> fixups = new List<NativeFixup>();
+    assert(!native_arena_record_new(code, fixups, 17, 7, 0));
+    assert(!native_arena_record_get(code, fixups, 16, 0, 0));
+    assert(code.len() == 0 && fixups.len() == 0);
+    assert(native_arena_record_new(code, fixups, 16, 7, 0));
+    assert(code.len() == 60 && fixups.len() == 3);
+    assert(native_arena_record_get(code, fixups, 16, 7, 0));
+    assert(code.len() == 120 && fixups.len() == 8);
+}
