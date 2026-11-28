@@ -25,11 +25,12 @@ bool ag_nvc_admit_typed(List<AGFunction> functions, List<AGNominalSignature> sig
     if (functions[entry].signature.parameters.len() != 0 ||
         functions[entry].signature.result_kind != AG_SCHEMA_INT) { return false; }
     for (int i = 0; i <= 4096; i += 1) { layouts.push(-1); }
+    Map<int> fields = new Map<int>();
     int blocks = 0; int instructions = 0; int operands = 0;
     for (int i = 0; i < functions.len(); i += 1) {
         AGFunction f = functions[i];
         if (f.blocks.len() > AG_NV_MAX_BLOCKS - blocks ||
-            !ag_nv_admit_function(f, layouts, true)) { return false; }
+            !ag_nv_admit_function(f, layouts, fields, true)) { return false; }
         blocks += f.blocks.len();
         for (int j = 0; j < f.blocks.len(); j += 1) {
             AGCFGBlock b = f.blocks[j];
@@ -43,7 +44,7 @@ bool ag_nvc_admit_typed(List<AGFunction> functions, List<AGNominalSignature> sig
     }
     for (int i = 0; i < functions.len(); i += 1) {
         AGNominalSignature signature = signatures[i];
-        if (!ag_nv_check_layouts(functions[i], layouts) ||
+        if (!ag_nv_check_layouts(functions[i], layouts, fields) ||
             !ag_seal_signature_matches(functions[i].signature, signature) ||
             !ag_nvc_nominal_shape(signature.coarse.result_kind, signature.result_descriptor, layouts)) { return false; }
         for (int j = 0; j < signature.coarse.parameters.len(); j += 1) {
@@ -81,23 +82,6 @@ bool ag_nvc_enter(AGNVContext c, int label, int slots, List<int> args) {
     return true;
 }
 
-// RAX holds an arena offset, never a machine address. The membership leaf
-// preserves it and RSI/RDI. Only after membership succeeds inspect the
-// immutable descriptor/count header; use the same global layout registry.
-bool ag_nvc_reference(AGNVContext c, int descriptor) {
-    List<int> b = c.code;
-    if (descriptor < 1 || descriptor > 4096 || c.layouts[descriptor] < 0 ||
-        b.len() > AG_BYTE_LIMIT - 64 ||
-        !ag_nv_imm(b, 6, descriptor) || !ag_nv_imm(b, 7, c.layouts[descriptor]) ||
-        !ag_nv_call(c, c.trap + 6)) { return false; }
-    // cmp [r12+rax],rsi ; jne trap
-    b.push(73); b.push(57); b.push(52); b.push(4);
-    if (!ag_nv_edge(c, 133, c.trap)) { return false; }
-    // cmp [r12+rax+8],rdi ; jne trap
-    b.push(73); b.push(57); b.push(124); b.push(4); b.push(8);
-    return ag_nv_edge(c, 133, c.trap);
-}
-
 bool ag_nvc_instruction(AGNVContext c, AGBlockInstruction ins,
     List<AGFunction> functions, List<AGNominalSignature> signatures, List<int> starts) {
     if (ins.opcode != AG_OP_DIRECT_CALL) { return ag_nv_instruction(c, ins); }
@@ -109,7 +93,7 @@ bool ag_nvc_instruction(AGNVContext c, AGBlockInstruction ins,
         int source = ins.operands[i];
         if (signature.coarse.parameters[i - 2] == AG_SCHEMA_REF) {
             if (!ag_nv_slot(c.code, false, 0, source) ||
-                !ag_nvc_reference(c, signature.parameter_descriptors[i - 2])) { return false; }
+                !ag_nv_reference(c, signature.parameter_descriptors[i - 2])) { return false; }
         }
         args.push(source);
     }
@@ -135,7 +119,7 @@ bool ag_nvc_function(AGNVContext c, List<AGFunction> functions,
             if (f.signature.result_kind != AG_RESULT_VOID) {
                 if (!ag_nv_slot(b, false, 0, f.returns[i])) { return false; }
                 if (f.signature.result_kind == AG_SCHEMA_REF &&
-                    !ag_nvc_reference(c, signatures[id].result_descriptor)) { return false; }
+                    !ag_nv_reference(c, signatures[id].result_descriptor)) { return false; }
             } else { b.push(49); b.push(192); }
             b.push(195); // ret, caller restores frame and depth
         } else if (block.terminator == 1) {
