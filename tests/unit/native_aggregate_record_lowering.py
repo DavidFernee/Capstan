@@ -32,6 +32,7 @@ def main():
         'opt-unwrap-none': None, 'opt-mismatch': None,
         'map-int': 42, 'map-ref': 42, 'map-string-bool': 3,
         'map-full': 42, 'map-over': None,
+        'map-snapshot': 33, 'map-remove': 42, 'map-empty-keys': 1,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
