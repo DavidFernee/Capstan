@@ -24,13 +24,16 @@ bool ag_nominal_kind(int kind, int descriptor) {
     if (kind == AG_SCHEMA_REF) {
         return (descriptor > 0 && descriptor <= AG_OPTIONAL_RECORD_MAX) ||
             (descriptor < 0 && descriptor >= -AG_OPTIONAL_RECORD_MAX - 3) ||
-            ccam_heap_optional_descriptor(descriptor);
+            (ccam_heap_optional_descriptor(descriptor) || ccam_heap_map_descriptor(descriptor));
     }
     return (kind == AG_SCHEMA_INT || kind == AG_SCHEMA_BOOL) && descriptor == 0;
 }
 
 bool ag_nominal_value_matches(CCAMHeap heap, CCAMHeapValue value, int kind, int descriptor) {
     if (!ag_nominal_kind(kind, descriptor) || value.kind != kind) { return false; }
+    if (kind == AG_SCHEMA_REF && ccam_heap_map_descriptor(descriptor)) {
+        return ccam_heap_map_matches(heap, value, descriptor);
+    }
     if (kind == AG_SCHEMA_REF && ccam_heap_optional_descriptor(descriptor)) {
         return ccam_heap_optional_matches(heap, value, descriptor);
     }
