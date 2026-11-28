@@ -1,0 +1,34 @@
+// Linked with the actual compiler/ast.cap through the host compiler.
+void report_charge(bool ok, CompileBudget budget) {
+    int result = 0;
+    if (ok) { result = 1; }
+    int exhausted = 0;
+    if (budget.exhausted) { exhausted = 1; }
+    println(int_to_str(result) + " " + int_to_str(budget.ast_nodes) + " " + int_to_str(exhausted));
+}
+
+int main() {
+    Node root = mk_node(N_NONE, 0, 1);
+    Node shared = mk_node(N_NONE, 0, 2);
+    Node leaf = mk_node(N_NONE, 0, 3);
+    root.kids.push(shared);
+    root.kids.push(leaf);
+    List<Node> roots = new List<Node>();
+    roots.push(root);
+    roots.push(shared);
+    CompileBudget first = new_compile_budget();
+    report_charge(charge_ast_nodes(first, roots), first);
+
+    Node cycle = mk_node(N_NONE, 0, 4);
+    cycle.kids.push(cycle);
+    List<Node> cycle_roots = new List<Node>();
+    cycle_roots.push(cycle);
+    CompileBudget boundary = new_compile_budget();
+    boundary.ast_nodes = MAX_TOTAL_AST_NODES - 1;
+    report_charge(charge_ast_nodes(boundary, cycle_roots), boundary);
+
+    CompileBudget empty = new_compile_budget();
+    empty.ast_nodes = MAX_TOTAL_AST_NODES;
+    report_charge(charge_ast_nodes(empty, new List<Node>()), empty);
+    return 0;
+}

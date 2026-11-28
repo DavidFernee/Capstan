@@ -49,7 +49,7 @@ each argument into a distinct stack slot and returns the value in RAX.
 The seed can admit up to 32 ordinary struct layouts, each with up to 32
 distinct fields. It recognizes `int`, `bool`, `string`, and self-recursive
 `List<ThisLayout>` field declarations, as well as optional references to a previously declared
-layout. Optional reference construction remains outside the seed subset. String initializers accept printable ASCII and the seven single-byte
+layout. Optional references accept the empty `none` initializer. String initializers accept printable ASCII and the seven single-byte
 escapes supported by the existing lexer. The decoded value is limited to
 63 bytes, including embedded NUL bytes. List initializers accept
 an empty `new List<ThisLayout>()`. Those fields can return their length via
@@ -108,7 +108,11 @@ one-million-iteration budget only when entering the body. Within the loop,
 a local named `node` can bind the last record reference using the same
 list for both indexing and length. The helper may read an integer field
 through that local for an assignment, including after popping the list slot.
-The local remains scoped to the loop body. An `if (item.field >= limit)
+The helper can also append `node.list[index]` to a list on `item` after
+checking the source index and the destination capacity. The local remains
+scoped to the loop body. A bounded inner `for` loop may stream all
+references from a saved node’s child list to a list on `item`. It reloads
+the source length and checks destination capacity on each iteration. An `if (item.field >= limit)
 { return value; }` statement can exit early from the helper. The field
 is checked as an integer and the limit and result may be integer literals
 or constants. Record-returning helpers still
@@ -118,9 +122,48 @@ produce only immutable empty self-recursive lists.
 
 Assembly is a candidate alternative to the proposed Rust seed. GNU Binutils is available in the local environment, and the seed's static linker inputs consist of one object assembled from `seed.S`. This keeps the seed independent of Capstan's existing compiler, generated C, Python and libc. The tradeoff is a Linux x86-64-specific parser and ELF emitter that require assembly review. The assembler, linker, kernel and CPU remain trusted for this experiment. This choice has not been accepted as the programme's S0 toolchain.
 
-Run `bash bootstrap/native-seed/test.sh` on Linux x86-64. The local audit used GNU assembler and linker 2.44. Two builds in one environment produced identical stripped seed binaries with SHA-256 `67917c78db361f6f605f0a14d0c6ce6d4f21b335b992f50a8e1074a82f53c347`. The test checks for absence of dynamic loading headers, runs the seed and emitted programs with empty tool paths, compares repeat outputs, and exercises signed extrema, input length boundaries and malformed source. This is same-environment evidence.
+Run `bash bootstrap/native-seed/test.sh` on Linux x86-64. The local audit used GNU assembler and linker 2.44. Two builds in one environment produced identical stripped seed binaries with SHA-256 `afe373779dbae2d1ce5433d02f2b4801ba09c5335c894387724a183aa2875cad`. The test checks for absence of dynamic loading headers, runs the seed and emitted programs with empty tool paths, compares repeat outputs, and exercises signed extrema, input length boundaries and malformed source. This is same-environment evidence.
 
 The candidate does not yet produce S1, consume a source manifest, compile the checked compiler workload, or establish canonical CCAM outcome correspondence. S2 compiler-on-compiler equivalence and S3 production dependency and diverse-seed evidence are still pending.
+
+The record helper can declare one local `List<Layout> pending` before its
+loop, with independent stack backing provided by the caller. The same
+bounded append, discard-pop, length-test, and last-element checks apply.
+The inner child loop can append to this local worklist. The list is visible
+only in the helper, and its references remain tied to the caller frame.
+A helper can alternatively receive a second parameter `List<Layout> roots`
+from a matching list field of `item`. It can seed `pending` by appending
+the indexed roots in order, checking capacity at each append. A record
+helper may instead return Boolean literals, including from an early budget
+guard. Such a guard can set a declared Boolean field before it returns.
+In that profile `main` branches on the helper’s result. The root list may
+have a different declared element layout from the first record parameter.
+The caller can pass an empty typed list or a singleton list containing a
+separately constructed `Node peer`. The seed resolves worklist fields
+against the element layout and rejects appending the budget record to the
+node worklist. The fixture uses the actual `CompileBudget` and `Node` layouts
+and compiles the unmodified `charge_ast_nodes` function extracted from
+`compiler/ast.cap`. It exercises success and exhaustion with one root. The
+fixture omits the preceding record-returning helper because this seed
+profile admits one callable helper per source stream.
+
+## Native AST traversal primitive
+
+`charge-ast-nodes.S` implements the worklist algorithm for a runtime-owned
+node table, root array, and scratch buffer. It charges nodes once per visit,
+checks IDs and scratch capacity, and marks exhaustion at the source
+compiler’s 150,000-node limit. The runtime owns pointer provenance and
+backing extents. The standalone test runs with an empty tool path and covers
+shared children, a cycle at the budget boundary, invalid roots, oversized
+child counts, and empty roots at the limit. Source lowering does not yet call
+this primitive.
+
+`bash bootstrap/native-seed/check-charge-ast-nodes.sh` compares the
+native return flag, charged count, and exhaustion flag directly against
+the actual `charge_ast_nodes` in `compiler/ast.cap` for the shared-child,
+cycle, and empty-root cases. The comparison builds the reference using
+the existing C-hosted Capstan compiler. The freestanding native test
+still runs independently with an empty tool path.
 
 ## Pinned workload probe
 
