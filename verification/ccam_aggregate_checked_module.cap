@@ -23,6 +23,8 @@ AGSourceModuleResult ag_source_lower_checked(Ctx ctx, List<Node> declarations) {
     Map<int> records = new Map<int>();
     Map<Node> record_nodes = new Map<Node>();
     Map<Node> constants = new Map<Node>();
+    Map<Node> function_nodes = new Map<Node>();
+    Map<int> function_indices = new Map<int>();
     int total_fields = 0;
     Map<int> names = new Map<int>();
     List<string> record_names = new List<string>();
@@ -49,6 +51,8 @@ AGSourceModuleResult ag_source_lower_checked(Ctx ctx, List<Node> declarations) {
             if (function_names.len() >= AG_SEALED_MAX_FUNCTIONS) {
                 return ag_source_module_failure("source_function_limit");
             }
+            function_indices.set(d.s, function_names.len());
+            function_nodes.set(d.s, d);
             function_names.push(d.s);
         } else if (d.k == N_CONST && d.kids.len() == 1) {
             Type t = ty_of(d);
@@ -71,7 +75,7 @@ AGSourceModuleResult ag_source_lower_checked(Ctx ctx, List<Node> declarations) {
     for (int i = 0; i < declarations.len(); i += 1) {
         Node d = declarations[i];
         if (d.k == N_FN) {
-            if (let lowered = ag_source_lower_function(d, records, record_nodes, constants)) {
+            if (let lowered = ag_source_lower_function(d, records, record_nodes, constants, function_nodes, function_indices)) {
                 int registers = lowered.function.kinds.len();
                 if (lowered.function.blocks.len() > AG_SEALED_MAX_BLOCKS - total_blocks) {
                     return ag_source_module_failure("source_module_limit");

@@ -35,11 +35,16 @@ AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int 
             return new AGTransferResult{ok: false, ready: output};
         }
     }
+    if (opcode == AG_OP_DIRECT_CALL) {
+        for (int i = 2; i < operands.len(); i += 1) {
+            if (!input[operands[i]]) { return new AGTransferResult{ok: false, ready: output}; }
+        }
+    }
     for (int i = 0; i < input.len(); i += 1) {
         bool writes_destination = opcode == 1 || opcode == 3 || opcode == 4 ||
             opcode == 5 || opcode == 7 || opcode == 8 || opcode == AG_OP_FIELD_GET ||
             opcode == AG_OP_RECORD_ALLOC || opcode == AG_OP_SCALAR_CONST ||
-            (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT);
+            (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT) || opcode == AG_OP_DIRECT_CALL;
         output.push(input[i] || (writes_destination && i == operands[0]));
     }
     return new AGTransferResult{ok: true, ready: output};
@@ -62,7 +67,7 @@ AGTransferResult ag_transfer_generation(
         bool writes_destination = opcode == 1 || opcode == 3 || opcode == 4 ||
             opcode == 5 || opcode == 7 || opcode == 8 || opcode == AG_OP_FIELD_GET ||
             opcode == AG_OP_RECORD_ALLOC || opcode == AG_OP_SCALAR_CONST ||
-            (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT);
+            (opcode >= AG_OP_MOVE && opcode <= AG_OP_NOT) || opcode == AG_OP_DIRECT_CALL;
         output.push(input[i] || (writes_destination && i == operands[0]));
     }
     return new AGTransferResult{ok: true, ready: output};

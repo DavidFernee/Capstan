@@ -86,3 +86,28 @@ test "sealed aggregate program rejects malformed contracts and instruction graph
     AGSealResult invalid = ag_seal_program(functions, signatures);
     assert(!invalid.ok && invalid.error == "invalid_program");
 }
+
+test "sealed registry rejects unresolved direct-call targets even in unreachable blocks" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    List<int> params = new List<int>(); params.push(AG_SCHEMA_INT);
+    AGCallSignature coarse = new AGCallSignature{parameters: params, result_kind: AG_SCHEMA_INT};
+    List<int> descriptors = new List<int>(); descriptors.push(0);
+    AGNominalSignature nominal = new AGNominalSignature{coarse: coarse,
+        parameter_descriptors: descriptors, result_descriptor: 0};
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: new List<AGBlockInstruction>(),
+        terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> operands = new List<int>(); operands.push(0); operands.push(1); operands.push(0);
+    List<AGBlockInstruction> code = new List<AGBlockInstruction>();
+    code.push(new AGBlockInstruction{opcode: AG_OP_DIRECT_CALL, kind: AG_SCHEMA_INT, operands: operands});
+    blocks.push(new AGCFGBlock{instructions: code, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(0); returns.push(0);
+    List<AGFunction> functions = new List<AGFunction>();
+    functions.push(new AGFunction{signature: coarse, kinds: kinds, blocks: blocks, returns: returns});
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>(); signatures.push(nominal);
+    assert(!ag_seal_program(functions, signatures).ok);
+    operands[1] = 0;
+    assert(ag_seal_program(functions, signatures).ok);
+    operands.pop();
+    assert(!ag_seal_program(functions, signatures).ok);
+}

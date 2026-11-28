@@ -52,7 +52,7 @@ test "checked aggregate source indexes nominal record arrays and measures collec
 test "checked source adapter refuses unsupported code without a partial executable" {
     AGSourceModuleResult invalid = ag_source_test_compile(
         "int first(List<int> values, int index) { return values[index]; } " +
-        "int unsupported(int value) { return first(new List<int>(), value); }");
+        "int unsupported(int value) { Map<int> values = new Map<int>(); values.set(\"x\", value); return value; }");
     assert(!invalid.ok && invalid.error == "unsupported_function_body");
     assert(invalid.function_names.len() == 0);
     AGSourceModuleResult wrong = ag_source_test_compile(
@@ -246,4 +246,37 @@ test "candidate checked source lowers production AST worklist traversal with red
         assert(ccam_heap_field_get(machine.heap, reference, 1, 0).value.int_value == 150000);
         assert(ccam_heap_field_get(machine.heap, reference, 1, 1).value.bool_value);
     } else { assert(false); }
+}
+
+test "sealed direct calls compose record construction and mutation" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Budget { int nodes; } " +
+        "Budget make_budget() { return new Budget{nodes: 0}; } " +
+        "int charge(Budget budget, int amount) { budget.nodes += amount; return budget.nodes; } " +
+        "int main() { Budget budget = make_budget(); int first = charge(budget, 20); return first + charge(budget, 2); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
+    assert(stack.stack.depth == 0 && stack.stack.slots == 1);
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
+}
+
+test "sealed recursion honours explicit depth and unwinds without publishing a result" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int descend(int value) { if (value == 0) { return 7; } return descend(value - 1); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 256);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(8)) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 3, 128);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 0) == "call_depth_limit");
+    assert(stack.stack.depth == 0 && stack.stack.slots == 1);
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 8);
 }

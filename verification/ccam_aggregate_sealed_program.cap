@@ -93,6 +93,30 @@ AGCFGBlock ag_seal_copy_block(AGCFGBlock source) {
         yes: source.yes, no: source.no};
 }
 
+// Validate direct-call edges across the owned graph, including unreachable blocks.
+bool ag_seal_validate_edges(List<AGFunction> functions) {
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGFunction caller = functions[i];
+        for (int b = 0; b < caller.blocks.len(); b += 1) {
+            for (int j = 0; j < caller.blocks[b].instructions.len(); j += 1) {
+                AGBlockInstruction ins = caller.blocks[b].instructions[j];
+                if (ins.opcode == AG_OP_DIRECT_CALL) {
+                    if (!ag_schema_operands(caller.kinds, ins.opcode, ins.kind, ins.operands)) { return false; }
+                    int id = ins.operands[1];
+                    if (id >= functions.len()) { return false; }
+                    AGCallSignature signature = functions[id].signature;
+                    if (ins.kind != signature.result_kind ||
+                        ins.operands.len() - 2 != signature.parameters.len()) { return false; }
+                    for (int a = 0; a < signature.parameters.len(); a += 1) {
+                        if (!ag_schema_register(caller.kinds, ins.operands[a + 2], signature.parameters[a])) { return false; }
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
 AGSealResult ag_seal_program(List<AGFunction> functions, List<AGNominalSignature> signatures) {
     string error = ag_seal_preflight(functions, signatures);
     if (error != "") { return ag_seal_failure(error); }
@@ -116,20 +140,69 @@ AGSealResult ag_seal_program(List<AGFunction> functions, List<AGNominalSignature
             result_descriptor: nominal.result_descriptor});
     }
     // Validate the actual owned snapshot, not the mutable source graph.
-    if (!ag_program_validate(owned_functions)) { return ag_seal_failure("invalid_program"); }
+    if (!ag_program_validate(owned_functions) || !ag_seal_validate_edges(owned_functions)) { return ag_seal_failure("invalid_program"); }
     return new AGSealResult{ok: true, error: "",
         program: new AGSealedProgram{functions: owned_functions,
             signatures: owned_signatures}};
 }
 
-// A caller supplies only the function index and register operands. It cannot
-// supply or replace a registered signature at invocation.
+// The continuation cursor is private to this iterative interpreter. Language
+// recursion consumes the explicit stack budget, never the host call stack.
+struct AGSealedCursor {
+    int function_id;
+    int block_id;
+    int instruction;
+}
+
 string ag_sealed_invoke(AGSealedProgram program, AGStack stack, int id,
     List<int> arguments, int destination) {
     if (stack.active.trap_code != "") { return stack.active.trap_code; }
     if (id < 0 || id >= program.functions.len()) {
         return ccam_aggregate_trap(stack.active, "invalid_function");
     }
-    return ag_nominal_invoke(stack, program.functions, id,
-        program.signatures[id], arguments, destination);
+    int initial_depth = stack.depth;
+    string error = ag_stack_nominal_call(stack, program.signatures[id],
+        program.functions[id].kinds, arguments, destination);
+    if (error != "") { return error; }
+    List<AGSealedCursor> cursors = new List<AGSealedCursor>();
+    cursors.push(new AGSealedCursor{function_id: id, block_id: 0, instruction: 0});
+    while (cursors.len() > 0 && error == "") {
+        AGSealedCursor cursor = cursors[cursors.len() - 1];
+        AGFunction fn = program.functions[cursor.function_id];
+        AGCFGBlock block = fn.blocks[cursor.block_id];
+        if (cursor.instruction < block.instructions.len()) {
+            AGBlockInstruction ins = block.instructions[cursor.instruction];
+            cursor.instruction += 1;
+            if (ins.opcode == AG_OP_DIRECT_CALL) {
+                int callee = ins.operands[1];
+                List<int> args = new List<int>();
+                for (int a = 2; a < ins.operands.len(); a += 1) { args.push(ins.operands[a]); }
+                error = ag_stack_nominal_call(stack, program.signatures[callee],
+                    program.functions[callee].kinds, args, ins.operands[0]);
+                if (error == "") {
+                    cursors.push(new AGSealedCursor{function_id: callee, block_id: 0, instruction: 0});
+                }
+            } else { error = ag_dispatch(stack.active, ins.opcode, ins.kind, ins.operands); }
+        } else if (block.terminator == 0) {
+            error = ccam_aggregate_begin_step(stack.active);
+            if (error == "") {
+                error = ag_stack_return(stack, fn.returns[cursor.block_id]);
+                cursors.pop();
+            }
+        } else {
+            AGBranchResult next = ag_branch_select(stack.active, block, fn.blocks.len());
+            if (!next.ok) { error = next.error; }
+            else { cursor.block_id = next.target; cursor.instruction = 0; }
+        }
+    }
+    // On failure unwind exactly the frames opened by this invocation. Preserve
+    // the first trap and cumulative fuel, never publish a failed return value.
+    if (error != "") {
+        while (stack.depth > initial_depth) {
+            ccam_aggregate_trap(stack.active, error);
+            ag_stack_return(stack, -1);
+        }
+        return ccam_aggregate_trap(stack.active, error);
+    }
+    return "";
 }
