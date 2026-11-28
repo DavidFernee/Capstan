@@ -311,12 +311,12 @@ void test_utf8_byte_ends(Tally t) {
     }
 
     List<int> source = new List<int>();
-    source.push(0x41);                         // A
-    source.push(0xC3); source.push(0xA9);     // U+00E9
+    source.push(0x41);                                       // A
+    source.push(0xC3); source.push(0xA9);                    // U+00E9
     source.push(0xE2); source.push(0x82); source.push(0xAC); // U+20AC
-    source.push(0xFF);                         // Invalid leading byte
+    source.push(0xFF);                                       // Invalid leading byte
     source.push(0xE2); source.push(0x82); source.push(0x42); // Invalid continuation boundary
-    source.push(0x80);                         // Stray continuation
+    source.push(0x80);                                       // Stray continuation
     source.push(0xED); source.push(0xA0); source.push(0x80); // Surrogate encoding
     source.push(0xF0); source.push(0x90); source.push(0x80); // Truncated sequence
 
