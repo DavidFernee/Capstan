@@ -52,7 +52,7 @@ test "checked aggregate source indexes nominal record arrays and measures collec
 test "checked source adapter refuses unsupported code without a partial executable" {
     AGSourceModuleResult invalid = ag_source_test_compile(
         "int first(List<int> values, int index) { return values[index]; } " +
-        "int unsupported(int value) { return value + 1; }");
+        "int unsupported(int value) { return first(new List<int>(), value); }");
     assert(!invalid.ok && invalid.error == "unsupported_function_body");
     assert(invalid.function_names.len() == 0);
     AGSourceModuleResult wrong = ag_source_test_compile(
@@ -132,4 +132,59 @@ test "checked source constructor preserves exact collection field shape" {
     CCAMAggregateValueResult result = ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_REF);
     assert(result.ok && ag_nominal_value_matches(root.machine.heap, result.value,
         AG_SCHEMA_REF, ag_nominal_record_array(1)));
+}
+
+test "checked aggregate CFG charges budget across a loop and early return" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Budget { int ast_nodes; bool exhausted; } " +
+        "bool charge(Budget budget, List<int> roots, int limit) { " +
+        "for (int i = 0; i < roots.len(); i += 1) { " +
+        "if (budget.ast_nodes >= limit) { budget.exhausted = true; return false; } " +
+        "budget.ast_nodes += 1; } return true; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 256);
+    assert(root.ok);
+    CCAMAggregateMachine machine = root.machine;
+    List<int> fields = new List<int>(); fields.push(AG_SCHEMA_INT); fields.push(AG_SCHEMA_BOOL);
+    List<bool> mutability = new List<bool>(); mutability.push(true); mutability.push(true);
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 1, field_types: fields,
+        field_ref_type_ids: new List<int>(), field_mutable: mutability};
+    assert(ccam_aggregate_alloc_record(machine, 0, layout) == "");
+    assert(ccam_aggregate_write(machine, 2, ccam_heap_int(0)) == "");
+    assert(ccam_aggregate_write(machine, 3, ccam_heap_bool(false)) == "");
+    assert(ccam_aggregate_field_set(machine, 0, 1, 0, 2, AG_SCHEMA_INT) == "");
+    assert(ccam_aggregate_field_set(machine, 0, 1, 1, 3, AG_SCHEMA_BOOL) == "");
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_INT, 0, 3) == "");
+    for (int i = 0; i < 3; i += 1) {
+        assert(ccam_aggregate_array_append(machine, 1, 2, AG_SCHEMA_INT) == "");
+    }
+    assert(ccam_aggregate_write(machine, 2, ccam_heap_int(2)) == "");
+    AGStackResult stack = ag_stack_create(machine, 4, 128);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0); args.push(1); args.push(2);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 3) == "");
+    assert(!ccam_aggregate_read(stack.stack.active, 3, AG_SCHEMA_BOOL).value.bool_value);
+    CCAMAggregateValueResult budget = ccam_aggregate_read(machine, 0, AG_SCHEMA_REF);
+    if (let reference = budget.value.reference) {
+        assert(ccam_heap_field_get(machine.heap, reference, 1, 0).value.int_value == 2);
+        assert(ccam_heap_field_get(machine.heap, reference, 1, 1).value.bool_value);
+    } else { assert(false); }
+}
+
+test "checked aggregate arithmetic overflow preserves the caller destination" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int increment(int number) { return number + 1; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 32);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_int(CCAM_I64_MAX)) == "");
+    assert(ccam_aggregate_write(root.machine, 1, ccam_heap_int(42)) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 16);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 1) == "integer_overflow");
+    assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT).value.int_value == 42);
 }
