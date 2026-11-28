@@ -22,3 +22,7 @@ jobs:
         run: bin/capstan test verification/ccam_assurance_arithmetic_tests.cap
       - name: Run bounded transition cases
         run: bin/capstan test verification/ccam_assurance_transition_tests.cap
+      - name: Run exact dispatcher and fuel-prefix scenarios
+        run: bin/capstan test verification/ccam_assurance_dispatch_tests.cap
+      - name: Run exhaustive bounded operand admission
+        run: bin/capstan test verification/ccam_assurance_admission_tests.cap
