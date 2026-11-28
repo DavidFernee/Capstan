@@ -71,7 +71,7 @@ test "candidate native arithmetic admits signed extrema and explicit arithmetic 
 test "candidate native admission rejects invalid budgets and unsupported source" {
     AGFunction f = ag_nv_test_arith(AG_OP_ADD, 1, 2);
     assert(!ag_nv_compile(f, 0).ok && !ag_nv_compile(f, 4097).ok);
-    if (let entry = ag_nv_test_source("int run() { List<string> v = new List<string>(); return v.len(); }")) {
+    if (let entry = ag_nv_test_source("int run() { Map<int> v = new Map<int>(); return 1; }")) {
         AGImage refused = ag_nv_compile(entry.function, 100);
         assert(!refused.ok && refused.bytes.len() == 0);
     } else { assert(false); }
@@ -347,4 +347,43 @@ test "candidate native list capacity and index boundaries" {
         "build/ccam-native-record-list-oob.elf"));
     assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<int> a = new List<int>(); a.push(1); return a[0 - 1]; }", 100, 8),
         "build/ccam-native-record-list-negative.elf"));
+}
+
+test "candidate native string lists preserve byte identity and slot replacement" {
+    string source = "List<string> make() { List<string> a = new List<string>(); a.push(\"a\\0b\"); return a; } " +
+        "int run() { List<string> a = make(); a.push(\"z\"); a[1] = a[0]; a.pop(); " +
+        "if (a[0] == \"a\\0b\") { return a.len() * 10 + a[0].at(2); } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-list-string.elf"));
+}
+
+test "candidate native record worklist preserves shared object identity" {
+    string source = "struct Task { int n; } struct Work { List<Task> tasks; } " +
+        "void fill(List<Task> tasks, Task task) { tasks.push(task); } " +
+        "int run() { Task t = new Task{n: 20}; List<Task> tasks = new List<Task>(); " +
+        "Work w = new Work{tasks: tasks}; fill(w.tasks, t); Task alias = w.tasks[0]; " +
+        "alias.n += 22; return t.n; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-list-reference.elf"));
+}
+
+test "candidate native reference list rejects invalid index" {
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { List<string> a = new List<string>(); a.push(\"a\"); return a[1].len(); }", 100, 8),
+        "build/ccam-native-record-list-reference-oob.elf"));
+}
+
+// Deliberately coarse-valid wrong-element graph: string list, record payload.
+test "candidate native reference list rejects wrong nominal payload before store" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(ag_nv_test_record_alloc(0, 1, 0, 0));
+    List<int> alloc = new List<int>(); alloc.push(1); alloc.push(-1); alloc.push(0);
+    instructions.push(new AGBlockInstruction{opcode: 5, kind: AG_SCHEMA_REF, operands: alloc});
+    List<int> push = new List<int>(); push.push(1); push.push(0);
+    instructions.push(new AGBlockInstruction{opcode: AG_OP_LIST_PUSH, kind: AG_SCHEMA_REF, operands: push});
+    instructions.push(ag_nv_test_ins(AG_OP_SCALAR_CONST, AG_SCHEMA_INT, 2, 42, 0));
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(2);
+    AGFunction f = new AGFunction{signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
+        kinds: kinds, blocks: blocks, returns: returns};
+    assert(ag_nv_test_write(ag_nv_compile(f, 100), "build/ccam-native-record-list-reference-mismatch.elf"));
 }
