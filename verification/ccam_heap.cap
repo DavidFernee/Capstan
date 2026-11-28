@@ -916,7 +916,7 @@ CCAMHeapRefResult ccam_heap_escape_log(CCAMHeap heap, CCAMHeapRef reference) {
     while (i < data.len()) {
         CCAMLogUnit unit = ccam_heap_log_unit(data, i);
         int added = unit.count;
-        if (unit.escape) { added *= 4; }
+        if (unit.escape) { added = added * 4; }
         if (added > CCAM_HEAP_LOG_MAX_BYTES - length) { return ccam_heap_ref_error("invalid_bytes_size"); }
         length += added;
         i += unit.count;
