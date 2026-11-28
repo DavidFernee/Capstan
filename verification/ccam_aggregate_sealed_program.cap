@@ -1,0 +1,135 @@
+// Candidate sealed aggregate program. The registry owns every mutable list
+// reachable from its functions and signatures. No accessor returns those lists.
+// Admission is synchronous and assumes exclusive access to the input graph
+// during copying; this is not a concurrent snapshot or normative CCAM format.
+import "ccam_aggregate_invoke.cap";
+
+const int AG_SEALED_MAX_FUNCTIONS = 256;
+const int AG_SEALED_MAX_REGISTERS = 262144;
+const int AG_SEALED_MAX_BLOCKS = 65536;
+const int AG_SEALED_MAX_INSTRUCTIONS = 65536;
+const int AG_SEALED_MAX_OPERANDS = 196608;
+
+opaque struct AGSealedProgram {
+    List<AGFunction> functions;
+    List<AGNominalSignature> signatures;
+}
+
+struct AGSealResult {
+    bool ok;
+    AGSealedProgram program;
+    string error;
+}
+
+AGSealResult ag_seal_failure(string error) {
+    return new AGSealResult{ok: false, error: error,
+        program: new AGSealedProgram{functions: new List<AGFunction>(),
+            signatures: new List<AGNominalSignature>()}};
+}
+
+List<int> ag_seal_copy_ints(List<int> source) {
+    List<int> copy = new List<int>();
+    for (int i = 0; i < source.len(); i += 1) { copy.push(source[i]); }
+    return copy;
+}
+
+bool ag_seal_signature_matches(AGCallSignature coarse, AGNominalSignature nominal) {
+    if (!ag_call_signature(coarse) || !ag_nominal_signature(nominal) ||
+        coarse.result_kind != nominal.coarse.result_kind ||
+        coarse.parameters.len() != nominal.coarse.parameters.len()) { return false; }
+    for (int i = 0; i < coarse.parameters.len(); i += 1) {
+        if (coarse.parameters[i] != nominal.coarse.parameters[i]) { return false; }
+    }
+    return true;
+}
+
+// Bound cumulative snapshot size before allocating the owned graph.
+// Repeated aliases are charged once per occurrence, because each is copied.
+string ag_seal_preflight(List<AGFunction> functions, List<AGNominalSignature> signatures) {
+    if (functions.len() == 0 || functions.len() > AG_SEALED_MAX_FUNCTIONS ||
+        signatures.len() != functions.len()) { return "invalid_function_table"; }
+    int registers = 0;
+    int blocks = 0;
+    int instructions = 0;
+    int operands = 0;
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGFunction f = functions[i];
+        if (!ag_seal_signature_matches(f.signature, signatures[i]) ||
+            f.returns.len() != f.blocks.len() || f.blocks.len() == 0) {
+            return "invalid_function_contract";
+        }
+        if (f.kinds.len() > AG_SEALED_MAX_REGISTERS - registers ||
+            f.blocks.len() > AG_SEALED_MAX_BLOCKS - blocks) { return "snapshot_limit"; }
+        registers += f.kinds.len();
+        blocks += f.blocks.len();
+        for (int j = 0; j < f.blocks.len(); j += 1) {
+            AGCFGBlock block = f.blocks[j];
+            if (block.instructions.len() > AG_SEALED_MAX_INSTRUCTIONS - instructions) {
+                return "snapshot_limit";
+            }
+            instructions += block.instructions.len();
+            for (int k = 0; k < block.instructions.len(); k += 1) {
+                AGBlockInstruction ins = block.instructions[k];
+                if (ins.operands.len() > 3 ||
+                    ins.operands.len() > AG_SEALED_MAX_OPERANDS - operands) {
+                    return "invalid_instruction_operands";
+                }
+                operands += ins.operands.len();
+            }
+        }
+    }
+    return "";
+}
+
+AGCFGBlock ag_seal_copy_block(AGCFGBlock source) {
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    for (int i = 0; i < source.instructions.len(); i += 1) {
+        AGBlockInstruction ins = source.instructions[i];
+        instructions.push(new AGBlockInstruction{opcode: ins.opcode,
+            kind: ins.kind, operands: ag_seal_copy_ints(ins.operands)});
+    }
+    return new AGCFGBlock{instructions: instructions,
+        terminator: source.terminator, condition: source.condition,
+        yes: source.yes, no: source.no};
+}
+
+AGSealResult ag_seal_program(List<AGFunction> functions, List<AGNominalSignature> signatures) {
+    string error = ag_seal_preflight(functions, signatures);
+    if (error != "") { return ag_seal_failure(error); }
+    List<AGFunction> owned_functions = new List<AGFunction>();
+    List<AGNominalSignature> owned_signatures = new List<AGNominalSignature>();
+    for (int i = 0; i < functions.len(); i += 1) {
+        AGFunction f = functions[i];
+        AGNominalSignature nominal = signatures[i];
+        AGCallSignature coarse = new AGCallSignature{
+            parameters: ag_seal_copy_ints(f.signature.parameters),
+            result_kind: f.signature.result_kind};
+        List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+        for (int j = 0; j < f.blocks.len(); j += 1) {
+            blocks.push(ag_seal_copy_block(f.blocks[j]));
+        }
+        owned_functions.push(new AGFunction{signature: coarse,
+            kinds: ag_seal_copy_ints(f.kinds), blocks: blocks,
+            returns: ag_seal_copy_ints(f.returns)});
+        owned_signatures.push(new AGNominalSignature{coarse: coarse,
+            parameter_descriptors: ag_seal_copy_ints(nominal.parameter_descriptors),
+            result_descriptor: nominal.result_descriptor});
+    }
+    // Validate the actual owned snapshot, not the mutable source graph.
+    if (!ag_program_validate(owned_functions)) { return ag_seal_failure("invalid_program"); }
+    return new AGSealResult{ok: true, error: "",
+        program: new AGSealedProgram{functions: owned_functions,
+            signatures: owned_signatures}};
+}
+
+// A caller supplies only the function index and register operands. It cannot
+// supply or replace a registered signature at invocation.
+string ag_sealed_invoke(AGSealedProgram program, AGStack stack, int id,
+    List<int> arguments, int destination) {
+    if (stack.active.trap_code != "") { return stack.active.trap_code; }
+    if (id < 0 || id >= program.functions.len()) {
+        return ccam_aggregate_trap(stack.active, "invalid_function");
+    }
+    return ag_nominal_invoke(stack, program.functions, id,
+        program.signatures[id], arguments, destination);
+}
