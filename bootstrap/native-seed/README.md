@@ -35,8 +35,9 @@ must have a distinct name from the declared integer constants.
 ## Parameterized integer helper profile
 
 A scalar program can declare one integer helper with one to six integer
-parameters and a checked return expression or conditional return. The
-condition may read the parameters. The helper and parameter names
+parameters. The helper supports the scalar local, assignment, loop, and
+conditional return forms described above. Parameters count toward its 16
+stack slots and may be read or assigned within the helper. The helper and parameter names
 begin with underscores. The entry evaluates the matching number of checked argument
 expressions left to right, then returns the helper result. The caller and
 helper share a 256-operator compilation budget. The native call uses the System V
@@ -74,11 +75,50 @@ declared integer constant. A boolean initializer must be `true` or `false`.
 The emitted executable stores the fields in separate eight-byte stack
 slots and loads the return value from the slot selected during compilation.
 
+A separate record profile admits an integer helper with one record parameter
+named `item`. The helper returns one integer field. The caller constructs the
+record and passes its stack address as an internal argument. The seed checks
+that the caller's layout matches the parameter layout and that the selected
+field has integer type. The helper can perform up to 32 integer field
+assignments or checked `+=` updates before returning. Overflow branches
+before the field store. The helper cannot return the reference.
+
+A caller-constructed record can also hold an empty `List<int>` with
+capacity for 16 integers in separate stack backing. Its helper can append
+values and return the length or a checked indexed element. The list length
+is published after its new element is stored. A full list or an invalid
+index exits with status 75. A caller-constructed self-recursive record list uses the same backing. A
+helper can append its own record parameter `item`, read the list length, or
+read an integer field through an indexed reference. A helper may receive a
+second parameter named `peer` of the same layout, separately constructed
+in the caller. It can append either parameter to the list in `item`. It can
+also append a
+reference read from an indexed element of another field of the same list
+type, including the destination list itself. The source index is checked
+before the destination is changed. The reference aliases
+the caller-owned record and cannot escape. A helper may finish with `if (let child = item.list.pop()) { return child.field; }
+return fallback;`. It removes the most recently appended reference, clears its
+slot, and reads an integer field on the nonempty path. Empty lists return
+the fallback without reading any element. A helper can also discard the
+result with an `item.list.pop();` statement. Both forms share the same
+length update and slot clearing. A record helper can include one
+`while (item.list.len() > 0)` loop containing the supported field and
+list statements. The emitted loop rereads the length and spends from a
+one-million-iteration budget only when entering the body. Within the loop,
+a local named `node` can bind the last record reference using the same
+list for both indexing and length. The helper may read an integer field
+through that local for an assignment, including after popping the list slot.
+The local remains scoped to the loop body. An `if (item.field >= limit)
+{ return value; }` statement can exit early from the helper. The field
+is checked as an integer and the limit and result may be integer literals
+or constants. Record-returning helpers still
+produce only immutable empty self-recursive lists.
+
 ## Toolchain and trust boundary
 
 Assembly is a candidate alternative to the proposed Rust seed. GNU Binutils is available in the local environment, and the seed's static linker inputs consist of one object assembled from `seed.S`. This keeps the seed independent of Capstan's existing compiler, generated C, Python and libc. The tradeoff is a Linux x86-64-specific parser and ELF emitter that require assembly review. The assembler, linker, kernel and CPU remain trusted for this experiment. This choice has not been accepted as the programme's S0 toolchain.
 
-Run `bash bootstrap/native-seed/test.sh` on Linux x86-64. The local audit used GNU assembler and linker 2.44. Two builds in one environment produced identical stripped seed binaries with SHA-256 `ae3abcf7a383ead8351ea7e5f73b0f78e6a9215c865816368b41049fdcc43a64`. The test checks for absence of dynamic loading headers, runs the seed and emitted programs with empty tool paths, compares repeat outputs, and exercises signed extrema, input length boundaries and malformed source. This is same-environment evidence.
+Run `bash bootstrap/native-seed/test.sh` on Linux x86-64. The local audit used GNU assembler and linker 2.44. Two builds in one environment produced identical stripped seed binaries with SHA-256 `67917c78db361f6f605f0a14d0c6ce6d4f21b335b992f50a8e1074a82f53c347`. The test checks for absence of dynamic loading headers, runs the seed and emitted programs with empty tool paths, compares repeat outputs, and exercises signed extrema, input length boundaries and malformed source. This is same-environment evidence.
 
 The candidate does not yet produce S1, consume a source manifest, compile the checked compiler workload, or establish canonical CCAM outcome correspondence. S2 compiler-on-compiler equivalence and S3 production dependency and diverse-seed evidence are still pending.
 

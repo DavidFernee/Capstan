@@ -135,6 +135,13 @@ scalar_helper_body:
     movb $0xe9, (%rbx)             /* process entry skips the helper */
     add $5, %rbx
     mov scalar_local_count(%rip), %rcx
+    mov %rcx, scalar_helper_arity(%rip)
+    mov $16, %eax
+    sub %ecx, %eax
+    shl $3, %eax
+    movl $0x00ec8148, (%rbx)       /* reserve non-parameter slots */
+    mov %eax, 3(%rbx)
+    add $7, %rbx
     lea argument_push(%rip), %rax
 scalar_spill_argument:
     dec %rcx
@@ -145,22 +152,13 @@ scalar_spill_argument:
     jnz scalar_spill_argument
     xor %r12d, %r12d
     movb $1, scalar_helper_active(%rip)
-    cmp %r13, %rsi
-    jae invalid
-    cmpb $105, (%rsi)
-    je parse_if
-    lea return_prefix(%rip), %r14
-    call match_prefix
-    call emit_expression
-    jmp finish_main
+    jmp local_body_dispatch
 finish_scalar_helper:
     movb $0, scalar_helper_active(%rip)
-    movl $0x00c48348, (%rbx)       /* add rsp,imm8 */
-    mov scalar_local_count(%rip), %rax
-    shl $3, %eax
-    mov %al, 3(%rbx)
-    movb $0xc3, 4(%rbx)            /* ret */
-    add $5, %rbx
+    movl $0x00c48148, (%rbx)       /* add rsp,128 */
+    movl $128, 3(%rbx)
+    movb $0xc3, 7(%rbx)            /* ret */
+    add $8, %rbx
     lea result_code+5(%rip), %rax
     mov %rbx, %rcx
     sub %rax, %rcx
@@ -177,7 +175,7 @@ finish_scalar_helper:
     jz invalid
     lea scalar_call_open(%rip), %r14
     call match_prefix
-    pushq scalar_local_count(%rip)  /* preserve arity, hide helper parameters */
+    pushq scalar_helper_arity(%rip) /* preserve arity, hide helper locals */
     movq $0, scalar_local_count(%rip)
     mov (%rsp), %rax
 scalar_argument:
@@ -276,6 +274,7 @@ local_declaration:
     mov %eax, 16(%r11,%rcx,8)    /* one-based slot ID */
     mov %rax, scalar_local_count(%rip)
     call emit_store_local
+local_body_dispatch:
     cmp %r13, %rsi
     jae invalid
     cmpb $105, (%rsi)             /* another int declaration or if */
@@ -586,6 +585,15 @@ record_list_type:
     lea list_type_open(%rip), %r14
     call match_prefix
     call parse_record_identifier
+    cmp $3, %rdx
+    jne record_recursive_list_type
+    cmpw $0x6e69, (%rdi)
+    jne record_recursive_list_type
+    cmpb $116, 2(%rdi)
+    jne record_recursive_list_type
+    mov $6, %ebp
+    jmp record_list_type_close
+record_recursive_list_type:
     mov layout_count(%rip), %rax
     lea (%rax,%rax,2), %rcx
     lea layouts(%rip), %rax
@@ -594,6 +602,7 @@ record_list_type:
     call find_name
     test %rax, %rax
     jz invalid                    /* only self-recursive List<ThisLayout> */
+record_list_type_close:
     lea list_type_close(%rip), %r14
 record_field_type:
     call match_prefix
@@ -660,9 +669,552 @@ record_helper:
     add $5, %rbx
     jmp record_open_initializer
 record_entry:
-    lea record_main_prefix(%rip), %r14
+    push %rsi
+    lea int_prefix(%rip), %r14
+    call match_prefix
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $95, (%rsi)
+    je record_read_helper
+    pop %rsi
+    jmp record_entry_body
+
+record_read_helper:
+    pop %rax                      /* release declaration lookahead */
+    call parse_record_identifier
+    cmp $2, %rdx
+    jb invalid
+    mov %rdi, record_reader_name(%rip)
+    mov %rdx, record_reader_name+8(%rip)
+    lea scalar_call_open(%rip), %r14
     call match_prefix
     call select_record_layout
+    lea record_reader_first_parameter(%rip), %r14
+    call match_prefix
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $44, (%rsi)
+    jne record_reader_parameters_done
+    lea comma(%rip), %r14
+    call match_prefix
+    call match_record_name
+    lea record_reader_peer_parameter(%rip), %r14
+    call match_prefix
+    movb $1, record_reader_has_peer(%rip)
+record_reader_parameters_done:
+    lea scalar_body_open(%rip), %r14
+    call match_prefix
+    movb $0xe9, (%rbx)             /* process entry skips helper */
+    add $5, %rbx
+    mov $32, %r15d
+record_reader_statement:
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $119, (%rsi)             /* while */
+    je record_reader_loop
+    cmpb $125, (%rsi)
+    je record_reader_loop_end
+    cmpb $114, (%rsi)             /* return */
+    je record_reader_return
+    cmpb $105, (%rsi)             /* item or if */
+    jne record_bind_last_node
+    lea 2(%rsi), %rax
+    cmp %r13, %rax
+    ja invalid
+    cmpb $102, 1(%rsi)
+    je record_reader_if
+    test %r15d, %r15d
+    jz invalid
+    dec %r15d
+    push %r15
+    lea record_assignment_target(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $6, %r12
+    je record_reader_push
+    cmp $4, %r12
+    je record_reader_push_self
+    cmp $1, %r12
+    jne invalid
+    push %rcx
+    call skip_trivia
+    cmp %r13, %rsi
+    jae invalid
+    xor %ebp, %ebp
+    cmpb $43, (%rsi)
+    jne record_reader_assignment_value
+    inc %rsi
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $61, (%rsi)
+    jne invalid
+    mov $1, %ebp
+record_reader_assignment_value:
+    lea local_equals(%rip), %r14
+    call match_prefix
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $110, (%rsi)             /* node */
+    je record_reader_node_value
+    call parse_operand
+    movw $0xb848, (%rbx)           /* movabs rax,value */
+    mov %r9, 2(%rbx)
+    add $10, %rbx
+    jmp record_reader_update_value
+record_reader_node_value:
+    cmpb $0, record_node_bound(%rip)
+    je invalid
+    lea node_field_prefix(%rip), %r14
+    call match_prefix
+    push %rbp
+    call resolve_record_field
+    pop %rbp
+    cmp $1, %r12
+    jne invalid
+    movw $0x8b49, (%rbx)         /* mov rax,[r9+disp32] */
+    movb $0x81, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    add $7, %rbx
+record_reader_update_value:
+    pop %rcx
+    test %ebp, %ebp
+    jz record_reader_store
+    movw $0x0348, (%rbx)          /* add rax,[rdi+disp32] */
+    movb $0x87, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    movw $0x800f, 7(%rbx)        /* jo overflow before publishing */
+    lea overflow_stub(%rip), %rax
+    add $13, %rbx
+    sub %rbx, %rax
+    mov %eax, -4(%rbx)
+record_reader_store:
+    movw $0x8948, (%rbx)          /* mov [rdi+disp32],rax */
+    movb $0x87, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    add $7, %rbx
+    jmp record_reader_statement_end
+record_reader_push:
+    push %rcx
+    lea list_push_suffix(%rip), %r14
+    call match_prefix
+    call parse_operand
+    lea close_paren(%rip), %r14
+    call match_prefix
+    pop %rcx
+    movw $0xb848, (%rbx)         /* movabs rax,value */
+    mov %r9, 2(%rbx)
+    add $10, %rbx
+    jmp record_reader_append
+record_reader_push_self:
+    push %rcx
+    lea method_dot(%rip), %r14
+    call match_prefix
+    lea 2(%rsi), %rax
+    cmp %r13, %rax
+    ja invalid
+    cmpw $0x6f70, (%rsi)          /* po: pop() */
+    je record_reader_discard_pop
+    lea list_push_open(%rip), %r14
+    call match_prefix
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $112, (%rsi)
+    je record_reader_push_peer
+    lea item_token(%rip), %r14
+    call match_prefix
+    call skip_trivia
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $46, (%rsi)
+    je record_reader_push_from_list
+    lea close_paren(%rip), %r14
+    call match_prefix
+    pop %rcx
+    movw $0x8948, (%rbx)         /* mov rax,rdi: reference to caller record */
+    movb $0xf8, 2(%rbx)
+    add $3, %rbx
+    jmp record_reader_append
+record_reader_discard_pop:
+    lea list_pop_call(%rip), %r14
+    call match_prefix
+    pop %rcx
+    call emit_record_list_pop
+    mov %rbx, %rax
+    sub %r11, %rax
+    mov %eax, -4(%r11)
+    jmp record_reader_statement_end
+record_reader_push_peer:
+    cmpb $0, record_reader_has_peer(%rip)
+    je invalid
+    lea peer_argument(%rip), %r14
+    call match_prefix
+    pop %rcx
+    movw $0x8948, (%rbx)         /* mov rax,rsi: second caller-owned record */
+    movb $0xf0, 2(%rbx)
+    add $3, %rbx
+    jmp record_reader_append
+record_reader_push_from_list:
+    lea method_dot(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $4, %r12
+    jne invalid
+    push %rcx
+    lea list_index_open(%rip), %r14
+    call match_prefix
+    call parse_operand
+    lea list_index_close(%rip), %r14
+    call match_prefix
+    lea close_paren(%rip), %r14
+    call match_prefix
+    pop %rcx
+    movw $0x8b48, (%rbx)          /* mov rax,[rdi+disp32]: source list */
+    movb $0x87, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    add $7, %rbx
+    call emit_indexed_list_load
+    pop %rcx
+record_reader_append:
+    movw $0x8b48, (%rbx)         /* mov rcx,[rdi+disp32] */
+    movb $0x8f, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    movl $0x48118b48, 7(%rbx)    /* mov rdx,[rcx] */
+    movw $0xfa83, 11(%rbx)       /* cmp rdx,16 */
+    movb $16, 13(%rbx)
+    add $14, %rbx
+    mov $0x83, %al               /* jae bounds */
+    call emit_bounds_branch
+    movl $0xd1448948, (%rbx)     /* mov [rcx+rdx*8+8],rax */
+    movb $8, 4(%rbx)
+    movl $0x48c2ff48, 5(%rbx)    /* inc rdx */
+    movw $0x1189, 9(%rbx)        /* mov [rcx],rdx */
+    add $11, %rbx
+record_reader_statement_end:
+    lea local_separator(%rip), %r14
+    call match_prefix
+    pop %r15
+    jmp record_reader_statement
+record_bind_last_node:
+    cmpq $0, record_loop_exit(%rip)
+    je invalid
+    cmpb $0, record_node_bound(%rip)
+    jne invalid
+    test %r15d, %r15d
+    jz invalid
+    dec %r15d
+    push %r15
+    call match_record_name
+    lea last_node_prefix(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $4, %r12
+    jne invalid
+    push %rcx
+    lea last_node_index(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $4, %r12
+    jne invalid
+    pop %rdx
+    cmp %rdx, %rcx
+    jne invalid                   /* length must come from the indexed list */
+    push %rcx
+    lea last_node_index_end(%rip), %r14
+    call match_prefix
+    pop %rcx
+    movw $0x8b48, (%rbx)         /* mov rax,[rdi+disp32] */
+    movb $0x87, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    movl $0x48088b48, 7(%rbx)    /* mov rcx,[rax] */
+    movw $0xc985, 11(%rbx)       /* test rcx,rcx */
+    add $13, %rbx
+    mov $0x84, %al               /* je bounds */
+    call emit_bounds_branch
+    movl $0x4cc9ff48, (%rbx)     /* dec rcx */
+    movl $0x08c84c8b, 4(%rbx)   /* mov r9,[rax+rcx*8+8] */
+    add $8, %rbx
+    movb $1, record_node_bound(%rip)
+    jmp record_reader_statement_end
+
+record_reader_loop:
+    cmpq $0, record_loop_header(%rip)
+    jne invalid                   /* at most one worklist loop */
+    push %r15
+    lea record_loop_prefix(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $4, %r12
+    jne invalid
+    push %rcx
+    lea record_loop_body(%rip), %r14
+    call match_prefix
+    pop %rcx
+    movw $0xb841, (%rbx)         /* mov r8d,1000000 */
+    movl $1000000, 2(%rbx)
+    add $6, %rbx
+    mov %rbx, record_loop_header(%rip)
+    movw $0x8b48, (%rbx)         /* mov rcx,[rdi+disp32] */
+    movb $0x8f, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    movl $0x00398348, 7(%rbx)    /* cmp qword [rcx],0 */
+    movw $0x840f, 11(%rbx)      /* je end */
+    add $17, %rbx
+    mov %rbx, record_loop_exit(%rip)
+    movw $0x8545, (%rbx)         /* test r8d,r8d */
+    movb $0xc0, 2(%rbx)
+    movw $0x840f, 3(%rbx)       /* je iteration_limit_stub */
+    lea iteration_limit_stub(%rip), %rax
+    add $9, %rbx
+    sub %rbx, %rax
+    mov %eax, -4(%rbx)
+    movw $0xff41, (%rbx)        /* dec r8d */
+    movb $0xc8, 2(%rbx)
+    add $3, %rbx
+    pop %r15
+    jmp record_reader_statement
+record_reader_loop_end:
+    mov record_loop_exit(%rip), %rcx
+    test %rcx, %rcx
+    jz invalid
+    movb $0xe9, (%rbx)
+    add $5, %rbx
+    mov record_loop_header(%rip), %rax
+    sub %rbx, %rax
+    mov %eax, -4(%rbx)
+    mov %rbx, %rax
+    sub %rcx, %rax
+    mov %eax, -4(%rcx)
+    movq $0, record_loop_exit(%rip)
+    movb $0, record_node_bound(%rip)
+    inc %rsi
+    call skip_trivia
+    jmp record_reader_statement
+record_reader_return:
+    cmpq $0, record_loop_exit(%rip)
+    jne invalid
+    lea record_return_prefix(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $1, %r12
+    je record_reader_load
+    cmp $6, %r12
+    je record_reader_list
+    cmp $4, %r12
+    jne invalid
+record_reader_list:
+    push %rcx
+    call skip_trivia
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $91, (%rsi)
+    je record_reader_index
+    lea method_dot(%rip), %r14
+    call match_prefix
+    lea length_suffix(%rip), %r14
+    call match_prefix
+    pop %rcx
+    jmp record_reader_load
+record_reader_index:
+    lea list_index_open(%rip), %r14
+    call match_prefix
+    call parse_operand
+    lea list_index_close(%rip), %r14
+    call match_prefix
+    cmp $4, %r12
+    je record_reader_index_field
+    mov $7, %r12d
+    pop %rcx
+    jmp record_reader_load
+record_reader_index_field:
+    push %r9
+    lea method_dot(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $1, %r12
+    jne invalid
+    mov %ecx, %ebp               /* field within the selected record */
+    mov $8, %r12d
+    pop %r9
+    pop %rcx
+record_reader_load:
+    movw $0x8b48, (%rbx)          /* mov rax,[rdi+disp32] */
+    movb $0x87, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    add $7, %rbx
+    cmp $7, %r12
+    je record_reader_index_load
+    cmp $8, %r12
+    je record_reader_index_load
+    cmp $6, %r12
+    je record_reader_length_load
+    cmp $4, %r12
+    jne record_reader_ret
+record_reader_length_load:
+    movw $0x8b48, (%rbx)          /* mov rax,[rax] */
+    movb $0, 2(%rbx)
+    add $3, %rbx
+    jmp record_reader_ret
+record_reader_index_load:
+    call emit_indexed_list_load
+    cmp $8, %r12
+    jne record_reader_ret
+    movw $0x8b48, (%rbx)         /* mov rax,[rax+disp32] */
+    movb $0x80, 2(%rbx)
+    mov %ebp, 3(%rbx)
+    add $7, %rbx
+    jmp record_reader_ret
+
+/* Optional pop yields a record only on the nonempty path. */
+record_reader_if:
+    lea if_open(%rip), %r14
+    call match_prefix
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $108, (%rsi)             /* let */
+    je record_reader_pop
+    test %r15d, %r15d
+    jz invalid
+    dec %r15d
+    push %r15
+    lea record_assignment_target(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $1, %r12
+    jne invalid
+    push %rcx
+    lea record_budget_operator(%rip), %r14
+    call match_prefix
+    call parse_operand
+    pop %rcx
+    movw $0xb948, (%rbx)          /* movabs rcx,limit */
+    mov %r9, 2(%rbx)
+    movw $0x3948, 10(%rbx)       /* cmp [rdi+disp32],rcx */
+    movb $0x8f, 12(%rbx)
+    mov %ecx, 13(%rbx)
+    movw $0x0b7c, 17(%rbx)       /* jl skips the eleven-byte early return */
+    add $19, %rbx
+    lea if_true_prefix(%rip), %r14
+    call match_prefix
+    call parse_operand
+    lea helper_end_without_initializer(%rip), %r14
+    call match_prefix
+    movw $0xb848, (%rbx)          /* movabs rax,result */
+    mov %r9, 2(%rbx)
+    movb $0xc3, 10(%rbx)
+    add $11, %rbx
+    pop %r15
+    jmp record_reader_statement
+
+record_reader_pop:
+    cmpq $0, record_loop_exit(%rip)
+    jne invalid
+    lea list_pop_if_prefix(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $4, %r12
+    jne invalid
+    push %rcx
+    lea list_pop_true_prefix(%rip), %r14
+    call match_prefix
+    call resolve_record_field
+    cmp $1, %r12
+    jne invalid
+    mov %ecx, %ebp
+    pop %rcx
+    call emit_record_list_pop
+    movw $0x8b48, (%rbx)         /* mov rax,[rax+disp32] */
+    movb $0x80, 2(%rbx)
+    mov %ebp, 3(%rbx)
+    movb $0xc3, 7(%rbx)          /* ret */
+    add $8, %rbx
+    mov %rbx, %rax
+    sub %r11, %rax
+    mov %eax, -4(%r11)
+    lea if_false_prefix(%rip), %r14
+    call match_prefix
+    call parse_operand
+    movw $0xb848, (%rbx)         /* movabs rax,fallback */
+    mov %r9, 2(%rbx)
+    add $10, %rbx
+record_reader_ret:
+    movb $0xc3, (%rbx)
+    inc %rbx
+    lea result_code+5(%rip), %rax
+    mov %rbx, %rcx
+    sub %rax, %rcx
+    mov %ecx, -4(%rax)
+    lea helper_end_without_initializer(%rip), %r14
+    call match_prefix
+
+    jmp record_entry_body
+
+/* ECX selects the field. R11 returns the empty-branch relocation base. */
+emit_record_list_pop:
+    movw $0x8b48, (%rbx)          /* mov rcx,[rdi+disp32] */
+    movb $0x8f, 2(%rbx)
+    mov %ecx, 3(%rbx)
+    movl $0x48118b48, 7(%rbx)     /* mov rdx,[rcx] */
+    movw $0xd285, 11(%rbx)       /* test rdx,rdx */
+    movw $0x840f, 13(%rbx)       /* je fallback */
+    add $19, %rbx
+    mov %rbx, %r11
+    movl $0x48caff48, (%rbx)     /* dec rdx */
+    movw $0x1189, 4(%rbx)        /* mov [rcx],rdx */
+    movl $0xd1448b48, 6(%rbx)    /* mov rax,[rcx+rdx*8+8] */
+    movb $8, 10(%rbx)
+    movl $0xd144c748, 11(%rbx)   /* mov qword [rcx+rdx*8+8],0 */
+    movb $8, 15(%rbx)
+    movl $0, 16(%rbx)
+    add $20, %rbx
+    ret
+
+/* Target RAX holds the list pointer. Emit a checked load using R9's index. */
+emit_indexed_list_load:
+    movw $0xb948, (%rbx)          /* movabs rcx,index */
+    mov %r9, 2(%rbx)
+    movw $0x3b48, 10(%rbx)       /* cmp rcx,[rax] */
+    movb $0x08, 12(%rbx)
+    add $13, %rbx
+    mov $0x83, %al               /* jae bounds */
+    call emit_bounds_branch
+    movl $0xc8448b48, (%rbx)     /* mov rax,[rax+rcx*8+8] */
+    movb $8, 4(%rbx)
+    add $5, %rbx
+    ret
+
+record_entry_body:
+    lea record_main_prefix(%rip), %r14
+    call match_prefix
+    cmpq $0, record_reader_name+8(%rip)
+    jne record_entry_existing_layout
+    call select_record_layout
+    jmp record_entry_construct
+record_entry_existing_layout:
+    call match_record_name
+record_entry_construct:
+    mov record_fields_base(%rip), %rax
+    mov record_count(%rip), %rcx
+record_scan_list_storage:
+    cmpq $6, 16(%rax)
+    je record_reserve_list_storage
+    cmpq $4, 16(%rax)
+    je record_reserve_list_storage
+    add $24, %rax
+    dec %rcx
+    jnz record_scan_list_storage
+    jmp record_construct_local
+record_reserve_list_storage:
+    imul $144, record_count(%rip), %eax
+    cmpb $0, record_reader_has_peer(%rip)
+    je record_reserve_list_bytes
+    add %eax, %eax
+record_reserve_list_bytes:
+    movl $0x00ec8148, (%rbx)      /* sub rsp,layout slot backing bytes */
+    mov %eax, 3(%rbx)
+    movw $0x8949, 7(%rbx)        /* mov r10,rsp */
+    movb $0xe2, 9(%rbx)
+    add $10, %rbx
+record_construct_local:
     lea record_local_prefix(%rip), %r14
     call match_prefix
     call match_record_name
@@ -690,6 +1242,8 @@ record_bool:
     je record_string
     cmpq $4, 16(%r12)
     je record_empty_list
+    cmpq $6, 16(%r12)
+    je record_mutable_list
     cmpq $2, 16(%r12)
     jne invalid                    /* optional values are outside the profile */
     cmp %r13, %rsi
@@ -752,12 +1306,34 @@ record_string_append:
 record_string_done:
     inc %rsi
     jmp record_blob
+record_mutable_list:
+    cmpq $0, helper_name+8(%rip)
+    jne invalid                   /* caller-owned backing cannot escape a helper */
+    lea int_list_constructor(%rip), %r14
+    call match_prefix
+record_initialize_list_backing:
+    mov record_count(%rip), %rax
+    sub %rbp, %rax
+    cmpb $0, record_constructing_peer(%rip)
+    je record_initialize_list_offset
+    add record_count(%rip), %rax
+record_initialize_list_offset:
+    imul $144, %eax, %eax
+    movw $0x8d49, (%rbx)         /* lea rax,[r10+disp32] */
+    movb $0x82, 2(%rbx)
+    mov %eax, 3(%rbx)
+    movl $0x0000c748, 7(%rbx)    /* mov qword [rax],0 */
+    movl $0, 10(%rbx)
+    add $14, %rbx
+    jmp record_store
 record_empty_list:
     lea list_value_open(%rip), %r14
     call match_prefix
     call match_record_name
     lea list_value_close(%rip), %r14
     call match_prefix
+    cmpq $0, helper_name+8(%rip)
+    je record_initialize_list_backing
     mov %rsi, %rdi
     xor %edx, %edx
 record_blob:
@@ -805,7 +1381,65 @@ record_finish_initializer:
     jne record_finish_helper
     lea record_close_initializer(%rip), %r14
     call match_prefix
-    jmp record_return
+    cmpq $0, record_reader_name+8(%rip)
+    je record_return
+    cmpb $0, record_reader_has_peer(%rip)
+    je record_call_reader
+    cmpb $0, record_constructing_peer(%rip)
+    jne record_call_reader
+    call skip_trivia
+    call match_record_name
+    lea record_peer_local_prefix(%rip), %r14
+    call match_prefix
+    call match_record_name
+    movb $1, record_constructing_peer(%rip)
+    jmp record_open_initializer
+record_call_reader:
+    call skip_trivia
+    lea return_prefix(%rip), %r14
+    call match_prefix
+    call parse_record_identifier
+    lea record_reader_name(%rip), %rax
+    mov $1, %r10d
+    call find_name
+    test %rax, %rax
+    jz invalid
+    cmpb $0, record_reader_has_peer(%rip)
+    jne record_call_reader_with_peer
+    lea record_reader_call(%rip), %r14
+    call match_prefix
+    movw $0x8948, (%rbx)          /* mov rdi,rsp: caller-owned record */
+    movb $0xe7, 2(%rbx)
+    add $3, %rbx
+    testb $1, record_count(%rip)
+    jz record_reader_aligned
+    movl $0x08ec8348, (%rbx)       /* sub rsp,8 */
+    add $4, %rbx
+    jmp record_reader_aligned
+record_call_reader_with_peer:
+    lea record_reader_pair_call(%rip), %r14
+    call match_prefix
+    movw $0x8948, (%rbx)          /* mov rsi,rsp: peer */
+    movb $0xe6, 2(%rbx)
+    movl $0x24bc8d48, 3(%rbx)    /* lea rdi,[rsp+disp32]: item */
+    mov record_count(%rip), %rax
+    shl $3, %eax
+    mov %eax, 7(%rbx)
+    add $11, %rbx
+record_reader_aligned:
+    movb $0xe8, (%rbx)
+    add $5, %rbx
+    lea result_code+5(%rip), %rax
+    sub %rbx, %rax
+    mov %eax, -4(%rbx)
+    cmpb $0, record_reader_has_peer(%rip)
+    jne record_reader_done
+    testb $1, record_count(%rip)
+    jz record_reader_done
+    movl $0x08c48348, (%rbx)       /* add rsp,8 */
+    add $4, %rbx
+record_reader_done:
+    jmp record_end_return
 record_finish_helper:
     lea helper_end(%rip), %r14
     call match_prefix
@@ -845,25 +1479,10 @@ record_finish_helper:
 record_return:
     lea record_return_prefix(%rip), %r14
     call match_prefix
-    call parse_record_identifier
-    mov record_fields_base(%rip), %rax
-    mov record_count(%rip), %r10
-    call find_name
-    test %rax, %rax
-    jz invalid
-    mov 16(%rax), %r12              /* field kind */
+    call resolve_record_field
     cmp $2, %r12
     je invalid                     /* main returns int */
-    mov record_fields_base(%rip), %rcx
-    sub %rcx, %rax
-    xor %edx, %edx
-    mov $24, %ecx
-    div %rcx                       /* layout entry index */
-    mov record_count(%rip), %rcx
-    dec %rcx
-    sub %rax, %rcx                 /* reverse index of pushed field */
     movl $0x24848b48, (%rbx)         /* mov rax,[rsp+disp32] */
-    shl $3, %ecx
     mov %ecx, 4(%rbx)
     add $8, %rbx
     cmp $1, %r12
@@ -975,6 +1594,26 @@ emit_bounds_branch:
     add $6, %rbx
     sub %rbx, %rax
     mov %eax, -4(%rbx)
+    ret
+
+/* ECX is byte displacement relative to the lowest record slot. */
+resolve_record_field:
+    call parse_record_identifier
+    mov record_fields_base(%rip), %rax
+    mov record_count(%rip), %r10
+    call find_name
+    test %rax, %rax
+    jz invalid
+    mov 16(%rax), %r12              /* field kind */
+    mov record_fields_base(%rip), %rcx
+    sub %rcx, %rax
+    xor %edx, %edx
+    mov $24, %ecx
+    div %rcx                       /* layout entry index */
+    mov record_count(%rip), %rcx
+    dec %rcx
+    sub %rax, %rcx                 /* reverse index of pushed field */
+    shl $3, %ecx
     ret
 
 select_record_layout:
@@ -1472,6 +2111,20 @@ colon: .asciz "\001:\001"
 comma: .asciz "\001,\001"
 true_token: .asciz "true"
 false_token: .asciz "false"
+record_reader_first_parameter: .asciz " item\001"
+record_reader_peer_parameter: .asciz " peer"
+record_peer_local_prefix: .asciz " peer\001=\001new "
+node_field_prefix: .asciz "node\001.\001"
+last_node_prefix: .asciz " node\001=\001item\001.\001"
+last_node_index: .asciz "\001[\001item\001.\001"
+last_node_index_end: .asciz "\001.\001len\001(\001)\001-\0011\001]"
+record_budget_operator: .asciz "\001>=\001"
+record_loop_prefix: .asciz "while\001(\001item\001.\001"
+record_loop_body: .asciz "\001.\001len\001(\001)\001>\0010\001)\001{\001"
+record_assignment_target: .asciz "item\001.\001"
+record_reader_call: .asciz "\001(\001item\001)"
+record_reader_pair_call: .asciz "\001(\001item\001,\001peer\001)"
+helper_end_without_initializer: .asciz "\001;\001}\001"
 record_main_prefix: .asciz "\001int main\001(\001)\001{\001"
 record_local_prefix: .asciz " item\001=\001new "
 required_trivia: .asciz " "
@@ -1485,6 +2138,16 @@ string_escapes:
     .byte 110,10, 116,9, 114,13, 48,0, 92,92, 34,34, 39,39
 string_escapes_end:
 string_quote: .asciz "\""
+int_list_constructor: .asciz "new List\001<\001int\001>\001(\001)"
+item_token: .asciz "item"
+peer_argument: .asciz "peer\001)"
+list_push_open: .asciz "push\001(\001"
+list_pop_call: .asciz "pop\001(\001)"
+list_push_suffix: .asciz "\001.\001push\001(\001"
+list_pop_if_prefix: .asciz "let child\001=\001item\001.\001"
+list_pop_true_prefix: .asciz "\001.\001pop\001(\001)\001)\001{\001return child\001.\001"
+list_index_open: .asciz "[\001"
+list_index_close: .asciz "\001]"
 list_value_open: .asciz "new List\001<\001"
 list_value_close: .asciz "\001>\001(\001)"
 method_dot: .asciz "\001.\001"
@@ -1547,7 +2210,7 @@ program:
 result_left:
     .quad 0
 result_code:
-    .space 256 * 19 + 1536 + (result_tail_end-result_tail)
+    .space 256 * 19 + 4096 + (result_tail_end-result_tail)
 
 .section .rodata
 result_tail:
@@ -1570,12 +2233,19 @@ result_tail_end:
 .lcomm input,SEED_INPUT_LIMIT + 1
 .lcomm decoded_string,63
 .lcomm scalar_helper_active,1
+.lcomm scalar_helper_arity,8
 .lcomm scalar_local_count,8
 .lcomm scalar_locals,16 * 24
 .lcomm constant_count,8
 .lcomm constants,256 * 24
 .lcomm record_name,24
 .lcomm helper_name,24
+.lcomm record_reader_name,24
+.lcomm record_loop_header,8
+.lcomm record_loop_exit,8
+.lcomm record_node_bound,1
+.lcomm record_reader_has_peer,1
+.lcomm record_constructing_peer,1
 .lcomm record_count,8
 .lcomm layout_count,8
 .lcomm layouts,32 * 24
