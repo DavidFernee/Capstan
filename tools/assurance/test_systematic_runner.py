@@ -4,7 +4,7 @@ import sys
 import tempfile
 import unittest
 
-from systematic_runner import complete, execute, validate_manifest
+from systematic_runner import capstan_summary_valid, complete, execute, validate_manifest
 
 
 class SystematicEvidenceTests(unittest.TestCase):
@@ -53,6 +53,15 @@ class SystematicEvidenceTests(unittest.TestCase):
         self.assertFalse(complete([], []))
         rows[0]["returncode"] = False
         self.assertFalse(complete(commands, rows))
+
+    def test_capstan_summary_requires_nonzero_complete_passing_tests(self):
+        self.assertTrue(capstan_summary_valid(b"  pass  first\n1 test(s), 0 failed\n"))
+        for log in (b"", b"0 test(s), 0 failed\n",
+                    b"  pass  first\n2 test(s), 0 failed\n",
+                    b"  FAIL  first\n1 test(s), 1 failed\n",
+                    b"  pass  first\n1 test(s), 0 failed\n1 test(s), 0 failed\n"):
+            with self.subTest(log=log):
+                self.assertFalse(capstan_summary_valid(log))
 
 
 if __name__ == "__main__":
