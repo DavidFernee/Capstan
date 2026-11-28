@@ -12,9 +12,9 @@ bool assurance_rights_subset(int held, int requested) {
     return true;
 }
 
-void assurance_capability_resolution(int rights) {
+bool assurance_capability_resolution(int rights) {
         SCMTransition issued = scm_issue_root(scm_initial(), rights);
-        assert(issued.ok);
+        if (!issued.ok) { return false; }
         for (int object_delta = 0; object_delta <= 1; object_delta += 1) {
             for (int generation = 0; generation <= 2; generation += 1) {
                 for (int slot = -1; slot <= 2; slot += 1) {
@@ -29,7 +29,7 @@ void assurance_capability_resolution(int rights) {
                                     bool expected = object_delta == 0 && generation == 1 &&
                                         slot == 0 && slot_generation == 1 && epoch == 1 &&
                                         claimed == rights && assurance_rights_subset(rights, required);
-                                    assert(scm_resolves(issued.state, h, required) == expected);
+                                    if (scm_resolves(issued.state, h, required) != expected) { return false; }
                                 }
                             }
                         }
@@ -37,28 +37,29 @@ void assurance_capability_resolution(int rights) {
                 }
             }
         }
+    return true;
 }
 
 test "capability competing identity faults rights 1" {
-    assurance_capability_resolution(1);
+    assert(assurance_capability_resolution(1));
 }
 test "capability competing identity faults rights 2" {
-    assurance_capability_resolution(2);
+    assert(assurance_capability_resolution(2));
 }
 test "capability competing identity faults rights 3" {
-    assurance_capability_resolution(3);
+    assert(assurance_capability_resolution(3));
 }
 test "capability competing identity faults rights 4" {
-    assurance_capability_resolution(4);
+    assert(assurance_capability_resolution(4));
 }
 test "capability competing identity faults rights 5" {
-    assurance_capability_resolution(5);
+    assert(assurance_capability_resolution(5));
 }
 test "capability competing identity faults rights 6" {
-    assurance_capability_resolution(6);
+    assert(assurance_capability_resolution(6));
 }
 test "capability competing identity faults rights 7" {
-    assurance_capability_resolution(7);
+    assert(assurance_capability_resolution(7));
 }
 
 test "capability attenuation and object revocation across all rights subsets" {
