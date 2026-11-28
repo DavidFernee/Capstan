@@ -66,3 +66,63 @@ test "nominal stack rejects incompatible result atomically and snapshots return 
     CCAMAggregateValueResult preserved = ccam_aggregate_read(stack.active, 1, AG_SCHEMA_REF);
     assert(preserved.ok && ccam_heap_value_has_type(stack.active.heap, preserved.value, AG_SCHEMA_REF, 8));
 }
+
+test "collection call contracts distinguish scalar arrays record arrays and bytes" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 32);
+    assert(root.ok);
+    CCAMAggregateMachine machine = root.machine;
+    assert(ccam_aggregate_alloc_array(machine, 0, AG_SCHEMA_INT, 0, 2) == "");
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_BOOL, 0, 2) == "");
+    assert(ccam_aggregate_alloc_array(machine, 2, AG_SCHEMA_REF, 7, 2) == "");
+    assert(ccam_aggregate_alloc_array(machine, 3, AG_SCHEMA_REF, 8, 2) == "");
+    assert(ccam_aggregate_alloc_bytes(machine, 4, "abc") == "");
+    int nodes = ag_nominal_record_array(7);
+    assert(nodes == -10 && ag_nominal_record_array(0) == 0);
+    List<int> shapes = new List<int>();
+    shapes.push(AG_NOMINAL_INT_ARRAY); shapes.push(AG_NOMINAL_BOOL_ARRAY);
+    shapes.push(nodes); shapes.push(ag_nominal_record_array(8));
+    shapes.push(AG_NOMINAL_BYTES);
+    for (int i = 0; i < kinds.len(); i += 1) {
+        CCAMAggregateValueResult value = ccam_aggregate_read(machine, i, AG_SCHEMA_REF);
+        assert(value.ok);
+        for (int j = 0; j < shapes.len(); j += 1) {
+            assert(ag_nominal_value_matches(machine.heap, value.value, AG_SCHEMA_REF, shapes[j]) == (i == j));
+        }
+        assert(!ag_nominal_value_matches(machine.heap, value.value, AG_SCHEMA_REF, 7));
+    }
+    List<int> args = new List<int>(); args.push(3);
+    AGNominalSignature signature = ag_nominal_test_signature(nodes, nodes);
+    int before = machine.steps;
+    AGFrameResult rejected = ag_nominal_open(machine, signature, kinds, args, 4, 5);
+    assert(!rejected.ok && rejected.error == "argument_descriptor_mismatch");
+    assert(machine.steps == before && machine.trap_code == "");
+    args[0] = 2;
+    AGStackResult created = ag_stack_create(machine, 4, 16);
+    assert(created.ok);
+    assert(ag_stack_nominal_call(created.stack, signature, kinds, args, 4) == "");
+    assert(ag_stack_return(created.stack, 0) == "");
+    CCAMAggregateValueResult result = ccam_aggregate_read(created.stack.active, 4, AG_SCHEMA_REF);
+    assert(result.ok && ag_nominal_value_matches(machine.heap, result.value, AG_SCHEMA_REF, nodes));
+}
+
+test "collection return mismatch preserves existing caller destination" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 16);
+    assert(root.ok);
+    assert(ccam_aggregate_alloc_array(root.machine, 0, AG_SCHEMA_INT, 0, 2) == "");
+    assert(ccam_aggregate_alloc_bytes(root.machine, 1, "preserve") == "");
+    AGNominalSignature signature = ag_nominal_test_signature(AG_NOMINAL_INT_ARRAY, AG_NOMINAL_INT_ARRAY);
+    List<int> args = new List<int>(); args.push(0);
+    AGStackResult created = ag_stack_create(root.machine, 4, 16);
+    assert(created.ok);
+    assert(ag_stack_nominal_call(created.stack, signature, kinds, args, 1) == "");
+    assert(ccam_aggregate_alloc_array(created.stack.active, 1, AG_SCHEMA_BOOL, 0, 2) == "");
+    assert(ag_stack_return(created.stack, 1) == "return_descriptor_mismatch");
+    assert(created.stack.depth == 0 && created.stack.slots == 2);
+    CCAMAggregateValueResult preserved = ccam_aggregate_read(created.stack.active, 1, AG_SCHEMA_REF);
+    assert(preserved.ok && ag_nominal_value_matches(root.machine.heap, preserved.value, AG_SCHEMA_REF, AG_NOMINAL_BYTES));
+}
