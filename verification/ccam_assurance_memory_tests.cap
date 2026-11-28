@@ -1,0 +1,104 @@
+import "ccam_memory_unwind_model.cap";
+
+// Exercise a second allocation under every small capacity and injection
+// combination while retaining a previously allocated and populated region.
+test "systematic allocation budget and injection precedence preserves prior owner" {
+    for (int budget = 0; budget <= 16; budget += 1) {
+        for (int capacity = 0; capacity <= 16; capacity += 1) {
+            for (int fail_at = -1; fail_at <= 17; fail_at += 1) {
+                CCAMMemManager manager = ccam_mem_manager(2, 8 + budget);
+                CCAMMemCreateResult first = ccam_mem_create(manager, 1, 8, -1);
+                assert(first.ok);
+                CCAMMemResult view = ccam_mem_reserve(manager, first.identity, 1, 1, 8, 8);
+                assert(view.ok);
+                assert(ccam_mem_store_i64(manager, view.view, 1, 0, 123456789).ok);
+                CCAMMemCreateResult second = ccam_mem_create(manager, 2, capacity, fail_at);
+                string expected = "";
+                if (fail_at > capacity) { expected = "invalid_region_request"; }
+                else if (capacity > budget) { expected = "region_limit_exceeded"; }
+                else if (fail_at >= 0) { expected = "allocation_failed"; }
+                assert(second.ok == (expected == "") && second.error == expected);
+                CCAMMemResult retained = ccam_mem_load_i64(manager, view.view, 1, 0);
+                assert(retained.ok && retained.int_value == 123456789);
+                assert(ccam_mem_manager_valid(manager));
+                if (second.ok) {
+                    assert(second.identity == 2 && manager.next_identity == 3);
+                    assert(manager.live_regions == 2 && manager.live_capacity == 8 + capacity);
+                    assert(manager.regions[1].owner_frame == 2);
+                    for (int b = 0; b < capacity; b += 1) { assert(manager.regions[1].bytes[b] == 0); }
+                } else {
+                    assert(second.identity == 0 && manager.next_identity == 2);
+                    assert(manager.live_regions == 1 && manager.live_capacity == 8);
+                    assert(manager.regions.len() == 1);
+                }
+            }
+        }
+    }
+}
+
+// Explicitly vary owner, view generation and access index. Rejected writes
+// must preserve every byte of the region and must not consume accounting.
+test "systematic capability generation owner and index rejection is atomic" {
+    for (int count = 1; count <= 8; count += 1) {
+        for (int caller = 0; caller <= 2; caller += 1) {
+            for (int generation = 0; generation <= 2; generation += 1) {
+                for (int index = -1; index <= count; index += 1) {
+                    CCAMMemManager manager = ccam_mem_manager(1, 8);
+                    CCAMMemCreateResult created = ccam_mem_create(manager, 1, 8, -1);
+                    assert(created.ok);
+                    CCAMMemResult reserved = ccam_mem_reserve(manager, created.identity, 1, count, 1, 1);
+                    assert(reserved.ok);
+                    CCAMMemView view = reserved.view;
+                    view.generation = generation;
+                    string expected = "";
+                    if (generation != 1) { expected = "stale_region_capability"; }
+                    else if (caller != 1) { expected = "wrong_region_owner"; }
+                    else if (index < 0 || index >= count) { expected = "scratch_range_error"; }
+                    CCAMMemResult stored = ccam_mem_store_bool(manager, view, caller, index, true);
+                    assert(stored.ok == (expected == "") && stored.error == expected);
+                    for (int b = 0; b < 8; b += 1) {
+                        int want = 0;
+                        if (stored.ok && b == index) { want = 1; }
+                        assert(manager.regions[0].bytes[b] == want);
+                    }
+                    assert(manager.live_capacity == 8 && manager.live_regions == 1);
+                    assert(manager.regions[0].used == count && manager.next_identity == 2);
+                }
+            }
+        }
+    }
+}
+
+test "systematic frame unwind isolates other owners and wipes full capacities" {
+    for (int first_size = 1; first_size <= 8; first_size += 1) {
+        for (int second_size = 1; second_size <= 8; second_size += 1) {
+            for (int owner = 1; owner <= 3; owner += 1) {
+                CCAMMemManager manager = ccam_mem_manager(2, 16);
+                CCAMMemCreateResult a = ccam_mem_create(manager, 1, first_size, -1);
+                CCAMMemCreateResult b = ccam_mem_create(manager, 2, second_size, -1);
+                assert(a.ok && b.ok);
+                for (int k = 0; k < first_size; k += 1) { manager.regions[0].bytes[k] = 17; }
+                for (int k = 0; k < second_size; k += 1) { manager.regions[1].bytes[k] = 29; }
+                CCAMMemUnwindResult unwind = ccam_mem_unwind_frame(manager, owner);
+                int closed = 1; if (owner == 3) { closed = 0; }
+                assert(unwind.ok && unwind.closed_regions == closed);
+                int remaining = first_size + second_size;
+                if (owner == 1) { remaining -= first_size; }
+                if (owner == 2) { remaining -= second_size; }
+                assert(manager.live_capacity == remaining && ccam_mem_manager_valid(manager));
+                assert(manager.regions[0].open == (owner != 1));
+                assert(manager.regions[1].open == (owner != 2));
+                for (int k = 0; k < first_size; k += 1) {
+                    int want = 17; if (owner == 1) { want = 0; }
+                    assert(manager.regions[0].bytes[k] == want);
+                }
+                for (int k = 0; k < second_size; k += 1) {
+                    int want = 29; if (owner == 2) { want = 0; }
+                    assert(manager.regions[1].bytes[k] == want);
+                }
+                CCAMMemUnwindResult again = ccam_mem_unwind_frame(manager, owner);
+                assert(again.ok && again.closed_regions == 0 && manager.live_capacity == remaining);
+            }
+        }
+    }
+}
