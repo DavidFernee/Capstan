@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import shutil
 import tempfile
 import unittest
@@ -71,6 +72,46 @@ class CoveragePolicyTests(unittest.TestCase):
             runner.gcov_lines(d, counts, branches)
             self.assertEqual(len(branches), 1)
             self.assertEqual(next(iter(branches.values())), {"branches": 2, "covered": 1})
+
+class CoverageWorkloadTests(unittest.TestCase):
+    def setUp(self):
+        runner.WORKLOADS.clear()
+
+    def test_real_success_and_expected_rejection(self):
+        runner.checked_workload("positive", [sys.executable, "-c", "print('ok')"])
+        runner.checked_workload("negative", [sys.executable, "-c",
+            "import sys; print('CWE-190', file=sys.stderr); sys.exit(101)"],
+            allowed=(101,), expected_stderr="CWE-190")
+        self.assertEqual([row["status"] for row in runner.WORKLOADS],
+                         ["completed", "completed"])
+
+    def test_unexpected_success_rejected(self):
+        with self.assertRaises(ValueError):
+            runner.checked_workload("negative", [sys.executable, "-c", "pass"],
+                                    allowed=(101,))
+        self.assertEqual(runner.WORKLOADS[-1]["status"], "failed")
+
+    def test_wrong_diagnostic_rejected(self):
+        with self.assertRaises(ValueError):
+            runner.checked_workload("negative", [sys.executable, "-c",
+                "raise SystemExit(101)"], allowed=(101,), expected_stderr="CWE-190")
+
+    def test_unexpected_exit_rejected(self):
+        with self.assertRaises(ValueError):
+            runner.checked_workload("positive", [sys.executable, "-c", "raise SystemExit(1)"])
+        self.assertEqual(runner.WORKLOADS[-1]["returncode"], 1)
+
+    def test_timeout_is_incomplete(self):
+        with self.assertRaises(ValueError):
+            runner.checked_workload("timeout", [sys.executable, "-c",
+                "import time; time.sleep(2)"], timeout=0.1)
+        self.assertEqual(runner.WORKLOADS[-1]["status"], "incomplete")
+        self.assertEqual(runner.WORKLOADS[-1]["error"], "TimeoutExpired")
+
+    def test_missing_executable_is_incomplete(self):
+        with self.assertRaises(ValueError):
+            runner.checked_workload("missing", ["/nonexistent-capstan-coverage-executable"])
+        self.assertEqual(runner.WORKLOADS[-1]["status"], "incomplete")
 
 if __name__ == "__main__":
     unittest.main()
