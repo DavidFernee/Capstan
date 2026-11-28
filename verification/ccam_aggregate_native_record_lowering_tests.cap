@@ -595,3 +595,28 @@ test "candidate constant folding preserves checked input and enforces independen
     AGNVConstantBudget bounded = new AGNVConstantBudget{remaining: AG_NV_CONST_WORK};
     if (let value = ag_nv_const_int(deep, bounded, 1)) { assert(false); }
 }
+
+test "candidate native taint operations preserve exact classification and list aliasing" {
+    string source = "Tainted pick(List<Tainted> values, int i) { return values[i]; } " +
+        "int run() { List<Tainted> values = new List<Tainted>(); " +
+        "values.push(taint(\"abc\")); values.push(taint(\"xyz\")); " +
+        "values[1] = pick(values, 0).slice(1, 3); Tainted selected = pick(values, 1); " +
+        "values.pop(); return selected.at(0) + selected.len() + values.len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-taint-list.elf"));
+    string empty = "int run() { List<Tainted> values = new List<Tainted>(); values.pop(); Tainted x = taint(\"\"); return x.slice(0, 0).len() + values.len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(empty, 1024, 8), "build/ccam-native-record-taint-empty.elf"));
+    string bounds = "int run() { Tainted x = taint(\"abc\"); return x.slice(0, 4).len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(bounds, 1024, 8), "build/ccam-native-record-taint-slice-oob.elf"));
+    string index = "int run() { Tainted x = taint(\"abc\"); return x.at(-1); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(index, 1024, 8), "build/ccam-native-record-taint-negative.elf"));
+    string absent = "int run() { List<Tainted> values = new List<Tainted>(); return values[0].len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(absent, 1024, 8), "build/ccam-native-record-taint-list-oob.elf"));
+    assert(!ag_nvc_test_source("string wrong() { return taint(\"x\"); } int run() { return 0; }", 1024, 8).ok);
+}
+
+test "candidate native tainted record field and direct return retain nominal type" {
+    string source = "struct Input { Tainted text; } " +
+        "Tainted get(Input item) { return item.text; } " +
+        "int run() { Input item = new Input{text: taint(\"A\")}; return get(item).at(0); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-taint-field.elf"));
+}

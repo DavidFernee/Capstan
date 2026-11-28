@@ -14,6 +14,9 @@ import "ccam_aggregate_native_string_conversion.cap";
 import "ccam_aggregate_native_scalar_list.cap";
 import "ccam_aggregate_native_reference_list.cap";
 import "ccam_aggregate_native_map.cap";
+import "ccam_aggregate_native_taint_validation.cap";
+import "ccam_aggregate_native_tainted_slice.cap";
+import "ccam_aggregate_native_tainted_list.cap";
 import "ccam_aggregate_elf_image.cap";
 import "ccam_aggregate_rel32.cap";
 import "ccam_aggregate_exit_code.cap";
@@ -26,6 +29,8 @@ const int AG_NV_MAX_FUEL = 4096; // execution profile unchanged
 // Candidate physical tag reserved for immutable strings. Source descriptor -1.
 const int AG_NV_BYTES_TAG = 4096;
 const int AG_NV_BYTES_DESCRIPTOR = -1;
+const int AG_NV_TAINTED_DESCRIPTOR = -4102;
+const int AG_NV_TAINTED_TAG = 2045;
 const int AG_NV_INT_LIST_TAG = 4094;
 const int AG_NV_BOOL_LIST_TAG = 4095;
 const int AG_NV_LIST_CAPACITY = 256;
@@ -108,6 +113,7 @@ int ag_nv_field_shape(int kind, int descriptor) {
     if (kind == AG_SCHEMA_INT && descriptor == 0) { return 0; }
     if (kind == AG_SCHEMA_BOOL && descriptor == 0) { return -1; }
     if (kind == AG_SCHEMA_REF && descriptor == AG_NV_BYTES_DESCRIPTOR) { return -3; }
+    if (kind == AG_SCHEMA_REF && descriptor == AG_NV_TAINTED_DESCRIPTOR) { return -6; }
     if (kind == AG_SCHEMA_REF && descriptor == AG_NV_INT_LIST_DESCRIPTOR) { return -4; }
     if (kind == AG_SCHEMA_REF && descriptor == AG_NV_BOOL_LIST_DESCRIPTOR) { return -5; }
     if (kind == AG_SCHEMA_REF && ag_nv_ref_list_tag(descriptor) != 0) { return -10000 + descriptor; }
@@ -142,9 +148,9 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
             if (op.len() > AG_NV_MAX_OPERANDS - operands ||
                 !ag_schema_operands(f.kinds, ins.opcode, ins.kind, op)) { return false; }
             operands += op.len();
-            // Evaluator-only taint opcodes stay closed until exact native bridges exist.
-            if (ag_schema_taint_opcode(ins.opcode)) { return false; }
-            if (ins.opcode == AG_OP_RECORD_ALLOC) {
+            if (ag_schema_taint_opcode(ins.opcode)) {
+                // Closed schemas checked above; exact object tags are guarded at execution.
+            } else if (ins.opcode == AG_OP_RECORD_ALLOC) {
                 int id = op[1]; int count = (op.len() - 2) / 2;
                 if (id < 1 || id >= AG_NV_RECORD_LIMIT || (layouts[id] != -1 && layouts[id] != count)) { return false; }
                 for (int j = 2; j < op.len(); j += 2) {
@@ -270,8 +276,10 @@ bool ag_nv_fuel(AGNVContext c) {
 // immutable descriptor/count header; use the same global layout registry.
 bool ag_nv_reference(AGNVContext c, int descriptor) {
     List<int> b = c.code;
-    if (descriptor == AG_NV_BYTES_DESCRIPTOR) {
-        if (b.len() > AG_BYTE_LIMIT - 32 || !ag_nv_imm(b, 6, AG_NV_BYTES_TAG) ||
+    if (descriptor == AG_NV_BYTES_DESCRIPTOR || descriptor == AG_NV_TAINTED_DESCRIPTOR) {
+        int tag = AG_NV_BYTES_TAG;
+        if (descriptor == AG_NV_TAINTED_DESCRIPTOR) { tag = AG_NV_TAINTED_TAG; }
+        if (b.len() > AG_BYTE_LIMIT - 32 || !ag_nv_imm(b, 6, tag) ||
             !ag_nv_call(c, c.trap + 6)) { return false; }
         // Membership validates the dynamic length (0..4096) and extent.
         b.push(73); b.push(57); b.push(52); b.push(4);
@@ -365,11 +373,13 @@ bool ag_nv_bytes_literal(AGNVContext c, List<int> a) {
 bool ag_nv_bytes_instruction(AGNVContext c, AGBlockInstruction ins) {
     List<int> b = c.code; List<int> a = ins.operands;
     if (ins.opcode == AG_OP_BYTES_LITERAL) { return ag_nv_bytes_literal(c, a); }
-    if (!ag_nv_slot(b, false, 0, a[1]) || !ag_nv_reference(c, AG_NV_BYTES_DESCRIPTOR)) { return false; }
-    if (ins.opcode == 7) {
+    int descriptor = AG_NV_BYTES_DESCRIPTOR;
+    if (ins.opcode == AG_OP_TAINT_LEN || ins.opcode == AG_OP_TAINT_AT) { descriptor = AG_NV_TAINTED_DESCRIPTOR; }
+    if (!ag_nv_slot(b, false, 0, a[1]) || !ag_nv_reference(c, descriptor)) { return false; }
+    if (ins.opcode == 7 || ins.opcode == AG_OP_TAINT_LEN) {
         // mov rax,[r12+rax+8]
         b.push(73); b.push(139); b.push(68); b.push(4); b.push(8);
-    } else if (ins.opcode == 4) {
+    } else if (ins.opcode == 4 || ins.opcode == AG_OP_TAINT_AT) {
         if (!ag_nv_slot(b, false, 8, a[2])) { return false; }
         // cmp r8,[r12+rax+8]; jae trap (also rejects negative index)
         b.push(77); b.push(59); b.push(68); b.push(4); b.push(8);
@@ -555,9 +565,68 @@ bool ag_nv_map_instruction(AGNVContext c, AGBlockInstruction ins) {
     return true;
 }
 
+// Native taint adapters. The private SysV leaves preserve RBX/RBP/R12-R15.
+// Slice receives a stack copy of R13 as its cursor pointer; restore the
+// updated cursor before checking status. No host calls or external ABI.
+bool ag_nv_taint_instruction(AGNVContext c, AGBlockInstruction ins) {
+    List<int> b = c.code; List<int> a = ins.operands; int op = ins.opcode;
+    if (op == AG_OP_TAINT_LEN || op == AG_OP_TAINT_AT) { return ag_nv_bytes_instruction(c, ins); }
+    if (op == AG_OP_TAINT) {
+        return ag_nv_slot(b, false, 0, a[1]) && ag_nv_imm(b, 8, 3) &&
+            ag_nv_call(c, c.trap + 16) && ag_nv_slot(b, true, 0, a[0]);
+    }
+    if (op == AG_OP_TAINT_SLICE) {
+        if (!ag_nv_slot(b, false, 1, a[1]) || !ag_nv_slot(b, false, 8, a[2]) ||
+            !ag_nv_slot(b, false, 9, a[3])) { return false; }
+        b.push(65); b.push(85); // push r13: private cursor storage
+        b.push(76); b.push(137); b.push(231); // mov rdi,r12
+        b.push(72); b.push(137); b.push(230); // mov rsi,rsp
+        b.push(76); b.push(137); b.push(242); // mov rdx,r14
+        if (!ag_nv_edge(c, 1, c.trap + 17)) { return false; }
+        b.push(65); b.push(93); // pop r13 (unchanged on rejection)
+        b.push(133); b.push(210);
+        return ag_nv_edge(c, 133, c.trap) && ag_nv_slot(b, true, 0, a[0]);
+    }
+    int mode = 0; int receiver = a[0];
+    if (op != AG_OP_TAINT_LIST_PUSH && op != AG_OP_TAINT_LIST_POP) { receiver = a[1]; }
+    if (op == AG_OP_TAINT_LIST_GET) { mode = 1; }
+    else if (op == AG_OP_TAINT_LIST_SET) { mode = 2; }
+    else if (op == AG_OP_TAINT_LIST_PUSH) { mode = 3; receiver = a[0]; }
+    else if (op == AG_OP_TAINT_LIST_POP) { mode = 4; receiver = a[0]; }
+    else if (op != AG_OP_TAINT_LIST_LEN) { return false; }
+    b.push(76); b.push(137); b.push(231); // mov rdi,r12
+    b.push(76); b.push(137); b.push(238); // mov rsi,r13
+    if (!ag_nv_slot(b, false, 2, receiver) || !ag_nv_imm(b, 1, mode)) { return false; }
+    if ((mode == 1 || mode == 2) && !ag_nv_slot(b, false, 8, a[2])) { return false; }
+    if (mode == 2 && !ag_nv_slot(b, false, 9, a[0])) { return false; }
+    if (mode == 3 && !ag_nv_slot(b, false, 9, a[1])) { return false; }
+    if (!ag_nv_call(c, c.trap + 18)) { return false; }
+    if (mode == 0 || mode == 1) { return ag_nv_slot(b, true, 0, a[0]); }
+    return true;
+}
+
+bool ag_nv_has_taint(AGFunction f) {
+    for (int i = 0; i < f.blocks.len(); i += 1) {
+        for (int j = 0; j < f.blocks[i].instructions.len(); j += 1) {
+            if (ag_schema_taint_opcode(f.blocks[i].instructions[j].opcode)) { return true; }
+        }
+    }
+    return false;
+}
+
+bool ag_nv_emit_taint_leaves(AGNVContext c) {
+    c.labels[c.trap + 16] = c.code.len();
+    if (!ag_native_emit_taint_validation(c.code)) { return false; }
+    c.labels[c.trap + 17] = c.code.len();
+    if (!ag_native_emit_tainted_slice(c.code)) { return false; }
+    c.labels[c.trap + 18] = c.code.len();
+    return ag_native_emit_tainted_list(c.code);
+}
+
 bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
     if (c.code.len() > AG_BYTE_LIMIT - 256 || !ag_nv_fuel(c)) { return false; }
     List<int> b = c.code; List<int> a = ins.operands; int op = ins.opcode;
+    if (ag_schema_taint_opcode(op)) { return ag_nv_taint_instruction(c, ins); }
     if (op == AG_OP_BYTES_LITERAL || op == 4 || op == 7 || op == AG_OP_BYTES_EQ || op == AG_OP_BYTES_NE ||
         op == 8 || op == AG_OP_BYTES_SLICE) {
         return ag_nv_bytes_instruction(c, ins);
@@ -664,7 +733,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     int count = f.blocks.len();
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 15; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 19; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Stack frame: one slot per register and one private return word.
     b.push(72); b.push(129); b.push(236);
@@ -707,6 +776,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     c.labels[count + 13] = b.len();
     c.labels[count + 14] = b.len() + AG_NV_MAP_KEYS_OFFSET;
     if (!ag_nv_emit_map(b)) { return ag_nv_failure(); }
+    if (ag_nv_has_taint(f) && !ag_nv_emit_taint_leaves(c)) { return ag_nv_failure(); }
     for (int i = 0; i < c.patches.len(); i += 1) {
         if (!ag_rel32(b, c.patches[i], c.labels[c.targets[i]])) { return ag_nv_failure(); }
     }
