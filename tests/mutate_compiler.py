@@ -152,7 +152,7 @@ def oracles(mc, d):
         stdin = open(f[:-4] + ".in", "rb").read() if io else b""
         scratch = tempfile.mkdtemp(dir=d)
         p = run([exe] + ([scratch] if io else []), input=stdin)
-        if p is None or p.stdout != open(f[:-4] + ".out", "rb").read():
+        if p is None or p.returncode != 0 or p.stdout != open(f[:-4] + ".out", "rb").read():
             return f"{os.path.relpath(f, ROOT)} output changed"
         want = expect(f, "expect-proved")
         if want is not None and len(re.findall(r"cap_[a-z_]*_proved\(", open(out).read())) != int(want):
@@ -169,7 +169,7 @@ def oracles(mc, d):
         p = run([exe])
         if p is None or p.returncode != 0:
             return f"{os.path.relpath(f, ROOT)} tests fail"
-    env = dict(os.environ, CAPSTANC=mc, CAPSTAN_SRC=os.path.join(d, "compiler"), FUZZ_FAILURES=os.path.join(d, "fuzz-failures"))
+    env = dict(os.environ, CAPSTANC=mc, CAPSTAN_SRC=(os.path.join(d, "compiler") if os.path.isdir(os.path.join(d, "compiler")) else os.path.join(ROOT, "compiler")), FUZZ_FAILURES=os.path.join(d, "fuzz-failures"))
     for script, what in (("tests/unit/lint_table.py", "the lint table"), ("tests/unit/ranges_props.py", "the interval property tests"),
                          ("tests/cwe/atlas.py", "the CWE atlas")):
         p = run([sys.executable, "-I", os.path.join(ROOT, script)], env=env, timeout=1200)
@@ -256,6 +256,17 @@ def campaign(texts, pool, count, seed):
     if count <= 0 or len(pool) < count:
         print(f"incomplete mutation campaign: requested {count}, {len(pool)} distinct candidates", file=sys.stderr)
         return 2
+    # A broken oracle must not turn every mutant into a spurious kill.
+    with tempfile.TemporaryDirectory() as baseline_dir:
+        baseline = os.path.join(ROOT, "build/capstanc")
+        try:
+            why = oracles(baseline, baseline_dir)
+        except (OSError, ValueError, AttributeError) as exc:
+            print(f"mutation baseline error: {exc}", file=sys.stderr)
+            return 2
+        if why is not None:
+            print(f"mutation baseline failed: {why}", file=sys.stderr)
+            return 2
     work = tempfile.mkdtemp()
     results, i = [], 0
 
