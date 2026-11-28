@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "7016b66e092206ac57bfdc77f96d76cc72cd46e5",
+  "baseline_commit": "5e66d4abf4159ff3ff14ae169d02ea3417ce26d8",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -129,12 +129,8 @@
         "tools/native_driver.cap"
       ],
       "open": [
-        "Cover every admitted opcode and observable effect in the backend.",
-        "Establish differential conformance against the reference machine for adversarial vectors.",
-        "Prove or translation-validate machine-code simulation, including ABI, traps and resource limits.",
-        "Add separately tested supported target and platform rows.",
-        "Direct ELF profile remains limited to a single parameterless integer-returning entry; calls, byte output, void entry, and complete terminal-outcome equivalence remain open.",
-        "Establish stable result-record consumer and bounded transport retry semantics; driver bootstrap remains C-dependent."
+        "Direct ELF supports bounded scalar calls to non-entry functions and parameterless integer entries; parameterless void entry is available only in record mode. Byte output, heap/aggregate/global/foreign operations, stable record consumer/retry, complete outcome equivalence and whole-program refinement remain open.",
+        "Validate the 15-register per-function call profile, 16-frame depth bound, 256-label relocation ceiling, caller/callee frame isolation, shared fuel, and record-mode void terminal outcome against adversarial evaluator vectors."
       ]
     },
     {

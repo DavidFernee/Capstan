@@ -49,7 +49,7 @@ Each CCAM virtual register is assigned an eight-byte value slot and an eight-byt
 
 The emitted program maintains process-global step and call-depth counters. At startup it maps a dedicated stack sized from the largest function frame and configured maximum depth, rounds the usable region to 4 KiB, and keeps the page below it inaccessible. The stack starts 16-byte aligned. The backend applies a 32 MiB stack budget independently of the host process's default stack limit. It checks the step budget before dispatching each CCAM instruction and checks call depth before entering a callee. The initial frame counts as depth one, matching the reference evaluator.
 
-The legacy assembler-backed path maps dynamic trap classes to distinct process exit statuses and does not preserve full-width integer results or structured trap locations/details. Linux process status exposes only the low eight bits, so it is not a lossless encoding of CCAM `Halt(Int64)`. The separate direct ELF profile addresses this for its narrow scalar subset: raw-result mode writes an eight-byte signed result to fd 3, while opt-in `--direct-record` writes an experimental CCAMRES v1 record containing the value or trap class, charged steps, PC, function name and (for explicit traps) detail. This is useful execution evidence, not a stable public ABI or complete CCAM outcome equivalence: the direct profile accepts a parameterless integer entry and admits a parameterless void entry in record mode, uses one write to a regular file, and treats short/interrupted writes as transport failure. The bounded retry protocol, production record consumer and whole-program refinement remain open. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned. The native backend also applies stricter expansion ceilings of 8,192 total instructions and 65,536 aggregate registers before validation or assembly allocation; these are backend resource limits, not changes to the CCAM language limits.
+The legacy assembler-backed path maps dynamic trap classes to distinct process exit statuses and does not preserve full-width integer results or structured trap locations/details. Linux process status exposes only the low eight bits, so it is not a lossless encoding of CCAM `Halt(Int64)`. The separate direct ELF profile supports a bounded scalar call subset and parameterless integer or (record mode only) void entry. Raw-result mode writes an eight-byte signed integer result to fd 3; opt-in `--direct-record` writes an experimental CCAMRES v1 record carrying integer return or void return/trap outcome, charged steps, function index/name and PC (plus explicit-trap detail). This is useful execution evidence, not a stable public ABI or complete CCAM outcome equivalence. It uses one write to a regular file and treats short/interrupted writes as transport failure. The bounded retry protocol, production record consumer and whole-program refinement remain open. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned. The native backend also applies stricter expansion ceilings of 8,192 total instructions and 65,536 aggregate registers before validation or assembly allocation; these are backend resource limits, not changes to the CCAM language limits.
 
 ## 4. Validation and testing
 
@@ -59,7 +59,7 @@ On Linux x86-64, the integration test assembles with `as --64`, links directly w
 
 ## 5. Explicit gaps
 
-This is not yet a production backend. The direct ELF profile does not support calls, byte output, heap objects, aggregates, globals, foreign calls, void entry points, or more than one parameterless integer-returning entry. The assembler-backed profile has a separate byte-output adapter but still lacks complete aggregate/runtime coverage and a stable public trap ABI. Neither profile supports Windows ABI, macOS Mach-O or AArch64. There is no Lean theorem proving that emitted machine code simulates CCAM, and no exhaustive differential conformance suite across the full supported machine semantics.
+This is not yet a production backend. The direct ELF profile supports bounded scalar direct calls to non-entry functions (including recursion) with a maximum depth of 16 frames, at most 15 registers per function, and at most 256 relocation labels. Calls to the entry function are rejected. Entry is parameterless; integer return is supported in raw and record modes, while void entry is admitted only in record mode. Byte output, heap objects, aggregates, globals and foreign calls remain outside this direct profile. The assembler-backed profile has a separate byte-output adapter but still lacks complete aggregate/runtime coverage and a stable public trap ABI. Neither profile supports Windows ABI, macOS Mach-O or AArch64. There is no Lean theorem proving that emitted machine code simulates CCAM, and no exhaustive differential conformance suite across the full supported machine semantics.
 
 Next work:
 
@@ -79,11 +79,14 @@ The image has one read/execute load segment and an explicit non-executable stack
 The driver still builds through the C-backed toolchain. Generation and execution
 of the target ELF require neither an assembler nor a linker.
 
-The profile admits one parameterless, integer-returning function with at most
-252 CCAM instructions and 256 typed registers. Constants, moves, signed checked
-arithmetic, comparisons, boolean negation, branches, loops and returns are
-supported. An instruction can load a register only when every incoming path
-has initialized it. Calls and byte output are outside this profile. Each instruction charges
+The profile admits a parameterless entry function with at most 252 CCAM
+instructions per function and 256 typed registers per program. Bounded scalar
+direct calls to non-entry functions are supported, including recursion, with
+at most 15 registers per function, 16 frames including entry, and 256 relocation
+labels. Constants, moves, signed checked arithmetic, comparisons, boolean
+negation, branches, loops, calls and returns are supported. An instruction can
+load a register only when every incoming path has initialized it. Byte output
+is outside this profile. Each instruction charges
 one step before dispatch, including jumps, returns and explicit traps. An
 exhausted budget exits before the next instruction's effects. The default is
 1,000,000 steps. Pass `--direct-steps N` to set a budget from 0 through
