@@ -36,7 +36,7 @@ def png_check(path):
 
 def names(node):
     yield node["name"]
-    for child in node["children"]:
+    for child in node.get("children", []):
         yield from names(child)
 
 
