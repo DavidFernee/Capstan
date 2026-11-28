@@ -1,0 +1,68 @@
+import "ccam_aggregate_invoke.cap";
+
+CCAMHeapLayout ag_nominal_test_layout(int descriptor) {
+    return new CCAMHeapLayout{type_id: descriptor, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()};
+}
+
+AGNominalSignature ag_nominal_test_signature(int argument_descriptor, int result_descriptor) {
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_REF);
+    List<int> descriptors = new List<int>();
+    descriptors.push(argument_descriptor);
+    return new AGNominalSignature{
+        coarse: new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_REF},
+        parameter_descriptors: descriptors, result_descriptor: result_descriptor
+    };
+}
+
+test "nominal invocation returns the same arena reference through a real continuation" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 16);
+    assert(root.ok);
+    assert(ccam_aggregate_alloc_record(root.machine, 0, ag_nominal_test_layout(7)) == "");
+    assert(ccam_aggregate_alloc_record(root.machine, 1, ag_nominal_test_layout(8)) == "");
+    AGNominalSignature signature = ag_nominal_test_signature(7, 7);
+    List<int> callee_kinds = new List<int>();
+    callee_kinds.push(AG_SCHEMA_REF);
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: new List<AGBlockInstruction>(),
+        terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>();
+    returns.push(0);
+    List<AGFunction> functions = new List<AGFunction>();
+    functions.push(new AGFunction{signature: signature.coarse,
+        kinds: callee_kinds, blocks: blocks, returns: returns});
+    List<int> arguments = new List<int>();
+    arguments.push(0);
+    AGStackResult created = ag_stack_create(root.machine, 4, 16);
+    assert(created.ok);
+    AGStack stack = created.stack;
+    assert(ag_nominal_invoke(stack, functions, 0, signature, arguments, 1) == "");
+    assert(stack.depth == 0 && stack.slots == 2);
+    assert(stack.active.steps == 5);
+    CCAMAggregateValueResult returned = ccam_aggregate_read(stack.active, 1, AG_SCHEMA_REF);
+    assert(returned.ok && ccam_heap_value_has_type(stack.active.heap, returned.value, AG_SCHEMA_REF, 7));
+}
+
+test "nominal stack rejects incompatible result atomically and snapshots return descriptor" {
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 16);
+    assert(root.ok);
+    assert(ccam_aggregate_alloc_record(root.machine, 0, ag_nominal_test_layout(7)) == "");
+    assert(ccam_aggregate_alloc_record(root.machine, 1, ag_nominal_test_layout(8)) == "");
+    AGStackResult created = ag_stack_create(root.machine, 4, 16);
+    assert(created.ok);
+    AGStack stack = created.stack;
+    AGNominalSignature signature = ag_nominal_test_signature(7, 7);
+    List<int> args = new List<int>(); args.push(0);
+    assert(ag_stack_nominal_call(stack, signature, kinds, args, 1) == "");
+    signature.result_descriptor = 9;
+    assert(ccam_aggregate_alloc_record(stack.active, 1, ag_nominal_test_layout(9)) == "");
+    assert(ag_stack_return(stack, 1) == "return_descriptor_mismatch");
+    assert(stack.depth == 0 && stack.slots == 2);
+    CCAMAggregateValueResult preserved = ccam_aggregate_read(stack.active, 1, AG_SCHEMA_REF);
+    assert(preserved.ok && ccam_heap_value_has_type(stack.active.heap, preserved.value, AG_SCHEMA_REF, 8));
+}
