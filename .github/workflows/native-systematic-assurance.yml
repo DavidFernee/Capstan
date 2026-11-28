@@ -26,3 +26,5 @@ jobs:
         run: bin/capstan test verification/ccam_assurance_dispatch_tests.cap
       - name: Run exhaustive bounded operand admission
         run: bin/capstan test verification/ccam_assurance_admission_tests.cap
+      - name: Run bounded loop and metamorphic branch scenarios
+        run: bin/capstan test verification/ccam_assurance_loop_tests.cap
