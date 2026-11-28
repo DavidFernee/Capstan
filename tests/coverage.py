@@ -15,7 +15,7 @@ directives, so coverage is reported against the Capstan source lines themselves.
 Writes docs/COVERAGE.md (per-file totals and the lines no test reaches). With
 --check, fails if any file falls below its floor in tests/coverage_floors.txt.
 """
-import glob, os, re, shutil, subprocess, sys, tempfile
+import glob, math, os, re, shutil, subprocess, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GCC = os.environ.get("COVERAGE_CC", "gcc")
@@ -35,8 +35,13 @@ def tests(*dirs):
 
 def gcov_lines(objdir, counts):
     """Merge gcov's per-line counts for every .gcda in objdir into counts[file][line]."""
-    for gcda in sorted(glob.glob(os.path.join(objdir, "*.gcda"))):
+    files = sorted(glob.glob(os.path.join(objdir, "*.gcda")))
+    if not files:
+        raise ValueError(f"no gcov data in {objdir}")
+    for gcda in files:
         res = run([GCOV, "--stdout", "-o", objdir, gcda], cwd=ROOT)
+        if res.returncode or not res.stdout:
+            raise ValueError(f"gcov failed for {gcda}: {res.stderr.decode(errors='replace')}")
         src = None
         for line in res.stdout.decode(errors="replace").splitlines():
             m = re.match(r"\s*([^:]+):\s*(\d+):(.*)$", line)
@@ -156,6 +161,25 @@ def ranges_of(nums):
     return out
 
 
+def parse_floors(lines):
+    """Reject malformed, duplicate, nonfinite or empty coverage policy."""
+    floors = {}
+    for number, raw in enumerate(lines, 1):
+        fields = raw.split("#", 1)[0].split()
+        if not fields:
+            continue
+        if len(fields) != 2:
+            raise ValueError(f"coverage floor line {number}: expected path and percentage")
+        path, value = fields
+        pct = float(value)
+        if path in floors or not math.isfinite(pct) or not 0 < pct <= 100:
+            raise ValueError(f"coverage floor line {number}: duplicate or invalid floor")
+        floors[path] = pct
+    if not floors:
+        raise ValueError("coverage floor policy is empty")
+    return floors
+
+
 def main():
     check = "--check" in sys.argv
     work = tempfile.mkdtemp()
@@ -188,16 +212,20 @@ def main():
     for src, pct in summary.items():
         print(f"  {src:28s} {pct:5.1f}%")
     if check:
-        floors = {}
-        for line in open(os.path.join(ROOT, "tests/coverage_floors.txt")):
-            line = line.split("#")[0].split()
-            if len(line) == 2:
-                floors[line[0]] = float(line[1])
+        try:
+            with open(os.path.join(ROOT, "tests/coverage_floors.txt")) as policy:
+                floors = parse_floors(policy)
+        except (OSError, ValueError) as exc:
+            print(f"invalid coverage policy: {exc}", file=sys.stderr)
+            return 2
         low = [f"{s} {summary.get(s, 0):.1f}% < floor {f}%" for s, f in floors.items() if summary.get(s, 0) < f]
         if low:
             print("coverage below floor: " + "; ".join(low))
             return 1
     total = len(summary)
+    if not total:
+        print("no coverage evidence", file=sys.stderr)
+        return 2
     print(f"coverage: {total} files measured; report in docs/COVERAGE.md")
     return 0
 
