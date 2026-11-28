@@ -89,6 +89,33 @@ def image(leaves, case):
         allocate(1, 0)
         result(False, 0, 80, 80)
         memory(80, SENTINEL)
+    elif case[0] == 'forged-interior':
+        _, name = case
+        mov(13, 0)
+        mov(14, 80)
+        allocate(7, 3)
+        result(True, 0, 64, 80)
+        # A legitimate payload and readiness word form a fake record header.
+        for offset, value in ((16, 9), (24, 1), (32, 42), (40, 1)):
+            memory(offset, value, True)
+        access(name, 16, 9, 1, 0)
+        result(False, 0, 64, 80)
+        for i, value in enumerate((7, 3, 9, 1, 42, 1, 0, 0, SENTINEL)):
+            memory(i * 8, value)
+    elif case[0] == 'later-record':
+        _, corrupt = case
+        mov(13, 0)
+        mov(14, 64)
+        allocate(7, 1)
+        result(True, 0, 32, 64)
+        allocate(9, 1)
+        result(True, 32, 64, 64)
+        if corrupt:
+            memory(8, 4097, True)
+        access('store', 32, 9, 1, 0)
+        result(not corrupt, 0, 64, 64)
+        memory(48, 0 if corrupt else VALUE)
+        memory(56, 0 if corrupt else 1)
     else:
         _, name, offset, desc, count, index, flag = case
         mov(13, 0)
@@ -122,8 +149,13 @@ def image(leaves, case):
 
 def main():
     data = Path(sys.argv[1]).read_bytes()
-    assert len(data) == 493
-    leaves = dict(zip(('alloc', 'load', 'store'), (data[:137], data[137:308], data[308:])))
+    guarded = len(sys.argv) == 3 and sys.argv[2] == '--guarded'
+    if guarded:
+        assert len(data) == 873
+        leaves = dict(zip(('alloc', 'load', 'store'), (data[:137], data[137:498], data[498:])))
+    else:
+        assert len(data) == 493
+        leaves = dict(zip(('alloc', 'load', 'store'), (data[:137], data[137:308], data[308:])))
     cases = [('roundtrip',)]
     cases += [('reject-alloc', *c) for c in [(0, 1, 0, 64), (4097, 1, 0, 64),
               (-1, 1, 0, 64), (1, -1, 0, 64), (1, 4097, 0, 64),
@@ -135,6 +167,9 @@ def main():
                   (1, 7, 2, 0, 1), (-8, 7, 2, 0, 1), (48, 7, 2, 0, 1),
                   (0, 7, 2, 0, 2)]]
     cases.append(('reject-access', 'load', 0, 7, 2, 0, 0))
+    if guarded:
+        cases += [('forged-interior', 'load'), ('forged-interior', 'store'),
+                  ('later-record', False), ('later-record', True)]
     with tempfile.TemporaryDirectory() as directory:
         executable = Path(directory) / 'record'
         for case in cases:
