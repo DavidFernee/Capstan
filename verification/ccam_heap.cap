@@ -427,8 +427,35 @@ CCAMMapLookup ccam_heap_map_get(CCAMHeap heap, CCAMHeapRef reference, int descri
     return new CCAMMapLookup{ok: true, found: true, value: ccam_map_snapshot_value(value), trap: ""};
 }
 
+// Distinct nominal map descriptor range, disjoint from records and optionals.
+const int AG_MAP_DESCRIPTOR_BASE = 20000;
+
+bool ccam_heap_map_descriptor(int descriptor) {
+    return descriptor > AG_MAP_DESCRIPTOR_BASE &&
+        ccam_heap_optional_descriptor(descriptor - AG_MAP_DESCRIPTOR_BASE);
+}
+
+bool ccam_heap_map_matches(CCAMHeap heap, CCAMHeapValue value, int descriptor) {
+    if (value.kind != CCAM_HEAP_VALUE_REF || !ccam_heap_map_descriptor(descriptor)) { return false; }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        return index >= 0 && ccam_map_shape(heap.objects[index], descriptor - AG_MAP_DESCRIPTOR_BASE);
+    }
+    return false;
+}
+
 string ccam_heap_map_set(CCAMHeap heap, CCAMHeapRef reference, int descriptor,
     CCAMHeapValue key, CCAMHeapValue value) {
+    return ccam_heap_map_set_internal(heap, reference, descriptor, key, value, false);
+}
+
+string ccam_heap_map_set_grow(CCAMHeap heap, CCAMHeapRef reference, int descriptor,
+    CCAMHeapValue key, CCAMHeapValue value) {
+    return ccam_heap_map_set_internal(heap, reference, descriptor, key, value, true);
+}
+
+string ccam_heap_map_set_internal(CCAMHeap heap, CCAMHeapRef reference, int descriptor,
+    CCAMHeapValue key, CCAMHeapValue value, bool grow) {
     int index = ccam_heap_object_index(heap, reference);
     if (index < 0) { return "invalid_reference"; }
     CCAMHeapObject object = heap.objects[index];
@@ -441,7 +468,34 @@ string ccam_heap_map_set(CCAMHeap heap, CCAMHeapRef reference, int descriptor,
     if (found.index >= 0) {
         object.elements[found.index] = ccam_map_snapshot_value(value);
     } else {
-        if (object.length >= object.capacity) { return "map_capacity"; }
+        if (object.length >= object.capacity) {
+            if (!grow || object.capacity >= AG_MAP_MAX_ENTRIES) { return "map_capacity"; }
+            int capacity = object.capacity * 2;
+            if (capacity == 0) { capacity = 1; }
+            if (capacity > AG_MAP_MAX_ENTRIES) { capacity = AG_MAP_MAX_ENTRIES; }
+            int bytes = capacity * CCAM_HEAP_SLOT_BYTES * 2;
+            int work = capacity * 2 + 1;
+            if (heap.bytes_used < 0 || heap.bytes_used > heap.max_bytes ||
+                heap.work_used < 0 || heap.work_used > heap.max_work) { return "invalid_heap_accounting"; }
+            if (bytes > heap.max_bytes - heap.bytes_used) { return "heap_limit"; }
+            if (work > heap.max_work - heap.work_used) { return "work_limit"; }
+            if (bytes > heap.max_temporary_bytes) { return "temporary_limit"; }
+            List<CCAMHeapValue> keys = new List<CCAMHeapValue>();
+            List<CCAMHeapValue> values = new List<CCAMHeapValue>();
+            for (int i = 0; i < capacity; i += 1) {
+                if (i < object.length) {
+                    keys.push(object.fields[i]); values.push(object.elements[i]);
+                } else {
+                    keys.push(ccam_heap_int(0)); values.push(ccam_heap_int(0));
+                }
+            }
+            object.fields = keys;
+            object.elements = values;
+            object.capacity = capacity;
+            heap.bytes_used += bytes;
+            heap.work_used += work;
+            heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, bytes);
+        }
         object.fields[object.length] = ccam_map_snapshot_value(key);
         object.elements[object.length] = ccam_map_snapshot_value(value);
         object.length += 1;
