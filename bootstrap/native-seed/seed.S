@@ -660,7 +660,10 @@ record_main:
     cmp $9, %eax
     ja record_entry
 record_helper:
+    movb $1, emitting_constructor(%rip)
     call select_record_layout
+    mov selected_record_layout(%rip), %rax
+    mov %rax, constructor_layout(%rip)
     lea required_trivia(%rip), %r14
     call match_prefix
     call parse_record_identifier
@@ -694,6 +697,11 @@ parse_record_reader_name:
     call parse_record_identifier
     cmp $2, %rdx
     jb invalid
+    lea helper_name(%rip), %rax
+    mov $1, %r10d
+    call find_name
+    test %rax, %rax
+    jnz invalid
     mov %rdi, record_reader_name(%rip)
     mov %rdx, record_reader_name+8(%rip)
     lea scalar_call_open(%rip), %r14
@@ -735,10 +743,15 @@ record_roots_type_ready:
 record_reader_parameters_done:
     lea scalar_body_open(%rip), %r14
     call match_prefix
+    cmpq $0, constructor_layout(%rip)
+    jne record_reader_start
     movb $0xe9, (%rbx)             /* process entry skips helper */
     add $5, %rbx
+record_reader_start:
+    mov %rbx, reader_entry(%rip)
     mov $32, %r15d
 record_reader_statement:
+    call record_check_emit_room
     cmp %r13, %rsi
     jae invalid
     cmpb $76, (%rsi)             /* List<Node> pending */
@@ -1455,7 +1468,19 @@ record_reader_ret:
     lea helper_end_without_initializer(%rip), %r14
     call match_prefix
 
+    pushq selected_record_layout(%rip)
+    call parse_layouts
+    pop %rax
+    call select_record_layout_entry
     jmp record_entry_body
+
+/* Each record statement or field emits less than 512 bytes before the next
+ * check, including the final call/return sequence. Keep the ELF tail separate. */
+record_check_emit_room:
+    lea result_code_limit-512(%rip), %rax
+    cmp %rax, %rbx
+    ja invalid
+    ret
 
 /* ECX selects the field. R11 returns the empty-branch relocation base. */
 emit_record_list_pop:
@@ -1550,7 +1575,18 @@ record_reserve_backing:
     movl $0x24048948, 18(%rbx)   /* mov [rsp],rax: hidden pending slot */
     add $22, %rbx
 record_construct_local:
-    lea record_local_prefix(%rip), %r14
+    lea helper_local_prefix(%rip), %r14
+    call match_prefix
+    push %rsi
+    call parse_record_identifier
+    lea helper_name(%rip), %rax
+    mov $1, %r10d
+    call find_name
+    test %rax, %rax
+    pop %rcx
+    jnz record_invoke_constructor
+    mov %rcx, %rsi
+    lea new_token(%rip), %r14
     call match_prefix
     call match_record_name
 record_open_initializer:
@@ -1559,6 +1595,7 @@ record_open_initializer:
     mov record_fields_base(%rip), %r12
     mov record_count(%rip), %rbp
 record_initializer:
+    call record_check_emit_room
     call skip_trivia
     call parse_record_identifier
     mov %r12, %rax
@@ -1649,7 +1686,7 @@ record_string_done:
     inc %rsi
     jmp record_blob
 record_mutable_list:
-    cmpq $0, helper_name+8(%rip)
+    cmpb $0, emitting_constructor(%rip)
     jne invalid                   /* caller-owned backing cannot escape a helper */
     lea int_list_constructor(%rip), %r14
     call match_prefix
@@ -1680,7 +1717,7 @@ record_empty_list:
     call match_record_name
     lea list_value_close(%rip), %r14
     call match_prefix
-    cmpq $0, helper_name+8(%rip)
+    cmpb $0, emitting_constructor(%rip)
     je record_initialize_list_backing
     mov %rsi, %rdi
     xor %edx, %edx
@@ -1707,7 +1744,7 @@ record_push:
     mov %r9, 2(%rbx)
     add $10, %rbx
 record_store:
-    cmpq $0, helper_name+8(%rip)
+    cmpb $0, emitting_constructor(%rip)
     jne record_store_helper
     movb $0x50, (%rbx)              /* push rax */
     inc %rbx
@@ -1725,10 +1762,11 @@ record_next_initializer:
     call match_prefix
     jmp record_initializer
 record_finish_initializer:
-    cmpq $0, helper_name+8(%rip)
+    cmpb $0, emitting_constructor(%rip)
     jne record_finish_helper
     lea record_close_initializer(%rip), %r14
     call match_prefix
+record_item_ready:
     cmpq $0, record_reader_name+8(%rip)
     je record_return
     cmpb $0, record_distinct_root_layout(%rip)
@@ -1880,7 +1918,7 @@ record_call_reader_with_peer:
 record_reader_aligned:
     movb $0xe8, (%rbx)
     add $5, %rbx
-    lea result_code+5(%rip), %rax
+    mov reader_entry(%rip), %rax
     sub %rbx, %rax
     mov %eax, -4(%rbx)
     cmpb $0, record_reader_call_pad(%rip)
@@ -1916,22 +1954,35 @@ record_finish_helper:
     mov %rbx, %rcx
     sub %rax, %rcx
     mov %ecx, -4(%rax)
-    pushq record_fields_base(%rip)
-    pushq record_count(%rip)
+    movb $0, emitting_constructor(%rip)
     call parse_layouts
-    popq record_count(%rip)
-    popq record_fields_base(%rip)
-    lea record_main_prefix(%rip), %r14
-    call match_prefix
-    call match_record_name
-    lea helper_local_prefix(%rip), %r14
-    call match_prefix
-    call parse_record_identifier
-    lea helper_name(%rip), %rax
-    mov $1, %r10d
-    call find_name
-    test %rax, %rax
-    jz invalid
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $98, (%rsi)
+    je record_bool_helper
+    mov constructor_layout(%rip), %rax
+    call select_record_layout_entry
+    jmp record_entry_body
+
+record_invoke_constructor:
+    mov constructor_layout(%rip), %rax
+    cmp selected_record_layout(%rip), %rax
+    jne invalid
+    /* A constructor's immutable empty list has no caller-owned backing.
+       Only pass constructed records to a reader when all fields are immutable. */
+    cmpq $0, record_reader_name+8(%rip)
+    je record_constructor_call
+    mov record_count(%rip), %rcx
+    mov record_fields_base(%rip), %rax
+record_check_constructor_fields:
+    cmpq $4, 16(%rax)
+    je invalid
+    cmpq $6, 16(%rax)
+    je invalid
+    add $24, %rax
+    dec %rcx
+    jnz record_check_constructor_fields
+record_constructor_call:
     lea helper_call_end(%rip), %r14
     call match_prefix
     movl $0x00ec8148, (%rbx)       /* sub rsp,imm32 (fourth byte overwritten) */
@@ -1943,6 +1994,7 @@ record_finish_helper:
     lea result_code+5(%rip), %rax
     sub %rbx, %rax
     mov %eax, -4(%rbx)
+    jmp record_item_ready
 record_return:
     lea record_return_prefix(%rip), %r14
     call match_prefix
@@ -2659,7 +2711,7 @@ record_reader_call: .asciz "\001(\001item\001)"
 record_reader_pair_call: .asciz "\001(\001item\001,\001peer\001)"
 helper_end_without_initializer: .asciz "\001;\001}\001"
 record_main_prefix: .asciz "\001int main\001(\001)\001{\001"
-record_local_prefix: .asciz " item\001=\001new "
+new_token: .asciz "new "
 required_trivia: .asciz " "
 helper_prefix: .asciz "\001(\001)\001{\001return new "
 helper_end: .asciz "\001}\001;\001}"
@@ -2743,7 +2795,9 @@ program:
 result_left:
     .quad 0
 result_code:
-    .space 256 * 19 + 4096 + (result_tail_end-result_tail)
+    .space 256 * 19 + 4096
+result_code_limit:
+    .space result_tail_end-result_tail
 
 .section .rodata
 result_tail:
@@ -2773,6 +2827,9 @@ result_tail_end:
 .lcomm constants,256 * 24
 .lcomm record_name,24
 .lcomm helper_name,24
+.lcomm emitting_constructor,1
+.lcomm constructor_layout,8
+.lcomm reader_entry,8
 .lcomm record_reader_name,24
 .lcomm record_parameter,24
 .lcomm child_index_name,24
