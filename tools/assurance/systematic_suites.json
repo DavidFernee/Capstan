@@ -87,6 +87,10 @@
       "bin/capstan",
       "test",
       "verification/assurance_observed_mcdc_tests.cap"
+    ],
+    [
+      "python3",
+      "tools/assurance/trace_capability_decision.py"
     ]
   ],
   "native": [
