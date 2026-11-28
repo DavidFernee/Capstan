@@ -49,7 +49,7 @@ Each CCAM virtual register is assigned an eight-byte value slot and an eight-byt
 
 The emitted program maintains process-global step and call-depth counters. At startup it maps a dedicated stack sized from the largest function frame and configured maximum depth, rounds the usable region to 4 KiB, and keeps the page below it inaccessible. The stack starts 16-byte aligned. The backend applies a 32 MiB stack budget independently of the host process's default stack limit. It checks the step budget before dispatching each CCAM instruction and checks call depth before entering a callee. The initial frame counts as depth one, matching the reference evaluator.
 
-The legacy assembler-backed path maps dynamic trap classes to distinct process exit statuses and does not preserve full-width integer results or structured trap locations/details. Linux process status exposes only the low eight bits, so it is not a lossless encoding of CCAM `Halt(Int64)`. The separate direct ELF profile addresses this for its narrow scalar subset: raw-result mode writes an eight-byte signed result to fd 3, while opt-in `--direct-record` writes an experimental CCAMRES v1 record containing the value or trap class, charged steps, PC, function name and (for explicit traps) detail. This is useful execution evidence, not a stable public ABI or complete CCAM outcome equivalence: the direct profile accepts only a parameterless integer-returning entry, uses one write to a regular file, and treats short/interrupted writes as transport failure. The bounded retry protocol, production record consumer, void entry semantics and whole-program refinement remain open. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned. The native backend also applies stricter expansion ceilings of 8,192 total instructions and 65,536 aggregate registers before validation or assembly allocation; these are backend resource limits, not changes to the CCAM language limits.
+The legacy assembler-backed path maps dynamic trap classes to distinct process exit statuses and does not preserve full-width integer results or structured trap locations/details. Linux process status exposes only the low eight bits, so it is not a lossless encoding of CCAM `Halt(Int64)`. The separate direct ELF profile addresses this for its narrow scalar subset: raw-result mode writes an eight-byte signed result to fd 3, while opt-in `--direct-record` writes an experimental CCAMRES v1 record containing the value or trap class, charged steps, PC, function name and (for explicit traps) detail. This is useful execution evidence, not a stable public ABI or complete CCAM outcome equivalence: the direct profile accepts a parameterless integer entry and admits a parameterless void entry in record mode, uses one write to a regular file, and treats short/interrupted writes as transport failure. The bounded retry protocol, production record consumer and whole-program refinement remain open. Unsupported instructions, argument counts, entry signatures, and invalid machine limits are rejected by the emitter before assembly is returned. The native backend also applies stricter expansion ceilings of 8,192 total instructions and 65,536 aggregate registers before validation or assembly allocation; these are backend resource limits, not changes to the CCAM language limits.
 
 ## 4. Validation and testing
 
@@ -140,6 +140,17 @@ PCs, step counts and details separately. The result record proposal in
 would need versioning, a byte-level consumer and end-to-end checks for the
 additional observable fields before adoption.
 
+### Direct ELF calls
+
+The direct emitter admits scalar direct calls to non-entry functions, including
+recursion, under a depth limit of 16 frames including the entry. A call profile
+admits up to 15 registers per function and at most 256 relocation labels across
+the program. Each call copies arguments into a separate frame and stores a
+destination only after a successful return. The initialization check covers
+each call argument before treating the destination as written. Fuel is shared
+across all frames. A depth trap identifies the call instruction in its caller.
+Calls targeting the process entry are rejected.
+
 ### Experimental versioned terminal record
 
 Use `capstan native --direct --direct-record --root . main.cap -o program`
@@ -150,8 +161,9 @@ the default.
 The record starts with the 48-byte little-endian header described in
 [Native Result ABI](../../research/native-bootstrap/NATIVE-RESULT-ABI.md).
 An integer return carries its signed 64-bit value and charged step count
-with both location fields set to `0xffffffff`. A trap carries its code,
-charged steps, function index zero, current CCAM PC, and function name.
+with both location fields set to `0xffffffff`. A void return carries kind 1,
+a zero value field, charged steps and the same location sentinels. A trap carries its code,
+charged steps, the zero-based function index, current CCAM PC, and function name.
 Explicit traps append the exact detail bytes. The invariant is one record
 of 48 through 1,136 bytes, with the declared name and detail lengths.
 The PC identifies the pending instruction for fuel exhaustion and the

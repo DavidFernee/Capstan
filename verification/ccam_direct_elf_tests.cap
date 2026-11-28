@@ -96,3 +96,29 @@ test "reference evaluator checks fuel before the instruction including return" {
         }
     }
 }
+
+test "direct ELF reads call arguments before writing an aliased destination" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT);
+    List<CCAMInstruction> caller = new List<CCAMInstruction>();
+    caller.push(ccam_instruction(CCAM_OP_CALL));
+    CCAMInstruction ret = ccam_instruction(CCAM_OP_RET);
+    ret.lhs = 0;
+    caller.push(ret);
+    List<CCAMFunction> functions = direct_test_program(caller, types);
+    List<int> arguments = new List<int>();
+    arguments.push(0);
+    functions[0].call_sites.push(new CCAMCallSite{
+        instruction_index: 0, callee_index: 1, argument_registers: arguments,
+        destination_register: 0, has_destination: true
+    });
+    List<CCAMInstruction> callee = new List<CCAMInstruction>();
+    callee.push(ret);
+    functions.push(new CCAMFunction{
+        name: "identity", register_types: types, parameter_count: 1,
+        return_type: CCAM_RETURN_INT, instructions: callee, call_sites: new List<CCAMCallSite>()
+    });
+    assert(ccam_validate_multi_function(functions, 0).ok);
+    CCAMDirectResult image = ccam_direct_elf(functions, 0, 10);
+    assert(!image.ok && image.bytes.len() == 0 && image.error == "uninitialised_register");
+}
