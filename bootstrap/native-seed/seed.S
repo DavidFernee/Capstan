@@ -169,23 +169,34 @@ scalar_spill_argument:
     jz invalid
     lea scalar_call_open(%rip), %r14
     call match_prefix
-    xor %r12d, %r12d
+    pushq scalar_local_count(%rip)  /* preserve arity, hide helper parameters */
+    movq $0, scalar_local_count(%rip)
+    mov (%rsp), %rax
 scalar_argument:
-    call parse_operand
-    lea argument_movabs(%rip), %rax
-    movzwl (%rax,%r12,2), %edx
-    mov %dx, (%rbx)
-    mov %r9, 2(%rbx)
-    add $10, %rbx
-    inc %r12
-    cmp scalar_local_count(%rip), %r12
-    je scalar_call_finish
+    push %rax
+    call emit_expression
+    movb $0x50, (%rbx)             /* push rax: preserve earlier arguments */
+    inc %rbx
+    pop %rax
+    dec %rax
+    jz scalar_call_finish
+    push %rax
     lea comma(%rip), %r14
     call match_prefix
+    pop %rax
     jmp scalar_argument
 scalar_call_finish:
     lea close_paren(%rip), %r14
     call match_prefix
+    pop %rcx
+    lea argument_pop(%rip), %rax
+scalar_restore_argument:
+    dec %rcx
+    movzwl (%rax,%rcx,2), %edx
+    mov %dx, (%rbx)
+    add $2, %rbx
+    test %rcx, %rcx
+    jnz scalar_restore_argument
     movb $0xe8, (%rbx)             /* call helper */
     add $5, %rbx
     lea result_code+5(%rip), %rax
@@ -1078,7 +1089,12 @@ expression_arithmetic:
     jmp next_operator
 finish_expression:
     cmpb $59, (%rsi)
+    je expression_done
+    cmpb $44, (%rsi)
+    je expression_done
+    cmpb $41, (%rsi)
     jne invalid
+expression_done:
     ret
 finish_main:
     lea record_end(%rip), %r14
@@ -1472,7 +1488,7 @@ main_prefix: .asciz "int main\001(\001)\001{\001"
 return_prefix: .asciz "return "
 /* RDI, RSI, RDX, RCX, R8, R9, in SysV integer argument order. */
 argument_push: .word 0x5740,0x5640,0x5240,0x5140,0x5041,0x5141
-argument_movabs: .word 0xbf48,0xbe48,0xba48,0xb948,0xb849,0xb949
+argument_pop: .word 0x5f40,0x5e40,0x5a40,0x5940,0x5841,0x5941
 scalar_function_end: .asciz "\001;\001}\001"
 scalar_call_open: .asciz "\001(\001"
 local_equals: .asciz "\001=\001"

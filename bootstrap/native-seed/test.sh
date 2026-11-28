@@ -407,6 +407,19 @@ for helper in \
     printf '%s' "$helper" | reject
 done
 
+printf '%s' 'int _sub(int _left, int _right){ return _left - _right; } int main(){ return _sub(45 + 5, 10 - 2); }' |
+    compile > "$scratch/expression-arguments"
+chmod +x "$scratch/expression-arguments"
+env -i PATH="$scratch/empty" "$scratch/expression-arguments" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+printf '%s' 'int _first(int _left, int _right){ return _left; } int main(){ return _first(42, 9223372036854775807 + 1); }' |
+    compile > "$scratch/expression-arguments"
+status=0
+env -i PATH="$scratch/empty" "$scratch/expression-arguments" 3>"$scratch/result" || status=$?
+[[ "$status" == 70 && ! -s "$scratch/result" ]]
+printf 'int _same(int _n){ return _n + 0; } int main(){ return _same(%s); }' "$chain" |
+    reject
+
 # Distinguish a broken input channel from a malformed source, and check
 # that transport failures cannot be mistaken for a successful compile/run.
 status=0

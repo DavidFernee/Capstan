@@ -36,8 +36,9 @@ must have a distinct name from the declared integer constants.
 
 A scalar program can declare one integer helper with one to six integer
 parameters and a checked return expression. The helper and parameter names
-begin with underscores. The entry passes the matching number of literals or
-constants, and returns the helper result. The native call uses the System V
+begin with underscores. The entry evaluates the matching number of checked argument
+expressions left to right, then returns the helper result. The caller and
+helper share a 256-operator compilation budget. The native call uses the System V
 AMD64 integer argument registers in declaration order. The helper spills
 each argument into a distinct stack slot and returns the value in RAX.
 
@@ -76,7 +77,7 @@ slots and loads the return value from the slot selected during compilation.
 
 Assembly is a candidate alternative to the proposed Rust seed. GNU Binutils is available in the local environment, and the seed's static linker inputs consist of one object assembled from `seed.S`. This keeps the seed independent of Capstan's existing compiler, generated C, Python and libc. The tradeoff is a Linux x86-64-specific parser and ELF emitter that require assembly review. The assembler, linker, kernel and CPU remain trusted for this experiment. This choice has not been accepted as the programme's S0 toolchain.
 
-Run `bash bootstrap/native-seed/test.sh` on Linux x86-64. The local audit used GNU assembler and linker 2.44. Two builds in one environment produced identical stripped seed binaries with SHA-256 `f58b5920367734955f7a556da00b0689d7bbe1fd2a0a22a573e7c9548b98ee36`. The test checks for absence of dynamic loading headers, runs the seed and emitted programs with empty tool paths, compares repeat outputs, and exercises signed extrema, input length boundaries and malformed source. This is same-environment evidence.
+Run `bash bootstrap/native-seed/test.sh` on Linux x86-64. The local audit used GNU assembler and linker 2.44. Two builds in one environment produced identical stripped seed binaries with SHA-256 `b976433dcca22b564735ef515f15602b70d9529a5846b8609152dc6bc32a04e9`. The test checks for absence of dynamic loading headers, runs the seed and emitted programs with empty tool paths, compares repeat outputs, and exercises signed extrema, input length boundaries and malformed source. This is same-environment evidence.
 
 The candidate does not yet produce S1, consume a source manifest, compile the checked compiler workload, or establish canonical CCAM outcome correspondence. S2 compiler-on-compiler equivalence and S3 production dependency and diverse-seed evidence are still pending.
 
