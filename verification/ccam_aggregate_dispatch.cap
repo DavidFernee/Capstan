@@ -370,3 +370,34 @@ test "candidate scalar literal admission rejects noncanonical boolean values" {
         "invalid_aggregate_instruction");
     assert(created.machine.steps == 0 && !created.machine.registers[0].initialised);
 }
+
+test "absent optional unwrap traps without publishing a destination" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 32);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_write(machine, 1, ccam_heap_int(42)) == "");
+    List<int> operands = new List<int>(); operands.push(0); operands.push(AG_OPTIONAL_INT);
+    assert(ag_dispatch(machine, AG_OP_OPT_NONE, AG_SCHEMA_REF, operands) == "");
+    List<int> unwrap = new List<int>(); unwrap.push(1); unwrap.push(0); unwrap.push(AG_OPTIONAL_INT);
+    assert(ag_dispatch(machine, AG_OP_OPT_UNWRAP, AG_SCHEMA_INT, unwrap) == "optional_absent");
+    assert(ccam_aggregate_read(machine, 1, AG_SCHEMA_INT).value.int_value == 42);
+}
+
+test "optional boxes reject incompatible payload and record impersonation" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 16);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    assert(!ccam_heap_alloc_optional(heap, AG_OPTIONAL_BOOL, true, ccam_heap_int(0)).ok);
+    CCAMHeapRefResult boxed = ccam_heap_alloc_optional(heap, AG_OPTIONAL_BOOL, true, ccam_heap_bool(false));
+    assert(boxed.ok);
+    CCAMHeapValue value = ccam_heap_ref_value(boxed.reference);
+    assert(ccam_heap_optional_read(heap, value, AG_OPTIONAL_BOOL, false).value.bool_value);
+    CCAMHeapValueResult payload = ccam_heap_optional_read(heap, value, AG_OPTIONAL_BOOL, true);
+    assert(payload.ok && !payload.value.bool_value);
+    assert(!ccam_heap_optional_matches(heap, value, AG_OPTIONAL_INT));
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: AG_OPTIONAL_BOOL,
+        field_types: new List<int>(), field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()};
+    CCAMHeapRefResult forged = ccam_heap_alloc_record(heap, layout);
+    assert(forged.ok && !ccam_heap_optional_matches(heap, ccam_heap_ref_value(forged.reference), AG_OPTIONAL_BOOL));
+}
