@@ -16,6 +16,8 @@ const int CCAM_HEAP_OBJECT_ARRAY = 2;
 const int CCAM_HEAP_OBJECT_BYTES = 3;
 // Disjoint from trusted bytes, records, optionals and maps.
 const int CCAM_HEAP_OBJECT_TAINTED = 6;
+const int CCAM_HEAP_OBJECT_LOG = 7;
+const int CCAM_HEAP_LOG_MAX_BYTES = 4096;
 const int CCAM_HEAP_TAINTED_MAX_BYTES = 4096;
 
 const int CCAM_HEAP_RECORD_HEADER_BYTES = 16;
@@ -234,11 +236,12 @@ const int AG_OPTIONAL_RECORD_MAX = 4096;
 const int AG_OPTIONAL_INT = 8193;
 const int AG_OPTIONAL_BOOL = 8194;
 const int AG_OPTIONAL_BYTES = 8195;
+const int AG_OPTIONAL_LOG = 8196;
 const int AG_OPTIONAL_RECORD_BASE = 10000;
 
 bool ccam_heap_optional_descriptor(int descriptor) {
     return descriptor == AG_OPTIONAL_INT || descriptor == AG_OPTIONAL_BOOL ||
-        descriptor == AG_OPTIONAL_BYTES ||
+        descriptor == AG_OPTIONAL_BYTES || descriptor == AG_OPTIONAL_LOG ||
         (descriptor > AG_OPTIONAL_RECORD_BASE &&
          descriptor <= AG_OPTIONAL_RECORD_BASE + AG_OPTIONAL_RECORD_MAX);
 }
@@ -254,6 +257,7 @@ bool ccam_heap_optional_payload_matches(CCAMHeap heap, int descriptor, CCAMHeapV
     if (descriptor == AG_OPTIONAL_INT) { return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_INT, 0); }
     if (descriptor == AG_OPTIONAL_BOOL) { return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_BOOL, 0); }
     if (descriptor == AG_OPTIONAL_BYTES) { return ccam_heap_value_is_bytes(heap, payload); }
+    if (descriptor == AG_OPTIONAL_LOG) { return ccam_heap_value_is_log(heap, payload); }
     if (descriptor > AG_OPTIONAL_RECORD_BASE &&
         descriptor <= AG_OPTIONAL_RECORD_BASE + AG_OPTIONAL_RECORD_MAX) {
         return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_REF, descriptor - AG_OPTIONAL_RECORD_BASE);
@@ -338,7 +342,7 @@ CCAMHeapValue ccam_map_snapshot_value(CCAMHeapValue value) {
 }
 
 CCAMHeapRefResult ccam_heap_alloc_map(CCAMHeap heap, int descriptor, int capacity) {
-    if (!ccam_heap_optional_descriptor(descriptor) || capacity < 0 || capacity > AG_MAP_MAX_ENTRIES) {
+    if (!ccam_heap_optional_descriptor(descriptor) || descriptor == AG_OPTIONAL_LOG || capacity < 0 || capacity > AG_MAP_MAX_ENTRIES) {
         return ccam_heap_ref_error("invalid_map_layout");
     }
     int backing = capacity * CCAM_HEAP_SLOT_BYTES * 2;
@@ -441,6 +445,7 @@ const int AG_MAP_DESCRIPTOR_BASE = 20000;
 
 bool ccam_heap_map_descriptor(int descriptor) {
     return descriptor > AG_MAP_DESCRIPTOR_BASE &&
+        descriptor - AG_MAP_DESCRIPTOR_BASE != AG_OPTIONAL_LOG &&
         ccam_heap_optional_descriptor(descriptor - AG_MAP_DESCRIPTOR_BASE);
 }
 
@@ -756,8 +761,19 @@ CCAMHeapRefResult ccam_heap_alloc_bytes(CCAMHeap heap, string data) {
 // Classification never converts a tainted reference back to a trusted one.
 // Public trusted-byte accessors continue to check OBJECT_BYTES exactly.
 CCAMHeapRefResult ccam_heap_alloc_byte_object(CCAMHeap heap, string data, bool tainted) {
+    int kind = CCAM_HEAP_OBJECT_BYTES;
+    if (tainted) { kind = CCAM_HEAP_OBJECT_TAINTED; }
+    return ccam_heap_alloc_classified_bytes(heap, data, kind);
+}
+
+// Internal model constructor: callers must establish the classification.
+// Not a candidate source instruction or an untrusted reference conversion.
+CCAMHeapRefResult ccam_heap_alloc_classified_bytes(CCAMHeap heap, string data, int kind) {
+    if (kind != CCAM_HEAP_OBJECT_BYTES && kind != CCAM_HEAP_OBJECT_TAINTED &&
+        kind != CCAM_HEAP_OBJECT_LOG) { return ccam_heap_ref_error("invalid_byte_kind"); }
     int length = data.len();
-    if (tainted && length > CCAM_HEAP_TAINTED_MAX_BYTES) {
+    if ((kind == CCAM_HEAP_OBJECT_TAINTED && length > CCAM_HEAP_TAINTED_MAX_BYTES) ||
+        (kind == CCAM_HEAP_OBJECT_LOG && length > CCAM_HEAP_LOG_MAX_BYTES)) {
         return ccam_heap_ref_error("invalid_bytes_size");
     }
     if (length < 0 || length > CCAM_HEAP_MAX_BYTES - CCAM_HEAP_BYTES_HEADER_BYTES) {
@@ -771,11 +787,9 @@ CCAMHeapRefResult ccam_heap_alloc_byte_object(CCAMHeap heap, string data, bool t
         return ccam_heap_ref_error(admission);
     }
     int id = heap.next_id;
-    int object_kind = CCAM_HEAP_OBJECT_BYTES;
-    if (tainted) { object_kind = CCAM_HEAP_OBJECT_TAINTED; }
     CCAMHeapObject object = new CCAMHeapObject{
         id: id,
-        kind: object_kind,
+        kind: kind,
         descriptor_id: 0,
         field_types: new List<int>(),
         field_ref_type_ids: new List<int>(),
@@ -842,6 +856,120 @@ CCAMHeapRefResult ccam_heap_tainted_slice(CCAMHeap heap, CCAMHeapRef reference, 
         heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
     }
     return allocated;
+}
+
+// Exact nominal log identity. Generic trusted bytes accessors intentionally
+// do not accept this object kind. Only escape and contextual composition
+// produce it in the candidate source model.
+bool ccam_heap_value_is_log(CCAMHeap heap, CCAMHeapValue value) {
+    if (value.kind != CCAM_HEAP_VALUE_REF) { return false; }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        return index >= 0 && heap.objects[index].kind == CCAM_HEAP_OBJECT_LOG;
+    }
+    return false;
+}
+
+struct CCAMLogUnit { int count; bool escape; }
+
+CCAMLogUnit ccam_heap_log_unit(string data, int i) {
+    int first = data.at(i);
+    if (first >= 32 && first < 127) { return new CCAMLogUnit{count: 1, escape: false}; }
+    int n = 0; int cp = 0;
+    if (first >= 194 && first <= 223) { n = 2; cp = first - 192; }
+    else if (first >= 224 && first <= 239) { n = 3; cp = first - 224; }
+    else if (first >= 240 && first <= 244) { n = 4; cp = first - 240; }
+    if (n == 0 || n > data.len() - i) { return new CCAMLogUnit{count: 1, escape: true}; }
+    for (int j = 1; j < n; j += 1) {
+        int b = data.at(i + j);
+        if (b < 128 || b > 191) { return new CCAMLogUnit{count: 1, escape: true}; }
+        cp = cp * 64 + b - 128;
+    }
+    if ((n == 3 && (cp < 2048 || (cp >= 55296 && cp <= 57343))) ||
+        (n == 4 && (cp < 65536 || cp > 1114111))) {
+        return new CCAMLogUnit{count: 1, escape: true};
+    }
+    bool hostile = (cp >= 128 && cp <= 159) || cp == 1564 || cp == 8206 || cp == 8207 ||
+        cp == 65279 || (cp >= 8232 && cp <= 8238) || (cp >= 8294 && cp <= 8297);
+    return new CCAMLogUnit{count: n, escape: hostile};
+}
+
+string ccam_heap_log_hex(int byte) {
+    string digits = "0123456789abcdef";
+    return "\\x" + char_str(digits.at(byte / 16)) + char_str(digits.at(byte % 16));
+}
+
+// Two passes: calculate exact bounded output before allocating; charge a
+// conservative bound for repeated string concatenation and scratch copies.
+// Invalid UTF-8 consumes one byte, valid hostile scalars escape every byte.
+CCAMHeapRefResult ccam_heap_escape_log(CCAMHeap heap, CCAMHeapRef reference) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject source = heap.objects[index];
+    if (source.kind != CCAM_HEAP_OBJECT_TAINTED && source.kind != CCAM_HEAP_OBJECT_BYTES &&
+        source.kind != CCAM_HEAP_OBJECT_LOG) { return ccam_heap_ref_error("object_type_mismatch"); }
+    string data = source.byte_data;
+    if (data.len() > CCAM_HEAP_LOG_MAX_BYTES) { return ccam_heap_ref_error("invalid_bytes_size"); }
+    // Preflight worst-case scanning before the first pass; charge only on success.
+    if (data.len() * 8 > heap.max_work - heap.work_used) { return ccam_heap_ref_error("work_limit"); }
+    int length = 0; int i = 0;
+    while (i < data.len()) {
+        CCAMLogUnit unit = ccam_heap_log_unit(data, i);
+        int added = unit.count;
+        if (unit.escape) { added *= 4; }
+        if (added > CCAM_HEAP_LOG_MAX_BYTES - length) { return ccam_heap_ref_error("invalid_bytes_size"); }
+        length += added;
+        i += unit.count;
+    }
+    int work = data.len() * 8 + length * (length + 1) + length;
+    int temporary = length * 3 + 16;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, work, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    string out = "";
+    i = 0;
+    while (i < data.len()) {
+        CCAMLogUnit unit = ccam_heap_log_unit(data, i);
+        if (unit.escape) {
+            for (int j = 0; j < unit.count; j += 1) { out = out + ccam_heap_log_hex(data.at(i + j)); }
+        } else { out = out + data.slice(i, i + unit.count); }
+        i += unit.count;
+    }
+    CCAMHeapRefResult result = ccam_heap_alloc_classified_bytes(heap, out, CCAM_HEAP_OBJECT_LOG);
+    if (result.ok) {
+        heap.work_used += work - length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return result;
+}
+
+// Composition follows the checked language's contextual text rule:
+// trusted fragments may contain deliberate newlines; at least one operand
+// must be LogText. Tainted objects are never admitted directly.
+CCAMHeapRefResult ccam_heap_log_concat(CCAMHeap heap, CCAMHeapRef left_ref, CCAMHeapRef right_ref) {
+    int li = ccam_heap_object_index(heap, left_ref);
+    int ri = ccam_heap_object_index(heap, right_ref);
+    if (li < 0 || ri < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject left = heap.objects[li];
+    CCAMHeapObject right = heap.objects[ri];
+    if ((left.kind != CCAM_HEAP_OBJECT_BYTES && left.kind != CCAM_HEAP_OBJECT_LOG) ||
+        (right.kind != CCAM_HEAP_OBJECT_BYTES && right.kind != CCAM_HEAP_OBJECT_LOG) ||
+        (left.kind != CCAM_HEAP_OBJECT_LOG && right.kind != CCAM_HEAP_OBJECT_LOG)) {
+        return ccam_heap_ref_error("object_type_mismatch");
+    }
+    if (right.byte_data.len() > CCAM_HEAP_LOG_MAX_BYTES ||
+        left.byte_data.len() > CCAM_HEAP_LOG_MAX_BYTES - right.byte_data.len()) {
+        return ccam_heap_ref_error("invalid_bytes_size");
+    }
+    int length = left.byte_data.len() + right.byte_data.len();
+    int temporary = length * 2;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, temporary, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    CCAMHeapRefResult result = ccam_heap_alloc_classified_bytes(heap, left.byte_data + right.byte_data, CCAM_HEAP_OBJECT_LOG);
+    if (result.ok) {
+        heap.work_used += length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return result;
 }
 
 CCAMHeapRefResult ccam_heap_bytes_concat(CCAMHeap heap, CCAMHeapRef left_reference, CCAMHeapRef right_reference) {
@@ -1813,4 +1941,66 @@ test "tainted slice allocation rejects without charging or publishing" {
     assert(heap.objects.len() == prior_count && heap.next_id == prior_id);
     assert(heap.temporary_peak_bytes == prior_temporary);
     assert(ccam_heap_tainted_get(heap, source.reference, 0).value == 97);
+}
+
+test "nominal LogText escapes hostile input and permits only contextual composition" {
+    CCAMHeapCreateResult created = ccam_heap_create(65536, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    string data = "A" + char_str(27) + char_str(194) + char_str(155) +
+        char_str(226) + char_str(128) + char_str(174) + char_str(255) +
+        char_str(195) + char_str(169);
+    CCAMHeapRefResult trusted = ccam_heap_alloc_bytes(heap, data);
+    assert(trusted.ok);
+    CCAMHeapRefResult source = ccam_heap_taint_bytes(heap, trusted.reference);
+    assert(source.ok);
+    CCAMHeapRefResult log = ccam_heap_escape_log(heap, source.reference);
+    assert(log.ok);
+    CCAMHeapValue value = ccam_heap_ref_value(log.reference);
+    assert(ccam_heap_value_is_log(heap, value));
+    assert(!ccam_heap_value_is_bytes(heap, value));
+    assert(!ccam_heap_value_has_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    int id = ccam_heap_object_index(heap, log.reference);
+    assert(heap.objects[id].byte_data == "A\\x1b\\xc2\\x9b\\xe2\\x80\\xae\\xff" + char_str(195) + char_str(169));
+    assert(!ccam_heap_bytes_len(heap, log.reference).ok);
+    assert(!ccam_heap_bytes_slice(heap, log.reference, 0, 1).ok);
+    assert(!ccam_heap_tainted_len(heap, log.reference).ok);
+    CCAMHeapRefResult fragment = ccam_heap_alloc_bytes(heap, "\n    ^");
+    assert(fragment.ok);
+    CCAMHeapRefResult combined = ccam_heap_log_concat(heap, log.reference, fragment.reference);
+    assert(combined.ok);
+    assert(ccam_heap_value_is_log(heap, ccam_heap_ref_value(combined.reference)));
+    assert(heap.objects[ccam_heap_object_index(heap, combined.reference)].byte_data ==
+        heap.objects[id].byte_data + "\n    ^");
+    assert(!ccam_heap_log_concat(heap, log.reference, source.reference).ok);
+    assert(!ccam_heap_log_concat(heap, fragment.reference, fragment.reference).ok);
+    assert(!ccam_heap_bytes_concat(heap, log.reference, fragment.reference).ok);
+    CCAMHeapRefResult some = ccam_heap_alloc_optional(heap, AG_OPTIONAL_LOG, true, value);
+    CCAMHeapRefResult absent = ccam_heap_alloc_optional(heap, AG_OPTIONAL_LOG, false, ccam_heap_int(0));
+    assert(some.ok && absent.ok);
+    assert(!ccam_heap_alloc_optional(heap, AG_OPTIONAL_BYTES, true, value).ok);
+    assert(!ccam_heap_alloc_optional(heap, AG_OPTIONAL_LOG, true, ccam_heap_ref_value(fragment.reference)).ok);
+    assert(!ccam_heap_optional_matches(heap, ccam_heap_ref_value(some.reference), AG_OPTIONAL_BYTES));
+    CCAMHeapValueResult read = ccam_heap_optional_read(heap, ccam_heap_ref_value(some.reference), AG_OPTIONAL_LOG, true);
+    assert(read.ok && ccam_heap_value_is_log(heap, read.value));
+    assert(!ccam_heap_optional_read(heap, ccam_heap_ref_value(absent.reference), AG_OPTIONAL_LOG, true).ok);
+}
+
+test "LogText escape quota rejection does not publish or charge" {
+    CCAMHeapCreateResult created = ccam_heap_create(18, 8);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult source = ccam_heap_alloc_bytes(heap, "A");
+    assert(source.ok);
+    int before = heap.bytes_used;
+    int work = heap.work_used;
+    int id = heap.next_id;
+    int peak = heap.temporary_peak_bytes;
+    // Exact output fits; use a second source to fill the heap, then reject.
+    CCAMHeapRefResult first = ccam_heap_escape_log(heap, source.reference);
+    assert(first.ok);
+    before = heap.bytes_used; work = heap.work_used; id = heap.next_id; peak = heap.temporary_peak_bytes;
+    assert(!ccam_heap_escape_log(heap, source.reference).ok);
+    assert(heap.bytes_used == before && heap.work_used == work && heap.next_id == id &&
+        heap.temporary_peak_bytes == peak);
 }

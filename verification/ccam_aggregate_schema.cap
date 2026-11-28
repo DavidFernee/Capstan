@@ -113,7 +113,7 @@ const int AG_OP_OPT_PRESENT = 31;
 const int AG_OP_OPT_UNWRAP = 32;
 
 bool ag_schema_optional_descriptor(int descriptor) {
-    return descriptor == 8193 || descriptor == 8194 || descriptor == 8195 ||
+    return descriptor == 8193 || descriptor == 8194 || descriptor == 8195 || descriptor == 8196 ||
         (descriptor > 10000 && descriptor <= 14096);
 }
 
@@ -154,11 +154,12 @@ const int AG_OP_MAP_SET = 36;
 
 bool ag_schema_map_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
     if (opcode == AG_OP_MAP_NEW) {
+        if (operands.len() == 2 && operands[1] == 8196) { return false; }
         return kind == AG_SCHEMA_REF && operands.len() == 2 &&
             ag_schema_optional_descriptor(operands[1]) &&
             ag_schema_register(kinds, operands[0], AG_SCHEMA_REF);
     }
-    if (operands.len() != 4 || !ag_schema_optional_descriptor(operands[3])) { return false; }
+    if (operands.len() != 4 || operands[3] == 8196 || !ag_schema_optional_descriptor(operands[3])) { return false; }
     if (opcode == AG_OP_MAP_SET) {
         return kind == ag_schema_optional_payload(operands[3]) &&
             ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
@@ -210,13 +211,14 @@ const int AG_OP_MAP_REMOVE = 42;
 
 bool ag_schema_map_enumeration(List<int> kinds, int opcode, int kind, List<int> operands) {
     if (opcode == AG_OP_MAP_KEYS) {
+        if (operands.len() == 3 && operands[2] == 8196) { return false; }
         return kind == AG_SCHEMA_REF && operands.len() == 3 &&
             ag_schema_optional_descriptor(operands[2]) &&
             ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
             ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
     }
     return opcode == AG_OP_MAP_REMOVE && kind == AG_SCHEMA_BOOL &&
-        operands.len() == 4 && ag_schema_optional_descriptor(operands[3]) &&
+        operands.len() == 4 && operands[3] != 8196 && ag_schema_optional_descriptor(operands[3]) &&
         ag_schema_register(kinds, operands[0], AG_SCHEMA_BOOL) &&
         ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
         ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
