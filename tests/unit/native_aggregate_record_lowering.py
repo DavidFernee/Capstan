@@ -24,6 +24,8 @@ def main():
         'bytes-slice-negative': None,
         'text-extrema': 42, 'text-byte-bool': 255,
         'text-byte-over': None, 'text-byte-negative': None,
+        'list-int': 42, 'list-bool': 2, 'list-full': 255,
+        'list-empty': 0, 'list-over': None, 'list-oob': None, 'list-negative': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
