@@ -1,5 +1,5 @@
 // Candidate checked AGFunction -> Linux x86-64 ELF. Not canonical native CCAM.
-// Only zero-argument, int-result functions, closed scalar and int-record
+// Only zero-argument, int-result functions, closed scalar and mixed-record
 // instructions. All reference values originate in allocation or reference
 // moves; headers are immutable, arena lifetime is one process invocation.
 // No calls, external references, collection types, GC or source ABI claim.
@@ -34,7 +34,20 @@ AGImage ag_nv_failure() {
 
 // Structural and profile admission before any code emission. Layouts are
 // globally consistent for each record descriptor, even in unreachable code.
-bool ag_nv_admit_function(AGFunction f, List<int> layouts, bool calls) {
+// A field shape is 0 for int, -1 for bool, positive for nominal record.
+// Registry keys are unambiguous bounded decimal descriptor/index pairs.
+int ag_nv_field_shape(int kind, int descriptor) {
+    if (kind == AG_SCHEMA_INT && descriptor == 0) { return 0; }
+    if (kind == AG_SCHEMA_BOOL && descriptor == 0) { return -1; }
+    if (kind == AG_SCHEMA_REF && descriptor >= 1 && descriptor <= 4096) { return descriptor; }
+    return -2;
+}
+
+string ag_nv_field_key(int descriptor, int index) {
+    return int_to_str(descriptor) + ":" + int_to_str(index);
+}
+
+bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool calls) {
     if ((!calls && (f.signature.parameters.len() != 0 || f.signature.result_kind != AG_SCHEMA_INT)) ||
         f.signature.parameters.len() > AG_NV_MAX_REGS ||
         f.kinds.len() > AG_NV_MAX_REGS ||
@@ -59,11 +72,16 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, bool calls) {
                 int id = op[1]; int count = (op.len() - 2) / 2;
                 if (id < 1 || id > 4096 || (layouts[id] != -1 && layouts[id] != count)) { return false; }
                 for (int j = 2; j < op.len(); j += 2) {
-                    if (op[j] != AG_SCHEMA_INT || op[j + 1] != 0) { return false; }
+                    int shape = ag_nv_field_shape(op[j], op[j + 1]);
+                    if (shape == -2) { return false; }
+                    string key = ag_nv_field_key(id, (j - 2) / 2);
+                    if (let previous = fields.get(key)) {
+                        if (previous != shape) { return false; }
+                    } else { fields.set(key, shape); }
                 }
                 layouts[id] = count;
             } else if (ins.opcode == AG_OP_FIELD_GET || ins.opcode == AG_OP_FIELD_SET) {
-                if (ins.kind != AG_SCHEMA_INT || op[2] < 1 || op[2] > 4096 || op[4] != 0) { return false; }
+                if (op[2] < 1 || op[2] > 4096 || ag_nv_field_shape(ins.kind, op[4]) == -2) { return false; }
             } else if (calls && ins.opcode == AG_OP_DIRECT_CALL) {
                 // Module-level nominal signature admission and boundary guards.
             } else if (ins.opcode < AG_OP_SCALAR_CONST || ins.opcode > AG_OP_NOT) { return false; }
@@ -72,12 +90,22 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, bool calls) {
     return true;
 }
 
-bool ag_nv_check_layouts(AGFunction f, List<int> layouts) {
+bool ag_nv_check_layouts(AGFunction f, List<int> layouts, Map<int> fields) {
     for (int b = 0; b < f.blocks.len(); b += 1) {
         for (int i = 0; i < f.blocks[b].instructions.len(); i += 1) {
             AGBlockInstruction ins = f.blocks[b].instructions[i];
             if (ins.opcode == AG_OP_FIELD_GET || ins.opcode == AG_OP_FIELD_SET) {
-                if (ins.operands[3] >= layouts[ins.operands[2]]) { return false; }
+                List<int> a = ins.operands;
+                if (a[3] >= layouts[a[2]]) { return false; }
+                if (let shape = fields.get(ag_nv_field_key(a[2], a[3]))) {
+                    if (shape != ag_nv_field_shape(ins.kind, a[4]) ||
+                        (shape > 0 && layouts[shape] < 0)) { return false; }
+                } else { return false; }
+            } else if (ins.opcode == AG_OP_RECORD_ALLOC) {
+                for (int j = 2; j < ins.operands.len(); j += 2) {
+                    int shape = ag_nv_field_shape(ins.operands[j], ins.operands[j + 1]);
+                    if (shape > 0 && layouts[shape] < 0) { return false; }
+                }
             }
         }
     }
@@ -87,7 +115,8 @@ bool ag_nv_check_layouts(AGFunction f, List<int> layouts) {
 bool ag_nv_admit(AGFunction f, List<int> layouts) {
     if (layouts.len() != 0) { return false; }
     for (int i = 0; i <= 4096; i += 1) { layouts.push(-1); }
-    return ag_nv_admit_function(f, layouts, false) && ag_nv_check_layouts(f, layouts) &&
+    Map<int> fields = new Map<int>();
+    return ag_nv_admit_function(f, layouts, fields, false) && ag_nv_check_layouts(f, layouts, fields) &&
         ag_function_validate(f);
 }
 
@@ -135,6 +164,34 @@ bool ag_nv_fuel(AGNVContext c) {
     return ag_nv_edge(c, 136, c.trap); // js
 }
 
+// RAX holds an arena offset, never a machine address. The membership leaf
+// preserves it and RSI/RDI. Only after membership succeeds inspect the
+// immutable descriptor/count header; use the same global layout registry.
+bool ag_nv_reference(AGNVContext c, int descriptor) {
+    List<int> b = c.code;
+    if (descriptor < 1 || descriptor > 4096 || c.layouts[descriptor] < 0 ||
+        b.len() > AG_BYTE_LIMIT - 64 ||
+        !ag_nv_imm(b, 6, descriptor) || !ag_nv_imm(b, 7, c.layouts[descriptor]) ||
+        !ag_nv_call(c, c.trap + 6)) { return false; }
+    // cmp [r12+rax],rsi ; jne trap
+    b.push(73); b.push(57); b.push(52); b.push(4);
+    if (!ag_nv_edge(c, 133, c.trap)) { return false; }
+    // cmp [r12+rax+8],rdi ; jne trap
+    b.push(73); b.push(57); b.push(124); b.push(4); b.push(8);
+    return ag_nv_edge(c, 133, c.trap);
+}
+
+// RAX is the payload word. Booleans require exact canonical representation.
+bool ag_nv_field_value(AGNVContext c, int kind, int descriptor) {
+    if (kind == AG_SCHEMA_REF) { return ag_nv_reference(c, descriptor); }
+    if (kind == AG_SCHEMA_BOOL) {
+        if (c.code.len() > AG_BYTE_LIMIT - 10) { return false; }
+        c.code.push(72); c.code.push(131); c.code.push(248); c.code.push(1);
+        return ag_nv_edge(c, 135, c.trap); // ja, including negative words
+    }
+    return kind == AG_SCHEMA_INT;
+}
+
 bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
     if (c.code.len() > AG_BYTE_LIMIT - 256 || !ag_nv_fuel(c)) { return false; }
     List<int> b = c.code; List<int> a = ins.operands; int op = ins.opcode;
@@ -151,12 +208,17 @@ bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
             ag_nv_call(c, c.trap + 3) && ag_nv_slot(b, true, 0, a[0]);
     }
     if (op == AG_OP_FIELD_GET || op == AG_OP_FIELD_SET) {
+        // Validate payload before any store. Reload object and payload from
+        // their independent frame slots after the guard clobbers scratch regs.
+        if (op == AG_OP_FIELD_SET && ins.kind != AG_SCHEMA_INT) {
+            if (!ag_nv_slot(b, false, 0, a[0]) || !ag_nv_field_value(c, ins.kind, a[4])) { return false; }
+        }
         if (!ag_nv_slot(b, false, 0, a[1]) || !ag_nv_imm(b, 6, a[2]) ||
             !ag_nv_imm(b, 7, c.layouts[a[2]]) || !ag_nv_imm(b, 8, a[3])) { return false; }
         if (op == AG_OP_FIELD_SET) {
             return ag_nv_slot(b, false, 9, a[0]) && ag_nv_call(c, c.trap + 5);
         }
-        return ag_nv_call(c, c.trap + 4) && ag_nv_slot(b, true, 0, a[0]);
+        return ag_nv_call(c, c.trap + 4) && ag_nv_field_value(c, ins.kind, a[4]) && ag_nv_slot(b, true, 0, a[0]);
     }
     if (!ag_nv_slot(b, false, 0, a[1]) || !ag_nv_slot(b, false, 1, a[2])) { return false; }
     if (op == AG_OP_ADD || op == AG_OP_SUB || op == AG_OP_MUL) {
@@ -221,7 +283,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     int count = f.blocks.len();
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 6; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 7; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Stack frame: one slot per register and one private return word.
     b.push(72); b.push(129); b.push(236);
@@ -254,6 +316,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     c.labels[count + 3] = b.len(); if (!ag_native_emit_scalar_record_alloc(b)) { return ag_nv_failure(); }
     c.labels[count + 4] = b.len(); if (!ag_native_emit_guarded_record_access(b, false)) { return ag_nv_failure(); }
     c.labels[count + 5] = b.len(); if (!ag_native_emit_guarded_record_access(b, true)) { return ag_nv_failure(); }
+    c.labels[count + 6] = b.len(); if (!ag_native_emit_record_boundary(b)) { return ag_nv_failure(); }
     for (int i = 0; i < c.patches.len(); i += 1) {
         if (!ag_rel32(b, c.patches[i], c.labels[c.targets[i]])) { return ag_nv_failure(); }
     }
