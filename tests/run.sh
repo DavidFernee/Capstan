@@ -194,6 +194,20 @@ else
   bad "indexed lifecycle emission" "$out"
 fi
 
+section "Candidate native indexed dynamic scalar lists"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_indexed_dynamic_list.cap" 2>&1)"; then
+  ok "indexed dynamic scalar list emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_indexed_dynamic_list.py" "$ROOT/build/ccam-native-indexed-lifecycle.bin" "$ROOT/build/ccam-native-indexed-dynamic-list.bin" 2>&1)"; then
+      ok "native indexed dynamic scalar list growth and mutation"
+    else
+      bad "indexed dynamic list execution" "$out"
+    fi
+  fi
+else
+  bad "indexed dynamic list emission" "$out"
+fi
+
 section "Candidate native borrowed-FD output"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_output.cap" 2>&1)"; then
   ok "bounded borrowed-FD output emission"
