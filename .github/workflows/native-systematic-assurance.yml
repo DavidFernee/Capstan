@@ -1,0 +1,24 @@
+name: native systematic assurance
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  systematic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Record revision and bootstrap compiler
+        run: |
+          git rev-parse HEAD 'HEAD^{tree}'
+          make
+      - name: Run exact arithmetic vectors
+        run: bin/capstan test verification/ccam_assurance_arithmetic_tests.cap
+      - name: Run bounded transition cases
+        run: bin/capstan test verification/ccam_assurance_transition_tests.cap
