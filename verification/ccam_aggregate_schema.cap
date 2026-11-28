@@ -100,7 +100,20 @@ bool ag_schema_scalar_operands(List<int> kinds, int opcode, int kind, List<int> 
 const int AG_OP_LIST_PUSH = 26;
 const int AG_OP_LIST_POP_DISCARD = 27;
 
+// Direct call operands: [destination, function index, argument registers...].
+const int AG_OP_DIRECT_CALL = 28;
+const int AG_DIRECT_MAX_ARGS = 256;
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (opcode == AG_OP_DIRECT_CALL) {
+        if (operands.len() < 2 || operands.len() > AG_DIRECT_MAX_ARGS + 2 ||
+            operands[1] < 0 || !ag_schema_register(kinds, operands[0], element_kind)) { return false; }
+        for (int i = 2; i < operands.len(); i += 1) {
+            int reg = operands[i];
+            if (reg < 0 || reg >= kinds.len() || !ag_schema_kind(kinds[reg])) { return false; }
+        }
+        return true;
+    }
     if (opcode == AG_OP_LIST_PUSH) {
         return operands.len() == 2 && ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
             ag_schema_register(kinds, operands[1], element_kind);
