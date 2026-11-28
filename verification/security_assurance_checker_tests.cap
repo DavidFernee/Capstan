@@ -1,0 +1,61 @@
+// Compile source through the actual lexer, parser and semantic checker.
+// No execution, environmental secret lookup or code generation is required.
+bool assurance_checker_case(string text, string expected) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("assurance-source.cap");
+    Tainted source = taint(text);
+    ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    // Reject syntax failures as invalid fixtures, not successful security tests.
+    if (error_count(ctx) != 0) { return false; }
+    check_program(new_checker(ctx), declarations, false);
+    if (expected == "") { return error_count(ctx) == 0; }
+    if (error_count(ctx) == 0) { return false; }
+    for (int i = 0; i < ctx.diags.len(); i += 1) {
+        if (ctx.diags[i].error && ctx.diags[i].code == expected) { return true; }
+    }
+    return false;
+}
+
+test "taint checker rejects laundering across renamed bindings and neutral source transformations" {
+    List<string> names = new List<string>();
+    names.push("input_value"); names.push("candidate"); names.push("payload");
+    names.push("incoming"); names.push("untrusted_text"); names.push("external_value");
+    List<string> spaces = new List<string>();
+    spaces.push(" "); spaces.push("\n"); spaces.push("\t"); spaces.push(" /* neutral */ ");
+    for (int n = 0; n < names.len(); n += 1) {
+        string name = names[n];
+        for (int s = 0; s < spaces.len(); s += 1) {
+            string gap = spaces[s];
+            string start = "int main() {" + gap + "Tainted " + name + " = taint(\"external\");" + gap;
+            assert(assurance_checker_case(start + "string leaked = " + name + "; return 0; }", "CWE-20"));
+            assert(assurance_checker_case(start + "Tainted copied = " + name + "; string leaked = copied; return 0; }", "CWE-20"));
+            assert(assurance_checker_case(start + "Html page = escape_html(taint(\"<p>\")) + " + name + "; return 0; }", "CWE-116"));
+            assert(assurance_checker_case(start + "Tainted copied = " + name + "; return copied.len(); }", ""));
+            assert(assurance_checker_case(start + "Html page = escape_html(" + name + "); return 0; }", ""));
+        }
+    }
+}
+
+test "secret checker rejects disclosure and timing comparisons with positive controls" {
+    List<string> names = new List<string>();
+    names.push("first"); names.push("credential"); names.push("hidden");
+    names.push("private_value"); names.push("access_key"); names.push("opaque_value");
+    List<string> spaces = new List<string>();
+    spaces.push(" "); spaces.push("\n"); spaces.push("\t"); spaces.push(" /* neutral */ ");
+    for (int n = 0; n < names.len(); n += 1) {
+        string name = names[n];
+        for (int s = 0; s < spaces.len(); s += 1) {
+            string gap = spaces[s];
+            string head = "bool compare(Secret " + name + ", Secret other) {" + gap;
+            string end = " } int main() { return 0; }";
+            assert(assurance_checker_case(head + "return " + name + " == other;" + end, "CWE-208"));
+            assert(assurance_checker_case(head + "return secret_eq(" + name + ", other);" + end, ""));
+            string prefix = "void inspect(Secret " + name + ") {" + gap;
+            assert(assurance_checker_case(prefix + "println(" + name + ");" + end, "CWE-532"));
+            assert(assurance_checker_case(prefix + "string leaked = " + name + ";" + end, "CWE-200"));
+            assert(assurance_checker_case(prefix + "println(hash(" + name + "));" + end, "CWE-532"));
+        }
+    }
+}
