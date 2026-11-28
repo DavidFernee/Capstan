@@ -1,0 +1,66 @@
+// Candidate scalar frame layout; not a frozen native ABI.
+// Value slots and initialization slots are disjoint eight-byte cells.
+// Two metadata cells reserve continuation and caller frame identity.
+const int SN_FRAME_REGISTER_LIMIT = 256;
+struct SNFrameLayout { bool ok; int registers; int bytes; }
+SNFrameLayout sn_frame_layout(int registers) {
+    if (registers < 0 || registers > SN_FRAME_REGISTER_LIMIT) {
+        return new SNFrameLayout{ok:false,registers:0,bytes:0};
+    }
+    return new SNFrameLayout{ok:true,registers:registers,bytes:16+16*registers};
+}
+bool sn_frame_valid(SNFrameLayout frame) {
+    return frame.ok && frame.registers >= 0 &&
+        frame.registers <= SN_FRAME_REGISTER_LIMIT &&
+        frame.bytes == 16+16*frame.registers;
+}
+int sn_frame_value_offset(SNFrameLayout frame, int reg) {
+    if (!sn_frame_valid(frame) || reg < 0 || reg >= frame.registers) { return -1; }
+    return 16+8*reg;
+}
+int sn_frame_init_offset(SNFrameLayout frame, int reg) {
+    if (!sn_frame_valid(frame) || reg < 0 || reg >= frame.registers) { return -1; }
+    return 16+8*frame.registers+8*reg;
+}
+// Pure preflight: caller must commit the reservation only after success.
+// The entry frame counts toward depth; hardware stack overhead and
+// transport scratch must be reserved separately by the eventual emitter.
+bool sn_frame_admit(SNFrameLayout frame, int live_bytes, int byte_limit,
+                    int depth, int depth_limit) {
+    if (!sn_frame_valid(frame) || live_bytes < 0 || byte_limit < 0 ||
+        live_bytes > byte_limit || depth < 0 || depth_limit < 0 ||
+        depth >= depth_limit) { return false; }
+    return frame.bytes <= byte_limit-live_bytes;
+}
+test "scalar frame disjoint aligned slots" {
+    SNFrameLayout f=sn_frame_layout(256);
+    assert(f.ok && f.bytes==4112);
+    for (int i=0; i<256; i+=1) {
+        assert(sn_frame_value_offset(f,i)==16+8*i);
+        assert(sn_frame_init_offset(f,i)==2064+8*i);
+        assert(sn_frame_init_offset(f,i)+8<=f.bytes);
+    }
+    assert(sn_frame_value_offset(f,256)==-1);
+    assert(sn_frame_init_offset(f,-1)==-1);
+}
+test "scalar frame exact and one-short admission" {
+    SNFrameLayout f=sn_frame_layout(1);
+    assert(sn_frame_admit(f,32,64,1,2));
+    assert(!sn_frame_admit(f,32,63,1,2));
+    assert(!sn_frame_admit(f,32,64,2,2));
+    assert(!sn_frame_admit(f,65,64,1,2));
+    assert(!sn_frame_admit(f,-1,64,1,2));
+    assert(!sn_frame_admit(f,0,64,-1,2));
+    assert(!sn_frame_admit(f,0,64,0,0));
+    assert(!sn_frame_admit(f,9223372036854775807,9223372036854775807,1,2));
+}
+test "scalar frame rejects forged and oversized layouts" {
+    assert(!sn_frame_layout(-1).ok);
+    assert(!sn_frame_layout(257).ok);
+    assert(!sn_frame_layout(9223372036854775807).ok);
+    SNFrameLayout f=sn_frame_layout(0);
+    assert(f.ok && f.bytes==16);
+    f.bytes=0;
+    assert(!sn_frame_valid(f));
+    assert(!sn_frame_admit(f,0,64,0,1));
+}
