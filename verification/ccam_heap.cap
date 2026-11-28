@@ -790,6 +790,66 @@ CCAMHeapIntResult ccam_heap_byte_get(CCAMHeap heap, CCAMHeapRef reference, int i
     return ccam_heap_int_ok(object.byte_data.at(index));
 }
 
+// Literal vectors are already closed, but recheck the byte range before
+// allocating. Account for the joined intermediate and destination copy.
+CCAMHeapRefResult ccam_heap_bytes_literal(CCAMHeap heap, List<int> operands) {
+    if (operands.len() == 0 || operands.len() > 4097) { return ccam_heap_ref_error("invalid_bytes_literal"); }
+    int length = operands.len() - 1;
+    for (int i = 1; i < operands.len(); i += 1) {
+        if (operands[i] < 0 || operands[i] > 255) { return ccam_heap_ref_error("invalid_bytes_literal"); }
+    }
+    // Conservative quadratic work bound for repeated string concatenation.
+    int temporary = length * 2;
+    int work = length * (length + 1) / 2 + length;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, work, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    string data = "";
+    for (int i = 1; i < operands.len(); i += 1) { data = data + char_str(operands[i]); }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_bytes(heap, data);
+    if (allocated.ok) {
+        heap.work_used += work - length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return allocated;
+}
+
+CCAMHeapValueResult ccam_heap_bytes_equal(CCAMHeap heap, CCAMHeapRef a, CCAMHeapRef b) {
+    int left = ccam_heap_object_index(heap, a);
+    int right = ccam_heap_object_index(heap, b);
+    if (left < 0 || right < 0) { return ccam_heap_value_error("invalid_reference"); }
+    if (heap.objects[left].kind != CCAM_HEAP_OBJECT_BYTES ||
+        heap.objects[right].kind != CCAM_HEAP_OBJECT_BYTES) {
+        return ccam_heap_value_error("object_type_mismatch");
+    }
+    string x = heap.objects[left].byte_data;
+    string y = heap.objects[right].byte_data;
+    int work = 1;
+    if (x.len() == y.len()) { work += x.len(); }
+    if (heap.work_used < 0 || heap.work_used > heap.max_work || work > heap.max_work - heap.work_used) {
+        return ccam_heap_value_error("work_limit");
+    }
+    heap.work_used += work;
+    return ccam_heap_value_ok(ccam_heap_bool(ccam_map_key_equal(x, y)));
+}
+
+CCAMHeapRefResult ccam_heap_bytes_slice_alloc(CCAMHeap heap, CCAMHeapRef reference, int start, int end) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_BYTES) { return ccam_heap_ref_error("object_type_mismatch"); }
+    if (start < 0 || end < start || end > object.byte_data.len()) { return ccam_heap_ref_error("byte_bounds"); }
+    int length = end - start;
+    int temporary = length * 2;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, temporary, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_bytes(heap, object.byte_data.slice(start, end));
+    if (allocated.ok) {
+        heap.work_used += length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return allocated;
+}
+
 CCAMHeapStringResult ccam_heap_bytes_slice(CCAMHeap heap, CCAMHeapRef reference, int start, int end) {
     int object_index = ccam_heap_object_index(heap, reference);
     if (object_index < 0) {
