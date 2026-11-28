@@ -166,6 +166,20 @@ else
   bad "bounded native record membership guard emission" "$out"
 fi
 
+section "Candidate native taint validation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_taint_validation.cap" 2>&1)"; then
+  ok "native taint validation emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_taint_validation.py" "$ROOT/build/ccam-native-taint-validation.bin" 2>&1)"; then
+      ok "native taint validation differential and boundary execution"
+    else
+      bad "native taint validation execution" "$out"
+    fi
+  fi
+else
+  bad "native taint validation emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"
