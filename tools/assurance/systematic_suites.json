@@ -170,6 +170,10 @@
   "mutscalar": [
     [
       "python3",
+      "tests/unit/test_security_assurance_mutants.py"
+    ],
+    [
+      "python3",
       "tests/unit/security_assurance_mutants.py",
       "scalar"
     ]
