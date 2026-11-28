@@ -656,3 +656,22 @@ test "candidate stdout supports trusted and contextual log values without launde
     a[1] = -4102;
     assert(!ag_schema_operands(kinds, AG_OP_PRINTLN, AG_SCHEMA_REF, a));
 }
+
+test "native source validation reuses bounded exact taint leaf modes" {
+    string src = "int run() { int? n = validate_int(taint(\"42\")); " +
+        "if (let x = n) { string? id = validate_ident(taint(\"_name9\")); " +
+        "if (let word = id) { if (word == \"_name9\") { return x; } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(src, 1024, 8), "build/ccam-native-record-validation.elf"));
+    string absent = "int run() { if (let n = validate_int(taint(\"9223372036854775808\"))) { return 1; } " +
+        "if (let s = validate_ident(taint(\"9bad\"))) { return 2; } return 42; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(absent, 1024, 8), "build/ccam-native-record-validation-absent.elf"));
+    string escaped = "int run() { string s = escape_c(taint(char_str(34))); return s.len() + s.at(0); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(escaped, 1024, 8), "build/ccam-native-record-validation-escape.elf"));
+    assert(!ag_nvc_test_source("int run() { if (let n = validate_int(\"42\")) { return n; } return 0; }", 1024, 8).ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF);
+    List<int> a = new List<int>(); a.push(0); a.push(0);
+    List<bool> ready = new List<bool>(); ready.push(false);
+    assert(!ag_transfer(kinds, ready, AG_OP_VALIDATE_IDENT, AG_SCHEMA_REF, a).ok);
+    ready[0] = true;
+    assert(ag_transfer(kinds, ready, AG_OP_VALIDATE_IDENT, AG_SCHEMA_REF, a).ok);
+}

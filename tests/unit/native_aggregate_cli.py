@@ -125,6 +125,33 @@ int main() {
         assert (q.returncode, q.stdout, q.stderr) == (0, expected + struct.pack("<q", 42), b""), ("production print_diags", q)
         print("Production print_diags candidate: exact source emitted expected diagnostic bytes")
 
+        # Compile the entire production AST module, unchanged, with only
+        # a test entry appended. No declaration pruning or replacement.
+        source.write_text(ast + r"""
+int main() {
+    CompileBudget budget = new_compile_budget();
+    Node node = mk_node_s(N_INT, "n", 0, 1);
+    Node parent = mk_node(N_BLOCK, 0, 1);
+    parent.kids.push(node);
+    List<Node> roots = new List<Node>(); roots.push(parent);
+    if (!charge_ast_nodes(budget, roots) || budget.ast_nodes != 2) { return 1; }
+    Type a = mk_wrap(TY_LIST, mk_type(TY_INT));
+    Type b = mk_wrap(TY_LIST, mk_type(TY_INT));
+    if (!type_eq(a, b) || type_str(a) != "List<int>") { return 2; }
+    if (!assignable(mk_type(TY_NONE), mk_wrap(TY_OPT, mk_type(TY_INT)))) { return 3; }
+    if (lower("AbC") != "abc" || !contains("abc", "bc")) { return 4; }
+    if (edit_distance("a", "b") != 1) { return 5; }
+    List<string> candidates = new List<string>(); candidates.push("cat");
+    if (suggest("car", candidates) != " (did you mean 'cat'?)") { return 6; }
+    return 42;
+}
+""")
+        p = run(root, cli, out, "fixture.cap")
+        assert p.returncode == 0, ("complete production ast.cap admission", p.stdout.decode(errors="replace"))
+        q = subprocess.run([str(out)], capture_output=True, timeout=5)
+        assert (q.returncode, q.stdout, q.stderr) == (0, struct.pack("<q", 42), b""), ("complete production ast.cap execution", q)
+        print("Complete production ast.cap candidate: all declarations admitted and constructor/type/collection helpers executed")
+
         # The complete checked compiler is the actual target. Do not prune
         # declarations, rename functions, or substitute a synthetic subset.
         probe = root / "compiler-probe"
