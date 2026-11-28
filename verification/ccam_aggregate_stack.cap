@@ -58,28 +58,18 @@ string ag_stack_call_internal(AGStack stack, AGCallSignature signature, List<int
     if (stack.slots > stack.max_slots || kinds.len() > stack.max_slots - stack.slots) {
         return ccam_aggregate_trap(stack.active, "frame_slot_limit");
     }
+    AGFrameResult opened = new AGFrameResult{ok: false, frame: stack.active, error: "invalid_call"};
     if (nominal) {
         AGNominalSignature contract = new AGNominalSignature{coarse: signature,
             parameter_descriptors: descriptors, result_descriptor: result_descriptor};
-        // Preflight without publishing a continuation or changing caller registers.
-        if (!ag_nominal_signature(contract)) {
-            return ccam_aggregate_trap(stack.active, "invalid_call");
-        }
-        for (int i = 0; i < arguments.len(); i += 1) {
-            if (i >= signature.parameters.len()) {
-                return ccam_aggregate_trap(stack.active, "invalid_call");
-            }
-            CCAMAggregateValueResult argument = ccam_aggregate_read(
-                stack.active, arguments[i], signature.parameters[i]);
-            if (!argument.ok) { return ccam_aggregate_trap(stack.active, argument.trap); }
-            if (!ccam_heap_value_has_type(stack.active.heap, argument.value,
-                signature.parameters[i], descriptors[i])) {
-                return ccam_aggregate_trap(stack.active, "argument_descriptor_mismatch");
-            }
-        }
+        // Nominal preflight uses the same frame API and does not publish a
+        // continuation until both the structural and descriptor checks pass.
+        opened = ag_nominal_open(stack.active, contract, kinds, arguments,
+            destination, stack.max_slots - stack.slots);
+    } else {
+        opened = ag_frame_open(stack.active, signature, kinds, arguments,
+            destination, stack.max_slots - stack.slots);
     }
-    AGFrameResult opened = ag_frame_open(stack.active, signature, kinds, arguments,
-        destination, stack.max_slots - stack.slots);
     if (!opened.ok) { return ccam_aggregate_trap(stack.active, opened.error); }
     // Copy signature parameters so future caller-side list mutation cannot
     // alter the stored return continuation.
