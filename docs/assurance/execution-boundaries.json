@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0.0",
   "repository": "DavidFernee/Capstan",
-  "baseline_commit": "5e66d4abf4159ff3ff14ae169d02ea3417ce26d8",
+  "baseline_commit": "667cf0d9337792748c0050f46dfe8fd6c33138bc",
   "production_path": [
     "compiler/main.cap",
     "compiler/checker.cap",
@@ -126,7 +126,10 @@
         "verification/ccam_direct_elf.cap",
         "verification/native_elf64.cap",
         "docs/architecture/CCAM-NATIVE-BACKEND.md",
-        "tools/native_driver.cap"
+        "tools/native_driver.cap",
+        "verification/ccam_direct_elf_tests.cap",
+        "verification/native_arena_record.cap",
+        "verification/native_arena_reserve.cap"
       ],
       "open": [
         "Direct ELF supports bounded scalar calls to non-entry functions and parameterless integer entries; parameterless void entry is available only in record mode. Byte output, heap/aggregate/global/foreign operations, stable record consumer/retry, complete outcome equivalence and whole-program refinement remain open.",
