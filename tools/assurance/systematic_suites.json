@@ -137,5 +137,22 @@
       "python3",
       "tests/unit/assurance_raw_corpus_tests.py"
     ]
+  ],
+  "ecosystem": [
+    [
+      "bin/capstan",
+      "test",
+      "verification/halyard_assurance_resource_tests.cap"
+    ],
+    [
+      "bin/capstan",
+      "test",
+      "verification/helm_assurance_memory_tests.cap"
+    ],
+    [
+      "bin/capstan",
+      "test",
+      "verification/bosun_assurance_storage_tests.cap"
+    ]
   ]
 }
