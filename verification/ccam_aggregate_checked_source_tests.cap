@@ -52,7 +52,7 @@ test "checked aggregate source indexes nominal record arrays and measures collec
 test "checked source adapter refuses unsupported code without a partial executable" {
     AGSourceModuleResult invalid = ag_source_test_compile(
         "int first(List<int> values, int index) { return values[index]; } " +
-        "int unsupported(int value) { Map<int> values = new Map<int>(); values.set(\"x\", value); return value; }");
+        "int unsupported(int value) { List<List<int>> values = new List<List<int>>(); return value; }");
     assert(!invalid.ok && invalid.error == "unsupported_function_body");
     assert(invalid.function_names.len() == 0);
     AGSourceModuleResult wrong = ag_source_test_compile(
@@ -329,5 +329,227 @@ test "void calls propagate arithmetic failure through all opened frames" {
     CCAMAggregateValueResult budget = ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_REF);
     if (let reference = budget.value.reference) {
         assert(ccam_heap_field_get(stack.stack.active.heap, reference, 1, 0).value.int_value == CCAM_I64_MAX);
+    } else { assert(false); }
+}
+
+test "checked optional calls preserve present zero and absent values" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int? choose(bool present) { if (present) { return 0; } return none; } " +
+        "int read_value(int? value) { if (let number = value) { return number; } return 7; } " +
+        "int main() { int? present = choose(true); int? absent = choose(false); return read_value(present) + read_value(absent); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 7);
+    assert(stack.stack.depth == 0 && stack.stack.slots == 1);
+}
+
+test "checked optional record field and if-let retain nominal payload identity" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Node { int number; } struct Holder { Node? node; } " +
+        "Holder make(Node node) { return new Holder{node: node}; } " +
+        "int read_value(Holder holder) { if (let node = holder.node) { return node.number; } return 0; } " +
+        "int main() { Node node = new Node{number: 42}; Holder holder = make(node); return read_value(holder); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
+}
+
+test "checked maps grow and transport present zero through optional lookup" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "Map<int> build(string first, string second) { Map<int> values = new Map<int>(); values.set(first, 0); values.set(second, 42); return values; } " +
+        "int read_value(Map<int> values, string key) { if (let value = values.get(key)) { return value; } return 7; } " +
+        "bool member(Map<int> values, string key) { return values.has(key); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 8192, 32, 8192, 8192, 256);
+    assert(root.ok);
+    assert(ccam_aggregate_alloc_bytes(root.machine, 0, "first") == "");
+    assert(ccam_aggregate_alloc_bytes(root.machine, 1, "second") == "");
+    assert(ccam_aggregate_alloc_bytes(root.machine, 2, "missing") == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0); args.push(1);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 3) == "");
+    args[0] = 3; args[1] = 0;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 4) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 4, AG_SCHEMA_INT).value.int_value == 0);
+    args[1] = 1;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 4) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 4, AG_SCHEMA_INT).value.int_value == 42);
+    args[1] = 2;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 4) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 4, AG_SCHEMA_INT).value.int_value == 7);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 5) == "");
+    assert(!ccam_aggregate_read(stack.stack.active, 5, AG_SCHEMA_BOOL).value.bool_value);
+    args[1] = 0;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 5) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 5, AG_SCHEMA_BOOL).value.bool_value);
+}
+
+test "checked escaped string literals preserve embedded NUL and exact byte comparisons" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "const string PREFIX = \"a\\0\"; " +
+        "string make() { return PREFIX + \"b?\"; } " +
+        "bool matches(string value) { return value == \"a\\0b?\"; } " +
+        "int check_byte(string value) { return value.slice(1, 3).at(0); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_BOOL); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
+    List<int> args = new List<int>(); args.push(0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 1) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_BOOL).value.bool_value);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 2) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 2, AG_SCHEMA_INT).value.int_value == 0);
+    CCAMAggregateValueResult returned = ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_REF);
+    if (let reference = returned.value.reference) {
+        assert(ccam_heap_bytes_len(stack.stack.active.heap, reference).value == 4);
+        assert(ccam_heap_byte_get(stack.stack.active.heap, reference, 3).value == 63);
+    } else { assert(false); }
+}
+
+test "checked string literals serve as symbol table keys" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int run() { Map<int> values = new Map<int>(); values.set(\"name\", 42); if (let value = values.get(\"name\")) { return value; } return 0; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
+}
+
+test "checked map enumeration preserves insertion order and independent string list snapshot" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int run() { Map<int> entries = new Map<int>(); entries.set(\"a\", 1); entries.set(\"b\", 2); entries.set(\"c\", 3); " +
+        "List<string> before = entries.keys(); bool removed = entries.remove(\"b\"); " +
+        "List<string> after = entries.keys(); List<string> names = new List<string>(); names.push(\"c\"); " +
+        "if (removed) { if (before[1] == \"b\") { if (after[1] == names[0]) { return before.len() * 10 + after.len(); } } } return 0; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 8192, 64, 8192, 8192, 256);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 32);
+}
+
+test "short circuit branches execute right side only when selected" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Counter { int nodes; } " +
+        "bool mark(Counter counter, bool value) { counter.nodes += 1; return value; } " +
+        "int run() { Counter counter = new Counter{nodes: 0}; " +
+        "bool a = false && mark(counter, true); bool b = true || mark(counter, false); " +
+        "bool c = true && mark(counter, true); bool d = false || mark(counter, false); " +
+        "if (!a && (b && (c && !d))) { return counter.nodes; } return -1; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 256);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 256);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 2);
+}
+
+test "short circuit suppresses unselected arithmetic traps but preserves selected traps" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "bool check(bool gate, int divisor) { return gate && (42 / divisor > 0); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_BOOL);
+    kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_bool(false)) == "");
+    assert(ccam_aggregate_write(root.machine, 1, ccam_heap_int(0)) == "");
+    assert(ccam_aggregate_write(root.machine, 2, ccam_heap_bool(true)) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0); args.push(1);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 2) == "");
+    assert(!ccam_aggregate_read(stack.stack.active, 2, AG_SCHEMA_BOOL).value.bool_value);
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_bool(true)) == "");
+    assert(ccam_aggregate_write(stack.stack.active, 2, ccam_heap_bool(true)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 2) == "division_by_zero");
+    assert(ccam_aggregate_read(stack.stack.active, 2, AG_SCHEMA_BOOL).value.bool_value);
+    assert(stack.stack.depth == 0 && stack.stack.slots == 3);
+}
+
+test "short circuit conditions are reevaluated on loop backedges" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int count(List<int> values, int limit) { int i = 0; while ((i < values.len()) && (values[i] < limit)) { i += 1; } return i; } " +
+        "int run() { List<int> values = new List<int>(); values.push(1); values.push(2); return count(values, 3); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 256);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 256);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 2);
+}
+
+test "checked conversions preserve signed extrema, boolean text and embedded zero bytes" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "string decimal(int number) { return int_to_str(number); } " +
+        "string byte_text(int number) { return char_str(number); } " +
+        "string label(bool present) { return to_text(present); } " +
+        "string same(string text) { return to_text(text); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 32, 4096, 4096, 256);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0);
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_int(CCAM_I64_MIN)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 1) == "");
+    CCAMAggregateValueResult minimum = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = minimum.value.reference) {
+        assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 20).value == "-9223372036854775808");
+    } else { assert(false); }
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_int(CCAM_I64_MAX)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 1) == "");
+    CCAMAggregateValueResult maximum = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = maximum.value.reference) {
+        assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 19).value == "9223372036854775807");
+    } else { assert(false); }
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_int(0)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 1) == "");
+    CCAMAggregateValueResult zero = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = zero.value.reference) {
+        assert(ccam_heap_bytes_len(stack.stack.active.heap, reference).value == 1);
+        assert(ccam_heap_byte_get(stack.stack.active.heap, reference, 0).value == 0);
+    } else { assert(false); }
+    args[0] = 2;
+    assert(ccam_aggregate_write(stack.stack.active, 2, ccam_heap_bool(false)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 1) == "");
+    CCAMAggregateValueResult label = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = label.value.reference) {
+        assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 5).value == "false");
+    } else { assert(false); }
+    args[0] = 0;
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_int(256)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 1) == "character_range");
+    CCAMAggregateValueResult preserved = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = preserved.value.reference) {
+        assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 5).value == "false");
     } else { assert(false); }
 }

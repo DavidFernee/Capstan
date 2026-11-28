@@ -13,20 +13,31 @@ struct AGNominalSignature {
 const int AG_NOMINAL_BYTES = -1;
 const int AG_NOMINAL_INT_ARRAY = -2;
 const int AG_NOMINAL_BOOL_ARRAY = -3;
+const int AG_NOMINAL_STRING_ARRAY = -4100;
 
 // A zero result indicates an unrepresentable array descriptor, never a reference type.
 int ag_nominal_record_array(int descriptor) {
-    if (descriptor <= 0 || descriptor > 9223372036854775805) { return 0; }
+    if (descriptor <= 0 || descriptor > AG_OPTIONAL_RECORD_MAX) { return 0; }
     return -descriptor - 3;
 }
 
 bool ag_nominal_kind(int kind, int descriptor) {
-    if (kind == AG_SCHEMA_REF) { return descriptor != 0; }
+    if (kind == AG_SCHEMA_REF) {
+        return (descriptor > 0 && descriptor <= AG_OPTIONAL_RECORD_MAX) ||
+            (descriptor < 0 && descriptor >= -AG_OPTIONAL_RECORD_MAX - 3) || descriptor == AG_NOMINAL_STRING_ARRAY ||
+            (ccam_heap_optional_descriptor(descriptor) || ccam_heap_map_descriptor(descriptor));
+    }
     return (kind == AG_SCHEMA_INT || kind == AG_SCHEMA_BOOL) && descriptor == 0;
 }
 
 bool ag_nominal_value_matches(CCAMHeap heap, CCAMHeapValue value, int kind, int descriptor) {
     if (!ag_nominal_kind(kind, descriptor) || value.kind != kind) { return false; }
+    if (kind == AG_SCHEMA_REF && ccam_heap_map_descriptor(descriptor)) {
+        return ccam_heap_map_matches(heap, value, descriptor);
+    }
+    if (kind == AG_SCHEMA_REF && ccam_heap_optional_descriptor(descriptor)) {
+        return ccam_heap_optional_matches(heap, value, descriptor);
+    }
     if (kind != AG_SCHEMA_REF || descriptor > 0) {
         return ccam_heap_value_has_type(heap, value, kind, descriptor);
     }
@@ -38,6 +49,9 @@ bool ag_nominal_value_matches(CCAMHeap heap, CCAMHeapValue value, int kind, int 
     }
     if (descriptor == AG_NOMINAL_BOOL_ARRAY) {
         return ccam_heap_value_has_array_type(heap, value, AG_SCHEMA_BOOL, 0);
+    }
+    if (descriptor == AG_NOMINAL_STRING_ARRAY) {
+        return ccam_heap_value_has_array_type(heap, value, AG_SCHEMA_REF, CCAM_HEAP_ELEMENT_BYTES);
     }
     // Addition before negation avoids negating the signed minimum.
     return ccam_heap_value_has_array_type(heap, value, AG_SCHEMA_REF, -(descriptor + 3));

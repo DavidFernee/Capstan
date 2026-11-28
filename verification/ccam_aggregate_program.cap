@@ -9,21 +9,30 @@ struct AGFunction {
 }
 
 bool ag_function_validate(AGFunction f) {
+    return ag_function_validate_budget(f, new AGFPBudget{remaining: AG_FP_MAX_WORK});
+}
+
+bool ag_function_validate_budget(AGFunction f, AGFPBudget budget) {
+    if (f.kinds.len() > AG_SCHEMA_MAX_REGS ||
+        !ag_fp_charge(budget, f.kinds.len() + f.signature.parameters.len())) { return false; }
     AGTransferResult entry = ag_call_entry(f.signature, f.kinds);
     if (!entry.ok || f.returns.len() != f.blocks.len()) { return false; }
     List<AGCFGState> states = new List<AGCFGState>();
-    if (!ag_fp_validate(f.kinds, entry.ready, f.blocks, states)) { return false; }
+    if (!ag_fp_validate_budget(f.kinds, entry.ready, f.blocks, states, budget)) { return false; }
     for (int i = 0; i < f.blocks.len(); i += 1) {
+        if (!ag_fp_charge(budget, 1)) { return false; }
         if (f.blocks[i].terminator == 0) {
             int source = f.returns[i];
             if (!ag_call_result_slot(f.kinds, source, f.signature.result_kind)) { return false; }
             if (states[i].reached) {
+                if (!ag_fp_charge(budget, f.kinds.len())) { return false; }
                 List<bool> ready = new List<bool>();
                 for (int r = 0; r < states[i].ready.len(); r += 1) {
                     ready.push(states[i].ready[r]);
                 }
                 for (int j = 0; j < f.blocks[i].instructions.len(); j += 1) {
                     AGBlockInstruction ins = f.blocks[i].instructions[j];
+                    if (!ag_fp_charge_transfer(budget, f.kinds.len(), ins)) { return false; }
                     AGTransferResult next = ag_transfer(
                         f.kinds, ready, ins.opcode, ins.kind, ins.operands
                     );
@@ -42,10 +51,11 @@ bool ag_function_validate(AGFunction f) {
 bool ag_program_validate(List<AGFunction> functions) {
     if (functions.len() == 0 || functions.len() > 256) { return false; }
     int total = 0;
+    AGFPBudget budget = new AGFPBudget{remaining: AG_FP_MAX_WORK};
     for (int i = 0; i < functions.len(); i += 1) {
         if (functions[i].blocks.len() > 65536 - total) { return false; }
         total += functions[i].blocks.len();
-        if (!ag_function_validate(functions[i])) { return false; }
+        if (!ag_function_validate_budget(functions[i], budget)) { return false; }
     }
     return true;
 }
