@@ -278,6 +278,20 @@ else
   bad "native tainted slice emission" "$out"
 fi
 
+section "Candidate native bounded tainted lists"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_tainted_list.cap" 2>&1)"; then
+  ok "native tainted list emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_tainted_list.py" "$ROOT/build/ccam-native-tainted-list.bin" 2>&1)"; then
+      ok "native tainted list differential and boundary execution"
+    else
+      bad "native tainted list execution" "$out"
+    fi
+  fi
+else
+  bad "native tainted list emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"
