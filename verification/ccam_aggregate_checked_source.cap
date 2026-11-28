@@ -453,6 +453,30 @@ int ag_source_snapshot(AGSourceContext c, int source) {
     return saved;
 }
 
+// Only the checked trusted int/bool/string overloads are admitted. No
+// conversion of tainted, secret, optional or context-escaped text.
+int ag_source_conversion(AGSourceContext c, Node e, AGSourceShape shape, int depth) {
+    if (e.kids.len() != 1 || shape.kind != AG_SCHEMA_REF ||
+        shape.descriptor != AG_NOMINAL_BYTES || c.function_nodes.has(e.s)) { return -1; }
+    Type input = ty_of(e.kids[0]);
+    int opcode = 0;
+    if (e.s == "int_to_str" && input.k == TY_INT) { opcode = AG_OP_INT_TEXT; }
+    if (e.s == "char_str" && input.k == TY_INT) { opcode = AG_OP_CHAR_TEXT; }
+    if (e.s == "to_text") {
+        if (input.k == TY_INT) { opcode = AG_OP_INT_TEXT; }
+        if (input.k == TY_BOOL) { opcode = AG_OP_BOOL_TEXT; }
+        if (input.k == TY_STR) { return ag_source_expected(c, e.kids[0], shape, depth + 1); }
+    }
+    if (opcode == 0) { return -1; }
+    int source = ag_source_expr(c, e.kids[0], depth + 1);
+    if (source < 0) { return -1; }
+    int destination = ag_source_register(c, shape);
+    if (destination < 0) { return -1; }
+    List<int> operands = new List<int>(); operands.push(destination); operands.push(source);
+    if (!ag_source_emit(c, opcode, AG_SCHEMA_REF, operands)) { return -1; }
+    return destination;
+}
+
 int ag_source_expr(AGSourceContext c, Node e, int depth) {
     if (depth >= AG_SOURCE_MAX_EXPR_DEPTH) { return -1; }
     AGSourceShape shape = ag_source_shape(ty_of(e), c.records);
@@ -542,7 +566,13 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         }
         return -1;
     }
-    if (e.k == N_CALL) { return ag_source_direct_call(c, e, shape, depth); }
+    if (e.k == N_CALL) {
+        if (!c.function_nodes.has(e.s) &&
+            (e.s == "int_to_str" || e.s == "char_str" || e.s == "to_text")) {
+            return ag_source_conversion(c, e, shape, depth);
+        }
+        return ag_source_direct_call(c, e, shape, depth);
+    }
     if (e.k == N_NEW) { return ag_source_construct(c, e, shape, depth); }
     if (e.k == N_GETF) { return ag_source_field_read(c, e, shape, depth); }
     if (e.k == N_VAR && e.kids.len() == 0 && e.binding_id > 0) {
