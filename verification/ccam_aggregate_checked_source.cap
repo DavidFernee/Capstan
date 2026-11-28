@@ -2,7 +2,7 @@
 // No source checker replacement, native ABI, or full compiler coverage claim.
 // Supported candidate functions: scalar operations, local assignment, public
 // record construction/fields, list/byte reads, if/while/for and terminal returns.
-// Short-circuit expressions and value-producing pop remain deferred.
+// Value-producing pop remains deferred.
 import "ccam_aggregate_sealed_program.cap";
 
 const int AG_SOURCE_MAX_NAME = 256;
@@ -417,6 +417,41 @@ int ag_source_string_binary(AGSourceContext c, string operation, AGSourceShape s
     return dest;
 }
 
+// Logical operators are control flow, not eager scalar operations. The
+// left result is materialised before branching; only the required edge
+// evaluates the right operand. Both incoming edges initialise the result.
+int ag_source_short_circuit(AGSourceContext c, Node e, AGSourceShape shape, int depth) {
+    if (shape.kind != AG_SCHEMA_BOOL || shape.descriptor != 0 ||
+        e.kids.len() != 2 || (e.s != "&&" && e.s != "||")) { return -1; }
+    int left = ag_source_expr(c, e.kids[0], depth + 1);
+    if (!ag_source_register_matches(c, left, shape)) { return -1; }
+    int result = ag_source_register(c, shape);
+    if (!ag_source_move(c, result, left)) { return -1; }
+    int rhs = ag_source_new_block(c);
+    int join_id = ag_source_new_block(c);
+    if (rhs < 0 || join_id < 0) { return -1; }
+    int yes = rhs;
+    int no = join_id;
+    if (e.s == "||") { yes = join_id; no = rhs; }
+    if (!ag_source_close(c, 2, result, yes, no, -1) ||
+        !ag_source_enter(c, rhs)) { return -1; }
+    int right = ag_source_expr(c, e.kids[1], depth + 1);
+    if (!ag_source_register_matches(c, right, shape) ||
+        !ag_source_move(c, result, right) || !ag_source_jump(c, join_id) ||
+        !ag_source_enter(c, join_id)) { return -1; }
+    return result;
+}
+
+// Materialise the value before evaluating a subsequent operand. A reference
+// retains its object identity rather than cloning the mutable object.
+int ag_source_snapshot(AGSourceContext c, int source) {
+    if (source < 0 || source >= c.kinds.len()) { return -1; }
+    AGSourceShape shape = new AGSourceShape{kind: c.kinds[source], descriptor: c.descriptors[source]};
+    int saved = ag_source_register(c, shape);
+    if (!ag_source_move(c, saved, source)) { return -1; }
+    return saved;
+}
+
 int ag_source_expr(AGSourceContext c, Node e, int depth) {
     if (depth >= AG_SOURCE_MAX_EXPR_DEPTH) { return -1; }
     AGSourceShape shape = ag_source_shape(ty_of(e), c.records);
@@ -428,9 +463,12 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
     if (e.k == N_BOOL && e.kids.len() == 0 && shape.kind == AG_SCHEMA_BOOL &&
         (e.n == 0 || e.n == 1)) { return ag_source_constant(c, shape, e.n); }
     if (e.k == N_BIN && e.kids.len() == 2) {
+        if (e.s == "&&" || e.s == "||") {
+            return ag_source_short_circuit(c, e, shape, depth);
+        }
         int opcode = ag_source_binary_opcode(e.s);
         if (opcode == 0) { return -1; }
-        int left = ag_source_expr(c, e.kids[0], depth + 1);
+        int left = ag_source_snapshot(c, ag_source_expr(c, e.kids[0], depth + 1));
         if (left < 0) { return -1; }
         int right = ag_source_expr(c, e.kids[1], depth + 1);
         if (right < 0) { return -1; }
