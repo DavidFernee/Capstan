@@ -17,9 +17,11 @@
 // mixing, source opcode, full taint type system or canonical ABI claim.
 import "ccam_aggregate_native_record_boundary.cap";
 
-const int AG_NATIVE_TAINT_VALIDATION_SIZE = 881 + AG_NATIVE_RECORD_BOUNDARY_SIZE;
+// Global initialisers cannot resolve imported constants in the bootstrap.
+const int AG_NATIVE_TAINT_VALIDATION_SIZE = 1059;
 
 bool ag_native_emit_taint_validation(List<int> b) {
+    if (AG_NATIVE_TAINT_VALIDATION_SIZE != 881 + AG_NATIVE_RECORD_BOUNDARY_SIZE) { return false; }
     if (b.len() > AG_BYTE_LIMIT - AG_NATIVE_TAINT_VALIDATION_SIZE) { return false; }
     b.push(72); b.push(129); b.push(236); b.push(64); b.push(16); b.push(0); b.push(0); b.push(252);
     b.push(76); b.push(137); b.push(4); b.push(36); b.push(73); b.push(131); b.push(248); b.push(3);
