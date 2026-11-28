@@ -505,3 +505,51 @@ test "short circuit conditions are reevaluated on loop backedges" {
     assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "");
     assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 2);
 }
+
+test "checked conversions preserve signed extrema, boolean text and embedded zero bytes" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "string decimal(int number) { return int_to_str(number); } " +
+        "string byte_text(int number) { return char_str(number); } " +
+        "string label(bool present) { return to_text(present); } " +
+        "string same(string text) { return to_text(text); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 32, 4096, 4096, 256);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0);
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_int(CCAM_I64_MIN)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 1) == "");
+    CCAMAggregateValueResult minimum = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = minimum.value.reference) {
+        assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 20).value == "-9223372036854775808");
+    } else { assert(false); }
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_int(CCAM_I64_MAX)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 1) == "");
+    CCAMAggregateValueResult maximum = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = maximum.value.reference) {
+        assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 19).value == "9223372036854775807");
+    } else { assert(false); }
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_int(0)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 1) == "");
+    CCAMAggregateValueResult zero = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = zero.value.reference) {
+        assert(ccam_heap_bytes_len(stack.stack.active.heap, reference).value == 1);
+        assert(ccam_heap_byte_get(stack.stack.active.heap, reference, 0).value == 0);
+    } else { assert(false); }
+    args[0] = 2;
+    assert(ccam_aggregate_write(stack.stack.active, 2, ccam_heap_bool(false)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 1) == "");
+    CCAMAggregateValueResult label = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = label.value.reference) {
+        assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 5).value == "false");
+    } else { assert(false); }
+    args[0] = 0;
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_int(256)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 1) == "character_range");
+    CCAMAggregateValueResult preserved = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_REF);
+    if (let reference = preserved.value.reference) {
+        assert(ccam_heap_bytes_slice(stack.stack.active.heap, reference, 0, 5).value == "false");
+    } else { assert(false); }
+}
