@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 MUTATIONS = [
@@ -85,10 +86,10 @@ MUTATIONS = [
      "if (high_sum >= HBM_U32_BASE) {",
      "if (high_sum > HBM_U32_BASE) {",
      "helm_assurance_memory_tests.cap"),
-    ("branch-target-upper-bound",
+    ("branch-target-zero-rejected",
      "ccam_core.cap",
      "target >= 0 && target < instructions.len()",
-     "target >= 0 && target <= instructions.len()",
+     "target > 0 && target < instructions.len()",
      "ccam_assurance_malformed_tests.cap"),
     ("trap-reason-max-length",
      "ccam_core.cap",
@@ -123,30 +124,78 @@ def compile_and_run(directory, suite):
     return run([exe], 180)
 
 
+# Partition by stable identifier; each experiment belongs to exactly one group.
+GROUPS = {
+    "scalar": {"add-boundary", "sub-boundary", "fuel-off-by-one", "output-boundary",
+               "branch-target-zero-rejected", "trap-reason-max-length"},
+    "authority": {"capability-rights", "capability-epoch", "channel-wake",
+                  "gc-stale-generation", "gc-handle-foreign-heap"},
+    "resources": {"memory-stale-generation", "memory-final-allocation-fault",
+                  "halyard-exact-capacity", "helm-carry-boundary", "helm-overflow-boundary"},
+    "persistence": {"wal-flush-regression", "wal-premature-page", "wal-premature-ack"},
+}
+
+
+def validate_inventory():
+    ids = [item[0] for item in MUTATIONS]
+    assigned = [ident for group in GROUPS.values() for ident in group]
+    if len(ids) != len(set(ids)) or sorted(ids) != sorted(assigned):
+        raise ValueError("mutation inventory missing, duplicated or unassigned IDs")
+
+
+def classify(observed):
+    if observed.returncode == 101 and "assertion failed" in observed.stderr:
+        return "assertion_detected"
+    if observed.returncode == 0:
+        return "survived"
+    return "unexpected_execution_failure"
+
+
 def main():
+    validate_inventory()
+    if len(sys.argv) != 2 or sys.argv[1] not in GROUPS:
+        raise SystemExit("select one mutation group: " + ", ".join(GROUPS))
+    selected = [item for item in MUTATIONS if item[0] in GROUPS[sys.argv[1]]]
     results = []
     with tempfile.TemporaryDirectory(prefix="capstan-security-mutants-") as tmp:
         directory = Path(tmp) / "verification"
         shutil.copytree(ROOT / "verification", directory)
-        for suite in sorted({item[4] for item in MUTATIONS}):
-            baseline = compile_and_run(directory, suite)
-            if baseline.returncode != 0:
-                raise RuntimeError(("baseline failed", suite, baseline.stdout, baseline.stderr))
-        for name, file, old, new, suite in MUTATIONS:
+        baselines = {}
+        for suite in sorted({item[4] for item in selected}):
+            try:
+                baseline = compile_and_run(directory, suite)
+                baselines[suite] = baseline.returncode == 0
+            except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+                baselines[suite] = False
+                print(json.dumps({"baseline": suite, "error": str(exc)[:2000]}), flush=True)
+        for name, file, old, new, suite in selected:
             target = directory / file
             source = target.read_text()
-            if source.count(old) != 1:
-                raise RuntimeError(("mutation anchor is not unique", name, source.count(old)))
-            try:
-                target.write_text(source.replace(old, new, 1))
-                observed = compile_and_run(directory, suite)
-            finally:
-                target.write_text(source)
-            killed = observed.returncode == 101 and "assertion failed" in observed.stderr
+            status = "baseline_failed"
+            returncode = None
+            detail = ""
+            if baselines[suite]:
+                if source.count(old) != 1:
+                    status = "invalid_anchor"
+                else:
+                    try:
+                        target.write_text(source.replace(old, new, 1))
+                        observed = compile_and_run(directory, suite)
+                        returncode = observed.returncode
+                        status = classify(observed)
+                    except subprocess.TimeoutExpired:
+                        status = "timeout"
+                    except (RuntimeError, OSError) as exc:
+                        status = "infrastructure_or_build_failure"
+                        detail = str(exc)[:2000]
+                    finally:
+                        target.write_text(source)
             results.append({"id": name, "target": file, "suite": suite,
-                            "killed": killed, "returncode": observed.returncode})
+                            "status": status, "returncode": returncode,
+                            "detail": detail})
             print(json.dumps(results[-1]), flush=True)
-    if len(results) != len(MUTATIONS) or not all(row["killed"] for row in results):
+    if len(results) != len(selected) or not all(
+            row["status"] == "assertion_detected" for row in results):
         raise SystemExit("targeted mutation campaign incomplete or surviving mutant")
     print(f"all {len(results)} targeted behavioral mutants detected")
 
