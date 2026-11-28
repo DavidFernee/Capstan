@@ -42,3 +42,7 @@ jobs:
         run: bin/capstan test verification/schooner_assurance_schedule_tests.cap
       - name: Run checker taint and secret metamorphic tests
         run: bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/security_assurance_checker_tests.cap
+      - name: Run exact x86-64 encoder fixtures
+        run: bin/capstan test verification/x86_assurance_encoding_tests.cap
+      - name: Run exhaustive stack layout and ABI controls
+        run: bin/capstan test verification/x86_assurance_abi_tests.cap
