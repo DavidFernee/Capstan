@@ -323,7 +323,21 @@ bool ag_schema_stdout_operands(List<int> kinds, int opcode, int kind, List<int> 
         (operands[1] == -1 || operands[1] == -4103);
 }
 
+// Native-only checked validation bridge: [destination, tainted source].
+// Exact result descriptors are bound by opcode: int?, string?, string.
+const int AG_OP_VALIDATE_INT = 61;
+const int AG_OP_VALIDATE_IDENT = 62;
+const int AG_OP_ESCAPE_C = 63;
+bool ag_schema_validation_opcode(int opcode) {
+    return opcode >= AG_OP_VALIDATE_INT && opcode <= AG_OP_ESCAPE_C;
+}
+bool ag_schema_validation_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    return ag_schema_validation_opcode(opcode) && kind == AG_SCHEMA_REF && operands.len() == 2 &&
+        ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+}
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (ag_schema_validation_opcode(opcode)) { return ag_schema_validation_operands(kinds, opcode, element_kind, operands); }
     if (ag_schema_stdout_opcode(opcode)) { return ag_schema_stdout_operands(kinds, opcode, element_kind, operands); }
     if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
     if (ag_schema_join_opcode(opcode)) { return ag_schema_join_operands(kinds, opcode, element_kind, operands); }

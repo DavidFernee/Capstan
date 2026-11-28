@@ -157,7 +157,7 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
             if (op.len() > AG_NV_MAX_OPERANDS - operands ||
                 !ag_schema_operands(f.kinds, ins.opcode, ins.kind, op)) { return false; }
             operands += op.len();
-            if (ag_schema_taint_opcode(ins.opcode) || ag_schema_log_opcode(ins.opcode) || ag_schema_join_opcode(ins.opcode) || ag_schema_stdout_opcode(ins.opcode)) {
+            if (ag_schema_taint_opcode(ins.opcode) || ag_schema_log_opcode(ins.opcode) || ag_schema_join_opcode(ins.opcode) || ag_schema_stdout_opcode(ins.opcode) || ag_schema_validation_opcode(ins.opcode)) {
                 // Closed schemas checked above; exact object tags are guarded at execution.
             } else if (ins.opcode == AG_OP_RECORD_ALLOC) {
                 int id = op[1]; int count = (op.len() - 2) / 2;
@@ -581,8 +581,12 @@ bool ag_nv_map_instruction(AGNVContext c, AGBlockInstruction ins) {
 bool ag_nv_taint_instruction(AGNVContext c, AGBlockInstruction ins) {
     List<int> b = c.code; List<int> a = ins.operands; int op = ins.opcode;
     if (op == AG_OP_TAINT_LEN || op == AG_OP_TAINT_AT) { return ag_nv_bytes_instruction(c, ins); }
-    if (op == AG_OP_TAINT) {
-        return ag_nv_slot(b, false, 0, a[1]) && ag_nv_imm(b, 8, 3) &&
+    if (op == AG_OP_TAINT || ag_schema_validation_opcode(op)) {
+        int mode = 3;
+        if (op == AG_OP_VALIDATE_INT) { mode = 0; }
+        if (op == AG_OP_VALIDATE_IDENT) { mode = 1; }
+        if (op == AG_OP_ESCAPE_C) { mode = 2; }
+        return ag_nv_slot(b, false, 0, a[1]) && ag_nv_imm(b, 8, mode) &&
             ag_nv_call(c, c.trap + 16) && ag_nv_slot(b, true, 0, a[0]);
     }
     if (op == AG_OP_TAINT_SLICE) {
@@ -707,7 +711,7 @@ bool ag_nv_has_log(AGFunction f) {
 bool ag_nv_has_taint(AGFunction f) {
     for (int i = 0; i < f.blocks.len(); i += 1) {
         for (int j = 0; j < f.blocks[i].instructions.len(); j += 1) {
-            if (ag_schema_taint_opcode(f.blocks[i].instructions[j].opcode)) { return true; }
+            if (ag_schema_taint_opcode(f.blocks[i].instructions[j].opcode) || ag_schema_validation_opcode(f.blocks[i].instructions[j].opcode)) { return true; }
         }
     }
     return false;
@@ -725,7 +729,7 @@ bool ag_nv_emit_taint_leaves(AGNVContext c) {
 bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
     if (c.code.len() > AG_BYTE_LIMIT - 256 || !ag_nv_fuel(c)) { return false; }
     List<int> b = c.code; List<int> a = ins.operands; int op = ins.opcode;
-    if (ag_schema_taint_opcode(op)) { return ag_nv_taint_instruction(c, ins); }
+    if (ag_schema_taint_opcode(op) || ag_schema_validation_opcode(op)) { return ag_nv_taint_instruction(c, ins); }
     if (ag_schema_log_opcode(op)) { return ag_nv_log_instruction(c, ins); }
     if (ag_schema_join_opcode(op)) { return ag_nv_join_instruction(c, ins); }
     if (ag_schema_stdout_opcode(op)) { return ag_nv_stdout_instruction(c, ins); }

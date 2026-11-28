@@ -592,6 +592,16 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         return -1;
     }
     if (e.k == N_CALL) {
+        if (!c.function_nodes.has(e.s) && e.kids.len() == 1 &&
+            (e.s == "validate_int" || e.s == "validate_ident" || e.s == "escape_c")) {
+            int opcode = AG_OP_VALIDATE_INT; int descriptor = AG_OPTIONAL_INT;
+            if (e.s == "validate_ident") { opcode = AG_OP_VALIDATE_IDENT; descriptor = AG_OPTIONAL_BYTES; }
+            if (e.s == "escape_c") { opcode = AG_OP_ESCAPE_C; descriptor = AG_NOMINAL_BYTES; }
+            if (shape.kind != AG_SCHEMA_REF || shape.descriptor != descriptor) { return -1; }
+            int value = ag_source_expr(c, e.kids[0], depth + 1);
+            if (value < 0 || c.kinds[value] != AG_SCHEMA_REF || c.descriptors[value] != AG_NOMINAL_TAINTED) { return -1; }
+            return ag_source_emit_read(c, opcode, AG_SCHEMA_REF, shape, value, -1);
+        }
         if (e.s == "join" && !c.function_nodes.has(e.s) && e.kids.len() == 2 && shape.kind == AG_SCHEMA_REF) {
             int expected = AG_NOMINAL_STRING_ARRAY;
             int opcode = AG_OP_JOIN_BYTES;

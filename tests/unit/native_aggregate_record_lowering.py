@@ -40,6 +40,7 @@ def main():
         'taint-negative': None, 'taint-list-oob': None, 'taint-field': 65,
         'log-present': 42, 'log-absent': 0,
         'join': 65,
+        'validation': 42, 'validation-absent': 42, 'validation-escape': 94,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
