@@ -207,3 +207,35 @@ test "aggregate dispatch concatenates immutable bytes and reads byte length" {
     assert(byte_value.ok && byte_value.value.int_value == 66);
     assert(machine.steps == 5);
 }
+
+test "candidate record field get rejects wrong collection shape without replacing destination" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 16);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    List<int> layout = new List<int>(); layout.push(0); layout.push(7);
+    layout.push(AG_SCHEMA_REF); layout.push(AG_NOMINAL_INT_ARRAY);
+    assert(ag_dispatch(machine, AG_OP_RECORD_ALLOC, AG_SCHEMA_REF, layout) == "");
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_INT, 0, 2) == "");
+    assert(ccam_aggregate_alloc_bytes(machine, 2, "preserved") == "");
+    List<int> field = new List<int>(); field.push(1); field.push(0);
+    field.push(7); field.push(0); field.push(AG_NOMINAL_INT_ARRAY);
+    assert(ag_dispatch(machine, AG_OP_FIELD_SET, AG_SCHEMA_REF, field) == "");
+    field[0] = 2; field[4] = AG_NOMINAL_BOOL_ARRAY;
+    assert(ag_dispatch(machine, AG_OP_FIELD_GET, AG_SCHEMA_REF, field) == "field_shape_mismatch");
+    CCAMAggregateValueResult preserved = ccam_aggregate_read(machine, 2, AG_SCHEMA_REF);
+    assert(preserved.ok && ag_nominal_value_matches(machine.heap, preserved.value,
+        AG_SCHEMA_REF, AG_NOMINAL_BYTES));
+}
+
+test "candidate scalar literal admission rejects noncanonical boolean values" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(created.ok);
+    List<int> operands = new List<int>(); operands.push(0); operands.push(2);
+    assert(!ag_schema_operands(kinds, AG_OP_SCALAR_CONST, AG_SCHEMA_BOOL, operands));
+    assert(ag_dispatch(created.machine, AG_OP_SCALAR_CONST, AG_SCHEMA_BOOL, operands) ==
+        "invalid_aggregate_instruction");
+    assert(created.machine.steps == 0 && !created.machine.registers[0].initialised);
+}
