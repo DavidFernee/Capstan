@@ -1,0 +1,80 @@
+// Candidate native scalar-record membership guard. A trusted, exclusively
+// record-allocated arena has immutable headers, no holes, no deallocation,
+// and a live mapped backing. Do not mix raw reservations or other layouts.
+// This guard establishes that an offset is a real record boundary in that
+// arena prefix; it does NOT authenticate references or establish lifetime.
+// RAX=offset; R12=base,R13=committed bytes,R14=capacity.
+// RDX=0 if found; 1 on rejection. RAX and all field arguments preserved;
+// RCX,R10,R11,flags clobbered. No writes. Scan cap: 65,536 headers per call.
+// Later objects beyond that cap are deliberately rejected; allocator and
+// profile integration must enforce a matching object bound before adoption.
+// Single-threaded trusted backing only; no canonical native ABI claim.
+import "ccam_aggregate_native_scalar_record.cap";
+
+const int AG_NATIVE_RECORD_BOUNDARY_SIZE = 178;
+const int AG_NATIVE_RECORD_WRAPPER_SIZE = 12;
+
+bool ag_native_emit_record_boundary(List<int> code) {
+    if (code.len() > AG_BYTE_LIMIT - AG_NATIVE_RECORD_BOUNDARY_SIZE) { return false; }
+    code.push(77); code.push(133); code.push(228); code.push(15); code.push(132); code.push(163); code.push(0); code.push(0);
+    code.push(0); code.push(73); code.push(247); code.push(196); code.push(7); code.push(0); code.push(0); code.push(0);
+    code.push(15); code.push(133); code.push(150); code.push(0); code.push(0); code.push(0); code.push(77); code.push(133);
+    code.push(237); code.push(15); code.push(136); code.push(141); code.push(0); code.push(0); code.push(0); code.push(73);
+    code.push(247); code.push(197); code.push(15); code.push(0); code.push(0); code.push(0); code.push(15); code.push(133);
+    code.push(128); code.push(0); code.push(0); code.push(0); code.push(73); code.push(129); code.push(254); code.push(0);
+    code.push(0); code.push(0); code.push(4); code.push(119); code.push(119); code.push(77); code.push(57); code.push(245);
+    code.push(119); code.push(114); code.push(76); code.push(137); code.push(225); code.push(76); code.push(1); code.push(241);
+    code.push(114); code.push(106); code.push(76); code.push(57); code.push(232); code.push(115); code.push(101); code.push(72);
+    code.push(169); code.push(15); code.push(0); code.push(0); code.push(0); code.push(117); code.push(93); code.push(69);
+    code.push(49); code.push(210); code.push(65); code.push(187); code.push(0); code.push(0); code.push(1); code.push(0);
+    code.push(69); code.push(133); code.push(219); code.push(116); code.push(79); code.push(65); code.push(255); code.push(203);
+    code.push(76); code.push(137); code.push(233); code.push(76); code.push(41); code.push(209); code.push(72); code.push(131);
+    code.push(249); code.push(16); code.push(114); code.push(64); code.push(75); code.push(139); code.push(20); code.push(20);
+    code.push(72); code.push(131); code.push(250); code.push(1); code.push(114); code.push(54); code.push(72); code.push(129);
+    code.push(250); code.push(0); code.push(16); code.push(0); code.push(0); code.push(119); code.push(45); code.push(75);
+    code.push(139); code.push(84); code.push(20); code.push(8); code.push(72); code.push(129); code.push(250); code.push(0);
+    code.push(16); code.push(0); code.push(0); code.push(119); code.push(31); code.push(72); code.push(193); code.push(226);
+    code.push(4); code.push(72); code.push(131); code.push(194); code.push(16); code.push(72); code.push(57); code.push(202);
+    code.push(119); code.push(18); code.push(76); code.push(57); code.push(208); code.push(116); code.push(10); code.push(73);
+    code.push(1); code.push(210); code.push(73); code.push(57); code.push(194); code.push(119); code.push(5); code.push(235);
+    code.push(175); code.push(49); code.push(210); code.push(195); code.push(186); code.push(1); code.push(0); code.push(0);
+    code.push(0); code.push(195);
+    return true;
+}
+
+// Entry calls the guard appended after the unguarded leaf, then falls
+// through to that leaf only on success. The guard and leaf both return.
+bool ag_native_emit_guarded_record_access(List<int> code, bool store) {
+    int leaf_size = AG_NATIVE_SCALAR_RECORD_LOAD_SIZE;
+    if (store) { leaf_size = AG_NATIVE_SCALAR_RECORD_STORE_SIZE; }
+    int total = AG_NATIVE_RECORD_WRAPPER_SIZE + leaf_size + AG_NATIVE_RECORD_BOUNDARY_SIZE;
+    if (code.len() > AG_BYTE_LIMIT - total) { return false; }
+    // call rel32 (displacement 7 + leaf size), test edx,edx, jz +3,
+    // xor eax,eax, ret; followed by leaf and private guard.
+    int displacement = 7 + leaf_size;
+    if (displacement < 0 || displacement > 255) { return false; }
+    code.push(232); code.push(displacement); code.push(0); code.push(0); code.push(0);
+    code.push(133); code.push(210); code.push(116); code.push(3);
+    code.push(49); code.push(192); code.push(195);
+    if (store) {
+        if (!ag_native_emit_scalar_record_store(code)) { return false; }
+    } else {
+        if (!ag_native_emit_scalar_record_load(code)) { return false; }
+    }
+    return ag_native_emit_record_boundary(code);
+}
+
+test "native guarded record access emits bounded private membership guards" {
+    List<int> code = new List<int>();
+    assert(ag_native_emit_scalar_record_alloc(code));
+    assert(ag_native_emit_guarded_record_access(code, false));
+    assert(code.len() == 498);
+    assert(code[137] == 232 && code[138] == 178);
+    assert(ag_native_emit_guarded_record_access(code, true));
+    assert(code.len() == 873);
+    assert(code[498] == 232 && code[499] == 192);
+    string data = "";
+    for (int i = 0; i < code.len(); i += 1) { data = data + char_str(code[i]); }
+    assert(data.len() == 873);
+    assert(write_file("build/ccam-aggregate-native-record-boundary.bin", data));
+}
