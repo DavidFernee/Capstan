@@ -214,3 +214,38 @@ test "fixedpoint transfer handles aliased immutable byte operations" {
     List<AGCFGState> states = new List<AGCFGState>();
     assert(ag_fp_validate(kinds, entry, blocks, states));
 }
+
+test "fixed point charges width per instruction and publishes nothing on budget exhaustion" {
+    List<int> kinds = new List<int>();
+    List<bool> entry = new List<bool>();
+    for (int i = 0; i < 64; i += 1) { kinds.push(AG_SCHEMA_INT); entry.push(true); }
+    List<int> operands = new List<int>(); operands.push(0); operands.push(1);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    for (int i = 0; i < 16; i += 1) {
+        instructions.push(new AGBlockInstruction{opcode: AG_OP_MOVE, kind: AG_SCHEMA_INT, operands: operands});
+    }
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions, terminator: 0,
+        condition: -1, yes: -1, no: -1});
+    List<AGCFGState> states = new List<AGCFGState>();
+    AGFPBudget budget = new AGFPBudget{remaining: 1024};
+    assert(!ag_fp_validate_budget(kinds, entry, blocks, states, budget));
+    assert(states.len() == 0 && budget.remaining >= 0);
+    budget.remaining = 8192;
+    assert(ag_fp_validate_budget(kinds, entry, blocks, states, budget));
+    assert(states.len() == 1 && states[0].reached && budget.remaining < 4096);
+}
+
+test "fixed point rejects exhausted shared validation budget without publishing states" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    List<bool> entry = new List<bool>(); entry.push(true);
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: new List<AGBlockInstruction>(),
+        terminator: 0, condition: -1, yes: -1, no: -1});
+    AGFPBudget budget = new AGFPBudget{remaining: 15};
+    List<AGCFGState> first = new List<AGCFGState>();
+    List<AGCFGState> second = new List<AGCFGState>();
+    assert(ag_fp_validate_budget(kinds, entry, blocks, first, budget));
+    assert(!ag_fp_validate_budget(kinds, entry, blocks, second, budget));
+    assert(first.len() == 1 && second.len() == 0);
+}
