@@ -38,6 +38,7 @@ def main():
         'constant-min': -(1 << 63), 'constant-ops': 42,
         'taint-list': 101, 'taint-empty': 0, 'taint-slice-oob': None,
         'taint-negative': None, 'taint-list-oob': None, 'taint-field': 65,
+        'log-present': 42, 'log-absent': 0,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():

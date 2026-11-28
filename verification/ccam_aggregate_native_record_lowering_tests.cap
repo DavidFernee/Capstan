@@ -620,3 +620,15 @@ test "candidate native tainted record field and direct return retain nominal typ
         "int run() { Input item = new Input{text: taint(\"A\")}; return get(item).at(0); }";
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-taint-field.elf"));
 }
+
+test "native LogText contextual composition and optional direct returns" {
+    string source = "LogText? excerpt(Tainted src, bool present) { if (!present) { return none; } " +
+        "LogText line = \"    \" + escape_log(src.slice(0, src.len())); return line + \"\\n    ^\"; } " +
+        "int run() { if (let value = excerpt(taint(\"abc\"), true)) { " +
+        "LogText again = escape_log(value); return 42; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-log-present.elf"));
+    string absent = "LogText? excerpt() { return none; } int run() { if (let x = excerpt()) { return 1; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(absent, 1024, 8), "build/ccam-native-record-log-absent.elf"));
+    assert(!ag_nvc_test_source("string bad(Tainted x) { return escape_log(x); } int run() { return 0; }", 1024, 8).ok);
+    assert(!ag_nvc_test_source("LogText bad(Tainted x) { return escape_log(x) + x; } int run() { return 0; }", 1024, 8).ok);
+}

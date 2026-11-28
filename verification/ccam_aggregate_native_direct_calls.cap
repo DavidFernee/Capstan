@@ -17,7 +17,7 @@ const int AG_NVC_MAX_DEPTH = 32;
 
 bool ag_nvc_nominal_shape(int kind, int descriptor, List<int> layouts) {
     if (kind == AG_SCHEMA_REF) {
-        return descriptor == AG_NV_BYTES_DESCRIPTOR || descriptor == AG_NV_TAINTED_DESCRIPTOR || descriptor == AG_NV_INT_LIST_DESCRIPTOR ||
+        return descriptor == AG_NV_BYTES_DESCRIPTOR || descriptor == AG_NV_TAINTED_DESCRIPTOR || descriptor == AG_NV_LOG_DESCRIPTOR || descriptor == AG_NV_INT_LIST_DESCRIPTOR ||
             descriptor == AG_NV_BOOL_LIST_DESCRIPTOR || ag_nv_ref_list_tag(descriptor) != 0 ||
             ag_nv_optional_tag(descriptor) != 0 || ag_nv_map_descriptor(descriptor) ||
             (descriptor >= 1 && descriptor < AG_NV_RECORD_LIMIT && layouts[descriptor] >= 0);
@@ -190,7 +190,7 @@ AGImage ag_nvc_compile_entry(List<AGFunction> functions, List<AGNominalSignature
     }
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 19; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 20; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Root scratch frame is not a language call; entry consumes one depth.
     if (!ag_nvc_stack_adjust(b, true, 1)) { return ag_nv_failure(); }
@@ -233,6 +233,14 @@ AGImage ag_nvc_compile_entry(List<AGFunction> functions, List<AGNominalSignature
         if (ag_nv_has_taint(functions[i])) { taint_ops = true; }
     }
     if (taint_ops && !ag_nv_emit_taint_leaves(c)) { return ag_nv_failure(); }
+    bool log_ops = false;
+    for (int i = 0; i < functions.len(); i += 1) {
+        if (ag_nv_has_log(functions[i])) { log_ops = true; }
+    }
+    if (log_ops) {
+        c.labels[count + 19] = b.len();
+        if (!ag_native_emit_log_bridge(b)) { return ag_nv_failure(); }
+    }
     for (int i = 0; i < c.patches.len(); i += 1) {
         int target = c.labels[c.targets[i]];
         if (target < 0 || !ag_rel32(b, c.patches[i], target)) { return ag_nv_failure(); }

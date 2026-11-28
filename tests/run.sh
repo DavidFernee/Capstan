@@ -292,6 +292,20 @@ else
   bad "native tainted list emission" "$out"
 fi
 
+section "Candidate native nominal LogText bridge"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_log_bridge.cap" 2>&1)"; then
+  ok "native LogText bridge emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_log_bridge.py" "$ROOT/build/ccam-native-log-bridge.bin" 2>&1)"; then
+      ok "native LogText bridge differential and boundary execution"
+    else
+      bad "native LogText bridge execution" "$out"
+    fi
+  fi
+else
+  bad "native LogText bridge emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"
