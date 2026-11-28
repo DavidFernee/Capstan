@@ -41,6 +41,7 @@ def main():
         'log-present': 42, 'log-absent': 0,
         'join': 65,
         'validation': 42, 'validation-absent': 42, 'validation-escape': 94,
+        'taint-build': 454, 'taint-char-negative': None, 'taint-char-over': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():

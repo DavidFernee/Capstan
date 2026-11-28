@@ -8,7 +8,9 @@
 // Noncanonical candidate physical tag 4096 and value/readiness stride.
 import "ccam_aggregate_byte_buffer.cap";
 
-bool ag_nv_emit_bytes_conversion(List<int> b) {
+// The tainted variant is private and called only in byte mode (1).
+bool ag_nv_emit_bytes_conversion_tag(List<int> b, int tag) {
+    if (tag != 4096 && tag != 2045) { return false; }
     if (b.len() > AG_BYTE_LIMIT - 262) { return false; }
     b.push(72); b.push(131); b.push(236); b.push(32); b.push(72); b.push(141); b.push(116); b.push(36);
     b.push(32); b.push(69); b.push(49); b.push(210); b.push(73); b.push(131); b.push(248); b.push(1);
@@ -34,7 +36,7 @@ bool ag_nv_emit_bytes_conversion(List<int> b) {
     b.push(211); b.push(73); b.push(193); b.push(227); b.push(4); b.push(73); b.push(131); b.push(195);
     b.push(16); b.push(76); b.push(137); b.push(241); b.push(76); b.push(41); b.push(233); b.push(73);
     b.push(57); b.push(203); b.push(119); b.push(62); b.push(75); b.push(141); b.push(60); b.push(44);
-    b.push(72); b.push(199); b.push(7); b.push(0); b.push(16); b.push(0); b.push(0); b.push(76);
+    b.push(72); b.push(199); b.push(7); b.push(tag % 256); b.push(tag / 256); b.push(0); b.push(0); b.push(76);
     b.push(137); b.push(87); b.push(8); b.push(72); b.push(131); b.push(199); b.push(16); b.push(76);
     b.push(137); b.push(209); b.push(72); b.push(15); b.push(182); b.push(22); b.push(72); b.push(137);
     b.push(23); b.push(72); b.push(199); b.push(71); b.push(8); b.push(1); b.push(0); b.push(0);
@@ -45,6 +47,8 @@ bool ag_nv_emit_bytes_conversion(List<int> b) {
     b.push(0); b.push(72); b.push(131); b.push(196); b.push(32); b.push(195);
     return true;
 }
+
+bool ag_nv_emit_bytes_conversion(List<int> b) { return ag_nv_emit_bytes_conversion_tag(b, 4096); }
 
 test "native scalar conversion leaf has fixed size" {
     List<int> b = new List<int>();

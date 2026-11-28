@@ -136,6 +136,7 @@ AGSealResult ag_seal_program(List<AGFunction> functions, List<AGNominalSignature
                 if (ag_schema_stdout_opcode(f.blocks[j].instructions[k].opcode)) { return ag_seal_failure("unsupported_effect"); }
                 // Native-only until reference allocation semantics are modeled.
                 if (ag_schema_validation_opcode(f.blocks[j].instructions[k].opcode)) { return ag_seal_failure("unsupported_validation_profile"); }
+                if (ag_schema_taint_build_opcode(f.blocks[j].instructions[k].opcode)) { return ag_seal_failure("unsupported_taint_build_profile"); }
             }
             blocks.push(ag_seal_copy_block(f.blocks[j]));
         }

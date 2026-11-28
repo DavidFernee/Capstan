@@ -157,7 +157,7 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
             if (op.len() > AG_NV_MAX_OPERANDS - operands ||
                 !ag_schema_operands(f.kinds, ins.opcode, ins.kind, op)) { return false; }
             operands += op.len();
-            if (ag_schema_taint_opcode(ins.opcode) || ag_schema_log_opcode(ins.opcode) || ag_schema_join_opcode(ins.opcode) || ag_schema_stdout_opcode(ins.opcode) || ag_schema_validation_opcode(ins.opcode)) {
+            if (ag_schema_taint_opcode(ins.opcode) || ag_schema_log_opcode(ins.opcode) || ag_schema_join_opcode(ins.opcode) || ag_schema_stdout_opcode(ins.opcode) || ag_schema_validation_opcode(ins.opcode) || ag_schema_taint_build_opcode(ins.opcode)) {
                 // Closed schemas checked above; exact object tags are guarded at execution.
             } else if (ins.opcode == AG_OP_RECORD_ALLOC) {
                 int id = op[1]; int count = (op.len() - 2) / 2;
@@ -690,6 +690,36 @@ bool ag_nv_emit_stdout_leaves(AGNVContext c, bool trusted, bool log) {
     return true;
 }
 
+// Both offsets are checked against their exact declared nominal class.
+// Existing copy leaf relies on canonical immutable pairs; no mutation of sources.
+bool ag_nv_taint_build_instruction(AGNVContext c, AGBlockInstruction ins) {
+    List<int> a = ins.operands; List<int> b = c.code;
+    if (ins.opcode == AG_OP_TAINT_CHAR) {
+        return ag_nv_slot(b, false, 0, a[1]) && ag_nv_imm(b, 8, 1) &&
+            ag_nv_call(c, c.trap + 24) && ag_nv_slot(b, true, 0, a[0]);
+    }
+    if (ins.opcode != AG_OP_TAINT_CONCAT) { return false; }
+    return ag_nv_slot(b, false, 0, a[2]) && ag_nv_reference(c, a[4]) &&
+        ag_nv_slot(b, false, 0, a[1]) && ag_nv_reference(c, a[3]) &&
+        ag_nv_slot(b, false, 0, a[1]) && ag_nv_slot(b, false, 8, a[2]) &&
+        ag_nv_call(c, c.trap + 23) && ag_nv_slot(b, true, 0, a[0]);
+}
+
+bool ag_nv_has_taint_build(AGFunction f) {
+    for (int i = 0; i < f.blocks.len(); i += 1) {
+        for (int j = 0; j < f.blocks[i].instructions.len(); j += 1) {
+            if (ag_schema_taint_build_opcode(f.blocks[i].instructions[j].opcode)) { return true; }
+        }
+    }
+    return false;
+}
+bool ag_nv_emit_taint_build(AGNVContext c) {
+    c.labels[c.trap + 23] = c.code.len();
+    if (!ag_nv_emit_bytes_concat_tag(c.code, AG_NV_TAINTED_TAG)) { return false; }
+    c.labels[c.trap + 24] = c.code.len();
+    return ag_nv_emit_bytes_conversion_tag(c.code, AG_NV_TAINTED_TAG);
+}
+
 bool ag_nv_has_join(AGFunction f) {
     for (int i = 0; i < f.blocks.len(); i += 1) {
         for (int j = 0; j < f.blocks[i].instructions.len(); j += 1) {
@@ -733,6 +763,7 @@ bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
     if (ag_schema_log_opcode(op)) { return ag_nv_log_instruction(c, ins); }
     if (ag_schema_join_opcode(op)) { return ag_nv_join_instruction(c, ins); }
     if (ag_schema_stdout_opcode(op)) { return ag_nv_stdout_instruction(c, ins); }
+    if (ag_schema_taint_build_opcode(op)) { return ag_nv_taint_build_instruction(c, ins); }
     if (op == AG_OP_BYTES_LITERAL || op == 4 || op == 7 || op == AG_OP_BYTES_EQ || op == AG_OP_BYTES_NE ||
         op == 8 || op == AG_OP_BYTES_SLICE) {
         return ag_nv_bytes_instruction(c, ins);
@@ -839,7 +870,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     int count = f.blocks.len();
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 23; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 25; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Stack frame: one slot per register and one private return word.
     b.push(72); b.push(129); b.push(236);
@@ -891,6 +922,7 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
         c.labels[count + 20] = b.len();
         if (!ag_native_emit_join(b)) { return ag_nv_failure(); }
     }
+    if (ag_nv_has_taint_build(f) && !ag_nv_emit_taint_build(c)) { return ag_nv_failure(); }
     if (!ag_nv_emit_stdout_leaves(c, ag_nv_has_stdout(f, AG_NV_BYTES_DESCRIPTOR),
         ag_nv_has_stdout(f, AG_NV_LOG_DESCRIPTOR))) { return ag_nv_failure(); }
     for (int i = 0; i < c.patches.len(); i += 1) {
