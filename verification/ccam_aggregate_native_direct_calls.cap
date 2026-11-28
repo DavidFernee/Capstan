@@ -8,6 +8,7 @@
 // No external ABI, canonical fuel equivalence, or complete compiler claim.
 import "ccam_aggregate_native_record_lowering.cap";
 import "ccam_aggregate_sealed_program.cap";
+import "ccam_aggregate_native_process_argv.cap";
 
 // Explicit opt-in candidate profile; shared/sealed defaults stay 256.
 const int AG_NVC_MAX_FUNCTIONS = 512;
@@ -25,10 +26,20 @@ bool ag_nvc_nominal_shape(int kind, int descriptor, List<int> layouts) {
 }
 
 bool ag_nvc_admit_typed(List<AGFunction> functions, List<AGNominalSignature> signatures, int entry, List<int> layouts) {
+    return ag_nvc_admit_entry(functions, signatures, entry, layouts, false);
+}
+
+bool ag_nvc_admit_entry(List<AGFunction> functions, List<AGNominalSignature> signatures,
+    int entry, List<int> layouts, bool process_args) {
     if (functions.len() == 0 || functions.len() > AG_NVC_MAX_FUNCTIONS ||
         entry < 0 || entry >= functions.len() || layouts.len() != 0 || signatures.len() != functions.len()) { return false; }
-    if (functions[entry].signature.parameters.len() != 0 ||
-        functions[entry].signature.result_kind != AG_SCHEMA_INT) { return false; }
+    if (functions[entry].signature.result_kind != AG_SCHEMA_INT) { return false; }
+    if (process_args) {
+        if (functions[entry].signature.parameters.len() != 1 ||
+            functions[entry].signature.parameters[0] != AG_SCHEMA_REF ||
+            signatures[entry].parameter_descriptors.len() != 1 ||
+            signatures[entry].parameter_descriptors[0] != -4100) { return false; }
+    } else if (functions[entry].signature.parameters.len() != 0) { return false; }
     for (int i = 0; i <= 4096; i += 1) { layouts.push(-1); }
     Map<int> fields = new Map<int>();
     int blocks = 0; int instructions = 0; int operands = 0; int registers = 0;
@@ -157,9 +168,21 @@ AGImage ag_nvc_compile(List<AGFunction> functions, int entry, int fuel, int dept
 
 AGImage ag_nvc_compile_typed(List<AGFunction> functions, List<AGNominalSignature> signatures,
     int entry, int fuel, int depth) {
+    return ag_nvc_compile_entry(functions, signatures, entry, fuel, depth, false);
+}
+
+// Explicit candidate process entry, not the source args() builtin.
+// The initial kernel stack is never passed as a language value.
+AGImage ag_nvc_compile_process(List<AGFunction> functions, List<AGNominalSignature> signatures,
+    int entry, int fuel, int depth) {
+    return ag_nvc_compile_entry(functions, signatures, entry, fuel, depth, true);
+}
+
+AGImage ag_nvc_compile_entry(List<AGFunction> functions, List<AGNominalSignature> signatures,
+    int entry, int fuel, int depth, bool process_args) {
     List<int> layouts = new List<int>();
     if (fuel < 1 || fuel > AG_NV_MAX_FUEL || depth < 1 || depth > AG_NVC_MAX_DEPTH ||
-        !ag_nvc_admit_typed(functions, signatures, entry, layouts)) { return ag_nv_failure(); }
+        !ag_nvc_admit_entry(functions, signatures, entry, layouts, process_args)) { return ag_nv_failure(); }
     List<int> starts = new List<int>();
     int count = 0;
     for (int i = 0; i < functions.len(); i += 1) {
@@ -167,15 +190,22 @@ AGImage ag_nvc_compile_typed(List<AGFunction> functions, List<AGNominalSignature
     }
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 15; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 16; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Root scratch frame is not a language call; entry consumes one depth.
     if (!ag_nvc_stack_adjust(b, true, 1)) { return ag_nv_failure(); }
     b.push(73); b.push(137); b.push(231);
     if (!ag_nv_imm(b, 12, 0) || !ag_nv_imm(b, 13, 0) || !ag_nv_imm(b, 14, 0) ||
         !ag_nv_imm(b, 3, fuel) || !ag_nv_imm(b, 5, depth) ||
-        !ag_nv_imm(b, 0, AG_NATIVE_SCALAR_RECORD_MAX_CAPACITY) || !ag_nv_call(c, count + 1) ||
-        !ag_nvc_enter(c, starts[entry], functions[entry].kinds.len(), new List<int>()) ||
+        !ag_nv_imm(b, 0, AG_NATIVE_SCALAR_RECORD_MAX_CAPACITY) || !ag_nv_call(c, count + 1)) { return ag_nv_failure(); }
+    List<int> entry_args = new List<int>();
+    if (process_args) {
+        // R15 is the root one-word frame immediately below original RSP.
+        b.push(73); b.push(141); b.push(71); b.push(8); // lea rax,[r15+8]
+        if (!ag_nv_call(c, count + 15) || !ag_nv_slot(b, true, 0, 0)) { return ag_nv_failure(); }
+        entry_args.push(0);
+    }
+    if (!ag_nvc_enter(c, starts[entry], functions[entry].kinds.len(), entry_args) ||
         !ag_nv_slot(b, true, 0, 0) || !ag_nv_return(c, 0, 0)) { return ag_nv_failure(); }
     for (int i = 0; i < functions.len(); i += 1) {
         if (!ag_nvc_function(c, functions, signatures, starts, i)) { return ag_nv_failure(); }
@@ -196,6 +226,8 @@ AGImage ag_nvc_compile_typed(List<AGFunction> functions, List<AGNominalSignature
     c.labels[count + 13] = b.len();
     c.labels[count + 14] = b.len() + AG_NV_MAP_KEYS_OFFSET;
     if (!ag_nv_emit_map(b)) { return ag_nv_failure(); }
+    c.labels[count + 15] = b.len();
+    if (process_args && !ag_nv_emit_process_argv(b)) { return ag_nv_failure(); }
     for (int i = 0; i < c.patches.len(); i += 1) {
         int target = c.labels[c.targets[i]];
         if (target < 0 || !ag_rel32(b, c.patches[i], target)) { return ag_nv_failure(); }
