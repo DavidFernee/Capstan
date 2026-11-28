@@ -1,0 +1,88 @@
+import "ccam_aggregate_sealed_program.cap";
+
+test "sealed aggregate program isolates nested operand and signature mutations" {
+    List<int> parameters = new List<int>();
+    parameters.push(AG_SCHEMA_REF);
+    List<int> descriptors = new List<int>();
+    descriptors.push(AG_NOMINAL_INT_ARRAY);
+    AGCallSignature coarse = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    AGNominalSignature signature = new AGNominalSignature{coarse: coarse,
+        parameter_descriptors: descriptors, result_descriptor: 0};
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    List<int> operands = new List<int>();
+    operands.push(1); operands.push(0);
+    AGBlockInstruction instruction = new AGBlockInstruction{opcode: 3,
+        kind: AG_SCHEMA_INT, operands: operands};
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    instructions.push(instruction);
+    AGCFGBlock block = new AGCFGBlock{instructions: instructions,
+        terminator: 0, condition: -1, yes: -1, no: -1};
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>(); blocks.push(block);
+    List<int> returns = new List<int>(); returns.push(1);
+    AGFunction function = new AGFunction{signature: coarse, kinds: kinds,
+        blocks: blocks, returns: returns};
+    List<AGFunction> functions = new List<AGFunction>(); functions.push(function);
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>(); signatures.push(signature);
+    AGSealResult sealed = ag_seal_program(functions, signatures);
+    assert(sealed.ok);
+
+    // Mutate all levels of the original graph after admission.
+    parameters[0] = AG_SCHEMA_BOOL;
+    descriptors[0] = AG_NOMINAL_BOOL_ARRAY;
+    signature.result_descriptor = 9;
+    coarse.result_kind = AG_SCHEMA_BOOL;
+    kinds[1] = AG_SCHEMA_BOOL;
+    operands[0] = 0;
+    instruction.opcode = 99;
+    block.terminator = 2;
+    returns[0] = 0;
+    instructions.push(instruction);
+    blocks.push(block);
+    functions.push(function);
+    signatures.push(signature);
+
+    List<int> root_kinds = new List<int>();
+    root_kinds.push(AG_SCHEMA_REF); root_kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(root_kinds, 4096, 16, 4096, 4096, 32);
+    assert(root.ok);
+    assert(ccam_aggregate_alloc_array(root.machine, 0, AG_SCHEMA_INT, 0, 2) == "");
+    assert(ccam_aggregate_write(root.machine, 1, ccam_heap_int(19)) == "");
+    assert(ccam_aggregate_array_append(root.machine, 0, 1, AG_SCHEMA_INT) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 16);
+    assert(stack.ok);
+    List<int> arguments = new List<int>(); arguments.push(0);
+    assert(ag_sealed_invoke(sealed.program, stack.stack, 0, arguments, 1) == "");
+    CCAMAggregateValueResult returned = ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT);
+    assert(returned.ok && returned.value.int_value == 1);
+    assert(stack.stack.depth == 0 && stack.stack.slots == 2);
+    // The extra function in the source vector is not part of the sealed registry.
+    assert(ag_sealed_invoke(sealed.program, stack.stack, 1, arguments, 1) == "invalid_function");
+}
+
+test "sealed aggregate program rejects malformed contracts and instruction graphs" {
+    List<int> parameters = new List<int>(); parameters.push(AG_SCHEMA_INT);
+    AGCallSignature coarse = new AGCallSignature{parameters: parameters, result_kind: AG_SCHEMA_INT};
+    List<int> descriptors = new List<int>(); descriptors.push(0);
+    AGNominalSignature signature = new AGNominalSignature{coarse: coarse,
+        parameter_descriptors: descriptors, result_descriptor: 0};
+    List<AGFunction> functions = new List<AGFunction>();
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>();
+    assert(!ag_seal_program(functions, signatures).ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    List<AGBlockInstruction> instructions = new List<AGBlockInstruction>();
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: instructions,
+        terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(0);
+    functions.push(new AGFunction{signature: coarse, kinds: kinds, blocks: blocks, returns: returns});
+    assert(!ag_seal_program(functions, signatures).ok);
+    signatures.push(signature);
+    assert(ag_seal_program(functions, signatures).ok);
+    descriptors[0] = 7;
+    assert(!ag_seal_program(functions, signatures).ok);
+    descriptors[0] = 0;
+    instructions.push(new AGBlockInstruction{opcode: 99, kind: AG_SCHEMA_INT, operands: new List<int>()});
+    AGSealResult invalid = ag_seal_program(functions, signatures);
+    assert(!invalid.ok && invalid.error == "invalid_program");
+}
