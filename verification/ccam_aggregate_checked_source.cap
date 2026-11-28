@@ -849,6 +849,17 @@ bool ag_source_statement(AGSourceContext c, Node statement, AGSourceShape result
     if (statement.k == N_EXPR && statement.kids.len() == 1) {
         Node expression = statement.kids[0];
         if (expression.k == N_CALL && ty_of(expression).k == TY_VOID) {
+            if (!c.function_nodes.has(expression.s) && (expression.s == "print" || expression.s == "println")) {
+                if (expression.kids.len() != 1) { return false; }
+                int value = ag_source_expr(c, expression.kids[0], 0);
+                if (value < 0 || c.kinds[value] != AG_SCHEMA_REF ||
+                    (c.descriptors[value] != AG_NOMINAL_BYTES && c.descriptors[value] != AG_NOMINAL_LOG)) { return false; }
+                int opcode = AG_OP_PRINT;
+                if (expression.s == "println") { opcode = AG_OP_PRINTLN; }
+                List<int> operands = new List<int>();
+                operands.push(value); operands.push(c.descriptors[value]);
+                return ag_source_emit(c, opcode, AG_SCHEMA_REF, operands);
+            }
             return ag_source_direct_call(c, expression,
                 ag_source_result_shape(ty_of(expression), c.records), 0) == AG_SOURCE_VOID_CALL_OK;
         }

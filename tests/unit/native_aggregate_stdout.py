@@ -81,6 +81,19 @@ def main():
             corrupt = bytearray(a)
             struct.pack_into('<Q', corrupt, pos, word)
             check(corrupt, 0, 1)
+        # The separately emitted LogText variant changes only the exact
+        # class immediate. Neither variant accepts the other class or taint.
+        trusted_leaf = leaf
+        leaf = Path(sys.argv[1]).with_name('ccam-native-stdout-log.bin').read_bytes()
+        assert len(leaf) == 382
+        differences = [i for i, (a_byte, b_byte) in enumerate(zip(trusted_leaf, leaf)) if a_byte != b_byte]
+        assert differences == [27, 28], differences
+        check(obj(b'abc', 2046), 0, 1, b'abc\n')
+        check(obj(b'', 2046), 0, 1, b'\n')
+        check(obj(b'abc', 4096), 0, 0)
+        check(obj(b'abc', 2045), 0, 0)
+        leaf = trusted_leaf
+        check(obj(b'abc', 2046), 0, 0)
         prepare(a, 0, 0, 0)
         with open('/dev/full', 'wb') as full:
             run = subprocess.run([exe], stdout=full, stderr=subprocess.PIPE, timeout=5)

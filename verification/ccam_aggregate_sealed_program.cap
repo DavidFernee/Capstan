@@ -130,6 +130,11 @@ AGSealResult ag_seal_program(List<AGFunction> functions, List<AGNominalSignature
             result_kind: f.signature.result_kind};
         List<AGCFGBlock> blocks = new List<AGCFGBlock>();
         for (int j = 0; j < f.blocks.len(); j += 1) {
+            // This sealed evaluator has no stdout effect authority or model.
+            // Refuse before publishing an executable instead of dropping I/O.
+            for (int k = 0; k < f.blocks[j].instructions.len(); k += 1) {
+                if (ag_schema_stdout_opcode(f.blocks[j].instructions[k].opcode)) { return ag_seal_failure("unsupported_effect"); }
+            }
             blocks.push(ag_seal_copy_block(f.blocks[j]));
         }
         owned_functions.push(new AGFunction{signature: coarse,

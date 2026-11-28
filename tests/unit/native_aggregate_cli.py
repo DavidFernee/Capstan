@@ -100,6 +100,31 @@ int main() {
         # not observe the returned log bytes; the isolated native leaf
         # differential tests cover those transforms separately.
 
+        # Exercise exact production print_diags and source_excerpt together.
+        # Candidate result ABI appends the existing binary return word after
+        # the emitted text; compare the whole stream, including hostile input.
+        printer = ast[ast.index("int error_count("):ast.index("// ---- constructors")]
+        source.write_text(declarations + excerpt + printer + r"""
+int main() {
+    Ctx c = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: false, strict: true, keep_checks: false};
+    c.files.push("input.cap");
+    c.sources.push(taint("first\n" + char_str(27) + "[31msecond\n"));
+    report_at(c, 0, 1, 3, true, "FIRST", "message");
+    report_at(c, 0, 2, 5, false, "", "another");
+    print_diags(c);
+    return 42;
+}
+""")
+        p = run(root, cli, out, "fixture.cap")
+        assert p.returncode == 0, ("production print_diags admission", p.stdout.decode(errors="replace"))
+        q = subprocess.run([str(out)], capture_output=True, timeout=5)
+        expected = (b"input.cap:1:3: error[FIRST]: message\n"
+                    b"    first\n      ^\n"
+                    b"input.cap:2:5: warning: another\n"
+                    b"    \\x1b[31msecond\n        ^\n")
+        assert (q.returncode, q.stdout, q.stderr) == (0, expected + struct.pack("<q", 42), b""), ("production print_diags", q)
+        print("Production print_diags candidate: exact source emitted expected diagnostic bytes")
+
         # The complete checked compiler is the actual target. Do not prune
         # declarations, rename functions, or substitute a synthetic subset.
         probe = root / "compiler-probe"
