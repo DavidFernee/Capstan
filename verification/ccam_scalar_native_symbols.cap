@@ -1,0 +1,112 @@
+import "native_link_model.cap";
+// Candidate compiler-side namespace, within existing linker capacity.
+const int SN_SYMBOL_LIMIT = 256;
+struct SNSymbolLayout {
+    bool ok;
+    List<int> counts;
+    List<int> starts;
+    int total;
+}
+SNSymbolLayout sn_symbol_layout(List<int> counts, int reserved) {
+    SNSymbolLayout result=new SNSymbolLayout{ok:false,counts:new List<int>(),starts:new List<int>(),total:0};
+    if (reserved<0 || reserved>SN_SYMBOL_LIMIT || counts.len()<1 ||
+        counts.len()>SN_SYMBOL_LIMIT-reserved) { return result; }
+    int total=reserved;
+    for (int i=0; i<counts.len(); i+=1) {
+        int n=counts[i];
+        if (n<1 || n>SN_SYMBOL_LIMIT-total-1) { return result; }
+        total+=1+n;
+    }
+    int next=reserved;
+    for (int i=0; i<counts.len(); i+=1) {
+        result.starts.push(next);
+        result.counts.push(counts[i]);
+        next+=1+counts[i];
+    }
+    result.total=total;
+    result.ok=true;
+    return result;
+}
+bool sn_symbol_valid(SNSymbolLayout layout) {
+    if (!layout.ok || layout.counts.len()<1 ||
+        layout.counts.len()>SN_SYMBOL_LIMIT ||
+        layout.starts.len()!=layout.counts.len()) { return false; }
+    int next=layout.starts[0];
+    if (next<0 || next>SN_SYMBOL_LIMIT) { return false; }
+    for (int i=0; i<layout.counts.len(); i+=1) {
+        int n=layout.counts[i];
+        if (layout.starts[i]!=next || n<1 ||
+            n>SN_SYMBOL_LIMIT-next-1) { return false; }
+        next+=1+n;
+    }
+    return next==layout.total;
+}
+int sn_function_symbol(SNSymbolLayout layout,int function_index) {
+    if (!sn_symbol_valid(layout) || function_index<0 ||
+        function_index>=layout.counts.len()) { return -1; }
+    return layout.starts[function_index];
+}
+int sn_instruction_symbol(SNSymbolLayout layout,int function_index,int pc) {
+    int entry=sn_function_symbol(layout,function_index);
+    if (entry<0 || pc<0 || pc>=layout.counts[function_index]) { return -1; }
+    return entry+1+pc;
+}
+// Append a call only after validating target and aggregate emission budgets.
+// The existing linker resolves the resulting fixup after all entries are emitted.
+bool sn_emit_call(List<int> code,List<NativeFixup> fixups,
+                  SNSymbolLayout layout,int function_index) {
+    int symbol=sn_function_symbol(layout,function_index);
+    if (symbol<0 || code.len()>1048576-5 || fixups.len()>=1024) { return false; }
+    code.push(232);
+    fixups.push(new NativeFixup{field:code.len(),symbol:symbol});
+    for (int i=0; i<4; i+=1) { code.push(0); }
+    return true;
+}
+test "scalar symbols separate entries and instruction labels" {
+    List<int> counts=new List<int>();
+    counts.push(2); counts.push(3);
+    SNSymbolLayout l=sn_symbol_layout(counts,4);
+    assert(l.ok && l.total==11);
+    assert(sn_function_symbol(l,0)==4);
+    assert(sn_instruction_symbol(l,0,1)==6);
+    assert(sn_function_symbol(l,1)==7);
+    assert(sn_instruction_symbol(l,1,2)==10);
+    assert(sn_instruction_symbol(l,1,3)==-1);
+    assert(sn_function_symbol(l,-1)==-1);
+    assert(sn_function_symbol(l,2)==-1);
+    counts[0]=99;
+    assert(sn_function_symbol(l,1)==7);
+    l.starts[1]=6;
+    assert(sn_function_symbol(l,1)==-1);
+}
+test "scalar symbols enforce aggregate capacity" {
+    List<int> counts=new List<int>();
+    counts.push(251);
+    assert(sn_symbol_layout(counts,4).ok);
+    counts[0]=252;
+    assert(!sn_symbol_layout(counts,4).ok);
+    counts[0]=9223372036854775807;
+    assert(!sn_symbol_layout(counts,4).ok);
+    counts[0]=0;
+    assert(!sn_symbol_layout(counts,4).ok);
+}
+test "scalar call relocation resolves forward and backward entries" {
+    List<int> counts=new List<int>();
+    counts.push(1); counts.push(1);
+    SNSymbolLayout l=sn_symbol_layout(counts,0);
+    List<int> code=new List<int>();
+    List<NativeFixup> fixups=new List<NativeFixup>();
+    assert(sn_emit_call(code,fixups,l,1));
+    assert(sn_emit_call(code,fixups,l,0));
+    assert(!sn_emit_call(code,fixups,l,2));
+    assert(code.len()==10 && fixups.len()==2);
+    List<NativeSymbol> symbols=new List<NativeSymbol>();
+    symbols.push(new NativeSymbol{id:sn_function_symbol(l,0),offset:0});
+    symbols.push(new NativeSymbol{id:sn_function_symbol(l,1),offset:5});
+    NativeLinkResult linked=native_link_image(code,symbols,fixups);
+    assert(linked.ok && linked.bytes.len()==10);
+    assert(linked.bytes[0]==232 && linked.bytes[1]==0);
+    assert(linked.bytes[5]==232 && linked.bytes[6]==246);
+    assert(linked.bytes[7]==255 && linked.bytes[8]==255 && linked.bytes[9]==255);
+    assert(code[6]==0);
+}
