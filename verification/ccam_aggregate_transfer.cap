@@ -19,7 +19,10 @@ AGTransferResult ag_transfer(List<int> kinds, List<bool> input, int opcode, int 
     if ((opcode == 2 || opcode == AG_OP_FIELD_SET) && !input[operands[0]]) {
         return new AGTransferResult{ok: false, ready: output};
     }
-    if (opcode == 6 && (!input[operands[0]] || !input[operands[1]])) {
+    if (opcode == AG_OP_LIST_POP_DISCARD && !input[operands[0]]) {
+        return new AGTransferResult{ok: false, ready: output};
+    }
+    if ((opcode == 6 || opcode == AG_OP_LIST_PUSH) && (!input[operands[0]] || !input[operands[1]])) {
         return new AGTransferResult{ok: false, ready: output};
     }
     if (opcode == 8 &&
