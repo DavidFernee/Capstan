@@ -8,12 +8,15 @@ const int CCAM_HEAP_VALUE_BOOL = 2;
 const int CCAM_HEAP_VALUE_REF = 3;
 // Array-only exact byte-object element tag; never a nominal record ID.
 const int CCAM_HEAP_ELEMENT_BYTES = -1;
-// Reserved for lists of tainted inputs. Payload operations await a tainted byte object.
+// Exact element identity for lists of immutable tainted byte objects.
 const int CCAM_HEAP_ELEMENT_TAINTED = -2;
 
 const int CCAM_HEAP_OBJECT_RECORD = 1;
 const int CCAM_HEAP_OBJECT_ARRAY = 2;
 const int CCAM_HEAP_OBJECT_BYTES = 3;
+// Disjoint from trusted bytes, records, optionals and maps.
+const int CCAM_HEAP_OBJECT_TAINTED = 6;
+const int CCAM_HEAP_TAINTED_MAX_BYTES = 4096;
 
 const int CCAM_HEAP_RECORD_HEADER_BYTES = 16;
 const int CCAM_HEAP_ARRAY_HEADER_BYTES = 24;
@@ -185,7 +188,7 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
             if (index < 0) { return false; }
             if (expected_ref_type_id == 0) { return true; }
             CCAMHeapObject target = heap.objects[index];
-            if (expected_ref_type_id == CCAM_HEAP_ELEMENT_TAINTED) { return false; }
+            if (expected_ref_type_id == CCAM_HEAP_ELEMENT_TAINTED) { return target.kind == CCAM_HEAP_OBJECT_TAINTED; }
             if (expected_ref_type_id == CCAM_HEAP_ELEMENT_BYTES) { return target.kind == CCAM_HEAP_OBJECT_BYTES; }
             return target.kind == CCAM_HEAP_OBJECT_RECORD &&
                 target.descriptor_id == expected_ref_type_id;
@@ -746,7 +749,17 @@ CCAMHeapRefResult ccam_heap_alloc_array(CCAMHeap heap, int element_type, int cap
 }
 
 CCAMHeapRefResult ccam_heap_alloc_bytes(CCAMHeap heap, string data) {
+    return ccam_heap_alloc_byte_object(heap, data, false);
+}
+
+// This helper receives only model-owned byte data (a trusted host string).
+// Classification never converts a tainted reference back to a trusted one.
+// Public trusted-byte accessors continue to check OBJECT_BYTES exactly.
+CCAMHeapRefResult ccam_heap_alloc_byte_object(CCAMHeap heap, string data, bool tainted) {
     int length = data.len();
+    if (tainted && length > CCAM_HEAP_TAINTED_MAX_BYTES) {
+        return ccam_heap_ref_error("invalid_bytes_size");
+    }
     if (length < 0 || length > CCAM_HEAP_MAX_BYTES - CCAM_HEAP_BYTES_HEADER_BYTES) {
         return ccam_heap_ref_error("invalid_bytes_size");
     }
@@ -758,9 +771,11 @@ CCAMHeapRefResult ccam_heap_alloc_bytes(CCAMHeap heap, string data) {
         return ccam_heap_ref_error(admission);
     }
     int id = heap.next_id;
+    int object_kind = CCAM_HEAP_OBJECT_BYTES;
+    if (tainted) { object_kind = CCAM_HEAP_OBJECT_TAINTED; }
     CCAMHeapObject object = new CCAMHeapObject{
         id: id,
-        kind: CCAM_HEAP_OBJECT_BYTES,
+        kind: object_kind,
         descriptor_id: 0,
         field_types: new List<int>(),
         field_ref_type_ids: new List<int>(),
@@ -781,6 +796,52 @@ CCAMHeapRefResult ccam_heap_alloc_bytes(CCAMHeap heap, string data) {
     heap.temporary_peak_bytes = ccam_heap_max_int(length, heap.temporary_peak_bytes);
     heap.next_id += 1;
     return new CCAMHeapRefResult{ok: true, reference: new CCAMHeapRef{identity: heap.identity, object_id: id}, trap: ""};
+}
+
+// Candidate reference-model taint classification. Only a trusted byte
+// object can enter this transition. No raw string accessor for tainted
+// objects is exported; len, byte inspection and slicing mirror Tainted.
+CCAMHeapRefResult ccam_heap_taint_bytes(CCAMHeap heap, CCAMHeapRef reference) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_BYTES) { return ccam_heap_ref_error("object_type_mismatch"); }
+    return ccam_heap_alloc_byte_object(heap, object.byte_data, true);
+}
+
+CCAMHeapIntResult ccam_heap_tainted_len(CCAMHeap heap, CCAMHeapRef reference) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_int_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_TAINTED) { return ccam_heap_int_error("object_type_mismatch"); }
+    return ccam_heap_int_ok(object.byte_data.len());
+}
+
+CCAMHeapIntResult ccam_heap_tainted_get(CCAMHeap heap, CCAMHeapRef reference, int offset) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_int_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_TAINTED) { return ccam_heap_int_error("object_type_mismatch"); }
+    if (offset < 0 || offset >= object.byte_data.len()) { return ccam_heap_int_error("byte_bounds"); }
+    return ccam_heap_int_ok(object.byte_data.at(offset));
+}
+
+CCAMHeapRefResult ccam_heap_tainted_slice(CCAMHeap heap, CCAMHeapRef reference, int start, int end) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_TAINTED) { return ccam_heap_ref_error("object_type_mismatch"); }
+    if (start < 0 || end < start || end > object.byte_data.len()) { return ccam_heap_ref_error("byte_bounds"); }
+    int length = end - start;
+    int temporary = length * 2;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, temporary, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_byte_object(heap, object.byte_data.slice(start, end), true);
+    if (allocated.ok) {
+        heap.work_used += length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return allocated;
 }
 
 CCAMHeapRefResult ccam_heap_bytes_concat(CCAMHeap heap, CCAMHeapRef left_reference, CCAMHeapRef right_reference) {
@@ -1673,4 +1734,83 @@ test "byte array element descriptor excludes records and preserves map key snaps
     assert(ccam_heap_array_set(heap, after.reference, CCAM_HEAP_VALUE_REF, 0,
         ccam_heap_ref_value(record.reference)) == "value_type_mismatch");
     assert(ccam_heap_array_len(heap, after.reference, CCAM_HEAP_VALUE_REF).value == 2);
+}
+
+test "tainted byte objects preserve classification through bounded slicing and typed lists" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult trusted = ccam_heap_alloc_bytes(heap, "abc");
+    assert(trusted.ok);
+    CCAMHeapRefResult source = ccam_heap_taint_bytes(heap, trusted.reference);
+    assert(source.ok);
+    CCAMHeapValue value = ccam_heap_ref_value(source.reference);
+    assert(ccam_heap_value_has_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(!ccam_heap_value_is_bytes(heap, value));
+    assert(!ccam_heap_value_has_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_BYTES));
+    assert(!ccam_heap_bytes_len(heap, source.reference).ok);
+    assert(!ccam_heap_byte_get(heap, source.reference, 0).ok);
+    assert(!ccam_heap_bytes_slice(heap, source.reference, 0, 1).ok);
+    assert(!ccam_heap_bytes_slice_alloc(heap, source.reference, 0, 1).ok);
+    assert(!ccam_heap_bytes_concat(heap, trusted.reference, source.reference).ok);
+    assert(!ccam_heap_tainted_len(heap, trusted.reference).ok);
+    assert(!ccam_heap_taint_bytes(heap, source.reference).ok);
+    assert(ccam_heap_tainted_len(heap, source.reference).value == 3);
+    assert(ccam_heap_tainted_get(heap, source.reference, 1).value == 98);
+    assert(!ccam_heap_tainted_get(heap, source.reference, -1).ok);
+    assert(!ccam_heap_tainted_get(heap, source.reference, 3).ok);
+    int prior_bytes = heap.bytes_used;
+    int prior_work = heap.work_used;
+    int prior_count = heap.objects.len();
+    assert(!ccam_heap_tainted_slice(heap, source.reference, -1, 1).ok);
+    assert(!ccam_heap_tainted_slice(heap, source.reference, 2, 1).ok);
+    assert(!ccam_heap_tainted_slice(heap, source.reference, 0, 4).ok);
+    assert(heap.bytes_used == prior_bytes && heap.work_used == prior_work && heap.objects.len() == prior_count);
+    CCAMHeapRefResult slice = ccam_heap_tainted_slice(heap, source.reference, 1, 3);
+    assert(slice.ok);
+    CCAMHeapValue sliced = ccam_heap_ref_value(slice.reference);
+    assert(ccam_heap_value_has_type(heap, sliced, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(!ccam_heap_value_is_bytes(heap, sliced));
+    assert(ccam_heap_tainted_len(heap, slice.reference).value == 2);
+    assert(ccam_heap_tainted_get(heap, slice.reference, 0).value == 98);
+    assert(ccam_heap_tainted_get(heap, slice.reference, 1).value == 99);
+    CCAMHeapRefResult empty = ccam_heap_tainted_slice(heap, source.reference, 3, 3);
+    assert(empty.ok && ccam_heap_tainted_len(heap, empty.reference).value == 0);
+    CCAMHeapRefResult list = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 0);
+    assert(list.ok);
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, value) == "");
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, sliced) == "");
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, ccam_heap_ref_value(trusted.reference)) == "value_type_mismatch");
+    assert(ccam_heap_array_set(heap, list.reference, CCAM_HEAP_VALUE_REF, 0, ccam_heap_ref_value(trusted.reference)) == "value_type_mismatch");
+    assert(ccam_heap_array_len(heap, list.reference, CCAM_HEAP_VALUE_REF).value == 2);
+    CCAMHeapValueResult first = ccam_heap_array_get(heap, list.reference, CCAM_HEAP_VALUE_REF, 0);
+    assert(first.ok && ccam_heap_value_has_type(heap, first.value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(ccam_heap_list_pop_discard(heap, list.reference, CCAM_HEAP_VALUE_REF) == "");
+    assert(ccam_heap_array_len(heap, list.reference, CCAM_HEAP_VALUE_REF).value == 1);
+    assert(!ccam_heap_array_get(heap, list.reference, CCAM_HEAP_VALUE_REF, 1).ok);
+    CCAMHeapCreateResult other = ccam_heap_create(4096, 32);
+    assert(other.ok);
+    assert(!ccam_heap_tainted_len(other.heap, source.reference).ok);
+    assert(!ccam_heap_value_has_type(other.heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+}
+
+test "tainted slice allocation rejects without charging or publishing" {
+    CCAMHeapCreateResult created = ccam_heap_create(22, 8);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult trusted = ccam_heap_alloc_bytes(heap, "abc");
+    assert(trusted.ok);
+    CCAMHeapRefResult source = ccam_heap_taint_bytes(heap, trusted.reference);
+    assert(source.ok);
+    int prior_bytes = heap.bytes_used;
+    int prior_work = heap.work_used;
+    int prior_count = heap.objects.len();
+    int prior_id = heap.next_id;
+    int prior_temporary = heap.temporary_peak_bytes;
+    CCAMHeapRefResult failed = ccam_heap_tainted_slice(heap, source.reference, 0, 1);
+    assert(!failed.ok && failed.trap == "heap_limit");
+    assert(heap.bytes_used == prior_bytes && heap.work_used == prior_work);
+    assert(heap.objects.len() == prior_count && heap.next_id == prior_id);
+    assert(heap.temporary_peak_bytes == prior_temporary);
+    assert(ccam_heap_tainted_get(heap, source.reference, 0).value == 97);
 }
