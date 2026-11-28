@@ -16,6 +16,7 @@ bool ag_nvc_nominal_shape(int kind, int descriptor, List<int> layouts) {
     if (kind == AG_SCHEMA_REF) {
         return descriptor == AG_NV_BYTES_DESCRIPTOR || descriptor == AG_NV_INT_LIST_DESCRIPTOR ||
             descriptor == AG_NV_BOOL_LIST_DESCRIPTOR || ag_nv_ref_list_tag(descriptor) != 0 ||
+            ag_nv_optional_tag(descriptor) != 0 ||
             (descriptor >= 1 && descriptor < AG_NV_RECORD_LIMIT && layouts[descriptor] >= 0);
     }
     return (kind == AG_SCHEMA_INT || kind == AG_SCHEMA_BOOL || kind == AG_RESULT_VOID) && descriptor == 0;
