@@ -46,3 +46,7 @@ jobs:
         run: bin/capstan test verification/x86_assurance_encoding_tests.cap
       - name: Run exhaustive stack layout and ABI controls
         run: bin/capstan test verification/x86_assurance_abi_tests.cap
+      - name: Run allocation oracle and certificate tests
+        run: bin/capstan test verification/x86_assurance_allocation_tests.cap
+      - name: Run native ELF differential arithmetic campaign
+        run: python3 tests/unit/native_assurance_oracle.py
