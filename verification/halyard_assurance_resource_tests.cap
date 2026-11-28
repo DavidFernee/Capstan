@@ -1,0 +1,106 @@
+import "halyard_resource_vector_actor.cap";
+
+// Bounded nonnegative sums are an independent oracle for subtraction-based
+// admission. Check both arrival orders and release before/after second decision.
+bool assurance_hrv_case(int capacity, int a, int b, int order, bool early) {
+    List<int> caps = new List<int>(); List<int> first = new List<int>(); List<int> second = new List<int>();
+    for (int i = 0; i < 3; i += 1) {
+        caps.push(capacity % 3); capacity = capacity / 3;
+        first.push(a % 3); a = a / 3;
+        second.push(b % 3); b = b / 3;
+    }
+    int first_id = 1 + order;
+    int second_id = 2 - order;
+    HRVState initial = hrv_initial(caps[0], caps[1], caps[2], 2);
+    HRVTransition queued1 = hrv_enqueue(initial, first_id, first[0], first[1], first[2]);
+    if (!queued1.ok || initial.queued != 0) { return false; }
+    HRVTransition queued2 = hrv_enqueue(queued1.state, second_id, second[0], second[1], second[2]);
+    if (!queued2.ok || queued1.state.queued != 1) { return false; }
+    bool fits1 = first[0] <= caps[0] && first[1] <= caps[1] && first[2] <= caps[2];
+    HRVTransition admitted1 = hrv_process_one(queued2.state);
+    if (!admitted1.ok || admitted1.state.queued != 1 || queued2.state.queued != 2) { return false; }
+    int status1 = HRV_REJECTED;
+    if (fits1) { status1 = HRV_ACCEPTED; }
+    if (order == 0 && (admitted1.state.a_status != status1 || admitted1.state.b_status != HRV_PENDING)) { return false; }
+    if (order == 1 && (admitted1.state.b_status != status1 || admitted1.state.a_status != HRV_PENDING)) { return false; }
+    HRVState state = admitted1.state;
+    List<int> used = new List<int>();
+    for (int i = 0; i < 3; i += 1) {
+        int v = 0; if (fits1) { v = first[i]; } used.push(v);
+    }
+    if (state.used_retained != used[0] || state.used_allocations != used[1] || state.used_metadata != used[2]) { return false; }
+    if (early && fits1) {
+        HRVTransition release = hrv_release(state, first_id);
+        if (!release.ok) { return false; }
+        state = release.state;
+        for (int i = 0; i < 3; i += 1) { used[i] = 0; }
+    }
+    bool fits2 = true;
+    for (int i = 0; i < 3; i += 1) { if (used[i] + second[i] > caps[i]) { fits2 = false; } }
+    HRVTransition admitted2 = hrv_process_one(state);
+    if (!admitted2.ok || admitted2.state.queued != 0 || state.queued != 1) { return false; }
+    int status2 = HRV_REJECTED; if (fits2) { status2 = HRV_ACCEPTED; }
+    state = admitted2.state;
+    if (order == 0 && state.b_status != status2) { return false; }
+    if (order == 1 && state.a_status != status2) { return false; }
+    if (fits2) { for (int i = 0; i < 3; i += 1) { used[i] += second[i]; } }
+    if (state.used_retained != used[0] || state.used_allocations != used[1] || state.used_metadata != used[2]) { return false; }
+    if (fits1 && !early) {
+        HRVTransition release = hrv_release(state, first_id);
+        if (!release.ok) { return false; } state = release.state;
+    }
+    if (fits2) {
+        HRVTransition release = hrv_release(state, second_id);
+        if (!release.ok) { return false; } state = release.state;
+    }
+    return state.used_retained == 0 && state.used_allocations == 0 && state.used_metadata == 0 &&
+        !hrv_release(state, first_id).ok && !hrv_release(state, second_id).ok && hrv_invariant(state);
+}
+bool assurance_hrv_shard(int start) {
+    for (int cap = start; cap < start + 3; cap += 1) {
+        for (int a = 0; a < 27; a += 1) {
+            for (int b = 0; b < 27; b += 1) {
+                for (int order = 0; order < 2; order += 1) {
+                    if (!assurance_hrv_case(cap, a, b, order, false) ||
+                        !assurance_hrv_case(cap, a, b, order, true)) { return false; }
+                }
+            }
+        }
+    }
+    return true;
+}
+test "Halyard bounded vector admission and release shard 0" {
+    assert(assurance_hrv_shard(0));
+}
+
+test "Halyard bounded vector admission and release shard 1" {
+    assert(assurance_hrv_shard(3));
+}
+
+test "Halyard bounded vector admission and release shard 2" {
+    assert(assurance_hrv_shard(6));
+}
+
+test "Halyard bounded vector admission and release shard 3" {
+    assert(assurance_hrv_shard(9));
+}
+
+test "Halyard bounded vector admission and release shard 4" {
+    assert(assurance_hrv_shard(12));
+}
+
+test "Halyard bounded vector admission and release shard 5" {
+    assert(assurance_hrv_shard(15));
+}
+
+test "Halyard bounded vector admission and release shard 6" {
+    assert(assurance_hrv_shard(18));
+}
+
+test "Halyard bounded vector admission and release shard 7" {
+    assert(assurance_hrv_shard(21));
+}
+
+test "Halyard bounded vector admission and release shard 8" {
+    assert(assurance_hrv_shard(24));
+}
