@@ -23,57 +23,16 @@ jobs:
         run: |
           git rev-parse HEAD 'HEAD^{tree}'
           make bootstrap
-      - name: Execute all suites in the selected group
+      - name: Test evidence runner
+        run: python3 tools/assurance/test_systematic_runner.py
+      - name: Execute all suites in selected group
         env:
           ASSURANCE_GROUP: ${{ matrix.group }}
-        shell: bash
-        run: |
-          failures=0
-          check() {
-            printf '\n=== %s ===\n' "$*"
-            if "$@"; then
-              printf 'PASS: %s\n' "$*"
-            else
-              printf 'FAIL: %s\n' "$*"
-              failures=$((failures + 1))
-            fi
-          }
-          case "$ASSURANCE_GROUP" in
-            scalar)
-              check bin/capstan test verification/ccam_assurance_arithmetic_tests.cap
-              check bin/capstan test verification/ccam_assurance_transition_tests.cap
-              check bin/capstan test verification/ccam_assurance_dispatch_tests.cap
-              check bin/capstan test verification/ccam_assurance_admission_tests.cap
-              check bin/capstan test verification/ccam_assurance_malformed_tests.cap
-              check bin/capstan test verification/ccam_assurance_loop_tests.cap
-              ;;
-            memory)
-              check bin/capstan test verification/ccam_assurance_call_tests.cap
-              check bin/capstan test verification/ccam_assurance_memory_tests.cap
-              check bin/capstan test verification/gc_assurance_graph_tests.cap
-              check bin/capstan test verification/gc_assurance_handle_tests.cap
-              ;;
-            security)
-              check bin/capstan test verification/schooner_assurance_capability_tests.cap
-              check bin/capstan test verification/schooner_assurance_schedule_tests.cap
-              check bin/capstan test verification/assurance_mcdc_tests.cap
-              check bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/security_assurance_checker_tests.cap
-              check bin/capstan test verification/concurrency_assurance_capacity_tests.cap
-              ;;
-            native)
-              check bin/capstan test verification/x86_assurance_encoding_tests.cap
-              check bin/capstan test verification/x86_assurance_abi_tests.cap
-              check bin/capstan test verification/x86_assurance_allocation_tests.cap
-              check python3 tests/unit/native_assurance_oracle.py
-              ;;
-            mutation)
-              check python3 tests/unit/security_assurance_mutants.py
-              ;;
-            generative)
-              check bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/ccam_core.cap verification/ccam_calls.cap verification/ccam_lowering.cap verification/source_assurance_grammar_tests.cap
-              check bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/source_assurance_reduction_tests.cap
-              check python3 tests/unit/assurance_raw_corpus_tests.py
-              ;;
-            *) exit 2 ;;
-          esac
-          test "$failures" -eq 0
+        run: python3 tools/assurance/systematic_runner.py "$ASSURANCE_GROUP"
+      - name: Preserve group evidence and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: systematic-${{ matrix.group }}
+          path: build/systematic-evidence/${{ matrix.group }}/
+          if-no-files-found: error
