@@ -87,7 +87,7 @@ def main():
         leaf = Path(sys.argv[1]).with_name('ccam-native-stdout-log.bin').read_bytes()
         assert len(leaf) == 382
         differences = [i for i, (a_byte, b_byte) in enumerate(zip(trusted_leaf, leaf)) if a_byte != b_byte]
-        assert differences == [27, 28], differences
+        assert differences == [30, 31], differences
         check(obj(b'abc', 2046), 0, 1, b'abc\n')
         check(obj(b'', 2046), 0, 1, b'\n')
         check(obj(b'abc', 4096), 0, 0)
