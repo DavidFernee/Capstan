@@ -106,8 +106,50 @@ const int AG_OP_LIST_POP_DISCARD = 27;
 const int AG_OP_DIRECT_CALL = 28;
 const int AG_DIRECT_MAX_ARGS = 256;
 
+// Optional operations carry the expected exact descriptor as an immediate.
+const int AG_OP_OPT_NONE = 29;
+const int AG_OP_OPT_SOME = 30;
+const int AG_OP_OPT_PRESENT = 31;
+const int AG_OP_OPT_UNWRAP = 32;
+
+bool ag_schema_optional_descriptor(int descriptor) {
+    return descriptor == 8193 || descriptor == 8194 || descriptor == 8195 ||
+        (descriptor > 10000 && descriptor <= 14096);
+}
+
+int ag_schema_optional_payload(int descriptor) {
+    if (descriptor == 8193) { return AG_SCHEMA_INT; }
+    if (descriptor == 8194) { return AG_SCHEMA_BOOL; }
+    if (ag_schema_optional_descriptor(descriptor)) { return AG_SCHEMA_REF; }
+    return 0;
+}
+
+bool ag_schema_optional_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_OPT_NONE) {
+        return kind == AG_SCHEMA_REF && operands.len() == 2 &&
+            ag_schema_optional_descriptor(operands[1]) &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF);
+    }
+    if (operands.len() != 3 || !ag_schema_optional_descriptor(operands[2])) { return false; }
+    int payload = ag_schema_optional_payload(operands[2]);
+    if (opcode == AG_OP_OPT_SOME) {
+        return kind == AG_SCHEMA_REF && ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[1], payload);
+    }
+    if (opcode == AG_OP_OPT_PRESENT) {
+        return kind == AG_SCHEMA_BOOL && ag_schema_register(kinds, operands[0], AG_SCHEMA_BOOL) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+    }
+    return opcode == AG_OP_OPT_UNWRAP && kind == payload &&
+        ag_schema_register(kinds, operands[0], payload) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+}
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
     if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
+    if (opcode >= AG_OP_OPT_NONE && opcode <= AG_OP_OPT_UNWRAP) {
+        return ag_schema_optional_operands(kinds, opcode, element_kind, operands);
+    }
     if (opcode == AG_OP_DIRECT_CALL) {
         if (operands.len() < 2 || operands.len() > AG_DIRECT_MAX_ARGS + 2 ||
             operands[1] < 0) { return false; }
