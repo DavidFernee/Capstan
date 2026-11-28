@@ -1,0 +1,240 @@
+import "helm_boot_memory_model.cap";
+
+bool assurance_helm_pair(int ah, int al, int bh, int bl, bool add_ok, int add_hi, int add_lo,
+    bool sub_ok, int sub_hi, int sub_lo, int compare) {
+    HBMU64 a = hbm_u64(ah, al); HBMU64 b = hbm_u64(bh, bl);
+    HBMU64Result sum = hbm_u64_add(a, b);
+    HBMU64Result diff = hbm_u64_sub(a, b);
+    if (hbm_u64_compare(a, b) != compare || sum.ok != add_ok || diff.ok != sub_ok) { return false; }
+    if (sum.value.hi != add_hi || sum.value.lo != add_lo || diff.value.hi != sub_hi || diff.value.lo != sub_lo) { return false; }
+    if (!add_ok && sum.error != "u64_overflow") { return false; }
+    if (!sub_ok && diff.error != "u64_underflow") { return false; }
+    return a.hi == ah && a.lo == al && b.hi == bh && b.lo == bl;
+}
+
+test "Helm unsigned address arithmetic row 0" {
+    assert(assurance_helm_pair(0, 0, 0, 0, true, 0, 0, true, 0, 0, 0));
+    assert(assurance_helm_pair(0, 0, 0, 1, true, 0, 1, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 0, 4294967295, true, 0, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 1, 0, true, 1, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 32767, 4294967295, true, 32767, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 32768, 0, true, 32768, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 2147483647, 4294967295, true, 2147483647, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 2147483648, 0, true, 2147483648, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 4294934527, 4294967295, true, 4294934527, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 4294934528, 0, true, 4294934528, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 4294967295, 4294967294, true, 4294967295, 4294967294, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 0, 4294967295, 4294967295, true, 4294967295, 4294967295, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 1" {
+    assert(assurance_helm_pair(0, 1, 0, 0, true, 0, 1, true, 0, 1, 1));
+    assert(assurance_helm_pair(0, 1, 0, 1, true, 0, 2, true, 0, 0, 0));
+    assert(assurance_helm_pair(0, 1, 0, 4294967295, true, 1, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 1, 0, true, 1, 1, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 32767, 4294967295, true, 32768, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 32768, 0, true, 32768, 1, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 2147483647, 4294967295, true, 2147483648, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 2147483648, 0, true, 2147483648, 1, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 4294934527, 4294967295, true, 4294934528, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 4294934528, 0, true, 4294934528, 1, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 4294967295, 4294967294, true, 4294967295, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 1, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 2" {
+    assert(assurance_helm_pair(0, 4294967295, 0, 0, true, 0, 4294967295, true, 0, 4294967295, 1));
+    assert(assurance_helm_pair(0, 4294967295, 0, 1, true, 1, 0, true, 0, 4294967294, 1));
+    assert(assurance_helm_pair(0, 4294967295, 0, 4294967295, true, 1, 4294967294, true, 0, 0, 0));
+    assert(assurance_helm_pair(0, 4294967295, 1, 0, true, 1, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 4294967295, 32767, 4294967295, true, 32768, 4294967294, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 4294967295, 32768, 0, true, 32768, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 4294967295, 2147483647, 4294967295, true, 2147483648, 4294967294, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 4294967295, 2147483648, 0, true, 2147483648, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 4294967295, 4294934527, 4294967295, true, 4294934528, 4294967294, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 4294967295, 4294934528, 0, true, 4294934528, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 4294967295, 4294967295, 4294967294, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(0, 4294967295, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 3" {
+    assert(assurance_helm_pair(1, 0, 0, 0, true, 1, 0, true, 1, 0, 1));
+    assert(assurance_helm_pair(1, 0, 0, 1, true, 1, 1, true, 0, 4294967295, 1));
+    assert(assurance_helm_pair(1, 0, 0, 4294967295, true, 1, 4294967295, true, 0, 1, 1));
+    assert(assurance_helm_pair(1, 0, 1, 0, true, 2, 0, true, 0, 0, 0));
+    assert(assurance_helm_pair(1, 0, 32767, 4294967295, true, 32768, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(1, 0, 32768, 0, true, 32769, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(1, 0, 2147483647, 4294967295, true, 2147483648, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(1, 0, 2147483648, 0, true, 2147483649, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(1, 0, 4294934527, 4294967295, true, 4294934528, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(1, 0, 4294934528, 0, true, 4294934529, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(1, 0, 4294967295, 4294967294, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(1, 0, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 4" {
+    assert(assurance_helm_pair(32767, 4294967295, 0, 0, true, 32767, 4294967295, true, 32767, 4294967295, 1));
+    assert(assurance_helm_pair(32767, 4294967295, 0, 1, true, 32768, 0, true, 32767, 4294967294, 1));
+    assert(assurance_helm_pair(32767, 4294967295, 0, 4294967295, true, 32768, 4294967294, true, 32767, 0, 1));
+    assert(assurance_helm_pair(32767, 4294967295, 1, 0, true, 32768, 4294967295, true, 32766, 4294967295, 1));
+    assert(assurance_helm_pair(32767, 4294967295, 32767, 4294967295, true, 65535, 4294967294, true, 0, 0, 0));
+    assert(assurance_helm_pair(32767, 4294967295, 32768, 0, true, 65535, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(32767, 4294967295, 2147483647, 4294967295, true, 2147516415, 4294967294, false, 0, 0, -1));
+    assert(assurance_helm_pair(32767, 4294967295, 2147483648, 0, true, 2147516415, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(32767, 4294967295, 4294934527, 4294967295, true, 4294967295, 4294967294, false, 0, 0, -1));
+    assert(assurance_helm_pair(32767, 4294967295, 4294934528, 0, true, 4294967295, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(32767, 4294967295, 4294967295, 4294967294, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(32767, 4294967295, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 5" {
+    assert(assurance_helm_pair(32768, 0, 0, 0, true, 32768, 0, true, 32768, 0, 1));
+    assert(assurance_helm_pair(32768, 0, 0, 1, true, 32768, 1, true, 32767, 4294967295, 1));
+    assert(assurance_helm_pair(32768, 0, 0, 4294967295, true, 32768, 4294967295, true, 32767, 1, 1));
+    assert(assurance_helm_pair(32768, 0, 1, 0, true, 32769, 0, true, 32767, 0, 1));
+    assert(assurance_helm_pair(32768, 0, 32767, 4294967295, true, 65535, 4294967295, true, 0, 1, 1));
+    assert(assurance_helm_pair(32768, 0, 32768, 0, true, 65536, 0, true, 0, 0, 0));
+    assert(assurance_helm_pair(32768, 0, 2147483647, 4294967295, true, 2147516415, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(32768, 0, 2147483648, 0, true, 2147516416, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(32768, 0, 4294934527, 4294967295, true, 4294967295, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(32768, 0, 4294934528, 0, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(32768, 0, 4294967295, 4294967294, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(32768, 0, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 6" {
+    assert(assurance_helm_pair(2147483647, 4294967295, 0, 0, true, 2147483647, 4294967295, true, 2147483647, 4294967295, 1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 0, 1, true, 2147483648, 0, true, 2147483647, 4294967294, 1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 0, 4294967295, true, 2147483648, 4294967294, true, 2147483647, 0, 1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 1, 0, true, 2147483648, 4294967295, true, 2147483646, 4294967295, 1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 32767, 4294967295, true, 2147516415, 4294967294, true, 2147450880, 0, 1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 32768, 0, true, 2147516415, 4294967295, true, 2147450879, 4294967295, 1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 2147483647, 4294967295, true, 4294967295, 4294967294, true, 0, 0, 0));
+    assert(assurance_helm_pair(2147483647, 4294967295, 2147483648, 0, true, 4294967295, 4294967295, false, 0, 0, -1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 4294934527, 4294967295, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 4294934528, 0, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 4294967295, 4294967294, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(2147483647, 4294967295, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 7" {
+    assert(assurance_helm_pair(2147483648, 0, 0, 0, true, 2147483648, 0, true, 2147483648, 0, 1));
+    assert(assurance_helm_pair(2147483648, 0, 0, 1, true, 2147483648, 1, true, 2147483647, 4294967295, 1));
+    assert(assurance_helm_pair(2147483648, 0, 0, 4294967295, true, 2147483648, 4294967295, true, 2147483647, 1, 1));
+    assert(assurance_helm_pair(2147483648, 0, 1, 0, true, 2147483649, 0, true, 2147483647, 0, 1));
+    assert(assurance_helm_pair(2147483648, 0, 32767, 4294967295, true, 2147516415, 4294967295, true, 2147450880, 1, 1));
+    assert(assurance_helm_pair(2147483648, 0, 32768, 0, true, 2147516416, 0, true, 2147450880, 0, 1));
+    assert(assurance_helm_pair(2147483648, 0, 2147483647, 4294967295, true, 4294967295, 4294967295, true, 0, 1, 1));
+    assert(assurance_helm_pair(2147483648, 0, 2147483648, 0, false, 0, 0, true, 0, 0, 0));
+    assert(assurance_helm_pair(2147483648, 0, 4294934527, 4294967295, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(2147483648, 0, 4294934528, 0, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(2147483648, 0, 4294967295, 4294967294, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(2147483648, 0, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 8" {
+    assert(assurance_helm_pair(4294934527, 4294967295, 0, 0, true, 4294934527, 4294967295, true, 4294934527, 4294967295, 1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 0, 1, true, 4294934528, 0, true, 4294934527, 4294967294, 1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 0, 4294967295, true, 4294934528, 4294967294, true, 4294934527, 0, 1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 1, 0, true, 4294934528, 4294967295, true, 4294934526, 4294967295, 1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 32767, 4294967295, true, 4294967295, 4294967294, true, 4294901760, 0, 1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 32768, 0, true, 4294967295, 4294967295, true, 4294901759, 4294967295, 1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 2147483647, 4294967295, false, 0, 0, true, 2147450880, 0, 1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 2147483648, 0, false, 0, 0, true, 2147450879, 4294967295, 1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 4294934527, 4294967295, false, 0, 0, true, 0, 0, 0));
+    assert(assurance_helm_pair(4294934527, 4294967295, 4294934528, 0, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 4294967295, 4294967294, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(4294934527, 4294967295, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 9" {
+    assert(assurance_helm_pair(4294934528, 0, 0, 0, true, 4294934528, 0, true, 4294934528, 0, 1));
+    assert(assurance_helm_pair(4294934528, 0, 0, 1, true, 4294934528, 1, true, 4294934527, 4294967295, 1));
+    assert(assurance_helm_pair(4294934528, 0, 0, 4294967295, true, 4294934528, 4294967295, true, 4294934527, 1, 1));
+    assert(assurance_helm_pair(4294934528, 0, 1, 0, true, 4294934529, 0, true, 4294934527, 0, 1));
+    assert(assurance_helm_pair(4294934528, 0, 32767, 4294967295, true, 4294967295, 4294967295, true, 4294901760, 1, 1));
+    assert(assurance_helm_pair(4294934528, 0, 32768, 0, false, 0, 0, true, 4294901760, 0, 1));
+    assert(assurance_helm_pair(4294934528, 0, 2147483647, 4294967295, false, 0, 0, true, 2147450880, 1, 1));
+    assert(assurance_helm_pair(4294934528, 0, 2147483648, 0, false, 0, 0, true, 2147450880, 0, 1));
+    assert(assurance_helm_pair(4294934528, 0, 4294934527, 4294967295, false, 0, 0, true, 0, 1, 1));
+    assert(assurance_helm_pair(4294934528, 0, 4294934528, 0, false, 0, 0, true, 0, 0, 0));
+    assert(assurance_helm_pair(4294934528, 0, 4294967295, 4294967294, false, 0, 0, false, 0, 0, -1));
+    assert(assurance_helm_pair(4294934528, 0, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 10" {
+    assert(assurance_helm_pair(4294967295, 4294967294, 0, 0, true, 4294967295, 4294967294, true, 4294967295, 4294967294, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 0, 1, true, 4294967295, 4294967295, true, 4294967295, 4294967293, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 0, 4294967295, false, 0, 0, true, 4294967294, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 1, 0, false, 0, 0, true, 4294967294, 4294967294, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 32767, 4294967295, false, 0, 0, true, 4294934527, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 32768, 0, false, 0, 0, true, 4294934527, 4294967294, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 2147483647, 4294967295, false, 0, 0, true, 2147483647, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 2147483648, 0, false, 0, 0, true, 2147483647, 4294967294, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 4294934527, 4294967295, false, 0, 0, true, 32767, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 4294934528, 0, false, 0, 0, true, 32767, 4294967294, 1));
+    assert(assurance_helm_pair(4294967295, 4294967294, 4294967295, 4294967294, false, 0, 0, true, 0, 0, 0));
+    assert(assurance_helm_pair(4294967295, 4294967294, 4294967295, 4294967295, false, 0, 0, false, 0, 0, -1));
+}
+
+test "Helm unsigned address arithmetic row 11" {
+    assert(assurance_helm_pair(4294967295, 4294967295, 0, 0, true, 4294967295, 4294967295, true, 4294967295, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 0, 1, false, 0, 0, true, 4294967295, 4294967294, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 0, 4294967295, false, 0, 0, true, 4294967295, 0, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 1, 0, false, 0, 0, true, 4294967294, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 32767, 4294967295, false, 0, 0, true, 4294934528, 0, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 32768, 0, false, 0, 0, true, 4294934527, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 2147483647, 4294967295, false, 0, 0, true, 2147483648, 0, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 2147483648, 0, false, 0, 0, true, 2147483647, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 4294934527, 4294967295, false, 0, 0, true, 32768, 0, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 4294934528, 0, false, 0, 0, true, 32767, 4294967295, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 4294967295, 4294967294, false, 0, 0, true, 0, 1, 1));
+    assert(assurance_helm_pair(4294967295, 4294967295, 4294967295, 4294967295, false, 0, 0, true, 0, 0, 0));
+}
+
+test "Helm all bounded snapshot windows and read widths" {
+    for (int start = -1; start <= 9; start += 1) {
+        for (int length = -1; length <= 9; length += 1) {
+            List<int> source = new List<int>();
+            for (int i = 0; i < 8; i += 1) { source.push(i + 1); }
+            HBMViewResult view = hbm_view_create(source, start, length);
+            bool valid = start >= 0 && length >= 0 && start + length <= 8;
+            assert(view.ok == valid);
+            if (!valid) {
+                assert(view.view.length == 0 && view.view.bytes.len() == 0);
+            } else {
+                for (int i = 0; i < 8; i += 1) { source[i] = 255; }
+                for (int offset = -1; offset <= length; offset += 1) {
+                    HBMReadResult b = hbm_read_u8(view.view, offset);
+                    HBMReadResult w = hbm_read_u16le(view.view, offset);
+                    HBMReadResult d = hbm_read_u32le(view.view, offset);
+                    HBMU64ReadResult q = hbm_read_u64le(view.view, offset);
+                    assert(b.ok == (offset >= 0 && offset + 1 <= length));
+                    assert(w.ok == (offset >= 0 && offset + 2 <= length));
+                    assert(d.ok == (offset >= 0 && offset + 4 <= length));
+                    assert(q.ok == (offset >= 0 && offset + 8 <= length));
+                    int first = start + offset + 1;
+                    if (b.ok) { assert(b.value == first); }
+                    if (w.ok) { assert(w.value == first + (first + 1) * 256); }
+                    if (d.ok) { assert(d.value == first + (first + 1) * 256 + (first + 2) * 65536 + (first + 3) * 16777216); }
+                    if (q.ok) {
+                        assert(q.value.lo == 67305985 && q.value.hi == 134678021);
+                    }
+                }
+            }
+        }
+    }
+}
+
+test "Helm canonical48 high limb boundary windows" {
+    List<int> bases = new List<int>();
+    bases.push(0); bases.push(32768); bases.push(4294934528); bases.push(4294967296);
+    for (int i = 0; i < bases.len(); i += 1) {
+        for (int delta = -32; delta <= 32; delta += 1) {
+            int high = bases[i] + delta;
+            bool expected = (high >= 0 && high < 32768) || (high >= 4294934528 && high < 4294967296);
+            assert(hbm_x64_canonical48(hbm_u64(high, 0)) == expected);
+            assert(hbm_x64_canonical48(hbm_u64(high, HBM_U32_MAX)) == expected);
+        }
+    }
+}
