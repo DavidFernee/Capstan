@@ -1,7 +1,7 @@
 // Compile with lib/shroud/geom.cap. Independent exact rational rounding
 // references generated using arbitrary-precision integer arithmetic.
 bool assurance_round_case(int a, int b, bool valid, int expected) {
-    int? value = checked_round_div(a,b);
+    int? value = checked_round_div(a, b);
     if (let actual = value) { return valid && actual == expected; }
     return !valid;
 }
