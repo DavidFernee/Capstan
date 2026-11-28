@@ -595,3 +595,50 @@ test "candidate constant folding preserves checked input and enforces independen
     AGNVConstantBudget bounded = new AGNVConstantBudget{remaining: AG_NV_CONST_WORK};
     if (let value = ag_nv_const_int(deep, bounded, 1)) { assert(false); }
 }
+
+test "candidate native taint operations preserve exact classification and list aliasing" {
+    string source = "Tainted pick(List<Tainted> values, int i) { return values[i]; } " +
+        "int run() { List<Tainted> values = new List<Tainted>(); " +
+        "values.push(taint(\"abc\")); values.push(taint(\"xyz\")); " +
+        "values[1] = pick(values, 0).slice(1, 3); Tainted selected = pick(values, 1); " +
+        "values.pop(); return selected.at(0) + selected.len() + values.len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-taint-list.elf"));
+    string empty = "int run() { List<Tainted> values = new List<Tainted>(); values.pop(); Tainted x = taint(\"\"); return x.slice(0, 0).len() + values.len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(empty, 1024, 8), "build/ccam-native-record-taint-empty.elf"));
+    string bounds = "int run() { Tainted x = taint(\"abc\"); return x.slice(0, 4).len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(bounds, 1024, 8), "build/ccam-native-record-taint-slice-oob.elf"));
+    string index = "int run() { Tainted x = taint(\"abc\"); return x.at(-1); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(index, 1024, 8), "build/ccam-native-record-taint-negative.elf"));
+    string absent = "int run() { List<Tainted> values = new List<Tainted>(); return values[0].len(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(absent, 1024, 8), "build/ccam-native-record-taint-list-oob.elf"));
+    assert(!ag_nvc_test_source("string wrong() { return taint(\"x\"); } int run() { return 0; }", 1024, 8).ok);
+}
+
+test "candidate native tainted record field and direct return retain nominal type" {
+    string source = "struct Input { Tainted text; } " +
+        "Tainted get(Input item) { return item.text; } " +
+        "int run() { Input item = new Input{text: taint(\"A\")}; return get(item).at(0); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-taint-field.elf"));
+}
+
+test "native LogText contextual composition and optional direct returns" {
+    string source = "LogText? excerpt(Tainted src, bool present) { if (!present) { return none; } " +
+        "LogText line = \"    \" + escape_log(src.slice(0, src.len())); return line + \"\\n    ^\"; } " +
+        "int run() { if (let value = excerpt(taint(\"abc\"), true)) { " +
+        "LogText again = escape_log(value); return 42; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-log-present.elf"));
+    string absent = "LogText? excerpt() { return none; } int run() { if (let x = excerpt()) { return 1; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(absent, 1024, 8), "build/ccam-native-record-log-absent.elf"));
+    assert(!ag_nvc_test_source("string bad(Tainted x) { return escape_log(x); } int run() { return 0; }", 1024, 8).ok);
+    assert(!ag_nvc_test_source("LogText bad(Tainted x) { return escape_log(x) + x; } int run() { return 0; }", 1024, 8).ok);
+}
+
+test "native join preserves trusted and tainted nominal result including empty lists" {
+    string source = "int run() { List<string> a = new List<string>(); a.push(\"left\"); a.push(\"right\"); " +
+        "List<Tainted> b = new List<Tainted>(); b.push(taint(\"left\")); b.push(taint(\"right\")); " +
+        "Tainted x = join(b, \"-\"); string y = join(a, \"-\"); " +
+        "List<Tainted> empty = new List<Tainted>(); Tainted z = join(empty, \"!\"); " +
+        "return x.len() + y.len() + z.len() + x.at(4); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-join.elf"));
+    assert(!ag_nvc_test_source("string bad(List<Tainted> x) { return join(x, \"\"); } int run() { return 0; }", 1024, 8).ok);
+}

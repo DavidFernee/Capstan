@@ -24,7 +24,7 @@ AGSourceShape ag_source_shape(Type t, Map<int> records) {
         Type inner = t.args[0];
         if (inner.args.len() != 0) { return ag_source_invalid_shape(); }
         AGSourceShape optional = ag_source_shape(mk_wrap(TY_OPT, inner), records);
-        if (!ccam_heap_optional_descriptor(optional.descriptor)) { return ag_source_invalid_shape(); }
+        if (!ccam_heap_optional_descriptor(optional.descriptor) || optional.descriptor == AG_OPTIONAL_LOG) { return ag_source_invalid_shape(); }
         return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_MAP_DESCRIPTOR_BASE + optional.descriptor};
     }
     if (t.k == TY_OPT && t.args.len() == 1 && t.name == "") {
@@ -34,6 +34,7 @@ AGSourceShape ag_source_shape(Type t, Map<int> records) {
         if (inner.k == TY_INT && inner.name == "") { descriptor = AG_OPTIONAL_INT; }
         if (inner.k == TY_BOOL && inner.name == "") { descriptor = AG_OPTIONAL_BOOL; }
         if (inner.k == TY_STR && inner.name == "") { descriptor = AG_OPTIONAL_BYTES; }
+        if (inner.k == TY_LOG && inner.name == "") { descriptor = AG_OPTIONAL_LOG; }
         if (inner.k == TY_STRUCT) {
             if (let id = records.get(inner.name)) { descriptor = AG_OPTIONAL_RECORD_BASE + id; }
         }
@@ -77,6 +78,8 @@ AGSourceShape ag_source_shape(Type t, Map<int> records) {
     if (t.k == TY_INT) { return new AGSourceShape{kind: AG_SCHEMA_INT, descriptor: 0}; }
     if (t.k == TY_BOOL) { return new AGSourceShape{kind: AG_SCHEMA_BOOL, descriptor: 0}; }
     if (t.k == TY_STR) { return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_BYTES}; }
+    if (t.k == TY_TAINT) { return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_TAINTED}; }
+    if (t.k == TY_LOG) { return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_LOG}; }
     return ag_source_invalid_shape();
 }
 
@@ -116,13 +119,15 @@ bool ag_source_register_matches(AGSourceContext c, int id, AGSourceShape shape) 
 int ag_source_element_kind(int descriptor) {
     if (descriptor == AG_NOMINAL_INT_ARRAY) { return AG_SCHEMA_INT; }
     if (descriptor == AG_NOMINAL_BOOL_ARRAY) { return AG_SCHEMA_BOOL; }
-    if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return 0; } // no payload operations yet
+    if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return AG_SCHEMA_REF; }
+    if (descriptor == AG_NOMINAL_TAINTED) { return 0; } // never an array
     if (descriptor < -3) { return AG_SCHEMA_REF; }
     return 0;
 }
 
 int ag_source_element_descriptor(int descriptor) {
     if (descriptor == AG_NOMINAL_STRING_ARRAY) { return AG_NOMINAL_BYTES; }
+    if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return AG_NOMINAL_TAINTED; }
     if (descriptor < -3 && descriptor >= -AG_OPTIONAL_RECORD_MAX - 3) { return -(descriptor + 3); }
     return 0;
 }
@@ -134,7 +139,7 @@ int ag_source_emit_read(AGSourceContext c, int opcode, int kind,
     if (dest < 0) { return -1; }
     List<int> operands = new List<int>();
     operands.push(dest); operands.push(receiver);
-    if (opcode == 1 || opcode == 4) { operands.push(index); }
+    if (opcode == 1 || opcode == 4 || opcode == AG_OP_TAINT_AT || opcode == AG_OP_TAINT_LIST_GET) { operands.push(index); }
     if (!ag_source_emit(c, opcode, kind, operands)) { return -1; }
     return dest;
 }
@@ -186,6 +191,7 @@ int ag_source_expected(AGSourceContext c, Node e, AGSourceShape expected, int de
     int kind = ccam_heap_optional_payload_kind(expected.descriptor);
     int descriptor = 0;
     if (expected.descriptor == AG_OPTIONAL_BYTES) { descriptor = AG_NOMINAL_BYTES; }
+    if (expected.descriptor == AG_OPTIONAL_LOG) { descriptor = AG_NOMINAL_LOG; }
     if (expected.descriptor > AG_OPTIONAL_RECORD_BASE) {
         descriptor = expected.descriptor - AG_OPTIONAL_RECORD_BASE;
     }
@@ -504,6 +510,16 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         if (left < 0) { return -1; }
         int right = ag_source_expr(c, e.kids[1], depth + 1);
         if (right < 0) { return -1; }
+        if (c.descriptors[left] == AG_NOMINAL_LOG || c.descriptors[right] == AG_NOMINAL_LOG) {
+            if (e.s != "+" || shape.kind != AG_SCHEMA_REF || shape.descriptor != AG_NOMINAL_LOG ||
+                (c.descriptors[left] != AG_NOMINAL_LOG && c.descriptors[left] != AG_NOMINAL_BYTES) ||
+                (c.descriptors[right] != AG_NOMINAL_LOG && c.descriptors[right] != AG_NOMINAL_BYTES)) { return -1; }
+            int dest = ag_source_register(c, shape);
+            if (dest < 0) { return -1; }
+            List<int> operands = new List<int>(); operands.push(dest); operands.push(left); operands.push(right);
+            if (!ag_source_emit(c, AG_OP_LOG_CONCAT, AG_SCHEMA_REF, operands)) { return -1; }
+            return dest;
+        }
         if (c.descriptors[left] == AG_NOMINAL_BYTES || c.descriptors[right] == AG_NOMINAL_BYTES) {
             return ag_source_string_binary(c, e.s, shape, left, right);
         }
@@ -576,6 +592,36 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         return -1;
     }
     if (e.k == N_CALL) {
+        if (e.s == "join" && !c.function_nodes.has(e.s) && e.kids.len() == 2 && shape.kind == AG_SCHEMA_REF) {
+            int expected = AG_NOMINAL_STRING_ARRAY;
+            int opcode = AG_OP_JOIN_BYTES;
+            if (shape.descriptor == AG_NOMINAL_TAINTED) {
+                expected = AG_NOMINAL_TAINTED_ARRAY; opcode = AG_OP_JOIN_TAINTED;
+            } else if (shape.descriptor != AG_NOMINAL_BYTES) { return -1; }
+            int parts = ag_source_snapshot(c, ag_source_expr(c, e.kids[0], depth + 1));
+            if (parts < 0 || c.descriptors[parts] != expected) { return -1; }
+            int separator = ag_source_expr(c, e.kids[1], depth + 1);
+            if (separator < 0 || c.descriptors[separator] != AG_NOMINAL_BYTES) { return -1; }
+            int dest = ag_source_register(c, shape);
+            if (dest < 0) { return -1; }
+            List<int> operands = new List<int>();
+            operands.push(dest); operands.push(parts); operands.push(separator);
+            if (!ag_source_emit(c, opcode, AG_SCHEMA_REF, operands)) { return -1; }
+            return dest;
+        }
+        if (e.s == "escape_log" && !c.function_nodes.has(e.s) && e.kids.len() == 1 &&
+            shape.kind == AG_SCHEMA_REF && shape.descriptor == AG_NOMINAL_LOG) {
+            int value = ag_source_expr(c, e.kids[0], depth + 1);
+            if (value < 0 || (c.descriptors[value] != AG_NOMINAL_BYTES &&
+                c.descriptors[value] != AG_NOMINAL_TAINTED && c.descriptors[value] != AG_NOMINAL_LOG)) { return -1; }
+            return ag_source_emit_read(c, AG_OP_ESCAPE_LOG, AG_SCHEMA_REF, shape, value, -1);
+        }
+        if (e.s == "taint" && !c.function_nodes.has(e.s) && e.kids.len() == 1 &&
+            shape.kind == AG_SCHEMA_REF && shape.descriptor == AG_NOMINAL_TAINTED) {
+            int value = ag_source_expr(c, e.kids[0], depth + 1);
+            if (value < 0 || c.descriptors[value] != AG_NOMINAL_BYTES) { return -1; }
+            return ag_source_emit_read(c, AG_OP_TAINT, AG_SCHEMA_REF, shape, value, -1);
+        }
         if (!c.function_nodes.has(e.s) &&
             (e.s == "int_to_str" || e.s == "char_str" || e.s == "to_text")) {
             return ag_source_conversion(c, e, shape, depth);
@@ -591,9 +637,9 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         return -1;
     }
     if (e.k == N_METHOD && e.s == "slice" && e.kids.len() == 3 &&
-        shape.kind == AG_SCHEMA_REF && shape.descriptor == AG_NOMINAL_BYTES) {
+        shape.kind == AG_SCHEMA_REF && (shape.descriptor == AG_NOMINAL_BYTES || shape.descriptor == AG_NOMINAL_TAINTED)) {
         int receiver = ag_source_snapshot(c, ag_source_expr(c, e.kids[0], depth + 1));
-        if (receiver < 0 || c.descriptors[receiver] != AG_NOMINAL_BYTES) { return -1; }
+        if (receiver < 0 || c.descriptors[receiver] != shape.descriptor) { return -1; }
         int start = ag_source_snapshot(c, ag_source_expr(c, e.kids[1], depth + 1));
         if (start < 0) { return -1; }
         int end = ag_source_expr(c, e.kids[2], depth + 1);
@@ -602,7 +648,9 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         if (dest < 0) { return -1; }
         List<int> operands = new List<int>();
         operands.push(dest); operands.push(receiver); operands.push(start); operands.push(end);
-        if (!ag_source_emit(c, AG_OP_BYTES_SLICE, AG_SCHEMA_REF, operands)) { return -1; }
+        int opcode = AG_OP_BYTES_SLICE;
+        if (shape.descriptor == AG_NOMINAL_TAINTED) { opcode = AG_OP_TAINT_SLICE; }
+        if (!ag_source_emit(c, opcode, AG_SCHEMA_REF, operands)) { return -1; }
         return dest;
     }
     bool length = e.k == N_METHOD && e.s == "len" && e.kids.len() == 1;
@@ -618,6 +666,8 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
         if (descriptor == AG_NOMINAL_BYTES) {
             return ag_source_emit_read(c, 7, AG_SCHEMA_INT, shape, receiver, -1);
         }
+        if (descriptor == AG_NOMINAL_TAINTED) { return ag_source_emit_read(c, AG_OP_TAINT_LEN, AG_SCHEMA_INT, shape, receiver, -1); }
+        if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return ag_source_emit_read(c, AG_OP_TAINT_LIST_LEN, AG_SCHEMA_REF, shape, receiver, -1); }
         if (element == 0) { return -1; }
         return ag_source_emit_read(c, 3, element, shape, receiver, -1);
     }
@@ -626,11 +676,14 @@ int ag_source_expr(AGSourceContext c, Node e, int depth) {
     int index = ag_source_expr(c, e.kids[1], depth + 1);
     if (index < 0 || c.kinds[index] != AG_SCHEMA_INT) { return -1; }
     if (byte_at) {
-        if (descriptor != AG_NOMINAL_BYTES || shape.kind != AG_SCHEMA_INT) { return -1; }
+        if (shape.kind != AG_SCHEMA_INT) { return -1; }
+        if (descriptor == AG_NOMINAL_TAINTED) { return ag_source_emit_read(c, AG_OP_TAINT_AT, AG_SCHEMA_INT, shape, receiver, index); }
+        if (descriptor != AG_NOMINAL_BYTES) { return -1; }
         return ag_source_emit_read(c, 4, AG_SCHEMA_INT, shape, receiver, index);
     }
     if (element == 0 || shape.kind != element) { return -1; }
     if (element == AG_SCHEMA_REF && shape.descriptor != ag_source_element_descriptor(descriptor)) { return -1; }
+    if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return ag_source_emit_read(c, AG_OP_TAINT_LIST_GET, element, shape, receiver, index); }
     return ag_source_emit_read(c, 1, element, shape, receiver, index);
 }
 
@@ -738,6 +791,7 @@ bool ag_source_index_assignment(AGSourceContext c, Node target, Node rhs, string
     }
     List<int> operands = new List<int>();
     operands.push(value); operands.push(receiver); operands.push(index);
+    if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return ag_source_emit(c, AG_OP_TAINT_LIST_SET, shape.kind, operands); }
     return ag_source_emit(c, 2, shape.kind, operands);
 }
 
@@ -754,7 +808,10 @@ bool ag_source_list_statement(AGSourceContext c, Node e) {
     int kind = ag_source_element_kind(descriptor);
     if (kind == 0) { return false; }
     List<int> operands = new List<int>(); operands.push(receiver);
-    if (pop) { return ag_source_emit(c, AG_OP_LIST_POP_DISCARD, kind, operands); }
+    if (pop) {
+        if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return ag_source_emit(c, AG_OP_TAINT_LIST_POP, kind, operands); }
+        return ag_source_emit(c, AG_OP_LIST_POP_DISCARD, kind, operands);
+    }
     receiver = ag_source_snapshot(c, receiver);
     if (receiver < 0) { return false; }
     operands[0] = receiver;
@@ -762,6 +819,7 @@ bool ag_source_list_statement(AGSourceContext c, Node e) {
     if (value < 0 || c.kinds[value] != kind) { return false; }
     if (kind == AG_SCHEMA_REF && c.descriptors[value] != ag_source_element_descriptor(descriptor)) { return false; }
     operands.push(value);
+    if (descriptor == AG_NOMINAL_TAINTED_ARRAY) { return ag_source_emit(c, AG_OP_TAINT_LIST_PUSH, kind, operands); }
     return ag_source_emit(c, AG_OP_LIST_PUSH, kind, operands);
 }
 
