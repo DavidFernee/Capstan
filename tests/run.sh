@@ -96,6 +96,90 @@ for module in schema dispatch block flow transfer cfg fixedpoint calls frames no
   fi
 done
 
+section "Candidate native arena reservation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_arena_reserve.cap" 2>&1)"; then
+  ok "bounded native arena reservation emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_arena_reserve.py" "$ROOT/build/ccam-aggregate-arena-reserve.bin" 2>&1)"; then
+      ok "freestanding native arena reservation executes and preserves cursor on rejection"
+    else
+      bad "native arena reservation execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native arena reservation emission" "$out"
+fi
+
+section "Candidate native arena word access"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_arena_slots.cap" 2>&1)"; then
+  ok "checked native arena load/store emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_arena_slots.py" "$ROOT/build/ccam-aggregate-arena-slots.bin" 2>&1)"; then
+      ok "native arena word access preserves backing on rejected operations"
+    else
+      bad "native arena word access execution" "$out"
+    fi
+  fi
+else
+  bad "checked native arena load/store emission" "$out"
+fi
+
+section "Candidate native arena lifecycle"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_arena_lifecycle.cap" 2>&1)"; then
+  ok "bounded native arena lifecycle emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_arena_lifecycle.py" "$ROOT/build/ccam-aggregate-arena-lifecycle.bin" 2>&1)"; then
+      ok "native arena mapping, reservation, access and release composition"
+    else
+      bad "native arena lifecycle execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native arena lifecycle emission" "$out"
+fi
+
+section "Candidate native scalar records"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_scalar_record.cap" 2>&1)"; then
+  ok "bounded native scalar record emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_scalar_record.py" "$ROOT/build/ccam-aggregate-native-scalar-record.bin" 2>&1)"; then
+      ok "native scalar record allocation and checked field access"
+    else
+      bad "native scalar record execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native scalar record emission" "$out"
+fi
+
+section "Candidate native record boundary membership"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_record_boundary.cap" 2>&1)"; then
+  ok "bounded native record membership guard emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_scalar_record.py" "$ROOT/build/ccam-aggregate-native-record-boundary.bin" --guarded 2>&1)"; then
+      ok "native guarded record access rejects forged interior headers"
+    else
+      bad "native record boundary execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native record membership guard emission" "$out"
+fi
+
+section "Candidate native scalar record CFG lowering"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_native_record_lowering_tests.cap" 2>&1)"; then
+  ok "checked scalar record CFG to direct native ELF"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_record_lowering.py" "$ROOT/build" 2>&1)"; then
+      ok "native record source loop and signed arithmetic ELF execution"
+    else
+      bad "candidate native record lowering execution" "$out"
+    fi
+  fi
+else
+  bad "checked native scalar record lowering" "$out"
+fi
+
 section "Checked production AST to candidate aggregate evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_checked_source_tests.cap" 2>&1)"; then
   ok "checked aggregate source leaf lowering and sealed invocation"

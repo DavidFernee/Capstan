@@ -1,0 +1,66 @@
+// Candidate Linux x86-64 arena lifecycle, trusted internal ABI.
+// Init: RAX=requested logical bytes (1..64 MiB), R12/R13/R14 all zero.
+// Success: RAX=R12=mapped base, R13=0, R14=logical capacity, RDX=0.
+// Release: trusted R12/R13/R14 from the live mapping; on success clears all
+// three and returns RAX=RDX=0. Rejection: RAX=0/RDX=1, metadata unchanged.
+// Syscalls: private anonymous RW mmap and munmap. No executable mapping.
+// RCX,R11,RDI,RSI,R8,R9,R10,flags may be clobbered. The stack must be valid.
+// The OS rounds mapping length to pages; access is bounded by logical capacity.
+// Ownership is a trusted precondition, not established by numeric checks.
+// No language-level authority, GC or canonical native ABI claim.
+import "ccam_aggregate_native_arena_reserve.cap";
+import "ccam_aggregate_native_arena_slots.cap";
+
+const int AG_NATIVE_ARENA_INIT_SIZE = 105;
+const int AG_NATIVE_ARENA_RELEASE_SIZE = 84;
+
+bool ag_native_emit_arena_init(List<int> code) {
+    if (code.len() > AG_BYTE_LIMIT - 105) { return false; }
+    code.push(77); code.push(133); code.push(228); code.push(117); code.push(92); code.push(77); code.push(133); code.push(237);
+    code.push(117); code.push(87); code.push(77); code.push(133); code.push(246); code.push(117); code.push(82); code.push(72);
+    code.push(133); code.push(192); code.push(126); code.push(77); code.push(72); code.push(61); code.push(0); code.push(0);
+    code.push(0); code.push(4); code.push(119); code.push(69); code.push(80); code.push(72); code.push(137); code.push(198);
+    code.push(49); code.push(255); code.push(186); code.push(3); code.push(0); code.push(0); code.push(0); code.push(65);
+    code.push(186); code.push(34); code.push(0); code.push(0); code.push(0); code.push(73); code.push(199); code.push(192);
+    code.push(255); code.push(255); code.push(255); code.push(255); code.push(69); code.push(49); code.push(201); code.push(184);
+    code.push(9); code.push(0); code.push(0); code.push(0); code.push(15); code.push(5); code.push(94); code.push(72);
+    code.push(61); code.push(1); code.push(240); code.push(255); code.push(255); code.push(115); code.push(26); code.push(72);
+    code.push(133); code.push(192); code.push(116); code.push(12); code.push(73); code.push(137); code.push(196); code.push(69);
+    code.push(49); code.push(237); code.push(73); code.push(137); code.push(246); code.push(49); code.push(210); code.push(195);
+    code.push(49); code.push(255); code.push(184); code.push(11); code.push(0); code.push(0); code.push(0); code.push(15);
+    code.push(5); code.push(49); code.push(192); code.push(186); code.push(1); code.push(0); code.push(0); code.push(0);
+    code.push(195);
+    return true;
+}
+
+bool ag_native_emit_arena_release(List<int> code) {
+    if (code.len() > AG_BYTE_LIMIT - 84) { return false; }
+    code.push(77); code.push(133); code.push(228); code.push(116); code.push(71); code.push(73); code.push(247); code.push(196);
+    code.push(255); code.push(15); code.push(0); code.push(0); code.push(117); code.push(62); code.push(77); code.push(133);
+    code.push(237); code.push(120); code.push(57); code.push(77); code.push(133); code.push(246); code.push(126); code.push(52);
+    code.push(73); code.push(129); code.push(254); code.push(0); code.push(0); code.push(0); code.push(4); code.push(119);
+    code.push(43); code.push(77); code.push(57); code.push(245); code.push(119); code.push(38); code.push(76); code.push(137);
+    code.push(225); code.push(76); code.push(1); code.push(241); code.push(114); code.push(30); code.push(76); code.push(137);
+    code.push(231); code.push(76); code.push(137); code.push(246); code.push(184); code.push(11); code.push(0); code.push(0);
+    code.push(0); code.push(15); code.push(5); code.push(72); code.push(133); code.push(192); code.push(117); code.push(12);
+    code.push(69); code.push(49); code.push(228); code.push(69); code.push(49); code.push(237); code.push(69); code.push(49);
+    code.push(246); code.push(49); code.push(210); code.push(195); code.push(49); code.push(192); code.push(186); code.push(1);
+    code.push(0); code.push(0); code.push(0); code.push(195);
+    return true;
+}
+
+test "native arena lifecycle has fixed bounds and composes with existing arena leaves" {
+    List<int> code = new List<int>();
+    assert(ag_native_emit_arena_init(code));
+    assert(code.len() == AG_NATIVE_ARENA_INIT_SIZE);
+    assert(ag_native_emit_arena_release(code));
+    assert(code.len() == AG_NATIVE_ARENA_INIT_SIZE + AG_NATIVE_ARENA_RELEASE_SIZE);
+    assert(ag_native_emit_arena_reserve(code));
+    assert(ag_native_emit_slot_load(code));
+    assert(ag_native_emit_slot_store(code));
+    assert(code.len() == 422);
+    string data = "";
+    for (int i = 0; i < code.len(); i += 1) { data = data + char_str(code[i]); }
+    assert(data.len() == 422);
+    assert(write_file("build/ccam-aggregate-arena-lifecycle.bin", data));
+}
