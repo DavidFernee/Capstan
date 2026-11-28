@@ -236,3 +236,36 @@ test "candidate native mixed layout admission rejects contradictions and wrong f
     assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_mixed_graph(false, true, false), 100),
         "build/ccam-native-record-mixed-mismatch.elf"));
 }
+
+test "candidate native immutable strings preserve embedded zero and byte indexing" {
+    string source = "int run() { string s = \"a\\0b\"; return s.len() * 10 + s.at(1) + s.at(2); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-bytes-index.elf"));
+}
+
+test "candidate native string fields calls and equality preserve exact bytes" {
+    string source = "struct Label { string text; } " +
+        "string get(Label label) { return label.text; } " +
+        "int run() { Label label = new Label{text: \"a\\0b\"}; string s = get(label); " +
+        "if (s == \"a\\0b\") { if (s != \"a\\0c\") { if (s != \"a\") { return 42; } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-bytes-equal.elf"));
+}
+
+test "candidate native empty strings compare exactly and reject invalid indexes" {
+    string empty = "int run() { string s = \"\"; if (s == \"\") { return s.len(); } return 1; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(empty, 1024, 8), "build/ccam-native-record-bytes-empty.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string s = \"a\"; return s.at(1); }", 100, 8),
+        "build/ccam-native-record-bytes-oob.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { string s = \"a\"; return s.at(0 - 1); }", 100, 8),
+        "build/ccam-native-record-bytes-negative.elf"));
+}
+
+test "candidate native reserved string tag cannot be allocated by record opcode" {
+    AGFunction f = ag_nvc_test_record_return(AG_NV_BYTES_TAG);
+    List<AGFunction> functions = new List<AGFunction>(); functions.push(f);
+    functions.push(ag_nv_test_arith(AG_OP_ADD, 1, 2));
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>();
+    signatures.push(new AGNominalSignature{coarse: f.signature, parameter_descriptors: new List<int>(), result_descriptor: AG_NV_BYTES_DESCRIPTOR});
+    signatures.push(new AGNominalSignature{coarse: functions[1].signature, parameter_descriptors: new List<int>(), result_descriptor: 0});
+    AGImage rejected = ag_nvc_compile_typed(functions, signatures, 1, 100, 8);
+    assert(!rejected.ok && rejected.bytes.len() == 0);
+}
