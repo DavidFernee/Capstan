@@ -1080,3 +1080,28 @@ test "CCAM region heap aliases share writes and rejected writes preserve state" 
     assert(heap.objects.len() == objects_before && heap.bytes_used == bytes_before &&
         heap.work_used == work_before && heap.next_id == next_id_before);
 }
+
+test "candidate list growth preserves identity and rejects growth atomically at heap limit" {
+    CCAMHeapCreateResult created = ccam_heap_create(72, 4);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult allocated = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_INT, 0, 0);
+    assert(allocated.ok);
+    CCAMHeapRef alias = allocated.reference;
+    assert(ccam_heap_list_push(heap, allocated.reference, CCAM_HEAP_VALUE_INT, ccam_heap_int(7)) == "");
+    assert(ccam_heap_list_push(heap, alias, CCAM_HEAP_VALUE_INT, ccam_heap_int(8)) == "");
+    assert(ccam_heap_array_len(heap, alias, CCAM_HEAP_VALUE_INT).value == 2);
+    int before = heap.bytes_used;
+    int work = heap.work_used;
+    assert(ccam_heap_list_push(heap, alias, CCAM_HEAP_VALUE_INT, ccam_heap_int(9)) == "heap_limit");
+    assert(heap.bytes_used == before && heap.work_used == work);
+    assert(ccam_heap_array_len(heap, alias, CCAM_HEAP_VALUE_INT).value == 2);
+    assert(ccam_heap_array_get(heap, alias, CCAM_HEAP_VALUE_INT, 0).value.int_value == 7);
+    assert(ccam_heap_array_get(heap, alias, CCAM_HEAP_VALUE_INT, 1).value.int_value == 8);
+    assert(ccam_heap_list_pop_discard(heap, alias, CCAM_HEAP_VALUE_INT) == "");
+    assert(ccam_heap_list_pop_discard(heap, alias, CCAM_HEAP_VALUE_INT) == "");
+    assert(ccam_heap_list_pop_discard(heap, alias, CCAM_HEAP_VALUE_INT) == "");
+    assert(ccam_heap_array_len(heap, alias, CCAM_HEAP_VALUE_INT).value == 0);
+    assert(!ccam_heap_array_get(heap, alias, CCAM_HEAP_VALUE_INT, 0).ok);
+    assert(heap.bytes_used == before);
+}
