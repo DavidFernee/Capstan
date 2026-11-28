@@ -52,7 +52,7 @@ test "checked aggregate source indexes nominal record arrays and measures collec
 test "checked source adapter refuses unsupported code without a partial executable" {
     AGSourceModuleResult invalid = ag_source_test_compile(
         "int first(List<int> values, int index) { return values[index]; } " +
-        "int unsupported(int value) { Map<int> values = new Map<int>(); values.set(\"x\", value); return value; }");
+        "int unsupported(int value) { List<List<int>> values = new List<List<int>>(); return value; }");
     assert(!invalid.ok && invalid.error == "unsupported_function_body");
     assert(invalid.function_names.len() == 0);
     AGSourceModuleResult wrong = ag_source_test_compile(
@@ -395,4 +395,42 @@ test "checked maps grow and transport present zero through optional lookup" {
     args[1] = 0;
     assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 5) == "");
     assert(ccam_aggregate_read(stack.stack.active, 5, AG_SCHEMA_BOOL).value.bool_value);
+}
+
+test "checked escaped string literals preserve embedded NUL and exact byte comparisons" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "const string PREFIX = \"a\\0\"; " +
+        "string make() { return PREFIX + \"b?\"; } " +
+        "bool matches(string value) { return value == \"a\\0b?\"; } " +
+        "int check_byte(string value) { return value.slice(1, 3).at(0); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_BOOL); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
+    List<int> args = new List<int>(); args.push(0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 1) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_BOOL).value.bool_value);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 2) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 2, AG_SCHEMA_INT).value.int_value == 0);
+    CCAMAggregateValueResult returned = ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_REF);
+    if (let reference = returned.value.reference) {
+        assert(ccam_heap_bytes_len(stack.stack.active.heap, reference).value == 4);
+        assert(ccam_heap_byte_get(stack.stack.active.heap, reference, 3).value == 63);
+    } else { assert(false); }
+}
+
+test "checked string literals serve as symbol table keys" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int run() { Map<int> values = new Map<int>(); values.set(\"name\", 42); if (let value = values.get(\"name\")) { return value; } return 0; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
 }
