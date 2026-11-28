@@ -1,0 +1,182 @@
+// Checked production AST adapter for the experimental aggregate evaluator.
+// No source checker replacement, native ABI, or full compiler coverage claim.
+// Supported leaf functions: parameter/local aliases, list indexing/length,
+// string byte access/length, and a single terminal return.
+import "ccam_aggregate_sealed_program.cap";
+
+const int AG_SOURCE_MAX_NAME = 256;
+const int AG_SOURCE_MAX_RECORDS = 4096;
+const int AG_SOURCE_MAX_EXPR_DEPTH = 64;
+const int AG_SOURCE_MAX_BODY = 4096;
+
+struct AGSourceShape {
+    int kind;
+    int descriptor;
+}
+
+AGSourceShape ag_source_invalid_shape() {
+    return new AGSourceShape{kind: 0, descriptor: 0};
+}
+
+AGSourceShape ag_source_shape(Type t, Map<int> records) {
+    if (t.k == TY_LIST) {
+        if (t.args.len() != 1 || t.name != "") { return ag_source_invalid_shape(); }
+        Type element = t.args[0];
+        if (element.args.len() != 0) { return ag_source_invalid_shape(); }
+        if (element.k == TY_INT && element.name == "") {
+            return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_INT_ARRAY};
+        }
+        if (element.k == TY_BOOL && element.name == "") {
+            return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_BOOL_ARRAY};
+        }
+        if (element.k == TY_STRUCT) {
+            if (let descriptor = records.get(element.name)) {
+                return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: ag_nominal_record_array(descriptor)};
+            }
+        }
+        return ag_source_invalid_shape();
+    }
+    if (t.args.len() != 0) { return ag_source_invalid_shape(); }
+    if (t.k == TY_STRUCT) {
+        if (let descriptor = records.get(t.name)) {
+            return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: descriptor};
+        }
+        return ag_source_invalid_shape();
+    }
+    if (t.name != "") { return ag_source_invalid_shape(); }
+    if (t.k == TY_INT) { return new AGSourceShape{kind: AG_SCHEMA_INT, descriptor: 0}; }
+    if (t.k == TY_BOOL) { return new AGSourceShape{kind: AG_SCHEMA_BOOL, descriptor: 0}; }
+    if (t.k == TY_STR) { return new AGSourceShape{kind: AG_SCHEMA_REF, descriptor: AG_NOMINAL_BYTES}; }
+    return ag_source_invalid_shape();
+}
+
+bool ag_source_shape_equal(AGSourceShape a, AGSourceShape b) {
+    return a.kind != 0 && a.kind == b.kind && a.descriptor == b.descriptor;
+}
+
+struct AGSourceContext {
+    Map<int> records;
+    Map<int> bindings;
+    List<int> kinds;
+    List<int> descriptors;
+    List<AGBlockInstruction> code;
+}
+
+int ag_source_register(AGSourceContext c, AGSourceShape shape) {
+    if (!ag_nominal_kind(shape.kind, shape.descriptor) ||
+        c.kinds.len() >= AG_SOURCE_MAX_BODY) { return -1; }
+    int id = c.kinds.len();
+    c.kinds.push(shape.kind); c.descriptors.push(shape.descriptor);
+    return id;
+}
+
+bool ag_source_register_matches(AGSourceContext c, int id, AGSourceShape shape) {
+    return id >= 0 && id < c.kinds.len() && shape.kind != 0 &&
+        c.kinds[id] == shape.kind && c.descriptors[id] == shape.descriptor;
+}
+
+int ag_source_element_kind(int descriptor) {
+    if (descriptor == AG_NOMINAL_INT_ARRAY) { return AG_SCHEMA_INT; }
+    if (descriptor == AG_NOMINAL_BOOL_ARRAY) { return AG_SCHEMA_BOOL; }
+    if (descriptor < -3) { return AG_SCHEMA_REF; }
+    return 0;
+}
+
+int ag_source_emit_read(AGSourceContext c, int opcode, int kind,
+    AGSourceShape shape, int receiver, int index) {
+    if (c.code.len() >= AG_SOURCE_MAX_BODY) { return -1; }
+    int dest = ag_source_register(c, shape);
+    if (dest < 0) { return -1; }
+    List<int> operands = new List<int>();
+    operands.push(dest); operands.push(receiver);
+    if (opcode == 1 || opcode == 4) { operands.push(index); }
+    if (!ag_schema_operands(c.kinds, opcode, kind, operands)) { return -1; }
+    c.code.push(new AGBlockInstruction{opcode: opcode, kind: kind, operands: operands});
+    return dest;
+}
+
+int ag_source_expr(AGSourceContext c, Node e, int depth) {
+    if (depth >= AG_SOURCE_MAX_EXPR_DEPTH) { return -1; }
+    AGSourceShape shape = ag_source_shape(ty_of(e), c.records);
+    if (shape.kind == 0) { return -1; }
+    if (e.k == N_VAR && e.kids.len() == 0 && e.binding_id > 0) {
+        if (let id = c.bindings.get(int_to_str(e.binding_id))) {
+            if (ag_source_register_matches(c, id, shape)) { return id; }
+        }
+        return -1;
+    }
+    bool length = e.k == N_METHOD && e.s == "len" && e.kids.len() == 1;
+    bool byte_at = e.k == N_METHOD && e.s == "at" && e.kids.len() == 2;
+    bool array_at = e.k == N_INDEX && e.kids.len() == 2;
+    if (!length && !byte_at && !array_at) { return -1; }
+    int receiver = ag_source_expr(c, e.kids[0], depth + 1);
+    if (receiver < 0 || c.kinds[receiver] != AG_SCHEMA_REF) { return -1; }
+    int descriptor = c.descriptors[receiver];
+    int element = ag_source_element_kind(descriptor);
+    if (length) {
+        if (shape.kind != AG_SCHEMA_INT) { return -1; }
+        if (descriptor == AG_NOMINAL_BYTES) {
+            return ag_source_emit_read(c, 7, AG_SCHEMA_INT, shape, receiver, -1);
+        }
+        if (element == 0) { return -1; }
+        return ag_source_emit_read(c, 3, element, shape, receiver, -1);
+    }
+    int index = ag_source_expr(c, e.kids[1], depth + 1);
+    if (index < 0 || c.kinds[index] != AG_SCHEMA_INT) { return -1; }
+    if (byte_at) {
+        if (descriptor != AG_NOMINAL_BYTES || shape.kind != AG_SCHEMA_INT) { return -1; }
+        return ag_source_emit_read(c, 4, AG_SCHEMA_INT, shape, receiver, index);
+    }
+    if (element == 0 || shape.kind != element) { return -1; }
+    if (element == AG_SCHEMA_REF && shape.descriptor != -(descriptor + 3)) { return -1; }
+    return ag_source_emit_read(c, 1, element, shape, receiver, index);
+}
+
+struct AGSourceFunction {
+    AGFunction function;
+    AGNominalSignature signature;
+}
+
+AGSourceFunction? ag_source_lower_function(Node f, Map<int> records) {
+    if (f.k != N_FN || f.s2 != "" || f.n < 0 || f.n > AG_CALL_MAX_ARGS ||
+        f.kids.len() != f.n + 1 || f.kids[f.n].k != N_BLOCK) { return none; }
+    AGSourceShape result = ag_source_shape(ty_of(f), records);
+    if (result.kind == 0) { return none; }
+    AGSourceContext c = new AGSourceContext{records: records, bindings: new Map<int>(),
+        kinds: new List<int>(), descriptors: new List<int>(), code: new List<AGBlockInstruction>()};
+    List<int> parameters = new List<int>();
+    List<int> descriptors = new List<int>();
+    for (int i = 0; i < f.n; i += 1) {
+        Node p = f.kids[i];
+        if (p.k != N_PARAM || p.binding_id <= 0 || c.bindings.has(int_to_str(p.binding_id))) { return none; }
+        AGSourceShape shape = ag_source_shape(ty_of(p), records);
+        int id = ag_source_register(c, shape);
+        if (id < 0) { return none; }
+        c.bindings.set(int_to_str(p.binding_id), id);
+        parameters.push(shape.kind); descriptors.push(shape.descriptor);
+    }
+    Node body = f.kids[f.n];
+    if (body.kids.len() == 0 || body.kids.len() > AG_SOURCE_MAX_BODY) { return none; }
+    for (int i = 0; i < body.kids.len() - 1; i += 1) {
+        Node statement = body.kids[i];
+        if (statement.k != N_DECL || statement.kids.len() != 1 || statement.binding_id <= 0 ||
+            c.bindings.has(int_to_str(statement.binding_id))) { return none; }
+        int value = ag_source_expr(c, statement.kids[0], 0);
+        if (!ag_source_register_matches(c, value, ag_source_shape(ty_of(statement), records))) { return none; }
+        // There are no variable writes in this slice. Alias a stable value register.
+        c.bindings.set(int_to_str(statement.binding_id), value);
+    }
+    Node terminal = body.kids[body.kids.len() - 1];
+    if (terminal.k != N_RETURN || terminal.kids.len() != 1) { return none; }
+    int returned = ag_source_expr(c, terminal.kids[0], 0);
+    if (!ag_source_register_matches(c, returned, result)) { return none; }
+    AGCallSignature coarse = new AGCallSignature{parameters: parameters, result_kind: result.kind};
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: c.code, terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(returned);
+    return new AGSourceFunction{
+        function: new AGFunction{signature: coarse, kinds: c.kinds, blocks: blocks, returns: returns},
+        signature: new AGNominalSignature{coarse: coarse, parameter_descriptors: descriptors,
+            result_descriptor: result.descriptor}
+    };
+}
