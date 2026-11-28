@@ -28,3 +28,7 @@ jobs:
         run: bin/capstan test verification/ccam_assurance_admission_tests.cap
       - name: Run bounded loop and metamorphic branch scenarios
         run: bin/capstan test verification/ccam_assurance_loop_tests.cap
+      - name: Run systematic recursive calls and call admission
+        run: bin/capstan test verification/ccam_assurance_call_tests.cap
+      - name: Run systematic memory and ownership scenarios
+        run: bin/capstan test verification/ccam_assurance_memory_tests.cap
