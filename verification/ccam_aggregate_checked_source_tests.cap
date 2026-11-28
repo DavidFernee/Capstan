@@ -79,3 +79,57 @@ test "checked source array indexing preserves out of bounds trap and caller dest
     assert(stack.stack.depth == 0 && stack.stack.slots == 2);
     assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT).value.int_value == 7);
 }
+
+test "checked source compiles the production budget constructor body and field reads" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct CompileBudget { int source_bytes; int tokens; int ast_nodes; int files; bool exhausted; } " +
+        "CompileBudget new_compile_budget() { return new CompileBudget{source_bytes: 0, tokens: 0, ast_nodes: 0, files: 0, exhausted: false}; } " +
+        "int ast_count(CompileBudget budget) { return budget.ast_nodes; } " +
+        "bool exhausted(CompileBudget budget) { return budget.exhausted; }");
+    assert(compiled.ok && compiled.function_names.len() == 3);
+    List<int> kinds = new List<int>();
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 64);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 32);
+    assert(stack.ok);
+    List<int> none_args = new List<int>();
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, none_args, 0) == "");
+    CCAMAggregateValueResult budget = ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_REF);
+    assert(budget.ok && ag_nominal_value_matches(root.machine.heap, budget.value, AG_SCHEMA_REF, 1));
+    List<int> args = new List<int>(); args.push(0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 1) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 1, AG_SCHEMA_INT).value.int_value == 0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 2, args, 2) == "");
+    assert(!ccam_aggregate_read(stack.stack.active, 2, AG_SCHEMA_BOOL).value.bool_value);
+    if (let reference = budget.value.reference) {
+        for (int i = 0; i < 4; i += 1) {
+            CCAMHeapValueResult field = ccam_heap_field_get(root.machine.heap, reference, 1, i);
+            assert(field.ok && field.value.kind == AG_SCHEMA_INT && field.value.int_value == 0);
+        }
+        CCAMHeapValueResult field = ccam_heap_field_get(root.machine.heap, reference, 1, 4);
+        assert(field.ok && field.value.kind == AG_SCHEMA_BOOL && !field.value.bool_value);
+    } else { assert(false); }
+}
+
+test "checked source constructor preserves exact collection field shape" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Node { int number; } struct Budget { int number; } " +
+        "struct Roots { List<Node> kids; } " +
+        "Roots make_roots(List<Node> kids) { return new Roots{kids: kids}; } " +
+        "List<Node> get_roots(Roots roots) { return roots.kids; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 32);
+    assert(root.ok);
+    assert(ccam_aggregate_alloc_array(root.machine, 0, AG_SCHEMA_REF, 1, 2) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 16);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 1) == "");
+    args[0] = 1;
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, args, 0) == "");
+    CCAMAggregateValueResult result = ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_REF);
+    assert(result.ok && ag_nominal_value_matches(root.machine.heap, result.value,
+        AG_SCHEMA_REF, ag_nominal_record_array(1)));
+}

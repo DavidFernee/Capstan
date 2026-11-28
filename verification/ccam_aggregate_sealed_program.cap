@@ -70,7 +70,7 @@ string ag_seal_preflight(List<AGFunction> functions, List<AGNominalSignature> si
             instructions += block.instructions.len();
             for (int k = 0; k < block.instructions.len(); k += 1) {
                 AGBlockInstruction ins = block.instructions[k];
-                if (ins.operands.len() > 3 ||
+                if (ins.operands.len() > AG_SCHEMA_MAX_OPERANDS ||
                     ins.operands.len() > AG_SEALED_MAX_OPERANDS - operands) {
                     return "invalid_instruction_operands";
                 }

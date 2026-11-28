@@ -1,6 +1,7 @@
 // Experimental typed array instruction adapter, not canonical CCAM encoding.
 import "ccam_aggregate_machine.cap";
 import "ccam_aggregate_schema.cap";
+import "ccam_aggregate_nominal_call.cap";
 
 bool ag_dispatch_reg(CCAMAggregateMachine machine, int index, int kind) {
     if (!ag_schema_kind(kind)) { return false; }
@@ -9,6 +10,14 @@ bool ag_dispatch_reg(CCAMAggregateMachine machine, int index, int kind) {
 
 bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.registers.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(kind)) { return false; }
+    if (opcode >= AG_OP_FIELD_GET && opcode <= AG_OP_SCALAR_CONST) {
+        if (!ag_schema_record_immediates(opcode, kind, operands) ||
+            !ag_dispatch_reg(machine, operands[0], kind)) { return false; }
+        if (opcode == AG_OP_FIELD_GET || opcode == AG_OP_FIELD_SET) {
+            return ag_dispatch_reg(machine, operands[1], AG_SCHEMA_REF);
+        }
+        return true;
+    }
     if (opcode == 1 || opcode == 2 || opcode == 4) {
         if (operands.len() != 3 || (opcode == 4 && kind != AG_SCHEMA_INT)) { return false; }
         return ag_dispatch_reg(machine, operands[0], kind) &&
@@ -45,10 +54,66 @@ bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<
     return false;
 }
 
+// Check shape before committing a field read or field write. Record allocation
+// reuses the arena's layout admission and accounting. The coarse heap layout
+// uses wildcard IDs for collections; these instructions check their exact shape.
+string ag_dispatch_record(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_RECORD_ALLOC) {
+        List<int> types = new List<int>();
+        List<int> references = new List<int>();
+        List<bool> mutable_fields = new List<bool>();
+        for (int i = 2; i < operands.len(); i += 2) {
+            types.push(operands[i]);
+            int descriptor = operands[i + 1];
+            if (descriptor < 0) { descriptor = 0; }
+            references.push(descriptor);
+            mutable_fields.push(true);
+        }
+        CCAMHeapLayout layout = new CCAMHeapLayout{type_id: operands[1],
+            field_types: types, field_ref_type_ids: references, field_mutable: mutable_fields};
+        return ccam_aggregate_alloc_record(machine, operands[0], layout);
+    }
+    if (opcode == AG_OP_SCALAR_CONST) {
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapValue value = ccam_heap_int(operands[1]);
+        if (kind == AG_SCHEMA_BOOL) { value = ccam_heap_bool(operands[1] == 1); }
+        string error = ccam_aggregate_write(machine, operands[0], value);
+        if (error != "") { return ccam_aggregate_trap(machine, error); }
+        return "";
+    }
+    CCAMAggregateValueResult object = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!object.ok) { return ccam_aggregate_trap(machine, object.trap); }
+    if (opcode == AG_OP_FIELD_SET) {
+        CCAMAggregateValueResult value = ccam_aggregate_read(machine, operands[0], kind);
+        if (!value.ok) { return ccam_aggregate_trap(machine, value.trap); }
+        if (!ag_nominal_value_matches(machine.heap, value.value, kind, operands[4])) {
+            return ccam_aggregate_trap(machine, "field_shape_mismatch");
+        }
+        return ccam_aggregate_field_set(machine, operands[1], operands[2], operands[3], operands[0], kind);
+    }
+    if (let reference = object.value.reference) {
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapValueResult value = ccam_heap_field_get(machine.heap, reference, operands[2], operands[3]);
+        if (!value.ok) { return ccam_aggregate_trap(machine, value.trap); }
+        if (!ag_nominal_value_matches(machine.heap, value.value, kind, operands[4])) {
+            return ccam_aggregate_trap(machine, "field_shape_mismatch");
+        }
+        string error = ccam_aggregate_write(machine, operands[0], value.value);
+        if (error != "") { return ccam_aggregate_trap(machine, error); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
 string ag_dispatch(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.trap_code != "") { return machine.trap_code; }
     if (!ag_dispatch_shape(machine, opcode, kind, operands)) {
         return ccam_aggregate_trap(machine, "invalid_aggregate_instruction");
+    }
+    if (opcode >= AG_OP_FIELD_GET && opcode <= AG_OP_SCALAR_CONST) {
+        return ag_dispatch_record(machine, opcode, kind, operands);
     }
     if (opcode == 5) {
         return ccam_aggregate_alloc_array(machine, operands[0], kind, operands[1], operands[2]);
@@ -141,4 +206,36 @@ test "aggregate dispatch concatenates immutable bytes and reads byte length" {
     CCAMAggregateValueResult byte_value = ccam_aggregate_read(machine, 3, AG_SCHEMA_INT);
     assert(byte_value.ok && byte_value.value.int_value == 66);
     assert(machine.steps == 5);
+}
+
+test "candidate record field get rejects wrong collection shape without replacing destination" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF);
+    kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 16);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    List<int> layout = new List<int>(); layout.push(0); layout.push(7);
+    layout.push(AG_SCHEMA_REF); layout.push(AG_NOMINAL_INT_ARRAY);
+    assert(ag_dispatch(machine, AG_OP_RECORD_ALLOC, AG_SCHEMA_REF, layout) == "");
+    assert(ccam_aggregate_alloc_array(machine, 1, AG_SCHEMA_INT, 0, 2) == "");
+    assert(ccam_aggregate_alloc_bytes(machine, 2, "preserved") == "");
+    List<int> field = new List<int>(); field.push(1); field.push(0);
+    field.push(7); field.push(0); field.push(AG_NOMINAL_INT_ARRAY);
+    assert(ag_dispatch(machine, AG_OP_FIELD_SET, AG_SCHEMA_REF, field) == "");
+    field[0] = 2; field[4] = AG_NOMINAL_BOOL_ARRAY;
+    assert(ag_dispatch(machine, AG_OP_FIELD_GET, AG_SCHEMA_REF, field) == "field_shape_mismatch");
+    CCAMAggregateValueResult preserved = ccam_aggregate_read(machine, 2, AG_SCHEMA_REF);
+    assert(preserved.ok && ag_nominal_value_matches(machine.heap, preserved.value,
+        AG_SCHEMA_REF, AG_NOMINAL_BYTES));
+}
+
+test "candidate scalar literal admission rejects noncanonical boolean values" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 8);
+    assert(created.ok);
+    List<int> operands = new List<int>(); operands.push(0); operands.push(2);
+    assert(!ag_schema_operands(kinds, AG_OP_SCALAR_CONST, AG_SCHEMA_BOOL, operands));
+    assert(ag_dispatch(created.machine, AG_OP_SCALAR_CONST, AG_SCHEMA_BOOL, operands) ==
+        "invalid_aggregate_instruction");
+    assert(created.machine.steps == 0 && !created.machine.registers[0].initialised);
 }
