@@ -5,6 +5,23 @@ import "ccam_aggregate_cfg.cap";
 
 const int AG_FP_MAX_WORK = 16777216;
 
+// Logical work units, not host allocation/time guarantees. Width and operand
+// lengths are admitted independently; precharge each full-width transfer.
+struct AGFPBudget { int remaining; }
+
+bool ag_fp_charge(AGFPBudget budget, int amount) {
+    if (budget.remaining < 0 || budget.remaining > AG_FP_MAX_WORK ||
+        amount < 0 || amount > budget.remaining) { return false; }
+    budget.remaining -= amount;
+    return true;
+}
+
+bool ag_fp_charge_transfer(AGFPBudget budget, int width, AGBlockInstruction instruction) {
+    if (width < 0 || width > AG_SCHEMA_MAX_REGS ||
+        instruction.operands.len() > AG_SCHEMA_MAX_OPERANDS) { return false; }
+    return ag_fp_charge(budget, 1 + 2 * width + instruction.operands.len());
+}
+
 bool ag_fp_target(int count, int target) {
     return target >= 0 && target < count;
 }
@@ -23,11 +40,18 @@ bool ag_fp_validate(
     List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks,
     List<AGCFGState> final_states
 ) {
+    return ag_fp_validate_budget(kinds, entry, blocks, final_states,
+        new AGFPBudget{remaining: AG_FP_MAX_WORK});
+}
+
+bool ag_fp_validate_budget(List<int> kinds, List<bool> entry, List<AGCFGBlock> blocks,
+    List<AGCFGState> final_states, AGFPBudget budget) {
     int count = blocks.len();
     int width = kinds.len();
     if (count <= 0 || count > AG_FLOW_MAX_BLOCKS || width > AG_SCHEMA_MAX_REGS ||
         entry.len() != width || width > AG_CFG_MAX_CELLS / count ||
         final_states.len() != 0) { return false; }
+    if (!ag_fp_charge(budget, width + count)) { return false; }
     for (int r = 0; r < width; r += 1) {
         if (!ag_schema_kind(kinds[r])) { return false; }
     }
@@ -39,7 +63,9 @@ bool ag_fp_validate(
         total += block.instructions.len();
         for (int j = 0; j < block.instructions.len(); j += 1) {
             AGBlockInstruction ins = block.instructions[j];
-            if (!ag_schema_operands(kinds, ins.opcode, ins.kind, ins.operands)) { return false; }
+            if (ins.operands.len() > AG_SCHEMA_MAX_OPERANDS ||
+                !ag_fp_charge(budget, 1 + ins.operands.len()) ||
+                !ag_schema_operands(kinds, ins.opcode, ins.kind, ins.operands)) { return false; }
         }
         if (block.terminator == 0) {
             if (block.condition != -1 || block.yes != -1 || block.no != -1) { return false; }
@@ -52,21 +78,19 @@ bool ag_fp_validate(
         states.push(new AGCFGState{reached: false, ready: new List<bool>()});
     }
     states[0] = new AGCFGState{reached: true, ready: entry};
-    int work = AG_FP_MAX_WORK;
     bool changed = true;
     while (changed) {
         changed = false;
         for (int i = 0; i < count; i += 1) {
             AGCFGBlock block = blocks[i];
-            int cost = 1 + width * 4 + block.instructions.len();
-            if (cost > work) { return false; }
-            work -= cost;
+            if (!ag_fp_charge(budget, 1 + 6 * width)) { return false; }
             AGCFGState state = states[i];
             if (state.reached) {
                 List<bool> output = new List<bool>();
                 for (int r = 0; r < width; r += 1) { output.push(state.ready[r]); }
                 for (int j = 0; j < block.instructions.len(); j += 1) {
                     AGBlockInstruction ins = block.instructions[j];
+                    if (!ag_fp_charge_transfer(budget, width, ins)) { return false; }
                     AGTransferResult generated = ag_transfer_generation(
                         kinds, output, ins.opcode, ins.kind, ins.operands
                     );
@@ -88,12 +112,14 @@ bool ag_fp_validate(
     }
     // At convergence, check every reachable read against its must-state.
     for (int i = 0; i < count; i += 1) {
+        if (!ag_fp_charge(budget, 1 + width)) { return false; }
         if (states[i].reached) {
             List<bool> ready = new List<bool>();
             for (int r = 0; r < width; r += 1) { ready.push(states[i].ready[r]); }
             AGCFGBlock block = blocks[i];
             for (int j = 0; j < block.instructions.len(); j += 1) {
                 AGBlockInstruction ins = block.instructions[j];
+                if (!ag_fp_charge_transfer(budget, width, ins)) { return false; }
                 AGTransferResult next = ag_transfer(
                     kinds, ready, ins.opcode, ins.kind, ins.operands
                 );
@@ -103,8 +129,10 @@ bool ag_fp_validate(
             if (block.terminator == 2 &&
                 !ag_transfer_condition(kinds, ready, block.condition)) { return false; }
         }
-        final_states.push(states[i]);
     }
+    // Publish only after the entire validation succeeds.
+    if (!ag_fp_charge(budget, count)) { return false; }
+    for (int i = 0; i < count; i += 1) { final_states.push(states[i]); }
     return true;
 }
 
