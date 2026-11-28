@@ -9,21 +9,30 @@ struct AGFunction {
 }
 
 bool ag_function_validate(AGFunction f) {
+    return ag_function_validate_budget(f, new AGFPBudget{remaining: AG_FP_MAX_WORK});
+}
+
+bool ag_function_validate_budget(AGFunction f, AGFPBudget budget) {
+    if (f.kinds.len() > AG_SCHEMA_MAX_REGS ||
+        !ag_fp_charge(budget, f.kinds.len() + f.signature.parameters.len())) { return false; }
     AGTransferResult entry = ag_call_entry(f.signature, f.kinds);
     if (!entry.ok || f.returns.len() != f.blocks.len()) { return false; }
     List<AGCFGState> states = new List<AGCFGState>();
-    if (!ag_fp_validate(f.kinds, entry.ready, f.blocks, states)) { return false; }
+    if (!ag_fp_validate_budget(f.kinds, entry.ready, f.blocks, states, budget)) { return false; }
     for (int i = 0; i < f.blocks.len(); i += 1) {
+        if (!ag_fp_charge(budget, 1)) { return false; }
         if (f.blocks[i].terminator == 0) {
             int source = f.returns[i];
             if (!ag_call_result_slot(f.kinds, source, f.signature.result_kind)) { return false; }
             if (states[i].reached) {
+                if (!ag_fp_charge(budget, f.kinds.len())) { return false; }
                 List<bool> ready = new List<bool>();
                 for (int r = 0; r < states[i].ready.len(); r += 1) {
                     ready.push(states[i].ready[r]);
                 }
                 for (int j = 0; j < f.blocks[i].instructions.len(); j += 1) {
                     AGBlockInstruction ins = f.blocks[i].instructions[j];
+                    if (!ag_fp_charge_transfer(budget, f.kinds.len(), ins)) { return false; }
                     AGTransferResult next = ag_transfer(
                         f.kinds, ready, ins.opcode, ins.kind, ins.operands
                     );
@@ -39,13 +48,26 @@ bool ag_function_validate(AGFunction f) {
     return true;
 }
 
+const int AG_PROGRAM_DEFAULT_FUNCTIONS = 256;
+const int AG_PROGRAM_CANDIDATE_FUNCTIONS = 512;
+
+// Explicit candidate profile only. The original shared entry retains its
+// 256-function contract. Neither profile refreshes the cumulative work
+// budget between functions; all other structural limits remain unchanged.
 bool ag_program_validate(List<AGFunction> functions) {
-    if (functions.len() == 0 || functions.len() > 256) { return false; }
+    return ag_program_validate_profile(functions, AG_PROGRAM_DEFAULT_FUNCTIONS);
+}
+
+bool ag_program_validate_profile(List<AGFunction> functions, int function_limit) {
+    if ((function_limit != AG_PROGRAM_DEFAULT_FUNCTIONS &&
+        function_limit != AG_PROGRAM_CANDIDATE_FUNCTIONS) ||
+        functions.len() == 0 || functions.len() > function_limit) { return false; }
     int total = 0;
+    AGFPBudget budget = new AGFPBudget{remaining: AG_FP_MAX_WORK};
     for (int i = 0; i < functions.len(); i += 1) {
         if (functions[i].blocks.len() > 65536 - total) { return false; }
         total += functions[i].blocks.len();
-        if (!ag_function_validate(functions[i])) { return false; }
+        if (!ag_function_validate_budget(functions[i], budget)) { return false; }
     }
     return true;
 }
@@ -66,4 +88,22 @@ test "aggregate function rejects a return register not definitely initialised" {
     returns[0] = 0;
     AGFunction valid = new AGFunction{signature: signature, kinds: kinds, blocks: blocks, returns: returns};
     assert(ag_function_validate(valid));
+}
+
+test "candidate large program profile is explicit and bounded" {
+    List<int> parameters = new List<int>(); parameters.push(AG_SCHEMA_INT);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    List<AGCFGBlock> blocks = new List<AGCFGBlock>();
+    blocks.push(new AGCFGBlock{instructions: new List<AGBlockInstruction>(),
+        terminator: 0, condition: -1, yes: -1, no: -1});
+    List<int> returns = new List<int>(); returns.push(0);
+    AGFunction f = new AGFunction{signature: new AGCallSignature{parameters: parameters,
+        result_kind: AG_SCHEMA_INT}, kinds: kinds, blocks: blocks, returns: returns};
+    List<AGFunction> functions = new List<AGFunction>();
+    for (int i = 0; i < AG_PROGRAM_CANDIDATE_FUNCTIONS; i += 1) { functions.push(f); }
+    assert(!ag_program_validate(functions));
+    assert(ag_program_validate_profile(functions, AG_PROGRAM_CANDIDATE_FUNCTIONS));
+    assert(!ag_program_validate_profile(functions, 513));
+    functions.push(f);
+    assert(!ag_program_validate_profile(functions, AG_PROGRAM_CANDIDATE_FUNCTIONS));
 }

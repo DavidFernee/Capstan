@@ -1,0 +1,56 @@
+// Candidate native conversion leaf. RAX=input, R8=mode (0=int,1=byte,2=bool).
+// Returns RAX=string offset and RDX=0, or RAX=0/RDX=1 on rejection.
+// Trusted live monotonic arena R12/R13/R14, valid stack, no concurrency.
+// 32 bytes scratch, at most 20 output bytes, exact capacity check before
+// arena writes; cursor published last. Unsigned magnitude handles INT64_MIN
+// without a signed arithmetic trap. Scratch registers RCX, RSI, RDI,
+// R9-R11 and flags clobbered; RBX/RBP/R12/R14/R15 preserved.
+// Noncanonical candidate physical tag 4096 and value/readiness stride.
+import "ccam_aggregate_byte_buffer.cap";
+
+bool ag_nv_emit_bytes_conversion(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - 262) { return false; }
+    b.push(72); b.push(131); b.push(236); b.push(32); b.push(72); b.push(141); b.push(116); b.push(36);
+    b.push(32); b.push(69); b.push(49); b.push(210); b.push(73); b.push(131); b.push(248); b.push(1);
+    b.push(116); b.push(74); b.push(73); b.push(131); b.push(248); b.push(2); b.push(116); b.push(93);
+    b.push(77); b.push(133); b.push(192); b.push(15); b.push(133); b.push(217); b.push(0); b.push(0);
+    b.push(0); b.push(69); b.push(49); b.push(201); b.push(72); b.push(133); b.push(192); b.push(121);
+    b.push(9); b.push(65); b.push(185); b.push(1); b.push(0); b.push(0); b.push(0); b.push(72);
+    b.push(247); b.push(216); b.push(185); b.push(10); b.push(0); b.push(0); b.push(0); b.push(49);
+    b.push(210); b.push(72); b.push(247); b.push(241); b.push(128); b.push(194); b.push(48); b.push(72);
+    b.push(255); b.push(206); b.push(136); b.push(22); b.push(73); b.push(255); b.push(194); b.push(72);
+    b.push(133); b.push(192); b.push(117); b.push(235); b.push(69); b.push(133); b.push(201); b.push(116);
+    b.push(85); b.push(72); b.push(255); b.push(206); b.push(198); b.push(6); b.push(45); b.push(73);
+    b.push(255); b.push(194); b.push(235); b.push(74); b.push(72); b.push(61); b.push(255); b.push(0);
+    b.push(0); b.push(0); b.push(15); b.push(135); b.push(146); b.push(0); b.push(0); b.push(0);
+    b.push(72); b.push(255); b.push(206); b.push(136); b.push(6); b.push(65); b.push(186); b.push(1);
+    b.push(0); b.push(0); b.push(0); b.push(235); b.push(49); b.push(72); b.push(131); b.push(248);
+    b.push(1); b.push(119); b.push(127); b.push(72); b.push(133); b.push(192); b.push(116); b.push(18);
+    b.push(72); b.push(131); b.push(238); b.push(4); b.push(199); b.push(6); b.push(116); b.push(114);
+    b.push(117); b.push(101); b.push(65); b.push(186); b.push(4); b.push(0); b.push(0); b.push(0);
+    b.push(235); b.push(20); b.push(72); b.push(131); b.push(238); b.push(5); b.push(199); b.push(6);
+    b.push(102); b.push(97); b.push(108); b.push(115); b.push(198); b.push(70); b.push(4); b.push(101);
+    b.push(65); b.push(186); b.push(5); b.push(0); b.push(0); b.push(0); b.push(77); b.push(137);
+    b.push(211); b.push(73); b.push(193); b.push(227); b.push(4); b.push(73); b.push(131); b.push(195);
+    b.push(16); b.push(76); b.push(137); b.push(241); b.push(76); b.push(41); b.push(233); b.push(73);
+    b.push(57); b.push(203); b.push(119); b.push(62); b.push(75); b.push(141); b.push(60); b.push(44);
+    b.push(72); b.push(199); b.push(7); b.push(0); b.push(16); b.push(0); b.push(0); b.push(76);
+    b.push(137); b.push(87); b.push(8); b.push(72); b.push(131); b.push(199); b.push(16); b.push(76);
+    b.push(137); b.push(209); b.push(72); b.push(15); b.push(182); b.push(22); b.push(72); b.push(137);
+    b.push(23); b.push(72); b.push(199); b.push(71); b.push(8); b.push(1); b.push(0); b.push(0);
+    b.push(0); b.push(72); b.push(255); b.push(198); b.push(72); b.push(131); b.push(199); b.push(16);
+    b.push(72); b.push(255); b.push(201); b.push(117); b.push(229); b.push(76); b.push(137); b.push(232);
+    b.push(77); b.push(1); b.push(221); b.push(49); b.push(210); b.push(72); b.push(131); b.push(196);
+    b.push(32); b.push(195); b.push(49); b.push(192); b.push(186); b.push(1); b.push(0); b.push(0);
+    b.push(0); b.push(72); b.push(131); b.push(196); b.push(32); b.push(195);
+    return true;
+}
+
+test "native scalar conversion leaf has fixed size" {
+    List<int> b = new List<int>();
+    assert(ag_nv_emit_bytes_conversion(b));
+    assert(b.len() == 262);
+    string data = "";
+    for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
+    assert(write_file("build/ccam-native-string-conversion.bin", data));
+}

@@ -11,6 +11,48 @@ bool ag_dispatch_reg(CCAMAggregateMachine machine, int index, int kind) {
 
 bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.registers.len() > AG_SCHEMA_MAX_REGS || !ag_schema_kind(kind)) { return false; }
+    if (ag_schema_join_opcode(opcode)) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_join_operands(kinds, opcode, kind, operands);
+    }
+    if (ag_schema_log_opcode(opcode)) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_log_operands(kinds, opcode, kind, operands);
+    }
+    if (ag_schema_taint_opcode(opcode)) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_taint_operands(kinds, opcode, kind, operands);
+    }
+    if (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) {
+        if (kind != AG_SCHEMA_REF || operands.len() != 2 ||
+            !ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF)) { return false; }
+        int source_kind = AG_SCHEMA_INT;
+        if (opcode == AG_OP_BOOL_TEXT) { source_kind = AG_SCHEMA_BOOL; }
+        return ag_dispatch_reg(machine, operands[1], source_kind);
+    }
+    if (opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_map_enumeration(kinds, opcode, kind, operands);
+    }
+    if (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_string_operands(kinds, opcode, kind, operands);
+    }
+    if (opcode >= AG_OP_MAP_NEW && opcode <= AG_OP_MAP_SET) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_map_operands(kinds, opcode, kind, operands);
+    }
+    if (opcode >= AG_OP_OPT_NONE && opcode <= AG_OP_OPT_UNWRAP) {
+        List<int> kinds = new List<int>();
+        for (int i = 0; i < machine.registers.len(); i += 1) { kinds.push(machine.registers[i].declared_type); }
+        return ag_schema_optional_operands(kinds, opcode, kind, operands);
+    }
     if (opcode == AG_OP_LIST_PUSH) {
         return operands.len() == 2 && ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF) &&
             ag_dispatch_reg(machine, operands[1], kind);
@@ -45,7 +87,8 @@ bool ag_dispatch_shape(CCAMAggregateMachine machine, int opcode, int kind, List<
             ag_dispatch_reg(machine, operands[1], AG_SCHEMA_REF);
     }
     if (opcode == 5) {
-        if (operands.len() != 3 || operands[1] < 0 || operands[2] < 0 ||
+        if (operands.len() != 3 || operands[1] < CCAM_HEAP_ELEMENT_TAINTED ||
+            (operands[1] == CCAM_HEAP_ELEMENT_TAINTED && operands[2] != 0) || operands[2] < 0 ||
             operands[2] > AG_SCHEMA_MAX_ARRAY_CAPACITY ||
             (kind != AG_SCHEMA_REF && operands[1] != 0)) { return false; }
         return ag_dispatch_reg(machine, operands[0], AG_SCHEMA_REF);
@@ -80,7 +123,7 @@ string ag_dispatch_record(CCAMAggregateMachine machine, int opcode, int kind, Li
         for (int i = 2; i < operands.len(); i += 2) {
             types.push(operands[i]);
             int descriptor = operands[i + 1];
-            if (descriptor < 0) { descriptor = 0; }
+            if (descriptor < 0 || ccam_heap_optional_descriptor(descriptor) || ccam_heap_map_descriptor(descriptor)) { descriptor = 0; }
             references.push(descriptor);
             mutable_fields.push(true);
         }
@@ -192,10 +235,293 @@ string ag_dispatch_list(CCAMAggregateMachine machine, int opcode, int kind, List
     return ccam_aggregate_trap(machine, "invalid_reference");
 }
 
+string ag_dispatch_optional(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_OPT_NONE || opcode == AG_OP_OPT_SOME) {
+        int descriptor = operands[1];
+        CCAMHeapValue payload = ccam_heap_int(0);
+        bool present = opcode == AG_OP_OPT_SOME;
+        if (present) {
+            descriptor = operands[2];
+            CCAMAggregateValueResult read = ccam_aggregate_read(machine, operands[1],
+                ccam_heap_optional_payload_kind(descriptor));
+            if (!read.ok) { return ccam_aggregate_trap(machine, read.trap); }
+            payload = read.value;
+        }
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapRefResult allocated = ccam_heap_alloc_optional(machine.heap, descriptor, present, payload);
+        if (!allocated.ok) { return ccam_aggregate_trap(machine, allocated.trap); }
+        string write = ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(allocated.reference));
+        if (write != "") { return ccam_aggregate_trap(machine, write); }
+        return "";
+    }
+    CCAMAggregateValueResult box = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!box.ok) { return ccam_aggregate_trap(machine, box.trap); }
+    string check = ccam_aggregate_begin_step(machine);
+    if (check != "") { return check; }
+    CCAMHeapValueResult read = ccam_heap_optional_read(machine.heap, box.value, operands[2],
+        opcode == AG_OP_OPT_UNWRAP);
+    if (!read.ok) { return ccam_aggregate_trap(machine, read.trap); }
+    string write = ccam_aggregate_write(machine, operands[0], read.value);
+    if (write != "") { return ccam_aggregate_trap(machine, write); }
+    return "";
+}
+
+string ag_dispatch_map(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_MAP_NEW) {
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapRefResult allocated = ccam_heap_alloc_map(machine.heap, operands[1], 0);
+        if (!allocated.ok) { return ccam_aggregate_trap(machine, allocated.trap); }
+        string write = ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(allocated.reference));
+        if (write != "") { return ccam_aggregate_trap(machine, write); }
+        return "";
+    }
+    int map_register = operands[1];
+    int key_register = operands[2];
+    if (opcode == AG_OP_MAP_SET) { map_register = operands[0]; key_register = operands[1]; }
+    CCAMAggregateValueResult map = ccam_aggregate_read_ref(machine, map_register);
+    if (!map.ok) { return ccam_aggregate_trap(machine, map.trap); }
+    CCAMAggregateValueResult key = ccam_aggregate_read_ref(machine, key_register);
+    if (!key.ok) { return ccam_aggregate_trap(machine, key.trap); }
+    if (let reference = map.value.reference) {
+        if (opcode == AG_OP_MAP_SET) {
+            CCAMAggregateValueResult value = ccam_aggregate_read(machine, operands[2], kind);
+            if (!value.ok) { return ccam_aggregate_trap(machine, value.trap); }
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            string error = ccam_heap_map_set_grow(machine.heap, reference, operands[3], key.value, value.value);
+            if (error != "") { return ccam_aggregate_trap(machine, error); }
+            return "";
+        }
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMMapLookup result = ccam_heap_map_get(machine.heap, reference, operands[3], key.value);
+        if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+        CCAMHeapValue returned = ccam_heap_bool(result.found);
+        if (opcode == AG_OP_MAP_GET) {
+            CCAMHeapRefResult box = ccam_heap_alloc_optional(machine.heap, operands[3], result.found, result.value);
+            if (!box.ok) { return ccam_aggregate_trap(machine, box.trap); }
+            returned = ccam_heap_ref_value(box.reference);
+        }
+        string write = ccam_aggregate_write(machine, operands[0], returned);
+        if (write != "") { return ccam_aggregate_trap(machine, write); }
+        return "";
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ag_dispatch_string(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    if (opcode == AG_OP_BYTES_LITERAL) {
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapRefResult literal = ccam_heap_bytes_literal(machine.heap, operands);
+        if (!literal.ok) { return ccam_aggregate_trap(machine, literal.trap); }
+        return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(literal.reference));
+    }
+    CCAMAggregateValueResult left = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!left.ok) { return ccam_aggregate_trap(machine, left.trap); }
+    if (let reference = left.value.reference) {
+        if (opcode == AG_OP_BYTES_SLICE) {
+            CCAMAggregateValueResult start = ccam_aggregate_read(machine, operands[2], AG_SCHEMA_INT);
+            if (!start.ok) { return ccam_aggregate_trap(machine, start.trap); }
+            CCAMAggregateValueResult end = ccam_aggregate_read(machine, operands[3], AG_SCHEMA_INT);
+            if (!end.ok) { return ccam_aggregate_trap(machine, end.trap); }
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult slice = ccam_heap_bytes_slice_alloc(machine.heap, reference, start.value.int_value, end.value.int_value);
+            if (!slice.ok) { return ccam_aggregate_trap(machine, slice.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(slice.reference));
+        }
+        CCAMAggregateValueResult right = ccam_aggregate_read_ref(machine, operands[2]);
+        if (!right.ok) { return ccam_aggregate_trap(machine, right.trap); }
+        if (let other = right.value.reference) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapValueResult equal = ccam_heap_bytes_equal(machine.heap, reference, other);
+            if (!equal.ok) { return ccam_aggregate_trap(machine, equal.trap); }
+            bool result = equal.value.bool_value;
+            if (opcode == AG_OP_BYTES_NE) { result = !result; }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_bool(result));
+        }
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ag_dispatch_map_enumeration(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    CCAMAggregateValueResult map = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!map.ok) { return ccam_aggregate_trap(machine, map.trap); }
+    if (let reference = map.value.reference) {
+        if (opcode == AG_OP_MAP_KEYS) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult keys = ccam_heap_map_keys(machine.heap, reference, operands[2]);
+            if (!keys.ok) { return ccam_aggregate_trap(machine, keys.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(keys.reference));
+        }
+        CCAMAggregateValueResult key = ccam_aggregate_read_ref(machine, operands[2]);
+        if (!key.ok) { return ccam_aggregate_trap(machine, key.trap); }
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        CCAMHeapValueResult removed = ccam_heap_map_remove(machine.heap, reference, operands[3], key.value);
+        if (!removed.ok) { return ccam_aggregate_trap(machine, removed.trap); }
+        return ccam_aggregate_write(machine, operands[0], removed.value);
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ag_dispatch_conversion(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    int kind = AG_SCHEMA_INT;
+    if (opcode == AG_OP_BOOL_TEXT) { kind = AG_SCHEMA_BOOL; }
+    CCAMAggregateValueResult source = ccam_aggregate_read(machine, operands[1], kind);
+    if (!source.ok) { return ccam_aggregate_trap(machine, source.trap); }
+    string check = ccam_aggregate_begin_step(machine);
+    if (check != "") { return check; }
+    CCAMHeapRefResult result = ccam_heap_ref_error("invalid_conversion");
+    if (opcode == AG_OP_INT_TEXT) {
+        result = ccam_heap_int_text(machine.heap, source.value.int_value);
+    } else if (opcode == AG_OP_CHAR_TEXT) {
+        result = ccam_heap_char_text(machine.heap, source.value.int_value);
+    } else if (opcode == AG_OP_BOOL_TEXT) {
+        string data = "false";
+        if (source.value.bool_value) { data = "true"; }
+        result = ccam_heap_alloc_bytes(machine.heap, data);
+    }
+    if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+    string write = ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(result.reference));
+    if (write != "") { return ccam_aggregate_trap(machine, write); }
+    return "";
+}
+
+// Candidate tainted byte operations: check reads before spending fuel, then
+// use the exact-kind heap operations. No extraction of an ordinary string.
+string ag_dispatch_taint_bytes(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    CCAMAggregateValueResult source = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!source.ok) { return ccam_aggregate_trap(machine, source.trap); }
+    int start = 0; int end = 0;
+    if (opcode == AG_OP_TAINT_AT || opcode == AG_OP_TAINT_SLICE) {
+        CCAMAggregateValueResult offset = ccam_aggregate_read(machine, operands[2], AG_SCHEMA_INT);
+        if (!offset.ok) { return ccam_aggregate_trap(machine, offset.trap); }
+        start = offset.value.int_value;
+    }
+    if (opcode == AG_OP_TAINT_SLICE) {
+        CCAMAggregateValueResult stop = ccam_aggregate_read(machine, operands[3], AG_SCHEMA_INT);
+        if (!stop.ok) { return ccam_aggregate_trap(machine, stop.trap); }
+        end = stop.value.int_value;
+    }
+    if (let reference = source.value.reference) {
+        string check = ccam_aggregate_begin_step(machine);
+        if (check != "") { return check; }
+        if (opcode == AG_OP_TAINT || opcode == AG_OP_TAINT_SLICE) {
+            CCAMHeapRefResult result = ccam_heap_ref_error("invalid_taint_operation");
+            if (opcode == AG_OP_TAINT) { result = ccam_heap_taint_bytes(machine.heap, reference); }
+            else { result = ccam_heap_tainted_slice(machine.heap, reference, start, end); }
+            if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(result.reference));
+        }
+        CCAMHeapIntResult result = ccam_heap_int_error("invalid_taint_operation");
+        if (opcode == AG_OP_TAINT_LEN) { result = ccam_heap_tainted_len(machine.heap, reference); }
+        else if (opcode == AG_OP_TAINT_AT) { result = ccam_heap_tainted_get(machine.heap, reference, start); }
+        if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+        return ccam_aggregate_write(machine, operands[0], ccam_heap_int(result.value));
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+// The tainted list receiver must have exact nominal element identity;
+// coarse REF alone does not permit using a trusted string or record list.
+string ag_dispatch_taint_list(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    int receiver = operands[0];
+    if (opcode != AG_OP_TAINT_LIST_PUSH && opcode != AG_OP_TAINT_LIST_POP) { receiver = operands[1]; }
+    CCAMAggregateValueResult array = ccam_aggregate_read_ref(machine, receiver);
+    if (!array.ok) { return ccam_aggregate_trap(machine, array.trap); }
+    if (!ag_nominal_value_matches(machine.heap, array.value, AG_SCHEMA_REF, AG_NOMINAL_TAINTED_ARRAY)) {
+        return ccam_aggregate_trap(machine, "object_type_mismatch");
+    }
+    if (opcode == AG_OP_TAINT_LIST_LEN) { return ccam_aggregate_array_len(machine, operands[0], receiver, AG_SCHEMA_REF); }
+    if (opcode == AG_OP_TAINT_LIST_PUSH) { return ag_dispatch_list(machine, AG_OP_LIST_PUSH, AG_SCHEMA_REF, operands); }
+    if (opcode == AG_OP_TAINT_LIST_POP) { return ag_dispatch_list(machine, AG_OP_LIST_POP_DISCARD, AG_SCHEMA_REF, operands); }
+    CCAMAggregateValueResult index = ccam_aggregate_read(machine, operands[2], AG_SCHEMA_INT);
+    if (!index.ok) { return ccam_aggregate_trap(machine, index.trap); }
+    if (opcode == AG_OP_TAINT_LIST_GET) {
+        return ccam_aggregate_array_get(machine, operands[0], receiver, AG_SCHEMA_REF, index.value.int_value);
+    }
+    if (opcode == AG_OP_TAINT_LIST_SET) {
+        return ccam_aggregate_array_set(machine, receiver, index.value.int_value, operands[0], AG_SCHEMA_REF);
+    }
+    return ccam_aggregate_trap(machine, "invalid_aggregate_instruction");
+}
+
+// All source references are read before fuel or destination mutation.
+// The heap enforces exact trusted/tainted/log object kinds and quotas.
+string ag_dispatch_log(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    CCAMAggregateValueResult left = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!left.ok) { return ccam_aggregate_trap(machine, left.trap); }
+    if (let reference = left.value.reference) {
+        if (opcode == AG_OP_ESCAPE_LOG) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult escaped = ccam_heap_escape_log(machine.heap, reference);
+            if (!escaped.ok) { return ccam_aggregate_trap(machine, escaped.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(escaped.reference));
+        }
+        CCAMAggregateValueResult right = ccam_aggregate_read_ref(machine, operands[2]);
+        if (!right.ok) { return ccam_aggregate_trap(machine, right.trap); }
+        if (let other = right.value.reference) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult joined = ccam_heap_log_concat(machine.heap, reference, other);
+            if (!joined.ok) { return ccam_aggregate_trap(machine, joined.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(joined.reference));
+        }
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
+string ag_dispatch_join(CCAMAggregateMachine machine, int opcode, List<int> operands) {
+    CCAMAggregateValueResult parts = ccam_aggregate_read_ref(machine, operands[1]);
+    if (!parts.ok) { return ccam_aggregate_trap(machine, parts.trap); }
+    CCAMAggregateValueResult separator = ccam_aggregate_read_ref(machine, operands[2]);
+    if (!separator.ok) { return ccam_aggregate_trap(machine, separator.trap); }
+    if (let list_ref = parts.value.reference) {
+        if (let sep_ref = separator.value.reference) {
+            string check = ccam_aggregate_begin_step(machine);
+            if (check != "") { return check; }
+            CCAMHeapRefResult result = ccam_heap_join_bytes(machine.heap, list_ref, sep_ref, opcode == AG_OP_JOIN_TAINTED);
+            if (!result.ok) { return ccam_aggregate_trap(machine, result.trap); }
+            return ccam_aggregate_write(machine, operands[0], ccam_heap_ref_value(result.reference));
+        }
+    }
+    return ccam_aggregate_trap(machine, "invalid_reference");
+}
+
 string ag_dispatch(CCAMAggregateMachine machine, int opcode, int kind, List<int> operands) {
     if (machine.trap_code != "") { return machine.trap_code; }
     if (!ag_dispatch_shape(machine, opcode, kind, operands)) {
         return ccam_aggregate_trap(machine, "invalid_aggregate_instruction");
+    }
+    if (ag_schema_join_opcode(opcode)) { return ag_dispatch_join(machine, opcode, operands); }
+    if (ag_schema_log_opcode(opcode)) { return ag_dispatch_log(machine, opcode, operands); }
+    if (opcode >= AG_OP_TAINT && opcode <= AG_OP_TAINT_SLICE) {
+        return ag_dispatch_taint_bytes(machine, opcode, operands);
+    }
+    if (opcode >= AG_OP_TAINT_LIST_LEN && opcode <= AG_OP_TAINT_LIST_POP) {
+        return ag_dispatch_taint_list(machine, opcode, operands);
+    }
+    if (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) {
+        return ag_dispatch_conversion(machine, opcode, operands);
+    }
+    if (opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE) {
+        return ag_dispatch_map_enumeration(machine, opcode, operands);
+    }
+    if (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) {
+        return ag_dispatch_string(machine, opcode, operands);
+    }
+    if (opcode >= AG_OP_MAP_NEW && opcode <= AG_OP_MAP_SET) {
+        return ag_dispatch_map(machine, opcode, kind, operands);
+    }
+    if (opcode >= AG_OP_OPT_NONE && opcode <= AG_OP_OPT_UNWRAP) {
+        return ag_dispatch_optional(machine, opcode, kind, operands);
     }
     if (opcode == AG_OP_LIST_PUSH || opcode == AG_OP_LIST_POP_DISCARD) {
         return ag_dispatch_list(machine, opcode, kind, operands);
@@ -329,4 +655,35 @@ test "candidate scalar literal admission rejects noncanonical boolean values" {
     assert(ag_dispatch(created.machine, AG_OP_SCALAR_CONST, AG_SCHEMA_BOOL, operands) ==
         "invalid_aggregate_instruction");
     assert(created.machine.steps == 0 && !created.machine.registers[0].initialised);
+}
+
+test "absent optional unwrap traps without publishing a destination" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult created = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 32);
+    assert(created.ok);
+    CCAMAggregateMachine machine = created.machine;
+    assert(ccam_aggregate_write(machine, 1, ccam_heap_int(42)) == "");
+    List<int> operands = new List<int>(); operands.push(0); operands.push(AG_OPTIONAL_INT);
+    assert(ag_dispatch(machine, AG_OP_OPT_NONE, AG_SCHEMA_REF, operands) == "");
+    List<int> unwrap = new List<int>(); unwrap.push(1); unwrap.push(0); unwrap.push(AG_OPTIONAL_INT);
+    assert(ag_dispatch(machine, AG_OP_OPT_UNWRAP, AG_SCHEMA_INT, unwrap) == "optional_absent");
+    assert(ccam_aggregate_read(machine, 1, AG_SCHEMA_INT).value.int_value == 42);
+}
+
+test "optional boxes reject incompatible payload and record impersonation" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 16);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    assert(!ccam_heap_alloc_optional(heap, AG_OPTIONAL_BOOL, true, ccam_heap_int(0)).ok);
+    CCAMHeapRefResult boxed = ccam_heap_alloc_optional(heap, AG_OPTIONAL_BOOL, true, ccam_heap_bool(false));
+    assert(boxed.ok);
+    CCAMHeapValue value = ccam_heap_ref_value(boxed.reference);
+    assert(ccam_heap_optional_read(heap, value, AG_OPTIONAL_BOOL, false).value.bool_value);
+    CCAMHeapValueResult payload = ccam_heap_optional_read(heap, value, AG_OPTIONAL_BOOL, true);
+    assert(payload.ok && !payload.value.bool_value);
+    assert(!ccam_heap_optional_matches(heap, value, AG_OPTIONAL_INT));
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: AG_OPTIONAL_BOOL,
+        field_types: new List<int>(), field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()};
+    CCAMHeapRefResult forged = ccam_heap_alloc_record(heap, layout);
+    assert(forged.ok && !ccam_heap_optional_matches(heap, ccam_heap_ref_value(forged.reference), AG_OPTIONAL_BOOL));
 }

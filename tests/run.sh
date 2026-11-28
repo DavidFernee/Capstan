@@ -96,6 +96,310 @@ for module in schema dispatch block flow transfer cfg fixedpoint calls frames no
   fi
 done
 
+section "Candidate native arena reservation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_arena_reserve.cap" 2>&1)"; then
+  ok "bounded native arena reservation emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_arena_reserve.py" "$ROOT/build/ccam-aggregate-arena-reserve.bin" 2>&1)"; then
+      ok "freestanding native arena reservation executes and preserves cursor on rejection"
+    else
+      bad "native arena reservation execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native arena reservation emission" "$out"
+fi
+
+section "Candidate native arena word access"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_arena_slots.cap" 2>&1)"; then
+  ok "checked native arena load/store emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_arena_slots.py" "$ROOT/build/ccam-aggregate-arena-slots.bin" 2>&1)"; then
+      ok "native arena word access preserves backing on rejected operations"
+    else
+      bad "native arena word access execution" "$out"
+    fi
+  fi
+else
+  bad "checked native arena load/store emission" "$out"
+fi
+
+section "Candidate native arena lifecycle"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_arena_lifecycle.cap" 2>&1)"; then
+  ok "bounded native arena lifecycle emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_arena_lifecycle.py" "$ROOT/build/ccam-aggregate-arena-lifecycle.bin" 2>&1)"; then
+      ok "native arena mapping, reservation, access and release composition"
+    else
+      bad "native arena lifecycle execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native arena lifecycle emission" "$out"
+fi
+
+section "Candidate native scalar records"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_scalar_record.cap" 2>&1)"; then
+  ok "bounded native scalar record emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_scalar_record.py" "$ROOT/build/ccam-aggregate-native-scalar-record.bin" 2>&1)"; then
+      ok "native scalar record allocation and checked field access"
+    else
+      bad "native scalar record execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native scalar record emission" "$out"
+fi
+
+section "Candidate native record boundary membership"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_record_boundary.cap" 2>&1)"; then
+  ok "bounded native record membership guard emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_scalar_record.py" "$ROOT/build/ccam-aggregate-native-record-boundary.bin" --guarded 2>&1)"; then
+      ok "native guarded record access rejects forged interior headers"
+    else
+      bad "native record boundary execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native record membership guard emission" "$out"
+fi
+
+section "Candidate native indexed arena"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_indexed_arena.cap" 2>&1)"; then
+  ok "indexed arena allocation and membership emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_indexed_arena.py" "$ROOT/build/ccam-native-indexed-arena.bin" 2>&1)"; then
+      ok "native indexed arena capacity and membership execution"
+    else
+      bad "native indexed arena execution" "$out"
+    fi
+  fi
+else
+  bad "indexed arena emission" "$out"
+fi
+
+section "Candidate native indexed arena lifecycle"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_indexed_lifecycle.cap" 2>&1)"; then
+  ok "indexed arena lifecycle emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_indexed_lifecycle.py" "$ROOT/build/ccam-native-indexed-lifecycle.bin" "$ROOT/build/ccam-native-indexed-arena.bin" 2>&1)"; then
+      ok "native indexed arena combined lifecycle and allocation"
+    else
+      bad "native indexed lifecycle execution" "$out"
+    fi
+  fi
+else
+  bad "indexed lifecycle emission" "$out"
+fi
+
+section "Candidate native indexed dynamic scalar lists"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_indexed_dynamic_list.cap" 2>&1)"; then
+  ok "indexed dynamic scalar list emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_indexed_dynamic_list.py" "$ROOT/build/ccam-native-indexed-lifecycle.bin" "$ROOT/build/ccam-native-indexed-dynamic-list.bin" 2>&1)"; then
+      ok "native indexed dynamic scalar list growth and mutation"
+    else
+      bad "indexed dynamic list execution" "$out"
+    fi
+  fi
+else
+  bad "indexed dynamic list emission" "$out"
+fi
+
+section "Candidate native borrowed-FD output"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_output.cap" 2>&1)"; then
+  ok "bounded borrowed-FD output emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_borrowed_output.py" "$ROOT/build/ccam-native-borrowed-fd-output.bin" 2>&1)"; then
+      ok "native borrowed-FD output boundary execution"
+    else
+      bad "native borrowed-FD output execution" "$out"
+    fi
+  fi
+else
+  bad "bounded borrowed-FD output emission" "$out"
+fi
+
+section "Candidate native borrowed-FD input"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_borrowed_fd.cap" 2>&1)"; then
+  ok "bounded borrowed-FD input emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_borrowed_fd.py" "$ROOT/build/ccam-native-borrowed-fd-read.bin" 2>&1)"; then
+      ok "native borrowed-FD input boundary execution"
+    else
+      bad "native borrowed-FD input execution" "$out"
+    fi
+  fi
+else
+  bad "bounded borrowed-FD input emission" "$out"
+fi
+
+section "Candidate native taint validation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_taint_validation.cap" 2>&1)"; then
+  ok "native taint validation emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_taint_validation.py" "$ROOT/build/ccam-native-taint-validation.bin" 2>&1)"; then
+      ok "native taint validation differential and boundary execution"
+    else
+      bad "native taint validation execution" "$out"
+    fi
+  fi
+else
+  bad "native taint validation emission" "$out"
+fi
+
+section "Candidate native bounded log escaping"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_log_escape.cap" 2>&1)"; then
+  ok "native log escape emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_log_escape.py" "$ROOT/build/ccam-native-log-escape.bin" 2>&1)"; then
+      ok "native log escape differential and boundary execution"
+    else
+      bad "native log escape execution" "$out"
+    fi
+  fi
+else
+  bad "native log escape emission" "$out"
+fi
+
+section "Candidate native bounded tainted slicing"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_tainted_slice.cap" 2>&1)"; then
+  ok "native tainted slice emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_tainted_slice.py" "$ROOT/build/ccam-native-tainted-slice.bin" 2>&1)"; then
+      ok "native tainted slice differential and boundary execution"
+    else
+      bad "native tainted slice execution" "$out"
+    fi
+  fi
+else
+  bad "native tainted slice emission" "$out"
+fi
+
+section "Candidate native bounded tainted lists"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_tainted_list.cap" 2>&1)"; then
+  ok "native tainted list emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_tainted_list.py" "$ROOT/build/ccam-native-tainted-list.bin" 2>&1)"; then
+      ok "native tainted list differential and boundary execution"
+    else
+      bad "native tainted list execution" "$out"
+    fi
+  fi
+else
+  bad "native tainted list emission" "$out"
+fi
+
+section "Candidate native nominal LogText bridge"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_log_bridge.cap" 2>&1)"; then
+  ok "native LogText bridge emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_log_bridge.py" "$ROOT/build/ccam-native-log-bridge.bin" 2>&1)"; then
+      ok "native LogText bridge differential and boundary execution"
+    else
+      bad "native LogText bridge execution" "$out"
+    fi
+  fi
+else
+  bad "native LogText bridge emission" "$out"
+fi
+
+section "Candidate native bounded join"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_join.cap" 2>&1)"; then
+  ok "native join emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_join.py" "$ROOT/build/ccam-native-join.bin" 2>&1)"; then
+      ok "native join differential and boundary execution"
+    else
+      bad "native join execution" "$out"
+    fi
+  fi
+else
+  bad "native join emission" "$out"
+fi
+
+section "Candidate native scalar string conversions"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
+  ok "bounded native scalar string conversion emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_string_conversion.py" "$ROOT/build/ccam-native-string-conversion.bin" 2>&1)"; then
+      ok "native scalar string conversion differential execution"
+    else
+      bad "native scalar string conversion execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native scalar string conversion emission" "$out"
+fi
+
+section "Candidate native scalar lists"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_scalar_list.cap" 2>&1)"; then
+  ok "bounded native scalar list emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_scalar_list.py" "$ROOT/build/ccam-native-scalar-list.bin" 2>&1)"; then
+      ok "native scalar list differential and boundary execution"
+    else
+      bad "native scalar list execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native scalar list emission" "$out"
+fi
+
+section "Candidate native stdout"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_stdout.cap" 2>&1)"; then
+  ok "bounded native stdout emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_stdout.py" "$ROOT/build/ccam-native-stdout.bin" 2>&1)"; then
+      ok "native stdout execution and failure behavior"
+    else
+      bad "native stdout execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native stdout emission" "$out"
+fi
+
+section "Candidate native process argument capture"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_process_argv.cap" 2>&1)"; then
+  ok "bounded native process argv emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_process_argv.py" "$ROOT/build/ccam-native-process-argv.bin" 2>&1)"; then
+      ok "native process argument capture execution"
+    else
+      bad "native process argv execution" "$out"
+    fi
+  fi
+else
+  bad "bounded native process argv emission" "$out"
+fi
+
+section "Candidate aggregate native CLI and full compiler admission probe"
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  if out="$($PY "$ROOT/tests/unit/native_aggregate_cli.py" "$ROOT" 2>&1)"; then
+    ok "candidate aggregate CLI and complete compiler admission probe (not S1)"
+    printf '%s\n' "$out"
+  else
+    bad "candidate aggregate CLI and complete compiler admission probe" "$out"
+  fi
+fi
+
+section "Candidate native scalar record CFG lowering"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_native_record_lowering_tests.cap" 2>&1)"; then
+  ok "checked scalar record CFG to direct native ELF"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_record_lowering.py" "$ROOT/build" 2>&1)"; then
+      ok "native record source loop and signed arithmetic ELF execution"
+    else
+      bad "candidate native record lowering execution" "$out"
+    fi
+  fi
+else
+  bad "checked native scalar record lowering" "$out"
+fi
+
 section "Checked production AST to candidate aggregate evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_checked_source_tests.cap" 2>&1)"; then
   ok "checked aggregate source leaf lowering and sealed invocation"
@@ -604,6 +908,22 @@ if "$C" build -o "$tmp/ccam_heap_cross_arena.c" "$ROOT/verification/ccam_heap_cr
 else
   bad "region heap cross-arena build" "$(head -3 "$tmp/log")"
 fi
+
+section "experimental region heap: tainted cross-arena rejection"
+for operation in len type; do
+  probe="ccam_heap_tainted_cross_arena_${operation}"
+  if "$C" build -o "$tmp/$probe.c" "$ROOT/verification/$probe.cap" >"$tmp/log" 2>&1 &&
+     "$CC" $WFLAGS "$tmp/$probe.c" -o "$tmp/$probe" 2>>"$tmp/log"; then
+    err="$("$tmp/$probe" 2>&1)"; code=$?
+    if [[ $code -eq 101 ]] && grep -qF "CWE-639" <<<"$err"; then
+      ok "tainted cross-arena $operation rejects a foreign reference"
+    else
+      bad "tainted cross-arena $operation" "exit $code: $err"
+    fi
+  else
+    bad "tainted cross-arena $operation build" "$(head -3 "$tmp/log")"
+  fi
+done
 
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do

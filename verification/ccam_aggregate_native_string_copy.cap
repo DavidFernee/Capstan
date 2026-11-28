@@ -1,0 +1,54 @@
+// Candidate native byte-string copy leaves. Both accept only previously
+// membership/tag-validated immutable strings and a trusted arena state.
+// RAX = left/source offset, R8 = right offset or unsigned start, R9 = end.
+// RAX = new offset, RDX = 0 on success; RAX=0,RDX=1 on rejection.
+// Check all bounds before the first write; publish committed cursor last.
+// Max output 4096 bytes; copy existing canonical payload/readiness pairs.
+// Clobbers RCX,RSI,RDI,R8,R9,R10,R11,flags; clears DF on successful copy.
+// No call, no temporary allocation, no source mutation or overlapping copy.
+// Single-threaded monotonic arena only. Not canonical resource accounting.
+import "ccam_aggregate_byte_buffer.cap";
+
+bool ag_nv_emit_bytes_concat(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - 109) { return false; }
+    b.push(77); b.push(141); b.push(20); b.push(4); b.push(79); b.push(141); b.push(28); b.push(4);
+    b.push(73); b.push(139); b.push(74); b.push(8); b.push(77); b.push(139); b.push(75); b.push(8);
+    b.push(74); b.push(141); b.push(20); b.push(9); b.push(72); b.push(129); b.push(250); b.push(0);
+    b.push(16); b.push(0); b.push(0); b.push(119); b.push(72); b.push(73); b.push(137); b.push(208);
+    b.push(73); b.push(193); b.push(224); b.push(4); b.push(73); b.push(131); b.push(192); b.push(16);
+    b.push(76); b.push(137); b.push(246); b.push(76); b.push(41); b.push(238); b.push(73); b.push(57);
+    b.push(240); b.push(119); b.push(50); b.push(75); b.push(141); b.push(60); b.push(44); b.push(72);
+    b.push(199); b.push(7); b.push(0); b.push(16); b.push(0); b.push(0); b.push(72); b.push(137);
+    b.push(87); b.push(8); b.push(72); b.push(131); b.push(199); b.push(16); b.push(73); b.push(141);
+    b.push(114); b.push(16); b.push(72); b.push(209); b.push(225); b.push(252); b.push(243); b.push(72);
+    b.push(165); b.push(73); b.push(141); b.push(115); b.push(16); b.push(75); b.push(141); b.push(12);
+    b.push(9); b.push(243); b.push(72); b.push(165); b.push(76); b.push(137); b.push(232); b.push(77);
+    b.push(1); b.push(197); b.push(49); b.push(210); b.push(195); b.push(49); b.push(192); b.push(186);
+    b.push(1); b.push(0); b.push(0); b.push(0); b.push(195);
+    return true;
+}
+
+bool ag_nv_emit_bytes_slice(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - 93) { return false; }
+    b.push(77); b.push(141); b.push(20); b.push(4); b.push(77); b.push(57); b.push(200); b.push(119);
+    b.push(76); b.push(77); b.push(59); b.push(74); b.push(8); b.push(119); b.push(70); b.push(77);
+    b.push(41); b.push(193); b.push(73); b.push(193); b.push(224); b.push(4); b.push(75); b.push(141);
+    b.push(116); b.push(2); b.push(16); b.push(77); b.push(137); b.push(200); b.push(73); b.push(193);
+    b.push(224); b.push(4); b.push(73); b.push(131); b.push(192); b.push(16); b.push(76); b.push(137);
+    b.push(241); b.push(76); b.push(41); b.push(233); b.push(73); b.push(57); b.push(200); b.push(119);
+    b.push(36); b.push(75); b.push(141); b.push(60); b.push(44); b.push(72); b.push(199); b.push(7);
+    b.push(0); b.push(16); b.push(0); b.push(0); b.push(76); b.push(137); b.push(79); b.push(8);
+    b.push(72); b.push(131); b.push(199); b.push(16); b.push(75); b.push(141); b.push(12); b.push(9);
+    b.push(252); b.push(243); b.push(72); b.push(165); b.push(76); b.push(137); b.push(232); b.push(77);
+    b.push(1); b.push(197); b.push(49); b.push(210); b.push(195); b.push(49); b.push(192); b.push(186);
+    b.push(1); b.push(0); b.push(0); b.push(0); b.push(195);
+    return true;
+}
+
+test "native string copy leaves have exact sizes and compose" {
+    List<int> b = new List<int>();
+    assert(ag_nv_emit_bytes_concat(b));
+    assert(b.len() == 109);
+    assert(ag_nv_emit_bytes_slice(b));
+    assert(b.len() == 202);
+}

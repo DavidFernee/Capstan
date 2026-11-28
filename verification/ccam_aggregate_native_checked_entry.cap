@@ -1,0 +1,181 @@
+// Narrow production-checked source entry for the candidate native slice.
+// All declarations checked by the production checker, one entry function,
+// scalar-record structs only; unsupported declarations rejected, not ignored.
+import "ccam_aggregate_checked_source.cap";
+import "ccam_aggregate_native_direct_calls.cap";
+
+const int AG_NV_MAX_CONSTANTS = 1024;
+
+// Closed checked integer expressions only. No variable dependencies,
+// calls, effects or unchecked host arithmetic. Each declaration consumes
+// at most 256 expression nodes and 32 recursive levels.
+const int AG_NV_CONST_WORK = 256;
+const int AG_NV_CONST_DEPTH = 32;
+
+struct AGNVConstantBudget { int remaining; }
+
+int? ag_nv_const_int(Node e, AGNVConstantBudget budget, int depth) {
+    if (depth > AG_NV_CONST_DEPTH || budget.remaining <= 0) { return none; }
+    budget.remaining -= 1;
+    Type t = ty_of(e);
+    if (t.k != TY_INT || t.name != "" || t.args.len() != 0) { return none; }
+    if (e.k == N_INT && e.kids.len() == 0) { return e.n; }
+    if (e.k == N_NEG && e.kids.len() == 1) {
+        if (let v = ag_nv_const_int(e.kids[0], budget, depth + 1)) {
+            CCAMIntResult result = ccam_sub(0, v);
+            if (result.ok) { return result.value; }
+        }
+        return none;
+    }
+    if (e.k != N_BIN || e.kids.len() != 2 ||
+        (e.s != "+" && e.s != "-" && e.s != "*" && e.s != "/" && e.s != "%")) { return none; }
+    if (let a = ag_nv_const_int(e.kids[0], budget, depth + 1)) {
+        if (let b = ag_nv_const_int(e.kids[1], budget, depth + 1)) {
+            CCAMIntResult result = ccam_add(a, b);
+            if (e.s == "-") { result = ccam_sub(a, b); }
+            else if (e.s == "*") { result = ccam_mul(a, b); }
+            else if (e.s == "/") { result = ccam_div(a, b); }
+            else if (e.s == "%") { result = ccam_rem(a, b); }
+            if (result.ok) { return result.value; }
+        }
+    }
+    return none;
+}
+
+// Create a detached declaration and integer literal; never mutate the
+// checked input tree. The existing source lowerer consumes literal nodes.
+Node? ag_nv_normalize_constant(Node d) {
+    if (d.k != N_CONST || d.kids.len() != 1) { return none; }
+    Type t = ty_of(d); Node literal = d.kids[0];
+    if (t.args.len() != 0 || t.name != "") { return none; }
+    if (t.k == TY_INT) {
+        AGNVConstantBudget budget = new AGNVConstantBudget{remaining: AG_NV_CONST_WORK};
+        if (let value = ag_nv_const_int(literal, budget, 1)) {
+            Node folded = mk_node(N_INT, literal.file, literal.line);
+            folded.n = value; folded.ty = t;
+            Node out = mk_node_s(N_CONST, d.s, d.file, d.line);
+            out.ty = t; out.kids.push(folded);
+            return out;
+        }
+        return none;
+    }
+    if (literal.kids.len() == 0 &&
+        ((t.k == TY_BOOL && literal.k == N_BOOL && (literal.n == 0 || literal.n == 1)) ||
+         (t.k == TY_STR && literal.k == N_STR && literal.n >= 0 && literal.n <= AG_STRING_MAX_LITERAL))) { return d; }
+    return none;
+}
+
+AGSourceFunction? ag_nv_checked_entry(Ctx ctx, List<Node> declarations) {
+    if (error_count(ctx) != 0 || declarations.len() == 0 ||
+        declarations.len() > 257 + AG_NV_MAX_CONSTANTS) { return none; }
+    Map<int> records = new Map<int>(); Map<Node> record_nodes = new Map<Node>();
+    Map<Node> constants = new Map<Node>(); Map<Node> function_nodes = new Map<Node>();
+    Map<int> function_indices = new Map<int>(); Map<int> names = new Map<int>();
+    int record_count = 0; int entry = -1; int total_fields = 0; int constant_count = 0;
+    for (int i = 0; i < declarations.len(); i += 1) {
+        Node d = declarations[i];
+        if (d.s.len() == 0 || d.s.len() > AG_SOURCE_MAX_NAME || names.has(d.s)) { return none; }
+        names.set(d.s, 1);
+        if (d.k == N_STRUCT) {
+            if (record_count >= 256 || d.s2 != "" || d.s3 != "" || d.kids.len() > AG_SCHEMA_MAX_RECORD_FIELDS ||
+                d.kids.len() > AG_NV_MAX_OPERANDS - total_fields) { return none; }
+            total_fields += d.kids.len();
+            record_count += 1; records.set(d.s, record_count); record_nodes.set(d.s, d);
+        } else if (d.k == N_FN && d.s == "run" && entry == -1 && d.n == 0) {
+            entry = i; function_indices.set(d.s, 0); function_nodes.set(d.s, d);
+        } else if (d.k == N_CONST) {
+            if (constant_count >= AG_NV_MAX_CONSTANTS) { return none; }
+            if (let normalized = ag_nv_normalize_constant(d)) {
+                constant_count += 1; constants.set(d.s, normalized);
+            } else { return none; }
+        } else { return none; }
+    }
+    if (entry < 0) { return none; }
+    return ag_source_lower_function(declarations[entry], records, record_nodes, constants, function_nodes, function_indices);
+}
+
+AGImage ag_nv_compile_checked(Ctx ctx, List<Node> declarations, int fuel) {
+    if (let entry = ag_nv_checked_entry(ctx, declarations)) {
+        return ag_nv_compile(entry.function, fuel);
+    }
+    return ag_nv_failure();
+}
+
+// Multi-function variant. Reuse the checked source lowering, with stable
+// source-order IDs. Preserve exact nominal signatures for call boundaries.
+AGImage ag_nvc_compile_checked(Ctx ctx, List<Node> declarations, int fuel, int depth) {
+    return ag_nvc_compile_checked_entry(ctx, declarations, fuel, depth, false);
+}
+
+AGImage ag_nvc_compile_checked_process(Ctx ctx, List<Node> declarations, int fuel, int depth) {
+    return ag_nvc_compile_checked_entry(ctx, declarations, fuel, depth, true);
+}
+
+AGImage ag_nvc_compile_checked_entry(Ctx ctx, List<Node> declarations, int fuel, int depth, bool process_args) {
+    return ag_nvc_compile_checked_named(ctx, declarations, fuel, depth, process_args, "run", false);
+}
+
+// Driver-only diagnostic path. Preserve old run-based test entry behavior.
+AGImage ag_nvc_checked_refusal(Ctx ctx, Node d, string reason, bool diagnostics) {
+    if (diagnostics) { error_at(ctx, d, "", "candidate aggregate native: " + reason); }
+    return ag_nv_failure();
+}
+
+AGImage ag_nvc_compile_checked_named(Ctx ctx, List<Node> declarations, int fuel, int depth,
+    bool process_args, string entry_name, bool diagnostics) {
+    if (error_count(ctx) != 0 || declarations.len() == 0 ||
+        declarations.len() > 256 + AG_NVC_MAX_FUNCTIONS + AG_NV_MAX_CONSTANTS) { return ag_nv_failure(); }
+    Map<int> records = new Map<int>(); Map<Node> record_nodes = new Map<Node>();
+    Map<Node> constants = new Map<Node>(); Map<Node> function_nodes = new Map<Node>();
+    Map<int> indices = new Map<int>(); Map<int> names = new Map<int>();
+    int record_count = 0; int count = 0; int entry = -1; int fields = 0; int constant_count = 0;
+    for (int i = 0; i < declarations.len(); i += 1) {
+        Node d = declarations[i];
+        if (d.s.len() == 0 || d.s.len() > AG_SOURCE_MAX_NAME || names.has(d.s)) { return ag_nvc_checked_refusal(ctx, d, "invalid or duplicate declaration name", diagnostics); }
+        names.set(d.s, 1);
+        if (d.k == N_STRUCT) {
+            if (record_count >= 256 || d.s2 != "" || d.s3 != "" ||
+                d.kids.len() > AG_SCHEMA_MAX_RECORD_FIELDS ||
+                d.kids.len() > AG_NV_MAX_OPERANDS - fields) { return ag_nvc_checked_refusal(ctx, d, "record layout outside candidate profile", diagnostics); }
+            fields += d.kids.len(); record_count += 1;
+            records.set(d.s, record_count); record_nodes.set(d.s, d);
+        } else if (d.k == N_FN) {
+            if (count >= AG_NVC_MAX_FUNCTIONS) { return ag_nvc_checked_refusal(ctx, d, "function count exceeds candidate profile", diagnostics); }
+            if (d.s == entry_name) { entry = count; }
+            indices.set(d.s, count); function_nodes.set(d.s, d); count += 1;
+        } else if (d.k == N_CONST) {
+            if (constant_count >= AG_NV_MAX_CONSTANTS) { return ag_nvc_checked_refusal(ctx, d, "constant count exceeds candidate profile", diagnostics); }
+            if (let normalized = ag_nv_normalize_constant(d)) {
+                constant_count += 1; constants.set(d.s, normalized);
+            } else { return ag_nvc_checked_refusal(ctx, d, "constant outside checked closed-expression profile: " + d.s, diagnostics); }
+        } else { return ag_nvc_checked_refusal(ctx, d, "unsupported declaration: " + d.s, diagnostics); }
+    }
+    if (entry < 0) { return ag_nv_failure(); }
+    List<AGFunction> functions = new List<AGFunction>();
+    List<AGNominalSignature> signatures = new List<AGNominalSignature>();
+    int registers = 0; int blocks = 0; int instructions = 0; int operands = 0;
+    for (int i = 0; i < declarations.len(); i += 1) {
+        Node d = declarations[i];
+        if (d.k == N_FN) {
+            if (let lowered = ag_source_lower_function(d, records, record_nodes, constants, function_nodes, indices)) {
+                AGFunction f = lowered.function;
+                if (f.kinds.len() > AG_NVC_MAX_TOTAL_REGS - registers ||
+                    f.blocks.len() > AG_NV_MAX_BLOCKS - blocks) { return ag_nv_failure(); }
+                registers += f.kinds.len(); blocks += f.blocks.len();
+                for (int j = 0; j < f.blocks.len(); j += 1) {
+                    AGCFGBlock block = f.blocks[j];
+                    if (block.instructions.len() > AG_NV_MAX_INS - instructions) { return ag_nv_failure(); }
+                    instructions += block.instructions.len();
+                    for (int k = 0; k < block.instructions.len(); k += 1) {
+                        int width = block.instructions[k].operands.len();
+                        if (width > AG_NV_MAX_OPERANDS - operands) { return ag_nv_failure(); }
+                        operands += width;
+                    }
+                }
+                functions.push(f);
+                signatures.push(lowered.signature);
+            } else { return ag_nvc_checked_refusal(ctx, d, "unsupported function body or signature: " + d.s, diagnostics); }
+        }
+    }
+    return ag_nvc_compile_entry(functions, signatures, entry, fuel, depth, process_args);
+}

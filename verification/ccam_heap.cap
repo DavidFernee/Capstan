@@ -6,10 +6,19 @@
 const int CCAM_HEAP_VALUE_INT = 1;
 const int CCAM_HEAP_VALUE_BOOL = 2;
 const int CCAM_HEAP_VALUE_REF = 3;
+// Array-only exact byte-object element tag; never a nominal record ID.
+const int CCAM_HEAP_ELEMENT_BYTES = -1;
+// Exact element identity for lists of immutable tainted byte objects.
+const int CCAM_HEAP_ELEMENT_TAINTED = -2;
 
 const int CCAM_HEAP_OBJECT_RECORD = 1;
 const int CCAM_HEAP_OBJECT_ARRAY = 2;
 const int CCAM_HEAP_OBJECT_BYTES = 3;
+// Disjoint from trusted bytes, records, optionals and maps.
+const int CCAM_HEAP_OBJECT_TAINTED = 6;
+const int CCAM_HEAP_OBJECT_LOG = 7;
+const int CCAM_HEAP_LOG_MAX_BYTES = 4096;
+const int CCAM_HEAP_TAINTED_MAX_BYTES = 4096;
 
 const int CCAM_HEAP_RECORD_HEADER_BYTES = 16;
 const int CCAM_HEAP_ARRAY_HEADER_BYTES = 24;
@@ -181,6 +190,8 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
             if (index < 0) { return false; }
             if (expected_ref_type_id == 0) { return true; }
             CCAMHeapObject target = heap.objects[index];
+            if (expected_ref_type_id == CCAM_HEAP_ELEMENT_TAINTED) { return target.kind == CCAM_HEAP_OBJECT_TAINTED; }
+            if (expected_ref_type_id == CCAM_HEAP_ELEMENT_BYTES) { return target.kind == CCAM_HEAP_OBJECT_BYTES; }
             return target.kind == CCAM_HEAP_OBJECT_RECORD &&
                 target.descriptor_id == expected_ref_type_id;
         }
@@ -194,7 +205,7 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
 bool ccam_heap_value_has_array_type(CCAMHeap heap, CCAMHeapValue value,
     int element_type, int element_ref_type_id) {
     if (value.kind != CCAM_HEAP_VALUE_REF ||
-        !ccam_heap_valid_value_type(element_type) || element_ref_type_id < 0 ||
+        !ccam_heap_valid_value_type(element_type) || element_ref_type_id < CCAM_HEAP_ELEMENT_TAINTED ||
         (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0)) {
         return false;
     }
@@ -216,6 +227,350 @@ bool ccam_heap_value_is_bytes(CCAMHeap heap, CCAMHeapValue value) {
         return index >= 0 && heap.objects[index].kind == CCAM_HEAP_OBJECT_BYTES;
     }
     return false;
+}
+
+// Candidate immutable optional boxes. Their object kind is distinct from
+// ordinary records, so a record with the same numeric ID cannot impersonate one.
+const int CCAM_HEAP_OBJECT_OPTIONAL = 4;
+const int AG_OPTIONAL_RECORD_MAX = 4096;
+const int AG_OPTIONAL_INT = 8193;
+const int AG_OPTIONAL_BOOL = 8194;
+const int AG_OPTIONAL_BYTES = 8195;
+const int AG_OPTIONAL_LOG = 8196;
+const int AG_OPTIONAL_RECORD_BASE = 10000;
+
+bool ccam_heap_optional_descriptor(int descriptor) {
+    return descriptor == AG_OPTIONAL_INT || descriptor == AG_OPTIONAL_BOOL ||
+        descriptor == AG_OPTIONAL_BYTES || descriptor == AG_OPTIONAL_LOG ||
+        (descriptor > AG_OPTIONAL_RECORD_BASE &&
+         descriptor <= AG_OPTIONAL_RECORD_BASE + AG_OPTIONAL_RECORD_MAX);
+}
+
+int ccam_heap_optional_payload_kind(int descriptor) {
+    if (descriptor == AG_OPTIONAL_INT) { return CCAM_HEAP_VALUE_INT; }
+    if (descriptor == AG_OPTIONAL_BOOL) { return CCAM_HEAP_VALUE_BOOL; }
+    if (ccam_heap_optional_descriptor(descriptor)) { return CCAM_HEAP_VALUE_REF; }
+    return 0;
+}
+
+bool ccam_heap_optional_payload_matches(CCAMHeap heap, int descriptor, CCAMHeapValue payload) {
+    if (descriptor == AG_OPTIONAL_INT) { return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_INT, 0); }
+    if (descriptor == AG_OPTIONAL_BOOL) { return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_BOOL, 0); }
+    if (descriptor == AG_OPTIONAL_BYTES) { return ccam_heap_value_is_bytes(heap, payload); }
+    if (descriptor == AG_OPTIONAL_LOG) { return ccam_heap_value_is_log(heap, payload); }
+    if (descriptor > AG_OPTIONAL_RECORD_BASE &&
+        descriptor <= AG_OPTIONAL_RECORD_BASE + AG_OPTIONAL_RECORD_MAX) {
+        return ccam_heap_value_has_type(heap, payload, CCAM_HEAP_VALUE_REF, descriptor - AG_OPTIONAL_RECORD_BASE);
+    }
+    return false;
+}
+
+CCAMHeapRefResult ccam_heap_alloc_optional(CCAMHeap heap, int descriptor, bool present, CCAMHeapValue payload) {
+    if (!ccam_heap_optional_descriptor(descriptor) ||
+        (present && !ccam_heap_optional_payload_matches(heap, descriptor, payload))) {
+        return ccam_heap_ref_error("optional_payload_mismatch");
+    }
+    int charge = CCAM_HEAP_RECORD_HEADER_BYTES + CCAM_HEAP_SLOT_BYTES;
+    string admission = ccam_heap_allocation_check(heap, charge, 2, CCAM_HEAP_SLOT_BYTES);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    List<CCAMHeapValue> fields = new List<CCAMHeapValue>();
+    List<bool> ready = new List<bool>();
+    if (present) { fields.push(payload); } else { fields.push(ccam_heap_int(0)); }
+    ready.push(present);
+    int id = heap.next_id;
+    CCAMHeapObject object = new CCAMHeapObject{id: id, kind: CCAM_HEAP_OBJECT_OPTIONAL,
+        descriptor_id: descriptor, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>(),
+        fields: fields, field_initialised: ready, element_type: 0, element_ref_type_id: 0,
+        capacity: 0, length: 0, elements: new List<CCAMHeapValue>(),
+        element_initialised: new List<bool>(), byte_data: ""};
+    heap.objects.push(object);
+    heap.bytes_used += charge;
+    heap.work_used += 2;
+    heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, CCAM_HEAP_SLOT_BYTES);
+    heap.next_id += 1;
+    return new CCAMHeapRefResult{ok: true,
+        reference: new CCAMHeapRef{identity: heap.identity, object_id: id}, trap: ""};
+}
+
+bool ccam_heap_optional_matches(CCAMHeap heap, CCAMHeapValue value, int descriptor) {
+    if (value.kind != CCAM_HEAP_VALUE_REF || !ccam_heap_optional_descriptor(descriptor)) { return false; }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        if (index < 0) { return false; }
+        CCAMHeapObject object = heap.objects[index];
+        return object.kind == CCAM_HEAP_OBJECT_OPTIONAL && object.descriptor_id == descriptor &&
+            object.fields.len() == 1 && object.field_initialised.len() == 1 &&
+            (!object.field_initialised[0] || ccam_heap_optional_payload_matches(heap, descriptor, object.fields[0]));
+    }
+    return false;
+}
+
+CCAMHeapValueResult ccam_heap_optional_read(CCAMHeap heap, CCAMHeapValue value, int descriptor, bool unwrap) {
+    if (!ccam_heap_optional_matches(heap, value, descriptor)) { return ccam_heap_value_error("optional_shape_mismatch"); }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        CCAMHeapObject object = heap.objects[index];
+        if (!unwrap) { return ccam_heap_value_ok(ccam_heap_bool(object.field_initialised[0])); }
+        if (!object.field_initialised[0]) { return ccam_heap_value_error("optional_absent"); }
+        return ccam_heap_value_ok(object.fields[0]);
+    }
+    return ccam_heap_value_error("invalid_reference");
+}
+
+// Candidate fixed-capacity map storage. Keys are immutable arena bytes;
+// values use the same exact payload descriptors as optional lookup results.
+// This linear-search model is deliberately bounded, not a production hash map.
+const int CCAM_HEAP_OBJECT_MAP = 5;
+const int AG_MAP_MAX_ENTRIES = 4096;
+const int AG_MAP_MAX_KEY_BYTES = 4096;
+
+struct CCAMMapLookup {
+    bool ok;
+    bool found;
+    CCAMHeapValue value;
+    string trap;
+}
+
+CCAMMapLookup ccam_map_lookup_error(string error) {
+    return new CCAMMapLookup{ok: false, found: false, value: ccam_heap_int(0), trap: error};
+}
+
+CCAMHeapValue ccam_map_snapshot_value(CCAMHeapValue value) {
+    return new CCAMHeapValue{kind: value.kind, int_value: value.int_value,
+        bool_value: value.bool_value, reference: value.reference};
+}
+
+CCAMHeapRefResult ccam_heap_alloc_map(CCAMHeap heap, int descriptor, int capacity) {
+    if (!ccam_heap_optional_descriptor(descriptor) || descriptor == AG_OPTIONAL_LOG || capacity < 0 || capacity > AG_MAP_MAX_ENTRIES) {
+        return ccam_heap_ref_error("invalid_map_layout");
+    }
+    int backing = capacity * CCAM_HEAP_SLOT_BYTES * 2;
+    int charge = CCAM_HEAP_ARRAY_HEADER_BYTES + backing;
+    string admission = ccam_heap_allocation_check(heap, charge, capacity * 2 + 1, backing);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    List<CCAMHeapValue> keys = new List<CCAMHeapValue>();
+    List<CCAMHeapValue> values = new List<CCAMHeapValue>();
+    for (int i = 0; i < capacity; i += 1) {
+        keys.push(ccam_heap_int(0)); values.push(ccam_heap_int(0));
+    }
+    int id = heap.next_id;
+    CCAMHeapObject object = new CCAMHeapObject{id: id, kind: CCAM_HEAP_OBJECT_MAP,
+        descriptor_id: descriptor, field_types: new List<int>(),
+        field_ref_type_ids: new List<int>(), field_mutable: new List<bool>(),
+        fields: keys, field_initialised: new List<bool>(),
+        element_type: ccam_heap_optional_payload_kind(descriptor), element_ref_type_id: 0,
+        capacity: capacity, length: 0, elements: values,
+        element_initialised: new List<bool>(), byte_data: ""};
+    heap.objects.push(object);
+    heap.bytes_used += charge;
+    heap.work_used += capacity * 2 + 1;
+    heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, backing);
+    heap.next_id += 1;
+    return new CCAMHeapRefResult{ok: true,
+        reference: new CCAMHeapRef{identity: heap.identity, object_id: id}, trap: ""};
+}
+
+bool ccam_map_shape(CCAMHeapObject object, int descriptor) {
+    return ccam_heap_optional_descriptor(descriptor) && object.kind == CCAM_HEAP_OBJECT_MAP &&
+        object.descriptor_id == descriptor && object.capacity >= 0 &&
+        object.capacity <= AG_MAP_MAX_ENTRIES && object.length >= 0 &&
+        object.length <= object.capacity && object.fields.len() == object.capacity &&
+        object.elements.len() == object.capacity;
+}
+
+// Returns a byte-object index or -1. Key references never grant authority to
+// another arena; lookup goes through the existing identity check.
+int ccam_map_key_index(CCAMHeap heap, CCAMHeapValue key) {
+    if (key.kind != CCAM_HEAP_VALUE_REF) { return -1; }
+    if (let reference = key.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        if (index >= 0 && heap.objects[index].kind == CCAM_HEAP_OBJECT_BYTES &&
+            heap.objects[index].byte_data.len() <= AG_MAP_MAX_KEY_BYTES) { return index; }
+    }
+    return -1;
+}
+
+bool ccam_map_key_equal(string left, string right) {
+    if (left.len() != right.len()) { return false; }
+    for (int i = 0; i < left.len(); i += 1) {
+        if (left.at(i) != right.at(i)) { return false; }
+    }
+    return true;
+}
+
+struct CCAMMapSearch { bool ok; int index; string trap; }
+
+// Charge a conservative upper bound before scanning. The charge remains
+// consumed on a miss or capacity rejection; contents remain unchanged.
+CCAMMapSearch ccam_map_find(CCAMHeap heap, CCAMHeapObject object, int key_index) {
+    string key = heap.objects[key_index].byte_data;
+    int work = 1 + object.length * (key.len() + 1);
+    if (heap.work_used < 0 || heap.work_used > heap.max_work ||
+        work > heap.max_work - heap.work_used) {
+        return new CCAMMapSearch{ok: false, index: -1, trap: "work_limit"};
+    }
+    heap.work_used += work;
+    for (int i = 0; i < object.length; i += 1) {
+        int stored = ccam_map_key_index(heap, object.fields[i]);
+        if (stored < 0) { return new CCAMMapSearch{ok: false, index: -1, trap: "invalid_map_key"}; }
+        if (ccam_map_key_equal(key, heap.objects[stored].byte_data)) {
+            return new CCAMMapSearch{ok: true, index: i, trap: ""};
+        }
+    }
+    return new CCAMMapSearch{ok: true, index: -1, trap: ""};
+}
+
+CCAMMapLookup ccam_heap_map_get(CCAMHeap heap, CCAMHeapRef reference, int descriptor, CCAMHeapValue key) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_map_lookup_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (!ccam_map_shape(object, descriptor)) { return ccam_map_lookup_error("map_shape_mismatch"); }
+    int key_index = ccam_map_key_index(heap, key);
+    if (key_index < 0) { return ccam_map_lookup_error("invalid_map_key"); }
+    CCAMMapSearch found = ccam_map_find(heap, object, key_index);
+    if (!found.ok) { return ccam_map_lookup_error(found.trap); }
+    if (found.index < 0) {
+        return new CCAMMapLookup{ok: true, found: false, value: ccam_heap_int(0), trap: ""};
+    }
+    CCAMHeapValue value = object.elements[found.index];
+    if (!ccam_heap_optional_payload_matches(heap, descriptor, value)) {
+        return ccam_map_lookup_error("invalid_map_value");
+    }
+    return new CCAMMapLookup{ok: true, found: true, value: ccam_map_snapshot_value(value), trap: ""};
+}
+
+// Distinct nominal map descriptor range, disjoint from records and optionals.
+const int AG_MAP_DESCRIPTOR_BASE = 20000;
+
+bool ccam_heap_map_descriptor(int descriptor) {
+    return descriptor > AG_MAP_DESCRIPTOR_BASE &&
+        descriptor - AG_MAP_DESCRIPTOR_BASE != AG_OPTIONAL_LOG &&
+        ccam_heap_optional_descriptor(descriptor - AG_MAP_DESCRIPTOR_BASE);
+}
+
+bool ccam_heap_map_matches(CCAMHeap heap, CCAMHeapValue value, int descriptor) {
+    if (value.kind != CCAM_HEAP_VALUE_REF || !ccam_heap_map_descriptor(descriptor)) { return false; }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        return index >= 0 && ccam_map_shape(heap.objects[index], descriptor - AG_MAP_DESCRIPTOR_BASE);
+    }
+    return false;
+}
+
+string ccam_heap_map_set(CCAMHeap heap, CCAMHeapRef reference, int descriptor,
+    CCAMHeapValue key, CCAMHeapValue value) {
+    return ccam_heap_map_set_internal(heap, reference, descriptor, key, value, false);
+}
+
+string ccam_heap_map_set_grow(CCAMHeap heap, CCAMHeapRef reference, int descriptor,
+    CCAMHeapValue key, CCAMHeapValue value) {
+    return ccam_heap_map_set_internal(heap, reference, descriptor, key, value, true);
+}
+
+string ccam_heap_map_set_internal(CCAMHeap heap, CCAMHeapRef reference, int descriptor,
+    CCAMHeapValue key, CCAMHeapValue value, bool grow) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return "invalid_reference"; }
+    CCAMHeapObject object = heap.objects[index];
+    if (!ccam_map_shape(object, descriptor)) { return "map_shape_mismatch"; }
+    if (!ccam_heap_optional_payload_matches(heap, descriptor, value)) { return "value_type_mismatch"; }
+    int key_index = ccam_map_key_index(heap, key);
+    if (key_index < 0) { return "invalid_map_key"; }
+    CCAMMapSearch found = ccam_map_find(heap, object, key_index);
+    if (!found.ok) { return found.trap; }
+    if (found.index >= 0) {
+        object.elements[found.index] = ccam_map_snapshot_value(value);
+    } else {
+        if (object.length >= object.capacity) {
+            if (!grow || object.capacity >= AG_MAP_MAX_ENTRIES) { return "map_capacity"; }
+            int capacity = object.capacity * 2;
+            if (capacity == 0) { capacity = 1; }
+            if (capacity > AG_MAP_MAX_ENTRIES) { capacity = AG_MAP_MAX_ENTRIES; }
+            int bytes = capacity * CCAM_HEAP_SLOT_BYTES * 2;
+            int work = capacity * 2 + 1;
+            if (heap.bytes_used < 0 || heap.bytes_used > heap.max_bytes ||
+                heap.work_used < 0 || heap.work_used > heap.max_work) { return "invalid_heap_accounting"; }
+            if (bytes > heap.max_bytes - heap.bytes_used) { return "heap_limit"; }
+            if (work > heap.max_work - heap.work_used) { return "work_limit"; }
+            if (bytes > heap.max_temporary_bytes) { return "temporary_limit"; }
+            List<CCAMHeapValue> keys = new List<CCAMHeapValue>();
+            List<CCAMHeapValue> values = new List<CCAMHeapValue>();
+            for (int i = 0; i < capacity; i += 1) {
+                if (i < object.length) {
+                    keys.push(object.fields[i]); values.push(object.elements[i]);
+                } else {
+                    keys.push(ccam_heap_int(0)); values.push(ccam_heap_int(0));
+                }
+            }
+            object.fields = keys;
+            object.elements = values;
+            object.capacity = capacity;
+            heap.bytes_used += bytes;
+            heap.work_used += work;
+            heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, bytes);
+        }
+        object.fields[object.length] = ccam_map_snapshot_value(key);
+        object.elements[object.length] = ccam_map_snapshot_value(value);
+        object.length += 1;
+    }
+    heap.objects[index] = object;
+    return "";
+}
+
+// The production runtime preserves insertion order, even after deletion.
+// Enumeration creates an independent vector of immutable byte references.
+CCAMHeapRefResult ccam_heap_map_keys(CCAMHeap heap, CCAMHeapRef reference, int descriptor) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (!ccam_map_shape(object, descriptor)) { return ccam_heap_ref_error("map_shape_mismatch"); }
+    int count = object.length;
+    int charge = CCAM_HEAP_ARRAY_HEADER_BYTES + count * CCAM_HEAP_SLOT_BYTES;
+    string admission = ccam_heap_allocation_check(heap, charge, count * 3 + 1, count * CCAM_HEAP_SLOT_BYTES);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    // Validate keys before publishing a new arena object.
+    for (int i = 0; i < count; i += 1) {
+        if (ccam_map_key_index(heap, object.fields[i]) < 0) { return ccam_heap_ref_error("invalid_map_key"); }
+    }
+    CCAMHeapRefResult result = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_BYTES, count);
+    if (!result.ok) { return result; }
+    int target = ccam_heap_object_index(heap, result.reference);
+    CCAMHeapObject array = heap.objects[target];
+    for (int i = 0; i < count; i += 1) {
+        array.elements[i] = ccam_map_snapshot_value(object.fields[i]);
+        array.element_initialised[i] = true;
+    }
+    array.length = count;
+    heap.objects[target] = array;
+    heap.work_used += count * 2;
+    return result;
+}
+
+CCAMHeapValueResult ccam_heap_map_remove(CCAMHeap heap, CCAMHeapRef reference, int descriptor, CCAMHeapValue key) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_value_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (!ccam_map_shape(object, descriptor)) { return ccam_heap_value_error("map_shape_mismatch"); }
+    int key_index = ccam_map_key_index(heap, key);
+    if (key_index < 0) { return ccam_heap_value_error("invalid_map_key"); }
+    CCAMMapSearch found = ccam_map_find(heap, object, key_index);
+    if (!found.ok) { return ccam_heap_value_error(found.trap); }
+    if (found.index < 0) { return ccam_heap_value_ok(ccam_heap_bool(false)); }
+    int work = (object.length - found.index) * 2;
+    if (heap.work_used < 0 || heap.work_used > heap.max_work || work > heap.max_work - heap.work_used) {
+        return ccam_heap_value_error("work_limit");
+    }
+    for (int i = found.index; i + 1 < object.length; i += 1) {
+        object.fields[i] = object.fields[i + 1];
+        object.elements[i] = object.elements[i + 1];
+    }
+    object.length -= 1;
+    object.fields[object.length] = ccam_heap_int(0);
+    object.elements[object.length] = ccam_heap_int(0);
+    heap.objects[index] = object;
+    heap.work_used += work;
+    return ccam_heap_value_ok(ccam_heap_bool(true));
 }
 
 public policy CCAMHeapIdentityBound(CCAMHeapIdentity identity) { return true; }
@@ -346,8 +701,9 @@ CCAMHeapRefResult ccam_heap_alloc_typed_array(
     CCAMHeap heap, int element_type, int element_ref_type_id, int capacity
 ) {
     if (!ccam_heap_valid_value_type(element_type) ||
-        element_ref_type_id < 0 ||
+        element_ref_type_id < CCAM_HEAP_ELEMENT_TAINTED ||
         (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0) ||
+        (element_ref_type_id == CCAM_HEAP_ELEMENT_TAINTED && capacity != 0) ||
         capacity < 0 || capacity > CCAM_HEAP_MAX_ARRAY_CAPACITY) {
         return ccam_heap_ref_error("invalid_array_layout");
     }
@@ -398,7 +754,28 @@ CCAMHeapRefResult ccam_heap_alloc_array(CCAMHeap heap, int element_type, int cap
 }
 
 CCAMHeapRefResult ccam_heap_alloc_bytes(CCAMHeap heap, string data) {
+    return ccam_heap_alloc_byte_object(heap, data, false);
+}
+
+// This helper receives only model-owned byte data (a trusted host string).
+// Classification never converts a tainted reference back to a trusted one.
+// Public trusted-byte accessors continue to check OBJECT_BYTES exactly.
+CCAMHeapRefResult ccam_heap_alloc_byte_object(CCAMHeap heap, string data, bool tainted) {
+    int kind = CCAM_HEAP_OBJECT_BYTES;
+    if (tainted) { kind = CCAM_HEAP_OBJECT_TAINTED; }
+    return ccam_heap_alloc_classified_bytes(heap, data, kind);
+}
+
+// Internal model constructor: callers must establish the classification.
+// Not a candidate source instruction or an untrusted reference conversion.
+CCAMHeapRefResult ccam_heap_alloc_classified_bytes(CCAMHeap heap, string data, int kind) {
+    if (kind != CCAM_HEAP_OBJECT_BYTES && kind != CCAM_HEAP_OBJECT_TAINTED &&
+        kind != CCAM_HEAP_OBJECT_LOG) { return ccam_heap_ref_error("invalid_byte_kind"); }
     int length = data.len();
+    if ((kind == CCAM_HEAP_OBJECT_TAINTED && length > CCAM_HEAP_TAINTED_MAX_BYTES) ||
+        (kind == CCAM_HEAP_OBJECT_LOG && length > CCAM_HEAP_LOG_MAX_BYTES)) {
+        return ccam_heap_ref_error("invalid_bytes_size");
+    }
     if (length < 0 || length > CCAM_HEAP_MAX_BYTES - CCAM_HEAP_BYTES_HEADER_BYTES) {
         return ccam_heap_ref_error("invalid_bytes_size");
     }
@@ -412,7 +789,7 @@ CCAMHeapRefResult ccam_heap_alloc_bytes(CCAMHeap heap, string data) {
     int id = heap.next_id;
     CCAMHeapObject object = new CCAMHeapObject{
         id: id,
-        kind: CCAM_HEAP_OBJECT_BYTES,
+        kind: kind,
         descriptor_id: 0,
         field_types: new List<int>(),
         field_ref_type_ids: new List<int>(),
@@ -433,6 +810,223 @@ CCAMHeapRefResult ccam_heap_alloc_bytes(CCAMHeap heap, string data) {
     heap.temporary_peak_bytes = ccam_heap_max_int(length, heap.temporary_peak_bytes);
     heap.next_id += 1;
     return new CCAMHeapRefResult{ok: true, reference: new CCAMHeapRef{identity: heap.identity, object_id: id}, trap: ""};
+}
+
+// Candidate reference-model taint classification. Only a trusted byte
+// object can enter this transition. No raw string accessor for tainted
+// objects is exported; len, byte inspection and slicing mirror Tainted.
+CCAMHeapRefResult ccam_heap_taint_bytes(CCAMHeap heap, CCAMHeapRef reference) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_BYTES) { return ccam_heap_ref_error("object_type_mismatch"); }
+    return ccam_heap_alloc_byte_object(heap, object.byte_data, true);
+}
+
+CCAMHeapIntResult ccam_heap_tainted_len(CCAMHeap heap, CCAMHeapRef reference) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_int_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_TAINTED) { return ccam_heap_int_error("object_type_mismatch"); }
+    return ccam_heap_int_ok(object.byte_data.len());
+}
+
+CCAMHeapIntResult ccam_heap_tainted_get(CCAMHeap heap, CCAMHeapRef reference, int offset) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_int_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_TAINTED) { return ccam_heap_int_error("object_type_mismatch"); }
+    if (offset < 0 || offset >= object.byte_data.len()) { return ccam_heap_int_error("byte_bounds"); }
+    return ccam_heap_int_ok(object.byte_data.at(offset));
+}
+
+CCAMHeapRefResult ccam_heap_tainted_slice(CCAMHeap heap, CCAMHeapRef reference, int start, int end) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_TAINTED) { return ccam_heap_ref_error("object_type_mismatch"); }
+    if (start < 0 || end < start || end > object.byte_data.len()) { return ccam_heap_ref_error("byte_bounds"); }
+    int length = end - start;
+    int temporary = length * 2;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, temporary, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_byte_object(heap, object.byte_data.slice(start, end), true);
+    if (allocated.ok) {
+        heap.work_used += length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return allocated;
+}
+
+// Exact nominal log identity. Generic trusted bytes accessors intentionally
+// do not accept this object kind. Only escape and contextual composition
+// produce it in the candidate source model.
+bool ccam_heap_value_is_log(CCAMHeap heap, CCAMHeapValue value) {
+    if (value.kind != CCAM_HEAP_VALUE_REF) { return false; }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        return index >= 0 && heap.objects[index].kind == CCAM_HEAP_OBJECT_LOG;
+    }
+    return false;
+}
+
+struct CCAMLogUnit { int count; bool escape; }
+
+CCAMLogUnit ccam_heap_log_unit(string data, int i) {
+    int first = data.at(i);
+    if (first >= 32 && first < 127) { return new CCAMLogUnit{count: 1, escape: false}; }
+    int n = 0; int cp = 0;
+    if (first >= 194 && first <= 223) { n = 2; cp = first - 192; }
+    else if (first >= 224 && first <= 239) { n = 3; cp = first - 224; }
+    else if (first >= 240 && first <= 244) { n = 4; cp = first - 240; }
+    if (n == 0 || n > data.len() - i) { return new CCAMLogUnit{count: 1, escape: true}; }
+    for (int j = 1; j < n; j += 1) {
+        int b = data.at(i + j);
+        if (b < 128 || b > 191) { return new CCAMLogUnit{count: 1, escape: true}; }
+        cp = cp * 64 + b - 128;
+    }
+    if ((n == 3 && (cp < 2048 || (cp >= 55296 && cp <= 57343))) ||
+        (n == 4 && (cp < 65536 || cp > 1114111))) {
+        return new CCAMLogUnit{count: 1, escape: true};
+    }
+    bool hostile = (cp >= 128 && cp <= 159) || cp == 1564 || cp == 8206 || cp == 8207 ||
+        cp == 65279 || (cp >= 8232 && cp <= 8238) || (cp >= 8294 && cp <= 8297);
+    return new CCAMLogUnit{count: n, escape: hostile};
+}
+
+string ccam_heap_log_hex(int byte) {
+    string digits = "0123456789abcdef";
+    return "\\x" + char_str(digits.at(byte / 16)) + char_str(digits.at(byte % 16));
+}
+
+// Two passes: calculate exact bounded output before allocating; charge a
+// conservative bound for repeated string concatenation and scratch copies.
+// Invalid UTF-8 consumes one byte, valid hostile scalars escape every byte.
+CCAMHeapRefResult ccam_heap_escape_log(CCAMHeap heap, CCAMHeapRef reference) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject source = heap.objects[index];
+    if (source.kind != CCAM_HEAP_OBJECT_TAINTED && source.kind != CCAM_HEAP_OBJECT_BYTES &&
+        source.kind != CCAM_HEAP_OBJECT_LOG) { return ccam_heap_ref_error("object_type_mismatch"); }
+    string data = source.byte_data;
+    if (data.len() > CCAM_HEAP_LOG_MAX_BYTES) { return ccam_heap_ref_error("invalid_bytes_size"); }
+    // Preflight worst-case scanning before the first pass; charge only on success.
+    if (data.len() * 8 > heap.max_work - heap.work_used) { return ccam_heap_ref_error("work_limit"); }
+    int length = 0; int i = 0;
+    while (i < data.len()) {
+        CCAMLogUnit unit = ccam_heap_log_unit(data, i);
+        int added = unit.count;
+        if (unit.escape) { added = added * 4; }
+        if (added > CCAM_HEAP_LOG_MAX_BYTES - length) { return ccam_heap_ref_error("invalid_bytes_size"); }
+        length += added;
+        i += unit.count;
+    }
+    int work = data.len() * 8 + length * (length + 1) + length;
+    int temporary = length * 3 + 16;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, work, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    string out = "";
+    i = 0;
+    while (i < data.len()) {
+        CCAMLogUnit unit = ccam_heap_log_unit(data, i);
+        if (unit.escape) {
+            for (int j = 0; j < unit.count; j += 1) { out = out + ccam_heap_log_hex(data.at(i + j)); }
+        } else { out = out + data.slice(i, i + unit.count); }
+        i += unit.count;
+    }
+    CCAMHeapRefResult result = ccam_heap_alloc_classified_bytes(heap, out, CCAM_HEAP_OBJECT_LOG);
+    if (result.ok) {
+        heap.work_used += work - length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return result;
+}
+
+// Composition follows the checked language's contextual text rule:
+// trusted fragments may contain deliberate newlines; at least one operand
+// must be LogText. Tainted objects are never admitted directly.
+CCAMHeapRefResult ccam_heap_log_concat(CCAMHeap heap, CCAMHeapRef left_ref, CCAMHeapRef right_ref) {
+    int li = ccam_heap_object_index(heap, left_ref);
+    int ri = ccam_heap_object_index(heap, right_ref);
+    if (li < 0 || ri < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject left = heap.objects[li];
+    CCAMHeapObject right = heap.objects[ri];
+    if ((left.kind != CCAM_HEAP_OBJECT_BYTES && left.kind != CCAM_HEAP_OBJECT_LOG) ||
+        (right.kind != CCAM_HEAP_OBJECT_BYTES && right.kind != CCAM_HEAP_OBJECT_LOG) ||
+        (left.kind != CCAM_HEAP_OBJECT_LOG && right.kind != CCAM_HEAP_OBJECT_LOG)) {
+        return ccam_heap_ref_error("object_type_mismatch");
+    }
+    if (right.byte_data.len() > CCAM_HEAP_LOG_MAX_BYTES ||
+        left.byte_data.len() > CCAM_HEAP_LOG_MAX_BYTES - right.byte_data.len()) {
+        return ccam_heap_ref_error("invalid_bytes_size");
+    }
+    int length = left.byte_data.len() + right.byte_data.len();
+    int temporary = length * 2;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, temporary, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    CCAMHeapRefResult result = ccam_heap_alloc_classified_bytes(heap, left.byte_data + right.byte_data, CCAM_HEAP_OBJECT_LOG);
+    if (result.ok) {
+        heap.work_used += length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return result;
+}
+
+// Candidate bounded join, matching the existing source builtin's provenance.
+// The separator is trusted; an empty tainted list still yields Tainted.
+// Validate and size before materialising the single joined byte object.
+CCAMHeapRefResult ccam_heap_join_bytes(CCAMHeap heap, CCAMHeapRef list_ref,
+    CCAMHeapRef separator_ref, bool tainted) {
+    int li = ccam_heap_object_index(heap, list_ref);
+    int si = ccam_heap_object_index(heap, separator_ref);
+    if (li < 0 || si < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject parts = heap.objects[li];
+    CCAMHeapObject separator = heap.objects[si];
+    int element = CCAM_HEAP_ELEMENT_BYTES;
+    int kind = CCAM_HEAP_OBJECT_BYTES;
+    if (tainted) { element = CCAM_HEAP_ELEMENT_TAINTED; kind = CCAM_HEAP_OBJECT_TAINTED; }
+    if (parts.kind != CCAM_HEAP_OBJECT_ARRAY || parts.element_type != CCAM_HEAP_VALUE_REF ||
+        parts.element_ref_type_id != element || separator.kind != CCAM_HEAP_OBJECT_BYTES) {
+        return ccam_heap_ref_error("object_type_mismatch");
+    }
+    if (parts.length < 0 || parts.length > 256 || separator.byte_data.len() > 4096) {
+        return ccam_heap_ref_error("invalid_bytes_size");
+    }
+    int length = 0;
+    for (int i = 0; i < parts.length; i += 1) {
+        CCAMHeapValueResult value = ccam_heap_array_get(heap, list_ref, CCAM_HEAP_VALUE_REF, i);
+        if (!value.ok) { return ccam_heap_ref_error(value.trap); }
+        if (let ref_value = value.value.reference) {
+            int at = ccam_heap_object_index(heap, ref_value);
+            if (at < 0 || heap.objects[at].kind != kind) { return ccam_heap_ref_error("object_type_mismatch"); }
+            int n = heap.objects[at].byte_data.len();
+            if (i > 0) {
+                if (separator.byte_data.len() > 4096 - length) { return ccam_heap_ref_error("invalid_bytes_size"); }
+                length += separator.byte_data.len();
+            }
+            if (n > 4096 - length) { return ccam_heap_ref_error("invalid_bytes_size"); }
+            length += n;
+        } else { return ccam_heap_ref_error("invalid_reference"); }
+    }
+    // Conservative accounting for bounded host list materialisation and output copies.
+    int work = length * 2 + parts.length * 4;
+    int temporary = length * 2 + parts.length * CCAM_HEAP_SLOT_BYTES;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, work, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    List<string> chunks = new List<string>();
+    for (int i = 0; i < parts.length; i += 1) {
+        if (let ref_value = parts.elements[i].reference) {
+            int at = ccam_heap_object_index(heap, ref_value);
+            if (at < 0) { return ccam_heap_ref_error("invalid_reference"); }
+            chunks.push(heap.objects[at].byte_data);
+        } else { return ccam_heap_ref_error("invalid_reference"); }
+    }
+    CCAMHeapRefResult result = ccam_heap_alloc_classified_bytes(heap, join(chunks, separator.byte_data), kind);
+    if (result.ok) {
+        heap.work_used += work - length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return result;
 }
 
 CCAMHeapRefResult ccam_heap_bytes_concat(CCAMHeap heap, CCAMHeapRef left_reference, CCAMHeapRef right_reference) {
@@ -502,6 +1096,106 @@ CCAMHeapIntResult ccam_heap_byte_get(CCAMHeap heap, CCAMHeapRef reference, int i
         return ccam_heap_int_error("byte_bounds");
     }
     return ccam_heap_int_ok(object.byte_data.at(index));
+}
+
+// Literal vectors are already closed, but recheck the byte range before
+// allocating. Account for the joined intermediate and destination copy.
+// Decimal conversion never negates INT64_MIN. Keep the working magnitude
+// nonpositive and negate only the remainder, which lies in -9..0.
+CCAMHeapRefResult ccam_heap_int_text(CCAMHeap heap, int value) {
+    int remaining = value;
+    if (remaining > 0) { remaining = -remaining; }
+    int length = 1;
+    int probe = remaining / 10;
+    while (probe != 0) { length += 1; probe = probe / 10; }
+    if (value < 0) { length += 1; }
+    int work = length * (length + 1) / 2 + length * 3;
+    int temporary = length * 2;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, work, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    string data = char_str(48 - remaining % 10);
+    remaining = remaining / 10;
+    while (remaining != 0) {
+        data = char_str(48 - remaining % 10) + data;
+        remaining = remaining / 10;
+    }
+    if (value < 0) { data = "-" + data; }
+    CCAMHeapRefResult result = ccam_heap_alloc_bytes(heap, data);
+    if (result.ok) {
+        heap.work_used += work - length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return result;
+}
+
+CCAMHeapRefResult ccam_heap_char_text(CCAMHeap heap, int value) {
+    if (value < 0 || value > 255) { return ccam_heap_ref_error("character_range"); }
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + 1, 2, 2);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    CCAMHeapRefResult result = ccam_heap_alloc_bytes(heap, char_str(value));
+    if (result.ok) {
+        heap.work_used += 1;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, 2);
+    }
+    return result;
+}
+
+CCAMHeapRefResult ccam_heap_bytes_literal(CCAMHeap heap, List<int> operands) {
+    if (operands.len() == 0 || operands.len() > 4097) { return ccam_heap_ref_error("invalid_bytes_literal"); }
+    int length = operands.len() - 1;
+    for (int i = 1; i < operands.len(); i += 1) {
+        if (operands[i] < 0 || operands[i] > 255) { return ccam_heap_ref_error("invalid_bytes_literal"); }
+    }
+    // Conservative quadratic work bound for repeated string concatenation.
+    int temporary = length * 2;
+    int work = length * (length + 1) / 2 + length;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, work, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    string data = "";
+    for (int i = 1; i < operands.len(); i += 1) { data = data + char_str(operands[i]); }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_bytes(heap, data);
+    if (allocated.ok) {
+        heap.work_used += work - length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return allocated;
+}
+
+CCAMHeapValueResult ccam_heap_bytes_equal(CCAMHeap heap, CCAMHeapRef a, CCAMHeapRef b) {
+    int left = ccam_heap_object_index(heap, a);
+    int right = ccam_heap_object_index(heap, b);
+    if (left < 0 || right < 0) { return ccam_heap_value_error("invalid_reference"); }
+    if (heap.objects[left].kind != CCAM_HEAP_OBJECT_BYTES ||
+        heap.objects[right].kind != CCAM_HEAP_OBJECT_BYTES) {
+        return ccam_heap_value_error("object_type_mismatch");
+    }
+    string x = heap.objects[left].byte_data;
+    string y = heap.objects[right].byte_data;
+    int work = 1;
+    if (x.len() == y.len()) { work += x.len(); }
+    if (heap.work_used < 0 || heap.work_used > heap.max_work || work > heap.max_work - heap.work_used) {
+        return ccam_heap_value_error("work_limit");
+    }
+    heap.work_used += work;
+    return ccam_heap_value_ok(ccam_heap_bool(ccam_map_key_equal(x, y)));
+}
+
+CCAMHeapRefResult ccam_heap_bytes_slice_alloc(CCAMHeap heap, CCAMHeapRef reference, int start, int end) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (object.kind != CCAM_HEAP_OBJECT_BYTES) { return ccam_heap_ref_error("object_type_mismatch"); }
+    if (start < 0 || end < start || end > object.byte_data.len()) { return ccam_heap_ref_error("byte_bounds"); }
+    int length = end - start;
+    int temporary = length * 2;
+    string admission = ccam_heap_allocation_check(heap, CCAM_HEAP_BYTES_HEADER_BYTES + length, temporary, temporary);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    CCAMHeapRefResult allocated = ccam_heap_alloc_bytes(heap, object.byte_data.slice(start, end));
+    if (allocated.ok) {
+        heap.work_used += length;
+        heap.temporary_peak_bytes = ccam_heap_max_int(heap.temporary_peak_bytes, temporary);
+    }
+    return allocated;
 }
 
 CCAMHeapStringResult ccam_heap_bytes_slice(CCAMHeap heap, CCAMHeapRef reference, int start, int end) {
@@ -1104,4 +1798,288 @@ test "candidate list growth preserves identity and rejects growth atomically at 
     assert(ccam_heap_array_len(heap, alias, CCAM_HEAP_VALUE_INT).value == 0);
     assert(!ccam_heap_array_get(heap, alias, CCAM_HEAP_VALUE_INT, 0).ok);
     assert(heap.bytes_used == before);
+}
+
+test "candidate typed map compares byte contents and updates existing entries at capacity" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 16);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult map = ccam_heap_alloc_map(heap, AG_OPTIONAL_INT, 1);
+    CCAMHeapRefResult first = ccam_heap_alloc_bytes(heap, "node");
+    CCAMHeapRefResult equal_key = ccam_heap_alloc_bytes(heap, "node");
+    CCAMHeapRefResult different = ccam_heap_alloc_bytes(heap, "Node");
+    assert(map.ok && first.ok && equal_key.ok && different.ok);
+    CCAMHeapValue key = ccam_heap_ref_value(first.reference);
+    CCAMHeapValue same = ccam_heap_ref_value(equal_key.reference);
+    CCAMHeapValue other = ccam_heap_ref_value(different.reference);
+    assert(!ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, key).found);
+    CCAMHeapValue payload = ccam_heap_int(0);
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, key, payload) == "");
+    payload.int_value = 99;
+    CCAMMapLookup present = ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, same);
+    assert(present.ok && present.found && present.value.int_value == 0);
+    present.value.int_value = 88;
+    assert(ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, key).value.int_value == 0);
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, same, ccam_heap_int(42)) == "");
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, other, ccam_heap_int(9)) == "map_capacity");
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, key, ccam_heap_bool(true)) == "value_type_mismatch");
+    assert(ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, key).value.int_value == 42);
+    CCAMMapLookup missing = ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, other);
+    assert(missing.ok && !missing.found);
+    assert(!ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_BOOL, key).ok);
+}
+
+test "candidate map charges search work before mutation" {
+    CCAMHeapCreateResult created = ccam_heap_create_bounded(4096, 16, 7, 4096);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult map = ccam_heap_alloc_map(heap, AG_OPTIONAL_BOOL, 1);
+    CCAMHeapRefResult key_ref = ccam_heap_alloc_bytes(heap, "x");
+    assert(map.ok && key_ref.ok);
+    CCAMHeapValue key = ccam_heap_ref_value(key_ref.reference);
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_BOOL, key, ccam_heap_bool(false)) == "");
+    int before = heap.work_used;
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_BOOL, key, ccam_heap_bool(true)) == "work_limit");
+    assert(heap.work_used == before);
+    int index = ccam_heap_object_index(heap, map.reference);
+    assert(index >= 0 && heap.objects[index].length == 1);
+    assert(!heap.objects[index].elements[0].bool_value);
+}
+
+test "growable map retains alias identity and rejects over-budget backing replacement" {
+    CCAMHeapCreateResult created = ccam_heap_create(100, 16);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult map = ccam_heap_alloc_map(heap, AG_OPTIONAL_INT, 0);
+    CCAMHeapRefResult first = ccam_heap_alloc_bytes(heap, "a");
+    CCAMHeapRefResult second = ccam_heap_alloc_bytes(heap, "b");
+    assert(map.ok && first.ok && second.ok);
+    CCAMHeapRef alias = map.reference;
+    CCAMHeapValue a = ccam_heap_ref_value(first.reference);
+    CCAMHeapValue b = ccam_heap_ref_value(second.reference);
+    assert(ccam_heap_map_set_grow(heap, map.reference, AG_OPTIONAL_INT, a, ccam_heap_int(7)) == "");
+    int bytes = heap.bytes_used;
+    assert(ccam_heap_map_set_grow(heap, alias, AG_OPTIONAL_INT, b, ccam_heap_int(8)) == "heap_limit");
+    assert(heap.bytes_used == bytes);
+    assert(ccam_heap_map_get(heap, alias, AG_OPTIONAL_INT, a).value.int_value == 7);
+    assert(!ccam_heap_map_get(heap, alias, AG_OPTIONAL_INT, b).found);
+    assert(ccam_heap_map_set_grow(heap, alias, AG_OPTIONAL_INT, a, ccam_heap_int(42)) == "");
+    assert(ccam_heap_map_get(heap, map.reference, AG_OPTIONAL_INT, a).value.int_value == 42);
+    assert(ccam_heap_map_matches(heap, ccam_heap_ref_value(alias), AG_MAP_DESCRIPTOR_BASE + AG_OPTIONAL_INT));
+    assert(!ccam_heap_map_matches(heap, ccam_heap_ref_value(alias), AG_MAP_DESCRIPTOR_BASE + AG_OPTIONAL_BOOL));
+}
+
+test "empty tainted lists retain a distinct element identity" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult list = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 0);
+    CCAMHeapRefResult text = ccam_heap_alloc_bytes(heap, "trusted");
+    assert(list.ok && text.ok);
+    CCAMHeapValue value = ccam_heap_ref_value(list.reference);
+    assert(ccam_heap_value_has_array_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(!ccam_heap_value_has_array_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_BYTES));
+    assert(!ccam_heap_value_has_type(heap, ccam_heap_ref_value(text.reference), CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(!ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 1).ok);
+}
+
+test "byte array element descriptor excludes records and preserves map key snapshots" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult map = ccam_heap_alloc_map(heap, AG_OPTIONAL_INT, 3);
+    CCAMHeapRefResult a = ccam_heap_alloc_bytes(heap, "a");
+    CCAMHeapRefResult b = ccam_heap_alloc_bytes(heap, "b");
+    CCAMHeapRefResult c = ccam_heap_alloc_bytes(heap, "c");
+    assert(map.ok && a.ok && b.ok && c.ok);
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(a.reference), ccam_heap_int(1)) == "");
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(b.reference), ccam_heap_int(2)) == "");
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(c.reference), ccam_heap_int(3)) == "");
+    CCAMHeapRefResult before = ccam_heap_map_keys(heap, map.reference, AG_OPTIONAL_INT);
+    assert(before.ok);
+    assert(ccam_heap_value_has_array_type(heap, ccam_heap_ref_value(before.reference),
+        CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_BYTES));
+    CCAMHeapValueResult removed = ccam_heap_map_remove(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(b.reference));
+    assert(removed.ok && removed.value.bool_value);
+    removed = ccam_heap_map_remove(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(b.reference));
+    assert(removed.ok && !removed.value.bool_value);
+    CCAMHeapRefResult after = ccam_heap_map_keys(heap, map.reference, AG_OPTIONAL_INT);
+    assert(after.ok);
+    assert(ccam_heap_array_len(heap, before.reference, CCAM_HEAP_VALUE_REF).value == 3);
+    assert(ccam_heap_array_len(heap, after.reference, CCAM_HEAP_VALUE_REF).value == 2);
+    CCAMHeapValueResult key = ccam_heap_array_get(heap, after.reference, CCAM_HEAP_VALUE_REF, 1);
+    assert(key.ok);
+    if (let reference = key.value.reference) {
+        assert(ccam_heap_byte_get(heap, reference, 0).value == 99);
+    } else { assert(false); }
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 1,
+        field_types: new List<int>(), field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()};
+    CCAMHeapRefResult record = ccam_heap_alloc_record(heap, layout);
+    assert(record.ok);
+    assert(ccam_heap_array_set(heap, after.reference, CCAM_HEAP_VALUE_REF, 0,
+        ccam_heap_ref_value(record.reference)) == "value_type_mismatch");
+    assert(ccam_heap_array_len(heap, after.reference, CCAM_HEAP_VALUE_REF).value == 2);
+}
+
+test "tainted byte objects preserve classification through bounded slicing and typed lists" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult trusted = ccam_heap_alloc_bytes(heap, "abc");
+    assert(trusted.ok);
+    CCAMHeapRefResult source = ccam_heap_taint_bytes(heap, trusted.reference);
+    assert(source.ok);
+    CCAMHeapValue value = ccam_heap_ref_value(source.reference);
+    assert(ccam_heap_value_has_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(!ccam_heap_value_is_bytes(heap, value));
+    assert(!ccam_heap_value_has_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_BYTES));
+    assert(!ccam_heap_bytes_len(heap, source.reference).ok);
+    assert(!ccam_heap_byte_get(heap, source.reference, 0).ok);
+    assert(!ccam_heap_bytes_slice(heap, source.reference, 0, 1).ok);
+    assert(!ccam_heap_bytes_slice_alloc(heap, source.reference, 0, 1).ok);
+    assert(!ccam_heap_bytes_concat(heap, trusted.reference, source.reference).ok);
+    assert(!ccam_heap_tainted_len(heap, trusted.reference).ok);
+    assert(!ccam_heap_taint_bytes(heap, source.reference).ok);
+    assert(ccam_heap_tainted_len(heap, source.reference).value == 3);
+    assert(ccam_heap_tainted_get(heap, source.reference, 1).value == 98);
+    assert(!ccam_heap_tainted_get(heap, source.reference, -1).ok);
+    assert(!ccam_heap_tainted_get(heap, source.reference, 3).ok);
+    int prior_bytes = heap.bytes_used;
+    int prior_work = heap.work_used;
+    int prior_count = heap.objects.len();
+    assert(!ccam_heap_tainted_slice(heap, source.reference, -1, 1).ok);
+    assert(!ccam_heap_tainted_slice(heap, source.reference, 2, 1).ok);
+    assert(!ccam_heap_tainted_slice(heap, source.reference, 0, 4).ok);
+    assert(heap.bytes_used == prior_bytes && heap.work_used == prior_work && heap.objects.len() == prior_count);
+    CCAMHeapRefResult slice = ccam_heap_tainted_slice(heap, source.reference, 1, 3);
+    assert(slice.ok);
+    CCAMHeapValue sliced = ccam_heap_ref_value(slice.reference);
+    assert(ccam_heap_value_has_type(heap, sliced, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(!ccam_heap_value_is_bytes(heap, sliced));
+    assert(ccam_heap_tainted_len(heap, slice.reference).value == 2);
+    assert(ccam_heap_tainted_get(heap, slice.reference, 0).value == 98);
+    assert(ccam_heap_tainted_get(heap, slice.reference, 1).value == 99);
+    CCAMHeapRefResult empty = ccam_heap_tainted_slice(heap, source.reference, 3, 3);
+    assert(empty.ok && ccam_heap_tainted_len(heap, empty.reference).value == 0);
+    CCAMHeapRefResult list = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 0);
+    assert(list.ok);
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, value) == "");
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, sliced) == "");
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, ccam_heap_ref_value(trusted.reference)) == "value_type_mismatch");
+    assert(ccam_heap_array_set(heap, list.reference, CCAM_HEAP_VALUE_REF, 0, ccam_heap_ref_value(trusted.reference)) == "value_type_mismatch");
+    assert(ccam_heap_array_len(heap, list.reference, CCAM_HEAP_VALUE_REF).value == 2);
+    CCAMHeapValueResult first = ccam_heap_array_get(heap, list.reference, CCAM_HEAP_VALUE_REF, 0);
+    assert(first.ok && ccam_heap_value_has_type(heap, first.value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    assert(ccam_heap_list_pop_discard(heap, list.reference, CCAM_HEAP_VALUE_REF) == "");
+    assert(ccam_heap_array_len(heap, list.reference, CCAM_HEAP_VALUE_REF).value == 1);
+    assert(!ccam_heap_array_get(heap, list.reference, CCAM_HEAP_VALUE_REF, 1).ok);
+    // Foreign-arena access is a fatal capability trap; the independent
+    // ccam_heap_tainted_cross_arena probes exercise both read and type query.
+}
+
+test "tainted slice allocation rejects without charging or publishing" {
+    CCAMHeapCreateResult created = ccam_heap_create(22, 8);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult trusted = ccam_heap_alloc_bytes(heap, "abc");
+    assert(trusted.ok);
+    CCAMHeapRefResult source = ccam_heap_taint_bytes(heap, trusted.reference);
+    assert(source.ok);
+    int prior_bytes = heap.bytes_used;
+    int prior_work = heap.work_used;
+    int prior_count = heap.objects.len();
+    int prior_id = heap.next_id;
+    int prior_temporary = heap.temporary_peak_bytes;
+    CCAMHeapRefResult failed = ccam_heap_tainted_slice(heap, source.reference, 0, 1);
+    assert(!failed.ok && failed.trap == "heap_limit");
+    assert(heap.bytes_used == prior_bytes && heap.work_used == prior_work);
+    assert(heap.objects.len() == prior_count && heap.next_id == prior_id);
+    assert(heap.temporary_peak_bytes == prior_temporary);
+    assert(ccam_heap_tainted_get(heap, source.reference, 0).value == 97);
+}
+
+test "nominal LogText escapes hostile input and permits only contextual composition" {
+    CCAMHeapCreateResult created = ccam_heap_create(65536, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    string data = "A" + char_str(27) + char_str(194) + char_str(155) +
+        char_str(226) + char_str(128) + char_str(174) + char_str(255) +
+        char_str(195) + char_str(169);
+    CCAMHeapRefResult trusted = ccam_heap_alloc_bytes(heap, data);
+    assert(trusted.ok);
+    CCAMHeapRefResult source = ccam_heap_taint_bytes(heap, trusted.reference);
+    assert(source.ok);
+    CCAMHeapRefResult log = ccam_heap_escape_log(heap, source.reference);
+    assert(log.ok);
+    CCAMHeapValue value = ccam_heap_ref_value(log.reference);
+    assert(ccam_heap_value_is_log(heap, value));
+    assert(!ccam_heap_value_is_bytes(heap, value));
+    assert(!ccam_heap_value_has_type(heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    int id = ccam_heap_object_index(heap, log.reference);
+    assert(heap.objects[id].byte_data == "A\\x1b\\xc2\\x9b\\xe2\\x80\\xae\\xff" + char_str(195) + char_str(169));
+    assert(!ccam_heap_bytes_len(heap, log.reference).ok);
+    assert(!ccam_heap_bytes_slice(heap, log.reference, 0, 1).ok);
+    assert(!ccam_heap_tainted_len(heap, log.reference).ok);
+    CCAMHeapRefResult fragment = ccam_heap_alloc_bytes(heap, "\n    ^");
+    assert(fragment.ok);
+    CCAMHeapRefResult combined = ccam_heap_log_concat(heap, log.reference, fragment.reference);
+    assert(combined.ok);
+    assert(ccam_heap_value_is_log(heap, ccam_heap_ref_value(combined.reference)));
+    assert(heap.objects[ccam_heap_object_index(heap, combined.reference)].byte_data ==
+        heap.objects[id].byte_data + "\n    ^");
+    assert(!ccam_heap_log_concat(heap, log.reference, source.reference).ok);
+    assert(!ccam_heap_log_concat(heap, fragment.reference, fragment.reference).ok);
+    assert(!ccam_heap_bytes_concat(heap, log.reference, fragment.reference).ok);
+    CCAMHeapRefResult some = ccam_heap_alloc_optional(heap, AG_OPTIONAL_LOG, true, value);
+    CCAMHeapRefResult absent = ccam_heap_alloc_optional(heap, AG_OPTIONAL_LOG, false, ccam_heap_int(0));
+    assert(some.ok && absent.ok);
+    assert(!ccam_heap_alloc_optional(heap, AG_OPTIONAL_BYTES, true, value).ok);
+    assert(!ccam_heap_alloc_optional(heap, AG_OPTIONAL_LOG, true, ccam_heap_ref_value(fragment.reference)).ok);
+    assert(!ccam_heap_optional_matches(heap, ccam_heap_ref_value(some.reference), AG_OPTIONAL_BYTES));
+    CCAMHeapValueResult read = ccam_heap_optional_read(heap, ccam_heap_ref_value(some.reference), AG_OPTIONAL_LOG, true);
+    assert(read.ok && ccam_heap_value_is_log(heap, read.value));
+    assert(!ccam_heap_optional_read(heap, ccam_heap_ref_value(absent.reference), AG_OPTIONAL_LOG, true).ok);
+}
+
+test "LogText escape quota rejection does not publish or charge" {
+    CCAMHeapCreateResult created = ccam_heap_create(18, 8);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult source = ccam_heap_alloc_bytes(heap, "A");
+    assert(source.ok);
+    int before = heap.bytes_used;
+    int work = heap.work_used;
+    int id = heap.next_id;
+    int peak = heap.temporary_peak_bytes;
+    // Exact output fits; use a second source to fill the heap, then reject.
+    CCAMHeapRefResult first = ccam_heap_escape_log(heap, source.reference);
+    assert(first.ok);
+    before = heap.bytes_used; work = heap.work_used; id = heap.next_id; peak = heap.temporary_peak_bytes;
+    assert(!ccam_heap_escape_log(heap, source.reference).ok);
+    assert(heap.bytes_used == before && heap.work_used == work && heap.next_id == id &&
+        heap.temporary_peak_bytes == peak);
+}
+
+test "join rejects mismatched list provenance and publishes one object on success" {
+    CCAMHeapCreateResult created = ccam_heap_create(65536, 64);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult a = ccam_heap_alloc_bytes(heap, "left");
+    CCAMHeapRefResult b = ccam_heap_taint_bytes(heap, a.reference);
+    CCAMHeapRefResult sep = ccam_heap_alloc_bytes(heap, "-");
+    CCAMHeapRefResult list = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED, 0);
+    assert(a.ok && b.ok && sep.ok && list.ok);
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, ccam_heap_ref_value(b.reference)) == "");
+    assert(ccam_heap_list_push(heap, list.reference, CCAM_HEAP_VALUE_REF, ccam_heap_ref_value(b.reference)) == "");
+    int prior = heap.objects.len();
+    int used = heap.bytes_used;
+    int work = heap.work_used;
+    assert(!ccam_heap_join_bytes(heap, list.reference, sep.reference, false).ok);
+    assert(!ccam_heap_join_bytes(heap, list.reference, b.reference, true).ok);
+    assert(heap.objects.len() == prior && heap.bytes_used == used && heap.work_used == work);
+    CCAMHeapRefResult joined = ccam_heap_join_bytes(heap, list.reference, sep.reference, true);
+    assert(joined.ok && heap.objects.len() == prior + 1);
+    assert(ccam_heap_tainted_len(heap, joined.reference).value == 9);
+    assert(ccam_heap_tainted_get(heap, joined.reference, 4).value == 45);
+    assert(!ccam_heap_bytes_len(heap, joined.reference).ok);
 }

@@ -1,0 +1,63 @@
+// Candidate native scalar list leaf. Membership MUST be checked by caller.
+// Immutable extent: 257 pairs (length/ready plus 256 element pairs).
+// Physical tags 4094=int list, 4095=bool list, disjoint from strings/records.
+// RAX=offset, RSI=expected tag, RDI=mode (0 len,1 get,2 set,3 push,4 pop),
+// R8=index, R9=value. RAX=result, RDX=status (0 success/1 rejection).
+// Validates exact tag/count, logical length, flags and canonical bool words.
+// No writes on rejection; pop clears retired value and readiness.
+// Backing is fixed capacity, NOT dynamic capacity growth. Process-local,
+// single-threaded trusted arena; no external authority or canonical ABI.
+import "ccam_aggregate_byte_buffer.cap";
+
+bool ag_nv_emit_scalar_list(List<int> b) {
+    if (b.len() > AG_BYTE_LIMIT - 306) { return false; }
+    b.push(77); b.push(141); b.push(20); b.push(4); b.push(72); b.push(129); b.push(254); b.push(254);
+    b.push(15); b.push(0); b.push(0); b.push(116); b.push(13); b.push(72); b.push(129); b.push(254);
+    b.push(255); b.push(15); b.push(0); b.push(0); b.push(15); b.push(133); b.push(16); b.push(1);
+    b.push(0); b.push(0); b.push(73); b.push(57); b.push(50); b.push(15); b.push(133); b.push(7);
+    b.push(1); b.push(0); b.push(0); b.push(73); b.push(129); b.push(122); b.push(8); b.push(1);
+    b.push(1); b.push(0); b.push(0); b.push(15); b.push(133); b.push(249); b.push(0); b.push(0);
+    b.push(0); b.push(73); b.push(131); b.push(122); b.push(24); b.push(1); b.push(15); b.push(133);
+    b.push(238); b.push(0); b.push(0); b.push(0); b.push(73); b.push(139); b.push(74); b.push(16);
+    b.push(72); b.push(129); b.push(249); b.push(0); b.push(1); b.push(0); b.push(0); b.push(15);
+    b.push(135); b.push(221); b.push(0); b.push(0); b.push(0); b.push(72); b.push(131); b.push(255);
+    b.push(0); b.push(15); b.push(132); b.push(201); b.push(0); b.push(0); b.push(0); b.push(72);
+    b.push(131); b.push(255); b.push(4); b.push(15); b.push(132); b.push(143); b.push(0); b.push(0);
+    b.push(0); b.push(72); b.push(131); b.push(255); b.push(3); b.push(116); b.push(47); b.push(72);
+    b.push(131); b.push(255); b.push(2); b.push(15); b.push(135); b.push(185); b.push(0); b.push(0);
+    b.push(0); b.push(73); b.push(57); b.push(200); b.push(15); b.push(131); b.push(176); b.push(0);
+    b.push(0); b.push(0); b.push(73); b.push(193); b.push(224); b.push(4); b.push(79); b.push(141);
+    b.push(92); b.push(2); b.push(32); b.push(73); b.push(131); b.push(123); b.push(8); b.push(1);
+    b.push(15); b.push(133); b.push(156); b.push(0); b.push(0); b.push(0); b.push(72); b.push(131);
+    b.push(255); b.push(1); b.push(116); b.push(72); b.push(235); b.push(32); b.push(72); b.push(129);
+    b.push(249); b.push(0); b.push(1); b.push(0); b.push(0); b.push(15); b.push(131); b.push(135);
+    b.push(0); b.push(0); b.push(0); b.push(73); b.push(137); b.push(200); b.push(73); b.push(193);
+    b.push(224); b.push(4); b.push(79); b.push(141); b.push(92); b.push(2); b.push(32); b.push(73);
+    b.push(131); b.push(123); b.push(8); b.push(0); b.push(117); b.push(116); b.push(72); b.push(129);
+    b.push(254); b.push(255); b.push(15); b.push(0); b.push(0); b.push(117); b.push(6); b.push(73);
+    b.push(131); b.push(249); b.push(1); b.push(119); b.push(101); b.push(77); b.push(137); b.push(11);
+    b.push(73); b.push(199); b.push(67); b.push(8); b.push(1); b.push(0); b.push(0); b.push(0);
+    b.push(72); b.push(131); b.push(255); b.push(3); b.push(117); b.push(79); b.push(73); b.push(255);
+    b.push(66); b.push(16); b.push(235); b.push(73); b.push(73); b.push(139); b.push(3); b.push(72);
+    b.push(129); b.push(254); b.push(255); b.push(15); b.push(0); b.push(0); b.push(117); b.push(63);
+    b.push(72); b.push(131); b.push(248); b.push(1); b.push(119); b.push(60); b.push(235); b.push(55);
+    b.push(72); b.push(133); b.push(201); b.push(116); b.push(48); b.push(72); b.push(255); b.push(201);
+    b.push(73); b.push(137); b.push(200); b.push(73); b.push(193); b.push(224); b.push(4); b.push(79);
+    b.push(141); b.push(92); b.push(2); b.push(32); b.push(73); b.push(131); b.push(123); b.push(8);
+    b.push(1); b.push(117); b.push(31); b.push(73); b.push(199); b.push(3); b.push(0); b.push(0);
+    b.push(0); b.push(0); b.push(73); b.push(199); b.push(67); b.push(8); b.push(0); b.push(0);
+    b.push(0); b.push(0); b.push(73); b.push(137); b.push(74); b.push(16); b.push(235); b.push(5);
+    b.push(72); b.push(137); b.push(200); b.push(235); b.push(2); b.push(49); b.push(192); b.push(49);
+    b.push(210); b.push(195); b.push(49); b.push(192); b.push(186); b.push(1); b.push(0); b.push(0);
+    b.push(0); b.push(195);
+    return true;
+}
+
+test "native scalar list leaf emits fixed bytes" {
+    List<int> b = new List<int>();
+    assert(ag_nv_emit_scalar_list(b));
+    assert(b.len() == 306);
+    string data = "";
+    for (int i = 0; i < b.len(); i += 1) { data = data + char_str(b[i]); }
+    assert(write_file("build/ccam-native-scalar-list.bin", data));
+}

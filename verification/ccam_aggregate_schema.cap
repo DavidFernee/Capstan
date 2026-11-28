@@ -106,8 +106,232 @@ const int AG_OP_LIST_POP_DISCARD = 27;
 const int AG_OP_DIRECT_CALL = 28;
 const int AG_DIRECT_MAX_ARGS = 256;
 
+// Optional operations carry the expected exact descriptor as an immediate.
+const int AG_OP_OPT_NONE = 29;
+const int AG_OP_OPT_SOME = 30;
+const int AG_OP_OPT_PRESENT = 31;
+const int AG_OP_OPT_UNWRAP = 32;
+
+bool ag_schema_optional_descriptor(int descriptor) {
+    return descriptor == 8193 || descriptor == 8194 || descriptor == 8195 || descriptor == 8196 ||
+        (descriptor > 10000 && descriptor <= 14096);
+}
+
+int ag_schema_optional_payload(int descriptor) {
+    if (descriptor == 8193) { return AG_SCHEMA_INT; }
+    if (descriptor == 8194) { return AG_SCHEMA_BOOL; }
+    if (ag_schema_optional_descriptor(descriptor)) { return AG_SCHEMA_REF; }
+    return 0;
+}
+
+bool ag_schema_optional_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_OPT_NONE) {
+        return kind == AG_SCHEMA_REF && operands.len() == 2 &&
+            ag_schema_optional_descriptor(operands[1]) &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF);
+    }
+    if (operands.len() != 3 || !ag_schema_optional_descriptor(operands[2])) { return false; }
+    int payload = ag_schema_optional_payload(operands[2]);
+    if (opcode == AG_OP_OPT_SOME) {
+        return kind == AG_SCHEMA_REF && ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[1], payload);
+    }
+    if (opcode == AG_OP_OPT_PRESENT) {
+        return kind == AG_SCHEMA_BOOL && ag_schema_register(kinds, operands[0], AG_SCHEMA_BOOL) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+    }
+    return opcode == AG_OP_OPT_UNWRAP && kind == payload &&
+        ag_schema_register(kinds, operands[0], payload) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+}
+
+// Map allocation [dest,payload optional descriptor], get/has [dest,map,key,descriptor],
+// set [map,key,value,descriptor]. Maps have no source len method.
+const int AG_OP_MAP_NEW = 33;
+const int AG_OP_MAP_GET = 34;
+const int AG_OP_MAP_HAS = 35;
+const int AG_OP_MAP_SET = 36;
+
+bool ag_schema_map_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_MAP_NEW) {
+        if (operands.len() == 2 && operands[1] == 8196) { return false; }
+        return kind == AG_SCHEMA_REF && operands.len() == 2 &&
+            ag_schema_optional_descriptor(operands[1]) &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF);
+    }
+    if (operands.len() != 4 || operands[3] == 8196 || !ag_schema_optional_descriptor(operands[3])) { return false; }
+    if (opcode == AG_OP_MAP_SET) {
+        return kind == ag_schema_optional_payload(operands[3]) &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[2], kind);
+    }
+    int result = AG_SCHEMA_REF;
+    if (opcode == AG_OP_MAP_HAS) { result = AG_SCHEMA_BOOL; }
+    return (opcode == AG_OP_MAP_GET || opcode == AG_OP_MAP_HAS) && kind == result &&
+        ag_schema_register(kinds, operands[0], result) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
+}
+
+// Byte literal operands [destination, byte...]; slice [dest,bytes,start,end].
+// Equality uses byte contents, not arena identity.
+const int AG_OP_BYTES_LITERAL = 37;
+const int AG_OP_BYTES_EQ = 38;
+const int AG_OP_BYTES_NE = 39;
+const int AG_OP_BYTES_SLICE = 40;
+const int AG_STRING_MAX_LITERAL = 4096;
+
+bool ag_schema_string_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_BYTES_LITERAL) {
+        if (kind != AG_SCHEMA_REF || operands.len() == 0 ||
+            operands.len() > AG_STRING_MAX_LITERAL + 1 ||
+            !ag_schema_register(kinds, operands[0], AG_SCHEMA_REF)) { return false; }
+        for (int i = 1; i < operands.len(); i += 1) {
+            if (operands[i] < 0 || operands[i] > 255) { return false; }
+        }
+        return true;
+    }
+    if (opcode == AG_OP_BYTES_SLICE) {
+        return kind == AG_SCHEMA_REF && operands.len() == 4 &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[2], AG_SCHEMA_INT) &&
+            ag_schema_register(kinds, operands[3], AG_SCHEMA_INT);
+    }
+    return (opcode == AG_OP_BYTES_EQ || opcode == AG_OP_BYTES_NE) &&
+        kind == AG_SCHEMA_BOOL && operands.len() == 3 &&
+        ag_schema_register(kinds, operands[0], AG_SCHEMA_BOOL) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
+}
+
+const int AG_OP_MAP_KEYS = 41;
+const int AG_OP_MAP_REMOVE = 42;
+
+bool ag_schema_map_enumeration(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_MAP_KEYS) {
+        if (operands.len() == 3 && operands[2] == 8196) { return false; }
+        return kind == AG_SCHEMA_REF && operands.len() == 3 &&
+            ag_schema_optional_descriptor(operands[2]) &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+            ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
+    }
+    return opcode == AG_OP_MAP_REMOVE && kind == AG_SCHEMA_BOOL &&
+        operands.len() == 4 && operands[3] != 8196 && ag_schema_optional_descriptor(operands[3]) &&
+        ag_schema_register(kinds, operands[0], AG_SCHEMA_BOOL) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
+}
+
+const int AG_OP_INT_TEXT = 43;
+const int AG_OP_CHAR_TEXT = 44;
+const int AG_OP_BOOL_TEXT = 45;
+
+bool ag_schema_conversion_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (kind != AG_SCHEMA_REF || operands.len() != 2 ||
+        !ag_schema_register(kinds, operands[0], AG_SCHEMA_REF)) { return false; }
+    if (opcode == AG_OP_BOOL_TEXT) { return ag_schema_register(kinds, operands[1], AG_SCHEMA_BOOL); }
+    return (opcode == AG_OP_INT_TEXT || opcode == AG_OP_CHAR_TEXT) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_INT);
+}
+
+// Distinct taint operations. Coarse register kinds alone cannot authorize
+// trusted text conversion; evaluator checks exact nominal object tags.
+// All operands are registers, and only the first six operations write a destination.
+const int AG_OP_TAINT = 46;
+const int AG_OP_TAINT_LEN = 47;
+const int AG_OP_TAINT_AT = 48;
+const int AG_OP_TAINT_SLICE = 49;
+const int AG_OP_TAINT_LIST_LEN = 50;
+const int AG_OP_TAINT_LIST_GET = 51;
+const int AG_OP_TAINT_LIST_SET = 52;
+const int AG_OP_TAINT_LIST_PUSH = 53;
+const int AG_OP_TAINT_LIST_POP = 54;
+
+bool ag_schema_taint_opcode(int opcode) {
+    return opcode >= AG_OP_TAINT && opcode <= AG_OP_TAINT_LIST_POP;
+}
+
+bool ag_schema_taint_writes(int opcode) {
+    return opcode >= AG_OP_TAINT && opcode <= AG_OP_TAINT_LIST_GET;
+}
+
+bool ag_schema_taint_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (opcode == AG_OP_TAINT_LIST_POP) {
+        return kind == AG_SCHEMA_REF && operands.len() == 1 &&
+            ag_schema_register(kinds, operands[0], AG_SCHEMA_REF);
+    }
+    int count = 2;
+    if (opcode == AG_OP_TAINT_AT || opcode == AG_OP_TAINT_LIST_GET || opcode == AG_OP_TAINT_LIST_SET) { count = 3; }
+    if (opcode == AG_OP_TAINT_SLICE) { count = 4; }
+    if (!ag_schema_taint_opcode(opcode) || operands.len() != count) { return false; }
+    int output = AG_SCHEMA_REF;
+    if (opcode == AG_OP_TAINT_LEN || opcode == AG_OP_TAINT_AT || opcode == AG_OP_TAINT_LIST_LEN) { output = AG_SCHEMA_INT; }
+    if (kind != output && opcode != AG_OP_TAINT_LIST_LEN) { return false; }
+    // List length retains the list element kind, like the legacy length opcode.
+    if (opcode == AG_OP_TAINT_LIST_LEN && kind != AG_SCHEMA_REF) { return false; }
+    if (!ag_schema_register(kinds, operands[0], output) ||
+        !ag_schema_register(kinds, operands[1], AG_SCHEMA_REF)) { return false; }
+    if (count >= 3 && !ag_schema_register(kinds, operands[2], AG_SCHEMA_INT)) { return false; }
+    return count != 4 || ag_schema_register(kinds, operands[3], AG_SCHEMA_INT);
+}
+
+// Contextual log values have a distinct result shape; no conversion to
+// ordinary bytes or raw tainted concatenation is admitted.
+const int AG_OP_ESCAPE_LOG = 55;
+const int AG_OP_LOG_CONCAT = 56;
+
+bool ag_schema_log_opcode(int opcode) {
+    return opcode == AG_OP_ESCAPE_LOG || opcode == AG_OP_LOG_CONCAT;
+}
+
+bool ag_schema_log_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (!ag_schema_log_opcode(opcode) || kind != AG_SCHEMA_REF) { return false; }
+    int count = 2;
+    if (opcode == AG_OP_LOG_CONCAT) { count = 3; }
+    if (operands.len() != count) { return false; }
+    for (int i = 0; i < count; i += 1) {
+        if (!ag_schema_register(kinds, operands[i], AG_SCHEMA_REF)) { return false; }
+    }
+    return true;
+}
+
+// Separate opcodes bind the result classification, including empty lists.
+const int AG_OP_JOIN_BYTES = 57;
+const int AG_OP_JOIN_TAINTED = 58;
+
+bool ag_schema_join_opcode(int opcode) {
+    return opcode == AG_OP_JOIN_BYTES || opcode == AG_OP_JOIN_TAINTED;
+}
+
+bool ag_schema_join_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    return ag_schema_join_opcode(opcode) && kind == AG_SCHEMA_REF && operands.len() == 3 &&
+        ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
+}
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
     if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
+    if (ag_schema_join_opcode(opcode)) { return ag_schema_join_operands(kinds, opcode, element_kind, operands); }
+    if (ag_schema_log_opcode(opcode)) { return ag_schema_log_operands(kinds, opcode, element_kind, operands); }
+    if (ag_schema_taint_opcode(opcode)) { return ag_schema_taint_operands(kinds, opcode, element_kind, operands); }
+    if (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) {
+        return ag_schema_conversion_operands(kinds, opcode, element_kind, operands);
+    }
+    if (opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE) {
+        return ag_schema_map_enumeration(kinds, opcode, element_kind, operands);
+    }
+    if (opcode >= AG_OP_BYTES_LITERAL && opcode <= AG_OP_BYTES_SLICE) {
+        return ag_schema_string_operands(kinds, opcode, element_kind, operands);
+    }
+    if (opcode >= AG_OP_MAP_NEW && opcode <= AG_OP_MAP_SET) {
+        return ag_schema_map_operands(kinds, opcode, element_kind, operands);
+    }
+    if (opcode >= AG_OP_OPT_NONE && opcode <= AG_OP_OPT_UNWRAP) {
+        return ag_schema_optional_operands(kinds, opcode, element_kind, operands);
+    }
     if (opcode == AG_OP_DIRECT_CALL) {
         if (operands.len() < 2 || operands.len() > AG_DIRECT_MAX_ARGS + 2 ||
             operands[1] < 0) { return false; }
@@ -154,7 +378,7 @@ bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int>
     if (opcode == 5) {
         if (operands.len() != 3 ||
             !ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) ||
-            operands[1] < 0 || operands[2] < 0 ||
+            operands[1] < -2 || (operands[1] == -2 && operands[2] != 0) || operands[2] < 0 ||
             operands[2] > AG_SCHEMA_MAX_ARRAY_CAPACITY) { return false; }
         return element_kind == AG_SCHEMA_REF || operands[1] == 0;
     }
