@@ -129,7 +129,7 @@ scalar_parameter:
     call skip_trivia
     jmp scalar_parameter
 scalar_helper_body:
-    lea if_true_prefix(%rip), %r14
+    lea scalar_body_open(%rip), %r14
     call match_prefix
     lea result_code(%rip), %rbx
     movb $0xe9, (%rbx)             /* process entry skips the helper */
@@ -144,9 +144,17 @@ scalar_spill_argument:
     test %rcx, %rcx
     jnz scalar_spill_argument
     xor %r12d, %r12d
-    call emit_expression
-    lea scalar_function_end(%rip), %r14
+    movb $1, scalar_helper_active(%rip)
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $105, (%rsi)
+    je parse_if
+    lea return_prefix(%rip), %r14
     call match_prefix
+    call emit_expression
+    jmp finish_main
+finish_scalar_helper:
+    movb $0, scalar_helper_active(%rip)
     movl $0x00c48348, (%rbx)       /* add rsp,imm8 */
     mov scalar_local_count(%rip), %rax
     shl $3, %eax
@@ -1099,6 +1107,8 @@ expression_done:
 finish_main:
     lea record_end(%rip), %r14
     call match_prefix
+    cmpb $0, scalar_helper_active(%rip)
+    jne finish_scalar_helper
     cmp %r13, %rsi
     jne invalid
     jmp emit
@@ -1489,7 +1499,7 @@ return_prefix: .asciz "return "
 /* RDI, RSI, RDX, RCX, R8, R9, in SysV integer argument order. */
 argument_push: .word 0x5740,0x5640,0x5240,0x5140,0x5041,0x5141
 argument_pop: .word 0x5f40,0x5e40,0x5a40,0x5940,0x5841,0x5941
-scalar_function_end: .asciz "\001;\001}\001"
+scalar_body_open: .asciz "\001)\001{\001"
 scalar_call_open: .asciz "\001(\001"
 local_equals: .asciz "\001=\001"
 local_separator: .asciz "\001;\001"
@@ -1559,6 +1569,7 @@ result_tail_end:
 .section .bss
 .lcomm input,SEED_INPUT_LIMIT + 1
 .lcomm decoded_string,63
+.lcomm scalar_helper_active,1
 .lcomm scalar_local_count,8
 .lcomm scalar_locals,16 * 24
 .lcomm constant_count,8

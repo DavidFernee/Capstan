@@ -420,6 +420,23 @@ env -i PATH="$scratch/empty" "$scratch/expression-arguments" 3>"$scratch/result"
 printf 'int _same(int _n){ return _n + 0; } int main(){ return _same(%s); }' "$chain" |
     reject
 
+for arguments in '19 + 1, 22' '22, 19 + 1' '21, 21' '0x7fffffffffffffff, 1'; do
+    printf 'int _choose(int _a, int _b){ if (_a < _b) { return _a + _b; } return _b + _a; } int main(){ return _choose(%s); }' "$arguments" |
+        compile > "$scratch/helper-branch"
+    chmod +x "$scratch/helper-branch"
+    status=0
+    env -i PATH="$scratch/empty" "$scratch/helper-branch" 3>"$scratch/result" || status=$?
+    if [[ "$arguments" == '0x7fffffffffffffff, 1' ]]; then
+        [[ "$status" == 70 && ! -s "$scratch/result" ]]
+    else
+        [[ "$status" == 0 && "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+    fi
+done
+printf '%s' 'int _choose(int _n){ if (_n == 42) { return _n; } return 9223372036854775807 + 1; } int main(){ return _choose(42); }' |
+    compile > "$scratch/helper-branch"
+env -i PATH="$scratch/empty" "$scratch/helper-branch" 3>"$scratch/result"
+[[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 42 ]]
+
 # Distinguish a broken input channel from a malformed source, and check
 # that transport failures cannot be mistaken for a successful compile/run.
 status=0
