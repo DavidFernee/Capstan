@@ -434,3 +434,19 @@ test "checked string literals serve as symbol table keys" {
     assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
     assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 42);
 }
+
+test "checked map enumeration preserves insertion order and independent string list snapshot" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int run() { Map<int> entries = new Map<int>(); entries.set(\"a\", 1); entries.set(\"b\", 2); entries.set(\"c\", 3); " +
+        "List<string> before = entries.keys(); bool removed = entries.remove(\"b\"); " +
+        "List<string> after = entries.keys(); List<string> names = new List<string>(); names.push(\"c\"); " +
+        "if (removed) { if (before[1] == \"b\") { if (after[1] == names[0]) { return before.len() * 10 + after.len(); } } } return 0; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 8192, 64, 8192, 8192, 256);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 32);
+}
