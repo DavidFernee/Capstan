@@ -11,18 +11,19 @@ class MutationEvidenceTests(unittest.TestCase):
         self.assertEqual(len(campaign.MUTATIONS), 19)
 
     def test_assertion_failure_is_detected(self):
-        result = SimpleNamespace(returncode=101, stderr="assertion failed")
+        result = SimpleNamespace(returncode=1, stderr="assertion failed",
+                                 stdout="  FAIL  boundary\n  pass  control\n2 test(s), 1 failed\n")
         self.assertEqual(campaign.classify(result), "assertion_detected")
 
     def test_success_is_survivor_even_with_assertion_text(self):
-        result = SimpleNamespace(returncode=0, stderr="assertion failed")
+        result = SimpleNamespace(returncode=0, stderr="assertion failed", stdout="")
         self.assertEqual(campaign.classify(result), "survived")
 
     def test_other_failure_is_not_a_kill(self):
         for status, message in ((101, "integer overflow"), (-11, "assertion failed"),
                                 (1, "assertion failed"), (124, "")):
             with self.subTest(status=status):
-                result = SimpleNamespace(returncode=status, stderr=message)
+                result = SimpleNamespace(returncode=status, stderr=message, stdout="")
                 self.assertEqual(campaign.classify(result), "unexpected_execution_failure")
 
 
