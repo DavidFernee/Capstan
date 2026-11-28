@@ -189,6 +189,35 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
     return expected_ref_type_id == 0;
 }
 
+// Read-only shape queries for candidate aggregate call contracts. The opaque
+// heap retains authority over object identity and element metadata.
+bool ccam_heap_value_has_array_type(CCAMHeap heap, CCAMHeapValue value,
+    int element_type, int element_ref_type_id) {
+    if (value.kind != CCAM_HEAP_VALUE_REF ||
+        !ccam_heap_valid_value_type(element_type) || element_ref_type_id < 0 ||
+        (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0)) {
+        return false;
+    }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        if (index < 0) { return false; }
+        CCAMHeapObject object = heap.objects[index];
+        return object.kind == CCAM_HEAP_OBJECT_ARRAY &&
+            object.element_type == element_type &&
+            object.element_ref_type_id == element_ref_type_id;
+    }
+    return false;
+}
+
+bool ccam_heap_value_is_bytes(CCAMHeap heap, CCAMHeapValue value) {
+    if (value.kind != CCAM_HEAP_VALUE_REF) { return false; }
+    if (let reference = value.reference) {
+        int index = ccam_heap_object_index(heap, reference);
+        return index >= 0 && heap.objects[index].kind == CCAM_HEAP_OBJECT_BYTES;
+    }
+    return false;
+}
+
 public policy CCAMHeapIdentityBound(CCAMHeapIdentity identity) { return true; }
 
 protected(CCAMHeapIdentityBound) void ccam_heap_require_identity(

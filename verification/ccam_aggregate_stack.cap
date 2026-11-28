@@ -1,5 +1,5 @@
 // Candidate stack controller. Trusted interpreter owns this state exclusively.
-import "ccam_aggregate_frames.cap";
+import "ccam_aggregate_nominal_call.cap";
 
 const int AG_STACK_MAX_DEPTH = 1024;
 const int AG_STACK_MAX_SLOTS = 262144;
@@ -8,6 +8,7 @@ struct AGContinuation {
     CCAMAggregateMachine caller;
     AGCallSignature signature;
     int destination;
+    int result_descriptor;
 }
 
 struct AGStack {
@@ -36,6 +37,20 @@ AGStackResult ag_stack_create(CCAMAggregateMachine root, int max_depth, int max_
 
 string ag_stack_call(AGStack stack, AGCallSignature signature, List<int> kinds,
     List<int> arguments, int destination) {
+    return ag_stack_call_internal(stack, signature, kinds, arguments, destination,
+        false, new List<int>(), 0);
+}
+
+// Trusted controller chooses the nominal contract; callers cannot replace it on return.
+string ag_stack_nominal_call(AGStack stack, AGNominalSignature signature,
+    List<int> kinds, List<int> arguments, int destination) {
+    return ag_stack_call_internal(stack, signature.coarse, kinds, arguments, destination,
+        true, signature.parameter_descriptors, signature.result_descriptor);
+}
+
+string ag_stack_call_internal(AGStack stack, AGCallSignature signature, List<int> kinds,
+    List<int> arguments, int destination, bool nominal, List<int> descriptors,
+    int result_descriptor) {
     if (stack.active.trap_code != "") { return stack.active.trap_code; }
     if (stack.depth >= stack.max_depth) {
         return ccam_aggregate_trap(stack.active, "call_depth_limit");
@@ -43,8 +58,18 @@ string ag_stack_call(AGStack stack, AGCallSignature signature, List<int> kinds,
     if (stack.slots > stack.max_slots || kinds.len() > stack.max_slots - stack.slots) {
         return ccam_aggregate_trap(stack.active, "frame_slot_limit");
     }
-    AGFrameResult opened = ag_frame_open(stack.active, signature, kinds, arguments,
-        destination, stack.max_slots - stack.slots);
+    AGFrameResult opened = new AGFrameResult{ok: false, frame: stack.active, error: "invalid_call"};
+    if (nominal) {
+        AGNominalSignature contract = new AGNominalSignature{coarse: signature,
+            parameter_descriptors: descriptors, result_descriptor: result_descriptor};
+        // Nominal preflight uses the same frame API and does not publish a
+        // continuation until both the structural and descriptor checks pass.
+        opened = ag_nominal_open(stack.active, contract, kinds, arguments,
+            destination, stack.max_slots - stack.slots);
+    } else {
+        opened = ag_frame_open(stack.active, signature, kinds, arguments,
+            destination, stack.max_slots - stack.slots);
+    }
     if (!opened.ok) { return ccam_aggregate_trap(stack.active, opened.error); }
     // Copy signature parameters so future caller-side list mutation cannot
     // alter the stored return continuation.
@@ -55,7 +80,7 @@ string ag_stack_call(AGStack stack, AGCallSignature signature, List<int> kinds,
     AGContinuation continuation = new AGContinuation{
         caller: stack.active,
         signature: new AGCallSignature{parameters: parameters, result_kind: signature.result_kind},
-        destination: destination
+        destination: destination, result_descriptor: result_descriptor
     };
     if (stack.depth == stack.suspended.len()) {
         stack.suspended.push(continuation);
@@ -75,6 +100,17 @@ string ag_stack_return(AGStack stack, int source) {
     }
     AGContinuation continuation = stack.suspended[stack.depth - 1];
     int released = stack.active.registers.len();
+    // Preserve existing trap and exhausted-budget precedence. Reject a wrong
+    // reference shape before the caller destination can be written.
+    if (stack.active.trap_code == "" && stack.active.steps < stack.active.max_steps &&
+        continuation.result_descriptor != 0) {
+        CCAMAggregateValueResult returned = ccam_aggregate_read(stack.active, source,
+            continuation.signature.result_kind);
+        if (returned.ok && !ag_nominal_value_matches(stack.active.heap, returned.value,
+            continuation.signature.result_kind, continuation.result_descriptor)) {
+            ccam_aggregate_trap(stack.active, "return_descriptor_mismatch");
+        }
+    }
     string result = ag_frame_return(continuation.caller, stack.active,
         continuation.signature, source, continuation.destination);
     stack.active = continuation.caller;
@@ -84,7 +120,7 @@ string ag_stack_return(AGStack stack, int source) {
     stack.suspended[stack.depth] = new AGContinuation{
         caller: ccam_aggregate_empty_machine(),
         signature: new AGCallSignature{parameters: new List<int>(), result_kind: AG_SCHEMA_INT},
-        destination: -1
+        destination: -1, result_descriptor: 0
     };
     return result;
 }
