@@ -1,4 +1,4 @@
-// Candidate single-result call signature contract. Reference kinds are
+// Candidate zero-or-one-result call signature contract. Reference kinds are
 // coarse tags only; descriptor identity and heap provenance remain required.
 import "ccam_aggregate_transfer.cap";
 
@@ -11,18 +11,23 @@ struct AGCallSignature {
 
 bool ag_call_signature(AGCallSignature signature) {
     if (signature.parameters.len() > AG_CALL_MAX_ARGS ||
-        !ag_schema_kind(signature.result_kind)) { return false; }
+        !(ag_schema_kind(signature.result_kind) || signature.result_kind == AG_RESULT_VOID)) { return false; }
     for (int i = 0; i < signature.parameters.len(); i += 1) {
         if (!ag_schema_kind(signature.parameters[i])) { return false; }
     }
     return true;
 }
 
+bool ag_call_result_slot(List<int> kinds, int slot, int kind) {
+    if (kind == AG_RESULT_VOID) { return slot == -1; }
+    return ag_schema_register(kinds, slot, kind);
+}
+
 bool ag_call_admit(AGCallSignature signature, List<int> kinds, List<bool> ready,
     List<int> arguments, int destination) {
     if (!ag_call_signature(signature) || ready.len() != kinds.len() ||
         arguments.len() != signature.parameters.len() ||
-        !ag_schema_register(kinds, destination, signature.result_kind)) { return false; }
+        !ag_call_result_slot(kinds, destination, signature.result_kind)) { return false; }
     for (int i = 0; i < arguments.len(); i += 1) {
         int source = arguments[i];
         if (!ag_schema_register(kinds, source, signature.parameters[i])) { return false; }
@@ -51,7 +56,8 @@ AGTransferResult ag_call_entry(AGCallSignature signature, List<int> kinds) {
 
 bool ag_call_return(AGCallSignature signature, List<int> kinds, List<bool> ready, int source) {
     if (!ag_call_signature(signature) || ready.len() != kinds.len() ||
-        !ag_schema_register(kinds, source, signature.result_kind)) { return false; }
+        !ag_call_result_slot(kinds, source, signature.result_kind)) { return false; }
+    if (signature.result_kind == AG_RESULT_VOID) { return true; }
     return ready[source];
 }
 
