@@ -110,6 +110,20 @@ else
   bad "bounded native arena reservation emission" "$out"
 fi
 
+section "Candidate native arena word access"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_arena_slots.cap" 2>&1)"; then
+  ok "checked native arena load/store emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_arena_slots.py" "$ROOT/build/ccam-aggregate-arena-slots.bin" 2>&1)"; then
+      ok "native arena word access preserves backing on rejected operations"
+    else
+      bad "native arena word access execution" "$out"
+    fi
+  fi
+else
+  bad "checked native arena load/store emission" "$out"
+fi
+
 section "Checked production AST to candidate aggregate evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_checked_source_tests.cap" 2>&1)"; then
   ok "checked aggregate source leaf lowering and sealed invocation"
