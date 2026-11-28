@@ -17,6 +17,8 @@ def main():
         'reference-mismatch': None,
         'mixed': 42, 'mixed-replace': 42, 'mixed-valid': 42,
         'mixed-mismatch': None,
+        'bytes-index': 128, 'bytes-equal': 42, 'bytes-empty': 0,
+        'bytes-oob': None, 'bytes-negative': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
