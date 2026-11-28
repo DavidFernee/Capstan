@@ -6,6 +6,8 @@
 const int CCAM_HEAP_VALUE_INT = 1;
 const int CCAM_HEAP_VALUE_BOOL = 2;
 const int CCAM_HEAP_VALUE_REF = 3;
+// Array-only exact byte-object element tag; never a nominal record ID.
+const int CCAM_HEAP_ELEMENT_BYTES = -1;
 
 const int CCAM_HEAP_OBJECT_RECORD = 1;
 const int CCAM_HEAP_OBJECT_ARRAY = 2;
@@ -181,6 +183,7 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
             if (index < 0) { return false; }
             if (expected_ref_type_id == 0) { return true; }
             CCAMHeapObject target = heap.objects[index];
+            if (expected_ref_type_id == CCAM_HEAP_ELEMENT_BYTES) { return target.kind == CCAM_HEAP_OBJECT_BYTES; }
             return target.kind == CCAM_HEAP_OBJECT_RECORD &&
                 target.descriptor_id == expected_ref_type_id;
         }
@@ -194,7 +197,7 @@ bool ccam_heap_value_has_type(CCAMHeap heap, CCAMHeapValue value, int expected_t
 bool ccam_heap_value_has_array_type(CCAMHeap heap, CCAMHeapValue value,
     int element_type, int element_ref_type_id) {
     if (value.kind != CCAM_HEAP_VALUE_REF ||
-        !ccam_heap_valid_value_type(element_type) || element_ref_type_id < 0 ||
+        !ccam_heap_valid_value_type(element_type) || element_ref_type_id < CCAM_HEAP_ELEMENT_BYTES ||
         (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0)) {
         return false;
     }
@@ -504,6 +507,61 @@ string ccam_heap_map_set_internal(CCAMHeap heap, CCAMHeapRef reference, int desc
     return "";
 }
 
+// The production runtime preserves insertion order, even after deletion.
+// Enumeration creates an independent vector of immutable byte references.
+CCAMHeapRefResult ccam_heap_map_keys(CCAMHeap heap, CCAMHeapRef reference, int descriptor) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_ref_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (!ccam_map_shape(object, descriptor)) { return ccam_heap_ref_error("map_shape_mismatch"); }
+    int count = object.length;
+    int charge = CCAM_HEAP_ARRAY_HEADER_BYTES + count * CCAM_HEAP_SLOT_BYTES;
+    string admission = ccam_heap_allocation_check(heap, charge, count * 3 + 1, count * CCAM_HEAP_SLOT_BYTES);
+    if (admission != "") { return ccam_heap_ref_error(admission); }
+    // Validate keys before publishing a new arena object.
+    for (int i = 0; i < count; i += 1) {
+        if (ccam_map_key_index(heap, object.fields[i]) < 0) { return ccam_heap_ref_error("invalid_map_key"); }
+    }
+    CCAMHeapRefResult result = ccam_heap_alloc_typed_array(heap, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_BYTES, count);
+    if (!result.ok) { return result; }
+    int target = ccam_heap_object_index(heap, result.reference);
+    CCAMHeapObject array = heap.objects[target];
+    for (int i = 0; i < count; i += 1) {
+        array.elements[i] = ccam_map_snapshot_value(object.fields[i]);
+        array.element_initialised[i] = true;
+    }
+    array.length = count;
+    heap.objects[target] = array;
+    heap.work_used += count * 2;
+    return result;
+}
+
+CCAMHeapValueResult ccam_heap_map_remove(CCAMHeap heap, CCAMHeapRef reference, int descriptor, CCAMHeapValue key) {
+    int index = ccam_heap_object_index(heap, reference);
+    if (index < 0) { return ccam_heap_value_error("invalid_reference"); }
+    CCAMHeapObject object = heap.objects[index];
+    if (!ccam_map_shape(object, descriptor)) { return ccam_heap_value_error("map_shape_mismatch"); }
+    int key_index = ccam_map_key_index(heap, key);
+    if (key_index < 0) { return ccam_heap_value_error("invalid_map_key"); }
+    CCAMMapSearch found = ccam_map_find(heap, object, key_index);
+    if (!found.ok) { return ccam_heap_value_error(found.trap); }
+    if (found.index < 0) { return ccam_heap_value_ok(ccam_heap_bool(false)); }
+    int work = (object.length - found.index) * 2;
+    if (heap.work_used < 0 || heap.work_used > heap.max_work || work > heap.max_work - heap.work_used) {
+        return ccam_heap_value_error("work_limit");
+    }
+    for (int i = found.index; i + 1 < object.length; i += 1) {
+        object.fields[i] = object.fields[i + 1];
+        object.elements[i] = object.elements[i + 1];
+    }
+    object.length -= 1;
+    object.fields[object.length] = ccam_heap_int(0);
+    object.elements[object.length] = ccam_heap_int(0);
+    heap.objects[index] = object;
+    heap.work_used += work;
+    return ccam_heap_value_ok(ccam_heap_bool(true));
+}
+
 public policy CCAMHeapIdentityBound(CCAMHeapIdentity identity) { return true; }
 
 protected(CCAMHeapIdentityBound) void ccam_heap_require_identity(
@@ -632,7 +690,7 @@ CCAMHeapRefResult ccam_heap_alloc_typed_array(
     CCAMHeap heap, int element_type, int element_ref_type_id, int capacity
 ) {
     if (!ccam_heap_valid_value_type(element_type) ||
-        element_ref_type_id < 0 ||
+        element_ref_type_id < CCAM_HEAP_ELEMENT_BYTES ||
         (element_type != CCAM_HEAP_VALUE_REF && element_ref_type_id != 0) ||
         capacity < 0 || capacity > CCAM_HEAP_MAX_ARRAY_CAPACITY) {
         return ccam_heap_ref_error("invalid_array_layout");
