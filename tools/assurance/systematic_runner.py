@@ -1,6 +1,7 @@
 """Run every registered suite; incomplete evidence is never a pass."""
 import hashlib
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -34,6 +35,17 @@ def validate_manifest(groups):
     return groups
 
 
+def capstan_summary_valid(log):
+    # A zero exit with no executed tests is not positive test evidence.
+    summaries = re.findall(rb"(?m)^([0-9]+) test\(s\), ([0-9]+) failed\r?$", log)
+    if len(summaries) != 1:
+        return False
+    total, failed = map(int, summaries[0])
+    passes = re.findall(rb"(?m)^  pass  .+\r?$", log)
+    failures = re.findall(rb"(?m)^  FAIL  .+\r?$", log)
+    return total > 0 and failed == 0 and len(passes) == total and not failures
+
+
 def execute(commands, directory, cwd, timeout=600):
     directory.mkdir(parents=True, exist_ok=False)
     rows = []
@@ -51,9 +63,12 @@ def execute(commands, directory, cwd, timeout=600):
                 error = "timeout"
             except OSError as exc:
                 error = type(exc).__name__
+        log_bytes = log.read_bytes()
+        if argv[0] == "bin/capstan" and status == 0 and not capstan_summary_valid(log_bytes):
+            error = "missing_or_inconsistent_test_summary"
         rows.append({"argv": argv, "returncode": status, "error": error,
                      "elapsed_seconds": round(time.monotonic() - start, 3),
-                     "log": log.name, "log_sha256": hashlib.sha256(log.read_bytes()).hexdigest()})
+                     "log": log.name, "log_sha256": hashlib.sha256(log_bytes).hexdigest()})
         print(json.dumps(rows[-1]), flush=True)
     return rows
 
