@@ -35,6 +35,7 @@ def main():
         'map-snapshot': 33, 'map-remove': 42, 'map-empty-keys': 1,
         'module-constants': 42, 'module-41': 42, 'module-256': 42,
         'module-300': 42,
+        'constant-min': -(1 << 63), 'constant-ops': 42,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
