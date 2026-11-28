@@ -50,7 +50,28 @@ def main():
             assert (run.returncode, run.stdout, run.stderr) == (1, b'', b''), (name, run)
         else:
             assert (run.returncode, run.stdout, run.stderr) == (0, struct.pack('<q', value), b''), (name, run)
-    print(f'{len(expected)} direct native record/backend ELF cases passed')
+    cases = [
+        ('argv', [], 0), ('argv', [b'abc'], 10003),
+        ('argv', [b'', b'x'], 20000),
+        ('argv', [b'x' * 4096], 14096),
+        ('argv', [b'x' * 4097], None),
+        ('argv', [b''] * 256, 2560000),
+        ('argv', [b''] * 257, None),
+        ('argv', [b'x' * 4096] * 20, None),
+        ('bytes', [b'', b'\xff'], 255),
+    ]
+    for name, args, value in cases:
+        executable = directory / f'ccam-native-record-process-{name}.elf'
+        data = executable.read_bytes()
+        assert data[:7] == b'\x7fELF\x02\x01\x01'
+        assert struct.unpack_from('<II', data, 120) == (0x6474e551, 6)
+        os.chmod(executable, 0o700)
+        run = subprocess.run([executable.resolve(), *args], capture_output=True, timeout=5)
+        if value is None:
+            assert (run.returncode, run.stdout, run.stderr) == (1, b'', b''), (name, run)
+        else:
+            assert (run.returncode, run.stdout, run.stderr) == (0, struct.pack('<q', value), b''), (name, run)
+    print(f'{len(expected)} direct native record/backend ELF cases and {len(cases)} process entry cases passed')
 
 
 if __name__ == '__main__':
