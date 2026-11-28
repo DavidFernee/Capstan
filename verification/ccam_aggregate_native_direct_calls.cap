@@ -164,7 +164,7 @@ AGImage ag_nvc_compile_typed(List<AGFunction> functions, List<AGNominalSignature
     }
     AGNVContext c = new AGNVContext{code: new List<int>(), patches: new List<int>(),
         targets: new List<int>(), labels: new List<int>(), layouts: layouts, trap: count};
-    for (int i = 0; i < count + 14; i += 1) { c.labels.push(-1); }
+    for (int i = 0; i < count + 15; i += 1) { c.labels.push(-1); }
     List<int> b = c.code;
     // Root scratch frame is not a language call; entry consumes one depth.
     if (!ag_nvc_stack_adjust(b, true, 1)) { return ag_nv_failure(); }
@@ -190,7 +190,9 @@ AGImage ag_nvc_compile_typed(List<AGFunction> functions, List<AGNominalSignature
     c.labels[count + 10] = b.len(); if (!ag_nv_emit_bytes_conversion(b)) { return ag_nv_failure(); }
     c.labels[count + 11] = b.len(); if (!ag_nv_emit_scalar_list(b)) { return ag_nv_failure(); }
     c.labels[count + 12] = b.len(); if (!ag_nv_emit_reference_list(b)) { return ag_nv_failure(); }
-    c.labels[count + 13] = b.len(); if (!ag_nv_emit_map(b)) { return ag_nv_failure(); }
+    c.labels[count + 13] = b.len();
+    c.labels[count + 14] = b.len() + AG_NV_MAP_KEYS_OFFSET;
+    if (!ag_nv_emit_map(b)) { return ag_nv_failure(); }
     for (int i = 0; i < c.patches.len(); i += 1) {
         int target = c.labels[c.targets[i]];
         if (target < 0 || !ag_rel32(b, c.patches[i], target)) { return ag_nv_failure(); }
