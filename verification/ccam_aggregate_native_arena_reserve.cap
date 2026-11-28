@@ -39,3 +39,12 @@ test "native arena reserve fragment has checked common failure edges and atomic 
     }
     assert(code[59] == 195 && code[67] == 195);
 }
+
+test "write candidate native arena reserve bytes for independent execution harness" {
+    List<int> code = new List<int>();
+    assert(ag_native_emit_arena_reserve(code));
+    string data = "";
+    for (int i = 0; i < code.len(); i += 1) { data = data + char_str(code[i]); }
+    assert(data.len() == AG_NATIVE_RESERVE_SIZE);
+    assert(write_file("build/ccam-aggregate-arena-reserve.bin", data));
+}
