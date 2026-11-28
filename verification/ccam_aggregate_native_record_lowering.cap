@@ -34,12 +34,16 @@ AGImage ag_nv_failure() {
 
 // Structural and profile admission before any code emission. Layouts are
 // globally consistent for each record descriptor, even in unreachable code.
-bool ag_nv_admit(AGFunction f, List<int> layouts) {
-    if (f.signature.parameters.len() != 0 || f.signature.result_kind != AG_SCHEMA_INT ||
-        f.kinds.len() == 0 || f.kinds.len() > AG_NV_MAX_REGS ||
+bool ag_nv_admit_function(AGFunction f, List<int> layouts, bool calls) {
+    if ((!calls && (f.signature.parameters.len() != 0 || f.signature.result_kind != AG_SCHEMA_INT)) ||
+        f.signature.parameters.len() > AG_NV_MAX_REGS || f.signature.result_kind == AG_SCHEMA_REF ||
+        f.kinds.len() > AG_NV_MAX_REGS ||
         f.blocks.len() == 0 || f.blocks.len() > AG_NV_MAX_BLOCKS ||
         f.returns.len() != f.blocks.len()) { return false; }
-    for (int i = 0; i <= 4096; i += 1) { layouts.push(-1); }
+    if (layouts.len() != 4097) { return false; }
+    for (int i = 0; i < f.signature.parameters.len(); i += 1) {
+        if (f.signature.parameters[i] != AG_SCHEMA_INT && f.signature.parameters[i] != AG_SCHEMA_BOOL) { return false; }
+    }
     int total = 0; int operands = 0;
     for (int b = 0; b < f.blocks.len(); b += 1) {
         AGCFGBlock block = f.blocks[b];
@@ -60,9 +64,15 @@ bool ag_nv_admit(AGFunction f, List<int> layouts) {
                 layouts[id] = count;
             } else if (ins.opcode == AG_OP_FIELD_GET || ins.opcode == AG_OP_FIELD_SET) {
                 if (ins.kind != AG_SCHEMA_INT || op[2] < 1 || op[2] > 4096 || op[4] != 0) { return false; }
+            } else if (calls && ins.opcode == AG_OP_DIRECT_CALL) {
+                if (ins.kind == AG_SCHEMA_REF) { return false; }
             } else if (ins.opcode < AG_OP_SCALAR_CONST || ins.opcode > AG_OP_NOT) { return false; }
         }
     }
+    return true;
+}
+
+bool ag_nv_check_layouts(AGFunction f, List<int> layouts) {
     for (int b = 0; b < f.blocks.len(); b += 1) {
         for (int i = 0; i < f.blocks[b].instructions.len(); i += 1) {
             AGBlockInstruction ins = f.blocks[b].instructions[i];
@@ -71,7 +81,14 @@ bool ag_nv_admit(AGFunction f, List<int> layouts) {
             }
         }
     }
-    return ag_function_validate(f);
+    return true;
+}
+
+bool ag_nv_admit(AGFunction f, List<int> layouts) {
+    if (layouts.len() != 0) { return false; }
+    for (int i = 0; i <= 4096; i += 1) { layouts.push(-1); }
+    return ag_nv_admit_function(f, layouts, false) && ag_nv_check_layouts(f, layouts) &&
+        ag_function_validate(f);
 }
 
 // Signed immediate encoding without negating INT64_MIN or forming 2^64.
@@ -240,6 +257,10 @@ AGImage ag_nv_compile(AGFunction f, int fuel) {
     for (int i = 0; i < c.patches.len(); i += 1) {
         if (!ag_rel32(b, c.patches[i], c.labels[c.targets[i]])) { return ag_nv_failure(); }
     }
+    return ag_nv_image(b);
+}
+
+AGImage ag_nv_image(List<int> b) {
     // Existing direct ELF builder; add explicit non-executable stack header.
     AGImage image = ag_elf_image(b);
     if (!image.ok || image.bytes.len() < 4096) { return ag_nv_failure(); }
