@@ -36,3 +36,9 @@ jobs:
         run: bin/capstan test verification/gc_assurance_graph_tests.cap
       - name: Run GC handle identity and retirement scenarios
         run: bin/capstan test verification/gc_assurance_handle_tests.cap
+      - name: Run systematic capability resolution and revocation
+        run: bin/capstan test verification/schooner_assurance_capability_tests.cap
+      - name: Run revocation event-history differential tests
+        run: bin/capstan test verification/schooner_assurance_schedule_tests.cap
+      - name: Run checker taint and secret metamorphic tests
+        run: bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/security_assurance_checker_tests.cap
