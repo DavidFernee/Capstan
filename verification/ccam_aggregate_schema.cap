@@ -222,8 +222,23 @@ bool ag_schema_map_enumeration(List<int> kinds, int opcode, int kind, List<int> 
         ag_schema_register(kinds, operands[2], AG_SCHEMA_REF);
 }
 
+const int AG_OP_INT_TEXT = 43;
+const int AG_OP_CHAR_TEXT = 44;
+const int AG_OP_BOOL_TEXT = 45;
+
+bool ag_schema_conversion_operands(List<int> kinds, int opcode, int kind, List<int> operands) {
+    if (kind != AG_SCHEMA_REF || operands.len() != 2 ||
+        !ag_schema_register(kinds, operands[0], AG_SCHEMA_REF)) { return false; }
+    if (opcode == AG_OP_BOOL_TEXT) { return ag_schema_register(kinds, operands[1], AG_SCHEMA_BOOL); }
+    return (opcode == AG_OP_INT_TEXT || opcode == AG_OP_CHAR_TEXT) &&
+        ag_schema_register(kinds, operands[1], AG_SCHEMA_INT);
+}
+
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
     if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }
+    if (opcode >= AG_OP_INT_TEXT && opcode <= AG_OP_BOOL_TEXT) {
+        return ag_schema_conversion_operands(kinds, opcode, element_kind, operands);
+    }
     if (opcode == AG_OP_MAP_KEYS || opcode == AG_OP_MAP_REMOVE) {
         return ag_schema_map_enumeration(kinds, opcode, element_kind, operands);
     }
