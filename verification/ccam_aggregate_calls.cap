@@ -115,3 +115,26 @@ test "aggregate calls isolate locals and validate returns" {
     kinds[0] = AG_SCHEMA_BOOL;
     assert(!ag_call_entry(signature, kinds).ok);
 }
+
+test "void results never admit a register or create a definite initialisation fact" {
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    List<bool> ready = new List<bool>(); ready.push(false);
+    AGCallSignature signature = new AGCallSignature{parameters: new List<int>(), result_kind: AG_RESULT_VOID};
+    List<int> args = new List<int>();
+    assert(ag_call_signature(signature));
+    assert(!ag_schema_kind(AG_RESULT_VOID));
+    assert(ag_call_admit(signature, kinds, ready, args, -1));
+    assert(!ag_call_admit(signature, kinds, ready, args, 0));
+    assert(ag_call_return(signature, kinds, ready, -1));
+    assert(!ag_call_return(signature, kinds, ready, 0));
+    AGTransferResult next = ag_call_normal_successor(signature, kinds, ready, args, -1);
+    assert(next.ok && !next.ready[0]);
+    List<int> operands = new List<int>(); operands.push(-1); operands.push(0);
+    assert(ag_schema_operands(kinds, AG_OP_DIRECT_CALL, AG_RESULT_VOID, operands));
+    next = ag_transfer(kinds, ready, AG_OP_DIRECT_CALL, AG_RESULT_VOID, operands);
+    assert(next.ok && !next.ready[0]);
+    operands[0] = 0;
+    assert(!ag_schema_operands(kinds, AG_OP_DIRECT_CALL, AG_RESULT_VOID, operands));
+    signature.parameters.push(AG_RESULT_VOID);
+    assert(!ag_call_signature(signature));
+}
