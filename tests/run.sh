@@ -96,6 +96,13 @@ for module in schema dispatch block flow transfer cfg fixedpoint calls frames no
   fi
 done
 
+section "Checked production AST to candidate aggregate evaluator"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/compiler/ast.cap" "$ROOT/compiler/lexer.cap" "$ROOT/compiler/parser.cap" "$ROOT/compiler/checker.cap" "$ROOT/verification/ccam_aggregate_checked_source_tests.cap" 2>&1)"; then
+  ok "checked aggregate source leaf lowering and sealed invocation"
+else
+  bad "checked aggregate source leaf lowering" "$out"
+fi
+
 section "Capstan-native verification: CCAM arithmetic, typed registers and single-frame evaluator"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_core.cap" "$ROOT/verification/ccam_core_tests.cap" 2>&1)"; then
   ok "CCAM checked arithmetic, typed registers and single-frame evaluator tests"
