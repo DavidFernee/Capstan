@@ -1,0 +1,39 @@
+name: portable bootstrap assurance
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: portable-assurance-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, cc: gcc }
+          - { os: ubuntu-latest, cc: clang }
+          - { os: macos-latest, cc: clang }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test portable conformance oracle
+        run: python3 tools/assurance/test_portable_bootstrap.py
+      - name: Bootstrap existing C-backed compiler
+        run: make bootstrap
+      - name: Check diverse optimisation fixpoints and security fixtures
+        run: python3 tools/assurance/portable_bootstrap.py
+      - name: Retain platform evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: portable-${{ matrix.os }}-${{ matrix.cc }}
+          path: build/portable-assurance/
+          if-no-files-found: error

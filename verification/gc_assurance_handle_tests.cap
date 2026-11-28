@@ -1,0 +1,78 @@
+import "gc_handle_model.cap";
+
+test "GC exhaustive handle admission with competing identity and descriptor faults" {
+    GCHHeap heap = gch_fixture_heap();
+    List<int> tokens = new List<int>(); tokens.push(0); tokens.push(91); tokens.push(92);
+    List<int> descriptors = new List<int>(); descriptors.push(-1); descriptors.push(0); descriptors.push(7); descriptors.push(8); descriptors.push(9);
+    for (int t = 0; t < tokens.len(); t += 1) {
+        for (int slot = -1; slot <= 3; slot += 1) {
+            for (int generation = -1; generation <= 5; generation += 1) {
+                for (int d = 0; d < descriptors.len(); d += 1) {
+                    int descriptor = descriptors[d];
+                    GCHResolveResult result = gch_resolve(heap, gch_handle(tokens[t], slot, generation), descriptor);
+                    int expected = GCH_OK;
+                    int actual_descriptor = 0;
+                    if (tokens[t] != 91) { expected = GCH_FOREIGN_HEAP; }
+                    else if (slot < 0 || slot > 2 || generation <= 0 || descriptor < 0) { expected = GCH_INVALID_HANDLE; }
+                    else {
+                        int actual_generation = 3;
+                        actual_descriptor = 7;
+                        if (slot == 1) { actual_generation = 1; actual_descriptor = 8; }
+                        if (slot == 2) { actual_generation = 4; actual_descriptor = 0; }
+                        if (generation != actual_generation) { expected = GCH_STALE_HANDLE; }
+                        else if (slot == 2) { expected = GCH_UNALLOCATED; }
+                        else if (descriptor != 0 && descriptor != actual_descriptor) { expected = GCH_LAYOUT_MISMATCH; }
+                    }
+                    assert(result.status == expected);
+                    if (expected == GCH_OK) {
+                        assert(result.slot_index == slot && result.descriptor_id == actual_descriptor);
+                    } else { assert(result.slot_index == -1 && result.descriptor_id == 0); }
+                    assert(heap.slots[0].allocated && heap.slots[0].generation == 3);
+                    assert(heap.slots[1].allocated && heap.slots[1].generation == 1);
+                    assert(!heap.slots[2].allocated && heap.slots[2].generation == 4);
+                }
+            }
+        }
+    }
+}
+
+test "GC repeated slot reuse never resurrects any previously issued handle" {
+    GCHHeap heap = gch_fixture_heap();
+    List<GCHHandle> old = new List<GCHHandle>();
+    for (int cycle = 0; cycle < 32; cycle += 1) {
+        int descriptor = 7 + cycle % 2;
+        GCHTransitionResult allocated = gch_allocate(heap, descriptor);
+        assert(allocated.status == GCH_OK);
+        assert(allocated.handle.slot_id == 2 && allocated.handle.generation == 5 + cycle);
+        assert(!heap.slots[2].allocated);
+        heap = allocated.heap;
+        assert(gch_resolve(heap, allocated.handle, descriptor).status == GCH_OK);
+        for (int j = 0; j < old.len(); j += 1) {
+            assert(gch_resolve(heap, old[j], 0).status == GCH_STALE_HANDLE);
+        }
+        GCHTransitionResult reclaimed = gch_reclaim_slot(heap, allocated.handle);
+        assert(reclaimed.status == GCH_OK && heap.slots[2].allocated);
+        heap = reclaimed.heap;
+        assert(gch_resolve(heap, allocated.handle, 0).status == GCH_UNALLOCATED);
+        old.push(allocated.handle);
+        assert(heap.slots[0].allocated && heap.slots[1].allocated);
+    }
+}
+
+test "GC generation exhaustion retires slots permanently" {
+    for (int offset = 1; offset <= 16; offset += 1) {
+        GCHHeap heap = gch_fixture_heap();
+        heap.slots[2].generation = GCH_MAX_GENERATION - offset;
+        for (int n = 0; n < offset; n += 1) {
+            GCHTransitionResult allocated = gch_allocate(heap, 7);
+            assert(allocated.status == GCH_OK);
+            assert(allocated.handle.generation == GCH_MAX_GENERATION - offset + n + 1);
+            GCHTransitionResult reclaimed = gch_reclaim_slot(allocated.heap, allocated.handle);
+            assert(reclaimed.status == GCH_OK);
+            heap = reclaimed.heap;
+            assert(heap.slots[2].retired == (n + 1 == offset));
+        }
+        assert(gch_allocate(heap, 7).status == GCH_NO_CAPACITY);
+        assert(heap.slots[2].generation == GCH_MAX_GENERATION && heap.slots[2].retired);
+    }
+}

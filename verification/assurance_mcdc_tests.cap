@@ -1,0 +1,92 @@
+import "schooner_capability.cap";
+
+// Unique-cause MC/DC witness accounting over explicit condition valuations.
+// Rows must be observations of the decision under test, not synthetic outcomes.
+// This does not instrument compiler-emitted short-circuit branch traces.
+struct AssuranceDecisionRow {
+    List<bool> conditions;
+    bool outcome;
+}
+
+List<bool> assurance_mcdc_witnesses(List<AssuranceDecisionRow> rows, int width) {
+    List<bool> covered = new List<bool>();
+    if (width < 1 || width > 32 || rows.len() > 4096) { return covered; }
+    for (int i = 0; i < width; i += 1) { covered.push(false); }
+    for (int i = 0; i < rows.len(); i += 1) {
+        if (rows[i].conditions.len() != width) { return new List<bool>(); }
+    }
+    for (int a = 0; a < rows.len(); a += 1) {
+        for (int b = a + 1; b < rows.len(); b += 1) {
+            if (rows[a].outcome == rows[b].outcome) { continue; }
+            int changed = 0;
+            int condition = -1;
+            for (int i = 0; i < width; i += 1) {
+                if (rows[a].conditions[i] != rows[b].conditions[i]) {
+                    changed += 1; condition = i;
+                }
+            }
+            if (changed == 1) { covered[condition] = true; }
+        }
+    }
+    return covered;
+}
+
+AssuranceDecisionRow assurance_mcdc_row(int width, int fault, bool outcome) {
+    List<bool> values = new List<bool>();
+    for (int i = 0; i < width; i += 1) { values.push(i != fault); }
+    return new AssuranceDecisionRow{conditions: values, outcome: outcome};
+}
+
+test "MC/DC witness accounting detects each missing unique-cause pair" {
+    for (int width = 1; width <= 12; width += 1) {
+        for (int omitted = -1; omitted < width; omitted += 1) {
+            List<AssuranceDecisionRow> rows = new List<AssuranceDecisionRow>();
+            rows.push(assurance_mcdc_row(width, -1, true));
+            for (int i = 0; i < width; i += 1) {
+                if (i != omitted) { rows.push(assurance_mcdc_row(width, i, false)); }
+            }
+            List<bool> covered = assurance_mcdc_witnesses(rows, width);
+            assert(covered.len() == width);
+            for (int i = 0; i < width; i += 1) { assert(covered[i] == (i != omitted)); }
+        }
+    }
+}
+
+test "MC/DC rejects inconsistent width and cannot credit correlated changes" {
+    List<AssuranceDecisionRow> rows = new List<AssuranceDecisionRow>();
+    rows.push(assurance_mcdc_row(2, -1, true));
+    List<bool> both_false = new List<bool>(); both_false.push(false); both_false.push(false);
+    rows.push(new AssuranceDecisionRow{conditions: both_false, outcome: false});
+    List<bool> covered = assurance_mcdc_witnesses(rows, 2);
+    assert(covered.len() == 2 && !covered[0] && !covered[1]);
+    assert(assurance_mcdc_witnesses(rows, 3).len() == 0);
+    assert(assurance_mcdc_witnesses(rows, 0).len() == 0);
+    assert(assurance_mcdc_witnesses(rows, 33).len() == 0);
+}
+
+// Exercise the actual root-handle resolution predicate. These are eight
+// independent contract conditions, not a claim of complete source MC/DC.
+test "capability root resolution has independent contract-condition witnesses" {
+    List<AssuranceDecisionRow> rows = new List<AssuranceDecisionRow>();
+    for (int fault = -1; fault < 8; fault += 1) {
+        SCMTransition issued = scm_issue_root(scm_initial(), SCM_RIGHT_READ);
+        assert(issued.ok);
+        SCMState state = issued.state;
+        SCMHandle h = issued.handle;
+        int required = SCM_RIGHT_READ;
+        if (fault == 0) { state.revoked = true; }
+        if (fault == 1) { h.object_id += 1; }
+        if (fault == 2) { h.object_generation += 1; }
+        if (fault == 3) { h.revocation_epoch += 1; }
+        if (fault == 4) { required = SCM_RIGHT_WRITE; }
+        if (fault == 5) { h.slot = 2; }
+        if (fault == 6) { state.root_live = false; }
+        if (fault == 7) { h.slot_generation += 1; }
+        bool actual = scm_resolves(state, h, required);
+        assert(actual == (fault == -1));
+        rows.push(assurance_mcdc_row(8, fault, actual));
+    }
+    List<bool> coverage = assurance_mcdc_witnesses(rows, 8);
+    assert(coverage.len() == 8);
+    for (int i = 0; i < coverage.len(); i += 1) { assert(coverage[i]); }
+}

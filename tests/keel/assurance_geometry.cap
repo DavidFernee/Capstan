@@ -1,0 +1,89 @@
+// Compile with lib/keel/predicates.cap.
+// All triples on the bounded 5 x 5 grid; independent shoelace formula.
+bool assurance_keel_orient(KPoint2 a, KPoint2 b, KPoint2 c) {
+    int area = a.x * b.y + b.x * c.y + c.x * a.y -
+        a.y * b.x - b.y * c.x - c.y * a.x;
+    int expected = 0;
+    if (area < 0) { expected = -1; }
+    if (area > 0) { expected = 1; }
+    if (let actual = keel_orient2d_sign(a,b,c)) {
+        if (actual != expected) { return false; }
+        if (let reverse = keel_orient2d_sign(a,c,b)) {
+            return reverse == -expected;
+        }
+    }
+    return false;
+}
+
+bool assurance_keel_grid(int ax) {
+    for (int ay = -2; ay <= 2; ay += 1) {
+        for (int bx = -2; bx <= 2; bx += 1) {
+            for (int by = -2; by <= 2; by += 1) {
+                for (int cx = -2; cx <= 2; cx += 1) {
+                    for (int cy = -2; cy <= 2; cy += 1) {
+                        if (!assurance_keel_orient(keel_point2(ax,ay), keel_point2(bx,by), keel_point2(cx,cy))) { return false; }
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+test "Keel exact planar orientation grid 0" {
+    assert(assurance_keel_grid(-2));
+}
+
+test "Keel exact planar orientation grid 1" {
+    assert(assurance_keel_grid(-1));
+}
+
+test "Keel exact planar orientation grid 2" {
+    assert(assurance_keel_grid(0));
+}
+
+test "Keel exact planar orientation grid 3" {
+    assert(assurance_keel_grid(1));
+}
+
+test "Keel exact planar orientation grid 4" {
+    assert(assurance_keel_grid(2));
+}
+
+test "Keel rejects every out-of-domain coordinate before geometry arithmetic" {
+    List<int> invalid = new List<int>();
+    invalid.push(-KEEL_COORD_LIMIT - 1); invalid.push(KEEL_COORD_LIMIT + 1);
+    invalid.push(-9223372036854775807 - 1); invalid.push(9223372036854775807);
+    for (int n = 0; n < invalid.len(); n += 1) {
+        for (int axis = 0; axis < 6; axis += 1) {
+            List<int> p = new List<int>();
+            for (int i = 0; i < 6; i += 1) { p.push(i); }
+            p[axis] = invalid[n];
+            bool accepted = false;
+            if (let sign = keel_orient2d_sign(keel_point2(p[0],p[1]),keel_point2(p[2],p[3]),keel_point2(p[4],p[5]))) {
+                accepted = true;
+            }
+            assert(!accepted);
+        }
+    }
+}
+
+test "Keel tetrahedron membership equals independent coordinate-sum oracle" {
+    for (int length = 1; length <= 8; length += 1) {
+        KPoint3 a = keel_point3(0,0,0);
+        KPoint3 b = keel_point3(length,0,0);
+        KPoint3 c = keel_point3(0,length,0);
+        KPoint3 d = keel_point3(0,0,length);
+        for (int x = -1; x <= length + 1; x += 1) {
+            for (int y = -1; y <= length + 1; y += 1) {
+                for (int z = -1; z <= length + 1; z += 1) {
+                    int expected = 1;
+                    if (x < 0 || y < 0 || z < 0 || x+y+z > length) { expected = -1; }
+                    else if (x == 0 || y == 0 || z == 0 || x+y+z == length) { expected = 0; }
+                    if (let actual = keel_point_in_tetrahedron3d(a,b,c,d,keel_point3(x,y,z))) {
+                        assert(actual == expected);
+                    } else { assert(false); }
+                }
+            }
+        }
+    }
+}

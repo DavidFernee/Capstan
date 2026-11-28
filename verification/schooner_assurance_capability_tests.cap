@@ -1,0 +1,120 @@
+import "schooner_capability.cap";
+
+// Arithmetic bit membership oracle, independent of the model's bitwise mask.
+bool assurance_rights_subset(int held, int requested) {
+    if (requested <= 0 || requested > 7 || held <= 0 || held > 7) { return false; }
+    int h = held;
+    int r = requested;
+    for (int i = 0; i < 3; i += 1) {
+        if (r % 2 == 1 && h % 2 == 0) { return false; }
+        h = h / 2; r = r / 2;
+    }
+    return true;
+}
+
+bool assurance_capability_resolution(int rights) {
+        SCMTransition issued = scm_issue_root(scm_initial(), rights);
+        if (!issued.ok) { return false; }
+        for (int object_delta = 0; object_delta <= 1; object_delta += 1) {
+            for (int generation = 0; generation <= 2; generation += 1) {
+                for (int slot = -1; slot <= 2; slot += 1) {
+                    for (int slot_generation = 0; slot_generation <= 2; slot_generation += 1) {
+                        for (int epoch = 0; epoch <= 2; epoch += 1) {
+                            for (int claimed = 0; claimed <= 8; claimed += 1) {
+                                for (int required = 0; required <= 8; required += 1) {
+                                    SCMHandle h = new SCMHandle{object_id: 41 + object_delta,
+                                        object_generation: generation, slot: slot,
+                                        slot_generation: slot_generation, rights: claimed,
+                                        revocation_epoch: epoch};
+                                    bool expected = object_delta == 0 && generation == 1 &&
+                                        slot == 0 && slot_generation == 1 && epoch == 1 &&
+                                        claimed == rights && assurance_rights_subset(rights, required);
+                                    if (scm_resolves(issued.state, h, required) != expected) { return false; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    return true;
+}
+
+test "capability competing identity faults rights 1" {
+    assert(assurance_capability_resolution(1));
+}
+test "capability competing identity faults rights 2" {
+    assert(assurance_capability_resolution(2));
+}
+test "capability competing identity faults rights 3" {
+    assert(assurance_capability_resolution(3));
+}
+test "capability competing identity faults rights 4" {
+    assert(assurance_capability_resolution(4));
+}
+test "capability competing identity faults rights 5" {
+    assert(assurance_capability_resolution(5));
+}
+test "capability competing identity faults rights 6" {
+    assert(assurance_capability_resolution(6));
+}
+test "capability competing identity faults rights 7" {
+    assert(assurance_capability_resolution(7));
+}
+
+test "capability attenuation and object revocation across all rights subsets" {
+    for (int root_rights = 1; root_rights <= 7; root_rights += 1) {
+        for (int child_rights = 0; child_rights <= 8; child_rights += 1) {
+            SCMTransition root = scm_issue_root(scm_initial(), root_rights);
+            assert(root.ok);
+            SCMTransition child = scm_attenuate(root.state, root.handle, child_rights);
+            bool subset = assurance_rights_subset(root_rights, child_rights);
+            assert(child.ok == subset);
+            if (!subset) {
+                assert(scm_same_state(child.state, root.state));
+                if (child_rights == 0 || child_rights == 8) { assert(child.error == "invalid_rights"); }
+                else { assert(child.error == "rights_amplification"); }
+            } else {
+                for (int requested = 0; requested <= 8; requested += 1) {
+                    assert(scm_resolves(child.state, child.handle, requested) ==
+                        assurance_rights_subset(child_rights, requested));
+                }
+                SCMTransition revoke = scm_revoke(child.state, child.handle);
+                bool admin = child_rights >= 4;
+                assert(revoke.ok == admin);
+                if (admin) {
+                    assert(revoke.state.revoked && revoke.state.revocation_epoch == 2);
+                    assert(!revoke.state.root_live && !revoke.state.child_live);
+                    for (int requested = 1; requested <= 7; requested += 1) {
+                        assert(!scm_resolves(revoke.state, root.handle, requested));
+                        assert(!scm_resolves(revoke.state, child.handle, requested));
+                    }
+                } else {
+                    assert(revoke.error == "revoke_not_authorised");
+                    assert(scm_same_state(revoke.state, child.state));
+                }
+            }
+        }
+    }
+}
+
+test "capability slot reuse rejects every historical delegation" {
+    SCMTransition root = scm_issue_root(scm_initial(), SCM_RIGHT_ALL);
+    assert(root.ok);
+    SCMState state = root.state;
+    List<SCMHandle> history = new List<SCMHandle>();
+    for (int cycle = 0; cycle < 32; cycle += 1) {
+        int rights = 1 + cycle % 7;
+        SCMTransition child = scm_attenuate(state, root.handle, rights);
+        assert(child.ok && child.handle.slot_generation == cycle + 1);
+        for (int i = 0; i < history.len(); i += 1) {
+            assert(!scm_resolves(child.state, history[i], history[i].rights));
+        }
+        SCMTransition removed = scm_revoke_child(child.state, root.handle, child.handle);
+        assert(removed.ok && !removed.state.child_live);
+        assert(scm_resolves(removed.state, root.handle, SCM_RIGHT_ADMIN));
+        assert(!scm_resolves(removed.state, child.handle, rights));
+        history.push(child.handle);
+        state = removed.state;
+    }
+}

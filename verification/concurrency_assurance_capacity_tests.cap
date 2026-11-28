@@ -1,0 +1,114 @@
+import "concurrency_generated_capacity_graph.cap";
+
+// Event ledger rather than a second copy of the transition function.
+// First and second messages can independently move into the consumer,
+// but only one message may occupy the channel at any time.
+bool assurance_capacity_history(List<int> actions) {
+    CSGState state = csg_initial();
+    bool first_received = false;
+    bool first_released = false;
+    bool waiting = false;
+    bool sent = false;
+    bool cancelled = false;
+    bool second_received = false;
+    bool second_released = false;
+    bool finished = false;
+    for (int i = 0; i < actions.len(); i += 1) {
+        int action = actions[i];
+        bool expected = false;
+        if (action == CSG_SEND_SECOND) {
+            expected = !waiting && !sent && !cancelled;
+        } else if (action == CSG_RECEIVE_FIRST) {
+            expected = !first_received && !finished;
+        } else if (action == CSG_RELEASE_FIRST) {
+            expected = first_received && !first_released;
+        } else if (action == CSG_CANCEL_PRODUCER) {
+            expected = waiting;
+        } else if (action == CSG_RECEIVE_SECOND) {
+            expected = sent && !second_received && !finished;
+        } else if (action == CSG_RELEASE_SECOND) {
+            expected = second_received && !second_released;
+        } else if (action == CSG_FINISH_CONSUMER) {
+            expected = !finished && first_released && (cancelled || second_released);
+        }
+        int old_key = csg_key(state);
+        CSGStep transition = csg_step(state, action);
+        if (transition.enabled != expected || csg_key(state) != old_key) { return false; }
+        if (expected) {
+            if (action == CSG_SEND_SECOND) {
+                if (first_received) { sent = true; } else { waiting = true; }
+            } else if (action == CSG_RECEIVE_FIRST) {
+                first_received = true; waiting = false;
+            } else if (action == CSG_RELEASE_FIRST) { first_released = true; }
+            else if (action == CSG_CANCEL_PRODUCER) { cancelled = true; waiting = false; }
+            else if (action == CSG_RECEIVE_SECOND) { second_received = true; }
+            else if (action == CSG_RELEASE_SECOND) { second_released = true; }
+            else if (action == CSG_FINISH_CONSUMER) { finished = true; }
+        }
+        int producer = CSG_RUNNABLE;
+        if (waiting) { producer = CSG_BLOCKED; }
+        if (sent) { producer = CSG_DONE; }
+        if (cancelled) { producer = CSG_CANCELLED; }
+        int consumer = CSG_RUNNABLE;
+        if (finished) { consumer = CSG_DONE; }
+        int first = CSG_CHANNEL;
+        if (first_received) { first = CSG_CONSUMER; }
+        if (first_released) { first = CSG_NONE; }
+        int second = CSG_PRODUCER;
+        if (sent) { second = CSG_CHANNEL; }
+        if (second_received) { second = CSG_CONSUMER; }
+        if (second_released || cancelled) { second = CSG_NONE; }
+        int queue = 0;
+        if (!first_received || (sent && !second_received)) { queue = 1; }
+        int wait_kind = CSG_WAIT_NONE;
+        if (waiting) { wait_kind = CSG_WAIT_CAPACITY; }
+        CSGState next = transition.next;
+        if (next.producer_status != producer || next.consumer_status != consumer ||
+            next.first_message_owner != first || next.second_message_owner != second ||
+            next.channel_count != queue || next.producer_wait_registered != waiting ||
+            next.producer_wait != wait_kind || next.channel_closed ||
+            !csg_invariant(next)) { return false; }
+        state = next;
+    }
+    return true;
+}
+
+bool assurance_capacity_shard(int first_action) {
+    // Six-action histories cover both blocked send/resume and cancellation.
+    for (int encoded = 0; encoded < 16807; encoded += 1) {
+        List<int> actions = new List<int>(); actions.push(first_action);
+        int digits = encoded;
+        for (int n = 0; n < 5; n += 1) {
+            actions.push(1 + digits % 7); digits = digits / 7;
+        }
+        if (!assurance_capacity_history(actions)) { return false; }
+    }
+    return true;
+}
+test "channel history six-action shard 1" {
+    assert(assurance_capacity_shard(1));
+}
+
+test "channel history six-action shard 2" {
+    assert(assurance_capacity_shard(2));
+}
+
+test "channel history six-action shard 3" {
+    assert(assurance_capacity_shard(3));
+}
+
+test "channel history six-action shard 4" {
+    assert(assurance_capacity_shard(4));
+}
+
+test "channel history six-action shard 5" {
+    assert(assurance_capacity_shard(5));
+}
+
+test "channel history six-action shard 6" {
+    assert(assurance_capacity_shard(6));
+}
+
+test "channel history six-action shard 7" {
+    assert(assurance_capacity_shard(7));
+}

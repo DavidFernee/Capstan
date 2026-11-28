@@ -1,0 +1,81 @@
+import "ccam_core.cap";
+
+// Two equivalent loop predicates (counter < limit and counter == limit),
+// with opposite branch orientations. Every fuel prefix is tested, not merely
+// successful completion. Expected PC and counter are derived from the
+// explicit eight-instruction control-flow graph.
+bool assurance_loop_prefix(int limit, int fuel, bool equality) {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_INT);
+    types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_BOOL);
+    List<CCAMInstruction> code = new List<CCAMInstruction>();
+    CCAMInstruction i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 0; i.int_value = 0; code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 1; i.int_value = limit; code.push(i);
+    i = ccam_instruction(CCAM_OP_CONST_I);
+    i.dst = 2; i.int_value = 1; code.push(i);
+    int compare = CCAM_OP_LT_I;
+    if (equality) { compare = CCAM_OP_EQ_I; }
+    i = ccam_instruction(compare);
+    i.dst = 3; i.lhs = 0; i.rhs = 1; code.push(i);
+    i = ccam_instruction(CCAM_OP_BRANCH);
+    i.lhs = 3; i.if_true = 5; i.if_false = 7;
+    if (equality) { i.if_true = 7; i.if_false = 5; }
+    code.push(i);
+    i = ccam_instruction(CCAM_OP_ADD_I);
+    i.dst = 0; i.lhs = 0; i.rhs = 2; code.push(i);
+    i = ccam_instruction(CCAM_OP_JUMP);
+    i.target = 3; code.push(i);
+    i = ccam_instruction(CCAM_OP_RET);
+    i.lhs = 0; code.push(i);
+    CCAMMachineCreateResult created = ccam_machine_create_validated(types, code, fuel, CCAM_RETURN_INT);
+    if (!created.ok) { return false; }
+    CCAMMachineState state = created.state;
+    int terminal_steps = 6 + 4 * limit;
+    for (int j = 0; j <= terminal_steps; j += 1) { ccam_machine_step(state); }
+    int steps = fuel;
+    int pc = fuel;
+    int counter = 0;
+    string trap = "step_limit_exceeded";
+    bool success = fuel >= terminal_steps;
+    if (success) {
+        steps = terminal_steps; pc = 7; counter = limit; trap = "";
+    } else if (fuel >= 3) {
+        int progress = fuel - 3;
+        if (progress < 4 * limit) {
+            pc = 3 + progress % 4;
+            counter = progress / 4;
+            if (progress % 4 == 3) { counter += 1; }
+        } else {
+            counter = limit;
+            int tail = progress - 4 * limit;
+            pc = 3 + tail;
+            if (tail == 2) { pc = 7; }
+        }
+    }
+    if (!state.halted || state.steps != steps || state.pc != pc ||
+        state.trap_code != trap || state.halt_has_value != success) { return false; }
+    if (success && state.halt_value != limit) { return false; }
+    CCAMRegisterResult r = ccam_register_read_int(state.registers, 0);
+    if (fuel == 0) {
+        if (r.ok || r.trap != "uninitialised_register") { return false; }
+    } else if (!r.ok || r.int_value != counter) { return false; }
+    return state.output_bytes.len() == 0;
+}
+
+test "systematic loops with less-than and exact fuel prefixes" {
+    for (int limit = 0; limit <= 16; limit += 1) {
+        for (int fuel = 0; fuel <= 7 + 4 * limit; fuel += 1) {
+            assert(assurance_loop_prefix(limit, fuel, false));
+        }
+    }
+}
+
+test "systematic metamorphic loops with equality and reversed branches" {
+    for (int limit = 0; limit <= 16; limit += 1) {
+        for (int fuel = 0; fuel <= 7 + 4 * limit; fuel += 1) {
+            assert(assurance_loop_prefix(limit, fuel, true));
+        }
+    }
+}

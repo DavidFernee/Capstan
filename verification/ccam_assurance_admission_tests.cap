@@ -1,0 +1,80 @@
+import "ccam_core.cap";
+
+// Each candidate is checked both on the reachable path and behind a return.
+bool assurance_operand_admission(int op, int dst, int lhs, int rhs, bool comparison) {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_BOOL);
+    bool valid = lhs >= 0 && lhs <= 1 && rhs >= 0 && rhs <= 1;
+    string error = "invalid_or_mistyped_integer_operand";
+    if (comparison) {
+        valid = valid && dst == 2;
+        error = "invalid_or_mistyped_comparison_operand";
+    } else {
+        valid = valid && dst >= 0 && dst <= 1;
+    }
+    for (int unreachable = 0; unreachable <= 1; unreachable += 1) {
+        List<CCAMInstruction> code = new List<CCAMInstruction>();
+        if (unreachable == 1) { code.push(ccam_instruction(CCAM_OP_RET_VOID)); }
+        CCAMInstruction i = ccam_instruction(op);
+        i.dst = dst; i.lhs = lhs; i.rhs = rhs; code.push(i);
+        code.push(ccam_instruction(CCAM_OP_RET_VOID));
+        CCAMMachineCreateResult created = ccam_machine_create_validated(types, code, 3, CCAM_RETURN_VOID);
+        if (created.ok != valid) { return false; }
+        if (!valid) {
+            if (created.error != error || !created.state.halted ||
+                created.state.instructions.len() != 0 ||
+                created.state.registers.len() != 0 || created.state.steps != 0) { return false; }
+        } else if (created.state.halted || created.state.steps != 0) { return false; }
+    }
+    return true;
+}
+
+test "systematic arithmetic operand admission across reachable and unreachable instructions" {
+    for (int op = CCAM_OP_ADD_I; op <= CCAM_OP_REM_I; op += 1) {
+        for (int dst = -1; dst <= 3; dst += 1) {
+            for (int lhs = -1; lhs <= 3; lhs += 1) {
+                for (int rhs = -1; rhs <= 3; rhs += 1) {
+                    assert(assurance_operand_admission(op, dst, lhs, rhs, false));
+                }
+            }
+        }
+    }
+}
+
+test "systematic comparison operand admission across reachable and unreachable instructions" {
+    for (int op = CCAM_OP_EQ_I; op <= CCAM_OP_LT_I; op += 1) {
+        for (int dst = -1; dst <= 3; dst += 1) {
+            for (int lhs = -1; lhs <= 3; lhs += 1) {
+                for (int rhs = -1; rhs <= 3; rhs += 1) {
+                    assert(assurance_operand_admission(op, dst, lhs, rhs, true));
+                }
+            }
+        }
+    }
+}
+
+test "systematic move admission across reachable and unreachable instructions" {
+    List<int> types = new List<int>();
+    types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_INT); types.push(CCAM_TYPE_BOOL);
+    for (int dst = -1; dst <= 3; dst += 1) {
+        for (int src = -1; src <= 3; src += 1) {
+            for (int unreachable = 0; unreachable <= 1; unreachable += 1) {
+                List<CCAMInstruction> code = new List<CCAMInstruction>();
+                if (unreachable == 1) { code.push(ccam_instruction(CCAM_OP_RET_VOID)); }
+                CCAMInstruction i = ccam_instruction(CCAM_OP_MOVE);
+                i.dst = dst; i.src = src; code.push(i);
+                code.push(ccam_instruction(CCAM_OP_RET_VOID));
+                CCAMMachineCreateResult created = ccam_machine_create_validated(types, code, 3, CCAM_RETURN_VOID);
+                if (dst < 0 || dst > 2 || src < 0 || src > 2) {
+                    assert(!created.ok && created.error == "invalid_register");
+                } else if ((dst == 2) != (src == 2)) {
+                    assert(!created.ok && created.error == "register_type_mismatch");
+                } else { assert(created.ok); }
+                if (!created.ok) {
+                    assert(created.state.halted && created.state.steps == 0);
+                    assert(created.state.instructions.len() == 0 && created.state.registers.len() == 0);
+                }
+            }
+        }
+    }
+}

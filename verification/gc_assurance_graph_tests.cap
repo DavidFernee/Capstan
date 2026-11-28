@@ -1,0 +1,188 @@
+import "gc_model.cap";
+
+// Independently enumerate simple paths of length zero, one and two: on
+// a three-node graph every reachable vertex has a simple path of length <= 2.
+bool assurance_gc_reach(List<bool> links, List<bool> roots, int target) {
+    if (roots[target]) { return true; }
+    for (int r = 0; r < 3; r += 1) {
+        if (roots[r]) {
+            if (links[3 * r + target]) { return true; }
+            for (int mid = 0; mid < 3; mid += 1) {
+                if (links[3 * r + mid] && links[3 * mid + target]) { return true; }
+            }
+        }
+    }
+    return false;
+}
+
+bool assurance_gc_graph(int mask, int root_mask, int budget) {
+    GCSpec spec = gc_empty_spec(budget);
+    List<bool> links = new List<bool>();
+    List<bool> roots = new List<bool>();
+    int bits = mask;
+    for (int i = 0; i < 9; i += 1) {
+        bool present = bits % 2 == 1;
+        links.push(present);
+        if (present) {
+            spec.edges.push(new GCEdge{from_id: i / 3, from_generation: 1,
+                to_id: i % 3, to_generation: 1});
+        }
+        bits = bits / 2;
+    }
+    bits = root_mask;
+    for (int i = 0; i < 3; i += 1) {
+        spec.objects.push(gc_object(i, GC_KIND_TRACED));
+        bool root = bits % 2 == 1;
+        roots.push(root);
+        if (root) { spec.roots.push(gc_ref(i, 1)); }
+        bits = bits / 2;
+    }
+    List<bool> expected = new List<bool>();
+    int live = 0;
+    for (int i = 0; i < 3; i += 1) {
+        bool keep = assurance_gc_reach(links, roots, i);
+        expected.push(keep);
+        if (keep) { live += 1; }
+    }
+    GCResult result = gc_collect(spec);
+    if (budget < live) {
+        if (result.status != GC_WORKLIST_FULL || result.work_items != budget ||
+            result.marked_ids.len() != 0 || result.reclaimed_ids.len() != 0) { return false; }
+        string reason = "reachable_worklist_capacity_exhausted";
+        if (spec.roots.len() > budget) { reason = "root_worklist_capacity_exhausted"; }
+        if (result.reason != reason) { return false; }
+        for (int i = 0; i < 3; i += 1) {
+            if (!result.objects[i].allocated || result.objects[i].marked ||
+                !spec.objects[i].allocated || spec.objects[i].marked) { return false; }
+        }
+        return true;
+    }
+    if (result.status != GC_OK || result.reason != "" || result.work_items != live ||
+        result.marked_ids.len() != live || result.reclaimed_ids.len() != 3 - live) { return false; }
+    for (int i = 0; i < 3; i += 1) {
+        if (result.objects[i].allocated != expected[i] ||
+            result.objects[i].marked != expected[i] ||
+            gc_id_in(result.marked_ids, i) != expected[i] ||
+            gc_id_in(result.reclaimed_ids, i) == expected[i] ||
+            result.objects[i].generation != 1 || result.objects[i].secret_wiped) { return false; }
+    }
+    return true;
+}
+
+test "GC exhaustive three-node graph shard 0" {
+    for (int graph = 0; graph < 64; graph += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                assert(assurance_gc_graph(graph, roots, budget));
+            }
+        }
+    }
+}
+
+test "GC exhaustive three-node graph shard 1" {
+    for (int graph = 64; graph < 128; graph += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                assert(assurance_gc_graph(graph, roots, budget));
+            }
+        }
+    }
+}
+
+test "GC exhaustive three-node graph shard 2" {
+    for (int graph = 128; graph < 192; graph += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                assert(assurance_gc_graph(graph, roots, budget));
+            }
+        }
+    }
+}
+
+test "GC exhaustive three-node graph shard 3" {
+    for (int graph = 192; graph < 256; graph += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                assert(assurance_gc_graph(graph, roots, budget));
+            }
+        }
+    }
+}
+
+test "GC exhaustive three-node graph shard 4" {
+    for (int graph = 256; graph < 320; graph += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                assert(assurance_gc_graph(graph, roots, budget));
+            }
+        }
+    }
+}
+
+test "GC exhaustive three-node graph shard 5" {
+    for (int graph = 320; graph < 384; graph += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                assert(assurance_gc_graph(graph, roots, budget));
+            }
+        }
+    }
+}
+
+test "GC exhaustive three-node graph shard 6" {
+    for (int graph = 384; graph < 448; graph += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                assert(assurance_gc_graph(graph, roots, budget));
+            }
+        }
+    }
+}
+
+test "GC exhaustive three-node graph shard 7" {
+    for (int graph = 448; graph < 512; graph += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                assert(assurance_gc_graph(graph, roots, budget));
+            }
+        }
+    }
+}
+
+test "GC all three-slot object kind and root combinations" {
+    for (int kinds = 0; kinds < 27; kinds += 1) {
+        for (int roots = 0; roots < 8; roots += 1) {
+            for (int budget = 0; budget <= 3; budget += 1) {
+                GCSpec spec = gc_empty_spec(budget);
+                List<bool> kept = new List<bool>();
+                int k = kinds;
+                int r = roots;
+                int live = 0;
+                for (int i = 0; i < 3; i += 1) {
+                    int kind = 1 + k % 3;
+                    bool root = r % 2 == 1;
+                    spec.objects.push(gc_object(i, kind));
+                    kept.push(root);
+                    if (root) { spec.roots.push(gc_ref(i, 1)); live += 1; }
+                    k = k / 3;
+                    r = r / 2;
+                }
+                GCResult result = gc_collect(spec);
+                if (budget < live) {
+                    assert(result.status == GC_WORKLIST_FULL && result.work_items == budget);
+                    assert(result.marked_ids.len() == 0 && result.reclaimed_ids.len() == 0);
+                    for (int i = 0; i < 3; i += 1) {
+                        assert(result.objects[i].allocated && !result.objects[i].secret_wiped);
+                    }
+                } else {
+                    assert(result.status == GC_OK && result.work_items == live);
+                    for (int i = 0; i < 3; i += 1) {
+                        GCObject item = result.objects[i];
+                        assert(item.allocated == kept[i] && item.marked == kept[i]);
+                        assert(item.secret_wiped == (!kept[i] && item.kind == GC_KIND_SECRET));
+                    }
+                }
+            }
+        }
+    }
+}
