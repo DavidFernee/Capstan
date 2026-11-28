@@ -22,6 +22,8 @@ def main():
         'bytes-copy': 50, 'bytes-copy-empty': 3, 'bytes-max': 4096,
         'bytes-over': None, 'bytes-reversed': None, 'bytes-slice-oob': None,
         'bytes-slice-negative': None,
+        'text-extrema': 42, 'text-byte-bool': 255,
+        'text-byte-over': None, 'text-byte-negative': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
