@@ -536,3 +536,26 @@ test "candidate native source admits calls across old function index boundary" {
     source = source + "int run() { return helper298() - helper256(); }";
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-300.elf"));
 }
+
+AGImage ag_nv_test_process(string text) {
+    Ctx ctx = new Ctx{files: new List<string>(), sources: new List<Tainted>(),
+        diags: new List<Diag>(), release: false, strict: false, keep_checks: false};
+    ctx.files.push("native-process.cap");
+    Tainted source = taint(text); ctx.sources.push(source);
+    List<Node> declarations = parse_program(ctx, lex(ctx, source, 0));
+    if (error_count(ctx) == 0) { check_program(new_checker(ctx), declarations, false); }
+    return ag_nvc_compile_checked_process(ctx, declarations, 1024, 8);
+}
+
+test "candidate process entry accepts only exact string list signature" {
+    string source = "int run(List<string> argv) { if (argv.len() == 0) { return 0; } return argv.len() * 10000 + argv[0].len(); }";
+    assert(ag_nv_test_write(ag_nv_test_process(source), "build/ccam-native-record-process-argv.elf"));
+    assert(!ag_nv_test_process("int run() { return 0; }").ok);
+    assert(!ag_nv_test_process("int run(List<int> argv) { return argv.len(); }").ok);
+    assert(!ag_nvc_test_source(source, 1024, 8).ok);
+}
+
+test "candidate process entry preserves argument bytes" {
+    string source = "int run(List<string> argv) { if (argv.len() == 2) { if (argv[0].len() == 0) { return argv[1].at(0); } } return 0; }";
+    assert(ag_nv_test_write(ag_nv_test_process(source), "build/ccam-native-record-process-bytes.elf"));
+}
