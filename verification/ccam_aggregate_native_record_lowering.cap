@@ -30,12 +30,36 @@ const int AG_NV_BOOL_LIST_TAG = 4095;
 const int AG_NV_LIST_CAPACITY = 256;
 const int AG_NV_INT_LIST_DESCRIPTOR = -2;
 const int AG_NV_BOOL_LIST_DESCRIPTOR = -3;
-const int AG_NV_RECORD_LIMIT = 2045;
+const int AG_NV_RECORD_LIMIT = 1021;
+const int AG_NV_OPT_INT_TAG = 1021;
+const int AG_NV_OPT_BOOL_TAG = 1022;
+const int AG_NV_OPT_STRING_TAG = 1023;
 const int AG_NV_STRING_LIST_TAG = 4093;
 
 int ag_nv_ref_list_tag(int descriptor) {
     if (descriptor == -4100) { return AG_NV_STRING_LIST_TAG; }
-    if (descriptor <= -4 && descriptor >= -2047) { return 2048 - (descriptor + 3); }
+    if (descriptor <= -4 && descriptor >= -1023) { return 2048 - (descriptor + 3); }
+    return 0;
+}
+
+// Immutable optionals occupy one ordinary pair: payload and presence.
+// The presence word is 0 for none and 1 for some, including offset zero.
+// Reserve disjoint tags 1021..2044; list tags start at 2049.
+int ag_nv_optional_tag(int descriptor) {
+    if (descriptor == 8193) { return AG_NV_OPT_INT_TAG; }
+    if (descriptor == 8194) { return AG_NV_OPT_BOOL_TAG; }
+    if (descriptor == 8195) { return AG_NV_OPT_STRING_TAG; }
+    if (descriptor > 10000 && descriptor < 10000 + AG_NV_RECORD_LIMIT) {
+        return 1024 + descriptor - 10000;
+    }
+    return 0;
+}
+
+int ag_nv_optional_payload_descriptor(int descriptor) {
+    if (descriptor == 8195) { return AG_NV_BYTES_DESCRIPTOR; }
+    if (descriptor > 10000 && descriptor < 10000 + AG_NV_RECORD_LIMIT) {
+        return descriptor - 10000;
+    }
     return 0;
 }
 
@@ -63,6 +87,7 @@ int ag_nv_field_shape(int kind, int descriptor) {
     if (kind == AG_SCHEMA_REF && descriptor == AG_NV_INT_LIST_DESCRIPTOR) { return -4; }
     if (kind == AG_SCHEMA_REF && descriptor == AG_NV_BOOL_LIST_DESCRIPTOR) { return -5; }
     if (kind == AG_SCHEMA_REF && ag_nv_ref_list_tag(descriptor) != 0) { return -10000 + descriptor; }
+    if (kind == AG_SCHEMA_REF && ag_nv_optional_tag(descriptor) != 0) { return -30000 - descriptor; }
     if (kind == AG_SCHEMA_REF && descriptor >= 1 && descriptor < AG_NV_RECORD_LIMIT) { return descriptor; }
     return -2;
 }
@@ -116,6 +141,10 @@ bool ag_nv_admit_function(AGFunction f, List<int> layouts, Map<int> fields, bool
                         if (op[1] != -1 && (op[1] < 1 || op[1] >= AG_NV_RECORD_LIMIT)) { return false; }
                     } else if (op[1] != 0) { return false; }
                 }
+            } else if (ins.opcode >= AG_OP_OPT_NONE && ins.opcode <= AG_OP_OPT_UNWRAP) {
+                int descriptor = op[1];
+                if (ins.opcode != AG_OP_OPT_NONE) { descriptor = op[2]; }
+                if (ag_nv_optional_tag(descriptor) == 0) { return false; }
             } else if (ins.opcode == AG_OP_BYTES_LITERAL || ins.opcode == 4 || ins.opcode == 7 ||
                 ins.opcode == AG_OP_BYTES_EQ || ins.opcode == AG_OP_BYTES_NE ||
                 ins.opcode == 8 || ins.opcode == AG_OP_BYTES_SLICE ||
@@ -214,6 +243,18 @@ bool ag_nv_reference(AGNVContext c, int descriptor) {
         // Membership validates the dynamic length (0..4096) and extent.
         b.push(73); b.push(57); b.push(52); b.push(4);
         return ag_nv_edge(c, 133, c.trap);
+    }
+    if (ag_nv_optional_tag(descriptor) != 0) {
+        if (b.len() > AG_BYTE_LIMIT - 96 || !ag_nv_imm(b, 6, ag_nv_optional_tag(descriptor)) ||
+            !ag_nv_call(c, c.trap + 6)) { return false; }
+        // Membership then exact tag, count, presence range.
+        b.push(73); b.push(57); b.push(52); b.push(4);
+        if (!ag_nv_edge(c, 133, c.trap)) { return false; }
+        b.push(73); b.push(131); b.push(124); b.push(4); b.push(8); b.push(1);
+        if (!ag_nv_edge(c, 133, c.trap)) { return false; }
+        b.push(73); b.push(131); b.push(124); b.push(4); b.push(24); b.push(1);
+        if (!ag_nv_edge(c, 135, c.trap)) { return false; }
+        return true;
     }
     if (descriptor == AG_NV_INT_LIST_DESCRIPTOR || descriptor == AG_NV_BOOL_LIST_DESCRIPTOR || ag_nv_ref_list_tag(descriptor) != 0) {
         int tag = AG_NV_INT_LIST_TAG;
@@ -390,6 +431,45 @@ bool ag_nv_ref_list_instruction(AGNVContext c, AGBlockInstruction ins) {
     return true;
 }
 
+// Validate payload before allocating some. Allocation privately writes
+// the pair and publishes the handle last. No public field opcode admits
+// an optional's physical tag. Unwrap checks presence before reading.
+bool ag_nv_optional_instruction(AGNVContext c, AGBlockInstruction ins) {
+    List<int> b = c.code; List<int> a = ins.operands;
+    int descriptor = a[1];
+    if (ins.opcode != AG_OP_OPT_NONE) { descriptor = a[2]; }
+    int tag = ag_nv_optional_tag(descriptor);
+    if (tag == 0 || b.len() > AG_BYTE_LIMIT - 256) { return false; }
+    int payload_kind = ag_schema_optional_payload(descriptor);
+    int payload_descriptor = ag_nv_optional_payload_descriptor(descriptor);
+    if (ins.opcode == AG_OP_OPT_NONE || ins.opcode == AG_OP_OPT_SOME) {
+        if (ins.opcode == AG_OP_OPT_SOME) {
+            if (!ag_nv_slot(b, false, 0, a[1]) ||
+                !ag_nv_field_value(c, payload_kind, payload_descriptor)) { return false; }
+        }
+        if (!ag_nv_imm(b, 0, tag) || !ag_nv_imm(b, 6, 1) ||
+            !ag_nv_call(c, c.trap + 3)) { return false; }
+        if (ins.opcode == AG_OP_OPT_SOME) {
+            if (!ag_nv_slot(b, false, 9, a[1])) { return false; }
+            // mov [r12+rax+16],r9; mov qword [r12+rax+24],1
+            b.push(77); b.push(137); b.push(76); b.push(4); b.push(16);
+            b.push(73); b.push(199); b.push(68); b.push(4); b.push(24);
+            if (!ag_u32(b, 1)) { return false; }
+        }
+    } else {
+        if (!ag_nv_slot(b, false, 0, a[1]) || !ag_nv_reference(c, descriptor)) { return false; }
+        if (ins.opcode == AG_OP_OPT_PRESENT) {
+            b.push(73); b.push(139); b.push(68); b.push(4); b.push(24);
+        } else if (ins.opcode == AG_OP_OPT_UNWRAP) {
+            b.push(73); b.push(131); b.push(124); b.push(4); b.push(24); b.push(1);
+            if (!ag_nv_edge(c, 133, c.trap)) { return false; }
+            b.push(73); b.push(139); b.push(68); b.push(4); b.push(16);
+            if (!ag_nv_field_value(c, payload_kind, payload_descriptor)) { return false; }
+        } else { return false; }
+    }
+    return ag_nv_slot(b, true, 0, a[0]);
+}
+
 bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
     if (c.code.len() > AG_BYTE_LIMIT - 256 || !ag_nv_fuel(c)) { return false; }
     List<int> b = c.code; List<int> a = ins.operands; int op = ins.opcode;
@@ -399,6 +479,9 @@ bool ag_nv_instruction(AGNVContext c, AGBlockInstruction ins) {
     }
     if (op == 5 || op == 1 || op == 2 || op == 3 || op == AG_OP_LIST_PUSH || op == AG_OP_LIST_POP_DISCARD) {
         return ag_nv_list_instruction(c, ins);
+    }
+    if (op >= AG_OP_OPT_NONE && op <= AG_OP_OPT_UNWRAP) {
+        return ag_nv_optional_instruction(c, ins);
     }
     if (op >= AG_OP_INT_TEXT && op <= AG_OP_BOOL_TEXT) {
         return ag_nv_slot(b, false, 0, a[1]) &&
