@@ -71,7 +71,7 @@ test "candidate native arithmetic admits signed extrema and explicit arithmetic 
 test "candidate native admission rejects invalid budgets and unsupported source" {
     AGFunction f = ag_nv_test_arith(AG_OP_ADD, 1, 2);
     assert(!ag_nv_compile(f, 0).ok && !ag_nv_compile(f, 4097).ok);
-    if (let entry = ag_nv_test_source("int run() { Map<int> v = new Map<int>(); return 1; }")) {
+    if (let entry = ag_nv_test_source("int run() { Map<int> v = new Map<int>(); return v.keys().len(); }")) {
         AGImage refused = ag_nv_compile(entry.function, 100);
         assert(!refused.ok && refused.bytes.len() == 0);
     } else { assert(false); }
@@ -114,8 +114,8 @@ test "candidate native direct calls preserve local record identity across scalar
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-local-record.elf"));
 }
 
-test "candidate native direct calls reject unsupported map boundaries and invalid budgets" {
-    string source = "int read(Map<int> values) { return 1; } " +
+test "candidate native direct calls reject unsupported map enumeration and invalid budgets" {
+    string source = "int read(Map<int> values) { return values.keys().len(); } " +
         "int run() { Map<int> values = new Map<int>(); return read(values); }";
     AGImage rejected = ag_nvc_test_source(source, 100, 8);
     assert(!rejected.ok && rejected.bytes.len() == 0);
@@ -444,4 +444,35 @@ test "candidate native optional tag partition and wrong descriptor rejection" {
     assert(ag_nv_test_write(ag_nv_compile(ag_nv_test_optional_graph(8193, 8194, false), 100),
         "build/ccam-native-record-opt-mismatch.elf"));
     assert(!ag_nv_compile(ag_nv_test_optional_graph(11021, 11021, false), 100).ok);
+}
+
+test "candidate native map lookup preserves present zero and content equality" {
+    string source = "int run() { Map<int> m = new Map<int>(); m.set(\"a\\0b\", 0); " +
+        "string k = \"a\" + \"\\0b\"; if (m.has(k)) { if (let v = m.get(k)) { " +
+        "m.set(k, 42); if (let w = m.get(\"a\\0b\")) { return v + w; } } } return 99; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-int.elf"));
+}
+
+test "candidate native map fields and returned reference payloads preserve aliases" {
+    string source = "struct Node { int n; } struct Holder { Map<Node> nodes; } " +
+        "Map<Node> make(Node n) { Map<Node> m = new Map<Node>(); m.set(\"n\", n); return m; } " +
+        "int run() { Node n = new Node{n: 20}; Holder h = new Holder{nodes: make(n)}; " +
+        "if (let v = h.nodes.get(\"n\")) { v.n += 22; return n.n; } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-ref.elf"));
+}
+
+test "candidate native map string and bool payloads and absent lookup" {
+    string source = "int run() { Map<string> s = new Map<string>(); Map<bool> b = new Map<bool>(); " +
+        "s.set(\"k\", \"abc\"); b.set(\"k\", false); if (let value = b.get(\"k\")) { if (!value) { " +
+        "if (let text = s.get(\"k\")) { if (!s.has(\"missing\")) { if (let other = s.get(\"missing\")) { return 99; } " +
+        "return text.len(); } } } } return 0; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-string-bool.elf"));
+}
+
+test "candidate native fixed map bound admits replacement and rejects growth" {
+    string full = "int run() { Map<int> m = new Map<int>(); int i = 0; while (i < 64) { m.set(int_to_str(i), i); i += 1; } " +
+        "m.set(\"0\", 42); if (let v = m.get(\"0\")) { return v; } return 0; }";
+    string over = "int run() { Map<int> m = new Map<int>(); int i = 0; while (i < 65) { m.set(int_to_str(i), i); i += 1; } return 42; }";
+    assert(ag_nv_test_write(ag_nvc_test_source(full, 4096, 8), "build/ccam-native-record-map-full.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source(over, 4096, 8), "build/ccam-native-record-map-over.elf"));
 }
