@@ -909,6 +909,22 @@ else
   bad "region heap cross-arena build" "$(head -3 "$tmp/log")"
 fi
 
+section "experimental region heap: tainted cross-arena rejection"
+for operation in len type; do
+  probe="ccam_heap_tainted_cross_arena_${operation}"
+  if "$C" build -o "$tmp/$probe.c" "$ROOT/verification/$probe.cap" >"$tmp/log" 2>&1 &&
+     "$CC" $WFLAGS "$tmp/$probe.c" -o "$tmp/$probe" 2>>"$tmp/log"; then
+    err="$("$tmp/$probe" 2>&1)"; code=$?
+    if [[ $code -eq 101 ]] && grep -qF "CWE-639" <<<"$err"; then
+      ok "tainted cross-arena $operation rejects a foreign reference"
+    else
+      bad "tainted cross-arena $operation" "exit $code: $err"
+    fi
+  else
+    bad "tainted cross-arena $operation build" "$(head -3 "$tmp/log")"
+  fi
+done
+
 expect_reject() {   # dir label
   for f in "$ROOT"/tests/$1/*.cap; do
     local n="$1/$(basename "$f")" want flags out code

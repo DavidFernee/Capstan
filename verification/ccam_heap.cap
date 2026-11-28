@@ -1973,10 +1973,8 @@ test "tainted byte objects preserve classification through bounded slicing and t
     assert(ccam_heap_list_pop_discard(heap, list.reference, CCAM_HEAP_VALUE_REF) == "");
     assert(ccam_heap_array_len(heap, list.reference, CCAM_HEAP_VALUE_REF).value == 1);
     assert(!ccam_heap_array_get(heap, list.reference, CCAM_HEAP_VALUE_REF, 1).ok);
-    CCAMHeapCreateResult other = ccam_heap_create(4096, 32);
-    assert(other.ok);
-    assert(!ccam_heap_tainted_len(other.heap, source.reference).ok);
-    assert(!ccam_heap_value_has_type(other.heap, value, CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_TAINTED));
+    // Foreign-arena access is a fatal capability trap; the independent
+    // ccam_heap_tainted_cross_arena probes exercise both read and type query.
 }
 
 test "tainted slice allocation rejects without charging or publishing" {
