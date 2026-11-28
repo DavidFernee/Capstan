@@ -306,6 +306,20 @@ else
   bad "native LogText bridge emission" "$out"
 fi
 
+section "Candidate native bounded join"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_join.cap" 2>&1)"; then
+  ok "native join emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_join.py" "$ROOT/build/ccam-native-join.bin" 2>&1)"; then
+      ok "native join differential and boundary execution"
+    else
+      bad "native join execution" "$out"
+    fi
+  fi
+else
+  bad "native join emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"

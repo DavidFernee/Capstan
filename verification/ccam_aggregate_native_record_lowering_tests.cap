@@ -632,3 +632,13 @@ test "native LogText contextual composition and optional direct returns" {
     assert(!ag_nvc_test_source("string bad(Tainted x) { return escape_log(x); } int run() { return 0; }", 1024, 8).ok);
     assert(!ag_nvc_test_source("LogText bad(Tainted x) { return escape_log(x) + x; } int run() { return 0; }", 1024, 8).ok);
 }
+
+test "native join preserves trusted and tainted nominal result including empty lists" {
+    string source = "int run() { List<string> a = new List<string>(); a.push(\"left\"); a.push(\"right\"); " +
+        "List<Tainted> b = new List<Tainted>(); b.push(taint(\"left\")); b.push(taint(\"right\")); " +
+        "Tainted x = join(b, \"-\"); string y = join(a, \"-\"); " +
+        "List<Tainted> empty = new List<Tainted>(); Tainted z = join(empty, \"!\"); " +
+        "return x.len() + y.len() + z.len() + x.at(4); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-join.elf"));
+    assert(!ag_nvc_test_source("string bad(List<Tainted> x) { return join(x, \"\"); } int run() { return 0; }", 1024, 8).ok);
+}
