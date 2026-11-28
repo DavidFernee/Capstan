@@ -58,7 +58,8 @@ AGSourceModuleResult ag_source_lower_checked(Ctx ctx, List<Node> declarations) {
             Type t = ty_of(d);
             Node literal = d.kids[0];
             if (!((t.k == TY_INT && literal.k == N_INT) ||
-                (t.k == TY_BOOL && literal.k == N_BOOL && (literal.n == 0 || literal.n == 1))) ||
+                (t.k == TY_BOOL && literal.k == N_BOOL && (literal.n == 0 || literal.n == 1)) ||
+                (t.k == TY_STR && literal.k == N_STR && literal.n >= 0 && literal.n <= AG_STRING_MAX_LITERAL)) ||
                 t.args.len() != 0 || t.name != "" || literal.kids.len() != 0) {
                 return ag_source_module_failure("unsupported_constant");
             }
