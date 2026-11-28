@@ -1,0 +1,45 @@
+name: test integrity
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Exercise detector controls
+        run: python3 -m unittest discover -s tools/assurance -p test_test_integrity_inventory.py -v
+      - name: Compare tested tree against target base
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          TESTED: ${{ github.sha }}
+        run: |
+          detector=tools/assurance/test_integrity_inventory.py
+          if git cat-file -e "$BASE:$detector" 2>/dev/null; then
+            git show "$BASE:$detector" > "$RUNNER_TEMP/base-detector.py"
+            detector="$RUNNER_TEMP/base-detector.py"
+          fi
+          printf 'PR head: %s\nTested tree: %s\nBase: %s\n' "$PR_HEAD" "$TESTED" "$BASE"
+          rc=0
+          python3 -I "$detector" "$BASE" "$TESTED" > integrity-report.json || rc=$?
+          cat integrity-report.json
+          case "$rc" in
+            0) echo "No review flags from detector" ;;
+            1) echo "::warning::Test integrity review required; inspect report before merge" ;;
+            *) exit "$rc" ;;
+          esac
+      - name: Retain revision-bound review report
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-integrity-report
+          path: integrity-report.json
+          if-no-files-found: error
