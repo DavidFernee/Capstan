@@ -34,14 +34,15 @@ must have a distinct name from the declared integer constants.
 
 ## Parameterized integer helper profile
 
-A scalar program can declare one integer helper with one to six integer
+A scalar program can declare one integer helper with one to sixteen integer
 parameters. The helper supports the scalar local, assignment, loop, and
 conditional return forms described above. Parameters count toward its 16
 stack slots and may be read or assigned within the helper. The helper and parameter names
 begin with underscores. The entry evaluates the matching number of checked argument
 expressions left to right, then returns the helper result. The caller and
 helper share a 256-operator compilation budget. The native call uses the System V
-AMD64 integer argument registers in declaration order. The helper spills
+AMD64 integer argument registers for the first six values and passes the remaining
+arguments on the aligned stack. The helper spills
 each argument into a distinct stack slot and returns the value in RAX.
 
 ## Record fixture profile

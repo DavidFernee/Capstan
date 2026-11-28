@@ -403,8 +403,22 @@ done
 for helper in \
     'int _sub(int _a, int _a){ return _a; } int main(){ return _sub(50, 8); }' \
     'int _sub(int _a, int _b){ return _a - _b; } int main(){ return _sub(42); }' \
-    'int _many(int _a, int _b, int _c, int _d, int _e, int _f, int _g){ return _g; } int main(){ return _many(1, 2, 3, 4, 5, 6, 7); }'; do
+    'int _many(int _a, int _b, int _c, int _d, int _e, int _f, int _g){ return _g; } int main(){ return _many(1, 2, 3, 4, 5, 6); }'; do
     printf '%s' "$helper" | reject
+done
+
+# Exercise both alignment cases and every register/stack argument position.
+for arity in 7 8 15 16 17; do
+    params=() args=()
+    for ((i=1; i<=arity; i++)); do params+=("int _p$i"); args+=("$i + 20"); done
+    for ((i=1; i<=arity; i++)); do
+        fixture="$(IFS=,; printf 'int _pick(%s){ return _p%d; } int main(){ return _pick(%s); }' "${params[*]}" "$i" "${args[*]}")"
+        if ((arity > 16)); then printf '%s' "$fixture" | reject; break; fi
+        printf '%s' "$fixture" | compile > "$scratch/stack-arguments"
+        chmod +x "$scratch/stack-arguments"
+        env -i PATH="$scratch/empty" "$scratch/stack-arguments" 3>"$scratch/result"
+        [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$((i+20))" ]]
+    done
 done
 
 printf '%s' 'int _sub(int _left, int _right){ return _left - _right; } int main(){ return _sub(45 + 5, 10 - 2); }' |
@@ -727,11 +741,14 @@ printf '%s' 'struct Ref { int n; } struct Holder { Ref? optional; } int main(){ 
 printf '%s' 'struct Budget { int count; } struct Node { int k; List<Node> kids; } bool _charge(Budget item, List<Node> roots){ List<Node> pending = new List<Node>(); pending.push(item); return true; } int main(){ Budget item = new Budget{count: 42}; if (_charge(item, new List<Node>())) { return 42; } return 17; }' |
     reject
 
-for budget in 149999 150000; do
+for budget in fresh 149999 150000; do
     {
-        sed -n '1,/^bool charge_ast_nodes(/p' ../../compiler/ast.cap | sed '/^CompileBudget new_compile_budget()/,/^}/d; $d'
-        sed -n '/^bool charge_ast_nodes(/,/^}/p' ../../compiler/ast.cap
-        printf 'int main(){ CompileBudget item = new CompileBudget{source_bytes: 0, tokens: 0, ast_nodes: %s, files: 0, exhausted: false}; ' "$budget"
+        sed '/^void report(/,$d' ../../compiler/ast.cap
+        if [[ "$budget" == fresh ]]; then
+            printf '%s' 'int main(){ CompileBudget item = new_compile_budget(); '
+        else
+            printf 'int main(){ CompileBudget item = new CompileBudget{source_bytes: 0, tokens: 0, ast_nodes: %s, files: 0, exhausted: false}; ' "$budget"
+        fi
         printf '%s\n' 'Node peer = new Node{k: N_NONE, s: "", s2: "", s3: "", n: 0, binding_id: 0, line: 0, col: 0, file: 0, kids: new List<Node>(), ty: none}; List<Node> roots = new List<Node>(); roots.push(peer); if (charge_ast_nodes(item, roots)) { return 42; } return 17; }'
     } | compile > "$scratch/nonempty-distinct-roots"
     chmod +x "$scratch/nonempty-distinct-roots"
@@ -740,6 +757,29 @@ for budget in 149999 150000; do
     [[ "$budget" != 150000 ]] || expected=17
     [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == "$expected" ]]
 done
+
+# Reject two helpers sharing a name, and a constructor of the wrong nominal type.
+printf '%s' 'struct A { int k; } A make(){ return new A{k: 42}; } bool make(A item){ return true; } int main(){ A item = make(); if (make(item)) { return 1; } return 0; }' | reject
+printf '%s' 'struct A { int k; } struct B { int k; } A make(){ return new A{k: 42}; } bool check(B item){ return true; } int main(){ B item = make(); if (check(item)) { return 1; } return 0; }' | reject
+
+# Build the production Ctx layout and read each list through a typed parameter.
+for field in files sources diags; do
+    {
+        sed -n '/^struct Diag {/,/^void report(/{ /^void report(/!p; }' ../../compiler/ast.cap
+        printf 'int _size(Ctx value){ return value.%s.len(); } ' "$field"
+        printf '%s' 'int main(){ Ctx item = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: false, strict: false, keep_checks: false}; return _size(item); }'
+    } | compile > "$scratch/context"
+    chmod +x "$scratch/context"
+    env -i PATH="$scratch/empty" "$scratch/context" 3>"$scratch/result"
+    [[ "$(od -An -td8 "$scratch/result" | tr -d '[:space:]')" == 0 ]]
+done
+
+printf '%s' 'struct Tainted { int k; } int main(){ Tainted item = new Tainted{k: 2}; return item.k; }' | reject
+for element_pair in 'string Tainted' 'Tainted string' 'Diag Token' 'Diag Missing'; do
+    read -r declared supplied <<< "$element_pair"
+    printf 'struct Diag { int k; } struct Token { int k; } struct Ctx { List<%s> values; } int main(){ Ctx item = new Ctx{values: new List<%s>()}; return item.values.len(); }' "$declared" "$supplied" | reject
+done
+printf '%s' 'struct Ctx { List<Tainted> values; } int _read(Ctx item){ return item.values[0]; } int main(){ Ctx item = new Ctx{values: new List<Tainted>()}; return _read(item); }' | reject
 
 # Distinguish a broken input channel from a malformed source, and check
 # that transport failures cannot be mistaken for a successful compile/run.

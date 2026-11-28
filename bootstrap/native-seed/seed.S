@@ -86,7 +86,7 @@ parse_constants:
     jmp parse_constants
 constants_done:
     ret
-/* One integer helper with up to six integer arguments. */
+/* One integer helper with up to sixteen integer arguments. */
 scalar_helper:
     pop %rax                      /* release the declaration lookahead */
     call parse_record_identifier
@@ -97,7 +97,7 @@ scalar_helper:
     lea scalar_call_open(%rip), %r14
     call match_prefix
 scalar_parameter:
-    cmpq $6, scalar_local_count(%rip)
+    cmpq $16, scalar_local_count(%rip)
     jae invalid
     lea int_prefix(%rip), %r14
     call match_prefix
@@ -142,6 +142,17 @@ scalar_helper_body:
     movl $0x00ec8148, (%rbx)       /* reserve non-parameter slots */
     mov %eax, 3(%rbx)
     add $7, %rbx
+    /* The incoming return address lies above the reserved locals. Copy the
+       stacked arguments from last to first. Each push moves the next source
+       and RSP down by eight, so the displacement stays (16 - 6) * 8. */
+scalar_copy_stack_parameter:
+    cmp $6, %ecx
+    jbe scalar_spill_registers
+    movl $0x502474ff, (%rbx)       /* push qword [rsp+80] */
+    add $4, %rbx
+    dec %ecx
+    jmp scalar_copy_stack_parameter
+scalar_spill_registers:
     lea argument_push(%rip), %rax
 scalar_spill_argument:
     dec %rcx
@@ -178,6 +189,12 @@ finish_scalar_helper:
     pushq scalar_helper_arity(%rip) /* preserve arity, hide helper locals */
     movq $0, scalar_local_count(%rip)
     mov (%rsp), %rax
+    cmp $6, %eax
+    jbe scalar_argument
+    test $1, %al
+    jz scalar_argument
+    movl $0x08ec8348, (%rbx)       /* alignment pad above all arguments */
+    add $4, %rbx
 scalar_argument:
     push %rax
     call emit_expression
@@ -195,6 +212,37 @@ scalar_call_finish:
     lea close_paren(%rip), %r14
     call match_prefix
     pop %rcx
+    cmp $6, %ecx
+    jbe scalar_call_registers
+    /* Arguments were evaluated left-to-right and pushed in reverse stack
+       order. Reverse the slots, then pop the six register arguments. */
+    xor %eax, %eax
+    lea -8(,%rcx,8), %edx
+scalar_reverse_slots:
+    cmp %edx, %eax
+    jae scalar_pop_registers_forward
+    movl $0x24448b48, (%rbx)       /* mov rax,[rsp+lo] */
+    mov %al, 4(%rbx)
+    movl $0x24448748, 5(%rbx)      /* xchg rax,[rsp+hi] */
+    mov %dl, 9(%rbx)
+    movl $0x24448948, 10(%rbx)     /* mov [rsp+lo],rax */
+    mov %al, 14(%rbx)
+    add $15, %rbx
+    add $8, %eax
+    sub $8, %edx
+    jmp scalar_reverse_slots
+scalar_pop_registers_forward:
+    lea argument_pop(%rip), %rax
+    mov $6, %ecx
+scalar_pop_next_register:
+    movzwl (%rax), %edx
+    mov %dx, (%rbx)
+    add $2, %rax
+    add $2, %rbx
+    dec %ecx
+    jnz scalar_pop_next_register
+    jmp scalar_emit_call
+scalar_call_registers:
     lea argument_pop(%rip), %rax
 scalar_restore_argument:
     dec %rcx
@@ -203,11 +251,21 @@ scalar_restore_argument:
     add $2, %rbx
     test %rcx, %rcx
     jnz scalar_restore_argument
+scalar_emit_call:
     movb $0xe8, (%rbx)             /* call helper */
     add $5, %rbx
     lea result_code+5(%rip), %rax
     sub %rbx, %rax
     mov %eax, -4(%rbx)
+    mov scalar_helper_arity(%rip), %eax
+    cmp $6, %eax
+    jbe finish_main
+    sub $5, %eax                   /* round stacked slot count up to even */
+    and $-2, %eax
+    shl $3, %eax
+    movl $0x00c48348, (%rbx)       /* add rsp,stacked bytes + alignment pad */
+    mov %al, 3(%rbx)
+    add $4, %rbx
     jmp finish_main
 
 parse_main:
@@ -528,6 +586,11 @@ parse_record:
     lea struct_prefix(%rip), %r14
     call match_prefix
     call parse_record_identifier
+    lea text_list_elements(%rip), %rax
+    mov $2, %r10d
+    call find_name
+    test %rax, %rax
+    jnz invalid
     lea layouts(%rip), %rax
     mov layout_count(%rip), %r10
     call find_name
@@ -586,22 +649,24 @@ record_list_type:
     call match_prefix
     call parse_record_identifier
     cmp $3, %rdx
-    jne record_recursive_list_type
+    jne record_named_list_type
     cmpw $0x6e69, (%rdi)
-    jne record_recursive_list_type
+    jne record_named_list_type
     cmpb $116, 2(%rdi)
-    jne record_recursive_list_type
+    jne record_named_list_type
     mov $6, %ebp
     jmp record_list_type_close
-record_recursive_list_type:
-    mov layout_count(%rip), %rax
-    lea (%rax,%rax,2), %rcx
-    lea layouts(%rip), %rax
-    lea (%rax,%rcx,8), %rax
-    mov $1, %r10d
-    call find_name
-    test %rax, %rax
-    jz invalid                    /* only self-recursive List<ThisLayout> */
+record_named_list_type:
+    /* Include the current layout so a recursive worklist keeps kind 4. */
+    mov layout_count(%rip), %r10
+    inc %r10
+    call resolve_list_element
+    lea layouts(%rip), %rcx
+    imul $24, layout_count(%rip), %rdx
+    add %rdx, %rcx
+    cmp %rcx, %rax
+    je record_list_type_close
+    mov %rax, %rbp                /* exact element identity for empty lists */
 record_list_type_close:
     lea list_type_close(%rip), %r14
 record_field_type:
@@ -660,7 +725,10 @@ record_main:
     cmp $9, %eax
     ja record_entry
 record_helper:
+    movb $1, emitting_constructor(%rip)
     call select_record_layout
+    mov selected_record_layout(%rip), %rax
+    mov %rax, constructor_layout(%rip)
     lea required_trivia(%rip), %r14
     call match_prefix
     call parse_record_identifier
@@ -694,6 +762,11 @@ parse_record_reader_name:
     call parse_record_identifier
     cmp $2, %rdx
     jb invalid
+    lea helper_name(%rip), %rax
+    mov $1, %r10d
+    call find_name
+    test %rax, %rax
+    jnz invalid
     mov %rdi, record_reader_name(%rip)
     mov %rdx, record_reader_name+8(%rip)
     lea scalar_call_open(%rip), %r14
@@ -735,10 +808,15 @@ record_roots_type_ready:
 record_reader_parameters_done:
     lea scalar_body_open(%rip), %r14
     call match_prefix
+    cmpq $0, constructor_layout(%rip)
+    jne record_reader_start
     movb $0xe9, (%rbx)             /* process entry skips helper */
     add $5, %rbx
+record_reader_start:
+    mov %rbx, reader_entry(%rip)
     mov $32, %r15d
 record_reader_statement:
+    call record_check_emit_room
     cmp %r13, %rsi
     jae invalid
     cmpb $76, (%rsi)             /* List<Node> pending */
@@ -1254,6 +1332,8 @@ record_reader_return:
     call resolve_parameter_field
     cmp $1, %r12
     je record_reader_load
+    cmp $FIRST_NOMINAL_FIELD_KIND, %r12
+    jae record_reader_list
     cmp $6, %r12
     je record_reader_list
     cmp $4, %r12
@@ -1272,6 +1352,8 @@ record_reader_list:
     pop %rcx
     jmp record_reader_load
 record_reader_index:
+    cmp $FIRST_NOMINAL_FIELD_KIND, %r12
+    jae invalid                    /* no payload access for read-only empty lists */
     lea list_index_open(%rip), %r14
     call match_prefix
     call parse_operand
@@ -1302,6 +1384,8 @@ record_reader_load:
     je record_reader_index_load
     cmp $8, %r12
     je record_reader_index_load
+    cmp $FIRST_NOMINAL_FIELD_KIND, %r12
+    jae record_reader_length_load
     cmp $6, %r12
     je record_reader_length_load
     cmp $4, %r12
@@ -1455,7 +1539,19 @@ record_reader_ret:
     lea helper_end_without_initializer(%rip), %r14
     call match_prefix
 
+    pushq selected_record_layout(%rip)
+    call parse_layouts
+    pop %rax
+    call select_record_layout_entry
     jmp record_entry_body
+
+/* Each record statement or field emits less than 512 bytes before the next
+ * check, including the final call/return sequence. Keep the ELF tail separate. */
+record_check_emit_room:
+    lea result_code_limit-512(%rip), %rax
+    cmp %rax, %rbx
+    ja invalid
+    ret
 
 /* ECX selects the field. R11 returns the empty-branch relocation base. */
 emit_record_list_pop:
@@ -1550,7 +1646,18 @@ record_reserve_backing:
     movl $0x24048948, 18(%rbx)   /* mov [rsp],rax: hidden pending slot */
     add $22, %rbx
 record_construct_local:
-    lea record_local_prefix(%rip), %r14
+    lea helper_local_prefix(%rip), %r14
+    call match_prefix
+    push %rsi
+    call parse_record_identifier
+    lea helper_name(%rip), %rax
+    mov $1, %r10d
+    call find_name
+    test %rax, %rax
+    pop %rcx
+    jnz record_invoke_constructor
+    mov %rcx, %rsi
+    lea new_token(%rip), %r14
     call match_prefix
     call match_record_name
 record_open_initializer:
@@ -1559,6 +1666,7 @@ record_open_initializer:
     mov record_fields_base(%rip), %r12
     mov record_count(%rip), %rbp
 record_initializer:
+    call record_check_emit_room
     call skip_trivia
     call parse_record_identifier
     mov %r12, %rax
@@ -1573,6 +1681,8 @@ record_initializer:
     call parse_operand
     jmp record_push
 record_bool:
+    cmpq $FIRST_NOMINAL_FIELD_KIND, 16(%r12)
+    jae record_typed_empty_list
     cmpq $3, 16(%r12)
     je record_string
     cmpq $4, 16(%r12)
@@ -1649,7 +1759,7 @@ record_string_done:
     inc %rsi
     jmp record_blob
 record_mutable_list:
-    cmpq $0, helper_name+8(%rip)
+    cmpb $0, emitting_constructor(%rip)
     jne invalid                   /* caller-owned backing cannot escape a helper */
     lea int_list_constructor(%rip), %r14
     call match_prefix
@@ -1674,14 +1784,26 @@ record_initialize_list_offset:
     movl $0, 10(%rbx)
     add $14, %rbx
     jmp record_store
+record_typed_empty_list:
+    lea list_value_open(%rip), %r14
+    call match_prefix
+    call parse_record_identifier
+    mov layout_count(%rip), %r10
+    call resolve_list_element
+    cmp 16(%r12), %rax
+    jne invalid
+    lea list_value_close(%rip), %r14
+    call match_prefix
+    jmp record_immutable_empty
 record_empty_list:
     lea list_value_open(%rip), %r14
     call match_prefix
     call match_record_name
     lea list_value_close(%rip), %r14
     call match_prefix
-    cmpq $0, helper_name+8(%rip)
+    cmpb $0, emitting_constructor(%rip)
     je record_initialize_list_backing
+record_immutable_empty:
     mov %rsi, %rdi
     xor %edx, %edx
 record_blob:
@@ -1707,7 +1829,7 @@ record_push:
     mov %r9, 2(%rbx)
     add $10, %rbx
 record_store:
-    cmpq $0, helper_name+8(%rip)
+    cmpb $0, emitting_constructor(%rip)
     jne record_store_helper
     movb $0x50, (%rbx)              /* push rax */
     inc %rbx
@@ -1725,10 +1847,11 @@ record_next_initializer:
     call match_prefix
     jmp record_initializer
 record_finish_initializer:
-    cmpq $0, helper_name+8(%rip)
+    cmpb $0, emitting_constructor(%rip)
     jne record_finish_helper
     lea record_close_initializer(%rip), %r14
     call match_prefix
+record_item_ready:
     cmpq $0, record_reader_name+8(%rip)
     je record_return
     cmpb $0, record_distinct_root_layout(%rip)
@@ -1880,7 +2003,7 @@ record_call_reader_with_peer:
 record_reader_aligned:
     movb $0xe8, (%rbx)
     add $5, %rbx
-    lea result_code+5(%rip), %rax
+    mov reader_entry(%rip), %rax
     sub %rbx, %rax
     mov %eax, -4(%rbx)
     cmpb $0, record_reader_call_pad(%rip)
@@ -1916,22 +2039,35 @@ record_finish_helper:
     mov %rbx, %rcx
     sub %rax, %rcx
     mov %ecx, -4(%rax)
-    pushq record_fields_base(%rip)
-    pushq record_count(%rip)
+    movb $0, emitting_constructor(%rip)
     call parse_layouts
-    popq record_count(%rip)
-    popq record_fields_base(%rip)
-    lea record_main_prefix(%rip), %r14
-    call match_prefix
-    call match_record_name
-    lea helper_local_prefix(%rip), %r14
-    call match_prefix
-    call parse_record_identifier
-    lea helper_name(%rip), %rax
-    mov $1, %r10d
-    call find_name
-    test %rax, %rax
-    jz invalid
+    cmp %r13, %rsi
+    jae invalid
+    cmpb $98, (%rsi)
+    je record_bool_helper
+    mov constructor_layout(%rip), %rax
+    call select_record_layout_entry
+    jmp record_entry_body
+
+record_invoke_constructor:
+    mov constructor_layout(%rip), %rax
+    cmp selected_record_layout(%rip), %rax
+    jne invalid
+    /* A constructor's immutable empty list has no caller-owned backing.
+       Only pass constructed records to a reader when all fields are immutable. */
+    cmpq $0, record_reader_name+8(%rip)
+    je record_constructor_call
+    mov record_count(%rip), %rcx
+    mov record_fields_base(%rip), %rax
+record_check_constructor_fields:
+    cmpq $4, 16(%rax)
+    je invalid
+    cmpq $6, 16(%rax)
+    je invalid
+    add $24, %rax
+    dec %rcx
+    jnz record_check_constructor_fields
+record_constructor_call:
     lea helper_call_end(%rip), %r14
     call match_prefix
     movl $0x00ec8148, (%rbx)       /* sub rsp,imm32 (fourth byte overwritten) */
@@ -1943,6 +2079,7 @@ record_finish_helper:
     lea result_code+5(%rip), %rax
     sub %rbx, %rax
     mov %eax, -4(%rbx)
+    jmp record_item_ready
 record_return:
     lea record_return_prefix(%rip), %r14
     call match_prefix
@@ -2098,6 +2235,23 @@ resolve_record_field:
     dec %rcx
     sub %rax, %rcx                 /* reverse index of pushed field */
     shl $3, %ecx
+    ret
+
+/* Input is a parsed element name and the number of visible layouts.
+ * Return the stable name-table entry as its nominal identity. */
+resolve_list_element:
+    push %r10
+    lea text_list_elements(%rip), %rax
+    mov $2, %r10d
+    call find_name
+    pop %r10
+    test %rax, %rax
+    jnz resolved_list_element
+    lea layouts(%rip), %rax
+    call find_name
+    test %rax, %rax
+    jz invalid
+resolved_list_element:
     ret
 
 lookup_record_layout:
@@ -2659,7 +2813,7 @@ record_reader_call: .asciz "\001(\001item\001)"
 record_reader_pair_call: .asciz "\001(\001item\001,\001peer\001)"
 helper_end_without_initializer: .asciz "\001;\001}\001"
 record_main_prefix: .asciz "\001int main\001(\001)\001{\001"
-record_local_prefix: .asciz " item\001=\001new "
+new_token: .asciz "new "
 required_trivia: .asciz " "
 helper_prefix: .asciz "\001(\001)\001{\001return new "
 helper_end: .asciz "\001}\001;\001}"
@@ -2667,6 +2821,13 @@ helper_local_prefix: .asciz " item\001=\001"
 helper_call_end: .asciz "\001(\001)\001;"
 record_close_initializer: .asciz "\001}\001;"
 record_return_prefix: .asciz "\001return item\001.\001"
+.set FIRST_NOMINAL_FIELD_KIND, 16
+/* Pointer-valued field kinds are disjoint from the small scalar/worklist tags. */
+text_list_elements:
+    .quad text_string_name,6,0
+    .quad text_tainted_name,7,0
+text_string_name: .ascii "string"
+text_tainted_name: .ascii "Tainted"
 string_escapes:
     .byte 110,10, 116,9, 114,13, 48,0, 92,92, 34,34, 39,39
 string_escapes_end:
@@ -2743,7 +2904,9 @@ program:
 result_left:
     .quad 0
 result_code:
-    .space 256 * 19 + 4096 + (result_tail_end-result_tail)
+    .space 256 * 19 + 4096
+result_code_limit:
+    .space result_tail_end-result_tail
 
 .section .rodata
 result_tail:
@@ -2773,6 +2936,9 @@ result_tail_end:
 .lcomm constants,256 * 24
 .lcomm record_name,24
 .lcomm helper_name,24
+.lcomm emitting_constructor,1
+.lcomm constructor_layout,8
+.lcomm reader_entry,8
 .lcomm record_reader_name,24
 .lcomm record_parameter,24
 .lcomm child_index_name,24
