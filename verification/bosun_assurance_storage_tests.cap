@@ -1,0 +1,202 @@
+import "bosuns_locker_protocol.cap";
+
+// Exercise every six-event history in the bounded WAL alphabet. The oracle
+// records persisted positions and commit identity separately from model state.
+bool assurance_wal_history(int encoded) {
+    BLStorageState state = bl_storage_initial();
+    int written = 0; int durable = 0; int page = 0; int commit = 0;
+    bool ack = false;
+    for (int i = 0; i < 6; i += 1) {
+        int event = encoded % 8; encoded = encoded / 8;
+        int action = BL_STORAGE_APPEND_UPDATE; int argument = 0;
+        if (event == 1) { action = BL_STORAGE_APPEND_COMMIT; }
+        if (event == 2) { action = BL_STORAGE_FLUSH_LOG; argument = written; }
+        if (event == 3) { action = BL_STORAGE_FLUSH_LOG; argument = durable - 1; }
+        if (event == 4) { action = BL_STORAGE_FLUSH_PAGE; argument = durable; }
+        if (event == 5) { action = BL_STORAGE_FLUSH_PAGE; argument = durable + 1; }
+        if (event == 6) { action = BL_STORAGE_ACK_COMMIT; }
+        if (event == 7) { action = BL_STORAGE_FLUSH_PAGE; argument = page - 1; }
+        bool permitted = false;
+        if (event == 0 || event == 1) { permitted = commit == 0; }
+        if (event == 2) { permitted = true; }
+        if (event == 4) { permitted = durable > 0; }
+        if (event == 6) { permitted = commit > 0 && durable >= commit; }
+        if (event == 7) { permitted = false; }
+        BLStorageTransition step = bl_storage_step(state, action, argument);
+        if (step.accepted != permitted) { return false; }
+        if (permitted) {
+            if (event == 0 || event == 1) { written += 1; }
+            if (event == 1) { commit = written; }
+            if (event == 2) { durable = written; }
+            if (event == 4) { page = durable; }
+            if (event == 6) { ack = true; }
+        }
+        state = step.state;
+        if (state.next_lsn != written || state.durable_lsn != durable ||
+            state.page_lsn != page || state.page_persisted != (page > 0) ||
+            state.commit_lsn != commit || state.acknowledged != ack ||
+            bl_storage_commit_survives_crash(state) != (commit > 0 && durable >= commit) ||
+            !bl_storage_invariant(state)) { return false; }
+    }
+    return true;
+}
+bool assurance_wal_shard(int shard) {
+    for (int history = shard * 8192; history < (shard + 1) * 8192; history += 1) {
+        if (!assurance_wal_history(history)) { return false; }
+    }
+    return true;
+}
+test "Bosun WAL six-event ordering shard 0" {
+    assert(assurance_wal_shard(0));
+}
+
+test "Bosun WAL six-event ordering shard 1" {
+    assert(assurance_wal_shard(1));
+}
+
+test "Bosun WAL six-event ordering shard 2" {
+    assert(assurance_wal_shard(2));
+}
+
+test "Bosun WAL six-event ordering shard 3" {
+    assert(assurance_wal_shard(3));
+}
+
+test "Bosun WAL six-event ordering shard 4" {
+    assert(assurance_wal_shard(4));
+}
+
+test "Bosun WAL six-event ordering shard 5" {
+    assert(assurance_wal_shard(5));
+}
+
+test "Bosun WAL six-event ordering shard 6" {
+    assert(assurance_wal_shard(6));
+}
+
+test "Bosun WAL six-event ordering shard 7" {
+    assert(assurance_wal_shard(7));
+}
+
+test "Bosun WAL six-event ordering shard 8" {
+    assert(assurance_wal_shard(8));
+}
+
+test "Bosun WAL six-event ordering shard 9" {
+    assert(assurance_wal_shard(9));
+}
+
+test "Bosun WAL six-event ordering shard 10" {
+    assert(assurance_wal_shard(10));
+}
+
+test "Bosun WAL six-event ordering shard 11" {
+    assert(assurance_wal_shard(11));
+}
+
+test "Bosun WAL six-event ordering shard 12" {
+    assert(assurance_wal_shard(12));
+}
+
+test "Bosun WAL six-event ordering shard 13" {
+    assert(assurance_wal_shard(13));
+}
+
+test "Bosun WAL six-event ordering shard 14" {
+    assert(assurance_wal_shard(14));
+}
+
+test "Bosun WAL six-event ordering shard 15" {
+    assert(assurance_wal_shard(15));
+}
+
+test "Bosun WAL six-event ordering shard 16" {
+    assert(assurance_wal_shard(16));
+}
+
+test "Bosun WAL six-event ordering shard 17" {
+    assert(assurance_wal_shard(17));
+}
+
+test "Bosun WAL six-event ordering shard 18" {
+    assert(assurance_wal_shard(18));
+}
+
+test "Bosun WAL six-event ordering shard 19" {
+    assert(assurance_wal_shard(19));
+}
+
+test "Bosun WAL six-event ordering shard 20" {
+    assert(assurance_wal_shard(20));
+}
+
+test "Bosun WAL six-event ordering shard 21" {
+    assert(assurance_wal_shard(21));
+}
+
+test "Bosun WAL six-event ordering shard 22" {
+    assert(assurance_wal_shard(22));
+}
+
+test "Bosun WAL six-event ordering shard 23" {
+    assert(assurance_wal_shard(23));
+}
+
+test "Bosun WAL six-event ordering shard 24" {
+    assert(assurance_wal_shard(24));
+}
+
+test "Bosun WAL six-event ordering shard 25" {
+    assert(assurance_wal_shard(25));
+}
+
+test "Bosun WAL six-event ordering shard 26" {
+    assert(assurance_wal_shard(26));
+}
+
+test "Bosun WAL six-event ordering shard 27" {
+    assert(assurance_wal_shard(27));
+}
+
+test "Bosun WAL six-event ordering shard 28" {
+    assert(assurance_wal_shard(28));
+}
+
+test "Bosun WAL six-event ordering shard 29" {
+    assert(assurance_wal_shard(29));
+}
+
+test "Bosun WAL six-event ordering shard 30" {
+    assert(assurance_wal_shard(30));
+}
+
+test "Bosun WAL six-event ordering shard 31" {
+    assert(assurance_wal_shard(31));
+}
+
+test "Bosun recovery at each transaction lifecycle boundary" {
+    for (int budget = 0; budget <= 8; budget += 1) {
+        BLTxnState state = bl_txn_initial(budget);
+        assert(!bl_recover(state, false).valid && !bl_recover(state, true).valid);
+        state = bl_txn_step(state, BL_ACTION_BEGIN).state;
+        for (int n = 0; n <= budget; n += 1) {
+            BLRecoveryResult absent = bl_recover(state, false);
+            assert(absent.valid && absent.state.phase == BL_PHASE_ABORTED);
+            assert(!bl_recover(state, true).valid);
+            BLTxnTransition operation = bl_txn_step(state, BL_ACTION_OPERATION);
+            assert(operation.accepted == (n < budget));
+            state = operation.state;
+        }
+        state = bl_txn_step(state, BL_ACTION_PREPARE).state;
+        assert(bl_recover(state, false).state.phase == BL_PHASE_ABORTED);
+        assert(!bl_recover(state, true).valid);
+        state = bl_txn_step(state, BL_ACTION_COMMIT_DECISION).state;
+        BLRecoveryResult lost = bl_recover(state, false);
+        BLRecoveryResult saved = bl_recover(state, true);
+        assert(lost.valid && lost.state.phase == BL_PHASE_ABORTED && !lost.state.writes_visible);
+        assert(saved.valid && saved.state.phase == BL_PHASE_DURABLE_COMMITTED && saved.state.writes_visible);
+        assert(!saved.state.acknowledged && !bl_recover(saved.state, false).valid);
+        assert(bl_recover(saved.state, true).valid);
+        assert(bl_recover(lost.state, false).valid && !bl_recover(lost.state, true).valid);
+    }
+}
