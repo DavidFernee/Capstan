@@ -450,3 +450,58 @@ test "checked map enumeration preserves insertion order and independent string l
     assert(ag_sealed_invoke(compiled.program, stack.stack, 0, new List<int>(), 0) == "");
     assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 32);
 }
+
+test "short circuit branches execute right side only when selected" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "struct Counter { int nodes; } " +
+        "bool mark(Counter counter, bool value) { counter.nodes += 1; return value; } " +
+        "int run() { Counter counter = new Counter{nodes: 0}; " +
+        "bool a = false && mark(counter, true); bool b = true || mark(counter, false); " +
+        "bool c = true && mark(counter, true); bool d = false || mark(counter, false); " +
+        "if (!a && (b && (c && !d))) { return counter.nodes; } return -1; }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 256);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 256);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 2);
+}
+
+test "short circuit suppresses unselected arithmetic traps but preserves selected traps" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "bool check(bool gate, int divisor) { return gate && (42 / divisor > 0); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_BOOL);
+    kinds.push(AG_SCHEMA_INT); kinds.push(AG_SCHEMA_BOOL);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 128);
+    assert(root.ok);
+    assert(ccam_aggregate_write(root.machine, 0, ccam_heap_bool(false)) == "");
+    assert(ccam_aggregate_write(root.machine, 1, ccam_heap_int(0)) == "");
+    assert(ccam_aggregate_write(root.machine, 2, ccam_heap_bool(true)) == "");
+    AGStackResult stack = ag_stack_create(root.machine, 4, 128);
+    assert(stack.ok);
+    List<int> args = new List<int>(); args.push(0); args.push(1);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 2) == "");
+    assert(!ccam_aggregate_read(stack.stack.active, 2, AG_SCHEMA_BOOL).value.bool_value);
+    assert(ccam_aggregate_write(stack.stack.active, 0, ccam_heap_bool(true)) == "");
+    assert(ccam_aggregate_write(stack.stack.active, 2, ccam_heap_bool(true)) == "");
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 0, args, 2) == "division_by_zero");
+    assert(ccam_aggregate_read(stack.stack.active, 2, AG_SCHEMA_BOOL).value.bool_value);
+    assert(stack.stack.depth == 0 && stack.stack.slots == 3);
+}
+
+test "short circuit conditions are reevaluated on loop backedges" {
+    AGSourceModuleResult compiled = ag_source_test_compile(
+        "int count(List<int> values, int limit) { int i = 0; while ((i < values.len()) && (values[i] < limit)) { i += 1; } return i; } " +
+        "int run() { List<int> values = new List<int>(); values.push(1); values.push(2); return count(values, 3); }");
+    assert(compiled.ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_INT);
+    CCAMAggregateCreateResult root = ccam_aggregate_create(kinds, 4096, 16, 4096, 4096, 256);
+    assert(root.ok);
+    AGStackResult stack = ag_stack_create(root.machine, 4, 256);
+    assert(stack.ok);
+    assert(ag_sealed_invoke(compiled.program, stack.stack, 1, new List<int>(), 0) == "");
+    assert(ccam_aggregate_read(stack.stack.active, 0, AG_SCHEMA_INT).value.int_value == 2);
+}
