@@ -1578,3 +1578,41 @@ test "growable map retains alias identity and rejects over-budget backing replac
     assert(ccam_heap_map_matches(heap, ccam_heap_ref_value(alias), AG_MAP_DESCRIPTOR_BASE + AG_OPTIONAL_INT));
     assert(!ccam_heap_map_matches(heap, ccam_heap_ref_value(alias), AG_MAP_DESCRIPTOR_BASE + AG_OPTIONAL_BOOL));
 }
+
+test "byte array element descriptor excludes records and preserves map key snapshots" {
+    CCAMHeapCreateResult created = ccam_heap_create(4096, 32);
+    assert(created.ok);
+    CCAMHeap heap = created.heap;
+    CCAMHeapRefResult map = ccam_heap_alloc_map(heap, AG_OPTIONAL_INT, 3);
+    CCAMHeapRefResult a = ccam_heap_alloc_bytes(heap, "a");
+    CCAMHeapRefResult b = ccam_heap_alloc_bytes(heap, "b");
+    CCAMHeapRefResult c = ccam_heap_alloc_bytes(heap, "c");
+    assert(map.ok && a.ok && b.ok && c.ok);
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(a.reference), ccam_heap_int(1)) == "");
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(b.reference), ccam_heap_int(2)) == "");
+    assert(ccam_heap_map_set(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(c.reference), ccam_heap_int(3)) == "");
+    CCAMHeapRefResult before = ccam_heap_map_keys(heap, map.reference, AG_OPTIONAL_INT);
+    assert(before.ok);
+    assert(ccam_heap_value_has_array_type(heap, ccam_heap_ref_value(before.reference),
+        CCAM_HEAP_VALUE_REF, CCAM_HEAP_ELEMENT_BYTES));
+    CCAMHeapValueResult removed = ccam_heap_map_remove(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(b.reference));
+    assert(removed.ok && removed.value.bool_value);
+    removed = ccam_heap_map_remove(heap, map.reference, AG_OPTIONAL_INT, ccam_heap_ref_value(b.reference));
+    assert(removed.ok && !removed.value.bool_value);
+    CCAMHeapRefResult after = ccam_heap_map_keys(heap, map.reference, AG_OPTIONAL_INT);
+    assert(after.ok);
+    assert(ccam_heap_array_len(heap, before.reference, CCAM_HEAP_VALUE_REF).value == 3);
+    assert(ccam_heap_array_len(heap, after.reference, CCAM_HEAP_VALUE_REF).value == 2);
+    CCAMHeapValueResult key = ccam_heap_array_get(heap, after.reference, CCAM_HEAP_VALUE_REF, 1);
+    assert(key.ok);
+    if (let reference = key.value.reference) {
+        assert(ccam_heap_byte_get(heap, reference, 0).value == 99);
+    } else { assert(false); }
+    CCAMHeapLayout layout = new CCAMHeapLayout{type_id: 1,
+        field_types: new List<int>(), field_ref_type_ids: new List<int>(), field_mutable: new List<bool>()};
+    CCAMHeapRefResult record = ccam_heap_alloc_record(heap, layout);
+    assert(record.ok);
+    assert(ccam_heap_array_set(heap, after.reference, CCAM_HEAP_VALUE_REF, 0,
+        ccam_heap_ref_value(record.reference)) == "value_type_mismatch");
+    assert(ccam_heap_array_len(heap, after.reference, CCAM_HEAP_VALUE_REF).value == 2);
+}
