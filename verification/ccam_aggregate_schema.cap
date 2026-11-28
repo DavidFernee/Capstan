@@ -336,7 +336,24 @@ bool ag_schema_validation_operands(List<int> kinds, int opcode, int kind, List<i
         ag_schema_register(kinds, operands[0], AG_SCHEMA_REF) &&
         ag_schema_register(kinds, operands[1], AG_SCHEMA_REF);
 }
+// Native tainted construction; exact input classes encoded as immediates.
+// Concat [dest,left,right,left_descriptor,right_descriptor]; char [dest,int].
+const int AG_OP_TAINT_CONCAT = 64;
+const int AG_OP_TAINT_CHAR = 65;
+bool ag_schema_taint_build_opcode(int opcode) { return opcode == AG_OP_TAINT_CONCAT || opcode == AG_OP_TAINT_CHAR; }
+bool ag_schema_taint_build_operands(List<int> kinds, int opcode, int kind, List<int> a) {
+    if (kind != AG_SCHEMA_REF) { return false; }
+    if (opcode == AG_OP_TAINT_CHAR) {
+        return a.len() == 2 && ag_schema_register(kinds, a[0], AG_SCHEMA_REF) && ag_schema_register(kinds, a[1], AG_SCHEMA_INT);
+    }
+    return opcode == AG_OP_TAINT_CONCAT && a.len() == 5 &&
+        ag_schema_register(kinds, a[0], AG_SCHEMA_REF) && ag_schema_register(kinds, a[1], AG_SCHEMA_REF) &&
+        ag_schema_register(kinds, a[2], AG_SCHEMA_REF) &&
+        (a[3] == -1 || a[3] == -4102) && (a[4] == -1 || a[4] == -4102) &&
+        (a[3] == -4102 || a[4] == -4102);
+}
 bool ag_schema_operands(List<int> kinds, int opcode, int element_kind, List<int> operands) {
+    if (ag_schema_taint_build_opcode(opcode)) { return ag_schema_taint_build_operands(kinds, opcode, element_kind, operands); }
     if (ag_schema_validation_opcode(opcode)) { return ag_schema_validation_operands(kinds, opcode, element_kind, operands); }
     if (ag_schema_stdout_opcode(opcode)) { return ag_schema_stdout_operands(kinds, opcode, element_kind, operands); }
     if (kinds.len() > AG_SCHEMA_MAX_REGS) { return false; }

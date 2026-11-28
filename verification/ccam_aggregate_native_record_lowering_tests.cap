@@ -675,3 +675,21 @@ test "native source validation reuses bounded exact taint leaf modes" {
     ready[0] = true;
     assert(ag_transfer(kinds, ready, AG_OP_VALIDATE_IDENT, AG_SCHEMA_REF, a).ok);
 }
+
+test "native tainted concat and byte construction preserve provenance" {
+    string src = "int run() { Tainted a = taint_char(0); Tainted b = \"a\" + a; " +
+        "Tainted c = b + \"b\"; Tainted d = c + taint_char(255); " +
+        "return d.len() + d.at(0) + d.at(1) + d.at(2) + d.at(3); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(src, 1024, 8), "build/ccam-native-record-taint-build.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { return taint_char(-1).len(); }", 1024, 8), "build/ccam-native-record-taint-char-negative.elf"));
+    assert(ag_nv_test_write(ag_nvc_test_source("int run() { return taint_char(256).len(); }", 1024, 8), "build/ccam-native-record-taint-char-over.elf"));
+    assert(!ag_nvc_test_source("int run() { string s = \"a\" + taint_char(1); return s.len(); }", 1024, 8).ok);
+    List<int> kinds = new List<int>(); kinds.push(AG_SCHEMA_REF); kinds.push(AG_SCHEMA_REF);
+    List<int> a = new List<int>(); a.push(0); a.push(0); a.push(1); a.push(-4102); a.push(-1);
+    List<bool> ready = new List<bool>(); ready.push(true); ready.push(false);
+    assert(!ag_transfer(kinds, ready, AG_OP_TAINT_CONCAT, AG_SCHEMA_REF, a).ok);
+    ready[1] = true;
+    assert(ag_transfer(kinds, ready, AG_OP_TAINT_CONCAT, AG_SCHEMA_REF, a).ok);
+    a[3] = -1;
+    assert(!ag_schema_operands(kinds, AG_OP_TAINT_CONCAT, AG_SCHEMA_REF, a));
+}
