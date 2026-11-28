@@ -496,3 +496,32 @@ test "candidate native empty map snapshot is independently mutable" {
         "keys.push(\"x\"); if (!m.has(\"x\")) { if (m.keys().len() == 0) { return keys.len(); } } return 0; }";
     assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-map-empty-keys.elf"));
 }
+
+test "candidate native source admits checked literal constants across functions" {
+    string source = "const int NUMBER = 40; const bool ENABLED = true; const string LABEL = \"ok\"; " +
+        "int helper() { if (ENABLED) { return NUMBER + LABEL.len(); } return 0; } " +
+        "int run() { return helper(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-constants.elf"));
+    AGImage invalid = ag_nvc_test_source("const int X = 20 + 22; int run() { return X; }", 100, 8);
+    assert(!invalid.ok && invalid.bytes.len() == 0);
+}
+
+test "candidate native checked module exceeds former 32 function ceiling" {
+    string source = "";
+    for (int i = 0; i < 40; i += 1) {
+        source = source + "int helper" + int_to_str(i) + "() { return " + int_to_str(i) + "; } ";
+    }
+    source = source + "int run() { return helper39() + helper3(); }";
+    assert(ag_nv_test_write(ag_nvc_test_source(source, 1024, 8), "build/ccam-native-record-module-41.elf"));
+}
+
+test "candidate native module admits exact shared function ceiling and rejects next" {
+    List<AGFunction> functions = new List<AGFunction>();
+    AGFunction f = ag_nv_test_arith(AG_OP_ADD, 20, 22);
+    for (int i = 0; i < AG_NVC_MAX_FUNCTIONS; i += 1) { functions.push(f); }
+    assert(ag_nv_test_write(ag_nvc_compile(functions, AG_NVC_MAX_FUNCTIONS - 1, 100, 8),
+        "build/ccam-native-record-module-256.elf"));
+    functions.push(f);
+    AGImage rejected = ag_nvc_compile(functions, 0, 100, 8);
+    assert(!rejected.ok && rejected.bytes.len() == 0);
+}
