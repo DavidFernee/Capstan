@@ -8,45 +8,65 @@ permissions:
   contents: read
 jobs:
   systematic:
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        group: [scalar, memory, security, native, mutation]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Record revision and bootstrap compiler
         run: |
           git rev-parse HEAD 'HEAD^{tree}'
-          make
-      - name: Run exact arithmetic vectors
-        run: bin/capstan test verification/ccam_assurance_arithmetic_tests.cap
-      - name: Run bounded transition cases
-        run: bin/capstan test verification/ccam_assurance_transition_tests.cap
-      - name: Run exact dispatcher and fuel-prefix scenarios
-        run: bin/capstan test verification/ccam_assurance_dispatch_tests.cap
-      - name: Run exhaustive bounded operand admission
-        run: bin/capstan test verification/ccam_assurance_admission_tests.cap
-      - name: Run bounded loop and metamorphic branch scenarios
-        run: bin/capstan test verification/ccam_assurance_loop_tests.cap
-      - name: Run systematic recursive calls and call admission
-        run: bin/capstan test verification/ccam_assurance_call_tests.cap
-      - name: Run systematic memory and ownership scenarios
-        run: bin/capstan test verification/ccam_assurance_memory_tests.cap
-      - name: Run exhaustive bounded GC graph scenarios
-        run: bin/capstan test verification/gc_assurance_graph_tests.cap
-      - name: Run GC handle identity and retirement scenarios
-        run: bin/capstan test verification/gc_assurance_handle_tests.cap
-      - name: Run systematic capability resolution and revocation
-        run: bin/capstan test verification/schooner_assurance_capability_tests.cap
-      - name: Run revocation event-history differential tests
-        run: bin/capstan test verification/schooner_assurance_schedule_tests.cap
-      - name: Run checker taint and secret metamorphic tests
-        run: bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/security_assurance_checker_tests.cap
-      - name: Run exact x86-64 encoder fixtures
-        run: bin/capstan test verification/x86_assurance_encoding_tests.cap
-      - name: Run exhaustive stack layout and ABI controls
-        run: bin/capstan test verification/x86_assurance_abi_tests.cap
-      - name: Run allocation oracle and certificate tests
-        run: bin/capstan test verification/x86_assurance_allocation_tests.cap
-      - name: Run native ELF differential arithmetic campaign
-        run: python3 tests/unit/native_assurance_oracle.py
+          make bootstrap
+      - name: Execute all suites in the selected group
+        env:
+          ASSURANCE_GROUP: ${{ matrix.group }}
+        shell: bash
+        run: |
+          failures=0
+          check() {
+            printf '\n=== %s ===\n' "$*"
+            if "$@"; then
+              printf 'PASS: %s\n' "$*"
+            else
+              printf 'FAIL: %s\n' "$*"
+              failures=$((failures + 1))
+            fi
+          }
+          case "$ASSURANCE_GROUP" in
+            scalar)
+              check bin/capstan test verification/ccam_assurance_arithmetic_tests.cap
+              check bin/capstan test verification/ccam_assurance_transition_tests.cap
+              check bin/capstan test verification/ccam_assurance_dispatch_tests.cap
+              check bin/capstan test verification/ccam_assurance_admission_tests.cap
+              check bin/capstan test verification/ccam_assurance_loop_tests.cap
+              ;;
+            memory)
+              check bin/capstan test verification/ccam_assurance_call_tests.cap
+              check bin/capstan test verification/ccam_assurance_memory_tests.cap
+              check bin/capstan test verification/gc_assurance_graph_tests.cap
+              check bin/capstan test verification/gc_assurance_handle_tests.cap
+              ;;
+            security)
+              check bin/capstan test verification/schooner_assurance_capability_tests.cap
+              check bin/capstan test verification/schooner_assurance_schedule_tests.cap
+              check bin/capstan test compiler/ast.cap compiler/lexer.cap compiler/parser.cap compiler/checker.cap verification/security_assurance_checker_tests.cap
+              check bin/capstan test verification/concurrency_assurance_capacity_tests.cap
+              ;;
+            native)
+              check bin/capstan test verification/x86_assurance_encoding_tests.cap
+              check bin/capstan test verification/x86_assurance_abi_tests.cap
+              check bin/capstan test verification/x86_assurance_allocation_tests.cap
+              check python3 tests/unit/native_assurance_oracle.py
+              ;;
+            mutation)
+              check python3 tests/unit/security_assurance_mutants.py
+              ;;
+            *) exit 2 ;;
+          esac
+          test "$failures" -eq 0
