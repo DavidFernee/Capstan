@@ -1,0 +1,36 @@
+// Narrow production-checked source entry for the candidate native slice.
+// All declarations checked by the production checker, one entry function,
+// scalar-record structs only; unsupported declarations rejected, not ignored.
+import "ccam_aggregate_checked_source.cap";
+import "ccam_aggregate_native_record_lowering.cap";
+
+AGSourceFunction? ag_nv_checked_entry(Ctx ctx, List<Node> declarations) {
+    if (error_count(ctx) != 0 || declarations.len() == 0 ||
+        declarations.len() > 257) { return none; }
+    Map<int> records = new Map<int>(); Map<Node> record_nodes = new Map<Node>();
+    Map<Node> constants = new Map<Node>(); Map<Node> function_nodes = new Map<Node>();
+    Map<int> function_indices = new Map<int>(); Map<int> names = new Map<int>();
+    int record_count = 0; int entry = -1; int total_fields = 0;
+    for (int i = 0; i < declarations.len(); i += 1) {
+        Node d = declarations[i];
+        if (d.s.len() == 0 || d.s.len() > AG_SOURCE_MAX_NAME || names.has(d.s)) { return none; }
+        names.set(d.s, 1);
+        if (d.k == N_STRUCT) {
+            if (d.s2 != "" || d.s3 != "" || d.kids.len() > AG_SCHEMA_MAX_RECORD_FIELDS ||
+                d.kids.len() > AG_NV_MAX_OPERANDS - total_fields) { return none; }
+            total_fields += d.kids.len();
+            record_count += 1; records.set(d.s, record_count); record_nodes.set(d.s, d);
+        } else if (d.k == N_FN && d.s == "run" && entry == -1 && d.n == 0) {
+            entry = i; function_indices.set(d.s, 0); function_nodes.set(d.s, d);
+        } else { return none; }
+    }
+    if (entry < 0) { return none; }
+    return ag_source_lower_function(declarations[entry], records, record_nodes, constants, function_nodes, function_indices);
+}
+
+AGImage ag_nv_compile_checked(Ctx ctx, List<Node> declarations, int fuel) {
+    if (let entry = ag_nv_checked_entry(ctx, declarations)) {
+        return ag_nv_compile(entry.function, fuel);
+    }
+    return ag_nv_failure();
+}
