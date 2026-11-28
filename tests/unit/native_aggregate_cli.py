@@ -67,6 +67,39 @@ int main() {
         q = subprocess.run([str(out)], capture_output=True, timeout=5)
         assert (q.returncode, q.stdout, q.stderr) == (0, struct.pack("<q", 42), b""), q
 
+        # Production source_excerpt is the next real compiler admission
+        # boundary. Read the exact function and record declarations, not
+        # a hand-written equivalent. This deliberately scoped probe is
+        # supplementary; the full compiler probe below remains mandatory.
+        excerpt = ast[ast.index("LogText? source_excerpt("):ast.index("int error_count(")]
+        assert excerpt.count("LogText? source_excerpt(") == 1
+        source.write_text(declarations + excerpt + r"""
+int main() {
+    Ctx c = new Ctx{files: new List<string>(), sources: new List<Tainted>(), diags: new List<Diag>(), release: false, strict: true, keep_checks: false};
+    c.files.push("input.cap");
+    c.sources.push(taint("first\n" + char_str(27) + "[31msecond\n"));
+    Diag first = new Diag{file: 0, line: 1, col: 3, error: true, code: "FIRST", msg: "first"};
+    Diag hostile = new Diag{file: 0, line: 2, col: 5, error: true, code: "SECOND", msg: "second"};
+    Diag missing = new Diag{file: 0, line: 4, col: 1, error: true, code: "MISSING", msg: "missing"};
+    Diag outside = new Diag{file: 1, line: 1, col: 1, error: true, code: "FILE", msg: "missing file"};
+    Diag zero = new Diag{file: 0, line: 0, col: 1, error: true, code: "ZERO", msg: "invalid line"};
+    if (let x = source_excerpt(c, first)) { LogText again = escape_log(x); } else { return 11; }
+    if (let x = source_excerpt(c, hostile)) { LogText again = escape_log(x); } else { return 12; }
+    if (let x = source_excerpt(c, missing)) { return 13; }
+    if (let x = source_excerpt(c, outside)) { return 14; }
+    if (let x = source_excerpt(c, zero)) { return 15; }
+    return 42;
+}
+""")
+        p = run(root, cli, out, "fixture.cap")
+        assert p.returncode == 0, ("production source_excerpt admission", p.stdout.decode(errors="replace"))
+        q = subprocess.run([str(out)], capture_output=True, timeout=5)
+        assert (q.returncode, q.stdout, q.stderr) == (0, struct.pack("<q", 42), b""), ("production source_excerpt execution", q)
+        print("Production source_excerpt candidate: exact source admitted and present/absent paths executed")
+        # The current result ABI exposes only an integer. This probe does
+        # not observe the returned log bytes; the isolated native leaf
+        # differential tests cover those transforms separately.
+
         # The complete checked compiler is the actual target. Do not prune
         # declarations, rename functions, or substitute a synthetic subset.
         probe = root / "compiler-probe"
