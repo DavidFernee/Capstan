@@ -19,6 +19,9 @@ def main():
         'mixed-mismatch': None,
         'bytes-index': 128, 'bytes-equal': 42, 'bytes-empty': 0,
         'bytes-oob': None, 'bytes-negative': None,
+        'bytes-copy': 50, 'bytes-copy-empty': 3, 'bytes-max': 4096,
+        'bytes-over': None, 'bytes-reversed': None, 'bytes-slice-oob': None,
+        'bytes-slice-negative': None,
         'fuel': None, 'overflow': None, 'divoverflow': None, 'divzero': None,
     }
     for name, value in expected.items():
