@@ -236,6 +236,20 @@ else
   bad "bounded borrowed-FD input emission" "$out"
 fi
 
+section "Candidate native taint validation"
+if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_taint_validation.cap" 2>&1)"; then
+  ok "native taint validation emission"
+  if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+    if out="$($PY "$ROOT/tests/unit/native_aggregate_taint_validation.py" "$ROOT/build/ccam-native-taint-validation.bin" 2>&1)"; then
+      ok "native taint validation differential and boundary execution"
+    else
+      bad "native taint validation execution" "$out"
+    fi
+  fi
+else
+  bad "native taint validation emission" "$out"
+fi
+
 section "Candidate native scalar string conversions"
 if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_string_conversion.cap" 2>&1)"; then
   ok "bounded native scalar string conversion emission"
@@ -290,6 +304,16 @@ if out="$( "$ROOT/bin/capstan" test "$ROOT/verification/ccam_aggregate_native_pr
   fi
 else
   bad "bounded native process argv emission" "$out"
+fi
+
+section "Candidate aggregate native CLI and full compiler admission probe"
+if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "x86_64" ]]; then
+  if out="$($PY "$ROOT/tests/unit/native_aggregate_cli.py" "$ROOT" 2>&1)"; then
+    ok "candidate aggregate CLI and complete compiler admission probe (not S1)"
+    printf '%s\n' "$out"
+  else
+    bad "candidate aggregate CLI and complete compiler admission probe" "$out"
+  fi
 fi
 
 section "Candidate native scalar record CFG lowering"

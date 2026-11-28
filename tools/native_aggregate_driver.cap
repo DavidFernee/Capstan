@@ -1,0 +1,223 @@
+// Transitional C-hosted aggregate native CLI. This is NOT an S0 seed.
+// Reuses the production workspace loading/checking path; no source or import is skipped.
+// Output uses the candidate signed-64 stdout test transport, not the production process ABI.
+// See native_driver.cap for the original scalar driver.
+
+bool native_import_path_ok(string spec) {
+    if (spec.len() < 5 || spec.at(0) == '/') { return false; }
+    if (spec.slice(spec.len() - 4, spec.len()) != ".cap") { return false; }
+    int seg_start = 0;
+    for (int i = 0; i <= spec.len(); i += 1) {
+        if (i == spec.len() || spec.at(i) == '/') {
+            string seg = spec.slice(seg_start, i);
+            if (seg == "" || seg == "." || seg == "..") { return false; }
+            seg_start = i + 1;
+        } else {
+            int ch = spec.at(i);
+            bool ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+                (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' || ch == '.';
+            if (!ok) { return false; }
+        }
+    }
+    return true;
+}
+
+string native_dir_of(string path) {
+    int cut = 0;
+    for (int i = 0; i < path.len(); i += 1) {
+        if (path.at(i) == '/') { cut = i + 1; }
+    }
+    return path.slice(0, cut);
+}
+
+void native_usage() {
+    println("usage: capstan native --direct --direct-aggregate --root /workspace -o output [--direct-steps N] [--strict] [--release] [--keep-checks] file.cap...");
+}
+
+int main() {
+    List<string> arguments = args(4096, 4096, 16777216);
+    Ctx context = new Ctx{
+        files: new List<string>(),
+        sources: new List<Tainted>(),
+        diags: new List<Diag>(),
+        release: false,
+        strict: false,
+        keep_checks: false
+    };
+    bool direct = false;
+    int max_steps = AG_NV_MAX_FUEL;
+    string output_path = "";
+    string workspace_root = "";
+    List<string> source_paths = new List<string>();
+    for (int i = 0; i < arguments.len(); i += 1) {
+        string arg = arguments[i];
+        if (arg == "--direct") {
+            direct = true;
+        } else if (arg == "--direct-steps") {
+            if (i + 1 >= arguments.len()) { native_usage(); return 2; }
+            if (let steps = validate_int(taint(arguments[i + 1]))) {
+                if (steps < 1 || steps > AG_NV_MAX_FUEL) {
+                    println("capstan native: aggregate step budget outside 1.." + int_to_str(AG_NV_MAX_FUEL));
+                    return 2;
+                }
+                max_steps = steps;
+                i += 1;
+            } else {
+                println("capstan native: invalid direct step budget");
+                return 2;
+            }
+        } else if (arg == "--strict") {
+            context.strict = true;
+        } else if (arg == "--release") {
+            context.release = true;
+        } else if (arg == "--keep-checks") {
+            context.keep_checks = true;
+        } else if (arg == "--root") {
+            if (i + 1 >= arguments.len()) {
+                native_usage();
+                return 2;
+            }
+            workspace_root = arguments[i + 1];
+            i += 1;
+        } else if (arg == "-o") {
+            if (i + 1 >= arguments.len()) {
+                native_usage();
+                return 2;
+            }
+            output_path = arguments[i + 1];
+            i += 1;
+        } else {
+            source_paths.push(arg);
+        }
+    }
+    if (!direct) { native_usage(); return 2; }
+    if (source_paths.len() > MAX_IMPORT_FILES) {
+        println("capstan native: source file count exceeds import graph limit");
+        return 2;
+    }
+    if (output_path == "" || workspace_root == "" || source_paths.len() == 0) {
+        native_usage();
+        return 2;
+    }
+    for (int i = 0; i < source_paths.len(); i += 1) {
+        if (!native_import_path_ok(source_paths[i])) {
+            println("capstan native: source path must be a relative .cap path inside the workspace");
+            return 2;
+        }
+    }
+    int workspace = workspace_open(workspace_root);
+    if (workspace < 0) {
+        println("capstan native: cannot open a symlink-free workspace root or kernel lacks openat2");
+        return 2;
+    }
+
+    List<Node> declarations = new List<Node>();
+    // Record paths on enqueue so shared imports occupy one slot and keep their first origin.
+    Map<int> scheduled = new Map<int>();
+    List<string> queue = new List<string>();
+    List<int> from_file = new List<int>();
+    List<int> from_line = new List<int>();
+    for (int q = 0; q < source_paths.len(); q += 1) {
+        string path = source_paths[q];
+        if (scheduled.has(path)) { continue; }
+        scheduled.set(path, 1);
+        queue.push(path);
+        from_file.push(-1);
+        from_line.push(0);
+    }
+    int queue_index = 0;
+    CompileBudget budget = new_compile_budget();
+    while (queue_index < queue.len()) {
+        if (budget.exhausted) { break; }
+        string path = queue[queue_index];
+        int origin_file = from_file[queue_index];
+        int origin_line = from_line[queue_index];
+        queue_index += 1;
+        int file_index = context.files.len();
+        context.files.push(path);
+        if (budget.files >= MAX_IMPORT_FILES) {
+            context.sources.push(taint(""));
+            budget.exhausted = true;
+            report(context, file_index, 0, true, "CWE-400",
+                "native import graph exceeds file-count limit (" + int_to_str(MAX_IMPORT_FILES) + ")");
+            break;
+        }
+        budget.files += 1;
+        int remaining = MAX_TOTAL_SOURCE_BYTES - budget.source_bytes;
+        int file_limit = MAX_SOURCE_BYTES;
+        if (remaining < file_limit) { file_limit = remaining; }
+        if (let source = workspace_read_file(workspace, path, file_limit)) {
+            budget.source_bytes += source.len();
+            context.sources.push(source);
+            List<Token> tokens = lex_bounded(context, source, file_index, budget);
+            if (error_count(context) == 0 && !budget.exhausted) {
+                List<Node> part = parse_program(context, tokens);
+                if (!charge_ast_nodes(budget, part)) {
+                    report(context, file_index, 0, true, "CWE-400",
+                        "native import graph exceeds AST-node limit (" + int_to_str(MAX_TOTAL_AST_NODES) + ")");
+                    break;
+                }
+                for (int k = 0; k < part.len(); k += 1) {
+                    Node declaration = part[k];
+                    if (declaration.k == N_IMPORT) {
+                        if (native_import_path_ok(declaration.s)) {
+                            string imported_path = native_dir_of(path) + declaration.s;
+                            if (scheduled.has(imported_path)) { continue; }
+                            scheduled.set(imported_path, 1);
+                            queue.push(imported_path);
+                            from_file.push(file_index);
+                            from_line.push(declaration.line);
+                        } else {
+                            error_at(context, declaration, "CWE-22",
+                                "import path must be a relative .cap path without absolute or dot-segment traversal");
+                        }
+                    } else {
+                        declarations.push(declaration);
+                    }
+                }
+            }
+        } else {
+            context.sources.push(taint(""));
+            if (origin_file >= 0) {
+                report(context, origin_file, origin_line, true, "CWE-400",
+                    "cannot read imported file '" + path + "' (missing, unreadable, symlinked, over 16 MiB, or aggregate source budget exceeded)");
+            } else {
+                report(context, file_index, 0, true, "CWE-400",
+                    "cannot read source file '" + path + "' (missing, unreadable, symlinked, over 16 MiB, or aggregate source budget exceeded)");
+            }
+        }
+    }
+    workspace_close(workspace);
+    if (error_count(context) > 0) {
+        print_diags(context);
+        return 1;
+    }
+
+    Checker checker = new_checker(context);
+    check_program(checker, declarations, true);
+    print_diags(context);
+    if (error_count(context) > 0) {
+        if (direct) {
+            println("capstan native: source checking failed; no ELF generated");
+        } else {
+            println("capstan native: source checking failed; no assembly generated");
+        }
+        return 1;
+    }
+
+    AGImage image = ag_nvc_compile_checked_named(context, declarations, max_steps, AG_NVC_MAX_DEPTH, false, "main", true);
+    if (!image.ok) {
+        print_diags(context);
+        println("capstan native: candidate aggregate backend rejected complete checked module; no ELF generated");
+        return 1;
+    }
+    List<string> bytes = new List<string>();
+    for (int i = 0; i < image.bytes.len(); i += 1) {
+        bytes.push(char_str(image.bytes[i]));
+    }
+    if (!write_file(output_path, join(bytes, ""))) {
+        println("capstan native: cannot write candidate ELF file");
+        return 1;
+    }
+    return 0;
+}
