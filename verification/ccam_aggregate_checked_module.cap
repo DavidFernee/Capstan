@@ -22,6 +22,7 @@ AGSourceModuleResult ag_source_lower_checked(Ctx ctx, List<Node> declarations) {
     }
     Map<int> records = new Map<int>();
     Map<Node> record_nodes = new Map<Node>();
+    Map<Node> constants = new Map<Node>();
     int total_fields = 0;
     Map<int> names = new Map<int>();
     List<string> record_names = new List<string>();
@@ -49,6 +50,15 @@ AGSourceModuleResult ag_source_lower_checked(Ctx ctx, List<Node> declarations) {
                 return ag_source_module_failure("source_function_limit");
             }
             function_names.push(d.s);
+        } else if (d.k == N_CONST && d.kids.len() == 1) {
+            Type t = ty_of(d);
+            Node literal = d.kids[0];
+            if (!((t.k == TY_INT && literal.k == N_INT) ||
+                (t.k == TY_BOOL && literal.k == N_BOOL && (literal.n == 0 || literal.n == 1))) ||
+                t.args.len() != 0 || t.name != "" || literal.kids.len() != 0) {
+                return ag_source_module_failure("unsupported_constant");
+            }
+            constants.set(d.s, d);
         } else { return ag_source_module_failure("unsupported_top_level_declaration"); }
     }
     // Record shapes are lowered into constructor/field instruction operands.
@@ -61,7 +71,7 @@ AGSourceModuleResult ag_source_lower_checked(Ctx ctx, List<Node> declarations) {
     for (int i = 0; i < declarations.len(); i += 1) {
         Node d = declarations[i];
         if (d.k == N_FN) {
-            if (let lowered = ag_source_lower_function(d, records, record_nodes)) {
+            if (let lowered = ag_source_lower_function(d, records, record_nodes, constants)) {
                 int registers = lowered.function.kinds.len();
                 if (lowered.function.blocks.len() > AG_SEALED_MAX_BLOCKS - total_blocks) {
                     return ag_source_module_failure("source_module_limit");
