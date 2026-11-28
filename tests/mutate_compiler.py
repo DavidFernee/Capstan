@@ -152,7 +152,7 @@ def oracles(mc, d):
         stdin = open(f[:-4] + ".in", "rb").read() if io else b""
         scratch = tempfile.mkdtemp(dir=d)
         p = run([exe] + ([scratch] if io else []), input=stdin)
-        if p is None or p.stdout != open(f[:-4] + ".out", "rb").read():
+        if p is None or p.returncode != 0 or p.stdout != open(f[:-4] + ".out", "rb").read():
             return f"{os.path.relpath(f, ROOT)} output changed"
         want = expect(f, "expect-proved")
         if want is not None and len(re.findall(r"cap_[a-z_]*_proved\(", open(out).read())) != int(want):
@@ -169,7 +169,7 @@ def oracles(mc, d):
         p = run([exe])
         if p is None or p.returncode != 0:
             return f"{os.path.relpath(f, ROOT)} tests fail"
-    env = dict(os.environ, CAPSTANC=mc, CAPSTAN_SRC=os.path.join(d, "compiler"), FUZZ_FAILURES=os.path.join(d, "fuzz-failures"))
+    env = dict(os.environ, CAPSTANC=mc, CAPSTAN_SRC=(os.path.join(d, "compiler") if os.path.isdir(os.path.join(d, "compiler")) else os.path.join(ROOT, "compiler")), FUZZ_FAILURES=os.path.join(d, "fuzz-failures"))
     for script, what in (("tests/unit/lint_table.py", "the lint table"), ("tests/unit/ranges_props.py", "the interval property tests"),
                          ("tests/cwe/atlas.py", "the CWE atlas")):
         p = run([sys.executable, "-I", os.path.join(ROOT, script)], env=env, timeout=1200)
@@ -194,7 +194,8 @@ def build_mutant(src_texts, target, mutation, d):
     if r is None or r.returncode != 0:
         return None
     exe = os.path.join(d, "capstanc")
-    if run([CC, "-O1", "-std=gnu11", "-w", "-I" + RT, c, "-o", exe], timeout=600).returncode != 0:
+    result = run([CC, "-O1", "-std=gnu11", "-w", "-I" + RT, c, "-o", exe], timeout=600)
+    if result is None or result.returncode != 0:
         return None
     return exe
 
@@ -211,7 +212,9 @@ def replay(log):
     for target, desc in wanted:
         strip = re.sub(r" col \d+", "", desc)
         hits = [s for s in sites(texts[target]) if s[3] == desc or re.sub(r" col \d+", "", s[3]) == strip and " col " not in desc]
-        items += [(target, h) for h in hits]
+        if len(hits) != 1:
+            raise ValueError(f"replay mutation is missing or ambiguous: {target}: {desc}")
+        items.append((target, hits[0]))
     return texts, items
 
 
@@ -220,7 +223,11 @@ def main():
     # well below the machine's memory so that only the mutant fails.
     os.environ.setdefault("CAPSTAN_MAX_HEAP", "1G")
     if sys.argv[1] == "--replay":
-        texts, pool = replay(sys.argv[2])
+        try:
+            texts, pool = replay(sys.argv[2])
+        except (ValueError, KeyError) as exc:
+            print(f"incomplete replay: {exc}", file=sys.stderr)
+            return 2
         count, seed = len(pool), 0
         return campaign(texts, pool, count, seed)
     count, seed = int(sys.argv[1]), int(sys.argv[2])
@@ -241,6 +248,25 @@ def main():
 
 
 def campaign(texts, pool, count, seed):
+    # Duplicate operator descriptions must not inflate the executed sample size.
+    unique = {}
+    for target, mutation in pool:
+        unique.setdefault((target, *mutation[:3]), (target, mutation))
+    pool = list(unique.values())
+    if count <= 0 or len(pool) < count:
+        print(f"incomplete mutation campaign: requested {count}, {len(pool)} distinct candidates", file=sys.stderr)
+        return 2
+    # A broken oracle must not turn every mutant into a spurious kill.
+    with tempfile.TemporaryDirectory() as baseline_dir:
+        baseline = os.path.join(ROOT, "build/capstanc")
+        try:
+            why = oracles(baseline, baseline_dir)
+        except (OSError, ValueError, AttributeError) as exc:
+            print(f"mutation baseline error: {exc}", file=sys.stderr)
+            return 2
+        if why is not None:
+            print(f"mutation baseline failed: {why}", file=sys.stderr)
+            return 2
     work = tempfile.mkdtemp()
     results, i = [], 0
 
@@ -258,7 +284,7 @@ def campaign(texts, pool, count, seed):
     jobs = int(os.environ.get("JOBS", "2"))
     with ThreadPoolExecutor(jobs) as ex:
         while len(results) < count and i < len(pool):
-            batch = pool[i:i + jobs * 2]
+            batch = pool[i:i + min(jobs * 2, count - len(results))]
             i += len(batch)
             for res in ex.map(one, batch):
                 if res is not None and len(results) < count:
@@ -268,6 +294,9 @@ def campaign(texts, pool, count, seed):
     killed = sum(1 for _, _, why in results if why)
     print(f"compiler mutation testing: {killed} of {len(results)} mutants killed ({100.0 * killed / max(1, len(results)):.0f}%), seed {seed}")
     shutil.rmtree(work, ignore_errors=True)
+    if len(results) != count:
+        print(f"incomplete mutation campaign: requested {count}, executed {len(results)}; candidates attempted {i}", file=sys.stderr)
+        return 2
     return 0 if killed == len(results) else 1
 
 
